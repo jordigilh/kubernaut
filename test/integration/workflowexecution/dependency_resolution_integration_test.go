@@ -25,14 +25,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ========================================
 // DD-WE-006 / Issue #1481: Dependency Resolution Integration Tests
 // ========================================
 // Authority: DD-WE-006, BR-WE-014, BR-WORKFLOW-004, BR-WORKFLOW-008
-// Pattern: Real envtest K8s API + configurable testWorkflowQuerier + real executor
+// Pattern: Real envtest K8s API + CRD-embedded WorkflowRef.Dependencies + real executor
 //
 // These tests verify the full reconciler→resolveSchemaMetadata→executor
 // pipeline with real K8s objects (Secrets, ConfigMaps) in envtest.
@@ -52,10 +52,6 @@ import (
 
 var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we-006"), func() {
 
-	AfterEach(func() {
-		testWorkflowQuerier.Deps = nil
-	})
-
 	Context("Job execution backend with schema-declared dependencies", func() {
 
 		It("IT-WE-006-001: should mount secret volumes when workflow declares secret dependencies", func() {
@@ -72,11 +68,10 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			Expect(k8sClient.Create(ctx, secret)).To(Succeed())
 			defer func() { _ = k8sClient.Delete(ctx, secret) }()
 
-			testWorkflowQuerier.Deps = &models.WorkflowDependencies{
-				Secrets: []models.ResourceDependency{{Name: "it-gitea-creds-001"}},
-			}
-
 			wfe := createUniqueJobWFE("depres-001", "default/deployment/dep-test-001")
+			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
+				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "it-gitea-creds-001"}},
+			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
@@ -109,11 +104,10 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 			Expect(k8sClient.Create(ctx, cm)).To(Succeed())
 			defer func() { _ = k8sClient.Delete(ctx, cm) }()
 
-			testWorkflowQuerier.Deps = &models.WorkflowDependencies{
-				ConfigMaps: []models.ResourceDependency{{Name: "it-remediation-config-002"}},
-			}
-
 			wfe := createUniqueJobWFE("depres-002", "default/deployment/dep-test-002")
+			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
+				ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "it-remediation-config-002"}},
+			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
@@ -134,11 +128,10 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 		})
 
 		It("IT-WE-1481-001 [BR-WORKFLOW-008]: should create the Job despite a missing Secret dependency, set ActiveDeadlineSeconds, and enrich the Failed message from the Pod's FailedMount event", func() {
-			testWorkflowQuerier.Deps = &models.WorkflowDependencies{
-				Secrets: []models.ResourceDependency{{Name: "nonexistent-secret-1481"}},
-			}
-
 			wfe := createUniqueJobWFE("depres-1481-001", "default/deployment/dep-test-1481-001")
+			wfe.Spec.WorkflowRef.Dependencies = &sharedtypes.WorkflowDependencies{
+				Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "nonexistent-secret-1481"}},
+			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)
 
@@ -198,8 +191,6 @@ var _ = Describe("DD-WE-006: Dependency Resolution", Label("integration", "dd-we
 		})
 
 		It("IT-WE-006-005: should create Job without dependency volumes when querier returns nil", func() {
-			testWorkflowQuerier.Deps = nil
-
 			wfe := createUniqueJobWFE("depres-005", "default/deployment/dep-test-005")
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 			defer cleanupJobWFE(wfe)

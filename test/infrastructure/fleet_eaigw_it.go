@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +26,11 @@ import (
 	"runtime"
 	"strings"
 	"time"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	linux = "linux"
 )
 
 // EAIGWImage is the Envoy AI Gateway CLI image for fleet MCP routing.
@@ -80,7 +86,7 @@ const (
 //     VM, so bridge networking + the host.containers.internal rewrite +
 //     conventional port mapping is used instead.
 func StartEAIGWContainer(servers []EAIGWMCPServerEntry, writer io.Writer) (*ContainerInstance, error) {
-	useHostNetwork := runtime.GOOS == "linux"
+	useHostNetwork := runtime.GOOS == linux
 
 	mcpServers := make(map[string]eaigwMCPServerConfig, len(servers))
 	for _, s := range servers {
@@ -169,7 +175,7 @@ func StartEAIGWContainer(servers []EAIGWMCPServerEntry, writer io.Writer) (*Cont
 	mcpAddr := fmt.Sprintf("127.0.0.1:%d", mcpPort)
 	_, _ = fmt.Fprintf(writer, "   ⏳ Waiting for MCP data-plane port: %s\n", mcpAddr)
 	if err := WaitForTCPPort(mcpAddr, 30*time.Second, writer); err != nil {
-		logsCmd := exec.Command("podman", "logs", cfg.Name)
+		logsCmd := exec.CommandContext(context.Background(), "podman", "logs", cfg.Name)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()

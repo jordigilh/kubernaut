@@ -101,7 +101,7 @@ var _ = Describe("StatusAggregator", func() {
 				// Assert
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result).ToNot(BeNil())
-				Expect(result.AIAnalysisPhase).To(Equal(string(ai.Status.Phase)))
+				Expect(result.AIAnalysisPhase).To(Equal(ai.Status.Phase))
 			})
 
 			// Test #4: Aggregates WorkflowExecution status when ref exists

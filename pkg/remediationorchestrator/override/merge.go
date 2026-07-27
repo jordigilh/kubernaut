@@ -111,8 +111,19 @@ func ResolveWorkflow(
 				overrideSpec.WorkflowName, namespace, err)
 		}
 
-		// G2: Complete 11-field mapping from RW to SelectedWorkflow
+		// G2: field mapping from the override-target RW CRD onto the shared
+		// sharedtypes.WorkflowSnapshot embed. Issue #1661 Change 12 adds
+		// WorkflowName (a direct rw.Name field, trivially fixable) to the 8
+		// already mapped here. Dependencies/Resources/DeclaredParameterNames
+		// remain intentionally NOT remapped -- they're schema-derived
+		// (parsed by KA from the OCI execution bundle), and this override
+		// path only has CRD access, not KA's schema-parsing pipeline, so
+		// they stay stale copies from the original AI-selected workflow
+		// (aiWorkflow.DeepCopy() above). Pre-existing latent gap, tracked
+		// separately, not addressed here -- see Change 12 plan's "Open
+		// design question".
 		resolved.WorkflowID = rw.Status.WorkflowID
+		resolved.WorkflowName = rw.Name
 		resolved.ActionType = rw.Spec.ActionType
 		resolved.Version = rw.Spec.Version
 		resolved.ExecutionBundle = rw.Spec.Execution.Bundle

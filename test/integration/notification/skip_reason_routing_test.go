@@ -122,7 +122,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 
 			// Wait for controller to process (should reach Sent phase)
 			err = waitForReconciliationComplete(ctx, k8sClient, notifName, testNamespace,
-				notificationv1alpha1.NotificationPhaseSent, 30*time.Second)
+				notificationv1alpha1.NotificationPhaseSent)
 			Expect(err).NotTo(HaveOccurred(), "Notification should reach Sent phase")
 
 			// Cleanup
@@ -174,7 +174,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 
 				// Wait for reconciliation
 				err = waitForReconciliationComplete(ctx, k8sClient, notifName, testNamespace,
-					expectedPhase, 30*time.Second)
+					expectedPhase)
 				Expect(err).NotTo(HaveOccurred(), "Notification with skip-reason %s should complete", skipReason)
 
 				// Cleanup
@@ -253,7 +253,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 
 			// Wait for processing
 			err = waitForReconciliationComplete(ctx, k8sClient, notifName, testNamespace,
-				notificationv1alpha1.NotificationPhaseSent, 30*time.Second)
+				notificationv1alpha1.NotificationPhaseSent)
 			Expect(err).NotTo(HaveOccurred(), "Notification with combined labels should complete")
 
 			// Verify all labels are preserved after processing
@@ -308,7 +308,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 
 			// Should still complete successfully (fallback routing)
 			err = waitForReconciliationComplete(ctx, k8sClient, notifName, testNamespace,
-				notificationv1alpha1.NotificationPhaseSent, 30*time.Second)
+				notificationv1alpha1.NotificationPhaseSent)
 			Expect(err).NotTo(HaveOccurred(), "Notification without skip-reason should still complete")
 
 			// Verify skip-reason label is NOT present
@@ -386,7 +386,7 @@ var _ = Describe("Skip-Reason Routing Integration (BR-NOT-065, DD-WE-004)", Labe
 
 			// Wait for processing
 			err = waitForReconciliationComplete(ctx, k8sClient, notifName, testNamespace,
-				notificationv1alpha1.NotificationPhaseSent, 30*time.Second)
+				notificationv1alpha1.NotificationPhaseSent)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Cleanup

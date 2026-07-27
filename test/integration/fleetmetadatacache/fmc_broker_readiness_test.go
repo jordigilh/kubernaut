@@ -113,9 +113,7 @@ var _ = Describe("IT-FMC-BROKER: Broker readiness probe wiring (BR-FLEET-002)", 
 		}()
 
 		By("Verifying readiness probe completed before sync cycles started")
-		Eventually(func() int32 {
-			return probeAttempts.Load()
-		}, 5*time.Second, 10*time.Millisecond).Should(BeNumerically(">=", 4),
+		Eventually(probeAttempts.Load, 5*time.Second, 10*time.Millisecond).Should(BeNumerically(">=", 4),
 			"SI-4: readiness probe must retry with backoff until broker responds, providing operational visibility into startup state transitions")
 
 		cancel()

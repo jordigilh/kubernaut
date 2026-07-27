@@ -71,7 +71,7 @@ func (r *SignalProcessingReconciler) reconcileCategorizing(ctx context.Context, 
 	priorityAssignment := sp.Status.PriorityAssignment
 
 	// Business classification
-	bizClass := r.classifyBusiness(k8sCtx, envClass, logger)
+	bizClass := r.classifyBusiness(k8sCtx, envClass)
 
 	// BR-SP-110: Prepare condition messages (will be set inside atomic update)
 	categorizationMessage, processingMessage := categorizingCompletionMessages(sp, bizClass, envClass, priorityAssignment)
@@ -140,6 +140,8 @@ func categorizingCompletionMessages(sp *signalprocessingv1alpha1.SignalProcessin
 // returns a non-nil error result so the caller aborts before reaching the
 // success path. Extracted from reconcileCategorizing (Wave 6 6e-iii GREEN:
 // funlen remediation) — pure code motion, no behavior change.
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches the reconcile-chain (ctrl.Result, error) contract of its caller (Issue #1546 Tier 4)
 func (r *SignalProcessingReconciler) finalizeCategorizingCompletion(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, oldPhase signalprocessingv1alpha1.SignalProcessingPhase, processingMessage string, categorizingStart time.Time) (ctrl.Result, error) {
 	// Record phase transition audit event (BR-SP-090)
 	// ADR-032: Audit is MANDATORY - return error if not configured
@@ -220,7 +222,9 @@ func (r *SignalProcessingReconciler) assignPriority(ctx context.Context, input e
 
 // classifyBusiness performs business classification.
 // BR-SP-080, BR-SP-081: Business Classification
-func (r *SignalProcessingReconciler) classifyBusiness(k8sCtx *signalprocessingv1alpha1.KubernetesContext, envClass *signalprocessingv1alpha1.EnvironmentClassification, logger logr.Logger) *signalprocessingv1alpha1.BusinessClassification {
+// Unlike its sibling classify/assign helpers, this one has no fallible
+// PolicyEvaluator call, so it needs no logger.
+func (r *SignalProcessingReconciler) classifyBusiness(k8sCtx *signalprocessingv1alpha1.KubernetesContext, envClass *signalprocessingv1alpha1.EnvironmentClassification) *signalprocessingv1alpha1.BusinessClassification {
 	result := &signalprocessingv1alpha1.BusinessClassification{
 		Criticality:    signalprocessingv1alpha1.CriticalityMedium,
 		SLARequirement: signalprocessingv1alpha1.SLARequirementBronze,

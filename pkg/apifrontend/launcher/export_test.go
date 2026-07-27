@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/go-logr/logr"
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/go-logr/logr"
 	"google.golang.org/adk/server/adka2a"
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
@@ -58,8 +58,8 @@ func EnsureTrailingParagraphBreakForTest(s string) string {
 }
 
 // SanitizeBridgeTextForTest exports sanitizeBridgeText for unit testing.
-func SanitizeBridgeTextForTest(text string) string {
-	return sanitizeBridgeText(text)
+func SanitizeBridgeTextForTest(ctx context.Context, text string) string {
+	return sanitizeBridgeText(ctx, text)
 }
 
 // ResolveA2AMethodForTest exports resolveA2AMethod for unit testing.

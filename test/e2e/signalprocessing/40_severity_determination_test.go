@@ -115,7 +115,7 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 			createTargetPod(ctx, k8sClient, namespace, "test-e2e-pod")
 
 			// GIVEN: RemediationRequest with external severity "Sev1" (ADR-057: RR in controller namespace)
-			rr := createTestRemediationRequest(controllerNamespace, namespace, "test-workflow-severity")
+			rr := createTestRemediationRequest(namespace, "test-workflow-severity")
 			rr.Spec.Severity = "Sev1" // External severity from PagerDuty
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
@@ -205,7 +205,7 @@ var _ = Describe("Severity Determination E2E Tests", Label("e2e", "severity", "w
 			createTargetPod(ctx, k8sClient, namespace, "test-pod")
 
 			// GIVEN: RemediationRequest with custom severity (ADR-057: RR in controller namespace)
-			rr := createTestRemediationRequest(controllerNamespace, namespace, "test-policy-change")
+			rr := createTestRemediationRequest(namespace, "test-policy-change")
 			rr.Spec.Severity = "CUSTOM_VALUE"
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
@@ -390,7 +390,7 @@ default labels := {}
 			}, "30s", "2s").Should(Succeed(), "ConfigMap hot-reload should complete within 30s (kubelet sync-frequency=10s)")
 
 			// THEN: New SignalProcessing uses updated policy after hot-reload (ADR-057: RR in controller namespace)
-			rr2 := createTestRemediationRequest(controllerNamespace, namespace, "test-policy-change-new")
+			rr2 := createTestRemediationRequest(namespace, "test-policy-change-new")
 			rr2.Spec.Severity = "CUSTOM_VALUE"
 			Expect(k8sClient.Create(ctx, rr2)).To(Succeed())
 
@@ -454,7 +454,7 @@ default labels := {}
 			createTargetPod(ctx, k8sClient, namespace, "test-e2e-pod")
 
 			// GIVEN: RemediationRequest with external severity (ADR-057: RR in controller namespace)
-			rr := createTestRemediationRequest(controllerNamespace, namespace, "test-audit-flow")
+			rr := createTestRemediationRequest(namespace, "test-audit-flow")
 			rr.Spec.Severity = "P0" // External severity from Splunk
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
@@ -530,13 +530,13 @@ default labels := {}
 // ========================================
 
 // createTestRemediationRequest creates a test RemediationRequest CRD.
-// ADR-057: RR lives in controller namespace; targetResourceNamespace is the workload namespace.
+// ADR-057: RR lives in controllerNamespace; targetResourceNamespace is the workload namespace.
 // Uses unique naming per test for parallel execution safety.
-func createTestRemediationRequest(rrNamespace, targetResourceNamespace, name string) *remediationv1alpha1.RemediationRequest {
+func createTestRemediationRequest(targetResourceNamespace, name string) *remediationv1alpha1.RemediationRequest {
 	return &remediationv1alpha1.RemediationRequest{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: rrNamespace,
+			Namespace: controllerNamespace,
 		},
 		Spec: remediationv1alpha1.RemediationRequestSpec{
 			SignalFingerprint: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // SHA256 hash

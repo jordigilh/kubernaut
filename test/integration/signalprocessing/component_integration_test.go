@@ -67,7 +67,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// Pod enrichment with real K8s API
 		It("BR-SP-001: should enrich Pod context from real K8s API", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("enricher-pod")
+			ns := createTestNamespace(ctx, "enricher-pod")
 			defer deleteTestNamespace(ns)
 
 			By("Creating Pod with labels and annotations")
@@ -104,7 +104,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-pod-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-pod"],
 				Name:        "PodEnrichTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -114,10 +114,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Pod enrichment")
@@ -132,7 +132,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// Deployment enrichment with real K8s API
 		It("BR-SP-001: should enrich Deployment context from real K8s API", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("enricher-deploy")
+			ns := createTestNamespace(ctx, "enricher-deploy")
 			defer deleteTestNamespace(ns)
 
 			By("Creating Deployment")
@@ -143,7 +143,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-deploy-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-deploy"],
 				Name:        "DeployEnrichTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -153,10 +153,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Deployment enrichment")
@@ -173,7 +173,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// StatefulSet enrichment
 		It("BR-SP-001: should enrich StatefulSet context from real K8s API", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("enricher-sts")
+			ns := createTestNamespace(ctx, "enricher-sts")
 			defer deleteTestNamespace(ns)
 
 			By("Creating StatefulSet")
@@ -202,7 +202,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-sts-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-sts"],
 				Name:        "StsEnrichTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -212,10 +212,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying StatefulSet enrichment")
@@ -229,7 +229,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// Service enrichment
 		It("BR-SP-001: should enrich Service context from real K8s API", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("enricher-svc")
+			ns := createTestNamespace(ctx, "enricher-svc")
 			defer deleteTestNamespace(ns)
 
 			By("Creating Service")
@@ -254,7 +254,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-svc-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-svc"],
 				Name:        "SvcEnrichTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -264,10 +264,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Service enrichment")
@@ -291,7 +291,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "enrich-ns-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["enrich-ns"],
 				Name:        "NsContextTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -301,10 +301,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Namespace context enrichment")
@@ -317,7 +317,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// Degraded mode fallback
 		It("BR-SP-001: should fall back to degraded mode when resource not found", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("enricher-degraded")
+			ns := createTestNamespace(ctx, "enricher-degraded")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR for non-existent resource")
@@ -337,10 +337,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying degraded mode")
@@ -362,14 +362,14 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			// The suite_test.go creates a ConfigMap with rules:
 			// - startswith(namespace, "prod") → production
 			// - startswith(namespace, "staging") → staging
-			ns := createTestNamespace("prod-rego-test")
+			ns := createTestNamespace(ctx, "prod-rego-test")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
 			sp := createSignalProcessingCR(ns, "env-rego-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["env-rego"],
 				Name:        "EnvRegoPolicyTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -379,10 +379,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Rego-based classification")
@@ -405,7 +405,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "env-label-priority-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["env-label"],
 				Name:        "LabelPriorityTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -415,10 +415,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying label takes priority")
@@ -459,10 +459,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Rego-based priority")
@@ -477,7 +477,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// Severity fallback when environment unknown
 		It("BR-SP-071: should fall back to severity-only priority when environment unknown", func() {
 			By("Creating namespace without environment classification")
-			ns := createTestNamespace("priority-severity-fallback")
+			ns := createTestNamespace(ctx, "priority-severity-fallback")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR with critical severity")
@@ -494,19 +494,19 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Verifying severity-based fallback priority")
-		var final signalprocessingv1alpha1.SignalProcessing
-		Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
+			By("Verifying severity-based fallback priority")
+			var final signalprocessingv1alpha1.SignalProcessing
+			Expect(k8sClient.Get(ctx, types.NamespacedName{Name: sp.Name, Namespace: ns}, &final)).To(Succeed())
 
-		Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal(signalprocessingv1alpha1.PriorityP3))))
-		// Issue #98: Score-based policy: severity_score=3 (critical) + env_score=0 (unknown) = composite 3 → P3
-		// Previously P1 under N*M policy. Score-based treats unknown env as zero contribution.
+			Expect(final.Status.PriorityAssignment).To(And(Not(BeNil()), HaveField("Priority", Equal(signalprocessingv1alpha1.PriorityP3))))
+			// Issue #98: Score-based policy: severity_score=3 (critical) + env_score=0 (unknown) = composite 3 → P3
+			// Previously P1 under N*M policy. Score-based treats unknown env as zero contribution.
 		})
 
 		// Rego policy load
@@ -524,7 +524,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "priority-rego-policy-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["priority-rego-cm"],
 				Name:        "PriorityRegoPolicyTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -534,10 +534,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Rego policy was used")
@@ -566,7 +566,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "business-label-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["business-label"],
 				Name:        "BusinessLabelTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -576,10 +576,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying label-based business classification")
@@ -599,7 +599,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// Real K8s traversal
 		It("BR-SP-100: should traverse owner chain using real K8s API", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("ownerchain-real")
+			ns := createTestNamespace(ctx, "ownerchain-real")
 			defer deleteTestNamespace(ns)
 
 			By("Creating Deployment → ReplicaSet → Pod chain")
@@ -646,7 +646,7 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 			sp := createSignalProcessingCR(ns, "ownerchain-real-test", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["ownerchain"],
 				Name:        "OwnerChainRealTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -656,10 +656,10 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying owner chain")
@@ -675,7 +675,6 @@ var _ = Describe("SignalProcessing Component Integration", func() {
 		// This scenario is not applicable (API constraint, not test gap)
 	})
 
-
 	// Detection LabelDetector and Priority 3 tests removed - ADR-056: DetectedLabels relocated to KA
 	// See: kubernaut-agent/tests/unit/test_label_detector.py for post-RCA detection tests
 
@@ -686,4 +685,3 @@ func parseQuantity(s string) *resource.Quantity {
 	q := resource.MustParse(s)
 	return &q
 }
-

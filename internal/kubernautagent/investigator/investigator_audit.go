@@ -19,6 +19,7 @@ package investigator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
@@ -242,7 +243,8 @@ func (inv *Investigator) renderCorrectionMessage(validationErr error, attempt, m
 		Errors:         []string{validationErr.Error()},
 	}
 
-	if paramErr, ok := validationErr.(*parser.ParameterValidationError); ok {
+	var paramErr *parser.ParameterValidationError
+	if errors.As(validationErr, &paramErr) {
 		data.Errors = paramErr.Result.Errors
 		data.SchemaHint = paramErr.Result.SchemaHint
 	}

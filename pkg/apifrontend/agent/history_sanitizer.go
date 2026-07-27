@@ -22,9 +22,16 @@ import (
 // that the prior tool call was interrupted and proceed normally.
 //
 // Issue: #1299
+//
+// nolint:nilnil // every (nil, nil) below is the ADK
+// llmagent.BeforeModelCallback contract's documented "proceed, call the
+// model normally" signal, not our design choice — see the type doc: "If it
+// returns non-nil LLMResponse or error, the actual model call is skipped."
+// A non-nil *model.LLMResponse here would skip the real model call entirely,
+// which this history-patching callback must never do (Issue #1546 Tier 2).
 func historySanitizer(ctx agent.CallbackContext, req *model.LLMRequest) (*model.LLMResponse, error) {
 	if len(req.Contents) == 0 {
-		return nil, nil
+		return nil, nil // nolint:nilnil
 	}
 
 	responseIDs := collectFunctionResponseIDs(req.Contents)
@@ -46,7 +53,7 @@ func historySanitizer(ctx agent.CallbackContext, req *model.LLMRequest) (*model.
 	}
 
 	if len(orphans) == 0 {
-		return nil, nil
+		return nil, nil // nolint:nilnil
 	}
 
 	if ctx != nil {
@@ -70,7 +77,7 @@ func historySanitizer(ctx agent.CallbackContext, req *model.LLMRequest) (*model.
 	}
 
 	req.Contents = patched
-	return nil, nil
+	return nil, nil // nolint:nilnil
 }
 
 func collectFunctionResponseIDs(contents []*genai.Content) map[string]struct{} {

@@ -267,7 +267,7 @@ func CreateDirectRRWithSignal(ctx context.Context, namespace, testID, signalName
 			"metadata": map[string]interface{}{
 				"name": targetNS,
 				"labels": map[string]interface{}{
-					"kubernaut.ai/managed": "true",
+					"kubernaut.ai/managed": trueFixture,
 				},
 			},
 		},
@@ -320,9 +320,9 @@ func CreateDirectRRWithSignal(ctx context.Context, namespace, testID, signalName
 
 // MCPSessionSetup holds the result of SetupMCPSession.
 type MCPSessionSetup struct {
-	Session  *mcpsdk.ClientSession
-	SAToken  string
-	Cleanup  func()
+	Session *mcpsdk.ClientSession
+	SAToken string
+	Cleanup func()
 }
 
 // SetupMCPSession creates a ServiceAccount with interactive RBAC, sets up TLS,

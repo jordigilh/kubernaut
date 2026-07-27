@@ -27,16 +27,24 @@ import (
 // Declared as a Kubernetes resource; registered via kubectl apply (BR-WORKFLOW-006).
 // Workflow name is derived from the CRD's metadata.name (not duplicated in spec).
 type RemediationWorkflowSpec struct {
-	// Version is the semantic version (e.g., "1.0.0")
+	// Version is the semantic version (e.g., "1.0.0").
+	// Pattern enforces semver-core (MAJOR.MINOR.PATCH, numeric, no leading "v")
+	// with optional "-<pre-release>" and "+<build>" suffixes per semver.org §9-10.
+	// Issue #1661 (CRD schema format hardening).
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength=50
+	// +kubebuilder:validation:Pattern=`^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$`
 	Version string `json:"version"`
 
 	// Description is a structured description for LLM and operator consumption
 	Description RemediationWorkflowDescription `json:"description"`
 
 	// ActionType is the action type from the taxonomy (PascalCase).
+	// Pattern requires an uppercase leading letter followed by alphanumerics
+	// only (no underscores/hyphens/spaces), matching ActionType.spec.name's
+	// own PascalCase contract so the two stay in lockstep. Issue #1661.
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Pattern=`^[A-Z][A-Za-z0-9]*$`
 	ActionType string `json:"actionType"`
 
 	// Labels contains mandatory matching/filtering criteria for discovery
@@ -92,7 +100,12 @@ type RemediationWorkflowDescription struct {
 
 // RemediationWorkflowMaintainer contains maintainer contact information
 type RemediationWorkflowMaintainer struct {
-	Name  string `json:"name"`
+	Name string `json:"name"`
+
+	// Email must contain exactly one "@" with a non-empty local part, domain,
+	// and TLD, and no whitespace. Intentionally permissive (not full RFC 5322)
+	// since this is a contact-hint field, not an auth credential. Issue #1661.
+	// +kubebuilder:validation:Pattern=`^[^\s@]+@[^\s@]+\.[^\s@]+$`
 	Email string `json:"email"`
 }
 
@@ -196,11 +209,23 @@ type RemediationWorkflowParameter struct {
 
 // RemediationWorkflowStatus defines the observed state of RemediationWorkflow
 type RemediationWorkflowStatus struct {
-	// WorkflowID is the UUID assigned by Data Storage upon registration
+	// WorkflowID is the deterministic UUID derived from the workflow's content
+	// hash (DeterministicUUID(ComputeContentHash(spec))). Computed locally by
+	// AuthWebhook (#1661 Change 8a/8c) rather than assigned by Data Storage --
+	// stable across the etcd-single-source-of-truth migration (DD-WORKFLOW-018).
 	// +optional
 	WorkflowID string `json:"workflowId,omitempty"`
 
-	// CatalogStatus reflects the DS catalog lifecycle state.
+	// ContentHash is the sha256 hex digest of the workflow's clean CRD content
+	// (apiVersion/kind/metadata.name/spec), computed locally by AuthWebhook
+	// (#1661 Change 8c). Lets DELETE/UPDATE flows and downstream consumers
+	// verify content identity without any Data Storage round-trip.
+	// +optional
+	ContentHash string `json:"contentHash,omitempty"`
+
+	// CatalogStatus reflects the workflow's lifecycle state. Always "Active"
+	// once admitted -- there is no external catalog decision to defer to
+	// (#1661 Change 8c, DD-WORKFLOW-018).
 	// +optional
 	// +kubebuilder:validation:Enum=Active;Invalid;Pending;Deprecated;Archived;Disabled;Superseded
 	CatalogStatus sharedtypes.CatalogStatus `json:"catalogStatus,omitempty"`

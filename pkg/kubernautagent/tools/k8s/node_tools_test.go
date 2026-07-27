@@ -32,14 +32,20 @@ import (
 	"k8s.io/client-go/rest"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	nodesLog          = "nodes_log"
+	nodesStatsSummary = "nodes_stats_summary"
+)
+
 type mockNodeProxyClient struct {
 	logsResult  string
 	logsErr     error
 	statsResult string
 	statsErr    error
 
-	capturedNode     string
-	capturedLogPath  string
+	capturedNode      string
+	capturedLogPath   string
 	capturedTailLines int
 }
 
@@ -73,7 +79,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -94,7 +100,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -112,7 +118,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -130,7 +136,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -148,7 +154,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -166,7 +172,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -185,7 +191,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 500)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -204,12 +210,12 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
 			}
-			Expect(logTool.Name()).To(Equal("nodes_log"))
+			Expect(logTool.Name()).To(Equal(nodesLog))
 		})
 	})
 
@@ -219,7 +225,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -234,7 +240,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -257,7 +263,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -273,7 +279,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -291,7 +297,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -309,7 +315,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var logTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_log" {
+				if t.Name() == nodesLog {
 					logTool = t
 					break
 				}
@@ -330,7 +336,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var statsTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_stats_summary" {
+				if t.Name() == nodesStatsSummary {
 					statsTool = t
 					break
 				}
@@ -350,7 +356,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var statsTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_stats_summary" {
+				if t.Name() == nodesStatsSummary {
 					statsTool = t
 					break
 				}
@@ -368,7 +374,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var statsTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_stats_summary" {
+				if t.Name() == nodesStatsSummary {
 					statsTool = t
 					break
 				}
@@ -386,7 +392,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var statsTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_stats_summary" {
+				if t.Name() == nodesStatsSummary {
 					statsTool = t
 					break
 				}
@@ -405,7 +411,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 500)
 			var statsTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_stats_summary" {
+				if t.Name() == nodesStatsSummary {
 					statsTool = t
 					break
 				}
@@ -424,12 +430,12 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var statsTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_stats_summary" {
+				if t.Name() == nodesStatsSummary {
 					statsTool = t
 					break
 				}
 			}
-			Expect(statsTool.Name()).To(Equal("nodes_stats_summary"))
+			Expect(statsTool.Name()).To(Equal(nodesStatsSummary))
 		})
 	})
 
@@ -439,7 +445,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var statsTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_stats_summary" {
+				if t.Name() == nodesStatsSummary {
 					statsTool = t
 					break
 				}
@@ -454,7 +460,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var statsTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_stats_summary" {
+				if t.Name() == nodesStatsSummary {
 					statsTool = t
 					break
 				}
@@ -476,7 +482,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var statsTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_stats_summary" {
+				if t.Name() == nodesStatsSummary {
 					statsTool = t
 					break
 				}
@@ -494,7 +500,7 @@ var _ = Describe("Node Proxy Tools Unit — #1507", func() {
 			tools := k8s.NewNodeProxyTools(mock, 30000)
 			var statsTool k8s.NodeTool
 			for _, t := range tools {
-				if t.Name() == "nodes_stats_summary" {
+				if t.Name() == nodesStatsSummary {
 					statsTool = t
 					break
 				}

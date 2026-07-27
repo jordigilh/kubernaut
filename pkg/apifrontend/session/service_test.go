@@ -14,13 +14,13 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
+	adksession "google.golang.org/adk/session"
+	"google.golang.org/genai"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-	adksession "google.golang.org/adk/session"
-	"google.golang.org/genai"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -38,8 +38,8 @@ func newScheme() *runtime.Scheme {
 	return s
 }
 
-func newFakeClient(scheme *runtime.Scheme, objs ...client.Object) client.Client {
-	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).WithStatusSubresource(&v1alpha1.InvestigationSession{}).Build()
+func newFakeClient(scheme *runtime.Scheme) client.Client {
+	return fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&v1alpha1.InvestigationSession{}).Build()
 }
 
 func newTestService(k8s client.Client, scheme *runtime.Scheme) *session.CRDSessionService {
@@ -241,7 +241,7 @@ var _ = Describe("CRDSessionService", func() {
 			Expect(err).NotTo(HaveOccurred())
 			err = svc.MaterializeCRD(ctx, "prune-active", rrRef)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "prune-active", v1alpha1.SessionPhaseActive)).To(Succeed())
+			Expect(setSessionCRDPhase(ctx, k8s, "prune-active")).To(Succeed())
 
 			req2 := createRequestWithDefaults("prune-done", "jane.doe", createConfigState())
 			_, err = svc.Create(ctx, &req2)
@@ -327,7 +327,7 @@ var _ = Describe("CRDSessionService", func() {
 
 			for i := 0; i < 5; i++ {
 				evt := adksession.NewEvent("inv-1")
-				evt.Author = "agent"
+				evt.Author = agent
 				evt.Content = genai.NewContentFromText("msg", genai.RoleModel)
 				err = svc.AppendEvent(ctx, createResp.Session, evt)
 				Expect(err).NotTo(HaveOccurred())
@@ -507,7 +507,7 @@ var _ = Describe("CRDSessionService", func() {
 
 		It("UT-AF-204-001: stores event in delegate", func() {
 			evt := adksession.NewEvent("inv-1")
-			evt.Author = "agent"
+			evt.Author = agent
 			evt.Content = genai.NewContentFromText("hello", genai.RoleModel)
 
 			err := svc.AppendEvent(ctx, sess, evt)
@@ -524,7 +524,7 @@ var _ = Describe("CRDSessionService", func() {
 
 		It("UT-AF-204-002: skips partial events", func() {
 			evt := adksession.NewEvent("inv-1")
-			evt.Author = "agent"
+			evt.Author = agent
 			evt.Partial = true
 			evt.Content = genai.NewContentFromText("partial", genai.RoleModel)
 
@@ -542,7 +542,7 @@ var _ = Describe("CRDSessionService", func() {
 
 		It("UT-AF-204-003: strips temp: keys from StateDelta", func() {
 			evt := adksession.NewEvent("inv-1")
-			evt.Author = "agent"
+			evt.Author = agent
 			evt.Content = genai.NewContentFromText("result", genai.RoleModel)
 			evt.Actions.StateDelta = map[string]any{
 				"temp:scratch":   "ephemeral",
@@ -569,7 +569,7 @@ var _ = Describe("CRDSessionService", func() {
 			responseJSON, _ := json.Marshal(largeResponse)
 
 			evt := adksession.NewEvent("inv-1")
-			evt.Author = "agent"
+			evt.Author = agent
 			evt.Content = &genai.Content{
 				Role: string(genai.RoleModel),
 				Parts: []*genai.Part{
@@ -608,7 +608,7 @@ var _ = Describe("CRDSessionService", func() {
 			}
 
 			evt := adksession.NewEvent("inv-1")
-			evt.Author = "agent"
+			evt.Author = agent
 			evt.Content = &genai.Content{
 				Role: string(genai.RoleModel),
 				Parts: []*genai.Part{
@@ -646,7 +646,7 @@ var _ = Describe("CRDSessionService", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			evt := adksession.NewEvent("inv-1")
-			evt.Author = "agent"
+			evt.Author = agent
 			evt.Content = genai.NewContentFromText("update", genai.RoleModel)
 
 			err = svc.AppendEvent(ctx, sess, evt)
@@ -667,7 +667,7 @@ var _ = Describe("CRDSessionService", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			modelEvt := adksession.NewEvent("inv-1")
-			modelEvt.Author = "agent"
+			modelEvt.Author = agent
 			modelEvt.Content = genai.NewContentFromText(strings.Repeat("m", 10000), genai.RoleModel)
 
 			err = svc.AppendEvent(ctx, sess, modelEvt)
@@ -733,7 +733,7 @@ var _ = Describe("CRDSessionService", func() {
 
 			err = svc.MaterializeCRD(ctx, "sess-gauge", v1alpha1.ObjectRef{Name: "rr-gauge", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "sess-gauge", v1alpha1.SessionPhaseActive)).To(Succeed())
+			Expect(setSessionCRDPhase(ctx, k8s, "sess-gauge")).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "sess-gauge", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "jane.doe")
 			Expect(err).NotTo(HaveOccurred())
@@ -836,7 +836,7 @@ var _ = Describe("CRDSessionService", func() {
 
 			err = svc.MaterializeCRD(ctx, "sess-audit", v1alpha1.ObjectRef{Name: "rr-audit", Namespace: "test-ns"})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "sess-audit", v1alpha1.SessionPhaseActive)).To(Succeed())
+			Expect(setSessionCRDPhase(ctx, k8s, "sess-audit")).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "sess-audit", v1alpha1.SessionPhaseCompleted, "done", "test-actor")
 			Expect(err).NotTo(HaveOccurred())

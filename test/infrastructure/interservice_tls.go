@@ -112,7 +112,7 @@ metadata:
   name: inter-service-ca
 data:
   ca.crt: |
-%s`, indentPEM(string(caCertPEM), 4))
+%s`, indentPEM(string(caCertPEM)))
 
 	if err := kubectlApply(ctx, kubeconfigPath, namespace, caConfigMap, writer); err != nil {
 		return "", fmt.Errorf("failed to create CA ConfigMap: %w", err)
@@ -161,6 +161,22 @@ data:
 				fmt.Sprintf("kubernaut-agent.%s", namespace),
 				fmt.Sprintf("kubernaut-agent.%s.svc", namespace),
 				fmt.Sprintf("kubernaut-agent.%s.svc.cluster.local", namespace),
+			},
+			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
+		},
+		{
+			// Issue #1683: FMC's API port presents TLS by default now
+			// (ConfigureConditionalTLS), matching DataStorage/Gateway.
+			// "localhost" + 127.0.0.1 let the E2E harness's host-side client
+			// (hitting FMC's NodePort) verify the cert.
+			name:       "fleetmetadatacache-service",
+			secretName: "fleetmetadatacache-tls",
+			dnsNames: []string{
+				"localhost",
+				"fleetmetadatacache-service",
+				fmt.Sprintf("fleetmetadatacache-service.%s", namespace),
+				fmt.Sprintf("fleetmetadatacache-service.%s.svc", namespace),
+				fmt.Sprintf("fleetmetadatacache-service.%s.svc.cluster.local", namespace),
 			},
 			ipAddrs: []net.IP{net.IPv4(127, 0, 0, 1)},
 		},
@@ -250,7 +266,7 @@ stringData:
   tls.crt: |
 %s
   tls.key: |
-%s`, svc.secretName, indentPEM(string(leafCertPEM), 4), indentPEM(string(leafKeyPEM), 4))
+%s`, svc.secretName, indentPEM(string(leafCertPEM)), indentPEM(string(leafKeyPEM)))
 
 		if err := kubectlApply(ctx, kubeconfigPath, namespace, secret, writer); err != nil {
 			return "", fmt.Errorf("failed to create TLS Secret for %s: %w", svc.name, err)
@@ -281,7 +297,7 @@ metadata:
   name: inter-service-ca
 data:
   ca.crt: |
-%s`, indentPEM(string(caPEM), 4))
+%s`, indentPEM(string(caPEM)))
 
 	if err := kubectlApply(ctx, kubeconfigPath, namespace, caConfigMap, writer); err != nil {
 		return fmt.Errorf("create inter-service-ca ConfigMap: %w", err)
@@ -395,9 +411,9 @@ func kubectlApply(ctx context.Context, kubeconfigPath, namespace, manifest strin
 	return cmd.Run()
 }
 
-// indentPEM indents each line of a PEM string by n spaces.
-func indentPEM(pemStr string, n int) string {
-	prefix := strings.Repeat(" ", n)
+// indentPEM indents each line of a PEM string by 4 spaces (YAML manifest nesting depth).
+func indentPEM(pemStr string) string {
+	prefix := strings.Repeat(" ", 4)
 	lines := strings.Split(strings.TrimRight(pemStr, "\n"), "\n")
 	for i, line := range lines {
 		lines[i] = prefix + line

@@ -13,6 +13,9 @@ echo "=== Kubernaut Quickstart ==="
 echo ""
 
 # --- LLM Configuration ---
+# DD-PLATFORM-007: the chart now consumes LLM settings via a named profile
+# (global.llmProfiles.<name>) referenced by kubernautAgent.llmProfileRef,
+# not a literal kubernautAgent.llm.* block.
 read -rp "LLM provider (openai, anthropic): " LLM_PROVIDER
 read -rp "LLM model (e.g., gpt-4o, claude-sonnet-4-20250514): " LLM_MODEL
 read -rsp "API key: " API_KEY
@@ -23,12 +26,22 @@ if [[ -z "$LLM_PROVIDER" || -z "$LLM_MODEL" || -z "$API_KEY" ]]; then
   exit 1
 fi
 
-# Determine the env var name for the API key
-case "$LLM_PROVIDER" in
-  openai)      KEY_NAME="OPENAI_API_KEY" ;;
-  anthropic)   KEY_NAME="ANTHROPIC_API_KEY" ;;
-  *)           KEY_NAME="LLM_API_KEY" ;;
-esac
+# api_key is the fixed Secret key name the chart's mounted-credential-file
+# convention expects for every non-vertex_ai provider (see
+# kubernaut.llm.credFile in charts/kubernaut/templates/_helpers.tpl) --
+# it is not provider-specific, unlike the old OPENAI_API_KEY/ANTHROPIC_API_KEY
+# env-var convention this replaced.
+KEY_NAME="api_key"
+
+# API Frontend's LLMConfig.Validate() (pkg/shared/types/llm.go) requires a
+# non-empty endpoint for provider=openai -- kubernaut-agent's client does
+# not enforce this, but apifrontend.llmProfileRef falls back to this same
+# profile by default, so every openai profile must supply one up front.
+LLM_ENDPOINT=""
+if [[ "$LLM_PROVIDER" == "openai" ]]; then
+  read -rp "LLM endpoint (default: https://api.openai.com/v1): " LLM_ENDPOINT
+  LLM_ENDPOINT="${LLM_ENDPOINT:-https://api.openai.com/v1}"
+fi
 
 # --- Optional Slack ---
 HELM_SLACK_ARGS=()
@@ -66,10 +79,19 @@ fi
 echo ""
 echo "--- Installing Kubernaut ---"
 
+HELM_LLM_ARGS=(
+  --set "global.llmProfiles.primary.provider=$LLM_PROVIDER"
+  --set "global.llmProfiles.primary.model=$LLM_MODEL"
+  --set "global.llmProfiles.primary.credentialsSecretName=llm-credentials"
+  --set "kubernautAgent.llmProfileRef=primary"
+)
+if [[ -n "$LLM_ENDPOINT" ]]; then
+  HELM_LLM_ARGS+=(--set "global.llmProfiles.primary.endpoint=$LLM_ENDPOINT")
+fi
+
 helm install "$RELEASE_NAME" "$CHART" \
   --namespace "$NAMESPACE" \
-  --set "kubernautAgent.llm.provider=$LLM_PROVIDER" \
-  --set "kubernautAgent.llm.model=$LLM_MODEL" \
+  "${HELM_LLM_ARGS[@]}" \
   "${HELM_SLACK_ARGS[@]}"
 
 echo ""

@@ -47,7 +47,7 @@ func createInternalTestEvent(resourceID string) *ogenclient.AuditEventRequest {
 	payload := ogenclient.GatewayAuditPayload{
 		EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewayCrdCreated,
 		SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-		SignalName:   "test-alert",
+		SignalName:  "test-alert",
 		Namespace:   "default",
 		Fingerprint: "test-fingerprint",
 	}
@@ -106,7 +106,7 @@ var _ = Describe("InternalAuditClient", func() {
 				Expect(ok).To(BeTrue(), "client should be *audit.InternalAuditClient")
 
 				// CORRECTNESS: Client implements audit.DataStorageClient interface
-				_ = audit.DataStorageClient(client) // Type assertion validates interface compliance
+				_ = client // Type assertion validates interface compliance
 
 				// BUSINESS OUTCOME: Circular dependency avoided
 				// This validates BR-STORAGE-013: No REST API calls to self

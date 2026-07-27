@@ -355,7 +355,7 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 		// warning would cause AA's response processor to route to NotActionable (Outcome D)
 		// instead of ProblemResolved (Outcome A). KA Python had the same precedence:
 		// the resolved outcome is authoritative over the actionable flag.
-		if flat.InvestigationOutcome != "problem_resolved" {
+		if flat.InvestigationOutcome != katypes.InvestigationOutcomeProblemResolved {
 			result.Warnings = append(result.Warnings, notActionableWarning)
 		}
 		if result.Confidence < confidenceFloor {
@@ -371,7 +371,7 @@ func applyFlatFields(result *katypes.InvestigationResult, flat flatLLMFields) {
 	// #301: Contradiction override — when the outcome is problem_resolved but
 	// the parser-derived HR was set (e.g., via inconclusive outcome fallback),
 	// the resolution takes precedence. Defense-in-depth per HAPI parity.
-	if flat.InvestigationOutcome == "problem_resolved" && result.HumanReviewNeeded {
+	if flat.InvestigationOutcome == katypes.InvestigationOutcomeProblemResolved && result.HumanReviewNeeded {
 		result.HumanReviewNeeded = false
 		result.HumanReviewReason = ""
 	}

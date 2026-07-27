@@ -139,7 +139,7 @@ func NewNoopLLMTriager(logger logr.Logger) *NoopLLMTriager {
 // TriageWithRules returns a static "warning" result (noop implementation).
 func (n *NoopLLMTriager) TriageWithRules(_ context.Context, _ []prom.Rule, _ TriageInput) (TriageResult, error) {
 	return TriageResult{
-		Severity:   "warning",
+		Severity:   SeverityWarning,
 		Confidence: 1.0,
 	}, nil
 }
@@ -147,7 +147,7 @@ func (n *NoopLLMTriager) TriageWithRules(_ context.Context, _ []prom.Rule, _ Tri
 // TriagePure returns a static "warning" result (noop implementation).
 func (n *NoopLLMTriager) TriagePure(_ context.Context, _ TriageInput) (TriageResult, error) {
 	return TriageResult{
-		Severity:   "warning",
+		Severity:   SeverityWarning,
 		Confidence: 1.0,
 	}, nil
 }

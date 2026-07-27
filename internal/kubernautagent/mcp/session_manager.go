@@ -104,9 +104,9 @@ func WithInactivityTimeout(timeout time.Duration) LeaseOption {
 }
 
 // WithMaxConcurrentSessions sets the session capacity limit (SEC-03).
-func WithMaxConcurrentSessions(max int) LeaseOption {
+func WithMaxConcurrentSessions(maxSessions int) LeaseOption {
 	return func(m *LeaseSessionManager) {
-		m.maxSessions = max
+		m.maxSessions = maxSessions
 	}
 }
 
@@ -213,10 +213,16 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 // third return value reports whether the takeover request was fully handled
 // here (true) or should fall through to lease acquisition (false, meaning no
 // existing lease was found).
+// nolint:nilnil // the trailing `handled` bool already disambiguates this
+// (nil, nil, false): callers must (and do, see Takeover above) check
+// `handled` before touching session/err, so there is no scenario where a
+// nil session + nil error is misread as "found, no error" — that is
+// precisely the ambiguity a sentinel error would solve, already solved here
+// by the bool (Issue #1546 Tier 2).
 func (m *LeaseSessionManager) reconnectOrRejectExistingLease(rrID string, user UserInfo) (*InteractiveSession, error, bool) {
 	existingSessionID, ok := m.rrIndex.Load(rrID)
 	if !ok {
-		return nil, nil, false
+		return nil, nil, false // nolint:nilnil
 	}
 	raw, found := m.sessions.Load(existingSessionID)
 	if !found {
@@ -338,16 +344,19 @@ func (m *LeaseSessionManager) Release(sessionID string, reason string) error {
 	return nil
 }
 
+// GetDriver returns the current driver session for rrID, or ErrSessionNotFound
+// if no interactive session exists (e.g., the RR is in autonomous mode).
+// Issue #1674: typed sentinel replaces the previous ambiguous (nil, nil).
 func (m *LeaseSessionManager) GetDriver(rrID string) (*InteractiveSession, error) {
 	raw, ok := m.rrIndex.Load(rrID)
 	if !ok {
-		return nil, nil
+		return nil, ErrSessionNotFound
 	}
 	sessionID := raw.(string)
 
 	raw, ok = m.sessions.Load(sessionID)
 	if !ok {
-		return nil, nil
+		return nil, ErrSessionNotFound
 	}
 	entry := raw.(*sessionEntry)
 

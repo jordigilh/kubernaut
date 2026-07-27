@@ -77,6 +77,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 const (
 	clusterName = "fmc-eaigw-e2e"
 	namespace   = "kubernaut-system"
@@ -87,14 +92,27 @@ const (
 	// isolated Kind cluster. See
 	// test/infrastructure/kind-fleetmetadatacache-eaigw-config.yaml and
 	// SetupFMCE2EInfrastructureEAIGW's Phase 9.
-	fmcAPIBaseURL = "http://localhost:8150"
+	//
+	// Issue #1683: https:// -- FMC's API port presents TLS by default now
+	// (ConfigureConditionalTLS), matching production. The harness's
+	// FMCHTTPClient trusts the E2E inter-service CA via
+	// http.DefaultTransport (set to infrastructure.NewTLSAwareTransport in
+	// SynchronizedBeforeSuite below), so no other change is needed here.
+	fmcAPIBaseURL = "https://localhost:8150"
+
+	// fmcHealthBaseURL is FMC's dedicated plain-HTTP health/readiness port
+	// (Issue #1683 3-port split). See
+	// test/infrastructure/kind-fleetmetadatacache-eaigw-config.yaml's
+	// health NodePort mapping and SetupFMCE2EInfrastructureEAIGW's Phase 8.
+	fmcHealthBaseURL = "http://localhost:8151"
 )
 
 // harness carries the state every shared FMC scenario needs (see
 // shared.Harness); its fields are populated below in SynchronizedBeforeSuite.
 var harness = &shared.Harness{
-	Namespace:     namespace,
-	FMCAPIBaseURL: fmcAPIBaseURL,
+	Namespace:        namespace,
+	FMCAPIBaseURL:    fmcAPIBaseURL,
+	FMCHealthBaseURL: fmcHealthBaseURL,
 }
 
 var (
@@ -185,7 +203,7 @@ var _ = SynchronizedAfterSuite(
 		setupFailed := harness.KubeconfigPath == ""
 		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
-		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
+		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == trueFixture || os.Getenv("KEEP_CLUSTER") == trueFixture
 
 		remoteClusterName := clusterName + "-remote"
 
@@ -219,7 +237,7 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
-		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+		if os.Getenv("E2E_COVERAGE") == trueFixture && !setupFailed {
 			if covErr := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
 				ServiceName:    "fleetmetadatacache",
 				ClusterName:    clusterName,

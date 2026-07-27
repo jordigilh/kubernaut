@@ -40,7 +40,7 @@ var _ = Describe("Propagation Timing Integration (#253, BR-EM-010.3, BR-EM-010.4
 	// Once the deferral elapses, the EM transitions to Stabilizing with hash computed.
 	// ========================================
 	It("IT-EM-253-001: should enter WaitingForPropagation then Stabilizing after deferral", func() {
-		ns := createTestNamespace("em-253-001")
+		ns := createTestNamespace(ctx, "em-253-001")
 		defer deleteTestNamespace(ns)
 
 		deferralDuration := 8 * time.Second
@@ -119,7 +119,7 @@ var _ = Describe("Propagation Timing Integration (#253, BR-EM-010.3, BR-EM-010.4
 	// The EA stays Stabilizing until CheckAfter elapses.
 	// ========================================
 	It("IT-EM-253-002: should anchor CheckAfter to creation+HashComputeDelay and stay Stabilizing", func() {
-		ns := createTestNamespace("em-253-002")
+		ns := createTestNamespace(ctx, "em-253-002")
 		defer deleteTestNamespace(ns)
 
 		deferralDuration := 5 * time.Second
@@ -187,7 +187,7 @@ var _ = Describe("Propagation Timing Integration (#253, BR-EM-010.3, BR-EM-010.4
 	// GitOpsSyncDelay and OperatorReconcileDelay were removed from EA spec (#277).
 	// ========================================
 	It("IT-EM-253-003: should include HashComputeAfter in assessment.scheduled audit for async targets", func() {
-		ns := createTestNamespace("em-253-003")
+		ns := createTestNamespace(ctx, "em-253-003")
 		defer deleteTestNamespace(ns)
 
 		deferralDuration := 5 * time.Second
@@ -268,7 +268,7 @@ var _ = Describe("Propagation Timing Integration (#253, BR-EM-010.3, BR-EM-010.4
 	// Business outcome: ValidityDeadline accounts for propagation + stabilization + validity.
 	// ========================================
 	It("IT-EM-253-004: should extend validity deadline for async targets", func() {
-		ns := createTestNamespace("em-253-004")
+		ns := createTestNamespace(ctx, "em-253-004")
 		defer deleteTestNamespace(ns)
 
 		deferralDuration := 5 * time.Second

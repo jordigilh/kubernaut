@@ -14,9 +14,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
-func newTypedRAR(namespace, name string) *remediationv1.RemediationApprovalRequest {
+func newTypedRAR() *remediationv1.RemediationApprovalRequest {
 	return &remediationv1.RemediationApprovalRequest{
-		ObjectMeta: objMeta(namespace, name),
+		ObjectMeta: objMeta("payments", "rar-1"),
 		Spec: remediationv1.RemediationApprovalRequestSpec{
 			RemediationRequestRef: corev1.ObjectReference{Name: "rr-1"},
 			RequiredBy:            metav1.NewTime(metav1.Now().Time),
@@ -32,7 +32,7 @@ var _ = Describe("kubernaut_approve", func() {
 	})
 
 	It("UT-AF-104-001: patches RAR status to Approved", func() {
-		tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+		tc := newTypedFakeClientWithStatus(newTypedRAR())
 		result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace: "payments",
 			RARName:   "rar-1",
@@ -43,7 +43,7 @@ var _ = Describe("kubernaut_approve", func() {
 	})
 
 	It("UT-AF-104-002: patches RAR status to Rejected", func() {
-		tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+		tc := newTypedFakeClientWithStatus(newTypedRAR())
 		result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace: "payments",
 			RARName:   "rar-1",
@@ -55,7 +55,7 @@ var _ = Describe("kubernaut_approve", func() {
 	})
 
 	It("UT-AF-104-003: sets decidedBy in patch", func() {
-		rar := newTypedRAR("payments", "rar-1")
+		rar := newTypedRAR()
 		tc := newTypedFakeClientWithStatus(rar)
 		result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace: "payments",
@@ -78,7 +78,7 @@ var _ = Describe("kubernaut_approve", func() {
 	})
 
 	It("UT-AF-104-005: supports workflowOverride in approval", func() {
-		tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+		tc := newTypedFakeClientWithStatus(newTypedRAR())
 		result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 			Namespace:        "payments",
 			RARName:          "rar-1",
@@ -133,7 +133,7 @@ var _ = Describe("kubernaut_approve", func() {
 
 	Context("strict decision enum validation (#1353)", func() {
 		It("UT-AF-1353-001: rejects verb form 'Approve' with actionable error", func() {
-			tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+			tc := newTypedFakeClientWithStatus(newTypedRAR())
 			_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 				Namespace: "payments",
 				RARName:   "rar-1",
@@ -146,7 +146,7 @@ var _ = Describe("kubernaut_approve", func() {
 		})
 
 		It("UT-AF-1353-002: rejects verb form 'Reject' with actionable error", func() {
-			tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+			tc := newTypedFakeClientWithStatus(newTypedRAR())
 			_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 				Namespace: "payments",
 				RARName:   "rar-1",
@@ -158,7 +158,7 @@ var _ = Describe("kubernaut_approve", func() {
 		})
 
 		It("UT-AF-1353-003: rejects arbitrary string 'maybe'", func() {
-			tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+			tc := newTypedFakeClientWithStatus(newTypedRAR())
 			_, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 				Namespace: "payments",
 				RARName:   "rar-1",
@@ -169,7 +169,7 @@ var _ = Describe("kubernaut_approve", func() {
 		})
 
 		It("UT-AF-1353-004: accepts exact enum value 'Approved'", func() {
-			tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+			tc := newTypedFakeClientWithStatus(newTypedRAR())
 			result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 				Namespace: "payments",
 				RARName:   "rar-1",
@@ -180,7 +180,7 @@ var _ = Describe("kubernaut_approve", func() {
 		})
 
 		It("UT-AF-1353-005: accepts exact enum value 'Rejected'", func() {
-			tc := newTypedFakeClientWithStatus(newTypedRAR("payments", "rar-1"))
+			tc := newTypedFakeClientWithStatus(newTypedRAR())
 			result, err := tools.HandleApprove(ctx, tc, tools.ApproveArgs{
 				Namespace: "payments",
 				RARName:   "rar-1",

@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	prometheus "github.com/prometheus/client_golang/prometheus"
@@ -41,6 +43,11 @@ import (
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/phase"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/routing"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	wfeTest = "wfe-test"
 )
 
 func noopAnalyzingCallbacks() prodcontroller.AnalyzingCallbacks {
@@ -75,7 +82,7 @@ func noopAnalyzingCallbacks() prodcontroller.AnalyzingCallbacks {
 		CapturePreRemediationHash: func(_ context.Context, _, _, _, _ string) (string, string, error) { return "", "", nil },
 		ResolveDualTargets: func(_ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) prodcontroller.DualTargetResult {
 			return prodcontroller.DualTargetResult{
-				Remediation: prodcontroller.TargetRef{Kind: "Deployment", Name: "app", Namespace: "default"},
+				Remediation: prodcontroller.TargetRef{Kind: "Deployment", Name: "app", Namespace: defaultFixture},
 			}
 		},
 		PersistPreHash: func(_ context.Context, _ *remediationv1.RemediationRequest, _ string) error { return nil },
@@ -83,9 +90,8 @@ func noopAnalyzingCallbacks() prodcontroller.AnalyzingCallbacks {
 		WFECallbacks: prodcontroller.WFECreationCallbacks{
 			EmitWorkflowCreatedAudit: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis, _ string) {},
 			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
-				return "wfe-test", nil
+				return wfeTest, nil
 			},
-			ResolveWorkflowDisplay: func(_ context.Context, _ string) (string, string) { return "TestAction", "test-wf" },
 		},
 	}
 }
@@ -110,29 +116,32 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 	}
 
 	analyzingRR := func(name string, aiRefName string) *remediationv1.RemediationRequest {
-		rr := newRemediationRequest(name, "default", remediationv1.PhaseAnalyzing)
+		rr := newRemediationRequest(name, defaultFixture, remediationv1.PhaseAnalyzing)
 		if aiRefName != "" {
-			rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: aiRefName, Namespace: "default"}
+			rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: aiRefName, Namespace: defaultFixture}
 		}
 		return rr
 	}
 
 	completedAI := func(name string, approvalRequired bool, workflowNotNeeded bool) *aianalysisv1.AIAnalysis {
 		ai := &aianalysisv1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: defaultFixture},
 			Status: aianalysisv1.AIAnalysisStatus{
 				Phase:            "Completed",
 				ApprovalRequired: approvalRequired,
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID: "wf-restart",
-					ActionType: "patch",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:   "wf-restart",
+						WorkflowName: "wf-restart",
+						ActionType:   "patch",
+					},
 					Confidence: 0.95,
 				},
 				RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
 					RemediationTarget: &aianalysisv1.RemediationTarget{
 						Kind:      "Deployment",
 						Name:      "my-app",
-						Namespace: "default",
+						Namespace: defaultFixture,
 					},
 				},
 			},
@@ -252,7 +261,7 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 			cbs := noopAnalyzingCallbacks()
 			cbs.WFECallbacks.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
 				wfeCreated = true
-				return "wfe-test", nil
+				return wfeTest, nil
 			}
 			cbs.FetchFreshRR = func(_ context.Context, _ client.ObjectKey) (*remediationv1.RemediationRequest, error) {
 				return rr, nil
@@ -449,7 +458,7 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 	Describe("AI Failed", func() {
 		It("UT-ANZ-H-017: AI Failed → delegates to HandleAIAnalysisStatus", func() {
 			ai := &aianalysisv1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{Name: "ai-failed", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "ai-failed", Namespace: defaultFixture},
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase:   "Failed",
 					Message: "LLM timeout",
@@ -478,7 +487,7 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 	Describe("AI in progress / unknown", func() {
 		It("UT-ANZ-H-018: AI in progress (Pending) → requeue at 10s", func() {
 			ai := &aianalysisv1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{Name: "ai-pending", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "ai-pending", Namespace: defaultFixture},
 				Status:     aianalysisv1.AIAnalysisStatus{Phase: "Pending"},
 			}
 			rr := analyzingRR("anz-pending", ai.Name)
@@ -493,7 +502,7 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 
 		It("UT-ANZ-H-019: AI unknown phase → requeue at 10s", func() {
 			ai := &aianalysisv1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{Name: "ai-unknown", Namespace: "default"},
+				ObjectMeta: metav1.ObjectMeta{Name: "ai-unknown", Namespace: defaultFixture},
 				Status:     aianalysisv1.AIAnalysisStatus{Phase: "SomethingNew"},
 			}
 			rr := analyzingRR("anz-unknown", ai.Name)
@@ -548,7 +557,6 @@ var _ = Describe("Issue #666: AnalyzingHandler (BR-ORCH-036/037)", func() {
 					wfeCreated = true
 					return "wfe-should-not-exist", nil
 				},
-				ResolveWorkflowDisplay: func(_ context.Context, _ string) (string, string) { return "", "" },
 			}
 
 			h := newHandler(c, cbs)

@@ -24,8 +24,8 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
@@ -56,7 +56,7 @@ import (
 var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
 
 	// Helper: create a standard test Deployment in the given namespace.
-	createTestDeployment := func(ns string) *appsv1.Deployment {
+	createTestDeployment := func(ns string) {
 		replicas := int32(1)
 		deploy := &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{
@@ -84,14 +84,13 @@ var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, deploy)).To(Succeed())
-		return deploy
 	}
 
 	// ========================================
 	// IT-EM-SD-001: Spec modification after hash -> EA completes with spec_drift
 	// ========================================
 	It("IT-EM-SD-001: should complete with spec_drift when target spec changes after hash computation", func() {
-		ns := createTestNamespace("em-sd-001")
+		ns := createTestNamespace(ctx, "em-sd-001")
 		defer deleteTestNamespace(ns)
 
 		By("1. Creating a target Deployment in the namespace")
@@ -201,7 +200,7 @@ var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
 	// IT-EM-SD-002: No spec change -> EA completes normally (no drift)
 	// ========================================
 	It("IT-EM-SD-002: should complete normally when target spec is unchanged", func() {
-		ns := createTestNamespace("em-sd-002")
+		ns := createTestNamespace(ctx, "em-sd-002")
 		defer deleteTestNamespace(ns)
 
 		By("1. Creating a target Deployment")
@@ -241,7 +240,7 @@ var _ = Describe("Spec Drift Guard (DD-EM-002 v1.1)", func() {
 	// IT-EM-SD-003: No target resource -> hash from empty spec, no drift
 	// ========================================
 	It("IT-EM-SD-003: should complete normally when target resource does not exist", func() {
-		ns := createTestNamespace("em-sd-003")
+		ns := createTestNamespace(ctx, "em-sd-003")
 		defer deleteTestNamespace(ns)
 
 		By("1. Creating an EA targeting a non-existent Deployment (no Deployment created)")

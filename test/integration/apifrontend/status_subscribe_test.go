@@ -296,7 +296,7 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 		time.Sleep(200 * time.Millisecond)
 		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
 		rr.Status.OverallPhase = remediationv1.PhaseCompleted
-		rr.Status.Outcome = "Remediated"
+		rr.Status.Outcome = remediationv1.OutcomeRemediated
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
 		events := collectSSEEvents(resp, 2, 5*time.Second)
@@ -315,7 +315,7 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 				hasFinal = true
 				Expect(inner).To(HaveKey("metadata"))
 				meta, _ := inner["metadata"].(map[string]any)
-				Expect(meta["outcome"]).To(Equal("Remediated"))
+				Expect(meta["outcome"]).To(Equal(remediationv1.OutcomeRemediated))
 			}
 		}
 		Expect(hasFinal).To(BeTrue(), "terminal phase must emit final:true event")
@@ -338,7 +338,7 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 
 	It("IT-AF-1460-017: already-terminal RR sends single final event and closes", func() {
 		rr := createTestRR(ctx, "rr-already-done", testNS, "Completed")
-		rr.Status.Outcome = "Remediated"
+		rr.Status.Outcome = remediationv1.OutcomeRemediated
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 		defer cleanupTestRR(ctx, rr.Name, testNS)
 
@@ -377,7 +377,7 @@ var _ = Describe("status/subscribe SSE endpoint (IT)", func() {
 
 		Expect(k8sClient.Get(ctx, crclient.ObjectKeyFromObject(rr), rr)).To(Succeed())
 		rr.Status.OverallPhase = remediationv1.PhaseCompleted
-		rr.Status.Outcome = "Remediated"
+		rr.Status.Outcome = remediationv1.OutcomeRemediated
 		Expect(k8sClient.Status().Update(ctx, rr)).To(Succeed())
 
 		events := collectSSEEvents(resp, 3, 5*time.Second)

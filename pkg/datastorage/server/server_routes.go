@@ -51,7 +51,6 @@ func (s *Server) Handler() http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 		writeAuthMiddleware, mutateAuthMiddleware := s.registerAPIV1AuthMiddleware(r)
 		s.registerAuditRoutes(r, writeAuthMiddleware, mutateAuthMiddleware)
-		s.registerWorkflowRoutes(r, writeAuthMiddleware, mutateAuthMiddleware)
 	})
 
 	s.logger.V(1).Info("API v1 routes configured successfully")
@@ -226,36 +225,14 @@ func (s *Server) registerAuditRoutes(r chi.Router, writeAuthMiddleware, mutateAu
 	r.Get("/remediation-history/context", s.handler.HandleGetRemediationHistoryContext)
 }
 
-// registerWorkflowRoutes registers the workflow catalog and action-type
-// taxonomy endpoints (three-step workflow discovery protocol, lifecycle
-// management, and ActionType CRUD). Extracted from Handler (Wave 6 6f
-// GREEN: funlen remediation) — pure code motion, no behavior change.
-func (s *Server) registerWorkflowRoutes(r chi.Router, writeAuthMiddleware, mutateAuthMiddleware *auth.Middleware) {
-	// BR-STORAGE-013, BR-STORAGE-014: Workflow catalog management
-	// DD-WORKFLOW-005 v1.0: Direct REST API workflow registration
-	// DD-WORKFLOW-002 v3.0: UUID primary key for workflow retrieval
-	s.logger.V(1).Info("Registering /api/v1/workflows handlers (BR-STORAGE-013, DD-STORAGE-008)")
-	r.With(writeAuthMiddleware.Handler).Post("/workflows", s.handler.HandleCreateWorkflow)
-	r.Get("/workflows", s.handler.HandleListWorkflows)
-	// DD-WORKFLOW-016, DD-HAPI-017: Three-step workflow discovery protocol
-	// Step 1: List available action types (with signal context filters)
-	r.Get("/workflows/actions", s.handler.HandleListAvailableActions)
-	// Step 2: List workflows for a specific action type
-	r.Get("/workflows/actions/{action_type}", s.handler.HandleListWorkflowsByActionType)
-	// Step 3 + existing: Get workflow by UUID (with optional security gate via context filters)
-	r.Get("/workflows/{workflowID}", s.handler.HandleGetWorkflowByID)
-	// DD-WORKFLOW-012: Update mutable fields (status, metrics) - immutable fields require new version
-	r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}", s.handler.HandleUpdateWorkflow)
-	// DD-WORKFLOW-012: Convenience endpoint for disabling workflows
-	r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}/disable", s.handler.HandleDisableWorkflow)
-	// DD-WORKFLOW-017 Phase 4.4 (GAP-WF-1): Lifecycle endpoints for enable and deprecate
-	r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}/enable", s.handler.HandleEnableWorkflow)
-	r.With(mutateAuthMiddleware.Handler).Patch("/workflows/{workflowID}/deprecate", s.handler.HandleDeprecateWorkflow)
-
-	// BR-WORKFLOW-007: ActionType taxonomy CRUD (ADR-059, DD-ACTIONTYPE-001)
-	s.logger.V(1).Info("Registering /api/v1/action-types handlers (BR-WORKFLOW-007)")
-	r.With(writeAuthMiddleware.Handler).Post("/action-types", s.handler.HandleCreateActionType)
-	r.With(mutateAuthMiddleware.Handler).Patch("/action-types/{name}", s.handler.HandleUpdateActionType)
-	r.With(mutateAuthMiddleware.Handler).Patch("/action-types/{name}/disable", s.handler.HandleDisableActionType)
-	r.Get("/action-types/{name}/workflow-count", s.handler.HandleGetActionTypeWorkflowCount)
-}
+// registerWorkflowRoutes previously registered the workflow catalog and
+// action-type taxonomy read endpoints (three-step workflow discovery
+// protocol: /workflows, /workflows/actions*, /action-types/{name}/workflow-count).
+//
+// #1677 Phase 2g (DD-WORKFLOW-019): removed entirely. Workflow/action-type
+// discovery is now owned directly by KubernautAgent, backed by its own
+// informer cache (internal/kubernautagent/workflowcatalog), not proxied
+// through DataStorage's REST API. See DD-WORKFLOW-019 and Issue #1677 for
+// the full rationale; the retired handlers lived in
+// workflow_discovery_handlers.go, workflow_query_handlers.go, and
+// actiontype_handlers.go (all deleted alongside this route removal).

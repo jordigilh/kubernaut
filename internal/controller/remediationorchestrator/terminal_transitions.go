@@ -48,6 +48,8 @@ var errPhaseConflict = errors.New("phase changed by concurrent reconcile")
 // only allows Remediated|NoActionRequired|ManualReviewRequired|VerificationTimedOut, and
 // the dedup lineage is already preserved via DeduplicatedByWE/DuplicateOf fields + K8s events.
 // sourceRef identifies the original resource name; sourceKind is "WorkflowExecution" or "RemediationRequest".
+//
+//nolint:unparam // ctrl.Result is always the zero value here, but the signature is required by ApplyTransition's uniform dispatch (apply_transition.go: wrapTransitionResult wraps all sibling transitionTo* results identically) (Issue #1546 Tier 4)
 func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *remediationv1.RemediationRequest, sourceRef, sourceKind string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
@@ -55,7 +57,7 @@ func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *rem
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
 		now := metav1.Now()
 		rr.Status.OverallPhase = phase.Completed
-		rr.Status.Outcome = "Remediated"
+		rr.Status.Outcome = remediationv1.OutcomeRemediated
 		rr.Status.CompletedAt = &now
 		rr.Status.ObservedGeneration = rr.Generation
 		if sourceKind == "RemediationRequest" {
@@ -102,6 +104,8 @@ func (r *Reconciler) transitionToInheritedCompleted(ctx context.Context, rr *rem
 // Does NOT reset ConsecutiveFailureCount — dry-run did not prove remediation works.
 // Sets NextAllowedExecution to suppress Gateway re-triggering (only if later than existing value).
 // #712, #736: ADR-RO-001
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature required by ApplyTransition's uniform dispatch (see transitionToInheritedCompleted)
 func (r *Reconciler) transitionToCompletedWithoutVerification(ctx context.Context, rr *remediationv1.RemediationRequest, reason string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
@@ -161,6 +165,8 @@ func (r *Reconciler) transitionToCompletedWithoutVerification(ctx context.Contex
 // Used when the original resource (WFE or RR) fails or is deleted (dangling reference).
 // Does NOT increment ConsecutiveFailureCount — inherited failures are excluded from blocking.
 // sourceRef identifies the original resource name; sourceKind is "WorkflowExecution" or "RemediationRequest".
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature required by ApplyTransition's uniform dispatch (see transitionToInheritedCompleted)
 func (r *Reconciler) transitionToInheritedFailed(ctx context.Context, rr *remediationv1.RemediationRequest, failureErr error, sourceRef, sourceKind string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
@@ -231,7 +237,7 @@ func (r *Reconciler) transitionPhase(ctx context.Context, rr *remediationv1.Reme
 		return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 	}
 
-	if !phase.CanTransition(phase.Phase(oldPhase), newPhase) {
+	if !phase.CanTransition(oldPhase, newPhase) {
 		logger.Error(nil, "Invalid phase transition rejected by state machine",
 			"currentPhase", oldPhase,
 			"requestedPhase", newPhase)
@@ -339,6 +345,8 @@ func requeueDelayForPhase(newPhase phase.Phase) time.Duration {
 // or when VerificationDeadline expires.
 // #281: Notification creation is delegated to ensureNotificationsCreated (idempotent).
 // If creation fails here, handleVerifyingPhase retries on subsequent reconciles.
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature required by ApplyTransition's uniform dispatch (see transitionToInheritedCompleted)
 func (r *Reconciler) transitionToVerifying(ctx context.Context, rr *remediationv1.RemediationRequest, outcome string) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 	// RO-AUDIT-IDEMPOTENCY: Refetch via apiReader (cache-bypassed) before the phase

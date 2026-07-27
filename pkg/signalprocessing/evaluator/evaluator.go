@@ -165,7 +165,7 @@ func (e *Evaluator) StartHotReload(ctx context.Context) error {
 	var err error
 	e.fileWatcher, err = hotreload.NewFileWatcher(
 		e.policyPath,
-		func(content string) error {
+		func(content string) error { //nolint:contextcheck // policy hot-reload callback fires asynchronously on file-change events, independent of any request
 			if err := e.LoadPolicy(content); err != nil {
 				return fmt.Errorf("policy validation failed: %w", err)
 			}
@@ -455,7 +455,9 @@ func (e *Evaluator) EvaluateCustomLabels(ctx context.Context, input PolicyInput)
 
 func isValidSeverity(severity string) bool {
 	switch severity {
-	case "critical", "high", "warning", "info", "unknown":
+	case signalprocessingv1alpha1.SeverityCritical, signalprocessingv1alpha1.SeverityHigh,
+		signalprocessingv1alpha1.SeverityWarning, signalprocessingv1alpha1.SeverityInfo,
+		signalprocessingv1alpha1.SeverityUnknown:
 		return true
 	default:
 		return false

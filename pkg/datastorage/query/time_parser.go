@@ -42,7 +42,7 @@ func ParseTimeParam(param string) (time.Time, error) {
 			if duration < 0 {
 				return time.Time{}, fmt.Errorf("negative day duration not allowed: %s", param)
 			}
-			duration = duration * 24
+			duration *= 24
 			return time.Now().Add(-duration), nil
 		}
 	}

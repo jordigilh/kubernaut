@@ -41,6 +41,8 @@ package remediationorchestrator
 import (
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -56,7 +58,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 	var testNamespace string
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("needs-review")
+		testNamespace = createTestNamespace(ctx, "needs-review")
 	})
 
 	AfterEach(func() {
@@ -77,7 +79,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed(), "SignalProcessing should be created by RO")
 
 			// Step 3: Complete SignalProcessing to trigger AI creation
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 			// Step 4: Wait for RO to create AIAnalysis
 			aiName := "ai-" + rrName
@@ -116,7 +118,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue(), "NotificationRequest for this RR should be created")
 
 			// Validate NotificationRequest
-			Expect(notification.Name).To(Equal("nr-manual-review-" + rrName), "Notification name should follow pattern")
+			Expect(notification.Name).To(Equal("nr-manual-review-"+rrName), "Notification name should follow pattern")
 			Expect(notification.Spec.Type).To(Equal(notificationv1.NotificationTypeManualReview), "Notification type should be manual-review")
 			Expect(notification.Spec.Context).NotTo(BeNil())
 			Expect(notification.Spec.Context.Review).NotTo(BeNil())
@@ -168,7 +170,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Step 3: Complete SignalProcessing
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "warning")).To(Succeed())
+			Expect(updateSPStatus(spName, "warning")).To(Succeed())
 
 			// Step 4: Wait for RO to create AIAnalysis
 			aiName := "ai-" + rrName
@@ -246,7 +248,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Step 3: Complete SignalProcessing
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "high")).To(Succeed())
+			Expect(updateSPStatus(spName, "high")).To(Succeed())
 
 			// Step 4: Wait for RO to create AIAnalysis
 			aiName := "ai-" + rrName
@@ -321,7 +323,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed(), "SignalProcessing should be created by RO")
 
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "warning")).To(Succeed())
+			Expect(updateSPStatus(spName, "warning")).To(Succeed())
 
 			aiName := "ai-" + rrName
 			var analysis *aianalysisv1.AIAnalysis
@@ -387,7 +389,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				return k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed(), "SignalProcessing should be created by RO")
 
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+			Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 			aiName := "ai-" + rrName
 			var analysis *aianalysisv1.AIAnalysis
@@ -403,7 +405,11 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 				HumanReviewReason: "low_confidence",
 				Message:           "AI confidence (0.55) below threshold (0.70)",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID: "restart-pod-v1",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:   "restart-pod-v1",
+						WorkflowName: "restart-pod-v1",
+						ActionType:   "RestartPod",
+					},
 					Confidence: 0.55,
 				},
 			}
@@ -437,4 +443,3 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 		})
 	})
 })
-

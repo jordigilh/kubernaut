@@ -32,6 +32,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/anthropicfamily"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	assistant = "assistant"
+)
+
 // Issue #1580 / BR-AI-086 AC1/AC2/AC3: model-aware thinking request wiring,
 // reasoning response capture, and #1299-class signature-replay ordering.
 // Tier detection reuses adk-anthropic-go/converters.ThinkingConfigToAnthropic
@@ -292,7 +297,7 @@ var _ = Describe("anthropicfamily thinking/reasoning wiring — #1580", func() {
 				Messages: []llm.Message{
 					{Role: "user", Content: "investigate the crash"},
 					{
-						Role:    "assistant",
+						Role:    assistant,
 						Content: "",
 						Reasoning: &llm.ReasoningBlock{
 							Text:      "I should check the pod events first.",
@@ -315,7 +320,7 @@ var _ = Describe("anthropicfamily thinking/reasoning wiring — #1580", func() {
 			var assistantMsg map[string]interface{}
 			for _, m := range messages {
 				mm := m.(map[string]interface{})
-				if mm["role"] == "assistant" {
+				if mm["role"] == assistant {
 					assistantMsg = mm
 					break
 				}
@@ -341,7 +346,7 @@ var _ = Describe("anthropicfamily thinking/reasoning wiring — #1580", func() {
 				Messages: []llm.Message{
 					{Role: "user", Content: "investigate the crash"},
 					{
-						Role:    "assistant",
+						Role:    assistant,
 						Content: "",
 						Reasoning: &llm.ReasoningBlock{
 							Signature: "encrypted-opaque-payload",
@@ -364,7 +369,7 @@ var _ = Describe("anthropicfamily thinking/reasoning wiring — #1580", func() {
 			var assistantMsg map[string]interface{}
 			for _, m := range messages {
 				mm := m.(map[string]interface{})
-				if mm["role"] == "assistant" {
+				if mm["role"] == assistant {
 					assistantMsg = mm
 					break
 				}

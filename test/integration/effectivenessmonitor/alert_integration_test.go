@@ -34,7 +34,7 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 	// IT-EM-AR-001: Mock AM returns resolved -> alert score 1.0
 	// ========================================
 	It("IT-EM-AR-001: should score 1.0 when AlertManager returns no active alerts", func() {
-		ns := createTestNamespace("em-ar-001")
+		ns := createTestNamespace(ctx, "em-ar-001")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock AM with empty response (no active alerts = resolved)")
@@ -62,7 +62,7 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 	// IT-EM-AR-002: Mock AM returns firing -> alert score 0.0
 	// ========================================
 	It("IT-EM-AR-002: should score 0.0 when AlertManager returns active firing alert", func() {
-		ns := createTestNamespace("em-ar-002")
+		ns := createTestNamespace(ctx, "em-ar-002")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock AM with a firing alert")
@@ -97,7 +97,7 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 	// IT-EM-AR-003: Mock AM returns no alerts for target -> alert score 1.0 (resolved)
 	// ========================================
 	It("IT-EM-AR-003: should score 1.0 when AM returns suppressed (non-active) alerts", func() {
-		ns := createTestNamespace("em-ar-003")
+		ns := createTestNamespace(ctx, "em-ar-003")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock AM with a suppressed (resolved) alert")
@@ -132,14 +132,14 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 	// IT-EM-AR-004: Mock AM returns error (503) -> alert not assessed, reconcile requeues
 	// ========================================
 	It("IT-EM-AR-004: should handle AM error and eventually complete after recovery", func() {
-		ns := createTestNamespace("em-ar-004")
+		ns := createTestNamespace(ctx, "em-ar-004")
 		defer deleteTestNamespace(ns)
 
 		errorCount := 0
 		By("Configuring mock AM to return 503 on first request, then succeed")
 		mockAM.SetAlertsResponse(nil) // Reset
 		// Use a custom handler that fails first, then succeeds
-		originalHandler := func(w http.ResponseWriter, r *http.Request) {
+		originalHandler := func(w http.ResponseWriter, _ *http.Request) {
 			errorCount++
 			if errorCount <= 2 {
 				w.WriteHeader(http.StatusServiceUnavailable)
@@ -178,7 +178,7 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 	// IT-EM-AR-006: Alert event payload verified
 	// ========================================
 	It("IT-EM-AR-006: should preserve correlation data and component structure", func() {
-		ns := createTestNamespace("em-ar-006")
+		ns := createTestNamespace(ctx, "em-ar-006")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mock AM with resolved alerts")
@@ -207,7 +207,7 @@ var _ = Describe("Alert Resolution Integration (BR-EM-002)", func() {
 		requests := mockAM.GetRequestLog()
 		alertRequests := 0
 		for _, req := range requests {
-			if req.Path == "/api/v2/alerts" {
+			if req.Path == pathV2Alerts {
 				alertRequests++
 			}
 		}

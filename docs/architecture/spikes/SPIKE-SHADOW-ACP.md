@@ -1,7 +1,7 @@
 # Spike: Shadow Agent via ACP
 
 **Issue**: [#1208](https://github.com/jordigilh/kubernaut/issues/1208)
-**Status**: COMPLETED
+**Status**: COMPLETED — the primary+shadow dual-run pattern validated here is superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536): an opaque agent's runtime can't host a second Kubernaut-orchestrated ACP session. The equivalent Layer 4 capability for opaque agents is now scoped as an AuthBridge traffic-tee (not a second agent run) — see [#1681](https://github.com/jordigilh/kubernaut/issues/1681), [ADR-KA-002](../decisions/ADR-KA-002-agent-security-defense-in-depth.md). KA-side (non-opaque) shadow evaluation still works as originally implemented per `ADR-KA-001`.
 **Date**: 2026-05-20
 
 ## Objective

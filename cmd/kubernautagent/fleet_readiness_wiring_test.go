@@ -27,7 +27,6 @@ import (
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
@@ -45,30 +44,29 @@ import (
 var _ = Describe("registerFleetTools and wireFleetReadinessGate wiring (#1553)", func() {
 
 	Describe("registerFleetTools retention behavior", func() {
-		It("IT-KA-1553-001: is a no-op when fleet is disabled (no client, no tools)", func() {
+		It("IT-KA-1553-001: is a no-op when fleet is disabled (no client, no resolver)", func() {
 			cfg := kaconfig.DefaultConfig()
-			reg := registry.New()
 
-			fc, toolNames := registerFleetTools(context.Background(), cfg, reg, logr.Discard())
+			fc, resolver := registerFleetTools(context.Background(), cfg, logr.Discard())
 			Expect(fc).To(BeNil(), "*mcpclient.ResilientClient must remain nil when fleet gatewayType/endpoint are unset")
-			Expect(toolNames).To(BeNil(), "no tool names expected when fleet is disabled")
+			Expect(resolver).To(BeNil(), "no FleetOverlayResolver expected when fleet is disabled")
 		})
 
-		It("IT-KA-1553-001: wires the client and tools when the gateway is reachable", func() {
+		It("IT-KA-1553-001: wires the client and a fleet overlay resolver when the gateway is reachable", func() {
 			gw := mockgw.NewMockGateway()
 			DeferCleanup(gw.Close)
 
 			cfg := kaconfig.DefaultConfig()
 			cfg.Integrations.Fleet.Endpoint = gw.URL()
 			cfg.Integrations.Fleet.GatewayType = "eaigw"
-			reg := registry.New()
 
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			DeferCleanup(cancel)
 
-			fc, _ := registerFleetTools(ctx, cfg, reg, logr.Discard())
+			fc, resolver := registerFleetTools(ctx, cfg, logr.Discard())
 			Expect(fc).NotTo(BeNil(), "*mcpclient.ResilientClient must be returned when the Fleet MCP Gateway is reachable")
 			DeferCleanup(func() { _ = fc.Close() })
+			Expect(resolver).NotTo(BeNil(), "DD-FLEET-004: registerFleetTools must return a FleetOverlayResolver when the gateway is reachable")
 
 			Expect(fc.Ready()).To(BeTrue(), "client must report Ready() when the initial connection succeeded")
 		})
@@ -77,18 +75,17 @@ var _ = Describe("registerFleetTools and wireFleetReadinessGate wiring (#1553)",
 			cfg := kaconfig.DefaultConfig()
 			cfg.Integrations.Fleet.Endpoint = "http://127.0.0.1:1/unreachable"
 			cfg.Integrations.Fleet.GatewayType = "eaigw"
-			reg := registry.New()
 
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			DeferCleanup(cancel)
 
-			fc, toolNames := registerFleetTools(ctx, cfg, reg, logr.Discard())
+			fc, resolver := registerFleetTools(ctx, cfg, logr.Discard())
 			Expect(fc).NotTo(BeNil(), "*mcpclient.ResilientClient must be kept (not discarded) when the Fleet "+
 				"MCP Gateway is unreachable so the readiness gate's periodic probe can keep retrying it (#1553)")
 			DeferCleanup(func() { _ = fc.Close() })
 
 			Expect(fc.Ready()).To(BeFalse(), "the kept client must not report Ready() when its initial connection failed")
-			Expect(toolNames).To(BeNil(), "no fleet tools should be registered when the initial connection failed")
+			Expect(resolver).To(BeNil(), "no fleet overlay resolver should be returned when the initial connection failed")
 		})
 	})
 

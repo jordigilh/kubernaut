@@ -49,8 +49,8 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 			for _, aa := range aaList.Items {
 				if aa.Spec.RemediationRequestRef.Name == rrName {
 					aaName = aa.Name
-					phase := string(aa.Status.Phase)
-					return phase == "Investigating" || phase == "Analyzing" || phase == "Completed"
+					phase := aa.Status.Phase
+					return phase == aianalysisv1.PhaseInvestigating || phase == aianalysisv1.PhaseAnalyzing || phase == aianalysisv1.PhaseCompleted
 				}
 			}
 			return false

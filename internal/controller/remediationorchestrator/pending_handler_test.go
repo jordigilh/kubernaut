@@ -97,7 +97,7 @@ var _ = Describe("Issue #666: PendingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("Routing error", func() {
 		It("UT-PND-H-003: routing engine error returns 5s requeue", func() {
-			rr := newRemediationRequest("pnd-route-err", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("pnd-route-err", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
@@ -118,7 +118,7 @@ var _ = Describe("Issue #666: PendingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("Routing blocked", func() {
 		It("UT-PND-H-004: routing blocked returns Block intent", func() {
-			rr := newRemediationRequest("pnd-blocked", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("pnd-blocked", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
@@ -145,7 +145,7 @@ var _ = Describe("Issue #666: PendingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("Namespace terminating", func() {
 		It("UT-PND-H-007: namespace terminating returns NoOp", func() {
-			rr := newRemediationRequest("pnd-ns-term", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("pnd-ns-term", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
@@ -172,7 +172,7 @@ var _ = Describe("Issue #666: PendingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("SP creation error", func() {
 		It("UT-PND-H-005: SP create error returns 5s requeue", func() {
-			rr := newRemediationRequest("pnd-sp-err", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("pnd-sp-err", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
@@ -200,7 +200,7 @@ var _ = Describe("Issue #666: PendingHandler (BR-ORCH-025)", func() {
 	// ========================================
 	Describe("Happy path", func() {
 		It("UT-PND-H-006: SP created successfully returns Advance(Processing)", func() {
-			rr := newRemediationRequest("pnd-happy", "default", remediationv1.PhasePending)
+			rr := newRemediationRequest("pnd-happy", defaultFixture, remediationv1.PhasePending)
 			rr.Status.StartTime = ptrMetaTime(time.Now())
 			c := fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).

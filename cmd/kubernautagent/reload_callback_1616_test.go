@@ -66,7 +66,7 @@ phaseModels:
 
 	It("accepts adding a brand-new phase override that sets only reasoning (identity matches base)", func() {
 		sc, resolver := setupPhaseResolver(GinkgoTB())
-		bootRuntime := bootRuntimeFor("gpt-4")
+		bootRuntime := bootRuntimeFor()
 
 		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), resolver, bootRuntime)
 

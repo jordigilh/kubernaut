@@ -20,7 +20,7 @@ var _ = Describe("Integration: tool wiring smoke", func() {
 		typedClient := fake.NewClientBuilder().WithScheme(s).Build()
 
 		result, err := tools.HandleListRemediations(context.Background(), typedClient, tools.ListRemediationsArgs{
-			Namespace: "default",
+			Namespace: defaultFixture,
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Count).To(Equal(0))

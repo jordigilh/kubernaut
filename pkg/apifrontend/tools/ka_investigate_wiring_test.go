@@ -164,9 +164,14 @@ var _ = Describe("kubectl_get — RESTMapper wiring (WIRE-C04)", func() {
 
 var _ = Describe("DS tool nil guard (WIRE-C05)", func() {
 	Describe("WIRE-C05: DS handlers return error when client is nil", func() {
-		It("UT-AF-WIRE-C05-list-workflows: HandleListWorkflows returns ErrDSUnavailable", func() {
-			_, err := tools.HandleListWorkflows(context.Background(), nil, tools.ListWorkflowsArgs{})
-			Expect(err).To(MatchError(tools.ErrDSUnavailable))
+		It("UT-AF-WIRE-C05-list-workflows: HandleListWorkflowsKA errors when KA MCP client is nil", func() {
+			// #1677 Phase 2g (DD-WORKFLOW-019): kubernaut_list_workflows is now
+			// KA-backed (HandleListWorkflowsKA, ka_tools.go), not DS-backed --
+			// the nil-guard check moved off ds.Client/ErrDSUnavailable onto
+			// ka.MCPClient with its own error message.
+			_, err := tools.HandleListWorkflowsKA(context.Background(), nil, tools.ListWorkflowsArgs{})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("MCP client not configured"))
 		})
 
 		It("UT-AF-WIRE-C05-history: HandleGetRemediationHistory returns ErrDSUnavailable", func() {

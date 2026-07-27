@@ -33,7 +33,7 @@ import (
 
 // emitToSink replicates the exact production emitToSink function from
 // investigator.go — non-blocking send to the context-carried event sink.
-func emitToSink(ctx context.Context, eventType string, turn int, phase string, data map[string]interface{}) bool {
+func emitToSink(ctx context.Context, eventType string, turn int, data map[string]interface{}) bool {
 	sink := session.EventSinkFromContext(ctx)
 	if sink == nil {
 		return false
@@ -49,7 +49,7 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 	event := session.InvestigationEvent{
 		Type:  eventType,
 		Turn:  turn,
-		Phase: phase,
+		Phase: "rca",
 		Data:  raw,
 	}
 	select {
@@ -63,9 +63,9 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() {
 
 	var (
-		store   *session.Store
-		mgr     *session.Manager
-		logger  logr.Logger
+		store  *session.Store
+		mgr    *session.Manager
+		logger logr.Logger
 	)
 
 	BeforeEach(func() {
@@ -98,7 +98,7 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 							logger.Info("investigation: sink nil", "turn", turn)
 						}
 
-						ok := emitToSink(ctx, "reasoning_delta", turn, "rca", map[string]interface{}{
+						ok := emitToSink(ctx, "reasoning_delta", turn, map[string]interface{}{
 							"content_preview": fmt.Sprintf("Turn %d analysis...", turn),
 						})
 						if ok {
@@ -107,7 +107,7 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 							droppedCount.Add(1)
 						}
 
-						ok = emitToSink(ctx, "tool_call_start", turn, "rca", map[string]interface{}{
+						ok = emitToSink(ctx, "tool_call_start", turn, map[string]interface{}{
 							"tool_name": "kubectl_get",
 						})
 						if ok {
@@ -116,7 +116,7 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 							droppedCount.Add(1)
 						}
 
-						ok = emitToSink(ctx, "tool_result", turn, "rca", map[string]interface{}{
+						ok = emitToSink(ctx, "tool_result", turn, map[string]interface{}{
 							"result_preview": "pods listed",
 						})
 						if ok {
@@ -210,7 +210,7 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 						if sink == nil {
 							earlyNilCount.Add(1)
 						}
-						emitToSink(ctx, "token_delta", i, "rca", map[string]interface{}{"delta": "early"})
+						emitToSink(ctx, "token_delta", i, map[string]interface{}{"delta": "early"})
 					}
 
 					// Wait for Subscribe
@@ -219,7 +219,7 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 
 					// Late phase: sink should be active
 					for i := 3; i < 8; i++ {
-						ok := emitToSink(ctx, "reasoning_delta", i, "rca", map[string]interface{}{"content": "late"})
+						ok := emitToSink(ctx, "reasoning_delta", i, map[string]interface{}{"content": "late"})
 						if ok {
 							lateSentCount.Add(1)
 						} else {
@@ -291,7 +291,7 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 					if sink != nil {
 						sinkPtrInGoroutine = fmt.Sprintf("%p", sink)
 					}
-					emitToSink(ctx, "test_event", 0, "rca", nil)
+					emitToSink(ctx, "test_event", 0, nil)
 					close(investigationDone)
 					return &katypes.InvestigationResult{}, nil
 				},
@@ -349,7 +349,7 @@ var _ = Describe("Production Flow Spike — End-to-End Event Streaming", func() 
 					// Blast 200 events — buffer is 64, so some should drop
 					// if nobody is draining
 					for i := 0; i < 200; i++ {
-						ok := emitToSink(ctx, "token_delta", i, "rca", map[string]interface{}{"delta": "x"})
+						ok := emitToSink(ctx, "token_delta", i, map[string]interface{}{"delta": "x"})
 						if ok {
 							sentCount.Add(1)
 						} else {

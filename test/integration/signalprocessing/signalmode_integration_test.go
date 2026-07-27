@@ -50,6 +50,11 @@ import (
 	spaudit "github.com/jordigilh/kubernaut/pkg/signalprocessing/audit"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	predictedoomkill = "PredictedOOMKill"
+)
+
 var _ = Describe("Signal Mode Classification Integration Tests", Label("integration", "signalmode", "signalprocessing"), func() {
 	var (
 		namespace string
@@ -101,7 +106,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 			// GIVEN: SignalProcessing with proactive signal type
 			sp := createSignalModeTestCRD(namespace, "test-proactive-oomkill")
-			sp.Spec.Signal.Name = "PredictedOOMKill"
+			sp.Spec.Signal.Name = predictedoomkill
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			// WHEN: Controller reconciles and classifies signal mode
@@ -121,7 +126,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 					"PredictedOOMKill should be normalized to OOMKilled for workflow catalog")
 
 				// THEN: Original signal type is preserved for SOC2 audit trail
-				g.Expect(updated.Status.SourceSignalName).To(Equal("PredictedOOMKill"),
+				g.Expect(updated.Status.SourceSignalName).To(Equal(predictedoomkill),
 					"Original signal type must be preserved for SOC2 CC7.4 audit trail")
 
 				// THEN: SP reaches Completed phase (full pipeline works with proactive signals)
@@ -252,7 +257,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 			// GIVEN: SignalProcessing with proactive signal type
 			sp := createSignalModeTestCRD(namespace, "test-audit-proactive")
-			sp.Spec.Signal.Name = "PredictedOOMKill"
+			sp.Spec.Signal.Name = predictedoomkill
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			// Get unique correlation ID for audit event query
@@ -294,7 +299,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 				// Validate source_signal_name is preserved
 				g.Expect(payload.SourceSignalName.IsSet()).To(BeTrue(),
 					"Audit event must include source_signal_name for SOC2 CC7.4")
-				g.Expect(payload.SourceSignalName.Value).To(Equal("PredictedOOMKill"),
+				g.Expect(payload.SourceSignalName.Value).To(Equal(predictedoomkill),
 					"Audit event should preserve original signal type before normalization")
 			}, 60*time.Second, 2*time.Second).Should(Succeed())
 
@@ -361,7 +366,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 			// GIVEN: SignalProcessing with proactive signal
 			sp := createSignalModeTestCRD(namespace, "test-audit-processed")
-			sp.Spec.Signal.Name = "PredictedOOMKill"
+			sp.Spec.Signal.Name = predictedoomkill
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			correlationID := sp.Spec.RemediationRequestRef.Name
@@ -399,7 +404,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 				g.Expect(payload.SourceSignalName.IsSet()).To(BeTrue(),
 					"signal.processed event should include source_signal_name")
-				g.Expect(payload.SourceSignalName.Value).To(Equal("PredictedOOMKill"),
+				g.Expect(payload.SourceSignalName.Value).To(Equal(predictedoomkill),
 					"signal.processed should preserve original signal type")
 
 				g.Expect(event.EventOutcome).To(Equal(ogenclient.AuditEventEventOutcomeSuccess),
@@ -423,7 +428,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 
 			// GIVEN: SignalProcessing with proactive signal
 			sp := createSignalModeTestCRD(namespace, "test-condition-proactive")
-			sp.Spec.Signal.Name = "PredictedOOMKill"
+			sp.Spec.Signal.Name = predictedoomkill
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			// WHEN: Controller classifies
@@ -447,7 +452,7 @@ var _ = Describe("Signal Mode Classification Integration Tests", Label("integrat
 					"ClassificationComplete condition should exist")
 				g.Expect(classificationCondition.Message).To(ContainSubstring("signalMode=proactive"),
 					"ClassificationComplete message should mention signalMode=proactive")
-				g.Expect(classificationCondition.Message).To(ContainSubstring("PredictedOOMKill"),
+				g.Expect(classificationCondition.Message).To(ContainSubstring(predictedoomkill),
 					"ClassificationComplete message should mention original type")
 				g.Expect(classificationCondition.Message).To(ContainSubstring("OOMKilled"),
 					"ClassificationComplete message should mention normalized type")

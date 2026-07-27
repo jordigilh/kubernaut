@@ -97,7 +97,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Getting the created Job and simulating completion")
@@ -111,7 +111,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
 			By("Listing events and asserting expected reasons")
@@ -152,7 +152,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 10*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
 
 			By("Listing events and asserting WorkflowValidationFailed")
@@ -181,7 +181,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			job, err := waitForJobCreation(wfe1.Name, 5*time.Second)
@@ -193,7 +193,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)))
 
 			By("Creating second WFE for SAME target (within cooldown)")
@@ -236,7 +236,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Simulating Job failure")
@@ -250,7 +250,7 @@ var _ = Describe("WorkflowExecution K8s Event Observability (DD-EVENT-001, BR-WE
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
 
 			By("Listing events and asserting expected reasons")

@@ -168,6 +168,11 @@ type RedisTLSConfig struct {
 
 // BuildTLSConfig returns a tls.Config when TLS is enabled, or nil if disabled.
 func (t *RedisTLSConfig) BuildTLSConfig() (*tls.Config, error) {
+	// nolint:nilnil // intentional "TLS disabled" sentinel, not an error —
+	// already documented above ("or nil if disabled"); a nil *tls.Config is
+	// a valid, safe redis.Options.TLSConfig value (no custom TLS), and the
+	// sole caller only invokes this when Enabled is already true (Issue
+	// #1546 Tier 2).
 	if !t.Enabled {
 		return nil, nil
 	}

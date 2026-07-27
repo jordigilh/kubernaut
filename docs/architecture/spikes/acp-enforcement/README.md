@@ -1,6 +1,6 @@
 # Spike 2: ACP Server Enforcement Layer
 
-**Status**: Complete  
+**Status**: Complete — the budget/shadow/audit enforcement concerns validated here survive, but relocated to the `AuthBridge` sidecar ([#1535](https://github.com/jordigilh/kubernaut/issues/1535), [#1681](https://github.com/jordigilh/kubernaut/issues/1681)) instead of a Kubernaut-run "ACP server." See [#1536](https://github.com/jordigilh/kubernaut/issues/1536).
 **Date**: 2026-05-19  
 **Confidence**: 95%
 

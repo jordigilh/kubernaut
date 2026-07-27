@@ -1,0 +1,226 @@
+suite: "WorkflowExecution fleet Helm wiring (BR-FLEET-054, ADR-068 Phase 3 gap): WE was the only fleet-integration-capable service never wired into the Helm chart -- cfg.Fleet.Endpoint could never be set via values.yaml, permanently forcing WE into local-only execution. Unlike GW/RO/AF/EM/SP/FMC (all read-only MCP tool callers), WE calls resources_create_or_update/resources_delete (mcpclient.WriterClient, pkg/workflowexecution/executor/client_factory.go), so its oauth2.credentialsSecretRef MUST NOT fall back to the shared global.fleet.oauth2.credentialsSecretRef used by the 6 read-only services (least privilege, AC-6) -- it is its own required, non-fallback-able field."
+templates:
+  - templates/workflowexecution/workflowexecution.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # ---------------------------------------------------------------------
+  # fleet block presence/absence, gated on global.fleet.enabled
+  # ---------------------------------------------------------------------
+  - it: "WE ConfigMap has no fleet block when global.fleet.enabled=false (default)"
+    documentSelector:
+      path: metadata.name
+      value: workflowexecution-config
+    asserts:
+      - notMatchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^fleet:"
+
+  - it: "WE ConfigMap renders fleet.endpoint from global.fleet.mcpGatewayEndpoint when global.fleet.enabled=true"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    documentSelector:
+      path: metadata.name
+      value: workflowexecution-config
+    asserts:
+      - matchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^\\s*endpoint: \"http://mcp\\.example\\.com\""
+
+  - it: "WE ConfigMap renders fleet.endpoint empty (local-only mode) when global.fleet.enabled=true but mcpGatewayEndpoint unset (remote execution is optional, unlike GW/RO/FMC)"
+    set:
+      global:
+        fleet:
+          enabled: true
+    documentSelector:
+      path: metadata.name
+      value: workflowexecution-config
+    asserts:
+      - matchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^\\s*endpoint: \"\""
+
+  # ---------------------------------------------------------------------
+  # oauth2: shared token URL/scopes/CA from global, but credentialsSecretRef
+  # is WE's own -- NOT a fallback to global.fleet.oauth2.credentialsSecretRef
+  # ---------------------------------------------------------------------
+  - it: "WE ConfigMap has no fleet.oauth2 block when global.fleet.oauth2.enabled=false, even with fleet enabled"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    documentSelector:
+      path: metadata.name
+      value: workflowexecution-config
+    asserts:
+      - notMatchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^\\s*oauth2:"
+
+  - it: "WE ConfigMap renders fleet.oauth2.tokenURL/scopes from global, but credentialsSecretRef from workflowexecution.fleet.oauth2.credentialsSecretRef (its own, not global)"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "shared-read-only-creds"
+            scopes: ["openid", "groups"]
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: "we-write-scoped-creds"
+    documentSelector:
+      path: metadata.name
+      value: workflowexecution-config
+    asserts:
+      - matchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^\\s*tokenURL: \"https://dex\\.example\\.com/token\""
+      - matchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "(?m)^\\s*credentialsSecretRef: \"we-write-scoped-creds\""
+      - notMatchRegex:
+          path: data["workflowexecution.yaml"]
+          pattern: "shared-read-only-creds"
+
+  # ---------------------------------------------------------------------
+  # Fail-closed guards: no silent fallback for WE's write-scoped credential
+  # ---------------------------------------------------------------------
+  - it: "helm fails at render time when oauth2 is enabled and workflowexecution.fleet.oauth2.credentialsSecretRef is unset, EVEN IF global.fleet.oauth2.credentialsSecretRef is set (proves no fallback)"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "shared-read-only-creds"
+    template: templates/workflowexecution/workflowexecution.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "workflowexecution.fleet.oauth2.credentialsSecretRef is required when global.fleet.oauth2.enabled=true (WE needs its own write-scoped MCP Gateway credentials -- it does NOT fall back to global.fleet.oauth2.credentialsSecretRef, which is shared read-only by gateway/remediationorchestrator/apifrontend/effectivenessmonitor/signalprocessing/fleetmetadatacache)"
+
+  - it: "helm fails at render time when oauth2 is enabled and global.fleet.oauth2.tokenURL is unset"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: "we-write-scoped-creds"
+    template: templates/workflowexecution/workflowexecution.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true"
+
+  # ---------------------------------------------------------------------
+  # Secret volume/mount wiring for the write-scoped OAuth2 credential
+  # ---------------------------------------------------------------------
+  - it: "WE Deployment mounts its own oauth2-credentials Secret at /etc/workflowexecution/<credentialsSecretRef>"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "shared-read-only-creds"
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: "we-write-scoped-creds"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: oauth2-credentials
+            mountPath: "/etc/workflowexecution/we-write-scoped-creds"
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: oauth2-credentials
+            secret:
+              secretName: we-write-scoped-creds
+
+  - it: "WE Deployment has no oauth2-credentials volume/mount when fleet oauth2 is disabled"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: oauth2-credentials
+
+  # ---------------------------------------------------------------------
+  # Schema guards: WE intentionally exposes ONLY oauth2.credentialsSecretRef
+  # per service -- no gatewayType (no ClusterRegistry/CRD watch; WE discovers
+  # tool prefixes dynamically via MCP tools/list, pkg/fleet/mcpclient/discover.go),
+  # no namespace, no per-service endpoint override.
+  # ---------------------------------------------------------------------
+  - it: "the workflowexecution.fleet.endpoint key is not recognized (schema rejects it -- endpoint is global-only for WE, no per-service override)"
+    set:
+      workflowexecution:
+        fleet:
+          endpoint: "http://mcp.example.com"
+    template: templates/workflowexecution/workflowexecution.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "the workflowexecution.fleet.mcpGatewayType key is not recognized (WE has no ClusterRegistry/CRD-watch capability)"
+    set:
+      workflowexecution:
+        fleet:
+          mcpGatewayType: "eaigw"
+    template: templates/workflowexecution/workflowexecution.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "the workflowexecution.fleet.namespace key is not recognized (WE has no CRD watch to scope)"
+    set:
+      workflowexecution:
+        fleet:
+          namespace: "team-a"
+    template: templates/workflowexecution/workflowexecution.yaml
+    asserts:
+      - failedTemplate: {}

@@ -185,7 +185,7 @@ func (inv *Investigator) reEnrichForRCATargetShift(ctx context.Context, p reEnri
 			"RunWorkflowDiscoveryFromRCA: enrichment hard-failed, triggering rca_incomplete",
 			"correlation_id", correlationID)
 		rcaResult.HumanReviewNeeded = true
-		rcaResult.HumanReviewReason = "rca_incomplete"
+		rcaResult.HumanReviewReason = katypes.HumanReviewReasonRCAIncomplete
 		backfillSeverity(rcaResult, signal)
 		attachDetectedLabels(rcaResult, rawEnrichData)
 		InjectRemediationTarget(rcaResult, signal, rawEnrichData)

@@ -26,6 +26,7 @@ import (
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/shared/contenthash"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
@@ -35,28 +36,32 @@ import (
 
 const startupRegisteredBy = "system:authwebhook-startup"
 
-// WorkflowDSClient abstracts the DS workflow operations needed by the startup reconciler.
-type WorkflowDSClient interface {
-	CreateWorkflowInline(ctx context.Context, content, source, registeredBy string) (*WorkflowRegistrationResult, error)
-}
+// WorkflowDSClient is now an empty marker interface. #1661 Change 8c removed
+// its only method (CreateWorkflowInline) -- syncWorkflowCRD computes/patches
+// everything locally with zero DS round-trips. The DSWorkflow field is kept
+// (rather than removed outright) to avoid an unrelated, high-blast-radius
+// signature change across every test call site and cmd/authwebhook/main.go
+// in this REFACTOR pass; full removal is deferred to Phase 55.
+type WorkflowDSClient interface{}
 
-// ActionTypeDSClient abstracts the DS action type operations needed by the startup reconciler.
-type ActionTypeDSClient interface {
-	CreateActionType(ctx context.Context, name string, description ogenclient.ActionTypeDescription, registeredBy string) (*ActionTypeRegistrationResult, error)
-}
-
-// StartupReconciler lists all ActionType and RemediationWorkflow CRDs at startup
-// and syncs them with DataStorage. It implements manager.Runnable so that the
-// controller manager blocks readiness until the reconciliation completes.
+// StartupReconciler lists all ActionType and RemediationWorkflow CRDs at
+// startup and stamps both from a pure local computation with zero DS
+// involvement (#1661 Change 8c for RemediationWorkflow, Change 8d for
+// ActionType). It implements manager.Runnable so that the controller
+// manager blocks readiness until the reconciliation completes.
+//
+// #1661 Phase 55c: ActionTypeDSClient (the vestigial marker interface that
+// used to back a DSActionType field here) was removed once DS's ActionType
+// REST endpoints were deleted (DD-WORKFLOW-018) -- syncActionTypeCRD has
+// computed/patched everything locally with zero DS round-trips since Change
+// 8d; WorkflowDSClient/DSWorkflow remain pending the equivalent RW-side
+// handler removal (Phase B).
 //
 // Issue #548: Ensures PVC-wipe resilience by re-registering CRDs on startup.
 // Issue #1246: Graceful degradation — individual RW failures don't crash the pod.
-// Ordering: ActionType CRDs are synced first, then RemediationWorkflow CRDs,
-// because workflows reference action types.
 type StartupReconciler struct {
 	K8sClient      client.Client
 	DSWorkflow     WorkflowDSClient
-	DSActionType   ActionTypeDSClient
 	Logger         logr.Logger
 	Timeout        time.Duration
 	InitialBackoff time.Duration
@@ -75,19 +80,13 @@ func (r *StartupReconciler) NeedLeaderElection() bool {
 func (r *StartupReconciler) Start(ctx context.Context) error {
 	logger := r.Logger.WithName("startup-reconciler")
 
-	if r.InitialBackoff == 0 {
-		r.InitialBackoff = 500 * time.Millisecond
-	}
-
-	deadline := time.Now().Add(r.Timeout)
-
 	// Phase 1: Sync ActionType CRDs (must complete before workflows)
-	if err := r.syncActionTypes(ctx, logger, deadline); err != nil {
+	if err := r.syncActionTypes(ctx, logger); err != nil {
 		return fmt.Errorf("startup reconciliation failed (ActionTypes): %w", err)
 	}
 
 	// Phase 2: Sync RemediationWorkflow CRDs
-	if err := r.syncWorkflows(ctx, logger, deadline); err != nil {
+	if err := r.syncWorkflows(ctx, logger); err != nil {
 		return fmt.Errorf("startup reconciliation failed (Workflows): %w", err)
 	}
 
@@ -95,7 +94,7 @@ func (r *StartupReconciler) Start(ctx context.Context) error {
 	return nil
 }
 
-func (r *StartupReconciler) syncActionTypes(ctx context.Context, logger logr.Logger, deadline time.Time) error {
+func (r *StartupReconciler) syncActionTypes(ctx context.Context, logger logr.Logger) error {
 	var atList atv1alpha1.ActionTypeList
 	if err := r.K8sClient.List(ctx, &atList); err != nil {
 		return fmt.Errorf("failed to list ActionType CRDs: %w", err)
@@ -106,59 +105,61 @@ func (r *StartupReconciler) syncActionTypes(ctx context.Context, logger logr.Log
 		return nil
 	}
 
-	logger.Info("Syncing ActionType CRDs with DS", "count", len(atList.Items))
+	logger.Info("Syncing ActionType CRDs", "count", len(atList.Items))
 
+	var succeeded, failed int
 	for i := range atList.Items {
 		at := &atList.Items[i]
-		if err := r.syncActionTypeCRD(ctx, logger, at, deadline); err != nil {
-			return err
+		if err := r.syncActionTypeCRD(ctx, logger, at); err != nil {
+			failed++
+		} else {
+			succeeded++
 		}
+	}
+
+	if failed > 0 {
+		logger.Error(fmt.Errorf("%d action type(s) failed registration", failed),
+			"Startup reconciliation completed with degraded action types",
+			"succeeded", succeeded, "failed", failed)
 	}
 	return nil
 }
 
-func (r *StartupReconciler) syncActionTypeCRD(ctx context.Context, logger logr.Logger, at *atv1alpha1.ActionType, deadline time.Time) error {
+// syncActionTypeCRD stamps .status.registered/.status.catalogStatus from a
+// pure local computation -- #1661 Change 8d removed the DS round-trip (and
+// the deadline/backoff/retry machinery that only existed to survive DS
+// being transiently unavailable) entirely, mirroring syncWorkflowCRD's
+// Change 8c precedent above. The only remaining failure mode is a transient
+// K8s API error on Get/Update, handled by RetryOnConflict.
+func (r *StartupReconciler) syncActionTypeCRD(ctx context.Context, logger logr.Logger, at *atv1alpha1.ActionType) error {
 	atLogger := logger.WithValues("actiontype", at.Spec.Name)
-	desc := ogenclient.ActionTypeDescription{
-		What:      at.Spec.Description.What,
-		WhenToUse: at.Spec.Description.WhenToUse,
+
+	key := client.ObjectKeyFromObject(at)
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		fresh := &atv1alpha1.ActionType{}
+		if getErr := r.K8sClient.Get(ctx, key, fresh); getErr != nil {
+			return getErr
+		}
+
+		now := metav1.Now()
+		fresh.Status.Registered = true
+		fresh.Status.CatalogStatus = sharedtypes.CatalogStatusActive
+		fresh.Status.RegisteredBy = startupRegisteredBy
+		fresh.Status.RegisteredAt = &now
+		fresh.Status.PreviouslyExisted = false
+
+		return r.K8sClient.Status().Update(ctx, fresh)
+	})
+	if err != nil {
+		atLogger.Error(err, "Failed to update ActionType CRD status after retries")
+		return err
 	}
-	desc.WhenNotToUse.SetTo(at.Spec.Description.WhenNotToUse)
-	desc.Preconditions.SetTo(at.Spec.Description.Preconditions)
 
-	backoff := r.InitialBackoff
-	for {
-		result, err := r.DSActionType.CreateActionType(ctx, at.Spec.Name, desc, startupRegisteredBy)
-		if err == nil {
-			atLogger.Info("ActionType synced with DS", "status", result.Status)
-
-			at.Status.Registered = true
-			at.Status.CatalogStatus = sharedtypes.CatalogStatusActive
-			at.Status.RegisteredBy = startupRegisteredBy
-			now := metav1.Now()
-			at.Status.RegisteredAt = &now
-
-			if statusErr := r.K8sClient.Status().Update(ctx, at); statusErr != nil {
-				atLogger.Error(statusErr, "Failed to update ActionType CRD status")
-			}
-			return nil
-		}
-
-		if time.Now().Add(backoff).After(deadline) {
-			return fmt.Errorf("DS unavailable for ActionType %q after retries: %w", at.Spec.Name, err)
-		}
-
-		atLogger.Info("DS unavailable, retrying", "backoff", backoff, "error", err)
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context cancelled while syncing ActionType %q: %w", at.Spec.Name, ctx.Err())
-		case <-time.After(backoff):
-			backoff *= 2
-		}
-	}
+	atLogger.Info("ActionType registered locally")
+	return nil
 }
 
-func (r *StartupReconciler) syncWorkflows(ctx context.Context, logger logr.Logger, deadline time.Time) error {
+func (r *StartupReconciler) syncWorkflows(ctx context.Context, logger logr.Logger) error {
 	var rwList rwv1alpha1.RemediationWorkflowList
 	if err := r.K8sClient.List(ctx, &rwList); err != nil {
 		return fmt.Errorf("failed to list RemediationWorkflow CRDs: %w", err)
@@ -169,12 +170,12 @@ func (r *StartupReconciler) syncWorkflows(ctx context.Context, logger logr.Logge
 		return nil
 	}
 
-	logger.Info("Syncing RemediationWorkflow CRDs with DS", "count", len(rwList.Items))
+	logger.Info("Syncing RemediationWorkflow CRDs", "count", len(rwList.Items))
 
 	var succeeded, failed int
 	for i := range rwList.Items {
 		rw := &rwList.Items[i]
-		if err := r.syncWorkflowCRD(ctx, logger, rw, deadline); err != nil {
+		if err := r.syncWorkflowCRD(ctx, logger, rw); err != nil {
 			failed++
 		} else {
 			succeeded++
@@ -189,56 +190,32 @@ func (r *StartupReconciler) syncWorkflows(ctx context.Context, logger logr.Logge
 	return nil
 }
 
-func (r *StartupReconciler) syncWorkflowCRD(ctx context.Context, logger logr.Logger, rw *rwv1alpha1.RemediationWorkflow, deadline time.Time) error {
+// syncWorkflowCRD stamps .status.workflowId/.status.contentHash/
+// .status.catalogStatus from a pure local computation -- #1661 Change 8c
+// removed the DS round-trip (and the deadline/backoff/retry machinery that
+// only existed to survive DS being transiently unavailable) entirely. The
+// only remaining failure mode is a malformed CRD failing to marshal, which
+// realistically cannot happen for an object that already passed
+// admission-time validation when it was created/updated.
+func (r *StartupReconciler) syncWorkflowCRD(ctx context.Context, logger logr.Logger, rw *rwv1alpha1.RemediationWorkflow) error {
 	rwLogger := logger.WithValues("workflow", rw.Name)
 
-	content, err := marshalCleanCRDContent(rw)
+	content, err := contenthash.MarshalCleanCRDContent(rw)
 	if err != nil {
 		r.markWorkflowFailed(ctx, rwLogger, rw, rwv1alpha1.ReasonValidationFailed,
 			fmt.Sprintf("failed to marshal workflow: %v", err))
 		return err
 	}
 
-	backoff := r.InitialBackoff
-	for {
-		result, err := r.DSWorkflow.CreateWorkflowInline(ctx, string(content), rw.Name, startupRegisteredBy)
-		if err == nil {
-			rwLogger.Info("Workflow synced with DS",
-				"workflow_id", result.WorkflowID,
-				"status", result.Status,
-				"previously_existed", result.PreviouslyExisted,
-			)
-			r.markWorkflowSucceeded(ctx, rwLogger, rw, result)
-			return nil
-		}
+	contentHash := contenthash.ComputeContentHash(string(content))
+	workflowID := contenthash.DeterministicUUID(contentHash)
 
-		if IsPermanentError(err) {
-			rwLogger.Error(err, "Workflow registration permanently failed — marking as Disabled",
-				"remediation", "fix the referenced dependency and re-apply the RW CR")
-			r.markWorkflowFailed(ctx, rwLogger, rw, rwv1alpha1.ReasonDependencyMissing, err.Error())
-			return err
-		}
-
-		if time.Now().Add(backoff).After(deadline) {
-			rwLogger.Error(err, "DS unavailable for workflow after retries — marking as Disabled",
-				"remediation", "ensure DataStorage is reachable and re-apply the RW CR")
-			r.markWorkflowFailed(ctx, rwLogger, rw, rwv1alpha1.ReasonDataStorageError,
-				fmt.Sprintf("DS unavailable after retries: %v", err))
-			return err
-		}
-
-		rwLogger.Info("DS unavailable, retrying", "backoff", backoff, "error", err)
-		select {
-		case <-ctx.Done():
-			r.markWorkflowFailed(ctx, rwLogger, rw, rwv1alpha1.ReasonDataStorageError, "context cancelled")
-			return fmt.Errorf("context cancelled while syncing Workflow %q: %w", rw.Name, ctx.Err())
-		case <-time.After(backoff):
-			backoff *= 2
-		}
-	}
+	rwLogger.Info("Workflow synced locally", "workflow_id", workflowID)
+	r.markWorkflowSucceeded(ctx, rwLogger, rw, workflowID, contentHash)
+	return nil
 }
 
-func (r *StartupReconciler) markWorkflowSucceeded(ctx context.Context, logger logr.Logger, rw *rwv1alpha1.RemediationWorkflow, result *WorkflowRegistrationResult) {
+func (r *StartupReconciler) markWorkflowSucceeded(ctx context.Context, logger logr.Logger, rw *rwv1alpha1.RemediationWorkflow, workflowID, contentHash string) {
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		fresh := &rwv1alpha1.RemediationWorkflow{}
 		if getErr := r.K8sClient.Get(ctx, client.ObjectKeyFromObject(rw), fresh); getErr != nil {
@@ -246,16 +223,17 @@ func (r *StartupReconciler) markWorkflowSucceeded(ctx context.Context, logger lo
 		}
 
 		now := metav1.Now()
-		fresh.Status.WorkflowID = result.WorkflowID
-		fresh.Status.CatalogStatus = sharedtypes.CatalogStatus(result.Status)
+		fresh.Status.WorkflowID = workflowID
+		fresh.Status.ContentHash = contentHash
+		fresh.Status.CatalogStatus = sharedtypes.CatalogStatusActive
 		fresh.Status.RegisteredBy = startupRegisteredBy
 		fresh.Status.RegisteredAt = &now
-		fresh.Status.PreviouslyExisted = result.PreviouslyExisted
+		fresh.Status.PreviouslyExisted = false
 		setCondition(&fresh.Status.Conditions, metav1.Condition{
 			Type:               rwv1alpha1.ConditionReady,
 			Status:             metav1.ConditionTrue,
 			Reason:             rwv1alpha1.ReasonRegistered,
-			Message:            "Workflow registered successfully in DataStorage catalog",
+			Message:            "Workflow registered successfully",
 			LastTransitionTime: now,
 		})
 		return r.K8sClient.Status().Update(ctx, fresh)

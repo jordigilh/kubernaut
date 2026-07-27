@@ -82,7 +82,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 	// ========================================
 	It("UT-RO-ET-001: should set EffectivenessAssessed=True when EA completes", func() {
 		rrName := "rr-et-001"
-		namespace := "test-ns"
+		namespace := testNs
 		eaName := "ea-" + rrName
 
 		// Create terminal RR with EA ref
@@ -131,7 +131,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 	// ========================================
 	It("UT-RO-ET-002: should set EffectivenessAssessed=False when EA fails", func() {
 		rrName := "rr-et-002"
-		namespace := "test-ns"
+		namespace := testNs
 		eaName := "ea-" + rrName
 
 		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseCompleted)
@@ -177,7 +177,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 	// ========================================
 	It("UT-RO-ET-003: should not set condition when EA is still Pending", func() {
 		rrName := "rr-et-003"
-		namespace := "test-ns"
+		namespace := testNs
 		eaName := "ea-" + rrName
 
 		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseCompleted)
@@ -219,7 +219,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 	// ========================================
 	It("UT-RO-ET-004: should not set condition when no EA ref exists", func() {
 		rrName := "rr-et-004"
-		namespace := "test-ns"
+		namespace := testNs
 
 		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseCompleted)
 		// No EffectivenessAssessmentRef set
@@ -245,7 +245,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 	// ========================================
 	It("UT-RO-ET-005: should be idempotent when condition already set", func() {
 		rrName := "rr-et-005"
-		namespace := "test-ns"
+		namespace := testNs
 		eaName := "ea-" + rrName
 
 		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseCompleted)
@@ -300,7 +300,7 @@ var _ = Describe("Effectiveness Assessment Tracking (ADR-EM-001, GAP-RO-2)", fun
 	// ========================================
 	It("UT-RO-ET-006: should set Reason=AssessmentExpired when EA completes with reason=expired", func() {
 		rrName := "rr-et-006"
-		namespace := "test-ns"
+		namespace := testNs
 		eaName := "ea-" + rrName
 
 		rr := newRemediationRequest(rrName, namespace, remediationv1.PhaseCompleted)

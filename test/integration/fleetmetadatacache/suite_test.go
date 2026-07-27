@@ -17,6 +17,7 @@ limitations under the License.
 package fleetmetadatacache_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,15 +60,17 @@ var (
 )
 
 var _ = SynchronizedBeforeSuite(func() []byte {
+	ctx := context.Background()
+
 	By("Starting Valkey container for FMC IT")
 	cfg := infrastructure.RedisConfig{
 		ContainerName: fmcRedisContainerName,
 		Port:          fmcRedisPort,
 	}
-	infrastructure.CleanupContainers([]string{fmcRedisContainerName}, GinkgoWriter)
-	Expect(infrastructure.StartRedis(cfg, GinkgoWriter)).To(Succeed(),
+	infrastructure.CleanupContainers(ctx, []string{fmcRedisContainerName}, GinkgoWriter)
+	Expect(infrastructure.StartRedis(ctx, cfg, GinkgoWriter)).To(Succeed(),
 		"Failed to start Valkey container")
-	Expect(infrastructure.WaitForRedisReady(fmcRedisContainerName, GinkgoWriter)).To(Succeed(),
+	Expect(infrastructure.WaitForRedisReady(ctx, fmcRedisContainerName, GinkgoWriter)).To(Succeed(),
 		"Valkey failed to become ready")
 
 	By("Starting envtest with Backend CRD (Envoy AI Gateway)")
@@ -100,7 +103,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 	GinkgoWriter.Printf("container kubeconfig: %s\n", containerKubeconfigPath)
 
 	By("Starting kube-mcp-server containers (table + yaml, host network)")
-	infrastructure.CleanupContainers([]string{kmcpTableContainerName, kmcpYAMLContainerName}, GinkgoWriter)
+	infrastructure.CleanupContainers(ctx, []string{kmcpTableContainerName, kmcpYAMLContainerName}, GinkgoWriter)
 
 	tableURL, yamlURL, startErr := startKMCPServerContainers(containerKubeconfigPath)
 	if startErr != nil {
@@ -146,7 +149,7 @@ var _ = SynchronizedAfterSuite(func() {}, func() {
 		Expect(testEnv.Stop()).To(Succeed())
 	}
 	By("Stopping Valkey and kube-mcp-server containers")
-	infrastructure.CleanupContainers([]string{
+	infrastructure.CleanupContainers(context.Background(), []string{
 		fmcRedisContainerName,
 		kmcpTableContainerName,
 		kmcpYAMLContainerName,

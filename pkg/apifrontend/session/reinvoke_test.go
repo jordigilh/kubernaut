@@ -13,6 +13,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	agent = "agent"
+)
+
 var _ = Describe("Re-invocation Fallback", func() {
 	ctx := context.Background()
 	inmem := adksession.InMemoryService()
@@ -38,14 +43,14 @@ var _ = Describe("Re-invocation Fallback", func() {
 
 	textEvent := func() *adksession.Event {
 		evt := adksession.NewEvent("inv-1")
-		evt.Author = "agent"
+		evt.Author = agent
 		evt.Content = genai.NewContentFromText("analysis complete", genai.RoleModel)
 		return evt
 	}
 
 	toolCallEvent := func() *adksession.Event {
 		evt := adksession.NewEvent("inv-1")
-		evt.Author = "agent"
+		evt.Author = agent
 		evt.Content = &genai.Content{
 			Role: string(genai.RoleModel),
 			Parts: []*genai.Part{

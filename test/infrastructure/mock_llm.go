@@ -108,14 +108,10 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 
 	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
 	// this service under the agreed-upon fixed tag (artifact-based CI mode,
-	// no registry involved). Mirrors StartGenericContainer's equivalent
-	// check (container_management.go).
-	if artifactTag := os.Getenv("KUBERNAUT_CI_ARTIFACT_TAG"); artifactTag != "" {
-		prebuiltImage := fmt.Sprintf("localhost/mock-llm:%s", artifactTag)
-		if checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", prebuiltImage); checkCmd.Run() == nil {
-			_, _ = fmt.Fprintf(writer, "   ✅ Using CI-prebuilt artifact: %s\n", prebuiltImage)
-			return prebuiltImage, nil
-		}
+	// no registry involved). Delegates to resolvePrebuiltCIArtifact
+	// (e2e_images.go); see #1738.
+	if prebuilt, ok := resolvePrebuiltCIArtifact(ctx, "mock-llm", writer); ok {
+		return prebuilt, nil
 	}
 
 	// DEBUG: Show environment variable status
@@ -125,10 +121,7 @@ func BuildMockLLMImage(ctx context.Context, serviceName string, writer io.Writer
 
 	// CI/CD Optimization: Try to pull from registry if configured
 	// Note: We try to pull with the unique image name, then tag as base for consistency
-	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "mock-llm", uniqueImageName, writer); pulled {
-		if err != nil {
-			return "", err // Tag failed after successful pull
-		}
+	if pulledImageName, pulled := tryPullFromRegistry(ctx, "mock-llm", writer); pulled {
 		// Also tag as base image for cache consistency
 		tagBaseCmd := exec.CommandContext(ctx, "podman", "tag", pulledImageName, baseImageName)
 		_ = tagBaseCmd.Run()        // Ignore errors (not critical)
@@ -329,7 +322,11 @@ func WaitForMockLLMHealthy(ctx context.Context, port int, writer io.Writer) erro
 		default:
 		}
 
-		resp, err := http.Get(healthURL)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL, http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build Mock LLM health request: %w", reqErr)
+		}
+		resp, err := http.DefaultClient.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			_, _ = fmt.Fprintf(writer, "✅ Mock LLM health check passed (attempt %d/%d)\n", i+1, maxRetries)
@@ -369,6 +366,10 @@ func StopMockLLMContainer(ctx context.Context, config MockLLMConfig, writer io.W
 	output, err := checkCmd.Output()
 	if err != nil || len(output) == 0 || string(output) == "\n" {
 		_, _ = fmt.Fprintf(writer, "ℹ️  Mock LLM container does not exist, nothing to stop\n")
+		// nolint:nilerr // intentional: idempotent cleanup per the DD-TEST-002
+		// doc comment above -- a podman-ps failure (or empty output) means
+		// "already stopped", not a teardown error; already surfaced to the
+		// writer above (Issue #1546 Tier 3).
 		return nil
 	}
 

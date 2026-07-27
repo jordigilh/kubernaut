@@ -7,13 +7,14 @@ Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Na
    kubectl get pods -n {{ .Release.Namespace }}
 
 2. Verify LLM credentials secret exists:
+{{- $kaNotesProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
 
-   kubectl get secret {{ .Values.kubernautAgent.llm.credentialsSecretName }} -n {{ .Release.Namespace }}
+   kubectl get secret {{ $kaNotesProfile.credentialsSecretName }} -n {{ .Release.Namespace }}
 
    If missing, create it with your LLM provider API key:
 
-   kubectl create secret generic {{ .Values.kubernautAgent.llm.credentialsSecretName }} \
-     --from-literal=OPENAI_API_KEY=sk-... \
+   kubectl create secret generic {{ $kaNotesProfile.credentialsSecretName }} \
+     --from-literal=api_key=sk-... \
      -n {{ .Release.Namespace }}
 
    Then restart the Kubernaut Agent to pick it up:

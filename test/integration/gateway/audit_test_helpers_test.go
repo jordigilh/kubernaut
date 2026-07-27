@@ -48,7 +48,7 @@ import (
 // createOgenClient returns the authenticated OpenAPI client for audit queries.
 // DD-AUTH-014: Uses suite-level authenticated client instead of creating unauthenticated client.
 //
-// DEPRECATED: This function is kept for backward compatibility but now returns sharedOgenClient.
+// Deprecated: This function is kept for backward compatibility but now returns sharedOgenClient.
 // New tests should use sharedOgenClient directly instead of calling this function.
 func createOgenClient() (*ogenclient.Client, error) {
 	// Return the suite-level authenticated client (created in SynchronizedBeforeSuite Phase 2)

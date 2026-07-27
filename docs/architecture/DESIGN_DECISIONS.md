@@ -93,9 +93,10 @@
 | DD-HOLMESGPT-013 | Vendor Local SDK Copy | ✅ Approved | [Date] | [DD-HOLMESGPT-013-Vendor-Local-SDK-Copy.md](decisions/DD-HOLMESGPT-013-Vendor-Local-SDK-Copy.md) |
 | DD-HOLMESGPT-014 | MinimalDAL Stateless Architecture | ✅ Approved | [Date] | [DD-HOLMESGPT-014-MinimalDAL-Stateless-Architecture.md](decisions/DD-HOLMESGPT-014-MinimalDAL-Stateless-Architecture.md) |
 | DD-HAPI-001 | Custom Labels Auto-Append Architecture | ✅ Approved | 2025-11-30 | [DD-HAPI-001-custom-labels-auto-append.md](decisions/DD-HAPI-001-custom-labels-auto-append.md) |
-| DD-HAPI-002 | Workflow Parameter Validation Architecture | ✅ Approved | 2025-12-01 | [DD-HAPI-002-workflow-parameter-validation.md](decisions/DD-HAPI-002-workflow-parameter-validation.md) |
+| DD-HAPI-002 | Workflow Parameter Validation Architecture | ⚠️ Superseded by DD-KA-001 | 2025-12-01 | [DD-HAPI-002-workflow-parameter-validation.md](decisions/DD-HAPI-002-workflow-parameter-validation.md) |
 | DD-HAPI-003 | Mandatory OpenAPI Client Usage | ✅ Approved | 2025-12-29 | [DD-HAPI-003-mandatory-openapi-client-usage.md](decisions/DD-HAPI-003-mandatory-openapi-client-usage.md) |
 | DD-HAPI-005 | Python OpenAPI Client Auto-Regeneration Pattern | ✅ Approved | 2025-12-29 | [DD-HAPI-005-python-openapi-client-regeneration.md](decisions/DD-HAPI-005-python-openapi-client-regeneration.md) |
+| DD-KA-001 | Workflow Response Validation Architecture (supersedes DD-HAPI-002; collapses to one validation layer) | ✅ Approved | 2026-07-14 | [DD-KA-001-workflow-response-validation-architecture.md](decisions/DD-KA-001-workflow-response-validation-architecture.md) |
 | DD-EMBEDDING-001 | Embedding Service as MCP Playbook Catalog Server (Python Microservice) | ✅ Approved | 2025-11-14 | [DD-EMBEDDING-001-embedding-service-implementation.md](decisions/DD-EMBEDDING-001-embedding-service-implementation.md) |
 | DD-PLAYBOOK-001 | Mandatory Playbook Label Schema (7 Labels) | ✅ Approved | 2025-11-14 | [DD-PLAYBOOK-001-mandatory-label-schema.md](decisions/DD-PLAYBOOK-001-mandatory-label-schema.md) |
 | DD-PLAYBOOK-002 | MCP Playbook Catalog Architecture | ✅ Approved | 2025-11-14 | [DD-PLAYBOOK-002-MCP-PLAYBOOK-CATALOG-ARCHITECTURE.md](decisions/DD-PLAYBOOK-002-MCP-PLAYBOOK-CATALOG-ARCHITECTURE.md) |
@@ -114,6 +115,7 @@
 | DD-AUTH-005 | DataStorage Client Authentication Pattern (Authoritative) | ✅ Approved | 2026-01-07 | [DD-AUTH-005-datastorage-client-authentication-pattern.md](decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md) |
 | DD-FLEET-002 | Cluster-Scoped Workflow Targeting via Rego Policy Classification | ✅ Approved | 2026-06-28 | [DD-FLEET-002-cluster-scoped-workflow-targeting.md](decisions/DD-FLEET-002-cluster-scoped-workflow-targeting.md) |
 | DD-FLEET-003 | Full Federation Validation (`ValidateFullFederation`, GW/RO dual-capability requirement) | ✅ Approved & Implemented | 2026-07-04 | [DD-FLEET-003-full-federation-validation.md](decisions/DD-FLEET-003-full-federation-validation.md) |
+| DD-FLEET-004 | Cluster-Transparent Tool Exposure for KA's RCA Investigation (server-side pre-scope, name-transparent aliasing, no LLM-facing cluster discovery) | ✅ Approved (design) | 2026-07-25 | [DD-FLEET-004-cluster-transparent-tool-exposure.md](decisions/DD-FLEET-004-cluster-transparent-tool-exposure.md) |
 | DD-AUDIT-008 | Audit Event Builder Registry Pattern (buildEventData decomposition) | ✅ Approved & Implemented | 2026-07-01 | [DD-AUDIT-008-audit-event-builder-registry-pattern.md](decisions/DD-AUDIT-008-audit-event-builder-registry-pattern.md) |
 | DD-TEST-014 | Fleet E2E Remote-Cluster-Only Topology (`AllRegistrationsRemote`, Keycloak adoption, `remote-cluster` rename) | ✅ Approved & Implemented | 2026-07-04 | [DD-TEST-014-fleet-e2e-remote-cluster-only-topology.md](decisions/DD-TEST-014-fleet-e2e-remote-cluster-only-topology.md) |
 | DD-LLM-004 | Remove langchaingo, Generalize Anthropic-Family Client, Extract Shared OpenAI-Compatible Core | 📋 Proposed | 2026-07-06 | [DD-LLM-004-langchaingo-removal-generalized-clients.md](decisions/DD-LLM-004-langchaingo-removal-generalized-clients.md) |
@@ -121,6 +123,7 @@
 | DD-LLM-006 | AWS Bedrock Provider Support via Dual-Client Routing | 📋 Proposed | 2026-07-06 | [DD-LLM-006-bedrock-dual-client-routing.md](decisions/DD-LLM-006-bedrock-dual-client-routing.md) |
 | DD-LLM-007 | AF and KA Intentionally Do Not Share an Anthropic Client | ✅ Approved | 2026-07-06 | [DD-LLM-007-af-ka-anthropic-client-divergence.md](decisions/DD-LLM-007-af-ka-anthropic-client-divergence.md) |
 | DD-LLM-008 | LLM Identity (Provider+Model) Requires a Restart to Change | ✅ Approved & Implemented | 2026-07-06 | [DD-LLM-008-restart-required-llm-identity-lock.md](decisions/DD-LLM-008-restart-required-llm-identity-lock.md) |
+| DD-FLEET-004 | FMC's Readiness Ping Targets `ClustersPath`, Not a Duplicated `/healthz` | ✅ Approved & Implemented | 2026-07-24 | [DD-FLEET-004-fmc-ping-clusters-endpoint.md](decisions/DD-FLEET-004-fmc-ping-clusters-endpoint.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 
@@ -131,12 +134,12 @@
 | ID | Proposal | Status | Date | File |
 |---|---|---|---|---|
 | PROPOSAL-EXT-001 | External Integration Strategy (MCP, A2A, API Frontend) | 📋 Under Review | 2026-04-15 | [PROPOSAL-EXT-001-external-integration-strategy.md](proposals/PROPOSAL-EXT-001-external-integration-strategy.md) |
-| PROPOSAL-EXT-002 | Investigation Prompt Bundles (OCI-packaged prompts and skills) | 📋 Under Review | 2026-04-15 | [PROPOSAL-EXT-002-investigation-prompt-bundles.md](proposals/PROPOSAL-EXT-002-investigation-prompt-bundles.md) |
-| PROPOSAL-EXT-003 | Goose Runtime Evaluation and Phased Adoption (ACP Go SDK, 6-phase pipeline, KA-as-compiler) | ❌ Superseded | 2026-04-15 | [PROPOSAL-EXT-003-goose-runtime-evaluation.md](proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) |
-| PROPOSAL-EXT-004 | Goose Recipes as AgenticWorkflow Runtime (pluggable multi-runtime model) | 📋 Draft | 2026-05-19 | [PROPOSAL-EXT-004-goose-recipes.md](proposals/PROPOSAL-EXT-004-goose-recipes.md) |
-| PROPOSAL-EXT-005 | Oracle Agent Spec (PyAgentSpec + LangGraph) as AgenticWorkflow Runtime | 📋 Draft | 2026-05-19 | [PROPOSAL-EXT-005-oracle-agent-spec.md](proposals/PROPOSAL-EXT-005-oracle-agent-spec.md) |
-| PROPOSAL-EXT-006 | LangChain Deep Agents as AgenticWorkflow Runtime (specialist investigations) | 📋 Draft | 2026-05-19 | [PROPOSAL-EXT-006-deep-agents.md](proposals/PROPOSAL-EXT-006-deep-agents.md) |
-| PROPOSAL-EXT-007 | Pre-Investigation AgenticWorkflow Pipeline in SP (adaptive triage, multi-domain correlation) | 📋 Draft | 2026-05-23 | [PROPOSAL-EXT-007-pre-investigation-pipeline.md](proposals/PROPOSAL-EXT-007-pre-investigation-pipeline.md) |
+| PROPOSAL-EXT-002 | Investigation Prompt Bundles (OCI-packaged prompts and skills) | ❌ Superseded by [#883](https://github.com/jordigilh/kubernaut/issues/883) (closed) / [#1536](https://github.com/jordigilh/kubernaut/issues/1536) | 2026-04-15 | [PROPOSAL-EXT-002-investigation-prompt-bundles.md](proposals/PROPOSAL-EXT-002-investigation-prompt-bundles.md) |
+| PROPOSAL-EXT-003 | Goose Runtime Evaluation and Phased Adoption (ACP Go SDK, 6-phase pipeline, KA-as-compiler) | ❌ Superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536) — security model extracted to [ADR-KA-002](decisions/ADR-KA-002-agent-security-defense-in-depth.md) | 2026-04-15 | [PROPOSAL-EXT-003-goose-runtime-evaluation.md](proposals/PROPOSAL-EXT-003-goose-runtime-evaluation.md) |
+| PROPOSAL-EXT-004 | Goose Recipes as AgenticWorkflow Runtime (pluggable multi-runtime model) | ❌ Superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536) | 2026-05-19 | [PROPOSAL-EXT-004-goose-recipes.md](proposals/PROPOSAL-EXT-004-goose-recipes.md) |
+| PROPOSAL-EXT-005 | Oracle Agent Spec (PyAgentSpec + LangGraph) as AgenticWorkflow Runtime | ❌ Superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536) | 2026-05-19 | [PROPOSAL-EXT-005-oracle-agent-spec.md](proposals/PROPOSAL-EXT-005-oracle-agent-spec.md) |
+| PROPOSAL-EXT-006 | LangChain Deep Agents as AgenticWorkflow Runtime (specialist investigations) | ❌ Superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536) | 2026-05-19 | [PROPOSAL-EXT-006-deep-agents.md](proposals/PROPOSAL-EXT-006-deep-agents.md) |
+| PROPOSAL-EXT-007 | Pre-Investigation AgenticWorkflow Pipeline in SP (adaptive triage, multi-domain correlation) | ❌ Rejected — routing already owned by Gateway/AF (`TargetType`/`SignalSource`) + Rego; cross-domain RCA is investigation work, not a new SP-owned agent tier | 2026-05-23 | [PROPOSAL-EXT-007-pre-investigation-pipeline.md](proposals/PROPOSAL-EXT-007-pre-investigation-pipeline.md) |
 
 ---
 

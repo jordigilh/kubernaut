@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -48,7 +48,7 @@ var _ = Describe("Per-Scenario ForceText Override (BR-TESTING-657)", func() {
 			server := httptest.NewServer(router)
 			defer server.Close()
 
-			body := toolCallChatRequest("- Signal Name: OOMKilled\n- Namespace: default",
+			body := toolCallChatRequest(
 				[]string{"search_workflow_catalog"})
 			resp, err := http.Post(server.URL+"/v1/chat/completions", "application/json", body)
 			Expect(err).NotTo(HaveOccurred())
@@ -79,7 +79,7 @@ var _ = Describe("Per-Scenario ForceText Override (BR-TESTING-657)", func() {
 			server := httptest.NewServer(router)
 			defer server.Close()
 
-			body := toolCallChatRequest("- Signal Name: OOMKilled\n- Namespace: default",
+			body := toolCallChatRequest(
 				[]string{"search_workflow_catalog"})
 			resp, err := http.Post(server.URL+"/v1/chat/completions", "application/json", body)
 			Expect(err).NotTo(HaveOccurred())
@@ -110,7 +110,7 @@ var _ = Describe("Per-Scenario ForceText Override (BR-TESTING-657)", func() {
 			server := httptest.NewServer(router)
 			defer server.Close()
 
-			body := toolCallChatRequest("- Signal Name: OOMKilled\n- Namespace: default",
+			body := toolCallChatRequest(
 				[]string{"search_workflow_catalog"})
 			resp, err := http.Post(server.URL+"/v1/chat/completions", "application/json", body)
 			Expect(err).NotTo(HaveOccurred())
@@ -152,7 +152,7 @@ var _ = Describe("Custom Tool Call Handler Bypass (BR-TESTING-657)", func() {
 			server := httptest.NewServer(router)
 			defer server.Close()
 
-			body := toolCallChatRequest("- Signal Name: OOMKilled\n- Namespace: default",
+			body := toolCallChatRequest(
 				[]string{"kubectl_get_yaml", "search_workflow_catalog"})
 			resp, err := http.Post(server.URL+"/v1/chat/completions", "application/json", body)
 			Expect(err).NotTo(HaveOccurred())
@@ -253,7 +253,7 @@ var _ = Describe("Custom Tool Call Handler Bypass (BR-TESTING-657)", func() {
 			server := httptest.NewServer(router)
 			defer server.Close()
 
-			body := toolCallChatRequest("- Signal Name: OOMKilled\n- Namespace: default",
+			body := toolCallChatRequest(
 				[]string{"search_workflow_catalog"})
 			resp, err := http.Post(server.URL+"/v1/chat/completions", "application/json", body)
 			Expect(err).NotTo(HaveOccurred())
@@ -269,11 +269,11 @@ var _ = Describe("Custom Tool Call Handler Bypass (BR-TESTING-657)", func() {
 	})
 })
 
-func toolCallChatRequest(content string, toolNames []string) *bytes.Buffer {
+func toolCallChatRequest(toolNames []string) *bytes.Buffer {
 	req := map[string]interface{}{
 		"model": "mock-model",
 		"messages": []map[string]string{
-			{"role": "user", "content": content},
+			{"role": "user", "content": "- Signal Name: OOMKilled\n- Namespace: default"},
 		},
 	}
 	if len(toolNames) > 0 {

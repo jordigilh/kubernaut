@@ -23,6 +23,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	notADuration = "not-a-duration"
+)
+
 // ========================================
 // Config.Validate() production security + input validation gap closure
 // (GO-ANTIPATTERN-AUDIT-2026-07-01, Phase 4.0 — coverage gate ahead of
@@ -166,7 +171,7 @@ var _ = Describe("Config.Validate() — production security enforcement and inpu
 	Describe("SI-10: Information Input Validation — malformed durations fail fast at startup", func() {
 		It("UT-DS-CFG-009: rejects an invalid server readTimeout instead of the server starting with an unparseable timeout", func() {
 			cfg := validSecureConfig()
-			cfg.Server.ReadTimeout = "not-a-duration"
+			cfg.Server.ReadTimeout = notADuration
 
 			err := cfg.Validate()
 
@@ -176,7 +181,7 @@ var _ = Describe("Config.Validate() — production security enforcement and inpu
 
 		It("UT-DS-CFG-010: rejects an invalid server writeTimeout instead of the server starting with an unparseable timeout", func() {
 			cfg := validSecureConfig()
-			cfg.Server.WriteTimeout = "not-a-duration"
+			cfg.Server.WriteTimeout = notADuration
 
 			err := cfg.Validate()
 
@@ -186,7 +191,7 @@ var _ = Describe("Config.Validate() — production security enforcement and inpu
 
 		It("UT-DS-CFG-011: rejects an invalid database connMaxLifetime instead of silently disabling connection recycling", func() {
 			cfg := validSecureConfig()
-			cfg.Database.ConnMaxLifetime = "not-a-duration"
+			cfg.Database.ConnMaxLifetime = notADuration
 
 			err := cfg.Validate()
 
@@ -196,7 +201,7 @@ var _ = Describe("Config.Validate() — production security enforcement and inpu
 
 		It("UT-DS-CFG-012: rejects an invalid database connMaxIdleTime instead of silently disabling idle-connection recycling", func() {
 			cfg := validSecureConfig()
-			cfg.Database.ConnMaxIdleTime = "not-a-duration"
+			cfg.Database.ConnMaxIdleTime = notADuration
 
 			err := cfg.Validate()
 
@@ -206,7 +211,7 @@ var _ = Describe("Config.Validate() — production security enforcement and inpu
 
 		It("UT-DS-CFG-013: rejects an invalid server shutdownTimeout instead of the operator's drain budget silently defaulting at runtime", func() {
 			cfg := validSecureConfig()
-			cfg.Server.ShutdownTimeout = "not-a-duration"
+			cfg.Server.ShutdownTimeout = notADuration
 
 			err := cfg.Validate()
 
@@ -216,7 +221,7 @@ var _ = Describe("Config.Validate() — production security enforcement and inpu
 
 		It("UT-DS-CFG-014: rejects an invalid server endpointPropagationDelay instead of silently defaulting the K8s endpoint-removal wait", func() {
 			cfg := validSecureConfig()
-			cfg.Server.EndpointPropagationDelay = "not-a-duration"
+			cfg.Server.EndpointPropagationDelay = notADuration
 
 			err := cfg.Validate()
 

@@ -70,6 +70,12 @@ func (s *DSAuditStore) StoreAudit(ctx context.Context, event *AuditEvent) error 
 	if event.ClusterID != "" {
 		req.ClusterID.SetTo(event.ClusterID)
 	}
+	if event.ResourceType != "" {
+		req.ResourceType.SetTo(event.ResourceType)
+	}
+	if event.ResourceID != "" {
+		req.ResourceID.SetTo(event.ResourceID)
+	}
 
 	if ed, ok := buildEventData(event); ok {
 		req.EventData = ed
@@ -119,6 +125,10 @@ var eventDataBuilders = map[string]eventDataBuilder{
 	EventTypeRateLimitDenied:        buildRateLimitDeniedPayload,
 	EventTypeAuthFailure:            buildAuthFailurePayload,
 	EventTypeAuthDenied:             buildAuthDeniedPayload,
+	EventTypeActionsListed:          buildActionsListedPayload,
+	EventTypeWorkflowsListed:        buildWorkflowsListedPayload,
+	EventTypeWorkflowRetrieved:      buildWorkflowRetrievedPayload,
+	EventTypeSelectionValidated:     buildSelectionValidatedPayload,
 }
 
 func buildEventData(event *AuditEvent) (ogenclient.AuditEventRequestEventData, bool) {

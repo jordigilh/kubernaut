@@ -208,7 +208,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				Namespace: ns,
 			}
 			rrName := "audit-test-rr-01"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-001"], "critical", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-001"], signalprocessingv1alpha1.SeverityCritical, targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			// Use RR name as correlation ID (production pattern)
@@ -216,7 +216,7 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 
 			By("4. Creating SignalProcessing CR with parent RR")
 			sp := CreateTestSignalProcessingWithParent("audit-test-sp-01", ns, rr, ValidTestFingerprints["audit-001"], targetResource)
-			sp.Spec.Signal.Severity = "critical"
+			sp.Spec.Signal.Severity = signalprocessingv1alpha1.SeverityCritical
 			sp.Spec.Signal.Name = "HighMemoryUsage"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
@@ -247,8 +247,8 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 			Expect(err).ToNot(HaveOccurred(), "Audit event query must succeed")
 			Expect(event).ToNot(BeNil(), "Event must exist")
 
-		By("8. Validate audit event fields")
-		Expect(string(event.EventCategory)).To(Equal(spaudit.CategorySignalProcessing), "Event category must match")
+			By("8. Validate audit event fields")
+			Expect(string(event.EventCategory)).To(Equal(spaudit.CategorySignalProcessing), "Event category must match")
 			Expect(event.EventAction).To(Equal("processed"), "Event action must match")
 			Expect(string(event.EventOutcome)).To(Equal("success"), "Event outcome must be success")
 			actorType, _ := event.ActorType.Get()
@@ -389,14 +389,14 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				Namespace: ns,
 			}
 			rrName := "audit-test-rr-06"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-006"], "critical", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-006"], signalprocessingv1alpha1.SeverityCritical, targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			correlationID := rrName
 
 			By("4. Creating SignalProcessing CR")
 			sp := CreateTestSignalProcessingWithParent("audit-test-sp-06", ns, rr, ValidTestFingerprints["audit-006"], targetResource)
-			sp.Spec.Signal.Severity = "critical"
+			sp.Spec.Signal.Severity = signalprocessingv1alpha1.SeverityCritical
 			sp.Spec.Signal.Name = "PaymentServiceDown"
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
@@ -688,14 +688,14 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				Namespace: ns,
 			}
 			rrName := "audit-test-rr-05"
-			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-005"], "critical", targetResource)
+			rr := CreateTestRemediationRequest(rrName, ns, ValidTestFingerprints["audit-005"], signalprocessingv1alpha1.SeverityCritical, targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			correlationID := rrName
 
 			By("3. Creating SignalProcessing CR with non-existent target")
 			sp := CreateTestSignalProcessingWithParent("audit-test-sp-05", ns, rr, ValidTestFingerprints["audit-005"], targetResource)
-			sp.Spec.Signal.Severity = "critical"
+			sp.Spec.Signal.Severity = signalprocessingv1alpha1.SeverityCritical
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			By("4. Wait for processing attempt to reach degraded mode or failed phase")
@@ -808,14 +808,14 @@ var _ = Describe("BR-SP-090: SignalProcessing → Data Storage Audit Integration
 				Name:      "test-pod-fatal",
 				Namespace: "non-existent-namespace-fatal", // This namespace does NOT exist
 			}
-			rr := CreateTestRemediationRequest(rrName, existingNs, ValidTestFingerprints["audit-006"], "critical", targetResource)
+			rr := CreateTestRemediationRequest(rrName, existingNs, ValidTestFingerprints["audit-006"], signalprocessingv1alpha1.SeverityCritical, targetResource)
 			Expect(k8sClient.Create(ctx, rr)).To(Succeed())
 
 			correlationID := rrName
 
 			By("2. Creating SignalProcessing CR targeting NON-EXISTENT namespace")
 			sp := CreateTestSignalProcessingWithParent("audit-test-sp-fatal-06", existingNs, rr, ValidTestFingerprints["audit-006"], targetResource)
-			sp.Spec.Signal.Severity = "critical"
+			sp.Spec.Signal.Severity = signalprocessingv1alpha1.SeverityCritical
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
 
 			By("3. Wait for enrichment to fail (namespace not found is fatal)")

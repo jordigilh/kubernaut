@@ -304,7 +304,7 @@ func (h *Handler) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(
 		}
 		return nil, errors.New("internal server error")
 	}
-	err := h.sessions.CancelInvestigation(params.SessionID)
+	err := h.sessions.CancelInvestigation(params.SessionID) //nolint:contextcheck // CancelInvestigation->terminateSession cleans up a session whose original context may already be gone
 	if err != nil {
 		if errors.Is(err, session.ErrSessionNotFound) {
 			return &agentclient.CancelSessionAPIV1IncidentSessionSessionIDCancelPostNotFound{
@@ -554,6 +554,11 @@ func (h *Handler) streamSessionEvents(ctx context.Context, sessionID string, ch 
 func (h *Handler) terminalSessionSSE(sessionID string) (agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetRes, error) {
 	sess, err := h.sessions.GetSession(sessionID)
 	if err != nil {
+		// nolint:nilerr // intentional: ogen's generated union response type
+		// makes the typed *HTTPError the encoding of a 404, not a Go error
+		// -- the caller returns this value verbatim as the endpoint's
+		// result and ogen's server dispatch encodes it as an HTTP 404
+		// (Issue #1546 Tier 3).
 		return &agentclient.HTTPError{
 			Type:     "https://kubernaut.ai/problems/not-found",
 			Title:    "Session Not Found",

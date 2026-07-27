@@ -1,7 +1,7 @@
 # Spike: OAS Runtime with ACP Server
 
 **Date**: May 20, 2026
-**Status**: COMPLETED
+**Status**: COMPLETED — technique validated; the CRD-level runtime-selection model it targeted is superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536)
 **Duration**: 1 session
 **Relates to**: PROPOSAL-EXT-003, [Agent Runtime Evaluation Plan](../../../.cursor/plans/agent_runtime_evaluation_fec263e8.plan.md)
 

@@ -14,6 +14,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/streaming"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	agent = "agent"
+)
+
 func TestStreamingSuite(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Streaming Suite")
@@ -29,7 +34,7 @@ var _ = Describe("SSE Event Formatting", func() {
 
 	toolCallEvent := func() *adksession.Event {
 		evt := adksession.NewEvent("inv-1")
-		evt.Author = "agent"
+		evt.Author = agent
 		evt.Content = &genai.Content{
 			Role: string(genai.RoleModel),
 			Parts: []*genai.Part{
@@ -45,7 +50,7 @@ var _ = Describe("SSE Event Formatting", func() {
 	}
 
 	It("UT-AF-240-001: formats ADK event as SSE frame with id field", func() {
-		evt := textEvent("agent", "Hello from agent")
+		evt := textEvent(agent, "Hello from agent")
 		frame, err := streaming.FormatSSEFrame(evt, 42)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(frame)).To(ContainSubstring("id: 42"))
@@ -55,7 +60,7 @@ var _ = Describe("SSE Event Formatting", func() {
 	})
 
 	It("UT-AF-240-002: maps author to SSE event type", func() {
-		Expect(streaming.EventTypeFromEvent(textEvent("agent", "x"))).To(Equal("agent"))
+		Expect(streaming.EventTypeFromEvent(textEvent(agent, "x"))).To(Equal(agent))
 		Expect(streaming.EventTypeFromEvent(textEvent("user", "x"))).To(Equal("user"))
 		Expect(streaming.EventTypeFromEvent(toolCallEvent())).To(Equal("tool-call"))
 	})
@@ -67,7 +72,7 @@ var _ = Describe("SSE Event Formatting", func() {
 	})
 
 	It("UT-AF-240-004: marks terminal event", func() {
-		evt := textEvent("agent", "Investigation complete")
+		evt := textEvent(agent, "Investigation complete")
 		evt.Actions.StateDelta = map[string]any{
 			streaming.StateKeyTerminal: true,
 		}
@@ -77,7 +82,7 @@ var _ = Describe("SSE Event Formatting", func() {
 	})
 
 	It("UT-AF-240-005: skips partial events", func() {
-		evt := textEvent("agent", "partial...")
+		evt := textEvent(agent, "partial...")
 		evt.Partial = true
 		frame, err := streaming.FormatSSEFrame(evt, 1)
 		Expect(err).NotTo(HaveOccurred())
@@ -91,7 +96,7 @@ var _ = Describe("SSE Event Formatting", func() {
 	})
 
 	It("UT-AF-240-007: data field is valid JSON", func() {
-		evt := textEvent("agent", "structured output")
+		evt := textEvent(agent, "structured output")
 		frame, err := streaming.FormatSSEFrame(evt, 1)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -115,7 +120,7 @@ var _ = Describe("SSE Event Formatting", func() {
 
 	It("UT-AF-240-009: nil Content event produces valid SSE frame", func() {
 		evt := adksession.NewEvent("inv-1")
-		evt.Author = "agent"
+		evt.Author = agent
 		evt.Content = nil
 		frame, err := streaming.FormatSSEFrame(evt, 10)
 		Expect(err).NotTo(HaveOccurred())
@@ -126,7 +131,7 @@ var _ = Describe("SSE Event Formatting", func() {
 
 	It("UT-AF-240-010: done event with nil Content has default text", func() {
 		evt := adksession.NewEvent("inv-1")
-		evt.Author = "agent"
+		evt.Author = agent
 		evt.Content = nil
 		evt.Actions.StateDelta = map[string]any{
 			streaming.StateKeyTerminal: true,
@@ -150,7 +155,7 @@ var _ = Describe("SSE Event Formatting", func() {
 	})
 
 	It("UT-AF-240-011: SSE frame includes retry field", func() {
-		evt := textEvent("agent", "with retry")
+		evt := textEvent(agent, "with retry")
 		frame, err := streaming.FormatSSEFrame(evt, 1)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(frame)).To(ContainSubstring("retry: 3000"))

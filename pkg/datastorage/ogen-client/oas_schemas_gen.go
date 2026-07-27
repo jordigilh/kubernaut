@@ -3657,200 +3657,6 @@ func (s *ActionTypeCatalogUpdatedPayloadEventType) UnmarshalText(data []byte) er
 	}
 }
 
-// Request body for creating or re-enabling an action type.
-// Ref: #/components/schemas/ActionTypeCreateRequest
-type ActionTypeCreateRequest struct {
-	// PascalCase action type name (e.g., RestartPod).
-	Name        string                `json:"name"`
-	Description ActionTypeDescription `json:"description"`
-	// Identity of the registrant (K8s SA or user).
-	RegisteredBy string `json:"registeredBy"`
-}
-
-// GetName returns the value of Name.
-func (s *ActionTypeCreateRequest) GetName() string {
-	return s.Name
-}
-
-// GetDescription returns the value of Description.
-func (s *ActionTypeCreateRequest) GetDescription() ActionTypeDescription {
-	return s.Description
-}
-
-// GetRegisteredBy returns the value of RegisteredBy.
-func (s *ActionTypeCreateRequest) GetRegisteredBy() string {
-	return s.RegisteredBy
-}
-
-// SetName sets the value of Name.
-func (s *ActionTypeCreateRequest) SetName(val string) {
-	s.Name = val
-}
-
-// SetDescription sets the value of Description.
-func (s *ActionTypeCreateRequest) SetDescription(val ActionTypeDescription) {
-	s.Description = val
-}
-
-// SetRegisteredBy sets the value of RegisteredBy.
-func (s *ActionTypeCreateRequest) SetRegisteredBy(val string) {
-	s.RegisteredBy = val
-}
-
-// Response for action type create/re-enable.
-// Ref: #/components/schemas/ActionTypeCreateResponse
-type ActionTypeCreateResponse struct {
-	// PascalCase action type name.
-	ActionType  string                   `json:"actionType"`
-	Description OptActionTypeDescription `json:"description"`
-	// Outcome: created, exists, or reenabled.
-	Status ActionTypeCreateResponseStatus `json:"status"`
-	// True if re-enabled from disabled state.
-	WasReenabled bool `json:"wasReenabled"`
-}
-
-// GetActionType returns the value of ActionType.
-func (s *ActionTypeCreateResponse) GetActionType() string {
-	return s.ActionType
-}
-
-// GetDescription returns the value of Description.
-func (s *ActionTypeCreateResponse) GetDescription() OptActionTypeDescription {
-	return s.Description
-}
-
-// GetStatus returns the value of Status.
-func (s *ActionTypeCreateResponse) GetStatus() ActionTypeCreateResponseStatus {
-	return s.Status
-}
-
-// GetWasReenabled returns the value of WasReenabled.
-func (s *ActionTypeCreateResponse) GetWasReenabled() bool {
-	return s.WasReenabled
-}
-
-// SetActionType sets the value of ActionType.
-func (s *ActionTypeCreateResponse) SetActionType(val string) {
-	s.ActionType = val
-}
-
-// SetDescription sets the value of Description.
-func (s *ActionTypeCreateResponse) SetDescription(val OptActionTypeDescription) {
-	s.Description = val
-}
-
-// SetStatus sets the value of Status.
-func (s *ActionTypeCreateResponse) SetStatus(val ActionTypeCreateResponseStatus) {
-	s.Status = val
-}
-
-// SetWasReenabled sets the value of WasReenabled.
-func (s *ActionTypeCreateResponse) SetWasReenabled(val bool) {
-	s.WasReenabled = val
-}
-
-// Outcome: created, exists, or reenabled.
-type ActionTypeCreateResponseStatus string
-
-const (
-	ActionTypeCreateResponseStatusCreated   ActionTypeCreateResponseStatus = "created"
-	ActionTypeCreateResponseStatusExists    ActionTypeCreateResponseStatus = "exists"
-	ActionTypeCreateResponseStatusReenabled ActionTypeCreateResponseStatus = "reenabled"
-)
-
-// AllValues returns all ActionTypeCreateResponseStatus values.
-func (ActionTypeCreateResponseStatus) AllValues() []ActionTypeCreateResponseStatus {
-	return []ActionTypeCreateResponseStatus{
-		ActionTypeCreateResponseStatusCreated,
-		ActionTypeCreateResponseStatusExists,
-		ActionTypeCreateResponseStatusReenabled,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ActionTypeCreateResponseStatus) MarshalText() ([]byte, error) {
-	switch s {
-	case ActionTypeCreateResponseStatusCreated:
-		return []byte(s), nil
-	case ActionTypeCreateResponseStatusExists:
-		return []byte(s), nil
-	case ActionTypeCreateResponseStatusReenabled:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ActionTypeCreateResponseStatus) UnmarshalText(data []byte) error {
-	switch ActionTypeCreateResponseStatus(data) {
-	case ActionTypeCreateResponseStatusCreated:
-		*s = ActionTypeCreateResponseStatusCreated
-		return nil
-	case ActionTypeCreateResponseStatusExists:
-		*s = ActionTypeCreateResponseStatusExists
-		return nil
-	case ActionTypeCreateResponseStatusReenabled:
-		*s = ActionTypeCreateResponseStatusReenabled
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Structured description for an action type.
-// Ref: #/components/schemas/ActionTypeDescription
-type ActionTypeDescription struct {
-	// What this action type concretely does.
-	What string `json:"what"`
-	// When this action type is appropriate.
-	WhenToUse string `json:"whenToUse"`
-	// Exclusion conditions.
-	WhenNotToUse OptString `json:"whenNotToUse"`
-	// Conditions to verify before use.
-	Preconditions OptString `json:"preconditions"`
-}
-
-// GetWhat returns the value of What.
-func (s *ActionTypeDescription) GetWhat() string {
-	return s.What
-}
-
-// GetWhenToUse returns the value of WhenToUse.
-func (s *ActionTypeDescription) GetWhenToUse() string {
-	return s.WhenToUse
-}
-
-// GetWhenNotToUse returns the value of WhenNotToUse.
-func (s *ActionTypeDescription) GetWhenNotToUse() OptString {
-	return s.WhenNotToUse
-}
-
-// GetPreconditions returns the value of Preconditions.
-func (s *ActionTypeDescription) GetPreconditions() OptString {
-	return s.Preconditions
-}
-
-// SetWhat sets the value of What.
-func (s *ActionTypeDescription) SetWhat(val string) {
-	s.What = val
-}
-
-// SetWhenToUse sets the value of WhenToUse.
-func (s *ActionTypeDescription) SetWhenToUse(val string) {
-	s.WhenToUse = val
-}
-
-// SetWhenNotToUse sets the value of WhenNotToUse.
-func (s *ActionTypeDescription) SetWhenNotToUse(val OptString) {
-	s.WhenNotToUse = val
-}
-
-// SetPreconditions sets the value of Preconditions.
-func (s *ActionTypeDescription) SetPreconditions(val OptString) {
-	s.Preconditions = val
-}
-
 // Structured description of an action type for audit payloads.
 // Ref: #/components/schemas/ActionTypeDescriptionPayload
 type ActionTypeDescriptionPayload struct {
@@ -3899,278 +3705,6 @@ func (s *ActionTypeDescriptionPayload) SetWhenNotToUse(val OptString) {
 func (s *ActionTypeDescriptionPayload) SetPreconditions(val OptString) {
 	s.Preconditions = val
 }
-
-// 409 response when disable is denied due to active workflow dependencies.
-// Ref: #/components/schemas/ActionTypeDisableDeniedResponse
-type ActionTypeDisableDeniedResponse struct {
-	ActionType string `json:"actionType"`
-	// Number of active workflows referencing this action type.
-	DependentWorkflowCount int `json:"dependentWorkflowCount"`
-	// Names of dependent workflows.
-	DependentWorkflows []string `json:"dependentWorkflows"`
-}
-
-// GetActionType returns the value of ActionType.
-func (s *ActionTypeDisableDeniedResponse) GetActionType() string {
-	return s.ActionType
-}
-
-// GetDependentWorkflowCount returns the value of DependentWorkflowCount.
-func (s *ActionTypeDisableDeniedResponse) GetDependentWorkflowCount() int {
-	return s.DependentWorkflowCount
-}
-
-// GetDependentWorkflows returns the value of DependentWorkflows.
-func (s *ActionTypeDisableDeniedResponse) GetDependentWorkflows() []string {
-	return s.DependentWorkflows
-}
-
-// SetActionType sets the value of ActionType.
-func (s *ActionTypeDisableDeniedResponse) SetActionType(val string) {
-	s.ActionType = val
-}
-
-// SetDependentWorkflowCount sets the value of DependentWorkflowCount.
-func (s *ActionTypeDisableDeniedResponse) SetDependentWorkflowCount(val int) {
-	s.DependentWorkflowCount = val
-}
-
-// SetDependentWorkflows sets the value of DependentWorkflows.
-func (s *ActionTypeDisableDeniedResponse) SetDependentWorkflows(val []string) {
-	s.DependentWorkflows = val
-}
-
-func (*ActionTypeDisableDeniedResponse) disableActionTypeRes() {}
-
-// Request body for disabling an action type.
-// Ref: #/components/schemas/ActionTypeDisableRequest
-type ActionTypeDisableRequest struct {
-	// Identity of who is disabling.
-	DisabledBy string `json:"disabledBy"`
-}
-
-// GetDisabledBy returns the value of DisabledBy.
-func (s *ActionTypeDisableRequest) GetDisabledBy() string {
-	return s.DisabledBy
-}
-
-// SetDisabledBy sets the value of DisabledBy.
-func (s *ActionTypeDisableRequest) SetDisabledBy(val string) {
-	s.DisabledBy = val
-}
-
-// Response for successful action type disable.
-// Ref: #/components/schemas/ActionTypeDisableResponse
-type ActionTypeDisableResponse struct {
-	ActionType string                          `json:"actionType"`
-	Status     ActionTypeDisableResponseStatus `json:"status"`
-}
-
-// GetActionType returns the value of ActionType.
-func (s *ActionTypeDisableResponse) GetActionType() string {
-	return s.ActionType
-}
-
-// GetStatus returns the value of Status.
-func (s *ActionTypeDisableResponse) GetStatus() ActionTypeDisableResponseStatus {
-	return s.Status
-}
-
-// SetActionType sets the value of ActionType.
-func (s *ActionTypeDisableResponse) SetActionType(val string) {
-	s.ActionType = val
-}
-
-// SetStatus sets the value of Status.
-func (s *ActionTypeDisableResponse) SetStatus(val ActionTypeDisableResponseStatus) {
-	s.Status = val
-}
-
-func (*ActionTypeDisableResponse) disableActionTypeRes() {}
-
-type ActionTypeDisableResponseStatus string
-
-const (
-	ActionTypeDisableResponseStatusDisabled ActionTypeDisableResponseStatus = "Disabled"
-)
-
-// AllValues returns all ActionTypeDisableResponseStatus values.
-func (ActionTypeDisableResponseStatus) AllValues() []ActionTypeDisableResponseStatus {
-	return []ActionTypeDisableResponseStatus{
-		ActionTypeDisableResponseStatusDisabled,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ActionTypeDisableResponseStatus) MarshalText() ([]byte, error) {
-	switch s {
-	case ActionTypeDisableResponseStatusDisabled:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ActionTypeDisableResponseStatus) UnmarshalText(data []byte) error {
-	switch ActionTypeDisableResponseStatus(data) {
-	case ActionTypeDisableResponseStatusDisabled:
-		*s = ActionTypeDisableResponseStatusDisabled
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Single action type with description and workflow count.
-// Ref: #/components/schemas/ActionTypeEntry
-type ActionTypeEntry struct {
-	// Action type identifier (e.g., ScaleReplicas, RestartPod).
-	ActionType  string                `json:"actionType"`
-	Description StructuredDescription `json:"description"`
-	// Number of active workflows matching this action type and context filters.
-	WorkflowCount int `json:"workflowCount"`
-}
-
-// GetActionType returns the value of ActionType.
-func (s *ActionTypeEntry) GetActionType() string {
-	return s.ActionType
-}
-
-// GetDescription returns the value of Description.
-func (s *ActionTypeEntry) GetDescription() StructuredDescription {
-	return s.Description
-}
-
-// GetWorkflowCount returns the value of WorkflowCount.
-func (s *ActionTypeEntry) GetWorkflowCount() int {
-	return s.WorkflowCount
-}
-
-// SetActionType sets the value of ActionType.
-func (s *ActionTypeEntry) SetActionType(val string) {
-	s.ActionType = val
-}
-
-// SetDescription sets the value of Description.
-func (s *ActionTypeEntry) SetDescription(val StructuredDescription) {
-	s.Description = val
-}
-
-// SetWorkflowCount sets the value of WorkflowCount.
-func (s *ActionTypeEntry) SetWorkflowCount(val int) {
-	s.WorkflowCount = val
-}
-
-// Response for Step 1: list available action types (DD-WORKFLOW-016).
-// Ref: #/components/schemas/ActionTypeListResponse
-type ActionTypeListResponse struct {
-	ActionTypes []ActionTypeEntry  `json:"actionTypes"`
-	Pagination  PaginationMetadata `json:"pagination"`
-}
-
-// GetActionTypes returns the value of ActionTypes.
-func (s *ActionTypeListResponse) GetActionTypes() []ActionTypeEntry {
-	return s.ActionTypes
-}
-
-// GetPagination returns the value of Pagination.
-func (s *ActionTypeListResponse) GetPagination() PaginationMetadata {
-	return s.Pagination
-}
-
-// SetActionTypes sets the value of ActionTypes.
-func (s *ActionTypeListResponse) SetActionTypes(val []ActionTypeEntry) {
-	s.ActionTypes = val
-}
-
-// SetPagination sets the value of Pagination.
-func (s *ActionTypeListResponse) SetPagination(val PaginationMetadata) {
-	s.Pagination = val
-}
-
-func (*ActionTypeListResponse) listAvailableActionsRes() {}
-
-// Request body for updating action type description. updatedBy is optional — the audit trail
-// (Phase 6a) captures the actor authoritatively.
-// Ref: #/components/schemas/ActionTypeUpdateRequest
-type ActionTypeUpdateRequest struct {
-	Description ActionTypeDescription `json:"description"`
-	// Identity of who made the change.
-	UpdatedBy OptString `json:"updatedBy"`
-}
-
-// GetDescription returns the value of Description.
-func (s *ActionTypeUpdateRequest) GetDescription() ActionTypeDescription {
-	return s.Description
-}
-
-// GetUpdatedBy returns the value of UpdatedBy.
-func (s *ActionTypeUpdateRequest) GetUpdatedBy() OptString {
-	return s.UpdatedBy
-}
-
-// SetDescription sets the value of Description.
-func (s *ActionTypeUpdateRequest) SetDescription(val ActionTypeDescription) {
-	s.Description = val
-}
-
-// SetUpdatedBy sets the value of UpdatedBy.
-func (s *ActionTypeUpdateRequest) SetUpdatedBy(val OptString) {
-	s.UpdatedBy = val
-}
-
-// Response for action type description update.
-// Ref: #/components/schemas/ActionTypeUpdateResponse
-type ActionTypeUpdateResponse struct {
-	ActionType     string                `json:"actionType"`
-	OldDescription ActionTypeDescription `json:"oldDescription"`
-	NewDescription ActionTypeDescription `json:"newDescription"`
-	// List of changed field names.
-	UpdatedFields []string `json:"updatedFields"`
-}
-
-// GetActionType returns the value of ActionType.
-func (s *ActionTypeUpdateResponse) GetActionType() string {
-	return s.ActionType
-}
-
-// GetOldDescription returns the value of OldDescription.
-func (s *ActionTypeUpdateResponse) GetOldDescription() ActionTypeDescription {
-	return s.OldDescription
-}
-
-// GetNewDescription returns the value of NewDescription.
-func (s *ActionTypeUpdateResponse) GetNewDescription() ActionTypeDescription {
-	return s.NewDescription
-}
-
-// GetUpdatedFields returns the value of UpdatedFields.
-func (s *ActionTypeUpdateResponse) GetUpdatedFields() []string {
-	return s.UpdatedFields
-}
-
-// SetActionType sets the value of ActionType.
-func (s *ActionTypeUpdateResponse) SetActionType(val string) {
-	s.ActionType = val
-}
-
-// SetOldDescription sets the value of OldDescription.
-func (s *ActionTypeUpdateResponse) SetOldDescription(val ActionTypeDescription) {
-	s.OldDescription = val
-}
-
-// SetNewDescription sets the value of NewDescription.
-func (s *ActionTypeUpdateResponse) SetNewDescription(val ActionTypeDescription) {
-	s.NewDescription = val
-}
-
-// SetUpdatedFields sets the value of UpdatedFields.
-func (s *ActionTypeUpdateResponse) SetUpdatedFields(val []string) {
-	s.UpdatedFields = val
-}
-
-func (*ActionTypeUpdateResponse) updateActionTypeRes() {}
 
 // AW audit payload for ActionType CRD admission events.
 // Ref: #/components/schemas/ActionTypeWebhookAuditPayload
@@ -4401,23 +3935,6 @@ func (s *ActionTypeWebhookAuditPayloadEventType) UnmarshalText(data []byte) erro
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
-}
-
-// Response containing the count of active workflows referencing an action type.
-// Ref: #/components/schemas/ActionTypeWorkflowCountResponse
-type ActionTypeWorkflowCountResponse struct {
-	// Number of active RemediationWorkflows referencing this action type.
-	Count int `json:"count"`
-}
-
-// GetCount returns the value of Count.
-func (s *ActionTypeWorkflowCountResponse) GetCount() int {
-	return s.Count
-}
-
-// SetCount sets the value of Count.
-func (s *ActionTypeWorkflowCountResponse) SetCount(val int) {
-	s.Count = val
 }
 
 // A2A task completed event payload (apifrontend.a2a.task_completed) — A2A task execution succeeded
@@ -16101,14 +15618,6 @@ func (s *BatchAuditEventResponse) SetMessage(val OptString) {
 	s.Message = val
 }
 
-type CreateActionTypeCreated ActionTypeCreateResponse
-
-func (*CreateActionTypeCreated) createActionTypeRes() {}
-
-type CreateActionTypeOK ActionTypeCreateResponse
-
-func (*CreateActionTypeOK) createActionTypeRes() {}
-
 type CreateAuditEventBadRequest RFC7807Problem
 
 func (*CreateAuditEventBadRequest) createAuditEventRes() {}
@@ -16197,78 +15706,6 @@ func (*CreateNotificationAuditConflict) createNotificationAuditRes() {}
 type CreateNotificationAuditInternalServerError RFC7807Problem
 
 func (*CreateNotificationAuditInternalServerError) createNotificationAuditRes() {}
-
-type CreateWorkflowBadRequest RFC7807Problem
-
-func (*CreateWorkflowBadRequest) createWorkflowRes() {}
-
-type CreateWorkflowConflict RFC7807Problem
-
-func (*CreateWorkflowConflict) createWorkflowRes() {}
-
-type CreateWorkflowCreated RemediationWorkflow
-
-func (*CreateWorkflowCreated) createWorkflowRes() {}
-
-type CreateWorkflowForbidden RFC7807Problem
-
-func (*CreateWorkflowForbidden) createWorkflowRes() {}
-
-// Ref: #/components/schemas/CreateWorkflowInlineRequest
-type CreateWorkflowInlineRequest struct {
-	// Raw YAML content of the RemediationWorkflow CRD. Data Storage
-	// parses the CRD envelope (apiVersion/kind/metadata/spec), validates
-	// the spec, and populates all catalog fields from it.
-	Content string `json:"content"`
-	// Registration source. Set to "crd" when the request originates from
-	// the Auth Webhook on CRD creation, or "api" for direct API calls.
-	Source OptString `json:"source"`
-	// Identity of the user or service account that triggered the registration.
-	// Populated from AdmissionReview.request.userInfo.username when source is "crd".
-	RegisteredBy OptString `json:"registeredBy"`
-}
-
-// GetContent returns the value of Content.
-func (s *CreateWorkflowInlineRequest) GetContent() string {
-	return s.Content
-}
-
-// GetSource returns the value of Source.
-func (s *CreateWorkflowInlineRequest) GetSource() OptString {
-	return s.Source
-}
-
-// GetRegisteredBy returns the value of RegisteredBy.
-func (s *CreateWorkflowInlineRequest) GetRegisteredBy() OptString {
-	return s.RegisteredBy
-}
-
-// SetContent sets the value of Content.
-func (s *CreateWorkflowInlineRequest) SetContent(val string) {
-	s.Content = val
-}
-
-// SetSource sets the value of Source.
-func (s *CreateWorkflowInlineRequest) SetSource(val OptString) {
-	s.Source = val
-}
-
-// SetRegisteredBy sets the value of RegisteredBy.
-func (s *CreateWorkflowInlineRequest) SetRegisteredBy(val OptString) {
-	s.RegisteredBy = val
-}
-
-type CreateWorkflowInternalServerError RFC7807Problem
-
-func (*CreateWorkflowInternalServerError) createWorkflowRes() {}
-
-type CreateWorkflowOK RemediationWorkflow
-
-func (*CreateWorkflowOK) createWorkflowRes() {}
-
-type CreateWorkflowUnauthorized RFC7807Problem
-
-func (*CreateWorkflowUnauthorized) createWorkflowRes() {}
 
 // Customer-defined labels (DD-WORKFLOW-001 v1.5) - subdomain-based format.
 // Ref: #/components/schemas/CustomLabels
@@ -16383,14 +15820,6 @@ func (s *DatastorageRatelimitDeniedPayloadEventType) UnmarshalText(data []byte) 
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
-
-type DeprecateWorkflowBadRequest RFC7807Problem
-
-func (*DeprecateWorkflowBadRequest) deprecateWorkflowRes() {}
-
-type DeprecateWorkflowNotFound RFC7807Problem
-
-func (*DeprecateWorkflowNotFound) deprecateWorkflowRes() {}
 
 // Auto-detected labels from Kubernetes resources (DD-WORKFLOW-001 v2.3) - V1.0 structured types.
 // Ref: #/components/schemas/DetectedLabels
@@ -16836,26 +16265,6 @@ func (s *DetectedLabelsStorageBackend) UnmarshalText(data []byte) error {
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
-
-type DisableActionTypeBadRequest RFC7807Problem
-
-func (*DisableActionTypeBadRequest) disableActionTypeRes() {}
-
-type DisableActionTypeInternalServerError RFC7807Problem
-
-func (*DisableActionTypeInternalServerError) disableActionTypeRes() {}
-
-type DisableActionTypeNotFound RFC7807Problem
-
-func (*DisableActionTypeNotFound) disableActionTypeRes() {}
-
-type DisableWorkflowBadRequest RFC7807Problem
-
-func (*DisableWorkflowBadRequest) disableWorkflowRes() {}
-
-type DisableWorkflowNotFound RFC7807Problem
-
-func (*DisableWorkflowNotFound) disableWorkflowRes() {}
 
 // Type-safe audit event payload for Effectiveness Monitor controller.
 // Covers component-level events (health, alert, metrics, hash),
@@ -18155,14 +17564,6 @@ func (s *EffectivenessScoreResponseAssessmentStatus) UnmarshalText(data []byte) 
 	}
 }
 
-type EnableWorkflowBadRequest RFC7807Problem
-
-func (*EnableWorkflowBadRequest) enableWorkflowRes() {}
-
-type EnableWorkflowNotFound RFC7807Problem
-
-func (*EnableWorkflowNotFound) enableWorkflowRes() {}
-
 // Standardized error information for audit events (BR-AUDIT-005 Gap.
 // Ref: #/components/schemas/ErrorDetails
 type ErrorDetails struct {
@@ -18871,124 +18272,6 @@ func (*GetRemediationHistoryContextBadRequest) getRemediationHistoryContextRes()
 type GetRemediationHistoryContextInternalServerError RFC7807Problem
 
 func (*GetRemediationHistoryContextInternalServerError) getRemediationHistoryContextRes() {}
-
-type GetWorkflowByIDInternalServerError RFC7807Problem
-
-func (*GetWorkflowByIDInternalServerError) getWorkflowByIDRes() {}
-
-type GetWorkflowByIDNotFound RFC7807Problem
-
-func (*GetWorkflowByIDNotFound) getWorkflowByIDRes() {}
-
-type GetWorkflowByIDPriority string
-
-const (
-	GetWorkflowByIDPriorityP0 GetWorkflowByIDPriority = "P0"
-	GetWorkflowByIDPriorityP1 GetWorkflowByIDPriority = "P1"
-	GetWorkflowByIDPriorityP2 GetWorkflowByIDPriority = "P2"
-	GetWorkflowByIDPriorityP3 GetWorkflowByIDPriority = "P3"
-)
-
-// AllValues returns all GetWorkflowByIDPriority values.
-func (GetWorkflowByIDPriority) AllValues() []GetWorkflowByIDPriority {
-	return []GetWorkflowByIDPriority{
-		GetWorkflowByIDPriorityP0,
-		GetWorkflowByIDPriorityP1,
-		GetWorkflowByIDPriorityP2,
-		GetWorkflowByIDPriorityP3,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s GetWorkflowByIDPriority) MarshalText() ([]byte, error) {
-	switch s {
-	case GetWorkflowByIDPriorityP0:
-		return []byte(s), nil
-	case GetWorkflowByIDPriorityP1:
-		return []byte(s), nil
-	case GetWorkflowByIDPriorityP2:
-		return []byte(s), nil
-	case GetWorkflowByIDPriorityP3:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *GetWorkflowByIDPriority) UnmarshalText(data []byte) error {
-	switch GetWorkflowByIDPriority(data) {
-	case GetWorkflowByIDPriorityP0:
-		*s = GetWorkflowByIDPriorityP0
-		return nil
-	case GetWorkflowByIDPriorityP1:
-		*s = GetWorkflowByIDPriorityP1
-		return nil
-	case GetWorkflowByIDPriorityP2:
-		*s = GetWorkflowByIDPriorityP2
-		return nil
-	case GetWorkflowByIDPriorityP3:
-		*s = GetWorkflowByIDPriorityP3
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-type GetWorkflowByIDSeverity string
-
-const (
-	GetWorkflowByIDSeverityCritical GetWorkflowByIDSeverity = "critical"
-	GetWorkflowByIDSeverityHigh     GetWorkflowByIDSeverity = "high"
-	GetWorkflowByIDSeverityWarning  GetWorkflowByIDSeverity = "warning"
-	GetWorkflowByIDSeverityInfo     GetWorkflowByIDSeverity = "info"
-)
-
-// AllValues returns all GetWorkflowByIDSeverity values.
-func (GetWorkflowByIDSeverity) AllValues() []GetWorkflowByIDSeverity {
-	return []GetWorkflowByIDSeverity{
-		GetWorkflowByIDSeverityCritical,
-		GetWorkflowByIDSeverityHigh,
-		GetWorkflowByIDSeverityWarning,
-		GetWorkflowByIDSeverityInfo,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s GetWorkflowByIDSeverity) MarshalText() ([]byte, error) {
-	switch s {
-	case GetWorkflowByIDSeverityCritical:
-		return []byte(s), nil
-	case GetWorkflowByIDSeverityHigh:
-		return []byte(s), nil
-	case GetWorkflowByIDSeverityWarning:
-		return []byte(s), nil
-	case GetWorkflowByIDSeverityInfo:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *GetWorkflowByIDSeverity) UnmarshalText(data []byte) error {
-	switch GetWorkflowByIDSeverity(data) {
-	case GetWorkflowByIDSeverityCritical:
-		*s = GetWorkflowByIDSeverityCritical
-		return nil
-	case GetWorkflowByIDSeverityHigh:
-		*s = GetWorkflowByIDSeverityHigh
-		return nil
-	case GetWorkflowByIDSeverityWarning:
-		*s = GetWorkflowByIDSeverityWarning
-		return nil
-	case GetWorkflowByIDSeverityInfo:
-		*s = GetWorkflowByIDSeverityInfo
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
 
 // Pre/post remediation spec hash comparison data per DD-EM-002.
 // Supplementary signal (not part of scoring formula).
@@ -20149,124 +19432,6 @@ func (s *LLMToolCallPayloadToolArguments) init() LLMToolCallPayloadToolArguments
 	return m
 }
 
-type ListAvailableActionsBadRequest RFC7807Problem
-
-func (*ListAvailableActionsBadRequest) listAvailableActionsRes() {}
-
-type ListAvailableActionsInternalServerError RFC7807Problem
-
-func (*ListAvailableActionsInternalServerError) listAvailableActionsRes() {}
-
-type ListAvailableActionsPriority string
-
-const (
-	ListAvailableActionsPriorityP0 ListAvailableActionsPriority = "P0"
-	ListAvailableActionsPriorityP1 ListAvailableActionsPriority = "P1"
-	ListAvailableActionsPriorityP2 ListAvailableActionsPriority = "P2"
-	ListAvailableActionsPriorityP3 ListAvailableActionsPriority = "P3"
-)
-
-// AllValues returns all ListAvailableActionsPriority values.
-func (ListAvailableActionsPriority) AllValues() []ListAvailableActionsPriority {
-	return []ListAvailableActionsPriority{
-		ListAvailableActionsPriorityP0,
-		ListAvailableActionsPriorityP1,
-		ListAvailableActionsPriorityP2,
-		ListAvailableActionsPriorityP3,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ListAvailableActionsPriority) MarshalText() ([]byte, error) {
-	switch s {
-	case ListAvailableActionsPriorityP0:
-		return []byte(s), nil
-	case ListAvailableActionsPriorityP1:
-		return []byte(s), nil
-	case ListAvailableActionsPriorityP2:
-		return []byte(s), nil
-	case ListAvailableActionsPriorityP3:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ListAvailableActionsPriority) UnmarshalText(data []byte) error {
-	switch ListAvailableActionsPriority(data) {
-	case ListAvailableActionsPriorityP0:
-		*s = ListAvailableActionsPriorityP0
-		return nil
-	case ListAvailableActionsPriorityP1:
-		*s = ListAvailableActionsPriorityP1
-		return nil
-	case ListAvailableActionsPriorityP2:
-		*s = ListAvailableActionsPriorityP2
-		return nil
-	case ListAvailableActionsPriorityP3:
-		*s = ListAvailableActionsPriorityP3
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-type ListAvailableActionsSeverity string
-
-const (
-	ListAvailableActionsSeverityCritical ListAvailableActionsSeverity = "critical"
-	ListAvailableActionsSeverityHigh     ListAvailableActionsSeverity = "high"
-	ListAvailableActionsSeverityWarning  ListAvailableActionsSeverity = "warning"
-	ListAvailableActionsSeverityInfo     ListAvailableActionsSeverity = "info"
-)
-
-// AllValues returns all ListAvailableActionsSeverity values.
-func (ListAvailableActionsSeverity) AllValues() []ListAvailableActionsSeverity {
-	return []ListAvailableActionsSeverity{
-		ListAvailableActionsSeverityCritical,
-		ListAvailableActionsSeverityHigh,
-		ListAvailableActionsSeverityWarning,
-		ListAvailableActionsSeverityInfo,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ListAvailableActionsSeverity) MarshalText() ([]byte, error) {
-	switch s {
-	case ListAvailableActionsSeverityCritical:
-		return []byte(s), nil
-	case ListAvailableActionsSeverityHigh:
-		return []byte(s), nil
-	case ListAvailableActionsSeverityWarning:
-		return []byte(s), nil
-	case ListAvailableActionsSeverityInfo:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ListAvailableActionsSeverity) UnmarshalText(data []byte) error {
-	switch ListAvailableActionsSeverity(data) {
-	case ListAvailableActionsSeverityCritical:
-		*s = ListAvailableActionsSeverityCritical
-		return nil
-	case ListAvailableActionsSeverityHigh:
-		*s = ListAvailableActionsSeverityHigh
-		return nil
-	case ListAvailableActionsSeverityWarning:
-		*s = ListAvailableActionsSeverityWarning
-		return nil
-	case ListAvailableActionsSeverityInfo:
-		*s = ListAvailableActionsSeverityInfo
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
 type ListLegalHoldsOK struct {
 	Holds []ListLegalHoldsOKHoldsItem `json:"holds"`
 	Total OptInt                      `json:"total"`
@@ -20348,435 +19513,6 @@ func (s *ListLegalHoldsOKHoldsItem) SetPlacedAt(val OptDateTime) {
 // SetReason sets the value of Reason.
 func (s *ListLegalHoldsOKHoldsItem) SetReason(val OptString) {
 	s.Reason = val
-}
-
-type ListWorkflowsByActionTypeBadRequest RFC7807Problem
-
-func (*ListWorkflowsByActionTypeBadRequest) listWorkflowsByActionTypeRes() {}
-
-type ListWorkflowsByActionTypeInternalServerError RFC7807Problem
-
-func (*ListWorkflowsByActionTypeInternalServerError) listWorkflowsByActionTypeRes() {}
-
-type ListWorkflowsByActionTypePriority string
-
-const (
-	ListWorkflowsByActionTypePriorityP0 ListWorkflowsByActionTypePriority = "P0"
-	ListWorkflowsByActionTypePriorityP1 ListWorkflowsByActionTypePriority = "P1"
-	ListWorkflowsByActionTypePriorityP2 ListWorkflowsByActionTypePriority = "P2"
-	ListWorkflowsByActionTypePriorityP3 ListWorkflowsByActionTypePriority = "P3"
-)
-
-// AllValues returns all ListWorkflowsByActionTypePriority values.
-func (ListWorkflowsByActionTypePriority) AllValues() []ListWorkflowsByActionTypePriority {
-	return []ListWorkflowsByActionTypePriority{
-		ListWorkflowsByActionTypePriorityP0,
-		ListWorkflowsByActionTypePriorityP1,
-		ListWorkflowsByActionTypePriorityP2,
-		ListWorkflowsByActionTypePriorityP3,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ListWorkflowsByActionTypePriority) MarshalText() ([]byte, error) {
-	switch s {
-	case ListWorkflowsByActionTypePriorityP0:
-		return []byte(s), nil
-	case ListWorkflowsByActionTypePriorityP1:
-		return []byte(s), nil
-	case ListWorkflowsByActionTypePriorityP2:
-		return []byte(s), nil
-	case ListWorkflowsByActionTypePriorityP3:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ListWorkflowsByActionTypePriority) UnmarshalText(data []byte) error {
-	switch ListWorkflowsByActionTypePriority(data) {
-	case ListWorkflowsByActionTypePriorityP0:
-		*s = ListWorkflowsByActionTypePriorityP0
-		return nil
-	case ListWorkflowsByActionTypePriorityP1:
-		*s = ListWorkflowsByActionTypePriorityP1
-		return nil
-	case ListWorkflowsByActionTypePriorityP2:
-		*s = ListWorkflowsByActionTypePriorityP2
-		return nil
-	case ListWorkflowsByActionTypePriorityP3:
-		*s = ListWorkflowsByActionTypePriorityP3
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-type ListWorkflowsByActionTypeSeverity string
-
-const (
-	ListWorkflowsByActionTypeSeverityCritical ListWorkflowsByActionTypeSeverity = "critical"
-	ListWorkflowsByActionTypeSeverityHigh     ListWorkflowsByActionTypeSeverity = "high"
-	ListWorkflowsByActionTypeSeverityWarning  ListWorkflowsByActionTypeSeverity = "warning"
-	ListWorkflowsByActionTypeSeverityInfo     ListWorkflowsByActionTypeSeverity = "info"
-)
-
-// AllValues returns all ListWorkflowsByActionTypeSeverity values.
-func (ListWorkflowsByActionTypeSeverity) AllValues() []ListWorkflowsByActionTypeSeverity {
-	return []ListWorkflowsByActionTypeSeverity{
-		ListWorkflowsByActionTypeSeverityCritical,
-		ListWorkflowsByActionTypeSeverityHigh,
-		ListWorkflowsByActionTypeSeverityWarning,
-		ListWorkflowsByActionTypeSeverityInfo,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ListWorkflowsByActionTypeSeverity) MarshalText() ([]byte, error) {
-	switch s {
-	case ListWorkflowsByActionTypeSeverityCritical:
-		return []byte(s), nil
-	case ListWorkflowsByActionTypeSeverityHigh:
-		return []byte(s), nil
-	case ListWorkflowsByActionTypeSeverityWarning:
-		return []byte(s), nil
-	case ListWorkflowsByActionTypeSeverityInfo:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ListWorkflowsByActionTypeSeverity) UnmarshalText(data []byte) error {
-	switch ListWorkflowsByActionTypeSeverity(data) {
-	case ListWorkflowsByActionTypeSeverityCritical:
-		*s = ListWorkflowsByActionTypeSeverityCritical
-		return nil
-	case ListWorkflowsByActionTypeSeverityHigh:
-		*s = ListWorkflowsByActionTypeSeverityHigh
-		return nil
-	case ListWorkflowsByActionTypeSeverityWarning:
-		*s = ListWorkflowsByActionTypeSeverityWarning
-		return nil
-	case ListWorkflowsByActionTypeSeverityInfo:
-		*s = ListWorkflowsByActionTypeSeverityInfo
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-type ListWorkflowsStatus string
-
-const (
-	ListWorkflowsStatusActive     ListWorkflowsStatus = "Active"
-	ListWorkflowsStatusDisabled   ListWorkflowsStatus = "Disabled"
-	ListWorkflowsStatusDeprecated ListWorkflowsStatus = "Deprecated"
-	ListWorkflowsStatusArchived   ListWorkflowsStatus = "Archived"
-)
-
-// AllValues returns all ListWorkflowsStatus values.
-func (ListWorkflowsStatus) AllValues() []ListWorkflowsStatus {
-	return []ListWorkflowsStatus{
-		ListWorkflowsStatusActive,
-		ListWorkflowsStatusDisabled,
-		ListWorkflowsStatusDeprecated,
-		ListWorkflowsStatusArchived,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s ListWorkflowsStatus) MarshalText() ([]byte, error) {
-	switch s {
-	case ListWorkflowsStatusActive:
-		return []byte(s), nil
-	case ListWorkflowsStatusDisabled:
-		return []byte(s), nil
-	case ListWorkflowsStatusDeprecated:
-		return []byte(s), nil
-	case ListWorkflowsStatusArchived:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *ListWorkflowsStatus) UnmarshalText(data []byte) error {
-	switch ListWorkflowsStatus(data) {
-	case ListWorkflowsStatusActive:
-		*s = ListWorkflowsStatusActive
-		return nil
-	case ListWorkflowsStatusDisabled:
-		*s = ListWorkflowsStatusDisabled
-		return nil
-	case ListWorkflowsStatusDeprecated:
-		*s = ListWorkflowsStatusDeprecated
-		return nil
-	case ListWorkflowsStatusArchived:
-		*s = ListWorkflowsStatusArchived
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// 4 mandatory workflow labels (Issue #274: signalName removed per DD-WORKFLOW-016).
-// Ref: #/components/schemas/MandatoryLabels
-type MandatoryLabels struct {
-	// Severity level(s) this workflow is designed for. Always an array. Use '*' to match any severity.
-	Severity []MandatoryLabelsSeverityItem `json:"severity"`
-	// Kubernetes resource GVK(s) this workflow targets in apiVersion/Kind format (e.g.
-	// apps/v1/Deployment, v1/Pod). Wildcard '*' matches all. Issues #790, #1051.
-	Component []string `json:"component"`
-	// Target environments (workflow can declare multiple, '*' matches all).
-	Environment []MandatoryLabelsEnvironmentItem `json:"environment"`
-	// Business priority level (P0, P1, P2, P3, * for any).
-	Priority MandatoryLabelsPriority `json:"priority"`
-	// BR-FLEET-003 (#1511): Cluster classification(s) this workflow is eligible for, as produced by
-	// Signal Processing's Rego policy from fleet cluster-registration labels. Optional — absent in
-	// non-fleet (single-cluster) deployments, where it is never evaluated. '*' matches any
-	// classification once fleet mode supplies a concrete filter value.
-	Cluster []string `json:"cluster"`
-}
-
-// GetSeverity returns the value of Severity.
-func (s *MandatoryLabels) GetSeverity() []MandatoryLabelsSeverityItem {
-	return s.Severity
-}
-
-// GetComponent returns the value of Component.
-func (s *MandatoryLabels) GetComponent() []string {
-	return s.Component
-}
-
-// GetEnvironment returns the value of Environment.
-func (s *MandatoryLabels) GetEnvironment() []MandatoryLabelsEnvironmentItem {
-	return s.Environment
-}
-
-// GetPriority returns the value of Priority.
-func (s *MandatoryLabels) GetPriority() MandatoryLabelsPriority {
-	return s.Priority
-}
-
-// GetCluster returns the value of Cluster.
-func (s *MandatoryLabels) GetCluster() []string {
-	return s.Cluster
-}
-
-// SetSeverity sets the value of Severity.
-func (s *MandatoryLabels) SetSeverity(val []MandatoryLabelsSeverityItem) {
-	s.Severity = val
-}
-
-// SetComponent sets the value of Component.
-func (s *MandatoryLabels) SetComponent(val []string) {
-	s.Component = val
-}
-
-// SetEnvironment sets the value of Environment.
-func (s *MandatoryLabels) SetEnvironment(val []MandatoryLabelsEnvironmentItem) {
-	s.Environment = val
-}
-
-// SetPriority sets the value of Priority.
-func (s *MandatoryLabels) SetPriority(val MandatoryLabelsPriority) {
-	s.Priority = val
-}
-
-// SetCluster sets the value of Cluster.
-func (s *MandatoryLabels) SetCluster(val []string) {
-	s.Cluster = val
-}
-
-type MandatoryLabelsEnvironmentItem string
-
-const (
-	MandatoryLabelsEnvironmentItem_production  MandatoryLabelsEnvironmentItem = "production"
-	MandatoryLabelsEnvironmentItem_staging     MandatoryLabelsEnvironmentItem = "staging"
-	MandatoryLabelsEnvironmentItem_development MandatoryLabelsEnvironmentItem = "development"
-	MandatoryLabelsEnvironmentItem_test        MandatoryLabelsEnvironmentItem = "test"
-	MandatoryLabelsEnvironmentItem_            MandatoryLabelsEnvironmentItem = "*"
-)
-
-// AllValues returns all MandatoryLabelsEnvironmentItem values.
-func (MandatoryLabelsEnvironmentItem) AllValues() []MandatoryLabelsEnvironmentItem {
-	return []MandatoryLabelsEnvironmentItem{
-		MandatoryLabelsEnvironmentItem_production,
-		MandatoryLabelsEnvironmentItem_staging,
-		MandatoryLabelsEnvironmentItem_development,
-		MandatoryLabelsEnvironmentItem_test,
-		MandatoryLabelsEnvironmentItem_,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s MandatoryLabelsEnvironmentItem) MarshalText() ([]byte, error) {
-	switch s {
-	case MandatoryLabelsEnvironmentItem_production:
-		return []byte(s), nil
-	case MandatoryLabelsEnvironmentItem_staging:
-		return []byte(s), nil
-	case MandatoryLabelsEnvironmentItem_development:
-		return []byte(s), nil
-	case MandatoryLabelsEnvironmentItem_test:
-		return []byte(s), nil
-	case MandatoryLabelsEnvironmentItem_:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *MandatoryLabelsEnvironmentItem) UnmarshalText(data []byte) error {
-	switch MandatoryLabelsEnvironmentItem(data) {
-	case MandatoryLabelsEnvironmentItem_production:
-		*s = MandatoryLabelsEnvironmentItem_production
-		return nil
-	case MandatoryLabelsEnvironmentItem_staging:
-		*s = MandatoryLabelsEnvironmentItem_staging
-		return nil
-	case MandatoryLabelsEnvironmentItem_development:
-		*s = MandatoryLabelsEnvironmentItem_development
-		return nil
-	case MandatoryLabelsEnvironmentItem_test:
-		*s = MandatoryLabelsEnvironmentItem_test
-		return nil
-	case MandatoryLabelsEnvironmentItem_:
-		*s = MandatoryLabelsEnvironmentItem_
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Business priority level (P0, P1, P2, P3, * for any).
-type MandatoryLabelsPriority string
-
-const (
-	MandatoryLabelsPriority_P0 MandatoryLabelsPriority = "P0"
-	MandatoryLabelsPriority_P1 MandatoryLabelsPriority = "P1"
-	MandatoryLabelsPriority_P2 MandatoryLabelsPriority = "P2"
-	MandatoryLabelsPriority_P3 MandatoryLabelsPriority = "P3"
-	MandatoryLabelsPriority_   MandatoryLabelsPriority = "*"
-)
-
-// AllValues returns all MandatoryLabelsPriority values.
-func (MandatoryLabelsPriority) AllValues() []MandatoryLabelsPriority {
-	return []MandatoryLabelsPriority{
-		MandatoryLabelsPriority_P0,
-		MandatoryLabelsPriority_P1,
-		MandatoryLabelsPriority_P2,
-		MandatoryLabelsPriority_P3,
-		MandatoryLabelsPriority_,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s MandatoryLabelsPriority) MarshalText() ([]byte, error) {
-	switch s {
-	case MandatoryLabelsPriority_P0:
-		return []byte(s), nil
-	case MandatoryLabelsPriority_P1:
-		return []byte(s), nil
-	case MandatoryLabelsPriority_P2:
-		return []byte(s), nil
-	case MandatoryLabelsPriority_P3:
-		return []byte(s), nil
-	case MandatoryLabelsPriority_:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *MandatoryLabelsPriority) UnmarshalText(data []byte) error {
-	switch MandatoryLabelsPriority(data) {
-	case MandatoryLabelsPriority_P0:
-		*s = MandatoryLabelsPriority_P0
-		return nil
-	case MandatoryLabelsPriority_P1:
-		*s = MandatoryLabelsPriority_P1
-		return nil
-	case MandatoryLabelsPriority_P2:
-		*s = MandatoryLabelsPriority_P2
-		return nil
-	case MandatoryLabelsPriority_P3:
-		*s = MandatoryLabelsPriority_P3
-		return nil
-	case MandatoryLabelsPriority_:
-		*s = MandatoryLabelsPriority_
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-type MandatoryLabelsSeverityItem string
-
-const (
-	MandatoryLabelsSeverityItem_critical MandatoryLabelsSeverityItem = "critical"
-	MandatoryLabelsSeverityItem_high     MandatoryLabelsSeverityItem = "high"
-	MandatoryLabelsSeverityItem_warning  MandatoryLabelsSeverityItem = "warning"
-	MandatoryLabelsSeverityItem_info     MandatoryLabelsSeverityItem = "info"
-	MandatoryLabelsSeverityItem_         MandatoryLabelsSeverityItem = "*"
-)
-
-// AllValues returns all MandatoryLabelsSeverityItem values.
-func (MandatoryLabelsSeverityItem) AllValues() []MandatoryLabelsSeverityItem {
-	return []MandatoryLabelsSeverityItem{
-		MandatoryLabelsSeverityItem_critical,
-		MandatoryLabelsSeverityItem_high,
-		MandatoryLabelsSeverityItem_warning,
-		MandatoryLabelsSeverityItem_info,
-		MandatoryLabelsSeverityItem_,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s MandatoryLabelsSeverityItem) MarshalText() ([]byte, error) {
-	switch s {
-	case MandatoryLabelsSeverityItem_critical:
-		return []byte(s), nil
-	case MandatoryLabelsSeverityItem_high:
-		return []byte(s), nil
-	case MandatoryLabelsSeverityItem_warning:
-		return []byte(s), nil
-	case MandatoryLabelsSeverityItem_info:
-		return []byte(s), nil
-	case MandatoryLabelsSeverityItem_:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *MandatoryLabelsSeverityItem) UnmarshalText(data []byte) error {
-	switch MandatoryLabelsSeverityItem(data) {
-	case MandatoryLabelsSeverityItem_critical:
-		*s = MandatoryLabelsSeverityItem_critical
-		return nil
-	case MandatoryLabelsSeverityItem_high:
-		*s = MandatoryLabelsSeverityItem_high
-		return nil
-	case MandatoryLabelsSeverityItem_warning:
-		*s = MandatoryLabelsSeverityItem_warning
-		return nil
-	case MandatoryLabelsSeverityItem_info:
-		*s = MandatoryLabelsSeverityItem_info
-		return nil
-	case MandatoryLabelsSeverityItem_:
-		*s = MandatoryLabelsSeverityItem_
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }
 
 // Notification audit record for tracking delivery attempts.
@@ -22188,52 +20924,6 @@ func (o OptAIAgentEnrichmentCompletedPayloadDetectedLabelsSummary) Or(d *AIAgent
 	return d
 }
 
-// NewOptActionTypeDescription returns new OptActionTypeDescription with value set to v.
-func NewOptActionTypeDescription(v ActionTypeDescription) OptActionTypeDescription {
-	return OptActionTypeDescription{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptActionTypeDescription is optional ActionTypeDescription.
-type OptActionTypeDescription struct {
-	Value ActionTypeDescription
-	Set   bool
-}
-
-// IsSet returns true if OptActionTypeDescription was set.
-func (o OptActionTypeDescription) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptActionTypeDescription) Reset() {
-	var v ActionTypeDescription
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptActionTypeDescription) SetTo(v ActionTypeDescription) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptActionTypeDescription) Get() (v ActionTypeDescription, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptActionTypeDescription) Or(d ActionTypeDescription) ActionTypeDescription {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptApifrontendSessionCompletedPayloadUserDecision returns new OptApifrontendSessionCompletedPayloadUserDecision with value set to v.
 func NewOptApifrontendSessionCompletedPayloadUserDecision(v ApifrontendSessionCompletedPayloadUserDecision) OptApifrontendSessionCompletedPayloadUserDecision {
 	return OptApifrontendSessionCompletedPayloadUserDecision{
@@ -23246,98 +21936,6 @@ func (o OptGatewayAuditPayloadSignalLabels) Or(d GatewayAuditPayloadSignalLabels
 	return d
 }
 
-// NewOptGetWorkflowByIDPriority returns new OptGetWorkflowByIDPriority with value set to v.
-func NewOptGetWorkflowByIDPriority(v GetWorkflowByIDPriority) OptGetWorkflowByIDPriority {
-	return OptGetWorkflowByIDPriority{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptGetWorkflowByIDPriority is optional GetWorkflowByIDPriority.
-type OptGetWorkflowByIDPriority struct {
-	Value GetWorkflowByIDPriority
-	Set   bool
-}
-
-// IsSet returns true if OptGetWorkflowByIDPriority was set.
-func (o OptGetWorkflowByIDPriority) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptGetWorkflowByIDPriority) Reset() {
-	var v GetWorkflowByIDPriority
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptGetWorkflowByIDPriority) SetTo(v GetWorkflowByIDPriority) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptGetWorkflowByIDPriority) Get() (v GetWorkflowByIDPriority, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptGetWorkflowByIDPriority) Or(d GetWorkflowByIDPriority) GetWorkflowByIDPriority {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptGetWorkflowByIDSeverity returns new OptGetWorkflowByIDSeverity with value set to v.
-func NewOptGetWorkflowByIDSeverity(v GetWorkflowByIDSeverity) OptGetWorkflowByIDSeverity {
-	return OptGetWorkflowByIDSeverity{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptGetWorkflowByIDSeverity is optional GetWorkflowByIDSeverity.
-type OptGetWorkflowByIDSeverity struct {
-	Value GetWorkflowByIDSeverity
-	Set   bool
-}
-
-// IsSet returns true if OptGetWorkflowByIDSeverity was set.
-func (o OptGetWorkflowByIDSeverity) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptGetWorkflowByIDSeverity) Reset() {
-	var v GetWorkflowByIDSeverity
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptGetWorkflowByIDSeverity) SetTo(v GetWorkflowByIDSeverity) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptGetWorkflowByIDSeverity) Get() (v GetWorkflowByIDSeverity, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptGetWorkflowByIDSeverity) Or(d GetWorkflowByIDSeverity) GetWorkflowByIDSeverity {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptHashComparisonData returns new OptHashComparisonData with value set to v.
 func NewOptHashComparisonData(v HashComparisonData) OptHashComparisonData {
 	return OptHashComparisonData{
@@ -23792,52 +22390,6 @@ func (o OptLLMToolCallPayloadToolArguments) Get() (v LLMToolCallPayloadToolArgum
 
 // Or returns value if set, or given parameter if does not.
 func (o OptLLMToolCallPayloadToolArguments) Or(d LLMToolCallPayloadToolArguments) LLMToolCallPayloadToolArguments {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptListWorkflowsStatus returns new OptListWorkflowsStatus with value set to v.
-func NewOptListWorkflowsStatus(v ListWorkflowsStatus) OptListWorkflowsStatus {
-	return OptListWorkflowsStatus{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptListWorkflowsStatus is optional ListWorkflowsStatus.
-type OptListWorkflowsStatus struct {
-	Value ListWorkflowsStatus
-	Set   bool
-}
-
-// IsSet returns true if OptListWorkflowsStatus was set.
-func (o OptListWorkflowsStatus) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptListWorkflowsStatus) Reset() {
-	var v ListWorkflowsStatus
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptListWorkflowsStatus) SetTo(v ListWorkflowsStatus) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptListWorkflowsStatus) Get() (v ListWorkflowsStatus, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptListWorkflowsStatus) Or(d ListWorkflowsStatus) ListWorkflowsStatus {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -25394,38 +23946,38 @@ func (o OptRemediationOrchestratorAuditPayloadOutcome) Or(d RemediationOrchestra
 	return d
 }
 
-// NewOptRemediationWorkflowParameters returns new OptRemediationWorkflowParameters with value set to v.
-func NewOptRemediationWorkflowParameters(v RemediationWorkflowParameters) OptRemediationWorkflowParameters {
-	return OptRemediationWorkflowParameters{
+// NewOptRemediationWorkflowContentDependencies returns new OptRemediationWorkflowContentDependencies with value set to v.
+func NewOptRemediationWorkflowContentDependencies(v RemediationWorkflowContentDependencies) OptRemediationWorkflowContentDependencies {
+	return OptRemediationWorkflowContentDependencies{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptRemediationWorkflowParameters is optional RemediationWorkflowParameters.
-type OptRemediationWorkflowParameters struct {
-	Value RemediationWorkflowParameters
+// OptRemediationWorkflowContentDependencies is optional RemediationWorkflowContentDependencies.
+type OptRemediationWorkflowContentDependencies struct {
+	Value RemediationWorkflowContentDependencies
 	Set   bool
 }
 
-// IsSet returns true if OptRemediationWorkflowParameters was set.
-func (o OptRemediationWorkflowParameters) IsSet() bool { return o.Set }
+// IsSet returns true if OptRemediationWorkflowContentDependencies was set.
+func (o OptRemediationWorkflowContentDependencies) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptRemediationWorkflowParameters) Reset() {
-	var v RemediationWorkflowParameters
+func (o *OptRemediationWorkflowContentDependencies) Reset() {
+	var v RemediationWorkflowContentDependencies
 	o.Value = v
 	o.Set = false
 }
 
 // SetTo sets value to v.
-func (o *OptRemediationWorkflowParameters) SetTo(v RemediationWorkflowParameters) {
+func (o *OptRemediationWorkflowContentDependencies) SetTo(v RemediationWorkflowContentDependencies) {
 	o.Set = true
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptRemediationWorkflowParameters) Get() (v RemediationWorkflowParameters, ok bool) {
+func (o OptRemediationWorkflowContentDependencies) Get() (v RemediationWorkflowContentDependencies, ok bool) {
 	if !o.Set {
 		return v, false
 	}
@@ -25433,7 +23985,99 @@ func (o OptRemediationWorkflowParameters) Get() (v RemediationWorkflowParameters
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptRemediationWorkflowParameters) Or(d RemediationWorkflowParameters) RemediationWorkflowParameters {
+func (o OptRemediationWorkflowContentDependencies) Or(d RemediationWorkflowContentDependencies) RemediationWorkflowContentDependencies {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationWorkflowContentPayload returns new OptRemediationWorkflowContentPayload with value set to v.
+func NewOptRemediationWorkflowContentPayload(v RemediationWorkflowContentPayload) OptRemediationWorkflowContentPayload {
+	return OptRemediationWorkflowContentPayload{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationWorkflowContentPayload is optional RemediationWorkflowContentPayload.
+type OptRemediationWorkflowContentPayload struct {
+	Value RemediationWorkflowContentPayload
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationWorkflowContentPayload was set.
+func (o OptRemediationWorkflowContentPayload) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationWorkflowContentPayload) Reset() {
+	var v RemediationWorkflowContentPayload
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationWorkflowContentPayload) SetTo(v RemediationWorkflowContentPayload) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationWorkflowContentPayload) Get() (v RemediationWorkflowContentPayload, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationWorkflowContentPayload) Or(d RemediationWorkflowContentPayload) RemediationWorkflowContentPayload {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptRemediationWorkflowContentPayloadCustomLabels returns new OptRemediationWorkflowContentPayloadCustomLabels with value set to v.
+func NewOptRemediationWorkflowContentPayloadCustomLabels(v RemediationWorkflowContentPayloadCustomLabels) OptRemediationWorkflowContentPayloadCustomLabels {
+	return OptRemediationWorkflowContentPayloadCustomLabels{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptRemediationWorkflowContentPayloadCustomLabels is optional RemediationWorkflowContentPayloadCustomLabels.
+type OptRemediationWorkflowContentPayloadCustomLabels struct {
+	Value RemediationWorkflowContentPayloadCustomLabels
+	Set   bool
+}
+
+// IsSet returns true if OptRemediationWorkflowContentPayloadCustomLabels was set.
+func (o OptRemediationWorkflowContentPayloadCustomLabels) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptRemediationWorkflowContentPayloadCustomLabels) Reset() {
+	var v RemediationWorkflowContentPayloadCustomLabels
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptRemediationWorkflowContentPayloadCustomLabels) SetTo(v RemediationWorkflowContentPayloadCustomLabels) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptRemediationWorkflowContentPayloadCustomLabels) Get() (v RemediationWorkflowContentPayloadCustomLabels, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptRemediationWorkflowContentPayloadCustomLabels) Or(d RemediationWorkflowContentPayloadCustomLabels) RemediationWorkflowContentPayloadCustomLabels {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -26130,52 +24774,6 @@ func (o OptWorkflowCatalogCreatedPayloadLabels) Or(d WorkflowCatalogCreatedPaylo
 	return d
 }
 
-// NewOptWorkflowDiscoveryEntryExecutionEngine returns new OptWorkflowDiscoveryEntryExecutionEngine with value set to v.
-func NewOptWorkflowDiscoveryEntryExecutionEngine(v WorkflowDiscoveryEntryExecutionEngine) OptWorkflowDiscoveryEntryExecutionEngine {
-	return OptWorkflowDiscoveryEntryExecutionEngine{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptWorkflowDiscoveryEntryExecutionEngine is optional WorkflowDiscoveryEntryExecutionEngine.
-type OptWorkflowDiscoveryEntryExecutionEngine struct {
-	Value WorkflowDiscoveryEntryExecutionEngine
-	Set   bool
-}
-
-// IsSet returns true if OptWorkflowDiscoveryEntryExecutionEngine was set.
-func (o OptWorkflowDiscoveryEntryExecutionEngine) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptWorkflowDiscoveryEntryExecutionEngine) Reset() {
-	var v WorkflowDiscoveryEntryExecutionEngine
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptWorkflowDiscoveryEntryExecutionEngine) SetTo(v WorkflowDiscoveryEntryExecutionEngine) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptWorkflowDiscoveryEntryExecutionEngine) Get() (v WorkflowDiscoveryEntryExecutionEngine, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptWorkflowDiscoveryEntryExecutionEngine) Or(d WorkflowDiscoveryEntryExecutionEngine) WorkflowDiscoveryEntryExecutionEngine {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptWorkflowExecutionAuditPayloadFailureReason returns new OptWorkflowExecutionAuditPayloadFailureReason with value set to v.
 func NewOptWorkflowExecutionAuditPayloadFailureReason(v WorkflowExecutionAuditPayloadFailureReason) OptWorkflowExecutionAuditPayloadFailureReason {
 	return OptWorkflowExecutionAuditPayloadFailureReason{
@@ -26358,105 +24956,6 @@ func (o OptWorkflowSearchFilters) Or(d WorkflowSearchFilters) WorkflowSearchFilt
 		return v
 	}
 	return d
-}
-
-// NewOptWorkflowUpdateRequestStatus returns new OptWorkflowUpdateRequestStatus with value set to v.
-func NewOptWorkflowUpdateRequestStatus(v WorkflowUpdateRequestStatus) OptWorkflowUpdateRequestStatus {
-	return OptWorkflowUpdateRequestStatus{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptWorkflowUpdateRequestStatus is optional WorkflowUpdateRequestStatus.
-type OptWorkflowUpdateRequestStatus struct {
-	Value WorkflowUpdateRequestStatus
-	Set   bool
-}
-
-// IsSet returns true if OptWorkflowUpdateRequestStatus was set.
-func (o OptWorkflowUpdateRequestStatus) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptWorkflowUpdateRequestStatus) Reset() {
-	var v WorkflowUpdateRequestStatus
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptWorkflowUpdateRequestStatus) SetTo(v WorkflowUpdateRequestStatus) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptWorkflowUpdateRequestStatus) Get() (v WorkflowUpdateRequestStatus, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptWorkflowUpdateRequestStatus) Or(d WorkflowUpdateRequestStatus) WorkflowUpdateRequestStatus {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// Pagination metadata for discovery endpoints (DD-WORKFLOW-016).
-// Ref: #/components/schemas/PaginationMetadata
-type PaginationMetadata struct {
-	// Total number of results across all pages.
-	TotalCount int `json:"totalCount"`
-	// Current offset (0-based).
-	Offset int `json:"offset"`
-	// Page size.
-	Limit int `json:"limit"`
-	// True if more pages exist beyond current offset+limit.
-	HasMore bool `json:"hasMore"`
-}
-
-// GetTotalCount returns the value of TotalCount.
-func (s *PaginationMetadata) GetTotalCount() int {
-	return s.TotalCount
-}
-
-// GetOffset returns the value of Offset.
-func (s *PaginationMetadata) GetOffset() int {
-	return s.Offset
-}
-
-// GetLimit returns the value of Limit.
-func (s *PaginationMetadata) GetLimit() int {
-	return s.Limit
-}
-
-// GetHasMore returns the value of HasMore.
-func (s *PaginationMetadata) GetHasMore() bool {
-	return s.HasMore
-}
-
-// SetTotalCount sets the value of TotalCount.
-func (s *PaginationMetadata) SetTotalCount(val int) {
-	s.TotalCount = val
-}
-
-// SetOffset sets the value of Offset.
-func (s *PaginationMetadata) SetOffset(val int) {
-	s.Offset = val
-}
-
-// SetLimit sets the value of Limit.
-func (s *PaginationMetadata) SetLimit(val int) {
-	s.Limit = val
-}
-
-// SetHasMore sets the value of HasMore.
-func (s *PaginationMetadata) SetHasMore(val bool) {
-	s.HasMore = val
 }
 
 type PlaceLegalHoldBadRequest RFC7807Problem
@@ -26796,10 +25295,6 @@ func (s *RFC7807Problem) SetInstance(val OptURI) {
 func (s *RFC7807Problem) SetFieldErrors(val OptRFC7807ProblemFieldErrors) {
 	s.FieldErrors = val
 }
-
-func (*RFC7807Problem) createActionTypeRes() {}
-func (*RFC7807Problem) listWorkflowsRes()    {}
-func (*RFC7807Problem) updateActionTypeRes() {}
 
 // Map of field names to error messages for validation errors.
 // Only present for 400 Bad Request responses.
@@ -29519,589 +28014,478 @@ func (s *RemediationRequestWebhookAuditPayloadEventType) UnmarshalText(data []by
 	}
 }
 
-// Ref: #/components/schemas/RemediationWorkflow
-type RemediationWorkflow struct {
-	// Unique workflow identifier (UUID, auto-generated).
-	WorkflowId OptUUID `json:"workflowId"`
-	// Workflow name (identifier for versions).
-	WorkflowName string `json:"workflowName"`
-	// Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy.
-	ActionType string `json:"actionType"`
-	// Semantic version (e.g., v1.0.0).
-	Version string `json:"version"`
-	// Schema format version (e.g., 1.0, 1.1). Determines which structural fields are valid.
-	// BR-WORKFLOW-004 v1.1, #255.
-	SchemaVersion string `json:"schemaVersion"`
-	// Human-readable workflow title.
-	Name        string                `json:"name"`
-	Description StructuredDescription `json:"description"`
-	// Workflow owner.
-	Owner OptString `json:"owner"`
-	// Workflow maintainer email.
-	Maintainer OptString `json:"maintainer"`
-	// YAML workflow definition.
-	Content string `json:"content"`
-	// SHA-256 hash of content.
-	ContentHash string `json:"contentHash"`
-	// Workflow parameters (JSONB).
-	Parameters OptRemediationWorkflowParameters `json:"parameters"`
-	// Execution engine (e.g., argo-workflows).
-	ExecutionEngine string `json:"executionEngine"`
-	// OCI image used to extract the workflow schema (DD-WORKFLOW-017).
-	SchemaImage OptString `json:"schemaImage"`
-	// OCI schema image digest.
-	SchemaDigest OptString `json:"schemaDigest"`
-	// OCI execution bundle reference (digest-pinned).
-	ExecutionBundle OptString `json:"executionBundle"`
-	// OCI execution bundle digest.
-	ExecutionBundleDigest OptString `json:"executionBundleDigest"`
-	// Pre-existing ServiceAccount for Job/PipelineRun (DD-WE-005 v2.0). Absent = K8s namespace default
-	// SA.
-	ServiceAccountName OptString         `json:"serviceAccountName"`
-	Labels             MandatoryLabels   `json:"labels"`
-	CustomLabels       OptCustomLabels   `json:"customLabels"`
-	DetectedLabels     OptDetectedLabels `json:"detectedLabels"`
-	// Workflow lifecycle status.
-	Status RemediationWorkflowStatus `json:"status"`
-	// When workflow was disabled.
-	DisabledAt OptDateTime `json:"disabledAt"`
-	// Who disabled the workflow.
-	DisabledBy OptString `json:"disabledBy"`
-	// Why workflow was disabled.
-	DisabledReason OptString `json:"disabledReason"`
-	// Is this the latest version?.
-	IsLatestVersion OptBool `json:"isLatestVersion"`
-	// Previous version identifier.
-	PreviousVersion OptString `json:"previousVersion"`
-	// Deprecation notice.
-	DeprecationNotice OptString `json:"deprecationNotice"`
-	// Version release notes.
-	VersionNotes OptString `json:"versionNotes"`
-	// Summary of changes in this version.
-	ChangeSummary OptString `json:"changeSummary"`
-	// Who approved this version.
-	ApprovedBy OptString `json:"approvedBy"`
-	// When this version was approved.
-	ApprovedAt OptDateTime `json:"approvedAt"`
-	// Expected success rate (0.0-1.0).
-	ExpectedSuccessRate OptFloat32 `json:"expectedSuccessRate"`
-	// Expected execution duration.
-	ExpectedDurationSeconds OptInt `json:"expectedDurationSeconds"`
-	// Actual success rate (0.0-1.0).
-	ActualSuccessRate OptFloat32 `json:"actualSuccessRate"`
-	// Total number of executions.
-	TotalExecutions OptInt `json:"totalExecutions"`
-	// Number of successful executions.
-	SuccessfulExecutions OptInt      `json:"successfulExecutions"`
-	CreatedAt            OptDateTime `json:"createdAt"`
-	UpdatedAt            OptDateTime `json:"updatedAt"`
-	CreatedBy            OptString   `json:"createdBy"`
-	UpdatedBy            OptString   `json:"updatedBy"`
+// Infrastructure resources required by the workflow. spec.dependencies.
+// Ref: #/components/schemas/RemediationWorkflowContentDependencies
+type RemediationWorkflowContentDependencies struct {
+	Secrets    []RemediationWorkflowContentResourceDependency `json:"secrets"`
+	ConfigMaps []RemediationWorkflowContentResourceDependency `json:"configMaps"`
 }
 
-// GetWorkflowId returns the value of WorkflowId.
-func (s *RemediationWorkflow) GetWorkflowId() OptUUID {
-	return s.WorkflowId
+// GetSecrets returns the value of Secrets.
+func (s *RemediationWorkflowContentDependencies) GetSecrets() []RemediationWorkflowContentResourceDependency {
+	return s.Secrets
 }
 
-// GetWorkflowName returns the value of WorkflowName.
-func (s *RemediationWorkflow) GetWorkflowName() string {
-	return s.WorkflowName
+// GetConfigMaps returns the value of ConfigMaps.
+func (s *RemediationWorkflowContentDependencies) GetConfigMaps() []RemediationWorkflowContentResourceDependency {
+	return s.ConfigMaps
 }
 
-// GetActionType returns the value of ActionType.
-func (s *RemediationWorkflow) GetActionType() string {
-	return s.ActionType
+// SetSecrets sets the value of Secrets.
+func (s *RemediationWorkflowContentDependencies) SetSecrets(val []RemediationWorkflowContentResourceDependency) {
+	s.Secrets = val
 }
 
-// GetVersion returns the value of Version.
-func (s *RemediationWorkflow) GetVersion() string {
-	return s.Version
+// SetConfigMaps sets the value of ConfigMaps.
+func (s *RemediationWorkflowContentDependencies) SetConfigMaps(val []RemediationWorkflowContentResourceDependency) {
+	s.ConfigMaps = val
 }
 
-// GetSchemaVersion returns the value of SchemaVersion.
-func (s *RemediationWorkflow) GetSchemaVersion() string {
-	return s.SchemaVersion
+// Execution engine configuration. spec.execution.
+// Ref: #/components/schemas/RemediationWorkflowContentExecution
+type RemediationWorkflowContentExecution struct {
+	// Execution engine type (tekton, job, ansible).
+	Engine OptString `json:"engine"`
+	// Execution bundle or container image reference.
+	Bundle OptString `json:"bundle"`
+	// Digest of the execution bundle.
+	BundleDigest OptString `json:"bundleDigest"`
+	// Engine-specific configuration. spec.execution.engineConfig — opaque JSON
+	// (`+kubebuilder:pruning:PreserveUnknownFields` at the CRD level), captured
+	// verbatim.
+	EngineConfig jx.Raw `json:"engineConfig"`
+	// Pre-existing ServiceAccount for the execution resource.
+	ServiceAccountName OptString `json:"serviceAccountName"`
 }
 
-// GetName returns the value of Name.
-func (s *RemediationWorkflow) GetName() string {
-	return s.Name
+// GetEngine returns the value of Engine.
+func (s *RemediationWorkflowContentExecution) GetEngine() OptString {
+	return s.Engine
 }
 
-// GetDescription returns the value of Description.
-func (s *RemediationWorkflow) GetDescription() StructuredDescription {
-	return s.Description
+// GetBundle returns the value of Bundle.
+func (s *RemediationWorkflowContentExecution) GetBundle() OptString {
+	return s.Bundle
 }
 
-// GetOwner returns the value of Owner.
-func (s *RemediationWorkflow) GetOwner() OptString {
-	return s.Owner
+// GetBundleDigest returns the value of BundleDigest.
+func (s *RemediationWorkflowContentExecution) GetBundleDigest() OptString {
+	return s.BundleDigest
 }
 
-// GetMaintainer returns the value of Maintainer.
-func (s *RemediationWorkflow) GetMaintainer() OptString {
-	return s.Maintainer
-}
-
-// GetContent returns the value of Content.
-func (s *RemediationWorkflow) GetContent() string {
-	return s.Content
-}
-
-// GetContentHash returns the value of ContentHash.
-func (s *RemediationWorkflow) GetContentHash() string {
-	return s.ContentHash
-}
-
-// GetParameters returns the value of Parameters.
-func (s *RemediationWorkflow) GetParameters() OptRemediationWorkflowParameters {
-	return s.Parameters
-}
-
-// GetExecutionEngine returns the value of ExecutionEngine.
-func (s *RemediationWorkflow) GetExecutionEngine() string {
-	return s.ExecutionEngine
-}
-
-// GetSchemaImage returns the value of SchemaImage.
-func (s *RemediationWorkflow) GetSchemaImage() OptString {
-	return s.SchemaImage
-}
-
-// GetSchemaDigest returns the value of SchemaDigest.
-func (s *RemediationWorkflow) GetSchemaDigest() OptString {
-	return s.SchemaDigest
-}
-
-// GetExecutionBundle returns the value of ExecutionBundle.
-func (s *RemediationWorkflow) GetExecutionBundle() OptString {
-	return s.ExecutionBundle
-}
-
-// GetExecutionBundleDigest returns the value of ExecutionBundleDigest.
-func (s *RemediationWorkflow) GetExecutionBundleDigest() OptString {
-	return s.ExecutionBundleDigest
+// GetEngineConfig returns the value of EngineConfig.
+func (s *RemediationWorkflowContentExecution) GetEngineConfig() jx.Raw {
+	return s.EngineConfig
 }
 
 // GetServiceAccountName returns the value of ServiceAccountName.
-func (s *RemediationWorkflow) GetServiceAccountName() OptString {
+func (s *RemediationWorkflowContentExecution) GetServiceAccountName() OptString {
 	return s.ServiceAccountName
 }
 
+// SetEngine sets the value of Engine.
+func (s *RemediationWorkflowContentExecution) SetEngine(val OptString) {
+	s.Engine = val
+}
+
+// SetBundle sets the value of Bundle.
+func (s *RemediationWorkflowContentExecution) SetBundle(val OptString) {
+	s.Bundle = val
+}
+
+// SetBundleDigest sets the value of BundleDigest.
+func (s *RemediationWorkflowContentExecution) SetBundleDigest(val OptString) {
+	s.BundleDigest = val
+}
+
+// SetEngineConfig sets the value of EngineConfig.
+func (s *RemediationWorkflowContentExecution) SetEngineConfig(val jx.Raw) {
+	s.EngineConfig = val
+}
+
+// SetServiceAccountName sets the value of ServiceAccountName.
+func (s *RemediationWorkflowContentExecution) SetServiceAccountName(val OptString) {
+	s.ServiceAccountName = val
+}
+
+// Mandatory matching/filtering criteria. spec.labels. Structurally mirrors
+// RemediationWorkflowLabels without DS's search-endpoint enum restrictions
+// (MandatoryLabels) — the CRD itself does not enum-constrain these values.
+// Ref: #/components/schemas/RemediationWorkflowContentLabels
+type RemediationWorkflowContentLabels struct {
+	// Severity level(s) this workflow is designed for.
+	Severity []string `json:"severity"`
+	// Target environment(s).
+	Environment []string `json:"environment"`
+	// Kubernetes resource type(s).
+	Component []string `json:"component"`
+	// Business priority level.
+	Priority string `json:"priority"`
+	// BR-FLEET-003 (#1511): cluster classification(s) this workflow is eligible for.
+	Cluster []string `json:"cluster"`
+}
+
+// GetSeverity returns the value of Severity.
+func (s *RemediationWorkflowContentLabels) GetSeverity() []string {
+	return s.Severity
+}
+
+// GetEnvironment returns the value of Environment.
+func (s *RemediationWorkflowContentLabels) GetEnvironment() []string {
+	return s.Environment
+}
+
+// GetComponent returns the value of Component.
+func (s *RemediationWorkflowContentLabels) GetComponent() []string {
+	return s.Component
+}
+
+// GetPriority returns the value of Priority.
+func (s *RemediationWorkflowContentLabels) GetPriority() string {
+	return s.Priority
+}
+
+// GetCluster returns the value of Cluster.
+func (s *RemediationWorkflowContentLabels) GetCluster() []string {
+	return s.Cluster
+}
+
+// SetSeverity sets the value of Severity.
+func (s *RemediationWorkflowContentLabels) SetSeverity(val []string) {
+	s.Severity = val
+}
+
+// SetEnvironment sets the value of Environment.
+func (s *RemediationWorkflowContentLabels) SetEnvironment(val []string) {
+	s.Environment = val
+}
+
+// SetComponent sets the value of Component.
+func (s *RemediationWorkflowContentLabels) SetComponent(val []string) {
+	s.Component = val
+}
+
+// SetPriority sets the value of Priority.
+func (s *RemediationWorkflowContentLabels) SetPriority(val string) {
+	s.Priority = val
+}
+
+// SetCluster sets the value of Cluster.
+func (s *RemediationWorkflowContentLabels) SetCluster(val []string) {
+	s.Cluster = val
+}
+
+// Ref: #/components/schemas/RemediationWorkflowContentMaintainer
+type RemediationWorkflowContentMaintainer struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+// GetName returns the value of Name.
+func (s *RemediationWorkflowContentMaintainer) GetName() string {
+	return s.Name
+}
+
+// GetEmail returns the value of Email.
+func (s *RemediationWorkflowContentMaintainer) GetEmail() string {
+	return s.Email
+}
+
+// SetName sets the value of Name.
+func (s *RemediationWorkflowContentMaintainer) SetName(val string) {
+	s.Name = val
+}
+
+// SetEmail sets the value of Email.
+func (s *RemediationWorkflowContentMaintainer) SetEmail(val string) {
+	s.Email = val
+}
+
+// Workflow input/rollback parameter definition. spec.parameters[] / spec.rollbackParameters[].
+// Ref: #/components/schemas/RemediationWorkflowContentParameter
+type RemediationWorkflowContentParameter struct {
+	Name string `json:"name"`
+	// Parameter type (string, integer, boolean, array, float).
+	Type        string     `json:"type"`
+	Required    bool       `json:"required"`
+	Description string     `json:"description"`
+	Enum        []string   `json:"enum"`
+	Pattern     OptString  `json:"pattern"`
+	Minimum     OptFloat64 `json:"minimum"`
+	Maximum     OptFloat64 `json:"maximum"`
+	// Default value. spec.parameters[].default — opaque JSON
+	// (`+kubebuilder:pruning:PreserveUnknownFields` at the CRD level; may be any
+	// JSON type, not just an object), captured verbatim.
+	Default   jx.Raw   `json:"default"`
+	DependsOn []string `json:"dependsOn"`
+}
+
+// GetName returns the value of Name.
+func (s *RemediationWorkflowContentParameter) GetName() string {
+	return s.Name
+}
+
+// GetType returns the value of Type.
+func (s *RemediationWorkflowContentParameter) GetType() string {
+	return s.Type
+}
+
+// GetRequired returns the value of Required.
+func (s *RemediationWorkflowContentParameter) GetRequired() bool {
+	return s.Required
+}
+
+// GetDescription returns the value of Description.
+func (s *RemediationWorkflowContentParameter) GetDescription() string {
+	return s.Description
+}
+
+// GetEnum returns the value of Enum.
+func (s *RemediationWorkflowContentParameter) GetEnum() []string {
+	return s.Enum
+}
+
+// GetPattern returns the value of Pattern.
+func (s *RemediationWorkflowContentParameter) GetPattern() OptString {
+	return s.Pattern
+}
+
+// GetMinimum returns the value of Minimum.
+func (s *RemediationWorkflowContentParameter) GetMinimum() OptFloat64 {
+	return s.Minimum
+}
+
+// GetMaximum returns the value of Maximum.
+func (s *RemediationWorkflowContentParameter) GetMaximum() OptFloat64 {
+	return s.Maximum
+}
+
+// GetDefault returns the value of Default.
+func (s *RemediationWorkflowContentParameter) GetDefault() jx.Raw {
+	return s.Default
+}
+
+// GetDependsOn returns the value of DependsOn.
+func (s *RemediationWorkflowContentParameter) GetDependsOn() []string {
+	return s.DependsOn
+}
+
+// SetName sets the value of Name.
+func (s *RemediationWorkflowContentParameter) SetName(val string) {
+	s.Name = val
+}
+
+// SetType sets the value of Type.
+func (s *RemediationWorkflowContentParameter) SetType(val string) {
+	s.Type = val
+}
+
+// SetRequired sets the value of Required.
+func (s *RemediationWorkflowContentParameter) SetRequired(val bool) {
+	s.Required = val
+}
+
+// SetDescription sets the value of Description.
+func (s *RemediationWorkflowContentParameter) SetDescription(val string) {
+	s.Description = val
+}
+
+// SetEnum sets the value of Enum.
+func (s *RemediationWorkflowContentParameter) SetEnum(val []string) {
+	s.Enum = val
+}
+
+// SetPattern sets the value of Pattern.
+func (s *RemediationWorkflowContentParameter) SetPattern(val OptString) {
+	s.Pattern = val
+}
+
+// SetMinimum sets the value of Minimum.
+func (s *RemediationWorkflowContentParameter) SetMinimum(val OptFloat64) {
+	s.Minimum = val
+}
+
+// SetMaximum sets the value of Maximum.
+func (s *RemediationWorkflowContentParameter) SetMaximum(val OptFloat64) {
+	s.Maximum = val
+}
+
+// SetDefault sets the value of Default.
+func (s *RemediationWorkflowContentParameter) SetDefault(val jx.Raw) {
+	s.Default = val
+}
+
+// SetDependsOn sets the value of DependsOn.
+func (s *RemediationWorkflowContentParameter) SetDependsOn(val []string) {
+	s.DependsOn = val
+}
+
+// Full RemediationWorkflow spec snapshot, mirroring RemediationWorkflowSpec
+// (api/remediationworkflow/v1alpha1/remediationworkflow_types.go) field-for-field
+// so the audit trail can reconstruct the exact workflow definition independent of
+// etcd or DataStorage's cache (#1661). Deliberately more permissive than
+// DataStorage's own search/discovery schemas (e.g. MandatoryLabels' enums) —
+// audit capture must never fail just because content the CRD itself allows falls
+// outside an unrelated endpoint's stricter validation.
+// Ref: #/components/schemas/RemediationWorkflowContentPayload
+type RemediationWorkflowContentPayload struct {
+	// Semantic version (e.g., 1.0.0). spec.version.
+	Version     string                `json:"version"`
+	Description StructuredDescription `json:"description"`
+	// Action type from the taxonomy (PascalCase). spec.actionType.
+	ActionType string                           `json:"actionType"`
+	Labels     RemediationWorkflowContentLabels `json:"labels"`
+	// Operator-defined key-value labels for additional filtering. spec.customLabels.
+	CustomLabels OptRemediationWorkflowContentPayloadCustomLabels `json:"customLabels"`
+	// Author-declared infrastructure requirements. spec.detectedLabels — the CRD
+	// declares this `+kubebuilder:pruning:PreserveUnknownFields` (opaque JSON), so
+	// it is captured verbatim rather than forced into a rigid shape.
+	DetectedLabels jx.Raw                                    `json:"detectedLabels"`
+	Execution      RemediationWorkflowContentExecution       `json:"execution"`
+	Dependencies   OptRemediationWorkflowContentDependencies `json:"dependencies"`
+	// Spec.maintainers.
+	Maintainers []RemediationWorkflowContentMaintainer `json:"maintainers"`
+	// Workflow input parameters. spec.parameters.
+	Parameters []RemediationWorkflowContentParameter `json:"parameters"`
+	// Parameters needed for rollback. spec.rollbackParameters.
+	RollbackParameters []RemediationWorkflowContentParameter `json:"rollbackParameters"`
+}
+
+// GetVersion returns the value of Version.
+func (s *RemediationWorkflowContentPayload) GetVersion() string {
+	return s.Version
+}
+
+// GetDescription returns the value of Description.
+func (s *RemediationWorkflowContentPayload) GetDescription() StructuredDescription {
+	return s.Description
+}
+
+// GetActionType returns the value of ActionType.
+func (s *RemediationWorkflowContentPayload) GetActionType() string {
+	return s.ActionType
+}
+
 // GetLabels returns the value of Labels.
-func (s *RemediationWorkflow) GetLabels() MandatoryLabels {
+func (s *RemediationWorkflowContentPayload) GetLabels() RemediationWorkflowContentLabels {
 	return s.Labels
 }
 
 // GetCustomLabels returns the value of CustomLabels.
-func (s *RemediationWorkflow) GetCustomLabels() OptCustomLabels {
+func (s *RemediationWorkflowContentPayload) GetCustomLabels() OptRemediationWorkflowContentPayloadCustomLabels {
 	return s.CustomLabels
 }
 
 // GetDetectedLabels returns the value of DetectedLabels.
-func (s *RemediationWorkflow) GetDetectedLabels() OptDetectedLabels {
+func (s *RemediationWorkflowContentPayload) GetDetectedLabels() jx.Raw {
 	return s.DetectedLabels
 }
 
-// GetStatus returns the value of Status.
-func (s *RemediationWorkflow) GetStatus() RemediationWorkflowStatus {
-	return s.Status
+// GetExecution returns the value of Execution.
+func (s *RemediationWorkflowContentPayload) GetExecution() RemediationWorkflowContentExecution {
+	return s.Execution
 }
 
-// GetDisabledAt returns the value of DisabledAt.
-func (s *RemediationWorkflow) GetDisabledAt() OptDateTime {
-	return s.DisabledAt
+// GetDependencies returns the value of Dependencies.
+func (s *RemediationWorkflowContentPayload) GetDependencies() OptRemediationWorkflowContentDependencies {
+	return s.Dependencies
 }
 
-// GetDisabledBy returns the value of DisabledBy.
-func (s *RemediationWorkflow) GetDisabledBy() OptString {
-	return s.DisabledBy
+// GetMaintainers returns the value of Maintainers.
+func (s *RemediationWorkflowContentPayload) GetMaintainers() []RemediationWorkflowContentMaintainer {
+	return s.Maintainers
 }
 
-// GetDisabledReason returns the value of DisabledReason.
-func (s *RemediationWorkflow) GetDisabledReason() OptString {
-	return s.DisabledReason
+// GetParameters returns the value of Parameters.
+func (s *RemediationWorkflowContentPayload) GetParameters() []RemediationWorkflowContentParameter {
+	return s.Parameters
 }
 
-// GetIsLatestVersion returns the value of IsLatestVersion.
-func (s *RemediationWorkflow) GetIsLatestVersion() OptBool {
-	return s.IsLatestVersion
-}
-
-// GetPreviousVersion returns the value of PreviousVersion.
-func (s *RemediationWorkflow) GetPreviousVersion() OptString {
-	return s.PreviousVersion
-}
-
-// GetDeprecationNotice returns the value of DeprecationNotice.
-func (s *RemediationWorkflow) GetDeprecationNotice() OptString {
-	return s.DeprecationNotice
-}
-
-// GetVersionNotes returns the value of VersionNotes.
-func (s *RemediationWorkflow) GetVersionNotes() OptString {
-	return s.VersionNotes
-}
-
-// GetChangeSummary returns the value of ChangeSummary.
-func (s *RemediationWorkflow) GetChangeSummary() OptString {
-	return s.ChangeSummary
-}
-
-// GetApprovedBy returns the value of ApprovedBy.
-func (s *RemediationWorkflow) GetApprovedBy() OptString {
-	return s.ApprovedBy
-}
-
-// GetApprovedAt returns the value of ApprovedAt.
-func (s *RemediationWorkflow) GetApprovedAt() OptDateTime {
-	return s.ApprovedAt
-}
-
-// GetExpectedSuccessRate returns the value of ExpectedSuccessRate.
-func (s *RemediationWorkflow) GetExpectedSuccessRate() OptFloat32 {
-	return s.ExpectedSuccessRate
-}
-
-// GetExpectedDurationSeconds returns the value of ExpectedDurationSeconds.
-func (s *RemediationWorkflow) GetExpectedDurationSeconds() OptInt {
-	return s.ExpectedDurationSeconds
-}
-
-// GetActualSuccessRate returns the value of ActualSuccessRate.
-func (s *RemediationWorkflow) GetActualSuccessRate() OptFloat32 {
-	return s.ActualSuccessRate
-}
-
-// GetTotalExecutions returns the value of TotalExecutions.
-func (s *RemediationWorkflow) GetTotalExecutions() OptInt {
-	return s.TotalExecutions
-}
-
-// GetSuccessfulExecutions returns the value of SuccessfulExecutions.
-func (s *RemediationWorkflow) GetSuccessfulExecutions() OptInt {
-	return s.SuccessfulExecutions
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *RemediationWorkflow) GetCreatedAt() OptDateTime {
-	return s.CreatedAt
-}
-
-// GetUpdatedAt returns the value of UpdatedAt.
-func (s *RemediationWorkflow) GetUpdatedAt() OptDateTime {
-	return s.UpdatedAt
-}
-
-// GetCreatedBy returns the value of CreatedBy.
-func (s *RemediationWorkflow) GetCreatedBy() OptString {
-	return s.CreatedBy
-}
-
-// GetUpdatedBy returns the value of UpdatedBy.
-func (s *RemediationWorkflow) GetUpdatedBy() OptString {
-	return s.UpdatedBy
-}
-
-// SetWorkflowId sets the value of WorkflowId.
-func (s *RemediationWorkflow) SetWorkflowId(val OptUUID) {
-	s.WorkflowId = val
-}
-
-// SetWorkflowName sets the value of WorkflowName.
-func (s *RemediationWorkflow) SetWorkflowName(val string) {
-	s.WorkflowName = val
-}
-
-// SetActionType sets the value of ActionType.
-func (s *RemediationWorkflow) SetActionType(val string) {
-	s.ActionType = val
+// GetRollbackParameters returns the value of RollbackParameters.
+func (s *RemediationWorkflowContentPayload) GetRollbackParameters() []RemediationWorkflowContentParameter {
+	return s.RollbackParameters
 }
 
 // SetVersion sets the value of Version.
-func (s *RemediationWorkflow) SetVersion(val string) {
+func (s *RemediationWorkflowContentPayload) SetVersion(val string) {
 	s.Version = val
 }
 
-// SetSchemaVersion sets the value of SchemaVersion.
-func (s *RemediationWorkflow) SetSchemaVersion(val string) {
-	s.SchemaVersion = val
-}
-
-// SetName sets the value of Name.
-func (s *RemediationWorkflow) SetName(val string) {
-	s.Name = val
-}
-
 // SetDescription sets the value of Description.
-func (s *RemediationWorkflow) SetDescription(val StructuredDescription) {
+func (s *RemediationWorkflowContentPayload) SetDescription(val StructuredDescription) {
 	s.Description = val
 }
 
-// SetOwner sets the value of Owner.
-func (s *RemediationWorkflow) SetOwner(val OptString) {
-	s.Owner = val
-}
-
-// SetMaintainer sets the value of Maintainer.
-func (s *RemediationWorkflow) SetMaintainer(val OptString) {
-	s.Maintainer = val
-}
-
-// SetContent sets the value of Content.
-func (s *RemediationWorkflow) SetContent(val string) {
-	s.Content = val
-}
-
-// SetContentHash sets the value of ContentHash.
-func (s *RemediationWorkflow) SetContentHash(val string) {
-	s.ContentHash = val
-}
-
-// SetParameters sets the value of Parameters.
-func (s *RemediationWorkflow) SetParameters(val OptRemediationWorkflowParameters) {
-	s.Parameters = val
-}
-
-// SetExecutionEngine sets the value of ExecutionEngine.
-func (s *RemediationWorkflow) SetExecutionEngine(val string) {
-	s.ExecutionEngine = val
-}
-
-// SetSchemaImage sets the value of SchemaImage.
-func (s *RemediationWorkflow) SetSchemaImage(val OptString) {
-	s.SchemaImage = val
-}
-
-// SetSchemaDigest sets the value of SchemaDigest.
-func (s *RemediationWorkflow) SetSchemaDigest(val OptString) {
-	s.SchemaDigest = val
-}
-
-// SetExecutionBundle sets the value of ExecutionBundle.
-func (s *RemediationWorkflow) SetExecutionBundle(val OptString) {
-	s.ExecutionBundle = val
-}
-
-// SetExecutionBundleDigest sets the value of ExecutionBundleDigest.
-func (s *RemediationWorkflow) SetExecutionBundleDigest(val OptString) {
-	s.ExecutionBundleDigest = val
-}
-
-// SetServiceAccountName sets the value of ServiceAccountName.
-func (s *RemediationWorkflow) SetServiceAccountName(val OptString) {
-	s.ServiceAccountName = val
+// SetActionType sets the value of ActionType.
+func (s *RemediationWorkflowContentPayload) SetActionType(val string) {
+	s.ActionType = val
 }
 
 // SetLabels sets the value of Labels.
-func (s *RemediationWorkflow) SetLabels(val MandatoryLabels) {
+func (s *RemediationWorkflowContentPayload) SetLabels(val RemediationWorkflowContentLabels) {
 	s.Labels = val
 }
 
 // SetCustomLabels sets the value of CustomLabels.
-func (s *RemediationWorkflow) SetCustomLabels(val OptCustomLabels) {
+func (s *RemediationWorkflowContentPayload) SetCustomLabels(val OptRemediationWorkflowContentPayloadCustomLabels) {
 	s.CustomLabels = val
 }
 
 // SetDetectedLabels sets the value of DetectedLabels.
-func (s *RemediationWorkflow) SetDetectedLabels(val OptDetectedLabels) {
+func (s *RemediationWorkflowContentPayload) SetDetectedLabels(val jx.Raw) {
 	s.DetectedLabels = val
 }
 
-// SetStatus sets the value of Status.
-func (s *RemediationWorkflow) SetStatus(val RemediationWorkflowStatus) {
-	s.Status = val
+// SetExecution sets the value of Execution.
+func (s *RemediationWorkflowContentPayload) SetExecution(val RemediationWorkflowContentExecution) {
+	s.Execution = val
 }
 
-// SetDisabledAt sets the value of DisabledAt.
-func (s *RemediationWorkflow) SetDisabledAt(val OptDateTime) {
-	s.DisabledAt = val
+// SetDependencies sets the value of Dependencies.
+func (s *RemediationWorkflowContentPayload) SetDependencies(val OptRemediationWorkflowContentDependencies) {
+	s.Dependencies = val
 }
 
-// SetDisabledBy sets the value of DisabledBy.
-func (s *RemediationWorkflow) SetDisabledBy(val OptString) {
-	s.DisabledBy = val
+// SetMaintainers sets the value of Maintainers.
+func (s *RemediationWorkflowContentPayload) SetMaintainers(val []RemediationWorkflowContentMaintainer) {
+	s.Maintainers = val
 }
 
-// SetDisabledReason sets the value of DisabledReason.
-func (s *RemediationWorkflow) SetDisabledReason(val OptString) {
-	s.DisabledReason = val
+// SetParameters sets the value of Parameters.
+func (s *RemediationWorkflowContentPayload) SetParameters(val []RemediationWorkflowContentParameter) {
+	s.Parameters = val
 }
 
-// SetIsLatestVersion sets the value of IsLatestVersion.
-func (s *RemediationWorkflow) SetIsLatestVersion(val OptBool) {
-	s.IsLatestVersion = val
+// SetRollbackParameters sets the value of RollbackParameters.
+func (s *RemediationWorkflowContentPayload) SetRollbackParameters(val []RemediationWorkflowContentParameter) {
+	s.RollbackParameters = val
 }
 
-// SetPreviousVersion sets the value of PreviousVersion.
-func (s *RemediationWorkflow) SetPreviousVersion(val OptString) {
-	s.PreviousVersion = val
-}
+// Operator-defined key-value labels for additional filtering. spec.customLabels.
+type RemediationWorkflowContentPayloadCustomLabels map[string]string
 
-// SetDeprecationNotice sets the value of DeprecationNotice.
-func (s *RemediationWorkflow) SetDeprecationNotice(val OptString) {
-	s.DeprecationNotice = val
-}
-
-// SetVersionNotes sets the value of VersionNotes.
-func (s *RemediationWorkflow) SetVersionNotes(val OptString) {
-	s.VersionNotes = val
-}
-
-// SetChangeSummary sets the value of ChangeSummary.
-func (s *RemediationWorkflow) SetChangeSummary(val OptString) {
-	s.ChangeSummary = val
-}
-
-// SetApprovedBy sets the value of ApprovedBy.
-func (s *RemediationWorkflow) SetApprovedBy(val OptString) {
-	s.ApprovedBy = val
-}
-
-// SetApprovedAt sets the value of ApprovedAt.
-func (s *RemediationWorkflow) SetApprovedAt(val OptDateTime) {
-	s.ApprovedAt = val
-}
-
-// SetExpectedSuccessRate sets the value of ExpectedSuccessRate.
-func (s *RemediationWorkflow) SetExpectedSuccessRate(val OptFloat32) {
-	s.ExpectedSuccessRate = val
-}
-
-// SetExpectedDurationSeconds sets the value of ExpectedDurationSeconds.
-func (s *RemediationWorkflow) SetExpectedDurationSeconds(val OptInt) {
-	s.ExpectedDurationSeconds = val
-}
-
-// SetActualSuccessRate sets the value of ActualSuccessRate.
-func (s *RemediationWorkflow) SetActualSuccessRate(val OptFloat32) {
-	s.ActualSuccessRate = val
-}
-
-// SetTotalExecutions sets the value of TotalExecutions.
-func (s *RemediationWorkflow) SetTotalExecutions(val OptInt) {
-	s.TotalExecutions = val
-}
-
-// SetSuccessfulExecutions sets the value of SuccessfulExecutions.
-func (s *RemediationWorkflow) SetSuccessfulExecutions(val OptInt) {
-	s.SuccessfulExecutions = val
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *RemediationWorkflow) SetCreatedAt(val OptDateTime) {
-	s.CreatedAt = val
-}
-
-// SetUpdatedAt sets the value of UpdatedAt.
-func (s *RemediationWorkflow) SetUpdatedAt(val OptDateTime) {
-	s.UpdatedAt = val
-}
-
-// SetCreatedBy sets the value of CreatedBy.
-func (s *RemediationWorkflow) SetCreatedBy(val OptString) {
-	s.CreatedBy = val
-}
-
-// SetUpdatedBy sets the value of UpdatedBy.
-func (s *RemediationWorkflow) SetUpdatedBy(val OptString) {
-	s.UpdatedBy = val
-}
-
-func (*RemediationWorkflow) deprecateWorkflowRes() {}
-func (*RemediationWorkflow) disableWorkflowRes()   {}
-func (*RemediationWorkflow) enableWorkflowRes()    {}
-func (*RemediationWorkflow) getWorkflowByIDRes()   {}
-func (*RemediationWorkflow) updateWorkflowRes()    {}
-
-// Workflow parameters (JSONB).
-type RemediationWorkflowParameters map[string]jx.Raw
-
-func (s *RemediationWorkflowParameters) init() RemediationWorkflowParameters {
+func (s *RemediationWorkflowContentPayloadCustomLabels) init() RemediationWorkflowContentPayloadCustomLabels {
 	m := *s
 	if m == nil {
-		m = map[string]jx.Raw{}
+		m = map[string]string{}
 		*s = m
 	}
 	return m
 }
 
-// Workflow lifecycle status.
-type RemediationWorkflowStatus string
-
-const (
-	RemediationWorkflowStatusActive     RemediationWorkflowStatus = "Active"
-	RemediationWorkflowStatusInvalid    RemediationWorkflowStatus = "Invalid"
-	RemediationWorkflowStatusPending    RemediationWorkflowStatus = "Pending"
-	RemediationWorkflowStatusDisabled   RemediationWorkflowStatus = "Disabled"
-	RemediationWorkflowStatusDeprecated RemediationWorkflowStatus = "Deprecated"
-	RemediationWorkflowStatusArchived   RemediationWorkflowStatus = "Archived"
-	RemediationWorkflowStatusSuperseded RemediationWorkflowStatus = "Superseded"
-)
-
-// AllValues returns all RemediationWorkflowStatus values.
-func (RemediationWorkflowStatus) AllValues() []RemediationWorkflowStatus {
-	return []RemediationWorkflowStatus{
-		RemediationWorkflowStatusActive,
-		RemediationWorkflowStatusInvalid,
-		RemediationWorkflowStatusPending,
-		RemediationWorkflowStatusDisabled,
-		RemediationWorkflowStatusDeprecated,
-		RemediationWorkflowStatusArchived,
-		RemediationWorkflowStatusSuperseded,
-	}
+// Ref: #/components/schemas/RemediationWorkflowContentResourceDependency
+type RemediationWorkflowContentResourceDependency struct {
+	Name string `json:"name"`
 }
 
-// MarshalText implements encoding.TextMarshaler.
-func (s RemediationWorkflowStatus) MarshalText() ([]byte, error) {
-	switch s {
-	case RemediationWorkflowStatusActive:
-		return []byte(s), nil
-	case RemediationWorkflowStatusInvalid:
-		return []byte(s), nil
-	case RemediationWorkflowStatusPending:
-		return []byte(s), nil
-	case RemediationWorkflowStatusDisabled:
-		return []byte(s), nil
-	case RemediationWorkflowStatusDeprecated:
-		return []byte(s), nil
-	case RemediationWorkflowStatusArchived:
-		return []byte(s), nil
-	case RemediationWorkflowStatusSuperseded:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
+// GetName returns the value of Name.
+func (s *RemediationWorkflowContentResourceDependency) GetName() string {
+	return s.Name
 }
 
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *RemediationWorkflowStatus) UnmarshalText(data []byte) error {
-	switch RemediationWorkflowStatus(data) {
-	case RemediationWorkflowStatusActive:
-		*s = RemediationWorkflowStatusActive
-		return nil
-	case RemediationWorkflowStatusInvalid:
-		*s = RemediationWorkflowStatusInvalid
-		return nil
-	case RemediationWorkflowStatusPending:
-		*s = RemediationWorkflowStatusPending
-		return nil
-	case RemediationWorkflowStatusDisabled:
-		*s = RemediationWorkflowStatusDisabled
-		return nil
-	case RemediationWorkflowStatusDeprecated:
-		*s = RemediationWorkflowStatusDeprecated
-		return nil
-	case RemediationWorkflowStatusArchived:
-		*s = RemediationWorkflowStatusArchived
-		return nil
-	case RemediationWorkflowStatusSuperseded:
-		*s = RemediationWorkflowStatusSuperseded
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
+// SetName sets the value of Name.
+func (s *RemediationWorkflowContentResourceDependency) SetName(val string) {
+	s.Name = val
 }
 
 // Audit payload for RemediationWorkflow CRD admission events (ADR-058).
@@ -30119,7 +28503,14 @@ type RemediationWorkflowWebhookAuditPayload struct {
 	// Catalog registration status (Active, Disabled, etc.).
 	CatalogStatus OptString `json:"catalog_status"`
 	// Reason for denial (only set when action=denied).
-	DenialReason OptString `json:"denial_reason"`
+	DenialReason    OptString                            `json:"denial_reason"`
+	WorkflowContent OptRemediationWorkflowContentPayload `json:"workflow_content"`
+	// SHA-256 hash of workflow_content, computed locally by AuthWebhook over
+	// the same clean CRD content it sends to DataStorage (identical algorithm
+	// to DataStorage's own content_hash / deterministic workflow_id
+	// derivation, #1661 Change 8a). Set whenever workflow_content is set,
+	// including on denied events (no DataStorage round-trip required).
+	ContentHash OptString `json:"content_hash"`
 }
 
 // GetEventType returns the value of EventType.
@@ -30152,6 +28543,16 @@ func (s *RemediationWorkflowWebhookAuditPayload) GetDenialReason() OptString {
 	return s.DenialReason
 }
 
+// GetWorkflowContent returns the value of WorkflowContent.
+func (s *RemediationWorkflowWebhookAuditPayload) GetWorkflowContent() OptRemediationWorkflowContentPayload {
+	return s.WorkflowContent
+}
+
+// GetContentHash returns the value of ContentHash.
+func (s *RemediationWorkflowWebhookAuditPayload) GetContentHash() OptString {
+	return s.ContentHash
+}
+
 // SetEventType sets the value of EventType.
 func (s *RemediationWorkflowWebhookAuditPayload) SetEventType(val RemediationWorkflowWebhookAuditPayloadEventType) {
 	s.EventType = val
@@ -30180,6 +28581,16 @@ func (s *RemediationWorkflowWebhookAuditPayload) SetCatalogStatus(val OptString)
 // SetDenialReason sets the value of DenialReason.
 func (s *RemediationWorkflowWebhookAuditPayload) SetDenialReason(val OptString) {
 	s.DenialReason = val
+}
+
+// SetWorkflowContent sets the value of WorkflowContent.
+func (s *RemediationWorkflowWebhookAuditPayload) SetWorkflowContent(val OptRemediationWorkflowContentPayload) {
+	s.WorkflowContent = val
+}
+
+// SetContentHash sets the value of ContentHash.
+func (s *RemediationWorkflowWebhookAuditPayload) SetContentHash(val OptString) {
+	s.ContentHash = val
 }
 
 // Admission action performed.
@@ -31831,14 +30242,6 @@ func (s *TimeoutConfig) SetExecuting(val OptString) {
 	s.Executing = val
 }
 
-type UpdateWorkflowBadRequest RFC7807Problem
-
-func (*UpdateWorkflowBadRequest) updateWorkflowRes() {}
-
-type UpdateWorkflowNotFound RFC7807Problem
-
-func (*UpdateWorkflowNotFound) updateWorkflowRes() {}
-
 // Validation result for reconstructed RemediationRequest.
 // Indicates completeness, errors, and warnings.
 // Ref: #/components/schemas/ValidationResult
@@ -32397,220 +30800,6 @@ func (s *WorkflowDiscoveryAuditPayloadEventType) UnmarshalText(data []byte) erro
 	}
 }
 
-// Workflow summary for discovery (Step 2) - no parameter schema, no scores.
-// Ref: #/components/schemas/WorkflowDiscoveryEntry
-type WorkflowDiscoveryEntry struct {
-	// UUID primary key.
-	WorkflowId uuid.UUID `json:"workflowId"`
-	// Human-readable workflow identifier (e.g., scale-conservative-v1).
-	WorkflowName string `json:"workflowName"`
-	// Display name.
-	Name        string                `json:"name"`
-	Description StructuredDescription `json:"description"`
-	// Semantic version.
-	Version string `json:"version"`
-	// Schema format version (e.g., 1.0, 1.1). #255.
-	SchemaVersion OptString `json:"schemaVersion"`
-	// OCI image used to extract the workflow schema.
-	SchemaImage OptString `json:"schemaImage"`
-	// OCI execution bundle reference (digest-pinned).
-	ExecutionBundle OptString `json:"executionBundle"`
-	// Execution engine (tekton, job, ansible).
-	ExecutionEngine OptWorkflowDiscoveryEntryExecutionEngine `json:"executionEngine"`
-	// Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set.
-	ServiceAccountName OptString `json:"serviceAccountName"`
-}
-
-// GetWorkflowId returns the value of WorkflowId.
-func (s *WorkflowDiscoveryEntry) GetWorkflowId() uuid.UUID {
-	return s.WorkflowId
-}
-
-// GetWorkflowName returns the value of WorkflowName.
-func (s *WorkflowDiscoveryEntry) GetWorkflowName() string {
-	return s.WorkflowName
-}
-
-// GetName returns the value of Name.
-func (s *WorkflowDiscoveryEntry) GetName() string {
-	return s.Name
-}
-
-// GetDescription returns the value of Description.
-func (s *WorkflowDiscoveryEntry) GetDescription() StructuredDescription {
-	return s.Description
-}
-
-// GetVersion returns the value of Version.
-func (s *WorkflowDiscoveryEntry) GetVersion() string {
-	return s.Version
-}
-
-// GetSchemaVersion returns the value of SchemaVersion.
-func (s *WorkflowDiscoveryEntry) GetSchemaVersion() OptString {
-	return s.SchemaVersion
-}
-
-// GetSchemaImage returns the value of SchemaImage.
-func (s *WorkflowDiscoveryEntry) GetSchemaImage() OptString {
-	return s.SchemaImage
-}
-
-// GetExecutionBundle returns the value of ExecutionBundle.
-func (s *WorkflowDiscoveryEntry) GetExecutionBundle() OptString {
-	return s.ExecutionBundle
-}
-
-// GetExecutionEngine returns the value of ExecutionEngine.
-func (s *WorkflowDiscoveryEntry) GetExecutionEngine() OptWorkflowDiscoveryEntryExecutionEngine {
-	return s.ExecutionEngine
-}
-
-// GetServiceAccountName returns the value of ServiceAccountName.
-func (s *WorkflowDiscoveryEntry) GetServiceAccountName() OptString {
-	return s.ServiceAccountName
-}
-
-// SetWorkflowId sets the value of WorkflowId.
-func (s *WorkflowDiscoveryEntry) SetWorkflowId(val uuid.UUID) {
-	s.WorkflowId = val
-}
-
-// SetWorkflowName sets the value of WorkflowName.
-func (s *WorkflowDiscoveryEntry) SetWorkflowName(val string) {
-	s.WorkflowName = val
-}
-
-// SetName sets the value of Name.
-func (s *WorkflowDiscoveryEntry) SetName(val string) {
-	s.Name = val
-}
-
-// SetDescription sets the value of Description.
-func (s *WorkflowDiscoveryEntry) SetDescription(val StructuredDescription) {
-	s.Description = val
-}
-
-// SetVersion sets the value of Version.
-func (s *WorkflowDiscoveryEntry) SetVersion(val string) {
-	s.Version = val
-}
-
-// SetSchemaVersion sets the value of SchemaVersion.
-func (s *WorkflowDiscoveryEntry) SetSchemaVersion(val OptString) {
-	s.SchemaVersion = val
-}
-
-// SetSchemaImage sets the value of SchemaImage.
-func (s *WorkflowDiscoveryEntry) SetSchemaImage(val OptString) {
-	s.SchemaImage = val
-}
-
-// SetExecutionBundle sets the value of ExecutionBundle.
-func (s *WorkflowDiscoveryEntry) SetExecutionBundle(val OptString) {
-	s.ExecutionBundle = val
-}
-
-// SetExecutionEngine sets the value of ExecutionEngine.
-func (s *WorkflowDiscoveryEntry) SetExecutionEngine(val OptWorkflowDiscoveryEntryExecutionEngine) {
-	s.ExecutionEngine = val
-}
-
-// SetServiceAccountName sets the value of ServiceAccountName.
-func (s *WorkflowDiscoveryEntry) SetServiceAccountName(val OptString) {
-	s.ServiceAccountName = val
-}
-
-// Execution engine (tekton, job, ansible).
-type WorkflowDiscoveryEntryExecutionEngine string
-
-const (
-	WorkflowDiscoveryEntryExecutionEngineTekton  WorkflowDiscoveryEntryExecutionEngine = "tekton"
-	WorkflowDiscoveryEntryExecutionEngineJob     WorkflowDiscoveryEntryExecutionEngine = "job"
-	WorkflowDiscoveryEntryExecutionEngineAnsible WorkflowDiscoveryEntryExecutionEngine = "ansible"
-)
-
-// AllValues returns all WorkflowDiscoveryEntryExecutionEngine values.
-func (WorkflowDiscoveryEntryExecutionEngine) AllValues() []WorkflowDiscoveryEntryExecutionEngine {
-	return []WorkflowDiscoveryEntryExecutionEngine{
-		WorkflowDiscoveryEntryExecutionEngineTekton,
-		WorkflowDiscoveryEntryExecutionEngineJob,
-		WorkflowDiscoveryEntryExecutionEngineAnsible,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s WorkflowDiscoveryEntryExecutionEngine) MarshalText() ([]byte, error) {
-	switch s {
-	case WorkflowDiscoveryEntryExecutionEngineTekton:
-		return []byte(s), nil
-	case WorkflowDiscoveryEntryExecutionEngineJob:
-		return []byte(s), nil
-	case WorkflowDiscoveryEntryExecutionEngineAnsible:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *WorkflowDiscoveryEntryExecutionEngine) UnmarshalText(data []byte) error {
-	switch WorkflowDiscoveryEntryExecutionEngine(data) {
-	case WorkflowDiscoveryEntryExecutionEngineTekton:
-		*s = WorkflowDiscoveryEntryExecutionEngineTekton
-		return nil
-	case WorkflowDiscoveryEntryExecutionEngineJob:
-		*s = WorkflowDiscoveryEntryExecutionEngineJob
-		return nil
-	case WorkflowDiscoveryEntryExecutionEngineAnsible:
-		*s = WorkflowDiscoveryEntryExecutionEngineAnsible
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Response for Step 2: list workflows for an action type (DD-WORKFLOW-016).
-// Ref: #/components/schemas/WorkflowDiscoveryResponse
-type WorkflowDiscoveryResponse struct {
-	// The action type these workflows belong to.
-	ActionType string                   `json:"actionType"`
-	Workflows  []WorkflowDiscoveryEntry `json:"workflows"`
-	Pagination PaginationMetadata       `json:"pagination"`
-}
-
-// GetActionType returns the value of ActionType.
-func (s *WorkflowDiscoveryResponse) GetActionType() string {
-	return s.ActionType
-}
-
-// GetWorkflows returns the value of Workflows.
-func (s *WorkflowDiscoveryResponse) GetWorkflows() []WorkflowDiscoveryEntry {
-	return s.Workflows
-}
-
-// GetPagination returns the value of Pagination.
-func (s *WorkflowDiscoveryResponse) GetPagination() PaginationMetadata {
-	return s.Pagination
-}
-
-// SetActionType sets the value of ActionType.
-func (s *WorkflowDiscoveryResponse) SetActionType(val string) {
-	s.ActionType = val
-}
-
-// SetWorkflows sets the value of Workflows.
-func (s *WorkflowDiscoveryResponse) SetWorkflows(val []WorkflowDiscoveryEntry) {
-	s.Workflows = val
-}
-
-// SetPagination sets the value of Pagination.
-func (s *WorkflowDiscoveryResponse) SetPagination(val PaginationMetadata) {
-	s.Pagination = val
-}
-
-func (*WorkflowDiscoveryResponse) listWorkflowsByActionTypeRes() {}
-
 // Type-safe audit event payload for WorkflowExecution (workflow.started, workflow.completed,
 // workflow.failed).
 // Ref: #/components/schemas/WorkflowExecutionAuditPayload
@@ -32625,6 +30814,16 @@ type WorkflowExecutionAuditPayload struct {
 	// Human-readable name of the selected workflow from the DataStorage catalog. Optional; present only
 	// when the catalog provides a name.
 	WorkflowName OptString `json:"workflow_name"`
+	// Action type from the DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
+	// Catalog-authoritative:
+	// resolved by KA at workflow-selection time, carried on AIAnalysis.Status.SelectedWorkflow, and
+	// copied
+	// verbatim by RemediationOrchestrator onto the immutable WorkflowExecution.Spec.WorkflowRef snapshot
+	// (mirrors ExecutionEngine/ServiceAccountName/WorkflowName; DD-WORKFLOW-018). Audit-readability only,
+	//  so
+	// started/completed/failed events are human-readable without joining back to the
+	// remediationworkflow.admitted.create event by workflow_id (#1661 Change 3).
+	ActionType OptString `json:"action_type"`
 	// Kubernetes resource being acted upon (format depends on scope).
 	TargetResource string `json:"target_resource"`
 	// Current phase of the WorkflowExecution.
@@ -32675,6 +30874,11 @@ func (s *WorkflowExecutionAuditPayload) GetWorkflowVersion() string {
 // GetWorkflowName returns the value of WorkflowName.
 func (s *WorkflowExecutionAuditPayload) GetWorkflowName() OptString {
 	return s.WorkflowName
+}
+
+// GetActionType returns the value of ActionType.
+func (s *WorkflowExecutionAuditPayload) GetActionType() OptString {
+	return s.ActionType
 }
 
 // GetTargetResource returns the value of TargetResource.
@@ -32765,6 +30969,11 @@ func (s *WorkflowExecutionAuditPayload) SetWorkflowVersion(val string) {
 // SetWorkflowName sets the value of WorkflowName.
 func (s *WorkflowExecutionAuditPayload) SetWorkflowName(val OptString) {
 	s.WorkflowName = val
+}
+
+// SetActionType sets the value of ActionType.
+func (s *WorkflowExecutionAuditPayload) SetActionType(val OptString) {
+	s.ActionType = val
 }
 
 // SetTargetResource sets the value of TargetResource.
@@ -33250,86 +31459,6 @@ func (s *WorkflowExecutionWebhookAuditPayloadPreviousState) UnmarshalText(data [
 	}
 }
 
-// Request for workflow lifecycle operations (enable, disable, deprecate). Reason is mandatory per
-// DD-WORKFLOW-017 Phase 4.4.
-// Ref: #/components/schemas/WorkflowLifecycleRequest
-type WorkflowLifecycleRequest struct {
-	// Why the lifecycle operation is being performed (mandatory).
-	Reason string `json:"reason"`
-	// Who is performing the operation.
-	UpdatedBy OptString `json:"updatedBy"`
-}
-
-// GetReason returns the value of Reason.
-func (s *WorkflowLifecycleRequest) GetReason() string {
-	return s.Reason
-}
-
-// GetUpdatedBy returns the value of UpdatedBy.
-func (s *WorkflowLifecycleRequest) GetUpdatedBy() OptString {
-	return s.UpdatedBy
-}
-
-// SetReason sets the value of Reason.
-func (s *WorkflowLifecycleRequest) SetReason(val string) {
-	s.Reason = val
-}
-
-// SetUpdatedBy sets the value of UpdatedBy.
-func (s *WorkflowLifecycleRequest) SetUpdatedBy(val OptString) {
-	s.UpdatedBy = val
-}
-
-// Ref: #/components/schemas/WorkflowListResponse
-type WorkflowListResponse struct {
-	Workflows []RemediationWorkflow `json:"workflows"`
-	Limit     OptInt                `json:"limit"`
-	Offset    OptInt                `json:"offset"`
-	Total     OptInt                `json:"total"`
-}
-
-// GetWorkflows returns the value of Workflows.
-func (s *WorkflowListResponse) GetWorkflows() []RemediationWorkflow {
-	return s.Workflows
-}
-
-// GetLimit returns the value of Limit.
-func (s *WorkflowListResponse) GetLimit() OptInt {
-	return s.Limit
-}
-
-// GetOffset returns the value of Offset.
-func (s *WorkflowListResponse) GetOffset() OptInt {
-	return s.Offset
-}
-
-// GetTotal returns the value of Total.
-func (s *WorkflowListResponse) GetTotal() OptInt {
-	return s.Total
-}
-
-// SetWorkflows sets the value of Workflows.
-func (s *WorkflowListResponse) SetWorkflows(val []RemediationWorkflow) {
-	s.Workflows = val
-}
-
-// SetLimit sets the value of Limit.
-func (s *WorkflowListResponse) SetLimit(val OptInt) {
-	s.Limit = val
-}
-
-// SetOffset sets the value of Offset.
-func (s *WorkflowListResponse) SetOffset(val OptInt) {
-	s.Offset = val
-}
-
-// SetTotal sets the value of Total.
-func (s *WorkflowListResponse) SetTotal(val OptInt) {
-	s.Total = val
-}
-
-func (*WorkflowListResponse) listWorkflowsRes() {}
-
 // Audit information for a single workflow result (BR-AUDIT-027).
 // Ref: #/components/schemas/WorkflowResultAudit
 type WorkflowResultAudit struct {
@@ -33689,103 +31818,6 @@ func (s *WorkflowSearchFiltersStatusItem) UnmarshalText(data []byte) error {
 		return nil
 	case WorkflowSearchFiltersStatusItemArchived:
 		*s = WorkflowSearchFiltersStatusItemArchived
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Update mutable workflow fields only (DD-WORKFLOW-012).
-// Ref: #/components/schemas/WorkflowUpdateRequest
-type WorkflowUpdateRequest struct {
-	// Workflow status (mutable).
-	Status OptWorkflowUpdateRequestStatus `json:"status"`
-	// Who disabled the workflow.
-	DisabledBy OptString `json:"disabledBy"`
-	// Why the workflow was disabled.
-	DisabledReason OptString `json:"disabledReason"`
-}
-
-// GetStatus returns the value of Status.
-func (s *WorkflowUpdateRequest) GetStatus() OptWorkflowUpdateRequestStatus {
-	return s.Status
-}
-
-// GetDisabledBy returns the value of DisabledBy.
-func (s *WorkflowUpdateRequest) GetDisabledBy() OptString {
-	return s.DisabledBy
-}
-
-// GetDisabledReason returns the value of DisabledReason.
-func (s *WorkflowUpdateRequest) GetDisabledReason() OptString {
-	return s.DisabledReason
-}
-
-// SetStatus sets the value of Status.
-func (s *WorkflowUpdateRequest) SetStatus(val OptWorkflowUpdateRequestStatus) {
-	s.Status = val
-}
-
-// SetDisabledBy sets the value of DisabledBy.
-func (s *WorkflowUpdateRequest) SetDisabledBy(val OptString) {
-	s.DisabledBy = val
-}
-
-// SetDisabledReason sets the value of DisabledReason.
-func (s *WorkflowUpdateRequest) SetDisabledReason(val OptString) {
-	s.DisabledReason = val
-}
-
-// Workflow status (mutable).
-type WorkflowUpdateRequestStatus string
-
-const (
-	WorkflowUpdateRequestStatusActive     WorkflowUpdateRequestStatus = "Active"
-	WorkflowUpdateRequestStatusDisabled   WorkflowUpdateRequestStatus = "Disabled"
-	WorkflowUpdateRequestStatusDeprecated WorkflowUpdateRequestStatus = "Deprecated"
-	WorkflowUpdateRequestStatusArchived   WorkflowUpdateRequestStatus = "Archived"
-)
-
-// AllValues returns all WorkflowUpdateRequestStatus values.
-func (WorkflowUpdateRequestStatus) AllValues() []WorkflowUpdateRequestStatus {
-	return []WorkflowUpdateRequestStatus{
-		WorkflowUpdateRequestStatusActive,
-		WorkflowUpdateRequestStatusDisabled,
-		WorkflowUpdateRequestStatusDeprecated,
-		WorkflowUpdateRequestStatusArchived,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s WorkflowUpdateRequestStatus) MarshalText() ([]byte, error) {
-	switch s {
-	case WorkflowUpdateRequestStatusActive:
-		return []byte(s), nil
-	case WorkflowUpdateRequestStatusDisabled:
-		return []byte(s), nil
-	case WorkflowUpdateRequestStatusDeprecated:
-		return []byte(s), nil
-	case WorkflowUpdateRequestStatusArchived:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *WorkflowUpdateRequestStatus) UnmarshalText(data []byte) error {
-	switch WorkflowUpdateRequestStatus(data) {
-	case WorkflowUpdateRequestStatusActive:
-		*s = WorkflowUpdateRequestStatusActive
-		return nil
-	case WorkflowUpdateRequestStatusDisabled:
-		*s = WorkflowUpdateRequestStatusDisabled
-		return nil
-	case WorkflowUpdateRequestStatusDeprecated:
-		*s = WorkflowUpdateRequestStatusDeprecated
-		return nil
-	case WorkflowUpdateRequestStatusArchived:
-		*s = WorkflowUpdateRequestStatusArchived
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -52,10 +54,6 @@ import (
 
 var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "comprehensive"), func() {
 
-	BeforeEach(func() {
-		testWorkflowQuerier.setEngine("tekton")
-	})
-
 	// ========================================
 	// Test 1: execution.workflow.started Audit Event
 	// ========================================
@@ -76,17 +74,19 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-workflow",
-						Version:        "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/test:v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/test:v1",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/test-app",
 					Parameters: map[string]string{
 						"test": "value",
 					},
-				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "tekton",
 				},
 			}
 
@@ -132,9 +132,14 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-workflow",
-						Version:        "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/test:v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/test:v1",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/test-app",
 				},
@@ -181,9 +186,14 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-workflow-success",
-						Version:        "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/test:v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow-success",
+							WorkflowName:    "test-workflow-success",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/test:v1",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/test-app",
 				},
@@ -227,12 +237,12 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 			pr.Status.CompletionTime = &now
 			Expect(k8sClient.Status().Update(ctx, &pr)).To(Succeed())
 
-		By("Waiting for Completed phase")
-		// Increased timeout for CI environment (resource contention can slow controller reconciliation)
-		Eventually(func() string {
-			_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
-			return updated.Status.Phase
-		}, 30*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
+			By("Waiting for Completed phase")
+			// Increased timeout for CI environment (resource contention can slow controller reconciliation)
+			Eventually(func() string {
+				_ = k8sClient.Get(ctx, types.NamespacedName{Name: wfe.Name, Namespace: wfe.Namespace}, updated)
+				return updated.Status.Phase
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(workflowexecutionv1alpha1.PhaseCompleted))
 
 			By("Verifying workflow.completed audit event emitted with duration")
 			Expect(updated.Status.CompletionTime).To(HaveValue(Not(BeZero())), "CompletionTime should be set after completion")
@@ -275,9 +285,15 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "nonexistent-workflow",
-						Version:        "v1.0.0",
-						ExecutionBundle: "", // Empty image triggers pre-execution failure
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "nonexistent-workflow",
+							WorkflowName:    "nonexistent-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "",
+							// Empty image triggers pre-execution failure
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/test-app",
 				},
@@ -326,9 +342,14 @@ var _ = Describe("Comprehensive Audit Trail Integration Tests", Label("audit", "
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-workflow-ordering",
-						Version:        "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/test:v1",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow-ordering",
+							WorkflowName:    "test-workflow-ordering",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/test:v1",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/ordering-test",
 				},

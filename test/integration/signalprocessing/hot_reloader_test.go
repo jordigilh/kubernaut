@@ -168,7 +168,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 		// BR-SP-072: Rego policy file change detected via fsnotify
 		It("BR-SP-072: should detect Rego policy file change", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("hr-file-watch")
+			ns := createTestNamespace(ctx, "hr-file-watch")
 			defer deleteTestNamespace(ns)
 
 			By("Updating policy file to v1")
@@ -182,7 +182,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 			sp1 := createSignalProcessingCR(ns, "hr-file-watch-test-1", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-file-watch-01"],
 				Name:        "HRFileWatchTest1",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -192,10 +192,10 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp1, timeout) }()
+			defer func() { _ = deleteAndWait(sp1) }()
 
 			By("Waiting for first CR to complete with v1 policy")
-			err := waitForCompletion(sp1.Name, sp1.Namespace, timeout)
+			err := waitForCompletion(sp1.Name, sp1.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying v1 label applied")
@@ -214,7 +214,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 			sp2 := createSignalProcessingCR(ns, "hr-file-watch-test-2", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-file-watch-02"],
 				Name:        "HRFileWatchTest2",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -224,10 +224,10 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp2, timeout) }()
+			defer func() { _ = deleteAndWait(sp2) }()
 
 			By("Waiting for second CR to complete with v2 policy")
-			err = waitForCompletion(sp2.Name, sp2.Namespace, timeout)
+			err = waitForCompletion(sp2.Name, sp2.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying v2 label applied (hot-reload detected)")
@@ -245,7 +245,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 		// BR-SP-072: Valid policy takes effect immediately
 		It("BR-SP-072: should apply valid updated policy immediately", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("hr-reload-valid")
+			ns := createTestNamespace(ctx, "hr-reload-valid")
 			defer deleteTestNamespace(ns)
 
 			By("Updating policy file to initial policy (status=alpha)")
@@ -259,7 +259,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 			sp1 := createSignalProcessingCR(ns, "hr-reload-valid-test-1", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-reload-valid-01"],
 				Name:        "HRReloadValidTest1",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -269,10 +269,10 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp1, timeout) }()
+			defer func() { _ = deleteAndWait(sp1) }()
 
 			By("Waiting for first CR to complete")
-			err := waitForCompletion(sp1.Name, sp1.Namespace, timeout)
+			err := waitForCompletion(sp1.Name, sp1.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying initial status=alpha label")
@@ -291,7 +291,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 			sp2 := createSignalProcessingCR(ns, "hr-reload-valid-test-2", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-reload-valid-02"],
 				Name:        "HRReloadValidTest2",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -301,10 +301,10 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp2, timeout) }()
+			defer func() { _ = deleteAndWait(sp2) }()
 
 			By("Waiting for second CR to complete")
-			err = waitForCompletion(sp2.Name, sp2.Namespace, timeout)
+			err = waitForCompletion(sp2.Name, sp2.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying updated status=beta label (hot-reload applied)")
@@ -322,7 +322,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 		// BR-SP-072: Invalid policy → old retained
 		It("BR-SP-072: should retain old policy when update is invalid", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("hr-graceful")
+			ns := createTestNamespace(ctx, "hr-graceful")
 			defer deleteTestNamespace(ns)
 
 			By("Updating policy file to valid policy (stage=prod)")
@@ -336,7 +336,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 			sp1 := createSignalProcessingCR(ns, "hr-graceful-test-1", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-graceful-01"],
 				Name:        "HRGracefulTest1",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -346,10 +346,10 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp1, timeout) }()
+			defer func() { _ = deleteAndWait(sp1) }()
 
 			By("Waiting for first CR to complete")
-			err := waitForCompletion(sp1.Name, sp1.Namespace, timeout)
+			err := waitForCompletion(sp1.Name, sp1.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying stage=prod label applied")
@@ -371,7 +371,7 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 			sp2 := createSignalProcessingCR(ns, "hr-graceful-test-2", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["hr-graceful-02"],
 				Name:        "HRGracefulTest2",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -381,10 +381,10 @@ var _ = Describe("SignalProcessing Hot-Reload Integration", Serial, func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp2, timeout) }()
+			defer func() { _ = deleteAndWait(sp2) }()
 
 			By("Waiting for second CR to complete")
-			err = waitForCompletion(sp2.Name, sp2.Namespace, timeout)
+			err = waitForCompletion(sp2.Name, sp2.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying graceful degradation - old policy retained (stage=prod)")

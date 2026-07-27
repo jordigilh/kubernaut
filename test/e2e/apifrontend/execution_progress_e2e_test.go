@@ -48,7 +48,7 @@ var _ = Describe("Execution Progress Streaming (#1403)", Ordered, Label("e2e", "
 		const rrName = "rr-progress-e2e-1403"
 
 		By("Creating an RR that will transition phases")
-		Expect(createRR(e2eNamespace, rrName, "Deployment", "progress-deploy")).To(Succeed())
+		Expect(createRR(e2eNamespace, rrName, "progress-deploy")).To(Succeed())
 		DeferCleanup(func() { deleteRR(e2eNamespace, rrName) })
 
 		By("Simulating phase transitions after 3s delay")

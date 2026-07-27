@@ -28,7 +28,7 @@ streaming pipeline.
 3. **Autonomous regression** (BR-SESSION-003): Without an observer, the investigation produces identical results to v1.4
 4. **Resilience** (BR-SESSION-003): A slow or disconnected observer cannot block the autonomous investigation
 5. **Cancellation parity** (BR-SESSION-001): Cancellation during streaming yields the same outcome as non-streaming cancellation
-6. **Runtime agnosticism** (BR-SESSION-007): EventTypeTokenDelta has a stable wire value mapped to Goose ACP
+6. **Runtime agnosticism** (BR-SESSION-007): EventTypeTokenDelta has a stable wire value, forward-compatible with the AuthBridge-relayed opaque-OCI-agent event model ([#1535](https://github.com/jordigilh/kubernaut/issues/1535))
 
 ### 1.3 Success Metrics
 
@@ -46,7 +46,7 @@ streaming pipeline.
 
 - **BR-SESSION-003**: Real-time streaming of investigation to observer — operator can observe autonomous investigation progress token-by-token
 - **BR-SESSION-001**: Operator can cancel an autonomous investigation; cancellation behavior identical with and without streaming
-- **BR-SESSION-007**: Event types are runtime-agnostic, providing a stable SSE contract across runtime migrations (LangChainGo → Goose ACP)
+- **BR-SESSION-007**: Event types are runtime-agnostic, providing a stable SSE contract across runtime migrations (LangChainGo → opaque-OCI agents via AuthBridge, [#1535](https://github.com/jordigilh/kubernaut/issues/1535))
 - TP-823-TURN-EVENTS-SSE.md (PR4), TP-823-STREAMCHAT.md (PR5)
 
 ---
@@ -71,7 +71,7 @@ streaming pipeline.
 - **Observation resilience**: Slow consumer does not block investigation
 - **Cancellation parity**: Streaming cancellation equivalent to non-streaming
 - **Event ordering**: Token deltas precede turn-level reasoning summaries
-- **Runtime agnosticism**: Wire value stability for Goose migration
+- **Runtime agnosticism**: Wire value stability for the opaque-OCI-agent/AuthBridge migration
 
 ### 4.2 Features Not to be Tested
 

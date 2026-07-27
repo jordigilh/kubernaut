@@ -100,17 +100,32 @@ func (r *Reconciler) reconcileActive(ctx context.Context, rctx *reconcileContext
 	return r.finalizeReconcile(ctx, rctx)
 }
 
+// requeueDeadlineSafetyMargin is subtracted from the remaining validity
+// time when capping a requeue, so the capped requeue fires strictly
+// before the deadline instead of landing on (or a hair after) it. Without
+// this margin, a requeue could race a pending component re-probe (e.g.
+// the alert-decay health re-probe) against handleExpired's short-circuit,
+// letting the EA complete with stale/incomplete component state
+// (BR-EM-007, Issue #1701).
+const requeueDeadlineSafetyMargin = 2 * time.Second
+
 // capRequeueAtDeadline ensures the requeue interval does not overshoot the
-// ValidityDeadline. Returns the original interval if no deadline is set or
-// the deadline is further away (BR-EM-007, Issue #591).
+// ValidityDeadline, and leaves a small safety margin so the requeue fires
+// strictly before the deadline rather than exactly on it. Returns the
+// original interval if no deadline is set or the deadline is further away
+// than the interval (BR-EM-007, Issue #591, Issue #1701).
 func (r *Reconciler) capRequeueAtDeadline(ea *eav1.EffectivenessAssessment, interval time.Duration) time.Duration {
-	if ea.Status.ValidityDeadline != nil {
-		remaining := r.validityChecker.TimeUntilExpired(ea.Status.ValidityDeadline.Time)
-		if remaining > 0 && remaining < interval {
-			return remaining
-		}
+	if ea.Status.ValidityDeadline == nil {
+		return interval
 	}
-	return interval
+	remaining := r.validityChecker.TimeUntilExpired(ea.Status.ValidityDeadline.Time)
+	if remaining <= 0 || remaining >= interval {
+		return interval
+	}
+	if remaining > requeueDeadlineSafetyMargin {
+		return remaining - requeueDeadlineSafetyMargin
+	}
+	return remaining
 }
 
 // computeAndSetDerivedTiming computes derived timing fields and applies them to

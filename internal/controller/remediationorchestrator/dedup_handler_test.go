@@ -40,6 +40,11 @@ import (
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	transientErrorWfe019 = "transient-error-wfe-019"
+)
+
 // ========================================
 // Issue #190: WE/RO Deduplicated Phase with Result Inheritance
 // ========================================
@@ -92,18 +97,18 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 	Context("C3 short-circuit in handleExecutingPhase", func() {
 
 		It("UT-RO-190-005: original WFE Completed → RR inherits Completed", func() {
-			rr := newRemediationRequest("prop-rr-005", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("prop-rr-005", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-005", "default")
+			setWERef(rr, "dedup-wfe-005")
 			rr.Status.DeduplicatedByWE = "original-wfe-005"
 
-			dedupWFE := newWorkflowExecution("dedup-wfe-005", "default", "prop-rr-005", workflowexecutionv1.PhaseFailed)
+			dedupWFE := newWorkflowExecution("dedup-wfe-005", defaultFixture, "prop-rr-005", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
 			dedupWFE.Status.DeduplicatedBy = "original-wfe-005"
 
-			originalWFE := newWorkflowExecutionCompleted("original-wfe-005", "default", "other-rr")
+			originalWFE := newWorkflowExecutionCompleted("original-wfe-005", defaultFixture, "other-rr")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(rr, dedupWFE, originalWFE).
@@ -122,33 +127,33 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prop-rr-005", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prop-rr-005", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-005", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-005", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 				"Behavior: RR must inherit Completed from original WFE")
-			Expect(updated.Status.Outcome).To(Equal("Remediated"),
+			Expect(updated.Status.Outcome).To(Equal(remediationv1.OutcomeRemediated),
 				"Behavior: Outcome must be Remediated (lineage tracked via DeduplicatedByWE + K8s events)")
 			Expect(updated.Status.CompletedAt).NotTo(BeNil())
 		})
 
 		It("UT-RO-190-006: original WFE Failed → RR inherits Failed with FailurePhaseDeduplicated", func() {
-			rr := newRemediationRequest("prop-rr-006", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("prop-rr-006", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-006", "default")
+			setWERef(rr, "dedup-wfe-006")
 			rr.Status.DeduplicatedByWE = "original-wfe-006"
 
-			dedupWFE := newWorkflowExecution("dedup-wfe-006", "default", "prop-rr-006", workflowexecutionv1.PhaseFailed)
+			dedupWFE := newWorkflowExecution("dedup-wfe-006", defaultFixture, "prop-rr-006", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
 			dedupWFE.Status.DeduplicatedBy = "original-wfe-006"
 
-			originalWFE := newWorkflowExecutionFailed("original-wfe-006", "default", "other-rr", "OOM killed")
+			originalWFE := newWorkflowExecutionFailed("original-wfe-006", defaultFixture, "other-rr", "OOM killed")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(rr, dedupWFE, originalWFE).
@@ -167,12 +172,12 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prop-rr-006", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prop-rr-006", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-006", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-006", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"Behavior: RR must inherit Failed from original WFE")
@@ -182,14 +187,14 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 		})
 
 		It("UT-RO-190-011: original WFE deleted → RR transitions to Failed/Deduplicated", func() {
-			rr := newRemediationRequest("prop-rr-011", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("prop-rr-011", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-011", "default")
+			setWERef(rr, "dedup-wfe-011")
 			rr.Status.DeduplicatedByWE = "deleted-wfe-011"
 
-			dedupWFE := newWorkflowExecution("dedup-wfe-011", "default", "prop-rr-011", workflowexecutionv1.PhaseFailed)
+			dedupWFE := newWorkflowExecution("dedup-wfe-011", defaultFixture, "prop-rr-011", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
 			dedupWFE.Status.DeduplicatedBy = "deleted-wfe-011"
 
@@ -210,12 +215,12 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prop-rr-011", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prop-rr-011", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-011", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-011", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"Behavior: RR must fail when original WFE is deleted (dangling reference)")
@@ -224,18 +229,18 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 		})
 
 		It("UT-RO-190-012: original WFE still Running → RR stays Executing, requeue", func() {
-			rr := newRemediationRequest("prop-rr-012", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("prop-rr-012", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-012", "default")
+			setWERef(rr, "dedup-wfe-012")
 			rr.Status.DeduplicatedByWE = "running-wfe-012"
 
-			dedupWFE := newWorkflowExecution("dedup-wfe-012", "default", "prop-rr-012", workflowexecutionv1.PhaseFailed)
+			dedupWFE := newWorkflowExecution("dedup-wfe-012", defaultFixture, "prop-rr-012", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
 			dedupWFE.Status.DeduplicatedBy = "running-wfe-012"
 
-			runningWFE := newWorkflowExecution("running-wfe-012", "default", "other-rr", workflowexecutionv1.PhaseRunning)
+			runningWFE := newWorkflowExecution("running-wfe-012", defaultFixture, "other-rr", workflowexecutionv1.PhaseRunning)
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(rr, dedupWFE, runningWFE).
@@ -254,12 +259,12 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prop-rr-012", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prop-rr-012", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-012", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-012", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseExecuting),
 				"Behavior: RR must stay Executing while original WFE is still Running")
@@ -268,18 +273,18 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 		})
 
 		It("UT-RO-190-016: idempotency — 2nd reconcile with DeduplicatedByWE set and Running original → no duplicate events", func() {
-			rr := newRemediationRequest("prop-rr-016", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("prop-rr-016", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-016", "default")
+			setWERef(rr, "dedup-wfe-016")
 			rr.Status.DeduplicatedByWE = "running-wfe-016"
 
-			dedupWFE := newWorkflowExecution("dedup-wfe-016", "default", "prop-rr-016", workflowexecutionv1.PhaseFailed)
+			dedupWFE := newWorkflowExecution("dedup-wfe-016", defaultFixture, "prop-rr-016", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
 			dedupWFE.Status.DeduplicatedBy = "running-wfe-016"
 
-			runningWFE := newWorkflowExecution("running-wfe-016", "default", "other-rr", workflowexecutionv1.PhaseRunning)
+			runningWFE := newWorkflowExecution("running-wfe-016", defaultFixture, "other-rr", workflowexecutionv1.PhaseRunning)
 
 			fakeRecorder := record.NewFakeRecorder(20)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
@@ -299,19 +304,19 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			})
 
 			result1, err1 := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prop-rr-016", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prop-rr-016", Namespace: defaultFixture},
 			})
 			Expect(err1).NotTo(HaveOccurred())
 			Expect(result1.RequeueAfter).To(BeNumerically(">", 0))
 
 			result2, err2 := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prop-rr-016", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prop-rr-016", Namespace: defaultFixture},
 			})
 			Expect(err2).NotTo(HaveOccurred())
 			Expect(result2.RequeueAfter).To(BeNumerically(">", 0))
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-016", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-016", Namespace: defaultFixture}, updated)).To(Succeed())
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseExecuting),
 				"Behavior: multiple reconciles must be idempotent — RR stays Executing")
 		})
@@ -320,18 +325,18 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 	Context("Phase 6: Notification provenance", func() {
 
 		It("UT-RO-190-015: inherited Completed emits K8s event with original WFE provenance", func() {
-			rr := newRemediationRequest("prop-rr-015", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("prop-rr-015", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-015", "default")
+			setWERef(rr, "dedup-wfe-015")
 			rr.Status.DeduplicatedByWE = "original-wfe-015"
 
-			dedupWFE := newWorkflowExecution("dedup-wfe-015", "default", "prop-rr-015", workflowexecutionv1.PhaseFailed)
+			dedupWFE := newWorkflowExecution("dedup-wfe-015", defaultFixture, "prop-rr-015", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
 			dedupWFE.Status.DeduplicatedBy = "original-wfe-015"
 
-			originalWFE := newWorkflowExecutionCompleted("original-wfe-015", "default", "other-rr")
+			originalWFE := newWorkflowExecutionCompleted("original-wfe-015", defaultFixture, "other-rr")
 
 			fakeRecorder := record.NewFakeRecorder(20)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
@@ -351,7 +356,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prop-rr-015", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prop-rr-015", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -371,23 +376,23 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 	Context("Error handling in handleDedupResultPropagation", func() {
 
 		It("UT-RO-190-019: transient Get error on original WFE returns reconcile error (not swallowed)", func() {
-			rr := newRemediationRequest("prop-rr-019", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("prop-rr-019", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-019", "default")
-			rr.Status.DeduplicatedByWE = "transient-error-wfe-019"
+			setWERef(rr, "dedup-wfe-019")
+			rr.Status.DeduplicatedByWE = transientErrorWfe019
 
-			dedupWFE := newWorkflowExecution("dedup-wfe-019", "default", "prop-rr-019", workflowexecutionv1.PhaseFailed)
+			dedupWFE := newWorkflowExecution("dedup-wfe-019", defaultFixture, "prop-rr-019", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
-			dedupWFE.Status.DeduplicatedBy = "transient-error-wfe-019"
+			dedupWFE.Status.DeduplicatedBy = transientErrorWfe019
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(rr, dedupWFE).
 				WithStatusSubresource(&remediationv1.RemediationRequest{}).
 				WithInterceptorFuncs(interceptor.Funcs{
 					Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
-						if key.Name == "transient-error-wfe-019" {
+						if key.Name == transientErrorWfe019 {
 							return fmt.Errorf("simulated transient API server error")
 						}
 						return c.Get(ctx, key, obj, opts...)
@@ -407,15 +412,15 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prop-rr-019", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prop-rr-019", Namespace: defaultFixture},
 			})
 			Expect(err).To(HaveOccurred(),
 				"Behavior: transient Get error on original WFE must surface as reconcile error, not be swallowed")
-			Expect(err.Error()).To(ContainSubstring("transient-error-wfe-019"),
+			Expect(err.Error()).To(ContainSubstring(transientErrorWfe019),
 				"Error must contain the original WFE name for debugging")
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-019", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-019", Namespace: defaultFixture}, updated)).To(Succeed())
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseExecuting),
 				"Behavior: RR must remain in Executing phase on transient error (reconcile retries)")
 		})
@@ -424,18 +429,18 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 	Context("Audit and notification provenance", func() {
 
 		It("UT-RO-190-017: inherited Failed emits K8s event with original WFE provenance", func() {
-			rr := newRemediationRequest("prop-rr-017", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("prop-rr-017", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-017", "default")
+			setWERef(rr, "dedup-wfe-017")
 			rr.Status.DeduplicatedByWE = "failed-original-017"
 
-			dedupWFE := newWorkflowExecution("dedup-wfe-017", "default", "prop-rr-017", workflowexecutionv1.PhaseFailed)
+			dedupWFE := newWorkflowExecution("dedup-wfe-017", defaultFixture, "prop-rr-017", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
 			dedupWFE.Status.DeduplicatedBy = "failed-original-017"
 
-			originalWFE := newWorkflowExecutionFailed("failed-original-017", "default", "other-rr", "OOM killed")
+			originalWFE := newWorkflowExecutionFailed("failed-original-017", defaultFixture, "other-rr", "OOM killed")
 
 			fakeRecorder := record.NewFakeRecorder(20)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
@@ -455,7 +460,7 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prop-rr-017", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prop-rr-017", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -472,18 +477,18 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 		})
 
 		It("UT-RO-190-018: inherited Failed sets FailureReason with original WFE name for audit traceability", func() {
-			rr := newRemediationRequest("prop-rr-018", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("prop-rr-018", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-018", "default")
+			setWERef(rr, "dedup-wfe-018")
 			rr.Status.DeduplicatedByWE = "failed-original-018"
 
-			dedupWFE := newWorkflowExecution("dedup-wfe-018", "default", "prop-rr-018", workflowexecutionv1.PhaseFailed)
+			dedupWFE := newWorkflowExecution("dedup-wfe-018", defaultFixture, "prop-rr-018", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
 			dedupWFE.Status.DeduplicatedBy = "failed-original-018"
 
-			originalWFE := newWorkflowExecutionFailed("failed-original-018", "default", "other-rr", "OOM killed")
+			originalWFE := newWorkflowExecutionFailed("failed-original-018", defaultFixture, "other-rr", "OOM killed")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(rr, dedupWFE, originalWFE).
@@ -502,12 +507,12 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prop-rr-018", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prop-rr-018", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-018", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-018", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.FailureReason).NotTo(BeNil())
 			Expect(*updated.Status.FailureReason).To(ContainSubstring("failed-original-018"),
@@ -518,14 +523,14 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 	Context("Phase 5: Consecutive failure exclusion", func() {
 
 		It("UT-RO-190-013: inherited failure does NOT increment ConsecutiveFailureCount", func() {
-			rr := newRemediationRequest("prop-rr-013", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("prop-rr-013", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-013", "default")
+			setWERef(rr, "dedup-wfe-013")
 			rr.Status.DeduplicatedByWE = "deleted-wfe-013"
 
-			dedupWFE := newWorkflowExecution("dedup-wfe-013", "default", "prop-rr-013", workflowexecutionv1.PhaseFailed)
+			dedupWFE := newWorkflowExecution("dedup-wfe-013", defaultFixture, "prop-rr-013", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
 			dedupWFE.Status.DeduplicatedBy = "deleted-wfe-013"
 
@@ -546,12 +551,12 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prop-rr-013", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prop-rr-013", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-013", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-013", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 			Expect(updated.Status.ConsecutiveFailureCount).To(Equal(int32(0)),
@@ -561,18 +566,18 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 		})
 
 		It("UT-RO-190-014: inherited failure sets FailurePhaseDeduplicated for countConsecutiveFailures exclusion", func() {
-			rr := newRemediationRequest("prop-rr-014", "default", remediationv1.PhaseExecuting)
+			rr := newRemediationRequest("prop-rr-014", defaultFixture, remediationv1.PhaseExecuting)
 			rr.Status.ObservedGeneration = rr.Generation
 			rr.Status.StartTime = &metav1.Time{Time: time.Now()}
 			rr.Status.ExecutingStartTime = &metav1.Time{Time: time.Now()}
-			setWERef(rr, "dedup-wfe-014", "default")
+			setWERef(rr, "dedup-wfe-014")
 			rr.Status.DeduplicatedByWE = "failed-original-014"
 
-			dedupWFE := newWorkflowExecution("dedup-wfe-014", "default", "prop-rr-014", workflowexecutionv1.PhaseFailed)
+			dedupWFE := newWorkflowExecution("dedup-wfe-014", defaultFixture, "prop-rr-014", workflowexecutionv1.PhaseFailed)
 			dedupWFE.Status.FailureDetails = &workflowexecutionv1.FailureDetails{Reason: workflowexecutionv1.FailureReasonDeduplicated}
 			dedupWFE.Status.DeduplicatedBy = "failed-original-014"
 
-			originalWFE := newWorkflowExecutionFailed("failed-original-014", "default", "other-rr", "OOM killed")
+			originalWFE := newWorkflowExecutionFailed("failed-original-014", defaultFixture, "other-rr", "OOM killed")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(rr, dedupWFE, originalWFE).
@@ -591,12 +596,12 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "prop-rr-014", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "prop-rr-014", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-014", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "prop-rr-014", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed))
 			Expect(updated.Status.FailurePhase).NotTo(BeNil())
@@ -608,12 +613,12 @@ var _ = Describe("Issue #190: Cross-WE Result Propagation", func() {
 	})
 })
 
-func setWERef(rr *remediationv1.RemediationRequest, name, namespace string) {
+func setWERef(rr *remediationv1.RemediationRequest, name string) {
 	rr.Status.WorkflowExecutionRef = &corev1.ObjectReference{
 		APIVersion: workflowexecutionv1.GroupVersion.String(),
 		Kind:       "WorkflowExecution",
 		Name:       name,
-		Namespace:  namespace,
+		Namespace:  defaultFixture,
 	}
 }
 

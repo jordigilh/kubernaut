@@ -488,9 +488,11 @@ policy_flags() {
 production_secret_flags() {
   echo "--set postgresql.auth.existingSecret=kubernaut-pg-credentials"
   echo "--set valkey.existingSecret=kubernaut-valkey-credentials"
-  echo "--set kubernautAgent.llm.provider=openai"
-  echo "--set kubernautAgent.llm.model=gpt-4o"
-  echo "--set kubernautAgent.llm.credentialsSecretName=kubernaut-llm-credentials"
+  echo "--set global.llmProfiles.primary.provider=openai"
+  echo "--set global.llmProfiles.primary.model=gpt-4o"
+  echo "--set global.llmProfiles.primary.credentialsSecretName=kubernaut-llm-credentials"
+  echo "--set global.llmProfiles.primary.endpoint=https://api.openai.com/v1"
+  echo "--set kubernautAgent.llmProfileRef=primary"
   echo "--set gateway.auth.signalSources[0].name=alertmanager"
   echo "--set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager"
   echo "--set gateway.auth.signalSources[0].namespace=monitoring"
@@ -538,7 +540,7 @@ run_pre_003() {
     --from-literal="valkey-secrets.yaml=password: \"${test_password}\"" \
     -n "$NAMESPACE" >/dev/null 2>&1 || pass=false
 
-  kubectl create secret generic kubernaut-llm-credentials --from-literal=OPENAI_API_KEY=sk-smoke-test-placeholder -n "$NAMESPACE" >/dev/null 2>&1 || pass=false # pre-commit:allow-sensitive
+  kubectl create secret generic kubernaut-llm-credentials --from-literal=api_key=sk-smoke-test-placeholder -n "$NAMESPACE" >/dev/null 2>&1 || pass=false # pre-commit:allow-sensitive
 
   local secret_count=3
   if [[ -n "$PULL_SECRET" && -n "${PULL_SECRET_SERVER:-}" ]]; then
@@ -881,7 +883,7 @@ run_guard_001() {
     --from-literal="valkey-secrets.yaml=password: \"${test_password}\"" \
     -n "$guard_ns" >/dev/null 2>&1
   kubectl create secret generic kubernaut-llm-credentials \
-    --from-literal=OPENAI_API_KEY=sk-smoke-test-placeholder \
+    --from-literal=api_key=sk-smoke-test-placeholder \
     -n "$guard_ns" >/dev/null 2>&1 # pre-commit:allow-sensitive
 
   local flags
@@ -1502,8 +1504,10 @@ template_common_args() {
 }
 
 template_llm_args() {
-  echo "--set" "kubernautAgent.llm.provider=openai"
-  echo "--set" "kubernautAgent.llm.model=gpt-4"
+  echo "--set" "global.llmProfiles.primary.provider=openai"
+  echo "--set" "global.llmProfiles.primary.model=gpt-4"
+  echo "--set" "global.llmProfiles.primary.credentialsSecretName=dummy"
+  echo "--set" "kubernautAgent.llmProfileRef=primary"
 }
 
 run_template_tests() {
@@ -1804,8 +1808,8 @@ for d in docs:
   # ST-CHART-LLM-REASON-001b: reasoning.enabled=true + budgetTokens renders both fields
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set kubernautAgent.llm.reasoning.enabled=true \
-    --set kubernautAgent.llm.reasoning.budgetTokens=4096 2>&1)
+    --set global.llmProfiles.primary.reasoning.enabled=true \
+    --set global.llmProfiles.primary.reasoning.budgetTokens=4096 2>&1)
   if grep -q "reasoning:" <<< "$output" && \
      grep -A2 "reasoning:" <<< "$output" | grep -q "enabled: true" && \
      grep -A2 "reasoning:" <<< "$output" | grep -q "budgetTokens: 4096"; then
@@ -1820,9 +1824,11 @@ for d in docs:
   # independently of the enabled toggle)
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(policy_flags) \
-    --set kubernautAgent.llm.provider=openai_compatible \
-    --set kubernautAgent.llm.model=custom-model \
-    --set kubernautAgent.llm.reasoning.capabilityOverride=force_off 2>&1)
+    --set global.llmProfiles.primary.provider=openai_compatible \
+    --set global.llmProfiles.primary.model=custom-model \
+    --set global.llmProfiles.primary.credentialsSecretName=dummy \
+    --set global.llmProfiles.primary.reasoning.capabilityOverride=force_off \
+    --set kubernautAgent.llmProfileRef=primary 2>&1)
   if grep -A2 "reasoning:" <<< "$output" | grep -q 'capabilityOverride: "force_off"' && \
      ! grep -A2 "reasoning:" <<< "$output" | grep -q "enabled:"; then
     tap_ok "ST-CHART-LLM-REASON-001c: capabilityOverride renders without enabled"
@@ -1834,7 +1840,7 @@ for d in docs:
   # ST-CHART-LLM-REASON-002: values.schema.json rejects an invalid capabilityOverride
   if ! helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set kubernautAgent.llm.reasoning.capabilityOverride=bogus >/dev/null 2>&1; then
+    --set global.llmProfiles.primary.reasoning.capabilityOverride=bogus >/dev/null 2>&1; then
     tap_ok "ST-CHART-LLM-REASON-002: schema rejects invalid reasoning.capabilityOverride"
   else
     tap_not_ok "ST-CHART-LLM-REASON-002: schema validation for reasoning.capabilityOverride" \
@@ -1846,7 +1852,7 @@ for d in docs:
   # separate "enabled" concept the way Anthropic's thinking param does)
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set kubernautAgent.llm.reasoning.effort=high 2>&1)
+    --set global.llmProfiles.primary.reasoning.effort=high 2>&1)
   if grep -A3 "reasoning:" <<< "$output" | grep -q 'effort: "high"' && \
      ! grep -A3 "reasoning:" <<< "$output" | grep -q "enabled:"; then
     tap_ok "ST-CHART-LLM-REASON-003a: effort renders without enabled"
@@ -1858,8 +1864,8 @@ for d in docs:
   # ST-CHART-LLM-REASON-003b: reasoning.enabled=true + effort renders both fields
   output=$(helm template test "$CHART_PATH" "$tpl_flag" "$tpl_path" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set kubernautAgent.llm.reasoning.enabled=true \
-    --set kubernautAgent.llm.reasoning.effort=medium 2>&1)
+    --set global.llmProfiles.primary.reasoning.enabled=true \
+    --set global.llmProfiles.primary.reasoning.effort=medium 2>&1)
   if grep -q "reasoning:" <<< "$output" && \
      grep -A3 "reasoning:" <<< "$output" | grep -q "enabled: true" && \
      grep -A3 "reasoning:" <<< "$output" | grep -q 'effort: "medium"'; then
@@ -1872,7 +1878,7 @@ for d in docs:
   # ST-CHART-LLM-REASON-004: values.schema.json rejects an invalid effort value
   if ! helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set kubernautAgent.llm.reasoning.effort=extreme >/dev/null 2>&1; then
+    --set global.llmProfiles.primary.reasoning.effort=extreme >/dev/null 2>&1; then
     tap_ok "ST-CHART-LLM-REASON-004: schema rejects invalid reasoning.effort"
   else
     tap_not_ok "ST-CHART-LLM-REASON-004: schema validation for reasoning.effort" \
@@ -2117,12 +2123,12 @@ for d in docs:
   local acm_with_token
   acm_with_token=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set gateway.fleet.enabled=true --set gateway.fleet.backend=acm \
-    --set gateway.fleet.mcpGatewayEndpoint=https://mcp.example.com \
-    --set gateway.fleet.tokenSecretRef=acm-token 2>&1)
+    --set global.fleet.enabled=true --set global.fleet.mcpGatewayEndpoint=https://mcp.example.com \
+    --set global.fleet.backend=acm \
+    --set global.fleet.tokenSecretRef=acm-token 2>&1)
   if grep -q 'tokenPath: "/etc/gateway/acm-token/token"' <<< "$acm_with_token" && \
      grep -q "fleet-acm-token" <<< "$acm_with_token"; then
-    tap_ok "ST-CHART-ACM-001a: gateway.fleet.tokenSecretRef renders tokenPath + Secret volume/mount"
+    tap_ok "ST-CHART-ACM-001a: global.fleet.tokenSecretRef renders tokenPath + Secret volume/mount (gateway)"
   else
     tap_not_ok "ST-CHART-ACM-001a: ACM tokenSecretRef wiring" \
       "tokenPath or fleet-acm-token volume/mount not found with backend=acm + tokenSecretRef set"
@@ -2131,8 +2137,8 @@ for d in docs:
   local acm_without_token acm_without_token_exit
   acm_without_token=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set gateway.fleet.enabled=true --set gateway.fleet.backend=acm \
-    --set gateway.fleet.mcpGatewayEndpoint=https://mcp.example.com 2>&1)
+    --set global.fleet.enabled=true --set global.fleet.mcpGatewayEndpoint=https://mcp.example.com \
+    --set global.fleet.backend=acm 2>&1)
   acm_without_token_exit=$?
   if [[ "$acm_without_token_exit" -eq 0 ]] && ! grep -q "fleet-acm-token" <<< "$acm_without_token"; then
     tap_ok "ST-CHART-ACM-001b: backend=acm without tokenSecretRef renders cleanly (fails Go-side Validate() at pod startup, per #1556)"
@@ -2147,12 +2153,12 @@ for d in docs:
   local ro_acm_with_token
   ro_acm_with_token=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set remediationorchestrator.fleet.enabled=true --set remediationorchestrator.fleet.backend=acm \
-    --set remediationorchestrator.fleet.mcpGatewayEndpoint=https://mcp.example.com \
-    --set remediationorchestrator.fleet.tokenSecretRef=acm-token 2>&1)
+    --set global.fleet.enabled=true --set global.fleet.mcpGatewayEndpoint=https://mcp.example.com \
+    --set global.fleet.backend=acm \
+    --set global.fleet.tokenSecretRef=acm-token 2>&1)
   if grep -q 'tokenPath: "/etc/remediationorchestrator/acm-token/token"' <<< "$ro_acm_with_token" && \
      grep -q "fleet-acm-token" <<< "$ro_acm_with_token"; then
-    tap_ok "ST-CHART-ACM-002a: remediationorchestrator.fleet.tokenSecretRef renders tokenPath + Secret volume/mount"
+    tap_ok "ST-CHART-ACM-002a: global.fleet.tokenSecretRef renders tokenPath + Secret volume/mount (remediationorchestrator)"
   else
     tap_not_ok "ST-CHART-ACM-002a: RemediationOrchestrator ACM tokenSecretRef wiring" \
       "tokenPath or fleet-acm-token volume/mount not found with backend=acm + tokenSecretRef set"
@@ -2161,8 +2167,8 @@ for d in docs:
   local ro_acm_without_token ro_acm_without_token_exit
   ro_acm_without_token=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set remediationorchestrator.fleet.enabled=true --set remediationorchestrator.fleet.backend=acm \
-    --set remediationorchestrator.fleet.mcpGatewayEndpoint=https://mcp.example.com 2>&1)
+    --set global.fleet.enabled=true --set global.fleet.mcpGatewayEndpoint=https://mcp.example.com \
+    --set global.fleet.backend=acm 2>&1)
   ro_acm_without_token_exit=$?
   if [[ "$ro_acm_without_token_exit" -eq 0 ]] && ! grep -q "fleet-acm-token" <<< "$ro_acm_without_token"; then
     tap_ok "ST-CHART-ACM-002b: RemediationOrchestrator backend=acm without tokenSecretRef renders cleanly (fails Go-side Validate() at pod startup, per #1556)"

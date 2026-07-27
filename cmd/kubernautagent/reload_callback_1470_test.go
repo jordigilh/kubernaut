@@ -84,7 +84,7 @@ phaseModels:
 	// prevent (was previously accepted; see git history of this test).
 	It("rejects adding a new phase override whose identity differs from base", func() {
 		sc, resolver := setupPhaseResolver(GinkgoTB())
-		bootRuntime := bootRuntimeFor("gpt-4")
+		bootRuntime := bootRuntimeFor()
 
 		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), resolver, bootRuntime)
 
@@ -108,7 +108,7 @@ phaseModels:
 	// just additional non-identity tuning scoped to that phase).
 	It("accepts adding a new phase override whose identity matches base", func() {
 		sc, resolver := setupPhaseResolver(GinkgoTB())
-		bootRuntime := bootRuntimeFor("gpt-4")
+		bootRuntime := bootRuntimeFor()
 
 		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), resolver, bootRuntime)
 
@@ -131,7 +131,7 @@ phaseModels:
 	// happens to stay the same. Provider is part of identity, not just Model.
 	It("rejects a phase override provider-only change", func() {
 		sc, resolver := setupPhaseResolver(GinkgoTB())
-		bootRuntime := bootRuntimeFor("gpt-4")
+		bootRuntime := bootRuntimeFor()
 
 		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), resolver, bootRuntime)
 
@@ -210,7 +210,7 @@ apiKey: test-key
 	// configured.
 	It("rejects a base model change and does not break reload when the resolver is nil (backward compat)", func() {
 		sc := setupSwappable(GinkgoTB())
-		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor("gpt-4"))
+		cb := llmRuntimeReloadCallback(staticCfg(), sc, testReloadLogger(), nil, bootRuntimeFor())
 
 		err := cb(`model: gpt-4-turbo
 endpoint: http://localhost:11434

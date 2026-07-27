@@ -88,7 +88,7 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		const rrName = "e2e-rr-mcp-full-02"
 
 		By("TC-E2E-MCP-FULL-02: Create RR via k8s client CRD fixture")
-		Expect(createRR(rrNamespace, rrName, "Deployment", g1RRDeployName)).To(Succeed())
+		Expect(createRR(rrNamespace, rrName, g1RRDeployName)).To(Succeed())
 		DeferCleanup(func() { deleteRR(rrNamespace, rrName) })
 
 		By("TC-E2E-MCP-FULL-04: kubernaut_approve after RR exists")
@@ -107,9 +107,9 @@ var _ = Describe("MCP Full-Path Validation (G1)", Label("e2e", "phase2", "g1"), 
 		apBody := buildJSONRPC("mcp-full-04-approve", "tools/call", map[string]interface{}{
 			"name": "kubernaut_approve",
 			"arguments": map[string]interface{}{
-				"rar_name":  rarName,
-				"decision":  "Approved",
-				"reason":    "MCP G1 full-path E2E",
+				"rar_name": rarName,
+				"decision": "Approved",
+				"reason":   "MCP G1 full-path E2E",
 			},
 		})
 		araw, acode, err := mcpPOST(approverTok, approverSession, apBody)

@@ -29,15 +29,21 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 // E2E-FLEET-004: GW cluster-aware alert ingestion E2E.
 // Validates that posting a Prometheus alert with commonLabels.cluster produces
 // a RemediationRequest with the correct spec.clusterID and a cluster-aware fingerprint.
 //
 // This test exercises the full HTTP path:
-//   POST /api/v1/signals/prometheus → PrometheusAdapter → CRDCreator → K8s API
+//
+//	POST /api/v1/signals/prometheus → PrometheusAdapter → CRDCreator → K8s API
 var _ = Describe("E2E-FLEET-004: GW Cluster-Aware Signal Ingestion", Label("fleet", "e2e"), func() {
 	BeforeEach(func() {
-		if os.Getenv("FLEET_E2E") != "true" {
+		if os.Getenv("FLEET_E2E") != trueFixture {
 			Skip("FLEET_E2E=true required for fleet E2E tests")
 		}
 	})
@@ -115,9 +121,9 @@ func buildPrometheusAlertWithCluster(alertName, namespace, severity, kind, name,
 			{
 				"status": "firing",
 				"labels": map[string]string{
-					"alertname":               alertName,
-					"namespace":               namespace,
-					"severity":                severity,
+					"alertname":           alertName,
+					"namespace":           namespace,
+					"severity":            severity,
 					strings.ToLower(kind): name,
 				},
 				"annotations": map[string]string{

@@ -26,6 +26,8 @@ import (
 	"encoding/hex"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -53,7 +55,7 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 	)
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("notif-ctx")
+		testNamespace = createTestNamespace(ctx, "notif-ctx")
 		nc = creator.NewNotificationCreator(
 			k8sClient,
 			k8sManager.GetScheme(),
@@ -105,11 +107,15 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 				Phase:          aianalysisv1.PhaseCompleted,
 				ApprovalReason: "policy_requires_human_gate",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID:      "wf-approval-003",
-					Version:         "v1",
-					ExecutionBundle: "oci://test/bundle@sha256:003",
-					Confidence:      0.85,
-					Rationale:       "test",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      "wf-approval-003",
+						WorkflowName:    "wf-approval-003",
+						ActionType:      "RestartPod",
+						Version:         "v1",
+						ExecutionBundle: "oci://test/bundle@sha256:003",
+					},
+					Confidence: 0.85,
+					Rationale:  "test",
 				},
 			},
 		}
@@ -199,12 +205,16 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 				Phase:     aianalysisv1.PhaseCompleted,
 				RootCause: "OOM",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID:      "wf-complete-006",
-					Version:         "v2",
-					ExecutionBundle: "oci://test/bundle@sha256:006",
-					Confidence:      0.9,
-					Rationale:       "done",
-					ExecutionEngine: "tekton",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      "wf-complete-006",
+						WorkflowName:    "wf-complete-006",
+						ActionType:      "RestartPod",
+						Version:         "v2",
+						ExecutionBundle: "oci://test/bundle@sha256:006",
+						ExecutionEngine: "tekton",
+					},
+					Confidence: 0.9,
+					Rationale:  "done",
 				},
 			},
 		}
@@ -215,7 +225,7 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 		nr := &notificationv1.NotificationRequest{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, nr)).To(Succeed())
 
-		Expect(nr.Spec.Context.Analysis.Outcome).To(Equal(string(rr.Status.Outcome)))
+		Expect(nr.Spec.Context.Analysis.Outcome).To(Equal(rr.Status.Outcome))
 		Expect(nr.Spec.Context.Workflow.WorkflowID).To(Equal(ai.Status.SelectedWorkflow.WorkflowID))
 		Expect(nr.Spec.Context.Lineage.RemediationRequest).To(Equal(rr.Name))
 		Expect(nr.Spec.Context.Lineage.AIAnalysis).To(Equal(ai.Name))

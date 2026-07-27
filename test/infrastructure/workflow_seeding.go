@@ -18,7 +18,6 @@ package infrastructure
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os/exec"
@@ -28,7 +27,6 @@ import (
 	"time"
 
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
 // workflowIDToImageName maps WorkflowID to fixture directory name.
@@ -68,104 +66,6 @@ type TestWorkflow struct {
 	SchemaParameters []models.WorkflowParameter
 }
 
-// SeedWorkflowsInDataStorage registers test workflows in DataStorage
-// Called during test suite setup (e.g., SynchronizedBeforeSuite Phase 1)
-//
-// Pattern: DD-TEST-010 Multi-Controller Pattern - Shared Infrastructure Setup
-// - Process 1 seeds workflows in DataStorage (shared resource)
-// - All processes can reference these workflows during tests
-// - Prevents "workflow not found" errors during KA validation
-//
-// Pattern: DD-TEST-011 v2.0 - Go-based workflow seeding
-// - Prevents pytest-xdist race conditions (BR-TEST-008)
-// - Prevents TokenReview rate limiting under concurrent access
-//
-// Returns: map[workflow_name]workflow_id (UUID) for test reference
-// DD-WORKFLOW-002 v3.0: DataStorage generates UUIDs (cannot be specified by client)
-// DD-AUTH-014: Accepts authenticated client for real K8s authentication
-func SeedWorkflowsInDataStorage(client *ogenclient.Client, workflows []TestWorkflow, testSuiteName string, output io.Writer) (map[string]string, error) {
-	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	_, _ = fmt.Fprintf(output, "🌱 Seeding Test Workflows in DataStorage (%s)\n", testSuiteName)
-	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-
-	_, _ = fmt.Fprintf(output, "📋 Registering %d test workflows...\n", len(workflows))
-
-	// Map to store workflow_name → workflow_id (UUID)
-	workflowUUIDs := make(map[string]string)
-
-	for _, wf := range workflows {
-		workflowID, err := RegisterWorkflowInDataStorage(client, wf, output)
-		if err != nil {
-			return nil, fmt.Errorf("failed to register workflow %s: %w", wf.WorkflowID, err)
-		}
-
-		// Store the UUID for this workflow (keyed by workflow_name + environment)
-		// Format: "workflow_name:environment" → "uuid"
-		// Some tests only use workflow_name, others use the full key
-		key := fmt.Sprintf("%s:%s", wf.WorkflowID, wf.Environment)
-		workflowUUIDs[key] = workflowID
-
-		_, _ = fmt.Fprintf(output, "  ✅ %s (%s) → %s\n", wf.WorkflowID, wf.Environment, workflowID)
-	}
-
-	_, _ = fmt.Fprintf(output, "✅ All test workflows registered (%d UUIDs captured)\n\n", len(workflowUUIDs))
-	return workflowUUIDs, nil
-}
-
-// RegisterWorkflowInDataStorage registers a single workflow via DataStorage OpenAPI Client.
-// ADR-058: Inline schema registration — reads CRD YAML from test fixtures and posts inline.
-//
-// DD-WORKFLOW-002 v3.0: DataStorage generates UUID (security - cannot be specified by client)
-// DD-AUTH-014: Accepts authenticated client instead of creating unauthenticated one
-//
-// This function is idempotent - safe to call multiple times for the same workflow.
-// If the DS returns 409 Conflict, it falls back to a ListWorkflows query to retrieve the
-// existing UUID. For any other error (400, 401, 403, 500, transport), the original error
-// is returned immediately — no misleading fallback.
-//
-// Returns: The actual UUID assigned by DataStorage (either from creation or query)
-func RegisterWorkflowInDataStorage(client *ogenclient.Client, wf TestWorkflow, output io.Writer) (string, error) {
-	fixtureDir := workflowIDToImageName(wf.WorkflowID)
-	content, readErr := readWorkflowFixtureContent(fixtureDir)
-	if readErr != nil {
-		return "", fmt.Errorf("read fixture for %s: %w", wf.WorkflowID, readErr)
-	}
-
-	uuid, _, err := callCreateWorkflowInline(client, content, "e2e-test-seeder")
-	if err == nil {
-		return uuid, nil
-	}
-
-	// Only fall back to ListWorkflows for 409 Conflict (workflow already exists).
-	// All other errors (400 bad request, 500 internal, transport, etc.) are fatal.
-	var ce *workflowConflictError
-	if !errors.As(err, &ce) {
-		return "", fmt.Errorf("register workflow %s: %w", wf.WorkflowID, err)
-	}
-
-	_, _ = fmt.Fprintf(output, "  ⚠️  Workflow already exists (409), querying for existing UUID...\n")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	listResp, listErr := client.ListWorkflows(ctx, ogenclient.ListWorkflowsParams{
-		WorkflowName: ogenclient.NewOptString(wf.WorkflowID),
-		Limit:        ogenclient.NewOptInt(1),
-	})
-	if listErr != nil {
-		return "", fmt.Errorf("failed to query existing workflow %s (after 409): %w", wf.WorkflowID, listErr)
-	}
-
-	switch r := listResp.(type) {
-	case *ogenclient.WorkflowListResponse:
-		if len(r.Workflows) == 0 {
-			return "", fmt.Errorf("registration conflict but no existing workflow found (name=%s): %w", wf.WorkflowID, err)
-		}
-		return r.Workflows[0].WorkflowId.Value.String(), nil
-	default:
-		return "", fmt.Errorf("unexpected response type from ListWorkflows: %T", listResp)
-	}
-}
-
 // Deprecated: SortedWorkflowUUIDKeys is part of the legacy ConfigMap sync infrastructure.
 // The Go Mock LLM uses deterministic UUIDs and no longer requires external UUID synchronization.
 //
@@ -200,6 +100,27 @@ type WorkflowSeedSpec struct {
 	Environment string // environment label for the workflowUUIDs map key (e.g., "production")
 }
 
+// testWorkflowsToSeedSpecs converts legacy TestWorkflow entries (the
+// Postgres-inline-registration shape) into WorkflowSeedSpecs for
+// SeedWorkflowsViaKubectlApply (Issue #1661 Phase 55: E2E suites move off
+// the Postgres-backed SeedWorkflowsInDataStorage path onto AuthWebhook's
+// real admission pipeline). FixtureDir is derived the same way
+// RegisterWorkflowInDataStorage does (workflowIDToImageName strips any
+// "-vN" version suffix from WorkflowID) -- every fixture's metadata.name
+// equals its TestWorkflow.WorkflowID (verified across all callers), so the
+// resulting map key (name:environment) is identical to the retired path's
+// key (WorkflowID:environment).
+func testWorkflowsToSeedSpecs(workflows []TestWorkflow) []WorkflowSeedSpec {
+	specs := make([]WorkflowSeedSpec, 0, len(workflows))
+	for _, wf := range workflows {
+		specs = append(specs, WorkflowSeedSpec{
+			FixtureDir:  workflowIDToImageName(wf.WorkflowID),
+			Environment: wf.Environment,
+		})
+	}
+	return specs
+}
+
 // SeedWorkflowsViaKubectlApply registers workflows declaratively using kubectl apply -f,
 // which triggers the authwebhook → DataStorage registration → CRD status update pipeline.
 // This mirrors production deployments where operators apply CRD manifests directly.
@@ -211,7 +132,7 @@ type WorkflowSeedSpec struct {
 //  4. Returns map["<crd-name>:<environment>"] = "<uuid>"
 //
 // Prerequisites: AuthWebhook deployed, DataStorage healthy, ActionTypes seeded.
-func SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace string, workflows []WorkflowSeedSpec, output io.Writer) (map[string]string, error) {
+func SeedWorkflowsViaKubectlApply(ctx context.Context, kubeconfigPath, namespace string, workflows []WorkflowSeedSpec, output io.Writer) (map[string]string, error) {
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
 	_, _ = fmt.Fprintf(output, "🌱 Seeding %d workflows via kubectl apply (declarative)\n", len(workflows))
 	_, _ = fmt.Fprintf(output, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -225,7 +146,7 @@ func SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace string, workflows []
 			return nil, fmt.Errorf("read fixture %s: %w", wf.FixtureDir, err)
 		}
 
-		cmd := exec.Command("kubectl", "apply",
+		cmd := exec.CommandContext(ctx, "kubectl", "apply",
 			"--kubeconfig", kubeconfigPath,
 			"-n", namespace,
 			"-f", "-")
@@ -255,7 +176,7 @@ func SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace string, workflows []
 		name := appliedNames[i]
 		key := fmt.Sprintf("%s:%s", name, wf.Environment)
 
-		uuid, err := waitForWorkflowUUID(kubeconfigPath, namespace, name, 90*time.Second)
+		uuid, err := waitForWorkflowUUID(ctx, kubeconfigPath, namespace, name, 90*time.Second)
 		if err != nil {
 			return nil, fmt.Errorf("workflow %s UUID not populated: %w", name, err)
 		}
@@ -269,10 +190,10 @@ func SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace string, workflows []
 
 // waitForWorkflowUUID polls a RemediationWorkflow's .status.workflowId until it
 // is non-empty or the timeout expires.
-func waitForWorkflowUUID(kubeconfigPath, namespace, name string, timeout time.Duration) (string, error) {
+func waitForWorkflowUUID(ctx context.Context, kubeconfigPath, namespace, name string, timeout time.Duration) (string, error) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		cmd := exec.Command("kubectl", "get",
+		cmd := exec.CommandContext(ctx, "kubectl", "get",
 			fmt.Sprintf("remediationworkflow/%s", name),
 			"-n", namespace,
 			"--kubeconfig", kubeconfigPath,

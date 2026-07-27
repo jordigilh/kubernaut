@@ -19,6 +19,8 @@ package creator_test
 import (
 	"context"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/prometheus/client_golang/prometheus"
@@ -95,12 +97,15 @@ var _ = Describe("NotificationCreator", func() {
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID:      "restart-pod",
-					Version:         "1.0.0",
-					ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
-					Confidence:      0.85,
-					ActionType:      "restart",
-					Rationale:       "Pod restart recommended",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:      "restart-pod",
+						WorkflowName:    "restart-pod",
+						Version:         "1.0.0",
+						ExecutionBundle: "oci://registry/workflows/restart-pod:v1.0.0",
+						ActionType:      "restart",
+					},
+					Confidence: 0.85,
+					Rationale:  "Pod restart recommended",
 				},
 				ApprovalReason: "High severity requires approval",
 				RootCause:      "Memory leak detected",
@@ -129,6 +134,10 @@ var _ = Describe("NotificationCreator", func() {
 			Expect(nr.OwnerReferences).To(HaveLen(1))
 			Expect(nr.OwnerReferences[0].Name).To(Equal(rr.Name))
 			Expect(nr.Spec.Context.Workflow.SelectedWorkflow).To(Equal("restart-pod"))
+			// Issue #1677 Phase 1: WorkflowName/ActionType sourced directly from
+			// ai.Status.SelectedWorkflow -- no live DataStorage lookup needed by Notification.
+			Expect(nr.Spec.Context.Workflow.WorkflowName).To(Equal("restart-pod"))
+			Expect(nr.Spec.Context.Workflow.ActionType).To(Equal("restart"))
 		})
 
 		It("is idempotent: reusing an existing approval notification returns the same name without error", func() {
@@ -178,6 +187,10 @@ var _ = Describe("NotificationCreator", func() {
 			Expect(nr.Spec.Type).To(Equal(notificationv1.NotificationTypeCompletion))
 			Expect(nr.Spec.Context.Workflow.WorkflowID).To(Equal("restart-pod"))
 			Expect(nr.Spec.Context.Workflow.ExecutionEngine).To(Equal("kubernetes-job"))
+			// Issue #1677 Phase 1: WorkflowName/ActionType sourced directly from
+			// ai.Status.SelectedWorkflow -- no live DataStorage lookup needed by Notification.
+			Expect(nr.Spec.Context.Workflow.WorkflowName).To(Equal("restart-pod"))
+			Expect(nr.Spec.Context.Workflow.ActionType).To(Equal("restart"))
 			Expect(nr.Spec.Context.Verification.Assessed).To(BeFalse())
 			Expect(nr.Spec.Context.Verification.Outcome).To(Equal("unavailable"))
 		})

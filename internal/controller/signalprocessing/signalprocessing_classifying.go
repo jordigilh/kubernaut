@@ -345,6 +345,8 @@ func (r *SignalProcessingReconciler) failClassifyingPhase(ctx context.Context, s
 // reconcileClassifying per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2
 // (issue #1520). Returns failed=true when the caller must return
 // (result, err) immediately.
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches the "caller must return (result, err)" contract shared with sibling extracted helpers (Issue #1546 Tier 4)
 func (r *SignalProcessingReconciler) evaluateSeverityOrFail(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, policyInput evaluator.PolicyInput, signal *signalprocessingv1alpha1.SignalData, classifyingStart time.Time, logger logr.Logger) (*evaluator.SeverityResult, ctrl.Result, bool, error) {
 	if r.PolicyEvaluator == nil {
 		return nil, ctrl.Result{}, false, nil
@@ -404,7 +406,7 @@ func (r *SignalProcessingReconciler) resolveSignalMode(signal *signalprocessingv
 		return r.SignalModeClassifier.Classify(signal.Name)
 	}
 	return classifier.SignalModeResult{
-		SignalMode:       "reactive",
+		SignalMode:       signalprocessingv1alpha1.SignalModeReactive,
 		SignalName:       signal.Name,
 		SourceSignalName: "",
 	}
@@ -427,7 +429,7 @@ func buildClassificationMessage(envClass *signalprocessingv1alpha1.EnvironmentCl
 			severityResult.Severity, severityResult.Source)
 	}
 
-	if signalModeResult.SignalMode == "proactive" {
+	if signalModeResult.SignalMode == signalprocessingv1alpha1.SignalModeProactive {
 		classificationMessage += fmt.Sprintf(", signalMode=proactive (normalized: %s → %s)",
 			signalModeResult.SourceSignalName, signalModeResult.SignalName)
 	}

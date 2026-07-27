@@ -113,7 +113,7 @@ var _ = Describe("Issue #614: DuplicateInProgress Outcome Inheritance Integratio
 	var ns string
 
 	BeforeEach(func() {
-		ns = createTestNamespace("dedup-block")
+		ns = createTestNamespace(ctx, "dedup-block")
 	})
 
 	AfterEach(func() {

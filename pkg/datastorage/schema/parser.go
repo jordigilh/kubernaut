@@ -208,12 +208,12 @@ func validateWorkflowExecution(schema *models.WorkflowSchema) error {
 
 	engine := schema.Execution.Engine
 	if engine == "" {
-		engine = "tekton"
+		engine = string(models.ExecutionEngineTekton)
 	}
 
 	// For tekton/job: require sha256 digest in bundle URL (OCI image)
 	// For ansible: bundle is a Git repo URL — digest validation is different
-	if engine == "tekton" || engine == "job" {
+	if engine == string(models.ExecutionEngineTekton) || engine == string(models.ExecutionEngineJob) {
 		if err := validateBundleDigest(schema.Execution.Bundle); err != nil {
 			return err
 		}
@@ -268,7 +268,9 @@ func validateWorkflowResources(resources *models.ResourcesSchema, engine string)
 // SchemaValidationError scoped to fieldPrefix on the first unparseable value.
 func parseResourceQuantities(fieldPrefix string, quantities map[string]string) (corev1.ResourceList, error) {
 	if len(quantities) == 0 {
-		return nil, nil
+		// Empty, non-nil map: behaviorally identical to nil (safe to
+		// range/len either way) but avoids an ambiguous nil-vs-error return.
+		return corev1.ResourceList{}, nil
 	}
 
 	result := make(corev1.ResourceList, len(quantities))
@@ -338,7 +340,7 @@ func ParseBundleDigest(bundle string) (fullRef string, digest string, err error)
 	}
 
 	if _, decodeErr := hex.DecodeString(hexPart); decodeErr != nil {
-		return "", "", fmt.Errorf("sha256 digest contains invalid hex characters: %v", decodeErr)
+		return "", "", fmt.Errorf("sha256 digest contains invalid hex characters: %w", decodeErr)
 	}
 
 	return bundle, hexPart, nil
@@ -380,7 +382,7 @@ func (p *Parser) ExtractLabels(schema *models.WorkflowSchema) (json.RawMessage, 
 	// DD-WORKFLOW-001 v2.8: severity always stored as JSONB array. Supports "*" wildcard.
 	// DD-WORKFLOW-016: environment/severity are []string for JSONB array storage
 	labels := map[string]interface{}{
-		"severity": []string(schema.Labels.Severity),
+		"severity": schema.Labels.Severity,
 	}
 
 	// Add required labels
@@ -444,6 +446,10 @@ func (p *Parser) ExtractDescription(schema *models.WorkflowSchema) (json.RawMess
 	return descJSON, nil
 }
 
+// boolStringTrue is the schema-level string value that converts to Go `true`
+// for DetectedLabelsSchema boolean fields (ADR-043 v1.3).
+const boolStringTrue = "true"
+
 // ExtractDetectedLabels converts the YAML-parsed DetectedLabelsSchema (string fields)
 // to the business model DetectedLabels (bool/string fields).
 // ADR-043 v1.3: Boolean fields convert "true" -> true; string fields pass through.
@@ -460,17 +466,17 @@ func (p *Parser) ExtractDetectedLabels(schema *models.WorkflowSchema) (*models.D
 	}
 
 	src := schema.DetectedLabels
-	dl.GitOpsManaged = src.GitOpsManaged == "true"
+	dl.GitOpsManaged = src.GitOpsManaged == boolStringTrue
 	dl.GitOpsTool = src.GitOpsTool
-	dl.PDBProtected = src.PDBProtected == "true"
-	dl.HPAEnabled = src.HPAEnabled == "true"
-	dl.Stateful = src.Stateful == "true"
-	dl.HelmManaged = src.HelmManaged == "true"
-	dl.NetworkIsolated = src.NetworkIsolated == "true"
+	dl.PDBProtected = src.PDBProtected == boolStringTrue
+	dl.HPAEnabled = src.HPAEnabled == boolStringTrue
+	dl.Stateful = src.Stateful == boolStringTrue
+	dl.HelmManaged = src.HelmManaged == boolStringTrue
+	dl.NetworkIsolated = src.NetworkIsolated == boolStringTrue
 	dl.ServiceMesh = src.ServiceMesh
-	dl.VirtualMachine = src.VirtualMachine == "true"
-	dl.LiveMigratable = src.LiveMigratable == "true"
-	dl.CDIManaged = src.CDIManaged == "true"
+	dl.VirtualMachine = src.VirtualMachine == boolStringTrue
+	dl.LiveMigratable = src.LiveMigratable == boolStringTrue
+	dl.CDIManaged = src.CDIManaged == boolStringTrue
 	dl.StorageBackend = src.StorageBackend
 
 	return dl, nil
@@ -491,7 +497,7 @@ func (p *Parser) ExtractExecutionEngine(schema *models.WorkflowSchema) string {
 	if schema.Execution != nil && schema.Execution.Engine != "" {
 		return schema.Execution.Engine
 	}
-	return "tekton" // Default for V1.0
+	return string(models.ExecutionEngineTekton) // Default for V1.0
 }
 
 // ExtractExecutionBundle extracts the execution bundle from a WorkflowSchema
@@ -554,6 +560,10 @@ func (p *Parser) ExtractBundleDigest(schema *models.WorkflowSchema) *string {
 // through ParseAndValidate/Validate first, since registration-time
 // validation (validateWorkflowResources) already rejects invalid quantities.
 func (p *Parser) ExtractResources(schema *models.WorkflowSchema) (*corev1.ResourceRequirements, error) {
+	// nolint:nilnil // intentional "absent section" sentinel, not an error —
+	// already documented in the doc comment above ("Returns (nil, nil) when
+	// the section is absent"); callers must (and do) preserve the existing
+	// BestEffort QoS spec in that case (Issue #1546 Tier 2).
 	if schema == nil || schema.Execution == nil || schema.Execution.Resources == nil {
 		return nil, nil
 	}

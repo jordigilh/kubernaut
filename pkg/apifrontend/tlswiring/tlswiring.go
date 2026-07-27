@@ -81,6 +81,9 @@ func fileExists(path string) bool {
 // non-empty, or nil (meaning "use default transport") otherwise.
 func OutboundTransport(caFile string) (http.RoundTripper, error) {
 	if caFile == "" {
+		// nolint:nilnil // intentional "disabled" sentinel: nil http.RoundTripper
+		// is documented-safe (http.Client falls back to DefaultTransport), not an
+		// error condition (Issue #1546 Tier 2).
 		return nil, nil
 	}
 	return sharedtls.NewTLSTransport(caFile)
@@ -157,6 +160,10 @@ func (t *reloadableCATransport) reload() error {
 // that triggers hot-reload of the server certificate when the file changes.
 // Returns nil watcher if reloader is nil (TLS disabled).
 func StartCertFileWatcher(ctx context.Context, certDir string, reloader *sharedtls.CertReloader, logger logr.Logger) (*hotreload.FileWatcher, error) {
+	// nolint:nilnil // intentional "TLS disabled, nothing to watch" sentinel,
+	// not an error — already documented above ("Returns nil watcher if
+	// reloader is nil"); sole caller (cmd/apifrontend/main.go) already guards
+	// with `if certWatcher != nil` before use (Issue #1546 Tier 2).
 	if reloader == nil || certDir == "" {
 		return nil, nil
 	}

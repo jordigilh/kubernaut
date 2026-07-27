@@ -20,6 +20,8 @@ import (
 	"context"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -55,19 +57,22 @@ func setupScheme() *runtime.Scheme {
 	return scheme
 }
 
-// MockRoutingEngine is a mock implementation for unit tests
+// MockRoutingEngine is a mock implementation for unit tests.
+//
+// Issue #1674: Check* methods return routing.ErrNotBlocked (not a bare nil
+// error) to match the production RoutingEngine's sentinel-error contract.
 type MockRoutingEngine struct{}
 
 func (m *MockRoutingEngine) CheckPreAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest) (*routing.BlockingCondition, error) {
-	return nil, nil // Always return not blocked for unit tests
+	return nil, routing.ErrNotBlocked // Always return not blocked for unit tests
 }
 
 func (m *MockRoutingEngine) CheckPostAnalysisConditions(ctx context.Context, rr *remediationv1.RemediationRequest, workflowID string, targetResource string, preRemediationSpecHash string, actionType string) (*routing.BlockingCondition, error) {
-	return nil, nil // Always return not blocked for unit tests
+	return nil, routing.ErrNotBlocked // Always return not blocked for unit tests
 }
 
 func (m *MockRoutingEngine) CheckResourceBusy(ctx context.Context, rr *remediationv1.RemediationRequest, targetResource string) (*routing.BlockingCondition, error) {
-	return nil, nil
+	return nil, routing.ErrNotBlocked
 }
 
 func (m *MockRoutingEngine) CheckUnmanagedResource(ctx context.Context, rr *remediationv1.RemediationRequest) *routing.BlockingCondition {
@@ -84,18 +89,6 @@ func (m *MockRoutingEngine) Config() routing.Config {
 
 func (m *MockRoutingEngine) CalculateExponentialBackoff(consecutiveFailures int32) time.Duration {
 	return time.Duration(consecutiveFailures) * time.Minute
-}
-
-// MockWorkflowResolver implements routing.WorkflowDisplayResolver for unit tests.
-type MockWorkflowResolver struct {
-	Responses map[string]*routing.WorkflowDisplayInfo
-}
-
-func (m *MockWorkflowResolver) ResolveWorkflowDisplay(_ context.Context, workflowID string) *routing.WorkflowDisplayInfo {
-	if m == nil || m.Responses == nil {
-		return nil
-	}
-	return m.Responses[workflowID]
 }
 
 // ptr is a helper to get pointer to bool
@@ -182,9 +175,11 @@ func newRemediationRequestWithChildRefs(name, namespace string, phase remediatio
 	return rr
 }
 
-// newSignalProcessingCompleted creates a completed SignalProcessing CRD
-func newSignalProcessingCompleted(name, namespace, rrName string) *signalprocessingv1.SignalProcessing {
-	sp := newSignalProcessing(name, namespace, rrName, signalprocessingv1.PhaseCompleted)
+// newSignalProcessingCompleted creates a completed SignalProcessing CRD in the
+// fixed defaultFixture namespace (the only namespace used across this package's tests).
+// This shared helper is called from many other _test.go files in this package.
+func newSignalProcessingCompleted(name, rrName string) *signalprocessingv1.SignalProcessing {
+	sp := newSignalProcessing(name, defaultFixture, rrName, signalprocessingv1.PhaseCompleted)
 	now := metav1.Now()
 	sp.Status.CompletionTime = &now
 	return sp
@@ -230,10 +225,19 @@ func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, 
 	now := metav1.Now()
 	ai.Status.CompletedAt = &now
 	ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-		WorkflowID:      workflowID,
-		Version:         "v1",
-		ExecutionBundle: "test-image:latest",
-		Confidence:      confidence,
+		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+			WorkflowID: workflowID,
+			// WorkflowName/ActionType: Issue #1711 cascade (DD-KA-001 v1.1) made
+			// these required fields on validateSelectedWorkflow.
+			WorkflowName:    workflowID,
+			ActionType:      "RestartPod",
+			Version:         "v1",
+			ExecutionBundle: "test-image:latest",
+			// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made this a
+			// required field on validateSelectedWorkflow.
+			ExecutionEngine: "job",
+		},
+		Confidence: confidence,
 	}
 	ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 		Summary:  "Test root cause",
@@ -314,8 +318,12 @@ func newWorkflowExecution(name, namespace, rrName string, phase string) *workflo
 				Namespace:  namespace,
 			},
 			WorkflowRef: workflowexecutionv1.WorkflowRef{
-				WorkflowID: "test-workflow",
-				Version:    "v1",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:   "test-workflow",
+					WorkflowName: "test-workflow",
+					ActionType:   "RestartPod",
+					Version:      "v1",
+				},
 			},
 			TargetResource: namespace + "/deployment/test-app",
 		},
@@ -334,8 +342,11 @@ func newWorkflowExecutionFailed(name, namespace, rrName, message string) *workfl
 	return we
 }
 
-// newRemediationApprovalRequestApproved creates an approved RAR
-func newRemediationApprovalRequestApproved(name, namespace, rrName, decidedBy string) *remediationv1.RemediationApprovalRequest {
+// newRemediationApprovalRequestApproved creates an approved RAR in the fixed
+// defaultFixture namespace (the only namespace used across this package's tests).
+// This shared helper is called from many other _test.go files in this package.
+func newRemediationApprovalRequestApproved(name, rrName, decidedBy string) *remediationv1.RemediationApprovalRequest {
+	namespace := defaultFixture
 	now := metav1.Now()
 	return &remediationv1.RemediationApprovalRequest{
 		ObjectMeta: metav1.ObjectMeta{
@@ -376,8 +387,11 @@ func newRemediationApprovalRequestApproved(name, namespace, rrName, decidedBy st
 	}
 }
 
-// newRemediationApprovalRequestRejected creates a rejected RAR
-func newRemediationApprovalRequestRejected(name, namespace, rrName, decidedBy, reason string) *remediationv1.RemediationApprovalRequest {
+// newRemediationApprovalRequestRejected creates a rejected RAR in the fixed
+// defaultFixture namespace (the only namespace used across this package's tests).
+// This shared helper is called from many other _test.go files in this package.
+func newRemediationApprovalRequestRejected(name, rrName, decidedBy, reason string) *remediationv1.RemediationApprovalRequest {
+	namespace := defaultFixture
 	now := metav1.Now()
 	return &remediationv1.RemediationApprovalRequest{
 		ObjectMeta: metav1.ObjectMeta{

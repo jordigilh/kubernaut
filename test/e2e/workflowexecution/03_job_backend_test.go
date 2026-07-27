@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
@@ -157,12 +159,18 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: jobFailureUUID,
-						Version:    "v1.0.0",
-						// Spec seed — resolveExecutionBundle overrides from DS catalog
-						// (job-failing:v1.0.0-exec, which exits non-zero)
-						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
-							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:   jobFailureUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
+							// job-failing:v1.0.0-exec exits non-zero. #1661 Change 11e: WFE no
+							// longer resolves/overrides this from DS at runtime, so the real
+							// digest-pinned bundle must be supplied directly (see
+							// TestJobFailingExecutionBundle's doc comment).
+							ExecutionBundle: infrastructure.TestJobFailingExecutionBundle,
+							ExecutionEngine: "job",
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -243,12 +251,18 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: jobOomkillUUID,
-						Version:    "v1.0.0",
-						// Spec seed -- resolveExecutionBundle overrides from DS catalog
-						// (job-oomkill:v1.0.0-exec, which unconditionally exits 137)
-						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
-							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:   jobOomkillUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
+							// job-oomkill:v1.0.0-exec unconditionally exits 137. #1661 Change
+							// 11e: WFE no longer resolves/overrides this from DS at runtime, so
+							// the real digest-pinned bundle must be supplied directly (see
+							// TestJobOomkillExecutionBundle's doc comment).
+							ExecutionBundle: infrastructure.TestJobOomkillExecutionBundle,
+							ExecutionEngine: "job",
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -359,10 +373,18 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID: jobFailureUUID,
-						Version:    "v1.0.0",
-						ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
-							infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:   jobFailureUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
+							// job-failing:v1.0.0-exec exits non-zero. #1661 Change 11e: WFE no
+							// longer resolves/overrides this from DS at runtime, so the real
+							// digest-pinned bundle must be supplied directly (see
+							// TestJobFailingExecutionBundle's doc comment).
+							ExecutionBundle: infrastructure.TestJobFailingExecutionBundle,
+							ExecutionEngine: "job",
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -532,14 +554,15 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 	// P1: Edge Cases and Cross-Cutting Concerns
 	// ========================================
 
-	Context("E2E-WE-014-005: Execution engine resolution (runtime)", func() {
-		It("documents that unsupported engines are validated at runtime, not on the WFE Spec (BR-WE-014)", func() {
-			// ExecutionEngine was removed from WorkflowExecutionSpec; the WE controller resolves the engine
-			// from DataStorage and ExecutorRegistry at runtime. An unsupported engine fails reconciliation
-			// rather than API admission. Exercising that failure path in E2E would require mocking DS.
-			Skip("Unsupported execution engine is validated at runtime via ExecutorRegistry; not exercised in E2E without DataStorage mocks")
-		})
-	})
+	// E2E-WE-014-005 ("Invalid executionEngine rejected by API server") is intentionally
+	// absent: ExecutionEngine was removed from WorkflowExecutionSpec, so the CRD-level
+	// admission scenario this test ID originally covered no longer applies. The
+	// replacement runtime behavior (WE controller rejects an unsupported engine resolved
+	// from DataStorage/ExecutorRegistry) is already proven without a permanent Skip():
+	//   - UT-WE-659-002 (pkg/workflowexecution/controller_events_test.go) proves the logic
+	//   - IT-WE-015-001 (test/integration/workflowexecution/ansible_dispatch_integration_test.go)
+	//     proves the controller wiring via envtest with a real reconciler
+	// See docs/testing/BR-WE-014/E2E_TEST_PLAN_BR_WE_014.md for the updated scope note.
 
 	Context("E2E-WE-014-006: Deterministic Job Naming for Resource Locking", func() {
 		It("should use deterministic Job name based on targetResource (BR-WE-014, BR-WE-009)", func() {
@@ -677,8 +700,8 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 // Test Helpers
 // ========================================
 
-// createTestJobWFE creates a WorkflowExecution for job-backend E2E (engine resolved from DS at runtime).
-// Issue #518: WorkflowID must be a valid UUID (resolved at runtime by the WE controller via DS).
+// createTestJobWFE creates a WorkflowExecution for job-backend E2E.
+// Issue #518: WorkflowID must be a valid UUID.
 // Uses the pre-built placeholder-execution image (echoes params and exits 0).
 func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.WorkflowExecution {
 	jobHelloWorldUUID := infrastructure.RegisteredWorkflowUUIDs["test-job-hello-world"]
@@ -698,10 +721,15 @@ func createTestJobWFE(name, targetResource string) *workflowexecutionv1alpha1.Wo
 				Namespace:  controllerNamespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID: jobHelloWorldUUID,
-				Version:    "v1.0.0",
-				ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
-					infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:   jobHelloWorldUUID,
+					WorkflowName: "test-workflow",
+					ActionType:   "RestartPod",
+					Version:      "v1.0.0",
+					ExecutionBundle: fmt.Sprintf("%s/placeholder-execution:%s",
+						infrastructure.TestWorkflowBundleRegistry, infrastructure.TestWorkflowBundleVersion),
+					ExecutionEngine: "job",
+				},
 			},
 			TargetResource: targetResource,
 			Parameters: map[string]string{

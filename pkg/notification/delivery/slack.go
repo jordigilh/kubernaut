@@ -129,7 +129,7 @@ func isRetryableStatusCode(statusCode int) bool {
 
 // FormatSlackPayload formats a notification as Slack Block Kit JSON
 //
-// DEPRECATED: Use FormatSlackBlocks() instead for type-safe structured blocks per DD-AUDIT-004.
+// Deprecated: Use FormatSlackBlocks() instead for type-safe structured blocks per DD-AUDIT-004.
 //
 // This function is maintained for backward compatibility with existing tests,
 // but new code should use FormatSlackBlocks() which returns SDK structured types.

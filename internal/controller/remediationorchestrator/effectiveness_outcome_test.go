@@ -21,6 +21,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	controller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 )
 
@@ -69,7 +70,7 @@ var _ = Describe("Score-Aware Outcome Derivation (Issue #722, BR-EM-012)", func(
 		}
 
 		outcome := controller.DeriveOutcomeFromEA(ea)
-		Expect(outcome).To(Equal("Remediated"),
+		Expect(outcome).To(Equal(remediationv1.OutcomeRemediated),
 			"Alert resolved (alertScore>0) must yield Remediated")
 	})
 
@@ -87,7 +88,7 @@ var _ = Describe("Score-Aware Outcome Derivation (Issue #722, BR-EM-012)", func(
 		}
 
 		outcome := controller.DeriveOutcomeFromEA(ea)
-		Expect(outcome).To(Equal("Remediated"),
+		Expect(outcome).To(Equal(remediationv1.OutcomeRemediated),
 			"AM unavailable (alertAssessed=false) must fail-open to Remediated")
 	})
 })

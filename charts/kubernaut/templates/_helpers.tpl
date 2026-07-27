@@ -69,14 +69,19 @@ Usage: {{ include "kubernaut.tls.issuerName" . }}
 {{- end }}
 
 {{/*
-Merged fleet OAuth2 config: a service's own fleet.oauth2 fields fall back to
-global.fleet.oauth2 when unset, since every fleet-integration-capable
-service (gateway, signalprocessing, remediationorchestrator,
-effectivenessmonitor, apifrontend, fleetmetadatacache) authenticates to the
-*same* MCP Gateway with the same OAuth2 client in practice -- set it once in
-global.fleet.oauth2 instead of duplicating it per service. Per-service
-`fleet.oauth2.enabled` (fleet integration on/off) is intentionally NOT
-handled here and stays independent per service.
+Merged fleet OAuth2 config (Issue #1707 follow-up): every field except
+credentialsSecretRef is now global-only -- backend/endpoint/mcpGatewayType/
+tlsCAFile/oauth2.enabled/tokenURL/scopes/tlsCAFile were removed from every
+per-service `fleet.*` schema, since every fleet-integration-capable service
+(gateway, signalprocessing, remediationorchestrator, effectivenessmonitor,
+apifrontend, fleetmetadatacache) authenticates to the *same* MCP Gateway
+with the same OAuth2 client in practice -- there is no known deployment that
+needs a different value per service. Only `oauth2.credentialsSecretRef`
+remains overridable per service (the one field ADR-068 anticipated could
+legitimately differ, e.g. a per-namespace Secret naming convention).
+Uses sprig `get` (not dot access) so this also works for callers whose
+`svc` dict doesn't declare one of these keys at all (e.g. fleetmetadatacache's
+own oauth2 dict only ever declared credentialsSecretRef) without erroring.
 Named templates can only return a string, so the merged config is
 serialized as YAML -- parse it back with `fromYaml` at the call site.
 Usage:
@@ -87,22 +92,27 @@ Usage:
 {{- $g := .root.Values.global.fleet.oauth2 -}}
 {{- $svc := .svc -}}
 {{- dict
-    "tokenURL" ($svc.tokenURL | default $g.tokenURL)
-    "credentialsSecretRef" ($svc.credentialsSecretRef | default $g.credentialsSecretRef)
-    "scopes" ($svc.scopes | default $g.scopes)
-    "tlsCAFile" ($svc.tlsCAFile | default $g.tlsCAFile)
+    "enabled" $g.enabled
+    "tokenURL" $g.tokenURL
+    "credentialsSecretRef" ((get $svc "credentialsSecretRef") | default $g.credentialsSecretRef)
+    "scopes" $g.scopes
+    "tlsCAFile" $g.tlsCAFile
   | toYaml -}}
 {{- end }}
 
 {{/*
-Merged fleet MCP Gateway config (endpoint/type/CA, distinct from OAuth2
-credentials -- see kubernaut.fleet.oauth2): a service's own
-fleet.mcpGatewayEndpoint/mcpGatewayType/tlsCAFile fall back to
-global.fleet.* when unset, since every fleet-integration-capable service
-points at the *same* physical MCP Gateway instance. Uses sprig `get` (not
-dot access) so this also works for callers whose `svc` dict doesn't declare
-one of these keys at all (e.g. signalprocessing has no top-level
-fleet.tlsCAFile) without erroring.
+Merged fleet MCP Gateway config (endpoint/type/CA/backend/token, distinct
+from OAuth2 credentials -- see kubernaut.fleet.oauth2). Issue #1707
+follow-up: backend/endpoint/mcpGatewayEndpoint/mcpGatewayType/tlsCAFile/
+tokenSecretRef are now global-only -- removed from every per-service
+`fleet.*` schema, since every fleet-integration-capable service points at
+the *same* physical MCP Gateway instance and (for gateway/
+remediationorchestrator) the same scope-check backend. `svc` is still
+accepted and still consulted via sprig `get` (not dot access, so this also
+works for callers whose `svc` dict doesn't declare one of these keys at all,
+e.g. fleetmetadatacache's own dict never had a `backend` key) purely so a
+future per-service exception could be reintroduced without changing this
+helper's signature again -- today it always resolves to the global value.
 Usage:
   {{- $f := include "kubernaut.fleet.config" (dict "root" $ "svc" .Values.gateway.fleet) | fromYaml }}
   {{ $f.mcpGatewayEndpoint }}
@@ -111,9 +121,12 @@ Usage:
 {{- $g := .root.Values.global.fleet -}}
 {{- $svc := .svc -}}
 {{- dict
+    "backend" ((get $svc "backend") | default $g.backend)
+    "endpoint" ((get $svc "endpoint") | default $g.endpoint)
     "mcpGatewayEndpoint" ((get $svc "mcpGatewayEndpoint") | default $g.mcpGatewayEndpoint)
     "mcpGatewayType" ((get $svc "mcpGatewayType") | default $g.mcpGatewayType)
     "tlsCAFile" ((get $svc "tlsCAFile") | default $g.tlsCAFile)
+    "tokenSecretRef" ((get $svc "tokenSecretRef") | default $g.tokenSecretRef)
   | toYaml -}}
 {{- end }}
 
@@ -384,10 +397,11 @@ https://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080
 
 {{/*
 Return the in-cluster FleetMetadataCache service URL.
-FleetMetadataCache uses HTTP by default (internal scope query API, ADR-068).
+Issue #1683: FleetMetadataCache's API port presents TLS by default
+(ConfigureConditionalTLS), matching every other Kubernaut HTTP-API service.
 */}}
 {{- define "kubernaut.fleetmetadatacache.url" -}}
-http://fleetmetadatacache-service.{{ .Release.Namespace }}.svc.cluster.local:8080
+https://fleetmetadatacache-service.{{ .Release.Namespace }}.svc.cluster.local:8080
 {{- end }}
 
 {{/*
@@ -459,6 +473,77 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: {{ .name }}-ns-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ .serviceAccount }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
+
+{{/*
+Render a namespace-scoped Role + RoleBinding granting a fleet
+ClusterRegistry's CRD watch (MCPServerRegistration for kuadrant;
+Backend/MCPRoute for eaigw), used in place of the equivalent cluster-wide
+ClusterRole rule whenever a service's fleet namespace-scoping knob
+(<service>.fleet.namespace / fleetmetadatacache.namespace) is set (#1686,
+BR-RBAC-020). Each rule is opted in independently via a bool so the exact
+rule content (apiGroups/resources/verbs) matches the ClusterRole variant it
+replaces verbatim -- callers copy the same literal rule block used in their
+own ClusterRole rather than re-typing it, so the two RBAC kinds cannot drift
+apart.
+Params:
+  name                    - resource name prefix (e.g. "apifrontend")
+  serviceAccount          - ServiceAccount name to bind (usually == name)
+  namespace               - namespace to scope the watch/RBAC to
+  appLabels               - pre-rendered "app identifying" label line(s),
+                             e.g. "app: apifrontend" or FMC's two-line
+                             app.kubernetes.io/name+component convention
+  mcpServerRegistrations  - bool: grant mcp.kuadrant.io/mcpserverregistrations
+  kuadrantGateways        - bool: grant gateway.networking.k8s.io/gateways+httproutes (FMC only)
+  eaigwBackends           - bool: grant gateway.envoyproxy.io/backends + aigateway.envoyproxy.io/mcproutes
+  Release, labels         - as in kubernaut.nsRoleForSecrets above
+Usage: {{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "apifrontend" "serviceAccount" "apifrontend" "namespace" $ns "appLabels" "app: apifrontend" "mcpServerRegistrations" true "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+*/}}
+{{- define "kubernaut.fleet.registryNsRBAC" -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .name }}-fleet-registry
+  namespace: {{ .namespace }}
+  labels:
+    {{- .appLabels | nindent 4 }}
+    {{- .labels | nindent 4 }}
+rules:
+  {{- if .mcpServerRegistrations }}
+  - apiGroups: ["mcp.kuadrant.io"]
+    resources: ["mcpserverregistrations"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+  {{- if .kuadrantGateways }}
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways", "httproutes"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+  {{- if .eaigwBackends }}
+  - apiGroups: ["gateway.envoyproxy.io"]
+    resources: ["backends"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["aigateway.envoyproxy.io"]
+    resources: ["mcproutes"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .name }}-fleet-registry-binding
+  namespace: {{ .namespace }}
+  labels:
+    {{- .appLabels | nindent 4 }}
+    {{- .labels | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .name }}-fleet-registry
 subjects:
   - kind: ServiceAccount
     name: {{ .serviceAccount }}
@@ -703,12 +788,12 @@ Usage: {{ include "kubernaut.containerSecurityContext" .Values.gateway | nindent
 {{- end }}
 
 {{/*
-Generic merge(override, defaults) -> toYaml for a securityContext block,
-for components needing different defaults than kubernaut.podSecurityContext/
-kubernaut.containerSecurityContext above (e.g. postgresql/valkey, whose
-upstream images already run non-root and need write access to their own
-data directories, so they don't set runAsNonRoot/readOnlyRootFilesystem/
-capabilities.drop by default).
+Generic merge(override, defaults) -> toYaml for a securityContext block.
+Used by postgresql/valkey (and any component needing custom defaults).
+Defaults now include restricted-PSA-oriented settings (runAsNonRoot,
+capabilities.drop ALL) while keeping readOnlyRootFilesystem false so
+upstream images can write their data directories. Overrides in values.yaml
+always win via merge.
 Usage: {{ include "kubernaut.mergedSecurityContext" (dict "override" .Values.postgresql.podSecurityContext "defaults" (dict "seccompProfile" (dict "type" "RuntimeDefault"))) | nindent 8 }}
 */}}
 {{- define "kubernaut.mergedSecurityContext" -}}
@@ -898,4 +983,176 @@ Usage: {{ include "kubernaut.console.apifrontendURL" . }}
 */}}
 {{- define "kubernaut.console.apifrontendURL" -}}
 {{- printf "https://apifrontend.%s.svc:%v" .Release.Namespace (.Values.apifrontend.config.server.httpPort | default 8443) -}}
+{{- end }}
+
+{{/* ===== LLM Profile Consolidation Helpers (DD-PLATFORM-007 / BR-PLATFORM-008) ===== */}}
+
+{{/*
+Resolve a named LLM profile from global.llmProfiles. fail()s loudly when the
+name is not defined -- mirrors the Kubernaut Operator's
+ResolveLLMProfile-consuming validation (VL-011/VL-014); callers are
+responsible for their own fail() when the *reference itself* is empty (see
+e.g. kubernautAgent.llmProfileRef being required), since an empty name and
+an unknown name warrant distinct error messages (IT-PLATFORM-LLM-001).
+Returns the profile's raw field dict exactly as authored under
+global.llmProfiles.<name> -- NOT schema defaults, since values.schema.json
+validates but never injects defaults into a free-form additionalProperties
+map. Callers apply their own `| default` for fields with a non-empty
+sensible default, same as the pre-DD-PLATFORM-007 literal-block templates
+did for kubernautAgent.llm.*.
+Usage:
+  {{- $p := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
+  {{ $p.provider }}
+*/}}
+{{- define "kubernaut.llm.resolveProfile" -}}
+{{- $profiles := .root.Values.global.llmProfiles | default dict -}}
+{{- $profile := index $profiles .name -}}
+{{- if not $profile -}}
+{{- fail (printf "global.llmProfiles[%q] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it." .name) -}}
+{{- end -}}
+{{- $profile | toYaml -}}
+{{- end }}
+
+{{/*
+Credential file name within an LLM profile's mounted Secret volume:
+vertex_ai uses a JSON service-account key ("credentials.json"); every other
+provider uses a flat API key file ("api_key"). Mirrors the Kubernaut
+Operator's configmaps.go credFile branch exactly (kubernaut-operator#233/
+#234).
+Usage: {{ include "kubernaut.llm.credFile" $profile.provider }}
+*/}}
+{{- define "kubernaut.llm.credFile" -}}
+{{- if eq . "vertex_ai" -}}credentials.json{{- else -}}api_key{{- end -}}
+{{- end }}
+
+{{/*
+Full in-container path to a resolved profile's mounted credential file:
+"<dir>/api_key" or "<dir>/credentials.json" depending on provider (see
+kubernaut.llm.credFile). Consolidates the identical printf+credFile pairing
+repeated at every dedicated-mount call site (KA phaseModels, KA
+alignmentCheck, AF's own agent.llm, AF severityTriage) -- each site only
+supplies its own mount directory and resolved profile's provider.
+Usage:
+  {{ include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/apifrontend/llm-credentials" "provider" $afProfile.provider) }}
+*/}}
+{{- define "kubernaut.llm.mountedKeyFile" -}}
+{{- printf "%s/%s" .dir (include "kubernaut.llm.credFile" .provider) -}}
+{{- end }}
+
+{{/*
+Render one phase-shaped LLM override's field subset (DD-PLATFORM-007):
+provider/model/endpoint/vertexProject/vertexLocation/reasoning, plus a
+conditional apiKeyFile supplied by the caller. Shared by
+kubernautAgent.phaseModels (Kubernaut Agent's LLMRuntimeConfig.PhaseModels)
+and kubernautAgent.alignmentCheck.llm (AlignmentCheckConfig.LLM) -- both
+consume the identical Go type (internal/kubernautagent/config.
+LLMOverrideConfig), which has no oauth2/tlsCaFile fields, so neither is
+rendered here. Deliberately excludes azureApiVersion/bedrockRegion even
+though LLMOverrideConfig has both fields -- matches the Kubernaut
+Operator's own configmaps.go rendering precedent for phaseModels (verified:
+llmPhaseOverrideYAML has no azureApiVersion/bedrockRegion field), which
+this chart mirrors for both consumers of LLMOverrideConfig for consistency.
+apiKeyFile is rendered verbatim when non-empty -- the caller computes the
+correct mount path (or passes "" when the resolved profile shares the
+base/KA profile's credentialsSecretName and should inherit its mount).
+Usage:
+  {{ include "kubernaut.llm.overrideBlock" (dict "profile" $p "apiKeyFile" $apiKeyFile) | nindent 8 }}
+*/}}
+{{- define "kubernaut.llm.overrideBlock" -}}
+{{- $p := .profile -}}
+provider: {{ $p.provider | quote }}
+{{- if $p.model }}
+model: {{ $p.model | quote }}
+{{- end }}
+{{- if $p.endpoint }}
+endpoint: {{ $p.endpoint | quote }}
+{{- end }}
+{{- if $p.vertexProject }}
+vertexProject: {{ $p.vertexProject | quote }}
+{{- end }}
+{{- if $p.vertexLocation }}
+vertexLocation: {{ $p.vertexLocation | quote }}
+{{- end }}
+{{- $reasoning := $p.reasoning | default dict -}}
+{{- if or $reasoning.enabled $reasoning.effort $reasoning.capabilityOverride $reasoning.budgetTokens }}
+reasoning:
+{{- if $reasoning.enabled }}
+  enabled: true
+{{- end }}
+{{- if $reasoning.budgetTokens }}
+  budgetTokens: {{ $reasoning.budgetTokens }}
+{{- end }}
+{{- if $reasoning.effort }}
+  effort: {{ $reasoning.effort | quote }}
+{{- end }}
+{{- if $reasoning.capabilityOverride }}
+  capabilityOverride: {{ $reasoning.capabilityOverride | quote }}
+{{- end }}
+{{- end }}
+{{- if .apiKeyFile }}
+apiKeyFile: {{ .apiKeyFile | quote }}
+{{- end }}
+{{- end }}
+
+{{/*
+Render an agent.llm / severityTriage.llm block from a resolved LLM profile
+(DD-PLATFORM-007), field-for-field against pkg/apifrontend/config's
+types.LLMConfig. apiKeyFile is rendered only for non-vertex_ai providers --
+vertex_ai authenticates via the ambient GOOGLE_APPLICATION_CREDENTIALS env
+var set on the Deployment instead (mirrors the Kubernaut Operator's
+afAgentLLMConfig: "vertex_ai itself never gets an apiKeyFile"). The caller
+computes apiKeyFile's mount path (AF's own "llm-credentials" mount, or a
+dedicated "severity-triage-credentials" mount when severityTriage resolves
+a distinct credentialsSecretName from AF's own).
+Usage:
+  {{ include "kubernaut.llm.afBlock" (dict "profile" $afProfile "apiKeyFile" "/etc/apifrontend/llm-credentials/api_key") | nindent 8 }}
+*/}}
+{{- define "kubernaut.llm.afBlock" -}}
+{{- $p := .profile -}}
+provider: {{ $p.provider | quote }}
+model: {{ $p.model | quote }}
+{{- if $p.endpoint }}
+endpoint: {{ $p.endpoint | quote }}
+{{- end }}
+{{- if and .apiKeyFile (ne $p.provider "vertex_ai") }}
+apiKeyFile: {{ .apiKeyFile | quote }}
+{{- end }}
+{{- if $p.vertexProject }}
+vertexProject: {{ $p.vertexProject | quote }}
+{{- end }}
+{{- if $p.vertexLocation }}
+vertexLocation: {{ $p.vertexLocation | quote }}
+{{- end }}
+{{- if $p.tlsCaFile }}
+tlsCaFile: {{ $p.tlsCaFile | quote }}
+{{- end }}
+{{- $oauth2 := $p.oauth2 | default dict -}}
+{{- if $oauth2.enabled }}
+oauth2:
+  enabled: true
+  tokenURL: {{ $oauth2.tokenURL | quote }}
+  credentialsDir: "/etc/apifrontend/oauth2"
+{{- if $oauth2.scopes }}
+  scopes:
+{{- range (splitList " " $oauth2.scopes) }}
+    - {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- $reasoning := $p.reasoning | default dict -}}
+{{- if or $reasoning.enabled $reasoning.effort $reasoning.capabilityOverride $reasoning.budgetTokens }}
+reasoning:
+{{- if $reasoning.enabled }}
+  enabled: true
+{{- end }}
+{{- if $reasoning.budgetTokens }}
+  budgetTokens: {{ $reasoning.budgetTokens }}
+{{- end }}
+{{- if $reasoning.effort }}
+  effort: {{ $reasoning.effort | quote }}
+{{- end }}
+{{- if $reasoning.capabilityOverride }}
+  capabilityOverride: {{ $reasoning.capabilityOverride | quote }}
+{{- end }}
+{{- end }}
 {{- end }}

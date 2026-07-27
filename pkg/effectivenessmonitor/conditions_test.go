@@ -39,7 +39,7 @@ var _ = Describe("EA Conditions Infrastructure (DD-CRD-002)", func() {
 		ea = &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "ea-cond-test",
-				Namespace: "test-ns",
+				Namespace: testNs,
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
 				CorrelationID: "rr-cond-test",

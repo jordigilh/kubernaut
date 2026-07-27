@@ -27,6 +27,12 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	aligned = "aligned"
+	rca     = "rca"
+)
+
 var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 
 	// --- Phase 1: Foundation ---
@@ -128,7 +134,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			}
 
 			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-trunc")
-			event.Data["model"] = "test-model"
+			event.Data["model"] = testModel
 			event.Data["prompt_length"] = 1000
 			event.Data["prompt_preview"] = string(longPrompt)
 
@@ -361,7 +367,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 
 			payload, ok := req.EventData.GetAIAgentAlignmentVerdictPayload()
 			Expect(ok).To(BeTrue())
-			Expect(string(payload.Result)).To(Equal("suspicious"))
+			Expect(payload.Result).To(Equal("suspicious"))
 			Expect(payload.Summary.Value).To(ContainSubstring("2 steps flagged"))
 			Expect(payload.Flagged).To(Equal(2))
 			Expect(payload.Total).To(Equal(15))
@@ -374,7 +380,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			store := audit.NewDSAuditStore(recorder)
 
 			event := audit.NewEvent(audit.EventTypeAlignmentVerdict, "corr-align-ok")
-			event.Data["result"] = "aligned"
+			event.Data["result"] = aligned
 			event.Data["summary"] = "all steps aligned"
 			event.Data["flagged"] = 0
 			event.Data["total"] = 10
@@ -384,7 +390,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 
 			payload, ok := recorder.calls[0].EventData.GetAIAgentAlignmentVerdictPayload()
 			Expect(ok).To(BeTrue())
-			Expect(string(payload.Result)).To(Equal("aligned"))
+			Expect(payload.Result).To(Equal(aligned))
 			Expect(payload.Flagged).To(Equal(0))
 			Expect(payload.Total).To(Equal(10))
 		})
@@ -399,7 +405,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 
 			event := audit.NewEvent(audit.EventTypeResponseFailed, "corr-fail")
 			event.Data["error_message"] = "LLM timeout after 30s"
-			event.Data["phase"] = "rca"
+			event.Data["phase"] = rca
 			event.Data["duration_seconds"] = 30.5
 
 			err := store.StoreAudit(context.Background(), event)
@@ -409,7 +415,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			payload, ok := req.EventData.GetAIAgentResponseFailedPayload()
 			Expect(ok).To(BeTrue())
 			Expect(payload.ErrorMessage).To(Equal("LLM timeout after 30s"))
-			Expect(payload.Phase).To(Equal("rca"))
+			Expect(payload.Phase).To(Equal(rca))
 			Expect(payload.DurationSeconds.Value).To(BeNumerically("~", 30.5, 0.01))
 		})
 	})
@@ -546,7 +552,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 
 			lastUserContent := "You are investigating a Kubernetes incident. The pod web-abc in namespace production is OOMKilled."
 			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-ap-006")
-			event.Data["model"] = "test-model"
+			event.Data["model"] = testModel
 			event.Data["prompt_length"] = len(lastUserContent)
 			event.Data["prompt_preview"] = lastUserContent
 
@@ -565,7 +571,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 
 			specialContent := `Analyze: {"pod":"web-abc","signals":["OOMKilled","CrashLoopBackOff"]}`
 			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-ap-006-special")
-			event.Data["model"] = "test-model"
+			event.Data["model"] = testModel
 			event.Data["prompt_length"] = len(specialContent)
 			event.Data["prompt_preview"] = specialContent
 
@@ -869,7 +875,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 			event.EventAction = audit.ActionLLMRequest
 			event.EventOutcome = audit.OutcomeSuccess
 
-			event.Data["model"] = "test-model"
+			event.Data["model"] = testModel
 			event.Data["retry_attempt"] = 1
 			event.Data["retry_max"] = 3
 			event.Data["phase"] = "workflow_discovery"
@@ -885,7 +891,7 @@ var _ = Describe("KA Audit Parity — TP-433-AUDIT-SOC2", func() {
 
 			payload, ok := recorder.calls[0].EventData.GetLLMRequestPayload()
 			Expect(ok).To(BeTrue(), "must map to LLMRequestPayload")
-			Expect(payload.Model).To(Equal("test-model"))
+			Expect(payload.Model).To(Equal(testModel))
 			Expect(payload.PromptLength).To(Equal(1500),
 				"prompt_length must be populated for retry audit events (BUG-5)")
 			Expect(payload.PromptPreview).To(Equal("Please correct the JSON output..."),

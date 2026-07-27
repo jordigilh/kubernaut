@@ -1,0 +1,271 @@
+suite: "fleet config consolidation (Issue #1707 follow-up): backend/endpoint/tokenSecretRef/mcpGatewayType/tlsCAFile/oauth2.{enabled,tokenURL,scopes,tlsCAFile} move to global.fleet, only oauth2.credentialsSecretRef stays per-service overridable"
+templates:
+  - templates/gateway/gateway.yaml
+  - templates/remediationorchestrator/remediationorchestrator.yaml
+  - templates/apifrontend/apifrontend.yaml
+  - templates/effectivenessmonitor/effectivenessmonitor.yaml
+  - templates/signalprocessing/signalprocessing.yaml
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # ---------------------------------------------------------------------
+  # GW/RO: backend + endpoint + tokenSecretRef now come from global only
+  # ---------------------------------------------------------------------
+  - it: "GW renders backend/endpoint from global.fleet.backend/endpoint (no per-service field exists anymore)"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          backend: "acm"
+          endpoint: "https://acm-search.example.com/graphql"
+          tokenSecretRef: "acm-token"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*backend: \"acm\""
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*endpoint: \"https://acm-search\\.example\\.com/graphql\""
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*tokenPath: \"/etc/gateway/acm-token/token\""
+
+  - it: "RO renders backend/endpoint from global.fleet.backend/endpoint"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          backend: "acm"
+          endpoint: "https://acm-search.example.com/graphql"
+          tokenSecretRef: "acm-token"
+    template: templates/remediationorchestrator/remediationorchestrator.yaml
+    documentSelector:
+      path: metadata.name
+      value: remediationorchestrator-config
+    asserts:
+      - matchRegex:
+          path: data["remediationorchestrator.yaml"]
+          pattern: "(?m)^\\s*backend: \"acm\""
+      - matchRegex:
+          path: data["remediationorchestrator.yaml"]
+          pattern: "(?m)^\\s*endpoint: \"https://acm-search\\.example\\.com/graphql\""
+
+  - it: "the old per-service gateway.fleet.backend key is no longer recognized (schema rejects it)"
+    set:
+      gateway:
+        fleet:
+          backend: "acm"
+    template: templates/gateway/gateway.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "the old per-service gateway.fleet.tokenSecretRef key is no longer recognized"
+    set:
+      gateway:
+        fleet:
+          tokenSecretRef: "acm-token"
+    template: templates/gateway/gateway.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "the old per-service remediationorchestrator.fleet.endpoint key is no longer recognized"
+    set:
+      remediationorchestrator:
+        fleet:
+          endpoint: "https://acm.example.com"
+    template: templates/remediationorchestrator/remediationorchestrator.yaml
+    asserts:
+      - failedTemplate: {}
+
+  # ---------------------------------------------------------------------
+  # AF/EM/GW/RO: mcpGatewayType + tlsCAFile are now global-only
+  # ---------------------------------------------------------------------
+  - it: "the old per-service apifrontend.fleet.mcpGatewayType key is no longer recognized"
+    set:
+      apifrontend:
+        fleet:
+          mcpGatewayType: "kuadrant"
+    template: templates/apifrontend/apifrontend.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "the old per-service effectivenessmonitor.fleet.tlsCAFile key is no longer recognized"
+    set:
+      effectivenessmonitor:
+        fleet:
+          tlsCAFile: "/custom/ca.crt"
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    asserts:
+      - failedTemplate: {}
+
+  # ---------------------------------------------------------------------
+  # SP: fleet.endpoint (rendered Go config key) is now sourced from
+  # global.fleet.mcpGatewayEndpoint, not a per-service field. #1707
+  # follow-up also fixes a pre-existing gap: SP's own `endpoint` field
+  # previously had NO global fallback at all.
+  # ---------------------------------------------------------------------
+  - it: "SP renders fleet.endpoint from global.fleet.mcpGatewayEndpoint (own field removed)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*endpoint: \"http://mcp\\.example\\.com\""
+
+  - it: "the old per-service signalprocessing.fleet.endpoint key is no longer recognized"
+    set:
+      signalprocessing:
+        fleet:
+          endpoint: "http://mcp.example.com"
+    template: templates/signalprocessing/signalprocessing.yaml
+    asserts:
+      - failedTemplate: {}
+
+  # ---------------------------------------------------------------------
+  # FMC: gatewayType + oauth2.tokenURL are now global-only
+  # ---------------------------------------------------------------------
+  - it: "FMC renders gatewayType from global.fleet.mcpGatewayType (own field removed)"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: "kuadrant"
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*gatewayType: \"kuadrant\""
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*tokenUrl: \"http://oauth\\.example\\.com\""
+
+  - it: "the old fleetmetadatacache.gatewayType top-level key is no longer recognized"
+    set:
+      fleetmetadatacache:
+        gatewayType: "eaigw"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "the old fleetmetadatacache.oauth2.tokenURL key is no longer recognized"
+    set:
+      fleetmetadatacache:
+        oauth2:
+          tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    asserts:
+      - failedTemplate: {}
+
+  # ---------------------------------------------------------------------
+  # oauth2.enabled is now global-only; only credentialsSecretRef stays
+  # per-service overridable.
+  # ---------------------------------------------------------------------
+  - it: "global.fleet.oauth2.enabled=true turns on OAuth2 for GW, with per-service credentialsSecretRef override"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "shared-creds"
+      gateway:
+        fleet:
+          oauth2:
+            credentialsSecretRef: "gateway-only-creds"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*enabled: true"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*credentialsSecretRef: \"gateway-only-creds\""
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*tokenURL: \"http://oauth\\.example\\.com\""
+
+  - it: "the old per-service gateway.fleet.oauth2.enabled key is no longer recognized"
+    set:
+      gateway:
+        fleet:
+          oauth2:
+            enabled: true
+    template: templates/gateway/gateway.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "the old per-service signalprocessing.fleet.oauth2.tokenURL key is no longer recognized"
+    set:
+      signalprocessing:
+        fleet:
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/signalprocessing/signalprocessing.yaml
+    asserts:
+      - failedTemplate: {}
+
+  # ---------------------------------------------------------------------
+  # Enum validation (Helm render-time failure on typos, per user request)
+  # ---------------------------------------------------------------------
+  - it: "an unsupported global.fleet.backend value fails at render time"
+    set:
+      global:
+        fleet:
+          backend: "not-a-real-backend"
+    template: templates/gateway/gateway.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "an unsupported global.fleet.mcpGatewayType value fails at render time"
+    set:
+      global:
+        fleet:
+          mcpGatewayType: "not-a-real-gateway"
+    template: templates/gateway/gateway.yaml
+    asserts:
+      - failedTemplate: {}

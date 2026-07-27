@@ -18,6 +18,7 @@ package routing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -33,6 +34,20 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
+
+// ErrNotBlocked is returned by the Check* family below when no blocking
+// condition applies. Issue #1674: replaces the ambiguous (nil, nil) return
+// that forced callers to distinguish "not blocked" from "a real check
+// failure" by nil-checking the *BlockingCondition result instead of
+// checking err. Callers should use errors.Is(err, ErrNotBlocked).
+var ErrNotBlocked = errors.New("no blocking condition found")
+
+// ErrNoMatch is returned by the Find* family below when no matching
+// RemediationRequest or WorkflowExecution exists. Issue #1674: same
+// rationale as ErrNotBlocked. The Check* functions that call into the
+// Find* family below translate ErrNoMatch into their own ErrNotBlocked
+// contract (e.g. CheckDuplicateInProgress calling FindActiveRRForFingerprint).
+var ErrNoMatch = errors.New("no matching resource found")
 
 // BlockingConditionChecker defines the routing-decision checks that determine
 // whether a RemediationRequest should be blocked. Split out from Engine for
@@ -242,7 +257,7 @@ func (r *RoutingEngine) CheckPreAnalysisConditions(
 	}
 
 	blocked, err := r.CheckDuplicateInProgress(ctx, rr)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNotBlocked) {
 		return nil, fmt.Errorf("failed to check duplicate: %w", err)
 	}
 	if blocked != nil {
@@ -253,7 +268,12 @@ func (r *RoutingEngine) CheckPreAnalysisConditions(
 		return blocked, nil
 	}
 
-	return nil, nil
+	// Issue #1674: every check passed -- ErrNotBlocked unambiguously means
+	// "no blocking condition found" (see doc comment above). All callers
+	// already guard with `if blocked != nil` before use (see
+	// reconcile_loop.go), and now use errors.Is(err, ErrNotBlocked) instead
+	// of a bare nil check on err.
+	return nil, ErrNotBlocked
 }
 
 // CheckPostAnalysisConditions checks all blocking conditions after AIAnalysis
@@ -296,7 +316,7 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 	}
 
 	blocked, err := r.CheckDuplicateInProgress(ctx, rr)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNotBlocked) {
 		return nil, fmt.Errorf("failed to check duplicate: %w", err)
 	}
 	if blocked != nil {
@@ -304,7 +324,7 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 	}
 
 	blocked, err = r.CheckResourceBusy(ctx, rr, targetResource)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNotBlocked) {
 		return nil, fmt.Errorf("failed to check resource lock: %w", err)
 	}
 	if blocked != nil {
@@ -312,7 +332,7 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 	}
 
 	blocked, err = r.CheckRecentlyRemediated(ctx, rr, workflowID, targetResource)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNotBlocked) {
 		return nil, fmt.Errorf("failed to check recent remediation: %w", err)
 	}
 	if blocked != nil {
@@ -331,7 +351,8 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 		}
 	}
 
-	return nil, nil
+	// Issue #1674: same ErrNotBlocked sentinel as CheckPreAnalysisConditions above.
+	return nil, ErrNotBlocked
 }
 
 // parseTargetResource parses a "namespace/kind/name" or "kind/name" string into TargetResource.
@@ -495,12 +516,16 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 	// Find active RR with same fingerprint (excluding self)
 	// ADR-057 (#222): Pass TargetResource.Namespace for multi-tenant isolation
 	originalRR, err := r.FindActiveRRForFingerprint(ctx, rr.Namespace, rr.Spec.SignalFingerprint, rr.Name, rr.Spec.TargetResource.Namespace)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNoMatch) {
 		return nil, fmt.Errorf("failed to check for duplicate: %w", err)
 	}
 
-	if originalRR == nil {
-		return nil, nil // Not a duplicate
+	// Issue #1674: ErrNoMatch here means "not a duplicate" for this check's
+	// own contract, so it is translated to ErrNotBlocked. Caller
+	// (CheckPreAnalysisConditions / CheckPostAnalysisConditions) already
+	// guards with `if blocked != nil` before checking err.
+	if errors.Is(err, ErrNoMatch) {
+		return nil, ErrNotBlocked // Not a duplicate
 	}
 
 	// #209: Deterministic tiebreaker — the oldest RR is always the original.
@@ -508,11 +533,11 @@ func (r *RoutingEngine) CheckDuplicateInProgress(
 	// This prevents circular deadlocks (A blocks B, B blocks A).
 	if !rr.CreationTimestamp.IsZero() && !originalRR.CreationTimestamp.IsZero() {
 		if originalRR.CreationTimestamp.After(rr.CreationTimestamp.Time) {
-			return nil, nil // We are older → we are the original
+			return nil, ErrNotBlocked // We are older → we are the original
 		}
 		// Same timestamp: use name as secondary tiebreaker (lexicographic)
 		if originalRR.CreationTimestamp.Time.Equal(rr.CreationTimestamp.Time) && originalRR.Name > rr.Name {
-			return nil, nil // Same time, we sort first → we are the original
+			return nil, ErrNotBlocked // Same time, we sort first → we are the original
 		}
 	}
 
@@ -546,12 +571,13 @@ func (r *RoutingEngine) CheckResourceBusy(
 
 	// Find active WFE for the same target resource
 	activeWFE, err := r.FindActiveWFEForTarget(ctx, targetResourceStr)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNoMatch) {
 		return nil, fmt.Errorf("failed to check resource lock: %w", err)
 	}
 
-	if activeWFE == nil {
-		return nil, nil // Resource not busy
+	// Issue #1674: ErrNoMatch translated to this check's own ErrNotBlocked contract.
+	if errors.Is(err, ErrNoMatch) {
+		return nil, ErrNotBlocked // Resource not busy
 	}
 
 	// BR-ORCH-050: Skip WFE owned by the requesting RR (self-detection).
@@ -559,7 +585,7 @@ func (r *RoutingEngine) CheckResourceBusy(
 	// should not block itself.
 	for _, ownerRef := range activeWFE.GetOwnerReferences() {
 		if ownerRef.UID == rr.UID {
-			return nil, nil // Our own WFE, not a conflict
+			return nil, ErrNotBlocked // Our own WFE, not a conflict
 		}
 	}
 
@@ -605,12 +631,13 @@ func (r *RoutingEngine) CheckRecentlyRemediated(
 		workflowID, // Pass workflow ID for workflow-specific matching
 		r.config.RecentlyRemediatedCooldown,
 	)
-	if err != nil {
+	if err != nil && !errors.Is(err, ErrNoMatch) {
 		return nil, fmt.Errorf("failed to check recent remediation: %w", err)
 	}
 
-	if recentWFE == nil {
-		return nil, nil // No recent remediation
+	// Issue #1674: ErrNoMatch translated to this check's own ErrNotBlocked contract.
+	if errors.Is(err, ErrNoMatch) {
+		return nil, ErrNotBlocked // No recent remediation
 	}
 
 	// Calculate remaining cooldown
@@ -785,14 +812,14 @@ func (r *RoutingEngine) calculateScopeBackoff(retryCount int32) time.Duration {
 	if base <= 0 {
 		base = 5 // default: 5 seconds (ADR-053)
 	}
-	max := r.config.ScopeBackoffMax
-	if max <= 0 {
-		max = 300 // default: 300 seconds = 5 minutes (ADR-053)
+	maxBackoff := r.config.ScopeBackoffMax
+	if maxBackoff <= 0 {
+		maxBackoff = 300 // default: 300 seconds = 5 minutes (ADR-053)
 	}
 
 	config := backoff.Config{
 		BasePeriod:    time.Duration(base) * time.Second,
-		MaxPeriod:     time.Duration(max) * time.Second,
+		MaxPeriod:     time.Duration(maxBackoff) * time.Second,
 		Multiplier:    2.0,
 		JitterPercent: 10,
 	}
@@ -852,7 +879,7 @@ func (r *RoutingEngine) CalculateExponentialBackoff(consecutiveFailures int32) t
 }
 
 // FindActiveRRForFingerprint finds an active (non-terminal) RR with the given fingerprint.
-// Returns the first active RR found, or nil if none exist.
+// Returns the first active RR found, or ErrNoMatch if none exist.
 // Excludes the RR with excludeName (to avoid self-matching).
 //
 // Uses field index on spec.signalFingerprint for O(1) lookup (configured in Day 1).
@@ -911,11 +938,14 @@ func (r *RoutingEngine) FindActiveRRForFingerprint(
 		}
 	}
 
-	return nil, nil // No active duplicate found
+	// Issue #1674: ErrNoMatch is the canonical Find* "not found" sentinel
+	// (mirrors client.IgnoreNotFound patterns); callers use
+	// errors.Is(err, ErrNoMatch) before use.
+	return nil, ErrNoMatch // No active duplicate found
 }
 
 // FindActiveWFEForTarget finds an active (Running phase) WFE for the given target resource.
-// Returns the first running WFE found, or nil if none exist.
+// Returns the first running WFE found, or ErrNoMatch if none exist.
 //
 // Uses field index on spec.targetResource for O(1) lookup (configured in Day 1).
 //
@@ -964,12 +994,13 @@ func (r *RoutingEngine) FindActiveWFEForTarget(
 		}
 	}
 
-	return nil, nil // No active WFE found
+	// Issue #1674: same ErrNoMatch idiom as FindActiveRRForFingerprint above.
+	return nil, ErrNoMatch // No active WFE found
 }
 
 // FindRecentCompletedWFE finds the most recent completed WFE for the given
 // target resource and workflow ID, within the cooldown period.
-// Returns the WFE if found within cooldown, or nil if none exist or outside cooldown.
+// Returns the WFE if found within cooldown, or ErrNoMatch if none exist or outside cooldown.
 //
 // Uses field index on spec.targetResource for O(1) lookup (configured in Day 1).
 //
@@ -1029,6 +1060,13 @@ func (r *RoutingEngine) FindRecentCompletedWFE(
 			wfe.Status.CompletionTime.After(mostRecentCompleted.Status.CompletionTime.Time) {
 			mostRecentCompleted = wfe
 		}
+	}
+
+	// Issue #1674: same ErrNoMatch idiom as its Find* siblings above, even
+	// though the nilnil linter never flagged this site (mostRecentCompleted
+	// is a variable, not a literal nil) -- kept consistent for callers.
+	if mostRecentCompleted == nil {
+		return nil, ErrNoMatch
 	}
 
 	return mostRecentCompleted, nil

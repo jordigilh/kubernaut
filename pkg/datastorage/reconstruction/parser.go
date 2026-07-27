@@ -166,6 +166,7 @@ func parseGatewaySignalReceived(event ogenclient.AuditEvent) (*ParsedAuditData, 
 	return data, nil
 }
 
+//nolint:unparam // error return matches the shared func(ogenclient.AuditEvent) (*ParsedAuditData, error) signature all ParseAuditEvent switch cases assign to the same parsed/err pair; parseGatewaySignalReceived (a sibling case) does return real errors (Issue #1546 Tier 4)
 func parseOrchestratorLifecycleCreated(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	payload := event.EventData.RemediationOrchestratorAuditPayload
 
@@ -190,6 +191,7 @@ func parseOrchestratorLifecycleCreated(event ogenclient.AuditEvent) (*ParsedAudi
 
 // parseOrchestratorLifecycleCompleted extracts outcome/duration from orchestrator.lifecycle.completed event.
 // BR-AUDIT-005 v2.0: RR status reconstruction (CC8.1)
+//nolint:unparam // error return required for ParseAuditEvent switch-case signature consistency (see parseOrchestratorLifecycleCreated)
 func parseOrchestratorLifecycleCompleted(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	payload := event.EventData.RemediationOrchestratorAuditPayload
 
@@ -210,6 +212,7 @@ func parseOrchestratorLifecycleCompleted(event ogenclient.AuditEvent) (*ParsedAu
 
 // parseOrchestratorLifecycleFailed extracts error_details from orchestrator.lifecycle.failed event.
 // BR-AUDIT-005 v2.0 Gap #7: Standardized error_details for RR reconstruction (CC8.1)
+//nolint:unparam // error return required for ParseAuditEvent switch-case signature consistency (see parseOrchestratorLifecycleCreated)
 func parseOrchestratorLifecycleFailed(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	payload := event.EventData.RemediationOrchestratorAuditPayload
 
@@ -259,6 +262,7 @@ func normalizeSignalType(s string) string {
 }
 
 // parseAIAnalysisCompleted extracts provider data from aianalysis.analysis.completed event (Gap #4).
+//nolint:unparam // error return required for ParseAuditEvent switch-case signature consistency (see parseOrchestratorLifecycleCreated)
 func parseAIAnalysisCompleted(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	payload := event.EventData.AIAnalysisAuditPayload
 
@@ -281,6 +285,7 @@ func parseAIAnalysisCompleted(event ogenclient.AuditEvent) (*ParsedAuditData, er
 }
 
 // parseWorkflowSelectionCompleted extracts workflow reference from workflowexecution.selection.completed event (Gap #5).
+//nolint:unparam // error return required for ParseAuditEvent switch-case signature consistency (see parseOrchestratorLifecycleCreated)
 func parseWorkflowSelectionCompleted(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	payload := event.EventData.WorkflowExecutionAuditPayload
 
@@ -300,6 +305,7 @@ func parseWorkflowSelectionCompleted(event ogenclient.AuditEvent) (*ParsedAuditD
 }
 
 // parseExecutionWorkflowStarted extracts execution reference from workflowexecution.execution.started event (Gap #6).
+//nolint:unparam // error return required for ParseAuditEvent switch-case signature consistency (see parseOrchestratorLifecycleCreated)
 func parseExecutionWorkflowStarted(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	payload := event.EventData.WorkflowExecutionAuditPayload
 

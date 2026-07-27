@@ -25,6 +25,17 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/notification/routing"
 )
 
+// defaultConsoleRoutingConfigFixture is a minimal routing config shared by
+// several hot-reload test cases below (goconst dedup).
+const defaultConsoleRoutingConfigFixture = `
+route:
+  receiver: default-console
+receivers:
+  - name: default-console
+    consoleConfigs:
+      - enabled: true
+`
+
 // testLogger is used for Router tests
 var testLogger logr.Logger
 
@@ -58,14 +69,7 @@ var _ = Describe("BR-NOT-067: Routing Configuration Hot-Reload", func() {
 			router := routing.NewRouter(testLogger)
 
 			// Load initial config
-			initialConfig := `
-route:
-  receiver: default-console
-receivers:
-  - name: default-console
-    consoleConfigs:
-      - enabled: true
-`
+			initialConfig := defaultConsoleRoutingConfigFixture
 			err := router.LoadConfig([]byte(initialConfig))
 			Expect(err).NotTo(HaveOccurred())
 
@@ -95,14 +99,7 @@ receivers:
 			router := routing.NewRouter(testLogger)
 
 			// Load valid config first
-			validConfig := `
-route:
-  receiver: default-console
-receivers:
-  - name: default-console
-    consoleConfigs:
-      - enabled: true
-`
+			validConfig := defaultConsoleRoutingConfigFixture
 			err := router.LoadConfig([]byte(validConfig))
 			Expect(err).NotTo(HaveOccurred())
 
@@ -129,14 +126,7 @@ receivers:
 			router := routing.NewRouter(testLogger)
 
 			// Load initial config
-			err := router.LoadConfig([]byte(`
-route:
-  receiver: default-console
-receivers:
-  - name: default-console
-    consoleConfigs:
-      - enabled: true
-`))
+			err := router.LoadConfig([]byte(defaultConsoleRoutingConfigFixture))
 			Expect(err).NotTo(HaveOccurred())
 
 			// Simulate in-flight notification resolution (before reload)
@@ -179,14 +169,7 @@ receivers:
 			router := routing.NewRouter(testLogger)
 
 			// Load initial config
-			err := router.LoadConfig([]byte(`
-route:
-  receiver: default-console
-receivers:
-  - name: default-console
-    consoleConfigs:
-      - enabled: true
-`))
+			err := router.LoadConfig([]byte(defaultConsoleRoutingConfigFixture))
 			Expect(err).NotTo(HaveOccurred())
 
 			// Get config summary before reload

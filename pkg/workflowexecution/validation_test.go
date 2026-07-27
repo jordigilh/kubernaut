@@ -17,6 +17,7 @@ limitations under the License.
 package workflowexecution_test
 
 import (
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -69,8 +70,10 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "restart-pod",
-						ExecutionBundle: "", // Empty - should fail
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-pod",
+							ExecutionBundle: "", // Empty - should fail
+						},
 					},
 					TargetResource: "default/deployment/test-app",
 				},
@@ -92,8 +95,10 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "restart-pod",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-pod",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+						},
 					},
 					TargetResource: "default/deployment/test-app",
 				},
@@ -118,8 +123,10 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "restart-pod",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-pod",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+						},
 					},
 					TargetResource: "", // Empty - should fail
 				},
@@ -144,8 +151,10 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "restart-pod",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-pod",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+						},
 					},
 					TargetResource: "deployment-only", // Invalid - needs kind/name or ns/kind/name
 				},
@@ -169,8 +178,10 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "restart-pod",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-pod",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+						},
 					},
 					TargetResource: "default/apps/deployment/test-app", // Invalid - 4 parts
 				},
@@ -194,8 +205,10 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "restart-pod",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-pod",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+						},
 					},
 					TargetResource: "default/deployment/", // Empty name - should fail
 				},
@@ -217,8 +230,10 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "restart-node",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-node:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-node",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-node:v1.0.0",
+						},
 					},
 					TargetResource: "node/worker-node-1", // Valid cluster-scoped: {kind}/{name}
 				},
@@ -238,8 +253,10 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 				},
 				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "restart-pod",
-						ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "restart-pod",
+							ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+						},
 					},
 					TargetResource: "default/deployment/test-app", // Valid namespaced: {ns}/{kind}/{name}
 				},
@@ -267,7 +284,12 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 					wfe: &workflowexecutionv1alpha1.WorkflowExecution{
 						ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
 						Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-							WorkflowRef:    workflowexecutionv1alpha1.WorkflowRef{WorkflowID: "test", ExecutionBundle: ""},
+							WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+								WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+									WorkflowID:      "test",
+									ExecutionBundle: "",
+								},
+							},
 							TargetResource: "default/deployment/test",
 						},
 					},
@@ -278,7 +300,12 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 					wfe: &workflowexecutionv1alpha1.WorkflowExecution{
 						ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
 						Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-							WorkflowRef:    workflowexecutionv1alpha1.WorkflowRef{WorkflowID: "test", ExecutionBundle: "test:v1"},
+							WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+								WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+									WorkflowID:      "test",
+									ExecutionBundle: "test:v1",
+								},
+							},
 							TargetResource: "",
 						},
 					},
@@ -289,7 +316,12 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 					wfe: &workflowexecutionv1alpha1.WorkflowExecution{
 						ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
 						Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-							WorkflowRef:    workflowexecutionv1alpha1.WorkflowRef{WorkflowID: "test", ExecutionBundle: "test:v1"},
+							WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+								WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+									WorkflowID:      "test",
+									ExecutionBundle: "test:v1",
+								},
+							},
 							TargetResource: "invalid-format-only-one-part",
 						},
 					},
@@ -327,7 +359,12 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 					wfe: &workflowexecutionv1alpha1.WorkflowExecution{
 						ObjectMeta: metav1.ObjectMeta{Name: "test1", Namespace: "default"},
 						Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-							WorkflowRef:    workflowexecutionv1alpha1.WorkflowRef{WorkflowID: "test", ExecutionBundle: ""},
+							WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+								WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+									WorkflowID:      "test",
+									ExecutionBundle: "",
+								},
+							},
 							TargetResource: "default/deployment/test",
 						},
 					},
@@ -337,7 +374,12 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 					wfe: &workflowexecutionv1alpha1.WorkflowExecution{
 						ObjectMeta: metav1.ObjectMeta{Name: "test2", Namespace: "default"},
 						Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-							WorkflowRef:    workflowexecutionv1alpha1.WorkflowRef{WorkflowID: "test", ExecutionBundle: "test:v1"},
+							WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+								WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+									WorkflowID:      "test",
+									ExecutionBundle: "test:v1",
+								},
+							},
 							TargetResource: "",
 						},
 					},
@@ -347,7 +389,12 @@ var _ = Describe("WorkflowExecution ValidateSpec - Edge Cases", func() {
 					wfe: &workflowexecutionv1alpha1.WorkflowExecution{
 						ObjectMeta: metav1.ObjectMeta{Name: "test3", Namespace: "default"},
 						Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-							WorkflowRef:    workflowexecutionv1alpha1.WorkflowRef{WorkflowID: "test", ExecutionBundle: "test:v1"},
+							WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+								WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+									WorkflowID:      "test",
+									ExecutionBundle: "test:v1",
+								},
+							},
 							TargetResource: "single-part",
 						},
 					},

@@ -18,6 +18,7 @@ package session_test
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -301,7 +302,7 @@ var _ = Describe("Issue #1420: Shadow Agent Verdict Escalation Fix", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			ch, subErr := mgr.Subscribe(context.Background(), id)
-			if subErr == session.ErrSessionTerminal {
+			if errors.Is(subErr, session.ErrSessionTerminal) {
 				// Investigation completed before Subscribe — the security-escalation
 				// forced completion (IR-4.a), so the channel closure is trivially satisfied.
 				return

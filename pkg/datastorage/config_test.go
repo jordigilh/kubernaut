@@ -26,6 +26,33 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/config"
 )
 
+// minimalValidConfigYAMLFixture is a minimal valid YAML config shared by
+// several test cases below that only need a baseline config to mutate or
+// validate defaults against (goconst dedup).
+const minimalValidConfigYAMLFixture = `
+server:
+  port: 8080
+  host: "0.0.0.0"
+  readTimeout: 30s
+  writeTimeout: 30s
+database:
+  host: localhost
+  port: 5432
+  name: testdb
+  user: testuser
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+  connMaxIdleTime: 10m
+redis:
+  addr: localhost:6379
+  db: 0
+logging:
+  level: info
+  format: json
+`
+
 // func TestConfig(t *testing.T) {
 // 	RegisterFailHandler(Fail)
 // 	RunSpecs(t, "...")
@@ -55,29 +82,7 @@ var _ = Describe("Config Loading (ADR-030)", func() {
 	Context("LoadFromFile", func() {
 		It("should load valid minimal YAML config", func() {
 			configPath := filepath.Join(tempDir, "config.yaml")
-			validYAML := `
-server:
-  port: 8080
-  host: "0.0.0.0"
-  readTimeout: 30s
-  writeTimeout: 30s
-database:
-  host: localhost
-  port: 5432
-  name: testdb
-  user: testuser
-  sslMode: disable
-  maxOpenConns: 25
-  maxIdleConns: 5
-  connMaxLifetime: 5m
-  connMaxIdleTime: 10m
-redis:
-  addr: localhost:6379
-  db: 0
-logging:
-  level: info
-  format: json
-`
+			validYAML := minimalValidConfigYAMLFixture
 			err := os.WriteFile(configPath, []byte(validYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -323,29 +328,7 @@ logging:
 	Context("Validation", func() {
 		It("should pass validation for valid config", func() {
 			configPath := filepath.Join(tempDir, "config.yaml")
-			validYAML := `
-server:
-  port: 8080
-  host: "0.0.0.0"
-  readTimeout: 30s
-  writeTimeout: 30s
-database:
-  host: localhost
-  port: 5432
-  name: testdb
-  user: testuser
-  sslMode: disable
-  maxOpenConns: 25
-  maxIdleConns: 5
-  connMaxLifetime: 5m
-  connMaxIdleTime: 10m
-redis:
-  addr: localhost:6379
-  db: 0
-logging:
-  level: info
-  format: json
-`
+			validYAML := minimalValidConfigYAMLFixture
 			err := os.WriteFile(configPath, []byte(validYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -507,29 +490,7 @@ logging:
 
 		It("UT-DS-283-002: should default metricsPort to 9090 when omitted", func() {
 			configPath := filepath.Join(tempDir, "config.yaml")
-			yamlNoMetrics := `
-server:
-  port: 8080
-  host: "0.0.0.0"
-  readTimeout: 30s
-  writeTimeout: 30s
-database:
-  host: localhost
-  port: 5432
-  name: testdb
-  user: testuser
-  sslMode: disable
-  maxOpenConns: 25
-  maxIdleConns: 5
-  connMaxLifetime: 5m
-  connMaxIdleTime: 10m
-redis:
-  addr: localhost:6379
-  db: 0
-logging:
-  level: info
-  format: json
-`
+			yamlNoMetrics := minimalValidConfigYAMLFixture
 			err := os.WriteFile(configPath, []byte(yamlNoMetrics), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -546,29 +507,7 @@ logging:
 		// Issue #667: BR-STORAGE-043 — HTTP batch API must enforce max batch size
 		It("UT-DS-043-001: applies default MaxBatchSize (500) when field is zero", func() {
 			configPath := filepath.Join(tempDir, "config.yaml")
-			yamlContent := `
-server:
-  port: 8080
-  host: "0.0.0.0"
-  readTimeout: 30s
-  writeTimeout: 30s
-database:
-  host: localhost
-  port: 5432
-  name: testdb
-  user: testuser
-  sslMode: disable
-  maxOpenConns: 25
-  maxIdleConns: 5
-  connMaxLifetime: 5m
-  connMaxIdleTime: 10m
-redis:
-  addr: localhost:6379
-  db: 0
-logging:
-  level: info
-  format: json
-`
+			yamlContent := minimalValidConfigYAMLFixture
 			err := os.WriteFile(configPath, []byte(yamlContent), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -698,29 +637,7 @@ logging:
 		// Issue #667/M1: statement_timeout and lock_timeout defaults
 		It("UT-DS-040-M1-001: applies default StatementTimeout (30s) and LockTimeout (10s) when omitted", func() {
 			configPath := filepath.Join(tempDir, "config.yaml")
-			yamlContent := `
-server:
-  port: 8080
-  host: "0.0.0.0"
-  readTimeout: 30s
-  writeTimeout: 30s
-database:
-  host: localhost
-  port: 5432
-  name: testdb
-  user: testuser
-  sslMode: disable
-  maxOpenConns: 25
-  maxIdleConns: 5
-  connMaxLifetime: 5m
-  connMaxIdleTime: 10m
-redis:
-  addr: localhost:6379
-  db: 0
-logging:
-  level: info
-  format: json
-`
+			yamlContent := minimalValidConfigYAMLFixture
 			err := os.WriteFile(configPath, []byte(yamlContent), 0644)
 			Expect(err).ToNot(HaveOccurred())
 

@@ -64,7 +64,7 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 	// ========================================================================
 	Describe("G1 — Failed Phase (ADR-EM-001 §11)", func() {
 		It("IT-EM-573-010: should reject EA with empty correlationID at CRD validation", func() {
-			ns := createTestNamespace("em-573-010")
+			ns := createTestNamespace(ctx, "em-573-010")
 			defer deleteTestNamespace(ns)
 
 			By("Attempting to create an EA with empty correlationID")
@@ -108,7 +108,7 @@ var _ = Describe("Issue #573: ADR-EM-001 Implementation Gaps", func() {
 	// ========================================================================
 	Describe("G2 — Scheduled Event on Stabilizing (ADR-EM-001 §9.2.0)", func() {
 		It("IT-EM-573-012: should emit AssessmentScheduled event on Stabilizing transition", func() {
-			ns := createTestNamespace("em-573-012")
+			ns := createTestNamespace(ctx, "em-573-012")
 			defer deleteTestNamespace(ns)
 
 			By("Creating an EA with a stabilization window long enough to observe Stabilizing phase")

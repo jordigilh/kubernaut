@@ -32,6 +32,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -51,7 +53,7 @@ var _ = Describe("NotificationRequest Retry Integration (#281)", Label("integrat
 
 	// IT-NT-RETRY-001: Full lifecycle validates completion notification tracked in NotificationRequestRefs
 	It("IT-NT-RETRY-001: should track completion notification ref after full remediation lifecycle", func() {
-		ns := createTestNamespace("ro-nt-retry")
+		ns := createTestNamespace(ctx, "ro-nt-retry")
 		defer deleteTestNamespace(ns)
 
 		rrName := "rr-nt-retry-001"
@@ -71,7 +73,7 @@ var _ = Describe("NotificationRequest Retry Integration (#281)", Label("integrat
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 		By("Waiting for Analyzing phase")
 		Eventually(func() remediationv1.RemediationPhase {
@@ -87,10 +89,16 @@ var _ = Describe("NotificationRequest Retry Integration (#281)", Label("integrat
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-restart-pods",
-			Version:         "v1.0.0",
-			ExecutionBundle: "test-image:latest",
-			Confidence:      0.95,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-restart-pods",
+				WorkflowName:    "wf-restart-pods",
+				ActionType:      "RestartPod",
+				Version:         "v1.0.0",
+				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: 0.95,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Memory leak in container",

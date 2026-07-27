@@ -259,7 +259,7 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 
 		severity := alert.Labels["severity"]
 		if severity == "" {
-			severity = "unknown"
+			severity = severityUnknown
 		}
 
 		return &types.NormalizedSignal{
@@ -420,7 +420,7 @@ func (a *PrometheusAdapter) parseOneAlertInBatch(
 
 	severity := alert.Labels["severity"]
 	if severity == "" {
-		severity = "unknown"
+		severity = severityUnknown
 	}
 
 	return &types.NormalizedSignal{

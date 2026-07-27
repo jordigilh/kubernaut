@@ -28,6 +28,14 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	statusUpdate   = "status-update"
+	completed      = "completed"
+	artifactUpdate = "artifact-update"
+	failed         = "failed"
+)
+
 // =============================================================================
 // E2E-AF-1407: Progressive RCA Emission — Pyramid Invariant E2E tier
 //
@@ -108,7 +116,7 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 
 			kind, _ := raw["kind"].(string)
 			switch kind {
-			case "status-update":
+			case statusUpdate:
 				result.allStatuses = append(result.allStatuses, raw)
 				meta, _ := raw["metadata"].(map[string]any)
 				if meta != nil && meta["schema"] == "early_rca" {
@@ -117,11 +125,11 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 				status, _ := raw["status"].(map[string]any)
 				if status != nil {
 					state, _ := status["state"].(string)
-					if state == "completed" || state == "failed" {
+					if state == completed || state == failed {
 						result.reachedEnd = true
 					}
 				}
-			case "artifact-update":
+			case artifactUpdate:
 				result.allArtifacts = append(result.allArtifacts, raw)
 			}
 		}
@@ -174,7 +182,7 @@ var _ = Describe("Progressive RCA Flow E2E — #1407", Ordered, Label("e2e", "pr
 			"AU-3: progressive flow must reach terminal state without user intervention")
 
 		By("AU-3: total event count confirms multi-phase execution (investigate + discover)")
-		Expect(len(result.allStatuses) + len(result.allArtifacts)).To(BeNumerically(">=", 2),
+		Expect(len(result.allStatuses)+len(result.allArtifacts)).To(BeNumerically(">=", 2),
 			"AU-3: progressive flow must produce events from both investigation and discovery phases")
 	})
 
@@ -287,7 +295,7 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 				continue
 			}
 
-			if kind, _ := raw["kind"].(string); kind == "artifact-update" {
+			if kind, _ := raw["kind"].(string); kind == artifactUpdate {
 				artifactEvents = append(artifactEvents, raw)
 			}
 		}

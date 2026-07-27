@@ -162,6 +162,33 @@ func buildSelectedWorkflow(r *katypes.InvestigationResult) agentclient.IncidentR
 		rRaw, _ := json.Marshal(r.WorkflowRationale)
 		sw["rationale"] = jx.Raw(rRaw)
 	}
+	// Issue #1661 Change 11a (DD-WORKFLOW-018): catalog-authoritative schema
+	// data enrichFromCatalog placed on r, forwarded so AA can embed it in
+	// AIAnalysis.Status.SelectedWorkflow (Change 11b) without
+	// WorkflowExecution needing its own DataStorage round-trip.
+	if r.Dependencies != nil {
+		depsRaw, _ := json.Marshal(r.Dependencies)
+		sw["dependencies"] = jx.Raw(depsRaw)
+	}
+	if r.Resources != nil {
+		resRaw, _ := json.Marshal(r.Resources)
+		sw["resources"] = jx.Raw(resRaw)
+	}
+	if r.DeclaredParameterNames != nil {
+		declRaw, _ := json.Marshal(r.DeclaredParameterNames)
+		sw["declared_parameter_names"] = jx.Raw(declRaw)
+	}
+	// Issue #1661 Change 12: ActionType/WorkflowName are likewise
+	// catalog-authoritative (enrichFromCatalog), forwarded so AA can embed
+	// them in AIAnalysis.Status.SelectedWorkflow.
+	if r.ActionType != "" {
+		atRaw, _ := json.Marshal(r.ActionType)
+		sw["action_type"] = jx.Raw(atRaw)
+	}
+	if r.WorkflowName != "" {
+		wnRaw, _ := json.Marshal(r.WorkflowName)
+		sw["workflow_name"] = jx.Raw(wnRaw)
+	}
 	return sw
 }
 

@@ -44,7 +44,7 @@ var _ = Describe("Alert Decay Detection Integration (Issue #369, BR-EM-012)", fu
 	// completes correctly when alert resolves — no manual intervention needed.
 	// ========================================
 	It("IT-EM-DECAY-001: should suppress duplicate RRs during alert decay window then complete on resolution", func() {
-		ns := createTestNamespace("em-decay-001")
+		ns := createTestNamespace(ctx, "em-decay-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a healthy target pod to enable positive health score")
@@ -180,7 +180,7 @@ var _ = Describe("Alert Decay Detection Integration (Issue #369, BR-EM-012)", fu
 	// updates are filtered and reconciliation rate is bounded by RequeueAssessmentInProgress.
 	// ========================================
 	It("IT-EM-DECAY-003: should bound decay reconciliation rate (no hot loop on status-update watch)", func() {
-		ns := createTestNamespace("em-decay-003")
+		ns := createTestNamespace(ctx, "em-decay-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a healthy target pod to enable positive health score")
@@ -291,7 +291,7 @@ var _ = Describe("Alert Decay Detection Integration (Issue #369, BR-EM-012)", fu
 	// The EA completes with AlertScore=0.0 — the alert is genuine.
 	// ========================================
 	It("IT-EM-DECAY-002: should complete with AlertScore=0.0 when metrics are negative (proactive signal kills decay)", func() {
-		ns := createTestNamespace("em-decay-002")
+		ns := createTestNamespace(ctx, "em-decay-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a healthy target pod to enable positive health score")

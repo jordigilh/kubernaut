@@ -46,14 +46,14 @@ func NewDetector(config remediationorchestrator.OrchestratorConfig) *Detector {
 // Phases that skip standard timeout checks (terminal phases + phases with their own timeout mechanism).
 // Terminal phases have no further processing; Blocked has its own cooldown; Verifying has VerificationDeadline.
 var skipTimeoutPhases = map[string]bool{
-	"Completed": true,
-	"Failed":    true,
-	"TimedOut":  true,
-	"Skipped":   true,
+	string(remediationv1.PhaseCompleted): true,
+	string(remediationv1.PhaseFailed):    true,
+	string(remediationv1.PhaseTimedOut):  true,
+	string(remediationv1.PhaseSkipped):   true,
 	// Blocked is NON-terminal but has its own cooldown mechanism (BR-ORCH-042)
-	"Blocked": true,
+	string(remediationv1.PhaseBlocked): true,
 	// Verifying is NON-terminal but has its own deadline via VerificationDeadline (#280)
-	"Verifying": true,
+	string(remediationv1.PhaseVerifying): true,
 }
 
 // CheckTimeout checks if global or phase timeout has been exceeded.
@@ -104,17 +104,17 @@ func (d *Detector) CheckPhaseTimeout(rr *remediationv1.RemediationRequest) Timeo
 	// Get phase start time based on current phase
 	var phaseStartTime *time.Time
 	switch currentPhase {
-	case "Processing":
+	case remediationv1.PhaseProcessing:
 		if rr.Status.ProcessingStartTime != nil {
 			t := rr.Status.ProcessingStartTime.Time
 			phaseStartTime = &t
 		}
-	case "Analyzing", "AwaitingApproval":
+	case remediationv1.PhaseAnalyzing, remediationv1.PhaseAwaitingApproval:
 		if rr.Status.AnalyzingStartTime != nil {
 			t := rr.Status.AnalyzingStartTime.Time
 			phaseStartTime = &t
 		}
-	case "Executing":
+	case remediationv1.PhaseExecuting:
 		if rr.Status.ExecutingStartTime != nil {
 			t := rr.Status.ExecutingStartTime.Time
 			phaseStartTime = &t
@@ -147,15 +147,15 @@ func (d *Detector) GetPhaseTimeout(rr *remediationv1.RemediationRequest, phase s
 	// Check per-remediation override first
 	if rr.Status.TimeoutConfig != nil {
 		switch phase {
-		case "Processing":
+		case string(remediationv1.PhaseProcessing):
 			if rr.Status.TimeoutConfig.Processing != nil && rr.Status.TimeoutConfig.Processing.Duration > 0 {
 				return rr.Status.TimeoutConfig.Processing.Duration
 			}
-		case "Analyzing", "AwaitingApproval":
+		case string(remediationv1.PhaseAnalyzing), string(remediationv1.PhaseAwaitingApproval):
 			if rr.Status.TimeoutConfig.Analyzing != nil && rr.Status.TimeoutConfig.Analyzing.Duration > 0 {
 				return rr.Status.TimeoutConfig.Analyzing.Duration
 			}
-		case "Executing":
+		case string(remediationv1.PhaseExecuting):
 			if rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration > 0 {
 				return rr.Status.TimeoutConfig.Executing.Duration
 			}
@@ -164,11 +164,11 @@ func (d *Detector) GetPhaseTimeout(rr *remediationv1.RemediationRequest, phase s
 
 	// Fall back to global config defaults
 	switch phase {
-	case "Processing":
+	case string(remediationv1.PhaseProcessing):
 		return d.config.Timeouts.Processing
-	case "Analyzing", "AwaitingApproval":
+	case string(remediationv1.PhaseAnalyzing), string(remediationv1.PhaseAwaitingApproval):
 		return d.config.Timeouts.Analyzing
-	case "Executing":
+	case string(remediationv1.PhaseExecuting):
 		return d.config.Timeouts.Executing
 	default:
 		return d.config.Timeouts.Global

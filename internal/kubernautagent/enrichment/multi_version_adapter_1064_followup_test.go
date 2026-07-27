@@ -96,10 +96,10 @@ func buildMultiVersionAdapterScheme() *runtime.Scheme {
 	return scheme
 }
 
-func newAdapterAuthzPolicy(name, namespace, version string) *unstructured.Unstructured {
+func newAdapterAuthzPolicy(name, namespace string) *unstructured.Unstructured {
 	return &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": istioGroup + "/" + version,
+			"apiVersion": istioGroup + "/" + istioV1,
 			"kind":       apKind,
 			"metadata": map[string]interface{}{
 				"name":      name,
@@ -125,7 +125,7 @@ var _ = Describe("Issue #1064 follow-up: K8sAdapter multi-version fallback in re
 	Describe("UT-EA-MVR-001: GetOwnerChain resolves via RESTMappings fallback when ResourcesFor fails", func() {
 		It("should resolve AuthorizationPolicy in v1 via RESTMappings fallback", func() {
 			scheme := buildMultiVersionAdapterScheme()
-			ap := newAdapterAuthzPolicy("deny-all-traffic", "demo-mesh-failure", istioV1)
+			ap := newAdapterAuthzPolicy("deny-all-traffic", "demo-mesh-failure")
 			dynClient := fakedynamic.NewSimpleDynamicClient(scheme, ap)
 			mapper := buildMultiVersionAdapterMapper()
 			wrappedMapper := &failResourcesForAdapterMapper{delegate: mapper}
@@ -145,7 +145,7 @@ var _ = Describe("Issue #1064 follow-up: K8sAdapter multi-version fallback in re
 	Describe("UT-EA-MVR-002: GetSpecHash resolves via RESTMappings fallback when ResourcesFor fails", func() {
 		It("should compute spec hash for AuthorizationPolicy resolved via fallback", func() {
 			scheme := buildMultiVersionAdapterScheme()
-			ap := newAdapterAuthzPolicy("deny-all-traffic", "demo-mesh-failure", istioV1)
+			ap := newAdapterAuthzPolicy("deny-all-traffic", "demo-mesh-failure")
 			dynClient := fakedynamic.NewSimpleDynamicClient(scheme, ap)
 			mapper := buildMultiVersionAdapterMapper()
 			wrappedMapper := &failResourcesForAdapterMapper{delegate: mapper}
@@ -166,7 +166,7 @@ var _ = Describe("Issue #1064 follow-up: K8sAdapter multi-version fallback in re
 	Describe("UT-EA-MVR-003: Fallback uses kindIndex group hint for CRD kinds", func() {
 		It("should use security.istio.io group from kindIndex when resolving AuthorizationPolicy", func() {
 			scheme := buildMultiVersionAdapterScheme()
-			ap := newAdapterAuthzPolicy("test-policy", "default", istioV1)
+			ap := newAdapterAuthzPolicy("test-policy", "default")
 			dynClient := fakedynamic.NewSimpleDynamicClient(scheme, ap)
 			mapper := buildMultiVersionAdapterMapper()
 			wrappedMapper := &failResourcesForAdapterMapper{delegate: mapper}
@@ -217,7 +217,7 @@ var _ = Describe("Issue #1064 follow-up: K8sAdapter multi-version fallback in re
 	Describe("UT-EA-MVR-006: Fallback log emitted at V(1) with version count", func() {
 		It("should emit a structured log entry when fallback resolves multiple versions", func() {
 			scheme := buildMultiVersionAdapterScheme()
-			ap := newAdapterAuthzPolicy("deny-all", "ns", istioV1)
+			ap := newAdapterAuthzPolicy("deny-all", "ns")
 			dynClient := fakedynamic.NewSimpleDynamicClient(scheme, ap)
 			mapper := buildMultiVersionAdapterMapper()
 			wrappedMapper := &failResourcesForAdapterMapper{delegate: mapper}

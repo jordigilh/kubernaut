@@ -1,7 +1,7 @@
 # Spike: Run State Persistence Strategy for Ephemeral Pods
 
 **Issue**: [#1206](https://github.com/jordigilh/kubernaut/issues/1206)
-**Status**: COMPLETED
+**Status**: COMPLETED — the ephemeral/stateless-retry findings validated here remain useful background for any pod-based agent execution model, but this spike specifically evaluated the OAS Runtime's in-memory run state, which is superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536) (opaque OCI agent images; Kubernaut doesn't own or query an in-process runtime's run state the same way)
 **Date**: 2026-05-20
 **Recommendation**: **Option A — Accept Ephemeral (no persistence needed)**
 

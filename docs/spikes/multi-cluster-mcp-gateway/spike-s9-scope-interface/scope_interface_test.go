@@ -118,6 +118,8 @@ var _ = Describe("Spike S9 — ScopeChecker Interface Design", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		remoteCalls.Store(0)
+		//nolint:unparam // must match the remoteCheck field type func(...) (bool, error);
+		// S9-013 below exercises a sibling closure returning a non-nil error for the same field.
 		remoteCheckFunc = func(_ context.Context, clusterID, _, _, _ string) (bool, error) {
 			remoteCalls.Add(1)
 			if clusterID == "prod-east" {

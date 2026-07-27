@@ -18,6 +18,11 @@ package authwebhook
 
 import "errors"
 
+// ErrActionTypeCRDNotFound indicates no ActionType CRD in the namespace has a
+// spec.name matching the queried action type. Issue #1674: typed sentinel
+// replacing the previous ambiguous (nil, nil) return from findActionTypeKey.
+var ErrActionTypeCRDNotFound = errors.New("ActionType CRD not found")
+
 // PermanentError indicates a non-retryable error from DataStorage.
 // HTTP 400 (validation), 403 (forbidden), 404 (not found) are permanent —
 // retrying will not produce a different result.

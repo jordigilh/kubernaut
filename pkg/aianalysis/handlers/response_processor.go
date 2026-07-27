@@ -227,14 +227,26 @@ func storeSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agentclient.
 		return
 	}
 	sw := &aianalysisv1.SelectedWorkflow{
-		WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
-		ActionType:            GetStringFromMap(swMap, "action_type"),
-		Version:               GetStringFromMap(swMap, "version"),
-		ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
-		ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
-		Confidence:            GetFloat64FromMap(swMap, "confidence"),
-		Rationale:             GetStringFromMap(swMap, "rationale"),
-		ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+			WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
+			WorkflowName:          GetStringFromMap(swMap, "workflow_name"),
+			ActionType:            GetStringFromMap(swMap, "action_type"),
+			Version:               GetStringFromMap(swMap, "version"),
+			ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
+			ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
+			ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+			// #1661 DD-WE-005 v2.0 / RCA follow-up: the WFE Job executor now reads
+			// the execution ServiceAccount exclusively from this CRD-embedded
+			// snapshot (wfe.Spec.WorkflowRef.ServiceAccountName, no
+			// executor-config fallback) -- omitting it here silently downgraded
+			// every job-engine Pod to the namespace's "default" SA, which lacks
+			// the workflow's cross-namespace get/patch RBAC and fails the Job
+			// fast (BackoffLimitExceeded) despite the image pulling and starting
+			// fine.
+			ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
+		},
+		Confidence: GetFloat64FromMap(swMap, "confidence"),
+		Rationale:  GetStringFromMap(swMap, "rationale"),
 	}
 	// Map parameters if present (map[string]string)
 	if paramsRaw, ok := swMap["parameters"]; ok {
@@ -248,7 +260,22 @@ func storeSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agentclient.
 			sw.EngineConfig = &apiextensionsv1.JSON{Raw: ecBytes}
 		}
 	}
+	stampWorkflowSnapshot(sw, swMap)
 	analysis.Status.SelectedWorkflow = sw
+}
+
+// stampWorkflowSnapshot populates the CRD-embedded execution snapshot fields
+// (Issue #1661 Change 11b, DD-WORKFLOW-018) and stamps SelectedAt, arming the
+// SelectedWorkflow write-once CEL guard (mirrors PostRCAContext/ADR-056).
+// Shared by all three population call sites — storeSelectedWorkflow,
+// preservePartialSelectedWorkflow, preserveLowConfidenceWorkflow — so every
+// terminal path that persists a SelectedWorkflow locks it the same way.
+func stampWorkflowSnapshot(sw *aianalysisv1.SelectedWorkflow, swMap map[string]interface{}) {
+	sw.Dependencies = extractWorkflowDependencies(swMap)
+	sw.Resources = extractResourceRequirements(swMap)
+	sw.DeclaredParameterNames = extractDeclaredParameterNames(swMap)
+	now := metav1.Now()
+	sw.SelectedAt = &now
 }
 
 // storeAlternativeWorkflows populates analysis.Status.AlternativeWorkflows
@@ -359,7 +386,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 	}
 
 	// #768: no_matching_workflows is a successful investigation — route to Completed handler
-	if humanReviewReason == "no_matching_workflows" {
+	if humanReviewReason == aianalysisv1.HumanReviewReasonNoMatchingWorkflows {
 		return p.handleNoMatchingWorkflowsCompleted(ctx, analysis, resp)
 	}
 
@@ -489,17 +516,26 @@ func preservePartialSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *ag
 	if swMap == nil {
 		return
 	}
-	analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-		WorkflowID:      GetStringFromMap(swMap, "workflow_id"),
-		ExecutionBundle: GetStringFromMap(swMap, "execution_bundle"),
-		Confidence:      GetFloat64FromMap(swMap, "confidence"),
-		Rationale:       GetStringFromMap(swMap, "rationale"),
-		ExecutionEngine: GetStringFromMap(swMap, "execution_engine"),
+	sw := &aianalysisv1.SelectedWorkflow{
+		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+			WorkflowID:         GetStringFromMap(swMap, "workflow_id"),
+			WorkflowName:       GetStringFromMap(swMap, "workflow_name"),
+			ActionType:         GetStringFromMap(swMap, "action_type"),
+			ExecutionBundle:    GetStringFromMap(swMap, "execution_bundle"),
+			ExecutionEngine:    GetStringFromMap(swMap, "execution_engine"),
+			ServiceAccountName: GetStringFromMap(swMap, "service_account_name"),
+		},
+		Confidence: GetFloat64FromMap(swMap, "confidence"),
+		Rationale:  GetStringFromMap(swMap, "rationale"),
 	}
+	stampWorkflowSnapshot(sw, swMap)
+	analysis.Status.SelectedWorkflow = sw
 }
 
 // handleProblemResolvedFromIncident handles problem self-resolved from IncidentResponse
 // BR-HAPI-200: Problem confirmed resolved, no workflow needed
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches the shared dispatch contract of sibling handleXFromIncident functions (handleNotActionableFromIncident, handleNoWorkflowTerminalFailure), called uniformly as `result, err := p.handleXFromIncident(...)` (Issue #1546 Tier 4)
 func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	p.log.Info("Problem confirmed resolved, no workflow needed",
 		"confidence", resp.Confidence,
@@ -512,17 +548,18 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 	analysis.Status.CompletedAt = &now
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
-	analysis.Status.SubReason = "ProblemResolved"
+	analysis.Status.SubReason = aianalysisv1.SubReasonProblemResolved
 	analysis.Status.InvestigationID = resp.IncidentID
 
 	// BR-HAPI-197: No human review needed for resolved problems
 	analysis.Status.NeedsHumanReview = false
 
-	if resp.Analysis != "" {
+	switch {
+	case resp.Analysis != "":
 		analysis.Status.Message = resp.Analysis
-	} else if len(resp.Warnings) > 0 {
+	case len(resp.Warnings) > 0:
 		analysis.Status.Message = strings.Join(resp.Warnings, "; ")
-	} else {
+	default:
 		analysis.Status.Message = "Problem self-resolved. No remediation required."
 	}
 
@@ -551,6 +588,8 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 // #388: Alert is benign — condition may be present but is harmless (e.g., orphaned PVCs).
 // Routes to Completed/WorkflowNotNeeded/NotActionable, analogous to handleProblemResolvedFromIncident
 // but semantically distinct: resolved = problem went away, not-actionable = problem is harmless.
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches the shared dispatch contract of sibling handleXFromIncident functions (see handleProblemResolvedFromIncident) (Issue #1546 Tier 4)
 func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	p.log.Info("Alert not actionable, no workflow needed",
 		"confidence", resp.Confidence,
@@ -570,11 +609,12 @@ func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context,
 	analysis.Status.NeedsHumanReview = false
 	analysis.Status.Actionability = aianalysis.ActionabilityNotActionable
 
-	if resp.Analysis != "" {
+	switch {
+	case resp.Analysis != "":
 		analysis.Status.Message = resp.Analysis
-	} else if len(resp.Warnings) > 0 {
+	case len(resp.Warnings) > 0:
 		analysis.Status.Message = strings.Join(resp.Warnings, "; ")
-	} else {
+	default:
 		analysis.Status.Message = "Alert not actionable. No remediation warranted."
 	}
 
@@ -621,7 +661,7 @@ func (p *ResponseProcessor) handleNoMatchingWorkflowsCompleted(ctx context.Conte
 	analysis.Status.CompletedAt = &now
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
-	analysis.Status.SubReason = "NoMatchingWorkflows"
+	analysis.Status.SubReason = aianalysisv1.SubReasonNoMatchingWorkflows
 	analysis.Status.InvestigationID = resp.IncidentID
 
 	// #768: NeedsHumanReview remains true — still requires human intervention
@@ -659,6 +699,8 @@ func (p *ResponseProcessor) handleNoMatchingWorkflowsCompleted(ctx context.Conte
 
 // handleNoWorkflowTerminalFailure handles terminal failure when no workflow selected with low confidence
 // Issue #29: BR-AI-050 - AIAnalysis must detect terminal failure per BR-HAPI-197 AC-4
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches the shared dispatch contract of sibling handleXFromIncident functions (see handleProblemResolvedFromIncident) (Issue #1546 Tier 4)
 func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	p.log.Info("No workflow selected, terminal failure",
 		"confidence", resp.Confidence,
@@ -672,12 +714,12 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	analysis.Status.CompletedAt = &now
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysis.ReasonWorkflowResolutionFailed
-	analysis.Status.SubReason = "NoMatchingWorkflows" // Maps to CRD SubReason enum
+	analysis.Status.SubReason = aianalysisv1.SubReasonNoMatchingWorkflows // Maps to CRD SubReason enum
 	analysis.Status.InvestigationID = resp.IncidentID
 
 	// BR-HAPI-197 AC-4: AIAnalysis sets needs_human_review for terminal failures
 	analysis.Status.NeedsHumanReview = true
-	analysis.Status.HumanReviewReason = "no_matching_workflows"
+	analysis.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 
 	// Build operator-friendly message
 	analysis.Status.Message = "No workflow selected for remediation"
@@ -700,8 +742,8 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	}
 
 	// Track failure metrics
-	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoMatchingWorkflows").Inc()
-	p.metrics.RecordFailure("WorkflowResolutionFailed", "NoMatchingWorkflows")
+	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", aianalysisv1.SubReasonNoMatchingWorkflows).Inc()
+	p.metrics.RecordFailure("WorkflowResolutionFailed", aianalysisv1.SubReasonNoMatchingWorkflows)
 
 	aianalysis.SetInvestigationComplete(analysis, false, "no workflow selected: no matching workflows found")
 	aianalysis.SetAnalysisComplete(analysis, false, "No workflow selected for remediation")
@@ -728,12 +770,12 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	analysis.Status.CompletedAt = &now
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysis.ReasonWorkflowResolutionFailed
-	analysis.Status.SubReason = "LowConfidence" // Maps to CRD SubReason enum
+	analysis.Status.SubReason = aianalysisv1.SubReasonLowConfidence // Maps to CRD SubReason enum
 	analysis.Status.InvestigationID = resp.IncidentID
 
 	// BR-HAPI-197 AC-4: AIAnalysis sets needs_human_review for low confidence
 	analysis.Status.NeedsHumanReview = true
-	analysis.Status.HumanReviewReason = "low_confidence"
+	analysis.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonLowConfidence
 
 	// Build operator-friendly message
 	analysis.Status.Message = fmt.Sprintf("Workflow confidence %.2f below threshold %.2f (low_confidence)", resp.Confidence, confidenceThreshold)
@@ -764,8 +806,8 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	}
 
 	// Track failure metrics
-	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "LowConfidence").Inc()
-	p.metrics.RecordFailure("WorkflowResolutionFailed", "LowConfidence")
+	p.metrics.FailuresTotal.WithLabelValues(string(aianalysisv1.ReasonWorkflowResolutionFailed), aianalysisv1.SubReasonLowConfidence).Inc()
+	p.metrics.RecordFailure(string(aianalysisv1.ReasonWorkflowResolutionFailed), aianalysisv1.SubReasonLowConfidence)
 
 	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("low confidence: %.2f below threshold %.2f", resp.Confidence, confidenceThreshold))
 	aianalysis.SetAnalysisComplete(analysis, false, fmt.Sprintf("Workflow confidence %.2f below threshold %.2f", resp.Confidence, confidenceThreshold))
@@ -784,21 +826,28 @@ func preserveLowConfidenceWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agen
 	if swMap == nil {
 		return
 	}
-	analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-		WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
-		Version:               GetStringFromMap(swMap, "version"),
-		ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
-		ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
-		Confidence:            GetFloat64FromMap(swMap, "confidence"),
-		Rationale:             GetStringFromMap(swMap, "rationale"),
-		ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+	sw := &aianalysisv1.SelectedWorkflow{
+		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+			WorkflowID:            GetStringFromMap(swMap, "workflow_id"),
+			WorkflowName:          GetStringFromMap(swMap, "workflow_name"),
+			ActionType:            GetStringFromMap(swMap, "action_type"),
+			Version:               GetStringFromMap(swMap, "version"),
+			ExecutionBundle:       GetStringFromMap(swMap, "execution_bundle"),
+			ExecutionBundleDigest: GetStringFromMap(swMap, "execution_bundle_digest"),
+			ExecutionEngine:       GetStringFromMap(swMap, "execution_engine"),
+			ServiceAccountName:    GetStringFromMap(swMap, "service_account_name"),
+		},
+		Confidence: GetFloat64FromMap(swMap, "confidence"),
+		Rationale:  GetStringFromMap(swMap, "rationale"),
 	}
 	// Map parameters if present
 	if paramsRaw, ok := swMap["parameters"]; ok {
 		if paramsMapIface, ok := paramsRaw.(map[string]interface{}); ok {
-			analysis.Status.SelectedWorkflow.Parameters = convertMapToStringMap(paramsMapIface)
+			sw.Parameters = convertMapToStringMap(paramsMapIface)
 		}
 	}
+	stampWorkflowSnapshot(sw, swMap)
+	analysis.Status.SelectedWorkflow = sw
 }
 
 // setTotalAnalysisTime calculates and sets TotalAnalysisTime from StartedAt.
@@ -815,21 +864,21 @@ func setTotalAnalysisTime(analysis *aianalysisv1.AIAnalysis, now metav1.Time) {
 // Updated Dec 7, 2025: Added investigation_inconclusive per BR-HAPI-200
 func (p *ResponseProcessor) mapEnumToSubReason(reason string) string {
 	mapping := map[string]string{
-		"workflow_not_found":          "WorkflowNotFound",
-		"image_mismatch":              "ImageMismatch",
-		"parameter_validation_failed": "ParameterValidationFailed",
-		"no_matching_workflows":       "NoMatchingWorkflows",
-		"low_confidence":              "LowConfidence",
-		"llm_parsing_error":           "LLMParsingError",
-		"investigation_inconclusive":  "InvestigationInconclusive", // BR-HAPI-200
-		"rca_incomplete":              "RcaIncomplete",             // BR-496 v2: root_owner missing from session_state
-		"operator_escalation":         "OperatorEscalation",        // #1449: KA complete_no_action escalation
+		"workflow_not_found":                              aianalysisv1.SubReasonWorkflowNotFound,
+		"image_mismatch":                                  "ImageMismatch",
+		"parameter_validation_failed":                     "ParameterValidationFailed",
+		aianalysisv1.HumanReviewReasonNoMatchingWorkflows: aianalysisv1.SubReasonNoMatchingWorkflows,
+		aianalysisv1.HumanReviewReasonLowConfidence:       aianalysisv1.SubReasonLowConfidence,
+		"llm_parsing_error":                               "LLMParsingError",
+		"investigation_inconclusive":                      "InvestigationInconclusive", // BR-HAPI-200
+		aianalysisv1.HumanReviewReasonRCAIncomplete:       "RcaIncomplete",             // BR-496 v2: root_owner missing from session_state
+		"operator_escalation":                             "OperatorEscalation",        // #1449: KA complete_no_action escalation
 	}
 	if subReason, ok := mapping[reason]; ok {
 		return subReason
 	}
 	p.log.Info("Unknown human_review_reason, defaulting to WorkflowNotFound", "reason", reason)
-	return "WorkflowNotFound"
+	return aianalysisv1.SubReasonWorkflowNotFound
 }
 
 // hasNoWorkflowWarningSignal checks if KA's warnings contain signals that indicate
@@ -901,18 +950,19 @@ func hasSubstantiveRCA(rca agentclient.IncidentResponseRootCauseAnalysis) bool {
 }
 
 // mapWarningsToSubReason extracts SubReason from KA warnings
-// DEPRECATED: Use mapEnumToSubReason when HumanReviewReason is available
-// Kept for backward compatibility with older KA versions
+//
+// Deprecated: Use mapEnumToSubReason when HumanReviewReason is available.
+// Kept for backward compatibility with older KA versions.
 func mapWarningsToSubReason(warnings []string) string {
 	warningsStr := strings.ToLower(strings.Join(warnings, " "))
 
 	switch {
 	case strings.Contains(warningsStr, "not found") || strings.Contains(warningsStr, "does not exist"):
-		return "WorkflowNotFound"
+		return aianalysisv1.SubReasonWorkflowNotFound
 	case strings.Contains(warningsStr, "no workflows matched") || strings.Contains(warningsStr, "no matching"):
-		return "NoMatchingWorkflows"
+		return aianalysisv1.SubReasonNoMatchingWorkflows
 	case strings.Contains(warningsStr, "confidence") && strings.Contains(warningsStr, "below"):
-		return "LowConfidence"
+		return aianalysisv1.SubReasonLowConfidence
 	case strings.Contains(warningsStr, "parameter validation") || strings.Contains(warningsStr, "missing required"):
 		return "ParameterValidationFailed"
 	case strings.Contains(warningsStr, "image mismatch") || strings.Contains(warningsStr, "container image"):
@@ -920,7 +970,7 @@ func mapWarningsToSubReason(warnings []string) string {
 	case strings.Contains(warningsStr, "parse") || strings.Contains(warningsStr, "invalid json"):
 		return "LLMParsingError"
 	default:
-		return "WorkflowNotFound" // Default to most common case
+		return aianalysisv1.SubReasonWorkflowNotFound // Default to most common case
 	}
 }
 

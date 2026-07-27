@@ -30,8 +30,8 @@ import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8stypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/runtime"
+	k8stypes "k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -77,7 +77,7 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 					Name: "leaky-app-587f69c664", Namespace: namespace,
 					UID: k8stypes.UID("rs-uid"),
 					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: "apps/v1", Kind: "Deployment", Name: "leaky-app",
+						APIVersion: "apps/v1", Kind: deployment, Name: "leaky-app",
 						UID: k8stypes.UID("deploy-uid"), Controller: boolPtr(true),
 					}},
 				},
@@ -96,7 +96,7 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Pod", pod.Name)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ownerKind).To(Equal("Deployment"))
+			Expect(ownerKind).To(Equal(deployment))
 			Expect(ownerName).To(Equal("leaky-app"))
 		})
 	})
@@ -259,7 +259,7 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 					Name: "leaky-app-544b75986", Namespace: namespace,
 					UID: k8stypes.UID("rs-uid"),
 					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: "apps/v1", Kind: "Deployment", Name: "leaky-app",
+						APIVersion: "apps/v1", Kind: deployment, Name: "leaky-app",
 						UID: k8stypes.UID("deploy-uid"), Controller: boolPtr(true),
 					}},
 				},
@@ -296,7 +296,7 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Pod", "leaky-app-544b75986-hndrn")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ownerKind).To(Equal("Deployment"))
+			Expect(ownerKind).To(Equal(deployment))
 			Expect(ownerName).To(Equal("leaky-app"))
 		})
 
@@ -409,7 +409,7 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 					Name: "api-server-abc123", Namespace: namespace,
 					UID: k8stypes.UID("rs-uid"),
 					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: "apps/v1", Kind: "Deployment", Name: "api-server",
+						APIVersion: "apps/v1", Kind: deployment, Name: "api-server",
 						UID: k8stypes.UID("deploy-uid"), Controller: boolPtr(true),
 					}},
 				},
@@ -434,7 +434,7 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 
 			ownerKind, ownerName, err := resolver.ResolveTopLevelOwner(ctx, namespace, "Service", "api-svc")
 			Expect(err).ToNot(HaveOccurred())
-			Expect(ownerKind).To(Equal("Deployment"))
+			Expect(ownerKind).To(Equal(deployment))
 			Expect(ownerName).To(Equal("api-server"))
 		})
 
@@ -600,7 +600,7 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 					Name: "leaky-app-544b75986", Namespace: namespace,
 					UID: k8stypes.UID("rs-uid"),
 					OwnerReferences: []metav1.OwnerReference{{
-						APIVersion: "apps/v1", Kind: "Deployment", Name: "leaky-app",
+						APIVersion: "apps/v1", Kind: deployment, Name: "leaky-app",
 						UID: k8stypes.UID("deploy-uid"), Controller: boolPtr(true),
 					}},
 				},
@@ -638,7 +638,7 @@ var _ = Describe("K8sOwnerResolver - Owner chain resolution with real K8s object
 				"Two pods from the same Deployment must produce identical fingerprints")
 
 			expectedFP := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
-				Namespace: namespace, Kind: "Deployment", Name: "leaky-app",
+				Namespace: namespace, Kind: deployment, Name: "leaky-app",
 			})
 			Expect(fpA).To(Equal(expectedFP),
 				"Fingerprint should be SHA256(namespace:Deployment:leaky-app)")

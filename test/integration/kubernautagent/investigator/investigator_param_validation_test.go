@@ -57,14 +57,14 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Self-Correction Integration 
 
 	Describe("IT-KA-1170-001: Invalid params trigger self-correction with schema hint", func() {
 		It("should self-correct from bad params to valid params", func() {
-			min := float64(1)
-			max := float64(10)
+			minReplicas := float64(1)
+			maxReplicas := float64(10)
 			validator := parser.NewValidator([]string{"scale-deployment"})
 			validator.SetWorkflowMeta("scale-deployment", parser.WorkflowMeta{
 				ExecutionEngine: "tekton",
 				ExecutionBundle: "quay.io/test/scale:v1",
 				Parameters: []models.WorkflowParameter{
-					{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &min, Maximum: &max},
+					{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &minReplicas, Maximum: &maxReplicas},
 					{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				},
 			})

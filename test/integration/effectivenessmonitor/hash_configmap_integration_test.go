@@ -45,7 +45,7 @@ var _ = Describe("ConfigMap-Aware Spec Hash Integration (#396)", func() {
 
 	// IT-EM-396-001: Composite hash matches pre-hash when spec + ConfigMaps unchanged (Match=true)
 	It("IT-EM-396-001: should match pre-hash when spec and ConfigMaps are unchanged", func() {
-		ns := createTestNamespace("em-396-001")
+		ns := createTestNamespace(ctx, "em-396-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating ConfigMap referenced by the Deployment")
@@ -125,7 +125,7 @@ var _ = Describe("ConfigMap-Aware Spec Hash Integration (#396)", func() {
 
 	// IT-EM-396-002: ConfigMap data change between assessments → different hashes
 	It("IT-EM-396-002: should produce different hash when ConfigMap data changes", func() {
-		ns := createTestNamespace("em-396-002")
+		ns := createTestNamespace(ctx, "em-396-002")
 		defer deleteTestNamespace(ns)
 
 		cm := &corev1.ConfigMap{
@@ -212,7 +212,7 @@ var _ = Describe("ConfigMap-Aware Spec Hash Integration (#396)", func() {
 	// During that requeue, a ConfigMap is modified. On the next reconcile the drift guard
 	// (Step 6.5) re-computes the composite hash via apiReader and detects the change.
 	It("IT-EM-396-003: should detect drift when ConfigMap changes during deferred alert window", func() {
-		ns := createTestNamespace("em-396-003")
+		ns := createTestNamespace(ctx, "em-396-003")
 		defer deleteTestNamespace(ns)
 
 		cm := &corev1.ConfigMap{
@@ -283,7 +283,7 @@ var _ = Describe("ConfigMap-Aware Spec Hash Integration (#396)", func() {
 
 	// IT-EM-396-004: No ConfigMap refs → backward compatible hash
 	It("IT-EM-396-004: should produce standard hash when no ConfigMap refs (backward compat)", func() {
-		ns := createTestNamespace("em-396-004")
+		ns := createTestNamespace(ctx, "em-396-004")
 		defer deleteTestNamespace(ns)
 
 		dep := &appsv1.Deployment{

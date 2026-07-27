@@ -39,14 +39,19 @@ import (
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	oomKilled = "OOM killed"
+)
+
 // ========================================
 // Issue #614: RO-level DuplicateInProgress Outcome Inheritance
 // ========================================
 
 // newBlockedDuplicateRR creates a Blocked RR with BlockReason=DuplicateInProgress
 // referencing the given original RR name.
-func newBlockedDuplicateRR(name, namespace, duplicateOf string) *remediationv1.RemediationRequest {
-	rr := newRemediationRequest(name, namespace, remediationv1.PhaseBlocked)
+func newBlockedDuplicateRR(name, duplicateOf string) *remediationv1.RemediationRequest {
+	rr := newRemediationRequest(name, defaultFixture, remediationv1.PhaseBlocked)
 	rr.Status.BlockReason = remediationv1.BlockReasonDuplicateInProgress
 	rr.Status.BlockMessage = "Another remediation is in progress for this fingerprint"
 	rr.Status.DuplicateOf = duplicateOf
@@ -68,10 +73,10 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 	Context("Core inheritance from original RemediationRequest", func() {
 
 		It("UT-RO-614-001: original RR Completed → duplicate inherits Completed with InheritedCompleted outcome", func() {
-			originalRR := newRemediationRequest("original-rr-001", "default", remediationv1.PhaseCompleted)
-			originalRR.Status.Outcome = "Remediated"
+			originalRR := newRemediationRequest("original-rr-001", defaultFixture, remediationv1.PhaseCompleted)
+			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
 
-			dupRR := newBlockedDuplicateRR("dup-rr-001", "default", "original-rr-001")
+			dupRR := newBlockedDuplicateRR("dup-rr-001", "original-rr-001")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(originalRR, dupRR).
@@ -90,16 +95,16 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-001", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-001", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-001", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-001", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 				"Behavior: Blocked/DuplicateInProgress RR must inherit Completed when original RR completes")
-			Expect(updated.Status.Outcome).To(Equal("Remediated"),
+			Expect(updated.Status.Outcome).To(Equal(remediationv1.OutcomeRemediated),
 				"Behavior: Outcome must be Remediated (lineage tracked via DuplicateOf + K8s events)")
 			Expect(updated.Status.CompletedAt).NotTo(BeNil(),
 				"Behavior: CompletedAt must be set for terminal transition")
@@ -113,12 +118,12 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 		It("UT-RO-614-002: original RR Failed → duplicate inherits Failed with FailurePhaseDeduplicated", func() {
 			failPhase := remediationv1.FailurePhaseWorkflowExecution
-			failReason := "OOM killed"
-			originalRR := newRemediationRequest("original-rr-002", "default", remediationv1.PhaseFailed)
+			failReason := oomKilled
+			originalRR := newRemediationRequest("original-rr-002", defaultFixture, remediationv1.PhaseFailed)
 			originalRR.Status.FailurePhase = &failPhase
 			originalRR.Status.FailureReason = &failReason
 
-			dupRR := newBlockedDuplicateRR("dup-rr-002", "default", "original-rr-002")
+			dupRR := newBlockedDuplicateRR("dup-rr-002", "original-rr-002")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(originalRR, dupRR).
@@ -137,12 +142,12 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-002", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-002", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-002", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-002", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"Behavior: Blocked/DuplicateInProgress RR must inherit Failed when original RR fails")
@@ -166,7 +171,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 	Context("Edge cases", func() {
 
 		It("UT-RO-614-003: deleted original RR → duplicate inherits Failed (dangling reference)", func() {
-			dupRR := newBlockedDuplicateRR("dup-rr-003", "default", "deleted-original-003")
+			dupRR := newBlockedDuplicateRR("dup-rr-003", "deleted-original-003")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(dupRR).
@@ -185,12 +190,12 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-003", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-003", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-003", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-003", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"Behavior: deleted original must cause inherited failure, not silent clearing")
@@ -209,7 +214,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 		})
 
 		It("UT-RO-614-004: transient Get error on original RR → reconcile error (retryable)", func() {
-			dupRR := newBlockedDuplicateRR("dup-rr-004", "default", "transient-original-004")
+			dupRR := newBlockedDuplicateRR("dup-rr-004", "transient-original-004")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(dupRR).
@@ -236,7 +241,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-004", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-004", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred(),
 				"Behavior: transient errors are handled with RequeueAfter, not propagated as errors")
@@ -244,7 +249,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 				"Behavior: must requeue after transient error")
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-004", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-004", Namespace: defaultFixture}, updated)).To(Succeed())
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked),
 				"Behavior: RR must remain Blocked on transient error")
 		})
@@ -253,13 +258,13 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 	Context("Observability: gauge decrement", func() {
 
 		It("UT-RO-614-005: CurrentBlockedGauge decrements after successful Completed inheritance", func() {
-			originalRR := newRemediationRequest("original-rr-005", "default", remediationv1.PhaseCompleted)
-			originalRR.Status.Outcome = "Remediated"
+			originalRR := newRemediationRequest("original-rr-005", defaultFixture, remediationv1.PhaseCompleted)
+			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
 
-			dupRR := newBlockedDuplicateRR("dup-rr-005", "default", "original-rr-005")
+			dupRR := newBlockedDuplicateRR("dup-rr-005", "original-rr-005")
 
 			m := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
-			m.CurrentBlockedGauge.WithLabelValues("default").Set(1)
+			m.CurrentBlockedGauge.WithLabelValues(defaultFixture).Set(1)
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(originalRR, dupRR).
@@ -278,26 +283,26 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-005", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-005", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			gaugeValue := testutil.ToFloat64(m.CurrentBlockedGauge.WithLabelValues("default"))
+			gaugeValue := testutil.ToFloat64(m.CurrentBlockedGauge.WithLabelValues(defaultFixture))
 			Expect(gaugeValue).To(Equal(float64(0)),
 				"Behavior: CurrentBlockedGauge must decrement from 1 to 0 after successful inheritance")
 		})
 
 		It("UT-RO-614-006: CurrentBlockedGauge decrements after successful Failed inheritance", func() {
 			failPhase := remediationv1.FailurePhaseWorkflowExecution
-			failReason := "OOM killed"
-			originalRR := newRemediationRequest("original-rr-006", "default", remediationv1.PhaseFailed)
+			failReason := oomKilled
+			originalRR := newRemediationRequest("original-rr-006", defaultFixture, remediationv1.PhaseFailed)
 			originalRR.Status.FailurePhase = &failPhase
 			originalRR.Status.FailureReason = &failReason
 
-			dupRR := newBlockedDuplicateRR("dup-rr-006", "default", "original-rr-006")
+			dupRR := newBlockedDuplicateRR("dup-rr-006", "original-rr-006")
 
 			m := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
-			m.CurrentBlockedGauge.WithLabelValues("default").Set(1)
+			m.CurrentBlockedGauge.WithLabelValues(defaultFixture).Set(1)
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(originalRR, dupRR).
@@ -316,11 +321,11 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-006", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-006", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
-			gaugeValue := testutil.ToFloat64(m.CurrentBlockedGauge.WithLabelValues("default"))
+			gaugeValue := testutil.ToFloat64(m.CurrentBlockedGauge.WithLabelValues(defaultFixture))
 			Expect(gaugeValue).To(Equal(float64(0)),
 				"Behavior: CurrentBlockedGauge must decrement from 1 to 0 after Failed inheritance")
 		})
@@ -329,10 +334,10 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 	Context("Observability: K8s events", func() {
 
 		It("UT-RO-614-007: Completed inheritance emits K8s event with RemediationRequest provenance", func() {
-			originalRR := newRemediationRequest("original-rr-007", "default", remediationv1.PhaseCompleted)
-			originalRR.Status.Outcome = "Remediated"
+			originalRR := newRemediationRequest("original-rr-007", defaultFixture, remediationv1.PhaseCompleted)
+			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
 
-			dupRR := newBlockedDuplicateRR("dup-rr-007", "default", "original-rr-007")
+			dupRR := newBlockedDuplicateRR("dup-rr-007", "original-rr-007")
 
 			fakeRecorder := record.NewFakeRecorder(20)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
@@ -352,7 +357,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-007", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-007", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -370,12 +375,12 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 
 		It("UT-RO-614-008: Failed inheritance emits K8s event with RemediationRequest provenance", func() {
 			failPhase := remediationv1.FailurePhaseWorkflowExecution
-			failReason := "OOM killed"
-			originalRR := newRemediationRequest("original-rr-008", "default", remediationv1.PhaseFailed)
+			failReason := oomKilled
+			originalRR := newRemediationRequest("original-rr-008", defaultFixture, remediationv1.PhaseFailed)
 			originalRR.Status.FailurePhase = &failPhase
 			originalRR.Status.FailureReason = &failReason
 
-			dupRR := newBlockedDuplicateRR("dup-rr-008", "default", "original-rr-008")
+			dupRR := newBlockedDuplicateRR("dup-rr-008", "original-rr-008")
 
 			fakeRecorder := record.NewFakeRecorder(20)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
@@ -395,7 +400,7 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-008", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-008", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -415,10 +420,10 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 	Context("Regression guards", func() {
 
 		It("UT-RO-614-009: active original RR → duplicate stays Blocked, requeues", func() {
-			originalRR := newRemediationRequest("original-rr-009", "default", remediationv1.PhaseExecuting)
+			originalRR := newRemediationRequest("original-rr-009", defaultFixture, remediationv1.PhaseExecuting)
 			originalRR.Status.StartTime = &metav1.Time{Time: time.Now()}
 
-			dupRR := newBlockedDuplicateRR("dup-rr-009", "default", "original-rr-009")
+			dupRR := newBlockedDuplicateRR("dup-rr-009", "original-rr-009")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(originalRR, dupRR).
@@ -437,26 +442,26 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-009", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-009", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
 				"Behavior: must requeue to poll original RR status")
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-009", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-009", Namespace: defaultFixture}, updated)).To(Succeed())
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked),
 				"Regression: duplicate must stay Blocked while original is still active")
 		})
 
 		It("UT-RO-614-010: empty DuplicateOf → clears to Pending (pre-#614 behavior preserved)", func() {
-			dupRR := newRemediationRequest("dup-rr-010", "default", remediationv1.PhaseBlocked)
+			dupRR := newRemediationRequest("dup-rr-010", defaultFixture, remediationv1.PhaseBlocked)
 			dupRR.Status.BlockReason = remediationv1.BlockReasonDuplicateInProgress
 			dupRR.Status.DuplicateOf = ""
 			dupRR.Status.ObservedGeneration = dupRR.Generation
 
 			m := rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
-			m.CurrentBlockedGauge.WithLabelValues("default").Set(1)
+			m.CurrentBlockedGauge.WithLabelValues(defaultFixture).Set(1)
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(dupRR).
@@ -475,28 +480,28 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-010", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-010", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-010", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-010", Namespace: defaultFixture}, updated)).To(Succeed())
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhasePending),
 				"Regression: empty DuplicateOf must still clear to Pending (not inherit)")
 
-			gaugeValue := testutil.ToFloat64(m.CurrentBlockedGauge.WithLabelValues("default"))
+			gaugeValue := testutil.ToFloat64(m.CurrentBlockedGauge.WithLabelValues(defaultFixture))
 			Expect(gaugeValue).To(Equal(float64(0)),
 				"Regression: gauge must decrement when clearing event-based block")
 		})
 
 		It("UT-RO-614-011: inherited failure does NOT increment ConsecutiveFailureCount", func() {
 			failPhase := remediationv1.FailurePhaseWorkflowExecution
-			failReason := "OOM killed"
-			originalRR := newRemediationRequest("original-rr-011", "default", remediationv1.PhaseFailed)
+			failReason := oomKilled
+			originalRR := newRemediationRequest("original-rr-011", defaultFixture, remediationv1.PhaseFailed)
 			originalRR.Status.FailurePhase = &failPhase
 			originalRR.Status.FailureReason = &failReason
 
-			dupRR := newBlockedDuplicateRR("dup-rr-011", "default", "original-rr-011")
+			dupRR := newBlockedDuplicateRR("dup-rr-011", "original-rr-011")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(originalRR, dupRR).
@@ -515,21 +520,21 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-011", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-011", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-011", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-011", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.ConsecutiveFailureCount).To(Equal(int32(0)),
 				"Behavior: inherited failures from RR-level dedup must NOT increment ConsecutiveFailureCount")
 		})
 
 		It("UT-RO-614-012: original RR TimedOut → duplicate inherits Failed (non-Completed terminal phases map to Failed)", func() {
-			originalRR := newRemediationRequest("original-rr-012", "default", remediationv1.PhaseTimedOut)
+			originalRR := newRemediationRequest("original-rr-012", defaultFixture, remediationv1.PhaseTimedOut)
 
-			dupRR := newBlockedDuplicateRR("dup-rr-012", "default", "original-rr-012")
+			dupRR := newBlockedDuplicateRR("dup-rr-012", "original-rr-012")
 
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 				WithObjects(originalRR, dupRR).
@@ -548,12 +553,12 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-012", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-012", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-012", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-012", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseFailed),
 				"Behavior: non-Completed terminal phases (TimedOut, Cancelled, etc.) must map to inherited Failed")
@@ -569,10 +574,10 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 	Context("F-3: Notification guard for RR-level inheritance", func() {
 
 		It("UT-RO-614-F3: ensureNotificationsCreated must NOT be called for RR-level inheritance (no AIAnalysis exists)", func() {
-			originalRR := newRemediationRequest("original-rr-f3", "default", remediationv1.PhaseCompleted)
-			originalRR.Status.Outcome = "Remediated"
+			originalRR := newRemediationRequest("original-rr-f3", defaultFixture, remediationv1.PhaseCompleted)
+			originalRR.Status.Outcome = remediationv1.OutcomeRemediated
 
-			dupRR := newBlockedDuplicateRR("dup-rr-f3", "default", "original-rr-f3")
+			dupRR := newBlockedDuplicateRR("dup-rr-f3", "original-rr-f3")
 
 			fakeRecorder := record.NewFakeRecorder(20)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).
@@ -592,12 +597,12 @@ var _ = Describe("Issue #614: RO-level DuplicateInProgress Outcome Inheritance",
 			})
 
 			_, err := reconciler.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: "dup-rr-f3", Namespace: "default"},
+				NamespacedName: types.NamespacedName{Name: "dup-rr-f3", Namespace: defaultFixture},
 			})
 			Expect(err).NotTo(HaveOccurred())
 
 			updated := &remediationv1.RemediationRequest{}
-			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-f3", Namespace: "default"}, updated)).To(Succeed())
+			Expect(fakeClient.Get(ctx, types.NamespacedName{Name: "dup-rr-f3", Namespace: defaultFixture}, updated)).To(Succeed())
 
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseCompleted),
 				"Behavior: inheritance must succeed without notification creation")

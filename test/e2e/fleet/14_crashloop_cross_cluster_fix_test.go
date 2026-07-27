@@ -90,11 +90,11 @@ var _ = Describe("E2E-FLEET-014 [AC-3, AC-4, SI-4]: CrashLoop config fix perform
 		}, 4*time.Minute, 2*time.Second).Should(BeTrue(), "crashloop-app should reach CrashLoopBackOff on the remote cluster")
 
 		By("Step 2: Sending synthetic cluster-tagged alert to Gateway (AC-4, no real event-exporter bridge)")
-		payload := buildPrometheusAlertWithCluster("KubePodCrashLooping", namespace, "high",
-			"Deployment", infrastructure.CrashLoopAppName, "remote-cluster")
+		payload := buildPrometheusAlertWithCluster("KubePodCrashLooping", "high",
+			infrastructure.CrashLoopAppName, "remote-cluster")
 
-		gatewayURL := "http://localhost:30080"
-		_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
+		gatewayURL := urlLocalhost30080
+		body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 		var response map[string]interface{}
 		Expect(json.Unmarshal(body, &response)).To(Succeed())

@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/jordigilh/kubernaut/pkg/shared/sizeutil"
 )
 
 // ExtractConfigMapRefs returns a deduplicated, sorted list of ConfigMap names
@@ -209,7 +211,9 @@ func extractEnvValueFromConfigMapNames(container map[string]interface{}, seen ma
 // are serialized as "key=base64(<bytes>)". All keys are sorted before hashing.
 // Returns "sha256:<64-lowercase-hex>" (71 chars total).
 func ConfigMapDataHash(data map[string]string, binaryData map[string][]byte) (string, error) {
-	parts := make([]string, 0, len(data)+len(binaryData))
+	// Issue #1684: sizeutil.SafeCap makes the overflow check on this capacity
+	// hint explicit (see its doc comment for why CodeQL flags raw "a+b").
+	parts := make([]string, 0, sizeutil.SafeCap(len(data), len(binaryData)))
 
 	keys := make([]string, 0, len(data))
 	for k := range data {

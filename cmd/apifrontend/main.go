@@ -138,7 +138,7 @@ type buildAndStartRouterParams struct {
 // only when auth is unconfigured) and rate-limit middlewares, then builds and
 // starts the router and its HTTP servers.
 func buildAndStartRouter(ctx context.Context, p buildAndStartRouterParams) (*routerAndServers, *atomic.Bool, func(), error) {
-	authMiddleware, authReady := buildAuthMiddleware(p.Cfg, p.MetricsReg, p.Auditor, p.Logger)
+	authMiddleware, authReady := buildAuthMiddleware(p.Cfg, p.MetricsReg, p.Auditor, p.Logger) //nolint:contextcheck // buildAuthMiddleware wires the OIDC replay cache once at startup; no parent request context exists yet
 	preAuthMW, postAuthMW := buildRateLimitMiddlewares(p.MetricsReg, p.Auditor, p.IPLimiter, p.UserLimiter)
 
 	return startRouterAndServers(ctx, startRouterParams{
@@ -416,7 +416,7 @@ func buildAuditWiring(ctx context.Context, cfg *config.Config, logger logr.Logge
 		logger.Error(err, "DS audit client creation failed — refusing to start")
 		return nil, cleanup, err
 	}
-	auditStore, err := sharedaudit.NewBufferedStore(dsAuditClient, sharedaudit.DefaultConfig(), "apifrontend", logger)
+	auditStore, err := sharedaudit.NewBufferedStore(dsAuditClient, sharedaudit.DefaultConfig(), "apifrontend", logger) //nolint:contextcheck // background audit writer goroutine is fire-and-forget by design; not tied to any single request
 	if err != nil {
 		logger.Error(err, "failed to create buffered audit store")
 		return nil, cleanup, err

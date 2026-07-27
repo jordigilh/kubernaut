@@ -27,6 +27,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc/config"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	urlGateway8080 = "http://gateway:8080"
+	urlIdpToken    = "https://idp/token"
+)
+
 func TestConfig(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "FMC Config Suite")
@@ -38,7 +44,14 @@ var _ = Describe("FMC ServiceConfig [BR-FLEET-054, ADR-030]", func() {
 			cfg := config.DefaultServiceConfig()
 
 			Expect(cfg.Server.APIAddr).To(Equal(":8080"))
-			Expect(cfg.Server.MetricsAddr).To(Equal(":8081"))
+			Expect(cfg.Server.HealthAddr).To(Equal(":8081"),
+				"Issue #753: dedicated health probe port, distinct from metrics")
+			Expect(cfg.Server.MetricsAddr).To(Equal(":9090"),
+				"Issue #753: 3-port standard moves metrics off :8081 to make room for the health port")
+			Expect(cfg.Server.TLS.Enabled()).To(BeFalse(),
+				"TLS is opt-in via server.tls.certDir; disabled by default (plain HTTP fallback)")
+			Expect(cfg.TLSProfile).To(BeEmpty(),
+				"Issue #748: TLSProfile is OCP-only, operator-managed; empty is a no-op on vanilla K8s")
 			Expect(cfg.MCPGateway.GatewayType).To(Equal("eaigw"))
 			Expect(cfg.MCPGateway.Namespace).To(Equal("kubernaut-system"))
 			Expect(cfg.Valkey.Addr).To(Equal("valkey:6379"))
@@ -64,8 +77,12 @@ var _ = Describe("FMC ServiceConfig [BR-FLEET-054, ADR-030]", func() {
 		It("UT-FMC-CFG-003: parses valid YAML and overrides defaults [ADR-030]", func() {
 			yamlContent := `
 server:
-  apiAddr: ":9090"
+  apiAddr: ":9080"
+  healthAddr: ":9081"
   metricsAddr: ":9091"
+  tls:
+    certDir: "/etc/fleetmetadatacache/tls"
+tlsProfile: "Intermediate"
 mcpGateway:
   endpoint: "http://gateway.svc:8080"
   gatewayType: "kuadrant"
@@ -91,8 +108,12 @@ oauth2:
 
 			cfg, err := config.LoadFromFile(tmpFile)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(cfg.Server.APIAddr).To(Equal(":9090"))
+			Expect(cfg.Server.APIAddr).To(Equal(":9080"))
+			Expect(cfg.Server.HealthAddr).To(Equal(":9081"))
 			Expect(cfg.Server.MetricsAddr).To(Equal(":9091"))
+			Expect(cfg.Server.TLS.CertDir).To(Equal("/etc/fleetmetadatacache/tls"))
+			Expect(cfg.Server.TLS.Enabled()).To(BeTrue())
+			Expect(cfg.TLSProfile).To(Equal("Intermediate"))
 			Expect(cfg.MCPGateway.Endpoint).To(Equal("http://gateway.svc:8080"))
 			Expect(cfg.MCPGateway.GatewayType).To(Equal("kuadrant"))
 			Expect(cfg.MCPGateway.Namespace).To(Equal("fleet-system"))
@@ -120,8 +141,12 @@ oauth2:
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cfg.MCPGateway.Endpoint).To(Equal("http://gw:8080"))
 			Expect(cfg.Server.APIAddr).To(Equal(":8080"), "unset fields keep defaults")
+			Expect(cfg.Server.HealthAddr).To(Equal(":8081"), "unset healthAddr keeps default")
+			Expect(cfg.Server.MetricsAddr).To(Equal(":9090"), "unset metricsAddr keeps default")
+			Expect(cfg.Server.TLS.Enabled()).To(BeFalse(), "unset server.tls keeps TLS disabled")
+			Expect(cfg.TLSProfile).To(BeEmpty(), "unset tlsProfile keeps the no-op default")
 			Expect(cfg.Valkey.Addr).To(Equal("valkey:6379"), "unset fields keep defaults")
-			Expect(cfg.Sync.Interval).To(Equal(30 * time.Second), "unset fields keep defaults")
+			Expect(cfg.Sync.Interval).To(Equal(30*time.Second), "unset fields keep defaults")
 			Expect(cfg.OAuth2.Scopes).To(Equal([]string{"openid", "groups"}), "unset scopes keep defaults")
 			Expect(cfg.OAuth2.TokenTimeout).To(Equal(10*time.Second), "unset tokenTimeout keeps default")
 		})
@@ -145,15 +170,15 @@ oauth2:
 	Describe("Validate", func() {
 		It("UT-FMC-CFG-007: passes with all required fields set [IA-5, SC-8]", func() {
 			cfg := config.DefaultServiceConfig()
-			cfg.MCPGateway.Endpoint = "http://gateway:8080"
-			cfg.OAuth2.TokenURL = "https://idp/token"
+			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.OAuth2.TokenURL = urlIdpToken
 
 			Expect(cfg.Validate()).To(Succeed())
 		})
 
 		It("UT-FMC-CFG-008: fails when mcpGateway.endpoint is empty [SC-7]", func() {
 			cfg := config.DefaultServiceConfig()
-			cfg.OAuth2.TokenURL = "https://idp/token"
+			cfg.OAuth2.TokenURL = urlIdpToken
 
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
@@ -162,8 +187,8 @@ oauth2:
 
 		It("UT-FMC-CFG-009: fails when valkey.addr is empty [SC-7]", func() {
 			cfg := config.DefaultServiceConfig()
-			cfg.MCPGateway.Endpoint = "http://gateway:8080"
-			cfg.OAuth2.TokenURL = "https://idp/token"
+			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.OAuth2.TokenURL = urlIdpToken
 			cfg.Valkey.Addr = ""
 
 			err := cfg.Validate()
@@ -173,12 +198,41 @@ oauth2:
 
 		It("UT-FMC-CFG-010: fails when oauth2.tokenUrl is empty — OAuth2 is mandatory [IA-5, SC-8]", func() {
 			cfg := config.DefaultServiceConfig()
-			cfg.MCPGateway.Endpoint = "http://gateway:8080"
+			cfg.MCPGateway.Endpoint = urlGateway8080
 
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("oauth2.tokenUrl is required"))
 			Expect(err.Error()).To(ContainSubstring("MCP Gateway requires authentication"))
+		})
+
+		It("UT-FMC-CFG-012: fails when mcpGateway.gatewayType is empty [SI-10]", func() {
+			// #1707 follow-up: registry.NewClusterRegistry() rejects an empty
+			// gatewayType at runtime (cmd/fleetmetadatacache/main.go) with a
+			// generic error deep in the startup path. Validate() must catch
+			// this explicitly and early, mirroring GW/RO's
+			// pkg/fleet.FleetConfig.Validate() pattern for MCPGatewayType.
+			cfg := config.DefaultServiceConfig()
+			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.OAuth2.TokenURL = urlIdpToken
+			cfg.MCPGateway.GatewayType = ""
+
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("mcpGateway.gatewayType is required"))
+		})
+
+		It("UT-FMC-CFG-013: fails when mcpGateway.gatewayType is unsupported [SI-10]", func() {
+			cfg := config.DefaultServiceConfig()
+			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.OAuth2.TokenURL = urlIdpToken
+			cfg.MCPGateway.GatewayType = "not-a-real-gateway"
+
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unsupported mcpGateway.gatewayType"))
+			Expect(err.Error()).To(ContainSubstring("eaigw"))
+			Expect(err.Error()).To(ContainSubstring("kuadrant"))
 		})
 	})
 

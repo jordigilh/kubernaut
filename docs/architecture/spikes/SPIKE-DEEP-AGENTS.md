@@ -1,7 +1,7 @@
 # Spike: Deep Agents Library Validation
 
 **Date**: May 23, 2026
-**Status**: COMPLETED
+**Status**: COMPLETED — technique validated; the CRD-level runtime-selection model it targeted is superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536)
 **Duration**: 1 session
 **Relates to**: [PROPOSAL-EXT-006](../proposals/PROPOSAL-EXT-006-deep-agents.md)
 **Code**: [pyagentspec-langgraph/05_deepagents_validation.py](pyagentspec-langgraph/05_deepagents_validation.py)

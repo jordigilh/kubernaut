@@ -1,6 +1,6 @@
 # Spike 3: OCI Image Packaging Contract per Runtime Type
 
-**Status**: Complete  
+**Status**: Complete — ⚠️ SUPERSEDED by [#1536](https://github.com/jordigilh/kubernaut/issues/1536); the runtime-aware contract (goose/oas/deepagent) has been replaced by an opaque-OCI-image model. Retained for historical context.
 **Date**: 2026-05-19  
 **Confidence**: 92%
 

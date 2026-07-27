@@ -80,7 +80,7 @@ Validate that the dry-run mode implementation correctly stops the remediation pi
 
 - **Helm chart values**: Deferred; operators use ConfigMap patches for v1.4
 - **Dry-run notifications**: Deferred to v1.5 (#116)
-- **Non-K8s target skip**: Deferred to Goose milestone
+- **Non-K8s target skip**: Deferred to non-K8s workflow support milestone ([#739](https://github.com/jordigilh/kubernaut/issues/739))
 - **Integration/E2E tests**: Deferred; unit tests provide >=80% coverage. Integration test isolation requires suite changes incompatible with parallel execution.
 - **Config hot-reload**: RO reads config once at startup; hot-reload is a separate issue
 

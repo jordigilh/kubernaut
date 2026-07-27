@@ -92,7 +92,7 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:              name,
-				Namespace:         "default",
+				Namespace:         defaultFixture,
 				CreationTimestamp: metav1.NewTime(time.Now().Add(-analyzingStartedAgo - 5*time.Minute)),
 			},
 			Spec: remediationv1.RemediationRequestSpec{
@@ -104,7 +104,7 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Pod",
 					Name:      "test-pod",
-					Namespace: "default",
+					Namespace: defaultFixture,
 				},
 			},
 			Status: remediationv1.RemediationRequestStatus{
@@ -113,14 +113,14 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 			},
 		}
 		if aiRefName != "" {
-			rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: aiRefName, Namespace: "default"}
+			rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: aiRefName, Namespace: defaultFixture}
 		}
 		return rr
 	}
 
 	aiWithInteractiveSession := func(name string, startedAt *metav1.Time, completedAt *metav1.Time) *aianalysisv1.AIAnalysis {
 		ai := &aianalysisv1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: defaultFixture},
 			Status: aianalysisv1.AIAnalysisStatus{
 				Phase: "Investigating",
 			},
@@ -247,7 +247,7 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:              "rr-processing-timeout",
-					Namespace:         "default",
+					Namespace:         defaultFixture,
 					CreationTimestamp: metav1.NewTime(time.Now().Add(-20 * time.Minute)),
 				},
 				Spec: remediationv1.RemediationRequestSpec{
@@ -259,13 +259,13 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Pod",
 						Name:      "test-pod",
-						Namespace: "default",
+						Namespace: defaultFixture,
 					},
 				},
 				Status: remediationv1.RemediationRequestStatus{
 					OverallPhase:        remediationv1.PhaseProcessing,
 					ProcessingStartTime: &processingStart,
-					AIAnalysisRef:       &corev1.ObjectReference{Name: ai.Name, Namespace: "default"},
+					AIAnalysisRef:       &corev1.ObjectReference{Name: ai.Name, Namespace: defaultFixture},
 				},
 			}
 

@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	prometheus "github.com/prometheus/client_golang/prometheus"
@@ -52,21 +54,24 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 		m = rometrics.NewMetricsWithRegistry(prometheus.NewRegistry())
 	})
 
-	minimalAI := func(workflowID string, confidence float64) *aianalysisv1.AIAnalysis {
+	minimalAI := func() *aianalysisv1.AIAnalysis {
 		return &aianalysisv1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{Name: "ai-test", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "ai-test", Namespace: defaultFixture},
 			Status: aianalysisv1.AIAnalysisStatus{
 				Phase: "Completed",
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID: workflowID,
-					ActionType: "patch",
-					Confidence: confidence,
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:   "wf-restart",
+						WorkflowName: "wf-restart",
+						ActionType:   "patch",
+					},
+					Confidence: 0.95,
 				},
 				RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
 					RemediationTarget: &aianalysisv1.RemediationTarget{
 						Kind:      "Deployment",
 						Name:      "my-app",
-						Namespace: "default",
+						Namespace: defaultFixture,
 					},
 				},
 			},
@@ -79,14 +84,13 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 			CreateWFE: func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
 				return "wfe-test", nil
 			},
-			ResolveWorkflowDisplay: func(_ context.Context, workflowID string) (string, string) { return "", workflowID },
 		}
 	}
 
 	It("UT-WEC-001: WFE created successfully → Advance to Executing", func() {
-		rr := newRemediationRequest("wec-001", "default", remediationv1.PhaseAnalyzing)
-		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: "default"}
-		ai := minimalAI("wf-restart", 0.95)
+		rr := newRemediationRequest("wec-001", defaultFixture, remediationv1.PhaseAnalyzing)
+		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: defaultFixture}
+		ai := minimalAI()
 
 		c := fake.NewClientBuilder().WithScheme(scheme).
 			WithObjects(rr).
@@ -107,9 +111,9 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 	})
 
 	It("UT-WEC-002: WFE creation fails → RequeueAfter", func() {
-		rr := newRemediationRequest("wec-002", "default", remediationv1.PhaseAnalyzing)
-		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: "default"}
-		ai := minimalAI("wf-restart", 0.95)
+		rr := newRemediationRequest("wec-002", defaultFixture, remediationv1.PhaseAnalyzing)
+		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: defaultFixture}
+		ai := minimalAI()
 
 		c := fake.NewClientBuilder().WithScheme(scheme).
 			WithObjects(rr).
@@ -128,9 +132,9 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 	})
 
 	It("UT-WEC-003: Status update fails → RequeueAfter", func() {
-		rr := newRemediationRequest("wec-003", "default", remediationv1.PhaseAnalyzing)
-		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: "default"}
-		ai := minimalAI("wf-restart", 0.95)
+		rr := newRemediationRequest("wec-003", defaultFixture, remediationv1.PhaseAnalyzing)
+		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: defaultFixture}
+		ai := minimalAI()
 
 		// Use a client without the RR object so status update will fail
 		c := fake.NewClientBuilder().WithScheme(scheme).Build()
@@ -143,9 +147,9 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 	})
 
 	It("UT-WEC-004: sets WorkflowExecutionRef and SelectedWorkflowRef in status", func() {
-		rr := newRemediationRequest("wec-004", "default", remediationv1.PhaseAnalyzing)
-		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: "default"}
-		ai := minimalAI("wf-restart", 0.95)
+		rr := newRemediationRequest("wec-004", defaultFixture, remediationv1.PhaseAnalyzing)
+		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: defaultFixture}
+		ai := minimalAI()
 
 		c := fake.NewClientBuilder().WithScheme(scheme).
 			WithObjects(rr).
@@ -156,9 +160,6 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 		cbs.CreateWFE = func(_ context.Context, _ *remediationv1.RemediationRequest, _ *aianalysisv1.AIAnalysis) (string, error) {
 			return "wfe-created", nil
 		}
-		cbs.ResolveWorkflowDisplay = func(_ context.Context, workflowID string) (string, string) {
-			return "TestAction", "Human-Friendly-" + workflowID
-		}
 
 		_, err := prodcontroller.CreateWFEAndTransition(ctx, c, m, rr, ai, "hash456", cbs)
 		Expect(err).ToNot(HaveOccurred())
@@ -168,12 +169,16 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 		Expect(c.Get(ctx, client.ObjectKeyFromObject(rr), updated)).To(Succeed())
 		Expect(updated.Status.WorkflowExecutionRef).To(HaveField("Name", Equal("wfe-created")))
 		Expect(updated.Status.SelectedWorkflowRef).To(HaveField("WorkflowID", Equal("wf-restart")))
+		// Issue #1677 Phase 1: WorkflowDisplayName comes directly from
+		// ai.Status.SelectedWorkflow.ActionType/.WorkflowName (set by minimalAI()
+		// to "patch"/"wf-restart") -- no live resolver involved.
+		Expect(updated.Status.WorkflowDisplayName).To(Equal("patch:wf-restart"))
 	})
 
 	It("UT-WEC-005: increments ChildCRDCreationsTotal metric", func() {
-		rr := newRemediationRequest("wec-005", "default", remediationv1.PhaseAnalyzing)
-		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: "default"}
-		ai := minimalAI("wf-restart", 0.95)
+		rr := newRemediationRequest("wec-005", defaultFixture, remediationv1.PhaseAnalyzing)
+		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: defaultFixture}
+		ai := minimalAI()
 
 		c := fake.NewClientBuilder().WithScheme(scheme).
 			WithObjects(rr).
@@ -206,10 +211,10 @@ var _ = Describe("Issue #666: WFE Creation Helper (TP-666-v1 §8.3)", func() {
 	})
 
 	It("UT-WEC-006: handles nil SelectedWorkflow gracefully", func() {
-		rr := newRemediationRequest("wec-006", "default", remediationv1.PhaseAnalyzing)
-		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: "default"}
+		rr := newRemediationRequest("wec-006", defaultFixture, remediationv1.PhaseAnalyzing)
+		rr.Status.AIAnalysisRef = &corev1.ObjectReference{Name: "ai-test", Namespace: defaultFixture}
 		ai := &aianalysisv1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{Name: "ai-test", Namespace: "default"},
+			ObjectMeta: metav1.ObjectMeta{Name: "ai-test", Namespace: defaultFixture},
 			Status: aianalysisv1.AIAnalysisStatus{
 				Phase: "Completed",
 			},

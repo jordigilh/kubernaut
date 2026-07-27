@@ -128,10 +128,13 @@ var _ = Describe("LeaseSessionManager deep IT — BR-INTERACTIVE-005", Label("in
 	})
 
 	Describe("IT-KA-LSM-005: GetDriver returns nil for unknown rrID", func() {
-		It("should return nil session when no driver holds the rrID", func() {
+		It("should return ErrSessionNotFound when no driver holds the rrID", func() {
+			// Issue #1674: GetDriver now signals "no session" via the
+			// ErrSessionNotFound sentinel instead of the ambiguous (nil, nil)
+			// return.
 			mgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			sess, err := mgr.GetDriver("rr-nobody")
-			Expect(err).NotTo(HaveOccurred())
+			Expect(err).To(MatchError(mcpinternal.ErrSessionNotFound))
 			Expect(sess).To(BeNil())
 		})
 	})

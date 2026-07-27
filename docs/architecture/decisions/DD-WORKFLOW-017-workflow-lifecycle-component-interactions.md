@@ -8,13 +8,52 @@
 **Affects**: Data Storage Service, AuthWebhook Service, HolmesGPT API, Remediation Orchestrator, Signal Processing, Workflow Execution
 **Related**: DD-WORKFLOW-016 (Action-Type Indexing), DD-WORKFLOW-012 (Immutability Constraints), DD-STORAGE-008 (Catalog Schema), DD-WORKFLOW-001 v2.6 (Label Schema), DD-AUDIT-003 (Audit Trace), ADR-058 (Webhook-Driven Registration), BR-WORKFLOW-006 (RemediationWorkflow CRD), DD-WEBHOOK-001 (Webhook Matrix), DD-004 (RFC 7807 Error Responses)
 **Supersedes**: DD-WORKFLOW-005 (Schema Extraction), DD-WORKFLOW-007 (Manual Registration)
-**Version**: 1.2
+**Version**: 1.4
 
 ---
 
 ## Changelog
 
-### Version 1.2 (2026-03-04) -- CURRENT
+### Version 1.4 (2026-07-22) -- CURRENT
+
+- **Phase 3 (Execution)**: Issue #1661 Change 11f completes the Change 8 migration below. Change 8 made
+  `WorkflowExecution.Spec.WorkflowRef` the copy destination for the CRD-embedded snapshot, but several downstream
+  consumers (the three executors, the audit manager, the RO completion-notification path, and a defensive
+  `resolveWorkflowCatalog` reconcile step) still read/mirrored the values through `wfe.Status.ExecutionEngine` /
+  `.ServiceAccountName` / `.Resources` for historical reasons. `ActionType` was never wired into either location and
+  was consequently omitted from the `workflowexecution.execution.started` audit event (a known gap flagged by the
+  `IT-WE-1661-002` test). Change 11f: (1) adds `ActionType` to `WorkflowRef` and has RO's `buildWorkflowRef` copy it
+  from `AIAnalysis.Status.SelectedWorkflow.ActionType` alongside the other five fields -- it is already known before
+  the WFE CRD exists, sourced from the AIAnalysis CRD's status, so no WE-side resolution is possible or necessary;
+  (2) removes `ExecutionEngine`/`ServiceAccountName`/`Resources`/`ActionType` from `WorkflowExecutionStatus` entirely,
+  along with the `resolveWorkflowCatalog` mirroring step; (3) repoints every remaining read site (executors, audit
+  manager, RO notification path) directly at `wfe.Spec.WorkflowRef.*`. `WorkflowName` remains intentionally absent
+  from `WorkflowRef` (see Change 8's SOC2 CC8.1 rationale) and continues to be omitted from audit events.
+
+### Version 1.3 (2026-07-14)
+
+- **Storage architecture revised by [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md)**: etcd
+  (via the `RemediationWorkflow`/`ActionType` CRDs) is now the sole source of truth for catalog definitions. The
+  "Dual Storage Model" framing in this document's Phase 1/4 sections and the DS-Level validation rules referencing
+  `action_type_taxonomy`/`remediation_workflow_catalog` as PostgreSQL tables are **revised** — see the inline notes
+  added to those sections. DD-WORKFLOW-018 is authoritative for the storage model; this document remains
+  authoritative for the Phase 2 (Discovery) and Phase 3 (Execution) component-interaction detail, which are
+  materially unaffected by the storage-backend swap (the three-step discovery protocol and its endpoints are
+  unchanged — only *where* DS reads the data from changed, from PostgreSQL SQL to an in-memory cache over etcd).
+- **Phase 3 (Execution)**: Issue #1661 Change 8 reverses this document's Issue #518 decision to resolve
+  `executionEngine`/`serviceAccountName` at WE runtime via a live `WorkflowQuerier` call to DS. Rationale: a
+  `WorkflowExecution` created against a `workflow_id` that is later superseded or deleted has no guaranteed way to
+  resolve that live lookup at execution time, which can occur arbitrarily later than selection, across the
+  `RemediationApprovalRequest` human-approval gate. The full execution snapshot (`executionEngine`,
+  `serviceAccountName`, dependencies, declared parameter names) is now captured once in
+  `AIAnalysis.Status.SelectedWorkflow` by KA at selection time, and copied into `WorkflowExecution.Spec.WorkflowRef`
+  by RO at WFE-creation time. Issue #518/#650's "no silent default" property is preserved — RO's
+  `validateSelectedWorkflow` fail-closed check now runs at CRD-creation time instead of WE-runtime, failing before
+  any child CRD exists at all. WE's `WorkflowQuerier`/DS dependency is removed entirely; WE executes purely from its
+  own spec with zero live calls to DS, the audit trail, or etcd. See DD-WORKFLOW-018 Change 8 for the full design
+  and rationale (including the rejected DS-side audit-fallback alternative).
+
+### Version 1.2 (2026-03-04)
 
 - **Phase 3 (Execution)**: Updated for Issue #518 -- `executionEngine` removed from WFE spec. WE controller resolves engine at runtime from DS catalog via `WorkflowQuerier.GetWorkflowSchemaMetadata` (F6: consolidated single DS call) and persists in `wfe.Status.ExecutionEngine` (immutable once set). RO no longer sets engine on WFE; notification path reads engine from WFE status. No silent "tekton" default -- WFE fails explicitly if DS has no engine.
 
@@ -66,17 +105,27 @@ Each phase specifies the components involved, the API calls between them, the va
 
 ## Scope
 
+> **Storage model revised by [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) (v1.3, July 2026)**:
+> "AuthWebhook bridges CRD lifecycle to DS catalog (internal `POST /api/v1/workflows`)" below, and the "Full
+> reconciliation controller for CRD-DS state drift" out-of-scope item, describe the **pre-#1661** architecture.
+> DD-WORKFLOW-018 removes the DS bridge call and the mutable PostgreSQL catalog it wrote to entirely — there is no
+> longer a second store to reconcile against. See DD-WORKFLOW-018 for the current storage architecture; the
+> Discovery (Phase 2) and Execution (Phase 3, partially) interaction detail below remains materially accurate.
+
 **V1.0**. This document describes the current implementation scope:
 
 - CRD-based workflow registration via `RemediationWorkflow` CRD (BR-WORKFLOW-006, ADR-058)
-- AuthWebhook bridges CRD lifecycle to DS catalog (internal `POST /api/v1/workflows`)
+- AuthWebhook bridges CRD lifecycle to DS catalog (internal `POST /api/v1/workflows`) — **pre-#1661**; see
+  DD-WORKFLOW-018 Change 5 (AW now validates/patches `.status` locally, zero DS calls)
 - `action_type`-based catalog indexing (DD-WORKFLOW-016)
 - Three-step LLM discovery protocol
-- Disable via CRD DELETE or REST API PATCH
-- Enable via REST API PATCH
+- Disable via CRD DELETE or REST API PATCH — **pre-#1661**; see DD-WORKFLOW-018 Change 7 (DELETE is a true etcd
+  deletion with no DS-side disable call; the REST API PATCH endpoints are removed by DD-WORKFLOW-018 Change 6)
+- Enable via REST API PATCH — **pre-#1661**; removed by DD-WORKFLOW-018 Change 6
 
 **Out of scope** (deferred to future versions):
-- Full reconciliation controller for CRD-DS state drift (V1.1)
+- Full reconciliation controller for CRD-DS state drift (V1.1) — **resolved by DD-WORKFLOW-018**, not deferred:
+  there is no longer a second mutable store for CRD state to drift against
 - CLI registration tool (V1.2)
 - Image signing and verification (V1.2)
 - Workflow versioning and rollback UI (V1.2)
@@ -193,6 +242,17 @@ The AW marshals the full CRD spec to JSON and passes it as the `content` field t
 
 ### Validation Rules
 
+> **Revised by [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) Change 5/6**: the table below
+> describes the **pre-#1661** architecture, where DS validated inline content forwarded by AW over HTTP. As of
+> DD-WORKFLOW-018, validation #2 (`action_type` existence) runs **locally in AW** against etcd (a `.spec.name` field
+> indexer over `ActionType` CRDs), not against a PostgreSQL `action_type_taxonomy` table via a DS round-trip.
+> Validations #1, #3, #5, #6 (schema/label/description/parameter shape) are enforced by the CRD's own
+> `kubebuilder` OpenAPI schema at the Kubernetes API server level (strengthened further by DD-WORKFLOW-018 Change
+> 10's `Pattern` hardening), before AW's admission webhook is even invoked. Validation #4 (uniqueness/re-enable) is
+> performed by AW directly against its own etcd-backed client (content-integrity/version-conflict check,
+> DD-WORKFLOW-018 Change 5), not a PostgreSQL `UNIQUE` constraint. DS no longer participates in admission-time
+> validation at all.
+
 DS validates the inline content from the AW. All error responses are surfaced to the operator as admission denial messages:
 
 | # | Validation | Authority | Admission Result |
@@ -218,7 +278,11 @@ After admission succeeds, the AW spawns a goroutine that updates the CRD `.statu
 | `status.registeredAt` | Current timestamp |
 | `status.previouslyExisted` | `true` if re-enabled from disabled |
 
-**Trade-off**: There is a brief window where the CRD exists but `.status` is empty. The DS catalog is the source of truth; CRD status is informational. See ADR-058 for the full rationale.
+**Trade-off (pre-#1661)**: There is a brief window where the CRD exists but `.status` is empty. The DS catalog is
+the source of truth; CRD status is informational. See ADR-058 for the full rationale. **Revised by
+DD-WORKFLOW-018**: the status patch is now applied synchronously by AW as part of the same admission decision
+(no goroutine, no DS response to wait on), since there is no DS round-trip left to spawn it after. Etcd is the
+source of truth, and `.status` is populated from the same local decision that admits the CRD.
 
 ### Audit Traces
 
@@ -355,7 +419,7 @@ Discovery generates audit traces at the DS data layer for each step:
 
 ### Overview
 
-After HAPI validates the LLM's selection, the AIAnalysis CR status is updated with the selected workflow and parameters. The Remediation Orchestrator (RO) -- which owns the end-to-end remediation lifecycle -- detects this status change and creates a WorkflowExecution CRD. The Workflow Execution (WE) controller -- a pure executor with no routing logic -- reconciles the CRD, resolves the execution engine from the DS workflow catalog at runtime (Issue #518), persists it in `wfe.Status.ExecutionEngine`, and creates the appropriate execution primitive (Tekton PipelineRun, Kubernetes Job, or Ansible AWX job).
+After HAPI validates the LLM's selection, the AIAnalysis CR status is updated with the selected workflow and parameters. The Remediation Orchestrator (RO) -- which owns the end-to-end remediation lifecycle -- detects this status change and creates a WorkflowExecution CRD, copying the full execution snapshot (`executionEngine`, `serviceAccountName`, `actionType`, `resources`, plus the identifying `workflowId`/`version`/`executionBundle`) verbatim from `AIAnalysis.Status.SelectedWorkflow` into `WorkflowExecution.Spec.WorkflowRef` (Issue #1661 Changes 8 and 11f -- superseding the Issue #518 design below the fold). The Workflow Execution (WE) controller -- a pure executor with no routing logic and zero live calls to DS -- reconciles the CRD purely from its own spec and creates the appropriate execution primitive (Tekton PipelineRun, Kubernetes Job, or Ansible AWX job).
 
 ### Component Flow
 
@@ -366,25 +430,23 @@ sequenceDiagram
     participant WE as WorkflowExecution
     participant K8s as Kubernetes
 
-    HAPI->>RO: AIAnalysis CR status updated with workflow_id + parameters
-    Note right of HAPI: RO watches AIAnalysis status changes
+    HAPI->>RO: AIAnalysis CR status updated with SelectedWorkflow snapshot
+    Note right of HAPI: RO watches AIAnalysis status changes.<br/>Snapshot includes workflowId, version, executionBundle,<br/>executionEngine, serviceAccountName, actionType, resources.
 
     RO->>RO: Check cooldown period (no duplicate execution)
     RO->>RO: Routing decisions (blocking, resource busy, etc.)
+    RO->>RO: validateSelectedWorkflow (fail-closed if engine/etc. missing)
     RO->>K8s: Create WorkflowExecution CRD
-    Note right of RO: Includes workflow_id, parameters,<br/>targetResource (no executionEngine — Issue #518)
+    Note right of RO: Spec.WorkflowRef carries the full snapshot verbatim<br/>(Issue #1661 Changes 8/11f) — no WE-side resolution needed.
 
     WE->>K8s: Reconcile WorkflowExecution CRD
-    WE->>DS: Resolve executionEngine from catalog (WorkflowQuerier)
-    DS-->>WE: engine ("tekton", "job", or "ansible")
-    WE->>WE: Persist engine in wfe.Status.ExecutionEngine (immutable)
-    WE->>WE: Select executor via ExecutorRegistry (Strategy pattern)
+    WE->>WE: Select executor via ExecutorRegistry (Strategy pattern),<br/>keyed on Spec.WorkflowRef.ExecutionEngine
 
-    alt status.executionEngine = "tekton"
+    alt spec.workflowRef.executionEngine = "tekton"
         WE->>K8s: Create Tekton PipelineRun from OCI bundle
-    else status.executionEngine = "job"
+    else spec.workflowRef.executionEngine = "job"
         WE->>K8s: Create Kubernetes Job
-    else status.executionEngine = "ansible"
+    else spec.workflowRef.executionEngine = "ansible"
         WE->>K8s: Launch AWX Job Template via REST API
     end
 
@@ -397,22 +459,27 @@ sequenceDiagram
 
 ### Execution Context
 
-The WorkflowExecution CRD spec includes:
+The WorkflowExecution CRD's `Spec.WorkflowRef` carries the immutable, CRD-embedded execution snapshot -- copied verbatim by the RO creator from `AIAnalysis.Status.SelectedWorkflow` at WFE-creation time (Issue #1661 Changes 8/11f):
+
+| `WorkflowRef` Field | Source | Description |
+|-------|--------|-------------|
+| `workflowId` | LLM selection (validated by HAPI) | ID of the workflow to execute |
+| `version` | `AIAnalysis.Status.SelectedWorkflow` | Workflow catalog version |
+| `executionBundle` | `AIAnalysis.Status.SelectedWorkflow` | OCI bundle reference (digest-pinned) |
+| `executionEngine` | `AIAnalysis.Status.SelectedWorkflow` | `"tekton"`, `"job"`, or `"ansible"` |
+| `serviceAccountName` | `AIAnalysis.Status.SelectedWorkflow` | Execution ServiceAccount for the Job/PipelineRun/AWX credential |
+| `actionType` | `AIAnalysis.Status.SelectedWorkflow` | Action taxonomy label, surfaced on audit events |
+| `resources` | `AIAnalysis.Status.SelectedWorkflow` | Catalog-declared container resource requests/limits (DD-WE-008) |
+
+Other WFE spec fields outside `WorkflowRef`:
 
 | Field | Source | Description |
 |-------|--------|-------------|
-| `workflowId` | LLM selection (validated by HAPI) | UUID of the workflow to execute |
 | `parameters` | LLM-populated (validated by HAPI) | Workflow parameters as key-value pairs |
 | `targetResource` | Signal context | Kubernetes resource to remediate |
 | `signalFingerprint` | SP | Unique identifier for the triggering signal |
 
-The WE controller resolves execution context at runtime and persists it in status:
-
-| Status Field | Source | Description |
-|-------|--------|-------------|
-| `executionEngine` | Resolved from DS workflow catalog by WE controller | `"tekton"`, `"job"`, or `"ansible"` (Issue #518) |
-
-**Note**: `executionEngine` is **not** on the WFE spec. The WE controller resolves it from the DS workflow catalog at runtime using `WorkflowQuerier.GetWorkflowSchemaMetadata(workflowId)` (F6: all catalog artifacts in a single DS call) and persists it in `wfe.Status.ExecutionEngine` (immutable once set). If the catalog entry has no engine defined, the WFE fails explicitly with `ConfigurationError` -- there is no silent default. WE uses the `ExecutorRegistry` (Strategy pattern) to select the correct executor based on the resolved engine.
+**Note**: none of the seven `WorkflowRef` fields above are resolved or mirrored by the WE controller at runtime -- there is no DS catalog round-trip, no `WorkflowQuerier`, and no corresponding `WorkflowExecutionStatus` field. `AIAnalysis`/RO's `validateSelectedWorkflow` is the sole fail-closed gate (at CRD-creation time, before any WFE exists); if the catalog entry has no engine defined, RO never creates the WFE at all -- there is no silent default and no possibility of a WE-side resolution failure. WE uses the `ExecutorRegistry` (Strategy pattern) to select the correct executor directly from `Spec.WorkflowRef.ExecutionEngine`. `WorkflowName` is deliberately *not* part of `WorkflowRef` (see Change 8's SOC2 CC8.1 rationale in the changelog above) -- `workflowId` joined against the immutable `workflow_content` audit ledger entry satisfies reconstruction requirements without it.
 
 ### Audit Traces
 
@@ -429,6 +496,16 @@ Execution generates audit traces across RO and WE:
 ---
 
 ## Phase 4: Operational Management
+
+> **Revised by [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) Change 6/7**: this entire phase
+> describes the **pre-#1661** architecture. DD-WORKFLOW-018 removes the `PATCH /api/v1/workflows/{id}/disable`,
+> `/enable`, and `/deprecate` REST endpoints entirely — there is no PostgreSQL row left for them to mutate. CRD
+> DELETE (Option A below) remains the only lifecycle-management path, and is now a **true etcd deletion** with no
+> corresponding DS-side disable call: AW's only remaining responsibility is emitting the audit event recording who
+> deleted the workflow and when (see DD-WORKFLOW-018's Deletion Semantics section for the full rationale on why
+> this has no impact on in-flight or historical remediations). Re-registering the same content re-creates the CRD
+> deterministically (same `workflow_id`, DD-WORKFLOW-018 Change 4) — there is no `previouslyExisted`/re-enable
+> concept to preserve, since there is no disabled-but-retained row anymore.
 
 ### 4.1 Disable Workflow
 
@@ -668,10 +745,11 @@ This DD consolidates the workflow lifecycle but does **not** supersede the follo
 | **DD-WORKFLOW-012** | Immutability constraints (mutable vs immutable fields) | Phase 1 (validation), Phase 4 (status transitions) |
 | **DD-WORKFLOW-016** | Action-type indexing, three-step discovery protocol, SQL queries, pagination | Phase 2 (discovery) |
 | **DD-WORKFLOW-001 v2.6** | Mandatory label schema (6 labels including `action_type`) | Phase 1 (validation) |
-| **DD-STORAGE-008** | Database schema (`remediation_workflow_catalog` table) | Phase 1 (INSERT), Phase 4 (UPDATE) |
+| **DD-STORAGE-008** | Database schema (`remediation_workflow_catalog` table) — **superseded by DD-WORKFLOW-018**, table removed | Phase 1 (INSERT), Phase 4 (UPDATE), pre-#1661 |
 | **DD-AUDIT-003** | Audit trace event types and requirements | Phase 1, 3, 4 (audit traces) |
-| **DD-004** | RFC 7807 error response standard, error type URI convention | Phase 4 (transition errors) |
+| **DD-004** | RFC 7807 error response standard, error type URI convention | Phase 4 (transition errors), pre-#1661 (endpoints removed) |
 | **ADR-043** | Workflow schema definition standard (`/workflow-schema.yaml`) | Phase 1 (schema format) |
+| **[DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md)** | Storage architecture: etcd as sole source of truth, AW/DS decoupling, CRD-embedded execution snapshot | Phase 1 (creation/validation), Phase 3 (execution metadata), Phase 4 (lifecycle management) |
 
 This DD **supersedes**:
 
@@ -777,16 +855,18 @@ flowchart TD
 
 ---
 
-**Document Version**: 1.2
-**Last Updated**: March 4, 2026
-**Status**: Approved
-**Authority**: AUTHORITATIVE - Governs workflow lifecycle component interactions (V1.0)
+**Document Version**: 1.3
+**Last Updated**: July 14, 2026
+**Status**: Approved (storage model superseded in part — see [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md))
+**Authority**: AUTHORITATIVE - Governs workflow lifecycle component interactions (V1.0); DD-WORKFLOW-018 is authoritative for the storage architecture specifically
 **Confidence**: 95%
 
 **Confidence Gap (5%)**:
-- CRD-DS state drift (~2%): No reconciliation controller in V1.0. If DS and CRD state diverge, manual intervention is required. Mitigated by the fact that CRD CREATE/DELETE is the only registration path.
-- Execution flow detail (~1%): RO and WE component interactions are described at summary level. Detailed execution protocol is governed by existing WE and RO design documents.
-- Deprecation API (~1%): PATCH endpoint for deprecation is defined but not yet implemented. Disable/enable is the V1.0 priority.
-- Goroutine status update (~1%): Async status update may fail, leaving CRD `.status` empty. DS catalog is source of truth. See ADR-058.
+- ~~CRD-DS state drift (~2%): No reconciliation controller in V1.0...~~ **Resolved by DD-WORKFLOW-018**: there is no
+  longer a second mutable store for CRD state to drift against.
+- Execution flow detail (~1%): RO and WE component interactions are described at summary level. Detailed execution protocol is governed by existing WE and RO design documents, plus DD-WORKFLOW-018 Change 8 for the CRD-embedded execution snapshot.
+- Deprecation API (~1%): PATCH endpoint for deprecation is defined but not yet implemented, and is now moot — DD-WORKFLOW-018 removes the lifecycle-management REST endpoints entirely. CRD DELETE is the sole lifecycle-management path.
+- ~~Goroutine status update (~1%): Async status update may fail...~~ **Resolved by DD-WORKFLOW-018**: `.status` is
+  patched synchronously as part of AW's local admission decision; there is no goroutine or DS round-trip to fail.
 
 **Next Review**: After V1.0 deployment validates the end-to-end CRD registration flow

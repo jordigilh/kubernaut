@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -98,7 +98,7 @@ func (h *handler) handleOllama(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, response.BuildOllamaResponse(model, cfg))
-	h.recordRequestMetric(r.URL.Path, http.StatusOK, scenarioName, time.Since(start).Seconds())
+	h.recordRequestMetric(r.URL.Path, scenarioName, time.Since(start).Seconds())
 }
 
 // handler holds dependencies for all HTTP handlers.
@@ -112,9 +112,12 @@ type handler struct {
 	metrics        *mockmetrics.Metrics
 }
 
-func (h *handler) recordRequestMetric(endpoint string, statusCode int, scenario string, duration float64) {
+// recordRequestMetric records a successful (HTTP 200) mock LLM response.
+// All call sites are on the success path immediately after writeJSON(w, http.StatusOK, ...);
+// error paths do not record this metric.
+func (h *handler) recordRequestMetric(endpoint string, scenario string, duration float64) {
 	if h.metrics != nil {
-		h.metrics.RecordRequest(endpoint, statusCode, scenario, duration)
+		h.metrics.RecordRequest(endpoint, http.StatusOK, scenario, duration)
 	}
 }
 

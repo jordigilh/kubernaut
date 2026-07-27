@@ -30,8 +30,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/security/boundary"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("GAP-2: InvestigatorWrapper inner error skips verdict — BR-AI-601", func() {
@@ -207,7 +207,7 @@ var _ = Describe("GAP-9: ContainsEscape + Wrap round-trip — BR-AI-601", func()
 
 	Describe("UT-GAP9-001: Wrap then ContainsEscape round-trip", func() {
 		It("should detect the closing marker in wrapped content", func() {
-			token := "abc123deadbeef4567890abcdef01234"
+			token := hashAbc123deadbeef4567890abcdef01234
 			content := "some tool output"
 			wrapped := boundary.Wrap(content, token)
 			Expect(wrapped).To(ContainSubstring("<<<EVAL_" + token + ">>>"))
@@ -219,7 +219,7 @@ var _ = Describe("GAP-9: ContainsEscape + Wrap round-trip — BR-AI-601", func()
 
 	Describe("UT-GAP9-002: ContainsEscape on benign content returns false", func() {
 		It("should not detect escape in content without boundary markers", func() {
-			token := "abc123deadbeef4567890abcdef01234"
+			token := hashAbc123deadbeef4567890abcdef01234
 			Expect(boundary.ContainsEscape("normal tool output", token)).To(BeFalse())
 		})
 	})
@@ -599,9 +599,9 @@ var _ = Describe("Grounding review through InvestigatorWrapper — #1096 wrapper
 				Message: llm.Message{Role: "assistant", Content: `{"suspicious":false,"grounded":false,"explanation":"reasoning drift detected"}`},
 			}
 			client := &concurrentMockLLMClient{responses: []llm.ChatResponse{
-				suspiciousResponse(),  // canary → pass
-				dualCleanUngrounded,   // signal step OR grounding (concurrent — dual-valid response)
-				dualCleanUngrounded,   // signal step OR grounding (concurrent — dual-valid response)
+				suspiciousResponse(), // canary → pass
+				dualCleanUngrounded,  // signal step OR grounding (concurrent — dual-valid response)
+				dualCleanUngrounded,  // signal step OR grounding (concurrent — dual-valid response)
 			}}
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 500, MaxRetries: 1,
@@ -649,9 +649,9 @@ var _ = Describe("Grounding review through InvestigatorWrapper — #1096 wrapper
 				Message: llm.Message{Role: "assistant", Content: `{"suspicious":false,"grounded":false,"explanation":"reasoning drift"}`},
 			}
 			client := &concurrentMockLLMClient{responses: []llm.ChatResponse{
-				suspiciousResponse(),  // canary → pass
-				dualCleanUngrounded,   // signal step OR grounding (concurrent — dual-valid response)
-				dualCleanUngrounded,   // signal step OR grounding (concurrent — dual-valid response)
+				suspiciousResponse(), // canary → pass
+				dualCleanUngrounded,  // signal step OR grounding (concurrent — dual-valid response)
+				dualCleanUngrounded,  // signal step OR grounding (concurrent — dual-valid response)
 			}}
 			evaluator := alignment.NewEvaluator(client, alignment.EvaluatorConfig{
 				Timeout: 5 * time.Second, MaxStepTokens: 500, MaxRetries: 1,

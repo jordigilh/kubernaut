@@ -27,6 +27,11 @@ import (
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	lit1000112345 = "10.0.0.1:12345"
+)
+
 var _ = Describe("Rate Limiter — #823 Hardening", func() {
 
 	Describe("UT-KA-823-RL01: Requests within burst are allowed", func() {
@@ -46,7 +51,7 @@ var _ = Describe("Rate Limiter — #823 Hardening", func() {
 
 			for i := 0; i < 5; i++ {
 				req := httptest.NewRequest("GET", "/api/v1/incident/analyze", nil)
-				req.RemoteAddr = "10.0.0.1:12345"
+				req.RemoteAddr = lit1000112345
 				rec := httptest.NewRecorder()
 				handler.ServeHTTP(rec, req)
 				Expect(rec.Code).To(Equal(http.StatusOK), "request %d should be allowed", i+1)
@@ -71,14 +76,14 @@ var _ = Describe("Rate Limiter — #823 Hardening", func() {
 
 			for i := 0; i < 2; i++ {
 				req := httptest.NewRequest("GET", "/stream", nil)
-				req.RemoteAddr = "10.0.0.1:12345"
+				req.RemoteAddr = lit1000112345
 				rec := httptest.NewRecorder()
 				handler.ServeHTTP(rec, req)
 				Expect(rec.Code).To(Equal(http.StatusOK))
 			}
 
 			req := httptest.NewRequest("GET", "/stream", nil)
-			req.RemoteAddr = "10.0.0.1:12345"
+			req.RemoteAddr = lit1000112345
 			rec := httptest.NewRecorder()
 			handler.ServeHTTP(rec, req)
 			Expect(rec.Code).To(Equal(http.StatusTooManyRequests))
@@ -101,7 +106,7 @@ var _ = Describe("Rate Limiter — #823 Hardening", func() {
 			}))
 
 			req1 := httptest.NewRequest("GET", "/", nil)
-			req1.RemoteAddr = "10.0.0.1:12345"
+			req1.RemoteAddr = lit1000112345
 			rec1 := httptest.NewRecorder()
 			handler.ServeHTTP(rec1, req1)
 			Expect(rec1.Code).To(Equal(http.StatusOK))
@@ -113,7 +118,7 @@ var _ = Describe("Rate Limiter — #823 Hardening", func() {
 			Expect(rec2.Code).To(Equal(http.StatusOK))
 
 			req3 := httptest.NewRequest("GET", "/", nil)
-			req3.RemoteAddr = "10.0.0.1:12345"
+			req3.RemoteAddr = lit1000112345
 			rec3 := httptest.NewRecorder()
 			handler.ServeHTTP(rec3, req3)
 			Expect(rec3.Code).To(Equal(http.StatusTooManyRequests), "second request from same IP should be rate limited")
@@ -169,14 +174,14 @@ var _ = Describe("Rate Limiter — #823 Hardening", func() {
 			}))
 
 			req1 := httptest.NewRequest("GET", "/", nil)
-			req1.RemoteAddr = "10.0.0.1:12345"
+			req1.RemoteAddr = lit1000112345
 			req1.Header.Set("X-Forwarded-For", "192.168.1.1")
 			rec1 := httptest.NewRecorder()
 			handler.ServeHTTP(rec1, req1)
 			Expect(rec1.Code).To(Equal(http.StatusOK))
 
 			req2 := httptest.NewRequest("GET", "/", nil)
-			req2.RemoteAddr = "10.0.0.1:12345"
+			req2.RemoteAddr = lit1000112345
 			req2.Header.Set("X-Forwarded-For", "192.168.1.1")
 			rec2 := httptest.NewRecorder()
 			handler.ServeHTTP(rec2, req2)

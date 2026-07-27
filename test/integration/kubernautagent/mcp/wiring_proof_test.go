@@ -38,7 +38,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
-	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 )
 
 // ---------------------------------------------------------------------------
@@ -147,8 +146,9 @@ func newCapturingMCPStack(k8sClient client.Client, namespace string, opts realSt
 	)
 	stack.EventStore = mcpinternal.NewDelegatingEventStore()
 
-	wfQuerier := wfclient.NewOgenWorkflowQuerier(sharedDSClient)
-	catalog := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier)
+	// #1677 Phase 2e (DD-WORKFLOW-019): catalog-backed by KA's own informer
+	// cache, not a DS-ogen-client-backed WorkflowQuerier round-trip.
+	catalog := mcpadapters.NewWorkflowCatalogAdapter(sharedWfCatalog)
 
 	investigateOpts := []mcptools.InvestigateOption{
 		mcptools.WithRateLimiter(stack.RateLimiter),
@@ -233,8 +233,7 @@ func newAutonomousMCPStack(k8sClient client.Client, namespace string, opts realS
 	sessionStore := session.NewStore(30 * time.Minute)
 	autoMgr := session.NewManager(sessionStore, logrLogger, audit.NopAuditStore{}, nil)
 
-	wfQuerier2 := wfclient.NewOgenWorkflowQuerier(sharedDSClient)
-	catalog2 := mcpadapters.NewWorkflowCatalogAdapter(wfQuerier2)
+	catalog2 := mcpadapters.NewWorkflowCatalogAdapter(sharedWfCatalog)
 
 	investigateOpts := []mcptools.InvestigateOption{
 		mcptools.WithRateLimiter(stack.RateLimiter),

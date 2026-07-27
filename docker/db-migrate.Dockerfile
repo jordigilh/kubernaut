@@ -4,10 +4,24 @@
 # (github.com/pressly/goose/v3) so the CLI matches application dependencies
 # without maintaining per-release binary SHA256 checksums.
 #
+# Postgres-only build (-tags): kubernaut's migrations (charts/kubernaut/templates/
+# hooks/migration-job.yaml's `goose ... postgres ...` invocation, and
+# test/infrastructure/migrations.go's goose.DialectPostgres) only ever use the
+# postgres dialect. Excluding every other driver goose supports drops their
+# transitive dependencies entirely from the compiled binary (verified via
+# `go version -m`, which is what Trivy's gobinary scanner reads) -- notably
+# github.com/ydb-platform/ydb-go-sdk (driver_ydb.go), whose grpc dependency
+# repeatedly requires manual `go get google.golang.org/grpc@vX` overrides here
+# every time a new gRPC-Go CVE lands (see git history for prior golang.org/x/
+# crypto and x/net overrides, same root cause). None of kubernaut's own code
+# ever exercises those drivers, so removing them removes the recurring CVE
+# surface instead of chasing it version-by-version, and shrinks the binary
+# ~3x (56MB -> 20MB).
+#
 # Build:
 #   podman build --platform linux/amd64 \
-#     --build-arg APP_VERSION=v3.27.1 \
-#     -t quay.io/kubernaut-ai/db-migrate:v3.27.1-amd64 \
+#     --build-arg APP_VERSION=v3.27.2 \
+#     -t quay.io/kubernaut-ai/db-migrate:v3.27.2-amd64 \
 #     -f docker/db-migrate.Dockerfile .
 #
 # Multi-arch: TARGETARCH is set from --platform for the goose compile step.
@@ -16,19 +30,23 @@ ARG APP_VERSION=unknown
 ARG GIT_COMMIT=unknown
 ARG BUILD_DATE=unknown
 
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.2@sha256:e0b7c6e41776a1cef9b2a2294e4bd440c75ccf8ee66a11fbc1338a1f10b3e912 AS goose-builder
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.2@sha256:40eb0e19d90700b02aa1055810a637f307af48c2d1cb376905bc53e3e583af6f AS goose-builder
 USER root
 ARG TARGETARCH
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}
+# no_clickhouse/no_mssql/no_mysql/no_sqlite3/no_turso/no_vertica/no_ydb: keep
+# only the postgres driver (see comment above) -- libsql remains registered
+# (compiled unconditionally by the core goose library, not gated by a
+# cmd/goose build tag) but is SQLite-based with no grpc/CVE-prone transitive
+# dependencies, so it's left as-is rather than chasing further.
 RUN GOMODCACHE=$(mktemp -d) && \
     cd "$GOMODCACHE" && \
     go mod init tmp && \
-    go get github.com/pressly/goose/v3/cmd/goose@v3.27.1 && \
-    go get golang.org/x/crypto@v0.53.0 && \
-    go get golang.org/x/net@v0.56.0 && \
-    go build -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
+    go get github.com/pressly/goose/v3/cmd/goose@v3.27.2 && \
+    go build -tags 'no_clickhouse no_mssql no_mysql no_sqlite3 no_turso no_vertica no_ydb' \
+      -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
 
-FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:b217fa65d8c21058887b18f005f587e47a17dd1281a5196ac88d01724a273dbd AS production
+FROM registry.access.redhat.com/ubi10/ubi-minimal:latest@sha256:af74bce19b9ab6446362310c9d18ffb4671ac11b2a4d36263047d9f57a653d80 AS production
 
 ARG APP_VERSION=unknown
 ARG GIT_COMMIT=unknown

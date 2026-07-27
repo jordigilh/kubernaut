@@ -82,7 +82,7 @@ func (a *AnthropicTriager) TriagePure(ctx context.Context, input TriageInput) (T
 
 func (a *AnthropicTriager) classify(ctx context.Context, prompt string) (TriageResult, error) {
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(a.model),
+		Model:     a.model,
 		MaxTokens: int64(64),
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),

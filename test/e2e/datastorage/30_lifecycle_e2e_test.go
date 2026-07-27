@@ -25,8 +25,8 @@ import (
 	"strings"
 	"time"
 
-	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/google/uuid"
+	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -131,7 +131,7 @@ var _ = Describe("Data Storage lifecycle Phase 9 (ET-DS-1088-LC)", Ordered, Cont
 				EventType:      "lifecycle.phase9.gateway.signal",
 				EventTimestamp: baseTs.Add(time.Duration(i) * time.Second),
 				Version:        "1.0",
-				EventData:      newMinimalGatewayPayload("alert", "lifecycle-phase9"),
+				EventData:      newMinimalGatewayPayload("lifecycle-phase9"),
 			})
 		}
 

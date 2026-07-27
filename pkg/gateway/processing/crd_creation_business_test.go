@@ -39,6 +39,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	testSignals = "test-signals"
+)
+
 // ============================================================================
 // BUSINESS OUTCOME TESTS: CRD Creation with Correct Business Metadata
 // ============================================================================
@@ -67,7 +72,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		testNamespace = "test-signals"
+		testNamespace = testSignals
 
 		// Create test namespace and controller namespace (ADR-057)
 		ns := &corev1.Namespace{
@@ -121,7 +126,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: Operations can identify WHAT failed
 			// RO uses alertName to select appropriate workflow
 			signal := &types.NormalizedSignal{
-				SignalName:    "HighMemoryUsage",
+				SignalName:   "HighMemoryUsage",
 				Fingerprint:  "test-fingerprint-abc123",
 				Severity:     "critical",
 				SourceType:   "alert",
@@ -148,7 +153,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: RO prioritizes critical > warning > info
 			// Severity determines urgency of remediation action
 			signal := &types.NormalizedSignal{
-				SignalName:    "PodCrashLooping",
+				SignalName:   "PodCrashLooping",
 				Fingerprint:  "crash-fingerprint-xyz789",
 				Severity:     "critical", // CRITICAL = immediate remediation
 				SourceType:   "alert",
@@ -174,7 +179,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: RO selects workflow based on resource Kind
 			// WorkflowExecution targets specific resource Name/Namespace
 			signal := &types.NormalizedSignal{
-				SignalName:    "DeploymentUnhealthy",
+				SignalName:   "DeploymentUnhealthy",
 				Fingerprint:  "deploy-fingerprint-def456",
 				Severity:     "warning",
 				SourceType:   "alert",
@@ -203,7 +208,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: Gateway can track duplicate occurrences
 			// DD-GATEWAY-011: Status.Deduplication uses fingerprint as key
 			signal := &types.NormalizedSignal{
-				SignalName:    "HighMemoryUsage",
+				SignalName:   "HighMemoryUsage",
 				Fingerprint:  "dedup-test-fingerprint-unique",
 				Severity:     "warning",
 				SourceType:   "alert",
@@ -242,7 +247,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			)
 
 			signal := &types.NormalizedSignal{
-				SignalName:    "SameIssue",
+				SignalName:   "SameIssue",
 				Fingerprint:  "same-fingerprint",
 				Severity:     "critical",
 				SourceType:   "alert",
@@ -266,14 +271,14 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			rr2, err2 := crdCreatorWithClock.CreateRemediationRequest(ctx, signal)
 			Expect(err2).NotTo(HaveOccurred())
 
-		// BUSINESS OUTCOME: Different CRD names enable tracking each remediation attempt
-		Expect(rr1.Name).NotTo(Equal(rr2.Name),
-			"UUID-based naming allows same problem to be remediated multiple times")
-		// DD-AUDIT-CORRELATION-002: UUID suffix guarantees zero collision risk
-		Expect(rr1.Name).To(MatchRegexp(`^rr-same-fingerp-[0-9a-f]{8}$`),
-			"CRD name follows rr-{fingerprint-prefix}-{uuid-suffix} pattern (8 hex chars)")
-		Expect(rr2.Name).To(MatchRegexp(`^rr-same-fingerp-[0-9a-f]{8}$`),
-			"Each occurrence gets unique UUID suffix in CRD name")
+			// BUSINESS OUTCOME: Different CRD names enable tracking each remediation attempt
+			Expect(rr1.Name).NotTo(Equal(rr2.Name),
+				"UUID-based naming allows same problem to be remediated multiple times")
+			// DD-AUDIT-CORRELATION-002: UUID suffix guarantees zero collision risk
+			Expect(rr1.Name).To(MatchRegexp(`^rr-same-fingerp-[0-9a-f]{8}$`),
+				"CRD name follows rr-{fingerprint-prefix}-{uuid-suffix} pattern (8 hex chars)")
+			Expect(rr2.Name).To(MatchRegexp(`^rr-same-fingerp-[0-9a-f]{8}$`),
+				"Each occurrence gets unique UUID suffix in CRD name")
 		})
 	})
 
@@ -282,7 +287,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: V1.0 is Kubernetes-only
 			// Missing Kind means RO cannot select appropriate workflow
 			invalidSignal := &types.NormalizedSignal{
-				SignalName:    "TestAlert",
+				SignalName:   "TestAlert",
 				Fingerprint:  "test-fingerprint",
 				Severity:     "critical",
 				SourceType:   "alert",
@@ -311,7 +316,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: Cannot remediate without knowing WHICH instance
 			// WorkflowExecution needs specific resource name for kubectl commands
 			invalidSignal := &types.NormalizedSignal{
-				SignalName:    "TestAlert",
+				SignalName:   "TestAlert",
 				Fingerprint:  "test-fingerprint",
 				Severity:     "critical",
 				SourceType:   "alert",
@@ -337,7 +342,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: Cluster-scoped resources don't have namespaces
 			// Node alerts must still be processed for remediation
 			clusterScopedSignal := &types.NormalizedSignal{
-				SignalName:    "NodeNotReady",
+				SignalName:   "NodeNotReady",
 				Fingerprint:  "node-fingerprint-abc",
 				Severity:     "critical",
 				SourceType:   "alert",
@@ -367,7 +372,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			// BUSINESS OUTCOME: Audit trail shows WHERE signal originated
 			// Operations can filter by source: Prometheus vs K8s Events
 			signal := &types.NormalizedSignal{
-				SignalName:    "TestAlert",
+				SignalName:   "TestAlert",
 				Fingerprint:  "audit-test",
 				Severity:     "info",
 				SourceType:   "alert", // Prometheus AlertManager source
@@ -398,7 +403,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 			receivedTime := time.Now()                     // Received just now
 
 			signal := &types.NormalizedSignal{
-				SignalName:    "DelayedAlert",
+				SignalName:   "DelayedAlert",
 				Fingerprint:  "time-test",
 				Severity:     "warning",
 				SourceType:   "alert",
@@ -428,7 +433,7 @@ var _ = Describe("BR-GATEWAY-004: RemediationRequest CRD Creation Business Outco
 		It("stores ProviderData as parseable JSON, not base64-encoded bytes", func() {
 			rawPayload := json.RawMessage(`{"alerts":[{"status":"firing","labels":{"alertname":"HighMemory"}}]}`)
 			signal := &types.NormalizedSignal{
-				SignalName:    "HighMemory",
+				SignalName:   "HighMemory",
 				Fingerprint:  "issue96-fingerprint-001",
 				Severity:     "warning",
 				SourceType:   "alert",
@@ -581,7 +586,7 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		testNamespace = "test-signals"
+		testNamespace = testSignals
 
 		ns := &corev1.Namespace{
 			ObjectMeta: metav1.ObjectMeta{
@@ -629,7 +634,7 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "oversized-test-fingerprint",
-				SignalName:   "LargePayloadAlert",
+				SignalName:  "LargePayloadAlert",
 				Severity:    "critical",
 				Namespace:   testNamespace,
 				Resource: types.ResourceIdentifier{
@@ -663,7 +668,7 @@ var _ = Describe("BR-GATEWAY-009: Oversized Annotations Truncation", func() {
 			// BUSINESS OUTCOME: Signals without annotations are valid
 			signal := &types.NormalizedSignal{
 				Fingerprint: "no-annotations-fingerprint",
-				SignalName:   "SimpleAlert",
+				SignalName:  "SimpleAlert",
 				Severity:    "warning",
 				Namespace:   testNamespace,
 				Resource: types.ResourceIdentifier{
@@ -758,7 +763,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 
 		BeforeEach(func() {
 			ctx = context.Background()
-			testNamespace = "test-signals"
+			testNamespace = testSignals
 
 			// Create test namespace
 			ns := &corev1.Namespace{
@@ -800,7 +805,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 			It("correctly sets signalType for event-based signals", func() {
 				// BUSINESS OUTCOME: Different source types tracked for observability
 				signal := &types.NormalizedSignal{
-					SignalName:    "PodEvicted",
+					SignalName:   "PodEvicted",
 					Fingerprint:  "k8s-event-fingerprint",
 					Severity:     "warning",
 					SourceType:   "alert", // Different source type
@@ -827,7 +832,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 			It("creates CRD without signal labels", func() {
 				// BUSINESS OUTCOME: Minimal signals without labels are valid
 				signal := &types.NormalizedSignal{
-					SignalName:    "MinimalAlert",
+					SignalName:   "MinimalAlert",
 					Fingerprint:  "minimal-fingerprint",
 					Severity:     "info",
 					SourceType:   "alert",
@@ -853,7 +858,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 			It("creates CRD with custom source type preserved", func() {
 				// BUSINESS OUTCOME: Future extensibility for non-prometheus/k8s sources
 				signal := &types.NormalizedSignal{
-					SignalName:    "CustomSourceAlert",
+					SignalName:   "CustomSourceAlert",
 					Fingerprint:  "custom-source-fingerprint",
 					Severity:     "warning",
 					SourceType:   "custom-monitoring-tool", // Custom source
@@ -879,7 +884,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 				It("creates CRD with empty namespace in ProviderData", func() {
 					// BUSINESS OUTCOME: Cluster-scoped resources without namespace handled
 					signal := &types.NormalizedSignal{
-						SignalName:    "ClusterScopedAlert",
+						SignalName:   "ClusterScopedAlert",
 						Fingerprint:  "cluster-scoped-fingerprint",
 						Severity:     "warning",
 						SourceType:   "alert",
@@ -912,7 +917,7 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 				It("creates CRD with null labels in ProviderData", func() {
 					// BUSINESS OUTCOME: Signals without labels are valid
 					signal := &types.NormalizedSignal{
-						SignalName:    "NoLabelsAlert",
+						SignalName:   "NoLabelsAlert",
 						Fingerprint:  "no-labels-fingerprint",
 						Severity:     "info",
 						SourceType:   "alert",
@@ -932,14 +937,13 @@ var _ = Describe("BR-GATEWAY-019: CRDCreator Safe Defaults", func() {
 					Expect(rr.Spec.ProviderData).ToNot(BeNil(),
 						"ProviderData should be populated even with nil labels")
 					// ProviderData JSON string should handle nil labels gracefully
-				var providerDataMap map[string]interface{}
-				jsonErr := json.Unmarshal([]byte(rr.Spec.ProviderData), &providerDataMap)
-				Expect(jsonErr).ToNot(HaveOccurred(),
-					"ProviderData JSON should be valid even with nil labels")
+					var providerDataMap map[string]interface{}
+					jsonErr := json.Unmarshal([]byte(rr.Spec.ProviderData), &providerDataMap)
+					Expect(jsonErr).ToNot(HaveOccurred(),
+						"ProviderData JSON should be valid even with nil labels")
+				})
 			})
-		})
 		})
 	})
 
 })
-

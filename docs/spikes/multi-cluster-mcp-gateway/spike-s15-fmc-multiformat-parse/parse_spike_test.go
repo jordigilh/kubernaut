@@ -264,7 +264,9 @@ func parseYAMLList(text string) ([]unstructured.Unstructured, error) {
 
 // --- Multi-format parser (the full priority chain) ---
 
-func parseMultiFormat(text string, fallbackKind, fallbackAPIVersion string) ([]unstructured.Unstructured, error) {
+// parseMultiFormat is also called from e2e_spike_test.go in this package (via
+// fullPriorityChain).
+func parseMultiFormat(text string) ([]unstructured.Unstructured, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil, nil
@@ -438,7 +440,7 @@ func TestYAMLParserSingleGet(t *testing.T) {
 
 func TestMultiFormatJSON(t *testing.T) {
 	jsonText := `{"items":[{"apiVersion":"v1","kind":"Pod","metadata":{"name":"test","namespace":"default"}}]}`
-	items, err := parseMultiFormat(jsonText, "Pod", "v1")
+	items, err := parseMultiFormat(jsonText)
 	if err != nil {
 		t.Fatalf("parseMultiFormat JSON: %v", err)
 	}
@@ -449,7 +451,7 @@ func TestMultiFormatJSON(t *testing.T) {
 }
 
 func TestMultiFormatYAML(t *testing.T) {
-	items, err := parseMultiFormat(yamlDeploymentList, "Deployment", "apps/v1")
+	items, err := parseMultiFormat(yamlDeploymentList)
 	if err != nil {
 		t.Fatalf("parseMultiFormat YAML: %v", err)
 	}
@@ -461,7 +463,7 @@ func TestMultiFormatYAML(t *testing.T) {
 }
 
 func TestMultiFormatTable(t *testing.T) {
-	items, err := parseMultiFormat(tableDeploymentNamespaced, "Deployment", "apps/v1")
+	items, err := parseMultiFormat(tableDeploymentNamespaced)
 	if err != nil {
 		t.Fatalf("parseMultiFormat Table: %v", err)
 	}
@@ -475,7 +477,7 @@ func TestMultiFormatTable(t *testing.T) {
 }
 
 func TestMultiFormatTableClusterScoped(t *testing.T) {
-	items, err := parseMultiFormat(tableNodeClusterScoped, "Node", "v1")
+	items, err := parseMultiFormat(tableNodeClusterScoped)
 	if err != nil {
 		t.Fatalf("parseMultiFormat Table cluster-scoped: %v", err)
 	}
@@ -488,7 +490,7 @@ func TestMultiFormatTableClusterScoped(t *testing.T) {
 }
 
 func TestMultiFormatEmpty(t *testing.T) {
-	items, err := parseMultiFormat("", "Pod", "v1")
+	items, err := parseMultiFormat("")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -535,11 +537,4 @@ func assertLabel(t *testing.T, labels map[string]string, key, want string) {
 	if got != want {
 		t.Errorf("label %q: got %q, want %q", key, got, want)
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

@@ -39,6 +39,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+// msgProblemSelfResolvedFixture is a free-text AIAnalysis.Status.Message
+// fixture (not a CRD enum) reused across self-resolved notification tests.
+const msgProblemSelfResolvedFixture = "Problem self-resolved"
+
 var _ = Describe("NotificationCreator", func() {
 	var (
 		scheme *runtime.Scheme
@@ -697,18 +701,18 @@ var _ = Describe("NotificationCreator", func() {
 					Expect(err).ToNot(HaveOccurred())
 					Expect(nr.Spec.Priority).To(Equal(expectedPriority))
 				},
-			// Workflow resolution failures
-			Entry("WorkflowNotFound → High", "WorkflowNotFound", notificationv1.NotificationPriorityHigh),
-			Entry("ImageMismatch → High", "ImageMismatch", notificationv1.NotificationPriorityHigh),
-			Entry("ParameterValidationFailed → High", "ParameterValidationFailed", notificationv1.NotificationPriorityHigh),
-			Entry("NoMatchingWorkflows → Medium", "NoMatchingWorkflows", notificationv1.NotificationPriorityMedium),
-			Entry("LowConfidence → Medium", "LowConfidence", notificationv1.NotificationPriorityMedium),
-			Entry("InvestigationInconclusive → Medium", "InvestigationInconclusive", notificationv1.NotificationPriorityMedium),
-			// BR-ORCH-036 v3.0: Infrastructure failures
-			Entry("AC-036-30: MaxRetriesExceeded → High", "MaxRetriesExceeded", notificationv1.NotificationPriorityHigh),
-			Entry("AC-036-31: TransientError → High", "TransientError", notificationv1.NotificationPriorityHigh),
-			Entry("AC-036-32: PermanentError → High", "PermanentError", notificationv1.NotificationPriorityHigh),
-		)
+				// Workflow resolution failures
+				Entry("WorkflowNotFound → High", "WorkflowNotFound", notificationv1.NotificationPriorityHigh),
+				Entry("ImageMismatch → High", "ImageMismatch", notificationv1.NotificationPriorityHigh),
+				Entry("ParameterValidationFailed → High", "ParameterValidationFailed", notificationv1.NotificationPriorityHigh),
+				Entry("NoMatchingWorkflows → Medium", "NoMatchingWorkflows", notificationv1.NotificationPriorityMedium),
+				Entry("LowConfidence → Medium", "LowConfidence", notificationv1.NotificationPriorityMedium),
+				Entry("InvestigationInconclusive → Medium", "InvestigationInconclusive", notificationv1.NotificationPriorityMedium),
+				// BR-ORCH-036 v3.0: Infrastructure failures
+				Entry("AC-036-30: MaxRetriesExceeded → High", "MaxRetriesExceeded", notificationv1.NotificationPriorityHigh),
+				Entry("AC-036-31: TransientError → High", "TransientError", notificationv1.NotificationPriorityHigh),
+				Entry("AC-036-32: PermanentError → High", "PermanentError", notificationv1.NotificationPriorityHigh),
+			)
 		})
 
 		Context("BR-ORCH-036: WorkflowExecution Source (Critical Priority)", func() {
@@ -1426,7 +1430,7 @@ var _ = Describe("NotificationCreator", func() {
 			nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 			rr := helpers.NewRemediationRequest("test-rr-304", "default")
-			rr.Status.Outcome = "Remediated"
+			rr.Status.Outcome = remediationv1.OutcomeRemediated
 			ai := helpers.NewCompletedAIAnalysis("test-ai-304", "default")
 
 			name, err := nc.CreateCompletionNotification(ctx, rr, ai, "tekton", nil)
@@ -1436,9 +1440,9 @@ var _ = Describe("NotificationCreator", func() {
 			err = client.Get(ctx, types.NamespacedName{Name: name, Namespace: "default"}, nr)
 			Expect(err).ToNot(HaveOccurred())
 
-			Expect(nr.Spec.Context.Analysis.Outcome).To(Equal("Remediated"),
+			Expect(nr.Spec.Context.Analysis.Outcome).To(Equal(remediationv1.OutcomeRemediated),
 				"#304: BR-ORCH-045 requires completion notification metadata to include actual Outcome")
-			Expect(nr.Spec.Body).To(ContainSubstring("Remediated"),
+			Expect(nr.Spec.Body).To(ContainSubstring(remediationv1.OutcomeRemediated),
 				"#304: BR-ORCH-045 requires completion notification body to include actual Outcome")
 		})
 
@@ -1495,7 +1499,7 @@ var _ = Describe("NotificationCreator", func() {
 
 			ai := helpers.NewCompletedAIAnalysis("test-ai-305", "default")
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-				Summary:  "OOM kills in payment-api",
+				Summary: "OOM kills in payment-api",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Deployment",
 					Name:      "payment-api",
@@ -1603,7 +1607,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr-318-001", "default")
-				rr.Status.Outcome = "Remediated"
+				rr.Status.Outcome = remediationv1.OutcomeRemediated
 				ai := helpers.NewCompletedAIAnalysis("test-ai-318-001", "default")
 				ea := &eav1.EffectivenessAssessment{
 					Status: eav1.EffectivenessAssessmentStatus{
@@ -1640,7 +1644,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr-318-002", "default")
-				rr.Status.Outcome = "Remediated"
+				rr.Status.Outcome = remediationv1.OutcomeRemediated
 				ai := helpers.NewCompletedAIAnalysis("test-ai-318-002", "default")
 				ea := &eav1.EffectivenessAssessment{
 					Status: eav1.EffectivenessAssessmentStatus{
@@ -1674,7 +1678,7 @@ var _ = Describe("NotificationCreator", func() {
 				nc = creator.NewNotificationCreator(client, scheme, rometrics.NewMetricsWithRegistry(prometheus.NewRegistry()))
 
 				rr := helpers.NewRemediationRequest("test-rr-318-003", "default")
-				rr.Status.Outcome = "Remediated"
+				rr.Status.Outcome = remediationv1.OutcomeRemediated
 				ai := helpers.NewCompletedAIAnalysis("test-ai-318-003", "default")
 
 				name, err := nc.CreateCompletionNotification(ctx, rr, ai, "", nil)
@@ -1713,9 +1717,9 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "WorkflowNotNeeded"
-				ai.Status.Message = "Problem self-resolved"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
+				ai.Status.Message = msgProblemSelfResolvedFixture
 
 				name, err := nc.CreateSelfResolvedNotification(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1733,9 +1737,9 @@ var _ = Describe("NotificationCreator", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				rr.Spec.Severity = "warning"
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "WorkflowNotNeeded"
-				ai.Status.Message = "Problem self-resolved"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
+				ai.Status.Message = msgProblemSelfResolvedFixture
 
 				name, err := nc.CreateSelfResolvedNotification(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1764,8 +1768,8 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "WorkflowNotNeeded"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
 
 				name1, err := nc.CreateSelfResolvedNotification(ctx, rr, ai)
 				Expect(err).ToNot(HaveOccurred())
@@ -1788,8 +1792,8 @@ var _ = Describe("NotificationCreator", func() {
 
 				rr := helpers.NewRemediationRequest("test-rr", "default")
 				ai := helpers.NewCompletedAIAnalysis("test-ai", "default")
-				ai.Status.Phase = "Completed"
-				ai.Status.Reason = "WorkflowNotNeeded"
+				ai.Status.Phase = aianalysisv1.PhaseCompleted
+				ai.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
 				ai.Status.Message = "Problem self-resolved. No remediation required."
 				ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 					Summary: "Node memory pressure cleared after OOM killer freed processes",
@@ -1806,7 +1810,7 @@ var _ = Describe("NotificationCreator", func() {
 					"Accuracy: body must contain signal name")
 				Expect(nr.Spec.Body).To(ContainSubstring(rr.Spec.TargetResource.Kind),
 					"Accuracy: body must contain target resource kind")
-				Expect(nr.Spec.Body).To(ContainSubstring("Problem self-resolved"),
+				Expect(nr.Spec.Body).To(ContainSubstring(msgProblemSelfResolvedFixture),
 					"Accuracy: body must contain AI assessment message")
 				Expect(nr.Spec.Body).To(ContainSubstring("Node memory pressure cleared"),
 					"Accuracy: body must contain RCA summary")

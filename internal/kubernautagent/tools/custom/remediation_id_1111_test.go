@@ -26,11 +26,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 )
 
-var _ = Describe("Issue #1111: Remediation ID forwarding to DS discovery tools", func() {
+var _ = Describe("Issue #1111: Remediation ID forwarding to discovery filters", func() {
 	const testRemediationID = "rr-test-abc-123"
 
 	signalCtxWithRemediationID := func(remediationID string) context.Context {
@@ -44,45 +42,37 @@ var _ = Describe("Issue #1111: Remediation ID forwarding to DS discovery tools",
 	}
 
 	Describe("UT-KA-1111-001: list_available_actions forwards signal.RemediationID", func() {
-		It("should set RemediationID on ListAvailableActionsParams", func() {
-			fake := &fakeWorkflowDS{
-				listActionsResponse: &ogenclient.ActionTypeListResponse{},
-			}
-			allTools := custom.NewAllTools(fake)
+		It("should set RemediationID on the discovery filters", func() {
+			fake := &fakeWorkflowDS{}
+			allTools := newTestTools(fake)
 			listActions := allTools[0]
 
 			ctx := signalCtxWithRemediationID(testRemediationID)
 			_, err := listActions.Execute(ctx, json.RawMessage(`{}`))
 			Expect(err).ToNot(HaveOccurred())
 
-			val, ok := fake.listActionsParams.RemediationID.Get()
-			Expect(ok).To(BeTrue(), "RemediationID should be set on params")
-			Expect(val).To(Equal(testRemediationID))
+			Expect(fake.listActionsFilters.RemediationID).To(Equal(testRemediationID))
 		})
 	})
 
 	Describe("UT-KA-1111-002: list_workflows forwards signal.RemediationID", func() {
-		It("should set RemediationID on ListWorkflowsByActionTypeParams", func() {
-			fake := &fakeWorkflowDS{
-				listWorkflowsResponse: &ogenclient.WorkflowDiscoveryResponse{},
-			}
-			allTools := custom.NewAllTools(fake)
+		It("should set RemediationID on the discovery filters", func() {
+			fake := &fakeWorkflowDS{}
+			allTools := newTestTools(fake)
 			listWorkflows := allTools[1]
 
 			ctx := signalCtxWithRemediationID(testRemediationID)
 			_, err := listWorkflows.Execute(ctx, json.RawMessage(`{"action_type":"RestartPod"}`))
 			Expect(err).ToNot(HaveOccurred())
 
-			val, ok := fake.listWorkflowsParams.RemediationID.Get()
-			Expect(ok).To(BeTrue(), "RemediationID should be set on params")
-			Expect(val).To(Equal(testRemediationID))
+			Expect(fake.listWorkflowsFilters.RemediationID).To(Equal(testRemediationID))
 		})
 	})
 
 	Describe("UT-KA-1111-003: get_workflow loads signal context and forwards RemediationID + context filters", func() {
-		It("should set RemediationID and context filters on GetWorkflowByIDParams", func() {
+		It("should set RemediationID and context filters on the discovery filters", func() {
 			fake := &fakeWorkflowDS{}
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			getWorkflow := allTools[2]
 
 			ctx := signalCtxWithRemediationID(testRemediationID)
@@ -92,42 +82,26 @@ var _ = Describe("Issue #1111: Remediation ID forwarding to DS discovery tools",
 			_, err := getWorkflow.Execute(ctx, args)
 			Expect(err).ToNot(HaveOccurred())
 
-			val, ok := fake.getWorkflowParams.RemediationID.Get()
-			Expect(ok).To(BeTrue(), "RemediationID should be set on GetWorkflowByIDParams")
-			Expect(val).To(Equal(testRemediationID))
-
-			sevVal, sevOk := fake.getWorkflowParams.Severity.Get()
-			Expect(sevOk).To(BeTrue(), "Severity should be set for HasContextFilters()")
-			Expect(string(sevVal)).To(Equal("critical"))
-
-			compVal, compOk := fake.getWorkflowParams.Component.Get()
-			Expect(compOk).To(BeTrue(), "Component should be set for HasContextFilters()")
-			Expect(compVal).To(Equal("deployment"))
-
-			envVal, envOk := fake.getWorkflowParams.Environment.Get()
-			Expect(envOk).To(BeTrue(), "Environment should be set for HasContextFilters()")
-			Expect(envVal).To(Equal("production"))
-
-			priVal, priOk := fake.getWorkflowParams.Priority.Get()
-			Expect(priOk).To(BeTrue(), "Priority should be set for HasContextFilters()")
-			Expect(string(priVal)).To(Equal("P0"))
+			Expect(fake.getWorkflowFilters).NotTo(BeNil(), "filters should be set on GetWorkflowWithContextFilters")
+			Expect(fake.getWorkflowFilters.RemediationID).To(Equal(testRemediationID))
+			Expect(fake.getWorkflowFilters.Severity).To(Equal("critical"), "Severity should be set for HasContextFilters()")
+			Expect(fake.getWorkflowFilters.Component).To(Equal("deployment"), "Component should be set for HasContextFilters()")
+			Expect(fake.getWorkflowFilters.Environment).To(Equal("production"), "Environment should be set for HasContextFilters()")
+			Expect(fake.getWorkflowFilters.Priority).To(Equal("P0"), "Priority should be set for HasContextFilters()")
 		})
 	})
 
-	Describe("UT-KA-1111-004: Empty RemediationID does NOT send param", func() {
+	Describe("UT-KA-1111-004: Empty RemediationID does NOT send filter", func() {
 		It("should not set RemediationID when signal.RemediationID is empty", func() {
-			fake := &fakeWorkflowDS{
-				listActionsResponse: &ogenclient.ActionTypeListResponse{},
-			}
-			allTools := custom.NewAllTools(fake)
+			fake := &fakeWorkflowDS{}
+			allTools := newTestTools(fake)
 			listActions := allTools[0]
 
 			ctx := signalCtxWithRemediationID("")
 			_, err := listActions.Execute(ctx, json.RawMessage(`{}`))
 			Expect(err).ToNot(HaveOccurred())
 
-			_, ok := fake.listActionsParams.RemediationID.Get()
-			Expect(ok).To(BeFalse(), "RemediationID should NOT be set when signal.RemediationID is empty")
+			Expect(fake.listActionsFilters.RemediationID).To(BeEmpty(), "RemediationID should NOT be set when signal.RemediationID is empty")
 		})
 	})
 
@@ -136,64 +110,52 @@ var _ = Describe("Issue #1111: Remediation ID forwarding to DS discovery tools",
 			longID := "rr-" + strings.Repeat("a", 253)
 			Expect(len(longID)).To(Equal(256))
 
-			fake := &fakeWorkflowDS{
-				listActionsResponse: &ogenclient.ActionTypeListResponse{},
-			}
-			allTools := custom.NewAllTools(fake)
+			fake := &fakeWorkflowDS{}
+			allTools := newTestTools(fake)
 			listActions := allTools[0]
 
 			ctx := signalCtxWithRemediationID(longID)
 			_, err := listActions.Execute(ctx, json.RawMessage(`{}`))
 			Expect(err).ToNot(HaveOccurred())
 
-			val, ok := fake.listActionsParams.RemediationID.Get()
-			Expect(ok).To(BeTrue())
-			Expect(val).To(Equal(longID))
+			Expect(fake.listActionsFilters.RemediationID).To(Equal(longID))
 		})
 	})
 
 	Describe("UT-KA-1111-006: Path traversal RemediationID forwarded as-is", func() {
 		It("should forward path traversal chars without sanitization", func() {
 			pathTraversal := "../../etc/passwd"
-			fake := &fakeWorkflowDS{
-				listActionsResponse: &ogenclient.ActionTypeListResponse{},
-			}
-			allTools := custom.NewAllTools(fake)
+			fake := &fakeWorkflowDS{}
+			allTools := newTestTools(fake)
 			listActions := allTools[0]
 
 			ctx := signalCtxWithRemediationID(pathTraversal)
 			_, err := listActions.Execute(ctx, json.RawMessage(`{}`))
 			Expect(err).ToNot(HaveOccurred())
 
-			val, ok := fake.listActionsParams.RemediationID.Get()
-			Expect(ok).To(BeTrue())
-			Expect(val).To(Equal(pathTraversal))
+			Expect(fake.listActionsFilters.RemediationID).To(Equal(pathTraversal))
 		})
 	})
 
 	Describe("UT-KA-1111-007: Unicode RemediationID forwarded correctly", func() {
 		It("should forward Unicode characters without corruption", func() {
 			unicodeID := "rr-テスト-123"
-			fake := &fakeWorkflowDS{
-				listActionsResponse: &ogenclient.ActionTypeListResponse{},
-			}
-			allTools := custom.NewAllTools(fake)
+			fake := &fakeWorkflowDS{}
+			allTools := newTestTools(fake)
 			listActions := allTools[0]
 
 			ctx := signalCtxWithRemediationID(unicodeID)
 			_, err := listActions.Execute(ctx, json.RawMessage(`{}`))
 			Expect(err).ToNot(HaveOccurred())
 
-			val, ok := fake.listActionsParams.RemediationID.Get()
-			Expect(ok).To(BeTrue())
-			Expect(val).To(Equal(unicodeID))
+			Expect(fake.listActionsFilters.RemediationID).To(Equal(unicodeID))
 		})
 	})
 
 	Describe("UT-KA-1111-008: get_workflow without signal context succeeds (best-effort)", func() {
 		It("should succeed without forwarding RemediationID when signal is missing", func() {
 			fake := &fakeWorkflowDS{}
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			getWorkflow := allTools[2]
 
 			validUUID := uuid.New().String()
@@ -202,15 +164,14 @@ var _ = Describe("Issue #1111: Remediation ID forwarding to DS discovery tools",
 			_, err := getWorkflow.Execute(context.Background(), args)
 			Expect(err).ToNot(HaveOccurred())
 
-			_, ok := fake.getWorkflowParams.RemediationID.Get()
-			Expect(ok).To(BeFalse(), "RemediationID should NOT be set when signal context is missing")
+			Expect(fake.getWorkflowFilters).To(BeNil(), "filters should NOT be set when signal context is missing")
 		})
 	})
 
-	Describe("UT-KA-1111-009: get_workflow with empty RemediationID does not populate params", func() {
+	Describe("UT-KA-1111-009: get_workflow with empty RemediationID does not populate filters", func() {
 		It("should not set context filters when RemediationID is empty", func() {
 			fake := &fakeWorkflowDS{}
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			getWorkflow := allTools[2]
 
 			ctx := signalCtxWithRemediationID("")
@@ -220,11 +181,7 @@ var _ = Describe("Issue #1111: Remediation ID forwarding to DS discovery tools",
 			_, err := getWorkflow.Execute(ctx, args)
 			Expect(err).ToNot(HaveOccurred())
 
-			_, ok := fake.getWorkflowParams.RemediationID.Get()
-			Expect(ok).To(BeFalse(), "RemediationID should NOT be set when signal.RemediationID is empty")
-
-			_, sevOk := fake.getWorkflowParams.Severity.Get()
-			Expect(sevOk).To(BeFalse(), "Severity should NOT be set when RemediationID is empty")
+			Expect(fake.getWorkflowFilters).To(BeNil(), "filters should NOT be set when signal.RemediationID is empty")
 		})
 	})
 })

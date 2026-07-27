@@ -1,6 +1,7 @@
 package tlswiring_test
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -306,7 +307,8 @@ func TestCAReloadableTransport_RoundTrip(t *testing.T) {
 		t.Fatal("expected TLS enabled")
 	}
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,7 +325,12 @@ func TestCAReloadableTransport_RoundTrip(t *testing.T) {
 	}
 
 	client := &http.Client{Transport: rt, Timeout: 5 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("https://%s/ping", ln.Addr().String()))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet,
+		fmt.Sprintf("https://%s/ping", ln.Addr().String()), http.NoBody)
+	if err != nil {
+		t.Fatalf("failed to build request: %v", err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("GET through CAReloadableTransport failed: %v", err)
 	}

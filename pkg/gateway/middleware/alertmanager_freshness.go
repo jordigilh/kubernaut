@@ -90,11 +90,11 @@ func AlertManagerFreshnessValidator(tolerance time.Duration) func(http.Handler) 
 // operational (health/metrics) request exempt from freshness validation.
 // Extracted from AlertManagerFreshnessValidator / EventFreshnessValidator.
 func isOperationalRequest(r *http.Request) bool {
-	if r.Method == "GET" || r.Method == "HEAD" || r.Method == "OPTIONS" {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
 		return true
 	}
 	switch r.URL.Path {
-	case "/health", "/ready", "/healthz", "/metrics":
+	case pathHealth, pathReady, pathHealthz, pathMetrics:
 		return true
 	default:
 		return false

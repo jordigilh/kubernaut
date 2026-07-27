@@ -1,7 +1,11 @@
 # DD-WORKFLOW-009: Workflow Catalog Storage
 
+> **SUPERSEDED** by [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) (Etcd as Single Source of Truth for Workflow/ActionType Catalog, July 2026).
+>
+> DD-WORKFLOW-018 reverses this document's "PostgreSQL + pgvector is the catalog storage backend" decision in full. Etcd (via the `RemediationWorkflow`/`ActionType` CRDs) is now the sole source of truth for catalog *definitions*; PostgreSQL is relegated strictly to audit traces (`audit_events`, ADR-034) and on-demand aggregate queries computed from that trail. The `playbooks` table, catalog controller, and pgvector usage described below no longer reflect the current architecture — kept for historical reference only.
+
 **Date**: 2025-11-15
-**Status**: Confirmed
+**Status**: **SUPERSEDED** by DD-WORKFLOW-018
 **Version**: v1.1
 **Related**: DD-WORKFLOW-007, DD-WORKFLOW-008, DD-WORKFLOW-012 (Workflow Immutability)
 

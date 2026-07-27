@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-logr/logr"
 
@@ -29,10 +30,15 @@ import (
 
 const (
 	ScopeCheckPath = "/api/v1/scope/check"
-	ClustersPath   = "/api/v1/clusters"
-	// HealthzPath is FMC's liveness/health endpoint, served on the same API
-	// mux as ScopeCheckPath. Used by HTTPClient.Ping (readiness gate Wave 0)
-	// to probe reachability without depending on scope-check semantics.
+	// ClustersPath lists known clusters, and doubles (DD-FLEET-004) as the
+	// target of HTTPClient.Ping (readiness gate Wave 0, #1553): it is a
+	// cheap, real API-port endpoint (in-memory registry read, no Valkey
+	// round-trip) reachable via GW/RO's existing CA-verified scope-check
+	// transport, so Ping needs no new endpoint and no new network path.
+	ClustersPath = "/api/v1/clusters"
+	// HealthzPath is FMC's liveness endpoint. Served exclusively on the
+	// dedicated health port (Issue #1683 3-port split) -- kubelet-only by
+	// design (DD-FLEET-004); never registered on the API mux.
 	HealthzPath = "/healthz"
 )
 
@@ -94,7 +100,7 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 	if _, known := h.registry.Get(resource.ClusterID); !known {
 		h.logger.V(1).Info("scope check rejected: unknown cluster",
 			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
-		writeJSON(w, http.StatusOK, ScopeCheckResponse{Managed: false})
+		writeJSON(w, ScopeCheckResponse{Managed: false})
 		return
 	}
 
@@ -102,11 +108,11 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error(err, "scope check failed",
 			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
-		writeJSON(w, http.StatusOK, ScopeCheckResponse{Managed: false})
+		writeJSON(w, ScopeCheckResponse{Managed: false})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, ScopeCheckResponse{Managed: managed})
+	writeJSON(w, ScopeCheckResponse{Managed: managed})
 }
 
 // ClusterListResponse is the JSON response for cluster listing.
@@ -141,13 +147,25 @@ func (h *Handler) handleListClusters(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, resp)
+	writeJSON(w, resp)
 }
 
 // Pinger checks connectivity to a backend store.
 type Pinger interface {
 	Ping(ctx context.Context) error
 }
+
+// readyzPingTimeout bounds how long ReadyzHandler waits on the backend Ping
+// before reporting 503. The incoming request context (a Kubernetes kubelet
+// probe, or a direct client call) carries no deadline of its own, and
+// Issue #1683 moved /readyz onto pkg/shared/health.NewHealthServer, whose
+// WriteTimeout (10s) will forcibly reset the TCP connection if the handler
+// is still blocked when it fires -- turning a detectable dependency outage
+// (503) into an opaque "connection reset by peer" for the caller. Bounding
+// the ping here keeps the probe's own failure mode observable (SI-4: no
+// silent hang, matching "no silent false-healthy") regardless of server
+// timeout configuration.
+const readyzPingTimeout = 3 * time.Second
 
 // ReadyzHandler returns an http.HandlerFunc that checks startup readiness
 // and backend connectivity. Used for the Kubernetes readiness probe.
@@ -158,7 +176,9 @@ func ReadyzHandler(ready func() bool, pinger Pinger) http.HandlerFunc {
 			_, _ = w.Write([]byte("not ready"))
 			return
 		}
-		if err := pinger.Ping(r.Context()); err != nil {
+		ctx, cancel := context.WithTimeout(r.Context(), readyzPingTimeout)
+		defer cancel()
+		if err := pinger.Ping(ctx); err != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte("valkey unreachable"))
 			return
@@ -177,8 +197,11 @@ func requireGET(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
+// writeJSON writes a 200 OK JSON response. All current call sites in this
+// package are success paths; non-2xx responses use http.Error/WriteHeader
+// directly (see requireGET, the readiness check above).
+func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
+	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(v)
 }

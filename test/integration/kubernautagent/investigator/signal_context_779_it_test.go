@@ -20,7 +20,6 @@ import (
 	"context"
 
 	"github.com/go-logr/logr"
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -28,46 +27,47 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
 
-// paramCapturingDS captures DS params for assertions while returning valid responses.
+// paramCapturingDS captures the filters/args passed to each catalog method
+// for assertions, while returning canned responses. Satisfies
+// custom.WorkflowCatalog (#1677 Phase 2e: replaces the former
+// ogen-client-shaped fake now that the discovery tools are catalog-backed,
+// not DS-ogen-client-backed -- mirrors internal/kubernautagent/tools/custom's
+// fakeWorkflowDS ported in Phase 2d).
 type paramCapturingDS struct {
-	listActionsParams   ogenclient.ListAvailableActionsParams
-	listWorkflowsParams ogenclient.ListWorkflowsByActionTypeParams
-	actionsCalled       bool
-	workflowsCalled     bool
+	listActionsFilters *models.WorkflowDiscoveryFilters
+	actionsCalled      bool
+
+	listWorkflowsActionType string
+	listWorkflowsFilters    *models.WorkflowDiscoveryFilters
+	workflowsCalled         bool
 }
 
-func (p *paramCapturingDS) ListAvailableActions(_ context.Context, params ogenclient.ListAvailableActionsParams) (ogenclient.ListAvailableActionsRes, error) {
-	p.listActionsParams = params
+func (p *paramCapturingDS) ListActions(_ context.Context, filters *models.WorkflowDiscoveryFilters, _, _ int) ([]models.ActionTypeEntry, int, error) {
+	p.listActionsFilters = filters
 	p.actionsCalled = true
-	return &ogenclient.ActionTypeListResponse{
-		ActionTypes: []ogenclient.ActionTypeEntry{
-			{ActionType: "RestartPod", Description: ogenclient.StructuredDescription{What: "restart", WhenToUse: "crash"}, WorkflowCount: 1},
-		},
-		Pagination: ogenclient.PaginationMetadata{TotalCount: 1, HasMore: false},
-	}, nil
+	return []models.ActionTypeEntry{
+		{ActionType: "RestartPod", Description: models.ActionTypeDescription{What: "restart", WhenToUse: "crash"}, WorkflowCount: 1},
+	}, 1, nil
 }
 
-func (p *paramCapturingDS) ListWorkflowsByActionType(_ context.Context, params ogenclient.ListWorkflowsByActionTypeParams) (ogenclient.ListWorkflowsByActionTypeRes, error) {
-	p.listWorkflowsParams = params
+func (p *paramCapturingDS) ListWorkflowsByActionType(_ context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, _, _ int) ([]models.RemediationWorkflow, int, error) {
+	p.listWorkflowsActionType = actionType
+	p.listWorkflowsFilters = filters
 	p.workflowsCalled = true
-	return &ogenclient.WorkflowDiscoveryResponse{
-		ActionType: params.ActionType,
-		Workflows: []ogenclient.WorkflowDiscoveryEntry{
-			{WorkflowId: uuid.New(), WorkflowName: "restart-v1", Name: "Restart Pod", Description: ogenclient.StructuredDescription{What: "restart", WhenToUse: "crash"}},
-		},
-		Pagination: ogenclient.PaginationMetadata{TotalCount: 1, HasMore: false},
-	}, nil
+	return []models.RemediationWorkflow{
+		{WorkflowID: "wf-restart-v1", WorkflowName: "restart-v1", Name: "Restart Pod", Description: models.StructuredDescription{What: "restart", WhenToUse: "crash"}},
+	}, 1, nil
 }
 
-func (p *paramCapturingDS) GetWorkflowByID(_ context.Context, _ ogenclient.GetWorkflowByIDParams) (ogenclient.GetWorkflowByIDRes, error) {
-	return &ogenclient.RemediationWorkflow{}, nil
+func (p *paramCapturingDS) GetWorkflowWithContextFilters(_ context.Context, _ string, _ *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {
+	return &models.RemediationWorkflow{}, nil
 }
 
 var _ = Describe("IT-KA-779: Signal context propagation through investigator to DS tool params", func() {
@@ -92,7 +92,7 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 		It("should forward staging/high/P1 signal context to DS, not hardcoded production/critical/P0", func() {
 			capturingDS := &paramCapturingDS{}
 			reg := registry.New()
-			for _, t := range custom.NewAllTools(capturingDS) {
+			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
 
@@ -133,13 +133,13 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 			Expect(capturingDS.actionsCalled).To(BeTrue(),
 				"list_available_actions must have been called during workflow selection")
 
-			Expect(string(capturingDS.listActionsParams.Severity)).To(Equal("high"),
+			Expect(capturingDS.listActionsFilters.Severity).To(Equal("high"),
 				"DS Severity should match signal, not hardcoded 'critical'")
-			Expect(capturingDS.listActionsParams.Component).To(Equal("apps/v1/StatefulSet"),
+			Expect(capturingDS.listActionsFilters.Component).To(Equal("apps/v1/StatefulSet"),
 				"DS Component should be signal ComponentGVK (apiVersion/kind)")
-			Expect(capturingDS.listActionsParams.Environment).To(Equal("staging"),
+			Expect(capturingDS.listActionsFilters.Environment).To(Equal("staging"),
 				"DS Environment should match signal, not hardcoded 'production'")
-			Expect(string(capturingDS.listActionsParams.Priority)).To(Equal("P1"),
+			Expect(capturingDS.listActionsFilters.Priority).To(Equal("P1"),
 				"DS Priority should match signal, not hardcoded 'P0'")
 		})
 	})
@@ -148,7 +148,7 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 		It("should forward signal fields when LLM calls list_workflows", func() {
 			capturingDS := &paramCapturingDS{}
 			reg := registry.New()
-			for _, t := range custom.NewAllTools(capturingDS) {
+			for _, t := range custom.NewAllTools(capturingDS, nil, invLogger) {
 				reg.Register(t)
 			}
 
@@ -187,15 +187,15 @@ var _ = Describe("IT-KA-779: Signal context propagation through investigator to 
 			Expect(capturingDS.workflowsCalled).To(BeTrue(),
 				"list_workflows must have been called during workflow selection")
 
-			Expect(string(capturingDS.listWorkflowsParams.Severity)).To(Equal("warning"),
+			Expect(capturingDS.listWorkflowsFilters.Severity).To(Equal("warning"),
 				"DS Severity should match signal")
-			Expect(capturingDS.listWorkflowsParams.Component).To(Equal("apps/v1/Deployment"),
+			Expect(capturingDS.listWorkflowsFilters.Component).To(Equal("apps/v1/Deployment"),
 				"DS Component should be signal ComponentGVK (apiVersion/kind)")
-			Expect(capturingDS.listWorkflowsParams.Environment).To(Equal("development"),
+			Expect(capturingDS.listWorkflowsFilters.Environment).To(Equal("development"),
 				"DS Environment should match signal")
-			Expect(string(capturingDS.listWorkflowsParams.Priority)).To(Equal("P2"),
+			Expect(capturingDS.listWorkflowsFilters.Priority).To(Equal("P2"),
 				"DS Priority should match signal")
-			Expect(capturingDS.listWorkflowsParams.ActionType).To(Equal("RestartPod"),
+			Expect(capturingDS.listWorkflowsActionType).To(Equal("RestartPod"),
 				"ActionType should come from LLM tool call args")
 		})
 	})

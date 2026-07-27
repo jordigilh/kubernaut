@@ -71,7 +71,7 @@ var _ = Describe("HTTPMetrics Middleware", func() {
 			// Find the duration metric
 			var found bool
 			for _, mf := range metricFamilies {
-				if mf.GetName() == "gateway_http_request_duration_seconds" {
+				if mf.GetName() == gatewayMetrics.MetricNameHTTPRequestDuration {
 					found = true
 					Expect(mf.GetType()).To(Equal(dto.MetricType_HISTOGRAM))
 
@@ -122,7 +122,7 @@ var _ = Describe("HTTPMetrics Middleware", func() {
 
 			var foundOK, foundError bool
 			for _, mf := range metricFamilies {
-				if mf.GetName() == "gateway_http_request_duration_seconds" {
+				if mf.GetName() == gatewayMetrics.MetricNameHTTPRequestDuration {
 					for _, metric := range mf.GetMetric() {
 						labels := metric.GetLabel()
 						for _, label := range labels {
@@ -167,7 +167,7 @@ var _ = Describe("HTTPMetrics Middleware", func() {
 
 			var foundGET, foundPOST bool
 			for _, mf := range metricFamilies {
-				if mf.GetName() == "gateway_http_request_duration_seconds" {
+				if mf.GetName() == gatewayMetrics.MetricNameHTTPRequestDuration {
 					for _, metric := range mf.GetMetric() {
 						labels := metric.GetLabel()
 						for _, label := range labels {

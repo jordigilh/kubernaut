@@ -6,24 +6,15 @@ import (
 )
 
 // Client defines the interface for Data Store operations.
+//
+// Issue #1677 Phase 2g (DD-WORKFLOW-019): ListWorkflows (backed by DS's now-
+// retired GET /api/v1/workflows) was removed from this interface. The
+// kubernaut_list_workflows tool is KA-backed now -- see HandleListWorkflowsKA
+// (ka_tools.go) and ka.MCPClient.ListWorkflows.
 type Client interface {
-	ListWorkflows(ctx context.Context, opts ListWorkflowsOpts) ([]Workflow, error)
 	GetRemediationHistory(ctx context.Context, opts HistoryOpts) ([]HistoricalRemediation, error)
 	GetEffectiveness(ctx context.Context, opts EffectivenessOpts) (*EffectivenessReport, error)
 	GetAuditTrail(ctx context.Context, opts AuditTrailOpts) ([]AuditEvent, error)
-}
-
-// ListWorkflowsOpts are the query options for listing workflows.
-type ListWorkflowsOpts struct {
-	Kind string
-}
-
-// Workflow represents a workflow definition from the Data Store catalog.
-type Workflow struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Kind        string `json:"kind,omitempty"`
 }
 
 // HistoryOpts are the query options for remediation history.
@@ -74,15 +65,9 @@ type AuditEvent struct {
 
 // MockClient is a test double for the DS Client interface.
 type MockClient struct {
-	ListWorkflowsFn         func(ctx context.Context, opts ListWorkflowsOpts) ([]Workflow, error)
 	GetRemediationHistoryFn func(ctx context.Context, opts HistoryOpts) ([]HistoricalRemediation, error)
 	GetEffectivenessFn      func(ctx context.Context, opts EffectivenessOpts) (*EffectivenessReport, error)
 	GetAuditTrailFn         func(ctx context.Context, opts AuditTrailOpts) ([]AuditEvent, error)
-}
-
-// ListWorkflows delegates to the mock function.
-func (m *MockClient) ListWorkflows(ctx context.Context, opts ListWorkflowsOpts) ([]Workflow, error) {
-	return m.ListWorkflowsFn(ctx, opts)
 }
 
 // GetRemediationHistory delegates to the mock function.

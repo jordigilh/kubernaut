@@ -33,7 +33,7 @@ var _ = Describe("Validity Window Integration (BR-EM-006, BR-EM-007)", func() {
 	// IT-EM-VW-001: EA with past deadline -> marked expired on first reconcile
 	// ========================================
 	It("IT-EM-VW-001: should complete EA with expired validity deadline", func() {
-		ns := createTestNamespace("em-vw-001")
+		ns := createTestNamespace(ctx, "em-vw-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with already-expired validity deadline")
@@ -66,7 +66,7 @@ var _ = Describe("Validity Window Integration (BR-EM-006, BR-EM-007)", func() {
 	// IT-EM-VW-002: EA completes within window -> normal completion with full assessment
 	// ========================================
 	It("IT-EM-VW-002: should process EA within validity window to completion", func() {
-		ns := createTestNamespace("em-vw-002")
+		ns := createTestNamespace(ctx, "em-vw-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with generous validity window (30 minutes)")
@@ -97,7 +97,7 @@ var _ = Describe("Validity Window Integration (BR-EM-006, BR-EM-007)", func() {
 	// IT-EM-VW-005: EA with tight validity window -> expires quickly
 	// ========================================
 	It("IT-EM-VW-005: should handle tight validity window and complete", func() {
-		ns := createTestNamespace("em-vw-005")
+		ns := createTestNamespace(ctx, "em-vw-005")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA (validity window computed by EM controller)")

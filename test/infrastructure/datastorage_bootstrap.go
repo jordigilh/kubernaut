@@ -59,12 +59,6 @@ type DSBootstrapConfig struct {
 	// This allows DataStorage to self-validate its auth middleware in the /health endpoint
 	// Optional: Only needed when using real middleware auth in integration tests
 	DataStorageServiceTokenPath string // Path to data-storage-sa token file (e.g., "/tmp/datastorage-service-token")
-
-	// ClientToken is a bearer token for an authenticated test client (DD-AUTH-014).
-	// If non-empty, StartDSBootstrap seeds action types via the DataStorage API as
-	// its last step, satisfying the FK constraint before any workflow registration.
-	// Set automatically by NewDSBootstrapConfigWithAuth from authConfig.Token.
-	ClientToken string
 }
 
 // NewDSBootstrapConfigWithAuth creates a DSBootstrapConfig with authentication properly configured
@@ -109,7 +103,6 @@ func NewDSBootstrapConfigWithAuth(
 		ConfigDir:                   configDir,
 		EnvtestKubeconfig:           authConfig.KubeconfigPath,
 		DataStorageServiceTokenPath: authConfig.DataStorageServiceTokenPath,
-		ClientToken:                 authConfig.Token,
 	}
 }
 
@@ -130,7 +123,7 @@ const (
 // - UUID ensures zero collision risk (no timestamp needed - UUID is sufficient)
 // - Simplest possible format while maintaining uniqueness
 // - No redundancy - image name already contains infrastructure type
-func generateInfrastructureImageTag(infrastructure, consumer string) string {
+func generateInfrastructureImageTag(consumer string) string {
 	// Use 8 hex characters from nanoseconds for UUID
 	uuid := fmt.Sprintf("%x", time.Now().UnixNano())[:8]
 	return fmt.Sprintf("%s-%s", consumer, uuid)
@@ -152,6 +145,12 @@ type DSBootstrapInfra struct {
 	// Image information for cleanup (DD-TEST-001 v1.3)
 	DataStorageImageName string // Full image name with tag (e.g., kubernaut/datastorage:datastorage-gateway-1734278400)
 
+	// DataStorageImagePreserve, when true, means DataStorageImageName is an
+	// externally-managed image (CI-prebuilt artifact or registry pull) that
+	// StopDSBootstrap must NOT `podman rmi` -- other suites in the same CI
+	// job may still need to reuse it (#1738).
+	DataStorageImagePreserve bool
+
 	Config DSBootstrapConfig // Original configuration (for reference)
 
 	// SigningCertDir holds the temp directory with tls.crt/tls.key for audit export signing.
@@ -172,34 +171,33 @@ type DSBootstrapInfra struct {
 //   - IMAGE_TAG: Image tag (e.g., "pr-123", "main-abc1234")
 //
 // Returns:
-//   - imageName: The local image name after tagging (same as input localImageName)
-//   - pulled: true if successfully pulled from registry, false otherwise
-//   - error: Only returns error if pull succeeded but tagging failed
+//   - imageName: The registry image name (empty if not pulled)
+//   - pulled: true if successfully pulled from registry, false otherwise (caller should build locally)
 //
 // Usage:
 //
-//	if imageName, pulled, _ := tryPullFromRegistry(ctx, "datastorage", localImageName, writer); pulled {
+//	if imageName, pulled := tryPullFromRegistry(ctx, "datastorage", writer); pulled {
 //	    return imageName, nil // Use registry image
 //	}
 //	// Otherwise, fall through to local build
 //
 // Authority: CI/CD pipeline optimization for integration tests
-func tryPullFromRegistry(ctx context.Context, serviceName, localImageName string, writer io.Writer) (string, bool, error) {
+func tryPullFromRegistry(ctx context.Context, serviceName string, writer io.Writer) (string, bool) {
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
 
 	if registry == "" || tag == "" {
-		return "", false, nil // Not configured, caller should build locally
+		return "", false // Not configured, caller should build locally
 	}
 
 	registryImage := fmt.Sprintf("%s/%s:%s", registry, serviceName, tag)
 	_, _ = fmt.Fprintf(writer, "   🔄 Registry mode detected (IMAGE_REGISTRY + IMAGE_TAG set)\n")
 
-	exists, err := VerifyImageExistsInRegistry(registryImage, writer)
+	exists, err := VerifyImageExistsInRegistry(ctx, registryImage, writer)
 	if err != nil || !exists {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Registry verification failed: %v\n", err)
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Falling back to local build...\n")
-		return "", false, nil
+		return "", false
 	}
 
 	_, _ = fmt.Fprintf(writer, "   📥 Pulling image from registry: %s\n", registryImage)
@@ -208,11 +206,11 @@ func tryPullFromRegistry(ctx context.Context, serviceName, localImageName string
 	pullCmd.Stderr = writer
 	if pullErr := pullCmd.Run(); pullErr != nil {
 		_, _ = fmt.Fprintf(writer, "   ⚠️  Pull failed: %v, falling back to local build...\n", pullErr)
-		return "", false, nil
+		return "", false
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Image pulled from registry (skipping local build)\n")
 
-	return registryImage, true, nil
+	return registryImage, true
 }
 
 // BuildDataStorageImage builds the DataStorage Docker image for integration tests.
@@ -229,25 +227,35 @@ func tryPullFromRegistry(ctx context.Context, serviceName, localImageName string
 // - error: Any errors during image build
 //
 // Per DD-TEST-004: Generates unique image tag per service to prevent collisions
-func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
+// Returns the resolved image name plus a preserveImage flag: true means the
+// image is externally-managed (CI-prebuilt artifact or registry pull) and
+// MUST NOT be removed by StopDSBootstrap's cleanup, since other suites
+// running later in the same CI job may still need to reuse it. false means
+// the image was built (or already cached) locally and is safe to remove.
+func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Writer) (imageName string, preserveImage bool, err error) {
 	projectRoot := getProjectRoot()
 
 	// Generate DD-TEST-001 v1.3 compliant image tag
-	imageTag := generateInfrastructureImageTag("datastorage", serviceName)
-	imageName := fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
+	imageTag := generateInfrastructureImageTag(serviceName)
+	imageName = fmt.Sprintf("kubernaut/datastorage:%s", imageTag)
 
 	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
 	// this service under the agreed-upon fixed tag (artifact-based CI mode,
-	// no registry involved). Mirrors StartGenericContainer's equivalent
-	// check (container_management.go) — without it, every suite that calls
-	// StartDSBootstrap unconditionally re-runs a --no-cache local build even
-	// though CI already built and loaded this exact image.
-	if artifactTag := os.Getenv("KUBERNAUT_CI_ARTIFACT_TAG"); artifactTag != "" {
-		prebuiltImage := fmt.Sprintf("localhost/datastorage:%s", artifactTag)
-		if checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", prebuiltImage); checkCmd.Run() == nil {
-			_, _ = fmt.Fprintf(writer, "   ✅ Using CI-prebuilt artifact: %s\n", prebuiltImage)
-			return prebuiltImage, nil
-		}
+	// no registry involved). Delegates to resolvePrebuiltCIArtifact
+	// (e2e_images.go) -- without it, every suite that calls StartDSBootstrap
+	// unconditionally re-runs a --no-cache local build even though CI
+	// already built and loaded this exact image. See #1738: this check was
+	// previously duplicated 4x with no failure diagnostics, silently masking
+	// why 3 of kubernautagent's 4 DS-dependent suites missed the cache.
+	//
+	// preserveImage=true here is load-bearing, not cosmetic: root-caused via
+	// #1738's own diagnostics -- the first kubernautagent suite to hit this
+	// fast path *did* get "✅ Using CI-prebuilt artifact", but StopDSBootstrap
+	// then unconditionally `podman rmi`'d that exact shared tag on teardown,
+	// so all 3 remaining suites in the same job legitimately found it gone
+	// (not a flaky "podman image exists" miss -- a real deletion).
+	if prebuilt, ok := resolvePrebuiltCIArtifact(ctx, "datastorage", writer); ok {
+		return prebuilt, true, nil
 	}
 
 	// DEBUG: Show environment variable status
@@ -255,19 +263,18 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	tag := os.Getenv("IMAGE_TAG")
 	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
 
-	// CI/CD Optimization: Try to pull from registry if configured
-	if pulledImageName, pulled, err := tryPullFromRegistry(ctx, "datastorage", imageName, writer); pulled {
-		if err != nil {
-			return "", err // Tag failed after successful pull
-		}
-		return pulledImageName, nil // Use registry image
+	// CI/CD Optimization: Try to pull from registry if configured. Same
+	// preserve-on-teardown rationale as the CI-prebuilt-artifact path above:
+	// this image isn't ours to delete.
+	if pulledImageName, pulled := tryPullFromRegistry(ctx, "datastorage", writer); pulled {
+		return pulledImageName, true, nil // Use registry image
 	}
 
 	// Check if image already exists (cache hit)
 	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", imageName)
 	if checkCmd.Run() == nil {
 		_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image already exists: %s\n", imageName)
-		return imageName, nil
+		return imageName, false, nil
 	}
 
 	// Build the image locally
@@ -283,18 +290,18 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 	buildCmd.Stdout = writer
 	buildCmd.Stderr = writer
 
-	if err := buildCmd.Run(); err != nil {
+	if buildErr := buildCmd.Run(); buildErr != nil {
 		// Check if image was actually built despite error (podman cleanup issue)
-		checkAgain := exec.Command("podman", "image", "exists", imageName)
+		checkAgain := exec.CommandContext(ctx, "podman", "image", "exists", imageName)
 		if checkAgain.Run() == nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", imageName)
-			return imageName, nil
+			return imageName, false, nil
 		}
-		return "", fmt.Errorf("failed to build DataStorage image: %w", err)
+		return "", false, fmt.Errorf("failed to build DataStorage image: %w", buildErr)
 	}
 
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage image built: %s\n", imageName)
-	return imageName, nil
+	return imageName, false, nil
 }
 
 // StartDSBootstrap starts DataStorage infrastructure using DD-TEST-002 sequential pattern
@@ -312,7 +319,7 @@ func BuildDataStorageImage(ctx context.Context, serviceName string, writer io.Wr
 // Returns:
 // - *DSBootstrapInfra: Infrastructure references for cleanup
 // - error: Any errors during infrastructure startup
-func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfra, error) {
+func StartDSBootstrap(ctx context.Context, cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfra, error) {
 	// Default HealthPort to DataStoragePort+10000 if not explicitly set.
 	// Offset 10000 avoids collision with MetricsPort (which is typically DataStoragePort+1000).
 	if cfg.HealthPort == 0 {
@@ -345,28 +352,29 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 
 	// Step 0: Build DataStorage image (can be parallelized in test suites)
 	_, _ = fmt.Fprintf(writer, "🔨 Building DataStorage image...\n")
-	imageName, err := BuildDataStorageImage(context.Background(), cfg.ServiceName, writer)
+	imageName, preserveImage, err := BuildDataStorageImage(ctx, cfg.ServiceName, writer)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build DataStorage image: %w", err)
 	}
 	infra.DataStorageImageName = imageName
+	infra.DataStorageImagePreserve = preserveImage
 	_, _ = fmt.Fprintf(writer, "\n")
 
 	// Step 1: Cleanup
 	_, _ = fmt.Fprintf(writer, "🧹 Cleaning up existing containers...\n")
-	cleanupDSBootstrapContainers(infra, writer)
+	cleanupDSBootstrapContainers(ctx, infra)
 	_, _ = fmt.Fprintf(writer, "   ✅ Cleanup complete\n\n")
 
 	// Step 2: Network
 	_, _ = fmt.Fprintf(writer, "🌐 Creating test network...\n")
-	if err := createDSBootstrapNetwork(infra, writer); err != nil {
+	if err := createDSBootstrapNetwork(ctx, infra, writer); err != nil {
 		return nil, fmt.Errorf("failed to create network: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Network ready: %s\n\n", infra.Network)
 
 	// Step 3: PostgreSQL
 	_, _ = fmt.Fprintf(writer, "🐘 Starting PostgreSQL...\n")
-	if err := startDSBootstrapPostgreSQL(infra, writer); err != nil {
+	if err := startDSBootstrapPostgreSQL(ctx, infra, writer); err != nil {
 		return nil, fmt.Errorf("failed to start PostgreSQL: %w", err)
 	}
 
@@ -375,26 +383,26 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 	// Phase 1: pg_isready (connection check)
 	// Phase 2: SELECT 1 (queryability check)
 	// Per DD-TEST-002: This prevents race condition in migrations
-	if err := WaitForPostgreSQLReady(infra.PostgresContainer, defaultPostgresUser, defaultPostgresDB, writer); err != nil {
+	if err := WaitForPostgreSQLReady(ctx, infra.PostgresContainer, defaultPostgresUser, defaultPostgresDB, writer); err != nil {
 		return nil, fmt.Errorf("PostgreSQL failed to become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ PostgreSQL ready and queryable\n\n")
 
 	// Step 4: Migrations
 	_, _ = fmt.Fprintf(writer, "🔄 Running database migrations...\n")
-	if err := runDSBootstrapMigrations(infra, projectRoot, writer); err != nil {
+	if err := runDSBootstrapMigrations(ctx, infra, projectRoot, writer); err != nil {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Migrations applied successfully\n\n")
 
 	// Step 5: Redis
 	_, _ = fmt.Fprintf(writer, "🔴 Starting Redis...\n")
-	if err := startDSBootstrapRedis(infra, writer); err != nil {
+	if err := startDSBootstrapRedis(ctx, infra, writer); err != nil {
 		return nil, fmt.Errorf("failed to start Redis: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for Redis to be ready...\n")
-	if err := waitForDSBootstrapRedisReady(infra, writer); err != nil {
+	if err := waitForDSBootstrapRedisReady(ctx, infra, writer); err != nil {
 		return nil, fmt.Errorf("redis failed to become ready: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ Redis ready\n\n")
@@ -410,15 +418,15 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 
 	// Step 6: DataStorage
 	_, _ = fmt.Fprintf(writer, "📦 Starting DataStorage service...\n")
-	if err := startDSBootstrapService(infra, imageName, projectRoot, writer); err != nil {
+	if err := startDSBootstrapService(ctx, infra, imageName, projectRoot, writer); err != nil {
 		return nil, fmt.Errorf("failed to start DataStorage: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "⏳ Waiting for DataStorage HTTP endpoint to be ready...\n")
-	if err := waitForDSBootstrapHTTPHealth(infra, 30*time.Second, writer); err != nil {
+	if err := waitForDSBootstrapHTTPHealth(ctx, infra, 30*time.Second, writer); err != nil {
 		// Print container logs for debugging
 		_, _ = fmt.Fprintf(writer, "\n⚠️  DataStorage failed to become healthy. Container logs:\n")
-		logsCmd := exec.Command("podman", "logs", infra.DataStorageContainer)
+		logsCmd := exec.CommandContext(ctx, "podman", "logs", infra.DataStorageContainer)
 		logsCmd.Stdout = writer
 		logsCmd.Stderr = writer
 		_ = logsCmd.Run()
@@ -426,13 +434,10 @@ func StartDSBootstrap(cfg DSBootstrapConfig, writer io.Writer) (*DSBootstrapInfr
 	}
 	_, _ = fmt.Fprintf(writer, "   ✅ DataStorage ready\n\n")
 
-	// Step 7: Seed action types via DS API (DD-WORKFLOW-016: FK constraint)
-	if cfg.ClientToken != "" {
-		_, _ = fmt.Fprintf(writer, "🏷️  Seeding action types via DataStorage API...\n")
-		if err := SeedActionTypesViaAPIWithURL(infra.ServiceURL, cfg.ClientToken, 30*time.Second, writer); err != nil {
-			return nil, fmt.Errorf("failed to seed action types via API: %w", err)
-		}
-	}
+	// #1661 Phase 55: action type seeding via DS's Postgres-backed API was removed
+	// (DD-WORKFLOW-018 dropped the action_type_taxonomy table and the FK constraint
+	// this step used to satisfy). Suites needing ActionType CRDs to exist for DS's
+	// informer-backed cache now seed them directly via their own K8s client.
 
 	// Success
 	_, _ = fmt.Fprintf(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
@@ -473,18 +478,27 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 	}
 
 	for _, container := range containers {
-		stopCmd := exec.Command("podman", "stop", container)
+		stopCmd := exec.CommandContext(context.Background(), "podman", "stop", container)
 		_ = stopCmd.Run() // Ignore errors
 
-		rmCmd := exec.Command("podman", "rm", container)
+		rmCmd := exec.CommandContext(context.Background(), "podman", "rm", container)
 		_ = rmCmd.Run() // Ignore errors
 	}
 
 	// Remove ONLY kubernaut-built DataStorage image (DD-TEST-001 v1.3)
-	// Base images (postgres, redis) are NOT removed - they're shared and cached
-	if infra.DataStorageImageName != "" {
+	// Base images (postgres, redis) are NOT removed - they're shared and cached.
+	//
+	// #1738: DataStorageImagePreserve guards the CI-prebuilt-artifact and
+	// registry-pull cases -- those images are shared across every suite in
+	// the same CI job (e.g. kubernautagent's 4 independent Ginkgo suites).
+	// Removing them here after the first suite finishes silently forced all
+	// later suites into a --no-cache local rebuild, which is what pushed the
+	// Integration (kubernautagent) job past its CI timeout.
+	if infra.DataStorageImageName != "" && infra.DataStorageImagePreserve {
+		_, _ = fmt.Fprintf(writer, "♻️  Preserving externally-managed DataStorage image for reuse by other suites: %s\n", infra.DataStorageImageName)
+	} else if infra.DataStorageImageName != "" {
 		_, _ = fmt.Fprintf(writer, "🗑️  Removing kubernaut-built DataStorage image: %s\n", infra.DataStorageImageName)
-		rmiCmd := exec.Command("podman", "rmi", infra.DataStorageImageName)
+		rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", infra.DataStorageImageName)
 		if err := rmiCmd.Run(); err != nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Failed to remove image (may not exist): %v\n", err)
 		} else {
@@ -493,7 +507,7 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 	}
 
 	// Remove network
-	networkCmd := exec.Command("podman", "network", "rm", infra.Network)
+	networkCmd := exec.CommandContext(context.Background(), "podman", "network", "rm", infra.Network)
 	_ = networkCmd.Run() // Ignore errors
 
 	_, _ = fmt.Fprintf(writer, "✅ DataStorage Infrastructure stopped and cleaned up\n")
@@ -505,7 +519,7 @@ func StopDSBootstrap(infra *DSBootstrapInfra, writer io.Writer) error {
 // ============================================================================
 
 // cleanupDSBootstrapContainers removes any existing containers from previous runs
-func cleanupDSBootstrapContainers(infra *DSBootstrapInfra, writer io.Writer) {
+func cleanupDSBootstrapContainers(ctx context.Context, infra *DSBootstrapInfra) {
 	containers := []string{
 		infra.PostgresContainer,
 		infra.RedisContainer,
@@ -514,24 +528,24 @@ func cleanupDSBootstrapContainers(infra *DSBootstrapInfra, writer io.Writer) {
 	}
 
 	for _, container := range containers {
-		stopCmd := exec.Command("podman", "stop", container)
+		stopCmd := exec.CommandContext(ctx, "podman", "stop", container)
 		_ = stopCmd.Run() // Ignore errors
 
-		rmCmd := exec.Command("podman", "rm", container)
+		rmCmd := exec.CommandContext(ctx, "podman", "rm", container)
 		_ = rmCmd.Run() // Ignore errors
 	}
 }
 
 // createDSBootstrapNetwork creates the test network
-func createDSBootstrapNetwork(infra *DSBootstrapInfra, writer io.Writer) error {
+func createDSBootstrapNetwork(ctx context.Context, infra *DSBootstrapInfra, writer io.Writer) error {
 	// Check if network already exists
-	checkCmd := exec.Command("podman", "network", "exists", infra.Network)
+	checkCmd := exec.CommandContext(ctx, "podman", "network", "exists", infra.Network)
 	if checkCmd.Run() == nil {
 		return nil // Network exists
 	}
 
 	// Create network
-	cmd := exec.Command("podman", "network", "create", infra.Network)
+	cmd := exec.CommandContext(ctx, "podman", "network", "create", infra.Network)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	return cmd.Run()
@@ -539,10 +553,10 @@ func createDSBootstrapNetwork(infra *DSBootstrapInfra, writer io.Writer) error {
 
 // PullImageWithRetry pulls a container image with exponential backoff.
 // This prevents transient registry failures (e.g., Docker Hub 504) from failing the entire test suite.
-func PullImageWithRetry(image string, maxRetries int, writer io.Writer) error {
+func PullImageWithRetry(ctx context.Context, image string, maxRetries int, writer io.Writer) error {
 	var lastErr error
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		cmd := exec.Command("podman", "pull", image)
+		cmd := exec.CommandContext(ctx, "podman", "pull", image)
 		cmd.Stdout = writer
 		cmd.Stderr = writer
 		if err := cmd.Run(); err != nil {
@@ -563,15 +577,15 @@ func PullImageWithRetry(image string, maxRetries int, writer io.Writer) error {
 }
 
 // startDSBootstrapPostgreSQL starts the PostgreSQL container
-func startDSBootstrapPostgreSQL(infra *DSBootstrapInfra, writer io.Writer) error {
+func startDSBootstrapPostgreSQL(ctx context.Context, infra *DSBootstrapInfra, writer io.Writer) error {
 	cfg := infra.Config
 
 	const postgresImage = "docker.io/library/postgres:16-alpine"
-	if err := PullImageWithRetry(postgresImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, postgresImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull PostgreSQL image: %w", err)
 	}
 
-	cmd := exec.Command("podman", "run", "-d",
+	cmd := exec.CommandContext(ctx, "podman", "run", "-d",
 		"--name", infra.PostgresContainer,
 		"--network", infra.Network,
 		"-p", fmt.Sprintf("%d:5432", cfg.PostgresPort),
@@ -587,7 +601,7 @@ func startDSBootstrapPostgreSQL(infra *DSBootstrapInfra, writer io.Writer) error
 
 // runDSBootstrapMigrations applies database migrations using the goose Go library (DD-012).
 // Connects directly to PostgreSQL via the Podman-exposed port and runs goose.Up().
-func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, writer io.Writer) error {
+func runDSBootstrapMigrations(ctx context.Context, infra *DSBootstrapInfra, projectRoot string, writer io.Writer) error {
 	migrationsDir := filepath.Join(projectRoot, defaultMigrationsPath)
 
 	connStr := fmt.Sprintf("host=localhost port=%d user=%s password=%s dbname=%s sslmode=disable",
@@ -599,24 +613,23 @@ func runDSBootstrapMigrations(infra *DSBootstrapInfra, projectRoot string, write
 	}
 	defer func() { _ = db.Close() }()
 
-	if err := db.Ping(); err != nil {
+	if err := db.PingContext(ctx); err != nil {
 		return fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 
-	ctx := context.Background()
 	return RunGooseMigrations(ctx, db, migrationsDir, writer)
 }
 
 // startDSBootstrapRedis starts the Redis container
-func startDSBootstrapRedis(infra *DSBootstrapInfra, writer io.Writer) error {
+func startDSBootstrapRedis(ctx context.Context, infra *DSBootstrapInfra, writer io.Writer) error {
 	cfg := infra.Config
 
 	const redisImage = "redis:7-alpine"
-	if err := PullImageWithRetry(redisImage, 3, writer); err != nil {
+	if err := PullImageWithRetry(ctx, redisImage, 3, writer); err != nil {
 		return fmt.Errorf("failed to pull Redis image: %w", err)
 	}
 
-	cmd := exec.Command("podman", "run", "-d",
+	cmd := exec.CommandContext(ctx, "podman", "run", "-d",
 		"--name", infra.RedisContainer,
 		"--network", infra.Network,
 		"-p", fmt.Sprintf("%d:6379", cfg.RedisPort),
@@ -628,9 +641,9 @@ func startDSBootstrapRedis(infra *DSBootstrapInfra, writer io.Writer) error {
 }
 
 // waitForDSBootstrapRedisReady waits for Redis to be ready
-func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) error {
+func waitForDSBootstrapRedisReady(ctx context.Context, infra *DSBootstrapInfra, writer io.Writer) error {
 	for i := 1; i <= 10; i++ {
-		cmd := exec.Command("podman", "exec", infra.RedisContainer,
+		cmd := exec.CommandContext(ctx, "podman", "exec", infra.RedisContainer,
 			"redis-cli", "ping")
 		output, err := cmd.Output()
 		if err == nil && strings.Contains(string(output), "PONG") {
@@ -652,7 +665,7 @@ func waitForDSBootstrapRedisReady(infra *DSBootstrapInfra, writer io.Writer) err
 // DD-AUTH-014: Platform-specific network configuration (per DD_AUTH_014_MACOS_PODMAN_LIMITATION.md)
 //   - Linux CI/CD: --network=host (Option D) - Container can reach localhost directly
 //   - macOS: Bridge network (Option A) - Requires IPv6 disabled + kubeconfig rewrite to IPv4
-func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectRoot string, writer io.Writer) error {
+func startDSBootstrapService(ctx context.Context, infra *DSBootstrapInfra, imageName string, projectRoot string, writer io.Writer) error {
 	cfg := infra.Config
 	configDir := filepath.Join(projectRoot, cfg.ConfigDir)
 
@@ -759,7 +772,7 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 
 	args = append(args, imageName)
 
-	cmd := exec.Command("podman", args...)
+	cmd := exec.CommandContext(ctx, "podman", args...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -770,12 +783,16 @@ func startDSBootstrapService(infra *DSBootstrapInfra, imageName string, projectR
 
 // waitForDSBootstrapHTTPHealth waits for DataStorage health endpoint to respond with 200 OK.
 // Issue #753: Health probes moved to dedicated port (8081) with /readyz endpoint.
-func waitForDSBootstrapHTTPHealth(infra *DSBootstrapInfra, timeout time.Duration, writer io.Writer) error {
+func waitForDSBootstrapHTTPHealth(ctx context.Context, infra *DSBootstrapInfra, timeout time.Duration, writer io.Writer) error {
 	deadline := time.Now().Add(timeout)
 	client := &http.Client{Timeout: 5 * time.Second}
 
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(infra.HealthURL + "/readyz")
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, infra.HealthURL+"/readyz", nil)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build health check request: %w", reqErr)
+		}
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			return nil

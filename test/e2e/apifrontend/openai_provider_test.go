@@ -8,6 +8,11 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 // E2E-AF-1254-001: Full A2A journey with openai_compatible provider (mock-LLM)
 //
 // This test verifies the complete end-to-end journey:
@@ -29,7 +34,7 @@ var _ = Describe("OpenAI Provider E2E (BR-INTEGRATION-1254)", Label("e2e", "open
 	var sreToken string
 
 	BeforeEach(func() {
-		if os.Getenv("AF_E2E_OPENAI_LANE") != "true" {
+		if os.Getenv("AF_E2E_OPENAI_LANE") != trueFixture {
 			Skip("OpenAI E2E lane not active — set AF_E2E_OPENAI_LANE=true with openai_compatible overlay (deferred per #1254)")
 		}
 
@@ -64,7 +69,7 @@ var _ = Describe("OpenAI Provider E2E (BR-INTEGRATION-1254)", Label("e2e", "open
 		task, err := extractTaskFromResult(rpc.Result)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(task.ID).NotTo(BeEmpty(), "task ID must not be empty")
-		Expect(task.Status.State).To(BeElementOf("completed", "working"),
+		Expect(task.Status.State).To(BeElementOf(completed, "working"),
 			"task should reach completed or working state — not failed")
 	})
 })

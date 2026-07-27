@@ -77,9 +77,12 @@ type ToolRegistration func(server *mcpsdk.Server, userFromCtx func(context.Conte
 // ToolDeps holds optional tool registration functions.
 // nil fields are skipped during registration.
 type ToolDeps struct {
-	Investigate       ToolRegistration
-	SelectWorkflow    ToolRegistration
-	CompleteNoAction  ToolRegistration
+	Investigate      ToolRegistration
+	SelectWorkflow   ToolRegistration
+	CompleteNoAction ToolRegistration
+	// ListWorkflows registers the stateless kubernaut_list_workflows catalog
+	// browse tool (#1677 Phase 2f, DD-WORKFLOW-019).
+	ListWorkflows ToolRegistration
 }
 
 // MCPDeps holds the dependencies needed to bootstrap the MCP server.
@@ -125,6 +128,10 @@ func (s *MCPServer) registerTools(deps ToolDeps) {
 	}
 	if deps.CompleteNoAction != nil {
 		deps.CompleteNoAction(s.server, userFn)
+		s.toolCount.Add(1)
+	}
+	if deps.ListWorkflows != nil {
+		deps.ListWorkflows(s.server, userFn)
 		s.toolCount.Add(1)
 	}
 }

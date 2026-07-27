@@ -99,7 +99,7 @@ func NewReloadableOAuth2Transport(cfg ReloadableOAuth2Config, base http.RoundTri
 func (t *ReloadableOAuth2Transport) StartWatching(ctx context.Context) error {
 	paths := []string{t.clientIDPath, t.clientSecretPath}
 	for _, path := range paths {
-		w, err := hotreload.NewFileWatcher(path, func(_ string) error {
+		w, err := hotreload.NewFileWatcher(path, func(_ string) error { //nolint:contextcheck // file-watcher reload callback rebuilds the long-lived token source, independent of any single request
 			return t.rebuildTokenSource()
 		}, t.logger)
 		if err != nil {

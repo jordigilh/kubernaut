@@ -1,7 +1,7 @@
 # PROPOSAL-EXT-003: Agent Runtime Evaluation
 
-**Status**: SUPERSEDED (see [Addendum: OAS Runtime + ACP + OpenShell](#addendum-oas-runtime--acp--openshell-architecture))
-**Date**: April 15, 2026 (original); May 3, 2026 (Goose decision accepted); May 20, 2026 (Goose superseded by OAS Runtime + ACP)
+**Status**: ❌ SUPERSEDED (twice over) — see [#1536](https://github.com/jordigilh/kubernaut/issues/1536). Both the original Goose-runtime body (Sections 1-16, Appendices A-E) **and** the [Addendum: OAS Runtime + ACP + OpenShell](#addendum-oas-runtime--acp--openshell-architecture) that superseded it are now superseded by the runtime-agnostic opaque-OCI-image direction — neither a Kubernaut-selected "Goose runtime" nor a Kubernaut-selected "OAS/ACP runtime" exists anymore; the agent image's own entrypoint runs, opaque to Kubernaut. The Addendum's **defense-in-depth security model** (§16.7, DG-20/21/22 — AuthBridge/OpenShell/pattern-detection/semantic-detection/deterministic-gate layers) is the one part of this doc with lasting value; it has been extracted and updated for the opaque-agent model in [ADR-KA-002](../decisions/ADR-KA-002-agent-security-defense-in-depth.md). This document is retained for historical context only.
+**Date**: April 15, 2026 (original); May 3, 2026 (Goose decision accepted); May 20, 2026 (Goose superseded by OAS Runtime + ACP); July 5, 2026 (OAS Runtime + ACP + OpenShell superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536))
 **Author**: Kubernaut Architecture Team
 **Confidence**: 82% (OAS Runtime spike validated, May 20 2026). The OAS Runtime spike (`docs/architecture/spikes/oas-runtime/`) validates the complete architecture: `open-agent-sdk-go` v0.5.0 provides streaming agentic loop, MCP client, hook system, and multi-provider support in a 10MB Go binary. ACP server (6 endpoints, REST + SSE) is implemented and compiles. No upstream dependencies -- all components are under Kubernaut's control. Key risks: OAS Go SDK maturity (v0.5.0, 7 weeks old), provider matrix validation pending, OpenShell alpha status. Confidence rises to 90%+ when provider validation spike completes and first end-to-end investigation runs.
 **Related**: [#711](https://github.com/jordigilh/kubernaut/issues/711) (Investigation Prompt Bundles), [#601](https://github.com/jordigilh/kubernaut/issues/601) (Shadow Agent), [#648](https://github.com/jordigilh/kubernaut/issues/648) (Multi-Agent Consensus / Dual Investigation), [#708](https://github.com/jordigilh/kubernaut/issues/708) (API Frontend Service), [#883](https://github.com/jordigilh/kubernaut/issues/883) (Goose Recipe Format Convergence -- to be updated), [PROPOSAL-EXT-001](PROPOSAL-EXT-001-external-integration-strategy.md) (External Integration Strategy), [PROPOSAL-EXT-002](PROPOSAL-EXT-002-investigation-prompt-bundles.md) (Investigation Prompt Bundles)
@@ -2313,6 +2313,8 @@ The CLI subprocess alternative was evaluated and rejected: intra-container calls
 ---
 
 ## Addendum: OAS Runtime + ACP + OpenShell Architecture
+
+⚠️ **This Addendum is itself superseded** — see [#1536](https://github.com/jordigilh/kubernaut/issues/1536). The OAS/ACP runtime-selection model (DG-7 through DG-19) is replaced by the opaque-OCI-image direction. DG-20 (shadow agent as a Goose/ACP session), DG-21 (Agent Sandbox), and DG-22 (NemoClaw scanner), along with the §16.7 defense-in-depth model, describe real, still-relevant security concerns but in terms of the now-dead session/runtime model — see [ADR-KA-002](../decisions/ADR-KA-002-agent-security-defense-in-depth.md) for the current version of this security model.
 
 **Date**: May 20, 2026
 **Status**: ACTIVE -- supersedes the Goose runtime adoption documented above

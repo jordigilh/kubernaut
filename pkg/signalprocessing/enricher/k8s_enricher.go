@@ -62,6 +62,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/signalprocessing/ownerchain"
 )
 
+// kindPod is the Kubernetes Kind string for Pod resources, used across
+// signal-driven dispatch, workload identification, and GVK lookups below.
+const kindPod = "Pod"
+
 // K8sEnricher fetches Kubernetes context for signal enrichment.
 type K8sEnricher struct {
 	client            client.Client
@@ -166,7 +170,7 @@ func (e *K8sEnricher) enrichByKind(ctx context.Context, signal *signalprocessing
 
 	// Signal-driven enrichment based on resource kind
 	switch signal.TargetResource.Kind {
-	case "Pod":
+	case kindPod:
 		return e.enrichPodSignal(ctx, signal, result)
 	case "Deployment":
 		return e.enrichDeploymentSignal(ctx, signal, result)
@@ -230,7 +234,7 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 		return nil, fmt.Errorf("failed to fetch pod: %w", err)
 	}
 	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
-		Kind:        "Pod",
+		Kind:        kindPod,
 		Name:        pod.Name,
 		Labels:      ensureMap(pod.Labels),
 		Annotations: ensureMap(pod.Annotations),
@@ -671,7 +675,7 @@ func (e *K8sEnricher) fetchRemoteWorkloadContext(ctx context.Context, reader cli
 // stays nil). Extracted from enrichRemote (Wave 6 6e-iii GREEN: funlen
 // remediation) — pure code motion, no behavior change.
 func (e *K8sEnricher) buildRemoteOwnerChain(ctx context.Context, reader client.Reader, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) {
-	if signal.TargetResource.Kind != "Pod" {
+	if signal.TargetResource.Kind != kindPod {
 		return
 	}
 	remoteBuilder := ownerchain.NewBuilder(reader, e.logger)
@@ -687,8 +691,8 @@ func (e *K8sEnricher) buildRemoteOwnerChain(ctx context.Context, reader client.R
 // kindToGVK maps common workload kinds to their GroupVersionKind.
 func kindToGVK(kind string) schema.GroupVersionKind {
 	switch kind {
-	case "Pod":
-		return schema.GroupVersionKind{Version: "v1", Kind: "Pod"}
+	case kindPod:
+		return schema.GroupVersionKind{Version: "v1", Kind: kindPod}
 	case "Deployment":
 		return schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"}
 	case "StatefulSet":

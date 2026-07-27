@@ -55,7 +55,7 @@ var _ = Describe("E2E-AA-607: Not-Actionable Confidence Gate", Label("e2e", "not
 		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
-			_ = createTestNamespace("e2e-607-not-actionable")
+			_ = createTestNamespace(ctx, "e2e-607-not-actionable")
 			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "e2e-not-actionable-607-" + randomSuffix(),
@@ -102,7 +102,7 @@ var _ = Describe("E2E-AA-607: Not-Actionable Confidence Gate", Label("e2e", "not
 			By("Waiting for AA to complete (not fail) — #607 fix removes confidence gate on actionable=false")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"),
 				"#607: actionable=false must route to Completed, not Failed")
 

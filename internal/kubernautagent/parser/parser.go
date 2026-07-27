@@ -98,7 +98,7 @@ const confidenceFloor = 0.8
 // from outcome when the `actionable` field was absent.
 func ApplyInvestigationOutcome(result *katypes.InvestigationResult, outcome string) {
 	switch outcome {
-	case "problem_resolved":
+	case katypes.InvestigationOutcomeProblemResolved:
 		if result.IsActionable == nil {
 			falseVal := false
 			result.IsActionable = &falseVal

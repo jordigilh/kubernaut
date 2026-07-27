@@ -302,7 +302,7 @@ var _ = SynchronizedAfterSuite(
 		logger.Info("🧹 Deleting Kind cluster...")
 		err := infrastructure.DeleteCluster(clusterName, "kubernaut-agent", anyFailure, GinkgoWriter, sharedNamespace)
 		if err != nil {
-			logger.Info("⚠️  Warning: Failed to delete cluster", "error", err)
+			logger.Info("⚠️  Warning: Failed to delete cluster", errorFixture, err)
 		} else {
 			logger.Info("✅ Cluster deleted successfully")
 		}

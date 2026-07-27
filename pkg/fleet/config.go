@@ -78,6 +78,18 @@ type FleetConfig struct {
 	// or "kuadrant" (Kuadrant MCP Gateway). Defaults to "eaigw" when empty.
 	MCPGatewayType MCPGatewayType `yaml:"mcpGatewayType,omitempty"`
 
+	// Namespace restricts the ClusterRegistry's CRD watch (MCPServerRegistration
+	// for kuadrant; Backend/MCPRoute for eaigw) to a single namespace instead of
+	// watching cluster-wide. Threaded into registry.RegistryConfig.Namespace by
+	// callers that construct a ClusterRegistry directly (AF, EM). Empty (the
+	// default) preserves the pre-existing cluster-wide watch behavior. Mirrors
+	// the field SP/FMC already expose locally (pkg/signalprocessing/config,
+	// MCPGatewayConfig below); least-privilege RBAC (BR-RBAC-020, #1686) is only
+	// possible when this is set, since the Helm chart narrows the granted
+	// Role/RoleBinding to match whatever namespace this carries.
+	// +optional
+	Namespace string `yaml:"namespace,omitempty"`
+
 	// TLSCAFile is the path to the CA certificate bundle for verifying TLS connections
 	// to the fleet backend (ACM Search, FMC). When set, the ACM client uses this CA
 	// instead of InsecureSkipVerify. Typically mounted from the service-ca operator.
@@ -260,13 +272,18 @@ const (
 // EffectiveEndpoint returns the configured endpoint, or derives it for the FMC
 // backend when no explicit endpoint is set. Auto-derivation uses the same
 // namespace detection pattern as DataStorage (POD_NAMESPACE env > SA mount > "default").
+//
+// Issue #1683: the auto-derived URL uses https:// -- FMC's API port presents
+// TLS by default (ConfigureConditionalTLS), matching every other Kubernaut
+// HTTP-API service (DataStorage, Gateway). An explicit Endpoint is passed
+// through unchanged, so a deployment can still opt into plain HTTP.
 func (c FleetConfig) EffectiveEndpoint() string {
 	if c.Endpoint != "" {
 		return c.Endpoint
 	}
 	if c.Backend == BackendFMC {
 		ns := detectNamespace()
-		return fmt.Sprintf("http://%s.%s.svc.cluster.local:%s", fmcServiceName, ns, fmcServicePort)
+		return fmt.Sprintf("https://%s.%s.svc.cluster.local:%s", fmcServiceName, ns, fmcServicePort)
 	}
 	return ""
 }

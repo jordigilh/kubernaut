@@ -18,6 +18,10 @@ const StateKeyTerminal = "af:terminal"
 // clients via the SSE retry: field for reconnection backoff.
 const DefaultRetryMS = 3000
 
+// EventTypeDone is the SSEPayload.EventType value signaling the SSE stream
+// has reached a terminal state and should close.
+const EventTypeDone = "done"
+
 // SSEPayload is the JSON structure sent in the data: field of SSE frames.
 // The EventType field intentionally duplicates the SSE event: line so that
 // clients parsing only the JSON data (e.g. via fetch ReadableStream without
@@ -42,7 +46,7 @@ func FormatSSEFrame(event *adksession.Event, seq int) ([]byte, error) {
 	eventType := EventTypeFromEvent(event)
 
 	if isTerminalEvent(event) {
-		eventType = "done"
+		eventType = EventTypeDone
 	}
 
 	payload := eventToPayload(event, seq, eventType)
@@ -107,7 +111,7 @@ func eventToPayload(event *adksession.Event, seq int, eventType string) SSEPaylo
 	}
 
 	if event.Content == nil {
-		if eventType == "done" {
+		if eventType == EventTypeDone {
 			p.Text = "Investigation complete"
 		}
 		return p
@@ -126,7 +130,7 @@ func eventToPayload(event *adksession.Event, seq int, eventType string) SSEPaylo
 		}
 	}
 
-	if eventType == "done" && p.Text == "" {
+	if eventType == EventTypeDone && p.Text == "" {
 		p.Text = "Investigation complete"
 	}
 

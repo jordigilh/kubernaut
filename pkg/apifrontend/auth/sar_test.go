@@ -19,13 +19,14 @@ import (
 
 var _ = Describe("SARChecker", func() {
 	var (
-		ctx       context.Context
-		fakeK8s   *k8sfake.Clientset
-		checker   *auth.SARChecker
-		sarCalls  atomic.Int32
-		lastSAR   *authorizationv1.SubjectAccessReview
+		ctx      context.Context
+		fakeK8s  *k8sfake.Clientset
+		checker  *auth.SARChecker
+		sarCalls atomic.Int32
+		lastSAR  *authorizationv1.SubjectAccessReview
 	)
 
+	//nolint:unparam // must match k8stesting.ReactionFunc signature required by PrependReactor
 	allowAll := func(action k8stesting.Action) (bool, runtime.Object, error) {
 		sarCalls.Add(1)
 		createAction := action.(k8stesting.CreateAction)
@@ -35,6 +36,7 @@ var _ = Describe("SARChecker", func() {
 		return true, sar, nil
 	}
 
+	//nolint:unparam // must match k8stesting.ReactionFunc signature required by PrependReactor
 	denyAll := func(action k8stesting.Action) (bool, runtime.Object, error) {
 		sarCalls.Add(1)
 		createAction := action.(k8stesting.CreateAction)
@@ -44,7 +46,8 @@ var _ = Describe("SARChecker", func() {
 		return true, sar, nil
 	}
 
-	failAll := func(action k8stesting.Action) (bool, runtime.Object, error) {
+	//nolint:unparam // action unused and runtime.Object always nil, but must match k8stesting.ReactionFunc signature required by PrependReactor
+	failAll := func(_ k8stesting.Action) (bool, runtime.Object, error) {
 		sarCalls.Add(1)
 		return true, nil, errors.New("api server unreachable")
 	}

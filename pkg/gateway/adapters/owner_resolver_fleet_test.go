@@ -49,7 +49,7 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
 			adapter.SetReaderFactory(&fleettest.StubReaderFactory{Readers: map[string]client.Reader{}})
 
-			payload := buildAlertPayload("", "default", "Pod", "nginx-abc")
+			payload := buildAlertPayload("")
 			signal, err := adapter.Parse(ctx, payload)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(signal).ToNot(BeNil())
@@ -69,7 +69,7 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				},
 			})
 
-			payload := buildAlertPayload("prod-east", "default", "Pod", "nginx-abc")
+			payload := buildAlertPayload("prod-east")
 			signal, err := adapter.Parse(ctx, payload)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(signal).ToNot(BeNil())
@@ -84,7 +84,7 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 			}
 			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
 
-			payload := buildAlertPayload("prod-east", "default", "Pod", "nginx-abc")
+			payload := buildAlertPayload("prod-east")
 			signal, err := adapter.Parse(ctx, payload)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(signal).ToNot(BeNil(),
@@ -101,7 +101,7 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 				Err: fmt.Errorf("MCP session unavailable"),
 			})
 
-			payload := buildAlertPayload("prod-east", "default", "Pod", "nginx-abc")
+			payload := buildAlertPayload("prod-east")
 			signal, err := adapter.Parse(ctx, payload)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(signal).ToNot(BeNil(),
@@ -115,7 +115,7 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 			}
 			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
 
-			payload := buildAlertPayload("", "default", "Pod", "nginx-abc")
+			payload := buildAlertPayload("")
 			signal, err := adapter.Parse(ctx, payload)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(signal).ToNot(BeNil())
@@ -130,11 +130,11 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 			}
 			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
 
-			payloadLocal := buildAlertPayload("", "default", "Pod", "nginx-abc")
+			payloadLocal := buildAlertPayload("")
 			signalLocal, err := adapter.Parse(ctx, payloadLocal)
 			Expect(err).ToNot(HaveOccurred())
 
-			payloadRemote := buildAlertPayload("prod-east", "default", "Pod", "nginx-abc")
+			payloadRemote := buildAlertPayload("prod-east")
 			signalRemote, err := adapter.Parse(ctx, payloadRemote)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -149,7 +149,7 @@ var _ = Describe("PrometheusAdapter — Fleet remote owner chain (P1)", func() {
 			}
 			adapter := adapters.NewPrometheusAdapter(localResolver, nil, logr.Discard())
 
-			payload := buildAlertPayload("prod-east", "default", "Pod", "nginx-abc")
+			payload := buildAlertPayload("prod-east")
 			signals, err := adapter.ParseBatch(ctx, payload)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(signals).ToNot(BeEmpty())
@@ -173,7 +173,7 @@ func (s *stubOwnerResolver) ResolveTopLevelOwner(_ context.Context, _, _, _ stri
 var _ types.OwnerResolver = (*stubOwnerResolver)(nil)
 
 // buildAlertPayload creates a minimal AlertManager webhook JSON payload for testing.
-func buildAlertPayload(clusterID, namespace, kind, name string) []byte {
+func buildAlertPayload(clusterID string) []byte {
 	commonLabels := map[string]string{}
 	if clusterID != "" {
 		commonLabels["cluster"] = clusterID
@@ -182,15 +182,8 @@ func buildAlertPayload(clusterID, namespace, kind, name string) []byte {
 	labels := map[string]string{
 		"alertname": "HighCPU",
 		"severity":  "warning",
-		"namespace": namespace,
-	}
-	switch kind {
-	case "Pod":
-		labels["pod"] = name
-	case "Deployment":
-		labels["deployment"] = name
-	default:
-		labels["pod"] = name
+		"namespace": "default",
+		"pod":       "nginx-abc",
 	}
 
 	payload := map[string]any{

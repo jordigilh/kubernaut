@@ -10,8 +10,8 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/go-logr/logr"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	adksession "google.golang.org/adk/session"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
@@ -136,7 +136,7 @@ var _ = Describe("IT-AF-1156: Audit Normalization Integration", func() {
 		adkSvc := adksession.InMemoryService()
 		recorder := &itRecordingEmitter{}
 		svc := session.NewCRDSessionService(
-			adkSvc, k8sClient, scheme, "default",
+			adkSvc, k8sClient, scheme, defaultFixture,
 			session.WithAuditor(recorder),
 		)
 		ctx := context.Background()
@@ -162,7 +162,7 @@ var _ = Describe("IT-AF-1156: Audit Normalization Integration", func() {
 		_, err := svc.Create(ctx, &req)
 		Expect(err).NotTo(HaveOccurred())
 
-		err = svc.MaterializeCRD(ctx, "sess-duration-it", v1alpha1.ObjectRef{Name: "rr-duration-it", Namespace: "default"})
+		err = svc.MaterializeCRD(ctx, "sess-duration-it", v1alpha1.ObjectRef{Name: "rr-duration-it", Namespace: defaultFixture})
 		Expect(err).NotTo(HaveOccurred())
 
 		Eventually(func(g Gomega) {
@@ -196,7 +196,7 @@ var _ = Describe("IT-AF-1156: Audit Normalization Integration", func() {
 				"session_id": "sess-multi-001", "tool_name": "kubernaut_investigate", "tool_outcome": "success", "execution_duration_ms": "150",
 			}},
 			{Type: audit.EventRRCreated, CorrelationID: "rr-multi-001", UserID: "alice", Detail: map[string]string{
-				"rr_name": "rr-test-001", "rr_namespace": "default",
+				"rr_name": "rr-test-001", "rr_namespace": defaultFixture,
 			}},
 			{Type: audit.EventSeverityTriageCompleted, CorrelationID: "rr-multi-001", UserID: "system", Detail: map[string]string{
 				"severity": "critical", "source_tier": "prometheus_rules",

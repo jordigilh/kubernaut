@@ -137,12 +137,24 @@ var _ = Describe("TP-433-ADV P1: Critical Wiring — GAP-006/GAP-007", func() {
 		})
 	})
 
-	Describe("UT-KA-433-WIR-004: nil CatalogFetcher means no validation — graceful skip (#665)", func() {
-		It("should have nil CatalogFetcher when no DS is configured (dev mode)", func() {
+	// #1677 hardening (DD-WORKFLOW-019) superseded the original #665 "nil
+	// CatalogFetcher means graceful skip, dev mode" contract this Describe
+	// documented: KA always runs in-cluster and always wires a
+	// workflowCatalogFetcher (backed by a LazyCatalog, ready or not), so a
+	// nil CatalogFetcher in production no longer exists as a supported
+	// state. runWorkflowSelection now fails closed (HumanReviewNeeded=true,
+	// HumanReviewReason="catalog_unavailable") instead of silently
+	// forwarding an unvalidated LLM-selected workflow -- see
+	// investigator_workflow_selection.go and the characterization tests in
+	// apiversion_gate_test.go / workflow_discovery_rca_characterization_test.go,
+	// which now default to a non-nil stubCatalogFetcher precisely because
+	// nil no longer means "skip validation".
+	Describe("UT-KA-433-WIR-004: nil CatalogFetcher is a wiring gap, not a supported state (#1677 hardening)", func() {
+		It("Pipeline{} zero value still has a nil CatalogFetcher (Go zero value)", func() {
 			pipeline := investigator.Pipeline{}
 			Expect(pipeline.CatalogFetcher).To(BeNil(),
-				"nil CatalogFetcher means validation is skipped — "+
-					"KA still starts and serves /health without DS (dev mode, #665)")
+				"the zero-value Pipeline's CatalogFetcher is nil; production callers "+
+					"(cmd/kubernautagent) always populate it explicitly")
 		})
 
 		It("should trigger self-correction when CatalogFetcher returns a validator and workflow is invalid", func() {

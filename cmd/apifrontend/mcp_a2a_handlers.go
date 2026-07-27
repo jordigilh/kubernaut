@@ -98,12 +98,12 @@ func buildA2AHandler(ctx context.Context, d *handlerDeps) (http.Handler, error) 
 	warnIfUnsupportedLLMTransport(d)
 
 	sessionSvcForAgent := sessionServiceForAgent(d)
-	rootAgent, _, err := agentpkg.NewRootAgent(buildRootAgentConfig(d, llmModel, sessionSvcForAgent))
+	rootAgent, _, err := agentpkg.NewRootAgent(buildRootAgentConfig(d, llmModel, sessionSvcForAgent)) //nolint:contextcheck // buildRootAgentConfig wires the instruction provider once at startup; no parent request context exists yet
 	if err != nil {
 		return nil, fmt.Errorf("create root agent: %w", err)
 	}
 
-	h, err := launcher.NewA2AHandler(buildA2AConfig(d, rootAgent, sessionSvcForAgent))
+	h, err := launcher.NewA2AHandler(buildA2AConfig(d, rootAgent, sessionSvcForAgent)) //nolint:contextcheck // NewA2AHandler wires the after-execute audit callback once at startup; no parent request context exists yet
 	if err != nil {
 		return nil, fmt.Errorf("create A2A handler: %w", err)
 	}

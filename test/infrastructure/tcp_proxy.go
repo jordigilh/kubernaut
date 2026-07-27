@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"io"
 	"net"
 	"sync"
@@ -40,7 +41,7 @@ type InterruptibleProxy struct {
 // NewInterruptibleProxy creates a proxy listening on a random localhost port.
 // All accepted connections are forwarded to target (e.g., "localhost:8088").
 func NewInterruptibleProxy(target string) (*InterruptibleProxy, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +93,7 @@ func (p *InterruptibleProxy) acceptLoop() {
 }
 
 func (p *InterruptibleProxy) handleConn(clientConn net.Conn) {
-	upstreamConn, err := net.Dial("tcp", p.target)
+	upstreamConn, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", p.target)
 	if err != nil {
 		_ = clientConn.Close()
 		return

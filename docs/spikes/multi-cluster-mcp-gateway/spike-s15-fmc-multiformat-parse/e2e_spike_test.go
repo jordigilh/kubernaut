@@ -76,7 +76,7 @@ func extractStructured(result *mcp.CallToolResult) []map[string]any {
 }
 
 // fullPriorityChain simulates the actual FMC client parse logic.
-func fullPriorityChain(result *mcp.CallToolResult, kind, apiVersion string) ([]unstructured.Unstructured, string, error) {
+func fullPriorityChain(result *mcp.CallToolResult) ([]unstructured.Unstructured, string, error) {
 	// Priority 1: StructuredContent
 	if sc := extractStructured(result); sc != nil {
 		items := make([]unstructured.Unstructured, len(sc))
@@ -88,7 +88,7 @@ func fullPriorityChain(result *mcp.CallToolResult, kind, apiVersion string) ([]u
 
 	// Priority 2+3+4: Text parsing
 	text := extractText(result)
-	items, err := parseMultiFormat(text, kind, apiVersion)
+	items, err := parseMultiFormat(text)
 	if err != nil {
 		return nil, "", err
 	}
@@ -122,7 +122,7 @@ func TestE2ETableDeployment(t *testing.T) {
 		t.Fatalf("CallTool: %v", err)
 	}
 
-	items, format, err := fullPriorityChain(result, "Deployment", "apps/v1")
+	items, format, err := fullPriorityChain(result)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestE2ETableNodeClusterScoped(t *testing.T) {
 		t.Fatalf("CallTool: %v", err)
 	}
 
-	items, format, err := fullPriorityChain(result, "Node", "v1")
+	items, format, err := fullPriorityChain(result)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestE2EYAMLDeployment(t *testing.T) {
 		t.Fatalf("CallTool: %v", err)
 	}
 
-	items, format, err := fullPriorityChain(result, "Deployment", "apps/v1")
+	items, format, err := fullPriorityChain(result)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestE2EYAMLNodeClusterScoped(t *testing.T) {
 		t.Fatalf("CallTool: %v", err)
 	}
 
-	items, format, err := fullPriorityChain(result, "Node", "v1")
+	items, format, err := fullPriorityChain(result)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

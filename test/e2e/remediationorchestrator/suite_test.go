@@ -64,6 +64,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	trueFixture = "true"
+)
+
 // Test constants for timeout and polling intervals
 const (
 	timeout  = 120 * time.Second // Longer timeout for E2E with real services
@@ -269,7 +274,7 @@ var _ = SynchronizedAfterSuite(
 		// Determine cleanup strategy
 		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
-		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == "true" || os.Getenv("KEEP_CLUSTER") == "true"
+		preserveCluster := os.Getenv("PRESERVE_E2E_CLUSTER") == trueFixture || os.Getenv("KEEP_CLUSTER") == trueFixture
 
 		if preserveCluster {
 			GinkgoWriter.Println("⚠️  CLUSTER PRESERVED FOR DEBUGGING")
@@ -279,7 +284,7 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
-		if os.Getenv("E2E_COVERAGE") == "true" && !setupFailed {
+		if os.Getenv("E2E_COVERAGE") == trueFixture && !setupFailed {
 			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
 				ServiceName:    "remediationorchestrator",
 				ClusterName:    clusterName,
@@ -343,7 +348,16 @@ var _ = SynchronizedAfterSuite(
 
 // createTestNamespace creates a managed test namespace and waits for Active.
 // Delegates to shared helpers.CreateTestNamespaceAndWait with kubernaut.ai/managed=true.
-func createTestNamespace(prefix string) string {
+//
+// Investigated per Issue #1546 review: ctx is intentionally unused here, not a
+// missed-wiring bug. CreateTestNamespaceAndWait uses context.Background() internally
+// per DD-E2E-PARALLEL, since namespace lifecycle must not be affected by test-level
+// timeouts (see test/shared/helpers/namespace.go). The ctx parameter is kept because
+// callers across many other e2e/remediationorchestrator test files (outside this
+// fix's scope) pass it positionally; removing it would require editing those call sites too.
+//
+//nolint:unparam // ctx is unused by design (see comment above); kept for caller compatibility outside this fix's scope.
+func createTestNamespace(ctx context.Context, prefix string) string {
 	return helpers.CreateTestNamespaceAndWait(k8sClient, prefix)
 }
 

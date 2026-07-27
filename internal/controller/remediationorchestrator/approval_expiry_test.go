@@ -107,12 +107,12 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 			It("should set Status.Expired=true when controller detects deadline passed", func() {
 				// Given: RR in AwaitingApproval with pending RAR whose requiredBy is in the past
 				pastTime := metav1.NewTime(time.Now().Add(-1 * time.Hour))
-				rar := newRemediationApprovalRequestPendingWithRequiredBy("rar-test-rr", "default", "test-rr", pastTime)
+				rar := newRemediationApprovalRequestPendingWithRequiredBy("rar-test-rr", defaultFixture, "test-rr", pastTime)
 
 				initialObjects := []client.Object{
-					newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-					newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-					newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.4, "risky-workflow"),
+					newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
+					newSignalProcessingCompleted("test-rr-sp", "test-rr"),
+					newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
 					rar,
 				}
 
@@ -148,13 +148,13 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 
 				// When: Reconcile the RR (triggers handleAwaitingApprovalPhase timeout path)
 				_, err := reconciler.Reconcile(ctx, ctrl.Request{
-					NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"},
+					NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture},
 				})
 				Expect(err).ToNot(HaveOccurred())
 
 				// Then: RAR Status.Expired must be true
 				updatedRAR := &remediationv1.RemediationApprovalRequest{}
-				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: "default"}, updatedRAR)).To(Succeed())
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: defaultFixture}, updatedRAR)).To(Succeed())
 				Expect(updatedRAR.Status.Expired).To(BeTrue(), "Status.Expired must be set to true when approval times out")
 				Expect(updatedRAR.Status.TimeRemaining).To(Equal("0s"), "Status.TimeRemaining must be 0s when expired")
 			})
@@ -163,10 +163,10 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 		Context("negative cases: Expired should remain false", func() {
 			It("should have Expired=false when RAR is approved", func() {
 				initialObjects := []client.Object{
-					newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-					newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-					newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.4, "risky-workflow"),
-					newRemediationApprovalRequestApproved("rar-test-rr", "default", "test-rr", "admin@example.com"),
+					newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
+					newSignalProcessingCompleted("test-rr-sp", "test-rr"),
+					newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
+					newRemediationApprovalRequestApproved("rar-test-rr", "test-rr", "admin@example.com"),
 				}
 
 				fakeClient = fake.NewClientBuilder().
@@ -194,20 +194,20 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 					RoutingEngine: mockRouting,
 				})
 
-				_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"}})
+				_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture}})
 				Expect(err).ToNot(HaveOccurred())
 
 				updatedRAR := &remediationv1.RemediationApprovalRequest{}
-				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: "default"}, updatedRAR)).To(Succeed())
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: defaultFixture}, updatedRAR)).To(Succeed())
 				Expect(updatedRAR.Status.Expired).To(BeFalse(), "Status.Expired must be false when RAR is approved")
 			})
 
 			It("should have Expired=false when RAR is rejected", func() {
 				initialObjects := []client.Object{
-					newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-					newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-					newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.4, "risky-workflow"),
-					newRemediationApprovalRequestRejected("rar-test-rr", "default", "test-rr", "admin@example.com", "Too risky"),
+					newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
+					newSignalProcessingCompleted("test-rr-sp", "test-rr"),
+					newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
+					newRemediationApprovalRequestRejected("rar-test-rr", "test-rr", "admin@example.com", "Too risky"),
 				}
 
 				fakeClient = fake.NewClientBuilder().
@@ -235,11 +235,11 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 					RoutingEngine: mockRouting,
 				})
 
-				_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"}})
+				_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture}})
 				Expect(err).ToNot(HaveOccurred())
 
 				updatedRAR := &remediationv1.RemediationApprovalRequest{}
-				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: "default"}, updatedRAR)).To(Succeed())
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: defaultFixture}, updatedRAR)).To(Succeed())
 				Expect(updatedRAR.Status.Expired).To(BeFalse(), "Status.Expired must be false when RAR is rejected")
 			})
 		})
@@ -250,12 +250,12 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 			It("should set Status.TimeRemaining to non-empty string (e.g. contains 's' for seconds)", func() {
 				// Given: RAR with requiredBy 60 seconds in the future
 				futureTime := metav1.NewTime(time.Now().Add(60 * time.Second))
-				rar := newRemediationApprovalRequestPendingWithRequiredBy("rar-test-rr", "default", "test-rr", futureTime)
+				rar := newRemediationApprovalRequestPendingWithRequiredBy("rar-test-rr", defaultFixture, "test-rr", futureTime)
 
 				initialObjects := []client.Object{
-					newRemediationRequestWithChildRefs("test-rr", "default", remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
-					newSignalProcessingCompleted("test-rr-sp", "default", "test-rr"),
-					newAIAnalysisCompleted("test-rr-ai", "default", "test-rr", 0.4, "risky-workflow"),
+					newRemediationRequestWithChildRefs("test-rr", defaultFixture, remediationv1.PhaseAwaitingApproval, "test-rr-sp", "test-rr-ai", ""),
+					newSignalProcessingCompleted("test-rr-sp", "test-rr"),
+					newAIAnalysisCompleted("test-rr-ai", defaultFixture, "test-rr", 0.4, "risky-workflow"),
 					rar,
 				}
 
@@ -285,12 +285,12 @@ var _ = Describe("RAR Status.Expired and Status.TimeRemaining (Bug Fix 3 & 4)", 
 				})
 
 				// When: Reconcile (RAR is pending, not expired)
-				_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: "default"}})
+				_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: "test-rr", Namespace: defaultFixture}})
 				Expect(err).ToNot(HaveOccurred())
 
 				// Then: TimeRemaining must be non-empty and contain "s" (Go duration format)
 				updatedRAR := &remediationv1.RemediationApprovalRequest{}
-				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: "default"}, updatedRAR)).To(Succeed())
+				Expect(fakeClient.Get(ctx, client.ObjectKey{Name: "rar-test-rr", Namespace: defaultFixture}, updatedRAR)).To(Succeed())
 				Expect(updatedRAR.Status.TimeRemaining).ToNot(BeEmpty(), "Status.TimeRemaining must be populated when RAR is pending")
 				Expect(updatedRAR.Status.TimeRemaining).To(ContainSubstring("s"), "TimeRemaining should use Go duration format (e.g. 59s, 1m0s)")
 			})

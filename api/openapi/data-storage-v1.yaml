@@ -81,18 +81,6 @@ tags:
     description: |
       Query API for incident data.
       Implements BR-STORAGE-021.
-  - name: Workflow Catalog API
-    description: |
-      Workflow catalog management and three-step discovery protocol.
-      Implements BR-STORAGE-013, BR-STORAGE-014, BR-HAPI-017-001.
-      V1.0: Label-only matching via action_type taxonomy (DD-WORKFLOW-016).
-  - name: Workflow Discovery API
-    description: |
-      Three-step workflow discovery protocol for LLM-driven remediation.
-      Step 1: List available action types (GET /actions)
-      Step 2: List workflows for action type (GET /actions/{action_type})
-      Step 3: Get workflow with security gate (GET /workflows/{id} + context filters)
-      Authority: DD-WORKFLOW-016, DD-HAPI-017.
   - name: Health
     description: Health check endpoints (DD-007 graceful shutdown support)
   - name: Metrics
@@ -108,881 +96,6 @@ tags:
       Authority: DD-HAPI-016.
 
 paths:
-  /api/v1/workflows/actions:
-    get:
-      tags:
-        - Workflow Discovery API
-      summary: List available action types
-      description: |
-        Step 1 of the three-step workflow discovery protocol.
-        Returns action types from the taxonomy that have active workflows matching
-        the provided signal context filters.
-
-        **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
-        **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
-
-        **Behavior**:
-        - Queries action_type_taxonomy joined with remediation_workflow_catalog
-        - Filters by active workflows matching signal context (severity, component, environment, priority)
-        - Returns action types with descriptions and workflow counts
-        - Paginated (default 10 per page)
-        - Emits `workflow.catalog.actions_listed` audit event (DD-WORKFLOW-014 v3.0)
-      operationId: listAvailableActions
-      parameters:
-        - name: severity
-          in: query
-          required: true
-          schema:
-            type: string
-            enum: [critical, high, warning, info]
-          description: Signal severity level (always provided by Signal Processing)
-        - name: component
-          in: query
-          required: true
-          schema:
-            type: string
-          description: >-
-            Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" for named groups
-            (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod").
-            Wildcard "*" matches all components. Issue #1051.
-        - name: environment
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Target environment (always provided by Signal Processing)
-        - name: priority
-          in: query
-          required: true
-          schema:
-            type: string
-            enum: [P0, P1, P2, P3]
-          description: Business priority level (always provided by Signal Processing)
-        - name: custom_labels
-          in: query
-          required: false
-          schema:
-            type: string
-          description: "JSON-encoded custom labels (e.g., {\"constraint\":[\"cost-constrained\"]})"
-        - name: detected_labels
-          in: query
-          required: false
-          schema:
-            type: string
-          description: "JSON-encoded detected labels (e.g., {\"gitOpsManaged\":true})"
-        - name: cluster
-          in: query
-          required: false
-          schema:
-            type: string
-          description: >-
-            Optional cluster business classification (e.g. "production", "staging-eu")
-            derived by SignalProcessing's Rego policy from fleet cluster-registration
-            labels (BR-FLEET-003, #1511). Omitted entirely for non-fleet deployments --
-            no cluster filter is applied in that case (backward compatible).
-        - name: remediation_id
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Remediation request ID for audit correlation (BR-AUDIT-021)
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-          description: Pagination offset
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 10
-            maximum: 100
-          description: Pagination limit (max 100)
-      responses:
-        '200':
-          description: Action types with matching workflow counts
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionTypeListResponse'
-        '400':
-          description: Validation error (missing required filters)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '500':
-          description: Internal server error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-  /api/v1/workflows/actions/{action_type}:
-    get:
-      tags:
-        - Workflow Discovery API
-      summary: List workflows for action type
-      description: |
-        Step 2 of the three-step workflow discovery protocol.
-        Returns all active workflows matching the specified action type and
-        signal context filters.
-
-        **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
-        **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
-
-        **LLM Instruction**: The LLM MUST review ALL workflows (across all pages)
-        before selecting one. Do not select from an incomplete list.
-
-        **Behavior**:
-        - Filters by action_type + signal context (severity, component, environment, priority)
-        - Excludes disabled and deprecated workflows
-        - Returns workflow metadata including effectiveness data
-        - Paginated (default 10 per page)
-        - Emits `workflow.catalog.workflows_listed` audit event (DD-WORKFLOW-014 v3.0)
-      operationId: listWorkflowsByActionType
-      parameters:
-        - name: action_type
-          in: path
-          required: true
-          schema:
-            type: string
-          description: "Action type from taxonomy (e.g., ScaleReplicas, RestartPod)"
-        - name: severity
-          in: query
-          required: true
-          schema:
-            type: string
-            enum: [critical, high, warning, info]
-          description: Signal severity level (always provided by Signal Processing)
-        - name: component
-          in: query
-          required: true
-          schema:
-            type: string
-          description: >-
-            Kubernetes resource GVK (apiVersion/Kind). Format: "group/version/Kind" for named groups
-            (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod"). Issue #1051.
-        - name: environment
-          in: query
-          required: true
-          schema:
-            type: string
-          description: Target environment (always provided by Signal Processing)
-        - name: priority
-          in: query
-          required: true
-          schema:
-            type: string
-            enum: [P0, P1, P2, P3]
-          description: Business priority level (always provided by Signal Processing)
-        - name: custom_labels
-          in: query
-          required: false
-          schema:
-            type: string
-          description: "JSON-encoded custom labels"
-        - name: detected_labels
-          in: query
-          required: false
-          schema:
-            type: string
-          description: "JSON-encoded detected labels"
-        - name: cluster
-          in: query
-          required: false
-          schema:
-            type: string
-          description: >-
-            Optional cluster business classification (e.g. "production", "staging-eu")
-            derived by SignalProcessing's Rego policy from fleet cluster-registration
-            labels (BR-FLEET-003, #1511). Omitted entirely for non-fleet deployments --
-            no cluster filter is applied in that case (backward compatible).
-        - name: remediation_id
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Remediation request ID for audit correlation (BR-AUDIT-021)
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-          description: Pagination offset
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 10
-            maximum: 100
-          description: Pagination limit (max 100)
-      responses:
-        '200':
-          description: Workflows for the specified action type
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowDiscoveryResponse'
-        '400':
-          description: Validation error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '500':
-          description: Internal server error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-  /api/v1/workflows:
-    post:
-      tags:
-        - Workflow Catalog API
-      summary: Register workflow from inline schema
-      description: |
-        Register a new workflow by providing the raw YAML content of a
-        RemediationWorkflow CRD. Data Storage parses and validates the schema,
-        then populates all catalog fields from it.
-
-        If the workflow was previously registered and disabled (via CRD deletion),
-        it is re-enabled and a 200 response is returned instead of 201.
-
-        **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
-        **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration)
-      operationId: createWorkflow
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateWorkflowInlineRequest'
-      responses:
-        '200':
-          description: |
-            Workflow re-enabled. The workflow was previously disabled and has been
-            re-activated with the provided schema content.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '201':
-          description: Workflow created successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '400':
-          description: |
-            Validation error - schema invalid, unknown action_type, missing mandatory labels,
-            or missing required fields.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '401':
-          description: |
-            Authentication failed - Invalid or missing Bearer token.
-            
-            **Authority**: DD-AUTH-014 (Middleware-based authentication)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '403':
-          description: |
-            Authorization failed - Kubernetes SubjectAccessReview (SAR) denied access.
-            
-            **Authority**: DD-AUTH-014 (Middleware-based authorization)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '409':
-          description: |
-            Conflict - Duplicate workflow.
-            Workflow with same workflow_name and version already exists in active state.
-            
-            **Authority**: DS-BUG-001 fix (RFC 9110 Section 15.5.10)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '500':
-          description: Internal server error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-    get:
-      tags:
-        - Workflow Catalog API
-      summary: List workflows
-      description: |
-        List workflows with optional filters and pagination.
-
-        **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management)
-      operationId: listWorkflows
-      parameters:
-        - name: status
-          in: query
-          schema:
-            type: string
-            enum: [Active, Disabled, Deprecated, Archived]
-        - name: environment
-          in: query
-          schema:
-            type: string
-        - name: priority
-          in: query
-          schema:
-            type: string
-        - name: component
-          in: query
-          schema:
-            type: string
-          description: >-
-            Kubernetes resource GVK filter (apiVersion/Kind). Format: "group/version/Kind"
-            (e.g. "apps/v1/Deployment"), "version/Kind" for core group (e.g. "v1/Pod").
-            Wildcard "*" matches all components. Issue #1051.
-        - name: workflow_name
-          in: query
-          schema:
-            type: string
-          description: Filter by workflow name (exact match for test idempotency)
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 100
-            maximum: 1000
-        - name: offset
-          in: query
-          schema:
-            type: integer
-            default: 0
-      responses:
-        '200':
-          description: Workflow list
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WorkflowListResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-  /api/v1/workflows/{workflow_id}:
-    get:
-      tags:
-        - Workflow Catalog API
-        - Workflow Discovery API
-      summary: Get workflow by UUID (with optional security gate)
-      description: |
-        Retrieve a specific workflow by its UUID.
-        Step 3 of the three-step workflow discovery protocol when context filters are provided.
-
-        **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key)
-        **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017
-
-        **Without context filters**: Returns workflow by ID (existing behavior).
-        **With context filters**: Returns workflow only if it matches the signal context.
-        Returns 404 if the workflow exists but does not match the context filters
-        (security gate - prevents info leakage by not distinguishing "not found" from "filtered out").
-
-        Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present.
-      operationId: getWorkflowByID
-      parameters:
-        - name: workflow_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: severity
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [critical, high, warning, info]
-          description: "Security gate: signal severity level"
-        - name: component
-          in: query
-          required: false
-          schema:
-            type: string
-          description: >-
-            Security gate: Kubernetes resource GVK (apiVersion/Kind). Format:
-            "group/version/Kind" (e.g. "apps/v1/Deployment"), "version/Kind" for
-            core group (e.g. "v1/Pod"). Issue #1051.
-        - name: environment
-          in: query
-          required: false
-          schema:
-            type: string
-          description: "Security gate: target environment"
-        - name: priority
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [P0, P1, P2, P3]
-          description: "Security gate: business priority level"
-        - name: custom_labels
-          in: query
-          required: false
-          schema:
-            type: string
-          description: "Security gate: JSON-encoded custom labels"
-        - name: detected_labels
-          in: query
-          required: false
-          schema:
-            type: string
-          description: "Security gate: JSON-encoded detected labels"
-        - name: remediation_id
-          in: query
-          required: false
-          schema:
-            type: string
-          description: Remediation request ID for audit correlation (BR-AUDIT-021)
-      responses:
-        '200':
-          description: Workflow found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '404':
-          description: Workflow not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '500':
-          description: Internal server error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-    patch:
-      tags:
-        - Workflow Catalog API
-      summary: Update workflow mutable fields
-      description: |
-        Update mutable workflow fields (status, metrics).
-        Immutable fields (description, content, labels) require creating a new version.
-
-        **Design Decision**: DD-WORKFLOW-012 (Mutable vs Immutable Fields)
-      operationId: updateWorkflow
-      parameters:
-        - name: workflow_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowUpdateRequest'
-      responses:
-        '200':
-          description: Workflow updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '400':
-          description: Validation error (attempted to update immutable field)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '404':
-          description: Workflow not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-  /api/v1/workflows/{workflow_id}/disable:
-    patch:
-      tags:
-        - Workflow Catalog API
-      summary: Disable workflow
-      description: |
-        Convenience endpoint to disable a workflow (soft delete).
-        Sets status to 'disabled' with timestamp and reason.
-
-        **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4
-      operationId: disableWorkflow
-      parameters:
-        - name: workflow_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowLifecycleRequest'
-      responses:
-        '200':
-          description: Workflow disabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '400':
-          description: Missing required field (reason)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '404':
-          description: Workflow not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-  /api/v1/workflows/{workflow_id}/enable:
-    patch:
-      tags:
-        - Workflow Catalog API
-      summary: Enable workflow
-      description: |
-        Re-enable a previously disabled or deprecated workflow.
-        Sets status to 'active' with timestamp and reason.
-
-        **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints)
-      operationId: enableWorkflow
-      parameters:
-        - name: workflow_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowLifecycleRequest'
-      responses:
-        '200':
-          description: Workflow enabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '400':
-          description: Missing required field (reason)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '404':
-          description: Workflow not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-  /api/v1/workflows/{workflow_id}/deprecate:
-    patch:
-      tags:
-        - Workflow Catalog API
-      summary: Deprecate workflow
-      description: |
-        Mark a workflow as deprecated. Deprecated workflows are excluded from
-        discovery results but remain in the catalog for audit history.
-
-        **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints)
-      operationId: deprecateWorkflow
-      parameters:
-        - name: workflow_id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/WorkflowLifecycleRequest'
-      responses:
-        '200':
-          description: Workflow deprecated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RemediationWorkflow'
-        '400':
-          description: Missing required field (reason)
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '404':
-          description: Workflow not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-  /api/v1/action-types:
-    post:
-      tags:
-        - ActionType Taxonomy API
-      summary: Create or re-enable an action type
-      description: |
-        Idempotent CREATE: creates a new action type, returns existing if active,
-        or re-enables if previously disabled.
-
-        **Business Requirement**: BR-WORKFLOW-007.1 (Idempotent CREATE)
-        **Design Decision**: DD-ACTIONTYPE-001 (ActionType CRD Lifecycle Design)
-      operationId: createActionType
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ActionTypeCreateRequest'
-      responses:
-        '201':
-          description: Action type created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionTypeCreateResponse'
-        '200':
-          description: Action type already exists (NOOP) or re-enabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionTypeCreateResponse'
-        '400':
-          description: Validation error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-  /api/v1/action-types/{name}:
-    patch:
-      tags:
-        - ActionType Taxonomy API
-      summary: Update action type description
-      description: |
-        Updates the description fields of an active action type.
-        Only spec.description is mutable; spec.name is immutable.
-
-        **Business Requirement**: BR-WORKFLOW-007.2 (Description UPDATE with audit)
-      operationId: updateActionType
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: "PascalCase action type name (e.g., RestartPod)"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ActionTypeUpdateRequest'
-      responses:
-        '200':
-          description: Action type description updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionTypeUpdateResponse'
-        '404':
-          description: Action type not found or disabled
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-  /api/v1/action-types/{name}/disable:
-    patch:
-      tags:
-        - ActionType Taxonomy API
-      summary: Soft-disable an action type
-      description: |
-        Soft-disables an action type. Denied with 409 if active workflows reference it.
-        The denial response includes the count and names of dependent workflows.
-
-        **Business Requirement**: BR-WORKFLOW-007.3 (DELETE with dependency guard)
-      operationId: disableActionType
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: "PascalCase action type name (e.g., RestartPod)"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ActionTypeDisableRequest'
-      responses:
-        '200':
-          description: Action type disabled successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionTypeDisableResponse'
-        '400':
-          description: Invalid request body
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '404':
-          description: Action type not found
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        '409':
-          description: Cannot disable — active workflows depend on this action type, or action type already disabled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionTypeDisableDeniedResponse'
-        '500':
-          description: Internal server error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
-  /api/v1/action-types/{name}/workflow-count:
-    get:
-      tags:
-        - ActionType Taxonomy API
-      summary: Get active workflow count for an action type
-      description: |
-        Returns the number of active RemediationWorkflows referencing this action type.
-        Used by the RW admission webhook to refresh the ActionType CRD's
-        status.activeWorkflowCount after RW CREATE/DELETE (Phase 3c cross-update).
-
-        **Business Requirement**: BR-WORKFLOW-007 (ActionType CRD lifecycle)
-      operationId: getActionTypeWorkflowCount
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-          description: "PascalCase action type name (e.g., RestartPod)"
-      responses:
-        '200':
-          description: Active workflow count for the action type
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActionTypeWorkflowCountResponse'
-        default:
-          description: Unexpected error
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/RFC7807Problem'
-
   /api/v1/audit/events:
     post:
       tags:
@@ -3061,111 +2174,13 @@ components:
     # ========================================
     # WORKFLOW DISCOVERY SCHEMAS (DD-WORKFLOW-016, DD-HAPI-017)
     # ========================================
-    # Three-step discovery protocol response types
-    # Step 1: ActionTypeListResponse (list available actions)
-    # Step 2: WorkflowDiscoveryResponse (list workflows for action type)
-    # Step 3: RemediationWorkflow (get workflow - uses existing schema with security gate)
-
-    ActionTypeListResponse:
-      type: object
-      description: "Response for Step 1: list available action types (DD-WORKFLOW-016)"
-      required:
-        - actionTypes
-        - pagination
-      properties:
-        actionTypes:
-          type: array
-          items:
-            $ref: '#/components/schemas/ActionTypeEntry'
-        pagination:
-          $ref: '#/components/schemas/PaginationMetadata'
-
-    ActionTypeEntry:
-      type: object
-      description: "Single action type with description and workflow count"
-      required:
-        - actionType
-        - description
-        - workflowCount
-      properties:
-        actionType:
-          type: string
-          description: "Action type identifier (e.g., ScaleReplicas, RestartPod)"
-          example: "ScaleReplicas"
-        description:
-          $ref: '#/components/schemas/StructuredDescription'
-        workflowCount:
-          type: integer
-          description: "Number of active workflows matching this action type and context filters"
-          minimum: 0
-
-    WorkflowDiscoveryResponse:
-      type: object
-      description: "Response for Step 2: list workflows for an action type (DD-WORKFLOW-016)"
-      required:
-        - actionType
-        - workflows
-        - pagination
-      properties:
-        actionType:
-          type: string
-          description: "The action type these workflows belong to"
-        workflows:
-          type: array
-          items:
-            $ref: '#/components/schemas/WorkflowDiscoveryEntry'
-        pagination:
-          $ref: '#/components/schemas/PaginationMetadata'
-
-    WorkflowDiscoveryEntry:
-      type: object
-      description: "Workflow summary for discovery (Step 2) - no parameter schema, no scores"
-      required:
-        - workflowId
-        - workflowName
-        - name
-        - description
-        - version
-      properties:
-        workflowId:
-          type: string
-          format: uuid
-          description: "UUID primary key"
-        workflowName:
-          type: string
-          description: "Human-readable workflow identifier (e.g., scale-conservative-v1)"
-        name:
-          type: string
-          description: "Display name"
-        description:
-          $ref: '#/components/schemas/StructuredDescription'
-        version:
-          type: string
-          description: "Semantic version"
-        schemaVersion:
-          type: string
-          description: "Schema format version (e.g., 1.0, 1.1). #255"
-        schemaImage:
-          type: string
-          description: "OCI image used to extract the workflow schema"
-        executionBundle:
-          type: string
-          description: "OCI execution bundle reference (digest-pinned)"
-        executionEngine:
-          type: string
-          description: "Execution engine (tekton, job, ansible)"
-          enum: [tekton, job, ansible]
-        serviceAccountName:
-          type: string
-          description: "Per-workflow ServiceAccount name (DD-WE-005 v2.0). Omitted if not set."
-          example: "my-workflow-sa"
-        # DD-HAPI-017 v1.1: actualSuccessRate and totalExecutions REMOVED from
-        # LLM-facing discovery response. These global aggregate metrics are
-        # misleading for per-incident workflow selection — the conditions under
-        # which they were collected (different signals, targets, environments)
-        # are not applicable to the current case. Contextual remediation history
-        # via spec-hash matching (DD-HAPI-016) is the correct mechanism.
-        # These fields remain on the full RemediationWorkflow schema for operators.
+    # The three-step discovery protocol's own response types (ActionTypeListResponse,
+    # WorkflowDiscoveryResponse, WorkflowDiscoveryEntry, RemediationWorkflow,
+    # WorkflowListResponse, PaginationMetadata, ActionTypeEntry, MandatoryLabels,
+    # ActionTypeWorkflowCountResponse) were removed from this DS contract when the
+    # discovery/scoring/catalog ownership relocated to KubernautAgent (DD-WORKFLOW-019,
+    # Issue #1677). StructuredDescription/CustomLabels/DetectedLabels survive below --
+    # they're still shared with the audit-payload and (deprecated) search schemas.
 
     StructuredDescription:
       type: object
@@ -3186,38 +2201,6 @@ components:
         preconditions:
           type: string
           description: "Conditions that must be verified through investigation."
-
-    PaginationMetadata:
-      type: object
-      description: "Pagination metadata for discovery endpoints (DD-WORKFLOW-016)"
-      required:
-        - totalCount
-        - offset
-        - limit
-        - hasMore
-      properties:
-        totalCount:
-          type: integer
-          description: "Total number of results across all pages"
-          minimum: 0
-        offset:
-          type: integer
-          description: "Current offset (0-based)"
-          minimum: 0
-        limit:
-          type: integer
-          description: "Page size"
-          minimum: 1
-        hasMore:
-          type: boolean
-          description: "True if more pages exist beyond current offset+limit"
-
-    # ========================================
-    # WORKFLOW SEARCH SCHEMAS (DEPRECATED - superseded by DD-WORKFLOW-016)
-    # ========================================
-    # These schemas supported the old POST /api/v1/workflows/search endpoint.
-    # Retained temporarily for reference. Will be removed after all consumers migrate.
-    # Superseded by: ActionTypeListResponse, WorkflowDiscoveryResponse, PaginationMetadata
 
     WorkflowSearchRequest:
       type: object
@@ -3283,50 +2266,6 @@ components:
             type: string
             enum: [Active, Disabled, Deprecated, Archived]
           description: "Workflow lifecycle status filter"
-
-    MandatoryLabels:
-      type: object
-      description: "4 mandatory workflow labels (Issue #274: signalName removed per DD-WORKFLOW-016)"
-      required:
-        - severity
-        - component
-        - environment
-        - priority
-      properties:
-        severity:
-          type: array
-          items:
-            type: string
-            enum: [critical, high, warning, info, "*"]
-          minItems: 1
-          description: "Severity level(s) this workflow is designed for. Always an array. Use '*' to match any severity."
-          example: [critical]
-        component:
-          type: array
-          items:
-            type: string
-          minItems: 1
-          description: "Kubernetes resource GVK(s) this workflow targets in apiVersion/Kind format (e.g. apps/v1/Deployment, v1/Pod). Wildcard '*' matches all. Issues #790, #1051."
-          example: [pod]
-        environment:
-          type: array
-          items:
-            type: string
-            enum: ["production", "staging", "development", "test", "*"]
-          minItems: 1
-          description: "Target environments (workflow can declare multiple, '*' matches all)"
-          example: ["staging", "production"]
-        priority:
-          type: string
-          description: "Business priority level (P0, P1, P2, P3, * for any)"
-          enum: [P0, P1, P2, P3, "*"]
-          example: "P0"
-        cluster:
-          type: array
-          items:
-            type: string
-          description: "BR-FLEET-003 (#1511): Cluster classification(s) this workflow is eligible for, as produced by Signal Processing's Rego policy from fleet cluster-registration labels. Optional — absent in non-fleet (single-cluster) deployments, where it is never evaluated. '*' matches any classification once fleet mode supplies a concrete filter value."
-          example: ["production"]
 
     CustomLabels:
       type: object
@@ -3490,253 +2429,6 @@ components:
           type: object
           additionalProperties: true
           description: "Workflow parameter schema (JSONB) - describes expected parameters"
-
-    CreateWorkflowInlineRequest:
-      type: object
-      required:
-        - content
-      properties:
-        content:
-          type: string
-          description: |
-            Raw YAML content of the RemediationWorkflow CRD. Data Storage
-            parses the CRD envelope (apiVersion/kind/metadata/spec), validates
-            the spec, and populates all catalog fields from it.
-          example: "apiVersion: kubernaut.ai/v1alpha1\nkind: RemediationWorkflow\nmetadata:\n  name: scale-memory\nspec:\n  ..."
-        source:
-          type: string
-          description: |
-            Registration source. Set to "crd" when the request originates from
-            the Auth Webhook on CRD creation, or "api" for direct API calls.
-          example: "crd"
-        registeredBy:
-          type: string
-          description: |
-            Identity of the user or service account that triggered the registration.
-            Populated from AdmissionReview.request.userInfo.username when source is "crd".
-          example: "admin@example.com"
-
-    RemediationWorkflow:
-      type: object
-      required:
-        - workflowName
-        - version
-        - schemaVersion
-        - name
-        - description
-        - content
-        - contentHash
-        - labels
-        - executionEngine
-        - status
-        - actionType
-      properties:
-        workflowId:
-          type: string
-          format: uuid
-          description: "Unique workflow identifier (UUID, auto-generated)"
-        workflowName:
-          type: string
-          maxLength: 255
-          description: "Workflow name (identifier for versions)"
-        actionType:
-          type: string
-          description: "Action type from taxonomy (DD-WORKFLOW-016). FK to action_type_taxonomy."
-          example: "ScaleReplicas"
-        version:
-          type: string
-          maxLength: 50
-          description: "Semantic version (e.g., v1.0.0)"
-        schemaVersion:
-          type: string
-          maxLength: 10
-          description: "Schema format version (e.g., 1.0, 1.1). Determines which structural fields are valid. BR-WORKFLOW-004 v1.1, #255."
-          example: "1.0"
-        name:
-          type: string
-          maxLength: 255
-          description: "Human-readable workflow title"
-        description:
-          $ref: '#/components/schemas/StructuredDescription'
-        owner:
-          type: string
-          maxLength: 255
-          description: "Workflow owner"
-        maintainer:
-          type: string
-          maxLength: 255
-          format: email
-          description: "Workflow maintainer email"
-        content:
-          type: string
-          description: "YAML workflow definition"
-        contentHash:
-          type: string
-          minLength: 64
-          maxLength: 64
-          description: "SHA-256 hash of content"
-        parameters:
-          type: object
-          additionalProperties: true
-          description: "Workflow parameters (JSONB)"
-        executionEngine:
-          type: string
-          description: "Execution engine (e.g., argo-workflows)"
-        schemaImage:
-          type: string
-          description: "OCI image used to extract the workflow schema (DD-WORKFLOW-017)"
-          example: "ghcr.io/kubernaut/workflows/oomkill:v1.0.0@sha256:abc123..."
-        schemaDigest:
-          type: string
-          description: "OCI schema image digest"
-          example: "sha256:abc123..."
-        executionBundle:
-          type: string
-          description: "OCI execution bundle reference (digest-pinned)"
-          example: "ghcr.io/kubernaut/workflows/oomkill@sha256:abc123..."
-        executionBundleDigest:
-          type: string
-          description: "OCI execution bundle digest"
-          example: "sha256:abc123..."
-        serviceAccountName:
-          type: string
-          description: "Pre-existing ServiceAccount for Job/PipelineRun (DD-WE-005 v2.0). Absent = K8s namespace default SA."
-          example: "hpa-workflow-sa"
-        labels:
-          $ref: '#/components/schemas/MandatoryLabels'
-        customLabels:
-          $ref: '#/components/schemas/CustomLabels'
-        detectedLabels:
-          $ref: '#/components/schemas/DetectedLabels'
-        status:
-          type: string
-          enum: [Active, Invalid, Pending, Disabled, Deprecated, Archived, Superseded]
-          description: "Workflow lifecycle status"
-        disabledAt:
-          type: string
-          format: date-time
-          description: "When workflow was disabled"
-        disabledBy:
-          type: string
-          maxLength: 255
-          description: "Who disabled the workflow"
-        disabledReason:
-          type: string
-          description: "Why workflow was disabled"
-        isLatestVersion:
-          type: boolean
-          description: "Is this the latest version?"
-        previousVersion:
-          type: string
-          maxLength: 50
-          description: "Previous version identifier"
-        deprecationNotice:
-          type: string
-          description: "Deprecation notice"
-        versionNotes:
-          type: string
-          description: "Version release notes"
-        changeSummary:
-          type: string
-          description: "Summary of changes in this version"
-        approvedBy:
-          type: string
-          maxLength: 255
-          description: "Who approved this version"
-        approvedAt:
-          type: string
-          format: date-time
-          description: "When this version was approved"
-        expectedSuccessRate:
-          type: number
-          format: float
-          minimum: 0.0
-          maximum: 1.0
-          description: "Expected success rate (0.0-1.0)"
-        expectedDurationSeconds:
-          type: integer
-          minimum: 0
-          description: "Expected execution duration"
-        actualSuccessRate:
-          type: number
-          format: float
-          minimum: 0.0
-          maximum: 1.0
-          description: "Actual success rate (0.0-1.0)"
-        totalExecutions:
-          type: integer
-          minimum: 0
-          description: "Total number of executions"
-        successfulExecutions:
-          type: integer
-          minimum: 0
-          description: "Number of successful executions"
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        createdBy:
-          type: string
-          maxLength: 255
-        updatedBy:
-          type: string
-          maxLength: 255
-
-    WorkflowListResponse:
-      type: object
-      properties:
-        workflows:
-          type: array
-          items:
-            $ref: '#/components/schemas/RemediationWorkflow'
-        limit:
-          type: integer
-        offset:
-          type: integer
-        total:
-          type: integer
-
-    WorkflowUpdateRequest:
-      type: object
-      description: "Update mutable workflow fields only (DD-WORKFLOW-012)"
-      properties:
-        status:
-          type: string
-          enum: [Active, Disabled, Deprecated, Archived]
-          description: "Workflow status (mutable)"
-        disabledBy:
-          type: string
-          description: "Who disabled the workflow"
-        disabledReason:
-          type: string
-          description: "Why the workflow was disabled"
-
-    WorkflowLifecycleRequest:
-      type: object
-      description: "Request for workflow lifecycle operations (enable, disable, deprecate). Reason is mandatory per DD-WORKFLOW-017 Phase 4.4."
-      required:
-        - reason
-      properties:
-        reason:
-          type: string
-          minLength: 1
-          description: "Why the lifecycle operation is being performed (mandatory)"
-        updatedBy:
-          type: string
-          description: "Who is performing the operation"
-
-    WorkflowDisableRequest:
-      type: object
-      description: "Convenience request to disable a workflow (deprecated: use WorkflowLifecycleRequest)"
-      properties:
-        reason:
-          type: string
-          description: "Why the workflow is being disabled"
-        updatedBy:
-          type: string
-          description: "Who is disabling the workflow"
 
     AuditExportResponse:
       type: object
@@ -4428,6 +3120,16 @@ components:
           type: string
           description: Human-readable name of the selected workflow from the DataStorage catalog. Optional; present only when the catalog provides a name.
           example: "fix-security-context-job"
+        action_type:
+          type: string
+          description: |
+            Action type from the DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod). Catalog-authoritative:
+            resolved by KA at workflow-selection time, carried on AIAnalysis.Status.SelectedWorkflow, and copied
+            verbatim by RemediationOrchestrator onto the immutable WorkflowExecution.Spec.WorkflowRef snapshot
+            (mirrors ExecutionEngine/ServiceAccountName/WorkflowName; DD-WORKFLOW-018). Audit-readability only, so
+            started/completed/failed events are human-readable without joining back to the
+            remediationworkflow.admitted.create event by workflow_id (#1661 Change 3).
+          example: "ScaleReplicas"
         target_resource:
           type: string
           description: Kubernetes resource being acted upon (format depends on scope)
@@ -4769,6 +3471,188 @@ components:
           type: string
           description: Reason for denial (only set when action=denied)
           example: "data storage registration failed"
+        workflow_content:
+          $ref: '#/components/schemas/RemediationWorkflowContentPayload'
+        content_hash:
+          type: string
+          description: |
+            SHA-256 hash of workflow_content, computed locally by AuthWebhook over
+            the same clean CRD content it sends to DataStorage (identical algorithm
+            to DataStorage's own content_hash / deterministic workflow_id
+            derivation, #1661 Change 8a). Set whenever workflow_content is set,
+            including on denied events (no DataStorage round-trip required).
+          example: "3f786850e387550fdab836ed7e6dc881de23001bd934f0c64dd25f4f169eb5f"
+
+    RemediationWorkflowContentPayload:
+      type: object
+      description: |
+        Full RemediationWorkflow spec snapshot, mirroring RemediationWorkflowSpec
+        (api/remediationworkflow/v1alpha1/remediationworkflow_types.go) field-for-field
+        so the audit trail can reconstruct the exact workflow definition independent of
+        etcd or DataStorage's cache (#1661). Deliberately more permissive than
+        DataStorage's own search/discovery schemas (e.g. MandatoryLabels' enums) —
+        audit capture must never fail just because content the CRD itself allows falls
+        outside an unrelated endpoint's stricter validation.
+      required: [version, description, actionType, labels, execution, parameters]
+      properties:
+        version:
+          type: string
+          description: "Semantic version (e.g., 1.0.0). spec.version."
+          example: "1.0.0"
+        description:
+          $ref: '#/components/schemas/StructuredDescription'
+        actionType:
+          type: string
+          description: "Action type from the taxonomy (PascalCase). spec.actionType."
+          example: "ScaleReplicas"
+        labels:
+          $ref: '#/components/schemas/RemediationWorkflowContentLabels'
+        customLabels:
+          type: object
+          additionalProperties:
+            type: string
+          description: "Operator-defined key-value labels for additional filtering. spec.customLabels."
+        detectedLabels:
+          description: |
+            Author-declared infrastructure requirements. spec.detectedLabels — the CRD
+            declares this `+kubebuilder:pruning:PreserveUnknownFields` (opaque JSON), so
+            it is captured verbatim rather than forced into a rigid shape.
+        execution:
+          $ref: '#/components/schemas/RemediationWorkflowContentExecution'
+        dependencies:
+          $ref: '#/components/schemas/RemediationWorkflowContentDependencies'
+        maintainers:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentMaintainer'
+          description: "spec.maintainers."
+        parameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentParameter'
+          description: "Workflow input parameters. spec.parameters."
+        rollbackParameters:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentParameter'
+          description: "Parameters needed for rollback. spec.rollbackParameters."
+
+    RemediationWorkflowContentLabels:
+      type: object
+      description: |
+        Mandatory matching/filtering criteria. spec.labels. Structurally mirrors
+        RemediationWorkflowLabels without DS's search-endpoint enum restrictions
+        (MandatoryLabels) — the CRD itself does not enum-constrain these values.
+      required: [severity, environment, component, priority]
+      properties:
+        severity:
+          type: array
+          items:
+            type: string
+          description: "Severity level(s) this workflow is designed for."
+        environment:
+          type: array
+          items:
+            type: string
+          description: "Target environment(s)."
+        component:
+          type: array
+          items:
+            type: string
+          description: "Kubernetes resource type(s)."
+        priority:
+          type: string
+          description: "Business priority level."
+        cluster:
+          type: array
+          items:
+            type: string
+          description: "BR-FLEET-003 (#1511): cluster classification(s) this workflow is eligible for."
+
+    RemediationWorkflowContentExecution:
+      type: object
+      description: "Execution engine configuration. spec.execution."
+      properties:
+        engine:
+          type: string
+          description: "Execution engine type (tekton, job, ansible)."
+        bundle:
+          type: string
+          description: "Execution bundle or container image reference."
+        bundleDigest:
+          type: string
+          description: "Digest of the execution bundle."
+        engineConfig:
+          description: |
+            Engine-specific configuration. spec.execution.engineConfig — opaque JSON
+            (`+kubebuilder:pruning:PreserveUnknownFields` at the CRD level), captured
+            verbatim.
+        serviceAccountName:
+          type: string
+          description: "Pre-existing ServiceAccount for the execution resource."
+
+    RemediationWorkflowContentDependencies:
+      type: object
+      description: "Infrastructure resources required by the workflow. spec.dependencies."
+      properties:
+        secrets:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentResourceDependency'
+        configMaps:
+          type: array
+          items:
+            $ref: '#/components/schemas/RemediationWorkflowContentResourceDependency'
+
+    RemediationWorkflowContentResourceDependency:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+
+    RemediationWorkflowContentMaintainer:
+      type: object
+      required: [name, email]
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+
+    RemediationWorkflowContentParameter:
+      type: object
+      description: "Workflow input/rollback parameter definition. spec.parameters[] / spec.rollbackParameters[]."
+      required: [name, type, required, description]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          description: "Parameter type (string, integer, boolean, array, float)."
+        required:
+          type: boolean
+        description:
+          type: string
+        enum:
+          type: array
+          items:
+            type: string
+        pattern:
+          type: string
+        minimum:
+          type: number
+        maximum:
+          type: number
+        default:
+          description: |
+            Default value. spec.parameters[].default — opaque JSON
+            (`+kubebuilder:pruning:PreserveUnknownFields` at the CRD level; may be any
+            JSON type, not just an object), captured verbatim.
+        dependsOn:
+          type: array
+          items:
+            type: string
 
     AuthwebhookWorkflowRegistrationFailedPayload:
       type: object
@@ -7125,16 +6009,6 @@ components:
           items:
             type: string
           description: "Names of dependent workflows"
-
-    ActionTypeWorkflowCountResponse:
-      type: object
-      description: "Response containing the count of active workflows referencing an action type"
-      required:
-        - count
-      properties:
-        count:
-          type: integer
-          description: "Number of active RemediationWorkflows referencing this action type"
 
     # ── ActionType Audit Payloads (Phase 6, BR-WORKFLOW-007) ──────────────────
 

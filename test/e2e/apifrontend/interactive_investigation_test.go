@@ -46,7 +46,7 @@ var _ = Describe("E2E-1293: Interactive Investigation (AF)", Label("e2e", "inter
 		rrName := fmt.Sprintf("e2e-rr-1293-004-%s", uuid.New().String()[:8])
 
 		By("Creating test RR for the SA to reference")
-		Expect(createRR("default", rrName, "Deployment", "test-deploy-1293-004")).To(Succeed())
+		Expect(createRR("default", rrName, "test-deploy-1293-004")).To(Succeed())
 		DeferCleanup(func() { deleteRR("default", rrName) })
 
 		By("Creating a ServiceAccount in the E2E namespace")

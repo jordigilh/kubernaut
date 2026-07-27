@@ -25,6 +25,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -138,6 +139,58 @@ var _ = Describe("Kubernaut Agent Investigator — retryWorkflowSubmit / retryRC
 			Expect(result).NotTo(BeNil())
 			Expect(result.WorkflowID).To(Equal("wf-2"))
 			Expect(mockClient.callIdx).To(Equal(4), "the errored attempt must not stop retryWorkflowSubmit from trying again")
+		})
+	})
+
+	Describe("UT-KA-WAVE5-R08: retryWorkflowSubmit — a workflow_id recovered via retry must still be catalog-validated (#1677 follow-up hardening)", func() {
+		It("routes the retry-recovered result through selfCorrectWorkflowSelection instead of returning it as a final answer", func() {
+			// Same script as UT-KA-WAVE5-R02 (text -> parse-fail -> valid
+			// submit_result_with_workflow on the 2nd parse-retry), but this
+			// time selecting a workflow_id NOT in the configured catalog.
+			// Before this fix, workflowSelectionRetryOrHumanReview returned
+			// retryWorkflowSubmit's result directly from runWorkflowSelection,
+			// completely bypassing selfCorrectWorkflowSelection's catalog
+			// validation -- regardless of whether CatalogFetcher was
+			// configured. "wf-hallucinated" would have been returned as the
+			// final WorkflowID with HumanReviewNeeded=false.
+			mockClient := &scriptedMockClient{
+				steps: []scriptedStep{
+					{resp: llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}}},
+					{resp: llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: "I cannot decide on a workflow"}}},
+					{resp: llm.ChatResponse{
+						Message:   llm.Message{Role: "assistant", Content: ""},
+						ToolCalls: []llm.ToolCall{{ID: "tc_retry1", Name: "submit_result_with_workflow", Arguments: `not-valid-json`}},
+					}},
+					{resp: llm.ChatResponse{
+						Message:   llm.Message{Role: "assistant", Content: ""},
+						ToolCalls: []llm.ToolCall{{ID: "tc_retry2", Name: "submit_result_with_workflow", Arguments: `{"workflow_id":"wf-hallucinated","confidence":0.9}`}},
+					}},
+				},
+			}
+			fetcher := &stubCatalogFetcher{
+				validator: parser.NewValidator([]string{"wf-known"}), // "wf-hallucinated" is deliberately absent
+			}
+			pipeline := investigator.Pipeline{CatalogFetcher: fetcher}
+			inv := loopCharTestInvestigator(mockClient, audit.NopAuditStore{}, 15, pipeline, nil)
+
+			result, err := inv.Investigate(context.Background(), testSignal)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+			Expect(result.HumanReviewNeeded).To(BeTrue(),
+				"a workflow_id recovered via retryWorkflowSubmit must still be catalog-validated, never passed through unvalidated")
+			Expect(result.WorkflowID).To(BeEmpty(),
+				"DD-HAPI-002: an invalid/unvalidated workflow_id must not propagate to execution")
+			// callIdx (not len(calls)) is asserted here because scriptedMockClient
+			// only increments callIdx while consuming pre-scripted steps -- it
+			// intentionally stops incrementing once exhausted and serving the
+			// generic fallback response (see scriptedMockClient.Chat), so a 5th
+			// real call lands as len(calls)==5 with callIdx still reporting 4.
+			Expect(len(mockClient.calls)).To(BeNumerically(">", 4),
+				"selfCorrectWorkflowSelection must have driven at least one additional correction LLM call beyond the parse-retries")
+			Expect(result.ValidationAttemptsHistory).To(ContainElement(
+				HaveField("WorkflowID", "wf-hallucinated")),
+				"the hallucinated workflow_id must appear as a rejected validation attempt, proving it was actually checked against the catalog")
 		})
 	})
 

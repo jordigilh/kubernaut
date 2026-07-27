@@ -1528,14 +1528,14 @@ func createGatewayServerWithMetrics(cfg *config.ServerConfig, logger logr.Logger
 
 // createPrometheusAlert creates a Prometheus AlertManager webhook payload
 // Used for testing Gateway adapter pass-through behavior
-func createPrometheusAlert(namespace, alertName, severity, fingerprint, correlationID string) []byte {
-	return createPrometheusAlertForPod(namespace, alertName, severity, fingerprint, correlationID, "test-pod-123")
+func createPrometheusAlert(namespace, alertName, severity, correlationID string) []byte {
+	return createPrometheusAlertForPod(namespace, alertName, severity, correlationID, "test-pod-123")
 }
 
 // createPrometheusAlertForPod creates a Prometheus AlertManager webhook payload targeting a specific pod.
 // Use this when tests need different resources to produce different fingerprints (Issue #63:
 // alertname is excluded from fingerprint, so different alertnames for the same pod produce the same fingerprint).
-func createPrometheusAlertForPod(namespace, alertName, severity, fingerprint, correlationID, podName string) []byte {
+func createPrometheusAlertForPod(namespace, alertName, severity, correlationID, podName string) []byte {
 	payload := fmt.Sprintf(`{
 		"alerts": [{
 			"labels": {
@@ -1577,18 +1577,18 @@ func createPrometheusAlertWithoutSeverity(namespace, alertName string) []byte {
 
 // createK8sEvent creates a Kubernetes Event payload
 // Used for testing Gateway K8s Event adapter pass-through behavior (BR-GATEWAY-181)
-func createK8sEvent(eventType, reason, namespace, kind, name string) []byte {
+func createK8sEvent(eventType, reason, namespace, name string) []byte {
 	payload := fmt.Sprintf(`{
 		"type": "%s",
 		"reason": "%s",
 		"involvedObject": {
-			"kind": "%s",
+			"kind": "Pod",
 			"name": "%s",
 			"namespace": "%s"
 		},
 		"message": "Test K8s event",
 		"firstTimestamp": "2026-01-16T12:00:00Z",
 		"lastTimestamp": "2026-01-16T12:00:00Z"
-	}`, eventType, reason, kind, name, namespace)
+	}`, eventType, reason, name, namespace)
 	return []byte(payload)
 }

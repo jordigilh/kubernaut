@@ -64,7 +64,7 @@ var _ = Describe("Gateway cache configuration (#270)", func() {
 
 			expectedKinds := []string{
 				"Pod", "Node", "Service", "ConfigMap", "Secret", "Namespace", "PersistentVolume",
-				"ReplicaSet", "Deployment", "StatefulSet", "DaemonSet",
+				"ReplicaSet", deployment, "StatefulSet", "DaemonSet",
 				"Job", "CronJob",
 			}
 			for _, kind := range expectedKinds {

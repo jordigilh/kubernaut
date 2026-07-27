@@ -45,6 +45,11 @@ import (
 	crdvalidators "github.com/jordigilh/kubernaut/test/shared/validators"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	oomkill = "oomkill"
+)
+
 // BR-E2E-001: Full Remediation Lifecycle E2E Test
 // Validates the complete pipeline from K8s Event to Notification delivery.
 //
@@ -122,19 +127,19 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 				for _, cs := range pod.Status.ContainerStatuses {
 					// Check last terminated state for OOMKilled reason
 					if cs.LastTerminationState.Terminated != nil &&
-						cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
+						cs.LastTerminationState.Terminated.Reason == oomkilled {
 						GinkgoWriter.Printf("  ✅ OOMKill detected: restarts=%d\n", cs.RestartCount)
 						return true
 					}
 					// Also check current terminated state
 					if cs.State.Terminated != nil &&
-						cs.State.Terminated.Reason == "OOMKilled" {
+						cs.State.Terminated.Reason == oomkilled {
 						GinkgoWriter.Println("  ✅ OOMKill terminated state detected")
 						return true
 					}
 					// Fallback: CrashLoopBackOff after restarts
 					if cs.RestartCount > 0 && cs.State.Waiting != nil &&
-						cs.State.Waiting.Reason == "CrashLoopBackOff" {
+						cs.State.Waiting.Reason == crashloopbackoff {
 						GinkgoWriter.Println("  ✅ CrashLoopBackOff detected (OOMKill)")
 						return true
 					}
@@ -163,7 +168,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 					continue
 				}
 				sig := strings.ToLower(rr.Spec.SignalName)
-				if sig == "backoff" || sig == "oomkilled" || sig == "oomkill" ||
+				if sig == backoff || sig == oomkilledLower || sig == oomkill ||
 					sig == "memoryexceedslimit" ||
 					strings.Contains(sig, "oom") || strings.Contains(sig, "memory") {
 					remediationRequest = rr
@@ -303,8 +308,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 				if we.Spec.RemediationRequestRef.Name == remediationRequest.Name {
 					weName = we.Name
 					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n",
-						we.Name, we.Status.Phase, we.Status.ExecutionEngine)
-					return we.Status.ExecutionEngine
+						we.Name, we.Status.Phase, we.Spec.WorkflowRef.ExecutionEngine)
+					return we.Spec.WorkflowRef.ExecutionEngine
 				}
 			}
 			return ""
@@ -374,7 +379,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 				// doesn't return "recovered" before EM would also consider it so.
 				ready := false
 				for _, cs := range pod.Status.ContainerStatuses {
-					g.Expect(cs.State.Waiting).To(Or(BeNil(), Not(HaveField("Reason", Equal("CrashLoopBackOff")))),
+					g.Expect(cs.State.Waiting).To(Or(BeNil(), Not(HaveField("Reason", Equal(crashloopbackoff)))),
 						"pod %s must not remain in CrashLoopBackOff after the memory limit fix", pod.Name)
 					if cs.Ready {
 						ready = true
@@ -498,7 +503,7 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		// These fire during processing; some may repeat (phase transitions, retries).
 		atLeastOnceEvents := []string{
 			// Remediation Orchestrator: EA creation and phase transitions
-			"orchestrator.ea.created",            // pkg/remediationorchestrator/audit: emitEACreatedAudit — may repeat on reconcile retry
+			"orchestrator.ea.created",             // pkg/remediationorchestrator/audit: emitEACreatedAudit — may repeat on reconcile retry
 			"orchestrator.lifecycle.transitioned", // pkg/remediationorchestrator/audit: emitPhaseTransitionAudit
 			// Signal Processing
 			"signalprocessing.enrichment.completed",    // pkg/signalprocessing/audit: RecordEnrichmentComplete
@@ -615,6 +620,39 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 		Expect(len(allAuditEvents)).To(BeNumerically(">=", expectedMinTotal),
 			"Audit trail must contain at least %d events (got %d): %d exactly-once + %d at-least-once",
 			expectedMinTotal, len(allAuditEvents), len(exactlyOnceEvents), len(atLeastOnceEvents))
+
+		// #1661 Change 3 introduced event_data.action_type on
+		// workflowexecution.execution.started, resolved via
+		// resolveWorkflowCatalog's DataStorage round-trip. Change 11e (GREEN:
+		// 898fe8574) removed that DS round-trip entirely, and ActionType was
+		// left off the Change 11c/11d WorkflowRef snapshot migration list --
+		// an oversight rather than a deliberate omission, since
+		// AIAnalysis.Status.SelectedWorkflow.ActionType (propagated from KA's
+		// three-step discovery protocol) is available at the exact same
+		// CRD-creation time as its ExecutionEngine/ServiceAccountName
+		// siblings. Change 11f folded ActionType into WorkflowRef alongside
+		// them, reading it straight from that immutable Spec snapshot (no
+		// Status mirror) -- but that only fixed the *read* site: KA itself
+		// never populated action_type/workflow_name in its selected_workflow
+		// wire response, so both stayed empty end-to-end regardless (this
+		// assertion was RED on CI until the fix landed). Change 12 closed
+		// the actual gap catalog-authoritatively in KA (enrichFromCatalog /
+		// applySelectedWorkflow), and deduplicated the two CRDs' snapshot
+		// field lists into one shared sharedtypes.WorkflowSnapshot type
+		// (DD-WORKFLOW-018) so this class of "field added to one CRD but not
+		// its sibling" drift can't recur.
+		for _, event := range allAuditEvents {
+			if event.EventType != "workflowexecution.execution.started" {
+				continue
+			}
+			payload, ok := event.EventData.GetWorkflowExecutionAuditPayload()
+			Expect(ok).To(BeTrue(), "workflowexecution.execution.started event_data should decode as WorkflowExecutionAuditPayload")
+			Expect(payload.ActionType.IsSet()).To(BeTrue(),
+				"action_type should be populated from WorkflowRef.ActionType (Issue #1661 Change 11f/12)")
+			Expect(payload.WorkflowName.IsSet()).To(BeTrue(),
+				"workflow_name should be populated from WorkflowRef.WorkflowName (Issue #1661 Change 12)")
+			break
+		}
 
 		// Verify temporal ordering: gateway.signal.received should be among the earliest events.
 		// Audit timestamps have second-level precision and services run on different pods,
@@ -1266,8 +1304,8 @@ var _ = Describe("Full Remediation Lifecycle [BR-E2E-001]", func() {
 				if we.Spec.RemediationRequestRef.Name == remediationRequest.Name {
 					weName = we.Name
 					GinkgoWriter.Printf("  WE %s phase: %s, engine: %s\n",
-						we.Name, we.Status.Phase, we.Status.ExecutionEngine)
-					return we.Status.ExecutionEngine
+						we.Name, we.Status.Phase, we.Spec.WorkflowRef.ExecutionEngine)
+					return we.Spec.WorkflowRef.ExecutionEngine
 				}
 			}
 			return ""

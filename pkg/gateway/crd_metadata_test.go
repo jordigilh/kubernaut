@@ -73,7 +73,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "abc123def456ghi789jkl012mno345", // Must be >=16 chars
-				SignalName:   "PodCrashLooping",
+				SignalName:  "PodCrashLooping",
 				Severity:    "critical",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
@@ -120,7 +120,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "timeline123abc456def789ghi012jk", // Must be >=16 chars
-				SignalName:   "HighLatency",
+				SignalName:  "HighLatency",
 				Severity:    "warning",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
@@ -166,7 +166,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "details789abc123def456ghi789jkl", // Must be >=16 chars
-				SignalName:   "PodMemoryHigh",
+				SignalName:  "PodMemoryHigh",
 				Severity:    "critical",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
@@ -179,7 +179,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 					"pod":       "payment-api-789",
 					"instance":  "10.0.1.45:9090",
 					"job":       "kubernetes-pods",
-					"container": "payment-api",
+					"container": appPaymentAPI,
 					"team":      "platform-engineering",
 				},
 				Annotations: map[string]string{
@@ -238,7 +238,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "recurring456abc789def012ghi345jk", // Must be >=16 chars
-				SignalName:   "DiskSpaceRunningOut",
+				SignalName:  "DiskSpaceRunningOut",
 				Severity:    "warning",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
@@ -298,7 +298,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 				signal := &types.NormalizedSignal{
 					Fingerprint: "fp-long-label-test12345678901234567890",
-					SignalName:   "HighMemory",
+					SignalName:  "HighMemory",
 					Severity:    "critical",
 					Namespace:   "production",
 					Resource: types.ResourceIdentifier{
@@ -344,7 +344,7 @@ var _ = Describe("BR-GATEWAY-092: Notification Metadata in RemediationRequest CR
 
 				signal := &types.NormalizedSignal{
 					Fingerprint: "fp-large-annotation-1234567890123",
-					SignalName:   "HighMemory",
+					SignalName:  "HighMemory",
 					Severity:    "critical",
 					Namespace:   "production",
 					Resource: types.ResourceIdentifier{
@@ -425,7 +425,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "fp-missing-kind-12345678901234567890",
-				SignalName:   "HighMemoryUsage",
+				SignalName:  "HighMemoryUsage",
 				Severity:    "critical",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
@@ -462,7 +462,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "fp-missing-name-12345678901234567890",
-				SignalName:   "CrashLoopBackOff",
+				SignalName:  "CrashLoopBackOff",
 				Severity:    "warning",
 				Namespace:   "staging",
 				Resource: types.ResourceIdentifier{
@@ -499,7 +499,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "fp-empty-resource-12345678901234567890",
-				SignalName:   "UnknownAlert",
+				SignalName:  "UnknownAlert",
 				Severity:    "info",
 				Namespace:   "default",
 				Resource: types.ResourceIdentifier{
@@ -532,11 +532,11 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "fp-valid-resource-12345678901234567890",
-				SignalName:   "HighCPUUsage",
+				SignalName:  "HighCPUUsage",
 				Severity:    "warning",
 				Namespace:   "production",
 				Resource: types.ResourceIdentifier{
-					Kind:      "Deployment",
+					Kind:      deployment,
 					Name:      "api-server",
 					Namespace: "production",
 				},
@@ -552,7 +552,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 			// BUSINESS OUTCOME: CRD created with populated TargetResource
 			Expect(err).NotTo(HaveOccurred(), "Valid signal should be processed")
 			Expect(rr).NotTo(BeNil(), "CRD should be created")
-			Expect(rr.Spec.TargetResource.Kind).To(Equal("Deployment"))
+			Expect(rr.Spec.TargetResource.Kind).To(Equal(deployment))
 			Expect(rr.Spec.TargetResource.Name).To(Equal("api-server"))
 			Expect(rr.Spec.TargetResource.Namespace).To(Equal("production"))
 
@@ -568,7 +568,7 @@ var _ = Describe("BR-GATEWAY-TARGET-RESOURCE-VALIDATION: Resource Info Validatio
 
 			signal := &types.NormalizedSignal{
 				Fingerprint: "fp-cluster-scoped-12345678901234567890",
-				SignalName:   "NodeNotReady",
+				SignalName:  "NodeNotReady",
 				Severity:    "critical",
 				Namespace:   "default", // Signal namespace (for CRD placement)
 				Resource: types.ResourceIdentifier{

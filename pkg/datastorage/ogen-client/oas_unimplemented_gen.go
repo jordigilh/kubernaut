@@ -13,18 +13,6 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
-// CreateActionType implements createActionType operation.
-//
-// Idempotent CREATE: creates a new action type, returns existing if active,
-// or re-enables if previously disabled.
-// **Business Requirement**: BR-WORKFLOW-007.1 (Idempotent CREATE)
-// **Design Decision**: DD-ACTIONTYPE-001 (ActionType CRD Lifecycle Design).
-//
-// POST /api/v1/action-types
-func (UnimplementedHandler) CreateActionType(ctx context.Context, req *ActionTypeCreateRequest) (r CreateActionTypeRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // CreateAuditEvent implements createAuditEvent operation.
 //
 // Persists a unified audit event to the audit_events table (ADR-034).
@@ -68,65 +56,6 @@ func (UnimplementedHandler) CreateNotificationAudit(ctx context.Context, req *No
 	return r, ht.ErrNotImplemented
 }
 
-// CreateWorkflow implements createWorkflow operation.
-//
-// Register a new workflow by providing the raw YAML content of a
-// RemediationWorkflow CRD. Data Storage parses and validates the schema,
-// then populates all catalog fields from it.
-// If the workflow was previously registered and disabled (via CRD deletion),
-// it is re-enabled and a 200 response is returned instead of 201.
-// **Business Requirement**: BR-WORKFLOW-006 (RemediationWorkflow CRD Definition)
-// **Design Decision**: ADR-058 (Webhook-Driven Workflow Registration).
-//
-// POST /api/v1/workflows
-func (UnimplementedHandler) CreateWorkflow(ctx context.Context, req *CreateWorkflowInlineRequest) (r CreateWorkflowRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// DeprecateWorkflow implements deprecateWorkflow operation.
-//
-// Mark a workflow as deprecated. Deprecated workflows are excluded from
-// discovery results but remain in the catalog for audit history.
-// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
-//
-// PATCH /api/v1/workflows/{workflow_id}/deprecate
-func (UnimplementedHandler) DeprecateWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params DeprecateWorkflowParams) (r DeprecateWorkflowRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// DisableActionType implements disableActionType operation.
-//
-// Soft-disables an action type. Denied with 409 if active workflows reference it.
-// The denial response includes the count and names of dependent workflows.
-// **Business Requirement**: BR-WORKFLOW-007.3 (DELETE with dependency guard).
-//
-// PATCH /api/v1/action-types/{name}/disable
-func (UnimplementedHandler) DisableActionType(ctx context.Context, req *ActionTypeDisableRequest, params DisableActionTypeParams) (r DisableActionTypeRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// DisableWorkflow implements disableWorkflow operation.
-//
-// Convenience endpoint to disable a workflow (soft delete).
-// Sets status to 'disabled' with timestamp and reason.
-// **Design Decision**: DD-WORKFLOW-012, DD-WORKFLOW-017 Phase 4.4.
-//
-// PATCH /api/v1/workflows/{workflow_id}/disable
-func (UnimplementedHandler) DisableWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params DisableWorkflowParams) (r DisableWorkflowRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// EnableWorkflow implements enableWorkflow operation.
-//
-// Re-enable a previously disabled or deprecated workflow.
-// Sets status to 'active' with timestamp and reason.
-// **Design Decision**: DD-WORKFLOW-017 Phase 4.4 (Lifecycle PATCH endpoints).
-//
-// PATCH /api/v1/workflows/{workflow_id}/enable
-func (UnimplementedHandler) EnableWorkflow(ctx context.Context, req *WorkflowLifecycleRequest, params EnableWorkflowParams) (r EnableWorkflowRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // ExportAuditEvents implements exportAuditEvents operation.
 //
 // Exports audit events matching the specified filters with cryptographic signatures
@@ -159,18 +88,6 @@ func (UnimplementedHandler) EnableWorkflow(ctx context.Context, req *WorkflowLif
 //
 // GET /api/v1/audit/export
 func (UnimplementedHandler) ExportAuditEvents(ctx context.Context, params ExportAuditEventsParams) (r ExportAuditEventsRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// GetActionTypeWorkflowCount implements getActionTypeWorkflowCount operation.
-//
-// Returns the number of active RemediationWorkflows referencing this action type.
-// Used by the RW admission webhook to refresh the ActionType CRD's
-// status.activeWorkflowCount after RW CREATE/DELETE (Phase 3c cross-update).
-// **Business Requirement**: BR-WORKFLOW-007 (ActionType CRD lifecycle).
-//
-// GET /api/v1/action-types/{name}/workflow-count
-func (UnimplementedHandler) GetActionTypeWorkflowCount(ctx context.Context, params GetActionTypeWorkflowCountParams) (r *ActionTypeWorkflowCountResponse, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -221,42 +138,6 @@ func (UnimplementedHandler) GetRemediationHistoryContext(ctx context.Context, pa
 	return r, ht.ErrNotImplemented
 }
 
-// GetWorkflowByID implements getWorkflowByID operation.
-//
-// Retrieve a specific workflow by its UUID.
-// Step 3 of the three-step workflow discovery protocol when context filters are provided.
-// **Design Decision**: DD-WORKFLOW-002 v3.0 (UUID primary key)
-// **Security Gate**: DD-WORKFLOW-016, DD-HAPI-017
-// **Without context filters**: Returns workflow by ID (existing behavior).
-// **With context filters**: Returns workflow only if it matches the signal context.
-// Returns 404 if the workflow exists but does not match the context filters
-// (security gate - prevents info leakage by not distinguishing "not found" from "filtered out").
-// Emits `workflow.catalog.workflow_retrieved` audit event when context filters are present.
-//
-// GET /api/v1/workflows/{workflow_id}
-func (UnimplementedHandler) GetWorkflowByID(ctx context.Context, params GetWorkflowByIDParams) (r GetWorkflowByIDRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ListAvailableActions implements listAvailableActions operation.
-//
-// Step 1 of the three-step workflow discovery protocol.
-// Returns action types from the taxonomy that have active workflows matching
-// the provided signal context filters.
-// **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
-// **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
-// **Behavior**:
-// - Queries action_type_taxonomy joined with remediation_workflow_catalog
-// - Filters by active workflows matching signal context (severity, component, environment, priority)
-// - Returns action types with descriptions and workflow counts
-// - Paginated (default 10 per page)
-// - Emits `workflow.catalog.actions_listed` audit event (DD-WORKFLOW-014 v3.0).
-//
-// GET /api/v1/workflows/actions
-func (UnimplementedHandler) ListAvailableActions(ctx context.Context, params ListAvailableActionsParams) (r ListAvailableActionsRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // ListLegalHolds implements listLegalHolds operation.
 //
 // Returns a list of all active legal holds across all audit events.
@@ -271,37 +152,6 @@ func (UnimplementedHandler) ListAvailableActions(ctx context.Context, params Lis
 //
 // GET /api/v1/audit/legal-hold
 func (UnimplementedHandler) ListLegalHolds(ctx context.Context) (r *ListLegalHoldsOK, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ListWorkflows implements listWorkflows operation.
-//
-// List workflows with optional filters and pagination.
-// **Business Requirement**: BR-STORAGE-014 (Workflow Catalog Management).
-//
-// GET /api/v1/workflows
-func (UnimplementedHandler) ListWorkflows(ctx context.Context, params ListWorkflowsParams) (r ListWorkflowsRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ListWorkflowsByActionType implements listWorkflowsByActionType operation.
-//
-// Step 2 of the three-step workflow discovery protocol.
-// Returns all active workflows matching the specified action type and
-// signal context filters.
-// **Authority**: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
-// **Business Requirement**: BR-HAPI-017-001 (Three-Step Tool Implementation)
-// **LLM Instruction**: The LLM MUST review ALL workflows (across all pages)
-// before selecting one. Do not select from an incomplete list.
-// **Behavior**:
-// - Filters by action_type + signal context (severity, component, environment, priority)
-// - Excludes disabled and deprecated workflows
-// - Returns workflow metadata including effectiveness data
-// - Paginated (default 10 per page)
-// - Emits `workflow.catalog.workflows_listed` audit event (DD-WORKFLOW-014 v3.0).
-//
-// GET /api/v1/workflows/actions/{action_type}
-func (UnimplementedHandler) ListWorkflowsByActionType(ctx context.Context, params ListWorkflowsByActionTypeParams) (r ListWorkflowsByActionTypeRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -378,28 +228,6 @@ func (UnimplementedHandler) ReconstructRemediationRequest(ctx context.Context, p
 //
 // DELETE /api/v1/audit/legal-hold/{correlation_id}
 func (UnimplementedHandler) ReleaseLegalHold(ctx context.Context, req *ReleaseLegalHoldReq, params ReleaseLegalHoldParams) (r ReleaseLegalHoldRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// UpdateActionType implements updateActionType operation.
-//
-// Updates the description fields of an active action type.
-// Only spec.description is mutable; spec.name is immutable.
-// **Business Requirement**: BR-WORKFLOW-007.2 (Description UPDATE with audit).
-//
-// PATCH /api/v1/action-types/{name}
-func (UnimplementedHandler) UpdateActionType(ctx context.Context, req *ActionTypeUpdateRequest, params UpdateActionTypeParams) (r UpdateActionTypeRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// UpdateWorkflow implements updateWorkflow operation.
-//
-// Update mutable workflow fields (status, metrics).
-// Immutable fields (description, content, labels) require creating a new version.
-// **Design Decision**: DD-WORKFLOW-012 (Mutable vs Immutable Fields).
-//
-// PATCH /api/v1/workflows/{workflow_id}
-func (UnimplementedHandler) UpdateWorkflow(ctx context.Context, req *WorkflowUpdateRequest, params UpdateWorkflowParams) (r UpdateWorkflowRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

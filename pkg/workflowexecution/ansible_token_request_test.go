@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	authenticationv1 "k8s.io/api/authentication/v1"
@@ -68,19 +70,19 @@ var _ = Describe("Ansible TokenRequest Credential Injection [#501]", func() {
 			},
 			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
 				WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-					WorkflowID:      "wf-123",
-					ExecutionBundle: "quay.io/test:v1@sha256:abc123",
-					EngineConfig:    defaultEngineConfig(),
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID:         "wf-123",
+						ExecutionBundle:    "quay.io/test:v1@sha256:abc123",
+						EngineConfig:       defaultEngineConfig(),
+						ExecutionEngine:    "ansible",
+						ServiceAccountName: saName,
+					},
 				},
 				TargetResource: "default/Deployment/nginx",
 				RemediationRequestRef: corev1.ObjectReference{
 					Name:      "rr-test",
 					Namespace: "kubernaut-workflows",
 				},
-			},
-			Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-				ExecutionEngine:    "ansible",
-				ServiceAccountName: saName,
 			},
 		}
 		if timeout > 0 {
@@ -94,10 +96,10 @@ var _ = Describe("Ansible TokenRequest Credential Injection [#501]", func() {
 	BeforeEach(func() {
 		ctx = context.Background()
 		awxClient = &mockTokenRequestAWXClient{
-			templateID:   99,
-			credID:       55,
-			credTypeID:   10,
-			launchedJob:  42,
+			templateID:    99,
+			credID:        55,
+			credTypeID:    10,
+			launchedJob:   42,
 			templateCreds: []int{},
 		}
 		fakeCS = kubefake.NewSimpleClientset()

@@ -32,6 +32,7 @@ import (
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	"github.com/jordigilh/kubernaut/pkg/shared/sizeutil"
 )
 
 const (
@@ -464,7 +465,7 @@ func (j *JobExecutor) buildJob(ctx context.Context, wfe *workflowexecutionv1alph
 				},
 				Spec: corev1.PodSpec{
 					RestartPolicy:      corev1.RestartPolicyNever,
-					ServiceAccountName: wfe.Status.ServiceAccountName,
+					ServiceAccountName: wfe.Spec.WorkflowRef.ServiceAccountName,
 					SecurityContext:    restrictedPodSecurityContext(),
 					Volumes:            volumes,
 					Containers: []corev1.Container{
@@ -512,15 +513,16 @@ func jobPodFailurePolicy() *batchv1.PodFailurePolicy {
 }
 
 // resourcesFor returns the "workflow" container's resource requirements
-// (BR-WE-019 / DD-WE-008), resolved once during Pending into
-// wfe.Status.Resources by resolveWorkflowCatalog. Returns the zero value
-// (no requests/limits, BestEffort QoS) when the catalog entry declared none
-// -- backward compatible with pre-DD-WE-008 Job specs.
+// (BR-WE-019 / DD-WE-008), read directly from the immutable
+// wfe.Spec.WorkflowRef.Resources CRD-embedded snapshot (Issue #1661 Change
+// 11f). Returns the zero value (no requests/limits, BestEffort QoS) when
+// the snapshot declares none -- backward compatible with pre-DD-WE-008 Job
+// specs.
 func resourcesFor(wfe *workflowexecutionv1alpha1.WorkflowExecution) corev1.ResourceRequirements {
-	if wfe.Status.Resources == nil {
+	if wfe.Spec.WorkflowRef.Resources == nil {
 		return corev1.ResourceRequirements{}
 	}
-	return *wfe.Status.Resources
+	return *wfe.Spec.WorkflowRef.Resources
 }
 
 // buildDependencyVolumes creates Volumes and VolumeMounts for schema-declared
@@ -572,7 +574,9 @@ func buildDependencyVolumes(deps *models.WorkflowDependencies) ([]corev1.Volume,
 // Also adds TARGET_RESOURCE for consistency with Tekton pipelines.
 // #243: Accepts pre-filtered params (filtering is done in buildJob).
 func buildEnvVars(targetResource string, params map[string]string) []corev1.EnvVar {
-	envVars := make([]corev1.EnvVar, 0, 1+len(params))
+	// Issue #1684: sizeutil.SafeCap makes the overflow check on this capacity
+	// hint explicit (see its doc comment for why CodeQL flags raw "a+b").
+	envVars := make([]corev1.EnvVar, 0, sizeutil.SafeCap(1, len(params)))
 	envVars = append(envVars, corev1.EnvVar{
 		Name:  "TARGET_RESOURCE",
 		Value: targetResource,
@@ -602,15 +606,16 @@ func (j *JobExecutor) buildStatusSummary(ctx context.Context, c ExecutorClient, 
 		RetryCount: j.countPodCreationAttempts(ctx, c, job),
 	}
 
-	if job.Status.Succeeded > 0 {
+	switch {
+	case job.Status.Succeeded > 0:
 		summary.Status = corev1.ConditionTrue
 		summary.Reason = "Succeeded"
 		summary.CompletedTasks = 1
-	} else if job.Status.Failed > 0 {
+	case job.Status.Failed > 0:
 		summary.Status = corev1.ConditionFalse
 		summary.Reason = "Failed"
 		summary.Message = fmt.Sprintf("%d pod(s) failed", job.Status.Failed)
-	} else if job.Status.Active > 0 {
+	case job.Status.Active > 0:
 		summary.Status = corev1.ConditionUnknown
 		summary.Reason = "Running"
 		summary.Message = fmt.Sprintf("%d pod(s) active", job.Status.Active)

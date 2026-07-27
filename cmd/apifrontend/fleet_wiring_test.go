@@ -35,6 +35,12 @@ import (
 	mockgw "github.com/jordigilh/kubernaut/test/services/mock-mcp-gateway/testutil"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	mockModel = "mock-model"
+	testKey   = "test-key"
+)
+
 // backendGVRListKinds mirrors the GVR the EAIGWRegistry watches (Envoy AI
 // Gateway Backend CRDs), needed for the fake dynamic client's list-kind map.
 var backendGVRListKinds = map[schema.GroupVersionResource]string{
@@ -166,6 +172,65 @@ func TestBuildFleetReaderDeps_EnabledUnreachableEndpoint_DegradesGracefully(t *t
 	t.Cleanup(deps.fleetReadinessGate.Stop)
 }
 
+// TestBuildFleetReaderDeps_Enabled_WithNamespace_ScopesClusterRegistryWatch is
+// IT-AF-020-001 (#1686, BR-RBAC-020): proves cmd/apifrontend threads
+// Config.Fleet.Namespace into registry.RegistryConfig instead of always
+// passing registry.RegistryConfig{} — the previously-hardcoded gap that
+// forced a cluster-wide watch (and matching cluster-wide RBAC) even when an
+// operator configured a namespace scope. Asserted via the fake dynamic
+// client's recorded actions: EAIGWRegistry's informer factory
+// (NewFilteredDynamicSharedInformerFactory) issues its list/watch calls
+// against whatever namespace RegistryConfig.Namespace carries.
+func TestBuildFleetReaderDeps_Enabled_WithNamespace_ScopesClusterRegistryWatch(t *testing.T) {
+	t.Parallel()
+
+	gw := mockgw.NewMockGateway()
+	t.Cleanup(gw.Close)
+
+	dynClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), backendGVRListKinds)
+
+	deps := &backendDeps{k8sDynClient: dynClient}
+	cfg := &config.Config{}
+	cfg.Fleet.Enabled = true
+	cfg.Fleet.MCPGatewayEndpoint = gw.URL()
+	cfg.Fleet.MCPGatewayType = registry.GatewayEAIGW
+	cfg.Fleet.Namespace = "team-a"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := buildFleetReaderDeps(ctx, cfg, deps, logr.Discard())
+	if err != nil {
+		t.Fatalf("IT-AF-020-001: unexpected error wiring fleet reader deps: %v", err)
+	}
+	if fc := deps.FleetResilientClient(); fc != nil {
+		defer func() { _ = fc.Close() }()
+	}
+	if deps.fleetReadinessGate != nil {
+		defer deps.fleetReadinessGate.Stop()
+	}
+
+	if deps.FleetClusterRegistry == nil {
+		t.Fatal("IT-AF-020-001: FleetClusterRegistry must be wired when fleet is enabled")
+	}
+
+	scoped := false
+	for _, action := range dynClient.Actions() {
+		if action.GetResource() != registry.BackendGVR {
+			continue
+		}
+		if action.GetNamespace() == "team-a" {
+			scoped = true
+			break
+		}
+	}
+	if !scoped {
+		t.Error("IT-AF-020-001: Config.Fleet.Namespace must thread into registry.RegistryConfig.Namespace — " +
+			"expected the ClusterRegistry's informer to List/Watch backends.gateway.envoyproxy.io scoped to " +
+			"namespace \"team-a\", but no such namespaced action was recorded (BR-RBAC-020, #1686)")
+	}
+}
+
 // stubFleetClusterRegistry is a minimal registry.ClusterRegistry for testing
 // AgentConfig threading without a live MCP Gateway or CRD watcher.
 type stubFleetClusterRegistry struct{}
@@ -199,8 +264,8 @@ func TestBuildA2AHandler_ThreadsFleetReaderFactory(t *testing.T) {
 	d := testHandlerDeps(func(d *handlerDeps) {
 		d.Cfg.Agent.LLM.Provider = types.LLMProviderGemini
 		d.Cfg.Agent.LLM.Endpoint = mockLLM.URL
-		d.Cfg.Agent.LLM.Model = "mock-model"
-		d.Cfg.Agent.LLM.APIKey = "test-key"
+		d.Cfg.Agent.LLM.Model = mockModel
+		d.Cfg.Agent.LLM.APIKey = testKey
 		d.Backends.FleetReaderFactory = tools.ResourceReaderFactory(
 			func(_ context.Context, _ string) (tools.ResourceReader, error) {
 				return &tools.DynamicResourceReader{}, nil

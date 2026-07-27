@@ -19,6 +19,8 @@ package remediationorchestrator
 import (
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -53,7 +55,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 	var testNS string
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("ro-human-review-e2e")
+		testNS = createTestNamespace(ctx, "ro-human-review-e2e")
 	})
 
 	AfterEach(func() {
@@ -77,7 +79,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
 					SignalName:        "MockRCAIncomplete", // Trigger for Mock LLM
-					Severity:          "critical",
+					Severity:          signalprocessingv1.SeverityCritical,
 					SignalType:        "mock_rca_incomplete", // Mock LLM detects this keyword
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
@@ -104,7 +106,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 				for i := range spList.Items {
 					if len(spList.Items[i].OwnerReferences) > 0 &&
-						spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						spList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 						spList.Items[i].OwnerReferences[0].Name == rr.Name {
 						sp = &spList.Items[i]
 						return true
@@ -115,8 +117,8 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 
 			By("Manually updating SignalProcessing status to Completed (simulating SP controller)")
 			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = "critical"
-			sp.Status.SignalMode = "reactive"
+			sp.Status.Severity = signalprocessingv1.SeverityCritical
+			sp.Status.SignalMode = signalprocessingv1.SignalModeReactive
 			sp.Status.SignalName = sp.Spec.Signal.Name
 			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 				Environment:  signalprocessingv1.EnvironmentProduction,
@@ -137,7 +139,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 				for i := range analysisList.Items {
 					if len(analysisList.Items[i].OwnerReferences) > 0 &&
-						analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						analysisList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 						analysisList.Items[i].OwnerReferences[0].Name == rr.Name {
 						analysis = &analysisList.Items[i]
 						return true
@@ -167,7 +169,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				_ = k8sClient.List(ctx, notificationList, client.InNamespace(controllerNamespace))
 				for i := range notificationList.Items {
 					if len(notificationList.Items[i].OwnerReferences) > 0 &&
-						notificationList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						notificationList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 						notificationList.Items[i].OwnerReferences[0].Name == rr.Name {
 						notification = &notificationList.Items[i]
 						return true
@@ -198,7 +200,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
 				count := 0
 				for _, item := range weList.Items {
-					if len(item.OwnerReferences) > 0 && item.OwnerReferences[0].Kind == "RemediationRequest" && item.OwnerReferences[0].Name == rr.Name {
+					if len(item.OwnerReferences) > 0 && item.OwnerReferences[0].Kind == kindRemediationRequestFixture && item.OwnerReferences[0].Name == rr.Name {
 						count++
 					}
 				}
@@ -227,8 +229,8 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				},
 				Spec: remediationv1.RemediationRequestSpec{
 					SignalFingerprint: fingerprint,
-					SignalName:        "OOMKilled", // Trigger for Mock LLM normal flow
-					Severity:          "critical",
+					SignalName:        signalNameOOMKilledFixture, // Trigger for Mock LLM normal flow
+					Severity:          signalprocessingv1.SeverityCritical,
 					SignalType:        "oomkilled", // Mock LLM detects this keyword → needs_human_review=false
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
@@ -255,7 +257,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 				for i := range spList.Items {
 					if len(spList.Items[i].OwnerReferences) > 0 &&
-						spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						spList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 						spList.Items[i].OwnerReferences[0].Name == rr.Name {
 						sp = &spList.Items[i]
 						return true
@@ -266,8 +268,8 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 
 			By("Manually updating SignalProcessing status to Completed (simulating SP controller)")
 			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = "critical"
-			sp.Status.SignalMode = "reactive"
+			sp.Status.Severity = signalprocessingv1.SeverityCritical
+			sp.Status.SignalMode = signalprocessingv1.SignalModeReactive
 			sp.Status.SignalName = sp.Spec.Signal.Name
 			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 				Environment:  signalprocessingv1.EnvironmentProduction,
@@ -288,7 +290,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 				for i := range analysisList.Items {
 					if len(analysisList.Items[i].OwnerReferences) > 0 &&
-						analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						analysisList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 						analysisList.Items[i].OwnerReferences[0].Name == rr.Name {
 						analysis = &analysisList.Items[i]
 						return true
@@ -304,16 +306,22 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 			analysis.Status.HumanReviewReason = ""
 			analysis.Status.Message = "Workflow recommended: restart-pod-v1"
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:      "restart-pod-v1",
-				Version:         "1.0.0",
-				ExecutionBundle: "quay.io/kubernaut/restart-pod:v1",
-				Confidence:      0.95,
-				Rationale:       "High confidence workflow match for pod restart scenario",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "restart-pod-v1",
+					WorkflowName:    "restart-pod-v1",
+					ActionType:      "RestartPod",
+					Version:         "1.0.0",
+					ExecutionBundle: "quay.io/kubernaut/restart-pod:v1",
+					ExecutionEngine: "job",
+				},
+				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				Confidence: 0.95,
+				Rationale:  "High confidence workflow match for pod restart scenario",
 			}
 			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "OOM kill detected on pod",
-				Severity:   "critical",
+				Severity:   signalprocessingv1.SeverityCritical,
 				SignalType: "alert",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Pod",
@@ -335,7 +343,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
 				for i := range weList.Items {
 					if len(weList.Items[i].OwnerReferences) > 0 &&
-						weList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+						weList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 						weList.Items[i].OwnerReferences[0].Name == rr.Name {
 						we = &weList.Items[i]
 						return true
@@ -354,7 +362,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				_ = k8sClient.List(ctx, notificationList, client.InNamespace(controllerNamespace))
 				count := 0
 				for _, item := range notificationList.Items {
-					if len(item.OwnerReferences) > 0 && item.OwnerReferences[0].Kind == "RemediationRequest" && item.OwnerReferences[0].Name == rr.Name {
+					if len(item.OwnerReferences) > 0 && item.OwnerReferences[0].Kind == kindRemediationRequestFixture && item.OwnerReferences[0].Name == rr.Name {
 						count++
 					}
 				}

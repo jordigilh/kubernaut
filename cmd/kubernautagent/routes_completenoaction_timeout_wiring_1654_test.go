@@ -18,8 +18,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -35,7 +33,6 @@ import (
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	dsmodels "github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	wfclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 )
 
 // ============================================================================
@@ -50,39 +47,22 @@ import (
 // for a session that actually ended for a different reason.
 // ============================================================================
 
-// stubWorkflowQuerier implements wfclient.WorkflowQuerier, returning a fixed
-// catalog entry for ResolveWorkflowCatalogMetadata (the only method
-// WorkflowCatalogAdapter.GetWorkflowByID calls) and failing every other
-// method (unused by select_workflow's catalog-lookup path).
-type stubWorkflowQuerier struct{}
+// stubWorkflowCatalogFetcher implements mcpadapters.WorkflowCatalogFetcher,
+// returning a fixed catalog entry for GetByID (the only method
+// WorkflowCatalogAdapter.GetWorkflowByID calls). #1677 Phase 2e
+// (DD-WORKFLOW-019): replaces the former DS-ogen-client-backed
+// wfclient.WorkflowQuerier stub now that the adapter is catalog-backed.
+type stubWorkflowCatalogFetcher struct{}
 
-func (stubWorkflowQuerier) GetWorkflowDependencies(_ context.Context, _ string) (*dsmodels.WorkflowDependencies, error) {
-	return nil, fmt.Errorf("not used by this test")
-}
-
-func (stubWorkflowQuerier) GetWorkflowEngineConfig(_ context.Context, _ string) (json.RawMessage, error) {
-	return nil, fmt.Errorf("not used by this test")
-}
-
-func (stubWorkflowQuerier) GetWorkflowExecutionEngine(_ context.Context, _ string) (string, string, error) {
-	return "", "", fmt.Errorf("not used by this test")
-}
-
-func (stubWorkflowQuerier) GetWorkflowExecutionBundle(_ context.Context, _ string) (string, string, error) {
-	return "", "", fmt.Errorf("not used by this test")
-}
-
-func (stubWorkflowQuerier) ResolveWorkflowCatalogMetadata(_ context.Context, _ string) (*wfclient.WorkflowCatalogMetadata, error) {
-	return &wfclient.WorkflowCatalogMetadata{
+func (stubWorkflowCatalogFetcher) GetByID(_ context.Context, _ string) (*dsmodels.RemediationWorkflow, error) {
+	return &dsmodels.RemediationWorkflow{
 		WorkflowName:    "restart-pod",
 		ExecutionEngine: "argo",
-		ExecutionBundle: "oci://example/restart-pod:v1",
+		ExecutionBundle: strPtr("oci://example/restart-pod:v1"),
 	}, nil
 }
 
-func (stubWorkflowQuerier) GetWorkflowSchemaMetadata(_ context.Context, _ string) (*wfclient.SchemaMetadata, error) {
-	return nil, fmt.Errorf("not used by this test")
-}
+func strPtr(s string) *string { return &s }
 
 func newMCPTestLeaseSessionManager() *mcpinternal.LeaseSessionManager {
 	scheme := runtime.NewScheme()
@@ -139,7 +119,7 @@ var _ = Describe("buildMCPTools — interactive-session inactivity-timer wiring 
 		})
 		defer timeoutMgr.StopAll()
 
-		catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(stubWorkflowQuerier{})
+		catalogAdapter := mcpadapters.NewWorkflowCatalogAdapter(stubWorkflowCatalogFetcher{})
 
 		_, selectWfTool, _ := buildMCPTools(mcpToolsDeps{
 			leaseMgr:       leaseMgr,

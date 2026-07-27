@@ -19,6 +19,8 @@ package workflowexecution
 import (
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -42,9 +44,6 @@ import (
 var _ = Describe("Conditions Integration", Label("integration", "conditions"), func() {
 	Context("ExecutionCreated condition", func() {
 		It("should be set after PipelineRun creation during reconciliation", func() {
-			// Issue #518: Engine is resolved at runtime via the configurable mock querier.
-			// Reset to "tekton" so earlier tests that set it to "job" don't leak.
-			testWorkflowQuerier.setEngine("tekton")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-pipeline-created",
@@ -59,17 +58,19 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-workflow",
-						Version:        "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/condition-test-app",
 					Parameters: map[string]string{
 						"MESSAGE": "Testing ExecutionCreated condition",
 					},
-				},
-				Status: workflowexecutionv1alpha1.WorkflowExecutionStatus{
-					ExecutionEngine: "tekton",
 				},
 			}
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
@@ -113,7 +114,6 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 	Context("ExecutionRunning condition", func() {
 		It("should be set when PipelineRun starts executing", func() {
-			testWorkflowQuerier.setEngine("tekton")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-running",
@@ -128,9 +128,14 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-workflow",
-						Version:        "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/running-test-app",
 				},
@@ -177,7 +182,6 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 	Context("ExecutionComplete condition", func() {
 		It("should be set to True when PipelineRun succeeds", func() {
-			testWorkflowQuerier.setEngine("tekton")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-complete-success",
@@ -192,9 +196,14 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-workflow",
-						Version:        "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/complete-success-app",
 				},
@@ -261,7 +270,6 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 	Context("AuditRecorded condition", func() {
 		It("should be set after audit event emission", func() {
-			testWorkflowQuerier.setEngine("tekton")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-audit",
@@ -276,9 +284,14 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-workflow",
-						Version:        "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/audit-test-app",
 				},
@@ -316,7 +329,6 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 
 	Context("Complete lifecycle with all conditions", func() {
 		It("should set all applicable conditions during successful execution", func() {
-			testWorkflowQuerier.setEngine("tekton")
 			wfe := &workflowexecutionv1alpha1.WorkflowExecution{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "wfe-condition-full-lifecycle",
@@ -331,9 +343,14 @@ var _ = Describe("Conditions Integration", Label("integration", "conditions"), f
 						Namespace:  DefaultNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:     "test-workflow",
-						Version:        "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "test-workflow",
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut/workflows/test-hello-world:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: "default/deployment/full-lifecycle-app",
 				},

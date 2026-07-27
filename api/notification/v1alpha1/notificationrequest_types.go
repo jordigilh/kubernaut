@@ -17,6 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	"strconv"
+
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -187,7 +189,7 @@ func (c *NotificationContext) FlattenToMap() map[string]string {
 		setIfNonEmpty(m, "rootCauseAnalysis", c.Review.RootCauseAnalysis)
 		setIfNonEmpty(m, "alignmentVerdict", c.Review.AlignmentVerdict)
 		if c.Review.CircuitBreakerActivated {
-			m["circuitBreakerActivated"] = "true"
+			m["circuitBreakerActivated"] = strconv.FormatBool(true)
 		}
 	}
 	if c.Execution != nil {
@@ -205,18 +207,10 @@ func (c *NotificationContext) FlattenToMap() map[string]string {
 		setIfNonEmpty(m, "targetResource", c.Target.TargetResource)
 	}
 	if c.Verification != nil {
-		if c.Verification.Assessed {
-			m["verificationAssessed"] = "true"
-		} else {
-			m["verificationAssessed"] = "false"
-		}
+		m["verificationAssessed"] = strconv.FormatBool(c.Verification.Assessed)
 		setIfNonEmpty(m, "verificationOutcome", c.Verification.Outcome)
 		setIfNonEmpty(m, "verificationReason", c.Verification.Reason)
-		if c.Verification.Degraded {
-			m["verificationDegraded"] = "true"
-		} else {
-			m["verificationDegraded"] = "false"
-		}
+		m["verificationDegraded"] = strconv.FormatBool(c.Verification.Degraded)
 		setIfNonEmpty(m, "verificationDegradedReason", c.Verification.DegradedReason)
 	}
 	return m
@@ -249,6 +243,16 @@ type WorkflowContext struct {
 	// WorkflowID is the ID of the executed workflow.
 	// +optional
 	WorkflowID string `json:"workflowId,omitempty"`
+	// WorkflowName is the human-readable workflow name, sourced directly from
+	// AIAnalysis.Status.SelectedWorkflow.WorkflowName (catalog-authoritative,
+	// Required field -- never LLM-suppliable). Issue #1677 Phase 1: lets
+	// Notification render a friendly name without a live DataStorage lookup.
+	// +optional
+	WorkflowName string `json:"workflowName,omitempty"`
+	// ActionType is the workflow's action type, sourced directly from
+	// AIAnalysis.Status.SelectedWorkflow.ActionType. Issue #1677 Phase 1.
+	// +optional
+	ActionType string `json:"actionType,omitempty"`
 	// ExecutionEngine is the engine used to execute the workflow.
 	// +optional
 	ExecutionEngine string `json:"executionEngine,omitempty"`

@@ -96,10 +96,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			By("Creating SignalProcessing CR with parent RR")
 			sp := CreateTestSignalProcessingWithParent("test-signal-hp-01", ns, rr, ValidTestFingerprints["reconciler-01"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred(), "SignalProcessing should complete")
 
 			By("Verifying BUSINESS OUTCOMES")
@@ -138,10 +138,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			By("Creating SignalProcessing CR with parent RR")
 			sp := CreateTestSignalProcessingWithParent("test-signal-hp-02", ns, rr, ValidTestFingerprints["reconciler-02"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred(), "SignalProcessing should complete")
 
 			By("Verifying BUSINESS OUTCOMES")
@@ -167,7 +167,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-hp-03", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["reconciler-03"],
 				Name:        "LowDiskSpace",
-				Severity: "low",
+				Severity:    "low",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -177,10 +177,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying development environment gets P3")
@@ -203,7 +203,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-hp-04", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["reconciler-04"],
 				Name:        "TestAlert",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -213,10 +213,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying label-based classification")
@@ -230,7 +230,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Rego policy fallback for environment classification
 		It("BR-SP-052: should classify environment from Rego policy fallback", func() {
 			By("Creating namespace with 'staging' prefix (no label)")
-			ns := createTestNamespace("staging-app")
+			ns := createTestNamespace(ctx, "staging-app")
 			defer deleteTestNamespace(ns)
 
 			// Create parent RemediationRequest (matches production architecture)
@@ -246,10 +246,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			By("Creating SignalProcessing CR with RemediationRequestRef")
 			sp := CreateTestSignalProcessingWithParent("test-signal-hp-05", ns, rr, ValidTestFingerprints["reconciler-05"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying Rego-based classification")
@@ -285,10 +285,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			By("Creating SignalProcessing CR with RemediationRequestRef")
 			sp := CreateTestSignalProcessingWithParent("test-signal-hp-06", ns, rr, ValidTestFingerprints["reconciler-06"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying business classification")
@@ -301,7 +301,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Owner chain traversal from Pod to Deployment
 		It("BR-SP-100: should build owner chain from Pod to Deployment", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("ownerchain")
+			ns := createTestNamespace(ctx, "ownerchain")
 			defer deleteTestNamespace(ns)
 
 			By("Creating Deployment")
@@ -359,10 +359,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			By("Creating SignalProcessing CR with RemediationRequestRef")
 			sp := CreateTestSignalProcessingWithParent("test-signal-hp-07", ns, rr, ValidTestFingerprints["reconciler-07"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying owner chain")
@@ -400,10 +400,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			By("Creating SignalProcessing CR with RemediationRequestRef")
 			sp := CreateTestSignalProcessingWithParent("test-signal-hp-10", ns, rr, ValidTestFingerprints["reconciler-10"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying CustomLabels populated")
@@ -429,14 +429,14 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Default environment fallback when no labels present
 		It("BR-SP-053: should default to unknown environment when no labels", func() {
 			By("Creating namespace without environment label")
-			ns := createTestNamespace("unknown-env")
+			ns := createTestNamespace(ctx, "unknown-env")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
 			sp := createSignalProcessingCR(ns, "test-signal-ec-01", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["edge-case-01"],
 				Name:        "DefaultEnv",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -446,10 +446,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying default environment")
@@ -463,7 +463,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Degraded mode when target resource not found
 		It("BR-SP-001: should enter degraded mode when pod not found", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("degraded")
+			ns := createTestNamespace(ctx, "degraded")
 			defer deleteTestNamespace(ns)
 
 			// Create parent RemediationRequest (matches production architecture)
@@ -480,10 +480,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := CreateTestSignalProcessingWithParent("test-signal-ec-02", ns, rr, ValidTestFingerprints["edge-case-02"], targetResource)
 			sp.Spec.Signal.Labels = map[string]string{"environment": "production"} // Add custom labels
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying degraded mode")
@@ -496,7 +496,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Concurrent reconciliation stress test
 		It("Controller: should handle concurrent reconciliation of 10 CRs", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("concurrent")
+			ns := createTestNamespace(ctx, "concurrent")
 			defer deleteTestNamespace(ns)
 
 			By("Creating 10 SignalProcessing CRs concurrently")
@@ -512,7 +512,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 					sp := createSignalProcessingCR(ns, "concurrent-"+string(rune('a'+idx)), signalprocessingv1alpha1.SignalData{
 						Fingerprint: GenerateConcurrentFingerprint("reconciler-concurrent", idx),
 						Name:        "ConcurrentTest",
-						Severity: "high",
+						Severity:    "high",
 						Type:        "alert",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -530,9 +530,9 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			By("Waiting for all to complete")
 			for _, sp := range sps {
 				if sp != nil {
-					err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+					err := waitForCompletion(sp.Name, sp.Namespace)
 					Expect(err).ToNot(HaveOccurred())
-					_ = deleteAndWait(sp, timeout)
+					_ = deleteAndWait(sp)
 				}
 			}
 		})
@@ -540,14 +540,14 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Minimal spec with defaults
 		It("Robustness: should handle minimal spec with default values", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("minimal")
+			ns := createTestNamespace(ctx, "minimal")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR with minimal spec")
 			sp := createSignalProcessingCR(ns, "test-signal-ec-04", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["edge-case-04"],
 				Name:        "MinimalSpec",
-				Severity: "low",
+				Severity:    "low",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -557,10 +557,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying default values applied")
@@ -573,14 +573,14 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Special namespace handling
 		It("Robustness: should handle special characters in namespace", func() {
 			By("Creating namespace with special characters")
-			ns := createTestNamespace("my-ns-123")
+			ns := createTestNamespace(ctx, "my-ns-123")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
 			sp := createSignalProcessingCR(ns, "test-signal-ec-05", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["edge-case-05"],
 				Name:        "SpecialNs",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -590,10 +590,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying successful processing")
@@ -606,7 +606,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Max owner chain depth limit
 		It("BR-SP-100: should stop owner chain traversal at 5 levels", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("deep-owner")
+			ns := createTestNamespace(ctx, "deep-owner")
 			defer deleteTestNamespace(ns)
 
 			// Create a deep ownership chain (Pod → RS → Deploy)
@@ -657,7 +657,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-ec-06", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["edge-case-06"],
 				Name:        "DeepOwner",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -667,10 +667,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying owner chain depth limit")
@@ -684,7 +684,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// No failed detections on successful queries
 		It("BR-SP-103: should have empty FailedDetections when all queries succeed", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("success-detect")
+			ns := createTestNamespace(ctx, "success-detect")
 			defer deleteTestNamespace(ns)
 
 			By("Creating Pod")
@@ -694,7 +694,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			sp := createSignalProcessingCR(ns, "test-signal-ec-07", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["edge-case-07"],
 				Name:        "SuccessDetect",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -704,10 +704,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying no failed detections")
@@ -743,10 +743,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 			By("Creating SignalProcessing CR with RemediationRequestRef")
 			sp := CreateTestSignalProcessingWithParent("test-signal-ec-08", ns, rr, ValidTestFingerprints["edge-case-08"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying all 3 keys present")
@@ -782,14 +782,14 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Status update conflict handling (Error Category D)
 		It("Error-Cat-D: should handle status update conflicts gracefully", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("conflict")
+			ns := createTestNamespace(ctx, "conflict")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
 			sp := createSignalProcessingCR(ns, "test-signal-er-02", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["error-02"],
 				Name:        "ConflictTest",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -799,10 +799,10 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion despite potential conflicts")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -812,7 +812,7 @@ var _ = Describe("SignalProcessing Reconciler Integration", func() {
 		// Rego syntax error fallback to defaults (Error Category C)
 		It("Error-Cat-C: should use defaults when Rego policy has syntax error", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("rego-error")
+			ns := createTestNamespace(ctx, "rego-error")
 			defer deleteTestNamespace(ns)
 
 			By("Creating ConfigMap with invalid Rego policy")
@@ -834,7 +834,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 			sp := createSignalProcessingCR(ns, "test-signal-er-04", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["error-04"],
 				Name:        "RegoError",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -844,10 +844,10 @@ labels["team"] := ["platform"  // Missing closing bracket
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying defaults used")
@@ -865,14 +865,14 @@ labels["team"] := ["platform"  // Missing closing bracket
 		// Audit write failure continues processing (ADR-038)
 		It("ADR-038: should continue processing when audit write fails", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("audit-fail")
+			ns := createTestNamespace(ctx, "audit-fail")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR")
 			sp := createSignalProcessingCR(ns, "test-signal-er-06", signalprocessingv1alpha1.SignalData{
 				Fingerprint: ValidTestFingerprints["error-06"],
 				Name:        "AuditFail",
-				Severity: "high",
+				Severity:    "high",
 				Type:        "alert",
 				TargetType:  "kubernetes",
 				TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -882,10 +882,10 @@ labels["team"] := ["platform"  // Missing closing bracket
 				},
 				ReceivedTime: metav1.Now(),
 			})
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying processing completed despite audit failure")
@@ -898,7 +898,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 		// Permanent error with invalid spec (Error Category A)
 		It("Error-Cat-A: should fail permanently with invalid spec", func() {
 			By("Creating namespace")
-			ns := createTestNamespace("permanent-fail")
+			ns := createTestNamespace(ctx, "permanent-fail")
 			defer deleteTestNamespace(ns)
 
 			By("Creating SignalProcessing CR with empty fingerprint (invalid)")
@@ -917,7 +917,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 						// Empty fingerprint - violates validation
 						Fingerprint: "",
 						Name:        "InvalidSpec",
-						Severity: "high",
+						Severity:    "high",
 						Type:        "alert",
 						TargetType:  "kubernetes",
 						TargetResource: signalprocessingv1alpha1.ResourceIdentifier{
@@ -934,9 +934,9 @@ labels["team"] := ["platform"  // Missing closing bracket
 			err := k8sClient.Create(ctx, sp)
 			if err == nil {
 				// If creation succeeded (validation not enforced), check for Failed phase
-				defer func() { _ = deleteAndWait(sp, timeout) }()
+				defer func() { _ = deleteAndWait(sp) }()
 
-				err = waitForPhase(sp.Name, sp.Namespace, signalprocessingv1alpha1.PhaseFailed, timeout)
+				err = waitForPhase(sp.Name, sp.Namespace, signalprocessingv1alpha1.PhaseFailed)
 				Expect(err).ToNot(HaveOccurred())
 
 				var final signalprocessingv1alpha1.SignalProcessing
@@ -977,10 +977,10 @@ labels["team"] := ["platform"  // Missing closing bracket
 			By("Creating SignalProcessing CR")
 			sp := CreateTestSignalProcessingWithParent("cond-test-sp", ns, rr, ValidTestFingerprints["reconciler-01"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred(), "SignalProcessing should complete")
 
 			By("Verifying all 4 conditions are True")
@@ -1031,10 +1031,10 @@ labels["team"] := ["platform"  // Missing closing bracket
 			By("Creating SignalProcessing CR")
 			sp := CreateTestSignalProcessingWithParent("cond-msg-sp", ns, rr, ValidTestFingerprints["reconciler-02"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying condition messages contain useful information")
@@ -1094,10 +1094,10 @@ labels["team"] := ["platform"  // Missing closing bracket
 			By("Creating SignalProcessing CR")
 			sp := CreateTestSignalProcessingWithParent("backoff-success-sp", ns, rr, ValidTestFingerprints["backoff-01"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying ConsecutiveFailures is zero after successful processing")
@@ -1130,7 +1130,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 			By("Creating SignalProcessing CR")
 			sp := CreateTestSignalProcessingWithParent("backoff-init-sp", ns, rr, ValidTestFingerprints["backoff-02"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Verifying initial ConsecutiveFailures is zero")
 			var created signalprocessingv1alpha1.SignalProcessing
@@ -1167,10 +1167,10 @@ labels["team"] := ["platform"  // Missing closing bracket
 			By("Creating SignalProcessing CR")
 			sp := CreateTestSignalProcessingWithParent("backoff-phases-sp", ns, rr, ValidTestFingerprints["backoff-03"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Waiting for completion (goes through all phases: Pending → Enriching → Classifying → Categorizing → Completed)")
-			err := waitForCompletion(sp.Name, sp.Namespace, timeout)
+			err := waitForCompletion(sp.Name, sp.Namespace)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying ConsecutiveFailures remains zero after all phase transitions")
@@ -1210,7 +1210,7 @@ labels["team"] := ["platform"  // Missing closing bracket
 			By("Creating SignalProcessing CR")
 			sp := CreateTestSignalProcessingWithParent("backoff-schema-sp", ns, rr, ValidTestFingerprints["backoff-04"], targetResource)
 			Expect(k8sClient.Create(ctx, sp)).To(Succeed())
-			defer func() { _ = deleteAndWait(sp, timeout) }()
+			defer func() { _ = deleteAndWait(sp) }()
 
 			By("Verifying status fields are accessible (schema validation)")
 			var created signalprocessingv1alpha1.SignalProcessing

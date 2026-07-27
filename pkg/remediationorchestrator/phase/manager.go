@@ -40,7 +40,7 @@ func (m *Manager) CurrentPhase(rr *remediationv1.RemediationRequest) Phase {
 	if rr.Status.OverallPhase == "" {
 		return Pending
 	}
-	return Phase(rr.Status.OverallPhase)
+	return rr.Status.OverallPhase
 }
 
 // TransitionTo transitions a RemediationRequest to the target phase.

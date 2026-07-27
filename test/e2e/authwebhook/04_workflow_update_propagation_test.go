@@ -17,9 +17,7 @@ limitations under the License.
 package authwebhook
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"time"
 
@@ -42,8 +40,8 @@ import (
 // Authority: BR-WORKFLOW-006, DD-WEBHOOK-001, DD-WORKFLOW-012, Issue #773
 // SOC2 CC8.1: UPDATE operations must produce distinct audit events
 //
-// These tests verify that CRD spec updates are correctly propagated to DS
-// via the validating webhook, including version bump supersession, same-version
+// These tests verify that CRD spec updates are correctly processed by the
+// validating webhook, including version bump supersession, same-version
 // content rejection, and idempotent re-apply.
 
 var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, Label("e2e", "workflow-update"), func() {
@@ -68,11 +66,11 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 		crdCleanup = append(crdCleanup, crdName)
 
 		By("Creating initial RW CRD v1.0.0")
-		rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "Initial description for version bump test")
+		rw := buildRemediationWorkflowCRD(crdName, "Initial description for version bump test")
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
 		By("Waiting for initial workflowId in status")
-		initial := waitForCRDStatus(crdName, 30*time.Second)
+		initial := waitForCRDStatus(crdName)
 		initialWorkflowID := initial.Status.WorkflowID
 		Expect(initialWorkflowID).ToNot(BeEmpty(), "Initial workflowId should be set")
 
@@ -102,37 +100,65 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 		}, 30*time.Second, 1*time.Second).ShouldNot(BeEmpty(),
 			"Status should reflect new workflowId after version bump")
 
-		By("Verifying DS catalog has the updated workflow")
-		url := fmt.Sprintf("%s/api/v1/workflows/%s", dataStorageURL, newWorkflowID)
-		req, err := http.NewRequest(http.MethodGet, url, nil)
-		Expect(err).ToNot(HaveOccurred())
-		resp, err := authHTTPClient.Do(req)
-		Expect(err).ToNot(HaveOccurred())
-		defer resp.Body.Close()
-		Expect(resp.StatusCode).To(Equal(http.StatusOK))
-
-		body, _ := io.ReadAll(resp.Body)
-		var dsWorkflow map[string]interface{}
-		Expect(json.Unmarshal(body, &dsWorkflow)).To(Succeed())
-		Expect(dsWorkflow["version"]).To(Equal("1.1.0"),
-			"DS catalog should have version 1.1.0")
+		// "DS catalog has the updated workflow" (#1677, DD-WORKFLOW-019): DS no
+		// longer hosts a workflow catalog or its REST read path at all -- that
+		// moved to KubernautAgent, and AW itself never called it (this was
+		// always a network-based proxy check, not part of AW's own contract).
+		// The CRD's own .status.workflowId already changing above is AW's real
+		// signal that the version bump was recognized and superseded
+		// correctly; that any cache built from this CRD reflects
+		// spec.version verbatim is a mapping-correctness property covered at
+		// the KA integration tier (crdWorkflowToModel, cache_convert_test.go).
 
 		By("Verifying audit trail has remediationworkflow.admitted.update event")
 		authAuditClient := createAuthenticatedAuditClient()
-		if authAuditClient != nil {
-			Eventually(func() bool {
-				events, err := authAuditClient.QueryAuditEvents(ctx, auditclient.QueryAuditEventsParams{
-					EventType: auditclient.NewOptString("remediationworkflow.admitted.update"),
-				})
-				if err != nil {
-					return false
-				}
-				return len(events.Data) > 0
-			}, 10*time.Second, 1*time.Second).Should(BeTrue(),
-				"Audit trail should contain remediationworkflow.admitted.update event")
-		}
+		Expect(authAuditClient).ToNot(BeNil(), "DD-AUTH-014 authenticated audit client must be available in E2E")
+		// #1661: filter server-side by event_data.workflow_name (detail_key/
+		// detail_value, Issue #1199) rather than the bare event_type, since the
+		// unfiltered query's default page (50 events, cluster-wide) can miss this
+		// CRD's event once enough other admitted.update events accumulate across
+		// the suite's other Serial specs.
+		var updateEvents []auditclient.AuditEvent
+		Eventually(func() bool {
+			events, err := authAuditClient.QueryAuditEvents(ctx, auditclient.QueryAuditEventsParams{
+				EventType:   auditclient.NewOptString("remediationworkflow.admitted.update"),
+				DetailKey:   auditclient.NewOptString("workflow_name"),
+				DetailValue: auditclient.NewOptString(crdName),
+			})
+			if err != nil {
+				return false
+			}
+			updateEvents = events.Data
+			return len(events.Data) > 0
+		}, 10*time.Second, 1*time.Second).Should(BeTrue(),
+			"Audit trail should contain remediationworkflow.admitted.update event for this CRD")
 
-		GinkgoWriter.Printf("✅ Version bump UPDATE propagated: %s -> %s\n", initialWorkflowID, newWorkflowID)
+		// E2E-AW-773-004 (#1661 Change 2): the audit trail alone -- independent of
+		// etcd or DS's cache -- must be able to reconstruct the exact workflow
+		// definition that was admitted (SOC2 CC8.1 full reconstruction).
+		By("E2E-AW-773-004: verifying remediationworkflow.admitted.update event carries full workflow_content")
+		var contentPayload auditclient.RemediationWorkflowWebhookAuditPayload
+		found := false
+		for _, evt := range updateEvents {
+			payload, ok := evt.EventData.GetRemediationWorkflowWebhookAuditPayload()
+			if ok && payload.WorkflowName == crdName {
+				contentPayload = payload
+				found = true
+				break
+			}
+		}
+		Expect(found).To(BeTrue(), "Should find the admitted.update event for this CRD (%s)", crdName)
+
+		Expect(contentPayload.WorkflowContent.IsSet()).To(BeTrue(),
+			"event_data.workflow_content should be set on the admitted.update event (#1661)")
+		Expect(contentPayload.WorkflowContent.Value.Version).To(Equal("1.1.0"),
+			"event_data.workflow_content.version should reflect the version-bumped spec")
+		Expect(contentPayload.ContentHash.IsSet()).To(BeTrue(),
+			"event_data.content_hash should be set on the admitted.update event (#1661)")
+		Expect(contentPayload.ContentHash.Value).ToNot(BeEmpty())
+
+		GinkgoWriter.Printf("✅ Version bump UPDATE propagated: %s -> %s (content_hash=%s)\n",
+			initialWorkflowID, newWorkflowID, contentPayload.ContentHash.Value)
 	})
 
 	// ========================================
@@ -143,11 +169,11 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 		crdCleanup = append(crdCleanup, crdName)
 
 		By("Creating initial RW CRD v1.0.0")
-		rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "Original description")
+		rw := buildRemediationWorkflowCRD(crdName, "Original description")
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
 		By("Waiting for initial workflowId in status")
-		initial := waitForCRDStatus(crdName, 30*time.Second)
+		initial := waitForCRDStatus(crdName)
 		Expect(initial.Status.WorkflowID).To(HaveLen(36),
 			"Initial workflowId should be a UUID (36 chars)")
 
@@ -182,11 +208,11 @@ var _ = Describe("E2E: RemediationWorkflow UPDATE Propagation (#773)", Serial, L
 		crdCleanup = append(crdCleanup, crdName)
 
 		By("Creating initial RW CRD v1.0.0")
-		rw := buildRemediationWorkflowCRD(crdName, "1.0.0", "Idempotent test description")
+		rw := buildRemediationWorkflowCRD(crdName, "Idempotent test description")
 		Expect(k8sClient.Create(ctx, rw)).To(Succeed())
 
 		By("Waiting for initial workflowId in status")
-		initial := waitForCRDStatus(crdName, 30*time.Second)
+		initial := waitForCRDStatus(crdName)
 		originalWorkflowID := initial.Status.WorkflowID
 		Expect(originalWorkflowID).To(HaveLen(36),
 			"Initial workflowId should be a UUID (36 chars)")

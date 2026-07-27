@@ -68,7 +68,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process signal with very short context deadline")
-			prometheusAlert := createPrometheusAlert(testNamespace, "TimeoutTest", "critical", "", "")
+			prometheusAlert := createPrometheusAlert(testNamespace, "TimeoutTest", "critical", "")
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
@@ -90,7 +90,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 			// Gateway didn't crash - this is what we're validating
 
 			By("5. Verify Gateway can still process subsequent requests")
-			validAlert := createPrometheusAlert(testNamespace, "AfterTimeout", "warning", "", "")
+			validAlert := createPrometheusAlert(testNamespace, "AfterTimeout", "warning", "")
 			validSignal, err := prometheusAdapter.Parse(ctx, validAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -110,7 +110,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 			Expect(err).ToNot(HaveOccurred())
 
 			By("2. Process signal with very short context deadline (will timeout DataStorage)")
-			prometheusAlert := createPrometheusAlert(testNamespace, "DataStorageTimeout", "critical", "", "")
+			prometheusAlert := createPrometheusAlert(testNamespace, "DataStorageTimeout", "critical", "")
 			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 			signal, err := prometheusAdapter.Parse(ctx, prometheusAlert)
 			Expect(err).ToNot(HaveOccurred())
@@ -144,7 +144,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 
 			By("5. Verify Gateway continues processing after timeout")
 			// Issue #63: alertname excluded from fingerprint — use different pod for a distinct signal
-			validAlert := createPrometheusAlertForPod(testNamespace, "AfterDataStorageTimeout", "info", "", "", "recovery-pod-456")
+			validAlert := createPrometheusAlertForPod(testNamespace, "AfterDataStorageTimeout", "info", "", "recovery-pod-456")
 			validSignal, err := prometheusAdapter.Parse(ctx, validAlert)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -176,7 +176,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 			for i := 0; i < 5; i++ {
 				alertName := fmt.Sprintf("CascadeTest-%d", i)
 				// Issue #63: alertname excluded from fingerprint — use different pods for distinct signals
-				alert := createPrometheusAlertForPod(uniqueNs, alertName, "warning", "", "", fmt.Sprintf("cascade-pod-%d", i))
+				alert := createPrometheusAlertForPod(uniqueNs, alertName, "warning", "", fmt.Sprintf("cascade-pod-%d", i))
 				signal, err := prometheusAdapter.Parse(ctx, alert)
 				Expect(err).ToNot(HaveOccurred())
 
@@ -197,7 +197,7 @@ var _ = Describe("Gateway Error Handling (Infrastructure Gaps)", Label("integrat
 				"BR-GATEWAY-113: Gateway must successfully process at least 3/5 signals despite stress")
 
 			By("5. Verify Gateway didn't crash (can still process new signals)")
-			validAlert := createPrometheusAlert(uniqueNs, "AfterCascade", "info", "", "")
+			validAlert := createPrometheusAlert(uniqueNs, "AfterCascade", "info", "")
 			validSignal, err := prometheusAdapter.Parse(ctx, validAlert)
 			Expect(err).ToNot(HaveOccurred())
 

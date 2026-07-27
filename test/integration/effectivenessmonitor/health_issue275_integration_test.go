@@ -44,7 +44,7 @@ var _ = Describe("Health Check — Issue #275: assessHealth must use Remediation
 	// Fix: assessHealth() should use ea.Spec.RemediationTarget instead.
 	// ========================================================================
 	It("IT-EM-275-001: should score 1.0 when SignalTarget pod is deleted but RemediationTarget deployment is healthy (#275)", func() {
-		ns := createTestNamespace("em-275-001")
+		ns := createTestNamespace(ctx, "em-275-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating healthy pods labeled for Deployment 'test-app' (post-restart replicas)")
@@ -118,7 +118,7 @@ var _ = Describe("Health Check — Issue #275: assessHealth must use Remediation
 	// — regression guard ensuring no change in behavior for same-target EAs.
 	// ========================================================================
 	It("IT-EM-275-002: should still score 1.0 when SignalTarget and RemediationTarget are the same Deployment (#275 regression)", func() {
-		ns := createTestNamespace("em-275-002")
+		ns := createTestNamespace(ctx, "em-275-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a healthy pod for Deployment 'test-app'")

@@ -1,6 +1,7 @@
 package retry
 
 import (
+	"errors"
 	"math"
 	"time"
 )
@@ -58,7 +59,8 @@ func (p *Policy) ShouldRetry(attemptCount int, err error) bool {
 // Satisfies BR-NOT-052: Automatic Retry (error classification)
 func (p *Policy) IsRetryable(err error) bool {
 	// Check for HTTP errors
-	if httpErr, ok := err.(*HTTPError); ok {
+	var httpErr *HTTPError
+	if errors.As(err, &httpErr) {
 		return isRetryableHTTPStatus(httpErr.StatusCode)
 	}
 

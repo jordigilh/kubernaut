@@ -30,9 +30,14 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	tool = "tool"
 )
 
 func containsSubstring(s, substr string) bool {
@@ -97,7 +102,7 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 			secondCall := mockClient.calls[1]
 			var foundRejection bool
 			for _, msg := range secondCall.Messages {
-				if msg.Role == "tool" && containsSubstring(msg.Content, "per-tool call limit exceeded") {
+				if msg.Role == tool && containsSubstring(msg.Content, "per-tool call limit exceeded") {
 					foundRejection = true
 					break
 				}
@@ -144,7 +149,7 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 			secondCall := mockClient.calls[1]
 			var foundRejection bool
 			for _, msg := range secondCall.Messages {
-				if msg.Role == "tool" && containsSubstring(msg.Content, "repeated identical failure") {
+				if msg.Role == tool && containsSubstring(msg.Content, "repeated identical failure") {
 					foundRejection = true
 					break
 				}
@@ -193,7 +198,7 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 
 			secondCall := mockClient.calls[1]
 			for _, msg := range secondCall.Messages {
-				if msg.Role == "tool" {
+				if msg.Role == tool {
 					Expect(msg.Content).NotTo(ContainSubstring("per-tool call limit exceeded"),
 						"IT-KA-860-001: no list_workflows call should be rejected — pagination calls are exempt from per-tool budget")
 				}

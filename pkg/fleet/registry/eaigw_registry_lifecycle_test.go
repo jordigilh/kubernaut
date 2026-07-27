@@ -34,14 +34,14 @@ func newTestWatcher() *EAIGWRegistry {
 	}, nil, logger)
 }
 
-func newBackendUnstructured(name, namespace, endpoint string) *unstructured.Unstructured {
+func newBackendUnstructured(name, endpoint string) *unstructured.Unstructured {
 	return &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"apiVersion": "gateway.envoyproxy.io/v1alpha1",
 			"kind":       "Backend",
 			"metadata": map[string]interface{}{
 				"name":      name,
-				"namespace": namespace,
+				"namespace": "kubernaut-system",
 				"labels": map[string]interface{}{
 					ManagedLabel: "true",
 				},
@@ -76,7 +76,7 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 
 	Describe("onAdd", func() {
 		It("UT-REG-EAIGW-003: should add cluster to registry and emit Added event", func() {
-			u := newBackendUnstructured("prod-east", "kubernaut-system",
+			u := newBackendUnstructured("prod-east",
 				"https://mcp.example.com/prod-east")
 
 			w.onAdd(u)
@@ -104,13 +104,13 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 
 	Describe("onUpdate", func() {
 		It("UT-REG-EAIGW-005: should update existing cluster and emit Updated event", func() {
-			u1 := newBackendUnstructured("staging", "kubernaut-system",
+			u1 := newBackendUnstructured("staging",
 				"https://old-endpoint.com/staging")
 			w.onAdd(u1)
 			// Drain the add event
 			Eventually(w.WatchClusters()).Should(Receive())
 
-			u2 := newBackendUnstructured("staging", "kubernaut-system",
+			u2 := newBackendUnstructured("staging",
 				"https://new-endpoint.com/staging")
 			w.onUpdate(u1, u2)
 
@@ -127,7 +127,7 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 
 	Describe("onDelete", func() {
 		It("UT-REG-EAIGW-006: should remove cluster from registry and emit Deleted event", func() {
-			u := newBackendUnstructured("dev-west", "kubernaut-system",
+			u := newBackendUnstructured("dev-west",
 				"https://mcp.example.com/dev-west")
 			w.onAdd(u)
 			Eventually(w.WatchClusters()).Should(Receive())
@@ -145,7 +145,7 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 		})
 
 		It("UT-REG-EAIGW-007: should handle tombstone objects on delete", func() {
-			u := newBackendUnstructured("tombstone-cluster", "kubernaut-system",
+			u := newBackendUnstructured("tombstone-cluster",
 				"https://mcp.example.com/tombstone")
 			w.onAdd(u)
 			Eventually(w.WatchClusters()).Should(Receive())
@@ -160,7 +160,7 @@ var _ = Describe("UT-REG-EAIGW: EAIGWRegistry lifecycle", func() {
 		})
 
 		It("UT-REG-EAIGW-008: should no-op when deleting unknown cluster", func() {
-			u := newBackendUnstructured("unknown", "kubernaut-system", "")
+			u := newBackendUnstructured("unknown", "")
 			w.onDelete(u)
 			Expect(w.List()).To(BeEmpty())
 		})

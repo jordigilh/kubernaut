@@ -38,7 +38,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			k8s := newFakeClient(scheme)
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(), k8s, scheme, "test-ns",
-				)
+			)
 
 			req := adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
@@ -60,7 +60,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			k8s := newFakeClient(scheme)
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(), k8s, scheme, "test-ns",
-				)
+			)
 
 			req := adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
@@ -85,7 +85,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			k8s := newFakeClient(scheme)
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(), k8s, scheme, "test-ns",
-					session.WithAuditor(recorder),
+				session.WithAuditor(recorder),
 			)
 
 			req := adksession.CreateRequest{
@@ -110,7 +110,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			k8s := newFakeClient(scheme)
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(), k8s, scheme, "test-ns",
-				)
+			)
 
 			req := adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
@@ -130,7 +130,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			k8s := newFakeClient(scheme)
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(), k8s, scheme, "test-ns",
-				)
+			)
 
 			req := adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
@@ -159,7 +159,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			k8s := newFakeClient(scheme)
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(), k8s, scheme, "test-ns",
-				)
+			)
 
 			req := adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
@@ -188,7 +188,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			k8s := newFakeClient(scheme)
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(), k8s, scheme, "test-ns",
-				)
+			)
 
 			req := adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
@@ -227,7 +227,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			k8s := newFakeClient(scheme)
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(), k8s, scheme, "test-ns",
-				)
+			)
 
 			err := svc.MaterializeCRD(ctx, "nonexistent", v1alpha1.ObjectRef{
 				Namespace: "prod",
@@ -241,7 +241,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			k8s := newFakeClient(scheme)
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(), k8s, scheme, "test-ns",
-				)
+			)
 
 			req := adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
@@ -274,7 +274,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			k8s := newFakeClient(scheme)
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(), k8s, scheme, "test-ns",
-				)
+			)
 
 			req := adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
@@ -301,7 +301,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			k8s := newFakeClient(scheme)
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(), k8s, scheme, "test-ns",
-				)
+			)
 
 			req := adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
@@ -330,7 +330,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 			k8s := newFakeClient(scheme)
 			svc := session.NewCRDSessionService(
 				adksession.InMemoryService(), k8s, scheme, "test-ns",
-				)
+			)
 
 			req := adksession.CreateRequest{
 				AppName:   "kubernaut-apifrontend",
@@ -383,7 +383,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 				Namespace: "prod", Name: "rr-disc-001",
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "disc-001", v1alpha1.SessionPhaseActive)).To(Succeed())
+			Expect(setSessionCRDPhase(ctx, k8s, "disc-001")).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "disc-001", v1alpha1.SessionPhaseDisconnected, "SSE connection closed", "")
 			Expect(err).NotTo(HaveOccurred())
@@ -414,7 +414,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 				Namespace: "prod", Name: "rr-ttl-001",
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "ttl-001", v1alpha1.SessionPhaseActive)).To(Succeed())
+			Expect(setSessionCRDPhase(ctx, k8s, "ttl-001")).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "ttl-001", v1alpha1.SessionPhaseDisconnected, "heartbeat stale", "system")
 			Expect(err).NotTo(HaveOccurred())
@@ -443,7 +443,7 @@ var _ = Describe("Deferred CRD Creation (G6)", func() {
 				Namespace: "prod", Name: "rr-ttl-002",
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(setSessionCRDPhase(ctx, k8s, "test-ns", "ttl-002", v1alpha1.SessionPhaseActive)).To(Succeed())
+			Expect(setSessionCRDPhase(ctx, k8s, "ttl-002")).To(Succeed())
 
 			err = svc.UpdatePhase(ctx, "ttl-002", v1alpha1.SessionPhaseDisconnected, "SSE dropped", "")
 			Expect(err).NotTo(HaveOccurred())
@@ -497,9 +497,9 @@ var _ = Describe("InitializeSessionByRR (takeover IS CRD creation)", func() {
 		Expect(is.Spec.A2ATaskID).To(Equal("ka-sess-001"))
 		Expect(is.Spec.UserIdentity.Username).To(Equal("sre-alice"))
 		Expect(is.Spec.UserIdentity.Groups).To(ConsistOf("sre-team"))
-	Expect(is.Spec.JoinMode).To(Equal(v1alpha1.SessionJoinModeTakeover))
-	Expect(is.Status.Phase).To(Equal(v1alpha1.SessionPhaseActive))
-	Expect(is.Labels).NotTo(HaveKey(session.LabelPhase))
+		Expect(is.Spec.JoinMode).To(Equal(v1alpha1.SessionJoinModeTakeover))
+		Expect(is.Status.Phase).To(Equal(v1alpha1.SessionPhaseActive))
+		Expect(is.Labels).NotTo(HaveKey(session.LabelPhase))
 		Expect(is.Labels[session.LabelUser]).To(Equal("sre-alice"))
 		Expect(is.Labels[session.LabelRRName]).To(Equal("rr-oom-001"))
 	})

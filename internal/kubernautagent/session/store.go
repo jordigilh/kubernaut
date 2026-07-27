@@ -223,6 +223,7 @@ func (st Status) IsTerminal() bool {
 }
 
 // SetMetadata stores request-level metadata on an existing session.
+//
 // Deprecated: Use SetContext for typed access. Retained for backward compatibility.
 func (s *Store) SetMetadata(id string, metadata map[string]string) {
 	s.mu.Lock()

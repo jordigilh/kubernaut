@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -54,7 +56,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 	)
 
 	BeforeEach(func() {
-		namespace = createTestNamespace("ro-char")
+		namespace = createTestNamespace(ctx, "ro-char")
 		rrName = fmt.Sprintf("char-%s", uuid.New().String()[:13])
 	})
 
@@ -81,7 +83,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 		}, timeout, interval).Should(Succeed())
 
 		By("Completing SP to drive to Analyzing")
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+		Expect(updateSPStatus(spName)).To(Succeed())
 
 		By("Waiting for AI to be created (Processing → Analyzing)")
 		aiName := fmt.Sprintf("ai-%s", rrName)
@@ -183,7 +185,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 			"ProcessingStartTime should be set after Pending → Processing transition")
 
 		By("Completing SP to drive to Analyzing")
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+		Expect(updateSPStatus(spName)).To(Succeed())
 
 		By("Waiting for AI to be created (confirms Analyzing phase reached)")
 		aiName := fmt.Sprintf("ai-%s", rrName)
@@ -229,7 +231,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 				Name: spName, Namespace: ROControllerNamespace,
 			}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+		Expect(updateSPStatus(spName)).To(Succeed())
 
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		Eventually(func() error {
@@ -247,11 +249,17 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.ApprovalRequired = false
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-restart-pods",
-			Version:         "v1.0.0",
-			Confidence:      0.95,
-			ExecutionBundle: "kubernaut/workflows:latest",
-			Rationale:       "High confidence auto-approve (characterization test)",
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-restart-pods",
+				WorkflowName:    "wf-restart-pods",
+				ActionType:      "RestartPod",
+				Version:         "v1.0.0",
+				ExecutionBundle: "kubernaut/workflows:latest",
+				ExecutionEngine: "job",
+			},
+			Confidence: 0.95,
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Rationale: "High confidence auto-approve (characterization test)",
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
@@ -322,7 +330,7 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 				Name: spName, Namespace: ROControllerNamespace,
 			}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+		Expect(updateSPStatus(spName)).To(Succeed())
 
 		aiName := fmt.Sprintf("ai-%s", rrName)
 		Eventually(func() error {
@@ -340,11 +348,17 @@ var _ = Describe("Issue #666: Characterization Integration Tests for RO Phase Ha
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.ApprovalRequired = false
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-restart-pods",
-			Version:         "v1.0.0",
-			Confidence:      0.95,
-			ExecutionBundle: "kubernaut/workflows:latest",
-			Rationale:       "High confidence auto-approve",
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-restart-pods",
+				WorkflowName:    "wf-restart-pods",
+				ActionType:      "RestartPod",
+				Version:         "v1.0.0",
+				ExecutionBundle: "kubernaut/workflows:latest",
+				ExecutionEngine: "job",
+			},
+			Confidence: 0.95,
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Rationale: "High confidence auto-approve",
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",

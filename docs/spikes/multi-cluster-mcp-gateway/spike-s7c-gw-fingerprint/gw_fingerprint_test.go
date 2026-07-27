@@ -57,8 +57,8 @@ var _ = Describe("Spike S7c — GW Cluster-Aware Fingerprint", func() {
 	Describe("Backward compatibility", func() {
 		It("S7c-001: empty clusterID produces same fingerprint as current algorithm", func() {
 			current := CalculateOwnerFingerprintCurrent("default", "Deployment", "nginx")
-			new := CalculateOwnerFingerprintNew("", "default", "Deployment", "nginx")
-			Expect(new).To(Equal(current))
+			updated := CalculateOwnerFingerprintNew("", "default", "Deployment", "nginx")
+			Expect(updated).To(Equal(current))
 		})
 
 		It("S7c-002: backward compatible across multiple resources", func() {
@@ -76,8 +76,8 @@ var _ = Describe("Spike S7c — GW Cluster-Aware Fingerprint", func() {
 
 			for _, tc := range testCases {
 				current := CalculateOwnerFingerprintCurrent(tc.namespace, tc.kind, tc.name)
-				new := CalculateOwnerFingerprintNew("", tc.namespace, tc.kind, tc.name)
-				Expect(new).To(Equal(current), fmt.Sprintf("Mismatch for %s/%s/%s", tc.namespace, tc.kind, tc.name))
+				updated := CalculateOwnerFingerprintNew("", tc.namespace, tc.kind, tc.name)
+				Expect(updated).To(Equal(current), fmt.Sprintf("Mismatch for %s/%s/%s", tc.namespace, tc.kind, tc.name))
 			}
 		})
 	})

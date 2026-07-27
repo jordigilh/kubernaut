@@ -31,6 +31,13 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
+// formatJSON and formatYAML are the two supported file output formats for
+// FileDeliveryService.
+const (
+	formatJSON = "json"
+	formatYAML = "yaml"
+)
+
 // ========================================
 // FILE DELIVERY SERVICE (DD-NOT-002 V3.0)
 // 📋 Design Decision: DD-NOT-002 (File-Based E2E Notification Delivery Validation)
@@ -86,7 +93,7 @@ var _ Service = (*FileDeliveryService)(nil)
 //	service := NewFileDeliveryService("/tmp/kubernaut-e2e-notifications", "json", 5*time.Second)
 func NewFileDeliveryService(outputDir, format string, timeout time.Duration) *FileDeliveryService {
 	if format == "" {
-		format = "json"
+		format = formatJSON
 	}
 	return &FileDeliveryService{
 		outputDir: outputDir,
@@ -182,7 +189,7 @@ func (s *FileDeliveryService) Deliver(ctx context.Context, notification *notific
 // 6b GREEN: funlen remediation) — pure code motion, no behavior change.
 func marshalNotificationForFile(notification *notificationv1alpha1.NotificationRequest, format string, log logr.Logger) ([]byte, error) {
 	switch format {
-	case "json":
+	case formatJSON:
 		data, err := json.MarshalIndent(notification, "", "  ")
 		if err != nil {
 			log.Error(err, "Failed to marshal notification to JSON",
@@ -191,7 +198,7 @@ func marshalNotificationForFile(notification *notificationv1alpha1.NotificationR
 			return nil, fmt.Errorf("failed to marshal notification to JSON: %w", err)
 		}
 		return data, nil
-	case "yaml":
+	case formatYAML:
 		// TDD REFACTOR: YAML support added
 		data, err := yaml.Marshal(notification)
 		if err != nil {

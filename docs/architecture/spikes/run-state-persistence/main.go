@@ -536,7 +536,7 @@ func testOptionAvsOptionC(results *spikeResults) {
 	log.Println("RECOMMENDATION: Option A (ephemeral in-memory)")
 	log.Println("  - GET /runs/{id} useful for in-flight status checks")
 	log.Println("  - Crash = run failure, KA detects and retries from scratch")
-	log.Println("  - Same behavior as current Goose model")
+	log.Println("  - Same behavior as the goose-server OAS runtime evaluated in this spike (superseded by #1536; opaque OCI agents don't expose an in-process run state to persist)")
 	log.Println("  - No additional infrastructure (no PVCs, no ConfigMaps)")
 	log.Println("  - KA already owns durable state via AgenticWorkflow CRD")
 

@@ -69,6 +69,13 @@ func (k *K8sCircuitBreaker) Execute(ctx context.Context, fn func(ctx context.Con
 			}
 			return nil, e
 		}
+		// nolint:nilnil // intentional "success, no error at all" case, not
+		// an ambiguous not-found sentinel: this closure's `any` result
+		// smuggles client errors through as a *value* (see the isK8sClientError
+		// branch above) so gobreaker doesn't count them as CB failures; a nil
+		// result here unambiguously means fn(ctx) returned nil. The caller
+		// below already checks `if result != nil` before type-asserting
+		// (Issue #1546 Tier 2).
 		return nil, nil
 	})
 	if err != nil {

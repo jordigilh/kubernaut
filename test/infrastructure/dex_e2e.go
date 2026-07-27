@@ -18,7 +18,6 @@ package infrastructure
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,23 +34,28 @@ const dexImage = "ghcr.io/dexidp/dex:latest"
 
 // DexE2EConfig holds the DEX E2E user credentials for token acquisition.
 type DexE2EConfig struct {
-	TokenEndpoint string       // e.g. https://localhost:5556/dex/token
-	ClientID      string
-	ClientSecret  string
-	Username      string       // email for static password user
-	Password      string
-	HTTPClient    *http.Client // optional TLS-aware client; defaults to InsecureSkipVerify for HTTPS
+	TokenEndpoint  string // e.g. https://localhost:5556/dex/token
+	ClientID       string
+	ClientSecret   string
+	Username       string // email for static password user
+	Password       string
+	HTTPClient     *http.Client // optional TLS-aware client override; if nil, one is built from KubeconfigPath
+	KubeconfigPath string       // locates the inter-service CA (GenerateInterServiceTLS) that signed DEX's leaf cert; required when HTTPClient is nil
 }
 
 // DefaultDexE2EConfig returns the default DEX config matching the static
-// passwords and clients deployed by deployDexInNamespace.
-func DefaultDexE2EConfig() DexE2EConfig {
+// passwords and clients deployed by deployDexInNamespace. kubeconfigPath
+// locates the inter-service CA (GenerateInterServiceTLS) so the client
+// dexHTTPClient builds verifies DEX's certificate instead of skipping
+// verification.
+func DefaultDexE2EConfig(kubeconfigPath string) DexE2EConfig {
 	return DexE2EConfig{
-		TokenEndpoint: "https://localhost:5556/dex/token",
-		ClientID:      "kubernaut-agent",
-		ClientSecret:  "e2e-client-secret",
-		Username:      "e2e-user@kubernaut.test",
-		Password:      "e2e-test-password",
+		TokenEndpoint:  "https://localhost:5556/dex/token",
+		ClientID:       "kubernaut-agent",
+		ClientSecret:   "e2e-client-secret",
+		Username:       "e2e-user@kubernaut.test",
+		Password:       "e2e-test-password",
+		KubeconfigPath: kubeconfigPath,
 	}
 }
 
@@ -67,8 +71,16 @@ func GetDexIDToken(cfg DexE2EConfig) (string, error) {
 		"client_secret": {cfg.ClientSecret},
 	}
 
-	client := dexHTTPClient(cfg.HTTPClient)
-	resp, err := client.PostForm(cfg.TokenEndpoint, data)
+	client, err := dexHTTPClient(cfg.HTTPClient, cfg.KubeconfigPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to build DEX HTTP client: %w", err)
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, cfg.TokenEndpoint, strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("failed to build DEX token request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("DEX token request failed: %w", err)
 	}
@@ -255,22 +267,22 @@ spec:
 // kind-kubernautagent-config.yaml maps host 5556, while kind-fullpipeline-config.yaml
 // and kind-fleetmetadatacache-config.yaml map host 30556 directly (matching the
 // NodePort number). Callers must pass the value used in their own Kind config.
-func waitForDexReady(hostPort int, writer io.Writer) error {
+func waitForDexReady(ctx context.Context, kubeconfigPath string, hostPort int, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for DEX OIDC endpoint to be reachable (HTTPS)...")
 
-	client := &http.Client{
-		Timeout: 5 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, //nolint:gosec // G402: health check during deployment
-			},
-		},
+	client, err := NewTLSAwareClient(kubeconfigPath, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("failed to build TLS-aware client for DEX health check: %w", err)
 	}
 
 	healthzURL := fmt.Sprintf("https://localhost:%d/dex/healthz", hostPort)
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
-		resp, err := client.Get(healthzURL)
+		req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthzURL, http.NoBody)
+		if reqErr != nil {
+			return fmt.Errorf("failed to build DEX healthz request: %w", reqErr)
+		}
+		resp, err := client.Do(req)
 		if err == nil && resp.StatusCode == http.StatusOK {
 			_ = resp.Body.Close()
 			_, _ = fmt.Fprintln(writer, "  ✅ DEX OIDC endpoint reachable (HTTPS)")
@@ -335,23 +347,18 @@ subjects:
 	return nil
 }
 
-// dexHTTPClient returns the provided client if non-nil, or a default HTTPS client
-// that skips TLS verification (for E2E test token endpoints using self-signed certs).
-func dexHTTPClient(c *http.Client) *http.Client {
+// dexHTTPClient returns the provided client if non-nil, or a client that
+// trusts the inter-service CA (GenerateInterServiceTLS) via kubeconfigPath
+// for E2E test token endpoints -- DEX's leaf cert (SANs include "localhost")
+// is signed by that same CA, so this verifies rather than skips TLS.
+func dexHTTPClient(c *http.Client, kubeconfigPath string) (*http.Client, error) {
 	if c != nil {
-		return c
+		return c, nil
 	}
-	return &http.Client{
-		Timeout: 10 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, //nolint:gosec // G402: E2E test with self-signed certs
-			},
-		},
-	}
+	return NewTLSAwareClient(kubeconfigPath, 10*time.Second)
 }
 
 // PreloadDexImage pulls the DEX image and loads it into the Kind cluster.
-func PreloadDexImage(clusterName string, writer io.Writer) error {
-	return PreloadExternalImage(dexImage, clusterName, writer)
+func PreloadDexImage(ctx context.Context, clusterName string, writer io.Writer) error {
+	return PreloadExternalImage(ctx, dexImage, clusterName, writer)
 }

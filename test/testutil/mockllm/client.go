@@ -17,6 +17,7 @@ package mockllm
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -106,7 +107,10 @@ func (c *Client) ConfigureFault(enabled bool, statusCode int, message string) {
 		"message":     message,
 	}
 	data, _ := json.Marshal(cfg)
-	resp, err := http.Post(c.baseURL+"/api/test/fault", "application/json", bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.baseURL+"/api/test/fault", bytes.NewReader(data))
+	ExpectWithOffset(1, err).NotTo(HaveOccurred())
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	defer func() { _ = resp.Body.Close() }()
 	ExpectWithOffset(1, resp.StatusCode).To(Equal(200))
@@ -114,7 +118,7 @@ func (c *Client) ConfigureFault(enabled bool, statusCode int, message string) {
 
 // ResetFault disables fault injection.
 func (c *Client) ResetFault() {
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/test/fault/reset", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.baseURL+"/api/test/fault/reset", nil)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	resp, err := http.DefaultClient.Do(req)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
@@ -124,7 +128,7 @@ func (c *Client) ResetFault() {
 
 // Reset clears all verification state.
 func (c *Client) Reset() {
-	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/api/test/reset", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, c.baseURL+"/api/test/reset", nil)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
 	resp, err := http.DefaultClient.Do(req)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred())
@@ -152,7 +156,9 @@ func (c *Client) getToolCalls() []toolCallEntry {
 }
 
 func (c *Client) getJSON(path string) map[string]interface{} {
-	resp, err := http.Get(c.baseURL + path)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, c.baseURL+path, http.NoBody)
+	ExpectWithOffset(2, err).NotTo(HaveOccurred(), fmt.Sprintf("failed to build GET %s request", path))
+	resp, err := http.DefaultClient.Do(req)
 	ExpectWithOffset(2, err).NotTo(HaveOccurred(), fmt.Sprintf("GET %s failed", path))
 	defer func() { _ = resp.Body.Close() }()
 	ExpectWithOffset(2, resp.StatusCode).To(Equal(200))

@@ -40,7 +40,7 @@ var _ = Describe("RemediationApprovalRequest Conditions Integration", Label("int
 		)
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-rar-create")
+			namespace = createTestNamespace(ctx, "ro-rar-create")
 			rrName = fmt.Sprintf("rr-create-%s", uuid.New().String()[:13])
 		})
 

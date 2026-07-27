@@ -55,8 +55,8 @@ func TestCircuitBreakerAuditFunc_EmitsEvent(t *testing.T) {
 	})
 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.com/test", http.NoBody)
-	_, _ = cbt.RoundTrip(req)
-	_, _ = cbt.RoundTrip(req)
+	closeIfPresent(cbt.RoundTrip(req))
+	closeIfPresent(cbt.RoundTrip(req))
 
 	events := spy.eventsByType(audit.EventCircuitBreakerTrip)
 	if len(events) != 1 {

@@ -246,7 +246,7 @@ func (s *Server) persistAuditEventWithDLQFallback(ctx context.Context, w http.Re
 			"event_type", req.EventType,
 			"correlation_id", req.CorrelationID,
 			"duration_seconds", duration)
-		s.fallbackAuditEventToDLQ(w, r, req, auditEvent, err)
+		s.fallbackAuditEventToDLQ(w, r, req, auditEvent, err) //nolint:contextcheck // DLQ fallback is a last-resort integrity path; must not risk losing events to the same request context that saw the primary write fail
 		return
 	}
 

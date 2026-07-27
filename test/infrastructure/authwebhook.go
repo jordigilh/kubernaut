@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"io"
 )
 
@@ -42,15 +43,15 @@ func NewAuthWebhookInfrastructure() *AuthWebhookInfrastructure {
 
 // Setup starts all infrastructure using shared DSBootstrap
 // Sequential Order: Cleanup → Network → PostgreSQL → Migrations → Redis → DataStorage
-func (i *AuthWebhookInfrastructure) Setup(writer io.Writer) error {
-	return i.SetupWithKubeconfig("", writer)
+func (i *AuthWebhookInfrastructure) Setup(ctx context.Context, writer io.Writer) error {
+	return i.SetupWithKubeconfig(ctx, "", writer)
 }
 
 // SetupWithKubeconfig starts all infrastructure with optional envtest kubeconfig for DataStorage SAR auth
 // DD-AUTH-014: Pass envtest kubeconfig to enable ServiceAccount authentication in DataStorage
 // SetupWithAuth sets up DataStorage infrastructure with proper authentication
 // DD-AUTH-014: Takes full authConfig to ensure DataStorage service token is mounted
-func (i *AuthWebhookInfrastructure) SetupWithAuth(authConfig *IntegrationAuthConfig, writer io.Writer) error {
+func (i *AuthWebhookInfrastructure) SetupWithAuth(ctx context.Context, authConfig *IntegrationAuthConfig, writer io.Writer) error {
 	cfg := NewDSBootstrapConfigWithAuth(
 		"authwebhook",
 		15442, 16386, 18099, 19099,
@@ -58,7 +59,7 @@ func (i *AuthWebhookInfrastructure) SetupWithAuth(authConfig *IntegrationAuthCon
 		authConfig,
 	)
 
-	infra, err := StartDSBootstrap(cfg, writer)
+	infra, err := StartDSBootstrap(ctx, cfg, writer)
 	if err != nil {
 		return err
 	}
@@ -69,7 +70,7 @@ func (i *AuthWebhookInfrastructure) SetupWithAuth(authConfig *IntegrationAuthCon
 
 // SetupWithKubeconfig is deprecated - use SetupWithAuth instead
 // Kept for backward compatibility during migration
-func (i *AuthWebhookInfrastructure) SetupWithKubeconfig(kubeconfigPath string, writer io.Writer) error {
+func (i *AuthWebhookInfrastructure) SetupWithKubeconfig(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	cfg := DSBootstrapConfig{
 		ServiceName:       "authwebhook",
 		PostgresPort:      15442, // DD-TEST-001 v2.2
@@ -81,7 +82,7 @@ func (i *AuthWebhookInfrastructure) SetupWithKubeconfig(kubeconfigPath string, w
 		// WARNING: DataStorageServiceTokenPath not set - health check won't validate auth
 	}
 
-	infra, err := StartDSBootstrap(cfg, writer)
+	infra, err := StartDSBootstrap(ctx, cfg, writer)
 	if err != nil {
 		return err
 	}

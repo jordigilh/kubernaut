@@ -73,7 +73,7 @@ var _ = Describe("Health Check — Issue #246 (BR-EM-001)", func() {
 	// should produce healthScore 1.0, not 0.75.
 	// ========================================================================
 	It("IT-EM-246-001: should score 1.0 when only active pod is healthy and terminating pod is excluded (#246)", func() {
-		ns := createTestNamespace("em-246-001")
+		ns := createTestNamespace(ctx, "em-246-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a healthy active pod (post-remediation)")
@@ -152,7 +152,7 @@ var _ = Describe("Health Check — Issue #246 (BR-EM-001)", func() {
 	// lower the healthScore.
 	// ========================================================================
 	It("IT-EM-246-002: should score 1.0 when pre-remediation pod has cumulative restarts but none since remediation (#246)", func() {
-		ns := createTestNamespace("em-246-002")
+		ns := createTestNamespace(ctx, "em-246-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a pod that existed before remediation (simulated via early creation timestamp)")
@@ -201,7 +201,7 @@ var _ = Describe("Health Check — Issue #246 (BR-EM-001)", func() {
 	// (regression guard — should pass before AND after the fix)
 	// ========================================================================
 	It("IT-EM-246-003: should score 0.75 when post-remediation pod has genuine restarts (#246)", func() {
-		ns := createTestNamespace("em-246-003")
+		ns := createTestNamespace(ctx, "em-246-003")
 		defer deleteTestNamespace(ns)
 
 		By("Setting a remediation time in the past")

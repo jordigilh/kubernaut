@@ -46,7 +46,9 @@ func ScopeCheck(g Gomega, h *Harness, clusterID, group, version, kind, namespace
 	q.Set("namespace", namespace)
 	q.Set("name", name)
 
-	resp, err := h.FMCHTTPClient.Get(h.FMCAPIBaseURL + fmc.ScopeCheckPath + "?" + q.Encode())
+	req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, h.FMCAPIBaseURL+fmc.ScopeCheckPath+"?"+q.Encode(), http.NoBody)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to build scope check request")
+	resp, err := h.FMCHTTPClient.Do(req)
 	g.Expect(err).ToNot(HaveOccurred(), "scope check request failed")
 	defer func() { _ = resp.Body.Close() }()
 	g.Expect(resp.StatusCode).To(Equal(http.StatusOK), "scope check should return 200")
@@ -58,7 +60,9 @@ func ScopeCheck(g Gomega, h *Harness, clusterID, group, version, kind, namespace
 
 // ListClusters queries FMC's real /api/v1/clusters endpoint.
 func ListClusters(g Gomega, h *Harness) []fmc.ClusterInfoResponse {
-	resp, err := h.FMCHTTPClient.Get(h.FMCAPIBaseURL + fmc.ClustersPath)
+	req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, h.FMCAPIBaseURL+fmc.ClustersPath, http.NoBody)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to build cluster list request")
+	resp, err := h.FMCHTTPClient.Do(req)
 	g.Expect(err).ToNot(HaveOccurred(), "cluster list request failed")
 	defer func() { _ = resp.Body.Close() }()
 	g.Expect(resp.StatusCode).To(Equal(http.StatusOK), "cluster list should return 200")
@@ -84,8 +88,14 @@ func ClusterIDs(g Gomega, h *Harness) []string {
 // scopecache.ValkeyCacheReader.Ping) and returns the HTTP status code. No
 // path constant is exported for /readyz (unlike ScopeCheckPath/ClustersPath)
 // since it is a Kubernetes probe endpoint, not a public API contract.
+//
+// Issue #1683: /readyz lives exclusively on FMC's dedicated health port
+// (FMCHealthBaseURL) since the 3-port split -- it is no longer served on
+// the TLS-protected API port (FMCAPIBaseURL).
 func ReadyzStatus(g Gomega, h *Harness) int {
-	resp, err := h.FMCHTTPClient.Get(h.FMCAPIBaseURL + "/readyz")
+	req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, h.FMCHealthBaseURL+"/readyz", http.NoBody)
+	g.Expect(err).ToNot(HaveOccurred(), "failed to build /readyz request")
+	resp, err := h.FMCHTTPClient.Do(req)
 	g.Expect(err).ToNot(HaveOccurred(), "/readyz request failed")
 	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode

@@ -1,7 +1,7 @@
 # A2A Streaming Protocol: Hybrid Event Model
 
-**Version**: 1.2
-**Last Updated**: 2026-06-13
+**Version**: 1.3
+**Last Updated**: 2026-07-23
 **Status**: Active
 **Applies to**: API Frontend (AF) A2A streaming endpoint (`/a2a/invoke`)
 
@@ -187,9 +187,13 @@ different content:
   overloaded onto the generic `reasoning_delta` KA event, so client behavior can
   diverge from generic reasoning if desired — currently both render identically).
 
-Both are safe to treat identically by clients that don't need to distinguish them;
-they use the same `EmitReasoningContentSafe`/`EmitReasoningSafe` rendering path and
-the same redaction (`redacted: true` suppresses text) semantics.
+Both are safe to treat identically by clients that don't need to distinguish them —
+with one exception: only `reasoning_content` carries redaction semantics (`reasoning`
+narration is never redacted). As of #1716, a redacted `reasoning_content` turn is no
+longer a full no-op: the message text remains suppressed (always empty), but the
+event itself is still emitted, carrying `metadata.redacted: true`, so a client can
+render a "reasoning hidden by provider" placeholder instead of seeing nothing at all.
+A non-redacted, genuinely-empty turn is unaffected and still produces zero events.
 
 ### Live Event Relay for Pooled Interactive Calls (#1637, DD-AF-009)
 
@@ -332,6 +336,32 @@ render a progress stepper while standard clients show it as text.
 This event can arrive during the initial `kubernaut_investigate` call **or** during a
 later `kubernaut_message` turn on the same interactive session (#1637) — clients
 should not assume `reasoning_content` only appears once per conversation.
+
+### Redacted Reasoning Content Event (#1716)
+
+When the provider redacted a reasoning turn (e.g. Anthropic `redacted_thinking`), the
+message text is always empty, but the event still carries `metadata.redacted: true` so
+a client can render an explicit "reasoning hidden by provider" placeholder instead of
+silence:
+
+```json
+{
+  "kind": "status-update",
+  "status": {
+    "state": "working",
+    "timestamp": "2026-07-23T12:00:01Z",
+    "message": {
+      "role": "agent",
+      "parts": [{"kind": "text", "text": ""}]
+    }
+  },
+  "metadata": {"type": "reasoning_content", "redacted": true}
+}
+```
+
+A non-redacted turn never carries `metadata.redacted`; clients should treat its absence
+(or `false`) as "not redacted." A genuinely empty, non-redacted turn still produces no
+event at all — only `redacted: true` overrides the empty-text no-op.
 
 ### Execution Progress Event
 
@@ -529,6 +559,7 @@ This means LLM output **must** use artifacts for the TUI to display it.
 | 1.0 | 2026-06-01 | Initial hybrid model: artifacts for LLM text, status for progress | — |
 | 1.1 | 2026-06-05 | Added metadata.type classification, keepalive events | #1399 |
 | 1.2 | 2026-06-13 | Multi-part DataPart/TextPart artifacts, FunctionResponse suppression, event-aware text routing, metadata-only schema identification, execution progress, approval events | #1399, #1403, #1408, #1410, #1411 |
+| 1.3 | 2026-07-23 | Redacted `reasoning_content` turns now emit a content-free `metadata.redacted=true` signal instead of a full no-op | #1716 |
 
 ---
 

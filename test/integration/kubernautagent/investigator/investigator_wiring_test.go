@@ -30,7 +30,7 @@ var _ = Describe("Kubernaut Agent Registry Wiring — TP-433-WIR Phase 2", func(
 	Describe("IT-KA-433W-007: Registry with DS URL includes all 5 custom tools", func() {
 		It("should register all 5 custom tool names when DataStorage is configured", func() {
 			reg := registry.New()
-			custom.RegisterAll(reg, nil, nil, nil, logr.Discard())
+			custom.RegisterAll(reg, nil, nil, nil, nil, logr.Discard())
 
 			allTools := reg.All()
 			toolNames := make([]string, len(allTools))

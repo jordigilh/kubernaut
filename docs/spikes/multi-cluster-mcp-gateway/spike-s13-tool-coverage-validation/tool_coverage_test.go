@@ -81,8 +81,8 @@ var _ = AfterSuite(func() {
 })
 
 // startMCPServer starts kubernetes-mcp-server with the given toolsets and returns
-// the endpoint URL, the running cmd, and a cleanup function.
-func startMCPServer(toolsets string) (endpoint string, cmd *exec.Cmd, cleanup func()) {
+// the endpoint URL and a cleanup function.
+func startMCPServer(toolsets string) (endpoint string, cleanup func()) {
 	mcpBinary, err := exec.LookPath("kubernetes-mcp-server")
 	Expect(err).ToNot(HaveOccurred(), "kubernetes-mcp-server binary must be in PATH")
 
@@ -99,7 +99,7 @@ func startMCPServer(toolsets string) (endpoint string, cmd *exec.Cmd, cleanup fu
 		args = append(args, "--toolsets", toolsets)
 	}
 
-	cmd = exec.Command(mcpBinary, args...)
+	cmd := exec.Command(mcpBinary, args...)
 	cmd.Stdout = GinkgoWriter
 	cmd.Stderr = GinkgoWriter
 	err = cmd.Start()
@@ -121,7 +121,7 @@ func startMCPServer(toolsets string) (endpoint string, cmd *exec.Cmd, cleanup fu
 			_ = cmd.Wait()
 		}
 	}
-	return endpoint, cmd, cleanup
+	return endpoint, cleanup
 }
 
 // toolInventory captures a tool's full metadata for analysis.
@@ -229,7 +229,7 @@ var _ = Describe("Spike S13 — K8s MCP Server Tool Coverage Validation", Ordere
 	// --- S13-001: Default toolsets (core, config) ---
 
 	It("S13-001: enumerates all tools from default toolsets (core, config)", func() {
-		endpoint, _, cleanup := startMCPServer("")
+		endpoint, cleanup := startMCPServer("")
 		defer cleanup()
 
 		inventory := enumerateTools(ctx, endpoint)
@@ -267,7 +267,7 @@ var _ = Describe("Spike S13 — K8s MCP Server Tool Coverage Validation", Ordere
 	// --- S13-002: core + tekton toolsets ---
 
 	It("S13-002: enumerates all tools from core + tekton toolsets", func() {
-		endpoint, _, cleanup := startMCPServer("core,tekton")
+		endpoint, cleanup := startMCPServer("core,tekton")
 		defer cleanup()
 
 		inventory := enumerateTools(ctx, endpoint)
@@ -304,7 +304,7 @@ var _ = Describe("Spike S13 — K8s MCP Server Tool Coverage Validation", Ordere
 	// --- S13-003: all available toolsets ---
 
 	It("S13-003: enumerates all tools from all available toolsets", func() {
-		endpoint, _, cleanup := startMCPServer("core,config,helm,tekton")
+		endpoint, cleanup := startMCPServer("core,config,helm,tekton")
 		defer cleanup()
 
 		inventory := enumerateTools(ctx, endpoint)
@@ -327,7 +327,7 @@ var _ = Describe("Spike S13 — K8s MCP Server Tool Coverage Validation", Ordere
 	// --- S13-004: Map actual tools to KA investigation needs ---
 
 	It("S13-004: maps actual tools to KA investigation requirements", func() {
-		endpoint, _, cleanup := startMCPServer("core,config,tekton")
+		endpoint, cleanup := startMCPServer("core,config,tekton")
 		defer cleanup()
 
 		inventory := enumerateTools(ctx, endpoint)
@@ -394,7 +394,7 @@ var _ = Describe("Spike S13 — K8s MCP Server Tool Coverage Validation", Ordere
 	// --- S13-005: Validate critical parameter support ---
 
 	It("S13-005: validates critical parameters on key tools", func() {
-		endpoint, _, cleanup := startMCPServer("core,tekton")
+		endpoint, cleanup := startMCPServer("core,tekton")
 		defer cleanup()
 
 		inventory := enumerateTools(ctx, endpoint)

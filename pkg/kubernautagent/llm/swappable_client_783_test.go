@@ -29,9 +29,9 @@ import (
 )
 
 type recordingClient struct {
-	id        string
-	chatCount atomic.Int64
-	closed    atomic.Bool
+	id         string
+	chatCount  atomic.Int64
+	closed     atomic.Bool
 	closeDelay time.Duration
 }
 
@@ -190,11 +190,11 @@ var _ = Describe("SwappableClient — TP-783-SC (#783)", func() {
 
 			for i := 0; i < 10; i++ {
 				wg.Add(1)
-				go func(idx int) {
+				go func() {
 					defer wg.Done()
 					newClient := &recordingClient{id: "swap"}
 					_ = sc.Swap(newClient, "model-swap")
-				}(i)
+				}()
 			}
 
 			wg.Wait()

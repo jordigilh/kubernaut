@@ -103,7 +103,7 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
 
 	enrichmentReason, enrichmentMessage := buildEnrichmentMessage(k8sCtx, signal.TargetResource)
 
-	return r.finalizeEnrichment(ctx, sp, k8sCtx, enrichmentReason, enrichmentMessage, enrichmentStart, logger)
+	return r.finalizeEnrichment(ctx, sp, k8sCtx, enrichmentReason, enrichmentMessage, enrichmentStart)
 }
 
 // checkEnrichingIdempotencyGuard prevents duplicate phase-transition work
@@ -150,6 +150,8 @@ func (r *SignalProcessingReconciler) warnIfUnsupportedTargetType(sp *signalproce
 // on error. Extracted from reconcileEnriching per
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520). Returns failed=true
 // when the caller must return (result, err) immediately.
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature matches the "caller must return (result, err)" contract shared with sibling extracted helpers (Issue #1546 Tier 4)
 func (r *SignalProcessingReconciler) performK8sEnrichment(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, signal *signalprocessingv1alpha1.SignalData, enrichmentStart time.Time, logger logr.Logger) (*signalprocessingv1alpha1.KubernetesContext, ctrl.Result, bool, error) {
 	// BR-SP-001: K8sEnricher is MANDATORY - fail loudly if not wired or fails
 	// No fallback path - enrichment failure should stop processing
@@ -265,9 +267,11 @@ func buildEnrichmentMessage(k8sCtx *signalprocessingv1alpha1.KubernetesContext, 
 // finalizeEnrichment persists the enriched context + phase transition
 // (DD-PERF-001 atomic update), then emits the observability trail (K8s
 // events, completion audit, phase-transition audit) and success metrics.
+// All failures are returned directly to the caller (which logs via the
+// reconcile-chain contract), so this needs no logger of its own.
 // Extracted from reconcileEnriching per GO-ANTIPATTERN-AUDIT-2026-07-01
 // Wave 2 (issue #1520).
-func (r *SignalProcessingReconciler) finalizeEnrichment(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, k8sCtx *signalprocessingv1alpha1.KubernetesContext, enrichmentReason, enrichmentMessage string, enrichmentStart time.Time, logger logr.Logger) (ctrl.Result, error) {
+func (r *SignalProcessingReconciler) finalizeEnrichment(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, k8sCtx *signalprocessingv1alpha1.KubernetesContext, enrichmentReason, enrichmentMessage string, enrichmentStart time.Time) (ctrl.Result, error) {
 	oldPhase := sp.Status.Phase
 	// SP-BUG-ENRICHMENT-001: Check if enrichment already completed BEFORE status update
 	// This prevents duplicate audit events when controller reconciles same enrichment twice

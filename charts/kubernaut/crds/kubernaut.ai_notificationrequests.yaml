@@ -247,6 +247,11 @@ spec:
                     description: Workflow captures selected workflow details (approval/completion
                       notifications).
                     properties:
+                      actionType:
+                        description: |-
+                          ActionType is the workflow's action type, sourced directly from
+                          AIAnalysis.Status.SelectedWorkflow.ActionType. Issue #1677 Phase 1.
+                        type: string
                       confidence:
                         description: Confidence is the AI confidence score (as string,
                           e.g. "0.95").
@@ -261,6 +266,13 @@ spec:
                         type: string
                       workflowId:
                         description: WorkflowID is the ID of the executed workflow.
+                        type: string
+                      workflowName:
+                        description: |-
+                          WorkflowName is the human-readable workflow name, sourced directly from
+                          AIAnalysis.Status.SelectedWorkflow.WorkflowName (catalog-authoritative,
+                          Required field -- never LLM-suppliable). Issue #1677 Phase 1: lets
+                          Notification render a friendly name without a live DataStorage lookup.
                         type: string
                     type: object
                 type: object

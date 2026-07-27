@@ -6,9 +6,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	adksession "google.golang.org/adk/session"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	adksession "google.golang.org/adk/session"
 
 	v1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
@@ -32,7 +32,7 @@ func sessionCreateRequest(suffix, user string) *adksession.CreateRequest {
 					Username: user,
 				},
 				RemediationRef: v1alpha1.ObjectRef{
-					Namespace: "default",
+					Namespace: defaultFixture,
 					Name:      "test-rr-" + suffix,
 				},
 			},
@@ -48,7 +48,7 @@ var _ = Describe("Session CRD Integration (session/)", func() {
 				adksession.InMemoryService(),
 				k8sClient,
 				scheme,
-				"default",
+				defaultFixture,
 			)
 
 			resp, err := svc.Create(context.Background(), sessionCreateRequest("042", "test-user"))
@@ -64,7 +64,7 @@ var _ = Describe("Session CRD Integration (session/)", func() {
 				adksession.InMemoryService(),
 				k8sClient,
 				scheme,
-				"default",
+				defaultFixture,
 				session.WithAuditor(auditRecorder),
 			)
 
@@ -73,7 +73,7 @@ var _ = Describe("Session CRD Integration (session/)", func() {
 			Expect(resp).NotTo(BeNil())
 
 			sessionID := resp.Session.ID()
-			err = svc.MaterializeCRD(context.Background(), sessionID, v1alpha1.ObjectRef{Name: "test-rr-043", Namespace: "default"})
+			err = svc.MaterializeCRD(context.Background(), sessionID, v1alpha1.ObjectRef{Name: "test-rr-043", Namespace: defaultFixture})
 			Expect(err).NotTo(HaveOccurred())
 
 			err = svc.UpdatePhase(context.Background(), sessionID, v1alpha1.SessionPhaseCompleted, "investigation completed", "test-user-043")

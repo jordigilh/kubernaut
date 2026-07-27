@@ -52,39 +52,6 @@ func NewOgenClient(cfg OgenClientConfig) (*OgenClient, error) {
 	return &OgenClient{client: client}, nil
 }
 
-// ListWorkflows queries the DS for workflows matching the given options.
-func (c *OgenClient) ListWorkflows(ctx context.Context, opts ListWorkflowsOpts) ([]Workflow, error) {
-	params := ogenclient.ListWorkflowsParams{}
-	if opts.Kind != "" {
-		params.Component = ogenclient.NewOptString(opts.Kind)
-	}
-
-	resp, err := c.client.ListWorkflows(ctx, params)
-	err = ogenx.ToError(resp, err)
-	if err != nil {
-		return nil, fmt.Errorf("ds: list workflows: %w", err)
-	}
-
-	result, ok := resp.(*ogenclient.WorkflowListResponse)
-	if !ok {
-		return nil, fmt.Errorf("ds: unexpected response type %T", resp)
-	}
-
-	workflows := make([]Workflow, 0, len(result.Workflows))
-	for i := range result.Workflows {
-		w := &result.Workflows[i]
-		wf := Workflow{
-			Name: w.WorkflowName,
-			Kind: w.ActionType,
-		}
-		if w.WorkflowId.Set {
-			wf.ID = w.WorkflowId.Value.String()
-		}
-		workflows = append(workflows, wf)
-	}
-	return workflows, nil
-}
-
 // GetRemediationHistory queries the DS for remediation history.
 func (c *OgenClient) GetRemediationHistory(ctx context.Context, opts HistoryOpts) ([]HistoricalRemediation, error) {
 	params := ogenclient.GetRemediationHistoryContextParams{

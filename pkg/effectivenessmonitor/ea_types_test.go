@@ -152,22 +152,22 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 				},
 			}
 
-			copy := ea.DeepCopy()
+			eaCopy := ea.DeepCopy()
 
 			// Verify deep copy
-			Expect(copy.Name).To(Equal("ea-test"))
-			Expect(copy.Spec.CorrelationID).To(Equal("rr-001"))
-			Expect(copy.Spec.SignalTarget.Kind).To(Equal("Deployment"))
-			Expect(copy.Status.Phase).To(Equal(eav1.PhaseAssessing))
-			Expect(copy.Status.Components.HealthAssessed).To(BeTrue())
-			Expect(*copy.Status.Components.HealthScore).To(Equal(0.85))
+			Expect(eaCopy.Name).To(Equal("ea-test"))
+			Expect(eaCopy.Spec.CorrelationID).To(Equal("rr-001"))
+			Expect(eaCopy.Spec.SignalTarget.Kind).To(Equal("Deployment"))
+			Expect(eaCopy.Status.Phase).To(Equal(eav1.PhaseAssessing))
+			Expect(eaCopy.Status.Components.HealthAssessed).To(BeTrue())
+			Expect(*eaCopy.Status.Components.HealthScore).To(Equal(0.85))
 
 			// Verify independence - mutating original should not affect copy
 			ea.Spec.CorrelationID = "rr-002"
-			Expect(copy.Spec.CorrelationID).To(Equal("rr-001"))
+			Expect(eaCopy.Spec.CorrelationID).To(Equal("rr-001"))
 
 			*ea.Status.Components.HealthScore = 0.5
-			Expect(*copy.Status.Components.HealthScore).To(Equal(0.85))
+			Expect(*eaCopy.Status.Components.HealthScore).To(Equal(0.85))
 		})
 
 		It("should deep copy EffectivenessAssessmentList", func() {
@@ -182,13 +182,13 @@ var _ = Describe("EffectivenessAssessment CRD Types (ADR-EM-001)", func() {
 				},
 			}
 
-			copy := list.DeepCopy()
-			Expect(copy.Items).To(HaveLen(2))
-			Expect(copy.Items[0].Name).To(Equal("ea-1"))
+			listCopy := list.DeepCopy()
+			Expect(listCopy.Items).To(HaveLen(2))
+			Expect(listCopy.Items[0].Name).To(Equal("ea-1"))
 
 			// Verify independence
 			list.Items[0].Name = "ea-modified"
-			Expect(copy.Items[0].Name).To(Equal("ea-1"))
+			Expect(listCopy.Items[0].Name).To(Equal("ea-1"))
 		})
 	})
 

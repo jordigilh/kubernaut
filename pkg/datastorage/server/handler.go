@@ -24,21 +24,9 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 )
-
-// WorkflowLifecycleRepository defines the data access interface for workflow
-// lifecycle operations (enable, disable, deprecate). Used for testability.
-// *repository.WorkflowRepository satisfies this interface.
-//
-// GAP-WF-1: DD-WORKFLOW-017 Phase 4.4 - PATCH /enable and PATCH /deprecate
-type WorkflowLifecycleRepository interface {
-	GetByID(ctx context.Context, workflowID string) (*models.RemediationWorkflow, error)
-	UpdateStatus(ctx context.Context, workflowID, version, status, reason, updatedBy string) error
-}
 
 // RemediationHistoryQuerier defines the data access interface for remediation
 // history context queries. Used by HandleGetRemediationHistoryContext.
@@ -50,43 +38,23 @@ type RemediationHistoryQuerier interface {
 	QueryEffectivenessEventsBatch(ctx context.Context, correlationIDs []string) (map[string][]*EffectivenessEvent, error)
 }
 
-// WorkflowContentIntegrityRepository defines the data access operations needed
-// for content integrity checking during workflow registration. When a workflow
-// with the same name+version already exists, these methods determine the correct
-// action: idempotent return, supersede, or re-enable.
-// BR-WORKFLOW-006: Content hash verification prevents spec tampering.
-type WorkflowContentIntegrityRepository interface {
-	Create(ctx context.Context, workflow *models.RemediationWorkflow) error
-	GetActiveByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error)
-	GetActiveByWorkflowName(ctx context.Context, workflowName string) (*models.RemediationWorkflow, error)
-	GetLatestDisabledByNameAndVersion(ctx context.Context, workflowName, version string) (*models.RemediationWorkflow, error)
-	UpdateStatus(ctx context.Context, workflowID, version, status, reason, updatedBy string) error
-	SupersedeAndCreate(ctx context.Context, oldID, oldVersion, reason string, newWorkflow *models.RemediationWorkflow) error
-}
-
-// ActionTypeValidator validates action types against the taxonomy before DB insertion.
-// DD-WORKFLOW-016: Explicit validation for clean 400 errors instead of FK constraint 500.
-type ActionTypeValidator interface {
-	ActionTypeExists(ctx context.Context, actionType string) (bool, error)
-}
-
 // Handler handles REST API requests for Data Storage Service
 // BR-STORAGE-021: REST API read endpoints
 // BR-STORAGE-024: RFC 7807 error responses
 //
 // REFACTOR: Enhanced with structured logging, request timing, and observability
 // V1.0: Embedding service removed (label-only search per CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md)
+//
+// #1677 Phase 2g (DD-WORKFLOW-019): workflowRepo/workflowCache/successMetricsRepo
+// (and their WithWorkflowRepository/WithWorkflowCache/WithSuccessMetricsRepository
+// options, and the SuccessMetricsQuerier interface) were removed -- workflow/
+// action-type discovery is now owned directly by KubernautAgent.
 type Handler struct {
-	sqlDB                   *sql.DB                           // For reconstruction queries (BR-AUDIT-006)
-	logger                  logr.Logger
-	workflowRepo            *repository.WorkflowRepository    // BR-STORAGE-013: Workflow catalog (label-only search)
-	workflowLifecycleRepo   WorkflowLifecycleRepository       // GAP-WF-1: Lifecycle ops (enable/disable/deprecate) - uses workflowRepo when nil
-	workflowIntegrityRepo   WorkflowContentIntegrityRepository // BR-WORKFLOW-006: Content hash integrity checking
-	actionTypeValidator     ActionTypeValidator                // GAP-4: DD-WORKFLOW-016 taxonomy validation
-	auditStore              audit.AuditStore                  // BR-AUDIT-023: Workflow search audit
-	schemaExtractor         *oci.SchemaExtractor              // DD-WORKFLOW-017: OCI image schema extraction; not currently invoked by any handler (Issue #1642 removed its last caller, ValidateBundleExists)
-	remediationHistoryRepo  RemediationHistoryQuerier         // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
-	actionTypeRepo          *actiontyperepo.Repository        // BR-WORKFLOW-007: ActionType CRD lifecycle
+	sqlDB                  *sql.DB // For reconstruction queries (BR-AUDIT-006)
+	logger                 logr.Logger
+	auditStore             audit.AuditStore           // BR-AUDIT-023: Workflow search audit
+	schemaExtractor        *oci.SchemaExtractor       // DD-WORKFLOW-017: OCI image schema extraction; not currently invoked by any handler (Issue #1642 removed its last caller, ValidateBundleExists)
+	remediationHistoryRepo RemediationHistoryQuerier // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
 }
 
 // HandlerOption is a functional option for configuring the Handler
@@ -97,31 +65,6 @@ type HandlerOption func(*Handler)
 func WithLogger(logger logr.Logger) HandlerOption {
 	return func(h *Handler) {
 		h.logger = logger
-	}
-}
-
-// WithWorkflowRepository sets the workflow repository for catalog operations
-// BR-STORAGE-013: Workflow catalog semantic search
-func WithWorkflowRepository(repo *repository.WorkflowRepository) HandlerOption {
-	return func(h *Handler) {
-		h.workflowRepo = repo
-	}
-}
-
-// WithWorkflowLifecycleRepository sets the workflow lifecycle repository for enable/disable/deprecate.
-// When nil, lifecycle handlers use workflowRepo. Used for unit test mocking (GAP-WF-1).
-func WithWorkflowLifecycleRepository(repo WorkflowLifecycleRepository) HandlerOption {
-	return func(h *Handler) {
-		h.workflowLifecycleRepo = repo
-	}
-}
-
-// WithActionTypeValidator sets the action type taxonomy validator.
-// DD-WORKFLOW-016 GAP-4: Validates action_type against taxonomy before DB insert
-// for clean 400 errors instead of FK constraint 500.
-func WithActionTypeValidator(v ActionTypeValidator) HandlerOption {
-	return func(h *Handler) {
-		h.actionTypeValidator = v
 	}
 }
 
@@ -151,28 +94,11 @@ func WithSchemaExtractor(extractor *oci.SchemaExtractor) HandlerOption {
 	}
 }
 
-// WithWorkflowContentIntegrityRepository sets the content integrity repository
-// for ContentHash-based duplicate detection during workflow registration.
-// BR-WORKFLOW-006: Prevents spec tampering for same name+version workflows.
-func WithWorkflowContentIntegrityRepository(repo WorkflowContentIntegrityRepository) HandlerOption {
-	return func(h *Handler) {
-		h.workflowIntegrityRepo = repo
-	}
-}
-
 // WithRemediationHistoryQuerier sets the remediation history repository.
 // BR-HAPI-016: Remediation history context for LLM prompt enrichment.
 func WithRemediationHistoryQuerier(repo RemediationHistoryQuerier) HandlerOption {
 	return func(h *Handler) {
 		h.remediationHistoryRepo = repo
-	}
-}
-
-// WithActionTypeRepository sets the action type taxonomy repository.
-// BR-WORKFLOW-007: ActionType CRD lifecycle management.
-func WithActionTypeRepository(repo *actiontyperepo.Repository) HandlerOption {
-	return func(h *Handler) {
-		h.actionTypeRepo = repo
 	}
 }
 
@@ -189,4 +115,3 @@ func NewHandler(opts ...HandlerOption) *Handler {
 
 	return h
 }
-

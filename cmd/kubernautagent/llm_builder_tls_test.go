@@ -23,6 +23,11 @@ import (
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	pathCaCrt = "/nonexistent/ca.crt"
+)
+
 var _ = Describe("buildTransportChain — TLS wiring", func() {
 	It("returns a non-nil transport when tlsCaFile is set", func() {
 		caPath := generateTestCACert(GinkgoTB(), "Test CA")
@@ -50,7 +55,7 @@ var _ = Describe("buildTransportChain — TLS wiring", func() {
 	// UT-KA-1342-030: buildTransportChain returns error for invalid CA file (fail-hard per SC-8)
 	It("returns an error for an invalid CA file (fail-hard per SC-8)", func() {
 		cfg := kaconfig.DefaultConfig()
-		cfg.AI.LLM.TLSCaFile = "/nonexistent/ca.crt"
+		cfg.AI.LLM.TLSCaFile = pathCaCrt
 
 		merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
 

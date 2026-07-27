@@ -238,7 +238,7 @@ func (rc *ResilientClient) doReconnect(ctx context.Context) error {
 	old := rc.client.Load()
 	if old != nil {
 		if t := rc.findReloadableTransport(); t != nil {
-			t.InvalidateToken()
+			t.InvalidateToken() //nolint:contextcheck // 401-retry token invalidation rebuilds the long-lived token source, independent of any single request
 			rc.logger.Info("OAuth2 token invalidated before reconnect")
 		}
 		_ = old.Close()

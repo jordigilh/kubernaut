@@ -73,11 +73,11 @@ func (d *SessionDrainer) DrainSessions(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			d.logger.Info("drain context expired, force-releasing remaining sessions")
-			d.forceReleaseAll(ids)
+			d.forceReleaseAll(ids) //nolint:contextcheck // forceReleaseAll runs after the drain context has already expired; cleanup must proceed regardless
 			return
 		default:
 		}
-		if err := d.sessions.Release(id, "shutdown"); err != nil {
+		if err := d.sessions.Release(id, "shutdown"); err != nil { //nolint:contextcheck // session Release must succeed on its own bounded context regardless of the caller's (drain/timeout/disconnect) context state
 			d.logger.Error(err, "failed to release session during drain", "session_id", id)
 		} else {
 			d.logger.Info("session released during drain", "session_id", id)

@@ -207,7 +207,7 @@ func normalizeBatchEventIdentity(event *AuditEvent) {
 	event.EventDate = DateOnly(event.EventTimestamp.Truncate(24 * time.Hour))
 
 	if event.Version == "" {
-		event.Version = "1.0"
+		event.Version = defaultAuditEventVersion
 	}
 	if event.RetentionDays == 0 {
 		event.RetentionDays = 2555
@@ -222,7 +222,7 @@ func normalizeBatchEventData(event *AuditEvent) error {
 	if marshalErr != nil {
 		return fmt.Errorf("failed to marshal event_data for event %s: %w", event.EventID, marshalErr)
 	}
-	if len(eventDataJSON) == 0 || string(eventDataJSON) == "null" {
+	if len(eventDataJSON) == 0 || string(eventDataJSON) == jsonNull {
 		return nil
 	}
 	var normalizedEventData map[string]interface{}

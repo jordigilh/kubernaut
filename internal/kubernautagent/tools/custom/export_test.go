@@ -25,6 +25,5 @@ var ListAvailableActionsSchema = func() json.RawMessage { return listAvailableAc
 var ListWorkflowsSchema = func() json.RawMessage { return listWorkflowsSchemaJSON }
 var GetWorkflowSchema = func() json.RawMessage { return getWorkflowSchemaJSON }
 
-var StripPaginationIfComplete = stripPaginationIfComplete
 var TransformPagination = transformPagination
 var DecodeCursor = decodeCursor

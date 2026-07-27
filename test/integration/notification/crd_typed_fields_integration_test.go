@@ -18,7 +18,6 @@ package notification
 
 import (
 	"fmt"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -97,7 +96,7 @@ var _ = Describe("Issue #453 Phase A: Typed Enum Fields Integration", Label("int
 			// Wait for the reconciler to reach a terminal phase before manually
 			// updating the status. The reconciler skips terminal-phase resources,
 			// so the subsequent manual update won't be overwritten.
-			Expect(waitForReconciliationComplete(ctx, k8sClient, notifName, testNamespace, notificationv1alpha1.NotificationPhaseSent, 30*time.Second)).To(Succeed())
+			Expect(waitForReconciliationComplete(ctx, k8sClient, notifName, testNamespace, notificationv1alpha1.NotificationPhaseSent)).To(Succeed())
 
 			key := client.ObjectKeyFromObject(fetched)
 			Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {

@@ -24,26 +24,6 @@ func newTestOgenClient(t *testing.T, handler http.Handler) *OgenClient {
 	return client
 }
 
-// UT-AF-038-031: ListWorkflows sends GET to correct path with query params
-func TestOgenClient_ListWorkflows_CorrectPath(t *testing.T) {
-	var capturedPath, capturedMethod string
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		capturedPath = r.URL.Path
-		capturedMethod = r.Method
-		w.WriteHeader(http.StatusInternalServerError)
-	})
-
-	client := newTestOgenClient(t, mux)
-	_, _ = client.ListWorkflows(context.Background(), ListWorkflowsOpts{Kind: "Deployment"})
-	if capturedMethod != http.MethodGet {
-		t.Errorf("method = %q, want GET", capturedMethod)
-	}
-	if capturedPath != "/api/v1/workflows" {
-		t.Errorf("path = %q, want /api/v1/workflows", capturedPath)
-	}
-}
-
 // UT-AF-038-032: GetRemediationHistory sends GET to correct path
 func TestOgenClient_GetRemediationHistory_CorrectPath(t *testing.T) {
 	var capturedPath string
@@ -111,17 +91,17 @@ func TestOgenClient_GetAuditTrail_SendsLimit(t *testing.T) {
 }
 
 // UT-AF-038-036: Error response returns wrapped error
-func TestOgenClient_ListWorkflows_ServerError(t *testing.T) {
+func TestOgenClient_GetRemediationHistory_ServerError(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/workflows", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/api/v1/remediation-history/context", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"error":"internal failure"}`))
 	})
 
 	client := newTestOgenClient(t, mux)
-	_, err := client.ListWorkflows(context.Background(), ListWorkflowsOpts{})
+	_, err := client.GetRemediationHistory(context.Background(), HistoryOpts{Kind: "Deployment", Name: "api", Namespace: "prod"})
 	if err == nil {
-		t.Fatal("ListWorkflows() expected error on 500 response")
+		t.Fatal("GetRemediationHistory() expected error on 500 response")
 	}
 }
 
@@ -154,9 +134,9 @@ func TestOgenClient_NetworkFailure(t *testing.T) {
 		t.Fatalf("NewOgenClient() error = %v", err)
 	}
 
-	_, err = client.ListWorkflows(context.Background(), ListWorkflowsOpts{})
+	_, err = client.GetRemediationHistory(context.Background(), HistoryOpts{Kind: "Deployment", Name: "api", Namespace: "prod"})
 	if err == nil {
-		t.Fatal("ListWorkflows() expected error on network failure")
+		t.Fatal("GetRemediationHistory() expected error on network failure")
 	}
 }
 

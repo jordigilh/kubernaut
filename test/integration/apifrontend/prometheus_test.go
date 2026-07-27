@@ -23,7 +23,7 @@ var _ = Describe("Prometheus Client Integration (prometheus/)", func() {
 					"data": map[string]any{
 						"alerts": []map[string]any{
 							{
-								"labels":      map[string]string{"alertname": "TestAlert", "namespace": "default"},
+								"labels":      map[string]string{"alertname": "TestAlert", "namespace": defaultFixture},
 								"annotations": map[string]string{"summary": "test alert"},
 								"state":       "firing",
 								"activeAt":    "2025-01-01T00:00:00Z",

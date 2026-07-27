@@ -30,9 +30,9 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
-	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ============================================================================
@@ -61,7 +61,7 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 		By("Waiting for Analyzing phase")
 		Eventually(func() remediationv1.RemediationPhase {
@@ -77,10 +77,16 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 		}, timeout, interval).Should(Succeed())
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-restart-pods",
-			Version:         "v1.0.0",
-			ExecutionBundle: "test-image:latest",
-			Confidence:      0.95,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-restart-pods",
+				WorkflowName:    "wf-restart-pods",
+				ActionType:      "RestartPod",
+				Version:         "v1.0.0",
+				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: 0.95,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Config drift detected",
@@ -149,7 +155,7 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 	// until after the GitOps controller (ArgoCD/FluxCD) reconciles the target.
 	// ========================================
 	It("IT-RO-251-001: should set Config.HashComputeDelay in EA when AIAnalysis indicates GitOps target", func() {
-		ns := createTestNamespace("ro-251-001")
+		ns := createTestNamespace(ctx, "ro-251-001")
 		defer deleteTestNamespace(ns)
 
 		rr := driveToCompleted(ns, "rr-251-001", func(ai *aianalysisv1.AIAnalysis) {
@@ -209,7 +215,7 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 	// that duration, giving the proactive alert time to fire and resolve.
 	// ========================================
 	It("IT-RO-251-003: should set Config.AlertCheckDelay in EA when signal is proactive (#277)", func() {
-		ns := createTestNamespace("ro-251-003")
+		ns := createTestNamespace(ctx, "ro-251-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a RemediationRequest")
@@ -249,10 +255,16 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-proactive-fix",
-			Version:         "v1.0.0",
-			ExecutionBundle: "test-image:latest",
-			Confidence:      0.90,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-proactive-fix",
+				WorkflowName:    "wf-proactive-fix",
+				ActionType:      "RestartPod",
+				Version:         "v1.0.0",
+				ExecutionBundle: "test-image:latest",
+				ExecutionEngine: "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: 0.90,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Predicted OOM kill based on memory trend",
@@ -337,7 +349,7 @@ var _ = Describe("EA Async Target Detection (DD-EM-004, BR-RO-103)", func() {
 	// compatibility: the EM computes the hash immediately on first reconcile.
 	// ========================================
 	It("IT-RO-251-002: should NOT set Config.HashComputeDelay for sync built-in target without GitOps", func() {
-		ns := createTestNamespace("ro-251-002")
+		ns := createTestNamespace(ctx, "ro-251-002")
 		defer deleteTestNamespace(ns)
 
 		rr := driveToCompleted(ns, "rr-251-002", func(ai *aianalysisv1.AIAnalysis) {

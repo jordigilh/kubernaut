@@ -96,6 +96,13 @@ func loadGatewayConfig(configPath string, bootstrapLogger logr.Logger) (*config.
 }
 
 func main() {
+	// gocritic:exitAfterDefer — run() returns an exit code instead of calling
+	// os.Exit directly so deferred cleanup (kubelog.Sync, serverCancel,
+	// fleetReadinessGate.Stop, stopHotReload, shutdownCancel) always runs.
+	os.Exit(run())
+}
+
+func run() int {
 	// ADR-030: Single --config flag; all functional config in YAML ConfigMap
 	var configPath string
 	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "Path to YAML configuration file (optional, falls back to defaults)")
@@ -115,7 +122,7 @@ func main() {
 	srv, err := gateway.NewServer(serverCfg, logger.WithName("server"))
 	if err != nil {
 		logger.Error(err, "Failed to create Gateway server")
-		os.Exit(1)
+		return 1
 	}
 
 	// Server lifecycle context — created early so the discovery refresh loop
@@ -128,7 +135,7 @@ func main() {
 	apiRegistry, err := buildAPIRegistry(serverCtx, srv, logger)
 	if err != nil {
 		logger.Error(err, "Failed to initialize API resource registry")
-		os.Exit(1)
+		return 1
 	}
 
 	// Register adapters (BR-GATEWAY-001, BR-GATEWAY-002) and optionally wire the
@@ -136,7 +143,7 @@ func main() {
 	fleetResilientClient, err := registerAdapters(serverCtx, srv, apiRegistry, serverCfg, logger)
 	if err != nil {
 		logger.Error(err, "Failed to register adapters")
-		os.Exit(1)
+		return 1
 	}
 
 	// #1553 / ADR-068 / BR-INTEGRATION-065: fail closed on Fleet dependency
@@ -170,7 +177,7 @@ func main() {
 	select {
 	case err := <-errChan:
 		logger.Error(err, "Gateway server failed")
-		os.Exit(1)
+		return 1
 	case sig := <-sigChan:
 		logger.Info("Shutdown signal received", "signal", sig.String())
 	}
@@ -191,10 +198,11 @@ func main() {
 	logger.Info("Initiating graceful shutdown...")
 	if err := srv.Stop(shutdownCtx); err != nil {
 		logger.Error(err, "Graceful shutdown failed")
-		os.Exit(1)
+		return 1
 	}
 
 	logger.Info("Gateway server shutdown complete")
+	return 0
 }
 
 // buildAPIRegistry builds the dynamic API resource registry (Issue #1029)
@@ -303,7 +311,7 @@ func wireFleetOwnerResolution(
 
 	fleetOpts := []fleetclient.Option{}
 	if serverCfg.Fleet.OAuth2.Enabled {
-		fleetOpts = append(fleetOpts, buildFleetOAuth2Option(serverCfg, logger.WithName("fleet-oauth2")))
+		fleetOpts = append(fleetOpts, buildFleetOAuth2Option(serverCfg, logger.WithName("fleet-oauth2"))) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 	}
 
 	resilienceCfg := fleetclient.DefaultResilienceConfig()

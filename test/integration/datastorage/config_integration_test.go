@@ -28,6 +28,11 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	passwordTestRedisPassword = "password: test-redis-password"
+)
+
 var _ = Describe("Config Integration Tests (ADR-030)", func() {
 	var (
 		tempDir          string
@@ -98,7 +103,7 @@ logging:
 			err = os.WriteFile(dbSecretsPath, []byte(dbSecretYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			redisSecretYAML := `password: test-redis-password`
+			redisSecretYAML := passwordTestRedisPassword
 			err = os.WriteFile(redisSecretsPath, []byte(redisSecretYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -177,7 +182,7 @@ logging:
 			Expect(err).ToNot(HaveOccurred())
 
 			// Create only Redis secret file
-			redisSecretYAML := `password: test-redis-password`
+			redisSecretYAML := passwordTestRedisPassword
 			err = os.WriteFile(redisSecretsPath, []byte(redisSecretYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -222,7 +227,7 @@ logging:
 			err = os.WriteFile(dbSecretsPath, []byte(dbSecretYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 
-			redisSecretYAML := `password: test-redis-password`
+			redisSecretYAML := passwordTestRedisPassword
 			err = os.WriteFile(redisSecretsPath, []byte(redisSecretYAML), 0644)
 			Expect(err).ToNot(HaveOccurred())
 

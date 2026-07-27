@@ -86,11 +86,31 @@ type Checker interface {
 }
 
 // checker is the concrete implementation of Checker.
-type checker struct{}
+//
+// now is the injectable time source. Production always uses time.Now (set by
+// NewChecker); tests may inject a frozen/controllable clock via
+// NewCheckerWithClock so deadline-proximity assertions don't depend on real
+// wall-clock scheduling (Issue #591, #1701, #1661 pipeline-monitoring RCA:
+// a loaded CI runner can burn enough wall-clock time inside a single
+// Reconcile() pass -- fake client round-trips plus component-pipeline
+// checks -- to erode a tight test-seeded validity window between seed time
+// and evaluation time, flipping the observed state non-deterministically).
+type checker struct {
+	now func() time.Time
+}
 
-// NewChecker creates a new validity window checker.
+// NewChecker creates a new validity window checker backed by the real
+// system clock.
 func NewChecker() Checker {
-	return &checker{}
+	return &checker{now: time.Now}
+}
+
+// NewCheckerWithClock creates a validity window checker backed by the given
+// clock function instead of time.Now. Intended for tests that need
+// deterministic deadline-proximity behavior regardless of how long the
+// reconcile pass under test actually takes on the executing machine.
+func NewCheckerWithClock(now func() time.Time) Checker {
+	return &checker{now: now}
 }
 
 // Check determines the current window state.
@@ -103,7 +123,7 @@ func NewChecker() Checker {
 // Expired takes priority: if validity has passed, always return Expired
 // even if stabilization hasn't completed (edge case: misconfigured windows).
 func (c *checker) Check(creationTime metav1.Time, stabilizationWindow time.Duration, validityDeadline metav1.Time) WindowState {
-	now := time.Now()
+	now := c.now()
 
 	// Expired takes priority (use promoted After to avoid QF1008)
 	if !validityDeadline.After(now) {
@@ -122,7 +142,7 @@ func (c *checker) Check(creationTime metav1.Time, stabilizationWindow time.Durat
 // TimeUntilStabilized returns the remaining time until stabilization expires.
 func (c *checker) TimeUntilStabilized(creationTime metav1.Time, stabilizationWindow time.Duration) time.Duration {
 	stabilizationEnd := creationTime.Add(stabilizationWindow)
-	remaining := time.Until(stabilizationEnd)
+	remaining := stabilizationEnd.Sub(c.now())
 	if remaining < 0 {
 		return 0
 	}
@@ -131,7 +151,7 @@ func (c *checker) TimeUntilStabilized(creationTime metav1.Time, stabilizationWin
 
 // TimeUntilExpired returns the remaining time until the validity deadline.
 func (c *checker) TimeUntilExpired(validityDeadline time.Time) time.Duration {
-	remaining := time.Until(validityDeadline)
+	remaining := validityDeadline.Sub(c.now())
 	if remaining < 0 {
 		return 0
 	}

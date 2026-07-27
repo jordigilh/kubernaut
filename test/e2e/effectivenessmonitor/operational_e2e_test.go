@@ -225,8 +225,8 @@ spec:
 
 			name := uniqueName("ea-gs")
 			correlationID := uniqueName("corr-gs")
-			createTargetPod(gsNS, "target-pod")
-			waitForPodReady(gsNS, "target-pod")
+			createTargetPod(gsNS)
+			waitForPodReady(gsNS)
 
 			By("Seeding workflowexecution.execution.started event (no_execution guard)")
 			seedWorkflowStartedEvent(correlationID)
@@ -273,4 +273,3 @@ spec:
 		})
 	})
 })
-

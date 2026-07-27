@@ -160,7 +160,7 @@ func EnsureMonthlyPartitions(ctx context.Context, db DBExecutor, now time.Time, 
 	if _, err := db.ExecContext(ctx, "SELECT pg_advisory_lock(hashtext('partition_ddl'))"); err != nil {
 		return fmt.Errorf("failed to acquire partition DDL advisory lock: %w", err)
 	}
-	defer func() {
+	defer func() { //nolint:contextcheck // advisory-lock release runs on a background context so the unlock succeeds even if ctx is cancelled; see doc comment
 		// Release on a background context so the unlock succeeds even if ctx is cancelled.
 		_, _ = db.ExecContext(context.Background(), "SELECT pg_advisory_unlock(hashtext('partition_ddl'))")
 	}()

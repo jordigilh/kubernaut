@@ -188,6 +188,10 @@ func (r *RARReconciler) buildAndStoreApprovalAudit(ctx context.Context, rar *rem
 	)
 	if err != nil {
 		logger.Error(err, "Failed to build approval audit event", "rar", rar.Name)
+		// nolint:nilnil // the trailing `built` bool already disambiguates
+		// this (nil, nil, false): the sole caller checks `built` before
+		// touching event/auditErr, so there is no ambiguity a sentinel error
+		// would resolve that isn't already resolved (Issue #1546 Tier 2).
 		// Fire-and-forget: Don't fail reconciliation on audit errors
 		return nil, nil, false
 	}

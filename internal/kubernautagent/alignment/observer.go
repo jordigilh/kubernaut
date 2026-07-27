@@ -155,7 +155,7 @@ func (o *Observer) SubmitAsync(ctx context.Context, step Step) {
 	// Use evalCtx for shadow evaluation if set (ARCH-3), otherwise use caller ctx.
 	evalCtx := ctx
 	if o.evalCtx != nil {
-		evalCtx = o.evalCtx
+		evalCtx = o.evalCtx //nolint:contextcheck // evalCtx is an intentionally decoupled shadow-evaluation context (ARCH-3); see SubmitAsync doc comment
 	}
 
 	o.wg.Add(1)

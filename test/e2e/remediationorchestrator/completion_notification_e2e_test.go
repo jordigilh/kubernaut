@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -56,7 +58,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 	)
 
 	BeforeEach(func() {
-		testNS = createTestNamespace("ro-completion-e2e")
+		testNS = createTestNamespace(ctx, "ro-completion-e2e")
 	})
 
 	AfterEach(func() {
@@ -77,9 +79,9 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 					h := sha256.Sum256([]byte(uuid.New().String()))
 					return hex.EncodeToString(h[:])
 				}(),
-				SignalName: "OOMKilled",
-				Severity:   "critical",
-				SignalType: "OOMKilled",
+				SignalName: signalNameOOMKilledFixture,
+				Severity:   signalprocessingv1.SeverityCritical,
+				SignalType: signalNameOOMKilledFixture,
 				TargetType: "kubernetes",
 				TargetResource: remediationv1.ResourceIdentifier{
 					Kind:      "Pod",
@@ -100,7 +102,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			_ = k8sClient.List(ctx, spList, client.InNamespace(controllerNamespace))
 			for i := range spList.Items {
 				if len(spList.Items[i].OwnerReferences) > 0 &&
-					spList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					spList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 					spList.Items[i].OwnerReferences[0].Name == rrName {
 					sp = &spList.Items[i]
 					return true
@@ -115,9 +117,9 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 				return err
 			}
 			sp.Status.Phase = signalprocessingv1.PhaseCompleted
-			sp.Status.Severity = "critical"
-			sp.Status.SignalMode = "reactive"
-			sp.Status.SignalName = "OOMKilled"
+			sp.Status.Severity = signalprocessingv1.SeverityCritical
+			sp.Status.SignalMode = signalprocessingv1.SignalModeReactive
+			sp.Status.SignalName = signalNameOOMKilledFixture
 			sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 				Environment:  signalprocessingv1.EnvironmentProduction,
 				Source:       "namespace-labels",
@@ -138,7 +140,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			_ = k8sClient.List(ctx, analysisList, client.InNamespace(controllerNamespace))
 			for i := range analysisList.Items {
 				if len(analysisList.Items[i].OwnerReferences) > 0 &&
-					analysisList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					analysisList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 					analysisList.Items[i].OwnerReferences[0].Name == rrName {
 					analysis = &analysisList.Items[i]
 					return true
@@ -157,20 +159,24 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			analysis.Status.Message = "Workflow recommended: restart-pod-v1"
 			analysis.Status.RootCause = "Memory exhaustion due to unbounded cache growth"
 			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:            "restart-pod-v1",
-				Version:               "1.0.0",
-				ExecutionBundle:       "quay.io/kubernaut/restart-pod:v1",
-				ExecutionBundleDigest: "sha256:abc123def456",
-				Confidence:            0.95,
-				Rationale:             "High confidence match for pod restart scenario",
-				ExecutionEngine:       "tekton",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:            "restart-pod-v1",
+					WorkflowName:          "restart-pod-v1",
+					ActionType:            "RestartPod",
+					Version:               "1.0.0",
+					ExecutionBundle:       "quay.io/kubernaut/restart-pod:v1",
+					ExecutionBundleDigest: "sha256:abc123def456",
+					ExecutionEngine:       "tekton",
+				},
+				Confidence: 0.95,
+				Rationale:  "High confidence match for pod restart scenario",
 				Parameters: map[string]string{
 					"TARGET_POD": "test-pod-completion",
 				},
 			}
 			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "Memory exhaustion due to unbounded cache growth",
-				Severity:   "critical",
+				Severity:   signalprocessingv1.SeverityCritical,
 				SignalType: "alert",
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind:      "Pod",
@@ -188,7 +194,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			_ = k8sClient.List(ctx, weList, client.InNamespace(controllerNamespace))
 			for i := range weList.Items {
 				if len(weList.Items[i].OwnerReferences) > 0 &&
-					weList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					weList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 					weList.Items[i].OwnerReferences[0].Name == rrName {
 					we = &weList.Items[i]
 					return true
@@ -249,7 +255,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			_ = k8sClient.List(ctx, notificationList, client.InNamespace(controllerNamespace))
 			for i := range notificationList.Items {
 				if len(notificationList.Items[i].OwnerReferences) > 0 &&
-					notificationList.Items[i].OwnerReferences[0].Kind == "RemediationRequest" &&
+					notificationList.Items[i].OwnerReferences[0].Kind == kindRemediationRequestFixture &&
 					notificationList.Items[i].OwnerReferences[0].Name == rrName &&
 					notificationList.Items[i].Spec.Type == notificationv1.NotificationTypeCompletion {
 					notification = &notificationList.Items[i]
@@ -276,7 +282,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		By("11. Validating NotificationRequest spec fields for routing (Issue #91)")
 		Expect(notification.Spec.Type).To(Equal(notificationv1.NotificationTypeCompletion))
 		Expect(notification.Spec.RemediationRequestRef.Name).To(Equal(rr.Name))
-		Expect(notification.Spec.Severity).To(Equal("critical"))
+		Expect(notification.Spec.Severity).To(Equal(signalprocessingv1.SeverityCritical))
 
 		By("12. Validating NotificationRequest context")
 		Expect(notification.Spec.Context.Lineage.RemediationRequest).To(Equal(rr.Name))
@@ -285,7 +291,7 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 		By("13. Validating owner reference for cascade deletion (BR-ORCH-031)")
 		Expect(notification.OwnerReferences).To(HaveLen(1))
 		Expect(notification.OwnerReferences[0].Name).To(Equal(rr.Name))
-		Expect(notification.OwnerReferences[0].Kind).To(Equal("RemediationRequest"))
+		Expect(notification.OwnerReferences[0].Kind).To(Equal(kindRemediationRequestFixture))
 
 		GinkgoWriter.Println("E2E-RO-045-001: Completion notification validated in Kind cluster")
 	})

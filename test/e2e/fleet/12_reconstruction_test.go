@@ -36,6 +36,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	urlLocalhost30080 = "http://localhost:30080"
+)
+
 // E2E-FLEET-CC81-001: SOC2 CC8.1 Fleet Reconstruction Compliance
 // Validates that ReconstructRemediationRequest returns cluster_id
 // for fleet-scoped remediations, proving end-to-end cluster provenance
@@ -151,10 +156,10 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 			DeferCleanup(func() { _ = k8sClient.Delete(context.Background(), dep) })
 
 			By("Submitting a signal with no cluster label to create a hub-only RR")
-			payload := buildPrometheusAlertWithCluster("HubOnlyReconstruction", namespace, "warning",
-				"Deployment", targetName, "")
-			gatewayURL := "http://localhost:30080"
-			_, body := postFleetAlertUntilAccepted(gatewayURL, payload)
+			payload := buildPrometheusAlertWithCluster("HubOnlyReconstruction", "warning",
+				targetName, "")
+			gatewayURL := urlLocalhost30080
+			body := postFleetAlertUntilAccepted(gatewayURL, payload)
 
 			var response map[string]interface{}
 			Expect(json.Unmarshal(body, &response)).To(Succeed())

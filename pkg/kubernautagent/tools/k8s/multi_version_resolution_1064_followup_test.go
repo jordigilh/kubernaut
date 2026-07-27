@@ -102,10 +102,10 @@ func buildMultiVersionKindIndex() map[string]schema.GroupKind {
 	}
 }
 
-func newAuthzPolicy(name, namespace, version string) *unstructured.Unstructured {
+func newAuthzPolicy(name, namespace string) *unstructured.Unstructured {
 	return &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": istioGroup + "/" + version,
+			"apiVersion": istioGroup + "/" + istioV1,
 			"kind":       apKind,
 			"metadata": map[string]interface{}{
 				"name":      name,
@@ -152,7 +152,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 	Describe("UT-MVR-002: List returns v1 items when v1beta1 is empty (fallback mapper)", func() {
 		It("should find AuthorizationPolicy in v1 after v1beta1 returns empty list", func() {
 			scheme := buildMultiVersionScheme()
-			ap := newAuthzPolicy("deny-all-traffic", "demo-mesh-failure", istioV1)
+			ap := newAuthzPolicy("deny-all-traffic", "demo-mesh-failure")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, ap)
 			mapper := buildMultiVersionMapper()
 			kindIndex := buildMultiVersionKindIndex()
@@ -170,7 +170,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 	Describe("UT-MVR-003: Get returns v1 resource when v1beta1 is NotFound (fallback mapper)", func() {
 		It("should find AuthorizationPolicy in v1 after v1beta1 returns NotFound", func() {
 			scheme := buildMultiVersionScheme()
-			ap := newAuthzPolicy("deny-all-traffic", "demo-mesh-failure", istioV1)
+			ap := newAuthzPolicy("deny-all-traffic", "demo-mesh-failure")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, ap)
 			mapper := buildMultiVersionMapper()
 			kindIndex := buildMultiVersionKindIndex()
@@ -188,7 +188,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 	Describe("UT-MVR-004: Fallback uses kindIndex group hint for CRD kinds", func() {
 		It("should use security.istio.io group from kindIndex when resolving AuthorizationPolicy", func() {
 			scheme := buildMultiVersionScheme()
-			ap := newAuthzPolicy("test-policy", "default", istioV1)
+			ap := newAuthzPolicy("test-policy", "default")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, ap)
 			mapper := buildMultiVersionMapper()
 			kindIndex := buildMultiVersionKindIndex()
@@ -223,7 +223,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 	Describe("UT-MVR-006: Multi-group resolution with explicit api_group (Subscription, #1311)", func() {
 		It("should resolve Subscription with explicit api_group", func() {
 			scheme := newAmbiguousScheme()
-			olmSub := newOLMSubscription("etcd", "demo-operator")
+			olmSub := newOLMSubscription("etcd")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, olmSub)
 			mapper := buildAmbiguousKindMapper()
 			kindIndex := buildAmbiguousKindIndex()
@@ -240,7 +240,7 @@ var _ = Describe("Issue #1064 follow-up: multi-version kind resolution fallback"
 	Describe("UT-MVR-007: Fallback log emitted at V(1) with version count", func() {
 		It("should emit a structured log entry when fallback resolves multiple versions", func() {
 			scheme := buildMultiVersionScheme()
-			ap := newAuthzPolicy("deny-all", "ns", istioV1)
+			ap := newAuthzPolicy("deny-all", "ns")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, ap)
 			mapper := buildMultiVersionMapper()
 			kindIndex := buildMultiVersionKindIndex()

@@ -34,6 +34,8 @@ import (
 	"sort"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	"github.com/google/uuid"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -50,6 +52,10 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 )
+
+// msgConfidenceBelowThresholdFixture is a free-text AIAnalysis.Status.ApprovalReason
+// fixture (not a CRD enum) reused across low-confidence approval test cases below.
+const msgConfidenceBelowThresholdFixture = "Confidence below threshold"
 
 // listEventsForObject returns corev1.Events for the given object name in the namespace,
 // sorted by FirstTimestamp for deterministic ordering.
@@ -92,7 +98,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 
 	Context("IT-RO-095-01: Happy path event trail (auto-approve)", func() {
 		It("should emit RemediationCreated, PhaseTransition, RemediationCompleted when lifecycle completes", func() {
-			namespace := createTestNamespace("ro-events-happy")
+			namespace := createTestNamespace(ctx, "ro-events-happy")
 			defer deleteTestNamespace(namespace)
 
 			rrName := fmt.Sprintf("rr-events-happy-%s", uuid.New().String()[:13])
@@ -106,7 +112,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			}, timeout, interval).Should(Succeed())
 
 			By("Simulating SignalProcessing completion")
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			Expect(updateSPStatus(spName)).To(Succeed())
 
 			By("Waiting for AIAnalysis to be created")
 			aiName := fmt.Sprintf("ai-%s", rrName)
@@ -118,14 +124,20 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 			By("Simulating AIAnalysis completion (high confidence, no approval)")
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
-			ai.Status.Phase = "Completed"
+			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.ApprovalRequired = false
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:     "wf-restart-pods",
-				Version:        "v1.0.0",
-				Confidence:     0.95,
-				ExecutionBundle: "kubernaut/workflows:latest",
-				Rationale:      "High confidence auto-approve",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "wf-restart-pods",
+					WorkflowName:    "wf-restart-pods",
+					ActionType:      "RestartPod",
+					Version:         "v1.0.0",
+					ExecutionBundle: "kubernaut/workflows:latest",
+					ExecutionEngine: "job",
+				},
+				Confidence: 0.95,
+				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				Rationale: "High confidence auto-approve",
 			}
 			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -205,7 +217,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 
 	Context("IT-RO-095-02: Approval flow event trail", func() {
 		It("should emit RemediationCreated, ApprovalRequired, ApprovalGranted, RemediationCompleted when approval flow completes", func() {
-			namespace := createTestNamespace("ro-events-approval")
+			namespace := createTestNamespace(ctx, "ro-events-approval")
 			defer deleteTestNamespace(namespace)
 
 			rrName := fmt.Sprintf("rr-events-appr-%s", uuid.New().String()[:13])
@@ -219,7 +231,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				sp := &signalprocessingv1.SignalProcessing{}
 				return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 			}, timeout, interval).Should(Succeed())
-			Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+			Expect(updateSPStatus(spName)).To(Succeed())
 
 			By("Progressing through AI with approval required")
 			aiName := fmt.Sprintf("ai-%s", rrName)
@@ -230,15 +242,21 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
-			ai.Status.Phase = "Completed"
+			ai.Status.Phase = aianalysisv1.PhaseCompleted
 			ai.Status.ApprovalRequired = true
-			ai.Status.ApprovalReason = "Confidence below threshold"
+			ai.Status.ApprovalReason = msgConfidenceBelowThresholdFixture
 			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-				WorkflowID:     "wf-restart-pods",
-				Version:        "v1.0.0",
-				Confidence:     0.70,
-				ExecutionBundle: "kubernaut/workflows:latest",
-				Rationale:      "Restart recommended",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "wf-restart-pods",
+					WorkflowName:    "wf-restart-pods",
+					ActionType:      "RestartPod",
+					Version:         "v1.0.0",
+					ExecutionBundle: "kubernaut/workflows:latest",
+					ExecutionEngine: "job",
+				},
+				Confidence: 0.70,
+				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+				Rationale: "Restart recommended",
 			}
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
@@ -332,7 +350,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 
 	Context("IT-RO-095-04: Consecutive failure blocking event trail", func() {
 		It("should emit RemediationCreated and ConsecutiveFailureBlocked when target at threshold", func() {
-			namespace := createTestNamespace("ro-events-consecutive")
+			namespace := createTestNamespace(ctx, "ro-events-consecutive")
 			defer deleteTestNamespace(namespace)
 
 			fingerprint := GenerateTestFingerprint(namespace, "events-blocked")

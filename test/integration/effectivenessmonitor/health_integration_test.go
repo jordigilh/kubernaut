@@ -36,7 +36,7 @@ var _ = Describe("Health Check Integration (BR-EM-001)", func() {
 	// IT-EM-HC-001: EA for healthy pod -> health score 1.0
 	// ========================================
 	It("IT-EM-HC-001: should score 1.0 for healthy running pod with all replicas ready", func() {
-		ns := createTestNamespace("em-hc-001")
+		ns := createTestNamespace(ctx, "em-hc-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a healthy target pod with 'app' label matching the EA target")
@@ -92,7 +92,7 @@ var _ = Describe("Health Check Integration (BR-EM-001)", func() {
 	// IT-EM-HC-002: EA for unhealthy pod (not ready) -> health score < 1.0
 	// ========================================
 	It("IT-EM-HC-002: should score < 1.0 for pod that is running but not ready", func() {
-		ns := createTestNamespace("em-hc-002")
+		ns := createTestNamespace(ctx, "em-hc-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a pod that is running but not ready")
@@ -149,7 +149,7 @@ var _ = Describe("Health Check Integration (BR-EM-001)", func() {
 	// IT-EM-HC-003: EA for pod not running -> health score 0.0
 	// ========================================
 	It("IT-EM-HC-003: should score 0.0 for pod in Pending phase", func() {
-		ns := createTestNamespace("em-hc-003")
+		ns := createTestNamespace(ctx, "em-hc-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a pod in Pending phase (no container statuses)")
@@ -199,7 +199,7 @@ var _ = Describe("Health Check Integration (BR-EM-001)", func() {
 	// IT-EM-HC-004: EA target pod has restart delta > 0 -> health score 0.75
 	// ========================================
 	It("IT-EM-HC-004: should score 0.75 for healthy pod with restarts", func() {
-		ns := createTestNamespace("em-hc-004")
+		ns := createTestNamespace(ctx, "em-hc-004")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a pod that is ready but has restarts")
@@ -255,7 +255,7 @@ var _ = Describe("Health Check Integration (BR-EM-001)", func() {
 	// IT-EM-HC-005: Health event payload verified (correlation_id, sub-checks, score)
 	// ========================================
 	It("IT-EM-HC-005: should include correlation ID and complete component data in status", func() {
-		ns := createTestNamespace("em-hc-005")
+		ns := createTestNamespace(ctx, "em-hc-005")
 		defer deleteTestNamespace(ns)
 
 		correlationID := fmt.Sprintf("rr-hc-005-%d", time.Now().UnixNano())
@@ -314,7 +314,7 @@ var _ = Describe("Health Check Integration (BR-EM-001)", func() {
 	// IT-EM-HC-006: Target resource deleted between EA creation and assessment -> health score 0.0
 	// ========================================
 	It("IT-EM-HC-006: should score 0.0 when target pod does not exist", func() {
-		ns := createTestNamespace("em-hc-006")
+		ns := createTestNamespace(ctx, "em-hc-006")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA without any matching target pod (no pod with app=test-app)")

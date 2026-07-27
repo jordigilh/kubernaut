@@ -54,7 +54,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 	var testNamespace string
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("notifications")
+		testNamespace = createTestNamespace(ctx, "notifications")
 	})
 
 	AfterEach(func() {

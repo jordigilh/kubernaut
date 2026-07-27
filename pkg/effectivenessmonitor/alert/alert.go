@@ -33,6 +33,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/client"
 	"github.com/jordigilh/kubernaut/pkg/effectivenessmonitor/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/sizeutil"
 )
 
 // AlertContext contains the information needed to check alert resolution.
@@ -124,7 +125,9 @@ func (s *scorer) Score(ctx context.Context, amClient client.AlertManagerClient, 
 // buildMatchers constructs AlertManager filter matchers from an AlertContext.
 // #269: namespace is included when non-empty to scope queries to the signal target's namespace.
 func buildMatchers(alertCtx AlertContext) []string {
-	matchers := make([]string, 0, len(alertCtx.AlertLabels)+2)
+	// Issue #1684: sizeutil.SafeCap makes the overflow check on this capacity
+	// hint explicit (see its doc comment for why CodeQL flags raw "a+b").
+	matchers := make([]string, 0, sizeutil.SafeCap(len(alertCtx.AlertLabels), 2))
 	if alertCtx.AlertName != "" {
 		matchers = append(matchers, fmt.Sprintf("alertname=%q", alertCtx.AlertName))
 	}

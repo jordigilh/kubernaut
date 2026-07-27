@@ -14,8 +14,9 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 )
 
-// buildLongReasoningContentText builds a string of exactly n runes, reused by
-// the EmitReasoningContent truncation-limit test (#1635).
+// buildLongReasoningContentText builds a string of exactly n runes, reused
+// across the EmitReasoningContent/per-type truncation-limit tests (#1635,
+// #1435).
 func buildLongReasoningContentText(n int) string {
 	unit := "The alert KubePodCrashLooping is firing for pod web-frontend in namespace demo-webui. "
 	var sb strings.Builder
@@ -153,12 +154,7 @@ var _ = Describe("EventBridge", func() {
 			ctx := launcher.WithEventBridge(context.Background(), queue, taskID, "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			var sb strings.Builder
-			unit := "The alert KubePodCrashLooping is firing for pod web-frontend in namespace demo-webui. "
-			for sb.Len() < 600 {
-				sb.WriteString(unit)
-			}
-			longText := sb.String()[:600]
+			longText := buildLongReasoningContentText(600)
 			err := bridge.EmitReasoning(ctx, longText)
 			Expect(err).NotTo(HaveOccurred())
 
@@ -171,21 +167,12 @@ var _ = Describe("EventBridge", func() {
 	})
 
 	Describe("Per-type truncation limits (#1435)", func() {
-		buildLongText := func(n int) string {
-			unit := "The alert KubePodCrashLooping is firing for pod web-frontend in namespace demo-webui. "
-			var sb strings.Builder
-			for sb.Len() < n {
-				sb.WriteString(unit)
-			}
-			return sb.String()[:n]
-		}
-
 		It("UT-AF-1435-001: reasoning text up to 4096 runes is NOT truncated", func() {
 			queue := &fakeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-001", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			longReasoning := buildLongText(4000)
+			longReasoning := buildLongReasoningContentText(4000)
 			err := bridge.EmitReasoning(ctx, longReasoning)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queue.events).To(HaveLen(1))
@@ -201,7 +188,7 @@ var _ = Describe("EventBridge", func() {
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-002", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			longReasoning := buildLongText(5000)
+			longReasoning := buildLongReasoningContentText(5000)
 			err := bridge.EmitReasoning(ctx, longReasoning)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queue.events).To(HaveLen(1))
@@ -218,7 +205,7 @@ var _ = Describe("EventBridge", func() {
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-003", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			longStatus := buildLongText(600)
+			longStatus := buildLongReasoningContentText(600)
 			err := bridge.EmitStatus(ctx, longStatus)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queue.events).To(HaveLen(1))
@@ -235,7 +222,7 @@ var _ = Describe("EventBridge", func() {
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1435-004", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			longOutput := buildLongText(4000)
+			longOutput := buildLongReasoningContentText(4000)
 			err := bridge.EmitOutput(ctx, longOutput)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queue.events).To(HaveLen(1))
@@ -295,7 +282,7 @@ var _ = Describe("EventBridge", func() {
 
 		It("UT-AF-1258-031: bearer token in standalone text is redacted", func() {
 			input := "token=Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIn0.Signature_value_here"
-			result := launcher.SanitizeBridgeTextForTest(input)
+			result := launcher.SanitizeBridgeTextForTest(context.Background(), input)
 			Expect(result).NotTo(ContainSubstring("eyJhbGci"),
 				"SC-7 violation: sanitizeBridgeText passes bearer token to output")
 		})
@@ -321,7 +308,7 @@ var _ = Describe("EventBridge", func() {
 		})
 
 		It("UT-AF-1258-033: newline and tab are preserved (legitimate formatting)", func() {
-			result := launcher.SanitizeBridgeTextForTest("line1\nline2\ttabbed")
+			result := launcher.SanitizeBridgeTextForTest(context.Background(), "line1\nline2\ttabbed")
 			Expect(result).To(Equal("line1\nline2\ttabbed"),
 				"SI-10 should not strip legitimate whitespace chars")
 		})
@@ -339,7 +326,7 @@ var _ = Describe("EventBridge", func() {
 
 		It("UT-AF-1258-035: long text is truncated after sanitization to bound memory", func() {
 			input := strings.Repeat("Hello world. ", 50) // ~650 chars of natural text
-			result := launcher.SanitizeBridgeTextForTest(input)
+			result := launcher.SanitizeBridgeTextForTest(context.Background(), input)
 			Expect(len([]rune(result))).To(BeNumerically("<=", 515),
 				"bridge text must be bounded to prevent memory exhaustion")
 			Expect(result).To(HaveSuffix("..."))
@@ -429,7 +416,7 @@ var _ = Describe("EventBridge", func() {
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-rc-001", "ctx-rc-001", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			err := bridge.EmitReasoningContent(ctx, "considering memory limits and recent deploys")
+			err := bridge.EmitReasoningContent(ctx, "considering memory limits and recent deploys", false)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queue.events).To(HaveLen(1))
 
@@ -452,7 +439,7 @@ var _ = Describe("EventBridge", func() {
 			bridge := launcher.EventBridgeFromContext(ctx)
 
 			longText := buildLongReasoningContentText(4000)
-			err := bridge.EmitReasoningContent(ctx, longText)
+			err := bridge.EmitReasoningContent(ctx, longText, false)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queue.events).To(HaveLen(1))
 
@@ -462,7 +449,7 @@ var _ = Describe("EventBridge", func() {
 		})
 
 		It("UT-AF-1635-EB-003: EmitReasoningContentSafe is nil-safe when bridge absent", func() {
-			err := launcher.EmitReasoningContentSafe(context.Background(), "no bridge here")
+			err := launcher.EmitReasoningContentSafe(context.Background(), "no bridge here", false)
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -471,10 +458,43 @@ var _ = Describe("EventBridge", func() {
 			ctx := launcher.WithEventBridge(context.Background(), queue, "task-rc-004", "", nil)
 			bridge := launcher.EventBridgeFromContext(ctx)
 
-			err := bridge.EmitReasoningContent(ctx, "")
+			err := bridge.EmitReasoningContent(ctx, "", false)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queue.events).To(BeEmpty(),
-				"#1635: a redacted turn's empty text must produce zero events, matching EmitReasoning's existing behavior")
+				"#1635: a non-redacted turn's empty text must produce zero events, matching EmitReasoning's existing behavior")
+		})
+
+		// #1716 / DD-LLM-009 (redaction sub-decision, revisited): a redacted
+		// turn must now emit a content-free signal (metadata.redacted=true,
+		// no text) instead of the full no-op above, so Console can render a
+		// "reasoning hidden by provider" placeholder.
+		It("UT-AF-1716-EB-001: a redacted turn emits a content-free signal instead of a no-op", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-rc-005", "ctx-rc-005", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			err := bridge.EmitReasoningContent(ctx, "", true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(HaveLen(1),
+				"#1716: a redacted turn must produce exactly one event, not a no-op")
+
+			evt, ok := queue.events[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue(), "EmitReasoningContent must produce TaskStatusUpdateEvent")
+			Expect(evt.Metadata).NotTo(BeNil())
+			Expect(evt.Metadata["type"]).To(Equal("reasoning_content"))
+			Expect(evt.Metadata["redacted"]).To(Equal(true),
+				"#1716: metadata.redacted must be true so Console can render a placeholder")
+		})
+
+		It("UT-AF-1716-EB-002: a non-redacted empty text still no-ops (regression guard)", func() {
+			queue := &fakeQueue{}
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-rc-006", "", nil)
+			bridge := launcher.EventBridgeFromContext(ctx)
+
+			err := bridge.EmitReasoningContent(ctx, "", false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queue.events).To(BeEmpty(),
+				"#1716: a genuinely empty, non-redacted turn must remain a no-op — only redacted=true changes behavior")
 		})
 	})
 
@@ -851,9 +871,9 @@ type spyBridgeMetrics struct {
 }
 
 func (s *spyBridgeMetrics) IncBridgeEvents()              { s.eventsInc++ }
-func (s *spyBridgeMetrics) IncBridgeWriteFailures()        { s.failuresInc++ }
-func (s *spyBridgeMetrics) IncBridgeStatusEvents()         { s.statusEventsInc++ }
-func (s *spyBridgeMetrics) IncBridgeStatusWriteFailures()  { s.statusFailuresInc++ }
+func (s *spyBridgeMetrics) IncBridgeWriteFailures()       { s.failuresInc++ }
+func (s *spyBridgeMetrics) IncBridgeStatusEvents()        { s.statusEventsInc++ }
+func (s *spyBridgeMetrics) IncBridgeStatusWriteFailures() { s.statusFailuresInc++ }
 
 // failingQueue always returns an error from Write.
 type failingQueue struct {

@@ -19,6 +19,7 @@ package alignment
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -213,7 +214,7 @@ func (w *InvestigatorWrapper) setupObservedContext(ctx context.Context, signal k
 // attach an alignment verdict) versus a genuine investigation failure.
 func (w *InvestigatorWrapper) runInnerInvestigation(investCtx context.Context, signal katypes.SignalContext) (result *katypes.InvestigationResult, circuitBroken bool, err error) {
 	result, err = w.inner.Investigate(investCtx, signal)
-	circuitBroken = err != nil && context.Cause(investCtx) == ErrCircuitBreaker
+	circuitBroken = err != nil && errors.Is(context.Cause(investCtx), ErrCircuitBreaker)
 	if circuitBroken && result == nil {
 		result = &katypes.InvestigationResult{}
 	}

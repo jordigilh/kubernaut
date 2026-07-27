@@ -52,7 +52,7 @@ func NewManager(client client.Client, scheme *runtime.Scheme) *Manager {
 
 // CurrentPhase returns the current phase of the SignalProcessing.
 func (m *Manager) CurrentPhase(sp *signalprocessingv1alpha1.SignalProcessing) Phase {
-	return Phase(sp.Status.Phase)
+	return sp.Status.Phase
 }
 
 // TransitionTo transitions the SignalProcessing to a new phase with validation.
@@ -66,7 +66,8 @@ func (m *Manager) CurrentPhase(sp *signalprocessingv1alpha1.SignalProcessing) Ph
 // - Set appropriate conditions
 //
 // Example usage:
-//   err := m.TransitionTo(ctx, sp, phase.Enriching, "EnrichmentStarted", "K8s context enrichment initiated")
+//
+//	err := m.TransitionTo(ctx, sp, phase.Enriching, "EnrichmentStarted", "K8s context enrichment initiated")
 func (m *Manager) TransitionTo(
 	ctx context.Context,
 	sp *signalprocessingv1alpha1.SignalProcessing,
@@ -86,16 +87,3 @@ func (m *Manager) TransitionTo(
 
 	return fmt.Errorf("phase manager not fully implemented yet - use StatusManager.AtomicStatusUpdate for now")
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

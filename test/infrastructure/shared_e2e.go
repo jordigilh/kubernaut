@@ -32,10 +32,33 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// coverageEnvYAMLFixture is the GOCOVERDIR env var YAML snippet shared by the
+// E2E deployment manifests below when DD-TEST-007 coverage instrumentation is
+// enabled (goconst dedup: identical across datastorage/notification/workflowexecution).
+const coverageEnvYAMLFixture = `
+        - name: GOCOVERDIR
+          value: /coverdata`
+
+// coverageSecurityContextYAMLFixture is the root-user securityContext YAML
+// snippet required so the coverage sidecar can write to the hostPath mount
+// (goconst dedup: identical across datastorage/gateway/notification/workflowexecution).
+const coverageSecurityContextYAMLFixture = `
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0`
+
+// e2eTestCoverageTag is the shared image tag suffix for coverage-instrumented
+// E2E builds (goconst dedup: identical across gateway/signalprocessing).
+const e2eTestCoverageTag = "e2e-test-coverage"
+
+// archARM64 identifies the ARM64 GOARCH value, used to gate coverage
+// instrumentation workarounds (Go runtime crash on ARM64).
+const archARM64 = "arm64"
+
 // createKAKindCluster creates a Kind cluster using the KA Kind config.
 // Reused by both KA and AIAnalysis E2E suites (same port layout).
-func createKAKindCluster(clusterName, kubeconfigPath string, writer io.Writer) error {
-	if os.Getenv("E2E_COVERAGE") == "true" {
+func createKAKindCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		projectRoot := getProjectRoot()
 		coverdataPath := filepath.Join(projectRoot, "coverdata")
 		if err := os.MkdirAll(coverdataPath, 0777); err != nil {
@@ -59,7 +82,7 @@ func createKAKindCluster(clusterName, kubeconfigPath string, writer io.Writer) e
 		UsePodman:                 true,
 		ProjectRootAsWorkingDir:   true,
 	}
-	return CreateKindClusterWithConfig(opts, writer)
+	return CreateKindClusterWithConfig(ctx, opts, writer)
 }
 
 // CreateKAE2EServiceAccount creates the E2E ServiceAccount with
@@ -671,29 +694,22 @@ spec:
 func BuildKubernautAgentImage(ctx context.Context, serviceName string, writer io.Writer) (string, error) {
 	projectRoot := getProjectRoot()
 
-	imageTag := generateInfrastructureImageTag("kubernautagent", serviceName)
+	imageTag := generateInfrastructureImageTag(serviceName)
 	localImageName := fmt.Sprintf("localhost/kubernautagent:%s", imageTag)
 
 	// Step -1: Use a CI-loaded artifact if one was already podman-loaded for
 	// this service under the agreed-upon fixed tag (artifact-based CI mode,
-	// no registry involved). Mirrors StartGenericContainer's equivalent
-	// check (container_management.go).
-	if artifactTag := os.Getenv("KUBERNAUT_CI_ARTIFACT_TAG"); artifactTag != "" {
-		prebuiltImage := fmt.Sprintf("localhost/kubernautagent:%s", artifactTag)
-		if checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", prebuiltImage); checkCmd.Run() == nil {
-			_, _ = fmt.Fprintf(writer, "   ✅ Using CI-prebuilt artifact: %s\n", prebuiltImage)
-			return prebuiltImage, nil
-		}
+	// no registry involved). Delegates to resolvePrebuiltCIArtifact
+	// (e2e_images.go); see #1738.
+	if prebuilt, ok := resolvePrebuiltCIArtifact(ctx, "kubernautagent", writer); ok {
+		return prebuilt, nil
 	}
 
 	registry := os.Getenv("IMAGE_REGISTRY")
 	tag := os.Getenv("IMAGE_TAG")
 	_, _ = fmt.Fprintf(writer, "   🔍 Environment check: IMAGE_REGISTRY=%q IMAGE_TAG=%q\n", registry, tag)
 
-	registryImage, pulled, err := tryPullFromRegistry(ctx, "kubernautagent", localImageName, writer)
-	if err != nil {
-		return "", fmt.Errorf("failed during registry pull attempt: %w", err)
-	}
+	registryImage, pulled := tryPullFromRegistry(ctx, "kubernautagent", writer)
 	if pulled {
 		return registryImage, nil
 	}
@@ -717,7 +733,7 @@ func BuildKubernautAgentImage(ctx context.Context, serviceName string, writer io
 	buildCmd.Stderr = writer
 
 	if err := buildCmd.Run(); err != nil {
-		checkAgain := exec.Command("podman", "image", "exists", localImageName)
+		checkAgain := exec.CommandContext(ctx, "podman", "image", "exists", localImageName)
 		if checkAgain.Run() == nil {
 			_, _ = fmt.Fprintf(writer, "   ⚠️  Build completed with warnings (image exists): %s\n", localImageName)
 			return localImageName, nil

@@ -122,7 +122,7 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 
 			// BUSINESS OUTCOME: AI can trigger deployment rollbacks
 			Expect(err).NotTo(HaveOccurred())
-			Expect(signal.Resource.Kind).To(Equal("Deployment"),
+			Expect(signal.Resource.Kind).To(Equal(deployment),
 				"AI chooses rollback strategy for Deployments")
 			Expect(signal.SignalName).To(Equal("FailedCreate"),
 				"AI needs failure type to determine root cause")

@@ -35,6 +35,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	localhost = "localhost"
+)
+
 // Issue #667: BR-STORAGE-042 — All DB queries must propagate caller context
 var _ = Describe("Context Propagation [BR-STORAGE-042]", func() {
 	var (
@@ -153,7 +158,7 @@ var _ = Describe("Context Propagation [BR-STORAGE-042]", func() {
 func newContextPropagationTestServer() *httptest.Server {
 	pgHost := os.Getenv("POSTGRES_HOST")
 	if pgHost == "" {
-		pgHost = "localhost"
+		pgHost = localhost
 	}
 	pgPort := os.Getenv("POSTGRES_PORT")
 	if pgPort == "" {
@@ -161,7 +166,7 @@ func newContextPropagationTestServer() *httptest.Server {
 	}
 	redisHost := os.Getenv("REDIS_HOST")
 	if redisHost == "" {
-		redisHost = "localhost"
+		redisHost = localhost
 	}
 	redisPort := os.Getenv("REDIS_PORT")
 	if redisPort == "" {

@@ -6,6 +6,18 @@
 **Author**: WorkflowExecution Team
 **Reviewers**: Platform Team, DataStorage Team
 
+> **Superseded field location (Issue #1661 Change 11f, 2026-07-22)**: `Resources`
+> (along with `ExecutionEngine`, `ServiceAccountName`, and `ActionType`) has
+> moved from `wfe.Status` to the immutable, CRD-embedded
+> `wfe.Spec.WorkflowRef.Resources`, set once by the RemediationOrchestrator
+> creator at WFE-creation time. The WE controller's `resolveWorkflowCatalog`
+> runtime-resolution step described below (and the `wfe.Status.Resources`
+> writes it performed) has been removed entirely -- there is no longer a DS
+> catalog round-trip or a Status mirror to keep in sync. The scenario
+> analysis and rationale below remain historically accurate for how the
+> value is *sourced upstream* (DS workflow catalog `execution.resources`);
+> only the CRD field that carries it into the WFE has changed.
+
 ---
 
 ## Context

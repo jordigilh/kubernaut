@@ -20,12 +20,14 @@ import (
 	"encoding/json"
 	"fmt"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
@@ -46,7 +48,7 @@ import (
 
 var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 	It("IT-WE-016-003: should pass engineConfig from AIAnalysis to WorkflowExecution CRD", func() {
-		ns := createTestNamespace("ro-ec-003")
+		ns := createTestNamespace(ctx, "ro-ec-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a RemediationRequest")
@@ -64,7 +66,7 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 		Eventually(func() error {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: spName, Namespace: ROControllerNamespace}, sp)
 		}, timeout, interval).Should(Succeed())
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted, "critical")).To(Succeed())
+		Expect(updateSPStatus(spName, "critical")).To(Succeed())
 
 		By("Waiting for Analyzing phase")
 		Eventually(func() remediationv1.RemediationPhase {
@@ -88,15 +90,19 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 
 		ai.Status.Phase = aianalysisv1.PhaseCompleted
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "wf-ansible-restart",
-			Version:         "v2.0.0",
-			ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
-			Confidence:      0.92,
-			Rationale:       "Ansible playbook for deployment restart",
-			ExecutionEngine: "ansible",
-			EngineConfig: &apiextensionsv1.JSON{
-				Raw: ansibleConfig,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID:      "wf-ansible-restart",
+				WorkflowName:    "wf-ansible-restart",
+				ActionType:      "RestartPod",
+				Version:         "v2.0.0",
+				ExecutionBundle: "https://github.com/kubernaut/playbooks.git",
+				ExecutionEngine: "ansible",
+				EngineConfig: &apiextensionsv1.JSON{
+					Raw: ansibleConfig,
+				},
 			},
+			Confidence: 0.92,
+			Rationale:  "Ansible playbook for deployment restart",
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Memory leak detected",
@@ -125,10 +131,11 @@ var _ = Describe("EngineConfig Pass-Through (BR-WE-016)", func() {
 			return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: weName, Namespace: ROControllerNamespace}, we)
 		}, timeout, interval).Should(Succeed())
 
-		// Issue #518: ExecutionEngine is no longer set by the RO creator — the WE controller
-		// resolves it at runtime from the DS catalog via WorkflowQuerier. In this integration
-		// test only the RO controller runs, so Status.ExecutionEngine stays empty. Verify that
-		// the EngineConfig pass-through (the test's actual concern) works correctly.
+		// Issue #1661 Change 11d/11f: the RO creator now copies ExecutionEngine
+		// (and its siblings, including ActionType as of Change 11f) verbatim
+		// onto WorkflowRef from AIAnalysis.Status.SelectedWorkflow -- there is
+		// no runtime DS catalog resolution step anymore. This test's actual
+		// concern is the EngineConfig pass-through; verify that works correctly.
 		Expect(we.Spec.WorkflowRef.EngineConfig).ToNot(BeNil(),
 			"WFE.Spec.WorkflowRef.EngineConfig must be populated from AIAnalysis")
 

@@ -51,28 +51,22 @@ type ApprovalDecisionMapping struct {
 // for RAR approvals, capturing WHAT/WHY (business context).
 var approvalDecisionMappings = map[string]ApprovalDecisionMapping{
 	"Approved": {
-		Action:           ActionApproved,
-		Outcome:          api.AuditEventRequestEventOutcomeSuccess,
-		PayloadEventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved,
-		DiscriminatorWrapper: func(payload api.RemediationOrchestratorAuditPayload) api.AuditEventRequestEventData {
-			return api.NewAuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData(payload)
-		},
+		Action:               ActionApproved,
+		Outcome:              api.AuditEventRequestEventOutcomeSuccess,
+		PayloadEventType:     api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalApproved,
+		DiscriminatorWrapper: api.NewAuditEventRequestEventDataOrchestratorApprovalApprovedAuditEventRequestEventData,
 	},
 	"Rejected": {
-		Action:           ActionRejected,
-		Outcome:          api.AuditEventRequestEventOutcomeFailure,
-		PayloadEventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected,
-		DiscriminatorWrapper: func(payload api.RemediationOrchestratorAuditPayload) api.AuditEventRequestEventData {
-			return api.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData(payload)
-		},
+		Action:               ActionRejected,
+		Outcome:              api.AuditEventRequestEventOutcomeFailure,
+		PayloadEventType:     api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected,
+		DiscriminatorWrapper: api.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData,
 	},
 	"Expired": {
-		Action:           ActionExpired,
-		Outcome:          api.AuditEventRequestEventOutcomeFailure,
-		PayloadEventType: api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected, // Expired uses Rejected discriminator
-		DiscriminatorWrapper: func(payload api.RemediationOrchestratorAuditPayload) api.AuditEventRequestEventData {
-			return api.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData(payload)
-		},
+		Action:               ActionExpired,
+		Outcome:              api.AuditEventRequestEventOutcomeFailure,
+		PayloadEventType:     api.RemediationOrchestratorAuditPayloadEventTypeOrchestratorApprovalRejected, // Expired uses Rejected discriminator
+		DiscriminatorWrapper: api.NewAuditEventRequestEventDataOrchestratorApprovalRejectedAuditEventRequestEventData,
 	},
 }
 

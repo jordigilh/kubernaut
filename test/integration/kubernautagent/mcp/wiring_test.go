@@ -34,6 +34,10 @@ import (
 
 var httpTestClient = &http.Client{Timeout: 10 * time.Second}
 
+// mcpInitializeRequestFixture is the MCP "initialize" JSON-RPC request body
+// reused by the wiring tests below (goconst dedup).
+const mcpInitializeRequestFixture = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+
 func fakeAuthMiddleware(user string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -46,9 +50,9 @@ func fakeAuthMiddleware(user string) func(http.Handler) http.Handler {
 	}
 }
 
-func newMCPTestRouter() (*httptest.Server, *mcpinternal.MCPServer) {
+func newMCPTestRouter() *httptest.Server {
 	authMw := fakeAuthMiddleware("test-user")
-	handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+	handler, _ := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
 		AuthMiddleware: authMw,
 	})
 
@@ -59,18 +63,17 @@ func newMCPTestRouter() (*httptest.Server, *mcpinternal.MCPServer) {
 		r.Handle("/mcp/*", kaserver.SSEHeadersMiddleware(handler))
 	})
 
-	ts := httptest.NewServer(r)
-	return ts, srv
+	return httptest.NewServer(r)
 }
 
 var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 
 	Describe("IT-KA-703-F01: MCP endpoint responds to authenticated POST (JSON-RPC initialize)", func() {
 		It("should return a valid JSON-RPC response to initialize", func() {
-			ts, _ := newMCPTestRouter()
+			ts := newMCPTestRouter()
 			defer ts.Close()
 
-			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			jsonRPC := mcpInitializeRequestFixture
 
 			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 			Expect(err).NotTo(HaveOccurred())
@@ -92,10 +95,10 @@ var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 
 	Describe("IT-KA-703-F02: MCP endpoint rejects unauthenticated request (401)", func() {
 		It("should return 401 when no Authorization header", func() {
-			ts, _ := newMCPTestRouter()
+			ts := newMCPTestRouter()
 			defer ts.Close()
 
-			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			jsonRPC := mcpInitializeRequestFixture
 
 			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 			Expect(err).NotTo(HaveOccurred())
@@ -111,10 +114,10 @@ var _ = Describe("MCP Route Wiring — #703 BR-INTERACTIVE-001", func() {
 
 	Describe("IT-KA-703-F03: MCP SSE headers applied to response", func() {
 		It("should include SSE headers on MCP endpoint responses", func() {
-			ts, _ := newMCPTestRouter()
+			ts := newMCPTestRouter()
 			defer ts.Close()
 
-			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			jsonRPC := mcpInitializeRequestFixture
 
 			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 			Expect(err).NotTo(HaveOccurred())
@@ -161,7 +164,7 @@ var _ = Describe("MCP Auth Architecture — #895/#896 BR-SECURITY-896", func() {
 			ts := httptest.NewServer(r)
 			defer ts.Close()
 
-			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			jsonRPC := mcpInitializeRequestFixture
 			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
@@ -197,7 +200,7 @@ var _ = Describe("MCP Auth Architecture — #895/#896 BR-SECURITY-896", func() {
 			ts := httptest.NewServer(r)
 			defer ts.Close()
 
-			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			jsonRPC := mcpInitializeRequestFixture
 			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
@@ -239,7 +242,7 @@ var _ = Describe("MCP Auth Architecture — #895/#896 BR-SECURITY-896", func() {
 			ts := httptest.NewServer(r)
 			defer ts.Close()
 
-			jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+			jsonRPC := mcpInitializeRequestFixture
 			req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 			Expect(err).NotTo(HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
@@ -288,7 +291,7 @@ var _ = Describe("MCP Session Resilience — KeepAlive/SessionTimeout Wiring (#1
 		ts := httptest.NewServer(r)
 		defer ts.Close()
 
-		jsonRPC := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}`
+		jsonRPC := mcpInitializeRequestFixture
 		req, err := http.NewRequest("POST", ts.URL+"/api/v1/mcp", strings.NewReader(jsonRPC))
 		Expect(err).NotTo(HaveOccurred())
 		req.Header.Set("Content-Type", "application/json")

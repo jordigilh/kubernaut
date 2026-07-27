@@ -95,7 +95,7 @@ var _ = Describe("E2E-AA-064: Session-Based Async Flow", Label("e2e", "session",
 			By("Waiting for Completed phase (async session flow: submit -> poll -> result -> analysis)")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"))
 
 			By("Verifying InvestigationSession was populated during async flow")

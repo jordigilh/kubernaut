@@ -372,7 +372,7 @@ func (e *Evaluator) StartHotReload(ctx context.Context) error {
 	var err error
 	e.fileWatcher, err = hotreload.NewFileWatcher(
 		e.policyPath,
-		func(content string) error {
+		func(content string) error { //nolint:contextcheck // policy hot-reload callback fires asynchronously on file-change events, independent of any request
 			// Validate and load new policy
 			// Per ADR-050: Graceful degradation on runtime validation failure
 			if err := e.LoadPolicy(content); err != nil {

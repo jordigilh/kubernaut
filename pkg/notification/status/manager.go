@@ -335,9 +335,9 @@ func (m *Manager) UpdateObservedGeneration(ctx context.Context, notification *no
 // - ✅ Includes initial phase transition ("" → Pending)
 // - ✅ Easy to maintain (update once, applies everywhere)
 // ========================================
-func isValidPhaseTransition(current, new notificationv1alpha1.NotificationPhase) bool {
+func isValidPhaseTransition(current, target notificationv1alpha1.NotificationPhase) bool {
 	// Use centralized phase transition validation (Pattern 1)
-	return notificationphase.CanTransition(notificationphase.Phase(current), notificationphase.Phase(new))
+	return notificationphase.CanTransition(current, target)
 }
 
 // isTerminalPhase checks if a phase is terminal (no further transitions allowed)
@@ -357,7 +357,7 @@ func isValidPhaseTransition(current, new notificationv1alpha1.NotificationPhase)
 // ========================================
 func isTerminalPhase(phase notificationv1alpha1.NotificationPhase) bool {
 	// Use centralized terminal phase detection (Pattern 1)
-	return notificationphase.IsTerminal(notificationphase.Phase(phase))
+	return notificationphase.IsTerminal(phase)
 }
 
 // abs returns the absolute value of a duration

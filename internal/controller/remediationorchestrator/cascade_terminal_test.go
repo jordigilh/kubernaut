@@ -91,7 +91,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 	// ========================================
 	It("UT-RO-1421-001: should patch AIAnalysis to Failed with ParentCancelled when RR is Cancelled [IR-4(1)]", func() {
 		rrName := "rr-cascade-001"
-		namespace := "test-ns"
+		namespace := testNs
 		aiName := "ai-cascade-001"
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseCancelled, "", aiName, "")
@@ -123,7 +123,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 	// ========================================
 	It("UT-RO-1421-002: should skip already-terminal children (idempotent) [CM-3]", func() {
 		rrName := "rr-cascade-002"
-		namespace := "test-ns"
+		namespace := testNs
 		aiName := "ai-cascade-002"
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseCancelled, "", aiName, "")
@@ -152,7 +152,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 	// ========================================
 	It("UT-RO-1421-003: should handle missing child refs gracefully (no panic) [SI-4]", func() {
 		rrName := "rr-cascade-003"
-		namespace := "test-ns"
+		namespace := testNs
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseCancelled, "nonexistent-sp", "nonexistent-ai", "nonexistent-we")
 
@@ -173,7 +173,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 	// ========================================
 	It("UT-RO-1421-004: should patch SignalProcessing to Failed when RR is Cancelled and SP is Enriching [IR-4(1)]", func() {
 		rrName := "rr-cascade-004"
-		namespace := "test-ns"
+		namespace := testNs
 		spName := "sp-cascade-004"
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseCancelled, spName, "", "")
@@ -200,7 +200,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 	// ========================================
 	It("UT-RO-1421-005: should patch WorkflowExecution to Failed when RR is Cancelled and WE is Running [AC-6]", func() {
 		rrName := "rr-cascade-005"
-		namespace := "test-ns"
+		namespace := testNs
 		weName := "we-cascade-005"
 
 		rr := newRemediationRequestWithChildRefs(rrName, namespace, remediationv1.PhaseCancelled, "", "", weName)
@@ -229,7 +229,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, SI-4, CM-3]"
 	// ========================================
 	It("UT-RO-1421-006: should cascade to all three child types simultaneously [IR-4]", func() {
 		rrName := "rr-cascade-006"
-		namespace := "test-ns"
+		namespace := testNs
 		spName := "sp-cascade-006"
 		aiName := "ai-cascade-006"
 		weName := "we-cascade-006"

@@ -237,7 +237,7 @@ func (t *TektonExecutor) BuildPipelineRun(ctx context.Context, wfe *workflowexec
 			Params:     params,
 			Workspaces: workspaces,
 			TaskRunTemplate: tektonv1.PipelineTaskRunTemplate{
-				ServiceAccountName: wfe.Status.ServiceAccountName,
+				ServiceAccountName: wfe.Spec.WorkflowRef.ServiceAccountName,
 				PodTemplate: &pod.PodTemplate{
 					SecurityContext: restrictedPodSecurityContext(),
 				},
@@ -305,7 +305,7 @@ func (t *TektonExecutor) buildStatusSummary(ctx context.Context, c ExecutorClien
 
 	succeededCond := pr.Status.GetCondition(apis.ConditionSucceeded)
 	if succeededCond != nil {
-		summary.Status = corev1.ConditionStatus(succeededCond.Status)
+		summary.Status = succeededCond.Status
 		summary.Reason = succeededCond.Reason
 		summary.Message = succeededCond.Message
 	}

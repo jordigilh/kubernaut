@@ -23,13 +23,15 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/go-logr/logr"
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 )
 
 // toolCtx returns a context with a representative SignalContext attached.
@@ -43,37 +45,69 @@ func toolCtx() context.Context {
 	})
 }
 
-// fakeWorkflowDS captures the params passed to each DS method and returns
-// canned responses. Satisfies custom.WorkflowDiscoveryClient.
+// fakeWorkflowDS captures the args passed to each Catalog method and returns
+// canned responses. Satisfies custom.WorkflowCatalog (Issue #1677 Phase 2d:
+// replaces the former ogen-client-shaped fake with one matching
+// workflowcatalog.Catalog's Go-native signatures).
 type fakeWorkflowDS struct {
-	listActionsParams   ogenclient.ListAvailableActionsParams
-	listActionsResponse *ogenclient.ActionTypeListResponse
+	listActionsFilters *models.WorkflowDiscoveryFilters
+	listActionsOffset  int
+	listActionsLimit   int
+	listActionsEntries []models.ActionTypeEntry
+	listActionsTotal   int
+	listActionsErr     error
 
-	listWorkflowsParams   ogenclient.ListWorkflowsByActionTypeParams
-	listWorkflowsResponse *ogenclient.WorkflowDiscoveryResponse
+	listWorkflowsActionType string
+	listWorkflowsFilters    *models.WorkflowDiscoveryFilters
+	listWorkflowsOffset     int
+	listWorkflowsLimit      int
+	listWorkflowsEntries    []models.RemediationWorkflow
+	listWorkflowsTotal      int
+	listWorkflowsErr        error
 
-	getWorkflowParams ogenclient.GetWorkflowByIDParams
+	getWorkflowID      string
+	getWorkflowFilters *models.WorkflowDiscoveryFilters
+	getWorkflowResult  *models.RemediationWorkflow
+	getWorkflowErr     error
 }
 
-func (f *fakeWorkflowDS) ListAvailableActions(_ context.Context, params ogenclient.ListAvailableActionsParams) (ogenclient.ListAvailableActionsRes, error) {
-	f.listActionsParams = params
-	return f.listActionsResponse, nil
+func (f *fakeWorkflowDS) ListActions(_ context.Context, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]models.ActionTypeEntry, int, error) {
+	f.listActionsFilters = filters
+	f.listActionsOffset = offset
+	f.listActionsLimit = limit
+	return f.listActionsEntries, f.listActionsTotal, f.listActionsErr
 }
 
-func (f *fakeWorkflowDS) ListWorkflowsByActionType(_ context.Context, params ogenclient.ListWorkflowsByActionTypeParams) (ogenclient.ListWorkflowsByActionTypeRes, error) {
-	f.listWorkflowsParams = params
-	return f.listWorkflowsResponse, nil
+func (f *fakeWorkflowDS) ListWorkflowsByActionType(_ context.Context, actionType string, filters *models.WorkflowDiscoveryFilters, offset, limit int) ([]models.RemediationWorkflow, int, error) {
+	f.listWorkflowsActionType = actionType
+	f.listWorkflowsFilters = filters
+	f.listWorkflowsOffset = offset
+	f.listWorkflowsLimit = limit
+	return f.listWorkflowsEntries, f.listWorkflowsTotal, f.listWorkflowsErr
 }
 
-func (f *fakeWorkflowDS) GetWorkflowByID(_ context.Context, params ogenclient.GetWorkflowByIDParams) (ogenclient.GetWorkflowByIDRes, error) {
-	f.getWorkflowParams = params
-	return &ogenclient.RemediationWorkflow{}, nil
+func (f *fakeWorkflowDS) GetWorkflowWithContextFilters(_ context.Context, workflowID string, filters *models.WorkflowDiscoveryFilters) (*models.RemediationWorkflow, error) {
+	f.getWorkflowID = workflowID
+	f.getWorkflowFilters = filters
+	if f.getWorkflowErr != nil {
+		return nil, f.getWorkflowErr
+	}
+	if f.getWorkflowResult != nil {
+		return f.getWorkflowResult, nil
+	}
+	return &models.RemediationWorkflow{}, nil
+}
+
+// newTestTools builds the 3 discovery tools against fake with no audit store
+// (audit emission is exercised separately in discovery_audit_test.go).
+func newTestTools(fake custom.WorkflowCatalog) []tools.Tool {
+	return custom.NewAllTools(fake, nil, logr.Discard())
 }
 
 // Guard: validate tool registration order assumed by allTools[0]/[1]/[2] indexing across all test files.
 var _ = Describe("NewAllTools registration order guard", func() {
 	It("should return tools in the expected positional order", func() {
-		allTools := custom.NewAllTools(&fakeWorkflowDS{})
+		allTools := newTestTools(&fakeWorkflowDS{})
 		Expect(allTools).To(HaveLen(3))
 		Expect(allTools[0].Name()).To(Equal("list_available_actions"))
 		Expect(allTools[1].Name()).To(Equal("list_workflows"))
@@ -81,60 +115,11 @@ var _ = Describe("NewAllTools registration order guard", func() {
 	})
 })
 
-var _ = Describe("UT-KA-688: Conditional pagination stripping", func() {
-
-	Describe("UT-KA-688-001: StripPaginationIfComplete removes pagination when all results fit in one page", func() {
-		It("should strip pagination when hasMore is false", func() {
-			input := `{"actionTypes":[{"actionType":"RestartDeployment"},{"actionType":"ScaleReplicas"}],"pagination":{"totalCount":2,"offset":0,"limit":10,"hasMore":false}}`
-			result := custom.StripPaginationIfComplete(json.RawMessage(input))
-
-			var parsed map[string]interface{}
-			Expect(json.Unmarshal(result, &parsed)).To(Succeed())
-			Expect(parsed).NotTo(HaveKey("pagination"))
-			Expect(parsed).To(HaveKey("actionTypes"))
-		})
-
-		It("should preserve pagination when hasMore is true", func() {
-			input := `{"actionTypes":[{"actionType":"RestartDeployment"}],"pagination":{"totalCount":16,"offset":0,"limit":10,"hasMore":true}}`
-			result := custom.StripPaginationIfComplete(json.RawMessage(input))
-
-			var parsed map[string]interface{}
-			Expect(json.Unmarshal(result, &parsed)).To(Succeed())
-			Expect(parsed).To(HaveKey("pagination"))
-			Expect(parsed).To(HaveKey("actionTypes"))
-		})
-	})
-
-	Describe("UT-KA-688-002: StripPaginationIfComplete works for workflow discovery responses", func() {
-		It("should strip pagination from workflow list when complete", func() {
-			input := `{"actionType":"RestartDeployment","workflows":[{"workflowId":"abc-123"}],"pagination":{"totalCount":1,"offset":0,"limit":10,"hasMore":false}}`
-			result := custom.StripPaginationIfComplete(json.RawMessage(input))
-
-			var parsed map[string]interface{}
-			Expect(json.Unmarshal(result, &parsed)).To(Succeed())
-			Expect(parsed).NotTo(HaveKey("pagination"))
-			Expect(parsed).To(HaveKey("workflows"))
-			Expect(parsed).To(HaveKey("actionType"))
-		})
-	})
-
-	Describe("UT-KA-688-003: StripPaginationIfComplete is safe for edge cases", func() {
-		It("should return input unchanged when pagination field is absent", func() {
-			input := `{"actionTypes":[{"actionType":"RestartDeployment"}]}`
-			result := custom.StripPaginationIfComplete(json.RawMessage(input))
-
-			var parsed map[string]interface{}
-			Expect(json.Unmarshal(result, &parsed)).To(Succeed())
-			Expect(parsed).To(HaveKey("actionTypes"))
-		})
-
-		It("should return input unchanged for invalid JSON", func() {
-			input := `not json`
-			result := custom.StripPaginationIfComplete(json.RawMessage(input))
-			Expect(string(result)).To(Equal(input))
-		})
-	})
-})
+// UT-KA-688-001/002/003 (stripPaginationIfComplete) were removed as dead-code
+// coverage (#1677 dead-code sweep, follow-up): stripPaginationIfComplete
+// itself was deleted -- superseded by TransformPagination (DD-WORKFLOW-016
+// v1.4, see UT-KA-688-110 through 115 below), which is a strict superset and
+// is the only pagination-shaping function called from production code.
 
 // --- Group A: Cursor Encoding/Decoding (UT-KA-688-100 through UT-KA-688-104) ---
 
@@ -360,7 +345,7 @@ var _ = Describe("UT-KA-688: TransformPagination", func() {
 	})
 })
 
-// --- Group C: Schema Validation (UT-KA-688-201 through UT-KA-688-202) ---
+// --- Group C: Schema Validation (UT-KA-433-170 through UT-KA-688-202) ---
 
 var _ = Describe("Kubernaut Agent Custom Tool Schemas — #433", func() {
 
@@ -418,7 +403,7 @@ var _ = Describe("Kubernaut Agent Custom Tool Schemas — #433", func() {
 	})
 
 	Describe("UT-KA-433-173: All existing custom tools return non-nil Parameters()", func() {
-		It("should have non-nil schemas for all 3 DataStorage tools", func() {
+		It("should have non-nil schemas for all 3 workflow discovery tools", func() {
 			Expect(custom.ListAvailableActionsSchema()).NotTo(BeNil())
 			Expect(custom.ListWorkflowsSchema()).NotTo(BeNil())
 			Expect(custom.GetWorkflowSchema()).NotTo(BeNil())
@@ -507,53 +492,31 @@ var _ = Describe("UT-KA-688: Execute wiring with cursor pagination", func() {
 
 	var fake *fakeWorkflowDS
 
-	singlePagePagination := ogenclient.PaginationMetadata{
-		TotalCount: 2, Offset: 0, Limit: 10, HasMore: false,
-	}
-	multiPagePagination := ogenclient.PaginationMetadata{
-		TotalCount: 16, Offset: 0, Limit: 10, HasMore: true,
-	}
-
 	BeforeEach(func() {
 		fake = &fakeWorkflowDS{
-			listActionsResponse: &ogenclient.ActionTypeListResponse{
-				ActionTypes: []ogenclient.ActionTypeEntry{
-					{
-						ActionType:    "ScaleReplicas",
-						Description:   ogenclient.StructuredDescription{What: "test", WhenToUse: "test"},
-						WorkflowCount: 1,
-					},
-				},
-				Pagination: singlePagePagination,
+			listActionsEntries: []models.ActionTypeEntry{
+				{ActionType: "ScaleReplicas", Description: models.ActionTypeDescription{What: "test", WhenToUse: "test"}, WorkflowCount: 1},
 			},
-			listWorkflowsResponse: &ogenclient.WorkflowDiscoveryResponse{
-				ActionType: "ScaleReplicas",
-				Workflows: []ogenclient.WorkflowDiscoveryEntry{
-					{
-						WorkflowId:   uuid.New(),
-						WorkflowName: "scale-conservative-v1",
-						Name:         "Scale Conservative",
-						Description:  ogenclient.StructuredDescription{What: "test", WhenToUse: "test"},
-					},
-				},
-				Pagination: singlePagePagination,
+			listActionsTotal: 2,
+			listWorkflowsEntries: []models.RemediationWorkflow{
+				{WorkflowID: uuid.New().String(), WorkflowName: "scale-conservative-v1", Name: "Scale Conservative", Description: models.StructuredDescription{What: "test", WhenToUse: "test"}},
 			},
+			listWorkflowsTotal: 2,
 		}
 	})
 
 	Describe("UT-KA-688-301: list_workflows Execute with no pagination args", func() {
-		It("should call DS with unset Offset/Limit and strip pagination from single-page response", func() {
-			allTools := custom.NewAllTools(fake)
-			var listWorkflows = allTools[1]
+		It("should call the catalog with default offset/limit and strip pagination from single-page response", func() {
+			fake.listWorkflowsTotal = 1
+			allTools := newTestTools(fake)
+			listWorkflows := allTools[1]
 
 			result, err := listWorkflows.Execute(toolCtx(),
 				json.RawMessage(`{"action_type":"ScaleReplicas"}`))
 			Expect(err).NotTo(HaveOccurred())
 
-			_, ok := fake.listWorkflowsParams.Offset.Get()
-			Expect(ok).To(BeFalse(), "Offset should be unset when no cursor provided")
-			_, ok = fake.listWorkflowsParams.Limit.Get()
-			Expect(ok).To(BeFalse(), "Limit should be unset when no cursor provided")
+			Expect(fake.listWorkflowsOffset).To(Equal(0), "Offset should default to 0 when no cursor provided")
+			Expect(fake.listWorkflowsLimit).To(Equal(10), "Limit should default to 10 when no cursor provided")
 
 			var parsed map[string]interface{}
 			Expect(json.Unmarshal([]byte(result), &parsed)).To(Succeed())
@@ -563,26 +526,19 @@ var _ = Describe("UT-KA-688: Execute wiring with cursor pagination", func() {
 	})
 
 	Describe("UT-KA-688-302: list_workflows Execute with page=next and cursor", func() {
-		It("should decode cursor and pass offset/limit to DS", func() {
-			fake.listWorkflowsResponse.Pagination = multiPagePagination
-			fake.listWorkflowsResponse.Pagination.Offset = 10
-			fake.listWorkflowsResponse.Pagination.HasMore = true
+		It("should decode cursor and pass offset/limit to the catalog", func() {
+			fake.listWorkflowsTotal = 30
 
 			cursor := custom.EncodeCursor(10, 10)
-			allTools := custom.NewAllTools(fake)
-			var listWorkflows = allTools[1]
+			allTools := newTestTools(fake)
+			listWorkflows := allTools[1]
 
 			args := fmt.Sprintf(`{"action_type":"ScaleReplicas","page":"next","cursor":"%s"}`, cursor)
 			result, err := listWorkflows.Execute(toolCtx(), json.RawMessage(args))
 			Expect(err).NotTo(HaveOccurred())
 
-			gotOffset, ok := fake.listWorkflowsParams.Offset.Get()
-			Expect(ok).To(BeTrue(), "Offset should be set when cursor provided")
-			Expect(gotOffset).To(Equal(10))
-
-			gotLimit, ok := fake.listWorkflowsParams.Limit.Get()
-			Expect(ok).To(BeTrue(), "Limit should be set when cursor provided")
-			Expect(gotLimit).To(Equal(10))
+			Expect(fake.listWorkflowsOffset).To(Equal(10), "Offset should be decoded from cursor")
+			Expect(fake.listWorkflowsLimit).To(Equal(10), "Limit should be decoded from cursor")
 
 			var parsed map[string]json.RawMessage
 			Expect(json.Unmarshal([]byte(result), &parsed)).To(Succeed())
@@ -598,18 +554,17 @@ var _ = Describe("UT-KA-688: Execute wiring with cursor pagination", func() {
 	})
 
 	Describe("UT-KA-688-303: list_available_actions Execute with no pagination args", func() {
-		It("should call DS with unset Offset/Limit and strip pagination from single-page response", func() {
-			allTools := custom.NewAllTools(fake)
-			var listActions = allTools[0]
+		It("should call the catalog with default offset/limit and strip pagination from single-page response", func() {
+			fake.listActionsTotal = 1
+			allTools := newTestTools(fake)
+			listActions := allTools[0]
 
 			result, err := listActions.Execute(toolCtx(),
 				json.RawMessage(`{}`))
 			Expect(err).NotTo(HaveOccurred())
 
-			_, ok := fake.listActionsParams.Offset.Get()
-			Expect(ok).To(BeFalse(), "Offset should be unset when no cursor provided")
-			_, ok = fake.listActionsParams.Limit.Get()
-			Expect(ok).To(BeFalse(), "Limit should be unset when no cursor provided")
+			Expect(fake.listActionsOffset).To(Equal(0), "Offset should default to 0 when no cursor provided")
+			Expect(fake.listActionsLimit).To(Equal(10), "Limit should default to 10 when no cursor provided")
 
 			var parsed map[string]interface{}
 			Expect(json.Unmarshal([]byte(result), &parsed)).To(Succeed())
@@ -619,24 +574,19 @@ var _ = Describe("UT-KA-688: Execute wiring with cursor pagination", func() {
 	})
 
 	Describe("UT-KA-688-304: list_available_actions Execute with page=next and cursor", func() {
-		It("should decode cursor and pass offset/limit to DS", func() {
-			fake.listActionsResponse.Pagination = multiPagePagination
+		It("should decode cursor and pass offset/limit to the catalog", func() {
+			fake.listActionsTotal = 16
 
 			cursor := custom.EncodeCursor(10, 10)
-			allTools := custom.NewAllTools(fake)
-			var listActions = allTools[0]
+			allTools := newTestTools(fake)
+			listActions := allTools[0]
 
 			args := fmt.Sprintf(`{"page":"next","cursor":"%s"}`, cursor)
 			result, err := listActions.Execute(toolCtx(), json.RawMessage(args))
 			Expect(err).NotTo(HaveOccurred())
 
-			gotOffset, ok := fake.listActionsParams.Offset.Get()
-			Expect(ok).To(BeTrue(), "Offset should be set when cursor provided")
-			Expect(gotOffset).To(Equal(10))
-
-			gotLimit, ok := fake.listActionsParams.Limit.Get()
-			Expect(ok).To(BeTrue(), "Limit should be set when cursor provided")
-			Expect(gotLimit).To(Equal(10))
+			Expect(fake.listActionsOffset).To(Equal(10), "Offset should be decoded from cursor")
+			Expect(fake.listActionsLimit).To(Equal(10), "Limit should be decoded from cursor")
 
 			var parsed map[string]json.RawMessage
 			Expect(json.Unmarshal([]byte(result), &parsed)).To(Succeed())
@@ -645,21 +595,16 @@ var _ = Describe("UT-KA-688: Execute wiring with cursor pagination", func() {
 	})
 
 	Describe("UT-KA-688-305: Execute with invalid cursor falls back gracefully", func() {
-		It("should not error and should call DS with default offset/limit", func() {
-			allTools := custom.NewAllTools(fake)
-			var listWorkflows = allTools[1]
+		It("should not error and should call the catalog with default offset/limit", func() {
+			allTools := newTestTools(fake)
+			listWorkflows := allTools[1]
 
 			result, err := listWorkflows.Execute(toolCtx(),
 				json.RawMessage(`{"action_type":"ScaleReplicas","page":"next","cursor":"garbage"}`))
 			Expect(err).NotTo(HaveOccurred())
 
-			gotOffset, ok := fake.listWorkflowsParams.Offset.Get()
-			Expect(ok).To(BeTrue(), "Offset should be set (decoded from invalid cursor with fallback)")
-			Expect(gotOffset).To(Equal(0))
-
-			gotLimit, ok := fake.listWorkflowsParams.Limit.Get()
-			Expect(ok).To(BeTrue(), "Limit should be set (decoded from invalid cursor with fallback)")
-			Expect(gotLimit).To(Equal(10))
+			Expect(fake.listWorkflowsOffset).To(Equal(0), "Offset should default to 0 (decoded from invalid cursor with fallback)")
+			Expect(fake.listWorkflowsLimit).To(Equal(10), "Limit should default to 10 (decoded from invalid cursor with fallback)")
 
 			Expect(result).NotTo(BeEmpty())
 		})

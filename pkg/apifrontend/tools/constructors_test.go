@@ -26,7 +26,11 @@ var _ = Describe("Tool Constructors", func() {
 		}},
 		{"kubernaut_select_workflow", func() (interface{ Name() string }, error) { return tools.NewSelectWorkflowTool(nil, nil) }},
 		{"kubernaut_present_decision", func() (interface{ Name() string }, error) { return tools.NewPresentDecisionTool() }},
-		{"kubernaut_list_workflows", func() (interface{ Name() string }, error) { return tools.NewListWorkflowsTool(nil) }},
+		// kubernaut_list_workflows: #1677 Phase 2g (DD-WORKFLOW-019) removed
+		// NewListWorkflowsTool (DS-backed) as dead code. The KA-backed
+		// replacement (HandleListWorkflowsKA) is registered directly via
+		// registerTool in mcp_bridge.go, with no standalone tools.NewXxxTool
+		// constructor -- see ka_list_workflows_test.go for its coverage.
 		{"kubernaut_get_remediation_history", func() (interface{ Name() string }, error) { return tools.NewGetRemediationHistoryTool(nil) }},
 		{"kubernaut_get_effectiveness", func() (interface{ Name() string }, error) { return tools.NewGetEffectivenessTool(nil) }},
 		{"kubernaut_get_audit_trail", func() (interface{ Name() string }, error) { return tools.NewGetAuditTrailTool(nil) }},

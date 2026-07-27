@@ -4,7 +4,7 @@ metadata:
   name: fix-certificate-v1
 spec:
   # Fix Certificate Workflow Schema (BR-WORKFLOW-004)
-  # Used by: Full Pipeline E2E — 02_async_hash_deferral_test.go (cert-manager scenario)
+  # Used by: Mock LLM cert_not_ready scenario (test/services/mock-llm/scenarios/scenario_cert_not_ready.go)
   version: "1.0.0"
   description:
     what: "Recreates a missing or corrupted CA Secret backing a cert-manager ClusterIssuer to restore certificate issuance"

@@ -50,7 +50,7 @@ var _ = Describe("Consecutive Failures Integration Tests (BR-ORCH-042)", func() 
 	var testNamespace string
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("consecutive-failures")
+		testNamespace = createTestNamespace(ctx, "consecutive-failures")
 	})
 
 	AfterEach(func() {

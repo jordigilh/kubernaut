@@ -121,7 +121,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 			By("Waiting for Completed phase")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, eventTimeout, eventInterval).Should(Equal("Completed"))
 
 			By("Listing events for object and asserting expected reasons")
@@ -194,7 +194,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 			By("Waiting for Failed phase (requires Mock KA permanent error scenario)")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, eventTimeout, eventInterval).Should(Equal("Failed"))
 
 			By("Listing events and asserting AIAnalysisCreated, AnalysisFailed")
@@ -261,7 +261,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 			By("Waiting for reconciliation (Completed or Failed depending on KA response)")
 			Eventually(func() bool {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				phase := string(analysis.Status.Phase)
+				phase := analysis.Status.Phase
 				return phase == "Completed" || phase == "Failed"
 			}, eventTimeout, eventInterval).Should(BeTrue())
 
@@ -331,7 +331,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 			By("Waiting for Completed phase (session flow: submit -> poll -> result -> analysis)")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, eventTimeout, eventInterval).Should(Equal("Completed"))
 
 			By("Asserting SessionCreated event was emitted")

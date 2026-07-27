@@ -13,6 +13,11 @@ const (
 	adaptiveCardContentType = "application/vnd.microsoft.card.adaptive"
 	adaptiveCardVersion     = "1.0"
 	teamsPayloadLimit       = 28 * 1024 // 28 KB
+
+	// colorOrSeverityWarning is shared by Teams Adaptive Card colors and
+	// PagerDuty severity levels within this package; both happen to use the
+	// literal "warning".
+	colorOrSeverityWarning = "warning"
 )
 
 // TeamsMessage is the Power Automate Workflows envelope.
@@ -120,7 +125,7 @@ func buildHeaderSection(notification *notificationv1alpha1.NotificationRequest) 
 		color = "attention"
 	case notificationv1alpha1.NotificationPriorityHigh:
 		prefix = "HIGH: "
-		color = "warning"
+		color = colorOrSeverityWarning
 	}
 
 	header := CardElement{

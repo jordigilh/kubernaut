@@ -19,12 +19,15 @@ package investigator
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -123,16 +126,27 @@ func toolNames(defs []llm.ToolDefinition) []string {
 	return names
 }
 
-func (inv *Investigator) toolDefinitionsForPhase(phase katypes.Phase) []llm.ToolDefinition {
+// toolDefinitionsForPhase builds the LLM-facing tool schema for phase. When
+// ctx carries a fleet tool overlay (DD-FLEET-004), a phase tool whose name
+// also appears in the overlay is described using the overlay's BridgeTool
+// instead of the local registry's tool of the same name — the LLM sees one
+// entry per name either way, so the schema is byte-identical to a hub-local
+// investigation's regardless of which cluster backs it (AC-6).
+func (inv *Investigator) toolDefinitionsForPhase(ctx context.Context, phase katypes.Phase) []llm.ToolDefinition {
 	var defs []llm.ToolDefinition
 	if inv.registry != nil {
 		phaseTools := inv.registry.ToolsForPhase(phase, inv.phaseTools)
+		overlay, _ := FleetOverlayFromContext(ctx)
 		defs = make([]llm.ToolDefinition, 0, len(phaseTools)+2)
 		for _, t := range phaseTools {
+			eff := t
+			if ov, found := resolveTool(overlay, t.Name()); found {
+				eff = ov
+			}
 			defs = append(defs, llm.ToolDefinition{
-				Name:        t.Name(),
-				Description: t.Description(),
-				Parameters:  t.Parameters(),
+				Name:        eff.Name(),
+				Description: eff.Description(),
+				Parameters:  eff.Parameters(),
 			})
 		}
 	}
@@ -167,6 +181,38 @@ func submitResultSchemaForPhase(phase katypes.Phase) json.RawMessage {
 	return parser.InvestigationResultSchema()
 }
 
+// executeResolved executes name via the fleet tool overlay (DD-FLEET-004)
+// when ctx carries one and name is present in it, otherwise via the local
+// tool registry unchanged. Callers see identical (string, error) semantics
+// regardless of which backend served the call.
+//
+// For a hub-local investigation (no overlay in ctx), a miss surfaces the
+// registry's plain registry.ErrToolNotFound unchanged — unambiguous on its
+// own, no cluster context to add. For a fleet-target investigation (overlay
+// present but name isn't in it), a miss is wrapped with the cluster ID: a
+// bare "tool not found: X" would otherwise leave an operator unable to tell
+// whether X was never a valid tool name or whether the fleet overlay simply
+// didn't expose it for this cluster (AC-6 — the two failure modes look
+// identical without this context).
+func (inv *Investigator) executeResolved(ctx context.Context, name string, args json.RawMessage) (string, error) {
+	overlay, hasOverlay := FleetOverlayFromContext(ctx)
+	if hasOverlay {
+		if t, found := resolveTool(overlay, name); found {
+			return t.Execute(ctx, args)
+		}
+	}
+
+	result, err := inv.registry.Execute(ctx, name, args)
+	if err != nil && hasOverlay {
+		var notFound *registry.ErrToolNotFound
+		if errors.As(err, &notFound) {
+			clusterID, _ := audit.ClusterIDFromContext(ctx)
+			return "", fmt.Errorf("tool %q not found in fleet overlay for cluster %q or local registry: %w", name, clusterID, err)
+		}
+	}
+	return result, err
+}
+
 func (inv *Investigator) executeTool(ctx context.Context, name string, args json.RawMessage) string {
 	if inv.registry == nil {
 		return toolErrorJSON("no registry configured for tool " + name)
@@ -180,7 +226,7 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 		return toolErrorJSON(ar.Reason)
 	}
 
-	result, err := inv.registry.Execute(ctx, name, args)
+	result, err := inv.executeResolved(ctx, name, args)
 	if err != nil {
 		inv.logger.Error(err, "tool execution failed",
 			"tool", name,

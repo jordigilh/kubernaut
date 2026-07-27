@@ -71,7 +71,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)),
 				"Controller should dispatch to JobExecutor and create a Job")
 
@@ -94,7 +94,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)),
 				"WFE should transition to Completed when Job succeeds")
 
@@ -118,7 +118,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Getting the created Job")
@@ -134,7 +134,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)),
 				"WFE should transition to Failed when Job fails")
 
@@ -212,7 +212,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Verifying Job exists")
@@ -267,7 +267,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Verifying the Job name is deterministic")
@@ -347,7 +347,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Verifying Job exists")
@@ -403,7 +403,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Getting and deleting the Job externally")
@@ -450,7 +450,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Simulating normal Job completion (NOT external deletion)")
@@ -464,7 +464,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)),
 				"WFE should complete normally (not trigger external deletion logic)")
 
@@ -600,7 +600,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Simulating Job failure")
@@ -661,7 +661,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Verifying Job exists for first WFE")
@@ -681,7 +681,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)),
 				"Second WFE should fail due to Job name collision (resource locked)")
 
@@ -712,7 +712,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseRunning)))
 
 			By("Creating second WFE for SAME target (will fail)")
@@ -728,7 +728,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseFailed)))
 
 			By("Verifying first WFE remains Running (unaffected)")
@@ -748,7 +748,7 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 				if err != nil {
 					return ""
 				}
-				return string(updated.Status.Phase)
+				return updated.Status.Phase
 			}, 15*time.Second, 200*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)),
 				"First WFE should complete successfully despite second WFE's failure")
 
@@ -898,18 +898,15 @@ var _ = Describe("Job Pre-execution Cleanup (Issue #374, DD-WE-003)", func() {
 // Transient-Failure Tolerance
 // ========================================
 //
-// Wiring Point A: catalog execution.resources -> WFE.Status.Resources -> Job
-// "workflow" container resources.
+// Wiring Point A: RO-embedded WFE.Spec.WorkflowRef.Resources (Issue #1661
+// Change 11d/11f, CRD-embedded snapshot from AIAnalysis.Status.
+// SelectedWorkflow.Resources) -> Job "workflow" container resources.
 var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 
-	AfterEach(func() {
-		// Prevent leaking Resources configuration into subsequent tests that
-		// don't set it explicitly (BestEffort QoS is the default elsewhere).
-		testWorkflowQuerier.Resources = nil
-	})
-
 	It("should apply catalog-resolved resources to the Job's workflow container (IT-WE-019-001)", func() {
-		testWorkflowQuerier.Resources = &corev1.ResourceRequirements{
+		targetResource := fmt.Sprintf("default/deployment/job-resources-%d", time.Now().UnixNano())
+		wfe := createUniqueJobWFE("resources", targetResource)
+		wfe.Spec.WorkflowRef.Resources = &corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("100m"),
 				corev1.ResourceMemory: resource.MustParse("128Mi"),
@@ -919,9 +916,6 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 				corev1.ResourceMemory: resource.MustParse("256Mi"),
 			},
 		}
-
-		targetResource := fmt.Sprintf("default/deployment/job-resources-%d", time.Now().UnixNano())
-		wfe := createUniqueJobWFE("resources", targetResource)
 
 		defer func() {
 			cleanupJobWFE(wfe)
@@ -942,32 +936,14 @@ var _ = Describe("Job Resource Governance (DD-WE-008, BR-WE-019)", func() {
 		Expect(container.Resources.Limits.Cpu().String()).To(Equal("500m"))
 		Expect(container.Resources.Limits.Memory().String()).To(Equal("256Mi"))
 
-		By("Verifying the resolved resources were persisted to WFE.Status.Resources")
-		// Job creation (waitForJobCreation above) and the WFE status update that
-		// persists Status.Resources are two sequential, non-atomic API calls within
-		// the same reconcile (finalizePendingToRunning): the Job becomes visible to
-		// this test as soon as it's created, which can race ahead of the subsequent
-		// Status().Update() -- especially when a concurrent reconcile (e.g. the
-		// Running-phase progress check triggered by the Job's own creation event)
-		// causes a resourceVersion conflict and forces a retry. Poll rather than a
-		// single-shot read to tolerate that expected eventual-consistency gap.
-		var updated *workflowexecutionv1alpha1.WorkflowExecution
-		Eventually(func() *corev1.ResourceRequirements {
-			var err error
-			updated, err = getWFE(wfe.Name, wfe.Namespace)
-			if err != nil {
-				return nil
-			}
-			return updated.Status.Resources
-		}, 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
-		Expect(updated.Status.Resources.Requests.Cpu().String()).To(Equal("100m"))
-
+		// Issue #1661 Change 11f: Resources lives immutably on
+		// Spec.WorkflowRef from CRD-creation time -- there is no Status
+		// mirror/persist step to poll for anymore (unlike the pre-Change-11f
+		// resolveWorkflowCatalog design this test previously exercised).
 		GinkgoWriter.Printf("✅ IT-WE-019-001: Catalog-resolved resources applied to Job container\n")
 	})
 
 	It("should leave the workflow container BestEffort when the catalog declares no resources (backward compat)", func() {
-		testWorkflowQuerier.Resources = nil
-
 		targetResource := fmt.Sprintf("default/deployment/job-no-resources-%d", time.Now().UnixNano())
 		wfe := createUniqueJobWFE("no-resources", targetResource)
 

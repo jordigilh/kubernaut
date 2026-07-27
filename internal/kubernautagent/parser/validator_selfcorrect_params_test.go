@@ -17,6 +17,8 @@ limitations under the License.
 package parser_test
 
 import (
+	"errors"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -85,13 +87,13 @@ var _ = Describe("BR-HAPI-191: SelfCorrect with Parameter Validation (#1170)", f
 
 	BeforeEach(func() {
 		v = parser.NewValidator([]string{"test-workflow"})
-		min := float64(1)
-		max := float64(10)
+		minVal := float64(1)
+		maxVal := float64(10)
 		v.SetWorkflowMeta("test-workflow", parser.WorkflowMeta{
 			ExecutionEngine: "tekton",
 			ExecutionBundle: "quay.io/test/bundle:v1",
 			Parameters: []models.WorkflowParameter{
-				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &min, Maximum: &max},
+				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &minVal, Maximum: &maxVal},
 				{Name: "NAMESPACE", Type: "string", Required: true, Description: "Target namespace"},
 				{Name: "STRATEGY", Type: "string", Required: false, Description: "Strategy", Enum: []string{"rolling", "recreate"}},
 			},
@@ -155,7 +157,8 @@ var _ = Describe("BR-HAPI-191: SelfCorrect with Parameter Validation (#1170)", f
 			})
 
 			Expect(err).NotTo(HaveOccurred())
-			paramErr, ok := receivedErr.(*parser.ParameterValidationError)
+			var paramErr *parser.ParameterValidationError
+			ok := errors.As(receivedErr, &paramErr)
 			Expect(ok).To(BeTrue(), "correctionFn should receive *ParameterValidationError")
 			Expect(paramErr.Result.Errors).To(ContainElement(ContainSubstring("REPLICA_COUNT")),
 				"Validation error should identify the failing parameter")

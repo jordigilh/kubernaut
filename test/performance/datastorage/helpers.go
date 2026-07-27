@@ -43,7 +43,6 @@ func createAuditEventRequest(
 	eventAction string,
 	eventOutcome string,
 	correlationID string,
-	eventData map[string]interface{},
 ) ogenclient.AuditEventRequest {
 	// Use timestamp 5 seconds in the past to avoid clock skew validation failures
 	timestamp := time.Now().Add(-5 * time.Second).UTC()
@@ -62,7 +61,7 @@ func createAuditEventRequest(
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				SignalName:   "test-alert",
+				SignalName:  "test-alert",
 				Namespace:   "default",
 				Fingerprint: "test-fingerprint",
 			},
@@ -91,7 +90,7 @@ func createAuditEventRequest(
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				EventType:   ogenclient.GatewayAuditPayloadEventTypeGatewaySignalReceived,
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				SignalName:   "test-alert",
+				SignalName:  "test-alert",
 				Namespace:   "default",
 				Fingerprint: "test-fingerprint",
 			},

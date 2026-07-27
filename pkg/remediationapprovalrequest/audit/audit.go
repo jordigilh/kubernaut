@@ -143,8 +143,6 @@ func (c *AuditClient) buildAuditEvent(
 	payload ogenclient.RemediationApprovalDecisionPayload,
 ) *ogenclient.AuditEventRequest {
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
-
 	// Set event metadata
 	audit.SetEventType(event, EventTypeApprovalDecision)
 	audit.SetEventCategory(event, EventCategoryApproval)

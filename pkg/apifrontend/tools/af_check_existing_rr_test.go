@@ -13,16 +13,27 @@ import (
 	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
 )
 
-func testFingerprint(ns, kind, name string) string {
+// testFingerprint computes a cluster-aware fingerprint for a "Deployment"
+// named "web" (the only kind/name combination used across all callers), in
+// the given namespace.
+func testFingerprint(ns string) string {
 	return gwtypes.CalculateClusterAwareFingerprint("", gwtypes.ResourceIdentifier{
 		Namespace: ns,
-		Kind:      kind,
-		Name:      name,
+		Kind:      "Deployment",
+		Name:      "web",
 	})
 }
 
-func newTypedRRWithFingerprint(namespace, name, phase, targetKind, targetName string) *remediationv1.RemediationRequest {
-	fp := testFingerprint(namespace, targetKind, targetName)
+// newTypedRRWithFingerprint builds a RemediationRequest in the fixed "prod"
+// namespace, targeting a "Deployment" named "web" (the only namespace/target
+// combination used across all callers of this helper).
+func newTypedRRWithFingerprint(name, phase string) *remediationv1.RemediationRequest {
+	const (
+		namespace  = "prod"
+		targetKind = "Deployment"
+		targetName = "web"
+	)
+	fp := testFingerprint(namespace)
 	return &remediationv1.RemediationRequest{
 		ObjectMeta: objMeta(namespace, name),
 		Spec: remediationv1.RemediationRequestSpec{
@@ -40,7 +51,7 @@ func newTypedRRWithFingerprint(namespace, name, phase, targetKind, targetName st
 
 var _ = Describe("kubernaut_check_existing_remediation", func() {
 	It("UT-AF-052-040: finds active RR for matching fingerprint", func() {
-		rr := newTypedRRWithFingerprint("prod", "rr-deploy-web-1", "Executing", "Deployment", "web")
+		rr := newTypedRRWithFingerprint("rr-deploy-web-1", "Executing")
 		client := newTypedFakeClient(rr)
 
 		result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
@@ -53,7 +64,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 	})
 
 	It("UT-AF-052-041: terminal RR not reported as existing", func() {
-		rr := newTypedRRWithFingerprint("prod", "rr-deploy-web-1", "Completed", "Deployment", "web")
+		rr := newTypedRRWithFingerprint("rr-deploy-web-1", "Completed")
 		client := newTypedFakeClient(rr)
 
 		result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
@@ -126,7 +137,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 
 	Describe("Cluster-aware dedup fingerprinting (#1409, AC-4: information-flow isolation)", func() {
 		It("UT-AF-1409-005: a cluster_id=\"a\" lookup never matches state fingerprinted under cluster_id=\"b\"", func() {
-			rrA := newTypedRRWithFingerprint("prod", "rr-cluster-a", "Executing", "Deployment", "web")
+			rrA := newTypedRRWithFingerprint("rr-cluster-a", "Executing")
 			rrA.Spec.ClusterID = "cluster-a"
 			rrA.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-a", gwtypes.ResourceIdentifier{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
@@ -142,7 +153,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 		})
 
 		It("UT-AF-1409-005b: a cluster_id=\"a\" lookup matches state fingerprinted under the same cluster_id", func() {
-			rrA := newTypedRRWithFingerprint("prod", "rr-cluster-a", "Executing", "Deployment", "web")
+			rrA := newTypedRRWithFingerprint("rr-cluster-a", "Executing")
 			rrA.Spec.ClusterID = "cluster-a"
 			rrA.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-a", gwtypes.ResourceIdentifier{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
@@ -159,7 +170,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 		})
 
 		It("UT-AF-1409-005c: empty cluster_id (local hub) preserves pre-#1409 backward-compatible matching", func() {
-			rr := newTypedRRWithFingerprint("prod", "rr-local", "Executing", "Deployment", "web")
+			rr := newTypedRRWithFingerprint("rr-local", "Executing")
 			client := newTypedFakeClient(rr)
 
 			result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
@@ -178,7 +189,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 		// tests and IT-AF-1409-010 below) — there is no additional MCP/HTTP
 		// transport layer to cross for this internal (ADK-only, non-MCP) tool.
 		It("IT-AF-1409-006: AC-4 — kubernaut_check_existing_remediation enforces cluster-scoped information-flow isolation end-to-end", func() {
-			rrEast := newTypedRRWithFingerprint("prod", "rr-east-006", "Executing", "Deployment", "web")
+			rrEast := newTypedRRWithFingerprint("rr-east-006", "Executing")
 			rrEast.Spec.ClusterID = "cluster-east-006"
 			rrEast.Spec.SignalFingerprint = gwtypes.CalculateClusterAwareFingerprint("cluster-east-006", gwtypes.ResourceIdentifier{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
@@ -214,7 +225,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 	})
 
 	It("UT-AF-052-048: mismatched fingerprint not reported as existing", func() {
-		rr := newTypedRRWithFingerprint("prod", "rr-deploy-web-1", "Executing", "Deployment", "web")
+		rr := newTypedRRWithFingerprint("rr-deploy-web-1", "Executing")
 		client := newTypedFakeClient(rr)
 
 		result, err := tools.HandleCheckExistingRR(context.Background(), client, "prod", tools.CheckExistingRRArgs{
@@ -232,7 +243,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: objMeta(controllerNS, "rr-deploy-web-existing"),
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: testFingerprint(workloadNS, "Deployment", "web"),
+					SignalFingerprint: testFingerprint(workloadNS),
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
 						Name:      "web",
@@ -260,7 +271,7 @@ var _ = Describe("kubernaut_check_existing_remediation", func() {
 			rr := &remediationv1.RemediationRequest{
 				ObjectMeta: objMeta(controllerNS, "rr-deploy-web-staging"),
 				Spec: remediationv1.RemediationRequestSpec{
-					SignalFingerprint: testFingerprint("staging", "Deployment", "web"),
+					SignalFingerprint: testFingerprint("staging"),
 					TargetResource: remediationv1.ResourceIdentifier{
 						Kind:      "Deployment",
 						Name:      "web",

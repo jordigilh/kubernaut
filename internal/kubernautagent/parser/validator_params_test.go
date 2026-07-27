@@ -170,9 +170,9 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Constraints (#1170)", func()
 
 	Context("UT-KA-1170-011: Minimum — value below minimum produces error", func() {
 		It("should reject value below minimum", func() {
-			min := float64(1)
+			minVal := float64(1)
 			schema := []models.WorkflowParameter{
-				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &min},
+				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &minVal},
 			}
 			params := map[string]interface{}{"REPLICA_COUNT": float64(0)}
 
@@ -185,9 +185,9 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Constraints (#1170)", func()
 
 	Context("UT-KA-1170-012: Minimum — value at minimum is valid", func() {
 		It("should accept value at minimum boundary", func() {
-			min := float64(1)
+			minVal := float64(1)
 			schema := []models.WorkflowParameter{
-				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &min},
+				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &minVal},
 			}
 			params := map[string]interface{}{"REPLICA_COUNT": float64(1)}
 
@@ -198,9 +198,9 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Constraints (#1170)", func()
 
 	Context("UT-KA-1170-013: Maximum — value above maximum produces error", func() {
 		It("should reject value above maximum", func() {
-			max := float64(10)
+			maxVal := float64(10)
 			schema := []models.WorkflowParameter{
-				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Maximum: &max},
+				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Maximum: &maxVal},
 			}
 			params := map[string]interface{}{"REPLICA_COUNT": float64(15)}
 
@@ -213,9 +213,9 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Constraints (#1170)", func()
 
 	Context("UT-KA-1170-014: Maximum — value at maximum is valid", func() {
 		It("should accept value at maximum boundary", func() {
-			max := float64(10)
+			maxVal := float64(10)
 			schema := []models.WorkflowParameter{
-				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Maximum: &max},
+				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Maximum: &maxVal},
 			}
 			params := map[string]interface{}{"REPLICA_COUNT": float64(10)}
 
@@ -520,9 +520,9 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Constraints (#1170)", func()
 
 	Context("UT-KA-1170-050: Multiple constraint violations produce multiple errors", func() {
 		It("should collect all validation errors, not stop at first", func() {
-			min := float64(1)
+			minVal := float64(1)
 			schema := []models.WorkflowParameter{
-				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &min},
+				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &minVal},
 				{Name: "STRATEGY", Type: "string", Required: true, Description: "Strategy", Enum: []string{"rolling", "recreate"}},
 			}
 			params := map[string]interface{}{
@@ -603,10 +603,10 @@ var _ = Describe("BR-HAPI-191: Schema Hint Formatting (#1170)", func() {
 
 	Context("UT-KA-1170-042: Constraints (min, max, enum) included in hint", func() {
 		It("should include min, max, and enum constraints in the hint", func() {
-			min := float64(1)
-			max := float64(10)
+			minVal := float64(1)
+			maxVal := float64(10)
 			schema := []models.WorkflowParameter{
-				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &min, Maximum: &max},
+				{Name: "REPLICA_COUNT", Type: "integer", Required: true, Description: "Number of replicas", Minimum: &minVal, Maximum: &maxVal},
 				{Name: "STRATEGY", Type: "string", Required: true, Description: "Strategy", Enum: []string{"rolling", "recreate"}},
 			}
 

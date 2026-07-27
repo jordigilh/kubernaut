@@ -94,11 +94,11 @@ func newCNVTestMapper() meta.RESTMapper {
 	return m
 }
 
-func makeUnstructuredVM(name, namespace string, evictionStrategy string) *unstructured.Unstructured {
+func makeUnstructuredVM(name, evictionStrategy string) *unstructured.Unstructured {
 	vm := &unstructured.Unstructured{}
 	vm.SetGroupVersionKind(schema.GroupVersionKind{Group: "kubevirt.io", Version: "v1", Kind: "VirtualMachine"})
 	vm.SetName(name)
-	vm.SetNamespace(namespace)
+	vm.SetNamespace("cnv-ns")
 	spec := map[string]interface{}{
 		"template": map[string]interface{}{
 			"spec": map[string]interface{}{},
@@ -126,7 +126,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-001: VirtualMachine in owner chain", func() {
 		It("should detect virtualMachine=true", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("test-vm", "cnv-ns", "")
+			vm := makeUnstructuredVM("test-vm", "")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, vm)
 			detector := enrichment.NewLabelDetector(dynClient, newCNVTestMapper(), logr.Discard())
 
@@ -161,7 +161,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-003: DataVolume in owner chain", func() {
 		It("should detect virtualMachine=true", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("test-vm", "cnv-ns", "")
+			vm := makeUnstructuredVM("test-vm", "")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, vm)
 			detector := enrichment.NewLabelDetector(dynClient, newCNVTestMapper(), logr.Discard())
 
@@ -205,7 +205,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-005: VM with evictionStrategy=LiveMigrate", func() {
 		It("should detect liveMigratable=true", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("migrate-vm", "cnv-ns", "LiveMigrate")
+			vm := makeUnstructuredVM("migrate-vm", "LiveMigrate")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, vm)
 			detector := enrichment.NewLabelDetector(dynClient, newCNVTestMapper(), logr.Discard())
 
@@ -223,7 +223,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-006: VM without evictionStrategy", func() {
 		It("should not detect liveMigratable", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("no-migrate-vm", "cnv-ns", "")
+			vm := makeUnstructuredVM("no-migrate-vm", "")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, vm)
 			detector := enrichment.NewLabelDetector(dynClient, newCNVTestMapper(), logr.Discard())
 
@@ -267,7 +267,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-008: PVC with CDI import annotation", func() {
 		It("should detect cdiManaged=true", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("cdi-vm", "cnv-ns", "")
+			vm := makeUnstructuredVM("cdi-vm", "")
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-dv",
@@ -293,7 +293,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-009: PVC without CDI annotations", func() {
 		It("should not detect cdiManaged", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("plain-vm", "cnv-ns", "")
+			vm := makeUnstructuredVM("plain-vm", "")
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "data-disk",
@@ -320,7 +320,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-010: PVC with rbd.csi.ceph.com provisioner", func() {
 		It("should detect storageBackend=odf-ceph", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("odf-vm", "cnv-ns", "")
+			vm := makeUnstructuredVM("odf-vm", "")
 			scName := "ocs-storagecluster-ceph-rbd"
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -351,7 +351,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-011: PVC with topolvm.io provisioner", func() {
 		It("should detect storageBackend=lvms", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("lvms-vm", "cnv-ns", "")
+			vm := makeUnstructuredVM("lvms-vm", "")
 			scName := "lvms-vg1"
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -382,7 +382,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-012: PVC with kubernetes.io/no-provisioner", func() {
 		It("should detect storageBackend=local", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("local-vm", "cnv-ns", "")
+			vm := makeUnstructuredVM("local-vm", "")
 			scName := "local-storage"
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -413,7 +413,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-013: PVC with unknown provisioner", func() {
 		It("should leave storageBackend empty", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("unknown-vm", "cnv-ns", "")
+			vm := makeUnstructuredVM("unknown-vm", "")
 			scName := "custom-storage"
 			pvc := &corev1.PersistentVolumeClaim{
 				ObjectMeta: metav1.ObjectMeta{
@@ -444,7 +444,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-014: No PVCs in namespace", func() {
 		It("should leave storageBackend empty and cdiManaged false", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("nopvc-vm", "cnv-ns", "")
+			vm := makeUnstructuredVM("nopvc-vm", "")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, vm)
 			detector := enrichment.NewLabelDetector(dynClient, newCNVTestMapper(), logr.Discard())
 
@@ -499,7 +499,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-016: VM GET fails (simulated RBAC denied)", func() {
 		It("should add liveMigratable to FailedDetections", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("rbac-vm", "cnv-ns", "LiveMigrate")
+			vm := makeUnstructuredVM("rbac-vm", "LiveMigrate")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, vm)
 
 			vmGetCount := 0
@@ -528,7 +528,7 @@ var _ = Describe("CNV DetectedLabels Detection — #1378", func() {
 	Describe("UT-KA-1378-017: PVC LIST fails (simulated timeout)", func() {
 		It("should add cdiManaged and storageBackend to FailedDetections", func() {
 			scheme := newCNVScheme()
-			vm := makeUnstructuredVM("fail-pvc-vm", "cnv-ns", "")
+			vm := makeUnstructuredVM("fail-pvc-vm", "")
 			dynClient := dynamicfake.NewSimpleDynamicClient(scheme, vm)
 			dynClient.PrependReactor("list", "persistentvolumeclaims", func(action k8stesting.Action) (bool, runtime.Object, error) {
 				return true, nil, fmt.Errorf("simulated timeout: context deadline exceeded")

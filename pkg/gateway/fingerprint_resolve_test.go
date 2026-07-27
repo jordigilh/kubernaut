@@ -58,14 +58,14 @@ var _ = Describe("ResolveFingerprint - Shared fingerprint resolution (Issue #228
 		It("should return owner-level fingerprint and resolved resource when resolver succeeds", func() {
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
-					return "Deployment", "payment-api", nil
+					return deployment, appPaymentAPI, nil
 				},
 			}
 
 			expectedOwner := types.ResourceIdentifier{
 				Namespace: "prod",
-				Kind:      "Deployment",
-				Name:      "payment-api",
+				Kind:      deployment,
+				Name:      appPaymentAPI,
 			}
 
 			fingerprint, resolved, err := types.ResolveFingerprint(ctx, resolver, resource, testLogger)
@@ -99,7 +99,7 @@ var _ = Describe("ResolveFingerprint - Shared fingerprint resolution (Issue #228
 		It("should return error when resolver returns empty ownerKind", func() {
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
-					return "", "payment-api", nil
+					return "", appPaymentAPI, nil
 				},
 			}
 
@@ -115,7 +115,7 @@ var _ = Describe("ResolveFingerprint - Shared fingerprint resolution (Issue #228
 		It("should produce identical fingerprints for same resource regardless of adapter origin", func() {
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
-					return "Deployment", "payment-api", nil
+					return deployment, appPaymentAPI, nil
 				},
 			}
 

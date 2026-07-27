@@ -21,10 +21,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	dsgen "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/pkg/ogenx"
 	"github.com/jordigilh/kubernaut/test/testutil"
 	. "github.com/onsi/ginkgo/v2" //nolint:revive,staticcheck // Ginkgo/Gomega convention
 	. "github.com/onsi/gomega"    //nolint:revive,staticcheck // Ginkgo/Gomega convention
@@ -37,11 +35,6 @@ const e2eBundleRef = "quay.io/kubernaut-cicd/test-workflows/placeholder-executio
 // detected labels tests (hpaEnabled, gitOpsTool), and duplicate detection.
 // Issue #330: Generated via builder pattern instead of inline YAML.
 var e2eTestWorkflowStubContent string
-
-// e2eTestAllDetectedLabelsContent is a workflow with all 8 detectedLabels fields populated.
-// Used by E2E-DS-043-005 to verify the full OCI -> DB -> HTTP round-trip for every field.
-// Issue #330: Generated via builder pattern instead of inline YAML.
-var e2eTestAllDetectedLabelsContent string
 
 func init() {
 	stub := testutil.NewTestWorkflowCRD("e2e-stub", "ScaleReplicas", "tekton")
@@ -59,92 +52,6 @@ func init() {
 		PopulatedFields: []string{"hpaEnabled", "gitOpsTool"},
 	}
 	e2eTestWorkflowStubContent = testutil.MarshalWorkflowCRD(stub)
-
-	allLabels := testutil.NewTestWorkflowCRD("e2e-all-labels", "RestartPod", "tekton")
-	allLabels.Spec.Labels.Component = []string{"v1/Pod"}
-	allLabels.Spec.Description.What = "Workflow with all 8 detectedLabels fields for round-trip E2E testing"
-	allLabels.Spec.Description.WhenToUse = "E2E-DS-043-005: validates every detectedLabels field survives storage"
-	allLabels.Spec.Labels.Priority = "P0"
-	allLabels.Spec.Execution.Bundle = e2eBundleRef
-	allLabels.Spec.Parameters = []models.WorkflowParameter{
-		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource for remediation"},
-	}
-	allLabels.Spec.DetectedLabels = &models.DetectedLabelsSchema{
-		HPAEnabled:      "true",
-		PDBProtected:    "true",
-		Stateful:        "true",
-		HelmManaged:     "true",
-		NetworkIsolated: "true",
-		GitOpsManaged:   "true",
-		GitOpsTool:      "flux",
-		ServiceMesh:     "istio",
-		PopulatedFields: []string{"hpaEnabled", "pdbProtected", "stateful", "helmManaged", "networkIsolated", "gitOpsManaged", "gitOpsTool", "serviceMesh"},
-	}
-	e2eTestAllDetectedLabelsContent = testutil.MarshalWorkflowCRD(allLabels)
-}
-
-// generateWorkflowContent returns valid inline YAML for CreateWorkflowInlineRequest
-// with the given workflowName and version. Useful for tests that need distinct
-// workflow versions or names to avoid idempotent 200 OK responses.
-// Issue #330: Uses builder pattern instead of brittle fmt.Sprintf.
-func generateWorkflowContent(workflowName, version string) string {
-	crd := testutil.NewTestWorkflowCRD(workflowName, "ScaleReplicas", "tekton")
-	crd.Spec.Labels.Component = []string{"v1/Pod"}
-	crd.Spec.Version = version
-	crd.Spec.Description.What = fmt.Sprintf("Generated workflow %s v%s for E2E testing", workflowName, version)
-	crd.Spec.Description.WhenToUse = "E2E tests that need distinct workflow versions"
-	crd.Spec.Labels.Priority = "P0"
-	crd.Spec.Execution.Bundle = e2eBundleRef
-	crd.Spec.Parameters = []models.WorkflowParameter{
-		{Name: "TARGET_RESOURCE", Type: "string", Required: true, Description: "Target resource for remediation"},
-	}
-	crd.Spec.DetectedLabels = &models.DetectedLabelsSchema{
-		HPAEnabled:      "true",
-		GitOpsTool:      "argocd",
-		PopulatedFields: []string{"hpaEnabled", "gitOpsTool"},
-	}
-	return testutil.MarshalWorkflowCRD(crd)
-}
-
-// ensureWorkflowRegistered creates a workflow or retrieves the existing one.
-// Handles all CreateWorkflow response types including the parallel race 500
-// (deterministic UUID PK collision when multiple Ginkgo processes register the
-// same content concurrently). On 409 Conflict or 500, falls back to querying
-// the workflow by name via ListWorkflows.
-func ensureWorkflowRegistered(ctx context.Context, client *dsgen.Client, content, workflowName string) (string, uuid.UUID) {
-	createReq := &dsgen.CreateWorkflowInlineRequest{Content: content}
-	createReq.Source.SetTo("e2e-test")
-
-	resp, err := client.CreateWorkflow(ctx, createReq)
-	Expect(err).ToNot(HaveOccurred(), "CreateWorkflow HTTP call should succeed")
-
-	switch r := resp.(type) {
-	case *dsgen.CreateWorkflowCreated:
-		wf := (*dsgen.RemediationWorkflow)(r)
-		return wf.WorkflowId.Value.String(), wf.WorkflowId.Value
-	case *dsgen.CreateWorkflowOK:
-		wf := (*dsgen.RemediationWorkflow)(r)
-		return wf.WorkflowId.Value.String(), wf.WorkflowId.Value
-	case *dsgen.CreateWorkflowConflict,
-		*dsgen.CreateWorkflowInternalServerError:
-		// 409: different content for same name+version (conflict)
-		// 500: parallel PK race — another process won the INSERT
-		// Both cases: the workflow exists in the DB, query it by name.
-		listResp, listErr := client.ListWorkflows(ctx, dsgen.ListWorkflowsParams{
-			WorkflowName: dsgen.NewOptString(workflowName),
-			Limit:        dsgen.NewOptInt(1),
-		})
-		listErr = ogenx.ToError(listResp, listErr)
-		Expect(listErr).ToNot(HaveOccurred(), "ListWorkflows should succeed for existing workflow")
-		listResult, ok := listResp.(*dsgen.WorkflowListResponse)
-		Expect(ok).To(BeTrue(), "Expected WorkflowListResponse, got %T", listResp)
-		Expect(listResult.Workflows).ToNot(BeEmpty(),
-			"Workflow '%s' returned %T but query found no results", workflowName, resp)
-		return listResult.Workflows[0].WorkflowId.Value.String(), listResult.Workflows[0].WorkflowId.Value
-	default:
-		Fail(fmt.Sprintf("Unexpected CreateWorkflow response type: %T", resp))
-		return "", uuid.Nil
-	}
 }
 
 // postAuditEventBatch posts multiple audit events using the ogen client and returns the event IDs
@@ -173,12 +80,12 @@ func postAuditEventBatch(
 // Minimal Payload Constructors for E2E API Testing
 // These create minimal valid payloads to test DataStorage API functionality
 
-func newMinimalGatewayPayload(signalType, alertName string) dsgen.AuditEventRequestEventData {
+func newMinimalGatewayPayload(alertName string) dsgen.AuditEventRequestEventData {
 	return dsgen.AuditEventRequestEventData{
 		Type: dsgen.AuditEventRequestEventDataGatewaySignalReceivedAuditEventRequestEventData,
 		GatewayAuditPayload: dsgen.GatewayAuditPayload{
 			EventType:   dsgen.GatewayAuditPayloadEventTypeGatewaySignalReceived,
-			SignalType:  dsgen.GatewayAuditPayloadSignalType(signalType),
+			SignalType:  dsgen.GatewayAuditPayloadSignalType("alert"),
 			SignalName:   alertName,
 			Namespace:   "default",
 			Fingerprint: "test-fingerprint",

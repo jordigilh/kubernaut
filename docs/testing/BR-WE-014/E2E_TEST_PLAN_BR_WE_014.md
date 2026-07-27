@@ -1,6 +1,6 @@
 # E2E Test Plan: BR-WE-014 (Kubernetes Job Execution Backend)
 
-**Version**: 1.1.0
+**Version**: 1.2.0
 **Created**: 2026-02-05
 **Status**: Active
 **Authority**: BR-WE-014 (Kubernetes Job Execution Backend)
@@ -42,7 +42,6 @@ Kubernetes API interactions including Job creation, status monitoring, and clean
 
 | Test ID | Scenario | Gherkin AC | BRs |
 |---------|----------|------------|-----|
-| E2E-WE-014-005 | Invalid executionEngine rejected by API server | AC Scenario 5 | BR-WE-014 |
 | E2E-WE-014-006 | Deterministic Job naming for resource locking | AC Scenario 6 | BR-WE-014, BR-WE-009 |
 | E2E-WE-014-007 | External Job deletion marks WFE as Failed | BR-WE-007 equivalent | BR-WE-014, BR-WE-007 |
 
@@ -53,6 +52,12 @@ Kubernetes API interactions including Job creation, status monitoring, and clean
 | Full platform E2E: OOMKill with Job backend | AC Scenario 8 | Requires all services deployed; deferred to platform E2E suite |
 | RO propagates execution_engine from catalog | AC Scenario 7 | Cross-service; belongs to RO E2E suite |
 | Default executionEngine applied when omitted | AC Scenario 4 | CRD has `+kubebuilder:default=tekton`; covered by existing Tekton tests |
+
+### Superseded
+
+| Test ID | Original Scenario | Gherkin AC | Reason |
+|---------|--------------------|------------|--------|
+| E2E-WE-014-005 | Invalid executionEngine rejected by API server | AC Scenario 5 | `executionEngine` was removed from `WorkflowExecutionSpec`; the CRD-level admission check this test targeted no longer exists. The engine is now resolved at runtime from DataStorage + `ExecutorRegistry`, and rejection of an unsupported engine is proven by `UT-WE-659-002` (`pkg/workflowexecution/controller_events_test.go`) and `IT-WE-015-001` (`test/integration/workflowexecution/ansible_dispatch_integration_test.go`) per the UT-proves-logic / IT-proves-wiring pyramid invariant. No E2E equivalent is required. |
 
 ---
 
@@ -129,16 +134,13 @@ Kubernetes API interactions including Job creation, status monitoring, and clean
 
 ---
 
-### E2E-WE-014-005: Invalid ExecutionEngine CRD Validation
+### E2E-WE-014-005: Superseded (see "Superseded" table above)
 
-**Business Outcome**: Invalid executionEngine values are rejected at API level, preventing misconfigured WFEs.
-
-**Steps**:
-1. Attempt to create WFE with `executionEngine: "ansible"` (invalid enum value)
-2. Assert creation fails with a validation error
-3. Assert no WFE is persisted in the API server
-
-**Pass Criteria**: API server rejects invalid enum value.
+This scenario originally validated CRD-level rejection of an invalid `executionEngine`
+enum value. That field was removed from `WorkflowExecutionSpec`; engine resolution and
+rejection now happen at runtime via DataStorage + `ExecutorRegistry`, and are covered by
+`UT-WE-659-002` and `IT-WE-015-001`. No E2E test exists for this ID -- it is intentionally
+retired rather than kept as a placeholder `Skip()`.
 
 ---
 

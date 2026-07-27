@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/go-logr/logr"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 	"k8s.io/client-go/dynamic"
@@ -64,6 +65,15 @@ func HandleRemediate(ctx context.Context, d *ToolDeps, args *RemediateArgs, user
 		}
 		var rr remediationv1.RemediationRequest
 		if getErr := d.Client.Get(ctx, crclient.ObjectKey{Namespace: ns, Name: name}, &rr); getErr != nil {
+			// Any Get failure (not-found, transient API error, RBAC) is
+			// treated as "no existing RR" so the LLM can proceed with
+			// creation rather than getting stuck on a dedup check --
+			// mirrors HandleReconnect's tolerant lookup (#1472, SI-10).
+			logr.FromContextOrDiscard(ctx).Info("kubernaut_remediate: RR lookup failed, treating as not found",
+				"rr_id", args.RRID, "error", getErr.Error())
+			//nolint:nilerr // intentional soft-fail: any Get error becomes
+			// AlreadyExists=false so the LLM proceeds with creation instead
+			// of surfacing a raw K8s error on a best-effort dedup check.
 			return RemediateResult{
 				RRID:          args.RRID,
 				Message:       "RemediationRequest not found",

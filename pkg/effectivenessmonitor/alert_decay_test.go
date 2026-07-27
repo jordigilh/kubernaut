@@ -123,14 +123,14 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 
 	// seedDecayEA creates an EA in Assessing phase with health=OK, hash=done,
 	// alert=not-yet-assessed, validity in the future.
-	seedDecayEA := func(ns, name string) *eav1.EffectivenessAssessment {
+	seedDecayEA := func(name string) *eav1.EffectivenessAssessment {
 		healthScore := 1.0
 		futureDeadline := metav1.NewTime(time.Now().Add(1 * time.Hour))
 		pastCheck := metav1.NewTime(time.Now().Add(-5 * time.Minute))
 		return &eav1.EffectivenessAssessment{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:              name,
-				Namespace:         ns,
+				Namespace:         testNs,
 				CreationTimestamp: metav1.NewTime(time.Now().Add(-30 * time.Minute)),
 			},
 			Spec: eav1.EffectivenessAssessmentSpec{
@@ -138,10 +138,10 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 				RemediationRequestPhase: "Verifying",
 				SignalName:              "HighMemoryUsage",
 				SignalTarget: eav1.TargetResource{
-					Kind: "Deployment", Name: "test-app", Namespace: ns,
+					Kind: "Deployment", Name: "test-app", Namespace: testNs,
 				},
 				RemediationTarget: eav1.TargetResource{
-					Kind: "Deployment", Name: "test-app", Namespace: ns,
+					Kind: "Deployment", Name: "test-app", Namespace: testNs,
 				},
 				Config: eav1.EAConfig{
 					StabilizationWindow: metav1.Duration{Duration: 0},
@@ -166,7 +166,7 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		return &decayAMClient{
 			alerts: []emclient.Alert{
 				{
-					Labels: map[string]string{"alertname": "HighMemoryUsage", "namespace": "test-ns"},
+					Labels: map[string]string{"alertname": "HighMemoryUsage", "namespace": testNs},
 					State:  "active",
 				},
 			},
@@ -183,12 +183,12 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// seedHealthyPod creates a Running/Ready pod matching the label selector
 	// used by getTargetHealthStatus (client.MatchingLabels{"app": targetName}).
 	// Health scorer returns 1.0 for TotalReplicas=1, ReadyReplicas=1, RestartCount=0.
-	seedHealthyPod := func(ns, targetName string) *corev1.Pod {
+	seedHealthyPod := func() *corev1.Pod {
 		return &corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      targetName + "-pod-0",
-				Namespace: ns,
-				Labels:    map[string]string{"app": targetName},
+				Name:      "test-app-pod-0",
+				Namespace: testNs,
+				Labels:    map[string]string{"app": "test-app"},
 			},
 			Status: corev1.PodStatus{
 				Phase: corev1.PodRunning,
@@ -208,10 +208,10 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-001: should keep EA open when resource is healthy but alert still firing (decay)", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-001"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea)
 
 		result, err := r.Reconcile(context.Background(), ctrl.Request{
@@ -244,10 +244,10 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-002: should complete with full reason and AlertScore=1.0 when alert resolves after decay monitoring", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-002"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		ea.Status.Components.AlertDecayRetries = 3
 		r, fc := makeReconcilerWithAM(s, resolvedAMClient(), nil, ea)
 
@@ -283,10 +283,10 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-003: should set alert_decay_timeout when validity expires during decay monitoring", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-003"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		ea.Status.Components.AlertDecayRetries = 5
 		pastDeadline := metav1.NewTime(time.Now().Add(-1 * time.Hour))
 		ea.Status.ValidityDeadline = &pastDeadline
@@ -340,10 +340,10 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-004: should assess alert normally when HealthScore is nil (non-pod resource)", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-004"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		ea.Status.Components.HealthScore = nil
 
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea)
@@ -373,10 +373,10 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-005: should complete with spec_drift when target spec changes during decay monitoring", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-005"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		ea.Status.Components.AlertDecayRetries = 2
 		ea.Status.Components.PostRemediationSpecHash = "sha256:abc123"
 		ea.Status.Components.CurrentSpecHash = "sha256:abc123"
@@ -409,11 +409,11 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-006: should accurately increment AlertDecayRetries on each reconcile", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-006"
 
-		ea := seedDecayEA(ns, name)
-		pod := seedHealthyPod(ns, "test-app")
+		ea := seedDecayEA(name)
+		pod := seedHealthyPod()
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea, pod)
 
 		for i := int32(1); i <= 3; i++ {
@@ -444,14 +444,14 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-007: should emit exactly one audit event on first decay detection, silence on subsequent", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-007"
 
 		spy := &decayAuditSpy{}
 		auditMgr := emaudit.NewManager(spy, ctrl.Log.WithName("test"))
 
-		ea := seedDecayEA(ns, name)
-		pod := seedHealthyPod(ns, "test-app")
+		ea := seedDecayEA(name)
+		pod := seedHealthyPod()
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), auditMgr, ea, pod)
 
 		// First reconcile — should emit decay detected audit event
@@ -488,10 +488,10 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-008: should complete EA normally when metrics are negative (proactive signal kills decay hypothesis)", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-008"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		metricsScore := 0.0
 		ea.Status.Components.MetricsAssessed = true
 		ea.Status.Components.MetricsScore = &metricsScore
@@ -526,10 +526,10 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-009: should continue decay monitoring when metrics are nil (neutral, not negative)", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-009"
 
-		ea := seedDecayEA(ns, name)
+		ea := seedDecayEA(name)
 		ea.Status.Components.MetricsAssessed = true
 		ea.Status.Components.MetricsScore = nil
 
@@ -555,20 +555,30 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 
 	// ========================================
 	// UT-EM-DECAY-010: Health re-probed live on each decay pass
-	// BR-EM-012: After decay detection, HealthAssessed is reset so the next
-	// reconcile re-probes health from K8s API. This prevents stale data from
-	// masking a genuine failure.
+	// BR-EM-012: While decay monitoring is active (AlertDecayRetries > 0,
+	// alert not yet assessed), health is re-probed live from the K8s API on
+	// every pass. This prevents stale data from masking a genuine failure.
+	//
+	// Issue #1701: HealthAssessed is NOT destructively cleared between
+	// probes — it stays true (reflecting the last confirmed assessment)
+	// throughout decay monitoring, so a terminal EA never falsely reports
+	// "health assessment did not complete" if validity expires before the
+	// next probe runs. Live re-probing (freshness) is proven separately by
+	// UT-EM-DECAY-011, which shows a degraded re-probe result overriding
+	// the earlier healthy score.
 	// ========================================
-	It("UT-EM-DECAY-010: should reset HealthAssessed and re-probe health on each decay pass", func() {
+	It("UT-EM-DECAY-010: should keep HealthAssessed=true while re-probing health on each decay pass", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-010"
 
-		ea := seedDecayEA(ns, name)
-		pod := seedHealthyPod(ns, "test-app")
+		ea := seedDecayEA(name)
+		pod := seedHealthyPod()
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea, pod)
 
-		// Pass 1: decay detected, HealthAssessed should be reset to false
+		// Pass 1: decay detected. HealthAssessed remains true (already
+		// confirmed); it is not destructively reset just to force a
+		// future re-probe.
 		_, err := r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
 		})
@@ -577,12 +587,14 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 		fetchedEA := &eav1.EffectivenessAssessment{}
 		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
 
-		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeFalse(),
-			"HealthAssessed should be false after pass 1 (reset for re-probe)")
+		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue(),
+			"HealthAssessed should remain true after pass 1 (last confirmed assessment, not reset — Issue #1701)")
 		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(1)),
 			"AlertDecayRetries should be 1 after pass 1")
 
-		// Pass 2: health re-probed (pod still healthy), decay detected again, HealthAssessed reset again
+		// Pass 2: health re-probed live again (pod still healthy) because
+		// decay monitoring is still active, even though HealthAssessed
+		// never dropped to false in between.
 		_, err = r.Reconcile(context.Background(), ctrl.Request{
 			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
 		})
@@ -590,8 +602,8 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 
 		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
 
-		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeFalse(),
-			"HealthAssessed should be false after pass 2 (re-probed then reset again)")
+		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue(),
+			"HealthAssessed should remain true after pass 2 (re-probed live, still confirmed)")
 		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(2)),
 			"AlertDecayRetries should be 2 after pass 2")
 		Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseAssessing),
@@ -607,11 +619,11 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 	// ========================================
 	It("UT-EM-DECAY-011: should kill decay hypothesis when health degrades on re-probe", func() {
 		s := buildScheme()
-		ns := "test-ns"
+		ns := testNs
 		name := "ea-decay-011"
 
-		ea := seedDecayEA(ns, name)
-		pod := seedHealthyPod(ns, "test-app")
+		ea := seedDecayEA(name)
+		pod := seedHealthyPod()
 		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea, pod)
 
 		// Pass 1: decay detected (health=1.0, alert=0.0, hash stable)
@@ -646,5 +658,70 @@ var _ = Describe("Alert Decay Detection (Issue #369, BR-EM-012)", func() {
 			"AlertDecayRetries should be 1 (only pass 1 was decay)")
 		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonFull),
 			"AssessmentReason should be 'full' (normal completion, not alert_decay_timeout)")
+	})
+
+	// ========================================
+	// UT-EM-DECAY-012: Validity expiry mid-decay-monitoring preserves last
+	// confirmed health assessment (Issue #1701)
+	//
+	// BR-EM-012 / BR-EM-001: A terminal EA must never report
+	// Components.HealthAssessed=false when a health assessment was in fact
+	// already confirmed. Previously, handleAlertDecaySuspected reset
+	// HealthAssessed=false on every decay pass to force a live re-probe on
+	// the *next* pass; if the validity deadline was reached before that
+	// next pass ran, handleExpired short-circuited and completed the EA
+	// with the stale false flag despite a valid last-known HealthScore.
+	//
+	// This regression test reproduces the exact two-pass race:
+	//   Pass 1: decay detected -> HealthAssessed destructively reset to
+	//           false (pre-fix behavior), AlertDecayRetries incremented.
+	//   (time passes, ValidityDeadline is reached before the next
+	//    reconcile can run and re-probe health)
+	//   Pass 2: handleExpired short-circuits on the expired deadline and
+	//           completes the EA using the stale HealthAssessed=false.
+	// ========================================
+	It("UT-EM-DECAY-012: should preserve HealthAssessed=true when validity expires mid-decay-monitoring", func() {
+		s := buildScheme()
+		ns := testNs
+		name := "ea-decay-012"
+
+		ea := seedDecayEA(name)
+		r, fc := makeReconcilerWithAM(s, firingAMClient(), nil, ea)
+
+		// Pass 1: decay detected on a healthy, still-firing-alert EA.
+		_, err := r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		fetchedEA := &eav1.EffectivenessAssessment{}
+		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
+		Expect(fetchedEA.Status.Components.AlertDecayRetries).To(Equal(int32(1)),
+			"sanity: decay should be detected on pass 1")
+
+		// Simulate the deadline being reached before the next reconcile
+		// (e.g. controller-runtime workqueue delay, node pressure, etc.)
+		// by moving ValidityDeadline into the past on the persisted object.
+		pastDeadline := metav1.NewTime(time.Now().Add(-1 * time.Second))
+		fetchedEA.Status.ValidityDeadline = &pastDeadline
+		Expect(fc.Status().Update(context.Background(), fetchedEA)).To(Succeed())
+
+		// Pass 2: validity has expired; the EA must complete now.
+		_, err = r.Reconcile(context.Background(), ctrl.Request{
+			NamespacedName: types.NamespacedName{Name: name, Namespace: ns},
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(fc.Get(context.Background(), types.NamespacedName{Name: name, Namespace: ns}, fetchedEA)).To(Succeed())
+
+		Expect(fetchedEA.Status.Phase).To(Equal(eav1.PhaseCompleted),
+			"EA should be Completed (validity expired)")
+		Expect(fetchedEA.Status.AssessmentReason).To(Equal(eav1.AssessmentReasonAlertDecayTimeout),
+			"Reason should be 'alert_decay_timeout' (decay was actively monitored)")
+		Expect(fetchedEA.Status.Components.HealthAssessed).To(BeTrue(),
+			"HealthAssessed must remain true — a valid health assessment was already confirmed on pass 1 and "+
+				"must not be reported as incomplete just because validity expired before the next re-probe (Issue #1701)")
+		Expect(fetchedEA.Status.Components.HealthScore).ToNot(BeNil(),
+			"HealthScore must be populated for downstream consumers")
 	})
 })

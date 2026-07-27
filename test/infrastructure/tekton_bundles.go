@@ -17,6 +17,7 @@ limitations under the License.
 package infrastructure
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -136,7 +137,7 @@ func buildTektonBundle(bundleRef, pipelineYAML string, output io.Writer) error {
 	// Build bundle using tkn CLI
 	// Note: tkn bundle push creates an OCI image in the local container registry
 	// The --override flag does not exist in tkn CLI - bundles are naturally overwritable
-	cmd := exec.Command("tkn", "bundle", "push", bundleRef,
+	cmd := exec.CommandContext(context.Background(), "tkn", "bundle", "push", bundleRef,
 		"-f", pipelineYAML,
 	)
 	cmd.Stdout = output
@@ -164,7 +165,7 @@ func loadBundleToKind(clusterName, bundleRef string, output io.Writer) error {
 
 	// Save bundle image to tar file
 	// Note: Bundles are OCI images, so we use podman save
-	saveCmd := exec.Command("podman", "save", "-o", tmpFile.Name(), bundleRef)
+	saveCmd := exec.CommandContext(context.Background(), "podman", "save", "-o", tmpFile.Name(), bundleRef)
 	saveCmd.Stdout = output
 	saveCmd.Stderr = output
 	if err := saveCmd.Run(); err != nil {
@@ -172,7 +173,7 @@ func loadBundleToKind(clusterName, bundleRef string, output io.Writer) error {
 	}
 
 	// Load bundle archive into Kind cluster
-	loadCmd := exec.Command("kind", "load", "image-archive", tmpFile.Name(), "--name", clusterName)
+	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive", tmpFile.Name(), "--name", clusterName)
 	loadCmd.Stdout = output
 	loadCmd.Stderr = output
 	if err := loadCmd.Run(); err != nil {

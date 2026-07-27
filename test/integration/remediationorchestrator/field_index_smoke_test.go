@@ -34,7 +34,7 @@ var _ = Describe("Field Index Smoke Test", func() {
 	var testNamespace string
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("field-index-smoke")
+		testNamespace = createTestNamespace(ctx, "field-index-smoke")
 	})
 
 	AfterEach(func() {

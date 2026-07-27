@@ -78,7 +78,7 @@ func (m *Manager) CurrentPhase(notification *notificationv1.NotificationRequest)
 	if notification.Status.Phase == "" {
 		return Pending
 	}
-	return Phase(notification.Status.Phase)
+	return notification.Status.Phase
 }
 
 // TransitionTo transitions a NotificationRequest to the target phase.
@@ -109,7 +109,7 @@ func (m *Manager) TransitionTo(notification *notificationv1.NotificationRequest,
 		return fmt.Errorf("invalid phase transition from %s to %s (see ValidTransitions map in pkg/notification/phase/types.go)", current, target)
 	}
 
-	notification.Status.Phase = notificationv1.NotificationPhase(target)
+	notification.Status.Phase = target
 	return nil
 }
 
@@ -126,16 +126,3 @@ func (m *Manager) TransitionTo(notification *notificationv1.NotificationRequest,
 func (m *Manager) IsInTerminalState(notification *notificationv1.NotificationRequest) bool {
 	return IsTerminal(m.CurrentPhase(notification))
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

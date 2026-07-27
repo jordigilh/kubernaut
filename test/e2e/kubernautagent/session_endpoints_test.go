@@ -17,6 +17,7 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -95,7 +96,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				return status.Status
 			}, 30*time.Second, 1*time.Second).Should(Equal("completed"),
@@ -165,7 +166,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				return status.Status
 			}, 30*time.Second, 1*time.Second).Should(Equal("completed"))
@@ -227,7 +228,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				return status.Status
 			}, 30*time.Second, 1*time.Second).Should(Equal("completed"))
@@ -291,7 +292,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				return status.Status
 			}, 30*time.Second, 1*time.Second).Should(Equal("completed"))
@@ -353,7 +354,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				return status.Status
 			}, 30*time.Second, 1*time.Second).Should(Equal("completed"))
@@ -379,7 +380,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 				"MOCK_MAX_RETRIES_EXHAUSTED triggers exactly 3 validation attempts")
 
 			for i, attempt := range result.ValidationAttemptsHistory {
-				Expect(attempt.Attempt).To(Equal(i + 1), "attempt number must be sequential")
+				Expect(attempt.Attempt).To(Equal(i+1), "attempt number must be sequential")
 				Expect(attempt.IsValid).To(BeFalse(), "is_valid must be false for failed validation")
 				Expect(attempt.Errors).ToNot(BeEmpty(), "errors must be present for failed validation")
 				Expect(attempt.Timestamp).ToNot(BeEmpty(), "timestamp must be present")
@@ -430,7 +431,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			Eventually(func() string {
 				status, pollErr := sessionClient.PollSession(ctx, sessionID)
 				if pollErr != nil {
-					return "error"
+					return errorFixture
 				}
 				observedStatuses[status.Status] = true
 				return status.Status
@@ -483,7 +484,8 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 				"Polling a non-existent session must return an error")
 
 			// CORRECTNESS: Error should indicate session not found
-			apiErr, ok := err.(*agentclient.APIError)
+			var apiErr *agentclient.APIError
+			ok := errors.As(err, &apiErr)
 			Expect(ok).To(BeTrue(), "Error should be an APIError type")
 			Expect(apiErr.StatusCode).To(Equal(http.StatusNotFound),
 				"Non-existent session should return HTTP 404")
@@ -515,7 +517,8 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			Expect(err).To(HaveOccurred(),
 				"Getting result for a non-existent session must return an error")
 
-			apiErr, ok := err.(*agentclient.APIError)
+			var apiErr *agentclient.APIError
+			ok := errors.As(err, &apiErr)
 			Expect(ok).To(BeTrue(), "Error should be an APIError type")
 			Expect(apiErr.StatusCode).To(Equal(http.StatusNotFound),
 				"Non-existent session result should return HTTP 404")

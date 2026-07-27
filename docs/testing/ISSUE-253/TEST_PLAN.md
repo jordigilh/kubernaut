@@ -40,7 +40,6 @@
 - **EM phase logic** (`pkg/effectivenessmonitor/phase/`): Updated valid transitions including `WaitingForPropagation`
 - **EA CRD config fields** (`api/effectivenessassessment/v1alpha1/`): `Spec.Config.HashComputeDelay` and `Spec.Config.AlertCheckDelay` set by RO (#277 migrated from old spec-level fields)
 - **Audit trail** (`pkg/effectivenessmonitor/audit/manager.go`): `hash_compute_delay`, `alert_check_delay` in `assessment.scheduled` event; propagation breakdown (`gitops_sync_delay`, `operator_reconcile_delay`) moved to RO `orchestrator.ea.created` audit event (#277)
-- **E2E validation** (`test/e2e/fullpipeline/02_async_hash_deferral_test.go`): Corrected timing assertions
 
 ### Out of Scope
 
@@ -68,7 +67,6 @@ The following existing #251 tests will require in-place updates to reflect #253'
 |-----------|----------------|
 | UT tests referencing `HashComputeDelay` (formerly `HashComputeAfter`) | Update to use `Config.HashComputeDelay` duration field |
 | IT tests asserting timing based on `StabilizationWindow` as anchor | Re-anchor to `(creation + HashComputeDelay) + StabilizationWindow` |
-| E2E `02_async_hash_deferral_test.go` timing assertions | Update expected values for corrected formula |
 
 ---
 
@@ -80,7 +78,7 @@ Authority: `03-testing-strategy.mdc` -- Per-Tier Testable Code Coverage.
 
 - **Unit**: >=80% of unit-testable code (config validation, compounding logic, phase transitions, timing computation)
 - **Integration**: >=80% of integration-testable code (EM reconciler phase transitions with real envtest, RO config-driven EA creation)
-- **E2E**: Existing E2E-FP-251-001 updated with corrected timing assertions
+- **E2E**: None (see [Tier Skip Rationale](#tier-skip-rationale) — `E2E-FP-253-001` removed, superseded by UT+IT)
 
 ### 2-Tier Minimum
 
@@ -134,7 +132,7 @@ Tests validate **business outcomes** — correct timing, correct phases, correct
 | BR-EM-010.4 | Health checks deferred until `(creation + HashComputeDelay) + StabilizationWindow` (envtest) | P0 | Integration | IT-EM-253-002 | Pass |
 | BR-EM-010.5 | Audit `assessment.scheduled` includes propagation delay fields | P1 | Integration | IT-EM-253-003 | Written |
 | BR-EM-010.4 | Async target `ValidityDeadline` extended correctly (envtest) | P0 | Integration | IT-EM-253-004 | Pass |
-| BR-EM-010.3, BR-EM-010.4 | Full pipeline: corrected timing, phase transitions, audit | P0 | E2E | E2E-FP-253-001 | Written |
+| BR-RO-103.3, BR-RO-103.5 | GVK resolution + `IsBuiltInGroup` + delay computation composed together for a CRD target not in the static GVK table (dynamic REST-mapper fallback) | P0 | Unit | UT-RO-253-009..013 | Pass |
 
 ### Status Legend
 
@@ -230,17 +228,17 @@ Format: `{TIER}-{SERVICE}-253-{SEQUENCE}`
 
 ### Tier 3: E2E Tests
 
-| ID | Business Outcome Under Test | Phase |
-|----|----------------------------|-------|
-| `E2E-FP-253-001` | Full pipeline with cert-manager CRD: corrected timing (propagation delay from config, not stabilization window); `WaitingForPropagation` phase observed; health checks after `(creation + HashComputeDelay) + StabilizationWindow`; audit includes `hash_compute_delay` | Written |
-
-**File**: `test/e2e/fullpipeline/02_async_hash_deferral_test.go` (update existing E2E-FP-251-001 with corrected assertions)
-
-**Note**: E2E-FP-253-001 extends the existing E2E-FP-251-001. The test infrastructure (cert-manager install, Mock LLM `cert_not_ready` scenario, namespace isolation) is already in place from #251. The test assertions are updated to validate the corrected timing model.
+None. `E2E-FP-253-001` (`test/e2e/fullpipeline/02_async_hash_deferral_test.go`) was removed — see [Tier Skip Rationale](#tier-skip-rationale).
 
 ### Tier Skip Rationale
 
-All tiers (UT, IT, E2E) are covered. No skips.
+**E2E removed (2026-07-21)**: `E2E-FP-253-001` ran real cert-manager (install/uninstall a cluster-wide operator per run, `Serial`-decorated to avoid racing the shared Kind cluster) to prove a `Certificate` CRD target through the full pipeline. Investigation (Issue #253 E2E audit) found this added no coverage beyond UT+IT:
+
+- `Certificate` resolves via `k8sutil.staticGVKByKind` (a static table), so the E2E run never exercised the dynamic REST-mapper fallback either — same as the IT tier's `EffectivenessAssessment` stand-in (envtest has no cert-manager CRDs, so `IT-RO-253-001/002` deliberately use `EffectivenessAssessment` instead; see commit `1fb6b8939`).
+- `CapturePreRemediationHash` (`internal/controller/remediationorchestrator/pre_remediation_hash.go`) fetches the target as `unstructured.Unstructured` and hashes it via `canonicalhash.CanonicalResourceFingerprint`, which is fully generic — no Kind-specific behavior differs between a real `Certificate` and `EffectivenessAssessment`. `ExtractConfigMapRefs`'s only Kind-specific branch (`resolvePodSpec`) treats both identically (neither matches a workload Kind, both hit the no-op default).
+- The one real gap — `computeEADelays` (GVK resolution + `IsBuiltInGroup` + delay computation) had never been exercised together against a CRD Kind outside the static table — is closed directly by `UT-RO-253-009..013` (`internal/controller/remediationorchestrator/timeout_handling_test.go`), using a synthetic CRD Kind/group (`CustomWidget`/`example.com`, mirroring `pkg/shared/k8s/gvk_test.go`) and a fake `meta.RESTMapper`. These pass with the existing implementation unchanged, confirming no latent bug — the gap was coverage-only.
+
+All remaining tiers (UT, IT) are covered. E2E is intentionally skipped for this BR: the full-pipeline user journey (alert → RR → ... → EA) is already proven by the non-`Serial` `E2E-FP-118-002` and other `fullpipeline` specs; re-running it with a real cert-manager operator only added `Serial` cluster-wide setup/teardown cost (a contributor to full-suite CI timeouts) without a business-outcome delta.
 
 ---
 
@@ -552,24 +550,22 @@ All tiers (UT, IT, E2E) are covered. No skips.
 - `EA.Spec.Config.HashComputeDelay = 2m30s` (compounded: gitOpsSyncDelay + operatorReconcileDelay)
 - RO emits `orchestrator.ea.created` audit with `gitops_sync_delay=2m`, `operator_reconcile_delay=30s`
 
-### E2E-FP-253-001: Full pipeline with corrected timing (cert-manager)
+### UT-RO-253-009..013: computeEADelays composed with dynamic REST-mapper fallback
 
-**BR**: BR-EM-010.3, BR-EM-010.4, BR-RO-103.3, BR-RO-103.5
-**Type**: E2E (Full Pipeline)
-**File**: `test/e2e/fullpipeline/02_async_hash_deferral_test.go`
+**BR**: BR-RO-103.3, BR-RO-103.5
+**Type**: Unit
+**File**: `internal/controller/remediationorchestrator/timeout_handling_test.go`
 
-**Given**: cert-manager installed in Kind; RO config with `operatorReconcileDelay=1m`; `CertManagerCertNotReady` alert injected; Mock LLM returns `rca_resource_kind: Certificate`
-**When**: Full Kubernaut pipeline runs (RR → SP → AA → WFE → Job → NR → EA)
+**Given**: A `Reconciler` with a fake `meta.RESTMapper` registering a synthetic CRD Kind (`CustomWidget`/`example.com`) absent from `k8sutil.staticGVKByKind`
+**When**: `computeEADelays` is called directly with that Kind as the remediation target (via `rr.Spec.TargetResource.Kind` or `dualTarget.Remediation.Kind`)
 **Then**:
-- EA phase transitions include `WaitingForPropagation`
-- `EA.Spec.Config.HashComputeDelay = operatorReconcileDelay` (1m, not 5m stabilization)
-- `EA.Status.PrometheusCheckAfter ≈ (creation + HashComputeDelay) + StabilizationWindow`
-- Audit `assessment.scheduled` includes `hash_compute_delay`
-- EA reaches terminal phase
+- The mapper-resolved GVK's non-built-in group is classified as a CRD (`isCRD=true`) and `hashComputeDelay` reflects `OperatorReconcileDelay` (and `GitOpsSyncDelay` when GitOps-managed)
+- A built-in Kind (`Pod`) is never classified as a CRD, even with the same mapper present
+- An unresolvable Kind degrades gracefully to a sync target (no error, `isCRD=false`) instead of failing the reconcile
+- An AI-identified `dualTarget.Remediation.Kind` overrides `rr.Spec.TargetResource.Kind` for detection
 
 **Acceptance Criteria**:
-- Timing assertions validate the corrected model (propagation ≠ stabilization)
-- No false-positive pass due to conflated timing
+- Closes the "classification logic tested for CRDs only via the static table, never the dynamic mapper fallback, and never composed with the three ingredients together" gap identified when auditing `E2E-FP-253-001` for removal (see Tier Skip Rationale above)
 
 ---
 

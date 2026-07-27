@@ -31,6 +31,11 @@ import (
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	pathV2Alerts = "/api/v2/alerts"
+)
+
 // fetchMetricsAssessedPayload queries the audit trail for the
 // effectiveness.metrics.assessed event matching correlationID and returns
 // its typed metric_deltas sub-object. Used to prove the audit event content
@@ -70,7 +75,7 @@ func fetchMetricsAssessedPayload(correlationID string) ogenclient.EffectivenessA
 // cluster-scoped builders, not the namespace-scoped ones).
 func promQuerySent(substr string) bool {
 	for _, req := range mockProm.GetRequestLog() {
-		if req.Path != "/api/v1/query_range" {
+		if req.Path != pathQueryRange {
 			continue
 		}
 		for _, q := range req.Query["query"] {
@@ -224,7 +229,7 @@ var _ = Describe("Cluster-Scoped Resource Assessment Integration (Issue #193, BR
 		requests := mockAM.GetRequestLog()
 		found := false
 		for _, req := range requests {
-			if req.Path != "/api/v2/alerts" {
+			if req.Path != pathV2Alerts {
 				continue
 			}
 			for _, f := range req.Query["filter"] {

@@ -134,8 +134,6 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 			return
 		}
 
-		start := time.Now()
-
 		// Read, parse, and validate signal
 		signal, err := s.readParseValidateSignal(ctx, w, r, adapter, logger)
 		if err != nil {
@@ -166,7 +164,7 @@ func (s *Server) createAdapterHandler(adapter adapters.SignalAdapter) http.Handl
 		}
 
 		// Send success response
-		s.sendSuccessResponse(w, r, response, adapter, start)
+		s.sendSuccessResponse(w, response)
 	}
 }
 
@@ -187,8 +185,6 @@ func (s *Server) handleBatchRequest(
 	batchAdapter adapters.BatchParser,
 	logger logr.Logger,
 ) {
-	start := time.Now()
-
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -224,12 +220,12 @@ func (s *Server) handleBatchRequest(
 	// Single-alert batch: use standard single-signal pipeline to preserve
 	// HTTP status contracts (201/202/500/504) for backward compatibility.
 	if len(signals) == 1 {
-		s.processSingleSignal(ctx, w, r, adapter, signals[0], logger, start)
+		s.processSingleSignal(ctx, w, r, adapter, signals[0], logger)
 		return
 	}
 
 	// Multi-alert batch: process each signal independently, return 207.
-	s.processMultiSignalBatch(ctx, w, r, adapter, signals, logger)
+	s.processMultiSignalBatch(ctx, w, adapter, signals, logger)
 }
 
 // processSingleSignal handles a single signal through the standard pipeline,
@@ -241,7 +237,6 @@ func (s *Server) processSingleSignal(
 	adapter adapters.SignalAdapter,
 	signal *types.NormalizedSignal,
 	logger logr.Logger,
-	start time.Time,
 ) {
 	if valErr := adapter.Validate(signal); valErr != nil {
 		logger.Info("Signal validation failed",
@@ -271,15 +266,16 @@ func (s *Server) processSingleSignal(
 		return
 	}
 
-	s.sendSuccessResponse(w, r, response, adapter, start)
+	s.sendSuccessResponse(w, response)
 }
 
 // processMultiSignalBatch processes multiple signals independently and returns
-// HTTP 207 Multi-Status with per-alert results (#1036).
+// HTTP 207 Multi-Status with per-alert results (#1036). Per-signal failures
+// are captured in the response body (via processOneSignalInBatch), not
+// written as an HTTP error response, so this needs no *http.Request.
 func (s *Server) processMultiSignalBatch(
 	ctx context.Context,
 	w http.ResponseWriter,
-	r *http.Request,
 	adapter adapters.SignalAdapter,
 	signals []*types.NormalizedSignal,
 	logger logr.Logger,
@@ -437,13 +433,13 @@ func (s *Server) handleProcessingError(
 	s.writeInternalError(w, r, "Internal server error")
 }
 
-// sendSuccessResponse sends the success HTTP response with metrics recording
+// sendSuccessResponse sends the success HTTP response. Metrics recording is
+// handled by middleware.HTTPMetrics, not here (Phase 3a of FedRAMP
+// remediation removed the duplicate observation that used to need
+// adapter/start), so it takes only what it writes into the response.
 func (s *Server) sendSuccessResponse(
 	w http.ResponseWriter,
-	r *http.Request,
 	response *ProcessingResponse,
-	adapter adapters.SignalAdapter,
-	start time.Time,
 ) {
 	// Determine HTTP status code based on response status
 	statusCode := http.StatusCreated
@@ -498,6 +494,11 @@ func (s *Server) validateScope(ctx context.Context, signal *types.NormalizedSign
 			"namespace", signal.Namespace,
 			"kind", signal.Resource.Kind,
 			"name", signal.Resource.Name)
+		// nolint:nilnil // intentional "scope check passed, continue
+		// processing" sentinel, not an error — sole caller
+		// (signal_ingestion_process.go) already guards with
+		// `else if rejection != nil` before using the response (Issue #1546
+		// Tier 2).
 		return nil, nil
 	}
 

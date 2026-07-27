@@ -1,13 +1,13 @@
 {{- if .Values.fleetmetadatacache.enabled }}
 {{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml }}
 {{- if not $fmcFleetPreamble.config.mcpGatewayEndpoint }}
-{{- fail "fleetmetadatacache.mcpGatewayEndpoint is required when fleetmetadatacache.enabled=true — FleetMetadataCache polls remote clusters via the MCP Gateway (set it directly, or set global.fleet.mcpGatewayEndpoint if shared across services)" }}
+{{- fail "global.fleet.mcpGatewayEndpoint is required when fleetmetadatacache.enabled=true — FleetMetadataCache polls remote clusters via the MCP Gateway" }}
 {{- end }}
 {{- if not $fmcFleetPreamble.oauth2.tokenURL }}
-{{- fail "fleetmetadatacache.oauth2.tokenURL is required when fleetmetadatacache.enabled=true — MCP Gateway requires OAuth2 authentication (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
+{{- fail "global.fleet.oauth2.tokenURL is required when fleetmetadatacache.enabled=true — MCP Gateway requires OAuth2 authentication" }}
 {{- end }}
 {{- if not $fmcFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "fleetmetadatacache.oauth2.credentialsSecretRef is required when fleetmetadatacache.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
+{{- fail "global.fleet.oauth2.credentialsSecretRef (or fleetmetadatacache.oauth2.credentialsSecretRef) is required when fleetmetadatacache.enabled=true (Secret must contain keys: client-id, client-secret)" }}
 {{- end }}
 ---
 apiVersion: v1
@@ -23,10 +23,13 @@ data:
   config.yaml: |
     server:
       apiAddr: ":8080"
-      metricsAddr: ":8081"
+      healthAddr: ":8081"
+      metricsAddr: ":9090"
+      tls:
+        certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
     mcpGateway:
       endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
-      gatewayType: {{ .Values.fleetmetadatacache.gatewayType | quote }}
+      gatewayType: {{ $fmcFleetPreamble.config.mcpGatewayType | quote }}
       namespace: {{ .Values.fleetmetadatacache.namespace | quote }}
     valkey:
       addr: {{ .Values.fleetmetadatacache.valkeyAddr | quote }}
@@ -75,19 +78,22 @@ spec:
             - name: api
               containerPort: 8080
               protocol: TCP
-            - name: metrics
+            - name: health
               containerPort: 8081
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
               protocol: TCP
           livenessProbe:
             httpGet:
               path: /healthz
-              port: api
+              port: health
             initialDelaySeconds: 5
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /readyz
-              port: api
+              port: health
             initialDelaySeconds: 3
             periodSeconds: 5
           resources:
@@ -99,6 +105,9 @@ spec:
             - name: oauth2-credentials
               mountPath: /etc/fleetmetadatacache/fleet-oauth2
               readOnly: true
+            - name: tls-certs
+              mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
+              readOnly: true
       volumes:
         - name: config
           configMap:
@@ -106,6 +115,10 @@ spec:
         - name: oauth2-credentials
           secret:
             secretName: {{ $fmcFleetPreamble.oauth2.credentialsSecretRef }}
+        - name: tls-certs
+          secret:
+            secretName: fleetmetadatacache-tls
+            optional: true
 ---
 apiVersion: v1
 kind: Service
@@ -125,8 +138,12 @@ spec:
       port: 8080
       targetPort: api
       protocol: TCP
-    - name: metrics
+    - name: health
       port: 8081
+      targetPort: health
+      protocol: TCP
+    - name: metrics
+      port: 9090
       targetPort: metrics
       protocol: TCP
 ---
@@ -139,6 +156,15 @@ metadata:
     app.kubernetes.io/name: fleetmetadatacache
     app.kubernetes.io/component: fleet-metadata-cache
     {{- include "kubernaut.labels" . | nindent 4 }}
+{{- /*
+#1686 (BR-RBAC-020): FMC's ClusterRole exists solely to grant its
+ClusterRegistry's CRD watch (there is no other rule in this ClusterRole),
+so when fleetmetadatacache.namespace scopes that watch to one namespace, the
+ClusterRole/ClusterRoleBinding are skipped entirely in favor of the
+namespace-scoped Role/RoleBinding below (least privilege) instead of
+rendering a redundant empty ClusterRole.
+*/}}
+{{- if not .Values.fleetmetadatacache.namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -148,7 +174,7 @@ metadata:
     app.kubernetes.io/name: fleetmetadatacache
     {{- include "kubernaut.labels" . | nindent 4 }}
 rules:
-{{- if eq .Values.fleetmetadatacache.gatewayType "kuadrant" }}
+{{- if eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant" }}
   - apiGroups: ["mcp.kuadrant.io"]
     resources: ["mcpserverregistrations"]
     verbs: ["get", "list", "watch"]
@@ -179,6 +205,12 @@ subjects:
   - kind: ServiceAccount
     name: fleetmetadatacache
     namespace: {{ .Release.Namespace }}
+{{- else }}
+---
+# #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rules
+# above, granted instead of them when fleetmetadatacache.namespace is set.
+{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "fleetmetadatacache" "serviceAccount" "fleetmetadatacache" "namespace" .Values.fleetmetadatacache.namespace "appLabels" "app.kubernetes.io/name: fleetmetadatacache" "mcpServerRegistrations" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "kuadrantGateways" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "eaigwBackends" (ne $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+{{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -207,11 +239,7 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
-    - from:
-        - namespaceSelector: {}
-      ports:
-        - protocol: TCP
-          port: 8081
+    {{- include "kubernaut.np.metricsIngress" . | nindent 4 }}
   egress:
     - to:
         - podSelector:

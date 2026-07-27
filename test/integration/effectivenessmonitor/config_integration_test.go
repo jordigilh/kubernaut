@@ -33,7 +33,7 @@ var _ = Describe("Configuration Integration (BR-EM-006, BR-EM-007, BR-EM-008)", 
 	// IT-EM-CF-001: Controller starts with valid config -> reconciler operational
 	// ========================================
 	It("IT-EM-CF-001: controller should be operational and reconcile EAs to completion", func() {
-		ns := createTestNamespace("em-cf-001")
+		ns := createTestNamespace(ctx, "em-cf-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA to verify controller is operational")
@@ -57,7 +57,7 @@ var _ = Describe("Configuration Integration (BR-EM-006, BR-EM-007, BR-EM-008)", 
 	// IT-EM-CF-003: Custom validityWindow -> EA deadline computed correctly
 	// ========================================
 	It("IT-EM-CF-003: should respect custom validity window in EA spec", func() {
-		ns := createTestNamespace("em-cf-003")
+		ns := createTestNamespace(ctx, "em-cf-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with custom validity deadline (30 minutes from now)")

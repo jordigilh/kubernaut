@@ -70,7 +70,7 @@ func (h *BlockedHandler) Handle(ctx context.Context, rr *remediationv1.Remediati
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
 	if rr.Status.BlockedUntil == nil {
-		switch remediationv1.BlockReason(rr.Status.BlockReason) {
+		switch rr.Status.BlockReason {
 		case remediationv1.BlockReasonResourceBusy:
 			result, err := h.callbacks.RecheckResourceBusyBlock(ctx, rr)
 			if err != nil {
@@ -105,7 +105,7 @@ func (h *BlockedHandler) Handle(ctx context.Context, rr *remediationv1.Remediati
 // block reasons transition the RR to terminal Failed. Extracted from Handle
 // per GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 func (h *BlockedHandler) handleCooldownExpired(ctx context.Context, rr *remediationv1.RemediationRequest, logger logr.Logger) (phase.TransitionIntent, error) {
-	if remediationv1.BlockReason(rr.Status.BlockReason) == remediationv1.BlockReasonUnmanagedResource {
+	if rr.Status.BlockReason == remediationv1.BlockReasonUnmanagedResource {
 		result, err := h.callbacks.HandleUnmanagedResourceExpiry(ctx, rr)
 		if err != nil {
 			return phase.TransitionIntent{}, err

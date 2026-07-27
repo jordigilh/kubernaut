@@ -53,7 +53,7 @@ func NewWorker(db *sql.DB, config Config, logger logr.Logger) *Worker {
 
 // Start begins the periodic purge loop. No-op if retention is disabled.
 // SRE-1: Emits datastorage_retention_enabled gauge to guard RetentionPurgeStalled alert.
-func (w *Worker) Start(ctx context.Context) {
+func (w *Worker) Start(ctx context.Context) { //nolint:contextcheck // defensive nil-ctx fallback for the background purge loop, which runs independent of any single request
 	if !w.config.Enabled {
 		dsmetrics.RetentionEnabled.Set(0)
 		w.logger.Info("Retention worker disabled (config.retention.enabled=false)")

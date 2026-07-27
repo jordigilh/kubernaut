@@ -69,7 +69,7 @@ var _ = Describe("Status Update Invariant (UT-EM-254-003, #254)", func() {
 
 	// makeReconcilerWithCounter creates a reconciler backed by a fake client
 	// that counts SubResource Update calls via an interceptor.
-	makeReconcilerWithCounter := func(s *runtime.Scheme, objs ...client.Object) (*controller.Reconciler, client.Client, *int32) {
+	makeReconcilerWithCounter := func(s *runtime.Scheme, objs ...client.Object) (*controller.Reconciler, *int32) {
 		var updateCount int32
 
 		fakeClient := fake.NewClientBuilder().
@@ -99,7 +99,7 @@ var _ = Describe("Status Update Invariant (UT-EM-254-003, #254)", func() {
 			AuditManager:       nil,
 			DSQuerier:          nil,
 		}, cfg)
-		return r, fakeClient, &updateCount
+		return r, &updateCount
 	}
 
 	seedPendingEA := func(ns, name string) *eav1.EffectivenessAssessment {
@@ -127,7 +127,7 @@ var _ = Describe("Status Update Invariant (UT-EM-254-003, #254)", func() {
 	It("UT-EM-254-003a: Assessing path (Pending→Completed) executes exactly one Status().Update", func() {
 		s := buildScheme()
 		ea := seedPendingEA("default", "ea-inv-003a")
-		r, _, updateCount := makeReconcilerWithCounter(s, ea)
+		r, updateCount := makeReconcilerWithCounter(s, ea)
 
 		ctx := context.Background()
 		req := ctrl.Request{NamespacedName: types.NamespacedName{
@@ -168,7 +168,7 @@ var _ = Describe("Status Update Invariant (UT-EM-254-003, #254)", func() {
 				},
 			},
 		}
-		r, _, updateCount := makeReconcilerWithCounter(s, ea)
+		r, updateCount := makeReconcilerWithCounter(s, ea)
 
 		ctx := context.Background()
 		req := ctrl.Request{NamespacedName: types.NamespacedName{
@@ -202,7 +202,7 @@ var _ = Describe("Status Update Invariant (UT-EM-254-003, #254)", func() {
 				},
 			},
 		}
-		r, _, updateCount := makeReconcilerWithCounter(s, ea)
+		r, updateCount := makeReconcilerWithCounter(s, ea)
 
 		ctx := context.Background()
 		req := ctrl.Request{NamespacedName: types.NamespacedName{
@@ -242,7 +242,7 @@ var _ = Describe("Status Update Invariant (UT-EM-254-003, #254)", func() {
 				CompletedAt:      &now,
 			},
 		}
-		r, _, updateCount := makeReconcilerWithCounter(s, ea)
+		r, updateCount := makeReconcilerWithCounter(s, ea)
 
 		ctx := context.Background()
 		req := ctrl.Request{NamespacedName: types.NamespacedName{

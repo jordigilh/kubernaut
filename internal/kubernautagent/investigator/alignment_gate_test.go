@@ -43,12 +43,12 @@ func (s *gateAuditStore) StoreAudit(_ context.Context, event *audit.AuditEvent) 
 	return nil
 }
 
-func (s *gateAuditStore) eventsByAction(action string) []*audit.AuditEvent {
+func (s *gateAuditStore) eventsByAction() []*audit.AuditEvent {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []*audit.AuditEvent
 	for _, e := range s.events {
-		if e.EventAction == action {
+		if e.EventAction == audit.ActionWorkflowAlignmentGate {
 			out = append(out, e)
 		}
 	}
@@ -83,7 +83,7 @@ var _ = Describe("Target-Workflow Alignment Gate — #934", func() {
 
 			investigator.CheckWorkflowTargetAlignment(context.Background(), result, v, "corr-001", store, logger)
 
-			gateEvents := store.eventsByAction("workflow_target_alignment_gate")
+			gateEvents := store.eventsByAction()
 			Expect(gateEvents).To(HaveLen(1), "exactly one alignment gate audit event expected")
 			Expect(gateEvents[0].EventType).To(Equal(audit.EventTypeLLMRequest),
 				"must use EventTypeLLMRequest for DS persistence (consistent with sameKindValidationGate)")
@@ -110,7 +110,7 @@ var _ = Describe("Target-Workflow Alignment Gate — #934", func() {
 
 			investigator.CheckWorkflowTargetAlignment(context.Background(), result, v, "corr-002", store, logger)
 
-			gateEvents := store.eventsByAction("workflow_target_alignment_gate")
+			gateEvents := store.eventsByAction()
 			Expect(gateEvents).To(HaveLen(1))
 			Expect(gateEvents[0].EventOutcome).To(Equal(audit.OutcomeSuccess))
 			Expect(gateEvents[0].Data["aligned"]).To(BeTrue())
@@ -173,7 +173,7 @@ var _ = Describe("Target-Workflow Alignment Gate — #934", func() {
 
 			investigator.CheckWorkflowTargetAlignment(context.Background(), result, v, "corr-005", store, logger)
 
-			Expect(store.eventsByAction("workflow_target_alignment_gate")).To(BeEmpty(),
+			Expect(store.eventsByAction()).To(BeEmpty(),
 				"UT-KA-934-012: no audit event when WorkflowID is empty")
 			Expect(result.Warnings).To(BeEmpty())
 		})
@@ -192,7 +192,7 @@ var _ = Describe("Target-Workflow Alignment Gate — #934", func() {
 
 			investigator.CheckWorkflowTargetAlignment(context.Background(), result, v, "corr-006", store, logger)
 
-			Expect(store.eventsByAction("workflow_target_alignment_gate")).To(BeEmpty(),
+			Expect(store.eventsByAction()).To(BeEmpty(),
 				"UT-KA-934-013: no audit event when workflow metadata missing from catalog")
 			Expect(result.Warnings).To(BeEmpty())
 		})

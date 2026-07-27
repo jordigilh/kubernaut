@@ -368,11 +368,12 @@ func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Par
 	case part.FunctionResponse != nil:
 		text := convertFunctionResponse(part.FunctionResponse)
 		if text != nil {
-			if decisionMetaTools[part.FunctionResponse.Name] {
+			switch {
+			case decisionMetaTools[part.FunctionResponse.Name]:
 				_ = bridge.EmitStructuredMeta(ctx, text.(a2a.TextPart).Text, map[string]any{"type": MetaTypeDecision})
-			} else if outputMetaTools[part.FunctionResponse.Name] {
+			case outputMetaTools[part.FunctionResponse.Name]:
 				_ = bridge.EmitStatus(ctx, text.(a2a.TextPart).Text)
-			} else {
+			default:
 				_ = bridge.EmitReasoning(ctx, text.(a2a.TextPart).Text)
 			}
 		}

@@ -1,13 +1,13 @@
 # PROPOSAL-EXT-007: Pre-Investigation AgenticWorkflow Pipeline in Signal Processing
 
-**Status**: Draft (first pass, requires further refinement)  
+**Status**: ❌ REJECTED (July 19, 2026) — the classification problem this proposal targets is already solved without a new agentic layer: signal-source routing (`targetSystem`-style domain) is Gateway/AF-owned at ingestion (`RemediationRequestSpec.TargetType`, `SignalSource`, both wired in `pkg/gateway/processing/crd_creator.go`), and cross-domain root-cause reasoning is investigation work that belongs to the downstream investigation agent (KA / opaque OCI agent per [#1536](https://github.com/jordigilh/kubernaut/issues/1536)), not a new SP-owned Triage/Correlator agent tier. SP's role stays deterministic (Rego) enrichment/consolidation, consistent with the precedent set by [#739](https://github.com/jordigilh/kubernaut/issues/739) (non-K8s `targetSystem` routing via DS catalog field, not an LLM classifier). Retained for historical context only; also depends on [PROPOSAL-EXT-004/005/006](.), all ❌ Superseded.  
 **Date**: May 23, 2026  
 **Author**: Kubernaut Architecture Team  
 **Confidence**: 65% (architectural design, no spike validation yet)  
-**Related**: [PROPOSAL-EXT-004](PROPOSAL-EXT-004-goose-recipes.md), [PROPOSAL-EXT-005](PROPOSAL-EXT-005-oracle-agent-spec.md), [PROPOSAL-EXT-006](PROPOSAL-EXT-006-deep-agents.md)  
+**Related**: [PROPOSAL-EXT-004](PROPOSAL-EXT-004-goose-recipes.md) (superseded), [PROPOSAL-EXT-005](PROPOSAL-EXT-005-oracle-agent-spec.md) (superseded), [PROPOSAL-EXT-006](PROPOSAL-EXT-006-deep-agents.md) (superseded)  
 **Inspiration**: [Athena AIOps Deep Agent](https://github.com/rhpds/athena-aiops-deep-agent) (Red Hat Summit 2026 workshop)  
 **Tracking**: [#1242](https://github.com/jordigilh/kubernaut/issues/1242)  
-**Target**: v1.6 milestone  
+**Target**: ~~v1.6 milestone~~ — rejected, no successor planned  
 
 ---
 

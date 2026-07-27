@@ -96,7 +96,7 @@ var _ = Describe("BR-GATEWAY-002: Signal Ingestion - Prometheus Adapter", func()
 			Expect(err).NotTo(HaveOccurred())
 			Expect(signal.Resource.Name).To(Equal("api-gateway"),
 				"Must identify the Deployment needing remediation")
-			Expect(signal.Resource.Kind).To(Equal("Deployment"),
+			Expect(signal.Resource.Kind).To(Equal(deployment),
 				"Must distinguish Deployments from Pods")
 		})
 

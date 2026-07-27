@@ -24,6 +24,11 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	nilFixture = "<nil>"
+)
+
 // ExpectedAuditEvent defines expected values for an audit event.
 // Fields left empty (zero value) will not be validated.
 // Based on ogenclient.AuditEvent schema from pkg/datastorage/client/generated.go
@@ -201,16 +206,16 @@ func (m *AuditEventMatcher) Match(actual interface{}) (bool, error) {
 // FailureMessage implements GomegaMatcher.
 func (m *AuditEventMatcher) FailureMessage(actual interface{}) string {
 	event := actual.(ogenclient.AuditEvent)
-	severityStr := "<nil>"
+	severityStr := nilFixture
 	if event.Severity.IsSet() {
 		severityStr = event.Severity.Value
 	}
-	expectedSeverityStr := "<nil>"
+	expectedSeverityStr := nilFixture
 	if m.expected.Severity != nil {
 		expectedSeverityStr = *m.expected.Severity
 	}
 	// Handle EventOutcome pointer
-	expectedOutcomeStr := "<nil>"
+	expectedOutcomeStr := nilFixture
 	if m.expected.EventOutcome != nil {
 		expectedOutcomeStr = string(*m.expected.EventOutcome)
 	}

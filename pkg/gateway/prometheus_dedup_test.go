@@ -28,10 +28,10 @@ import (
 )
 
 // newPrometheusAlertJSON creates a Prometheus AlertManager webhook JSON payload for testing.
-// alertname, namespace, and resource labels are configurable.
-func newPrometheusAlertJSON(alertname, namespace string, labels map[string]string) []byte {
+// alertname and resource labels are configurable; namespace is fixed to "prod".
+func newPrometheusAlertJSON(alertname string, labels map[string]string) []byte {
 	// Build label string
-	labelParts := fmt.Sprintf(`"alertname": "%s", "namespace": "%s"`, alertname, namespace)
+	labelParts := fmt.Sprintf(`"alertname": "%s", "namespace": "%s"`, alertname, "prod")
 	for k, v := range labels {
 		labelParts += fmt.Sprintf(`, "%s": "%s"`, k, v)
 	}
@@ -61,12 +61,12 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 			// LLM investigates the resource state, not the signal type.
 			adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
-			alert1 := newPrometheusAlertJSON("KubePodCrashLooping", "prod",
+			alert1 := newPrometheusAlertJSON("KubePodCrashLooping",
 				map[string]string{"pod": "payment-api-789", "severity": "critical"})
 			signal1, err := adapter.Parse(ctx, alert1)
 			Expect(err).ToNot(HaveOccurred())
 
-			alert2 := newPrometheusAlertJSON("KubePodNotReady", "prod",
+			alert2 := newPrometheusAlertJSON("KubePodNotReady",
 				map[string]string{"pod": "payment-api-789", "severity": "warning"})
 			signal2, err := adapter.Parse(ctx, alert2)
 			Expect(err).ToNot(HaveOccurred())
@@ -81,12 +81,12 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 			// Business scenario: Alerts targeting Deployment directly (no pod label)
 			adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
-			alert1 := newPrometheusAlertJSON("DeploymentReplicasMismatch", "prod",
+			alert1 := newPrometheusAlertJSON("DeploymentReplicasMismatch",
 				map[string]string{"deployment": "api-gateway", "severity": "warning"})
 			signal1, err := adapter.Parse(ctx, alert1)
 			Expect(err).ToNot(HaveOccurred())
 
-			alert2 := newPrometheusAlertJSON("KubeDeploymentRolloutStuck", "prod",
+			alert2 := newPrometheusAlertJSON("KubeDeploymentRolloutStuck",
 				map[string]string{"deployment": "api-gateway", "severity": "critical"})
 			signal2, err := adapter.Parse(ctx, alert2)
 			Expect(err).ToNot(HaveOccurred())
@@ -103,14 +103,14 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
 					if kind == "Pod" && name == "payment-api-789" {
-						return "Deployment", "payment-api", nil
+						return deployment, appPaymentAPI, nil
 					}
 					return kind, name, nil
 				},
 			}
 			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
-			alert := newPrometheusAlertJSON("KubePodCrashLooping", "prod",
+			alert := newPrometheusAlertJSON("KubePodCrashLooping",
 				map[string]string{"pod": "payment-api-789", "severity": "critical"})
 			signal, err := adapter.Parse(ctx, alert)
 			Expect(err).ToNot(HaveOccurred())
@@ -118,8 +118,8 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 			// Fingerprint should be based on the Deployment, not the Pod
 			expectedFingerprint := types.CalculateOwnerFingerprint(types.ResourceIdentifier{
 				Namespace: "prod",
-				Kind:      "Deployment",
-				Name:      "payment-api",
+				Kind:      deployment,
+				Name:      appPaymentAPI,
 			})
 			Expect(signal.Fingerprint).To(Equal(expectedFingerprint),
 				"Pod-level alerts should be fingerprinted at the Deployment level via owner chain resolution")
@@ -129,17 +129,17 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 			// Mock: Both pods are owned by Deployment "payment-api"
 			resolver := &mockOwnerResolver{
 				resolveFunc: func(ctx context.Context, namespace, kind, name string) (string, string, error) {
-					return "Deployment", "payment-api", nil
+					return deployment, appPaymentAPI, nil
 				},
 			}
 			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
-			alert1 := newPrometheusAlertJSON("KubePodCrashLooping", "prod",
+			alert1 := newPrometheusAlertJSON("KubePodCrashLooping",
 				map[string]string{"pod": "payment-api-abc123", "severity": "critical"})
 			signal1, err := adapter.Parse(ctx, alert1)
 			Expect(err).ToNot(HaveOccurred())
 
-			alert2 := newPrometheusAlertJSON("KubePodNotReady", "prod",
+			alert2 := newPrometheusAlertJSON("KubePodNotReady",
 				map[string]string{"pod": "payment-api-def456", "severity": "warning"})
 			signal2, err := adapter.Parse(ctx, alert2)
 			Expect(err).ToNot(HaveOccurred())
@@ -160,7 +160,7 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 			}
 			adapter := adapters.NewPrometheusAdapter(resolver, adapters.NewTestAPIResourceRegistry())
 
-			alert := newPrometheusAlertJSON("KubePodCrashLooping", "prod",
+			alert := newPrometheusAlertJSON("KubePodCrashLooping",
 				map[string]string{"pod": "payment-api-789", "severity": "critical"})
 			signal, err := adapter.Parse(ctx, alert)
 			Expect(err).To(HaveOccurred())
@@ -175,7 +175,7 @@ var _ = Describe("BR-GATEWAY-004: Prometheus Deduplication - Owner Chain Resolut
 		It("should exclude alertname from fingerprint even without OwnerResolver", func() {
 			adapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
 
-			alert := newPrometheusAlertJSON("KubePodCrashLooping", "prod",
+			alert := newPrometheusAlertJSON("KubePodCrashLooping",
 				map[string]string{"pod": "payment-api-789", "severity": "critical"})
 			signal, err := adapter.Parse(ctx, alert)
 			Expect(err).ToNot(HaveOccurred())

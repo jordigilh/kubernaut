@@ -75,7 +75,7 @@ var _ = Describe("IT-RO-1511-001: RO propagates SP.Status.ClusterClassification 
 	)
 
 	BeforeEach(func() {
-		namespace = createTestNamespace("ro-cluster")
+		namespace = createTestNamespace(ctx, "ro-cluster")
 		rrName = fmt.Sprintf("cluster-%s", uuid.New().String()[:13])
 	})
 
@@ -126,7 +126,7 @@ var _ = Describe("IT-RO-1511-001: RO propagates SP.Status.ClusterClassification 
 		}, timeout, interval).Should(Succeed())
 
 		By("Completing SP without any cluster classification (non-fleet deployment)")
-		Expect(updateSPStatus(ROControllerNamespace, spName, signalprocessingv1.PhaseCompleted)).To(Succeed())
+		Expect(updateSPStatus(spName)).To(Succeed())
 
 		By("Waiting for AIAnalysis to be created with an empty cluster classification")
 		aiName := fmt.Sprintf("ai-%s", rrName)

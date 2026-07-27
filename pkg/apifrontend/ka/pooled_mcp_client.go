@@ -47,6 +47,13 @@ func (c *PooledMCPClient) Investigate(_ context.Context, _ InvestigateArgs) (*In
 	return nil, fmt.Errorf("Investigate is a REST operation; use SDKMCPClient for non-interactive calls")
 }
 
+// ListWorkflows is not supported by pooled sessions — it is a stateless
+// catalog browse with no rr_id to key a pooled session on. Callers should
+// use SDKMCPClient.ListWorkflows (#1677 Phase 2f, DD-WORKFLOW-019).
+func (c *PooledMCPClient) ListWorkflows(_ context.Context, _ ListWorkflowsArgs) (*ListWorkflowsResult, error) {
+	return nil, fmt.Errorf("ListWorkflows is a stateless catalog query; use SDKMCPClient for non-interactive calls")
+}
+
 // InvokeAction calls kubernaut_investigate with the given action via a pooled
 // MCP session. Terminal actions (complete, cancel) release the session after
 // a successful call.

@@ -229,6 +229,12 @@ vet: ## Run go vet against code
 lint: golangci-lint ## Run golangci-lint
 	$(GOLANGCI_LINT) run cmd/... pkg/... internal/... test/...
 
+.PHONY: test-helm
+test-helm: ## Run helm-unittest specs for charts/kubernaut (requires the helm-unittest plugin: helm plugin install https://github.com/helm-unittest/helm-unittest --verify=false)
+	@command -v helm >/dev/null 2>&1 || { echo "❌ helm not found; install Helm first"; exit 1; }
+	@helm plugin list 2>/dev/null | grep -q unittest || { echo "❌ helm-unittest plugin not installed; run: helm plugin install https://github.com/helm-unittest/helm-unittest --verify=false"; exit 1; }
+	helm unittest charts/kubernaut/
+
 .PHONY: clean
 clean: ## Clean build artifacts
 	@echo "Cleaning Go artifacts..."

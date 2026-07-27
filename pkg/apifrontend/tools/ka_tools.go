@@ -287,6 +287,31 @@ func NewSelectWorkflowTool(mcpClient ka.MCPClient, auditor audit.Emitter) (tool.
 	})
 }
 
+// HandleListWorkflowsKA implements kubernaut_list_workflows via KA MCP,
+// replacing the DS-backed HandleListWorkflows (ds_tools.go) as the
+// production handler for this tool -- #1677 Phase 2f (DD-WORKFLOW-019).
+// Reuses ListWorkflowsArgs/ListWorkflowsResult/WorkflowSummary (ds_tools.go)
+// as the unchanged wire contract for kubernaut_list_workflows callers.
+func HandleListWorkflowsKA(ctx context.Context, mcpClient ka.MCPClient, args ListWorkflowsArgs) (ListWorkflowsResult, error) {
+	if mcpClient == nil {
+		return ListWorkflowsResult{}, fmt.Errorf("workflow catalog is not available: MCP client not configured")
+	}
+
+	kaResult, err := mcpClient.ListWorkflows(ctx, ka.ListWorkflowsArgs{Kind: args.Kind})
+	if err != nil {
+		return ListWorkflowsResult{}, fmt.Errorf("listing workflows: %w", err)
+	}
+
+	summaries := make([]WorkflowSummary, 0, len(kaResult.Workflows))
+	for _, w := range kaResult.Workflows {
+		summaries = append(summaries, WorkflowSummary{
+			ID: w.ID, Name: w.Name, Description: w.Description, Kind: w.Kind,
+		})
+	}
+
+	return ListWorkflowsResult{Workflows: summaries, Count: len(summaries)}, nil
+}
+
 // PresentDecisionArgs defines the input for present_decision.
 // RCAData is the structured root cause analysis data that the LLM passes
 // through from the kubernaut_investigate response into present_decision.

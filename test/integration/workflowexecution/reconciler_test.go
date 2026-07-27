@@ -25,6 +25,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sretry "k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
@@ -67,7 +68,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for controller to create PipelineRun")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred(), "PipelineRun should be created")
 
 			By("Verifying PipelineRun has correct labels")
@@ -94,7 +95,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying parameters are passed to PipelineRun")
@@ -117,7 +118,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying TARGET_RESOURCE parameter is passed")
@@ -153,7 +154,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 			By("Waiting for PipelineRun creation")
 			var err error
-			pr, err = waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err = waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Simulating PipelineRun success")
@@ -174,7 +175,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 			By("Waiting for PipelineRun creation")
 			var err error
-			pr, err = waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err = waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Simulating PipelineRun failure")
@@ -226,7 +227,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying owner reference is set")
@@ -254,25 +255,24 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying no platform default SA is injected (namespace default applies at runtime)")
 			Expect(pr.Spec.TaskRunTemplate.ServiceAccountName).To(BeEmpty())
 		})
 
-		// DD-WE-005 v2 / Issue #501: SA resolved from DS via querier (Issue #650).
-		It("should use Status.ServiceAccountName on PipelineRun when set", func() {
-			By("Configuring mock querier to return custom SA from Data Storage")
-			testWorkflowQuerier.ServiceAccountName = "custom-workflow-sa"
-			DeferCleanup(func() { testWorkflowQuerier.ServiceAccountName = "" })
-
-			By("Creating a WorkflowExecution")
+		// DD-WE-005 v2 / Issue #501: SA sourced from the CRD-embedded WorkflowRef
+		// snapshot (Issue #1661 Change 11e/11f; previously resolved via a
+		// DataStorage/querier round-trip, Issue #650).
+		It("should use Spec.WorkflowRef.ServiceAccountName on PipelineRun when set", func() {
+			By("Creating a WorkflowExecution with a custom ServiceAccountName in WorkflowRef")
 			wfe = createUniqueWFE("sa-custom", "default/deployment/sa-custom-test")
+			wfe.Spec.WorkflowRef.ServiceAccountName = "custom-workflow-sa"
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
 			By("Waiting for PipelineRun creation")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 10*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Verifying WFE status service account is propagated to TaskRunTemplate")
@@ -308,7 +308,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Getting PipelineRun and completing it")
-			pr, err = waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 5*time.Second)
+			pr, err = waitForPipelineRunCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = simulatePipelineRunCompletion(pr, true)
@@ -330,7 +330,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Getting PipelineRun and failing it")
-			pr, err = waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 5*time.Second)
+			pr, err = waitForPipelineRunCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = simulatePipelineRunCompletion(pr, false)
@@ -386,12 +386,12 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Querying DataStorage API for workflowexecution.execution.started audit event via ogen client")
-		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
-		auditClient := dsClients.OpenAPIClient
+			By("Querying DataStorage API for workflowexecution.execution.started audit event via ogen client")
+			// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+			auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: Gap #6 uses "workflowexecution" category and weaudit.EventTypeExecutionStarted event type
-			eventCategory := "workflowexecution" // Gap #6 uses "workflowexecution" category (ADR-034 v1.5)
+			eventCategory := weaudit.CategoryWorkflowExecution // Gap #6 uses "workflowexecution" category (ADR-034 v1.5)
 			var startedEvent *ogenclient.AuditEvent
 			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 			correlationID := wfe.Spec.RemediationRequestRef.Name
@@ -446,7 +446,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Getting PipelineRun and completing it")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 5*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = simulatePipelineRunCompletion(pr, true)
@@ -456,12 +456,12 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseCompleted), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Querying DataStorage API for workflowexecution.workflow.completed audit event via ogen client")
-		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
-		auditClient := dsClients.OpenAPIClient
+			By("Querying DataStorage API for workflowexecution.workflow.completed audit event via ogen client")
+			// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+			auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: use "workflowexecution" category and weaudit.EventTypeCompleted event type
-			eventCategory := "workflowexecution"
+			eventCategory := weaudit.CategoryWorkflowExecution
 			var completedEvent *ogenclient.AuditEvent
 			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 			correlationID := wfe.Spec.RemediationRequestRef.Name
@@ -511,7 +511,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Getting PipelineRun and failing it")
-			pr, err := waitForPipelineRunCreation(wfe.Name, wfe.Namespace, 5*time.Second)
+			pr, err := waitForPipelineRunCreation(wfe.Name, 5*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
 			err = simulatePipelineRunCompletion(pr, false)
@@ -521,12 +521,12 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err = waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseFailed), 15*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Querying DataStorage API for workflowexecution.workflow.failed audit event via ogen client")
-		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
-		auditClient := dsClients.OpenAPIClient
+			By("Querying DataStorage API for workflowexecution.workflow.failed audit event via ogen client")
+			// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+			auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: use "workflowexecution" category and weaudit.EventTypeFailed event type
-			eventCategory := "workflowexecution"
+			eventCategory := weaudit.CategoryWorkflowExecution
 			var failedEvent *ogenclient.AuditEvent
 			// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name as correlation ID
 			correlationID := wfe.Spec.RemediationRequestRef.Name
@@ -588,12 +588,12 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 			_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 			Expect(err).ToNot(HaveOccurred())
 
-		By("Querying DataStorage API for audit events with correlation ID via ogen client")
-		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
-		auditClient := dsClients.OpenAPIClient
+			By("Querying DataStorage API for audit events with correlation ID via ogen client")
+			// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
+			auditClient := dsClients.OpenAPIClient
 
 			// Per ADR-034 v1.5: Use "workflowexecution" category
-			eventCategory := "workflowexecution"
+			eventCategory := weaudit.CategoryWorkflowExecution
 			// Flush before querying to ensure buffered events are written to DataStorage
 			flushAuditBuffer()
 			Eventually(func() bool {
@@ -713,13 +713,24 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 
 				By("Simulating completion by marking WFE as Completed (integration test shortcut)")
 				// In real scenario, Tekton would complete. In integration, we simulate completion.
-				wfe1Status, err := getWFE(wfe1.Name, wfe1.Namespace)
-				Expect(err).ToNot(HaveOccurred())
-
-				now := metav1.Now()
-				wfe1Status.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
-				wfe1Status.Status.CompletionTime = &now
-				Expect(k8sClient.Status().Update(ctx, wfe1Status)).To(Succeed())
+				// RetryOnConflict: the live reconciler now actively progresses this
+				// WFE (finalizer/status updates) with ExecutionEngine correctly
+				// resolved from WorkflowRef, racing this Get+Update and bumping
+				// resourceVersion out from under it -- retry on a stale-resourceVersion
+				// conflict rather than treating it as an assertion failure (same
+				// pattern as workflowref_snapshot_immutability_test.go).
+				var wfe1Status *workflowexecutionv1alpha1.WorkflowExecution
+				Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+					var getErr error
+					wfe1Status, getErr = getWFE(wfe1.Name, wfe1.Namespace)
+					if getErr != nil {
+						return getErr
+					}
+					now := metav1.Now()
+					wfe1Status.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
+					wfe1Status.Status.CompletionTime = &now
+					return k8sClient.Status().Update(ctx, wfe1Status)
+				})).To(Succeed())
 
 				By("Waiting for cooldown period (default 5 minutes, but controller may use shorter for test)")
 				// Note: In production, cooldown is 5 minutes. In test, reconciler may be configured with shorter cooldown.
@@ -759,17 +770,17 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				_, err := waitForWFEPhase(wfe.Name, wfe.Namespace, string(workflowexecutionv1alpha1.PhaseRunning), 10*time.Second)
 				Expect(err).ToNot(HaveOccurred())
 
-			By("Simulating completion")
-			now := metav1.Now()
-			Eventually(func() error {
-				fresh, fetchErr := getWFE(wfe.Name, wfe.Namespace)
-				if fetchErr != nil {
-					return fetchErr
-				}
-				fresh.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
-				fresh.Status.CompletionTime = &now
-				return k8sClient.Status().Update(ctx, fresh)
-			}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
+				By("Simulating completion")
+				now := metav1.Now()
+				Eventually(func() error {
+					fresh, fetchErr := getWFE(wfe.Name, wfe.Namespace)
+					if fetchErr != nil {
+						return fetchErr
+					}
+					fresh.Status.Phase = workflowexecutionv1alpha1.PhaseCompleted
+					fresh.Status.CompletionTime = &now
+					return k8sClient.Status().Update(ctx, fresh)
+				}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 
 				By("Verifying PipelineRun still exists immediately after completion (cooldown active)")
 				// Use Eventually to verify PipelineRun exists (allows for controller reconciliation timing)
@@ -912,7 +923,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				// Use Eventually to wait for controller to process the completion and record metrics
 				Eventually(func() string {
 					updated, _ := getWFE(wfe.Name, wfe.Namespace)
-					return string(updated.Status.Phase)
+					return updated.Status.Phase
 				}, 15*time.Second, 500*time.Millisecond).Should(Equal(string(workflowexecutionv1alpha1.PhaseCompleted)),
 					"Controller should reconcile completion and record duration metric")
 

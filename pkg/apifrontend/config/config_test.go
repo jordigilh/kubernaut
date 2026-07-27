@@ -13,6 +13,19 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	urlPrometheus9090     = "http://prometheus:9090"
+	urlRealmsKubernaut    = "https://sso.example.com/realms/kubernaut"
+	claudeSonnet420250514 = "claude-sonnet-4-20250514"
+	gemini20Flash         = "gemini-2.0-flash"
+	pathLlmKey            = "/etc/secrets/llm-key"
+	pathCaPem             = "/etc/ca/ca.pem"
+	pathClientCrt         = "/etc/certs/client.crt"
+	pathClientKey         = "/etc/certs/client.key"
+	gpt4o                 = "gpt-4o"
+)
+
 // validConfig returns a Config that passes Validate() for use as a base in tests.
 func validConfig() *config.Config {
 	return &config.Config{
@@ -315,7 +328,7 @@ auth:
 `)
 		cfg, err := config.Load(data)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg.Auth.IssuerURL).To(Equal("https://sso.example.com/realms/kubernaut"))
+		Expect(cfg.Auth.IssuerURL).To(Equal(urlRealmsKubernaut))
 		Expect(cfg.Auth.Audience).To(Equal("apifrontend"))
 	})
 
@@ -787,7 +800,7 @@ resilience:
 	It("rejects severity triage LLMConfidence out of range", func() {
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
-		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.PrometheusURL = urlPrometheus9090
 		cfg.SeverityTriage.LLMConfidence = 1.5
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred())
@@ -797,7 +810,7 @@ resilience:
 	It("accepts valid severity triage config", func() {
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
-		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.PrometheusURL = urlPrometheus9090
 		cfg.SeverityTriage.LLMConfidence = 0.7
 		Expect(cfg.Validate()).To(Succeed())
 	})
@@ -806,10 +819,10 @@ resilience:
 	It("UT-AF-1404-004 accepts severityTriage.llm with valid vertex_ai config", func() {
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
-		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.PrometheusURL = urlPrometheus9090
 		cfg.SeverityTriage.LLM = &types.LLMConfig{
 			Provider:       types.LLMProviderVertexAI,
-			Model:          "gemini-2.0-flash",
+			Model:          gemini20Flash,
 			VertexProject:  "triage-project",
 			VertexLocation: "us-central1",
 		}
@@ -819,10 +832,10 @@ resilience:
 	It("UT-AF-1404-005 accepts severityTriage.llm with valid gemini config", func() {
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
-		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.PrometheusURL = urlPrometheus9090
 		cfg.SeverityTriage.LLM = &types.LLMConfig{
 			Provider:   types.LLMProviderGemini,
-			Model:      "gemini-2.0-flash",
+			Model:      gemini20Flash,
 			APIKeyFile: "/etc/secrets/gemini-key",
 		}
 		Expect(cfg.Validate()).To(Succeed())
@@ -831,7 +844,7 @@ resilience:
 	It("UT-AF-1404-006 rejects severityTriage.llm with missing model", func() {
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
-		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.PrometheusURL = urlPrometheus9090
 		cfg.SeverityTriage.LLM = &types.LLMConfig{
 			Provider:       types.LLMProviderVertexAI,
 			Model:          "",
@@ -846,7 +859,7 @@ resilience:
 	It("UT-AF-1404-007 rejects severityTriage.llm with invalid provider", func() {
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
-		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.PrometheusURL = urlPrometheus9090
 		cfg.SeverityTriage.LLM = &types.LLMConfig{
 			Provider: "invalid_provider",
 			Model:    "some-model",
@@ -859,7 +872,7 @@ resilience:
 	It("UT-AF-1404-008 skips severityTriage.llm validation when nil (inherits agent.llm)", func() {
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
-		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.PrometheusURL = urlPrometheus9090
 		cfg.SeverityTriage.LLM = nil
 		Expect(cfg.Validate()).To(Succeed())
 	})
@@ -867,10 +880,10 @@ resilience:
 	It("UT-AF-1404-009 rejects vertex_ai severityTriage.llm without vertexProject", func() {
 		cfg := validConfig()
 		cfg.SeverityTriage.Enabled = true
-		cfg.SeverityTriage.PrometheusURL = "http://prometheus:9090"
+		cfg.SeverityTriage.PrometheusURL = urlPrometheus9090
 		cfg.SeverityTriage.LLM = &types.LLMConfig{
 			Provider:       types.LLMProviderVertexAI,
-			Model:          "gemini-2.0-flash",
+			Model:          gemini20Flash,
 			VertexProject:  "",
 			VertexLocation: "us-central1",
 		}
@@ -948,7 +961,7 @@ auth:
 
 	It("UT-AF-1245-012 rejects relative oidcCaFile path", func() {
 		cfg := validConfig()
-		cfg.Auth.IssuerURL = "https://sso.example.com/realms/kubernaut"
+		cfg.Auth.IssuerURL = urlRealmsKubernaut
 		cfg.Auth.OIDCCaFile = "relative/path/ca.crt"
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred())
@@ -957,14 +970,14 @@ auth:
 
 	It("UT-AF-1245-013 accepts absolute oidcCaFile path", func() {
 		cfg := validConfig()
-		cfg.Auth.IssuerURL = "https://sso.example.com/realms/kubernaut"
+		cfg.Auth.IssuerURL = urlRealmsKubernaut
 		cfg.Auth.OIDCCaFile = "/etc/apifrontend/ingress-ca/ca.crt"
 		Expect(cfg.Validate()).To(Succeed())
 	})
 
 	It("UT-AF-1245-014 accepts empty oidcCaFile as optional", func() {
 		cfg := validConfig()
-		cfg.Auth.IssuerURL = "https://sso.example.com/realms/kubernaut"
+		cfg.Auth.IssuerURL = urlRealmsKubernaut
 		cfg.Auth.OIDCCaFile = ""
 		Expect(cfg.Validate()).To(Succeed())
 	})
@@ -998,7 +1011,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 	It("requires vertexProject for vertex_ai provider", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderVertexAI
-		cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
+		cfg.Agent.LLM.Model = claudeSonnet420250514
 		cfg.Agent.LLM.VertexProject = ""
 		cfg.Agent.LLM.VertexLocation = "us-central1"
 		err := cfg.Validate()
@@ -1009,7 +1022,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 	It("requires vertexLocation for vertex_ai provider", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderVertexAI
-		cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
+		cfg.Agent.LLM.Model = claudeSonnet420250514
 		cfg.Agent.LLM.VertexProject = "my-project"
 		cfg.Agent.LLM.VertexLocation = ""
 		err := cfg.Validate()
@@ -1020,23 +1033,23 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 	It("accepts gemini provider", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderGemini
-		cfg.Agent.LLM.Model = "gemini-2.0-flash"
-		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
+		cfg.Agent.LLM.Model = gemini20Flash
+		cfg.Agent.LLM.APIKeyFile = pathLlmKey
 		Expect(cfg.Validate()).To(Succeed())
 	})
 
 	It("accepts anthropic provider", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderAnthropic
-		cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
-		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
+		cfg.Agent.LLM.Model = claudeSonnet420250514
+		cfg.Agent.LLM.APIKeyFile = pathLlmKey
 		Expect(cfg.Validate()).To(Succeed())
 	})
 
 	It("requires credentials for gemini provider", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderGemini
-		cfg.Agent.LLM.Model = "gemini-2.0-flash"
+		cfg.Agent.LLM.Model = gemini20Flash
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("apiKeyFile"))
@@ -1045,7 +1058,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 	It("rejects relative apiKeyFile path", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderGemini
-		cfg.Agent.LLM.Model = "gemini-2.0-flash"
+		cfg.Agent.LLM.Model = gemini20Flash
 		cfg.Agent.LLM.APIKeyFile = "relative/path/key"
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred())
@@ -1055,7 +1068,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 	It("requires tokenURL when oauth2 enabled", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderGemini
-		cfg.Agent.LLM.Model = "gemini-2.0-flash"
+		cfg.Agent.LLM.Model = gemini20Flash
 		cfg.Agent.LLM.OAuth2.Enabled = true
 		cfg.Agent.LLM.OAuth2.TokenURL = ""
 		cfg.Agent.LLM.OAuth2.CredentialsDir = "/etc/creds"
@@ -1067,7 +1080,7 @@ var _ = Describe("Tier 9: LLM Config Validation (Issue #1252)", func() {
 	It("requires credentialsDir when oauth2 enabled", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderGemini
-		cfg.Agent.LLM.Model = "gemini-2.0-flash"
+		cfg.Agent.LLM.Model = gemini20Flash
 		cfg.Agent.LLM.OAuth2.Enabled = true
 		cfg.Agent.LLM.OAuth2.TokenURL = "https://auth.example.com/token"
 		cfg.Agent.LLM.OAuth2.CredentialsDir = ""
@@ -1134,7 +1147,7 @@ agent:
 		cfg, err := config.Load(data)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cfg.Agent.LLM.Provider).To(Equal(types.LLMProviderAnthropic))
-		Expect(cfg.Agent.LLM.Model).To(Equal("claude-sonnet-4-20250514"))
+		Expect(cfg.Agent.LLM.Model).To(Equal(claudeSonnet420250514))
 		Expect(cfg.Agent.LLM.Endpoint).To(Equal("https://anthropic.example.com"))
 		Expect(cfg.Agent.LLM.OAuth2.Enabled).To(BeTrue())
 		Expect(cfg.Agent.LLM.OAuth2.TokenURL).To(Equal("https://auth.example.com/token"))
@@ -1152,10 +1165,10 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	It("UT-AF-1342-010: rejects tlsCertFile without tlsKeyFile", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderGemini
-		cfg.Agent.LLM.Model = "gemini-2.0-flash"
-		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
-		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
-		cfg.Agent.LLM.TLSCertFile = "/etc/certs/client.crt"
+		cfg.Agent.LLM.Model = gemini20Flash
+		cfg.Agent.LLM.APIKeyFile = pathLlmKey
+		cfg.Agent.LLM.TLSCaFile = pathCaPem
+		cfg.Agent.LLM.TLSCertFile = pathClientCrt
 		cfg.Agent.LLM.TLSKeyFile = ""
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred())
@@ -1167,11 +1180,11 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	It("UT-AF-1342-011: rejects tlsKeyFile without tlsCertFile", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderGemini
-		cfg.Agent.LLM.Model = "gemini-2.0-flash"
-		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
-		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
+		cfg.Agent.LLM.Model = gemini20Flash
+		cfg.Agent.LLM.APIKeyFile = pathLlmKey
+		cfg.Agent.LLM.TLSCaFile = pathCaPem
 		cfg.Agent.LLM.TLSCertFile = ""
-		cfg.Agent.LLM.TLSKeyFile = "/etc/certs/client.key"
+		cfg.Agent.LLM.TLSKeyFile = pathClientKey
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("tlsCertFile"))
@@ -1181,11 +1194,11 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	It("UT-AF-1342-012: rejects relative tlsCertFile path", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderGemini
-		cfg.Agent.LLM.Model = "gemini-2.0-flash"
-		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
-		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
+		cfg.Agent.LLM.Model = gemini20Flash
+		cfg.Agent.LLM.APIKeyFile = pathLlmKey
+		cfg.Agent.LLM.TLSCaFile = pathCaPem
 		cfg.Agent.LLM.TLSCertFile = "relative/client.crt"
-		cfg.Agent.LLM.TLSKeyFile = "/etc/certs/client.key"
+		cfg.Agent.LLM.TLSKeyFile = pathClientKey
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("tlsCertFile"))
@@ -1196,10 +1209,10 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	It("UT-AF-1342-013: rejects relative tlsKeyFile path", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderGemini
-		cfg.Agent.LLM.Model = "gemini-2.0-flash"
-		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
-		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
-		cfg.Agent.LLM.TLSCertFile = "/etc/certs/client.crt"
+		cfg.Agent.LLM.Model = gemini20Flash
+		cfg.Agent.LLM.APIKeyFile = pathLlmKey
+		cfg.Agent.LLM.TLSCaFile = pathCaPem
+		cfg.Agent.LLM.TLSCertFile = pathClientCrt
 		cfg.Agent.LLM.TLSKeyFile = "relative/client.key"
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred())
@@ -1211,11 +1224,11 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	It("UT-AF-1342-014: rejects mTLS without tlsCaFile", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderGemini
-		cfg.Agent.LLM.Model = "gemini-2.0-flash"
-		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
+		cfg.Agent.LLM.Model = gemini20Flash
+		cfg.Agent.LLM.APIKeyFile = pathLlmKey
 		cfg.Agent.LLM.TLSCaFile = ""
-		cfg.Agent.LLM.TLSCertFile = "/etc/certs/client.crt"
-		cfg.Agent.LLM.TLSKeyFile = "/etc/certs/client.key"
+		cfg.Agent.LLM.TLSCertFile = pathClientCrt
+		cfg.Agent.LLM.TLSKeyFile = pathClientKey
 		err := cfg.Validate()
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("tlsCaFile"))
@@ -1226,11 +1239,11 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	It("UT-AF-1342-015: accepts valid mTLS config", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderGemini
-		cfg.Agent.LLM.Model = "gemini-2.0-flash"
-		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
-		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
-		cfg.Agent.LLM.TLSCertFile = "/etc/certs/client.crt"
-		cfg.Agent.LLM.TLSKeyFile = "/etc/certs/client.key"
+		cfg.Agent.LLM.Model = gemini20Flash
+		cfg.Agent.LLM.APIKeyFile = pathLlmKey
+		cfg.Agent.LLM.TLSCaFile = pathCaPem
+		cfg.Agent.LLM.TLSCertFile = pathClientCrt
+		cfg.Agent.LLM.TLSKeyFile = pathClientKey
 		Expect(cfg.Validate()).To(Succeed())
 	})
 
@@ -1238,12 +1251,12 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	It("UT-AF-1342-016: accepts vertex_ai with transport options", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderVertexAI
-		cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
+		cfg.Agent.LLM.Model = claudeSonnet420250514
 		cfg.Agent.LLM.VertexProject = "my-project"
 		cfg.Agent.LLM.VertexLocation = "us-central1"
-		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
-		cfg.Agent.LLM.TLSCertFile = "/etc/certs/client.crt"
-		cfg.Agent.LLM.TLSKeyFile = "/etc/certs/client.key"
+		cfg.Agent.LLM.TLSCaFile = pathCaPem
+		cfg.Agent.LLM.TLSCertFile = pathClientCrt
+		cfg.Agent.LLM.TLSKeyFile = pathClientKey
 		Expect(cfg.Validate()).To(Succeed())
 	})
 
@@ -1251,11 +1264,11 @@ var _ = Describe("Tier 10: LLM mTLS Config Validation (Issue #1342)", func() {
 	It("UT-AF-1342-017: accepts anthropic with transport options", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderAnthropic
-		cfg.Agent.LLM.Model = "claude-sonnet-4-20250514"
-		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/llm-key"
-		cfg.Agent.LLM.TLSCaFile = "/etc/ca/ca.pem"
-		cfg.Agent.LLM.TLSCertFile = "/etc/certs/client.crt"
-		cfg.Agent.LLM.TLSKeyFile = "/etc/certs/client.key"
+		cfg.Agent.LLM.Model = claudeSonnet420250514
+		cfg.Agent.LLM.APIKeyFile = pathLlmKey
+		cfg.Agent.LLM.TLSCaFile = pathCaPem
+		cfg.Agent.LLM.TLSCertFile = pathClientCrt
+		cfg.Agent.LLM.TLSKeyFile = pathClientKey
 		Expect(cfg.Validate()).To(Succeed())
 	})
 
@@ -1273,8 +1286,8 @@ agent:
 `)
 		cfg, err := config.Load(data)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg.Agent.LLM.TLSCertFile).To(Equal("/etc/certs/client.crt"))
-		Expect(cfg.Agent.LLM.TLSKeyFile).To(Equal("/etc/certs/client.key"))
+		Expect(cfg.Agent.LLM.TLSCertFile).To(Equal(pathClientCrt))
+		Expect(cfg.Agent.LLM.TLSKeyFile).To(Equal(pathClientKey))
 	})
 })
 
@@ -1414,7 +1427,7 @@ auth:
 `)
 		cfg, err := config.Load(data)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg.Auth.IssuerURL).To(Equal("https://sso.example.com/realms/kubernaut"))
+		Expect(cfg.Auth.IssuerURL).To(Equal(urlRealmsKubernaut))
 		Expect(cfg.Auth.JWTProviders).To(BeEmpty())
 	})
 
@@ -1502,7 +1515,7 @@ var _ = Describe("Tier 11: OpenAI-Compatible LLM Provider Config (Issue #1254)",
 	It("UT-AF-1254-001 accepts openai provider with valid model+endpoint+apiKeyFile", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderOpenAI
-		cfg.Agent.LLM.Model = "gpt-4o"
+		cfg.Agent.LLM.Model = gpt4o
 		cfg.Agent.LLM.Endpoint = "https://api.openai.com/v1"
 		cfg.Agent.LLM.APIKeyFile = "/etc/secrets/openai-key"
 		Expect(cfg.Validate()).To(Succeed())
@@ -1532,7 +1545,7 @@ var _ = Describe("Tier 11: OpenAI-Compatible LLM Provider Config (Issue #1254)",
 		func(provider string) {
 			cfg := validConfig()
 			cfg.Agent.LLM.Provider = provider
-			cfg.Agent.LLM.Model = "gpt-4o"
+			cfg.Agent.LLM.Model = gpt4o
 			cfg.Agent.LLM.Endpoint = ""
 			cfg.Agent.LLM.APIKeyFile = "/etc/secrets/key"
 			err := cfg.Validate()
@@ -1557,7 +1570,7 @@ var _ = Describe("Tier 11: OpenAI-Compatible LLM Provider Config (Issue #1254)",
 	It("UT-AF-1254-006 rejects openai without apiKeyFile", func() {
 		cfg := validConfig()
 		cfg.Agent.LLM.Provider = types.LLMProviderOpenAI
-		cfg.Agent.LLM.Model = "gpt-4o"
+		cfg.Agent.LLM.Model = gpt4o
 		cfg.Agent.LLM.Endpoint = "https://api.openai.com/v1"
 		cfg.Agent.LLM.APIKeyFile = ""
 		err := cfg.Validate()
@@ -1575,7 +1588,7 @@ auth:
 `)
 		cfg, err := config.Load(data)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg.Auth.IssuerURL).To(Equal("https://sso.example.com/realms/kubernaut"))
+		Expect(cfg.Auth.IssuerURL).To(Equal(urlRealmsKubernaut))
 	})
 
 	It("UT-AF-1309-011: config YAML with stale kubernetesAuthEnabled loads without error", func() {
@@ -1587,7 +1600,7 @@ auth:
 `)
 		cfg, err := config.Load(data)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(cfg.Auth.IssuerURL).To(Equal("https://sso.example.com/realms/kubernaut"))
+		Expect(cfg.Auth.IssuerURL).To(Equal(urlRealmsKubernaut))
 	})
 })
 

@@ -20,6 +20,8 @@ import (
 	"context"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -77,9 +79,18 @@ var _ = Describe("WorkflowExecution Creator WFE spec [DD-WE-005] (#501/#650)", f
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
 				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowID:      "wf-uuid-123",
-					Version:         "1.0.0",
-					ExecutionBundle: "quay.io/test:v1@sha256:abc123",
+					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+						WorkflowID: "wf-uuid-123",
+						// WorkflowName/ActionType: Issue #1711 cascade (DD-KA-001 v1.1)
+						// made these required fields on validateSelectedWorkflow.
+						WorkflowName:    "wf-uuid-123",
+						ActionType:      "RestartPod",
+						Version:         "1.0.0",
+						ExecutionBundle: "quay.io/test:v1@sha256:abc123",
+						// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made
+						// this a required field on validateSelectedWorkflow.
+						ExecutionEngine: "job",
+					},
 				},
 			},
 		}

@@ -93,7 +93,7 @@ var _ = Describe("BR-ORCH-025: RemediationOrchestrator Controller", func() {
 			result, err := reconciler.Reconcile(ctx, ctrl.Request{
 				NamespacedName: types.NamespacedName{
 					Name:      "non-existent-rr",
-					Namespace: "default",
+					Namespace: defaultFixture,
 				},
 			})
 

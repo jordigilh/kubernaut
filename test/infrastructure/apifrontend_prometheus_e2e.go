@@ -197,7 +197,7 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if lastErr = InjectMetrics(prometheusURL, metric); lastErr == nil {
+		if lastErr = InjectMetrics(ctx, prometheusURL, metric); lastErr == nil {
 			return nil
 		}
 		if attempt < 4 {

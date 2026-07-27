@@ -22,6 +22,8 @@ import (
 	"math/rand"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -200,9 +202,6 @@ var _ = Describe("BR-WE-004: Tekton Failure Reason Classification", Ordered, Con
 
 // createMinimalWorkflowExecution creates a minimal WorkflowExecution for testing
 func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1alpha1.WorkflowExecution {
-	// Issue #518: Engine is resolved at runtime via the configurable mock querier.
-	// Reset to "tekton" so earlier tests that set it to "job" don't leak.
-	testWorkflowQuerier.setEngine("tekton")
 	return &workflowexecutionv1alpha1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       name,
@@ -217,9 +216,14 @@ func createMinimalWorkflowExecution(name, namespace string) *workflowexecutionv1
 				Namespace:  namespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID:     "test-workflow",
-				Version:        "v1.0.0",
-				ExecutionBundle: "quay.io/jordigilh/test-workflows/test:v1.0.0",
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "test-workflow",
+					WorkflowName:    "test-workflow",
+					ActionType:      "RestartPod",
+					Version:         "v1.0.0",
+					ExecutionBundle: "quay.io/jordigilh/test-workflows/test:v1.0.0",
+					ExecutionEngine: "tekton",
+				},
 			},
 			TargetResource: "default/deployment/test-app-" + name, // Unique per test for deterministic PR names
 		},

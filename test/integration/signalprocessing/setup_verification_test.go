@@ -37,7 +37,7 @@ var _ = Describe("SignalProcessing Integration Setup Verification", func() {
 
 		It("should be able to create and delete SignalProcessing CRD", func() {
 			// Create unique namespace for this test
-			ns := createTestNamespace("setup-verify")
+			ns := createTestNamespace(ctx, "setup-verify")
 			defer deleteTestNamespace(ns)
 
 			// Create a SignalProcessing CR

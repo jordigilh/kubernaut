@@ -51,7 +51,7 @@ func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitS
 		return AwaitSessionResult{}, ErrK8sUnavailable
 	}
 	if err := validate.Namespace(args.Namespace); err != nil {
-		return AwaitSessionResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return AwaitSessionResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	if args.RRName == "" {
 		return AwaitSessionResult{}, fmt.Errorf("%w: rr_name is required", ErrInvalidInput)
@@ -82,6 +82,8 @@ func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitS
 // watchForSessionID drains watcher's event channel until an AIAnalysis event
 // matching rrName carries a non-empty KASession.ID, the watch closes, or
 // watchCtx is done (timeout).
+//
+//nolint:unparam // error is always nil here; signature matches pollForSessionID's (AwaitSessionResult, error), the interchangeable sibling branch at the shared call site (Issue #1546 Tier 4)
 func watchForSessionID(watchCtx context.Context, watcher watch.Interface, rrName string) (AwaitSessionResult, error) {
 	for {
 		select {
@@ -203,7 +205,7 @@ func AwaitISPhaseActive(ctx context.Context, client crclient.Client, namespace, 
 		case <-time.After(interval):
 		}
 
-		interval = interval * 2
+		interval *= 2
 		if interval > isPhaseMaxInterval {
 			interval = isPhaseMaxInterval
 		}

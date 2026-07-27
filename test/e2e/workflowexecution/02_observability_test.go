@@ -24,6 +24,8 @@ import (
 	"strings"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	tektonv1 "github.com/tektoncd/pipeline/pkg/apis/pipeline/v1"
@@ -75,17 +77,17 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Create WorkflowExecution
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-		// Wait for completion (success or failure)
-		Eventually(func() bool {
-			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-			GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
-			if updated != nil {
-				phase := updated.Status.Phase
-				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-					phase == workflowexecutionv1alpha1.PhaseFailed
-			}
-			return false
-		}, 120*time.Second).Should(BeTrue())
+			// Wait for completion (success or failure)
+			Eventually(func() bool {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
+				if updated != nil {
+					phase := updated.Status.Phase
+					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+						phase == workflowexecutionv1alpha1.PhaseFailed
+				}
+				return false
+			}, 120*time.Second).Should(BeTrue())
 
 			// Verify events were emitted for this WFE
 			// Business Behavior: Events should be visible via kubectl get events
@@ -135,14 +137,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Create WorkflowExecution
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-		// Wait for Running phase (PipelineRun created)
-		Eventually(func() string {
-			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-			if updated != nil {
-				return updated.Status.Phase
-			}
-			return ""
-		}, 60*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
+			// Wait for Running phase (PipelineRun created)
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 60*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseRunning))
 
 			GinkgoWriter.Println("✅ WFE is Running, PipelineRun exists")
 
@@ -167,14 +169,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			GinkgoWriter.Printf("🗑️  Deleting PipelineRun %s externally...\n", targetPR.Name)
 			Expect(k8sClient.Delete(ctx, targetPR)).To(Succeed())
 
-		// Business Behavior: WFE should detect deletion and mark as Failed
-		Eventually(func() string {
-			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-			if updated != nil {
-				return updated.Status.Phase
-			}
-			return ""
-		}, 60*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			// Business Behavior: WFE should detect deletion and mark as Failed
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 60*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
 
 			// Verify failure details explain the external deletion
 			failed, err := getWFE(wfe.Name, wfe.Namespace)
@@ -211,41 +213,41 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-		// Wait for completion to generate metrics
-		Eventually(func() bool {
-			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-			GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
-			if updated != nil {
-				phase := updated.Status.Phase
-				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-					phase == workflowexecutionv1alpha1.PhaseFailed
-			}
-			return false
-		}, 120*time.Second).Should(BeTrue())
+			// Wait for completion to generate metrics
+			Eventually(func() bool {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
+				if updated != nil {
+					phase := updated.Status.Phase
+					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+						phase == workflowexecutionv1alpha1.PhaseFailed
+				}
+				return false
+			}, 120*time.Second).Should(BeTrue())
 
 			GinkgoWriter.Println("✅ WFE completed, checking metrics...")
 
-		// Query metrics endpoint via NodePort
-		// Per DD-TEST-001: Metrics NodePort is 30185
-		metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
-		metricsClient := &http.Client{Timeout: 5 * time.Second}
+			// Query metrics endpoint via NodePort
+			// Per DD-TEST-001: Metrics NodePort is 30185
+			metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
+			metricsClient := &http.Client{Timeout: 5 * time.Second}
 
-		// Business Behavior: Metrics should be scrapable by Prometheus
-		var metricsBody string
-		Eventually(func() error {
-			resp, err := metricsClient.Get(metricsURL)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = resp.Body.Close() }()
+			// Business Behavior: Metrics should be scrapable by Prometheus
+			var metricsBody string
+			Eventually(func() error {
+				resp, err := metricsClient.Get(metricsURL)
+				if err != nil {
+					return err
+				}
+				defer func() { _ = resp.Body.Close() }()
 
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-			metricsBody = string(body)
-			return nil
-		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint")
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return err
+				}
+				metricsBody = string(body)
+				return nil
+			}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint")
 
 			// Verify expected business metrics are present
 			// Using constants from pkg/workflowexecution/metrics to prevent typos (DRY principle)
@@ -272,31 +274,31 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			GinkgoWriter.Println("✅ BR-WE-008: All expected Prometheus metrics exposed")
 		})
 
-	It("should increment workflowexecution_total{outcome=Completed} on successful completion", func() {
-		// Business Outcome: SREs can track completion rate via Prometheus
-		// This test validates metrics are actually incremented when workflows complete
+		It("should increment workflowexecution_total{outcome=Completed} on successful completion", func() {
+			// Business Outcome: SREs can track completion rate via Prometheus
+			// This test validates metrics are actually incremented when workflows complete
 
-		// Query initial metric value
-		metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
-		metricsClient := &http.Client{Timeout: 5 * time.Second}
+			// Query initial metric value
+			metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
+			metricsClient := &http.Client{Timeout: 5 * time.Second}
 
-		var initialMetricsBody string
-		Eventually(func() error {
-			resp, err := metricsClient.Get(metricsURL)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = resp.Body.Close() }()
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-			initialMetricsBody = string(body)
-			return nil
-		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint initially")
+			var initialMetricsBody string
+			Eventually(func() error {
+				resp, err := metricsClient.Get(metricsURL)
+				if err != nil {
+					return err
+				}
+				defer func() { _ = resp.Body.Close() }()
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return err
+				}
+				initialMetricsBody = string(body)
+				return nil
+			}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint initially")
 
 			// Extract initial count (parse Prometheus format)
-			initialCompletedCount := extractMetricValue(initialMetricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted)
+			initialCompletedCount := extractMetricValue(initialMetricsBody, wemetrics.LabelOutcomeCompleted)
 			GinkgoWriter.Printf("Initial %s{outcome=%s}: %.0f\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted, initialCompletedCount)
 
 			// Run a workflow that will complete successfully
@@ -310,34 +312,34 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-		// Wait for completion
-		Eventually(func() bool {
-			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-			GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
-			if updated != nil {
-				return updated.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted
-			}
-			return false
-		}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should complete")
+			// Wait for completion
+			Eventually(func() bool {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
+				if updated != nil {
+					return updated.Status.Phase == workflowexecutionv1alpha1.PhaseCompleted
+				}
+				return false
+			}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should complete")
 
 			GinkgoWriter.Println("✅ Workflow completed, checking metrics...")
 
-		// Verify metric incremented
-		Eventually(func() bool {
-			resp, err := metricsClient.Get(metricsURL)
-			if err != nil {
-				return false
-			}
-			defer func() { _ = resp.Body.Close() }()
-			body, _ := io.ReadAll(resp.Body)
-			metricsBody := string(body)
+			// Verify metric incremented
+			Eventually(func() bool {
+				resp, err := metricsClient.Get(metricsURL)
+				if err != nil {
+					return false
+				}
+				defer func() { _ = resp.Body.Close() }()
+				body, _ := io.ReadAll(resp.Body)
+				metricsBody := string(body)
 
-			currentCount := extractMetricValue(metricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted)
-			GinkgoWriter.Printf("Current %s{outcome=%s}: %.0f (initial: %.0f)\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted, currentCount, initialCompletedCount)
+				currentCount := extractMetricValue(metricsBody, wemetrics.LabelOutcomeCompleted)
+				GinkgoWriter.Printf("Current %s{outcome=%s}: %.0f (initial: %.0f)\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted, currentCount, initialCompletedCount)
 
-			return currentCount > initialCompletedCount
-		}, 60*time.Second, 2*time.Second).Should(BeTrue(),
-			fmt.Sprintf("%s{outcome=%s} should increment after workflow completion", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted))
+				return currentCount > initialCompletedCount
+			}, 60*time.Second, 2*time.Second).Should(BeTrue(),
+				fmt.Sprintf("%s{outcome=%s} should increment after workflow completion", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeCompleted))
 
 			GinkgoWriter.Println("✅ BR-WE-008: Completion metric incremented on successful workflow")
 		})
@@ -346,27 +348,27 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 			// Business Outcome: SREs can track failure rate via Prometheus
 			// This test validates metrics are actually incremented when workflows fail
 
-		// Query initial metric value
-		metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
-		metricsClient := &http.Client{Timeout: 5 * time.Second}
+			// Query initial metric value
+			metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", infrastructure.WorkflowExecutionMetricsHostPort)
+			metricsClient := &http.Client{Timeout: 5 * time.Second}
 
-		var initialMetricsBody string
-		Eventually(func() error {
-			resp, err := metricsClient.Get(metricsURL)
-			if err != nil {
-				return err
-			}
-			defer func() { _ = resp.Body.Close() }()
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return err
-			}
-			initialMetricsBody = string(body)
-			return nil
-		}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint initially")
+			var initialMetricsBody string
+			Eventually(func() error {
+				resp, err := metricsClient.Get(metricsURL)
+				if err != nil {
+					return err
+				}
+				defer func() { _ = resp.Body.Close() }()
+				body, err := io.ReadAll(resp.Body)
+				if err != nil {
+					return err
+				}
+				initialMetricsBody = string(body)
+				return nil
+			}, 60*time.Second, 2*time.Second).Should(Succeed(), "Should be able to scrape metrics endpoint initially")
 
-		// Extract initial count
-		initialFailedCount := extractMetricValue(initialMetricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed)
+			// Extract initial count
+			initialFailedCount := extractMetricValue(initialMetricsBody, wemetrics.LabelOutcomeFailed)
 			GinkgoWriter.Printf("Initial %s{outcome=%s}: %.0f\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed, initialFailedCount)
 
 			// Run a workflow that intentionally fails (tekton-bundles/failing exits non-zero)
@@ -390,9 +392,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      failureUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      failureUUID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -408,33 +415,33 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-		// Wait for failure
-		Eventually(func() bool {
-			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-			if updated != nil {
-				return updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed
-			}
-			return false
-		}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should fail")
+			// Wait for failure
+			Eventually(func() bool {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed
+				}
+				return false
+			}, 120*time.Second, 2*time.Second).Should(BeTrue(), "Workflow should fail")
 
 			GinkgoWriter.Println("✅ Workflow failed as expected, checking metrics...")
 
-		// Verify metric incremented
-		Eventually(func() bool {
-			resp, err := metricsClient.Get(metricsURL)
-			if err != nil {
-				return false
-			}
-			defer func() { _ = resp.Body.Close() }()
-			body, _ := io.ReadAll(resp.Body)
-			metricsBody := string(body)
+			// Verify metric incremented
+			Eventually(func() bool {
+				resp, err := metricsClient.Get(metricsURL)
+				if err != nil {
+					return false
+				}
+				defer func() { _ = resp.Body.Close() }()
+				body, _ := io.ReadAll(resp.Body)
+				metricsBody := string(body)
 
-			currentCount := extractMetricValue(metricsBody, wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed)
-			GinkgoWriter.Printf("Current %s{outcome=%s}: %.0f (initial: %.0f)\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed, currentCount, initialFailedCount)
+				currentCount := extractMetricValue(metricsBody, wemetrics.LabelOutcomeFailed)
+				GinkgoWriter.Printf("Current %s{outcome=%s}: %.0f (initial: %.0f)\n", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed, currentCount, initialFailedCount)
 
-			return currentCount > initialFailedCount
-		}, 60*time.Second, 2*time.Second).Should(BeTrue(),
-			fmt.Sprintf("%s{outcome=%s} should increment after workflow failure", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed))
+				return currentCount > initialFailedCount
+			}, 60*time.Second, 2*time.Second).Should(BeTrue(),
+				fmt.Sprintf("%s{outcome=%s} should increment after workflow failure", wemetrics.MetricNameExecutionTotal, wemetrics.LabelOutcomeFailed))
 
 			GinkgoWriter.Println("✅ BR-WE-008: Failure metric incremented on failed workflow")
 		})
@@ -480,17 +487,17 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-		By("Waiting for workflow to complete")
-		Eventually(func() bool {
-			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-			GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
-			if updated != nil {
-				phase := updated.Status.Phase
-				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-					phase == workflowexecutionv1alpha1.PhaseFailed
-			}
-			return false
-		}, 120*time.Second).Should(BeTrue())
+			By("Waiting for workflow to complete")
+			Eventually(func() bool {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
+				if updated != nil {
+					phase := updated.Status.Phase
+					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+						phase == workflowexecutionv1alpha1.PhaseFailed
+				}
+				return false
+			}, 120*time.Second).Should(BeTrue())
 
 			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
 			time.Sleep(3 * time.Second)
@@ -582,26 +589,31 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 					Name:      testName,
 					Namespace: controllerNamespace,
 				},
-			Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
-					Kind:       "RemediationRequest",
-					Name:       "test-rr-" + testName,
-					Namespace:  controllerNamespace,
+				Spec: workflowexecutionv1alpha1.WorkflowExecutionSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						APIVersion: "remediationorchestrator.kubernaut.ai/v1alpha1",
+						Kind:       "RemediationRequest",
+						Name:       "test-rr-" + testName,
+						Namespace:  controllerNamespace,
+					},
+					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:   failureUUID,
+							WorkflowName: "test-workflow",
+							ActionType:   "RestartPod",
+							Version:      "v1.0.0",
+							// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
+							ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
+							ExecutionEngine: "tekton",
+						},
+					},
+					TargetResource: targetResource,
+					Parameters: map[string]string{
+						// Per test/fixtures/tekton/failing-pipeline.yaml
+						"FAILURE_MODE":    "exit",
+						"FAILURE_MESSAGE": "E2E audit failure validation",
+					},
 				},
-			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID: failureUUID,
-				Version:    "v1.0.0",
-				// Tekton bundle from quay.io/kubernaut-cicd/tekton-bundles (built with tkn bundle push)
-				ExecutionBundle: "quay.io/kubernaut-cicd/tekton-bundles/failing:v1.0.0",
-			},
-				TargetResource: targetResource,
-				Parameters: map[string]string{
-					// Per test/fixtures/tekton/failing-pipeline.yaml
-					"FAILURE_MODE":    "exit",
-					"FAILURE_MESSAGE": "E2E audit failure validation",
-				},
-			},
 			}
 
 			defer func() {
@@ -610,14 +622,14 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-		By("Waiting for Failed phase")
-		Eventually(func() string {
-			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-			if updated != nil {
-				return updated.Status.Phase
-			}
-			return ""
-		}, 120*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
+			By("Waiting for Failed phase")
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 120*time.Second, 2*time.Second).Should(Equal(workflowexecutionv1alpha1.PhaseFailed))
 
 			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
 			time.Sleep(3 * time.Second)
@@ -741,17 +753,17 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-		By("Waiting for workflow to complete")
-		Eventually(func() string {
-			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-			if updated != nil {
-				return updated.Status.Phase
-			}
-			return ""
-		}, 120*time.Second).Should(Or(
-			Equal(workflowexecutionv1alpha1.PhaseCompleted),
-			Equal(workflowexecutionv1alpha1.PhaseFailed),
-		))
+			By("Waiting for workflow to complete")
+			Eventually(func() string {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil {
+					return updated.Status.Phase
+				}
+				return ""
+			}, 120*time.Second).Should(Or(
+				Equal(workflowexecutionv1alpha1.PhaseCompleted),
+				Equal(workflowexecutionv1alpha1.PhaseFailed),
+			))
 
 			// Wait for audit batch to flush to DataStorage (1s flush interval + buffer)
 			time.Sleep(3 * time.Second)
@@ -914,31 +926,31 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 
 			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
 
-		// Business Behavior: WFE should have ExecutionRef after Running
-		Eventually(func() bool {
-			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-			if updated != nil && updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning {
-				return updated.Status.ExecutionRef != nil
-			}
-			return false
-		}, 60*time.Second).Should(BeTrue(), "WFE should track PipelineRun reference")
+			// Business Behavior: WFE should have ExecutionRef after Running
+			Eventually(func() bool {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				if updated != nil && updated.Status.Phase == workflowexecutionv1alpha1.PhaseRunning {
+					return updated.Status.ExecutionRef != nil
+				}
+				return false
+			}, 60*time.Second).Should(BeTrue(), "WFE should track PipelineRun reference")
 
 			runningWFE, _ := getWFE(wfe.Name, wfe.Namespace)
 			Expect(runningWFE.Status.ExecutionRef).To(And(Not(BeNil()), HaveField("Name", Not(BeEmpty()))), "ExecutionRef must reference PipelineRun")
 			GinkgoWriter.Printf("✅ WFE tracks PipelineRun: %s\n",
 				runningWFE.Status.ExecutionRef.Name)
 
-		// Wait for completion
-		Eventually(func() bool {
-			updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
-			GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
-			if updated != nil {
-				phase := updated.Status.Phase
-				return phase == workflowexecutionv1alpha1.PhaseCompleted ||
-					phase == workflowexecutionv1alpha1.PhaseFailed
-			}
-			return false
-		}, 120*time.Second).Should(BeTrue())
+			// Wait for completion
+			Eventually(func() bool {
+				updated, _ := getWFEDirect(wfe.Name, wfe.Namespace)
+				GinkgoWriter.Printf("🔍 poll: %s\n", wfeDiagnosticSnapshot(updated))
+				if updated != nil {
+					phase := updated.Status.Phase
+					return phase == workflowexecutionv1alpha1.PhaseCompleted ||
+						phase == workflowexecutionv1alpha1.PhaseFailed
+				}
+				return false
+			}, 120*time.Second).Should(BeTrue())
 
 			// Business Behavior: Completion should include timing information
 			completedWFE, err := getWFE(wfe.Name, wfe.Namespace)
@@ -959,9 +971,11 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 		})
 	})
 })
-// extractMetricValue parses Prometheus metrics format and extracts the value for a specific metric and label
+
+// extractMetricValue parses Prometheus metrics format and extracts the value for a specific label
+// of the workflowexecution execution-total metric.
 // Example: workflowexecution_total{outcome="Completed"} 5.0
-func extractMetricValue(metricsBody, metricName, outcomeLabel string) float64 {
+func extractMetricValue(metricsBody, outcomeLabel string) float64 {
 	// Parse Prometheus text format
 	// Look for lines like: workflowexecution_total{outcome="Completed"} 5.0
 	lines := strings.Split(metricsBody, "\n")
@@ -973,7 +987,7 @@ func extractMetricValue(metricsBody, metricName, outcomeLabel string) float64 {
 		}
 
 		// Check if this line is for our metric
-		if !strings.HasPrefix(line, metricName) {
+		if !strings.HasPrefix(line, wemetrics.MetricNameExecutionTotal) {
 			continue
 		}
 
@@ -996,6 +1010,7 @@ func extractMetricValue(metricsBody, metricName, outcomeLabel string) float64 {
 	// Return 0 if metric not found
 	return 0.0
 }
+
 // isDataStorageDeployed checks if Data Storage service is deployed in the cluster
 // This is used to skip audit persistence tests when DS infrastructure is not available
 func isDataStorageDeployed() bool {

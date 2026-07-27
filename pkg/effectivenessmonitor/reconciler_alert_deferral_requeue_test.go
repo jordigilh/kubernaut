@@ -69,7 +69,7 @@ var _ = Describe("Alert Deferral Requeue Cap (UT-EM-254-004, #254)", func() {
 		return s
 	}
 
-	makeReconciler := func(s *runtime.Scheme, objs ...client.Object) (*controller.Reconciler, client.Client) {
+	makeReconciler := func(s *runtime.Scheme, objs ...client.Object) *controller.Reconciler {
 		fakeClient := fake.NewClientBuilder().
 			WithScheme(s).
 			WithObjects(objs...).
@@ -91,7 +91,7 @@ var _ = Describe("Alert Deferral Requeue Cap (UT-EM-254-004, #254)", func() {
 			AuditManager:       nil,
 			DSQuerier:          nil,
 		}, cfg)
-		return r, fakeClient
+		return r
 	}
 
 	// seedAlertDeferredEA creates an EA already in Assessing with
@@ -131,7 +131,7 @@ var _ = Describe("Alert Deferral Requeue Cap (UT-EM-254-004, #254)", func() {
 		alertCheckAfter := time.Now().Add(3 * time.Minute)
 		validityDeadline := time.Now().Add(25 * time.Minute)
 		ea := seedAlertDeferredEA("default", "ea-ad-004a", alertCheckAfter, validityDeadline)
-		r, _ := makeReconciler(s, ea)
+		r := makeReconciler(s, ea)
 
 		ctx := context.Background()
 		req := ctrl.Request{NamespacedName: types.NamespacedName{
@@ -154,7 +154,7 @@ var _ = Describe("Alert Deferral Requeue Cap (UT-EM-254-004, #254)", func() {
 		alertCheckAfter := time.Now().Add(10 * time.Minute)
 		validityDeadline := time.Now().Add(2 * time.Minute)
 		ea := seedAlertDeferredEA("default", "ea-ad-004b", alertCheckAfter, validityDeadline)
-		r, _ := makeReconciler(s, ea)
+		r := makeReconciler(s, ea)
 
 		ctx := context.Background()
 		req := ctrl.Request{NamespacedName: types.NamespacedName{

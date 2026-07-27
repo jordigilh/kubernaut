@@ -29,9 +29,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
-	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
-	kubernautnotif "github.com/jordigilh/kubernaut/pkg/notification"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	kubernautnotif "github.com/jordigilh/kubernaut/pkg/notification"
+	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
@@ -171,22 +171,22 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		Expect(err).ToNot(HaveOccurred(), "Should be able to get created NotificationRequest")
 		Expect(createdNotification.Name).To(Equal(notificationName))
 
-	// ===== STEP 2: Wait for controller to process notification =====
-	// ✅ CORRECT PATTERN: Test controller behavior, NOT audit infrastructure
-	// Per TESTING_GUIDELINES.md lines 1688-1948
-	By("Waiting for controller to process notification and update phase")
-	Eventually(func() notificationv1alpha1.NotificationPhase {
-		var updated notificationv1alpha1.NotificationRequest
-		err := apiReader.Get(testCtx, types.NamespacedName{
-			Name:      notificationName,
-			Namespace: notificationNS,
-		}, &updated)
-		if err != nil {
-			return ""
-		}
-		return updated.Status.Phase
-	}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
-		"Controller should process notification and update phase to Sent")
+		// ===== STEP 2: Wait for controller to process notification =====
+		// ✅ CORRECT PATTERN: Test controller behavior, NOT audit infrastructure
+		// Per TESTING_GUIDELINES.md lines 1688-1948
+		By("Waiting for controller to process notification and update phase")
+		Eventually(func() notificationv1alpha1.NotificationPhase {
+			var updated notificationv1alpha1.NotificationRequest
+			err := apiReader.Get(testCtx, types.NamespacedName{
+				Name:      notificationName,
+				Namespace: notificationNS,
+			}, &updated)
+			if err != nil {
+				return ""
+			}
+			return updated.Status.Phase
+		}, 30*time.Second, 1*time.Second).Should(Equal(notificationv1alpha1.NotificationPhaseSent),
+			"Controller should process notification and update phase to Sent")
 
 		// ===== STEP 2.5: E2E-NT-163-001/002/003 - Exact field validation =====
 		By("Validating NR lifecycle timestamps, delivery counters, and DeliveryAttempt sub-fields")
@@ -209,17 +209,17 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 		// ✅ CORRECT PATTERN: Verify audit as SIDE EFFECT of business operation
 		By("Verifying controller emitted audit event for message sent")
 		Eventually(func() int {
-		resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-			EventType:     ogenclient.NewOptString(string(ogenclient.NotificationMessageSentPayloadAuditEventEventData)),
-			EventCategory: ogenclient.NewOptString(notificationaudit.EventCategoryNotification),
-			CorrelationID: ogenclient.NewOptString(correlationID),
-		})
+			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+				EventType:     ogenclient.NewOptString(string(ogenclient.NotificationMessageSentPayloadAuditEventEventData)),
+				EventCategory: ogenclient.NewOptString(notificationaudit.EventCategoryNotification),
+				CorrelationID: ogenclient.NewOptString(correlationID),
+			})
 			if err != nil || resp.Data == nil {
 				return 0
 			}
 			// Filter by controller actor_id after retrieving events
 			events := resp.Data
-			controllerEvents := filterEventsByActorId(events, "notification-controller")
+			controllerEvents := filterEventsByActorId(events)
 			return len(controllerEvents)
 		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">=", 1),
 			"Controller should emit audit event during notification processing")
@@ -232,7 +232,7 @@ var _ = Describe("E2E Test 1: Full Notification Lifecycle with Audit", Label("e2
 
 		// DD-E2E-002: Filter to only controller-emitted events (ActorId "notification-controller")
 		// Uses real service name, not test-specific name (ADR-034 compliance)
-		events := filterEventsByActorId(allEvents, "notification-controller")
+		events := filterEventsByActorId(allEvents)
 
 		// Find controller-emitted sent event and validate ADR-034 compliance
 		var foundSentEvent *ogenclient.AuditEvent
@@ -411,13 +411,14 @@ func queryAuditEvents(dsClient *ogenclient.Client, correlationID string) []ogenc
 	return events
 }
 
-// filterEventsByActorId filters audit events to only include events with matching ActorId
-// This is used in E2E tests to distinguish service-emitted events (ActorId "notification")
-// from controller-emitted events (ActorId "notification-controller") when both run concurrently.
+// filterEventsByActorId filters audit events to only include controller-emitted
+// events (ActorId "notification-controller"), distinguishing them from
+// service-emitted events (ActorId "notification") when both run concurrently.
 //
 // IMPORTANT: ActorId MUST use real service names, NOT test-specific names (ADR-034 compliance).
 // DD-E2E-002: E2E Audit Event Isolation Pattern
-func filterEventsByActorId(events []ogenclient.AuditEvent, actorId string) []ogenclient.AuditEvent {
+func filterEventsByActorId(events []ogenclient.AuditEvent) []ogenclient.AuditEvent {
+	const actorId = "notification-controller"
 	filtered := make([]ogenclient.AuditEvent, 0, len(events))
 	for _, event := range events {
 		if event.ActorID.IsSet() && event.ActorID.Value == actorId {

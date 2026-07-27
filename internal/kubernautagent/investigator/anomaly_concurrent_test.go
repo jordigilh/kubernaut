@@ -33,7 +33,7 @@ var _ = Describe("BR-PERFORMANCE-970: AnomalyDetector Thread Safety", func() {
 			var admitted atomic.Int32
 
 			for g := 0; g < numGoroutines; g++ {
-				go func(gID int) {
+				go func() {
 					defer GinkgoRecover()
 					defer wg.Done()
 					for i := 0; i < callsPerGoroutine; i++ {
@@ -42,7 +42,7 @@ var _ = Describe("BR-PERFORMANCE-970: AnomalyDetector Thread Safety", func() {
 							admitted.Add(1)
 						}
 					}
-				}(g)
+				}()
 			}
 
 			wg.Wait()
@@ -163,7 +163,7 @@ var _ = Describe("BR-PERFORMANCE-970: AnomalyDetector Thread Safety", func() {
 			var rejected atomic.Int32
 
 			for g := 0; g < numGoroutines; g++ {
-				go func(gID int) {
+				go func() {
 					defer GinkgoRecover()
 					defer wg.Done()
 					toolName := "kubectl_describe"
@@ -175,7 +175,7 @@ var _ = Describe("BR-PERFORMANCE-970: AnomalyDetector Thread Safety", func() {
 							rejected.Add(1)
 						}
 					}
-				}(g)
+				}()
 			}
 
 			wg.Wait()
@@ -209,7 +209,7 @@ var _ = Describe("BR-PERFORMANCE-970: AnomalyDetector Thread Safety", func() {
 			var rejected atomic.Int32
 
 			for g := 0; g < numGoroutines; g++ {
-				go func(gID int) {
+				go func() {
 					defer GinkgoRecover()
 					defer wg.Done()
 					toolName := "kubectl_describe"
@@ -219,7 +219,7 @@ var _ = Describe("BR-PERFORMANCE-970: AnomalyDetector Thread Safety", func() {
 					} else {
 						rejected.Add(1)
 					}
-				}(g)
+				}()
 			}
 
 			wg.Wait()

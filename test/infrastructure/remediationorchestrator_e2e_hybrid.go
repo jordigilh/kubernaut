@@ -43,7 +43,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-001: Port 30083 (API), 30183 (Metrics)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	namespace := "kubernaut-system"
+	namespace := kubernautSystem
 
 	// DD-TEST-007: Create coverdata directory BEFORE everything
 	projectRoot := getProjectRoot()
@@ -82,9 +82,9 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			ImageName:        "kubernaut/remediationorchestrator",
 			DockerfilePath:   "docker/remediationorchestrator-controller.Dockerfile", // Dockerfile can have suffix
 			BuildContextPath: "",                                                     // Will use project root
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true" || os.Getenv("GOCOVERDIR") != "",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture || os.Getenv("GOCOVERDIR") != "",
 		}
-		roImage, err := BuildImageForKind(cfg, writer)
+		roImage, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "RemediationOrchestrator (coverage)", image: roImage, err: err}
 	}()
 
@@ -95,9 +95,9 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			ImageName:        "kubernaut/datastorage",
 			DockerfilePath:   "docker/data-storage.Dockerfile",
 			BuildContextPath: "", // Will use project root
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		dsImage, err := BuildImageForKind(cfg, writer)
+		dsImage, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "DataStorage", image: dsImage, err: err}
 	}()
 
@@ -108,9 +108,9 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 			ImageName:        "authwebhook",
 			DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "", // Will use project root
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		awImage, err := BuildImageForKind(cfg, writer)
+		awImage, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "AuthWebhook", image: awImage, err: err}
 	}()
 
@@ -154,6 +154,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 
 	kindConfigPath := "test/infrastructure/kind-remediationorchestrator-config.yaml"
 	if err := CreateKindClusterWithExtraMounts(
+		ctx,
 		clusterName,
 		kubeconfigPath,
 		kindConfigPath,
@@ -173,12 +174,18 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		"kubernaut.ai_signalprocessings.yaml",
 		"kubernaut.ai_notificationrequests.yaml",
 		"kubernaut.ai_effectivenessassessments.yaml", // ADR-EM-001: EA CRD for EA creation on terminal phases
+		// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow cache indexes
+		// RemediationWorkflow by .spec.actionType at startup -- the CRDs must
+		// already be registered with the apiserver or DS's informer cache
+		// setup fails hard ("no matches for kind"), crash-looping the pod.
+		"kubernaut.ai_remediationworkflows.yaml",
+		"kubernaut.ai_actiontypes.yaml",
 	}
 
 	for _, crdFile := range crdFiles {
 		crdPath := filepath.Join(projectRoot, "config/crd/bases", crdFile)
 		_, _ = fmt.Fprintf(writer, "  ├── Installing %s...\n", crdFile)
-		crdCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
+		crdCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", crdPath)
 		crdCmd.Stdout = writer
 		crdCmd.Stderr = writer
 		if err := crdCmd.Run(); err != nil {
@@ -188,7 +195,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 
 	// Create kubernaut-system namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -214,21 +221,21 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	// Load RemediationOrchestrator coverage image using consolidated API
 	go func() {
 		roImage := builtImages["RemediationOrchestrator (coverage)"]
-		err := LoadImageToKind(roImage, "remediationorchestrator-controller", clusterName, writer)
+		err := LoadImageToKind(ctx, roImage, "remediationorchestrator-controller", clusterName, writer)
 		loadResults <- loadResult{name: "RemediationOrchestrator coverage", err: err}
 	}()
 
 	// Load DataStorage image using consolidated API
 	go func() {
 		dsImage := builtImages["DataStorage"]
-		err := LoadImageToKind(dsImage, "datastorage", clusterName, writer)
+		err := LoadImageToKind(ctx, dsImage, "datastorage", clusterName, writer)
 		loadResults <- loadResult{name: "DataStorage", err: err}
 	}()
 
 	// Load AuthWebhook image
 	go func() {
 		awImage := builtImages["AuthWebhook"]
-		err := LoadImageToKind(awImage, "authwebhook", clusterName, writer)
+		err := LoadImageToKind(ctx, awImage, "authwebhook", clusterName, writer)
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 
@@ -347,7 +354,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 	}()
 	go func() {
 		roImage := builtImages["RemediationOrchestrator (coverage)"]
-		err := DeployROCoverageManifest(kubeconfigPath, roImage, writer, "5s")
+		err := DeployROCoverageManifest(ctx, kubeconfigPath, roImage, writer, "5s")
 		deployResults <- deployResult{"RemediationOrchestrator", err}
 	}()
 
@@ -374,16 +381,10 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 		return fmt.Errorf("services not ready: %w", err)
 	}
 
-	// DD-WORKFLOW-016: Seed action types via DS API (FK constraint for workflow catalog)
-	seedSA := "ro-e2e-seed-sa"
-	if err := CreateE2EServiceAccountWithDataStorageAccess(ctx, namespace, kubeconfigPath, seedSA, writer); err != nil {
-		return fmt.Errorf("failed to create seed SA: %w", err)
-	}
-	seedToken, err := GetServiceAccountToken(ctx, namespace, seedSA, kubeconfigPath)
-	if err != nil {
-		return fmt.Errorf("failed to get seed SA token: %w", err)
-	}
-	if err := SeedActionTypesViaAPIWithTLS("https://localhost:8090", seedToken, kubeconfigPath, 30*time.Second, writer); err != nil {
+	// DD-WORKFLOW-016: Seed action types (FK constraint for workflow catalog).
+	// #1661 Phase 53: direct CRD creation -- no seed ServiceAccount/DataStorage
+	// round-trip needed, unlike the removed SeedActionTypesViaAPIWithTLS.
+	if err := SeedActionTypesViaCRD(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return fmt.Errorf("failed to seed action types: %w", err)
 	}
 
@@ -426,7 +427,7 @@ func BuildROImageWithCoverage(writer io.Writer) error {
 	// Build with coverage instrumentation
 	// Use localhost/ prefix to match Podman's default tagging
 	// CRITICAL: --no-cache ensures latest code changes are included (DD-TEST-002)
-	cmd := exec.Command("podman", "build",
+	cmd := exec.CommandContext(context.Background(), "podman", "build",
 		"--no-cache", // Force fresh build to include latest code changes
 		"--build-arg", fmt.Sprintf("GOARCH=%s", runtime.GOARCH),
 		"--build-arg", "GOFLAGS=-cover",
@@ -456,7 +457,7 @@ func LoadROCoverageImage(clusterName string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "📦 Loading RemediationOrchestrator coverage image into Kind cluster...")
 
 	// Save image to tar (following Gateway/DataStorage pattern for Kind+Podman compatibility)
-	saveCmd := exec.Command("podman", "save", "localhost/remediationorchestrator-controller:e2e-coverage", "-o", "/tmp/remediationorchestrator-e2e-coverage.tar")
+	saveCmd := exec.CommandContext(context.Background(), "podman", "save", "localhost/remediationorchestrator-controller:e2e-coverage", "-o", "/tmp/remediationorchestrator-e2e-coverage.tar")
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer
 
@@ -465,7 +466,7 @@ func LoadROCoverageImage(clusterName string, writer io.Writer) error {
 	}
 
 	// Load tar into Kind cluster
-	loadCmd := exec.Command("kind", "load", "image-archive", "/tmp/remediationorchestrator-e2e-coverage.tar", "--name", clusterName)
+	loadCmd := exec.CommandContext(context.Background(), "kind", "load", "image-archive", "/tmp/remediationorchestrator-e2e-coverage.tar", "--name", clusterName)
 	loadCmd.Stdout = writer
 	loadCmd.Stderr = writer
 
@@ -479,7 +480,7 @@ func LoadROCoverageImage(clusterName string, writer io.Writer) error {
 	// CRITICAL: Remove Podman image immediately to free disk space
 	// Image is now in Kind, Podman copy is duplicate
 	_, _ = fmt.Fprintln(writer, "  🗑️  Removing Podman image to free disk space...")
-	rmiCmd := exec.Command("podman", "rmi", "-f", "localhost/remediationorchestrator-controller:e2e-coverage")
+	rmiCmd := exec.CommandContext(context.Background(), "podman", "rmi", "-f", "localhost/remediationorchestrator-controller:e2e-coverage")
 	rmiCmd.Stdout = writer
 	rmiCmd.Stderr = writer
 	if err := rmiCmd.Run(); err != nil {
@@ -722,10 +723,10 @@ spec:
 // Per consolidated API migration: Accepts dynamic image name as parameter
 // Applies RBAC first, then workload after 2s propagation delay to avoid API race.
 // verifyingTimeout optionally sets the Verifying phase safety-net (#280). Pass "5s" for tiers without EM.
-func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer, verifyingTimeout ...string) error {
+func DeployROCoverageManifest(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer, verifyingTimeout ...string) error {
 	// Apply RBAC first (SA + ClusterRole + ClusterRoleBinding)
 	rbacManifest := roRBACManifest()
-	rbacCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	rbacCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	rbacCmd.Stdin = bytes.NewReader([]byte(rbacManifest))
 	rbacCmd.Stdout = writer
 	rbacCmd.Stderr = writer
@@ -738,7 +739,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 
 	// Apply workload (ConfigMap + Deployment + Service)
 	workloadManifest := roWorkloadManifest(imageName, verifyingTimeout...)
-	workloadCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	workloadCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	workloadCmd.Stdin = bytes.NewReader([]byte(workloadManifest))
 	workloadCmd.Stdout = writer
 	workloadCmd.Stderr = writer
@@ -751,7 +752,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 	_, _ = fmt.Fprintln(writer, "   ⏳ Waiting for RemediationOrchestrator to be ready...")
 	deadline := time.Now().Add(3 * time.Minute) // Longer timeout for controller startup
 	for time.Now().Before(deadline) {
-		waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+		waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
 			"wait", "--for=condition=ready", "pod", "-l", "app=remediationorchestrator-controller",
 			"--timeout=10s")
 		if err := waitCmd.Run(); err == nil {
@@ -768,7 +769,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 
 	// 1. Pod status
 	_, _ = fmt.Fprintln(writer, "   📋 Pod Status:")
-	statusCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+	statusCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
 		"get", "pods", "-l", "app=remediationorchestrator-controller", "-o", "wide")
 	statusCmd.Stdout = writer
 	statusCmd.Stderr = writer
@@ -777,7 +778,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 
 	// 2. Pod describe (events, image status, readiness probe)
 	_, _ = fmt.Fprintln(writer, "   📋 Pod Details & Events:")
-	describeCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+	describeCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
 		"describe", "pod", "-l", "app=remediationorchestrator-controller")
 	describeCmd.Stdout = writer
 	describeCmd.Stderr = writer
@@ -786,7 +787,7 @@ func DeployROCoverageManifest(kubeconfigPath, imageName string, writer io.Writer
 
 	// 3. Pod logs (startup errors)
 	_, _ = fmt.Fprintln(writer, "   📋 Pod Logs (last 50 lines):")
-	logsCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "-n", "kubernaut-system",
+	logsCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", kubernautSystem,
 		"logs", "-l", "app=remediationorchestrator-controller", "--tail=50", "--all-containers")
 	logsCmd.Stdout = writer
 	logsCmd.Stderr = writer

@@ -54,7 +54,7 @@ var _ = Describe("Operational Metrics Integration Tests (BR-ORCH-044)", Serial, 
 	var testNamespace string
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("metrics")
+		testNamespace = createTestNamespace(ctx, "metrics")
 	})
 
 	AfterEach(func() {

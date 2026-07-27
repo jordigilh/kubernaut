@@ -92,7 +92,7 @@ jobs:
     outputs:
       code_changed: ${{ steps.filter.outputs.code }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4
         id: filter
         with:
@@ -135,13 +135,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: true
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.5'
           cache: true
@@ -185,6 +185,21 @@ jobs:
           version: v2.9.0
           args: --timeout=10m cmd/... pkg/... internal/... test/...
 
+      - name: Lint Go code (godox TODO/FIXME report -- informational only)
+        # godox is deliberately excluded from .golangci.yml's blocking linter
+        # set (see the NOTE there, Issue #1546 Tier 4): blocking merges on the
+        # presence of the word TODO would defeat the purpose of TODO comments
+        # as a deferred-work tracking tool. .golangci.yml also scopes godox's
+        # keywords to [TODO, FIXME] (dropping the default BUG keyword), since
+        # ~72 of ~97 raw findings were retrospective "Bug:"/"BUG FIX" doc-
+        # comment prose describing an already-fixed defect, not pending work.
+        # continue-on-error keeps this annotation-only -- it never fails the job.
+        continue-on-error: true
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: v2.9.0
+          args: --timeout=5m --enable-only godox cmd/... pkg/... internal/... test/...
+
       - name: Dependency vulnerability scan (govulncheck)
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.3.0
@@ -198,12 +213,12 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.5'
           cache: true
@@ -240,6 +255,41 @@ jobs:
           path: licenses.csv
           retention-days: 90
 
+  # DD-PLATFORM-005 (motivated by #1686/BR-RBAC-020): dedicated fast
+  # fail-fast gate for chart template changes, distinct from helm-smoke-test
+  # (Stage 2+, needs built images and a live Kind cluster, ~30-45min).
+  # helm-unittest asserts specific rendered output (RBAC rule shape,
+  # conditional resources) offline in seconds -- runs in Stage 1 alongside
+  # lint-go/unit-tests instead of waiting on build-images, so a broken
+  # template fails CI in ~1min instead of ~30min.
+  helm-unittest:
+    name: Helm Chart Unit Tests (helm-unittest)
+    needs: [detect-changes]
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: true
+
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: latest
+
+      - name: Install helm-unittest plugin
+        # --verify=false: azure/setup-helm's "latest" now resolves to Helm v4,
+        # which added plugin provenance verification and refuses to install a
+        # plugin whose source doesn't publish it ("plugin source does not
+        # support verification") unless explicitly opted out. helm-unittest's
+        # releases aren't signed, so this is required, not optional.
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version v1.1.1 --verify=false
+
+      - name: Run helm-unittest specs
+        run: helm unittest charts/kubernaut/
+
   unit-tests:
     name: Unit Tests (${{ matrix.service }})
     needs: [detect-changes]
@@ -265,12 +315,12 @@ jobs:
           - shared-packages  # pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.5'
           cache: true
@@ -424,12 +474,12 @@ jobs:
             dockerfile: docker/workflowexecution-controller.Dockerfile
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.5'
           cache: true
@@ -565,12 +615,12 @@ jobs:
             context: .
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: true
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.5'
           cache: true
@@ -710,12 +760,20 @@ jobs:
             timeout: 15
           - service: kubernautagent
             service_name: "Kubernaut Agent"
-            timeout: 20
+            # #1734: bumped 20->25. Historical baseline was 14m48s-16m35s (3.5-5min
+            # margin under the old 20min cap), but run 30200803099 (PR #1734, all
+            # 46/46 specs passed) hit 20m4s: SynchronizedBeforeSuite (envtest
+            # bootstrap) grew 15-30% across all 4 envtest-backed suites in this job
+            # (investigator/mcp/tools-custom/enrichment) -- including 3 suites that
+            # PR didn't touch -- pointing to CI runner contention (see #1657 for the
+            # same suites' known concurrent-envtest/Podman-build contention), not a
+            # real regression. +5min restores the historical margin.
+            timeout: 25
           - service: apifrontend
             service_name: "API Frontend"
             timeout: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: true
 
@@ -743,7 +801,7 @@ jobs:
           echo "Disk after cleanup:"
           df -h /
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.5'
       - name: Cache generated code
@@ -937,7 +995,7 @@ jobs:
             service_name: "Fleet Metadata Cache (EAIGW)"
             timeout: 20
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: true
 
@@ -959,7 +1017,7 @@ jobs:
           echo "Disk after cleanup:"
           df -h /
 
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.5'
       - name: Cache generated code
@@ -1166,12 +1224,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: recursive
 
       - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: '1.26.5'
           cache: true
@@ -1203,9 +1261,10 @@ jobs:
             --set postgresql.auth.existingSecret=lint-placeholder \
             --set datastorage.dbExistingSecret=lint-placeholder \
             --set valkey.existingSecret=lint-placeholder \
-            --set kubernautAgent.llm.provider=openai \
-            --set kubernautAgent.llm.model=gpt-4o \
-            --set kubernautAgent.llm.credentialsSecretName=lint-placeholder
+            --set global.llmProfiles.primary.provider=openai \
+            --set global.llmProfiles.primary.model=gpt-4o \
+            --set global.llmProfiles.primary.credentialsSecretName=lint-placeholder \
+            --set kubernautAgent.llmProfileRef=primary
           echo "PASS: values.schema.json is consistent with values.yaml"
 
       - name: Install Podman
@@ -1382,16 +1441,19 @@ jobs:
                       registry: localhost
                       namespace: ""
                       tag: ${IMAGE_TAG}
+                    llmProfiles:
+                      primary:
+                        provider: openai
+                        model: gpt-4o
+                        endpoint: https://api.openai.com/v1
+                        credentialsSecretName: kubernaut-llm-credentials
                   postgresql:
                     auth:
                       existingSecret: postgresql-secret
                   valkey:
                     existingSecret: valkey-secret
                   kubernautAgent:
-                    llm:
-                      provider: openai
-                      model: gpt-4o
-                      credentialsSecretName: kubernaut-llm-credentials
+                    llmProfileRef: primary
                   signalprocessing:
                     policies:
                       content: |
@@ -1658,7 +1720,7 @@ jobs:
   # ========================================
   summary:
     name: Test Suite Summary
-    needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, integration-tests, e2e-tests, helm-smoke-test]
+    needs: [detect-changes, lint-go, unit-tests, build-images, build-infra-images, integration-tests, e2e-tests, helm-unittest, helm-smoke-test]
     if: always() && needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -1666,7 +1728,7 @@ jobs:
       pull-requests: write  # required for sticky-pull-request-comment to post/update PR comment
     steps:
       - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Download coverage summary reports
         if: always()
@@ -1931,6 +1993,20 @@ jobs:
             exit 1
           fi
 
+          # Check for Helm chart unit tests (helm-unittest, #1686)
+          if [ "${{ needs.helm-unittest.result }}" == "failure" ]; then
+            echo ""
+            echo "❌ Helm chart unit tests failed - check charts/kubernaut/tests/*.yaml"
+            exit 1
+          elif [ "${{ needs.helm-unittest.result }}" == "skipped" ]; then
+            echo ""
+            echo "⏭️  Helm chart unit tests skipped (dependencies failed)"
+          elif [ "${{ needs.helm-unittest.result }}" == "cancelled" ]; then
+            echo ""
+            echo "⚠️  Helm chart unit tests cancelled"
+            exit 1
+          fi
+
           # Check for Helm smoke test (handle skipped if dependencies failed)
           if [ "${{ needs.helm-smoke-test.result }}" == "failure" ]; then
             echo ""
@@ -1949,6 +2025,7 @@ jobs:
           echo ""
           if [ "${{ needs.integration-tests.result }}" == "success" ] && \
              [ "${{ needs.e2e-tests.result }}" == "success" ] && \
+             [ "${{ needs.helm-unittest.result }}" == "success" ] && \
              [ "${{ needs.helm-smoke-test.result }}" == "success" ]; then
             echo "✅ All tests passed!"
             exit 0
@@ -1970,7 +2047,7 @@ jobs:
     if: always()
     needs: [detect-changes, lint-go, license-scan, unit-tests, build-images,
             build-infra-images,
-            integration-tests, e2e-tests, helm-smoke-test, summary]
+            integration-tests, e2e-tests, helm-unittest, helm-smoke-test, summary]
     runs-on: ubuntu-latest
     steps:
       - name: Evaluate CI results
@@ -1990,6 +2067,7 @@ jobs:
           echo "  build-infra:          ${{ needs.build-infra-images.result }}"
           echo "  integration-tests:    ${{ needs.integration-tests.result }}"
           echo "  e2e-tests:            ${{ needs.e2e-tests.result }}"
+          echo "  helm-unittest:        ${{ needs.helm-unittest.result }}"
           echo "  helm-smoke-test:      ${{ needs.helm-smoke-test.result }}"
           echo "  summary:              ${{ needs.summary.result }}"
           echo ""

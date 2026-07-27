@@ -60,7 +60,7 @@ var _ = Describe("E2E-KA-1390-001: Nil-Result Resilience", Label("e2e", "ka", "1
 		Eventually(func() string {
 			result, pollErr := sessionClient.PollSession(ctx, sessionID)
 			if pollErr != nil || result == nil {
-				return "error"
+				return errorFixture
 			}
 			return result.Status
 		}, 2*time.Minute, 2*time.Second).Should(

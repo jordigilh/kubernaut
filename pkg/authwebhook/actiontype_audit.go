@@ -96,7 +96,7 @@ func (h *ActionTypeHandler) emitATDeniedAudit(
 		ResourceID:   req.Name,
 	})
 
-	_, _, wrapFn := resolveATDeniedTypes(eventType)
+	_, wrapFn := resolveATDeniedTypes(eventType)
 
 	payload := api.ActionTypeWebhookAuditPayload{
 		EventType:      resolveATDeniedOgenEventType(eventType),
@@ -135,28 +135,30 @@ func resolveATAdmitTypes(eventType string) (api.ActionTypeWebhookAuditPayloadEve
 	}
 }
 
-func resolveATDeniedTypes(eventType string) (api.ActionTypeWebhookAuditPayloadEventType, api.ActionTypeWebhookAuditPayloadAction, atWrapFn) {
+// resolveATDeniedTypes resolves the ogen event-type and payload-wrap
+// function for a denied ActionType audit event. Unlike its sibling
+// resolveATAdmitTypes, it has no Action return -- every denial case uses the
+// same api.ActionTypeWebhookAuditPayloadActionDenied, which both call sites
+// (emitATDeniedAudit, resolveATDeniedOgenEventType) already set/read
+// directly rather than through this helper.
+func resolveATDeniedTypes(eventType string) (api.ActionTypeWebhookAuditPayloadEventType, atWrapFn) {
 	switch eventType {
 	case EventTypeATDeniedCreate:
 		return api.ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedCreate,
-			api.ActionTypeWebhookAuditPayloadActionDenied,
 			api.NewAuditEventRequestEventDataActiontypeDeniedCreateAuditEventRequestEventData
 	case EventTypeATDeniedUpdate:
 		return api.ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedUpdate,
-			api.ActionTypeWebhookAuditPayloadActionDenied,
 			api.NewAuditEventRequestEventDataActiontypeDeniedUpdateAuditEventRequestEventData
 	case EventTypeATDeniedDelete:
 		return api.ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedDelete,
-			api.ActionTypeWebhookAuditPayloadActionDenied,
 			api.NewAuditEventRequestEventDataActiontypeDeniedDeleteAuditEventRequestEventData
 	default:
 		return api.ActionTypeWebhookAuditPayloadEventTypeActiontypeDeniedCreate,
-			api.ActionTypeWebhookAuditPayloadActionDenied,
 			api.NewAuditEventRequestEventDataActiontypeDeniedCreateAuditEventRequestEventData
 	}
 }
 
 func resolveATDeniedOgenEventType(eventType string) api.ActionTypeWebhookAuditPayloadEventType {
-	et, _, _ := resolveATDeniedTypes(eventType)
+	et, _ := resolveATDeniedTypes(eventType)
 	return et
 }

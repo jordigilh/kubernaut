@@ -10,20 +10,6 @@ import (
 	ht "github.com/ogen-go/ogen/http"
 )
 
-func encodeCreateActionTypeRequest(
-	req *ActionTypeCreateRequest,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
 func encodeCreateAuditEventRequest(
 	req *AuditEventRequest,
 	r *http.Request,
@@ -70,76 +56,6 @@ func encodeCreateNotificationAuditRequest(
 	return nil
 }
 
-func encodeCreateWorkflowRequest(
-	req *CreateWorkflowInlineRequest,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeDeprecateWorkflowRequest(
-	req *WorkflowLifecycleRequest,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeDisableActionTypeRequest(
-	req *ActionTypeDisableRequest,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeDisableWorkflowRequest(
-	req *WorkflowLifecycleRequest,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeEnableWorkflowRequest(
-	req *WorkflowLifecycleRequest,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
 func encodePlaceLegalHoldRequest(
 	req *PlaceLegalHoldReq,
 	r *http.Request,
@@ -156,34 +72,6 @@ func encodePlaceLegalHoldRequest(
 
 func encodeReleaseLegalHoldRequest(
 	req *ReleaseLegalHoldReq,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeUpdateActionTypeRequest(
-	req *ActionTypeUpdateRequest,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeUpdateWorkflowRequest(
-	req *WorkflowUpdateRequest,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

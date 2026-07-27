@@ -56,7 +56,7 @@ The test plan provides behavioral assurance that:
 - BR-SESSION-007: Runtime-agnostic event types for SSE contract stability (working definition — see Section 2.3)
 - Issue [#823](https://github.com/jordigilh/kubernaut/issues/823): Session Store Cancellation Infrastructure
 - Issue [#822](https://github.com/jordigilh/kubernaut/issues/822): v1.5 Streaming and Cancellation (parent)
-- PROPOSAL-EXT-003: Goose Runtime Evaluation
+- PROPOSAL-EXT-003: Goose Runtime Evaluation (❌ superseded — see [#1536](https://github.com/jordigilh/kubernaut/issues/1536))
 
 ### 2.2 Cross-References
 
@@ -73,7 +73,7 @@ These BRs do not yet have formal `BUSINESS_REQUIREMENTS.md` definitions in the s
 | BR-SESSION-001 | An operator can cancel an autonomous investigation in progress. The cancellation is final: once cancelled, the investigation state is immutable and cannot be overwritten by any concurrent process. This immutability extends to all terminal states (completed, failed, cancelled). | Inline in `manager_test.go`, `store_test.go` |
 | BR-SESSION-002 | The session store accurately reflects the current state of every investigation. Querying a cancelled, completed, or failed investigation returns the correct terminal state. | Derived from BR-SESSION-001 state integrity guarantee; formalized here. |
 | BR-SESSION-003 | Observers can subscribe to live events from an active investigation and are notified when the investigation concludes. | Inline in `manager_test.go` |
-| BR-SESSION-007 | Investigation event types are runtime-agnostic, providing a stable SSE contract across runtime migrations (current LangChainGo to future Goose ACP). See PROPOSAL-EXT-003. | `types.go` comment |
+| BR-SESSION-007 | Investigation event types are runtime-agnostic, providing a stable SSE contract across runtime migrations (current LangChainGo to future opaque-OCI agents relayed via AuthBridge). See [#1535](https://github.com/jordigilh/kubernaut/issues/1535), [#1536](https://github.com/jordigilh/kubernaut/issues/1536). | `types.go` comment |
 
 **Action item**: Create `docs/services/kubernautagent/session/BUSINESS_REQUIREMENTS.md` with formal definitions after PR 1 merges.
 
@@ -117,7 +117,7 @@ These BRs do not yet have formal `BUSINESS_REQUIREMENTS.md` definitions in the s
 - **SSE streaming endpoint** (`GET /api/v1/incident/session/{id}/stream`): Deferred to PR 3-5
 - **Event emission during LLM loop**: Deferred to PR 4
 - **Authorization/authentication**: Deferred to PR 2 (KA endpoint auth)
-- **Goose runtime integration**: Out of scope; event types designed for compatibility but no Goose code in this PR
+- **Opaque-OCI-agent runtime integration**: Out of scope; event types designed for compatibility but no opaque-agent/AuthBridge relay code in this PR
 
 ### 4.3 Design Decisions
 

@@ -51,16 +51,21 @@ kubectl create secret generic valkey-secret \
   --from-literal=valkey-secrets.yaml="$(printf 'password: %s' "$(openssl rand -base64 24)")" \
   -n kubernaut-system
 
-# 4. Create LLM credentials
+# 4. Create LLM credentials (key must be "api_key" -- the flat filename
+#    Kubernaut mounts and reads via the resolved profile's apiKeyFile;
+#    vertex_ai profiles use a "credentials.json" service-account key instead)
 kubectl create secret generic llm-credentials \
-  --from-literal=OPENAI_API_KEY=sk-... \
+  --from-literal=api_key=sk-... \
   -n kubernaut-system
 
 # 5. Install (--set-file for Rego policies is mandatory)
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-4o \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
+  --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego
 ```
@@ -93,8 +98,11 @@ kubectl create secret generic slack-webhook \
 # Install with Slack enabled
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-4o \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
+  --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego \
   --set notification.slack.secretName=slack-webhook \
@@ -108,8 +116,11 @@ Install [kube-prometheus-stack](https://github.com/prometheus-community/helm-cha
 ```bash
 helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-4o \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
+  --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego \
   --set effectivenessmonitor.external.prometheusEnabled=true \
@@ -176,6 +187,23 @@ Defaults: `minReplicas: 1`, `maxReplicas: 5`, CPU target `75%`, memory target `8
 
 ## Production Configuration
 
+The chart bundles single-replica PostgreSQL and Valkey Deployments
+(`postgresql.enabled=true` / `valkey.enabled=true` by default) purely for
+convenience — quick installs, evaluation, and development. Neither has
+replication or automated failover, and neither is part of Kubernaut's own
+managed footprint — they're infrastructure Kubernaut depends on, not
+infrastructure it operates.
+
+**For production, we recommend running PostgreSQL and Valkey/Redis
+separately in HA mode** — via a dedicated operator (e.g. CloudNativePG,
+Valkey Operator) or a managed cloud service — and pointing Kubernaut at
+them as BYO infrastructure (`postgresql.enabled=false` / `valkey.enabled=false`
+plus `host`; see [BYO PostgreSQL / Valkey](#byo-postgresql--valkey) below).
+
+The example below still uses the bundled, single-replica databases (just
+with custom secret names) — it's a starting point for locking down secrets,
+not a substitute for the BYO+HA recommendation above.
+
 For production environments, use custom secret names and provide custom policies:
 
 ```bash
@@ -193,7 +221,7 @@ kubectl create secret generic vk-credentials \
   -n kubernaut-system
 
 kubectl create secret generic llm-credentials \
-  --from-literal=OPENAI_API_KEY=sk-... \
+  --from-literal=api_key=sk-... \
   -n kubernaut-system
 
 # 2. Install with production overrides
@@ -201,13 +229,20 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set postgresql.auth.existingSecret=pg-credentials \
   --set valkey.existingSecret=vk-credentials \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-4o \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
+  --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=my-policy.rego \
   --set-file aianalysis.policies.content=my-approval.rego
 ```
 
 ### BYO PostgreSQL / Valkey
+
+**Recommended for production** — run PostgreSQL and Valkey/Redis separately
+in HA mode and point Kubernaut at them, instead of the chart's bundled
+single-replica Deployments.
 
 When using external PostgreSQL, the secret referenced by `existingSecret` must
 contain **both** the `POSTGRES_*` env-var keys **and** the `db-secrets.yaml` key
@@ -376,39 +411,90 @@ All values are validated against `values.schema.json`. Run `helm lint` to check 
 | `global.image.pullPolicy` | Image pull policy | `IfNotPresent` |
 | `global.nodeSelector` | Global node selector | `{}` |
 | `global.tolerations` | Global tolerations | `[]` |
-| `global.fleet.mcpGatewayEndpoint` | Shared MCP Gateway endpoint URL, used as fallback when a service's own `fleet.mcpGatewayEndpoint` is unset | `""` |
-| `global.fleet.mcpGatewayType` | Shared MCP Gateway type (`eaigw` or `kuadrant`), used as fallback when a service's own `fleet.mcpGatewayType` is unset | `""` |
-| `global.fleet.tlsCAFile` | Shared CA bundle for verifying the MCP Gateway's TLS cert, used as fallback when a service's own `fleet.tlsCAFile` is unset | `""` |
-| `global.fleet.oauth2.tokenURL` | Shared MCP Gateway OAuth2 token URL, used as fallback when a service's own `fleet.oauth2.tokenURL` is unset | `""` |
-| `global.fleet.oauth2.credentialsSecretRef` | Shared MCP Gateway OAuth2 credentials Secret (keys: `client-id`, `client-secret`), used as fallback | `""` |
-| `global.fleet.oauth2.scopes` | Shared MCP Gateway OAuth2 scopes, used as fallback | `[]` |
-| `global.fleet.oauth2.tlsCAFile` | Shared CA bundle for verifying `tokenURL`'s TLS cert, used as fallback | `""` |
+| `global.fleet.enabled` | Multi-cluster fleet federation on/off (BR-INTEGRATION-065, ADR-068), consolidated from four independent per-service toggles ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707)) | `false` |
+| `global.fleet.backend` | Federated scope-check backend for GW/RO: `""` (defaults to `fleetmetadatacache`), `fleetmetadatacache`, or `acm`. Enum-validated — `helm template`/`install` fails at render time for any other value ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up) | `""` |
+| `global.fleet.endpoint` | Endpoint for the selected `backend`. Auto-derived for `fleetmetadatacache`; required for `acm` | `""` |
+| `global.fleet.mcpGatewayEndpoint` | Shared MCP Gateway endpoint URL, used by every fleet-integration-capable service (global-only, no per-service override) | `""` |
+| `global.fleet.mcpGatewayType` | Shared MCP Gateway type: `""`, `eaigw`, or `kuadrant`. Enum-validated — `helm template`/`install` fails at render time for any other value | `""` |
+| `global.fleet.tlsCAFile` | Shared CA bundle for verifying the MCP Gateway's TLS cert (global-only, no per-service override) | `""` |
+| `global.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Mandatory when `backend: "acm"`** — GW/RO fail `FleetConfig.Validate()` at startup without it ([Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556)) | `""` |
+| `global.fleet.oauth2.enabled` | OAuth2 `client_credentials` auth on/off for MCP Gateway authentication (global-only, no per-service override) | `false` |
+| `global.fleet.oauth2.tokenURL` | Shared MCP Gateway OAuth2 token URL (global-only, no per-service override) | `""` |
+| `global.fleet.oauth2.credentialsSecretRef` | Shared MCP Gateway OAuth2 credentials Secret (keys: `client-id`, `client-secret`), used as the default when a service's own `fleet.oauth2.credentialsSecretRef` is unset | `""` |
+| `global.fleet.oauth2.scopes` | Shared MCP Gateway OAuth2 scopes (global-only, no per-service override) | `[]` |
+| `global.fleet.oauth2.tlsCAFile` | Shared CA bundle for verifying `tokenURL`'s TLS cert (global-only, no per-service override) | `""` |
 
-Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remediationorchestrator`, `effectivenessmonitor`, `apifrontend`, `fleetmetadatacache`) points at the same physical MCP Gateway instance, so set its endpoint, type, CA bundle, and OAuth2 credentials once here instead of duplicating them per service. Each service's own `fleet.mcpGatewayEndpoint` / `fleet.mcpGatewayType` / `fleet.tlsCAFile` / `fleet.oauth2.*` (or, for `fleetmetadatacache`, top-level equivalents) still takes precedence when set. Per-service `fleet.enabled` / `fleet.oauth2.enabled` (fleet integration on/off) remains independent per service and is not controlled by these globals.
+Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remediationorchestrator`, `effectivenessmonitor`, `apifrontend`, `fleetmetadatacache`) points at the same physical MCP Gateway instance (and, for `gateway`/`remediationorchestrator`, the same scope-check backend), so `global.fleet` is the **sole source of truth** for all of it ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up). The single per-service exception is `fleet.oauth2.credentialsSecretRef`, which each service can still override individually (see each service's own `fleet.oauth2` block, or `fleetmetadatacache.oauth2` for FMC) — every other field that used to be duplicated per service (`backend`, `endpoint`, `mcpGatewayEndpoint`, `mcpGatewayType`, `tlsCAFile`, `tokenSecretRef`, `oauth2.enabled`/`tokenURL`/`scopes`/`tlsCAFile`) was removed from every per-service schema entirely; setting it there now fails Helm schema validation at render time instead of being silently ignored. `global.fleet.enabled` is the single on/off switch for multi-cluster fleet federation across `gateway`, `remediationorchestrator`, `apifrontend`, and `effectivenessmonitor` — there is no per-service equivalent. `fleetmetadatacache.enabled` (whether to deploy that service at all) remains independent and is not controlled by this global.
 
-`gateway.fleet.mcpGatewayEndpoint`, `remediationorchestrator.fleet.mcpGatewayEndpoint`, and `fleetmetadatacache.mcpGatewayEndpoint` are required (directly or via the global fallback) when their respective `fleet.enabled` / `fleetmetadatacache.enabled` is `true` — `helm install`/`upgrade` fails fast with a remediation message if neither is set. It's optional for `effectivenessmonitor` and `apifrontend`, where an empty value just means those services fall back to reading local-cluster-only state instead of federating through the MCP Gateway.
+`global.fleet.mcpGatewayEndpoint` is required when `global.fleet.enabled` / `fleetmetadatacache.enabled` is `true` for `gateway`, `remediationorchestrator`, and `fleetmetadatacache` — `helm install`/`upgrade` fails fast with a remediation message if it's unset. It's optional for `effectivenessmonitor` and `apifrontend`, where an empty value just means those services fall back to reading local-cluster-only state instead of federating through the MCP Gateway.
+
+### LLM Profiles (DD-PLATFORM-007)
+
+LLM provider configuration is defined once as a **named profile** under `global.llmProfiles`
+and referenced by name from every consumer — mirroring the Kubernaut Operator's
+`spec.llmProfiles`. This replaces the old `kubernautAgent.llm.*` literal block; there is no
+backward-compat shim, since the chart is pre-GA.
+
+At least one profile is required — `kubernautAgent.llmProfileRef` has no default and the
+chart fails fast at render time if it's unset or names an undefined profile.
+
+| Parameter | Description | Default |
+|---|---|---|
+| `global.llmProfiles.<name>.provider` | LLM provider: `openai`, `anthropic`, `vertex_ai`, or `openai_compatible` — **required** | none |
+| `global.llmProfiles.<name>.model` | Model name (`gpt-4o`, `claude-sonnet-4-20250514`, `gemini-2.5-pro`, ...) | `""` |
+| `global.llmProfiles.<name>.credentialsSecretName` | Secret with the LLM API key (key `api_key`) or, for `vertex_ai`, a service-account JSON key (key `credentials.json`) — **required** | none |
+| `global.llmProfiles.<name>.endpoint` | Endpoint URL, functionally required for `openai`/`openai_compatible` on both KA and AF (e.g. `https://api.openai.com/v1` for real OpenAI, or a self-hosted/Azure (`azureApiVersion`) base URL) — neither client defaults it. API Frontend fails fast at startup if it's unset for these providers; Kubernaut Agent does not validate it upfront, but every LLM call fails at request time without it | `""` |
+| `global.llmProfiles.<name>.temperature` | Sampling temperature | `0.7` |
+| `global.llmProfiles.<name>.maxRetries` | Max retry attempts on transient LLM errors | `3` |
+| `global.llmProfiles.<name>.timeoutSeconds` | Per-request timeout | `120` |
+| `global.llmProfiles.<name>.vertexProject` | GCP project ID (`vertex_ai` only) | `""` |
+| `global.llmProfiles.<name>.vertexLocation` | GCP region (`vertex_ai` only) | `""` |
+| `global.llmProfiles.<name>.azureApiVersion` | Switches `openai`/`openai_compatible` into Azure OpenAI mode | `""` |
+| `global.llmProfiles.<name>.tlsCaFile` | PEM CA cert path for internal LLM endpoints behind a private CA | `""` |
+| `global.llmProfiles.<name>.oauth2.enabled` | Enable OAuth2 client-credentials auth for the LLM gateway | `false` |
+| `global.llmProfiles.<name>.oauth2.tokenURL` | OAuth2 token endpoint URL | `""` |
+| `global.llmProfiles.<name>.oauth2.credentialsSecretRef` | Secret with `client-id`/`client-secret` keys (mounted as files) | `""` |
+| `global.llmProfiles.<name>.reasoning.enabled` | Request model reasoning/thinking output (BR-AI-086). Supported today on the Anthropic-family client (native + Vertex) | `false` |
+| `global.llmProfiles.<name>.reasoning.budgetTokens` | Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). `0` lets the client choose a default. Anthropic-only; always wins over `effort` when set | `0` |
+| `global.llmProfiles.<name>.reasoning.effort` | Unified, provider-agnostic reasoning-depth knob (#1604): `""` (vendor/provider default), `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Supported on Anthropic, real OpenAI/gpt-5/o-series models, and DeepSeek | `""` |
+| `global.llmProfiles.<name>.reasoning.capabilityOverride` | Override reasoning-capability auto-detection for `openai_compatible` self-hosted models: `""` (auto), `force_on`, or `force_off` | `""` |
 
 ### Kubernaut Agent (LLM)
 
 | Parameter | Description | Default |
 |---|---|---|
-| `kubernautAgent.llm.credentialsSecretName` | Secret with LLM API keys (e.g., `OPENAI_API_KEY`) | `llm-credentials` |
-| `kubernautAgent.llm.provider` | LLM provider for quickstart (`openai`, `anthropic`) | `""` |
-| `kubernautAgent.llm.tlsCaFile` | PEM CA cert path for internal LLM endpoints behind private CA | `""` |
-| `kubernautAgent.llm.model` | LLM model for quickstart (`gpt-4o`, `claude-sonnet-4-20250514`) | `""` |
-| `kubernautAgent.llm.oauth2.enabled` | Enable OAuth2 client credentials grant for LLM gateway | `false` |
-| `kubernautAgent.llm.oauth2.tokenURL` | OAuth2 token endpoint URL | `""` |
-| `kubernautAgent.llm.oauth2.credentialsSecretRef` | Secret with `client-id` and `client-secret` keys (mounted as files) | `""` |
-| `kubernautAgent.llm.reasoning.enabled` | Request model reasoning/thinking output (BR-AI-086). Supported today on the Anthropic-family client (native + Vertex) | `false` |
-| `kubernautAgent.llm.reasoning.budgetTokens` | Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). `0` lets the client choose a default. Anthropic-only; always wins over `effort` when set | `0` |
-| `kubernautAgent.llm.reasoning.effort` | Unified, provider-agnostic reasoning-depth knob (#1604): `""` (vendor/provider default), `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Supported on Anthropic, real OpenAI/gpt-5/o-series models, and DeepSeek | `""` |
-| `kubernautAgent.llm.reasoning.capabilityOverride` | Override reasoning-capability auto-detection for `openai_compatible` self-hosted models: `""` (auto), `force_on`, or `force_off` | `""` |
+| `kubernautAgent.llmProfileRef` | Name of an entry in `global.llmProfiles` for KA's main investigation LLM — **required, no default** | none |
+| `kubernautAgent.phaseModels.<phase>` | Per-phase LLM override, one of `rca`, `workflow_discovery`, `validation` → a `global.llmProfiles` name. Omitted phases use `llmProfileRef`'s profile unchanged | `{}` |
+| `kubernautAgent.alignmentCheck.llmProfileRef` | Name of an entry in `global.llmProfiles` for the plan-alignment-check LLM call. Empty (default) inherits `llmProfileRef`'s resolved profile. Fixes a dead-field bug where the chart previously wrote an `apiKey` the Go binary never read (it expects `apiKeyFile`) | `""` |
 | `kubernautAgent.prometheus.enabled` | Enable Prometheus toolset | `false` |
 | `kubernautAgent.prometheus.url` | Prometheus/Thanos URL | `""` |
 | `kubernautAgent.prometheus.tls.enabled` | Enable TLS CA trust for Prometheus connections | `false` |
 | `kubernautAgent.prometheus.tls.caConfigMapName` | ConfigMap with CA PEM | `""` |
 
-All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap. OAuth2 credentials are mounted from a Secret as files (never exposed as environment variables).
+All LLM configuration is part of the main `kubernaut-agent-config`/`kubernaut-agent-llm-runtime`
+ConfigMaps. Credentials (API keys, `vertex_ai` service-account JSON, OAuth2 client secrets) are
+always mounted from a Secret as files — never exposed as environment variables or inlined in a
+ConfigMap. Distinct `credentialsSecretName`s across `phaseModels`/`alignmentCheck` each get their
+own dedicated Secret mount; a phase/alignment-check profile that shares `llmProfileRef`'s own
+`credentialsSecretName` reuses that existing mount instead of duplicating it.
+
+### API Frontend (LLM)
+
+API Frontend's own agent-loop LLM connection and severity-triage LLM tiers were previously
+unreachable via Helm despite being fully implemented in Go — both are now wired.
+
+| Parameter | Description | Default |
+|---|---|---|
+| `apifrontend.llmProfileRef` | Name of an entry in `global.llmProfiles` for AF's own `agent.llm` connection. Empty (default) falls back to `kubernautAgent.llmProfileRef`'s resolved profile | `""` |
+| `apifrontend.config.severityTriage.llmProfileRef` | Name of an entry in `global.llmProfiles` for severity-triage's LLM fallback tier, independent of `apifrontend.llmProfileRef`. Empty (default) inherits AF's own resolved profile | `""` |
+| `apifrontend.config.severityTriage.llmEnabled` | Whether LLM-based severity-triage tiers are active. `false` forces rule-based-only triage (no `llm` block rendered) | `true` |
+
+`vertex_ai` authenticates via ambient `GOOGLE_APPLICATION_CREDENTIALS` (set automatically on the
+Deployment when a resolved profile is `vertex_ai`), so AF's own connection and severity-triage's
+cannot both be `vertex_ai` while pointing at *different* Secrets — there's no way to make two
+different credential files visible to the SDK's ADC lookup at the same time. The chart fails fast
+at render time (`kubernaut#1731`) if this combination is configured; use the same
+`credentialsSecretName` for both, or a non-`vertex_ai` provider for one of them.
 
 ### SignalProcessing
 
@@ -451,6 +537,14 @@ All LLM configuration is now part of the main `kubernaut-agent-config` ConfigMap
 | `workflowexecution.config.ansible.tokenSecretRef.namespace` | Secret namespace (defaults to release namespace) | _(release ns)_ |
 | `workflowexecution.config.ansible.caCertSecretRef.name` | Secret with a custom/private CA cert for a self-signed AWX/AAP endpoint (BR-PLATFORM-005) | `""` |
 | `workflowexecution.config.ansible.caCertSecretRef.key` | Key within the Secret (PEM) | `ca.crt` |
+| `workflowexecution.fleet.oauth2.credentialsSecretRef` | K8s Secret (keys: `client-id`, `client-secret`) for a **write-scoped** OAuth2 client. **REQUIRED when `global.fleet.oauth2.enabled=true`** — `helm template`/`install` fails at render time if unset. Does **NOT** fall back to `global.fleet.oauth2.credentialsSecretRef`: WE is the only fleet-integration-capable service that calls MCP write tools (`resources_create_or_update`/`resources_delete`) instead of the read-only tools every other service (`gateway`/`remediationorchestrator`/`apifrontend`/`effectivenessmonitor`/`signalprocessing`/`fleetmetadatacache`) uses, so sharing their credential here would be a least-privilege violation | `""` |
+
+WE's remote-execution `fleet.endpoint` and `fleet.oauth2.{enabled,tokenURL,scopes,tlsCAFile}` come
+entirely from [`global.fleet.*`](#global) — there is no per-service override for them, since WE has
+no `ClusterRegistry`/CRD-watch capability (no `mcpGatewayType`, no `namespace`; it discovers MCP tool
+prefixes dynamically via `tools/list`). Unlike GW/RO/FMC, an empty `global.fleet.mcpGatewayEndpoint`
+is a valid, supported state even with `global.fleet.enabled=true` — WE simply stays in local-only
+execution (BR-FLEET-054).
 
 Setting `caCertSecretRef` adds a `build-ca-bundle` init container that combines the custom CA with
 the inter-service CA into one trust bundle (`TLS_CA_FILE`), mirroring the Kubernaut Operator. When
@@ -464,19 +558,13 @@ cluster's other known peers.
 |---|---|---|
 | `gateway.auth.signalSources` | External signal sources needing RBAC | `[]` |
 | `gateway.service.type` | Service type | `ClusterIP` |
-| `gateway.fleet.enabled` | Multi-cluster fleet federation (BR-INTEGRATION-065, ADR-068) | `false` |
-| `gateway.fleet.backend` | Federated scope-check backend: `fleetmetadatacache` or `acm` | `""` (fleetmetadatacache) |
-| `gateway.fleet.endpoint` | Backend endpoint (auto-derived for fleetmetadatacache; required for acm) | `""` |
-| `gateway.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Mandatory when `backend: "acm"`** — GW fails `FleetConfig.Validate()` at startup without it ([Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556)). | `""` |
+| `gateway.fleet.oauth2.credentialsSecretRef` | K8s Secret (keys: `client-id`, `client-secret`) overriding `global.fleet.oauth2.credentialsSecretRef` for Gateway only. All other fleet fields (`backend`, `endpoint`, `tokenSecretRef`, `mcpGatewayEndpoint`, `mcpGatewayType`, `tlsCAFile`, `oauth2.enabled`/`tokenURL`/`scopes`/`tlsCAFile`) moved to [`global.fleet.*`](#global) ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up) | `""` |
 
 ### RemediationOrchestrator
 
 | Parameter | Description | Default |
 |---|---|---|
-| `remediationorchestrator.fleet.enabled` | Multi-cluster fleet federation (BR-INTEGRATION-065, ADR-068) | `false` |
-| `remediationorchestrator.fleet.backend` | Federated scope-check backend: `fleetmetadatacache` or `acm` | `""` (fleetmetadatacache) |
-| `remediationorchestrator.fleet.endpoint` | Backend endpoint (auto-derived for fleetmetadatacache; required for acm) | `""` |
-| `remediationorchestrator.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Mandatory when `backend: "acm"`** — RO fails `FleetConfig.Validate()` at startup without it ([Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556)). | `""` |
+| `remediationorchestrator.fleet.oauth2.credentialsSecretRef` | K8s Secret (keys: `client-id`, `client-secret`) overriding `global.fleet.oauth2.credentialsSecretRef` for RemediationOrchestrator only. All other fleet fields (`backend`, `endpoint`, `tokenSecretRef`, `mcpGatewayEndpoint`, `mcpGatewayType`, `tlsCAFile`, `oauth2.enabled`/`tokenURL`/`scopes`/`tlsCAFile`) moved to [`global.fleet.*`](#global) ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up) | `""` |
 
 ### EffectivenessMonitor
 
@@ -671,8 +759,11 @@ For airgapped environments, mirror container images and override the registry. R
 helm install kubernaut oci://harbor.corp/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --set global.image.registry=harbor.corp \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-4o \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
+  --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego
 
@@ -681,8 +772,11 @@ helm install kubernaut oci://quay.io/myorg/charts/kubernaut \
   --namespace kubernaut-system \
   --set global.image.registry=quay.io/myorg \
   --set global.image.separator=- \
-  --set kubernautAgent.llm.provider=openai \
-  --set kubernautAgent.llm.model=gpt-4o \
+  --set global.llmProfiles.primary.provider=openai \
+  --set global.llmProfiles.primary.model=gpt-4o \
+  --set global.llmProfiles.primary.endpoint=https://api.openai.com/v1 \
+  --set global.llmProfiles.primary.credentialsSecretName=llm-credentials \
+  --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego
 ```

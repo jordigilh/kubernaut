@@ -39,18 +39,18 @@ func HandleKubectlGet(ctx context.Context, reader ResourceReader, mapper meta.RE
 		return KubectlGetResult{}, ErrK8sUnavailable
 	}
 	if err := validate.Kind(args.Kind); err != nil {
-		return KubectlGetResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return KubectlGetResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	if err := validate.ResourceName(args.Name); err != nil {
-		return KubectlGetResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return KubectlGetResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	if err := validate.Namespace(args.Namespace); err != nil {
-		return KubectlGetResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return KubectlGetResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	gvr, gvk, err := resolveGVRAndGVK(mapper, args.Kind)
 	if err != nil {
-		return KubectlGetResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return KubectlGetResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	ns := ResolveEffectiveNamespace(mapper, args.Kind, args.Namespace, logr.FromContextOrDiscard(ctx))

@@ -65,6 +65,12 @@ const (
 	ActionFailed    = "failed"
 )
 
+// errCodePipelineFailed is the default/generic error code used in audit
+// ErrorDetails for pipeline failures whose FailureDetails.Reason maps to a
+// retryable, non-specific failure (OOMKilled, ResourceExhausted,
+// DeadlineExceeded, TaskFailed, or unknown).
+const errCodePipelineFailed = "ERR_PIPELINE_FAILED"
+
 // Event types for WorkflowExecution audit events (per ADR-034 v1.5 + OpenAPI spec)
 // Per ADR-034 v1.5: ALL event types from WorkflowExecution controller use "workflowexecution" prefix
 // These match the event_type enum values in data-storage-v1.yaml
@@ -145,7 +151,6 @@ func (m *Manager) RecordWorkflowSelectionCompleted(ctx context.Context, wfe *wor
 	}
 
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeSelectionCompleted)
 	audit.SetEventCategory(event, CategoryWorkflowExecution)
 	audit.SetEventAction(event, "completed") // "workflowexecution.selection.completed" → "completed"
@@ -229,7 +234,6 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	}
 
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeExecutionStarted)
 	audit.SetEventCategory(event, CategoryWorkflowExecution) // Per ADR-034 v1.5: workflowexecution category
 	audit.SetEventAction(event, "started")                   // "workflowexecution.execution.started" → "started"
@@ -273,6 +277,30 @@ func (m *Manager) RecordExecutionWorkflowStarted(
 	return nil
 }
 
+// setWorkflowIdentifiers sets payload.WorkflowName/ActionType.
+// #1661 Change 11f: ActionType is read directly from the immutable,
+// CRD-embedded wfe.Spec.WorkflowRef.ActionType snapshot (no Status mirror
+// or resolve step involved -- it's known at WFE creation time, same as
+// WorkflowID/Version/ExecutionBundle read elsewhere in this file).
+// WorkflowName has no equivalent source anywhere upstream (WorkflowRef
+// carries no display-name field; KA's autonomous selection path never
+// emits one either) so it stays permanently unset on wfe.Status --
+// WorkflowID remains the functional/join key for SOC2 CC8.1 reconstruction
+// regardless (IT-AW-1111-001).
+func setWorkflowIdentifiers(payload *api.WorkflowExecutionAuditPayload, wfe *workflowexecutionv1alpha1.WorkflowExecution) {
+	// Issue #1661 Change 12: WorkflowName now lives on the CRD-embedded
+	// execution snapshot (Spec.WorkflowRef.WorkflowName), same as its
+	// sibling ActionType below -- Status.WorkflowName was never actually
+	// set by production code (a dead field superseded by this Spec value;
+	// see WorkflowExecutionStatus.WorkflowName's doc comment).
+	if wfe.Spec.WorkflowRef.WorkflowName != "" {
+		payload.WorkflowName.SetTo(wfe.Spec.WorkflowRef.WorkflowName)
+	}
+	if wfe.Spec.WorkflowRef.ActionType != "" {
+		payload.ActionType.SetTo(wfe.Spec.WorkflowRef.ActionType)
+	}
+}
+
 // buildExecutionStartedPayload builds the WorkflowExecutionAuditPayload for
 // an execution.workflow.started event (Gap #6), defaulting Phase to
 // "Pending" when the WFE phase is not yet set and including execution
@@ -294,6 +322,7 @@ func buildExecutionStartedPayload(wfe *workflowexecutionv1alpha1.WorkflowExecuti
 		TargetResource:  wfe.Spec.TargetResource, // Already a string per CRD definition
 	}
 	payload.PipelinerunName.SetTo(pipelineRunName)
+	setWorkflowIdentifiers(&payload, wfe)
 
 	// Add execution parameters for SOC2 chain of custody (Issue #103)
 	if len(wfe.Spec.Parameters) > 0 {
@@ -327,7 +356,6 @@ func (m *Manager) recordAuditEvent(
 
 	// Build audit event per ADR-034 schema (DD-AUDIT-002 V2.0: OpenAPI types)
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	// Event type = action (e.g., "workflowexecution.workflow.started")
 	// Service context is provided by event_category and actor fields
 	audit.SetEventType(event, action)
@@ -421,6 +449,7 @@ func buildWorkflowExecutionAuditPayload(wfe *workflowexecutionv1alpha1.WorkflowE
 		ContainerImage:  wfe.Spec.WorkflowRef.ExecutionBundle,
 		ExecutionName:   wfe.Name,
 	}
+	setWorkflowIdentifiers(&payload, wfe)
 
 	if wfe.Status.StartTime != nil {
 		payload.StartedAt.SetTo(wfe.Status.StartTime.Time)
@@ -471,7 +500,7 @@ func buildFailureErrorDetails(wfe *workflowexecutionv1alpha1.WorkflowExecution) 
 	if wfe.Status.FailureDetails == nil {
 		return sharedaudit.NewErrorDetails(
 			"workflowexecution",
-			"ERR_PIPELINE_FAILED",
+			errCodePipelineFailed,
 			"Workflow execution failed with unknown error",
 			true,
 		)
@@ -488,7 +517,7 @@ func buildFailureErrorDetails(wfe *workflowexecutionv1alpha1.WorkflowExecution) 
 
 	// Determine error code based on FailureDetails.Reason (structured enum)
 	// Uses Kubernetes-style reason code instead of string matching on error message
-	errorCode := "ERR_PIPELINE_FAILED"
+	errorCode := errCodePipelineFailed
 	retryPossible := true // Pipeline failures may be transient
 
 	switch wfe.Status.FailureDetails.Reason {
@@ -496,13 +525,13 @@ func buildFailureErrorDetails(wfe *workflowexecutionv1alpha1.WorkflowExecution) 
 		errorCode = "ERR_WORKFLOW_NOT_FOUND"
 		retryPossible = false
 	case "OOMKilled", "ResourceExhausted", "DeadlineExceeded":
-		errorCode = "ERR_PIPELINE_FAILED"
+		errorCode = errCodePipelineFailed
 		retryPossible = true
 	case "ImagePullBackOff":
 		errorCode = "ERR_IMAGE_PULL"
 		retryPossible = true
 	case "TaskFailed":
-		errorCode = "ERR_PIPELINE_FAILED"
+		errorCode = errCodePipelineFailed
 		retryPossible = !wfe.Status.FailureDetails.WasExecutionFailure
 	}
 
@@ -536,7 +565,6 @@ func (m *Manager) recordFailureAuditWithDetails(ctx context.Context, wfe *workfl
 
 	// Build audit event
 	event := audit.NewAuditEventRequest()
-	event.Version = "1.0"
 	audit.SetEventType(event, EventTypeFailed)
 	audit.SetEventCategory(event, CategoryWorkflowExecution)
 	audit.SetEventAction(event, ActionFailed)

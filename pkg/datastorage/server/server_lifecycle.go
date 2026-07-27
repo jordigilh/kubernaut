@@ -183,7 +183,7 @@ func (s *Server) shutdownStep3DrainConnections(ctx context.Context, shutdownID s
 		"dd", "DD-007-step-3")
 
 	// Create timeout context for draining
-	drainCtx, cancel := context.WithTimeout(context.Background(), drainTimeout)
+	drainCtx, cancel := context.WithTimeout(context.Background(), drainTimeout) //nolint:contextcheck // drain uses a bounded shutdown context, deliberately independent of any request context already cancelled during teardown
 	defer cancel()
 
 	// Override parent context if it would timeout sooner
@@ -224,7 +224,7 @@ func (s *Server) shutdownStep4DrainDLQ(ctx context.Context, shutdownID string) e
 	// Create timeout context for DLQ drain.
 	// Always start from context.Background() so the DLQ drain gets its full budget
 	// even if the parent context expired during HTTP drain (ARCH-M2).
-	drainCtx, cancel := context.WithTimeout(context.Background(), dlqDrainTimeout)
+	drainCtx, cancel := context.WithTimeout(context.Background(), dlqDrainTimeout) //nolint:contextcheck // drain uses a bounded shutdown context, deliberately independent of any request context already cancelled during teardown
 	defer cancel()
 
 	// Use the parent context only if it has positive remaining time shorter than

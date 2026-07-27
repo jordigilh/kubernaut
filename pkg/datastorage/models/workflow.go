@@ -43,6 +43,13 @@ const (
 	ExecutionEngineAnsible ExecutionEngine = "ansible"
 )
 
+// RemediationWorkflow.Status values (see the `validate:"oneof=..."` tag below
+// for the full enum: Active, Disabled, Deprecated, Archived).
+const (
+	WorkflowStatusActive   = "Active"
+	WorkflowStatusDisabled = "Disabled"
+)
+
 // RemediationWorkflow represents a workflow in the catalog
 // Maps to remediation_workflow_catalog table (migration 015)
 //
@@ -177,9 +184,18 @@ type RemediationWorkflow struct {
 	// ========================================
 	ExpectedSuccessRate     *float64 `json:"expectedSuccessRate,omitempty" db:"expected_success_rate" validate:"omitempty,min=0,max=1"`
 	ExpectedDurationSeconds *int     `json:"expectedDurationSeconds,omitempty" db:"expected_duration_seconds" validate:"omitempty,min=0"`
-	ActualSuccessRate       *float64 `json:"actualSuccessRate,omitempty" db:"actual_success_rate" validate:"omitempty,min=0,max=1"`
-	TotalExecutions         int      `json:"totalExecutions" db:"total_executions" validate:"min=0"`
-	SuccessfulExecutions    int      `json:"successfulExecutions" db:"successful_executions" validate:"min=0"`
+
+	// ActualSuccessRate/TotalExecutions/SuccessfulExecutions ("success-metrics
+	// overlay") were removed entirely (#1677 Phase 2g follow-up, DD-WORKFLOW-019
+	// v2.0 changelog): originally computed on demand from audit_events by DS's
+	// Handler.overlaySuccessMetrics (Issue #1661 Change 7, DD-WORKFLOW-018 --
+	// migration 015 already dropped their backing DB columns). Phase 2g deleted
+	// overlaySuccessMetrics itself as dead code once workflow discovery moved
+	// to KubernautAgent, confirming zero use in the actual scoring logic
+	// (cache_filter.go). A repo-wide sweep found zero remaining Go references
+	// to these three fields (production or test), so -- consistent with the
+	// DD's own "dropped entirely rather than migrated" wording -- the fields
+	// are deleted here rather than kept as always-zero wire-compat stubs.
 
 	// ========================================
 	// AUDIT TRAIL
@@ -298,35 +314,17 @@ type WorkflowSearchFilters struct {
 // V1.0: DetectedLabels type moved to workflow_labels.go
 // Authority: DD-WORKFLOW-001 v2.3 - Structured types for zero unstructured data
 // See: pkg/datastorage/models/workflow_labels.go for MandatoryLabels, CustomLabels, DetectedLabels
-
-// ShouldSkipDetectedLabel returns true if the given field name should be skipped
-// because it's in the failedDetections list.
-// DD-WORKFLOW-001 v2.1: When matching incident DetectedLabels against workflow
-// catalog detected_labels, skip fields that are in failedDetections.
-func ShouldSkipDetectedLabel(fieldName string, failedDetections []string) bool {
-	if len(failedDetections) == 0 {
-		return false
-	}
-	for _, failed := range failedDetections {
-		if failed == fieldName {
-			return true
-		}
-	}
-	return false
-}
-
-// IsValidFailedDetectionField returns true if the given field name is a valid
-// DetectedLabels field that can be included in failedDetections.
-// DD-WORKFLOW-001 v2.1: Validation for failedDetections field names
-// V1.0: Uses ValidDetectedLabelFields from workflow_labels.go
-func IsValidFailedDetectionField(fieldName string) bool {
-	for _, valid := range ValidDetectedLabelFields {
-		if valid == fieldName {
-			return true
-		}
-	}
-	return false
-}
+//
+// ShouldSkipDetectedLabel/IsValidFailedDetectionField (DD-WORKFLOW-001 v2.1
+// failedDetections skip-list helpers) were removed as dead code (#1677
+// dead-code sweep, follow-up): they backed the SQL-era discovery WHERE-clause
+// skip mechanism, which was never carried over when discovery filtering moved
+// from raw SQL to a Go-native filter (Issue #1661); confirmed the deleted
+// DS repository/workflow/cache_filter.go never called them, and KA's ported
+// filter (internal/kubernautagent/workflowcatalog/cache_filter.go) has its
+// own explicit documentation that the boolean detected-label hard-filter is
+// a faithful mirror of the pre-existing SQL tautology, not a newly introduced
+// gap.
 
 // ========================================
 // WORKFLOW SEARCH RESPONSE
@@ -495,32 +493,10 @@ type WorkflowListResponse struct {
 	Total     int                    `json:"total"`
 }
 
-// WorkflowVersionsResponse represents all versions of a workflow by workflow_name
-// DD-WORKFLOW-002 v3.0: List all versions by workflow_name
-type WorkflowVersionsResponse struct {
-	WorkflowName string                `json:"workflowName"`
-	Versions     []RemediationWorkflow `json:"versions"`
-	Total        int                   `json:"total"`
-}
-
-// WorkflowUpdateRequest represents a request to update mutable workflow fields
-// DD-WORKFLOW-012: Only mutable fields can be updated (status, metrics)
-// Immutable fields (description, content, labels) require creating a new version
-type WorkflowUpdateRequest struct {
-	// Mutable fields (DD-WORKFLOW-012)
-	Status         *string `json:"status,omitempty"`          // active, disabled, deprecated, archived
-	DisabledBy     *string `json:"disabledBy,omitempty"`     // Who disabled the workflow
-	DisabledReason *string `json:"disabledReason,omitempty"` // Why the workflow was disabled
-
-	// Immutable fields - included for validation (will be rejected if provided)
-	Description *StructuredDescription `json:"description,omitempty"` // IMMUTABLE - rejected if provided
-	Content     *string          `json:"content,omitempty"`     // IMMUTABLE - rejected if provided
-	Labels      *json.RawMessage `json:"labels,omitempty"`      // IMMUTABLE - rejected if provided
-}
-
-// WorkflowDisableRequest represents a request to disable a workflow
-// DD-WORKFLOW-012: Convenience endpoint for soft-delete (status = disabled)
-type WorkflowDisableRequest struct {
-	Reason    *string `json:"reason,omitempty"`     // Why the workflow is being disabled
-	UpdatedBy *string `json:"updatedBy,omitempty"` // Who is disabling the workflow
-}
+// #1661 Phase B: WorkflowVersionsResponse/WorkflowUpdateRequest/WorkflowDisableRequest
+// deleted -- their sole consumers were the deleted RW mutation/version-management
+// handlers (create/update/disable/enable/deprecate, and the version-management
+// endpoints removed earlier alongside 07_workflow_version_management_test.go).
+// AuthWebhook now owns the RemediationWorkflow CRD lifecycle entirely locally
+// (DD-WORKFLOW-018); version is no longer a composite primary key component
+// (etcd/Kubernetes metadata.name is the sole primary key).

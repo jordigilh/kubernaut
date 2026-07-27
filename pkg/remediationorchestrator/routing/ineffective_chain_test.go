@@ -51,24 +51,27 @@ func (m *mockHistoryQuerier) GetRemediationHistory(
 	return m.entries, m.err
 }
 
-// helper to create a DS entry with hash chain data
-func newDSEntry(preHash, postHash string, hashMatch ogenclient.RemediationHistoryEntryHashMatch, outcome string, completedAt time.Time) ogenclient.RemediationHistoryEntry {
+// helper to create a DS entry with hash chain data. Outcome is always "Completed"
+// in these tests (ineffective-chain detection only considers completed remediations).
+func newDSEntry(preHash, postHash string, hashMatch ogenclient.RemediationHistoryEntryHashMatch, completedAt time.Time) ogenclient.RemediationHistoryEntry {
 	entry := ogenclient.RemediationHistoryEntry{
 		RemediationUID:          fmt.Sprintf("rr-uid-%d", completedAt.UnixNano()),
 		PreRemediationSpecHash:  ogenclient.NewOptString(preHash),
 		PostRemediationSpecHash: ogenclient.NewOptString(postHash),
 		HashMatch:               ogenclient.NewOptRemediationHistoryEntryHashMatch(hashMatch),
-		Outcome:                 ogenclient.NewOptString(outcome),
+		Outcome:                 ogenclient.NewOptString("Completed"),
 		CompletedAt:             completedAt,
 	}
 	return entry
 }
 
-// helper to create a DS entry with no hash data (for safety net tests)
-func newDSEntryNoHash(outcome string, completedAt time.Time) ogenclient.RemediationHistoryEntry {
+// helper to create a DS entry with no hash data (for safety net tests). Outcome is
+// always "Completed" in these tests (ineffective-chain detection only considers
+// completed remediations).
+func newDSEntryNoHash(completedAt time.Time) ogenclient.RemediationHistoryEntry {
 	return ogenclient.RemediationHistoryEntry{
 		RemediationUID: fmt.Sprintf("rr-uid-%d", completedAt.UnixNano()),
-		Outcome:        ogenclient.NewOptString(outcome),
+		Outcome:        ogenclient.NewOptString("Completed"),
 		CompletedAt:    completedAt,
 	}
 }
@@ -112,15 +115,15 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 			Build()
 
 		config := routing.Config{
-			ConsecutiveFailureThreshold: 3,
-			ConsecutiveFailureCooldown:  3600,
-			RecentlyRemediatedCooldown:  300,
-			ExponentialBackoffBase:      60,
-			ExponentialBackoffMax:       600,
+			ConsecutiveFailureThreshold:   3,
+			ConsecutiveFailureCooldown:    3600,
+			RecentlyRemediatedCooldown:    300,
+			ExponentialBackoffBase:        60,
+			ExponentialBackoffMax:         600,
 			ExponentialBackoffMaxExponent: 4,
-			IneffectiveChainThreshold:   3,
-			RecurrenceCountThreshold:    5,
-			IneffectiveTimeWindow:       4 * time.Hour,
+			IneffectiveChainThreshold:     3,
+			RecurrenceCountThreshold:      5,
+			IneffectiveTimeWindow:         4 * time.Hour,
 		}
 
 		engine = routing.NewRoutingEngine(fakeClient, fakeClient, "default", config, &mocks.AlwaysManagedScopeChecker{}, querier)
@@ -138,9 +141,9 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 		It("should return BlockReasonIneffectiveChain when 3 consecutive entries match hash chain within window", func() {
 			now := time.Now()
 			entries := []ogenclient.RemediationHistoryEntry{
-				newDSEntry(preHash, "post1", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, "Completed", now.Add(-3*time.Hour)),
-				newDSEntry(preHash, "post2", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, "Completed", now.Add(-2*time.Hour)),
-				newDSEntry(preHash, "post3", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, "Completed", now.Add(-1*time.Hour)),
+				newDSEntry(preHash, "post1", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, now.Add(-3*time.Hour)),
+				newDSEntry(preHash, "post2", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, now.Add(-2*time.Hour)),
+				newDSEntry(preHash, "post3", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, now.Add(-1*time.Hour)),
 			}
 			setupEngine(&mockHistoryQuerier{entries: entries})
 
@@ -165,9 +168,9 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 		It("should return BlockReasonIneffectiveChain for consecutive regression entries", func() {
 			now := time.Now()
 			entries := []ogenclient.RemediationHistoryEntry{
-				newDSEntry(preHash, "post1", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, "Completed", now.Add(-3*time.Hour)),
-				newDSEntry(preHash, "post2", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, "Completed", now.Add(-2*time.Hour)),
-				newDSEntry(preHash, "post3", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, "Completed", now.Add(-1*time.Hour)),
+				newDSEntry(preHash, "post1", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, now.Add(-3*time.Hour)),
+				newDSEntry(preHash, "post2", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, now.Add(-2*time.Hour)),
+				newDSEntry(preHash, "post3", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, now.Add(-1*time.Hour)),
 			}
 			setupEngine(&mockHistoryQuerier{entries: entries})
 
@@ -192,9 +195,9 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 		It("should return nil when hash chain is broken by an effective entry", func() {
 			now := time.Now()
 			entries := []ogenclient.RemediationHistoryEntry{
-				newDSEntry(preHash, "post1", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, "Completed", now.Add(-3*time.Hour)),
-				newDSEntry("different-hash", "post2", ogenclient.RemediationHistoryEntryHashMatchNone, "Completed", now.Add(-2*time.Hour)),
-				newDSEntry(preHash, "post3", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, "Completed", now.Add(-1*time.Hour)),
+				newDSEntry(preHash, "post1", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, now.Add(-3*time.Hour)),
+				newDSEntry("different-hash", "post2", ogenclient.RemediationHistoryEntryHashMatchNone, now.Add(-2*time.Hour)),
+				newDSEntry(preHash, "post3", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, now.Add(-1*time.Hour)),
 			}
 			setupEngine(&mockHistoryQuerier{entries: entries})
 
@@ -218,9 +221,9 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 		It("should return nil when entries lack hash data to determine chain", func() {
 			now := time.Now()
 			entries := []ogenclient.RemediationHistoryEntry{
-				newDSEntryNoHash("Completed", now.Add(-3*time.Hour)),
-				newDSEntryNoHash("Completed", now.Add(-2*time.Hour)),
-				newDSEntryNoHash("Completed", now.Add(-1*time.Hour)),
+				newDSEntryNoHash(now.Add(-3 * time.Hour)),
+				newDSEntryNoHash(now.Add(-2 * time.Hour)),
+				newDSEntryNoHash(now.Add(-1 * time.Hour)),
 			}
 			setupEngine(&mockHistoryQuerier{entries: entries})
 
@@ -244,8 +247,8 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 		It("should return nil when only 2 ineffective entries exist (threshold = 3)", func() {
 			now := time.Now()
 			entries := []ogenclient.RemediationHistoryEntry{
-				newDSEntry(preHash, "post1", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, "Completed", now.Add(-2*time.Hour)),
-				newDSEntry(preHash, "post2", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, "Completed", now.Add(-1*time.Hour)),
+				newDSEntry(preHash, "post1", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, now.Add(-2*time.Hour)),
+				newDSEntry(preHash, "post2", ogenclient.RemediationHistoryEntryHashMatchPostRemediation, now.Add(-1*time.Hour)),
 			}
 			setupEngine(&mockHistoryQuerier{entries: entries})
 
@@ -274,7 +277,7 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 			now := time.Now()
 			entries := make([]ogenclient.RemediationHistoryEntry, 5)
 			for i := 0; i < 5; i++ {
-				entries[i] = newDSEntryNoHash("Completed", now.Add(-time.Duration(5-i)*30*time.Minute))
+				entries[i] = newDSEntryNoHash(now.Add(-time.Duration(5-i) * 30 * time.Minute))
 			}
 			setupEngine(&mockHistoryQuerier{entries: entries})
 
@@ -300,7 +303,7 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 			now := time.Now()
 			entries := make([]ogenclient.RemediationHistoryEntry, 5)
 			for i := 0; i < 5; i++ {
-				entries[i] = newDSEntryNoHash("Completed", now.Add(-5*time.Hour-time.Duration(i)*time.Hour))
+				entries[i] = newDSEntryNoHash(now.Add(-5*time.Hour - time.Duration(i)*time.Hour))
 			}
 			setupEngine(&mockHistoryQuerier{entries: entries})
 
@@ -372,9 +375,9 @@ var _ = Describe("CheckIneffectiveRemediationChain (Issue #214)", func() {
 		It("should allow both consecutive-failure and ineffective-chain checks to coexist", func() {
 			now := time.Now()
 			entries := []ogenclient.RemediationHistoryEntry{
-				newDSEntry(preHash, "post1", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, "Completed", now.Add(-3*time.Hour)),
-				newDSEntry(preHash, "post2", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, "Completed", now.Add(-2*time.Hour)),
-				newDSEntry(preHash, "post3", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, "Completed", now.Add(-1*time.Hour)),
+				newDSEntry(preHash, "post1", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, now.Add(-3*time.Hour)),
+				newDSEntry(preHash, "post2", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, now.Add(-2*time.Hour)),
+				newDSEntry(preHash, "post3", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, now.Add(-1*time.Hour)),
 			}
 			setupEngine(&mockHistoryQuerier{entries: entries})
 
@@ -606,8 +609,8 @@ var _ = Describe("Forward Hash Chain Detection (Issue #525)", func() {
 		It("should return nil when entries lack PostRemediationSpecHash", func() {
 			now := time.Now()
 			entries := []ogenclient.RemediationHistoryEntry{
-				newDSEntryNoHash("Completed", now.Add(-20*time.Minute)),
-				newDSEntryNoHash("Completed", now.Add(-40*time.Minute)),
+				newDSEntryNoHash(now.Add(-20 * time.Minute)),
+				newDSEntryNoHash(now.Add(-40 * time.Minute)),
 			}
 			setupEngine(&mockHistoryQuerier{entries: entries})
 
@@ -621,9 +624,9 @@ var _ = Describe("Forward Hash Chain Detection (Issue #525)", func() {
 			now := time.Now()
 			regressionHash := "regHash"
 			entries := []ogenclient.RemediationHistoryEntry{
-				newDSEntry(regressionHash, "hashC", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, "Completed", now.Add(-20*time.Minute)),
-				newDSEntry(regressionHash, "hashB", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, "Completed", now.Add(-30*time.Minute)),
-				newDSEntry(regressionHash, "hashA", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, "Completed", now.Add(-40*time.Minute)),
+				newDSEntry(regressionHash, "hashC", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, now.Add(-20*time.Minute)),
+				newDSEntry(regressionHash, "hashB", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, now.Add(-30*time.Minute)),
+				newDSEntry(regressionHash, "hashA", ogenclient.RemediationHistoryEntryHashMatchPreRemediation, now.Add(-40*time.Minute)),
 			}
 			setupEngine(&mockHistoryQuerier{entries: entries})
 

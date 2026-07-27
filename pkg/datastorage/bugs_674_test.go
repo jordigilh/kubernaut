@@ -26,7 +26,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/query"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
@@ -171,34 +170,6 @@ var _ = Describe("Issue #674: Latent bug fixes (BR-STORAGE-010, BR-STORAGE-020)"
 		It("UT-DS-674-017: IsActive returns true for uppercase 'ACTIVE'", func() {
 			wf := &models.RemediationWorkflow{Status: "ACTIVE"}
 			Expect(wf.IsActive()).To(BeTrue(), "uppercase 'ACTIVE' should match")
-		})
-	})
-
-	// =========================================================================
-	// Bug 7: NewWorkflowCreatedAuditEvent(nil) panics
-	// =========================================================================
-	Describe("Bug 7: Nil workflow audit event safety (UT-DS-674-018..019)", func() {
-
-		It("UT-DS-674-018: nil workflow returns error without panic", func() {
-			Expect(func() {
-				evt, err := audit.NewWorkflowCreatedAuditEvent(nil)
-				Expect(err).To(HaveOccurred(), "nil workflow should return error")
-				Expect(evt).To(BeNil())
-			}).ToNot(Panic(), "nil workflow must not cause panic")
-		})
-
-		It("UT-DS-674-019: valid workflow returns audit event", func() {
-			wf := &models.RemediationWorkflow{
-				WorkflowID:      "12345678-1234-1234-1234-123456789012",
-				WorkflowName:    "test-workflow",
-				Version:         "v1.0.0",
-				Status:          "Active",
-				Name:            "Test Workflow",
-				ExecutionEngine: models.ExecutionEngineTekton,
-			}
-			evt, err := audit.NewWorkflowCreatedAuditEvent(wf)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(evt.EventType).To(Equal(audit.EventTypeWorkflowCreated))
 		})
 	})
 

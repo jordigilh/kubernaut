@@ -61,7 +61,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 		It("should block RR and create notification after threshold failures (end-to-end)", func() {
 			// Create unique namespace for this test
-			ns := createTestNamespace("blocking-e2e")
+			ns := createTestNamespace(ctx, "blocking-e2e")
 			defer deleteTestNamespace(ns)
 
 			fingerprint := "c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3"
@@ -102,7 +102,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				Namespace: ROControllerNamespace,
 			}, fetchedRR)).To(Succeed())
 
-			if fetchedRR.Status.OverallPhase == "Blocked" {
+			if fetchedRR.Status.OverallPhase == remediationv1.PhaseBlocked {
 				Expect(fetchedRR.Status.BlockedUntil).ToNot(BeNil(), "Should set BlockedUntil")
 				Expect(fetchedRR.Status.BlockReason).To(Equal(remediationv1.BlockReasonConsecutiveFailures), "Should set BlockReason")
 				GinkgoWriter.Printf("✅ RR blocked with cooldown until: %s\n", fetchedRR.Status.BlockedUntil.Format(time.RFC3339))
@@ -120,7 +120,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 		It("should accept Blocked as a valid phase value in RR status", func() {
 			// Create unique namespace for this test
-			ns := createTestNamespace("blocking-phase")
+			ns := createTestNamespace(ctx, "blocking-phase")
 			defer deleteTestNamespace(ns)
 
 			fingerprint := "d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4"
@@ -165,7 +165,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 		It("should allow manual blocks without BlockedUntil (nil = no auto-expiry)", func() {
 			// Create unique namespace for this test
-			ns := createTestNamespace("blocking-manual")
+			ns := createTestNamespace(ctx, "blocking-manual")
 			defer deleteTestNamespace(ns)
 
 			fingerprint := "f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6b1c2d3e4f5a6"
@@ -207,7 +207,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 		var namespace string
 
 		BeforeEach(func() {
-			namespace = createTestNamespace("ro-fingerprint")
+			namespace = createTestNamespace(ctx, "ro-fingerprint")
 		})
 
 		AfterEach(func() {
@@ -286,7 +286,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			ctx := context.Background()
 
 			// Create second namespace for isolation test
-			nsB := createTestNamespace("ro-fingerprint-b")
+			nsB := createTestNamespace(ctx, "ro-fingerprint-b")
 			defer deleteTestNamespace(nsB)
 
 			// Unique fingerprint per test to avoid cross-test blocking (parallel tests share ROControllerNamespace)
@@ -309,7 +309,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				}
 				failedCountA := 0
 				for _, rr := range rrListA.Items {
-					if rr.Spec.SignalFingerprint == sharedFP && rr.Spec.TargetResource.Namespace == namespace && rr.Status.OverallPhase == "Failed" {
+					if rr.Spec.SignalFingerprint == sharedFP && rr.Spec.TargetResource.Namespace == namespace && rr.Status.OverallPhase == remediationv1.PhaseFailed {
 						failedCountA++
 					}
 				}
@@ -333,7 +333,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				}
 				failedCountB := 0
 				for _, rr := range rrListB.Items {
-					if rr.Spec.SignalFingerprint == sharedFP && rr.Spec.TargetResource.Namespace == nsB && rr.Status.OverallPhase == "Failed" {
+					if rr.Spec.SignalFingerprint == sharedFP && rr.Spec.TargetResource.Namespace == nsB && rr.Status.OverallPhase == remediationv1.PhaseFailed {
 						failedCountB++
 					}
 				}
@@ -375,7 +375,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				Equal("Processing"),
 				Equal("Analyzing"),
 				Equal("Executing"),
-				Equal("Completed")),
+				Equal(completed)),
 				"New RR in namespace B should progress normally (namespace isolation works)")
 
 			// Business Value: Multi-tenant safety - one tenant's failures don't affect another
@@ -422,7 +422,7 @@ func createRemediationRequestWithFingerprint(targetNamespace, name, fingerprint 
 // createFailedRemediationRequestWithFingerprint creates an RR and sets it to Failed.
 // Uses same approach as simulateFailedPhase but in single function to minimize race window.
 // Used for blocking tests that need RRs pre-Failed (not transitioning during test).
-func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint string) *remediationv1.RemediationRequest {
+func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint string) {
 	// DD-TEST-PARALLELISM-003: Work WITH Controller, Not Against It
 	// Strategy: Wait for controller to naturally progress RR to Processing, THEN set to Failed.
 	// This eliminates race conditions by letting controller do its initial work first.
@@ -436,7 +436,7 @@ func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint 
 	// Confidence: 95% - Works with controller lifecycle, not against it
 
 	// Step 1: Create RR (starts in Pending)
-	rr := createRemediationRequestWithFingerprint(namespace, name, fingerprint)
+	createRemediationRequestWithFingerprint(namespace, name, fingerprint)
 
 	// Step 2: Wait for controller to naturally progress to Processing
 	// Controller creates SignalProcessing CRD and updates RR status
@@ -478,7 +478,6 @@ func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint 
 	}, timeout, interval).Should(Equal("Failed"), "Should confirm Failed phase persisted for %s/%s", ROControllerNamespace, name)
 
 	GinkgoWriter.Printf("✅ Set to Failed (after natural progression): %s/%s\n", ROControllerNamespace, name)
-	return rr
 }
 
 // Removed: simulateFailedPhase (unused) - Tests now use createFailedRemediationRequestWithFingerprint

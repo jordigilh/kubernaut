@@ -54,6 +54,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	analysis2 = "analysis"
+)
+
 // ========================================
 // FLOW-BASED AUDIT INTEGRATION TESTS
 // ========================================
@@ -197,7 +202,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
 			// Rationale: Ensures events buffered AFTER previous query are written to DataStorage
 			correlationID := analysis.Spec.RemediationID
-			eventCategory := "analysis"
+			eventCategory := analysis2
 			var allEvents []ogenclient.AuditEvent
 			Eventually(func() bool {
 				// Flush on each retry to catch events buffered by controller since last check
@@ -379,26 +384,26 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			Expect(eventTypeCounts[aiaudit.EventTypeAnalysisCompleted]).To(Equal(1),
 				"Should have exactly 1 analysis completion event")
 
-		// Total events: DD-TESTING-001 Pattern 4 (lines 256-299): Validate exact expected count
-		// Per DD-AUDIT-003: AIAnalysis Controller audit trail (filtered to exclude KA events)
-		//
-		// AIAnalysis Controller events (9):
-		// - 3 phase transitions (Pending→Investigating→Analyzing→Completed)
-		// - 1 AI agent submit (aiagent.submit — session creation, BR-AA-HAPI-064)
-		// - 1 AI agent result (aiagent.result — session result retrieval, BR-AA-HAPI-064)
-		// - 1 AI agent API call metadata (aiagent.call — backward compat from RecordAIAgentResult)
-		// - 1 Rego evaluation (policy check)
-		// - 1 Approval decision (auto-approval or manual review)
-		// - 1 Analysis completion
-		//
-		// Note: KA events (llm_request, llm_response, llm_tool_call, workflow_validation_attempt)
-		//       are EXCLUDED from this test. KA integration tests validate those separately.
-		//       This test focuses ONLY on AIAnalysis controller audit behavior.
-		//
-		// Total: 9 AIAnalysis events (deterministic per DD-AIANALYSIS-005 v1.x + BR-AA-HAPI-064 session audit)
-		// Breakdown: 3 phase transitions + 3 AI agent events (submit+result+call) + 1 Rego + 1 approval + 1 completion
-		Expect(len(events)).To(Equal(9),
-			"AIAnalysis workflow generates exactly 9 audit events: 3 phase transitions + 3 AI agent (submit+result+call) + 1 Rego + 1 approval + 1 completion")
+			// Total events: DD-TESTING-001 Pattern 4 (lines 256-299): Validate exact expected count
+			// Per DD-AUDIT-003: AIAnalysis Controller audit trail (filtered to exclude KA events)
+			//
+			// AIAnalysis Controller events (9):
+			// - 3 phase transitions (Pending→Investigating→Analyzing→Completed)
+			// - 1 AI agent submit (aiagent.submit — session creation, BR-AA-HAPI-064)
+			// - 1 AI agent result (aiagent.result — session result retrieval, BR-AA-HAPI-064)
+			// - 1 AI agent API call metadata (aiagent.call — backward compat from RecordAIAgentResult)
+			// - 1 Rego evaluation (policy check)
+			// - 1 Approval decision (auto-approval or manual review)
+			// - 1 Analysis completion
+			//
+			// Note: KA events (llm_request, llm_response, llm_tool_call, workflow_validation_attempt)
+			//       are EXCLUDED from this test. KA integration tests validate those separately.
+			//       This test focuses ONLY on AIAnalysis controller audit behavior.
+			//
+			// Total: 9 AIAnalysis events (deterministic per DD-AIANALYSIS-005 v1.x + BR-AA-HAPI-064 session audit)
+			// Breakdown: 3 phase transitions + 3 AI agent events (submit+result+call) + 1 Rego + 1 approval + 1 completion
+			Expect(len(events)).To(Equal(9),
+				"AIAnalysis workflow generates exactly 9 audit events: 3 phase transitions + 3 AI agent (submit+result+call) + 1 Rego + 1 approval + 1 completion")
 		})
 	})
 
@@ -466,7 +471,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
 			correlationID := analysis.Spec.RemediationID
 			eventType := aiaudit.EventTypeAIAgentCall
-			eventCategory := "analysis"
+			eventCategory := analysis2
 			var events []ogenclient.AuditEvent
 			Eventually(func() int {
 				// Flush on each retry to catch events buffered by controller since last check
@@ -560,31 +565,31 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				Expect(k8sClient.Delete(ctx, analysis)).To(Succeed())
 			}()
 
-		By("Waiting for controller to process and generate audit events")
+			By("Waiting for controller to process and generate audit events")
 
-		correlationID := analysis.Spec.RemediationID
-		eventCategory := "analysis"
+			correlationID := analysis.Spec.RemediationID
+			eventCategory := analysis2
 
-		// DD-TESTING-001: Use Eventually() instead of time.Sleep()
-		// PR#20 Fix: Flush audit buffer on EACH retry to ensure events are written to DataStorage
-		// Rationale: Controller buffers events asynchronously AFTER test starts waiting
-		var events []ogenclient.AuditEvent
-		Eventually(func() int {
-			// Flush on each retry to catch events buffered by controller since last check
-			_ = auditStore.Flush(ctx)
+			// DD-TESTING-001: Use Eventually() instead of time.Sleep()
+			// PR#20 Fix: Flush audit buffer on EACH retry to ensure events are written to DataStorage
+			// Rationale: Controller buffers events asynchronously AFTER test starts waiting
+			var events []ogenclient.AuditEvent
+			Eventually(func() int {
+				// Flush on each retry to catch events buffered by controller since last check
+				_ = auditStore.Flush(ctx)
 
-			params := ogenclient.QueryAuditEventsParams{
-				CorrelationID: ogenclient.NewOptString(correlationID),
-				EventCategory: ogenclient.NewOptString(eventCategory),
-			}
-			resp, err := dsClient.QueryAuditEvents(ctx, params)
-			if err != nil {
-				return 0
-			}
-			events = resp.Data
-			return len(events)
-		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">", 0),
-			"Controller MUST generate audit events even during error scenarios")
+				params := ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+				}
+				resp, err := dsClient.QueryAuditEvents(ctx, params)
+				if err != nil {
+					return 0
+				}
+				events = resp.Data
+				return len(events)
+			}, 30*time.Second, 2*time.Second).Should(BeNumerically(">", 0),
+				"Controller MUST generate audit events even during error scenarios")
 
 			// DD-TESTING-001: Validate specific event types even in error scenarios
 			// Business Value: Operators have audit trail regardless of success/failure
@@ -663,37 +668,37 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			}, 60*time.Second, 2*time.Second).Should(Equal("Completed"),
 				"Controller should complete analysis within 60 seconds")
 
-		By("Verifying approval decision was automatically audited")
+			By("Verifying approval decision was automatically audited")
 
-		correlationID := analysis.Spec.RemediationID
-		eventType := aiaudit.EventTypeApprovalDecision
-		eventCategory := "analysis"
+			correlationID := analysis.Spec.RemediationID
+			eventType := aiaudit.EventTypeApprovalDecision
+			eventCategory := analysis2
 
-		// PR#20 Fix: Flush audit buffer on EACH retry to ensure events are written to DataStorage
-		// Rationale: Controller buffers events asynchronously AFTER test starts waiting
-		var events []ogenclient.AuditEvent
-		Eventually(func() int {
-			// Flush on each retry to catch events buffered by controller since last check
-			_ = auditStore.Flush(ctx)
+			// PR#20 Fix: Flush audit buffer on EACH retry to ensure events are written to DataStorage
+			// Rationale: Controller buffers events asynchronously AFTER test starts waiting
+			var events []ogenclient.AuditEvent
+			Eventually(func() int {
+				// Flush on each retry to catch events buffered by controller since last check
+				_ = auditStore.Flush(ctx)
 
-			params := ogenclient.QueryAuditEventsParams{
-				CorrelationID: ogenclient.NewOptString(correlationID),
-				EventType:     ogenclient.NewOptString(eventType),
-				EventCategory: ogenclient.NewOptString(eventCategory),
-			}
-			resp, err := dsClient.QueryAuditEvents(ctx, params)
-			if err != nil {
-				return 0
-			}
-			events = resp.Data
-			return len(events)
-		}, 30*time.Second, 2*time.Second).Should(BeNumerically(">", 0),
-			"Controller MUST generate approval decision audit events")
+				params := ogenclient.QueryAuditEventsParams{
+					CorrelationID: ogenclient.NewOptString(correlationID),
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+				}
+				resp, err := dsClient.QueryAuditEvents(ctx, params)
+				if err != nil {
+					return 0
+				}
+				events = resp.Data
+				return len(events)
+			}, 30*time.Second, 2*time.Second).Should(BeNumerically(">", 0),
+				"Controller MUST generate approval decision audit events")
 
-		// DD-TESTING-001: Deterministic count validation instead of weak null-testing
-		eventCounts := countEventsByType(events)
-		Expect(eventCounts[aiaudit.EventTypeApprovalDecision]).To(Equal(1),
-			"Expected exactly 1 approval decision event per analysis")
+			// DD-TESTING-001: Deterministic count validation instead of weak null-testing
+			eventCounts := countEventsByType(events)
+			Expect(eventCounts[aiaudit.EventTypeApprovalDecision]).To(Equal(1),
+				"Expected exactly 1 approval decision event per analysis")
 
 			// Business Value: Compliance teams can audit approval decisions
 			event := events[0]
@@ -775,7 +780,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
 			correlationID := analysis.Spec.RemediationID
 			eventType := aiaudit.EventTypeRegoEvaluation
-			eventCategory := "analysis"
+			eventCategory := analysis2
 			params := ogenclient.QueryAuditEventsParams{
 				CorrelationID: ogenclient.NewOptString(correlationID),
 				EventType:     ogenclient.NewOptString(eventType),
@@ -814,8 +819,8 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 				CorrelationID: correlationID,
 				EventDataFields: map[string]interface{}{
 					"outcome":  aianalysis.OutcomeAutoApproved, // OOMKilled (0.95) >= Rego threshold (0.8) → auto-approved
-					"degraded": nil,             // Validate key exists
-					"reason":   nil,             // Validate key exists
+					"degraded": nil,                            // Validate key exists
+					"reason":   nil,                            // Validate key exists
 				},
 			})
 		})
@@ -883,7 +888,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
 			correlationID := analysis.Spec.RemediationID
 			eventType := aiaudit.EventTypePhaseTransition
-			eventCategory := "analysis"
+			eventCategory := analysis2
 			var events []ogenclient.AuditEvent
 			Eventually(func() int {
 				// Flush on each retry to catch events buffered by controller since last check
@@ -959,7 +964,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// NT Pattern: Flush audit buffer on EACH retry inside Eventually()
 			correlationID := analysis.Spec.RemediationID
 			eventType := aiaudit.EventTypeAIAgentCall
-			eventCategory := "analysis"
+			eventCategory := analysis2
 			var events []ogenclient.AuditEvent
 			Eventually(func() int {
 				// Flush on each retry to catch events buffered by controller since last check

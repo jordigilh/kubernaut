@@ -108,7 +108,7 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 		// Testing CORRECTNESS: Pagination metadata correctly extracted from args
 
 		// Setup mock helper
-		setupMocks := func(args []interface{}, queryStr string, countStr string, expectedTotal int, countArgsCount int) {
+		setupMocks := func(args []interface{}, expectedTotal int, countArgsCount int) {
 			// Mock count query
 			if countArgsCount == 0 {
 				mock.ExpectQuery("SELECT COUNT").
@@ -154,7 +154,7 @@ var _ = Describe("AuditEventsRepository - Query with Minimal Args", func() {
 
 		DescribeTable("should handle various arg count combinations",
 			func(description string, args []interface{}, queryStr string, countStr string, expectedTotal int, countArgsCount int) {
-				setupMocks(args, queryStr, countStr, expectedTotal, countArgsCount)
+				setupMocks(args, expectedTotal, countArgsCount)
 
 				// Execute query
 				events, pagination, err := repo.Query(ctx, queryStr, countStr, args)

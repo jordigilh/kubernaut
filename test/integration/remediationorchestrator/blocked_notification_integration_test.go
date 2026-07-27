@@ -47,7 +47,7 @@ var _ = Describe("Issue #803: Blocked NotificationRequest Integration Tests", La
 	)
 
 	BeforeEach(func() {
-		testNamespace = createTestNamespace("blocked-notif")
+		testNamespace = createTestNamespace(ctx, "blocked-notif")
 		nc = creator.NewNotificationCreator(
 			k8sClient,
 			k8sManager.GetScheme(),

@@ -8,6 +8,7 @@
     (dict "name" "gateway-tls" "dnsNameBase" "gateway-service")
     (dict "name" "datastorage-tls" "dnsNameBase" "data-storage-service")
     (dict "name" "kubernautagent-tls" "dnsNameBase" "kubernaut-agent")
+    (dict "name" "fleetmetadatacache-tls" "dnsNameBase" "fleetmetadatacache-service")
   }}
 {{- if $i }}
 ---

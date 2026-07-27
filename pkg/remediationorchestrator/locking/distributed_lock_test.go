@@ -34,6 +34,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/locking"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	roPod2 = "ro-pod-2"
+)
+
 var _ = Describe("RO DistributedLockManager (BR-ORCH-025)", func() {
 	var (
 		ctx       context.Context
@@ -78,7 +83,7 @@ var _ = Describe("RO DistributedLockManager (BR-ORCH-025)", func() {
 	Describe("UT-RO-189-002: Contention returns (false, nil)", func() {
 		It("should return (false, nil) when Lease held by another pod", func() {
 			// Pre-create a Lease held by a different pod
-			otherHolder := "ro-pod-2"
+			otherHolder := roPod2
 			now := metav1.NowMicro()
 			leaseDuration := int32(locking.LockDurationSeconds)
 			leaseName := locking.GenerateLeaseName("Deployment/test-app")
@@ -161,7 +166,7 @@ var _ = Describe("RO DistributedLockManager (BR-ORCH-025)", func() {
 	Describe("UT-RO-189-005: Stale Lease with nil RenewTime", func() {
 		It("should treat lease with nil RenewTime as non-acquirable (contention)", func() {
 			// A lease with nil RenewTime is ambiguous - treat as contention, not expired
-			otherHolder := "ro-pod-2"
+			otherHolder := roPod2
 			leaseDuration := int32(locking.LockDurationSeconds)
 			leaseName := locking.GenerateLeaseName("Deployment/test-app")
 			Expect(leaseName).NotTo(BeEmpty())
@@ -187,7 +192,7 @@ var _ = Describe("RO DistributedLockManager (BR-ORCH-025)", func() {
 		})
 
 		It("should take over expired lease (RenewTime + duration < now)", func() {
-			otherHolder := "ro-pod-2"
+			otherHolder := roPod2
 			leaseDuration := int32(locking.LockDurationSeconds)
 			leaseName := locking.GenerateLeaseName("Deployment/test-app")
 			Expect(leaseName).NotTo(BeEmpty())
@@ -250,7 +255,7 @@ var _ = Describe("RO DistributedLockManager (BR-ORCH-025)", func() {
 		It("UT-RO-1356-001: should not delete lease if held by another pod", func() {
 			target := "Deployment/test-takeover"
 			lockMgr1 := locking.NewDistributedLockManager(k8sClient, namespace, "ro-pod-1")
-			lockMgr2 := locking.NewDistributedLockManager(k8sClient, namespace, "ro-pod-2")
+			lockMgr2 := locking.NewDistributedLockManager(k8sClient, namespace, roPod2)
 
 			// Pod 1 acquires
 			acquired, err := lockMgr1.AcquireLock(ctx, target)
@@ -275,7 +280,7 @@ var _ = Describe("RO DistributedLockManager (BR-ORCH-025)", func() {
 
 			// Lease still exists and is held by pod 2
 			Expect(k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: leaseName}, lease)).To(Succeed())
-			Expect(*lease.Spec.HolderIdentity).To(Equal("ro-pod-2"))
+			Expect(*lease.Spec.HolderIdentity).To(Equal(roPod2))
 		})
 
 		It("UT-RO-1356-002: should delete lease when held by current pod", func() {

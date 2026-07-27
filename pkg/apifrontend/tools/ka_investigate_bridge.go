@@ -318,7 +318,7 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 	case ka.EventTypeSessionEnded:
 		reason := evt.Phase
 		if reason == "" {
-			reason = "unknown"
+			reason = unknownValue
 		}
 		return "Session ended: " + reason
 	case ka.EventTypeAlignmentVerdict:
@@ -345,17 +345,29 @@ func isStatusEvent(evtType string) bool {
 // emitEventToA2A routes a formatted event text to the correct A2A channel
 // based on the event type: status channel for orchestration events, artifact
 // channel for LLM content. Write failures are logged by the Safe helpers (AU-2).
+//
+// EventTypeReasoningContentDelta has its own branch, checked before the
+// generic text=="" guard below: a redacted turn (#1716, DD-LLM-009 redaction
+// sub-decision revisited) carries redacted=true with empty text on the wire,
+// and must still emit a content-free live signal rather than no-op, so
+// Console can render a "reasoning hidden by provider" placeholder.
 func emitEventToA2A(ctx context.Context, evt ka.InvestigationEvent, text string) {
+	if evt.Type == ka.EventTypeReasoningContentDelta {
+		redacted := extractJSONBool(evt.Data, "redacted")
+		if text == "" && !redacted {
+			return
+		}
+		// #1635 / DD-LLM-009: dedicated channel, kept distinct from the
+		// EmitReasoningSafe path used by orchestration narration below.
+		_ = launcher.EmitReasoningContentSafe(ctx, text, redacted)
+		return
+	}
 	if text == "" {
 		return
 	}
 	switch {
 	case isStatusEvent(evt.Type):
 		_ = launcher.EmitStatusSafe(ctx, text)
-	case evt.Type == ka.EventTypeReasoningContentDelta:
-		// #1635 / DD-LLM-009: dedicated channel, kept distinct from the
-		// EmitReasoningSafe path used by orchestration narration below.
-		_ = launcher.EmitReasoningContentSafe(ctx, text)
 	default:
 		_ = launcher.EmitReasoningSafe(ctx, text)
 	}
@@ -388,7 +400,7 @@ func WatchTerminalEvents(ctx context.Context, events <-chan ka.InvestigationEven
 				emitWatcherTerminal(relayCtxOrDefault(relay, ctx), evt)
 				return
 			}
-			relayLiveEvent(relay, evt)
+			relayLiveEvent(relay, evt) //nolint:contextcheck // relayLiveEvent deliberately ignores the watcher's own ctx and sources relay.Current() instead -- the whole point is to relay onto whichever pooled call's ctx is currently in flight, not the watcher's detached one
 		case <-done:
 			drainBufferedTerminalEvent(relayCtxOrDefault(relay, ctx), events)
 			return
@@ -474,4 +486,20 @@ func extractJSONField(data json.RawMessage, field string) string {
 		return v
 	}
 	return ""
+}
+
+// extractJSONBool extracts a boolean field from a JSON RawMessage. Used by
+// emitEventToA2A (#1716) to read KA's "redacted" flag on a
+// reasoning_content_delta event without changing FormatEventForUser's
+// string-only return type.
+func extractJSONBool(data json.RawMessage, field string) bool {
+	if len(data) == 0 {
+		return false
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(data, &m); err != nil {
+		return false
+	}
+	v, _ := m[field].(bool)
+	return v
 }

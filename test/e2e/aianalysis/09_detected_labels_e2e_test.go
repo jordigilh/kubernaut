@@ -69,7 +69,7 @@ var _ = Describe("E2E-AA ADR-056 DetectedLabels", Label("e2e", "adr-056", "detec
 		clientset, err = kubernetes.NewForConfig(cfg)
 		Expect(err).NotTo(HaveOccurred(), "Failed to create K8s clientset")
 
-		testNS = createTestNamespace("adr056-e2e")
+		testNS = createTestNamespace(ctx, "adr056-e2e")
 	})
 
 	// createTestDeployment creates a Deployment in the test namespace for label detection.
@@ -170,7 +170,7 @@ var _ = Describe("E2E-AA ADR-056 DetectedLabels", Label("e2e", "adr-056", "detec
 			By("Waiting for full 4-phase reconciliation to complete")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Completed"),
 				"CR should complete 4-phase reconciliation (Pending→Investigating→Analyzing→Completed)")
 
@@ -208,7 +208,7 @@ var _ = Describe("E2E-AA ADR-056 DetectedLabels", Label("e2e", "adr-056", "detec
 			By("Waiting for reconciliation to complete")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
-				return string(analysis.Status.Phase)
+				return analysis.Status.Phase
 			}, timeout, interval).Should(SatisfyAny(Equal("Completed"), Equal("Failed")))
 
 			By("Verifying pdbProtected in postRCAContext.detectedLabels")

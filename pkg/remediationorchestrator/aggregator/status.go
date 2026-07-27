@@ -123,7 +123,7 @@ func (a *StatusAggregator) getAIAnalysisPhase(ctx context.Context, name, namespa
 	if err := a.client.Get(ctx, client.ObjectKey{Name: name, Namespace: namespace}, ai); err != nil {
 		return "", err
 	}
-	return string(ai.Status.Phase), nil
+	return ai.Status.Phase, nil
 }
 
 // getWorkflowExecutionPhase fetches the phase from a WorkflowExecution CRD.

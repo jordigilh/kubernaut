@@ -196,7 +196,7 @@ var _ = Describe("Audit Correlation Query Integration Tests (Issue #1199)", func
 		BeforeEach(func() {
 			pgHost := os.Getenv("POSTGRES_HOST")
 			if pgHost == "" {
-				pgHost = "localhost"
+				pgHost = localhost
 			}
 			pgPort := os.Getenv("POSTGRES_PORT")
 			if pgPort == "" {
@@ -209,7 +209,7 @@ var _ = Describe("Audit Correlation Query Integration Tests (Issue #1199)", func
 
 			redisHost := os.Getenv("REDIS_HOST")
 			if redisHost == "" {
-				redisHost = "localhost"
+				redisHost = localhost
 			}
 			redisPort := os.Getenv("REDIS_PORT")
 			if redisPort == "" {

@@ -69,7 +69,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 	"github.com/jordigilh/kubernaut/pkg/shared/k8serrors"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
-	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	"github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
 	wephase "github.com/jordigilh/kubernaut/pkg/workflowexecution/phase"
@@ -167,10 +166,6 @@ type WorkflowExecutionReconciler struct {
 	// Maps execution engine names ("tekton", "job") to Executor implementations.
 	// When nil, falls back to inline Tekton-only code path.
 	ExecutorRegistry *weexecutor.Registry
-
-	// DD-WE-006: WorkflowQuerier fetches workflow dependencies from DS on demand.
-	// Optional: nil disables dependency injection (workflows run without mounted deps).
-	WorkflowQuerier weclient.WorkflowQuerier
 }
 
 // ReconcilerOptions groups the business-specific dependencies for the
@@ -185,7 +180,6 @@ type ReconcilerOptions struct {
 	PhaseManager       *wephase.Manager
 	AuditManager       *weaudit.Manager
 	ExecutorRegistry   *weexecutor.Registry
-	WorkflowQuerier    weclient.WorkflowQuerier
 }
 
 // NewReconciler creates a WorkflowExecutionReconciler, extracting
@@ -206,7 +200,6 @@ func NewReconciler(mgr ctrl.Manager, opts ReconcilerOptions) *WorkflowExecutionR
 		PhaseManager:       opts.PhaseManager,
 		AuditManager:       opts.AuditManager,
 		ExecutorRegistry:   opts.ExecutorRegistry,
-		WorkflowQuerier:    opts.WorkflowQuerier,
 	}
 }
 
@@ -332,7 +325,7 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		ctrlBuilder = ctrlBuilder.Watches(
 			&tektonv1.PipelineRun{},
 			handler.EnqueueRequestsFromMapFunc(r.FindWFEForOwnedResource),
-			builder.WithPredicates(workflowExecutionLabelPredicate()),
+			builder.WithPredicates(ownedResourceLabelPredicate()),
 		)
 	}
 
@@ -344,7 +337,7 @@ func (r *WorkflowExecutionReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	ctrlBuilder = ctrlBuilder.Watches(
 		&batchv1.Job{},
 		handler.EnqueueRequestsFromMapFunc(r.FindWFEForOwnedResource),
-		builder.WithPredicates(jobLabelPredicate()),
+		builder.WithPredicates(ownedResourceLabelPredicate()),
 	)
 
 	return ctrlBuilder.Complete(r)
@@ -385,38 +378,21 @@ func hasWorkflowExecutionLabel(labels map[string]string) bool {
 	return hasLabel
 }
 
-// workflowExecutionLabelPredicate builds the predicate used to filter
-// PipelineRun watch events down to those owned by a WorkflowExecution.
+// ownedResourceLabelPredicate builds the predicate used to filter PipelineRun
+// and Job watch events down to those owned by a WorkflowExecution. Both
+// executors label their owned resources identically (see
+// hasWorkflowExecutionLabel), so one predicate serves both watches.
 // Extracted from SetupWithManager (Wave 6 6e-ii GREEN: funlen remediation)
-// — pure code motion, no behavior change.
-func workflowExecutionLabelPredicate() predicate.Funcs {
+// — pure code motion, no behavior change. Issue #1530 (dupl): previously
+// duplicated as workflowExecutionLabelPredicate (PipelineRun) and
+// jobLabelPredicate (Job), which were byte-identical.
+func ownedResourceLabelPredicate() predicate.Funcs {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return hasWorkflowExecutionLabel(e.Object.GetLabels())
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
-			// Watch for status updates on labeled PipelineRuns
-			return hasWorkflowExecutionLabel(e.ObjectNew.GetLabels())
-		},
-		DeleteFunc: func(e event.DeleteEvent) bool {
-			return hasWorkflowExecutionLabel(e.Object.GetLabels())
-		},
-		GenericFunc: func(e event.GenericEvent) bool {
-			return hasWorkflowExecutionLabel(e.Object.GetLabels())
-		},
-	}
-}
-
-// jobLabelPredicate builds the predicate used to filter Job watch events
-// down to those owned by a WorkflowExecution. Extracted from
-// SetupWithManager (Wave 6 6e-ii GREEN: funlen remediation) — pure code
-// motion, no behavior change.
-func jobLabelPredicate() predicate.Funcs {
-	return predicate.Funcs{
-		CreateFunc: func(e event.CreateEvent) bool {
-			return hasWorkflowExecutionLabel(e.Object.GetLabels())
-		},
-		UpdateFunc: func(e event.UpdateEvent) bool {
+			// Watch for status updates on labeled PipelineRuns/Jobs
 			return hasWorkflowExecutionLabel(e.ObjectNew.GetLabels())
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
@@ -507,7 +483,7 @@ func (r *WorkflowExecutionReconciler) emitPhaseTransition(wfe *workflowexecution
 // engineGuidance returns a human-readable remediation hint for a missing engine (Issue #868).
 func engineGuidance(engine string) string {
 	switch engine {
-	case "tekton":
+	case workflowexecutionv1alpha1.ExecutionEngineTekton:
 		return `install Tekton Pipelines CRDs or use executionEngine: "job"`
 	case "ansible":
 		return "configure ansible section in workflowexecution config"

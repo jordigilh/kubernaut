@@ -19,59 +19,29 @@ package custom_test
 import (
 	"encoding/json"
 
-	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
-	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 )
 
-// BR-AI-056: KA tools must forward DetectedLabels from enrichment to
-// DataStorage catalog queries so the scoring engine can boost
+// BR-AI-056: KA tools must forward DetectedLabels from enrichment to the
+// workflow catalog's discovery filters so the scoring engine can boost
 // GitOps-compatible workflows and penalize non-GitOps ones.
 // Issue #1052.
 
-var _ = Describe("UT-KA-1052: DetectedLabels forwarding to DS tool params", func() {
+var _ = Describe("UT-KA-1052: DetectedLabels forwarding to discovery filters", func() {
 
 	const detectedLabelsJSON = `{"gitOpsManaged":true,"gitOpsTool":"argocd"}`
 
 	var fake *fakeWorkflowDS
 
 	BeforeEach(func() {
-		fake = &fakeWorkflowDS{
-			listActionsResponse: &ogenclient.ActionTypeListResponse{
-				ActionTypes: []ogenclient.ActionTypeEntry{
-					{
-						ActionType:    "ScaleReplicas",
-						Description:   ogenclient.StructuredDescription{What: "test", WhenToUse: "test"},
-						WorkflowCount: 1,
-					},
-				},
-				Pagination: ogenclient.PaginationMetadata{
-					TotalCount: 1, Offset: 0, Limit: 10, HasMore: false,
-				},
-			},
-			listWorkflowsResponse: &ogenclient.WorkflowDiscoveryResponse{
-				ActionType: "ScaleReplicas",
-				Workflows: []ogenclient.WorkflowDiscoveryEntry{
-					{
-						WorkflowId:   uuid.New(),
-						WorkflowName: "scale-conservative-v1",
-						Name:         "Scale Conservative",
-						Description:  ogenclient.StructuredDescription{What: "test", WhenToUse: "test"},
-					},
-				},
-				Pagination: ogenclient.PaginationMetadata{
-					TotalCount: 1, Offset: 0, Limit: 10, HasMore: false,
-				},
-			},
-		}
+		fake = &fakeWorkflowDS{}
 	})
 
-	Describe("UT-KA-1052-001: list_available_actions forwards DetectedLabelsJSON to DS params", func() {
-		It("should set params.DetectedLabels from SignalContext.DetectedLabelsJSON", func() {
+	Describe("UT-KA-1052-001: list_available_actions forwards DetectedLabelsJSON to discovery filters", func() {
+		It("should set filters.DetectedLabels from SignalContext.DetectedLabelsJSON", func() {
 			ctx := katypes.WithSignalContext(contextBackground(), katypes.SignalContext{
 				Severity:           "critical",
 				ResourceKind:       "Deployment",
@@ -80,20 +50,21 @@ var _ = Describe("UT-KA-1052: DetectedLabels forwarding to DS tool params", func
 				DetectedLabelsJSON: detectedLabelsJSON,
 			})
 
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			listActions := allTools[0]
 
 			_, err := listActions.Execute(ctx, json.RawMessage(`{}`))
 			Expect(err).NotTo(HaveOccurred())
 
-			dl, ok := fake.listActionsParams.DetectedLabels.Get()
-			Expect(ok).To(BeTrue(), "DetectedLabels must be set on params when SignalContext carries DetectedLabelsJSON")
-			Expect(dl).To(Equal(detectedLabelsJSON))
+			Expect(fake.listActionsFilters.DetectedLabels).NotTo(BeNil(),
+				"DetectedLabels must be set on filters when SignalContext carries DetectedLabelsJSON")
+			Expect(fake.listActionsFilters.DetectedLabels.GitOpsManaged).To(BeTrue())
+			Expect(fake.listActionsFilters.DetectedLabels.GitOpsTool).To(Equal("argocd"))
 		})
 	})
 
-	Describe("UT-KA-1052-002: list_workflows forwards DetectedLabelsJSON to DS params", func() {
-		It("should set params.DetectedLabels from SignalContext.DetectedLabelsJSON", func() {
+	Describe("UT-KA-1052-002: list_workflows forwards DetectedLabelsJSON to discovery filters", func() {
+		It("should set filters.DetectedLabels from SignalContext.DetectedLabelsJSON", func() {
 			ctx := katypes.WithSignalContext(contextBackground(), katypes.SignalContext{
 				Severity:           "critical",
 				ResourceKind:       "Deployment",
@@ -102,20 +73,21 @@ var _ = Describe("UT-KA-1052: DetectedLabels forwarding to DS tool params", func
 				DetectedLabelsJSON: detectedLabelsJSON,
 			})
 
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			listWorkflows := allTools[1]
 
 			_, err := listWorkflows.Execute(ctx, json.RawMessage(`{"action_type":"ScaleReplicas"}`))
 			Expect(err).NotTo(HaveOccurred())
 
-			dl, ok := fake.listWorkflowsParams.DetectedLabels.Get()
-			Expect(ok).To(BeTrue(), "DetectedLabels must be set on params when SignalContext carries DetectedLabelsJSON")
-			Expect(dl).To(Equal(detectedLabelsJSON))
+			Expect(fake.listWorkflowsFilters.DetectedLabels).NotTo(BeNil(),
+				"DetectedLabels must be set on filters when SignalContext carries DetectedLabelsJSON")
+			Expect(fake.listWorkflowsFilters.DetectedLabels.GitOpsManaged).To(BeTrue())
+			Expect(fake.listWorkflowsFilters.DetectedLabels.GitOpsTool).To(Equal("argocd"))
 		})
 	})
 
 	Describe("UT-KA-1052-003: list_available_actions omits DetectedLabels when empty", func() {
-		It("should not set params.DetectedLabels when SignalContext has no DetectedLabelsJSON", func() {
+		It("should not set filters.DetectedLabels when SignalContext has no DetectedLabelsJSON", func() {
 			ctx := katypes.WithSignalContext(contextBackground(), katypes.SignalContext{
 				Severity:     "critical",
 				ResourceKind: "Deployment",
@@ -123,19 +95,19 @@ var _ = Describe("UT-KA-1052: DetectedLabels forwarding to DS tool params", func
 				Priority:     "P0",
 			})
 
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			listActions := allTools[0]
 
 			_, err := listActions.Execute(ctx, json.RawMessage(`{}`))
 			Expect(err).NotTo(HaveOccurred())
 
-			_, ok := fake.listActionsParams.DetectedLabels.Get()
-			Expect(ok).To(BeFalse(), "DetectedLabels must NOT be set when DetectedLabelsJSON is empty")
+			Expect(fake.listActionsFilters.DetectedLabels).To(BeNil(),
+				"DetectedLabels must NOT be set when DetectedLabelsJSON is empty")
 		})
 	})
 
 	Describe("UT-KA-1052-004: list_workflows omits DetectedLabels when empty", func() {
-		It("should not set params.DetectedLabels when SignalContext has no DetectedLabelsJSON", func() {
+		It("should not set filters.DetectedLabels when SignalContext has no DetectedLabelsJSON", func() {
 			ctx := katypes.WithSignalContext(contextBackground(), katypes.SignalContext{
 				Severity:     "critical",
 				ResourceKind: "Deployment",
@@ -143,14 +115,14 @@ var _ = Describe("UT-KA-1052: DetectedLabels forwarding to DS tool params", func
 				Priority:     "P0",
 			})
 
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 			listWorkflows := allTools[1]
 
 			_, err := listWorkflows.Execute(ctx, json.RawMessage(`{"action_type":"ScaleReplicas"}`))
 			Expect(err).NotTo(HaveOccurred())
 
-			_, ok := fake.listWorkflowsParams.DetectedLabels.Get()
-			Expect(ok).To(BeFalse(), "DetectedLabels must NOT be set when DetectedLabelsJSON is empty")
+			Expect(fake.listWorkflowsFilters.DetectedLabels).To(BeNil(),
+				"DetectedLabels must NOT be set when DetectedLabelsJSON is empty")
 		})
 	})
 
@@ -172,7 +144,7 @@ var _ = Describe("UT-KA-1052: DetectedLabels forwarding to DS tool params", func
 		})
 	})
 
-	Describe("UT-KA-1052-006: nil enrichment DetectedLabels produces no param on tools", func() {
+	Describe("UT-KA-1052-006: empty enrichment DetectedLabels produces no filter on tools", func() {
 		It("should not set DetectedLabels on either tool when DetectedLabelsJSON is zero-value", func() {
 			ctx := katypes.WithSignalContext(contextBackground(), katypes.SignalContext{
 				Severity:           "critical",
@@ -182,17 +154,17 @@ var _ = Describe("UT-KA-1052: DetectedLabels forwarding to DS tool params", func
 				DetectedLabelsJSON: "",
 			})
 
-			allTools := custom.NewAllTools(fake)
+			allTools := newTestTools(fake)
 
 			_, err := allTools[0].Execute(ctx, json.RawMessage(`{}`))
 			Expect(err).NotTo(HaveOccurred())
-			_, ok := fake.listActionsParams.DetectedLabels.Get()
-			Expect(ok).To(BeFalse(), "list_available_actions must not set DetectedLabels for nil enrichment labels")
+			Expect(fake.listActionsFilters.DetectedLabels).To(BeNil(),
+				"list_available_actions must not set DetectedLabels for empty enrichment labels")
 
 			_, err = allTools[1].Execute(ctx, json.RawMessage(`{"action_type":"ScaleReplicas"}`))
 			Expect(err).NotTo(HaveOccurred())
-			_, ok = fake.listWorkflowsParams.DetectedLabels.Get()
-			Expect(ok).To(BeFalse(), "list_workflows must not set DetectedLabels for nil enrichment labels")
+			Expect(fake.listWorkflowsFilters.DetectedLabels).To(BeNil(),
+				"list_workflows must not set DetectedLabels for empty enrichment labels")
 		})
 	})
 })

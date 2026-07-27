@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/a2aproject/a2a-go/a2a"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -107,10 +108,16 @@ var _ = Describe("AF/KA reasoning content live-stream relay — #1635", func() {
 		})
 	})
 
-	Describe("UT-AF-1635-003: a redacted reasoning content event produces zero queue writes", func() {
-		It("should not write any event when KA sends an empty text (redacted) payload", func() {
+	// #1716 / DD-LLM-009 (redaction sub-decision, revisited): a redacted turn
+	// now relays a content-free signal (metadata.redacted=true, empty text)
+	// instead of the full no-op this test originally asserted. Re-tagged
+	// UT-AF-1716-001 per docs/testing/1716/TEST_PLAN.md Section 9 — the old
+	// UT-AF-1635-003 assertion described the bug being fixed, not a contract
+	// to preserve.
+	Describe("UT-AF-1716-001: a redacted reasoning content event relays a content-free signal", func() {
+		It("should write one event with metadata.redacted=true and empty text when KA sends a redacted payload", func() {
 			queue := &bridgeQueue{}
-			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1635-003", "ctx-1635-003", nil)
+			ctx := launcher.WithEventBridge(context.Background(), queue, "task-1716-001", "ctx-1716-001", nil)
 
 			events := make(chan ka.InvestigationEvent, 5)
 			events <- ka.InvestigationEvent{
@@ -122,8 +129,15 @@ var _ = Describe("AF/KA reasoning content live-stream relay — #1635", func() {
 
 			_, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
-			Expect(queue.Events()).To(BeEmpty(),
-				"#1635: redacted (empty-text) reasoning content must be a no-op on the AF relay, matching EmitReasoning's existing empty-text behavior; the audit trail remains the record of truth for redacted=true")
+			queuedEvents := queue.Events()
+			Expect(queuedEvents).To(HaveLen(1),
+				"#1716: a redacted turn must produce exactly one event, not a no-op; the audit trail remains the durable record of the actual content")
+
+			statusEvt, ok := queuedEvents[0].(*a2a.TaskStatusUpdateEvent)
+			Expect(ok).To(BeTrue())
+			Expect(statusEvt.Metadata["type"]).To(Equal(launcher.MetaTypeReasoningContent))
+			Expect(statusEvt.Metadata["redacted"]).To(Equal(true),
+				"#1716: metadata.redacted must be true so Console can render a placeholder")
 		})
 	})
 

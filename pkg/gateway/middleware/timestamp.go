@@ -71,14 +71,14 @@ func TimestampValidator(tolerance time.Duration) func(http.Handler) http.Handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Skip validation for GET requests (health/metrics endpoints)
 			// BR-GATEWAY-074: Timestamp validation only applies to write operations
-			if r.Method == "GET" || r.Method == "HEAD" || r.Method == "OPTIONS" {
+			if r.Method == http.MethodGet || r.Method == http.MethodHead || r.Method == http.MethodOptions {
 				next.ServeHTTP(w, r)
 				return
 			}
 
 			// Skip validation for health and metrics endpoints
 			// These endpoints should be accessible for monitoring without timestamps
-			if r.URL.Path == "/health" || r.URL.Path == "/ready" || r.URL.Path == "/healthz" || r.URL.Path == "/metrics" {
+			if r.URL.Path == pathHealth || r.URL.Path == pathReady || r.URL.Path == pathHealthz || r.URL.Path == pathMetrics {
 				next.ServeHTTP(w, r)
 				return
 			}

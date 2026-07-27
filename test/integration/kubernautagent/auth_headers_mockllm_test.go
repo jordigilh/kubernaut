@@ -20,74 +20,42 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"sync"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/jordigilh/kubernaut/pkg/shared/types"
 	llmclient "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/shared/types"
+	openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/fault"
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/handlers"
+	"github.com/jordigilh/kubernaut/test/services/mock-llm/scenarios"
+	mockllmutil "github.com/jordigilh/kubernaut/test/testutil/mockllm"
 )
 
-// mockLLMServer simulates the Mock LLM verification API (#570).
-// POST /v1/chat/completions — records headers, returns chat completion
-// GET /api/test/headers — returns recorded headers as JSON
-//
-// TODO: Replace with Mock LLM #570 verification API when available
-type mockLLMServer struct {
-	mu              sync.Mutex
-	recordedHeaders map[string]string
-}
-
-func newMockLLMServer() *mockLLMServer {
-	return &mockLLMServer{
-		recordedHeaders: make(map[string]string),
-	}
-}
-
-func (m *mockLLMServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch {
-	case r.URL.Path == "/v1/chat/completions" && r.Method == http.MethodPost:
-		m.mu.Lock()
-		for name, values := range r.Header {
-			m.recordedHeaders[name] = values[0]
-		}
-		m.mu.Unlock()
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{
-			"id": "chatcmpl-mock-001",
-			"object": "chat.completion",
-			"choices": [{"message": {"role": "assistant", "content": "OOM detected"}}]
-		}`))
-
-	case r.URL.Path == "/api/test/headers" && r.Method == http.MethodGet:
-		m.mu.Lock()
-		data, _ := json.Marshal(m.recordedHeaders)
-		m.mu.Unlock()
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(data)
-
-	default:
-		w.WriteHeader(http.StatusNotFound)
-	}
-}
+// oomChatRequestBody is a minimal chat-completion request that the Mock LLM's
+// default scenario registry recognizes (OOMKilled signal), so these tests can
+// assert on a genuine 200 response instead of a hand-rolled fixture reply.
+const oomChatRequestBody = `{"model":"mock-model","messages":[{"role":"user","content":"- Signal Name: OOMKilled"}]}`
 
 var _ = Describe("Auth Headers Mock LLM Verification — #417", func() {
 
-	// IT-KA-417-006: End-to-end with Mock LLM verification API
+	// IT-KA-417-006: End-to-end with the real Mock LLM Go service's
+	// verification API (#570) -- both the header-injecting production
+	// llmclient and the header-recording Mock LLM router are the real
+	// implementations, not stand-ins for each other.
 	Describe("IT-KA-417-006: Mock LLM records and exposes injected headers", func() {
 		var (
-			mockLLM *mockLLMServer
-			server  *httptest.Server
+			server *httptest.Server
+			client *mockllmutil.Client
 		)
 
 		BeforeEach(func() {
-			mockLLM = newMockLLMServer()
-			server = httptest.NewServer(mockLLM)
+			registry := scenarios.DefaultRegistry()
+			router := handlers.NewFullRouter(registry, true, "", "Authorization", fault.NewInjector())
+			server = httptest.NewServer(router)
+			client = mockllmutil.NewClient(server.URL)
 		})
 
 		AfterEach(func() {
@@ -98,27 +66,17 @@ var _ = Describe("Auth Headers Mock LLM Verification — #417", func() {
 			hdefs := []types.LLMHeaderDef{
 				{Name: "Authorization", Value: "Bearer test-token-e2e"},
 			}
-			client, err := llmclient.NewLLMClient(server.URL, hdefs)
+			llm, err := llmclient.NewLLMClient(server.URL, hdefs)
 			Expect(err).NotTo(HaveOccurred())
 
-			resp, err := client.Post(server.URL+"/v1/chat/completions",
+			resp, err := llm.Post(server.URL+"/v1/chat/completions",
 				"application/json",
-				nil)
+				strings.NewReader(oomChatRequestBody))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			resp.Body.Close()
 
-			verifyResp, err := http.Get(server.URL + "/api/test/headers")
-			Expect(err).NotTo(HaveOccurred())
-			defer verifyResp.Body.Close()
-			Expect(verifyResp.StatusCode).To(Equal(http.StatusOK))
-
-			var recorded map[string]string
-			err = json.NewDecoder(verifyResp.Body).Decode(&recorded)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(recorded["Authorization"]).To(Equal("Bearer test-token-e2e"),
-				"Mock LLM verification API must confirm the header was received")
+			client.AssertHeaderReceived("Authorization", "Bearer test-token-e2e")
 		})
 
 		It("should process chat completion normally despite auth headers", func() {
@@ -126,19 +84,19 @@ var _ = Describe("Auth Headers Mock LLM Verification — #417", func() {
 				{Name: "Authorization", Value: "Bearer test-token-e2e"},
 				{Name: "x-correlation-id", Value: "req-001"},
 			}
-			client, err := llmclient.NewLLMClient(server.URL, hdefs)
+			llm, err := llmclient.NewLLMClient(server.URL, hdefs)
 			Expect(err).NotTo(HaveOccurred())
 
-			resp, err := client.Post(server.URL+"/v1/chat/completions",
+			resp, err := llm.Post(server.URL+"/v1/chat/completions",
 				"application/json",
-				nil)
+				strings.NewReader(oomChatRequestBody))
 			Expect(err).NotTo(HaveOccurred())
 			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
-			var result map[string]interface{}
-			err = json.NewDecoder(resp.Body).Decode(&result)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result["id"]).To(Equal("chatcmpl-mock-001"),
+			var result openai.ChatCompletionResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&result)).To(Succeed())
+			Expect(result.Choices).NotTo(BeEmpty(),
 				"Mock LLM should return a normal chat completion response")
 		})
 	})

@@ -44,7 +44,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 	// IT-EM-DT-001: First reconciliation sets ValidityDeadline in EA status
 	// ========================================
 	It("IT-EM-DT-001: should set ValidityDeadline in status on first reconciliation", func() {
-		ns := createTestNamespace("em-dt-001")
+		ns := createTestNamespace(ctx, "em-dt-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with 1s stabilization window")
@@ -77,7 +77,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 	// IT-EM-DT-002: First reconciliation sets PrometheusCheckAfter in EA status
 	// ========================================
 	It("IT-EM-DT-002: should set PrometheusCheckAfter in status on first reconciliation", func() {
-		ns := createTestNamespace("em-dt-002")
+		ns := createTestNamespace(ctx, "em-dt-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with 1s stabilization window")
@@ -109,7 +109,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 	// IT-EM-DT-003: First reconciliation sets AlertManagerCheckAfter in EA status
 	// ========================================
 	It("IT-EM-DT-003: should set AlertManagerCheckAfter in status on first reconciliation", func() {
-		ns := createTestNamespace("em-dt-003")
+		ns := createTestNamespace(ctx, "em-dt-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with 1s stabilization window")
@@ -141,7 +141,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 	// IT-EM-DT-004: Subsequent reconciliations do not overwrite derived timing fields
 	// ========================================
 	It("IT-EM-DT-004: should not overwrite derived timing fields on subsequent reconciliations", func() {
-		ns := createTestNamespace("em-dt-004")
+		ns := createTestNamespace(ctx, "em-dt-004")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA and waiting for completion")
@@ -185,7 +185,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 	// IT-EM-DT-008: Reconciler uses status.ValidityDeadline for expiry check
 	// ========================================
 	It("IT-EM-DT-008: should use status.ValidityDeadline for expiry check (not recomputed)", func() {
-		ns := createTestNamespace("em-dt-008")
+		ns := createTestNamespace(ctx, "em-dt-008")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA normally")
@@ -216,7 +216,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 	// A custom ValidityWindow would require a separate controller instance.
 	// The unit test UT-EM-DT-001 covers the computation with different values.
 	It("IT-EM-DT-009: should compute ValidityDeadline using ReconcilerConfig.ValidityWindow", func() {
-		ns := createTestNamespace("em-dt-009")
+		ns := createTestNamespace(ctx, "em-dt-009")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA")
@@ -243,7 +243,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 	// IT-EM-DT-010: All three derived fields set together on Pending -> Assessing
 	// ========================================
 	It("IT-EM-DT-010: should set all three derived timing fields atomically during Pending -> Assessing", func() {
-		ns := createTestNamespace("em-dt-010")
+		ns := createTestNamespace(ctx, "em-dt-010")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with a specific stabilization window")
@@ -316,7 +316,7 @@ var _ = Describe("Derived Timing Computation (BR-EM-009)", func() {
 	// The guard should extend ValidityDeadline = StabilizationWindow + ValidityWindow.
 	// ========================================
 	It("IT-EM-VWG-001: should extend ValidityDeadline when StabilizationWindow exceeds ValidityWindow", func() {
-		ns := createTestNamespace("em-vwg-001")
+		ns := createTestNamespace(ctx, "em-vwg-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA with StabilizationWindow (35m) > default ValidityWindow (30m)")

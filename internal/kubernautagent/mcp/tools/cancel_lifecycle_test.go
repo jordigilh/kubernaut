@@ -77,10 +77,9 @@ var _ = Describe("#1351 KA Session Lifecycle — handleCancel HTTP bridge", func
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out.Status).To(Equal("cancelled"))
 
-			completedID, completedResult := completer.getCompleted()
+			completedID := completer.getCompleted()
 			Expect(completedID).To(Equal("http-sess-001"),
 				"handleCancel must call CompleteUserDriving on the HTTP session (KA-CRIT-1)")
-			_ = completedResult
 		})
 	})
 
@@ -164,7 +163,7 @@ var _ = Describe("UT-KA-1351-003: TimeoutManager onExpire resolves HTTP session 
 
 		mcptools.CompleteHTTPSession(completer, "rr-timeout-001", nil, logger, "inactivity_timeout")
 
-		completedID, _ := completer.getCompleted()
+		completedID := completer.getCompleted()
 		Expect(completedID).To(Equal("http-sess-timeout"),
 			"CompleteHTTPSession must call CompleteUserDriving for timeout path (KA-CRIT-2)")
 	})
@@ -203,7 +202,7 @@ var _ = Describe("#1654: CompleteHTTPSession completes ALL sibling sessions, not
 
 		mcptools.CompleteHTTPSession(completer, "rr-dual-001", nil, logger, "select_workflow")
 
-		completedID, _ := completer.getCompleted()
+		completedID := completer.getCompleted()
 		Expect(completedID).To(Equal("http-sess-dual-001"),
 			"CompleteHTTPSession must still complete the user_driving session it found")
 		Expect(completer.forceCompleteCalled()).To(BeTrue(),
@@ -222,7 +221,7 @@ var _ = Describe("#1654: CompleteHTTPSession completes ALL sibling sessions, not
 
 		mcptools.CompleteHTTPSession(completer, "rr-dual-002", nil, logger, "select_workflow")
 
-		completedID, _ := completer.getCompleted()
+		completedID := completer.getCompleted()
 		Expect(completedID).To(Equal("http-sess-dual-002"))
 		for _, line := range capture.lines {
 			Expect(line).NotTo(ContainSubstring("CRITICAL"),
@@ -233,12 +232,16 @@ var _ = Describe("#1654: CompleteHTTPSession completes ALL sibling sessions, not
 })
 
 // cancelLifecycleHTTPCompleter tracks calls for lifecycle test assertions.
+// The *katypes.InvestigationResult passed to CompleteUserDriving /
+// ForceCompleteByRemediationID is accepted (required by the HTTPCompleter
+// interface) but intentionally not retained: no assertion in this file
+// inspects it, unlike the sibling mockHTTPCompleter in select_workflow_test.go
+// whose completedResult field backs real assertions there.
 type cancelLifecycleHTTPCompleter struct {
 	mu                     sync.Mutex
 	foundID                string
 	found                  bool
 	completedID            string
-	completedResult        *katypes.InvestigationResult
 	forceCompleteWasCalled bool
 	forceCompleteError     error
 }
@@ -249,29 +252,27 @@ func (c *cancelLifecycleHTTPCompleter) FindUserDrivingByRemediationID(_ string) 
 	return c.foundID, c.found
 }
 
-func (c *cancelLifecycleHTTPCompleter) CompleteUserDriving(id string, result *katypes.InvestigationResult) error {
+func (c *cancelLifecycleHTTPCompleter) CompleteUserDriving(id string, _ *katypes.InvestigationResult) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.completedID = id
-	c.completedResult = result
 	return nil
 }
 
-func (c *cancelLifecycleHTTPCompleter) ForceCompleteByRemediationID(_ string, result *katypes.InvestigationResult) error {
+func (c *cancelLifecycleHTTPCompleter) ForceCompleteByRemediationID(_ string, _ *katypes.InvestigationResult) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.forceCompleteWasCalled = true
 	if c.forceCompleteError != nil {
 		return c.forceCompleteError
 	}
-	c.completedResult = result
 	return nil
 }
 
-func (c *cancelLifecycleHTTPCompleter) getCompleted() (string, *katypes.InvestigationResult) {
+func (c *cancelLifecycleHTTPCompleter) getCompleted() string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.completedID, c.completedResult
+	return c.completedID
 }
 
 func (c *cancelLifecycleHTTPCompleter) forceCompleteCalled() bool {

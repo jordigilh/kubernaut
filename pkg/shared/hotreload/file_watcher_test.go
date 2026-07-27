@@ -199,9 +199,7 @@ var _ = Describe("FileWatcher", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Wait for reload
-			Eventually(func() int32 {
-				return callCount.Load()
-			}, 3*time.Second, 100*time.Millisecond).Should(Equal(int32(2)))
+			Eventually(callCount.Load, 3*time.Second, 100*time.Millisecond).Should(Equal(int32(2)))
 
 			Expect(lastContent.Load().(string)).To(Equal("updated content"))
 			Expect(watcher.GetReloadCount()).To(Equal(int64(2)))
@@ -259,9 +257,7 @@ var _ = Describe("FileWatcher", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Wait for reload attempt
-			Eventually(func() int64 {
-				return watcher.GetErrorCount()
-			}, 3*time.Second, 100*time.Millisecond).Should(Equal(int64(1)))
+			Eventually(watcher.GetErrorCount, 3*time.Second, 100*time.Millisecond).Should(Equal(int64(1)))
 
 			// Should still have old content
 			Expect(watcher.GetLastHash()).To(Equal(initialHash))
@@ -370,6 +366,18 @@ var _ = Describe("FileWatcher", func() {
 
 			watcher, err := prodhotreload.NewFileWatcher(testFile, func(string) error { return nil }, logger)
 			Expect(err).NotTo(HaveOccurred())
+
+			Expect(func() {
+				watcher.Stop()
+			}).NotTo(Panic())
+		})
+
+		It("UT-HR-1356-003: should not panic when Stop() is called on a nil *FileWatcher", func() {
+			// Defense-in-depth for the sharedtls.StartCAFileWatcher nilnil idiom
+			// (Issue #1546 Tier 2): callers receive a nil *FileWatcher when no
+			// watcher was needed, and must currently remember to nil-check
+			// before calling Stop(). This guards the case where a caller forgets.
+			var watcher *prodhotreload.FileWatcher
 
 			Expect(func() {
 				watcher.Stop()

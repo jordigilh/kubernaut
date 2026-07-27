@@ -46,7 +46,7 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 	// IT-EM-AE-001: All component fields present after successful assessment
 	// ========================================
 	It("IT-EM-AE-001: should have all component fields populated after full assessment", func() {
-		ns := createTestNamespace("em-ae-001")
+		ns := createTestNamespace(ctx, "em-ae-001")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a target pod for health assessment")
@@ -108,7 +108,7 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 	// IT-EM-AE-002: Events have correct reason values
 	// ========================================
 	It("IT-EM-AE-002: should have correct assessment reason reflecting component state", func() {
-		ns := createTestNamespace("em-ae-002")
+		ns := createTestNamespace(ctx, "em-ae-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating a standard EA (all components enabled)")
@@ -135,7 +135,7 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 	// IT-EM-AE-003: Only completed reason when validity expired with no data
 	// ========================================
 	It("IT-EM-AE-003: should set expired reason when no data collected before expiry", func() {
-		ns := createTestNamespace("em-ae-003")
+		ns := createTestNamespace(ctx, "em-ae-003")
 		defer deleteTestNamespace(ns)
 
 		By("Configuring mocks to return empty/no data")
@@ -171,7 +171,7 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 	// IT-EM-AE-004: Events emitted incrementally (component ordering)
 	// ========================================
 	It("IT-EM-AE-004: should assess health and hash before alert and metrics", func() {
-		ns := createTestNamespace("em-ae-004")
+		ns := createTestNamespace(ctx, "em-ae-004")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA")
@@ -198,7 +198,7 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 	// IT-EM-AE-005: Correlation ID consistency across all component data
 	// ========================================
 	It("IT-EM-AE-005: should have consistent correlation ID in all status fields", func() {
-		ns := createTestNamespace("em-ae-005")
+		ns := createTestNamespace(ctx, "em-ae-005")
 		defer deleteTestNamespace(ns)
 
 		correlationID := "rr-ae-005-unique"
@@ -222,7 +222,7 @@ var _ = Describe("Audit Event Payload Integration (BR-AUDIT-006)", func() {
 	// IT-EM-AE-008: DS write failure handling (reconciler resilience)
 	// ========================================
 	It("IT-EM-AE-008: should complete even when AuditEmitter is nil (not yet wired)", func() {
-		ns := createTestNamespace("em-ae-008")
+		ns := createTestNamespace(ctx, "em-ae-008")
 		defer deleteTestNamespace(ns)
 
 		By("Creating an EA (AuditEmitter is nil in current reconciler)")

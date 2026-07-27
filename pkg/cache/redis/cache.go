@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -130,7 +131,7 @@ func (c *Cache[T]) Get(ctx context.Context, key string) (*T, error) {
 	// Retrieve JSON from Redis
 	redisClient := c.client.GetClient()
 	jsonData, err := redisClient.Get(ctx, hashedKey).Result()
-	if err == goredis.Nil {
+	if errors.Is(err, goredis.Nil) {
 		return nil, ErrCacheMiss
 	} else if err != nil {
 		c.client.MarkDisconnected()

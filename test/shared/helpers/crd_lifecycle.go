@@ -21,8 +21,10 @@ import (
 	"strings"
 	"time"
 
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
+
 	. "github.com/onsi/ginkgo/v2" //nolint:revive
-	. "github.com/onsi/gomega"     //nolint:revive
+	. "github.com/onsi/gomega"    //nolint:revive
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8sretry "k8s.io/client-go/util/retry"
@@ -86,16 +88,16 @@ func SimulateSPCompletion(ctx context.Context, k8sClient client.Client, sp *sign
 // ADR-066: canonical model is critical > high > warning > info.
 func normalizeSeverity(raw string) string {
 	switch strings.ToLower(raw) {
-	case "critical", "high", "warning", "info", "unknown":
+	case signalprocessingv1.SeverityCritical, signalprocessingv1.SeverityHigh, signalprocessingv1.SeverityWarning, signalprocessingv1.SeverityInfo, signalprocessingv1.SeverityUnknown:
 		return strings.ToLower(raw)
 	case "medium":
-		return "warning"
+		return signalprocessingv1.SeverityWarning
 	case "low":
-		return "info"
+		return signalprocessingv1.SeverityInfo
 	case "informational":
-		return "info"
+		return signalprocessingv1.SeverityInfo
 	default:
-		return "unknown"
+		return signalprocessingv1.SeverityUnknown
 	}
 }
 
@@ -160,14 +162,22 @@ func SimulateAICompletedWithWorkflow(ctx context.Context, k8sClient client.Clien
 			ai.Status.ApprovalReason = opts.ApprovalReason
 		}
 		ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-			WorkflowID:      "restart-pod-v1",
-			Version:         "1.0.0",
-			ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
-			Confidence:      confidence,
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID: "restart-pod-v1",
+				// WorkflowName/ActionType: Issue #1711 cascade (DD-KA-001 v1.1) made
+				// these required fields on validateSelectedWorkflow.
+				WorkflowName:    "restart-pod-v1",
+				ActionType:      "RestartPod",
+				Version:         "1.0.0",
+				ExecutionBundle: "ghcr.io/kubernaut/workflows/restart-pod:v1.0.0",
+				ExecutionEngine: "job",
+			},
+			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
+			Confidence: confidence,
 		}
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "Root cause identified",
-			Severity:   "critical",
+			Severity:   signalprocessingv1.SeverityCritical,
 			SignalType: "alert",
 			RemediationTarget: &aianalysisv1.RemediationTarget{
 				Kind:      targetKind,

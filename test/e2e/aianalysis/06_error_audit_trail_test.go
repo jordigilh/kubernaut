@@ -86,7 +86,7 @@ var _ = Describe("Error Audit Trail E2E", Label("e2e", "audit", "error"), func()
 			// Wait for at least one KA call event (success or failure)
 			// waitForSpecificAuditEvent already uses Eventually() internally
 			kaEventType := aianalysisaudit.EventTypeAIAgentCall
-			kaEvents := waitForSpecificAuditEvent(remediationID, kaEventType, 1)
+			kaEvents := waitForSpecificAuditEvent(remediationID, kaEventType)
 
 			By("Validating AI agent call was audited regardless of success/failure")
 			Expect(kaEvents).ToNot(BeEmpty(),

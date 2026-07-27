@@ -41,7 +41,7 @@ var _ = Describe("Hash Compute Deferral Integration (DD-EM-004, BR-EM-010)", fun
 	// This ensures the hash captures the spec AFTER the external controller reconciles.
 	// ========================================
 	It("IT-EM-251-001: should defer hash computation until HashComputeDelay elapses, then complete", func() {
-		ns := createTestNamespace("em-251-001")
+		ns := createTestNamespace(ctx, "em-251-001")
 		defer deleteTestNamespace(ns)
 
 		deferralDuration := 8 * time.Second
@@ -127,7 +127,7 @@ var _ = Describe("Hash Compute Deferral Integration (DD-EM-004, BR-EM-010)", fun
 	// without any deferral. This is the existing behavior for all pre-#251 EAs.
 	// ========================================
 	It("IT-EM-251-002: should compute hash immediately when HashComputeDelay is nil (sync target)", func() {
-		ns := createTestNamespace("em-251-002")
+		ns := createTestNamespace(ctx, "em-251-002")
 		defer deleteTestNamespace(ns)
 
 		By("Creating EA without HashComputeDelay (sync target, backward compatible)")
@@ -165,7 +165,7 @@ var _ = Describe("Hash Compute Deferral Integration (DD-EM-004, BR-EM-010)", fun
 	// always complete.
 	// ========================================
 	It("IT-EM-251-003: should compute hash immediately when HashComputeDelay is effectively elapsed", func() {
-		ns := createTestNamespace("em-251-003")
+		ns := createTestNamespace(ctx, "em-251-003")
 		defer deleteTestNamespace(ns)
 
 		By("Creating EA with HashComputeDelay 1ns (elapsed deferral—creation + 1ns < now)")

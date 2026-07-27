@@ -189,6 +189,10 @@ func ResetDefaultTransportForTesting() {
 func StartCAFileWatcher(ctx context.Context, logger logr.Logger, onReload ...func(error)) (*hotreload.FileWatcher, error) {
 	caFile := os.Getenv("TLS_CA_FILE")
 	if caFile == "" {
+		// nolint:nilnil // intentional "not configured" sentinel, not an error.
+		// All 10+ cmd/*/main.go callers guard with `if caWatcher != nil` before
+		// use, and *hotreload.FileWatcher.Stop() is itself nil-receiver-safe
+		// as defense in depth (Issue #1546 Tier 2).
 		return nil, nil
 	}
 
@@ -199,6 +203,9 @@ func StartCAFileWatcher(ctx context.Context, logger logr.Logger, onReload ...fun
 
 	reloader, ok := rt.(*CAReloader)
 	if !ok {
+		// nolint:nilnil // intentional "not applicable" sentinel (base transport
+		// isn't a *CAReloader), not an error. Same caller-safety guarantees as
+		// the caFile=="" case above (Issue #1546 Tier 2).
 		return nil, nil
 	}
 

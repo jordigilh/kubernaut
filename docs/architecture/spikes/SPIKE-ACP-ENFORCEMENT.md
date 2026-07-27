@@ -1,7 +1,7 @@
 # Spike: ACP Server Enforcement Layer
 
 **Date**: May 19, 2026
-**Status**: COMPLETED
+**Status**: COMPLETED — the budget/shadow/audit enforcement concerns validated here survive, but relocated: enforcement now happens via the `AuthBridge` sidecar intercepting agent network traffic ([#1535](https://github.com/jordigilh/kubernaut/issues/1535), [#1681](https://github.com/jordigilh/kubernaut/issues/1681)) instead of a Kubernaut-run "ACP server." See [#1536](https://github.com/jordigilh/kubernaut/issues/1536), [ADR-KA-002](../decisions/ADR-KA-002-agent-security-defense-in-depth.md).
 **Duration**: 1 session
 **Relates to**: [PROPOSAL-EXT-004](../proposals/PROPOSAL-EXT-004-goose-recipes.md), [PROPOSAL-EXT-005](../proposals/PROPOSAL-EXT-005-oracle-agent-spec.md), [PROPOSAL-EXT-006](../proposals/PROPOSAL-EXT-006-deep-agents.md)
 **Code**: [acp-enforcement/](acp-enforcement/)

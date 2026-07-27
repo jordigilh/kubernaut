@@ -24,7 +24,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
 
 	"github.com/go-logr/logr"
@@ -36,7 +35,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/oci"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/partition"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/repository"
-	actiontyperepo "github.com/jordigilh/kubernaut/pkg/datastorage/repository/actiontype"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/retention"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
@@ -78,7 +76,9 @@ func connectAndPreparePostgres(deps ServerDeps, appCfg *config.Config, logger lo
 	}
 	cleanups.add(func() { _ = db.Close() })
 
-	if err := db.Ping(); err != nil {
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer pingCancel()
+	if err := db.PingContext(pingCtx); err != nil {
 		return nil, fmt.Errorf("failed to ping PostgreSQL: %w", err)
 	}
 
@@ -238,30 +238,29 @@ func buildAuditWriteDependencies(db *sql.DB, redisClient *redis.Client, deps Ser
 	}, nil
 }
 
-// workflowCatalogDeps groups the BR-STORAGE-013/014 and BR-WORKFLOW-007
-// workflow catalog dependencies constructed by buildWorkflowCatalogDependencies.
+// workflowCatalogDeps groups the DD-WE-006/BR-HAPI-016 dependencies
+// constructed by buildWorkflowCatalogDependencies.
+//
+// Issue #1661 Phase C: actionTypeRepo (*actiontype.Repository) was removed --
+// its sole method, ActionTypeExists, lost its only caller (HandleCreateWorkflow)
+// in Phase B and had zero other production callers (see pkg/datastorage/
+// repository/actiontype, deleted wholesale in this phase).
+//
+// #1677 Phase 2g (DD-WORKFLOW-019): workflowRepo removed -- workflow/
+// action-type discovery (BR-STORAGE-013/014, BR-WORKFLOW-007) is now owned
+// directly by KubernautAgent, not proxied through DataStorage.
 type workflowCatalogDeps struct {
-	workflowRepo      *repository.WorkflowRepository
-	actionTypeRepo    *actiontyperepo.Repository
 	schemaExtractor   *oci.SchemaExtractor
 	remHistoryQuerier RemediationHistoryQuerier
 }
 
-// buildWorkflowCatalogDependencies constructs the workflow repository,
-// action-type taxonomy repository, OCI schema extractor (DD-WE-006), and
-// remediation history querier (DD-HAPI-016 v1.1).
+// buildWorkflowCatalogDependencies constructs the OCI schema extractor
+// (DD-WE-006) and remediation history querier (DD-HAPI-016 v1.1).
 //
 // V1.0: Embedding service removed (label-only search); see
 // CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence).
 func buildWorkflowCatalogDependencies(db *sql.DB, logger logr.Logger) *workflowCatalogDeps {
 	logger.V(1).Info("Creating workflow catalog dependencies...")
-	sqlxDB := sqlx.NewDb(db, "pgx") // Wrap *sql.DB with sqlx for workflow repository
-
-	workflowRepo := repository.NewWorkflowRepository(sqlxDB, logger)
-	logger.V(1).Info("Workflow catalog dependencies created (label-only search)",
-		"workflow_repo_nil", workflowRepo == nil)
-
-	actionTypeRepo := actiontyperepo.NewRepository(sqlxDB, logger)
 
 	imagePuller := oci.NewCraneImagePuller(logger)
 	schemaParser := schema.NewParser()
@@ -271,8 +270,6 @@ func buildWorkflowCatalogDependencies(db *sql.DB, logger logr.Logger) *workflowC
 	remHistoryQuerier := NewRemediationHistoryRepoAdapter(remHistoryRepo)
 
 	return &workflowCatalogDeps{
-		workflowRepo:      workflowRepo,
-		actionTypeRepo:    actionTypeRepo,
 		schemaExtractor:   schemaExtractor,
 		remHistoryQuerier: remHistoryQuerier,
 	}
@@ -283,20 +280,18 @@ func buildWorkflowCatalogDependencies(db *sql.DB, logger logr.Logger) *workflowC
 // WithSchemaExtractor).
 //
 // BR-AUDIT-006: Pass sqlDB for reconstruction queries.
-// GAP-WF-1: WithWorkflowLifecycleRepository enables enable/disable/deprecate handlers.
+// Issue #1661 Phase B: WithWorkflowLifecycleRepository/WithWorkflowContentIntegrityRepository
+// removed -- their handlers (enable/disable/deprecate/create) were deleted;
+// AuthWebhook now owns the RemediationWorkflow CRD lifecycle entirely locally
+// (DD-WORKFLOW-018).
 func buildRESTHandler(deps ServerDeps, db *sql.DB, logger logr.Logger, auditDeps *auditWriteDeps, catalogDeps *workflowCatalogDeps) *Handler {
-	opts := make([]HandlerOption, 0, 10+len(deps.HandlerOpts))
+	opts := make([]HandlerOption, 0, 5+len(deps.HandlerOpts))
 	opts = append(opts,
 		WithLogger(logger),
-		WithWorkflowRepository(catalogDeps.workflowRepo),
-		WithWorkflowLifecycleRepository(catalogDeps.workflowRepo),
-		WithWorkflowContentIntegrityRepository(catalogDeps.workflowRepo),
-		WithActionTypeValidator(catalogDeps.actionTypeRepo),
 		WithAuditStore(auditDeps.auditStore),
 		WithSQLDB(db),
 		WithSchemaExtractor(catalogDeps.schemaExtractor),
 		WithRemediationHistoryQuerier(catalogDeps.remHistoryQuerier),
-		WithActionTypeRepository(catalogDeps.actionTypeRepo),
 	)
 	opts = append(opts, deps.HandlerOpts...)
 	return NewHandler(opts...)
@@ -477,6 +472,7 @@ func NewServer(deps ServerDeps) (*Server, error) {
 	}
 
 	catalogDeps := buildWorkflowCatalogDependencies(db, logger)
+
 	handler := buildRESTHandler(deps, db, logger, auditDeps, catalogDeps)
 
 	signer, openapiValidator, err := initSignerAndOpenAPIValidator(deps, auditDeps, logger)

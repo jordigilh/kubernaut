@@ -144,7 +144,8 @@ type SessionLifecycle interface {
 // sessions. Split out from SessionManager for ISP
 // (GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 0b).
 type SessionQuerier interface {
-	// GetDriver returns the current driver session for an RR, or nil if autonomous.
+	// GetDriver returns the current driver session for an RR, or
+	// ErrSessionNotFound if no interactive session exists (e.g., autonomous mode).
 	GetDriver(rrID string) (*InteractiveSession, error)
 
 	// IsDriverActive returns true if a user is currently driving the given RR.

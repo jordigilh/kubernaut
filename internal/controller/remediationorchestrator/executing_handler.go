@@ -147,7 +147,7 @@ func (h *ExecutingHandler) handleWEStatus(ctx context.Context, rr *remediationv1
 	switch we.Status.Phase {
 	case workflowexecutionv1.PhaseCompleted:
 		logger.Info("WorkflowExecution completed, transitioning to Verifying")
-		return phase.Verify("Remediated", "WorkflowExecution completed successfully"), nil
+		return phase.Verify(remediationv1.OutcomeRemediated, "WorkflowExecution completed successfully"), nil
 
 	case workflowexecutionv1.PhaseFailed:
 		if we.Status.FailureDetails != nil &&

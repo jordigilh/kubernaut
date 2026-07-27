@@ -83,6 +83,10 @@ func NewCircuitBreakerTransport(next http.RoundTripper, cfg *CircuitBreakerConfi
 		}
 	}
 
+	// nolint:bodyclose // false positive: NewCircuitBreaker[T any](st Settings) *CircuitBreaker[T]
+	// is a generic constructor with no HTTP semantics; bodyclose misparses the
+	// *http.Response type parameter as an HTTP call site. RoundTrip below
+	// already drains+closes the body on the failure-status path (Issue #1546 Tier 2).
 	cb := gobreaker.NewCircuitBreaker[*http.Response](settings)
 
 	if cfg.StateGauge != nil {

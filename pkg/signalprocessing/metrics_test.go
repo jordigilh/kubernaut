@@ -92,8 +92,8 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 			}
 
 			// Core metrics must exist
-			Expect(metricNames).To(HaveKey("signalprocessing_processing_total"))
-			Expect(metricNames).To(HaveKey("signalprocessing_processing_duration_seconds"))
+			Expect(metricNames).To(HaveKey(metrics.MetricNameProcessingTotal))
+			Expect(metricNames).To(HaveKey(metrics.MetricNameProcessingDuration))
 			Expect(metricNames).To(HaveKey("signalprocessing_enrichment_errors_total"))
 		})
 	})
@@ -115,7 +115,7 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 
 				var found bool
 				for _, mf := range metricFamilies {
-					if mf.GetName() == "signalprocessing_processing_total" {
+					if mf.GetName() == metrics.MetricNameProcessingTotal {
 						found = true
 						Expect(mf.GetType()).To(Equal(dto.MetricType_COUNTER))
 						metrics := mf.GetMetric()
@@ -137,7 +137,7 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				for _, mf := range metricFamilies {
-					if mf.GetName() == "signalprocessing_processing_total" {
+					if mf.GetName() == metrics.MetricNameProcessingTotal {
 						// Should have 3 separate label combinations
 						metrics := mf.GetMetric()
 						Expect(metrics).To(HaveLen(3))
@@ -154,7 +154,7 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				for _, mf := range metricFamilies {
-					if mf.GetName() == "signalprocessing_processing_total" {
+					if mf.GetName() == metrics.MetricNameProcessingTotal {
 						metrics := mf.GetMetric()
 						Expect(metrics).To(HaveLen(2))
 						// Both should have value 1
@@ -225,7 +225,7 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 
 				var found bool
 				for _, mf := range metricFamilies {
-					if mf.GetName() == "signalprocessing_processing_duration_seconds" {
+					if mf.GetName() == metrics.MetricNameProcessingDuration {
 						found = true
 						Expect(mf.GetType()).To(Equal(dto.MetricType_HISTOGRAM))
 						metrics := mf.GetMetric()
@@ -248,7 +248,7 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				for _, mf := range metricFamilies {
-					if mf.GetName() == "signalprocessing_processing_duration_seconds" {
+					if mf.GetName() == metrics.MetricNameProcessingDuration {
 						metrics := mf.GetMetric()
 						Expect(metrics).To(HaveLen(1))
 						histogram := metrics[0].GetHistogram()
@@ -269,7 +269,7 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 				Expect(err).ToNot(HaveOccurred())
 
 				for _, mf := range metricFamilies {
-					if mf.GetName() == "signalprocessing_processing_duration_seconds" {
+					if mf.GetName() == metrics.MetricNameProcessingDuration {
 						metrics := mf.GetMetric()
 						Expect(metrics).To(HaveLen(3))
 					}
@@ -310,7 +310,7 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			for _, mf := range metricFamilies {
-				if mf.GetName() == "signalprocessing_processing_total" {
+				if mf.GetName() == metrics.MetricNameProcessingTotal {
 					metrics := mf.GetMetric()
 					Expect(metrics).To(HaveLen(1))
 					labels := metrics[0].GetLabel()
@@ -351,8 +351,8 @@ var _ = Describe("NewMetricsWithRegistry", func() {
 			metricNames[mf.GetName()] = true
 		}
 
-		Expect(metricNames).To(HaveKey("signalprocessing_processing_total"))
-		Expect(metricNames).To(HaveKey("signalprocessing_processing_duration_seconds"))
+		Expect(metricNames).To(HaveKey(metrics.MetricNameProcessingTotal))
+		Expect(metricNames).To(HaveKey(metrics.MetricNameProcessingDuration))
 	})
 
 	It("METRICS-REG-02: should isolate metrics between registries", func() {
@@ -370,7 +370,7 @@ var _ = Describe("NewMetricsWithRegistry", func() {
 		families1, _ := registry1.Gather()
 		var found1 bool
 		for _, mf := range families1 {
-			if mf.GetName() == "signalprocessing_processing_total" {
+			if mf.GetName() == metrics.MetricNameProcessingTotal {
 				found1 = true
 				for _, metric := range mf.GetMetric() {
 					Expect(metric.GetCounter().GetValue()).To(Equal(float64(1)))
@@ -386,7 +386,7 @@ var _ = Describe("NewMetricsWithRegistry", func() {
 		// Verify m2's registry has different value
 		families2, _ := registry2.Gather()
 		for _, mf := range families2 {
-			if mf.GetName() == "signalprocessing_processing_total" {
+			if mf.GetName() == metrics.MetricNameProcessingTotal {
 				for _, metric := range mf.GetMetric() {
 					Expect(metric.GetCounter().GetValue()).To(Equal(float64(2)))
 				}
@@ -396,7 +396,7 @@ var _ = Describe("NewMetricsWithRegistry", func() {
 		// Verify m1's registry still has 1 (not affected by m2)
 		families1After, _ := registry1.Gather()
 		for _, mf := range families1After {
-			if mf.GetName() == "signalprocessing_processing_total" {
+			if mf.GetName() == metrics.MetricNameProcessingTotal {
 				for _, metric := range mf.GetMetric() {
 					Expect(metric.GetCounter().GetValue()).To(Equal(float64(1)))
 				}

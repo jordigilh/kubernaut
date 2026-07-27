@@ -28,15 +28,21 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	workflowexecutionv1alpha1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	weconditions "github.com/jordigilh/kubernaut/pkg/workflowexecution"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 
 	"github.com/google/uuid"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	noFailureDetailsAvailable = "no failure details available"
 )
 
 // Ansible Engine E2E Tests (BR-WE-015)
@@ -176,7 +182,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 					return false, nil
 				}
 				if updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed {
-					details := "no failure details available"
+					details := noFailureDetailsAvailable
 					if updated.Status.FailureDetails != nil {
 						details = fmt.Sprintf("reason=%s, message=%s",
 							updated.Status.FailureDetails.Reason,
@@ -249,7 +255,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 					return false, nil
 				}
 				if updated.Status.Phase == workflowexecutionv1alpha1.PhaseFailed {
-					details := "no failure details available"
+					details := noFailureDetailsAvailable
 					if updated.Status.FailureDetails != nil {
 						details = fmt.Sprintf("reason=%s, message=%s",
 							updated.Status.FailureDetails.Reason,
@@ -325,10 +331,18 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      depSecretAnsibleUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
-						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      depSecretAnsibleUUID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+							EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+							ExecutionEngine: "ansible",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-ansible"}},
+							},
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -349,12 +363,12 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 				Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
 					"WFE should reach Running — ephemeral AWX credential injection must succeed")
 
-		By("E2E-WE-015-005: Verifying ephemeral credential IDs in status")
-		runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
-			"WFE status should contain ephemeral credential IDs (#479)")
-		GinkgoWriter.Printf("Ephemeral credential IDs: %v\n", runningWFE.Status.EphemeralCredentialIDs)
+			By("E2E-WE-015-005: Verifying ephemeral credential IDs in status")
+			runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
+				"WFE status should contain ephemeral credential IDs (#479)")
+			GinkgoWriter.Printf("Ephemeral credential IDs: %v\n", runningWFE.Status.EphemeralCredentialIDs)
 
 			By("E2E-WE-015-005: Waiting for WFE to complete (playbook validates env var)")
 			Eventually(func() string {
@@ -396,10 +410,18 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      depConfigMapAnsibleUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
-						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      depConfigMapAnsibleUUID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+							EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+							ExecutionEngine: "ansible",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								ConfigMaps: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-configmap-ansible"}},
+							},
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -469,10 +491,18 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 						Namespace:  controllerNamespace,
 					},
 					WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-						WorkflowID:      credMergeUUID,
-						Version:         "v1.0.0",
-						ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
-						EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      credMergeUUID,
+							WorkflowName:    "test-workflow",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+							EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+							ExecutionEngine: "ansible",
+							Dependencies: &sharedtypes.WorkflowDependencies{
+								Secrets: []sharedtypes.WorkflowResourceDependency{{Name: "e2e-dep-secret-ansible"}},
+							},
+						},
 					},
 					TargetResource: targetResource,
 					Parameters: map[string]string{
@@ -493,12 +523,12 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 				Should(Equal(workflowexecutionv1alpha1.PhaseRunning),
 					"WFE should reach Running — AWX must not reject the launch with 400 about missing credentials")
 
-		By("E2E-WE-365-001: Verifying ephemeral credential IDs in status")
-		runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
-			"WFE status should contain ephemeral credential IDs (#479)")
-		GinkgoWriter.Printf("Ephemeral credential IDs: %v\n", runningWFE.Status.EphemeralCredentialIDs)
+			By("E2E-WE-365-001: Verifying ephemeral credential IDs in status")
+			runningWFE, err := getWFEDirect(wfe.Name, wfe.Namespace)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(runningWFE.Status.EphemeralCredentialIDs).ToNot(BeEmpty(),
+				"WFE status should contain ephemeral credential IDs (#479)")
+			GinkgoWriter.Printf("Ephemeral credential IDs: %v\n", runningWFE.Status.EphemeralCredentialIDs)
 
 			By("E2E-WE-365-001: Verifying WFE completes (playbook validates env var from merged credentials)")
 			Eventually(func() string {
@@ -523,7 +553,7 @@ var _ = Describe("Ansible Engine E2E [BR-WE-015]", func() {
 	})
 })
 
-// createAnsibleWFE builds a WorkflowExecution CRD for ansible workflows (engine resolved from DS at runtime).
+// createAnsibleWFE builds a WorkflowExecution CRD for ansible workflows.
 func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateName string) *workflowexecutionv1alpha1.WorkflowExecution {
 	engineCfgJSON, err := json.Marshal(map[string]string{
 		"playbookPath":    playbookPath,
@@ -544,10 +574,15 @@ func createAnsibleWFE(name, targetResource, workflowID, playbookPath, templateNa
 				Namespace:  controllerNamespace,
 			},
 			WorkflowRef: workflowexecutionv1alpha1.WorkflowRef{
-				WorkflowID:      workflowID,
-				Version:         "v1.0.0",
-				ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
-				EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      workflowID,
+					WorkflowName:    "test-workflow",
+					ActionType:      "RestartPod",
+					Version:         "v1.0.0",
+					ExecutionBundle: "https://github.com/jordigilh/kubernaut-test-playbooks.git",
+					EngineConfig:    &apiextensionsv1.JSON{Raw: engineCfgJSON},
+					ExecutionEngine: "ansible",
+				},
 			},
 			TargetResource: targetResource,
 			Parameters: map[string]string{
@@ -620,7 +655,7 @@ func phaseOrFailFast(name, namespace string) func() (string, error) {
 		}
 		phase := updated.Status.Phase
 		if phase == workflowexecutionv1alpha1.PhaseFailed {
-			details := "no failure details available"
+			details := noFailureDetailsAvailable
 			if updated.Status.FailureDetails != nil {
 				details = fmt.Sprintf("reason=%s, message=%s",
 					updated.Status.FailureDetails.Reason,

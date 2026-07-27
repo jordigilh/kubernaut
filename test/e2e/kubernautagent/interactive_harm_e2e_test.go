@@ -122,7 +122,7 @@ var _ = Describe("CP-5 HARM: Holistic Adversarial Regression & Misuse Scenarios"
 				Expect(err.Error()).To(Or(
 					ContainSubstring("ghost-rr"),
 					ContainSubstring("not found"),
-					ContainSubstring("error"),
+					ContainSubstring(errorFixture),
 				), "error should reference the missing RR or be descriptive")
 			} else {
 				Expect(result).NotTo(BeNil())
@@ -354,4 +354,3 @@ func getKubernetesClientset() (*kubernetes.Clientset, error) {
 func leaseNameForRR(rrID string) string {
 	return "kubernaut-interactive-" + rrID
 }
-

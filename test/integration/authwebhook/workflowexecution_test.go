@@ -26,6 +26,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	defaultFixture = "default"
+)
+
 // TDD RED Phase: WorkflowExecution Integration Tests
 // BR-WE-013: Audit-Tracked Block Clearing
 // BR-AUTH-001: Operator Attribution (SOC2 CC8.1)
@@ -46,7 +51,7 @@ var _ = Describe("BR-WE-013: WorkflowExecution Block Clearance Attribution", fun
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		namespace = "default"
+		namespace = defaultFixture
 	})
 
 	Context("INT-WE-01: when operator clears workflow execution block", func() {

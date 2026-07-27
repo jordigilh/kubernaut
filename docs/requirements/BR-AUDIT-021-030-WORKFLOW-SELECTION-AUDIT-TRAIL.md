@@ -1,16 +1,17 @@
 # BR-AUDIT-021-030: Workflow Selection Audit Trail
 
-**Document Version**: 2.0
+**Document Version**: 2.1
 **Date**: November 2025
-**Updated**: February 2026
+**Updated**: July 2026
 **Status**: ✅ APPROVED
 **Category**: Audit & Compliance
-**Related DDs**: DD-WORKFLOW-014 v3.0, DD-WORKFLOW-016, DD-WORKFLOW-017, ADR-034, ADR-038
+**Related DDs**: DD-WORKFLOW-014 v4.0, DD-WORKFLOW-016, DD-WORKFLOW-017, DD-WORKFLOW-019, ADR-034, ADR-038
 
 ### Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.1 | 2026-07-23 | **Amendment (Issue #1677, DD-WORKFLOW-019)**: Relocated ownership of audit event *generation* for the four `workflow.catalog.*` events from Data Storage Service to KubernautAgent (KA), which now owns the discovery/scoring logic and informer-backed cache directly. Data Storage's role narrows to persistence (audit_events table) and the query API (BR-AUDIT-029/030, unchanged). Event types, schemas, and correlation semantics are unchanged. See §1.3, BR-AUDIT-022/023, §4.1, and the new §9 (v2.1 Implementation Status) below. |
 | 2.0 | 2026-02-05 | **BREAKING**: Aligned with DD-WORKFLOW-014 v3.0 three-step discovery protocol. Replaced single `workflow.catalog.search_completed` event (BR-AUDIT-023) with four step-specific events. Updated query metadata (BR-AUDIT-025) for action-type taxonomy. Updated scoring (BR-AUDIT-026) for label-based scoring (no semantic search). Updated search metadata (BR-AUDIT-028) to remove embedding references. Updated query API (BR-AUDIT-030) for V3.0 event types. Supersedes DD-WORKFLOW-002 references with DD-WORKFLOW-016. |
 | 1.0 | 2025-11-27 | Initial release with single `workflow.catalog.search_completed` event model |
 
@@ -33,8 +34,9 @@ The Workflow Selection Audit Trail provides comprehensive tracking of all workfl
 
 | Service | Role | BR Coverage |
 |---------|------|-------------|
-| **HolmesGPT API** | Search initiator, passes remediation_id | BR-AUDIT-021, BR-AUDIT-022 |
-| **Data Storage Service** | Audit event generator, search executor | BR-AUDIT-023 through BR-AUDIT-030 |
+| **HolmesGPT API** (superseded by **KubernautAgent**, see §9) | Search initiator, passes remediation_id | BR-AUDIT-021, BR-AUDIT-022 |
+| **KubernautAgent (KA)** | Audit event **generator** for `workflow.catalog.*` (v2.1, Issue #1677, DD-WORKFLOW-019) — owns discovery/scoring and emits events via `BufferedDSAuditStore` | BR-AUDIT-023, BR-AUDIT-024 |
+| **Data Storage Service** | Audit event **persistence** (audit_events table) + query API; no longer the generator (v2.1) | BR-AUDIT-025 through BR-AUDIT-030 |
 
 ---
 
@@ -62,31 +64,32 @@ The Workflow Selection Audit Trail provides comprehensive tracking of all workfl
 
 **Implementation Reference**: DD-WORKFLOW-016, DD-WORKFLOW-014 v3.0
 
-#### BR-AUDIT-022: No Audit Generation in HolmesGPT API
+#### BR-AUDIT-022: No Ad Hoc Audit Generation Outside the Designated Owner
 
-**Requirement**: HolmesGPT API MUST NOT generate audit events for workflow searches. Audit generation is the responsibility of Data Storage Service.
+**Requirement (amended v2.1, Issue #1677, DD-WORKFLOW-019)**: No caller other than the designated audit-event owner may generate `workflow.catalog.*` audit events. **KubernautAgent (KA)** is that owner as of v2.1 — it both performs the three-step discovery/validation directly against its own informer-backed cache *and* generates the corresponding audit events via `internal/kubernautagent/audit/BufferedDSAuditStore`. This supersedes the original v1.0-v2.0 design, where HolmesGPT API called Data Storage Service and DS generated the events as a side effect of serving the query.
 
 **Business Value**:
-- Single source of truth for audit events (Data Storage has richer context)
-- Avoids duplicate audit events
-- Simplifies HolmesGPT API responsibilities
+- Single source of truth for audit events (one designated generator, avoiding duplicate or missing events)
+- Simplifies the caller's responsibilities — no other component reimplements audit-event construction for this domain
 
 **Acceptance Criteria**:
-- [ ] HolmesGPT API does not call `/api/v1/audit/events` endpoint
-- [ ] No audit-related code in workflow catalog toolset
-- [ ] HAPI makes only DS discovery calls (Steps 1-3) plus the post-selection validation re-query; DS generates audit events for each
+- [ ] Only KA calls `internal/kubernautagent/audit` to emit `workflow.catalog.*` events; no other service independently constructs these event types
+- [ ] No audit-related code duplicating this responsibility in APIFrontend's workflow-catalog MCP tools (they call KA, not DS, and do not emit their own audit events for this domain)
+- [ ] KA performs discovery (Steps 1-3) and post-selection validation against its own cache, generating one audit event per step
 
-**Implementation Reference**: DD-WORKFLOW-014 v3.0, DD-WORKFLOW-016
+**Implementation Reference**: DD-WORKFLOW-014 v4.0, DD-WORKFLOW-016, DD-WORKFLOW-019
 
 ---
 
-## 3. Data Storage Service Audit Requirements
+## 3. Workflow Discovery Audit Event Generation Requirements
+
+> **Amended v2.1 (Issue #1677, DD-WORKFLOW-019)**: this section's requirements were originally scoped to "Data Storage Service" (v1.0-v2.0 design, when DS hosted the discovery/scoring logic). As of v2.1, **KubernautAgent (KA)** owns discovery/scoring directly and is the audit event **generator**; Data Storage Service's remaining role is **persistence** (audit_events table) and the **query API** (§3.3 below, unchanged). The heading and BR text are updated in place below rather than left to silently contradict the current implementation — see §9 for the full amendment rationale.
 
 ### 3.1 Audit Event Generation
 
-#### BR-AUDIT-023: Workflow Discovery Audit Event Generation (V3.0)
+#### BR-AUDIT-023: Workflow Discovery Audit Event Generation (V3.0, amended v2.1)
 
-**Requirement**: Data Storage Service MUST generate a step-specific audit event for every workflow discovery operation across the three-step protocol (DD-WORKFLOW-016). The V2.0 single `workflow.catalog.search_completed` event is **deprecated** and replaced by four step-specific events.
+**Requirement**: **KubernautAgent (KA)** MUST generate a step-specific audit event for every workflow discovery operation across the three-step protocol (DD-WORKFLOW-016), writing them to Data Storage Service via the buffered async audit pipeline (`BufferedDSAuditStore`, BR-AUDIT-024/ADR-038). The V2.0 single `workflow.catalog.search_completed` event is **deprecated** and replaced by four step-specific events. *(Originally scoped to Data Storage Service in v1.0-v2.0; ownership relocated to KA per DD-WORKFLOW-019 once DS's discovery/scoring logic itself moved to KA — see §9.)*
 
 **Business Value**:
 - Fine-grained audit trail for each decision point in the discovery flow
@@ -97,26 +100,26 @@ The Workflow Selection Audit Trail provides comprehensive tracking of all workfl
 - [ ] `workflow.catalog.actions_listed` emitted after Step 1 (list available actions)
 - [ ] `workflow.catalog.workflows_listed` emitted after Step 2 (list workflows for action type)
 - [ ] `workflow.catalog.workflow_retrieved` emitted after Step 3 (get single workflow)
-- [ ] `workflow.catalog.selection_validated` emitted after HAPI post-selection validation re-query
+- [ ] `workflow.catalog.selection_validated` emitted after KA's post-selection validation re-query
 - [ ] All four events include `remediationId` as `correlationId`
 - [ ] All four events follow ADR-034 unified audit table schema
-- [ ] Event schemas as defined in DD-WORKFLOW-014 v3.0
+- [ ] Event schemas as defined in DD-WORKFLOW-014 v4.0
 
-**Implementation Reference**: DD-WORKFLOW-014 v3.0, DD-WORKFLOW-016, ADR-034
+**Implementation Reference**: DD-WORKFLOW-014 v4.0, DD-WORKFLOW-016, DD-WORKFLOW-019, ADR-034
 
 #### BR-AUDIT-024: Asynchronous Non-Blocking Audit
 
-**Requirement**: Audit event generation MUST be asynchronous and non-blocking. Search response MUST NOT be delayed by audit operations.
+**Requirement**: Audit event generation MUST be asynchronous and non-blocking. Discovery response MUST NOT be delayed by audit operations.
 
 **Business Value**:
-- Maintains search performance SLA
+- Maintains discovery performance SLA
 - Audit failures don't impact business operations
 - Graceful degradation under high load
 
 **Acceptance Criteria**:
-- [ ] Audit uses buffered async pattern (ADR-038)
-- [ ] Search response returned before audit write completes
-- [ ] Audit failures logged but don't fail search operation
+- [ ] Audit uses buffered async pattern (ADR-038) — KA's existing `BufferedDSAuditStore` (DD-AUDIT-002)
+- [ ] Discovery response returned before audit write completes
+- [ ] Audit failures logged but don't fail the discovery operation
 - [ ] Buffer overflow handled gracefully (oldest events dropped)
 
 **Implementation Reference**: ADR-038
@@ -319,27 +322,32 @@ WHERE event_type = 'workflow.catalog.workflow_retrieved'
 - Supports debugging across service boundaries
 - Required for compliance and forensics
 
-**Correlation Chain (V3.0 Three-Step Discovery)**:
+**Correlation Chain (v2.1, KA-owned discovery, Issue #1677/DD-WORKFLOW-019)**:
 ```
 AIAnalysis Controller
   → generates remediationId (kubernaut.ai/correlation-id label)
-  → calls HolmesGPT API with remediationId
+  → invokes KubernautAgent (KA) with remediationId
 
-HolmesGPT API (three-step discovery)
-  → Step 1: GET /api/v1/workflows/actions?remediationId=...
-  → Step 2: GET /api/v1/workflows/actions/{action_type}?remediationId=...
-  → Step 3: GET /api/v1/workflows/{workflow_id}?remediationId=...
-  → Post-selection: GET /api/v1/workflows/{workflow_id}?remediationId=... (validation)
+KubernautAgent (KA) — three-step discovery against its own informer-backed cache
+  → Step 1: list_available_actions(remediationId=...)
+  → Step 2: list_workflows(action_type, remediationId=...)
+  → Step 3: get_workflow(workflow_id, remediationId=...)
+  → Post-selection: validation re-query (remediationId=...)
+  → for each step: constructs a step-specific audit event with correlationId = remediationId,
+    event_category="workflow" (WithEventCategory), ResourceType/ResourceID set for Step 3 and
+    validation (WithResource("Workflow", workflowId))
+  → writes via BufferedDSAuditStore (async, non-blocking — BR-AUDIT-024/ADR-038)
 
 Data Storage Service
-  → extracts remediationId from query parameter on each request
-  → generates step-specific audit event with correlationId = remediationId
-  → stores in audit_events table (one event per step)
+  → persists each event to the audit_events table (one event per step)
+  → serves the audit query API (BR-AUDIT-030, unchanged)
 
 Audit Query
   → query by correlationId to reconstruct full three-step discovery flow
   → includes action type selection, workflow selection, parameter lookup, and validation
 ```
+
+**Historical chain (v1.0-v2.0, superseded)**: HolmesGPT API called Data Storage Service's REST discovery endpoints directly, and DS generated the audit events as a side effect of serving each query. See DD-WORKFLOW-014 §"V3.0 Three-Step Discovery Audit Events" for the original design this superseded.
 
 ---
 
@@ -380,19 +388,27 @@ Audit Query
 - [ ] Handle empty `remediationId` gracefully
 - [ ] Update tests to verify no audit calls and correct `remediationId` propagation
 
-### 6.2 Data Storage Service
+### 6.2 Data Storage Service (v1.0-v2.0 historical checklist — superseded by §6.2b for generation, retained for persistence/query)
 
-- [ ] Implement `workflow.catalog.actions_listed` audit event in Step 1 handler
-- [ ] Implement `workflow.catalog.workflows_listed` audit event in Step 2 handler
-- [ ] Implement `workflow.catalog.workflow_retrieved` audit event in Step 3 handler
-- [ ] Implement `workflow.catalog.selection_validated` audit event in validation handler
-- [ ] Extract `remediationId` from query parameter in all three discovery handlers
-- [ ] Include `signalContext`, `resultCount`, `pagination`, `queryDurationMs` in all events
-- [ ] Include `finalScore` per workflow in Step 2 events (stripped before LLM rendering)
-- [ ] Include `securityGateResult` in Step 3 events
-- [ ] Implement async buffered audit write (ADR-038) for all four events
+- [ ] ~~Implement `workflow.catalog.actions_listed` audit event in Step 1 handler~~ (superseded — see §6.2b)
+- [ ] ~~Implement `workflow.catalog.workflows_listed` audit event in Step 2 handler~~ (superseded — see §6.2b)
+- [ ] ~~Implement `workflow.catalog.workflow_retrieved` audit event in Step 3 handler~~ (superseded — see §6.2b)
+- [ ] ~~Implement `workflow.catalog.selection_validated` audit event in validation handler~~ (superseded — see §6.2b)
+- [ ] ~~Extract `remediationId` from query parameter in all three discovery handlers~~ (superseded — see §6.2b)
+- [ ] ~~Include `signalContext`, `resultCount`, `pagination`, `queryDurationMs` in all events~~ (superseded — see §6.2b)
+- [ ] ~~Include `finalScore` per workflow in Step 2 events (stripped before LLM rendering)~~ (superseded — see §6.2b)
+- [ ] ~~Include `securityGateResult` in Step 3 events~~ (superseded — see §6.2b)
+- [ ] ~~Implement async buffered audit write (ADR-038) for all four events~~ (superseded — see §6.2b)
 - [ ] Deprecate `workflow.catalog.search_completed` event handler
-- [ ] Add audit query API endpoints for V3.0 event types
+- [x] Add audit query API endpoints for V3.0 event types (unchanged, DS remains the query API owner — BR-AUDIT-030)
+
+### 6.2b KubernautAgent (v2.1, Issue #1677, DD-WORKFLOW-019) — current audit event generator
+
+- [x] Add `WithEventCategory`/`WithResource` `EventOption`s and `ResourceType`/`ResourceID` fields to `AuditEvent` (`internal/kubernautagent/audit/emitter.go`)
+- [x] Implement all 4 `workflow.catalog.*` `eventDataBuilder`s (`internal/kubernautagent/audit/ds_workflow_catalog_payloads.go`), registered in `eventDataBuilders` (`ds_store.go`)
+- [x] Translate `ResourceType`/`ResourceID` in both `DSAuditStore.StoreAudit` and `BufferedDSAuditStore.StoreAudit`; fix pre-existing `ParentEventID` translation gap in `BufferedDSAuditStore`
+- [ ] Wire audit emission into the 3 custom MCP tools' `Execute` methods (`list_available_actions`/`list_workflows`/`get_workflow`) — Phase 2d
+- [ ] Wire audit emission into `select_workflow`/`investigate_discovery`'s post-selection validation path — Phase 2e
 
 ### 6.3 Documentation
 
@@ -407,8 +423,9 @@ Audit Query
 
 | Document | Relationship |
 |----------|--------------|
-| [DD-WORKFLOW-014 v3.0](../architecture/decisions/DD-WORKFLOW-014-workflow-selection-audit-trail.md) | Technical design for three-step audit trail (V3.0 event schemas) |
-| [DD-WORKFLOW-016](../architecture/decisions/DD-WORKFLOW-016-action-type-workflow-indexing.md) | Three-step discovery protocol, DS endpoints, HAPI tools |
+| [DD-WORKFLOW-014 v4.0](../architecture/decisions/DD-WORKFLOW-014-workflow-selection-audit-trail.md) | Technical design for three-step audit trail (V3.0 event schemas; v4.0 amends "who generates" to KA) |
+| [DD-WORKFLOW-019](../architecture/decisions/DD-WORKFLOW-019-ka-owned-workflow-discovery.md) | Relocates discovery/scoring ownership (and, per this v2.1 amendment, audit generation) from DS to KA |
+| [DD-WORKFLOW-016](../architecture/decisions/DD-WORKFLOW-016-action-type-workflow-indexing.md) | Three-step discovery protocol, KA-owned as of v2.1 (originally DS endpoints, HAPI tools) |
 | [DD-WORKFLOW-017](../architecture/decisions/DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) | Workflow lifecycle component interactions |
 | [DD-WORKFLOW-004](../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-scoring.md) | Label-based scoring algorithm |
 | [ADR-034](../architecture/decisions/ADR-034-unified-audit-table-design.md) | Unified audit table schema |
@@ -439,12 +456,37 @@ Issue [#433](https://github.com/jordigilh/kubernaut/issues/433) (Kubernaut Agent
 | BR | v1.3 status (KA) |
 |----|------------------|
 | **BR-AUDIT-021** | **Met by KA**: `remediationId` propagated on all three discovery steps and validation re-query (same contract as HAPI; implementation in KA). |
-| **BR-AUDIT-022** | **Unchanged**: HolmesGPT API / HAPI still MUST NOT emit `workflow.catalog.*` events; **KA** also does not generate those events (DS does). |
-| **BR-AUDIT-023**–**BR-AUDIT-024** | **Unchanged**: DS owns step events and async non-blocking audit. |
-| **BR-AUDIT-025**–**BR-AUDIT-028** | **Unchanged**: Payload requirements for the four V3.0 event types remain DS responsibilities. |
-| **BR-AUDIT-029**–**BR-AUDIT-030** | **Unchanged**: Retention and audit query API. |
+| **BR-AUDIT-022** | **Unchanged at v1.3, since amended at v2.1 (§9)**: HolmesGPT API / HAPI still MUST NOT emit `workflow.catalog.*` events; at v1.3, KA did not generate those events either (DS did). **Superseded by v2.1** — KA now IS the generator. |
+| **BR-AUDIT-023**–**BR-AUDIT-024** | **Unchanged at v1.3, since amended at v2.1 (§9)**: DS owned step events and async non-blocking audit. **Superseded by v2.1** — KA now owns generation; DS retains persistence. |
+| **BR-AUDIT-025**–**BR-AUDIT-028** | **Unchanged**: Payload requirements for the four V3.0 event types are unchanged in shape; construction moved from DS to KA at v2.1 (§9). |
+| **BR-AUDIT-029**–**BR-AUDIT-030** | **Unchanged**: Retention and audit query API remain Data Storage Service responsibilities. |
 
-**Granularity (related `aiagent.*` trail, #433)**: KA emits `aiagent.llm.tool_call` **per tool call** (not per turn) and `aiagent.workflow.validation_attempt` **per attempt**, including `workflow_id` and `is_final_attempt` where applicable. This complements the DS `workflow.catalog.*` events for end-to-end forensics.
+**Granularity (related `aiagent.*` trail, #433)**: KA emits `aiagent.llm.tool_call` **per tool call** (not per turn) and `aiagent.workflow.validation_attempt` **per attempt**, including `workflow_id` and `is_final_attempt` where applicable. This complements the `workflow.catalog.*` events (generated by KA as of v2.1, see §9) for end-to-end forensics.
 
 **Verification**: [TP-433-AUDIT-SOC2](../tests/433/TP-433-AUDIT-SOC2.md) — 19 unit tests, 8 integration tests, 3 E2E tests.
+
+---
+
+## 9. v2.1 Implementation Status: KA-Owned Workflow Discovery Audit Generation (Issue #1677)
+
+**Authority**: [DD-WORKFLOW-019](../architecture/decisions/DD-WORKFLOW-019-ka-owned-workflow-discovery.md), [DD-WORKFLOW-014 v4.0](../architecture/decisions/DD-WORKFLOW-014-workflow-selection-audit-trail.md)
+
+Issue [#1677](https://github.com/jordigilh/kubernaut/issues/1677) relocates ownership of the workflow/action-type discovery, scoring, and informer-backed cache from Data Storage Service (DS) into KubernautAgent (KA) — see DD-WORKFLOW-019. Because KA now performs the discovery/validation logic directly (not DS), **audit event generation for the four `workflow.catalog.*` events moves with it.** The v1.3 status above ("DS owns step events... Unchanged") is **superseded** by this section wherever the two conflict.
+
+| BR | v2.1 status (KA-owned generation) |
+|----|------------------------------------|
+| **BR-AUDIT-021** | **Unchanged from v1.3**: `remediationId` propagation, now internal to KA (no longer an HTTP query parameter to DS — KA holds `remediationId` as the audit event's `correlationId` directly). |
+| **BR-AUDIT-022** | **Amended**: KA is now the sole authorized generator of `workflow.catalog.*` events (was DS). No other service — including APIFrontend, which calls KA's MCP tools rather than DS directly — independently generates these events. |
+| **BR-AUDIT-023** | **Amended**: KA generates all four step-specific events (`internal/kubernautagent/audit/ds_workflow_catalog_payloads.go`), using `event_category="workflow"` (`audit.WorkflowCatalogEventCategory`, via `WithEventCategory`) instead of KA's default `"aiagent"` category, and `ResourceType`/`ResourceID` = `("Workflow", workflowId)` for the Step 3 and validation events (via `WithResource`). Event type strings, correlation semantics, and payload schema (`WorkflowDiscoveryAuditPayload`) are byte-for-byte unchanged from v3.0/v1.3. |
+| **BR-AUDIT-024** | **Unchanged in mechanism, changed in owner**: still async/non-blocking, now via KA's existing `BufferedDSAuditStore` (DD-AUDIT-002) rather than DS's internal buffered writer. |
+| **BR-AUDIT-025**–**BR-AUDIT-028** | **Unchanged in shape**: same `signalContext`/scoring/metadata fields, now populated from KA's in-process discovery state rather than DS's request/response cycle. |
+| **BR-AUDIT-029**–**BR-AUDIT-030** | **Unchanged**: Data Storage Service remains the persistence layer (audit_events table) and query API — KA writes to it exactly as it does for its other `aiagent.*` events. |
+
+**Implementation** (Phase 2c of the DD-WORKFLOW-019 rollout):
+- `internal/kubernautagent/audit/emitter.go`: `WithEventCategory`, `WithResource` `EventOption`s; `ResourceType`/`ResourceID` fields on `AuditEvent`; `EventTypeActionsListed`/`EventTypeWorkflowsListed`/`EventTypeWorkflowRetrieved`/`EventTypeSelectionValidated` and `ActionDiscovery`/`ActionRetrieve`/`ActionValidate` constants (values unchanged from DS's originals).
+- `internal/kubernautagent/audit/ds_workflow_catalog_payloads.go`: the four `eventDataBuilder`s, reimplemented independently of DS's `pkg/datastorage/audit/workflow_discovery_event.go` (no KA dependency on DS's internal packages).
+- `internal/kubernautagent/audit/ds_store.go` / `ds_buffered_store.go`: `ResourceType`/`ResourceID` translation onto `ogenclient.AuditEventRequest`; the four new `eventDataBuilders` entries; fixed a pre-existing `ParentEventID` translation gap in `BufferedDSAuditStore` (found while touching this code).
+- Audit-event *emission* at the call sites (the 3 custom MCP tools and the post-selection validation path) lands in Phase 2d/2e — tracked separately, not yet complete as of this section's authoring.
+
+**Verification**: `internal/kubernautagent/audit/emitter_test.go`, `ds_store_test.go`, `coverage_668_test.go` — unit tests for the `EventOption`s, payload builders, and `ResourceType`/`ParentEventID`/`EventCategory` round-trip through `BufferedDSAuditStore`'s in-process batch worker (`IT-KA-1677-AUDIT-INFRA-001a/b`), plus a 4-event single-`correlationId` reconstruction test (`IT-KA-1677-AUDIT-INFRA-002`) proving the SOC2 CC8.1 acceptance contract this amendment strengthens.
 

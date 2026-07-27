@@ -93,16 +93,14 @@ var _ = Describe("E2E-FP-AF-001: AF audit trace coverage in happy-path MCP lifec
 			Expect(token).NotTo(BeEmpty())
 
 			By("Initializing MCP session through AF")
-			sessionID, err := fpInitMCPSessionExplicit(afHTTPClient, afBaseURL, token)
-			Expect(err).NotTo(HaveOccurred())
-			GinkgoWriter.Printf("  MCP Session ID: %s\n", sessionID)
+			Expect(fpInitMCPSessionExplicit(afHTTPClient, afBaseURL, token)).To(Succeed())
 
 			By("Calling kubernaut_list_remediations tool through AF MCP (generates tool.executed audit event)")
 			toolBody := fpBuildJSONRPC("fp-af-audit-1", "tools/call", map[string]interface{}{
 				"name":      "kubernaut_list_remediations",
 				"arguments": map[string]interface{}{},
 			})
-			_, code, err := fpMCPPOST(afHTTPClient, afBaseURL, token, sessionID, toolBody)
+			_, code, err := fpMCPPOST(afHTTPClient, afBaseURL, token, "", toolBody)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(code).To(BeNumerically("<", 500), "tool call should not return 5xx")
 
@@ -229,7 +227,7 @@ func fpFetchDEXToken(dexURL, clientID, clientSecret, username, password string) 
 	return tokenResp.IDToken, nil
 }
 
-func fpInitMCPSessionExplicit(client *http.Client, baseURL, token string) (string, error) {
+func fpInitMCPSessionExplicit(client *http.Client, baseURL, token string) error {
 	body := fpBuildJSONRPC("fp-init-1", "initialize", map[string]interface{}{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]interface{}{},
@@ -237,12 +235,12 @@ func fpInitMCPSessionExplicit(client *http.Client, baseURL, token string) (strin
 	})
 	raw, code, err := fpMCPPOST(client, baseURL, token, "", body)
 	if err != nil {
-		return "", err
+		return err
 	}
 	if code >= http.StatusBadRequest {
-		return "", fmt.Errorf("MCP initialize: HTTP %d: %s", code, string(raw))
+		return fmt.Errorf("MCP initialize: HTTP %d: %s", code, string(raw))
 	}
-	return "", nil
+	return nil
 }
 
 func fpMCPPOST(client *http.Client, baseURL, token, sessionID, jsonBody string) ([]byte, int, error) {
@@ -264,4 +262,3 @@ func fpMCPPOST(client *http.Client, baseURL, token, sessionID, jsonBody string) 
 	body, err := io.ReadAll(resp.Body)
 	return body, resp.StatusCode, err
 }
-

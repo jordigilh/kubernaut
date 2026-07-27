@@ -1,9 +1,9 @@
 # Spike: OAS Go SDK Provider Validation
 
 **Date**: May 20, 2026
-**Status**: COMPLETED (research phase)
+**Status**: COMPLETED (research phase) — superseded by [#1536](https://github.com/jordigilh/kubernaut/issues/1536); Kubernaut no longer invokes `open-agent-sdk-go` itself, so its multi-provider support is the opaque agent image author's concern, not Kubernaut's
 **Duration**: 1 session
-**Relates to**: PROPOSAL-EXT-003 Addendum, DG-23
+**Relates to**: PROPOSAL-EXT-003 Addendum (superseded), DG-23
 
 ---
 

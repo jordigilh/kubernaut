@@ -146,12 +146,22 @@ type ReconcilerDeps struct {
 	AlertManagerClient emclient.AlertManagerClient
 	AuditManager       *emaudit.Manager
 	DSQuerier          emclient.DataStorageQuerier
+	// Clock overrides the validity checker's time source. Production leaves
+	// this nil (real time.Now via validity.NewChecker). Tests that assert on
+	// deadline proximity may inject a frozen clock so the result doesn't
+	// depend on how long the reconcile pass takes on the executing machine
+	// (Issue #591, #1701, #1661 pipeline-monitoring RCA).
+	Clock func() time.Time
 }
 
 // NewReconciler creates a new Reconciler with all dependencies injected.
 // Per DD-METRICS-001: Metrics wired via dependency injection.
 // Per DD-AUDIT-003: AuditManager wired via dependency injection (Pattern 2).
 func NewReconciler(deps ReconcilerDeps, cfg ReconcilerConfig) *Reconciler {
+	validityChecker := validity.NewChecker()
+	if deps.Clock != nil {
+		validityChecker = validity.NewCheckerWithClock(deps.Clock)
+	}
 	return &Reconciler{
 		Client:             deps.Client,
 		apiReader:          deps.APIReader,
@@ -167,7 +177,7 @@ func NewReconciler(deps ReconcilerDeps, cfg ReconcilerConfig) *Reconciler {
 		alertScorer:        alert.NewScorer(),
 		metricScorer:       emmetrics.NewScorer(),
 		hashComputer:       hash.NewComputer(),
-		validityChecker:    validity.NewChecker(),
+		validityChecker:    validityChecker,
 		Config:             cfg,
 	}
 }

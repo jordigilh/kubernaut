@@ -127,7 +127,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-001 v2.7: Gateway :30080, DataStorage :30081")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	namespace := "kubernaut-system"
+	namespace := kubernautSystem
 	projectRoot := getProjectRoot()
 	startTime := time.Now()
 
@@ -137,7 +137,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "\n📦 PHASE 1: Building service images...")
 
 	var buildErr error
-	builtImages, buildErr = buildFullPipelineImages(writer)
+	builtImages, buildErr = buildFullPipelineImages(ctx, writer)
 	if buildErr != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 1 failed: %w", buildErr)
 	}
@@ -157,7 +157,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 
 	extraMounts := []ExtraMount{}
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		extraMounts = append(extraMounts, ExtraMount{
 			HostPath:      coverdataPath,
 			ContainerPath: "/coverdata",
@@ -166,7 +166,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	}
 
 	kindConfigPath := "test/infrastructure/kind-fullpipeline-config.yaml"
-	if err := CreateKindClusterWithExtraMounts(
+	if err := CreateKindClusterWithExtraMounts(ctx,
 		clusterName, kubeconfigPath, kindConfigPath, extraMounts, writer,
 	); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 2 failed: %w", err)
@@ -183,7 +183,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	if os.Getenv("IMAGE_REGISTRY") != "" {
 		_, _ = fmt.Fprintln(writer, "  ⏭️  Skipping local image loading (CI/CD: IMAGE_REGISTRY is set, Kind pulls from registry)")
 	} else {
-		if err := loadFullPipelineImages(builtImages, clusterName, writer); err != nil {
+		if err := loadFullPipelineImages(ctx, builtImages, clusterName, writer); err != nil {
 			return builtImages, nil, nil, fmt.Errorf("PHASE 3 failed: %w", err)
 		}
 	}
@@ -204,6 +204,12 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		"kubernaut.ai_workflowexecutions.yaml",
 		"kubernaut.ai_notificationrequests.yaml",
 		"kubernaut.ai_effectivenessassessments.yaml", // ADR-EM-001: EA CRD for EM
+		// Issue #1661 (DD-WORKFLOW-018): DataStorage's workflow cache indexes
+		// RemediationWorkflow by .spec.actionType at startup -- the CRDs must
+		// already be registered with the apiserver or DS's informer cache
+		// setup fails hard ("no matches for kind"), crash-looping the pod.
+		"kubernaut.ai_remediationworkflows.yaml",
+		"kubernaut.ai_actiontypes.yaml",
 	}
 	crdArgs := []string{"--kubeconfig", kubeconfigPath, "apply"}
 	for _, crdFile := range crdFiles {
@@ -211,7 +217,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		_, _ = fmt.Fprintf(writer, "  ├── %s\n", crdFile)
 		crdArgs = append(crdArgs, "-f", crdPath)
 	}
-	cmd := exec.Command("kubectl", crdArgs...)
+	cmd := exec.CommandContext(ctx, "kubectl", crdArgs...)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
@@ -226,7 +232,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 5: Namespace + RBAC...")
 	phase5Start := time.Now()
 
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -349,7 +355,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: DataStorage HTTP not ready: %w", err)
 	}
 
-	if err := SeedE2EActionTypes(kubeconfigPath, namespace, writer); err != nil {
+	if err := SeedE2EActionTypes(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed action types: %w", err)
 	}
 
@@ -359,7 +365,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		{FixtureDir: "fix-certificate", Environment: "production"},
 		{FixtureDir: "generic-restart", Environment: "production"},
 	}
-	seededUUIDs, seedErr := SeedWorkflowsViaKubectlApply(kubeconfigPath, namespace, fpWorkflows, writer)
+	seededUUIDs, seedErr := SeedWorkflowsViaKubectlApply(ctx, kubeconfigPath, namespace, fpWorkflows, writer)
 	if seedErr != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed workflows: %w", seedErr)
 	}
@@ -478,13 +484,13 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		deployF func() error
 	}{
 		{"SignalProcessing", func() error {
-			return deployFullPipelineSPController(ctx, namespace, kubeconfigPath, builtImages["signalprocessing"], writer)
+			return deployFullPipelineSPController(ctx, kubeconfigPath, builtImages["signalprocessing"], writer)
 		}},
 		{"RemediationOrchestrator", func() error {
-			return DeployROCoverageManifest(kubeconfigPath, builtImages["remediationorchestrator"], writer)
+			return DeployROCoverageManifest(ctx, kubeconfigPath, builtImages["remediationorchestrator"], writer)
 		}},
 		{"AIAnalysis", func() error {
-			return deployFullPipelineAAController(ctx, namespace, kubeconfigPath, builtImages["aianalysis"], writer)
+			return deployFullPipelineAAController(ctx, kubeconfigPath, builtImages["aianalysis"], writer)
 		}},
 		{"WorkflowExecution", func() error {
 			return DeployWorkflowExecutionController(ctx, namespace, kubeconfigPath, builtImages["workflowexecution"], writer)
@@ -511,7 +517,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// B1: Kubernaut Agent — wait for Mock LLM
 	go func() {
 		<-mockLLMReady
-		err := DeployKubernautAgentOnly(clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
+		err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, builtImages["kubernautagent"], false, writer)
 		allResults <- waveResult{"KubernautAgent", err}
 	}()
 
@@ -572,7 +578,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n⏳ PHASE 8b: Verifying Prometheus cadvisor scrape target...")
 	promURL := fmt.Sprintf("http://127.0.0.1:%d", PrometheusHostPort)
-	if err := WaitForPrometheusCadvisorTarget(promURL, 60*time.Second, writer); err != nil {
+	if err := WaitForPrometheusCadvisorTarget(ctx, promURL, 60*time.Second, writer); err != nil {
 		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8b failed: %w", err)
 	}
 
@@ -619,7 +625,7 @@ func CleanupFullPipelineTestResources(kubeconfigPath string, writer io.Writer) {
 	}
 
 	for _, kind := range crdKinds {
-		cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+		cmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 			"delete", kind, "--all-namespaces", "--all", "--ignore-not-found", "--wait=false")
 		out, err := cmd.CombinedOutput()
 		if err != nil {
@@ -633,13 +639,13 @@ func CleanupFullPipelineTestResources(kubeconfigPath string, writer io.Writer) {
 	}
 
 	// Delete test namespaces matching known patterns (fp-am-*, fp-event-*)
-	nsCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	nsCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 		"get", "namespaces", "-o", "jsonpath={.items[*].metadata.name}")
 	nsOut, err := nsCmd.Output()
 	if err == nil {
 		for _, ns := range strings.Fields(string(nsOut)) {
 			if strings.HasPrefix(ns, "fp-am-") || strings.HasPrefix(ns, "fp-event-") {
-				delCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+				delCmd := exec.CommandContext(context.Background(), "kubectl", "--kubeconfig", kubeconfigPath,
 					"delete", "namespace", ns, "--ignore-not-found", "--wait=false")
 				if delOut, delErr := delCmd.CombinedOutput(); delErr != nil {
 					_, _ = fmt.Fprintf(writer, "  ⚠️  namespace %s: %s\n", ns, strings.TrimSpace(string(delOut)))
@@ -660,7 +666,7 @@ func CleanupFullPipelineTestResources(kubeconfigPath string, writer io.Writer) {
 // buildFullPipelineImages builds all service images with a concurrency limit of 3
 // for local builds. In CI/CD mode (IMAGE_REGISTRY+IMAGE_TAG set), BuildImageForKind
 // returns the registry reference immediately without building.
-func buildFullPipelineImages(writer io.Writer) (map[string]string, error) {
+func buildFullPipelineImages(ctx context.Context, writer io.Writer) (map[string]string, error) {
 	// In CI/CD mode, all builds are instant (return registry refs)
 	isCI := IsRunningInCICD()
 	if isCI {
@@ -677,7 +683,7 @@ func buildFullPipelineImages(writer io.Writer) (map[string]string, error) {
 	sem := make(chan struct{}, 3)
 	var wg sync.WaitGroup
 
-	enableCoverage := os.Getenv("E2E_COVERAGE") == "true"
+	enableCoverage := os.Getenv("E2E_COVERAGE") == trueFixture
 
 	for _, baseCfg := range fullPipelineImageConfigs {
 		// Skip mock-llm build when SKIP_MOCK_LLM is set (local dev with real LLM)
@@ -697,7 +703,7 @@ func buildFullPipelineImages(writer io.Writer) (map[string]string, error) {
 			sem <- struct{}{}        // acquire slot
 			defer func() { <-sem }() // release slot
 
-			imageName, err := BuildImageForKind(cfg, writer)
+			imageName, err := BuildImageForKind(ctx, cfg, writer)
 
 			mu.Lock()
 			defer mu.Unlock()
@@ -724,12 +730,12 @@ func buildFullPipelineImages(writer io.Writer) (map[string]string, error) {
 
 // loadFullPipelineImages loads locally-built images into the Kind cluster.
 // Skipped automatically for registry images (LoadImageToKind checks internally).
-func loadFullPipelineImages(builtImages map[string]string, clusterName string, writer io.Writer) error {
+func loadFullPipelineImages(ctx context.Context, builtImages map[string]string, clusterName string, writer io.Writer) error {
 	// LoadImageToKind already checks if the image is a registry image and skips.
 	// We still iterate all images — the no-op is cheap.
 	var loadErrors []error
 	for serviceName, imageName := range builtImages {
-		if err := LoadImageToKind(imageName, serviceName, clusterName, writer); err != nil {
+		if err := LoadImageToKind(ctx, imageName, serviceName, clusterName, writer); err != nil {
 			_, _ = fmt.Fprintf(writer, "  ❌ %s load failed: %v\n", serviceName, err)
 			loadErrors = append(loadErrors, fmt.Errorf("%s: %w", serviceName, err))
 		}
@@ -746,15 +752,15 @@ func loadFullPipelineImages(builtImages map[string]string, clusterName string, w
 
 // deployFullPipelineSPController deploys the SignalProcessing controller with
 // Rego policy ConfigMap for the full pipeline E2E.
-func deployFullPipelineSPController(ctx context.Context, namespace, kubeconfigPath, imageName string, writer io.Writer) error {
+func deployFullPipelineSPController(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Install all SP-specific Rego policy ConfigMaps and proactive signal mappings
 	// (5 policies + 1 proactive mapping ConfigMap required by SP controller)
-	if err := deploySignalProcessingPolicies(kubeconfigPath, writer); err != nil {
+	if err := deploySignalProcessingPolicies(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to deploy SP policies: %w", err)
 	}
 
 	// Deploy SP controller using coverage manifest (handles both coverage and non-coverage modes)
-	if err := DeploySignalProcessingControllerWithCoverage(kubeconfigPath, imageName, writer); err != nil {
+	if err := DeploySignalProcessingControllerWithCoverage(ctx, kubeconfigPath, imageName, writer); err != nil {
 		return fmt.Errorf("failed to deploy SP controller: %w", err)
 	}
 	return nil
@@ -762,14 +768,14 @@ func deployFullPipelineSPController(ctx context.Context, namespace, kubeconfigPa
 
 // deployFullPipelineAAController deploys the AIAnalysis controller with
 // Rego policy and proper RBAC for the full pipeline E2E.
-func deployFullPipelineAAController(ctx context.Context, namespace, kubeconfigPath, imageName string, writer io.Writer) error {
+func deployFullPipelineAAController(ctx context.Context, kubeconfigPath, imageName string, writer io.Writer) error {
 	// Install AA-specific Rego policy ConfigMap (aianalysis-policies)
-	if err := createInlineRegoPolicyConfigMap(kubeconfigPath, writer); err != nil {
+	if err := createInlineRegoPolicyConfigMap(ctx, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create AA Rego policy ConfigMap: %w", err)
 	}
 
 	// Deploy AA controller using the manifest helper
-	if err := deployAIAnalysisControllerManifestOnly(kubeconfigPath, imageName, writer); err != nil {
+	if err := deployAIAnalysisControllerManifestOnly(ctx, kubeconfigPath, imageName, writer); err != nil {
 		return fmt.Errorf("failed to deploy AA controller: %w", err)
 	}
 	return nil
@@ -787,7 +793,7 @@ func deployFullPipelineAAController(ctx context.Context, namespace, kubeconfigPa
 func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, gatewayImageName string, writer io.Writer) error {
 	manifest := gatewayManifest(gatewayImageName, false)
 
-	cmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -796,7 +802,7 @@ func deployFullPipelineGateway(ctx context.Context, namespace, kubeconfigPath, g
 	}
 
 	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Gateway pod ready...")
-	waitCmd := exec.Command("kubectl", "--kubeconfig", kubeconfigPath,
+	waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"wait", "--for=condition=ready", "pod",
 		"-l", "app=gateway", "-n", namespace, "--timeout=300s")
 	waitCmd.Stdout = writer
@@ -1395,134 +1401,6 @@ func pollUntilReady(ctx context.Context, timeout, interval time.Duration, condFn
 	}
 }
 
-// SetupCertManagerScenario creates the cert-manager resources needed for the
-// cert_not_ready E2E scenario (DD-EM-004, BR-EM-010, #253).
-//
-// Creates: self-signed CA Secret → ClusterIssuer → Certificate (Ready).
-// Then deletes the CA Secret to make the Certificate go NotReady, replicating
-// the demo cert-failure scenario for the fix-certificate-v1 workflow.
-func SetupCertManagerScenario(kubeconfigPath, namespace string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	_, _ = fmt.Fprintln(writer, "📦 Setting up cert-manager scenario (fix-certificate-v1)")
-	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-
-	tmpDir, err := os.MkdirTemp("", "cert-e2e-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp dir: %w", err)
-	}
-	defer func() { _ = os.RemoveAll(tmpDir) }()
-
-	keyPath := filepath.Join(tmpDir, "ca.key")
-	crtPath := filepath.Join(tmpDir, "ca.crt")
-
-	_, _ = fmt.Fprintln(writer, "  🔑 Generating self-signed CA key pair...")
-	genCmd := exec.Command("openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-		"-keyout", keyPath, "-out", crtPath,
-		"-days", "365", "-subj", "/CN=Demo CA/O=Kubernaut")
-	genCmd.Stderr = writer
-	if err := genCmd.Run(); err != nil {
-		return fmt.Errorf("failed to generate CA key pair: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "  📋 Creating CA Secret demo-ca-key-pair in cert-manager namespace...")
-	secretCmd := exec.Command("kubectl", "create", "secret", "tls", "demo-ca-key-pair",
-		"--cert", crtPath, "--key", keyPath,
-		"-n", "cert-manager",
-		"--kubeconfig", kubeconfigPath,
-		"--dry-run=client", "-o", "yaml")
-	secretYAML, err := secretCmd.Output()
-	if err != nil {
-		return fmt.Errorf("failed to generate CA Secret YAML: %w", err)
-	}
-	applyCmd := exec.Command("kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
-	applyCmd.Stdin = strings.NewReader(string(secretYAML))
-	applyCmd.Stdout = writer
-	applyCmd.Stderr = writer
-	if err := applyCmd.Run(); err != nil {
-		return fmt.Errorf("failed to apply CA Secret: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "  📋 Creating ClusterIssuer demo-selfsigned-ca...")
-	issuerYAML := `apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: demo-selfsigned-ca
-spec:
-  ca:
-    secretName: demo-ca-key-pair`
-	issuerCmd := exec.Command("kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
-	issuerCmd.Stdin = strings.NewReader(issuerYAML)
-	issuerCmd.Stdout = writer
-	issuerCmd.Stderr = writer
-	if err := issuerCmd.Run(); err != nil {
-		return fmt.Errorf("failed to create ClusterIssuer: %w", err)
-	}
-
-	_, _ = fmt.Fprintf(writer, "  📋 Creating Certificate demo-app-cert in %s...\n", namespace)
-	certYAML := fmt.Sprintf(`apiVersion: cert-manager.io/v1
-kind: Certificate
-metadata:
-  name: demo-app-cert
-  namespace: %s
-spec:
-  secretName: demo-app-tls
-  issuerRef:
-    name: demo-selfsigned-ca
-    kind: ClusterIssuer
-  dnsNames:
-    - demo-app.%s.svc.cluster.local
-    - demo-app
-  duration: 2160h
-  renewBefore: 360h`, namespace, namespace)
-	certCmd := exec.Command("kubectl", "apply", "-f", "-", "--kubeconfig", kubeconfigPath)
-	certCmd.Stdin = strings.NewReader(certYAML)
-	certCmd.Stdout = writer
-	certCmd.Stderr = writer
-	if err := certCmd.Run(); err != nil {
-		return fmt.Errorf("failed to create Certificate: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for Certificate to become Ready...")
-	waitCmd := exec.Command("kubectl", "wait",
-		"--kubeconfig", kubeconfigPath,
-		"-n", namespace,
-		"--for=condition=Ready",
-		"--timeout=120s",
-		"certificate/demo-app-cert")
-	waitCmd.Stdout = writer
-	waitCmd.Stderr = writer
-	if err := waitCmd.Run(); err != nil {
-		return fmt.Errorf("certificate demo-app-cert did not become Ready: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "  🔥 Deleting CA Secret to trigger NotReady state...")
-	delCmd := exec.Command("kubectl", "delete", "secret", "demo-ca-key-pair",
-		"-n", "cert-manager",
-		"--kubeconfig", kubeconfigPath,
-		"--ignore-not-found")
-	delCmd.Stdout = writer
-	delCmd.Stderr = writer
-	if err := delCmd.Run(); err != nil {
-		return fmt.Errorf("failed to delete CA Secret: %w", err)
-	}
-
-	// Delete the issued TLS secret to force re-issuance attempt (which will fail)
-	_, _ = fmt.Fprintln(writer, "  🔄 Deleting issued TLS secret to trigger re-issuance attempt...")
-	delTLSCmd := exec.Command("kubectl", "delete", "secret", "demo-app-tls",
-		"-n", namespace,
-		"--kubeconfig", kubeconfigPath,
-		"--ignore-not-found")
-	delTLSCmd.Stdout = writer
-	delTLSCmd.Stderr = writer
-	if err := delTLSCmd.Run(); err != nil {
-		return fmt.Errorf("failed to delete TLS secret: %w", err)
-	}
-
-	_, _ = fmt.Fprintln(writer, "  ✅ cert-manager scenario ready: Certificate demo-app-cert is NotReady")
-	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-	return nil
-}
-
 // waitForDataStorageHTTP blocks until the DataStorage pod is Ready and the
 // cluster-internal service is accepting HTTP connections. Phase 6 applies the
 // manifest but doesn't wait for the readiness probe; this guard prevents
@@ -1565,20 +1443,4 @@ func waitForDataStorageHTTP(ctx context.Context, namespace, kubeconfigPath strin
 		time.Sleep(2 * time.Second)
 	}
 	return fmt.Errorf("DataStorage pod not ready within 60s")
-}
-
-// CleanupCertManagerScenario removes cert-manager resources created by SetupCertManagerScenario.
-func CleanupCertManagerScenario(kubeconfigPath, namespace string, writer io.Writer) {
-	_, _ = fmt.Fprintln(writer, "  🧹 Cleaning up cert-manager scenario resources...")
-	for _, args := range [][]string{
-		{"delete", "certificate", "demo-app-cert", "-n", namespace, "--ignore-not-found"},
-		{"delete", "secret", "demo-app-tls", "-n", namespace, "--ignore-not-found"},
-		{"delete", "clusterissuer", "demo-selfsigned-ca", "--ignore-not-found"},
-		{"delete", "secret", "demo-ca-key-pair", "-n", "cert-manager", "--ignore-not-found"},
-	} {
-		cmd := exec.Command("kubectl", append(args, "--kubeconfig", kubeconfigPath)...)
-		cmd.Stdout = writer
-		cmd.Stderr = writer
-		_ = cmd.Run()
-	}
 }

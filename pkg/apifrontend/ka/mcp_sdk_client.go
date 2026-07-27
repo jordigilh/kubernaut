@@ -253,7 +253,7 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 	// minutes; the caller controls cleanup via Closer(). We still use ctx
 	// for the initial Connect and SetLoggingLevel calls (which must complete
 	// within the request deadline), but the session itself lives beyond ctx.
-	session, err := connectInvestigationSession(streamClient, c.endpoint, c.streamHTTPClient)
+	session, err := connectInvestigationSession(streamClient, c.endpoint, c.streamHTTPClient) //nolint:contextcheck // connectInvestigationSession intentionally connects over a detached background context (see its doc comment / StartInvestigation)
 	if err != nil {
 		close(doneCh)
 		close(eventCh)
@@ -447,6 +447,27 @@ func (c *SDKMCPClient) CompleteNoAction(ctx context.Context, args CompleteNoActi
 		return nil, fmt.Errorf("parse complete_no_action response: %w", err)
 	}
 	return &cnaResult, nil
+}
+
+// ListWorkflows calls kubernaut_list_workflows on KA's MCP server. Stateless
+// (no rr_id/session, session-per-call via callTool) -- #1677 Phase 2f
+// (DD-WORKFLOW-019).
+func (c *SDKMCPClient) ListWorkflows(ctx context.Context, args ListWorkflowsArgs) (*ListWorkflowsResult, error) {
+	argsMap := map[string]any{}
+	if args.Kind != "" {
+		argsMap["kind"] = args.Kind
+	}
+
+	result, err := c.callTool(ctx, "kubernaut_list_workflows", argsMap)
+	if err != nil {
+		return nil, err
+	}
+
+	var lwResult ListWorkflowsResult
+	if err := json.Unmarshal(result, &lwResult); err != nil {
+		return nil, fmt.Errorf("parse list_workflows response: %w", err)
+	}
+	return &lwResult, nil
 }
 
 // Compile-time interface check.

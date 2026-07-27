@@ -28,7 +28,7 @@ import (
 	"time"
 )
 
-func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Writer) (string, error) {
+func CreateNotificationCluster(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (string, error) {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "Notification E2E Cluster Setup - Hybrid Parallel (DD-TEST-002)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -58,9 +58,9 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 			ImageName:        "kubernaut/notification",
 			DockerfilePath:   "docker/notification-controller.Dockerfile", // Dockerfile can have suffix
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "Notification", imageName: imageName, err: err}
 	}()
 
@@ -71,9 +71,9 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 			ImageName:        "authwebhook",
 			DockerfilePath:   "docker/authwebhook.Dockerfile",
 			BuildContextPath: "",
-			EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+			EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 		}
-		imageName, err := BuildImageForKind(cfg, writer)
+		imageName, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- buildResult{name: "AuthWebhook", imageName: imageName, err: err}
 	}()
 
@@ -107,7 +107,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 
 	// DD-TEST-007: Create coverdata directory for E2E coverage collection
 	var coverMounts []ExtraMount
-	if os.Getenv("E2E_COVERAGE") == "true" {
+	if os.Getenv("E2E_COVERAGE") == trueFixture {
 		projectRoot := getProjectRoot()
 		coverdataPath := filepath.Join(projectRoot, "coverdata")
 		_, _ = fmt.Fprintf(writer, "📁 Creating coverage directory: %s\n", coverdataPath)
@@ -123,7 +123,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 		}
 	}
 
-	if err := CreateKindClusterWithExtraMounts(
+	if err := CreateKindClusterWithExtraMounts(ctx,
 		clusterName,
 		kubeconfigPath,
 		"test/infrastructure/kind-notification-config.yaml",
@@ -151,14 +151,14 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 
 	// Load Notification image
 	go func() {
-		err := LoadImageToKind(notificationImageName, "notification", clusterName, writer)
+		err := LoadImageToKind(ctx, notificationImageName, "notification", clusterName, writer)
 		loadResults <- loadResult{name: "Notification", err: err}
 	}()
 
 	// Load AuthWebhook image
 	go func() {
 		awImage := builtImages["AuthWebhook"]
-		err := LoadImageToKind(awImage, "authwebhook", clusterName, writer)
+		err := LoadImageToKind(ctx, awImage, "authwebhook", clusterName, writer)
 		loadResults <- loadResult{name: "AuthWebhook", err: err}
 	}()
 
@@ -189,7 +189,7 @@ func CreateNotificationCluster(clusterName, kubeconfigPath string, writer io.Wri
 	// ============================================================
 	_, _ = fmt.Fprintln(writer, "")
 	_, _ = fmt.Fprintln(writer, "PHASE 4: Installing NotificationRequest CRD...")
-	if err := installNotificationCRD(kubeconfigPath, writer); err != nil {
+	if err := installNotificationCRD(ctx, kubeconfigPath, writer); err != nil {
 		return "", fmt.Errorf("failed to install NotificationRequest CRD: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "✅ PHASE 4 Complete: CRDs installed")
@@ -212,12 +212,12 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	}
 
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(namespace, kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "📁 Creating default namespace (for E2E tests)...\n")
-	if err := createTestNamespace("default", kubeconfigPath, writer); err != nil {
+	if err := createTestNamespace(ctx, "default", kubeconfigPath, writer); err != nil {
 		errMsg := strings.ToLower(err.Error())
 		if !strings.Contains(errMsg, "alreadyexists") && !strings.Contains(errMsg, "already exists") {
 			return fmt.Errorf("failed to create default namespace: %w", err)
@@ -243,10 +243,10 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	_, _ = fmt.Fprintf(writer, "   ✅ mock-webhook deployed (http://mock-webhook:8080)\n")
 
 	_, _ = fmt.Fprintf(writer, "🚀 Deploying Notification resources via inline YAML template...\n")
-	enableCoverage := os.Getenv("E2E_COVERAGE") == "true"
+	enableCoverage := os.Getenv("E2E_COVERAGE") == trueFixture
 	manifest := notificationControllerManifest(namespace, notificationImageName, enableCoverage)
 
-	cmd := exec.Command("kubectl", "apply", "--kubeconfig", kubeconfigPath, "-n", namespace, "-f", "-")
+	cmd := exec.CommandContext(ctx, "kubectl", "apply", "--kubeconfig", kubeconfigPath, "-n", namespace, "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
@@ -326,9 +326,9 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 		DockerfilePath:   "docker/data-storage.Dockerfile",
 		KindClusterName:  clusterName,
 		BuildContextPath: "", // Empty = use project root (default)
-		EnableCoverage:   os.Getenv("E2E_COVERAGE") == "true",
+		EnableCoverage:   os.Getenv("E2E_COVERAGE") == trueFixture,
 	}
-	actualImageName, err := BuildAndLoadImageToKind(cfg, writer)
+	actualImageName, err := BuildAndLoadImageToKind(ctx, cfg, writer)
 	if err != nil {
 		return fmt.Errorf("failed to build+load Data Storage image: %w", err)
 	}
@@ -375,7 +375,7 @@ func DeployNotificationAuditInfrastructure(ctx context.Context, namespace, kubec
 	// NodePort 30090 is exposed by kind-notification-config.yaml for E2E tests
 	dataStorageHealthURL := "http://127.0.0.1:30281/readyz"
 	_, _ = fmt.Fprintf(writer, "   🔍 Checking DataStorage health endpoint: %s\n", dataStorageHealthURL)
-	if err := WaitForHTTPHealth(dataStorageHealthURL, 60*time.Second, writer); err != nil {
+	if err := WaitForHTTPHealth(ctx, dataStorageHealthURL, 60*time.Second, writer); err != nil {
 		return fmt.Errorf("DataStorage health check failed: %w", err)
 	}
 	_, _ = fmt.Fprintf(writer, "✅ DataStorage ready and healthy\n")
@@ -420,7 +420,7 @@ func DeleteNotificationCluster(clusterName, kubeconfigPath string, testsFailed b
 	return nil
 }
 
-func installNotificationCRD(kubeconfigPath string, writer io.Writer) error {
+func installNotificationCRD(ctx context.Context, kubeconfigPath string, writer io.Writer) error {
 	workspaceRoot, err := findWorkspaceRoot()
 	if err != nil {
 		return fmt.Errorf("failed to find workspace root: %w", err)
@@ -432,7 +432,7 @@ func installNotificationCRD(kubeconfigPath string, writer io.Writer) error {
 		return fmt.Errorf("NotificationRequest CRD not found at %s", crdPath)
 	}
 
-	applyCmd := exec.Command("kubectl", "apply", "-f", crdPath)
+	applyCmd := exec.CommandContext(ctx, "kubectl", "apply", "-f", crdPath)
 	applyCmd.Env = append(os.Environ(), fmt.Sprintf("KUBECONFIG=%s", kubeconfigPath))
 	applyCmd.Stdout = writer
 	applyCmd.Stderr = writer
@@ -561,9 +561,7 @@ func notificationControllerManifest(namespace, imageName string, enableCoverage 
 	coverageSecurityContextYAML := ""
 
 	if enableCoverage {
-		coverageEnvYAML = `
-        - name: GOCOVERDIR
-          value: /coverdata`
+		coverageEnvYAML = coverageEnvYAMLFixture
 		coverageVolumeMountYAML = `
         - name: coverdata
           mountPath: /coverdata`
@@ -572,10 +570,7 @@ func notificationControllerManifest(namespace, imageName string, enableCoverage 
         hostPath:
           path: /coverdata
           type: DirectoryOrCreate`
-		coverageSecurityContextYAML = `
-      securityContext:
-        runAsUser: 0
-        runAsGroup: 0`
+		coverageSecurityContextYAML = coverageSecurityContextYAMLFixture
 	}
 
 	slackWebhookURL := "http://mock-webhook:8080/webhook"

@@ -54,7 +54,6 @@ import (
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	weaudit "github.com/jordigilh/kubernaut/pkg/workflowexecution/audit"
-	weclient "github.com/jordigilh/kubernaut/pkg/workflowexecution/client"
 	weconfig "github.com/jordigilh/kubernaut/pkg/workflowexecution/config"
 	weexecutor "github.com/jordigilh/kubernaut/pkg/workflowexecution/executor"
 	wemetrics "github.com/jordigilh/kubernaut/pkg/workflowexecution/metrics"
@@ -185,6 +184,13 @@ func initWorkflowExecutionServices(cfg *weconfig.Config, mgr ctrl.Manager) (audi
 }
 
 func main() {
+	// gocritic:exitAfterDefer — run() returns an exit code instead of calling
+	// os.Exit directly so deferred cleanup (stopTLSWatcher, stopLogLevelWatcher,
+	// wireShutdownHooks, fleetGate.Stop) always runs.
+	os.Exit(run())
+}
+
+func run() int {
 	// ========================================
 	// CONFIGURATION LOADING (ADR-030)
 	// Only --config flag is supported. All other settings are in the YAML config file.
@@ -227,15 +233,6 @@ func main() {
 	// ClientFactory for cluster routing.
 	executorRegistry := buildExecutorRegistry(cfg, mgr, controllerNS, clientFactory, setupLog)
 
-	// DD-WE-006: Create WorkflowQuerier for fetching dependencies from DS
-	workflowQuerier, err := weclient.NewOgenWorkflowQuerierFromConfig(cfg.DataStorage.URL, cfg.DataStorage.Timeout)
-	if err != nil {
-		setupLog.Error(err, "Failed to create workflow querier (DD-WE-006) - continuing without dependency injection")
-		// Non-fatal: controller will run without dependency injection
-	} else {
-		setupLog.Info("Workflow querier initialized (DD-WE-006)", "dataStorageURL", cfg.DataStorage.URL)
-	}
-
 	// Setup WorkflowExecution controller using NewReconciler constructor
 	// which extracts infrastructure fields (Client, APIReader, Scheme, Recorder)
 	// from the manager automatically.
@@ -244,6 +241,11 @@ func main() {
 	// Dependency existence is now validated exclusively at runtime by
 	// Kubernetes when the Job/PipelineRun attempts to mount the volume
 	// (BR-WORKFLOW-008 covers the resulting fail-fast/observability guarantees).
+	//
+	// Issue #1661 Change 11e (DD-WORKFLOW-018): no WorkflowQuerier is wired
+	// here anymore -- the reconciler resolves engine/SA/resources/dependencies
+	// directly from WorkflowExecution.Spec.WorkflowRef's CRD-embedded
+	// execution snapshot instead of a DataStorage round-trip.
 	reconciler := workflowexecution.NewReconciler(mgr, workflowexecution.ReconcilerOptions{
 		ExecutionNamespace: cfg.Execution.Namespace,
 		CooldownPeriod:     cfg.Execution.CooldownPeriod,
@@ -253,17 +255,16 @@ func main() {
 		PhaseManager:       phaseManager,
 		AuditManager:       auditManager,
 		ExecutorRegistry:   executorRegistry,
-		WorkflowQuerier:    workflowQuerier,
 	})
-	if err = reconciler.SetupWithManager(mgr); err != nil {
+	if err := reconciler.SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "WorkflowExecution")
-		os.Exit(1)
+		return 1
 	}
 	//+kubebuilder:scaffold:builder
 
 	if err := registerHealthChecks(mgr, executorRegistry, fleetGate); err != nil {
 		setupLog.Error(err, "unable to set up health checks")
-		os.Exit(1)
+		return 1
 	}
 
 	// Issue #875: Log level hot-reload via FileWatcher
@@ -281,8 +282,9 @@ func main() {
 	setupLog.Info("starting manager")
 	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func readSecretKeyDirect(clientset kubernetes.Interface, namespace, name, key string) (string, error) {
@@ -447,7 +449,7 @@ func buildClientFactory(ctx context.Context, cfg *weconfig.Config, localClient c
 			TlsCaFile:        cfg.Fleet.OAuth2.TLSCAFile,
 		}
 		fleetOpts = append(fleetOpts,
-			fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog),
+			fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog), //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 		)
 		logger.Info("fleet OAuth2 authentication configured (hot-reloadable)",
 			"tokenURL", cfg.Fleet.OAuth2.TokenURL,

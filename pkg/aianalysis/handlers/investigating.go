@@ -270,7 +270,7 @@ func (h *InvestigatingHandler) retryTransientError(analysis *aianalysisv1.AIAnal
 	analysis.Status.SubReason = mapErrorTypeToSubReason(classification.ErrorType) // Map to valid CRD enum
 
 	// Record metric for transient errors
-	h.metrics.RecordFailure("TransientError", "Retrying")
+	h.metrics.RecordFailure(aianalysisv1.SubReasonTransientError, "Retrying")
 
 	// Requeue with exponential backoff (error classifier handles jitter internally)
 	return ctrl.Result{RequeueAfter: backoffDuration}, nil
@@ -296,10 +296,10 @@ func (h *InvestigatingHandler) failMaxRetriesExceeded(ctx context.Context, analy
 	analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
 		analysis.Status.ConsecutiveFailures, err)
 	analysis.Status.Reason = aianalysisv1.ReasonAPIError
-	analysis.Status.SubReason = "MaxRetriesExceeded"
+	analysis.Status.SubReason = aianalysisv1.SubReasonMaxRetriesExceeded
 
 	// Record metric for max retries exceeded
-	h.metrics.RecordFailure("APIError", "MaxRetriesExceeded")
+	h.metrics.RecordFailure(string(aianalysisv1.ReasonAPIError), aianalysisv1.SubReasonMaxRetriesExceeded)
 
 	// BR-AUDIT-005 Gap #7: Record failure audit with standardized error details
 	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
@@ -369,13 +369,13 @@ func mapErrorTypeToSubReason(errorType ErrorType) string {
 	switch errorType {
 	case ErrorTypeNetwork, ErrorTypeTimeout, ErrorTypeRateLimit, ErrorTypeTransient:
 		// All transient/retryable errors map to "TransientError"
-		return "TransientError"
+		return aianalysisv1.SubReasonTransientError
 	case ErrorTypePermanent, ErrorTypeAuthentication, ErrorTypeAuthorization, ErrorTypeConfiguration:
 		// All non-retryable errors map to "PermanentError"
 		return "PermanentError"
 	default:
 		// Fallback for unknown error types
-		return "TransientError"
+		return aianalysisv1.SubReasonTransientError
 	}
 }
 
@@ -636,6 +636,52 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
 	}
 }
 
+// checkInvestigationTimeout fails analysis in place and returns true if
+// session has exceeded h.maxInvestigationDuration, in which case the caller
+// must return (ctrl.Result{}, nil) without further poll handling; returns
+// false otherwise, in which case the caller should proceed with its normal
+// poll handling. Issue #1530 (dupl): extracted from
+// handleSessionPollUserDriving and handleSessionPollPending, which shared
+// this exact timeout-check-and-fail block; interactive selects between the
+// "Interactive session/investigation"-worded messages used by the
+// user-driving caller (AA-CRIT-1: user_driving must NOT bypass
+// MaxInvestigationDuration) and the plain "Investigation"-worded messages
+// used by the pending caller.
+func (h *InvestigatingHandler) checkInvestigationTimeout(ctx context.Context, analysis *aianalysisv1.AIAnalysis, session *aianalysisv1.KASession, interactive bool) bool {
+	if session.CreatedAt == nil {
+		return false
+	}
+	elapsed := time.Since(session.CreatedAt.Time)
+	if elapsed <= h.maxInvestigationDuration {
+		return false
+	}
+
+	exceededLogMsg := "Investigation exceeded max duration, failing"
+	timeoutMsgFmt := "Investigation timed out after %s (limit: %s)"
+	if interactive {
+		exceededLogMsg = "Interactive session exceeded max duration, failing"
+		timeoutMsgFmt = "Interactive investigation timed out after %s (limit: %s)"
+	}
+
+	h.log.Info(exceededLogMsg,
+		"sessionID", session.ID,
+		"elapsed", elapsed,
+		"maxDuration", h.maxInvestigationDuration,
+	)
+	// #1376: Close the InvestigationSession CRD on timeout.
+	h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseFailed)
+
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation
+	analysis.Status.CompletedAt = &now
+	analysis.Status.Reason = aianalysisv1.ReasonTransientError
+	analysis.Status.SubReason = aianalysisv1.SubReasonTransientError
+	analysis.Status.Message = fmt.Sprintf(timeoutMsgFmt, elapsed.Truncate(time.Second), h.maxInvestigationDuration)
+
+	return true
+}
+
 // handleSessionPollUserDriving handles the case where a user has taken over the
 // interactive session via MCP (DD-INTERACTIVE-002 dynamic takeover).
 // The controller continues polling at the normal interval so it detects when the
@@ -646,29 +692,8 @@ func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context,
 
 	// AA-CRIT-1: user_driving must NOT bypass MaxInvestigationDuration.
 	// A malicious or stalled interactive session cannot hold the pipeline indefinitely.
-	if session.CreatedAt != nil {
-		elapsed := time.Since(session.CreatedAt.Time)
-		if elapsed > h.maxInvestigationDuration {
-			h.log.Info("Interactive session exceeded max duration, failing",
-				"sessionID", session.ID,
-				"elapsed", elapsed,
-				"maxDuration", h.maxInvestigationDuration,
-			)
-			// #1376: Close the InvestigationSession CRD on interactive timeout.
-			h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseFailed)
-
-			now := metav1.Now()
-			analysis.Status.Phase = aianalysis.PhaseFailed
-			analysis.Status.ObservedGeneration = analysis.Generation
-			analysis.Status.CompletedAt = &now
-			analysis.Status.Reason = aianalysisv1.ReasonTransientError
-			analysis.Status.SubReason = "TransientError"
-			analysis.Status.Message = fmt.Sprintf(
-				"Interactive investigation timed out after %s (limit: %s)",
-				elapsed.Truncate(time.Second), h.maxInvestigationDuration,
-			)
-			return ctrl.Result{}, nil
-		}
+	if h.checkInvestigationTimeout(ctx, analysis, session, true) {
+		return ctrl.Result{}, nil
 	}
 
 	session.PollCount++
@@ -715,29 +740,8 @@ func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context,
 func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
 	session := analysis.Status.KASession
 
-	if session.CreatedAt != nil {
-		elapsed := time.Since(session.CreatedAt.Time)
-		if elapsed > h.maxInvestigationDuration {
-			h.log.Info("Investigation exceeded max duration, failing",
-				"sessionID", session.ID,
-				"elapsed", elapsed,
-				"maxDuration", h.maxInvestigationDuration,
-			)
-			// #1376: Close the InvestigationSession CRD on timeout.
-			h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseFailed)
-
-			now := metav1.Now()
-			analysis.Status.Phase = aianalysis.PhaseFailed
-			analysis.Status.ObservedGeneration = analysis.Generation
-			analysis.Status.CompletedAt = &now
-			analysis.Status.Reason = aianalysisv1.ReasonTransientError
-			analysis.Status.SubReason = "TransientError"
-			analysis.Status.Message = fmt.Sprintf(
-				"Investigation timed out after %s (limit: %s)",
-				elapsed.Truncate(time.Second), h.maxInvestigationDuration,
-			)
-			return ctrl.Result{}, nil
-		}
+	if h.checkInvestigationTimeout(ctx, analysis, session, false) {
+		return ctrl.Result{}, nil
 	}
 
 	// Update poll tracking fields for observability

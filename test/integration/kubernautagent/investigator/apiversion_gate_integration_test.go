@@ -107,6 +107,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: parser.NewValidator([]string{"restart-operator"})}},
 			})
 
 			result, err := inv.Investigate(context.Background(), signal)
@@ -185,6 +186,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: parser.NewValidator([]string{"scale-up"})}},
 			})
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{
@@ -240,6 +242,7 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 				Client: mockClient, Builder: builder, ResultParser: rp,
 				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
 				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+				Pipeline: investigator.Pipeline{CatalogFetcher: &staticCatalogFetcher{validator: parser.NewValidator([]string{"restart-sub"})}},
 			})
 
 			result, err := inv.Investigate(context.Background(), katypes.SignalContext{

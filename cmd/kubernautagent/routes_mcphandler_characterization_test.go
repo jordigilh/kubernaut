@@ -38,6 +38,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
@@ -140,7 +141,12 @@ func validMCPHandlerParams(t testing.TB) mcpHandlerParams {
 		authMw:       &auth.Middleware{},
 		agentMetrics: newMCPTestAgentMetrics(),
 		auditStore:   audit.NopAuditStore{},
-		logger:       logr.Discard(),
+		// #1677 hardening (DD-WORKFLOW-019): production always wires a
+		// non-nil, Ready-or-not LazyCatalog -- default to Ready here so the
+		// "fully-wired" baseline test reflects the normal steady state; the
+		// wiring-bug guard test below explicitly overrides this to nil.
+		wfCatalog: workflowcatalog.NewLazyCatalogReady(workflowcatalog.NewCacheFromReader(nil), logr.Discard()),
+		logger:    logr.Discard(),
 	}
 }
 
@@ -172,24 +178,33 @@ var _ = Describe("buildMCPHandler — construction-path characterization", func(
 	// other DS-optional dependency in this function (see also buildToolRegistry
 	// and readinessHandler, which both guard `ds != nil` the same way).
 	//
+	// #1677 hardening (DD-WORKFLOW-019): the workflow-catalog dependency this
+	// test exercises is now KA's own informer-backed LazyCatalog, which is
+	// always non-nil in production -- a Go-nil `wfCatalog` here therefore
+	// represents only a defensive wiring-bug guard (resolveWorkflowCatalog
+	// Fetcher), not a supported "cache unavailable" mode; the catalog's own
+	// Not-Ready window is covered separately (LazyCatalog's own tests) and
+	// does not need this nil-guard at all.
+	//
 	// BR-INTERACTIVE-001 / AU-3: MCP interactive mode must remain available
-	// (investigate/select-workflow/complete-no-action) even when DataStorage is
-	// unavailable; workflow-catalog-dependent lookups must fail with a clear,
-	// per-call error rather than taking down the whole handler at construction.
-	It("degrades gracefully (non-nil handler, logged warning) when ds is nil", func() {
+	// (investigate/select-workflow/complete-no-action) even if wfCatalog were
+	// ever wired as nil; catalog-dependent lookups must fail with a clear,
+	// per-call error rather than taking down the whole handler at
+	// construction.
+	It("degrades gracefully (non-nil handler, logged error) when wfCatalog is nil (wiring-bug guard)", func() {
 		capture := &jsonLogCapture{}
 		logger := funcr.NewJSON(capture.capture, funcr.Options{})
 
 		p := validMCPHandlerParams(GinkgoTB())
-		p.ds = nil
+		p.wfCatalog = nil
 		p.logger = logger
 
 		handler, drainer := buildMCPHandler(ctx, p)
 
-		Expect(handler).NotTo(BeNil(), "expected non-nil http.Handler when ds is nil (DS-optional degradation, not a hard dependency)")
-		Expect(drainer).NotTo(BeNil(), "expected non-nil session drainer when ds is nil")
+		Expect(handler).NotTo(BeNil(), "expected non-nil http.Handler when wfCatalog is nil (defensive guard, not a hard dependency panic)")
+		Expect(drainer).NotTo(BeNil(), "expected non-nil session drainer when wfCatalog is nil")
 
-		capture.findByMessage(GinkgoTB(), "MCP interactive mode: DS unavailable — workflow catalog lookups disabled")
+		capture.findByMessage(GinkgoTB(), "MCP interactive mode: workflow catalog unexpectedly nil (wiring bug) — workflow catalog lookups disabled")
 	})
 
 	It("disables enrichment in select-workflow when enricher is nil", func() {
@@ -228,18 +243,20 @@ var _ = Describe("buildMCPHandler — construction-path characterization", func(
 	})
 })
 
-// TestNoopWorkflowQuerier_ReturnsDescriptiveError proves the noop fallback
-// used when ds is nil surfaces a clear, actionable error through the same
+// TestNoopWorkflowCatalogFetcher_ReturnsDescriptiveError proves the noop
+// fallback used when wfCatalog is nil (a defensive wiring-bug guard --
+// production always constructs a LazyCatalog, #1677 hardening,
+// DD-WORKFLOW-019) surfaces a clear, actionable error through the same
 // WorkflowCatalogAdapter/tools.WorkflowCatalog path a real request would use
 // (SelectWorkflowTool.Handle wraps this as "workflow catalog lookup failed: %w"
 // and returns it as a normal tool error to the LLM/client), rather than a nil
 // pointer panic or a silently-empty result that would look like "workflow not
-// found" instead of "DataStorage unavailable".
-var _ = Describe("noopWorkflowQuerier", func() {
-	It("returns a descriptive error explaining DataStorage is unavailable", func() {
-		q := &noopWorkflowQuerier{}
+// found" instead of "catalog unavailable".
+var _ = Describe("noopWorkflowCatalogFetcher", func() {
+	It("returns a descriptive error explaining the catalog is unavailable", func() {
+		q := &noopWorkflowCatalogFetcher{}
 
-		_, err := q.ResolveWorkflowCatalogMetadata(context.Background(), "wf-123")
+		_, err := q.GetByID(context.Background(), "wf-123")
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(Or(ContainSubstring("DataStorage"), ContainSubstring("unavailable")))
 	})

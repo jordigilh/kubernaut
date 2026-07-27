@@ -53,7 +53,7 @@ import (
 
 const (
 	// emE2ENamespace is the namespace where EM and dependencies are deployed
-	emE2ENamespace = "kubernaut-system"
+	emE2ENamespace = kubernautSystem
 
 	// emE2EKindConfig is the Kind cluster configuration file for EM E2E tests
 	emE2EKindConfig = "test/infrastructure/kind-effectivenessmonitor-config.yaml"
@@ -123,7 +123,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 	}
 
 	buildResults := make(chan imageBuildResult, 3)
-	enableCoverage := os.Getenv("E2E_COVERAGE") == "true" || os.Getenv("GOCOVERDIR") != ""
+	enableCoverage := os.Getenv("E2E_COVERAGE") == trueFixture || os.Getenv("GOCOVERDIR") != ""
 
 	// Build EM controller
 	go func() {
@@ -133,7 +133,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 			DockerfilePath: "docker/effectivenessmonitor-controller.Dockerfile",
 			EnableCoverage: enableCoverage,
 		}
-		image, err := BuildImageForKind(cfg, writer)
+		image, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "EffectivenessMonitor", image: image, err: err}
 	}()
 
@@ -145,7 +145,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 			DockerfilePath: "docker/data-storage.Dockerfile",
 			EnableCoverage: enableCoverage,
 		}
-		image, err := BuildImageForKind(cfg, writer)
+		image, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "DataStorage", image: image, err: err}
 	}()
 
@@ -157,7 +157,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 			DockerfilePath: "docker/authwebhook.Dockerfile",
 			EnableCoverage: enableCoverage,
 		}
-		image, err := BuildImageForKind(cfg, writer)
+		image, err := BuildImageForKind(ctx, cfg, writer)
 		buildResults <- imageBuildResult{name: "AuthWebhook", image: image, err: err}
 	}()
 
@@ -189,7 +189,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		{HostPath: coverdataPath, ContainerPath: "/coverdata", ReadOnly: false},
 	}
 
-	if err := CreateKindClusterWithExtraMounts(
+	if err := CreateKindClusterWithExtraMounts(ctx, 
 		clusterName, kubeconfigPath, emE2EKindConfig, extraMounts, writer,
 	); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
@@ -202,7 +202,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 
 	// Load images into Kind
 	for name, image := range builtImages {
-		if err := LoadImageToKind(image, strings.ToLower(name), clusterName, writer); err != nil {
+		if err := LoadImageToKind(ctx, image, strings.ToLower(name), clusterName, writer); err != nil {
 			return fmt.Errorf("failed to load %s image: %w", name, err)
 		}
 	}
@@ -219,7 +219,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		if err := pullCmd.Run(); err != nil {
 			return fmt.Errorf("failed to pull %s: %w", img.image, err)
 		}
-		if err := LoadImageToKind(img.image, img.name, clusterName, writer); err != nil {
+		if err := LoadImageToKind(ctx, img.image, img.name, clusterName, writer); err != nil {
 			return fmt.Errorf("failed to load %s image: %w", img.image, err)
 		}
 	}
@@ -322,12 +322,12 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 	_, _ = fmt.Fprintln(writer, "\n  PHASE 5: Waiting for services to be ready...")
 
 	promURL := fmt.Sprintf("http://127.0.0.1:%d", PrometheusHostPort)
-	if err := WaitForPrometheusReady(promURL, emPrometheusReadyTimeout, writer); err != nil {
+	if err := WaitForPrometheusReady(ctx, promURL, emPrometheusReadyTimeout, writer); err != nil {
 		return fmt.Errorf("prometheus not ready: %w", err)
 	}
 
 	amURL := fmt.Sprintf("http://127.0.0.1:%d", AlertManagerHostPort)
-	if err := WaitForAlertManagerReady(amURL, emAlertManagerReadyTimeout, writer); err != nil {
+	if err := WaitForAlertManagerReady(ctx, amURL, emAlertManagerReadyTimeout, writer); err != nil {
 		return fmt.Errorf("alertmanager not ready: %w", err)
 	}
 
@@ -336,7 +336,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		return fmt.Errorf("EM controller not ready: %w", err)
 	}
 
-	if err := WaitForPrometheusCadvisorTarget(promURL, 60*time.Second, writer); err != nil {
+	if err := WaitForPrometheusCadvisorTarget(ctx, promURL, 60*time.Second, writer); err != nil {
 		return fmt.Errorf("prometheus cadvisor target not UP: %w", err)
 	}
 

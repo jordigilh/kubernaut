@@ -26,6 +26,12 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	inc001 = "inc-001"
+	test   = "test"
+)
+
 var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func() {
 
 	Describe("UT-KA-433W-008: DSAuditStore maps event fields to ogen request", func() {
@@ -72,7 +78,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 
 			event := audit.NewEvent(audit.EventTypeEnrichmentCompleted, "corr-enr")
 			event.Data["event_id"] = "evt-001"
-			event.Data["incident_id"] = "inc-001"
+			event.Data["incident_id"] = inc001
 			event.Data["root_owner_kind"] = "Deployment"
 			event.Data["root_owner_name"] = "api-server"
 			event.Data["root_owner_namespace"] = "production"
@@ -89,7 +95,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			payload, ok := req.EventData.GetAIAgentEnrichmentCompletedPayload()
 			Expect(ok).To(BeTrue(), "should extract AIAgentEnrichmentCompletedPayload")
 			Expect(payload.EventID).To(Equal("evt-001"))
-			Expect(payload.IncidentID).To(Equal("inc-001"))
+			Expect(payload.IncidentID).To(Equal(inc001))
 			Expect(payload.RootOwnerKind).To(Equal("Deployment"))
 			Expect(payload.RootOwnerName).To(Equal("api-server"))
 			Expect(payload.RootOwnerNamespace.Value).To(Equal("production"))
@@ -157,6 +163,12 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			skipPayloadCheck := map[string]bool{
 				audit.EventTypeGroundingRequest:  true,
 				audit.EventTypeGroundingResponse: true,
+				// aiagent.fleet.overlay_failed (DD-FLEET-004, issue #1732) has
+				// no dedicated OpenAPI discriminator variant yet either; it is
+				// stored with outer fields only (event_type, cluster_id,
+				// correlation_id, actor, event_action/outcome), same as the
+				// grounding events above.
+				audit.EventTypeFleetOverlayFailed: true,
 			}
 
 			for _, eventType := range audit.AllEventTypes {
@@ -167,13 +179,13 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 				event.EventAction = "test_action"
 				event.EventOutcome = audit.OutcomeSuccess
 				event.SessionID = "sess-001"
-				event.Data["incident_id"] = "inc-001"
+				event.Data["incident_id"] = inc001
 				event.Data["model"] = "gpt-4"
 				event.Data["prompt_length"] = 100
-				event.Data["prompt_preview"] = "test"
+				event.Data["prompt_preview"] = test
 				event.Data["has_analysis"] = true
 				event.Data["analysis_length"] = 50
-				event.Data["analysis_preview"] = "test"
+				event.Data["analysis_preview"] = test
 				event.Data["tool_call_index"] = 0
 				event.Data["tool_name"] = "test_tool"
 				event.Data["tool_result"] = "{}"
@@ -186,13 +198,13 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 				event.Data["root_owner_name"] = "api"
 				event.Data["owner_chain_length"] = 1
 				event.Data["remediation_history_fetched"] = true
-				event.Data["reason"] = "test"
-				event.Data["detail"] = "test"
+				event.Data["reason"] = test
+				event.Data["detail"] = test
 				event.Data["affected_resource_kind"] = "Pod"
 				event.Data["affected_resource_name"] = "pod-1"
-				event.Data["error_message"] = "test"
-				event.Data["phase"] = "rca"
-				event.Data["cancelled_phase"] = "rca"
+				event.Data["error_message"] = test
+				event.Data["phase"] = rca
+				event.Data["cancelled_phase"] = rca
 				event.Data["cancelled_at_turn"] = 3
 				event.Data["endpoint"] = "/api/test"
 				event.Data["requesting_user"] = "attacker"
@@ -225,7 +237,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			event.EventAction = audit.ActionSessionStarted
 			event.EventOutcome = audit.OutcomeSuccess
 			event.SessionID = "sess-001"
-			event.Data["incident_id"] = "inc-001"
+			event.Data["incident_id"] = inc001
 			event.Data["signal_name"] = "OOMKilled"
 			event.Data["severity"] = "critical"
 			event.Data["created_by"] = "system:serviceaccount:test:sa"
@@ -238,7 +250,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			payload, ok := req.EventData.GetAIAgentSessionStartedPayload()
 			Expect(ok).To(BeTrue())
 			Expect(payload.SessionID).To(Equal("sess-001"))
-			Expect(payload.IncidentID.Value).To(Equal("inc-001"))
+			Expect(payload.IncidentID.Value).To(Equal(inc001))
 			Expect(payload.SignalName.Value).To(Equal("OOMKilled"))
 			Expect(payload.Severity.Value).To(Equal("critical"))
 			Expect(payload.CreatedBy.Value).To(Equal("system:serviceaccount:test:sa"))
@@ -278,7 +290,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			event := audit.NewEvent(audit.EventTypeInvestigationCancelled, "rem-003")
 			event.EventAction = audit.ActionInvestigationCancelled
 			event.EventOutcome = audit.OutcomeFailure
-			event.Data["cancelled_phase"] = "rca"
+			event.Data["cancelled_phase"] = rca
 			event.Data["cancelled_at_turn"] = 5
 			event.Data["total_prompt_tokens"] = 1000
 			event.Data["total_completion_tokens"] = 500
@@ -290,12 +302,12 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 
 			payload, ok := recorder.calls[0].EventData.GetAIAgentInvestigationCancelledPayload()
 			Expect(ok).To(BeTrue())
-			Expect(payload.CancelledPhase).To(Equal("rca"))
+			Expect(payload.CancelledPhase).To(Equal(rca))
 			Expect(payload.CancelledAtTurn).To(Equal(5))
 			Expect(payload.TotalPromptTokens.Value).To(Equal(1000))
 			Expect(payload.TotalCompletionTokens.Value).To(Equal(500))
 			Expect(payload.TotalTokens.Value).To(Equal(1500))
-			Expect(payload.AccumulatedMessages.Value).To(ContainSubstring("test"))
+			Expect(payload.AccumulatedMessages.Value).To(ContainSubstring(test))
 		})
 	})
 
@@ -409,6 +421,148 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			req := recorder.calls[0]
 			Expect(req.ClusterID.IsSet()).To(BeFalse(),
 				"Single-cluster events must not set ClusterID")
+		})
+	})
+
+	Describe("DD-WORKFLOW-019 #1677 Phase 2c: DSAuditStore ResourceType/ResourceID + EventCategory override", func() {
+		It("UT-KA-1677-AUDIT-007: sets ResourceType/ResourceID on AuditEventRequest when present", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeWorkflowRetrieved, "corr-1677-res",
+				audit.WithEventCategory(audit.WorkflowCatalogEventCategory),
+				audit.WithResource("Workflow", "wf-abc"))
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.calls).To(HaveLen(1))
+
+			req := recorder.calls[0]
+			Expect(string(req.EventCategory)).To(Equal("workflow"))
+			Expect(req.ResourceType.IsSet()).To(BeTrue())
+			Expect(req.ResourceType.Value).To(Equal("Workflow"))
+			Expect(req.ResourceID.IsSet()).To(BeTrue())
+			Expect(req.ResourceID.Value).To(Equal("wf-abc"))
+		})
+
+		It("UT-KA-1677-AUDIT-008: leaves ResourceType/ResourceID unset when event has no resource", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeActionsListed, "corr-1677-nores",
+				audit.WithEventCategory(audit.WorkflowCatalogEventCategory))
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.calls).To(HaveLen(1))
+
+			req := recorder.calls[0]
+			Expect(req.ResourceType.IsSet()).To(BeFalse())
+			Expect(req.ResourceID.IsSet()).To(BeFalse())
+		})
+	})
+
+	Describe("DD-WORKFLOW-019 #1677 Phase 2c: DSAuditStore builds workflow.catalog.* EventData payloads", func() {
+		It("UT-KA-1677-AUDIT-009: builds actions_listed payload with filters and counts", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeActionsListed, "corr-1677-actions",
+				audit.WithEventCategory(audit.WorkflowCatalogEventCategory))
+			event.EventAction = audit.ActionDiscovery
+			event.EventOutcome = audit.OutcomeSuccess
+			event.Data["total_count"] = 3
+			event.Data["duration_ms"] = 12
+			event.Data["severity"] = "critical"
+			event.Data["component"] = "deployment"
+			event.Data["environment"] = "production"
+			event.Data["priority"] = "P0"
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.calls).To(HaveLen(1))
+
+			req := recorder.calls[0]
+			Expect(req.EventData.Type).To(Equal(ogenclient.AuditEventRequestEventDataWorkflowCatalogActionsListedAuditEventRequestEventData))
+
+			payload, ok := req.EventData.GetWorkflowDiscoveryAuditPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.EventType).To(Equal(ogenclient.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogActionsListed))
+			Expect(payload.Query.TopK).To(Equal(int32(3)))
+			Expect(payload.Results.TotalFound).To(Equal(int32(3)))
+			Expect(payload.Results.Returned).To(Equal(int32(3)))
+			Expect(payload.SearchMetadata.DurationMs).To(Equal(int64(12)))
+
+			filters, ok := payload.Query.Filters.Get()
+			Expect(ok).To(BeTrue(), "filters should be set when signal-context fields are present")
+			Expect(string(filters.Severity)).To(Equal("critical"))
+			Expect(filters.Component).To(Equal("deployment"))
+			Expect(filters.Environment).To(Equal("production"))
+			Expect(string(filters.Priority)).To(Equal("P0"))
+		})
+
+		It("UT-KA-1677-AUDIT-010: builds workflows_listed payload without filters when no signal-context present", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeWorkflowsListed, "corr-1677-workflows",
+				audit.WithEventCategory(audit.WorkflowCatalogEventCategory))
+			event.Data["total_count"] = 2
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			req := recorder.calls[0]
+			Expect(req.EventData.Type).To(Equal(ogenclient.AuditEventRequestEventDataWorkflowCatalogWorkflowsListedAuditEventRequestEventData))
+
+			payload, ok := req.EventData.GetWorkflowDiscoveryAuditPayload()
+			Expect(ok).To(BeTrue())
+			_, filtersSet := payload.Query.Filters.Get()
+			Expect(filtersSet).To(BeFalse(), "filters must be unset when no signal-context fields are present")
+		})
+
+		It("UT-KA-1677-AUDIT-011: builds workflow_retrieved payload with ResourceType/ResourceID", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeWorkflowRetrieved, "corr-1677-retrieved",
+				audit.WithEventCategory(audit.WorkflowCatalogEventCategory),
+				audit.WithResource("Workflow", "wf-xyz"))
+			event.EventAction = audit.ActionRetrieve
+			event.Data["total_count"] = 1
+			event.Data["duration_ms"] = 8
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			req := recorder.calls[0]
+			Expect(req.EventData.Type).To(Equal(ogenclient.AuditEventRequestEventDataWorkflowCatalogWorkflowRetrievedAuditEventRequestEventData))
+			Expect(req.ResourceID.Value).To(Equal("wf-xyz"))
+
+			payload, ok := req.EventData.GetWorkflowDiscoveryAuditPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.EventType).To(Equal(ogenclient.WorkflowDiscoveryAuditPayloadEventTypeWorkflowCatalogWorkflowRetrieved))
+		})
+
+		It("UT-KA-1677-AUDIT-012: builds selection_validated payload with failure outcome", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeSelectionValidated, "corr-1677-validated",
+				audit.WithEventCategory(audit.WorkflowCatalogEventCategory),
+				audit.WithResource("Workflow", "wf-invalid"))
+			event.EventAction = audit.ActionValidate
+			event.EventOutcome = audit.OutcomeFailure
+			event.Data["total_count"] = 0
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			req := recorder.calls[0]
+			Expect(req.EventData.Type).To(Equal(ogenclient.AuditEventRequestEventDataWorkflowCatalogSelectionValidatedAuditEventRequestEventData))
+			Expect(string(req.EventOutcome)).To(Equal(audit.OutcomeFailure))
+
+			payload, ok := req.EventData.GetWorkflowDiscoveryAuditPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.Results.TotalFound).To(Equal(int32(0)))
 		})
 	})
 })

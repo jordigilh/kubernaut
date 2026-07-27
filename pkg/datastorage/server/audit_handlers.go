@@ -83,7 +83,7 @@ func (s *Server) handleCreateNotificationAudit(w http.ResponseWriter, r *http.Re
 		s.logger.Error(err, "Database write failed",
 			"notification_id", audit.NotificationID,
 			"write_duration_seconds", writeDuration)
-		s.fallbackNotificationAuditToDLQ(w, &audit, err)
+		s.fallbackNotificationAuditToDLQ(w, &audit, err) //nolint:contextcheck // DLQ fallback is a last-resort integrity path; must not risk losing events to the same request context that saw the primary write fail
 		return
 	}
 

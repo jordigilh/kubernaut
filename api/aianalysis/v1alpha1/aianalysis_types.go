@@ -18,7 +18,6 @@ package v1alpha1
 
 import (
 	corev1 "k8s.io/api/core/v1"
-	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -332,6 +331,36 @@ const (
 	PhaseFailed = "Failed"
 )
 
+// AIAnalysis SubReason constants (subset of the full kubebuilder enum on
+// AIAnalysisStatus.SubReason below) for values referenced from multiple
+// call sites in pkg/aianalysis/handlers.
+const (
+	// SubReasonWorkflowNotFound indicates no matching workflow was found in the catalog
+	SubReasonWorkflowNotFound = "WorkflowNotFound"
+	// SubReasonNoMatchingWorkflows indicates the catalog query returned zero candidates
+	SubReasonNoMatchingWorkflows = "NoMatchingWorkflows"
+	// SubReasonTransientError indicates a retryable error occurred (network, API, timeout)
+	SubReasonTransientError = "TransientError"
+	// SubReasonProblemResolved indicates KA reported the problem self-resolved (no workflow needed)
+	SubReasonProblemResolved = "ProblemResolved"
+	// SubReasonLowConfidence indicates workflow selection confidence fell below threshold
+	SubReasonLowConfidence = "LowConfidence"
+	// SubReasonMaxRetriesExceeded indicates a transient error persisted past the retry budget
+	SubReasonMaxRetriesExceeded = "MaxRetriesExceeded"
+)
+
+// AIAnalysis HumanReviewReason constants (subset of the full kubebuilder enum
+// on AIAnalysisStatus.HumanReviewReason below) for values referenced from
+// multiple call sites in pkg/aianalysis/handlers.
+const (
+	// HumanReviewReasonRCAIncomplete indicates KA could not determine the remediation target
+	HumanReviewReasonRCAIncomplete = "rca_incomplete"
+	// HumanReviewReasonNoMatchingWorkflows indicates investigation succeeded but no workflow matched (#768)
+	HumanReviewReasonNoMatchingWorkflows = "no_matching_workflows"
+	// HumanReviewReasonLowConfidence indicates workflow selection confidence fell below threshold
+	HumanReviewReasonLowConfidence = "low_confidence"
+)
+
 // AIAnalysisStatus defines the observed state of AIAnalysis.
 type AIAnalysisStatus struct {
 	// ObservedGeneration is the most recent generation observed by the controller.
@@ -617,22 +646,27 @@ type RemediationTarget struct {
 
 // SelectedWorkflow contains the AI-selected workflow for execution
 // DD-CONTRACT-002: Output format for RO to create WorkflowExecution
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.selectedAt) || self == oldSelf",message="selectedWorkflow is immutable once selectedAt is populated (Issue #1661, DD-WORKFLOW-018)"
 type SelectedWorkflow struct {
-	// Workflow identifier (catalog lookup key)
-	// +kubebuilder:validation:Required
-	WorkflowID string `json:"workflowId"`
-	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
-	// Propagated from KA three-step discovery protocol to RO audit events.
-	// +optional
-	ActionType string `json:"actionType,omitempty"`
-	// Workflow version
-	// +kubebuilder:validation:Required
-	Version string `json:"version"`
-	// Execution bundle OCI reference (digest-pinned) - resolved by KA
-	// +kubebuilder:validation:Required
-	ExecutionBundle string `json:"executionBundle"`
-	// Execution bundle digest for audit trail
-	ExecutionBundleDigest string `json:"executionBundleDigest,omitempty"`
+	// WorkflowSnapshot is the catalog-resolved execution snapshot
+	// (WorkflowID/WorkflowName/ActionType/Version/ExecutionBundle/
+	// ExecutionBundleDigest/ExecutionEngine/EngineConfig/ServiceAccountName/
+	// Dependencies/Resources/DeclaredParameterNames), inline-embedded so its
+	// field list can never drift from WorkflowExecution.Spec.WorkflowRef,
+	// which embeds the same type (Issue #1661 Change 12, DD-WORKFLOW-018).
+	//
+	// ========================================
+	// CRD-EMBEDDED EXECUTION SNAPSHOT (Issue #1661 Change 11b, DD-WORKFLOW-018)
+	// ========================================
+	// Dependencies/Resources/DeclaredParameterNames are catalog-authoritative
+	// schema data KA already validated during workflow selection (Change 11a).
+	// Embedding them here lets RemediationOrchestrator/WorkflowExecution trust
+	// this CRD snapshot instead of independently re-fetching the workflow from
+	// DataStorage — closing the gap where an in-flight remediation could
+	// observe a RemediationWorkflow that was updated or deleted after
+	// selection completed.
+	sharedtypes.WorkflowSnapshot `json:",inline"`
+
 	// Confidence score (0.0-1.0)
 	// +kubebuilder:validation:Minimum=0.0
 	// +kubebuilder:validation:Maximum=1.0
@@ -641,23 +675,13 @@ type SelectedWorkflow struct {
 	Parameters map[string]string `json:"parameters,omitempty"`
 	// Rationale explaining why this workflow was selected
 	Rationale string `json:"rationale"`
-	// ExecutionEngine specifies the backend engine for workflow execution.
-	// Populated from KA workflow recommendation.
-	// When empty, defaults to "tekton" for backwards compatibility.
-	// +kubebuilder:validation:Enum=tekton;job;ansible
-	// +optional
-	ExecutionEngine string `json:"executionEngine,omitempty"`
 
-	// EngineConfig holds engine-specific configuration (BR-WE-016).
-	// For ansible: {"playbookPath": "...", "jobTemplateName": "...", "inventoryName": "..."}.
-	// +kubebuilder:pruning:PreserveUnknownFields
+	// SelectedAt records when this snapshot was first populated. Once
+	// non-nil, the entire SelectedWorkflow becomes immutable via the
+	// XValidation rule above — mirroring PostRCAContext's ADR-056 guard —
+	// to prevent tampering with the execution snapshot RO/WFE will trust.
 	// +optional
-	EngineConfig *apiextensionsv1.JSON `json:"engineConfig,omitempty"`
-
-	// ServiceAccountName is the pre-existing ServiceAccount resolved from the
-	// DS workflow catalog (Issue #650). Propagated to the WFE for pod execution.
-	// +optional
-	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+	SelectedAt *metav1.Time `json:"selectedAt,omitempty"`
 }
 
 // AlternativeWorkflow contains alternative workflows considered but not selected.

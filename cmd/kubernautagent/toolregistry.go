@@ -18,26 +18,32 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
+	"golang.org/x/sync/singleflight"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
 
-	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	dsschema "github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	fleetregistry "github.com/jordigilh/kubernaut/pkg/fleet/registry"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	amtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/alertmanager"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
 	k8stools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
@@ -47,7 +53,11 @@ import (
 )
 
 // buildToolRegistry creates and populates the tool registry with all available tool sets.
-func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra, ds *dsClients, auditStore audit.AuditStore) *registry.Registry {
+// wfCatalog is always non-nil (workflowcatalog.LazyCatalog, #1677 hardening,
+// DD-WORKFLOW-019): the 3 workflow discovery tools are always registered,
+// and fail at execution time with a clear "not ready" error (rather than
+// registration time) until the background cache sync completes.
+func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra, ds *dsClients, wfCatalog *workflowcatalog.LazyCatalog, auditStore audit.AuditStore) *registry.Registry {
 	reg := registry.New()
 
 	if infra != nil {
@@ -63,7 +73,12 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 	}
 
 	if ds != nil {
-		custom.RegisterAll(reg, ds.ogenClient, ds.dsAdapter, ds.k8sAdapter, logger)
+		// wfCatalog (LazyCatalog) is always non-nil and always satisfies
+		// custom.WorkflowCatalog -- no typed-nil-interface guard needed
+		// (#1677 hardening, DD-WORKFLOW-019). Before the cache syncs, its
+		// methods return workflowcatalog.ErrCatalogNotReady, which each
+		// tool's Execute already surfaces as a normal per-call error.
+		custom.RegisterAll(reg, wfCatalog, auditStore, ds.dsAdapter, ds.k8sAdapter, logger)
 		logger.Info("registered custom tools", "count", len(custom.AllToolNames))
 	}
 
@@ -148,14 +163,84 @@ func resolveAlignmentCheckConfig(cfg *kaconfig.Config) kaconfig.AlignmentCheckCo
 	return cfg.AI.AlignmentCheck
 }
 
-// registerFleetTools connects to the MCP Gateway, creates a GatewayDiscoverer
-// for the configured gateway type, pre-scopes tools for the target cluster,
-// and registers list_clusters + list_tools_for_cluster for LLM-driven discovery.
-// Returns the fleet client (must be closed on shutdown) and the registered tool names,
-// or nil if fleet is disabled.
+// gatewayOverlayResolver implements investigator.FleetOverlayResolver by
+// wrapping a fleetclient.GatewayDiscoverer. Overlay re-keys the discovered
+// tool definitions under each tool's generic (unprefixed) name, so KA's LLM
+// sees the exact same tool identity for a remote-cluster investigation as
+// for a hub-local one (DD-FLEET-004 full name transparency, issue #1732).
+// The wire-level name used to actually reach the gateway (which may carry
+// the "{clusterID}__" EAIGW convention) is untouched inside the wrapped
+// BridgeTool — only the LLM-facing identity changes.
+type gatewayOverlayResolver struct {
+	discoverer fleetclient.GatewayDiscoverer
+	session    fleetclient.Session
+
+	// sf deduplicates concurrent Overlay calls for the same clusterID down
+	// to a single ToolsForCluster gateway round trip (SC-5: Denial of
+	// Service Protection), exactly as the deleted ListToolsForClusterTool
+	// did before DD-FLEET-004 removed the LLM-facing discovery tools --
+	// every investigation now calls Overlay() once at pre-scoping time, so
+	// N investigations landing on the same busy cluster concurrently would
+	// otherwise each trigger their own discover_tools/select_tools call.
+	sf singleflight.Group
+}
+
+// Overlay implements investigator.FleetOverlayResolver.
+func (r *gatewayOverlayResolver) Overlay(ctx context.Context, clusterID string) (map[string]tools.Tool, error) {
+	v, err, _ := r.sf.Do(clusterID, func() (any, error) {
+		defs, err := r.discoverer.ToolsForCluster(ctx, clusterID)
+		if err != nil {
+			return nil, fmt.Errorf("discover tools for cluster %q: %w", clusterID, err)
+		}
+		overlay := make(map[string]tools.Tool, len(defs))
+		for _, def := range defs {
+			// EAIGW names carry a "{clusterID}__" wire prefix; Kuadrant names
+			// (post select_tools) are already bare. TrimPrefix is a no-op for
+			// the latter, so this line handles both gateway types uniformly.
+			genericName := strings.TrimPrefix(def.Name, clusterID+"__")
+			bridge := fleetclient.NewBridgeTool(def, clusterID, r.session)
+			overlay[genericName] = &genericNameTool{inner: bridge, name: genericName}
+		}
+		return overlay, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	// Safe to share the same map across every waiter on this singleflight
+	// key: FleetOverlayFromContext/resolveTool only ever read it, never
+	// mutate it (see fleet_overlay.go).
+	return v.(map[string]tools.Tool), nil
+}
+
+// genericNameTool decorates a *fleetclient.BridgeTool, exposing it to KA's
+// tool registry/LLM schema under its generic name while Execute still
+// delegates to the inner BridgeTool, which calls the remote MCP gateway
+// using the tool's original wire name (DD-FLEET-004: LLM-facing identity
+// and wire identity are allowed to differ; only the former is transparent).
+type genericNameTool struct {
+	inner *fleetclient.BridgeTool
+	name  string
+}
+
+func (g *genericNameTool) Name() string                { return g.name }
+func (g *genericNameTool) Description() string         { return g.inner.Description() }
+func (g *genericNameTool) Parameters() json.RawMessage { return g.inner.Parameters() }
+func (g *genericNameTool) Execute(ctx context.Context, args json.RawMessage) (string, error) {
+	return g.inner.Execute(ctx, args)
+}
+
+// registerFleetTools connects to the MCP Gateway and creates a
+// GatewayDiscoverer for the configured gateway type, returning an
+// investigator.FleetOverlayResolver that pre-scopes tools for each
+// investigation's own target cluster (DD-FLEET-004 / issue #1732). No tools
+// are registered into any shared, LLM-facing registry here — pre-scoping
+// happens per-investigation via the resolver, replacing the previous
+// LLM-driven list_clusters/list_tools_for_cluster discovery tools entirely.
+// Returns the fleet client (must be closed on shutdown) and the resolver,
+// or (nil, nil) if fleet is disabled.
 //
-// Authority: ADR-068 decision #11
-func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry.Registry, logger logr.Logger) (*fleetclient.ResilientClient, []string) {
+// Authority: DD-FLEET-004, ADR-068 decision #11
+func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.Logger) (*fleetclient.ResilientClient, investigator.FleetOverlayResolver) {
 	gatewayType := cfg.Integrations.Fleet.GatewayType
 	endpoint := cfg.Integrations.Fleet.Endpoint
 	if gatewayType == "" || endpoint == "" {
@@ -179,7 +264,7 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 			Scopes:           fleetclient.DefaultFleetScopes(cfg.Integrations.Fleet.OAuth2.Scopes),
 			TokenTimeout:     10 * time.Second,
 		}
-		opts = append(opts, fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog))
+		opts = append(opts, fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 		fleetLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
 			"tokenURL", cfg.Integrations.Fleet.OAuth2.TokenURL,
 			"secretPath", basePath)
@@ -207,18 +292,9 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, reg *registry
 		return nil, nil
 	}
 
-	listClustersTool := fleetclient.NewListClustersTool(discoverer)
-	listToolsTool := fleetclient.NewListToolsForClusterTool(discoverer, reg, session)
-
-	reg.Register(listClustersTool)
-	reg.Register(listToolsTool)
-
-	toolNames := make([]string, 0, 2)
-	toolNames = append(toolNames, listClustersTool.Name(), listToolsTool.Name())
-
-	fleetLog.Info("registered fleet discovery tools",
-		"tools", toolNames, "endpoint", endpoint, "gatewayType", gatewayType)
-	return resilientClient, toolNames
+	fleetLog.Info("fleet tool pre-scoping resolver ready (DD-FLEET-004)",
+		"endpoint", endpoint, "gatewayType", gatewayType)
+	return resilientClient, &gatewayOverlayResolver{discoverer: discoverer, session: session}
 }
 
 // fleetReadinessProbeInterval controls how often the #1553 Fleet readiness
@@ -314,40 +390,49 @@ func newSecretAccessObserver(auditStore audit.AuditStore, logger logr.Logger) fu
 	}
 }
 
-// dsCatalogFetcher implements investigator.CatalogFetcher by querying
-// DataStorage on every call. This removes the boot-time blocking fetch
-// that caused #665 (CrashLoopBackOff when the catalog was not yet seeded).
+// workflowCatalogFetcher implements investigator.CatalogFetcher by querying
+// KubernautAgent's own informer-backed workflow catalog on every call. This
+// removes the boot-time blocking fetch that caused #665 (CrashLoopBackOff
+// when the catalog was not yet seeded).
 //
 // Per DD-HAPI-002 (v1.1+), KA is the sole workflow validator. The catalog
 // is fetched per-request so KA always validates against the current catalog
 // without needing a restart when workflows are added/removed.
-type dsCatalogFetcher struct {
-	ds     *dsClients
-	logger logr.Logger
+//
+// #1677 Phase 2g follow-up (DD-WORKFLOW-019): previously queried DataStorage's
+// REST API (GET /api/v1/workflows) directly via the DS ogen client. That
+// route was retired as dead code once workflow discovery moved to KA -- this
+// was a real, missed production caller (not covered by the Phase 2g Wiring
+// Manifest), discovered when regenerating the DS ogen client after pruning
+// the OpenAPI spec broke this file's build. Fixed by reading from the same
+// cache-backed Catalog the 3-step discovery protocol already uses, which is
+// a strict improvement: zero network hop, zero dependency on DS's REST
+// surface, and no artificial page-size cap (List(ctx, nil, -1, 0) is
+// unfiltered/unbounded, unlike the old default-100/max-1000 REST endpoint).
+type workflowCatalogFetcher struct {
+	catalog *workflowcatalog.LazyCatalog
+	logger  logr.Logger
 }
 
-func newDSCatalogFetcher(ds *dsClients, logger logr.Logger) *dsCatalogFetcher {
-	return &dsCatalogFetcher{ds: ds, logger: logger}
+func newWorkflowCatalogFetcher(catalog *workflowcatalog.LazyCatalog, logger logr.Logger) *workflowCatalogFetcher {
+	return &workflowCatalogFetcher{catalog: catalog, logger: logger}
 }
 
-func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validator, error) {
+func (f *workflowCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validator, error) {
 	fetchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	resp, err := f.ds.ogenClient.ListWorkflows(fetchCtx, ogenclient.ListWorkflowsParams{})
+	// limit=-1: unfiltered, unbounded -- KA validates LLM-selected workflows
+	// against the FULL current catalog (DD-HAPI-002), not a paginated subset.
+	workflows, _, err := f.catalog.List(fetchCtx, nil, -1, 0)
 	if err != nil {
-		return nil, fmt.Errorf("ListWorkflows call failed: %w", err)
+		return nil, fmt.Errorf("workflow catalog list failed: %w", err)
 	}
 
-	wlr, ok := resp.(*ogenclient.WorkflowListResponse)
-	if !ok {
-		return nil, fmt.Errorf("unexpected ListWorkflows response type %T", resp)
-	}
-
-	ids := make([]string, 0, len(wlr.Workflows))
-	for _, w := range wlr.Workflows {
-		if w.WorkflowId.Set {
-			ids = append(ids, w.WorkflowId.Value.String())
+	ids := make([]string, 0, len(workflows))
+	for i := range workflows {
+		if workflows[i].WorkflowID != "" {
+			ids = append(ids, workflows[i].WorkflowID)
 		}
 	}
 	if len(ids) == 0 {
@@ -356,12 +441,12 @@ func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validato
 
 	validator := parser.NewValidator(ids)
 	schemaParser := dsschema.NewParser()
-	for _, w := range wlr.Workflows {
-		if !w.WorkflowId.Set {
+	for i := range workflows {
+		w := &workflows[i]
+		if w.WorkflowID == "" {
 			continue
 		}
-		wfID := w.WorkflowId.Value.String()
-		validator.SetWorkflowMeta(wfID, buildWorkflowMeta(w, schemaParser, f.logger))
+		validator.SetWorkflowMeta(w.WorkflowID, buildWorkflowMeta(w, schemaParser, f.logger))
 	}
 
 	f.logger.Info("workflow catalog fetched (DD-HAPI-002: per-request validation)",
@@ -374,33 +459,70 @@ func (f *dsCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Validato
 // parse failures are logged and fail-closed (no Parameters set, stripping
 // all LLM-supplied params for that workflow) rather than aborting the whole
 // catalog fetch.
-func buildWorkflowMeta(w ogenclient.RemediationWorkflow, schemaParser *dsschema.Parser, logger logr.Logger) parser.WorkflowMeta {
+func buildWorkflowMeta(w *models.RemediationWorkflow, schemaParser *dsschema.Parser, logger logr.Logger) parser.WorkflowMeta {
 	meta := parser.WorkflowMeta{
-		ExecutionEngine: w.ExecutionEngine,
+		ExecutionEngine: string(w.ExecutionEngine),
 		Version:         w.Version,
-		Component:       append([]string(nil), w.Labels.GetComponent()...),
+		Component:       append([]string(nil), w.Labels.Component...),
+		// ActionType/WorkflowName (Issue #1661 Change 12): both required,
+		// non-optional fields on the catalog entry (metadata.name /
+		// DD-WORKFLOW-016 taxonomy respectively), so always copied verbatim.
+		ActionType:   w.ActionType,
+		WorkflowName: w.WorkflowName,
 	}
-	if w.ExecutionBundle.Set {
-		meta.ExecutionBundle = w.ExecutionBundle.Value
+	if w.ExecutionBundle != nil {
+		meta.ExecutionBundle = *w.ExecutionBundle
 	}
-	if w.ExecutionBundleDigest.Set {
-		meta.ExecutionBundleDigest = w.ExecutionBundleDigest.Value
+	if w.ExecutionBundleDigest != nil {
+		meta.ExecutionBundleDigest = *w.ExecutionBundleDigest
 	}
-	if w.ServiceAccountName.Set {
-		meta.ServiceAccountName = w.ServiceAccountName.Value
+	if w.ServiceAccountName != nil {
+		meta.ServiceAccountName = *w.ServiceAccountName
 	}
 	if w.Content != "" {
-		parsed, err := schemaParser.Parse(w.Content)
-		if err != nil {
-			wfID := ""
-			if w.WorkflowId.Set {
-				wfID = w.WorkflowId.Value.String()
-			}
-			logger.Error(err, "failed to parse workflow schema Content, parameter validation will strip all LLM params (fail-closed)",
-				"workflow_id", wfID)
-		} else {
-			meta.Parameters = parsed.Parameters
-		}
+		applyParsedSchemaMeta(&meta, w, schemaParser, logger)
 	}
 	return meta
+}
+
+// applyParsedSchemaMeta parses w.Content and, on success, populates meta's
+// schema-derived fields: Parameters/DeclaredParameterNames (always),
+// Dependencies (always, nil when the schema declares none), and Resources
+// (best-effort -- an ExtractResources failure is logged but does not block
+// the other fields, since a malformed execution.resources section is
+// independent of parameter/dependency validity). A Parse failure leaves all
+// of these fields at their zero value (fail-closed: no unvalidated data).
+func applyParsedSchemaMeta(meta *parser.WorkflowMeta, w *models.RemediationWorkflow, schemaParser *dsschema.Parser, logger logr.Logger) {
+	wfID := w.WorkflowID
+
+	parsed, err := schemaParser.Parse(w.Content)
+	if err != nil {
+		logger.Error(err, "failed to parse workflow schema Content, parameter validation will strip all LLM params (fail-closed)",
+			"workflow_id", wfID)
+		return
+	}
+
+	meta.Parameters = parsed.Parameters
+	meta.DeclaredParameterNames = declaredParameterNames(parsed.Parameters)
+	meta.Dependencies = schemaParser.ExtractDependencies(parsed)
+
+	resources, resErr := schemaParser.ExtractResources(parsed)
+	if resErr != nil {
+		logger.Error(resErr, "failed to extract execution.resources from workflow schema, WorkflowMeta.Resources left nil",
+			"workflow_id", wfID)
+		return
+	}
+	meta.Resources = resources
+}
+
+// declaredParameterNames builds the defense-in-depth allowlist WorkflowExecution
+// uses to strip undeclared parameters before injecting them into execution
+// resources (Issue #1661 Change 11a, mirrors #243's WorkflowQuerier semantics:
+// nil means no schema available, empty means the schema declares zero params).
+func declaredParameterNames(params []models.WorkflowParameter) map[string]bool {
+	names := make(map[string]bool, len(params))
+	for _, p := range params {
+		names[p.Name] = true
+	}
+	return names
 }

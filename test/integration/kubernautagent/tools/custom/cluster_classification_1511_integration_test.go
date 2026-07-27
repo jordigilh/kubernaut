@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -28,22 +29,24 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 )
 
-// IT-KA-1511-001: the `cluster` discovery param reaches a real DataStorage
-// instance through the production dispatch path (BR-FLEET-003, #1511, AU-3).
-// The DS server does not yet apply cluster-based filtering (that is Phase 5,
-// proven separately by IT-DS-1511-001..003 against real PostgreSQL) -- this
-// test proves the KA -> ogen client -> real DS HTTP call succeeds end-to-end
-// with the new query parameter present, i.e. the wiring itself is correct
-// and introduces no regression for non-fleet callers.
-var _ = Describe("IT-KA-1511-001: cluster classification param reaches real DataStorage (BR-FLEET-003)", Label("integration", "fleet"), func() {
+// IT-KA-1511-001: the `cluster` discovery param reaches KA's own workflow
+// catalog cache through the production dispatch path (BR-FLEET-003, #1511,
+// AU-3). #1677 Phase 2e (DD-WORKFLOW-019): the discovery tools no longer
+// round-trip through DataStorage -- filtering (including cluster-based
+// filtering, ported in Phase 2b's cache_filter.go) now happens against KA's
+// own informer-backed cache. This test proves the KA -> workflowcatalog.
+// Catalog dispatch succeeds end-to-end with the ClusterClassification signal
+// field present, i.e. the wiring itself is correct and introduces no
+// regression for non-fleet callers.
+var _ = Describe("IT-KA-1511-001: cluster classification param reaches KA's workflow catalog (BR-FLEET-003)", Label("integration", "fleet"), func() {
 
 	var reg *registry.Registry
 
 	BeforeEach(func() {
-		Expect(ogenClient).NotTo(BeNil(), "ogen client must be initialized by SynchronizedBeforeSuite")
+		Expect(wfCatalog).NotTo(BeNil(), "workflow catalog must be initialized by SynchronizedBeforeSuite")
 
 		reg = registry.New()
-		allTools := custom.NewAllTools(ogenClient)
+		allTools := custom.NewAllTools(wfCatalog, nil, logr.Discard())
 		for _, t := range allTools {
 			reg.Register(t)
 		}

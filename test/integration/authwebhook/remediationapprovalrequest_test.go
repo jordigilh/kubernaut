@@ -31,12 +31,12 @@ import (
 
 // ApprovalDecisionScenario defines test data for business outcome validation
 type ApprovalDecisionScenario struct {
-	testID              string
-	businessOutcome     string
-	auditorQuestion     string
-	complianceControl   string
-	decision        remediationv1.ApprovalDecision
-	decisionMessage string
+	testID            string
+	businessOutcome   string
+	auditorQuestion   string
+	complianceControl string
+	decision          remediationv1.ApprovalDecision
+	decisionMessage   string
 }
 
 var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution", func() {
@@ -47,11 +47,11 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		namespace = "default"
+		namespace = defaultFixture
 	})
 
-	// Helper to create RAR with scenario-specific decision
-	createRAR := func(scenario ApprovalDecisionScenario, testSuffix string) *remediationv1.RemediationApprovalRequest {
+	// Helper to create RAR with a unique name per test scenario
+	createRAR := func(testSuffix string) *remediationv1.RemediationApprovalRequest {
 		return &remediationv1.RemediationApprovalRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-rar-" + strings.ToLower(testSuffix) + "-" + randomSuffix(),
@@ -71,10 +71,10 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 				InvestigationSummary: "Memory leak detected in payment service",
 				WhyApprovalRequired:  "Medium confidence requires human validation",
 				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-					WorkflowID:     "restart-pod-v1",
-					Version:        "1.0.0",
+					WorkflowID:      "restart-pod-v1",
+					Version:         "1.0.0",
 					ExecutionBundle: "kubernaut/restart-pod:v1",
-					Rationale:      "Standard pod restart for memory leak",
+					Rationale:       "Standard pod restart for memory leak",
 				},
 				RecommendedActions: []remediationv1.ApprovalRecommendedAction{
 					{Action: "Restart pod", Rationale: "Clear memory leak"},
@@ -93,7 +93,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 	DescribeTable("Approval Decision Scenarios - SOC 2 Compliance Validation",
 		func(scenario ApprovalDecisionScenario) {
 			// BUSINESS ACTION: Create RAR
-			rar := createRAR(scenario, scenario.testID)
+			rar := createRAR(scenario.testID)
 			createAndWaitForCRD(ctx, k8sClient, rar)
 
 			// BUSINESS ACTION: Operator makes decision
@@ -186,10 +186,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			// BUSINESS RISK: Invalid decisions corrupt audit trail
 			// BUSINESS OUTCOME: Only valid decisions (Approved/Rejected/Expired) accepted
 
-			rar := createRAR(ApprovalDecisionScenario{
-				testID:          "INT-RAR-03",
-				businessOutcome: "Audit Trail Integrity",
-			}, "invalid")
+			rar := createRAR("invalid")
 			createAndWaitForCRD(ctx, k8sClient, rar)
 
 			By("Operator provides invalid decision")
@@ -219,10 +216,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			// SECURITY OUTCOME: User-provided DecidedBy MUST be overwritten by webhook
 			// COMPLIANCE: SOC 2 CC8.1 requires authenticated identity
 
-			rar := createRAR(ApprovalDecisionScenario{
-				testID:          "INT-RAR-04",
-				businessOutcome: "Identity Forgery Prevention",
-			}, "forgery")
+			rar := createRAR("forgery")
 			createAndWaitForCRD(ctx, k8sClient, rar)
 
 			By("Operator attempts to forge identity")
@@ -268,10 +262,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			// COMPLIANCE: DD-WEBHOOK-003 (Webhook-Complete Audit Pattern)
 			// AUDITOR NEED: Separate audit trail for authentication step
 
-			rar := createRAR(ApprovalDecisionScenario{
-				testID:          "INT-RAR-05",
-				businessOutcome: "Webhook Audit Event Emission",
-			}, "audit")
+			rar := createRAR("audit")
 			createAndWaitForCRD(ctx, k8sClient, rar)
 
 			By("Operator approves via webhook")
@@ -361,10 +352,7 @@ var _ = Describe("BR-AUTH-001: RemediationApprovalRequest Decision Attribution",
 			// BUSINESS OUTCOME: End-to-end audit trail from webhook to controller
 			// COMPLIANCE: SOC 2 CC8.1 (User Attribution across service boundary)
 
-			rar := createRAR(ApprovalDecisionScenario{
-				testID:          "INT-RAR-06",
-				businessOutcome: "DecidedBy Preservation for RO Audit",
-			}, "preservation")
+			rar := createRAR("preservation")
 			createAndWaitForCRD(ctx, k8sClient, rar)
 
 			By("Operator approves via webhook")

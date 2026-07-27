@@ -13,26 +13,53 @@
     "goDuration": {
       "description": "Go time.Duration string (e.g. \"30s\", \"5m\", \"1h30m\")",
       "type": "string",
-      "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))*$"
+      "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))*$"
     },
     "serviceToggle": {
       "description": "Simple enabled/disabled toggle with no other configuration",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": true }
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        }
       }
     },
     "autoscaling": {
-      "description": "HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589). autoscaling/v2 is a stable core API — no CRD required.",
+      "description": "HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589). autoscaling/v2 is a stable core API \u2014 no CRD required.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": false, "description": "Create a HorizontalPodAutoscaler for this service" },
-        "minReplicas": { "type": "integer", "default": 1, "minimum": 1 },
-        "maxReplicas": { "type": "integer", "default": 5, "minimum": 1 },
-        "cpuTarget": { "type": "integer", "default": 75, "minimum": 1, "maximum": 100, "description": "Target average CPU utilization percentage" },
-        "memoryTarget": { "type": "integer", "default": 80, "minimum": 0, "maximum": 100, "description": "Target average memory utilization percentage (0 disables the memory metric)" }
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Create a HorizontalPodAutoscaler for this service"
+        },
+        "minReplicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 1
+        },
+        "maxReplicas": {
+          "type": "integer",
+          "default": 5,
+          "minimum": 1
+        },
+        "cpuTarget": {
+          "type": "integer",
+          "default": 75,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Target average CPU utilization percentage"
+        },
+        "memoryTarget": {
+          "type": "integer",
+          "default": 80,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Target average memory utilization percentage (0 disables the memory metric)"
+        }
       }
     },
     "resources": {
@@ -44,16 +71,24 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "memory": { "$ref": "#/definitions/resourceQuantity" },
-            "cpu": { "$ref": "#/definitions/resourceQuantity" }
+            "memory": {
+              "$ref": "#/definitions/resourceQuantity"
+            },
+            "cpu": {
+              "$ref": "#/definitions/resourceQuantity"
+            }
           }
         },
         "limits": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "memory": { "$ref": "#/definitions/resourceQuantity" },
-            "cpu": { "$ref": "#/definitions/resourceQuantity" }
+            "memory": {
+              "$ref": "#/definitions/resourceQuantity"
+            },
+            "cpu": {
+              "$ref": "#/definitions/resourceQuantity"
+            }
           }
         }
       }
@@ -67,11 +102,43 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": false },
-        "tokenURL": { "type": "string", "default": "" },
-        "credentialsSecretRef": { "type": "string", "default": "", "description": "K8s Secret with keys: client-id, client-secret" },
-        "scopes": { "type": "array", "items": { "type": "string" }, "default": [] },
-        "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying tokenURL's TLS certificate; defaults to the shared inter-service CA when empty" }
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "tokenURL": {
+          "type": "string",
+          "default": ""
+        },
+        "credentialsSecretRef": {
+          "type": "string",
+          "default": "",
+          "description": "K8s Secret with keys: client-id, client-secret"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "tlsCAFile": {
+          "type": "string",
+          "default": "",
+          "description": "Path to a CA bundle for verifying tokenURL's TLS certificate; defaults to the shared inter-service CA when empty"
+        }
+      }
+    },
+    "fleetOAuth2CredentialsOverride": {
+      "description": "Per-service OAuth2 credentials override (Issue #1707 follow-up): every other fleet.oauth2 field moved to global.fleet.oauth2 -- only credentialsSecretRef remains overridable per service.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "credentialsSecretRef": {
+          "type": "string",
+          "default": "",
+          "description": "K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only."
+        }
       }
     },
     "serviceConfig": {
@@ -81,7 +148,11 @@
       "properties": {
         "type": {
           "type": "string",
-          "enum": ["ClusterIP", "NodePort", "LoadBalancer"],
+          "enum": [
+            "ClusterIP",
+            "NodePort",
+            "LoadBalancer"
+          ],
           "default": "ClusterIP",
           "description": "Kubernetes Service type"
         }
@@ -90,16 +161,39 @@
     "nodeSelector": {
       "description": "Kubernetes node selector",
       "type": "object",
-      "additionalProperties": { "type": "string" }
+      "additionalProperties": {
+        "type": "string"
+      }
     },
     "pdb": {
       "description": "PodDisruptionBudget configuration. DD-PLATFORM-004: enabled by default (maxUnavailable: 1) for all services that render a PDB (see templates/pdb.yaml); minAvailable is intentionally not the default because it blocks all voluntary disruption at replicas=1 (PodDisruptionBudgetAtLimit).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": true },
-        "minAvailable": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
-        "maxUnavailable": { "oneOf": [{ "type": "integer" }, { "type": "string" }] }
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "minAvailable": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "maxUnavailable": {
+          "oneOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
       }
     },
     "affinity": {
@@ -109,23 +203,47 @@
     "topologySpreadConstraints": {
       "description": "Kubernetes topology spread constraints",
       "type": "array",
-      "items": { "type": "object" }
+      "items": {
+        "type": "object"
+      }
     },
     "toleration": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "key": { "type": "string" },
-        "operator": { "type": "string", "enum": ["Equal", "Exists"] },
-        "value": { "type": "string" },
-        "effect": { "type": "string", "enum": ["NoSchedule", "PreferNoSchedule", "NoExecute"] },
-        "tolerationSeconds": { "type": "integer", "minimum": 0 }
+        "key": {
+          "type": "string"
+        },
+        "operator": {
+          "type": "string",
+          "enum": [
+            "Equal",
+            "Exists"
+          ]
+        },
+        "value": {
+          "type": "string"
+        },
+        "effect": {
+          "type": "string",
+          "enum": [
+            "NoSchedule",
+            "PreferNoSchedule",
+            "NoExecute"
+          ]
+        },
+        "tolerationSeconds": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "tolerations": {
       "description": "Pod tolerations (overrides global.tolerations for this component)",
       "type": "array",
-      "items": { "$ref": "#/definitions/toleration" }
+      "items": {
+        "$ref": "#/definitions/toleration"
+      }
     },
     "serviceLogging": {
       "description": "Structured logging level for service ConfigMap (Issue #875)",
@@ -134,7 +252,12 @@
       "properties": {
         "level": {
           "type": "string",
-          "enum": ["DEBUG", "INFO", "WARN", "ERROR"],
+          "enum": [
+            "DEBUG",
+            "INFO",
+            "WARN",
+            "ERROR"
+          ],
           "default": "INFO",
           "description": "Log level (Issue #875)"
         }
@@ -163,7 +286,10 @@
             },
             "separator": {
               "type": "string",
-              "enum": ["/", "-"],
+              "enum": [
+                "/",
+                "-"
+              ],
               "default": "/",
               "description": "Character joining namespace to service name. Use '/' for nested registries (Harbor, Artifactory), '-' for flat registries (quay.io, Docker Hub)."
             },
@@ -179,7 +305,11 @@
             },
             "pullPolicy": {
               "type": "string",
-              "enum": ["Always", "IfNotPresent", "Never"],
+              "enum": [
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ],
               "default": "IfNotPresent",
               "description": "Image pull policy"
             }
@@ -192,15 +322,23 @@
           "items": {
             "type": "object",
             "properties": {
-              "name": { "type": "string" }
+              "name": {
+                "type": "string"
+              }
             },
-            "required": ["name"]
+            "required": [
+              "name"
+            ]
           }
         },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
         "tolerations": {
           "type": "array",
-          "items": { "$ref": "#/definitions/toleration" },
+          "items": {
+            "$ref": "#/definitions/toleration"
+          },
           "default": [],
           "description": "Pod tolerations"
         },
@@ -208,45 +346,230 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Multi-cluster fleet federation on/off (Issue #1707), consolidated from four independent per-service toggles (gateway/remediationorchestrator/apifrontend/effectivenessmonitor fleet.enabled)"
+            },
+            "backend": {
+              "type": "string",
+              "enum": [
+                "",
+                "fleetmetadatacache",
+                "acm"
+              ],
+              "default": "",
+              "description": "Backend adapter for GW/RO's federated scope-check: fleetmetadatacache (FMC HTTP API) or acm (ACM Search). Defaults to fleetmetadatacache when empty."
+            },
+            "endpoint": {
+              "type": "string",
+              "default": "",
+              "description": "Endpoint for the selected backend. Auto-derived for fleetmetadatacache; required for acm."
+            },
             "mcpGatewayEndpoint": {
               "type": "string",
               "default": "",
-              "description": "Shared MCP Gateway endpoint URL, used as the fallback when a service's own fleet.mcpGatewayEndpoint is unset"
+              "description": "Shared MCP Gateway endpoint URL, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override)."
             },
             "mcpGatewayType": {
               "type": "string",
               "default": "",
-              "description": "Shared MCP Gateway type (eaigw or kuadrant), used as the fallback when a service's own fleet.mcpGatewayType is unset"
+              "description": "Shared MCP Gateway type (eaigw or kuadrant), used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override).",
+              "enum": [
+                "",
+                "eaigw",
+                "kuadrant"
+              ]
             },
             "tlsCAFile": {
               "type": "string",
               "default": "",
-              "description": "Shared CA bundle path for verifying the MCP Gateway's TLS certificate, used as the fallback when a service's own fleet.tlsCAFile is unset"
+              "description": "Shared CA bundle path for verifying the MCP Gateway's TLS certificate, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override)."
+            },
+            "tokenSecretRef": {
+              "type": "string",
+              "default": "",
+              "description": "K8s Secret (key: token) with a bearer token for authenticating to the ACM Search GraphQL API (backend=acm). Mandatory when backend=acm; FleetConfig.Validate() rejects backend=acm without it (#1556)."
             },
             "oauth2": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "OAuth2 client_credentials auth on/off for MCP Gateway authentication (Issue #1707 follow-up: global-only, no per-service override)."
+                },
                 "tokenURL": {
                   "type": "string",
                   "default": "",
-                  "description": "Shared OAuth2 token URL for MCP Gateway authentication, used as the fallback when a service's own fleet.oauth2.tokenURL is unset"
+                  "description": "Shared OAuth2 token URL for MCP Gateway authentication, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override)."
                 },
                 "credentialsSecretRef": {
                   "type": "string",
                   "default": "",
-                  "description": "Shared Secret name (keys: client-id, client-secret) for MCP Gateway OAuth2, used as the fallback when a service's own fleet.oauth2.credentialsSecretRef is unset"
+                  "description": "Shared Secret name (keys: client-id, client-secret) for MCP Gateway OAuth2, used as the fallback when a service's own fleet.oauth2.credentialsSecretRef is unset (the one field that remains overridable per service)."
                 },
                 "scopes": {
                   "type": "array",
-                  "items": { "type": "string" },
+                  "items": {
+                    "type": "string"
+                  },
                   "default": [],
-                  "description": "Shared OAuth2 scopes for MCP Gateway authentication, used as the fallback when a service's own fleet.oauth2.scopes is unset"
+                  "description": "Shared OAuth2 scopes for MCP Gateway authentication, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override)."
                 },
                 "tlsCAFile": {
                   "type": "string",
                   "default": "",
-                  "description": "Shared CA bundle path for verifying tokenURL's TLS certificate, used as the fallback when a service's own fleet.oauth2.tlsCAFile is unset"
+                  "description": "Shared CA bundle path for verifying tokenURL's TLS certificate, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override)."
+                }
+              }
+            }
+          }
+        },
+        "llmProfiles": {
+          "type": "object",
+          "description": "Named LLM provider profiles, referenced by name from kubernautAgent.llmProfileRef, kubernautAgent.phaseModels, kubernautAgent.alignmentCheck.llmProfileRef, apifrontend.llmProfileRef, and apifrontend.config.severityTriage.llmProfileRef (DD-PLATFORM-007). Mirrors the Kubernaut Operator's spec.llmProfiles authoring model -- a profile defined once is reusable by any consumer without re-deriving its field set.",
+          "default": {},
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "provider",
+              "model",
+              "credentialsSecretName"
+            ],
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "openai",
+                  "anthropic",
+                  "vertex_ai",
+                  "openai_compatible"
+                ],
+                "description": "LLM provider name. NOT currently supported: bedrock (tracked in #1582). For Mistral/Ollama/HuggingFace TGI/self-hosted vLLM or LlamaStack, use 'openai_compatible' with `endpoint` set. For Azure OpenAI, use 'openai' or 'openai_compatible' with `azureApiVersion` set (#1600) -- there is no dedicated 'azure' provider value."
+              },
+              "model": {
+                "type": "string",
+                "description": "LLM model name (e.g. gpt-4o, claude-sonnet-4-20250514, gemini-2.5-pro)."
+              },
+              "credentialsSecretName": {
+                "type": "string",
+                "description": "Name of the pre-existing K8s Secret containing this profile's LLM API credentials."
+              },
+              "endpoint": {
+                "type": "string",
+                "default": "",
+                "description": "LLM endpoint URL override. Empty uses the provider default."
+              },
+              "temperature": {
+                "type": "number",
+                "default": 0.7,
+                "minimum": 0,
+                "maximum": 2,
+                "description": "LLM sampling temperature."
+              },
+              "maxRetries": {
+                "type": "integer",
+                "default": 3,
+                "minimum": 0,
+                "description": "Max retries for LLM requests."
+              },
+              "timeoutSeconds": {
+                "type": "integer",
+                "default": 120,
+                "minimum": 1,
+                "description": "LLM request timeout in seconds."
+              },
+              "vertexProject": {
+                "type": "string",
+                "default": "",
+                "description": "GCP project ID. Required for vertex_ai provider."
+              },
+              "vertexLocation": {
+                "type": "string",
+                "default": "",
+                "description": "GCP region (e.g. us-central1). Required for vertex_ai provider."
+              },
+              "azureApiVersion": {
+                "type": "string",
+                "default": "",
+                "description": "Azure OpenAI API version (e.g. 2024-10-21). Set alongside provider: openai/openai_compatible to switch to Azure's deployment-scoped URL and api-key auth (#1600); `model` doubles as the Azure deployment ID."
+              },
+              "tlsCaFile": {
+                "type": "string",
+                "default": "",
+                "description": "Path to PEM CA cert for internal LLM endpoints behind a private CA."
+              },
+              "oauth2": {
+                "type": "object",
+                "description": "OAuth2 client credentials grant for enterprise LLM gateway authentication.",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Enable OAuth2 client credentials token acquisition for LLM requests."
+                  },
+                  "tokenURL": {
+                    "type": "string",
+                    "default": "",
+                    "description": "OAuth2 token endpoint URL (e.g. Keycloak, Azure AD)."
+                  },
+                  "credentialsSecretRef": {
+                    "type": "string",
+                    "default": "",
+                    "description": "K8s Secret name containing client-id and client-secret keys."
+                  },
+                  "scopes": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Space-separated OAuth2 scopes."
+                  }
+                }
+              },
+              "reasoning": {
+                "type": "object",
+                "description": "Model-aware reasoning/thinking token support (BR-AI-086). Disabled by default; opt-in only.",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Request reasoning/thinking output from the model where the provider/model supports it."
+                  },
+                  "budgetTokens": {
+                    "type": "integer",
+                    "default": 0,
+                    "minimum": 0,
+                    "description": "Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). 0 lets the provider/client choose a default."
+                  },
+                  "effort": {
+                    "type": "string",
+                    "enum": [
+                      "",
+                      "none",
+                      "minimal",
+                      "low",
+                      "medium",
+                      "high",
+                      "xhigh"
+                    ],
+                    "default": "",
+                    "description": "Unified, provider-agnostic reasoning-depth knob (#1604): empty lets the vendor/provider choose its own default."
+                  },
+                  "capabilityOverride": {
+                    "type": "string",
+                    "enum": [
+                      "",
+                      "auto",
+                      "force_on",
+                      "force_off"
+                    ],
+                    "default": "",
+                    "description": "Overrides vendor/model-name auto-detection of reasoning support. Only meaningful for self-hosted/custom models served via the openai_compatible provider."
+                  }
                 }
               }
             }
@@ -271,7 +594,11 @@
       "properties": {
         "mode": {
           "type": "string",
-          "enum": ["hook", "cert-manager", "manual"],
+          "enum": [
+            "hook",
+            "cert-manager",
+            "manual"
+          ],
           "default": "hook",
           "description": "TLS mode: 'hook' (self-signed via Helm hooks), 'cert-manager' (production, requires cert-manager), or 'manual' (user-managed certificates)"
         },
@@ -290,7 +617,10 @@
                 },
                 "kind": {
                   "type": "string",
-                  "enum": ["Issuer", "ClusterIssuer"],
+                  "enum": [
+                    "Issuer",
+                    "ClusterIssuer"
+                  ],
                   "default": "ClusterIssuer",
                   "description": "Kind of the issuer resource"
                 },
@@ -332,7 +662,11 @@
       "description": "Gateway service (AlertManager webhook target + external signal ingestion)",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
         "config": {
           "type": "object",
           "additionalProperties": false,
@@ -341,10 +675,36 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "maxConcurrentRequests": { "type": "integer", "default": 100, "minimum": 0 },
-                "readTimeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30s" },
-                "writeTimeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30s" },
-                "k8sRequestTimeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "15s", "description": "Per-handler K8s API timeout (BR-GATEWAY-102)" }
+                "maxConcurrentRequests": {
+                  "type": "integer",
+                  "default": 100,
+                  "minimum": 0
+                },
+                "readTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30s"
+                },
+                "writeTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30s"
+                },
+                "k8sRequestTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "15s",
+                  "description": "Per-handler K8s API timeout (BR-GATEWAY-102)"
+                }
               }
             },
             "middleware": {
@@ -353,7 +713,9 @@
               "properties": {
                 "trustedProxyCIDRs": {
                   "type": "array",
-                  "items": { "type": "string" },
+                  "items": {
+                    "type": "string"
+                  },
                   "default": [],
                   "description": "Issue #673 L-1: CIDRs whose proxy headers are trusted"
                 }
@@ -366,14 +728,27 @@
               "properties": {
                 "allowedOrigins": {
                   "type": "array",
-                  "items": { "type": "string" },
-                  "default": ["https://no-browser-clients.invalid"],
-                  "description": "Allowed CORS origins. M2M API — deny by default."
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": [
+                    "https://no-browser-clients.invalid"
+                  ],
+                  "description": "Allowed CORS origins. M2M API \u2014 deny by default."
                 },
                 "allowedMethods": {
                   "type": "array",
-                  "items": { "type": "string" },
-                  "default": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+                  "items": {
+                    "type": "string"
+                  },
+                  "default": [
+                    "GET",
+                    "POST",
+                    "PUT",
+                    "PATCH",
+                    "DELETE",
+                    "OPTIONS"
+                  ],
                   "description": "HTTP methods allowed for cross-origin requests."
                 },
                 "allowCredentials": {
@@ -393,13 +768,24 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "cooldownPeriod": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "5m" }
+                "cooldownPeriod": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "5m"
+                }
               }
             }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "service": { "$ref": "#/definitions/serviceConfig" },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "service": {
+          "$ref": "#/definitions/serviceConfig"
+        },
         "auth": {
           "type": "object",
           "description": "BR-GATEWAY-036/037: Auth middleware configuration",
@@ -412,35 +798,52 @@
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {
-                  "name": { "type": "string" },
-                  "serviceAccount": { "type": "string" },
-                  "namespace": { "type": "string" }
+                  "name": {
+                    "type": "string"
+                  },
+                  "serviceAccount": {
+                    "type": "string"
+                  },
+                  "namespace": {
+                    "type": "string"
+                  }
                 }
               }
             }
           }
         },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "logging": { "$ref": "#/definitions/serviceLogging" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
+        "logging": {
+          "$ref": "#/definitions/serviceLogging"
+        },
+        "affinity": {
+          "$ref": "#/definitions/affinity"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/definitions/topologySpreadConstraints"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        },
         "fleet": {
           "type": "object",
-          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003)",
+          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003). On/off toggle consolidated into global.fleet.enabled (Issue #1707); backend/endpoint/mcpGatewayEndpoint/mcpGatewayType/tlsCAFile/tokenSecretRef/oauth2.{enabled,tokenURL,scopes,tlsCAFile} consolidated into global.fleet.* (Issue #1707 follow-up).",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false },
-            "backend": { "type": "string", "default": "", "description": "Backend adapter: fleetmetadatacache or acm" },
-            "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" },
-            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for federated scope checks. Required when fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
-            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
-            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
-            "tokenSecretRef": { "type": "string", "default": "", "description": "K8s Secret (key: token) with an ACM Search bearer token. Mandatory when backend=acm; FleetConfig.Validate() rejects backend=acm without it (#1556)." },
-            "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
+            "oauth2": {
+              "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            }
           }
         }
       }
@@ -450,8 +853,14 @@
       "description": "DataStorage service (audit trail, workflow catalog)",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
-        "autoscaling": { "$ref": "#/definitions/autoscaling" },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
+        "autoscaling": {
+          "$ref": "#/definitions/autoscaling"
+        },
         "config": {
           "type": "object",
           "additionalProperties": false,
@@ -461,19 +870,59 @@
               "additionalProperties": false,
               "description": "DataStorage server configuration",
               "properties": {
-                "maxBodySize": { "type": "string", "default": "5242880", "description": "#1048 Phase 4 / SC-5: Maximum request body size in bytes" },
-                "maxConcurrentRequests": { "type": "integer", "default": 100, "minimum": 0, "description": "Maximum concurrent request limit" },
-                "readTimeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30s", "description": "Server read timeout" },
-                "corsAllowedOrigins": { "type": "array", "items": { "type": "string" }, "description": "#1048 Phase 4 / AC-4: CORS allowed origins" },
-                "signerCertDir": { "type": "string", "default": "/etc/certs", "description": "#1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key)" },
+                "maxBodySize": {
+                  "type": "string",
+                  "default": "5242880",
+                  "description": "#1048 Phase 4 / SC-5: Maximum request body size in bytes"
+                },
+                "maxConcurrentRequests": {
+                  "type": "integer",
+                  "default": 100,
+                  "minimum": 0,
+                  "description": "Maximum concurrent request limit"
+                },
+                "readTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30s",
+                  "description": "Server read timeout"
+                },
+                "corsAllowedOrigins": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "#1048 Phase 4 / AC-4: CORS allowed origins"
+                },
+                "signerCertDir": {
+                  "type": "string",
+                  "default": "/etc/certs",
+                  "description": "#1048 Phase 5 / AU-9: Directory containing signing cert (tls.crt, tls.key)"
+                },
                 "rateLimit": {
                   "type": "object",
                   "additionalProperties": false,
                   "description": "GAP-09 (Issue #1505) / SC-5: Per-IP rate limiting for the DS HTTP API. Disabled by default.",
                   "properties": {
-                    "enabled": { "type": "boolean", "default": false },
-                    "requestsPerSecond": { "type": "number", "default": 50, "minimum": 0, "description": "Sustained per-IP requests/second" },
-                    "burst": { "type": "integer", "default": 100, "minimum": 0, "description": "Per-IP token bucket burst size" }
+                    "enabled": {
+                      "type": "boolean",
+                      "default": false
+                    },
+                    "requestsPerSecond": {
+                      "type": "number",
+                      "default": 50,
+                      "minimum": 0,
+                      "description": "Sustained per-IP requests/second"
+                    },
+                    "burst": {
+                      "type": "integer",
+                      "default": 100,
+                      "minimum": 0,
+                      "description": "Per-IP token bucket burst size"
+                    }
                   }
                 }
               }
@@ -482,10 +931,32 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "sslMode": { "type": "string", "default": "disable", "description": "PostgreSQL SSL mode" },
-                "maxOpenConns": { "type": "integer", "default": 100, "minimum": 0, "description": "Maximum open database connections" },
-                "maxIdleConns": { "type": "integer", "default": 20, "minimum": 0, "description": "Maximum idle database connections" },
-                "connMaxLifetime": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "1h", "description": "Maximum connection lifetime" }
+                "sslMode": {
+                  "type": "string",
+                  "default": "disable",
+                  "description": "PostgreSQL SSL mode"
+                },
+                "maxOpenConns": {
+                  "type": "integer",
+                  "default": 100,
+                  "minimum": 0,
+                  "description": "Maximum open database connections"
+                },
+                "maxIdleConns": {
+                  "type": "integer",
+                  "default": 20,
+                  "minimum": 0,
+                  "description": "Maximum idle database connections"
+                },
+                "connMaxLifetime": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "1h",
+                  "description": "Maximum connection lifetime"
+                }
               }
             },
             "redis": {
@@ -493,17 +964,42 @@
               "additionalProperties": false,
               "description": "Redis DLQ configuration",
               "properties": {
-                "dlqMaxLen": { "type": "integer", "default": 10000, "minimum": 0, "description": "#1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound" },
+                "dlqMaxLen": {
+                  "type": "integer",
+                  "default": 10000,
+                  "minimum": 0,
+                  "description": "#1048 Phase 5 / AU-11: Redis DLQ MAXLEN bound"
+                },
                 "tls": {
                   "type": "object",
                   "additionalProperties": false,
                   "description": "#1048 Phase 5 / AU-9: Redis TLS client configuration",
                   "properties": {
-                    "enabled": { "type": "boolean", "default": false, "description": "Enable TLS for Redis/Valkey connections" },
-                    "certFile": { "type": "string", "default": "", "description": "Client certificate file path (mTLS)" },
-                    "keyFile": { "type": "string", "default": "", "description": "Client key file path (mTLS)" },
-                    "caFile": { "type": "string", "default": "", "description": "CA bundle to verify Redis server" },
-                    "insecureSkipVerify": { "type": "boolean", "default": false, "description": "Skip TLS verification (dev/test only)" }
+                    "enabled": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Enable TLS for Redis/Valkey connections"
+                    },
+                    "certFile": {
+                      "type": "string",
+                      "default": "",
+                      "description": "Client certificate file path (mTLS)"
+                    },
+                    "keyFile": {
+                      "type": "string",
+                      "default": "",
+                      "description": "Client key file path (mTLS)"
+                    },
+                    "caFile": {
+                      "type": "string",
+                      "default": "",
+                      "description": "CA bundle to verify Redis server"
+                    },
+                    "insecureSkipVerify": {
+                      "type": "boolean",
+                      "default": false,
+                      "description": "Skip TLS verification (dev/test only)"
+                    }
                   }
                 }
               }
@@ -513,10 +1009,32 @@
               "additionalProperties": false,
               "description": "#1048 Phase 5 / AU-11: Retention worker configuration (BR-AUDIT-009)",
               "properties": {
-                "enabled": { "type": "boolean", "default": false, "description": "Enable periodic purge of expired audit events" },
-                "interval": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "24h", "description": "How often the retention worker runs" },
-                "batchSize": { "type": "integer", "default": 1000, "minimum": 1, "description": "Max rows per DELETE batch" },
-                "defaultDays": { "type": "integer", "default": 2555, "minimum": 0, "description": "Application-level default retention in days (ADR-034: 7 years)" }
+                "enabled": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Enable periodic purge of expired audit events"
+                },
+                "interval": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "24h",
+                  "description": "How often the retention worker runs"
+                },
+                "batchSize": {
+                  "type": "integer",
+                  "default": 1000,
+                  "minimum": 1,
+                  "description": "Max rows per DELETE batch"
+                },
+                "defaultDays": {
+                  "type": "integer",
+                  "default": 2555,
+                  "minimum": 0,
+                  "description": "Application-level default retention in days (ADR-034: 7 years)"
+                }
               }
             },
             "auditHashKey": {
@@ -524,9 +1042,21 @@
               "additionalProperties": false,
               "description": "GAP-05 (Issue #1505) / AU-9: Optional keyed HMAC-SHA256 audit hash chain",
               "properties": {
-                "enabled": { "type": "boolean", "default": false, "description": "Enable keyed HMAC-SHA256 hash chaining (requires a pre-created Secret)" },
-                "existingSecret": { "type": "string", "default": "", "description": "Pre-created Secret name; defaults to datastorage-audit-hmac-key when unset" },
-                "secretKey": { "type": "string", "default": "hmacKey", "description": "Key name within the secret's audit-hmac-key.yaml file" }
+                "enabled": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Enable keyed HMAC-SHA256 hash chaining (requires a pre-created Secret)"
+                },
+                "existingSecret": {
+                  "type": "string",
+                  "default": "",
+                  "description": "Pre-created Secret name; defaults to datastorage-audit-hmac-key when unset"
+                },
+                "secretKey": {
+                  "type": "string",
+                  "default": "hmacKey",
+                  "description": "Key name within the secret's audit-hmac-key.yaml file"
+                }
               }
             }
           }
@@ -536,16 +1066,36 @@
           "default": "",
           "description": "DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret."
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "service": { "$ref": "#/definitions/serviceConfig" },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "logging": { "$ref": "#/definitions/serviceLogging" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "service": {
+          "$ref": "#/definitions/serviceConfig"
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
+        "logging": {
+          "$ref": "#/definitions/serviceLogging"
+        },
+        "affinity": {
+          "$ref": "#/definitions/affinity"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/definitions/topologySpreadConstraints"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        }
       }
     },
     "aianalysis": {
@@ -553,13 +1103,26 @@
       "description": "AIAnalysis controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
         "rego": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "confidenceThreshold": {
-              "oneOf": [{ "type": "number", "minimum": 0, "maximum": 1 }, { "type": "null" }],
+              "oneOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "description": "BR-AI-076: nil = use Rego default (0.8)"
             }
           }
@@ -569,19 +1132,43 @@
           "description": "Approval policy externalization. Provide content via --set-file or reference an existing ConfigMap.",
           "additionalProperties": false,
           "properties": {
-            "content": { "type": "string", "default": "" },
-            "existingConfigMap": { "type": "string", "default": "" }
+            "content": {
+              "type": "string",
+              "default": ""
+            },
+            "existingConfigMap": {
+              "type": "string",
+              "default": ""
+            }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "logging": { "$ref": "#/definitions/serviceLogging" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
+        "logging": {
+          "$ref": "#/definitions/serviceLogging"
+        },
+        "affinity": {
+          "$ref": "#/definitions/affinity"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/definitions/topologySpreadConstraints"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        }
       }
     },
     "signalprocessing": {
@@ -589,14 +1176,26 @@
       "description": "SignalProcessing controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
         "policies": {
           "type": "object",
           "description": "Classification policy externalization (ADR-060). Provide content via --set-file or reference an existing ConfigMap.",
           "additionalProperties": false,
           "properties": {
-            "content": { "type": "string", "default": "", "description": "Raw Rego policy content. Inject via --set-file signalprocessing.policies.content=policy.rego" },
-            "existingConfigMap": { "type": "string", "default": "", "description": "Pre-existing ConfigMap with key 'policy.rego'. Mutually exclusive with 'content'." }
+            "content": {
+              "type": "string",
+              "default": "",
+              "description": "Raw Rego policy content. Inject via --set-file signalprocessing.policies.content=policy.rego"
+            },
+            "existingConfigMap": {
+              "type": "string",
+              "default": "",
+              "description": "Pre-existing ConfigMap with key 'policy.rego'. Mutually exclusive with 'content'."
+            }
           }
         },
         "proactiveSignalMappings": {
@@ -604,30 +1203,58 @@
           "description": "Proactive signal mappings (YAML, ADR-054). Optional.",
           "additionalProperties": false,
           "properties": {
-            "content": { "type": "string", "default": "" },
-            "existingConfigMap": { "type": "string", "default": "" }
+            "content": {
+              "type": "string",
+              "default": ""
+            },
+            "existingConfigMap": {
+              "type": "string",
+              "default": ""
+            }
           }
         },
         "fleet": {
           "type": "object",
-          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-054/BR-FLEET-003, ADR-068)",
+          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-054/BR-FLEET-003, ADR-068). endpoint/mcpGatewayType consolidated into global.fleet.mcpGatewayEndpoint/mcpGatewayType (Issue #1707 follow-up) -- this also fixes a pre-existing gap where SP's own endpoint field had no global fallback at all.",
           "additionalProperties": false,
           "properties": {
-            "endpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster resource reads" },
-            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant; required to evaluate the cluster classification dimension. Falls back to global.fleet.mcpGatewayType when unset" },
-            "namespace": { "type": "string", "default": "", "description": "Restricts the ClusterRegistry CRD watch; empty watches all namespaces" },
-            "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
+            "namespace": {
+              "type": "string",
+              "default": "",
+              "description": "Restricts the ClusterRegistry CRD watch; empty watches all namespaces"
+            },
+            "oauth2": {
+              "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "logging": { "$ref": "#/definitions/serviceLogging" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
+        "logging": {
+          "$ref": "#/definitions/serviceLogging"
+        },
+        "affinity": {
+          "$ref": "#/definitions/affinity"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/definitions/topologySpreadConstraints"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        }
       }
     },
     "remediationorchestrator": {
@@ -635,8 +1262,14 @@
       "description": "RemediationOrchestrator controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
-        "resources": { "$ref": "#/definitions/resources" },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
         "config": {
           "type": "object",
           "additionalProperties": false,
@@ -645,23 +1278,102 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "global": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "1h", "description": "Global remediation timeout" },
-                "processing": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "5m", "description": "Signal processing phase timeout" },
-                "analyzing": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "10m", "description": "AI analysis phase timeout" },
-                "executing": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30m", "description": "Workflow execution phase timeout" },
-                "verifying": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30m", "description": "Effectiveness verification phase timeout" }
+                "global": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "1h",
+                  "description": "Global remediation timeout"
+                },
+                "processing": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "5m",
+                  "description": "Signal processing phase timeout"
+                },
+                "analyzing": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "10m",
+                  "description": "AI analysis phase timeout"
+                },
+                "executing": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30m",
+                  "description": "Workflow execution phase timeout"
+                },
+                "verifying": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30m",
+                  "description": "Effectiveness verification phase timeout"
+                }
               }
             },
             "routing": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "consecutiveFailureThreshold": { "type": "integer", "default": 3, "minimum": 1, "description": "Failures before cooldown" },
-                "consecutiveFailureCooldown": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "1h", "description": "Cooldown after consecutive failures" },
-                "recentlyRemediatedCooldown": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "5m", "description": "Cooldown for recently remediated signals" },
-                "ineffectiveChainThreshold": { "type": "integer", "default": 3, "minimum": 1, "description": "Ineffective workflow chain length before escalation" },
-                "recurrenceCountThreshold": { "type": "integer", "default": 5, "minimum": 1, "description": "Signal recurrence count before escalation" },
-                "ineffectiveTimeWindow": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "4h", "description": "Time window for ineffectiveness evaluation" }
+                "consecutiveFailureThreshold": {
+                  "type": "integer",
+                  "default": 3,
+                  "minimum": 1,
+                  "description": "Failures before cooldown"
+                },
+                "consecutiveFailureCooldown": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "1h",
+                  "description": "Cooldown after consecutive failures"
+                },
+                "recentlyRemediatedCooldown": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "5m",
+                  "description": "Cooldown for recently remediated signals"
+                },
+                "ineffectiveChainThreshold": {
+                  "type": "integer",
+                  "default": 3,
+                  "minimum": 1,
+                  "description": "Ineffective workflow chain length before escalation"
+                },
+                "recurrenceCountThreshold": {
+                  "type": "integer",
+                  "default": 5,
+                  "minimum": 1,
+                  "description": "Signal recurrence count before escalation"
+                },
+                "ineffectiveTimeWindow": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "4h",
+                  "description": "Time window for ineffectiveness evaluation"
+                }
               }
             },
             "effectivenessAssessment": {
@@ -669,7 +1381,11 @@
               "additionalProperties": false,
               "properties": {
                 "stabilizationWindow": {
-                  "allOf": [{ "$ref": "#/definitions/goDuration" }],
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
                   "default": "5m",
                   "description": "Time for system stabilization after remediation before assessment"
                 }
@@ -680,17 +1396,29 @@
               "additionalProperties": false,
               "properties": {
                 "gitOpsSyncDelay": {
-                  "allOf": [{ "$ref": "#/definitions/goDuration" }],
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
                   "default": "3m",
                   "description": "Expected time for GitOps tool (ArgoCD/Flux) to sync changes to cluster"
                 },
                 "operatorReconcileDelay": {
-                  "allOf": [{ "$ref": "#/definitions/goDuration" }],
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
                   "default": "1m",
                   "description": "Expected time for operator to reconcile after CR update"
                 },
                 "proactiveAlertDelay": {
-                  "allOf": [{ "$ref": "#/definitions/goDuration" }],
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
                   "default": "5m",
                   "description": "Extra delay for proactive alert resolution"
                 }
@@ -713,7 +1441,11 @@
               "description": "CRD retention TTL configuration (Issue #265)",
               "properties": {
                 "period": {
-                  "allOf": [{ "$ref": "#/definitions/goDuration" }],
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
                   "default": "24h",
                   "description": "Duration before terminal RemediationRequests are cleaned up"
                 }
@@ -721,27 +1453,38 @@
             }
           }
         },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "logging": { "$ref": "#/definitions/serviceLogging" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
+        "logging": {
+          "$ref": "#/definitions/serviceLogging"
+        },
+        "affinity": {
+          "$ref": "#/definitions/affinity"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/definitions/topologySpreadConstraints"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        },
         "fleet": {
           "type": "object",
-          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003)",
+          "description": "Multi-cluster fleet configuration (BR-INTEGRATION-065, ADR-068, DD-FLEET-003). On/off toggle consolidated into global.fleet.enabled (Issue #1707); backend/endpoint/mcpGatewayEndpoint/mcpGatewayType/tlsCAFile/tokenSecretRef/oauth2.{enabled,tokenURL,scopes,tlsCAFile} consolidated into global.fleet.* (Issue #1707 follow-up).",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false },
-            "backend": { "type": "string", "default": "", "description": "Backend adapter: fleetmetadatacache or acm" },
-            "endpoint": { "type": "string", "default": "", "description": "Endpoint for the selected backend" },
-            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for reading remote resource specs (spec hash). Required when fleet.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
-            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
-            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
-            "tokenSecretRef": { "type": "string", "default": "", "description": "K8s Secret (key: token) with an ACM Search bearer token. Mandatory when backend=acm; FleetConfig.Validate() rejects backend=acm without it (#1556)." },
-            "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
+            "oauth2": {
+              "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            }
           }
         }
       }
@@ -751,7 +1494,11 @@
       "description": "WorkflowExecution controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
         "config": {
           "type": "object",
           "additionalProperties": false,
@@ -760,7 +1507,15 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "cooldownPeriod": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "1m", "description": "Cooldown between workflow executions" }
+                "cooldownPeriod": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "1m",
+                  "description": "Cooldown between workflow executions"
+                }
               }
             },
             "tekton": {
@@ -768,36 +1523,75 @@
               "description": "Tekton Pipelines engine configuration (issue #868). Omit for auto-discovery.",
               "additionalProperties": false,
               "properties": {
-                "enabled": { "type": "boolean", "description": "true or omit = auto-discover CRDs; false = disable Tekton engine" }
+                "enabled": {
+                  "type": "boolean",
+                  "description": "true or omit = auto-discover CRDs; false = disable Tekton engine"
+                }
               }
             },
             "ansible": {
               "type": "object",
               "description": "AWX/AAP connectivity for the ansible executor (issue #478). Omit to disable.",
               "additionalProperties": false,
-              "required": ["apiURL"],
+              "required": [
+                "apiURL"
+              ],
               "properties": {
-                "apiURL": { "type": "string", "minLength": 1, "description": "AWX/AAP API base URL (required when ansible is enabled)" },
-                "organizationID": { "type": "integer", "default": 1, "minimum": 1, "description": "AWX organization ID" },
+                "apiURL": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "AWX/AAP API base URL (required when ansible is enabled)"
+                },
+                "organizationID": {
+                  "type": "integer",
+                  "default": 1,
+                  "minimum": 1,
+                  "description": "AWX organization ID"
+                },
                 "tokenSecretRef": {
                   "type": "object",
                   "description": "Reference to a K8s Secret containing the AWX API token",
                   "additionalProperties": false,
-                  "required": ["name", "key"],
+                  "required": [
+                    "name",
+                    "key"
+                  ],
                   "properties": {
-                    "name": { "type": "string", "minLength": 1, "description": "Secret name" },
-                    "key": { "type": "string", "default": "token", "description": "Key within the Secret" },
-                    "namespace": { "type": "string", "default": "", "description": "Namespace of the Secret (empty = release namespace)" }
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Secret name"
+                    },
+                    "key": {
+                      "type": "string",
+                      "default": "token",
+                      "description": "Key within the Secret"
+                    },
+                    "namespace": {
+                      "type": "string",
+                      "default": "",
+                      "description": "Namespace of the Secret (empty = release namespace)"
+                    }
                   }
                 },
                 "caCertSecretRef": {
                   "type": "object",
                   "description": "BR-PLATFORM-005: reference to a K8s Secret containing a PEM-encoded CA certificate for the AAP/AWX API endpoint. Set when AAP/AWX uses a self-signed or private-CA certificate (Kubernaut Operator parity). If omitted, only the system trust store + inter-service CA are trusted.",
                   "additionalProperties": false,
-                  "required": ["name"],
+                  "required": [
+                    "name"
+                  ],
                   "properties": {
-                    "name": { "type": "string", "minLength": 1, "description": "Secret name" },
-                    "key": { "type": "string", "default": "ca.crt", "description": "Key within the Secret containing the PEM CA certificate" }
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "Secret name"
+                    },
+                    "key": {
+                      "type": "string",
+                      "default": "ca.crt",
+                      "description": "Key within the Secret containing the PEM CA certificate"
+                    }
                   }
                 }
               }
@@ -809,15 +1603,51 @@
           "description": "Namespace for Job/PipelineRun execution",
           "default": "kubernaut-workflows"
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "logging": { "$ref": "#/definitions/serviceLogging" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "fleet": {
+          "type": "object",
+          "description": "Multi-cluster fleet configuration for remote workflow execution (BR-FLEET-054, ADR-068). Endpoint/oauth2.{enabled,tokenURL,scopes,tlsCAFile} come from global.fleet.* -- no per-service override, since WE has no ClusterRegistry/CRD-watch capability (no mcpGatewayType, no namespace). oauth2.credentialsSecretRef is the one WE-owned, REQUIRED field: it does NOT fall back to global.fleet.oauth2.credentialsSecretRef, because WE is the only fleet-integration-capable service calling MCP write tools (resources_create_or_update/resources_delete) instead of the read-only tools every other service uses.",
+          "additionalProperties": false,
+          "properties": {
+            "oauth2": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "credentialsSecretRef": {
+                  "type": "string",
+                  "default": "",
+                  "description": "REQUIRED (no fallback to global.fleet.oauth2.credentialsSecretRef) when global.fleet.oauth2.enabled=true. K8s Secret (keys: client-id, client-secret) for a write-scoped OAuth2 client, distinct from the read-only credential shared by gateway/remediationorchestrator/apifrontend/effectivenessmonitor/signalprocessing/fleetmetadatacache."
+                }
+              }
+            }
+          }
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
+        "logging": {
+          "$ref": "#/definitions/serviceLogging"
+        },
+        "affinity": {
+          "$ref": "#/definitions/affinity"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/definitions/topologySpreadConstraints"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        }
       }
     },
     "notification": {
@@ -825,15 +1655,31 @@
       "description": "Notification controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
         "slack": {
           "type": "object",
           "description": "Slack quickstart shortcut. Auto-generates routing and credential projection when secretName is set.",
           "additionalProperties": false,
           "properties": {
-            "secretName": { "type": "string", "default": "", "description": "K8s Secret containing Slack webhook URL. Empty = no Slack." },
-            "secretKey": { "type": "string", "default": "webhook-url", "description": "Key within the Secret that holds the webhook URL." },
-            "channel": { "type": "string", "default": "#kubernaut-alerts", "description": "Slack channel for notifications." }
+            "secretName": {
+              "type": "string",
+              "default": "",
+              "description": "K8s Secret containing Slack webhook URL. Empty = no Slack."
+            },
+            "secretKey": {
+              "type": "string",
+              "default": "webhook-url",
+              "description": "Key within the Secret that holds the webhook URL."
+            },
+            "channel": {
+              "type": "string",
+              "default": "#kubernaut-alerts",
+              "description": "Slack channel for notifications."
+            }
           }
         },
         "routing": {
@@ -841,8 +1687,14 @@
           "description": "Notification routing externalization. Provide content via --set-file or reference an existing ConfigMap.",
           "additionalProperties": false,
           "properties": {
-            "content": { "type": "string", "default": "" },
-            "existingConfigMap": { "type": "string", "default": "" }
+            "content": {
+              "type": "string",
+              "default": ""
+            },
+            "existingConfigMap": {
+              "type": "string",
+              "default": ""
+            }
           }
         },
         "credentials": {
@@ -851,23 +1703,51 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "secretName", "secretKey"],
+            "required": [
+              "name",
+              "secretName",
+              "secretKey"
+            ],
             "properties": {
-              "name": { "type": "string" },
-              "secretName": { "type": "string" },
-              "secretKey": { "type": "string" }
+              "name": {
+                "type": "string"
+              },
+              "secretName": {
+                "type": "string"
+              },
+              "secretKey": {
+                "type": "string"
+              }
             }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "logging": { "$ref": "#/definitions/serviceLogging" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
+        "logging": {
+          "$ref": "#/definitions/serviceLogging"
+        },
+        "affinity": {
+          "$ref": "#/definitions/affinity"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/definitions/topologySpreadConstraints"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        }
       }
     },
     "effectivenessmonitor": {
@@ -875,7 +1755,11 @@
       "description": "EffectivenessMonitor controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
         "config": {
           "type": "object",
           "additionalProperties": false,
@@ -884,33 +1768,70 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "stabilizationWindow": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30s", "description": "Time to wait after remediation before assessing effectiveness" },
-                "validityWindow": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "120s", "description": "Time window for assessment validity" }
+                "stabilizationWindow": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30s",
+                  "description": "Time to wait after remediation before assessing effectiveness"
+                },
+                "validityWindow": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "120s",
+                  "description": "Time window for assessment validity"
+                }
               }
             }
           }
         },
         "fleet": {
           "type": "object",
-          "description": "Multi-cluster fleet configuration (BR-FLEET-054, ADR-068)",
+          "description": "Multi-cluster fleet configuration (BR-FLEET-054, ADR-068). On/off toggle consolidated into global.fleet.enabled (Issue #1707); mcpGatewayEndpoint/mcpGatewayType/tlsCAFile/oauth2.{enabled,tokenURL,scopes,tlsCAFile} consolidated into global.fleet.* (Issue #1707 follow-up).",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false },
-            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster reads. Optional; falls back to global.fleet.mcpGatewayEndpoint when unset" },
-            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
-            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
-            "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
+            "namespace": {
+              "type": "string",
+              "default": "",
+              "description": "Restricts the ClusterRegistry CRD watch to a single namespace instead of cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and grants cluster-wide RBAC"
+            },
+            "oauth2": {
+              "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "logging": { "$ref": "#/definitions/serviceLogging" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
+        "logging": {
+          "$ref": "#/definitions/serviceLogging"
+        },
+        "affinity": {
+          "$ref": "#/definitions/affinity"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/definitions/topologySpreadConstraints"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        }
       }
     },
     "kubernautAgent": {
@@ -918,76 +1839,83 @@
       "description": "Kubernaut Agent (Go LLM investigation service)",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
-        "logging": { "$ref": "#/definitions/serviceLogging" },
-        "resources": { "$ref": "#/definitions/resources" },
-        "service": { "$ref": "#/definitions/serviceConfig" },
-        "llm": {
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
+        "logging": {
+          "$ref": "#/definitions/serviceLogging"
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "service": {
+          "$ref": "#/definitions/serviceConfig"
+        },
+        "llmProfileRef": {
+          "type": "string",
+          "default": "",
+          "description": "Required. Name of an entry in global.llmProfiles used for KA's investigator LLM calls (DD-PLATFORM-007). Replaces the old kubernautAgent.llm.* literal block."
+        },
+        "phaseModels": {
           "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "credentialsSecretName": { "type": "string", "default": "llm-credentials", "description": "Name of the pre-existing K8s Secret containing LLM API credentials (e.g. OPENAI_API_KEY)" },
-            "provider": { "type": "string", "enum": ["", "openai", "anthropic", "vertex_ai", "openai_compatible"], "default": "", "description": "LLM provider name. Static — requires pod restart. NOT currently supported: bedrock (tracked in #1582) — for Mistral/Ollama/HuggingFace TGI/self-hosted vLLM or LlamaStack, use 'openai_compatible' with `endpoint` set to the provider's OpenAI-Chat-Completions-compatible base URL instead of a dedicated provider value. For Azure OpenAI, use 'openai' or 'openai_compatible' with `azureApiVersion` set (#1600) — there is no dedicated 'azure' provider value." },
-            "vertexProject": { "type": "string", "default": "", "description": "GCP project ID. Required for vertex_ai provider. Static — requires pod restart." },
-            "vertexLocation": { "type": "string", "default": "", "description": "GCP region (e.g. us-central1). Required for vertex_ai provider. Static — requires pod restart." },
-            "azureApiVersion": { "type": "string", "default": "", "description": "Azure OpenAI API version (e.g. 2024-10-21). Set alongside provider: openai/openai_compatible to switch to Azure's deployment-scoped URL and api-key auth (#1600); `model` doubles as the Azure deployment ID. Leave empty for non-Azure endpoints. Static — requires pod restart." },
-            "bedrockRegion": { "type": "string", "default": "", "description": "Reserved for future Bedrock support (#1582) — NOT currently consumed by any code path. Setting this has no effect today." },
-            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA cert for internal LLM endpoints behind private CA. Static — requires pod restart." },
-            "model": { "type": "string", "default": "", "description": "LLM model name (gpt-4o, claude-sonnet-4-20250514). Hot-reloadable." },
-            "endpoint": { "type": "string", "default": "", "description": "LLM endpoint URL. Hot-reloadable." },
-            "temperature": { "type": "number", "default": 0.7, "minimum": 0, "maximum": 2, "description": "LLM sampling temperature. Hot-reloadable." },
-            "maxRetries": { "type": "integer", "default": 3, "minimum": 0, "description": "Max retries for LLM requests. Hot-reloadable." },
-            "timeoutSeconds": { "type": "integer", "default": 120, "minimum": 1, "description": "LLM request timeout in seconds. Hot-reloadable." },
-            "oauth2": {
-              "type": "object",
-              "description": "OAuth2 client credentials grant for enterprise LLM gateway authentication.",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": { "type": "boolean", "default": false, "description": "Enable OAuth2 client credentials token acquisition for LLM requests." },
-                "tokenURL": { "type": "string", "default": "", "description": "OAuth2 token endpoint URL (e.g. Keycloak, Azure AD)." },
-                "credentialsSecretRef": { "type": "string", "default": "", "description": "K8s Secret name containing client-id and client-secret keys." },
-                "scopes": { "type": "string", "default": "", "description": "Space-separated OAuth2 scopes." }
-              }
-            },
-            "reasoning": {
-              "type": "object",
-              "description": "Model-aware reasoning/thinking token support (BR-AI-086). Disabled by default; opt-in only. Static — requires pod restart.",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": { "type": "boolean", "default": false, "description": "Request reasoning/thinking output from the model where the provider/model supports it. Unsupported models silently skip the parameter rather than erroring." },
-                "budgetTokens": { "type": "integer", "default": 0, "minimum": 0, "description": "Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). 0 lets the provider/client choose a default. Anthropic-only; always wins over effort when set." },
-                "effort": { "type": "string", "enum": ["", "none", "minimal", "low", "medium", "high", "xhigh"], "default": "", "description": "Unified, provider-agnostic reasoning-depth knob (#1604): empty lets the vendor/provider choose its own default. Supported on Anthropic (mapped to a thinking tier), real OpenAI/gpt-5/o-series models (reasoning_effort), and DeepSeek (downscaled to its own high/max dialect). effort: none combined with enabled: true is rejected for Anthropic/vertex_ai at startup." },
-                "capabilityOverride": { "type": "string", "enum": ["", "auto", "force_on", "force_off"], "default": "", "description": "Overrides vendor/model-name auto-detection of reasoning support. Only meaningful for self-hosted/custom models served via the openai_compatible provider, which cannot be reliably identified by vendor enum alone." }
-              }
-            }
+          "default": {},
+          "description": "Per-phase LLM profile overrides (DD-PLATFORM-007), newly exposed via Helm. Maps a phase name (rca, workflow_discovery, validation) to a profile name in global.llmProfiles; unlisted phases use kubernautAgent.llmProfileRef's profile unchanged.",
+          "additionalProperties": {
+            "type": "string"
           }
         },
-
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
+        "affinity": {
+          "$ref": "#/definitions/affinity"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/definitions/topologySpreadConstraints"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        },
         "alignmentCheck": {
           "type": "object",
           "description": "Shadow agent alignment check (#601): parallel audit for prompt injection detection.",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false, "description": "Enable the shadow alignment agent." },
-            "timeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "10s", "description": "Per-step evaluation timeout." },
-            "maxStepTokens": { "type": "integer", "default": 500, "minimum": 1, "description": "Max evaluator response tokens per step." },
-            "llm": {
-              "type": "object",
-              "description": "Optional separate LLM config for alignment evaluation. Omit to reuse investigation LLM.",
-              "additionalProperties": false,
-              "properties": {
-                "provider": { "type": "string", "enum": ["", "openai", "anthropic", "vertex_ai", "openai_compatible"], "default": "", "description": "Same provider support constraints as ai.llm.provider above (bedrock not currently supported; no azureApiVersion field in this override block, so Azure OpenAI can't be configured separately for the alignment-check LLM)." },
-                "model": { "type": "string", "default": "" },
-                "endpoint": { "type": "string", "default": "" },
-                "apiKey": { "type": "string", "default": "" }
-              }
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Enable the shadow alignment agent."
+            },
+            "timeout": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/goDuration"
+                }
+              ],
+              "default": "10s",
+              "description": "Per-step evaluation timeout."
+            },
+            "maxStepTokens": {
+              "type": "integer",
+              "default": 500,
+              "minimum": 1,
+              "description": "Max evaluator response tokens per step."
+            },
+            "llmProfileRef": {
+              "type": "string",
+              "default": "",
+              "description": "DD-PLATFORM-007: name of an entry in global.llmProfiles for a dedicated alignment-check shadow-agent LLM. Empty (default) inherits kubernautAgent.llmProfileRef's resolved profile, reusing the investigation LLM. Replaces the old alignmentCheck.llm.* block, whose apiKey field never had any effect (the Kubernaut Agent binary only reads apiKeyFile -- see kubernaut#1726 for the same class of bug)."
             }
           }
         },
@@ -996,30 +1924,93 @@
           "description": "MCP interactive mode (#703): enables human-in-the-loop investigation sessions.",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false, "description": "Enable MCP interactive mode endpoint and Lease-based session management." },
-            "sessionTTL": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30m", "description": "Maximum duration for an interactive session before auto-release." },
-            "inactivityTimeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "10m", "description": "Session timeout after last activity." },
-            "maxConcurrentSessions": { "type": "integer", "default": 5, "minimum": 1, "description": "Maximum concurrent interactive sessions per instance." },
-            "rateLimitPerUser": { "type": "integer", "default": 10, "minimum": 1, "description": "Maximum requests per second per authenticated user." },
-            "maxAnalyzingTimeout": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "45m", "description": "Extended analyzing timeout for RO when an interactive session is active. Prevents RO from timing out a RemediationRequest while an operator is investigating." },
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Enable MCP interactive mode endpoint and Lease-based session management."
+            },
+            "sessionTTL": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/goDuration"
+                }
+              ],
+              "default": "30m",
+              "description": "Maximum duration for an interactive session before auto-release."
+            },
+            "inactivityTimeout": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/goDuration"
+                }
+              ],
+              "default": "10m",
+              "description": "Session timeout after last activity."
+            },
+            "maxConcurrentSessions": {
+              "type": "integer",
+              "default": 5,
+              "minimum": 1,
+              "description": "Maximum concurrent interactive sessions per instance."
+            },
+            "rateLimitPerUser": {
+              "type": "integer",
+              "default": 10,
+              "minimum": 1,
+              "description": "Maximum requests per second per authenticated user."
+            },
+            "maxAnalyzingTimeout": {
+              "allOf": [
+                {
+                  "$ref": "#/definitions/goDuration"
+                }
+              ],
+              "default": "45m",
+              "description": "Extended analyzing timeout for RO when an interactive session is active. Prevents RO from timing out a RemediationRequest while an operator is investigating."
+            },
             "jwtProviders": {
               "type": "array",
               "description": "JWT providers for Pattern B authentication (DD-AUTH-MCP-001 v2.0).",
               "items": {
                 "type": "object",
-                "required": ["name", "issuer", "jwksURL", "audience"],
+                "required": [
+                  "name",
+                  "issuer",
+                  "jwksURL",
+                  "audience"
+                ],
                 "additionalProperties": false,
                 "properties": {
-                  "name": { "type": "string", "description": "Human-readable provider name." },
-                  "issuer": { "type": "string", "description": "JWT issuer URL (must match iss claim)." },
-                  "jwksURL": { "type": "string", "description": "JWKS endpoint URL for signature verification." },
-                  "audience": { "type": "string", "description": "Expected audience claim value." },
+                  "name": {
+                    "type": "string",
+                    "description": "Human-readable provider name."
+                  },
+                  "issuer": {
+                    "type": "string",
+                    "description": "JWT issuer URL (must match iss claim)."
+                  },
+                  "jwksURL": {
+                    "type": "string",
+                    "description": "JWKS endpoint URL for signature verification."
+                  },
+                  "audience": {
+                    "type": "string",
+                    "description": "Expected audience claim value."
+                  },
                   "claimMappings": {
                     "type": "object",
                     "additionalProperties": false,
                     "properties": {
-                      "username": { "type": "string", "default": "preferred_username", "description": "JWT claim for username extraction." },
-                      "groups": { "type": "string", "default": "groups", "description": "JWT claim for groups extraction (supports dot-notation)." }
+                      "username": {
+                        "type": "string",
+                        "default": "preferred_username",
+                        "description": "JWT claim for username extraction."
+                      },
+                      "groups": {
+                        "type": "string",
+                        "default": "groups",
+                        "description": "JWT claim for groups extraction (supports dot-notation)."
+                      }
                     }
                   }
                 }
@@ -1034,16 +2025,38 @@
       "description": "AuthWebhook admission controller",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
-        "logging": { "$ref": "#/definitions/serviceLogging" },
-        "resources": { "$ref": "#/definitions/resources" },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
+        "logging": {
+          "$ref": "#/definitions/serviceLogging"
+        },
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
+        "affinity": {
+          "$ref": "#/definitions/affinity"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/definitions/topologySpreadConstraints"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        }
       }
     },
     "postgresql": {
@@ -1051,7 +2064,11 @@
       "description": "PostgreSQL (DataStorage backend). Set enabled=false to use external host/port (BYO #256)",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
         "enabled": {
           "type": "boolean",
           "default": true,
@@ -1062,7 +2079,12 @@
           "default": "",
           "description": "External PostgreSQL host. Required when enabled=false."
         },
-        "port": { "type": "integer", "default": 5432, "minimum": 1, "maximum": 65535 },
+        "port": {
+          "type": "integer",
+          "default": 5432,
+          "minimum": 1,
+          "maximum": 65535
+        },
         "image": {
           "type": "string",
           "default": "postgres:16-alpine"
@@ -1076,15 +2098,24 @@
               "default": "",
               "description": "Pre-created Secret name with POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, db-secrets.yaml keys. Empty = expect 'postgresql-secret'."
             },
-            "username": { "type": "string", "default": "slm_user" },
-            "database": { "type": "string", "default": "action_history" }
+            "username": {
+              "type": "string",
+              "default": "slm_user"
+            },
+            "database": {
+              "type": "string",
+              "default": "action_history"
+            }
           }
         },
         "storage": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "size": { "type": "string", "default": "10Gi" },
+            "size": {
+              "type": "string",
+              "default": "10Gi"
+            },
             "storageClassName": {
               "type": "string",
               "default": "",
@@ -1092,9 +2123,21 @@
             }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        }
       }
     },
     "valkey": {
@@ -1102,7 +2145,11 @@
       "description": "Valkey (DataStorage DLQ). Redis-compatible in-memory store. Set enabled=false to use external host/port (BYO #256)",
       "additionalProperties": false,
       "properties": {
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
         "enabled": {
           "type": "boolean",
           "default": true,
@@ -1113,7 +2160,12 @@
           "default": "",
           "description": "External Valkey host. Required when enabled=false."
         },
-        "port": { "type": "integer", "default": 6379, "minimum": 1, "maximum": 65535 },
+        "port": {
+          "type": "integer",
+          "default": 6379,
+          "minimum": 1,
+          "maximum": 65535
+        },
         "image": {
           "type": "string",
           "default": "valkey/valkey:8-alpine"
@@ -1127,7 +2179,10 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "size": { "type": "string", "default": "512Mi" },
+            "size": {
+              "type": "string",
+              "default": "512Mi"
+            },
             "storageClassName": {
               "type": "string",
               "default": "",
@@ -1135,9 +2190,21 @@
             }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        }
       }
     },
     "fleetmetadatacache": {
@@ -1145,40 +2212,84 @@
       "description": "FleetMetadataCache: Fleet Metadata Cache service (BR-INTEGRATION-065, ADR-068)",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": false },
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
         "image": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "repository": { "type": "string", "default": "quay.io/kubernaut-ai/fleetmetadatacache" },
-            "tag": { "type": "string", "default": "v1.6.0" },
-            "pullPolicy": { "type": "string", "default": "IfNotPresent" }
+            "repository": {
+              "type": "string",
+              "default": "quay.io/kubernaut-ai/fleetmetadatacache"
+            },
+            "tag": {
+              "type": "string",
+              "default": "v1.6.0"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "default": "IfNotPresent"
+            }
           }
         },
-        "syncInterval": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30s" },
-        "keyTTL": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "45s" },
-        "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "Required when fleetmetadatacache.enabled=true; falls back to global.fleet.mcpGatewayEndpoint when unset" },
-        "gatewayType": { "type": "string", "enum": ["eaigw", "kuadrant"], "default": "eaigw", "description": "MCP Gateway type: eaigw (Envoy AI Gateway) or kuadrant (Kuadrant MCP Gateway)" },
-        "valkeyAddr": { "type": "string", "default": "" },
-        "namespace": { "type": "string", "default": "kubernaut-system" },
+        "syncInterval": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/goDuration"
+            }
+          ],
+          "default": "30s"
+        },
+        "keyTTL": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/goDuration"
+            }
+          ],
+          "default": "45s"
+        },
+        "valkeyAddr": {
+          "type": "string",
+          "default": ""
+        },
+        "namespace": {
+          "type": "string",
+          "default": "kubernaut-system"
+        },
         "oauth2": {
-          "type": "object",
-          "description": "OAuth2 client_credentials for MCP Gateway authentication. Required when fleetmetadatacache.enabled=true — there is no unauthenticated fallback.",
-          "additionalProperties": false,
-          "properties": {
-            "tokenURL": { "type": "string", "default": "", "description": "OAuth2 token endpoint URL (REQUIRED)" },
-            "credentialsSecretRef": { "type": "string", "default": "", "description": "Secret with client-id and client-secret keys (REQUIRED)" }
-          }
+          "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
+        "affinity": {
+          "$ref": "#/definitions/affinity"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/definitions/topologySpreadConstraints"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        }
       }
     },
     "apifrontend": {
@@ -1186,30 +2297,58 @@
       "description": "API Frontend (MCP bridge between users and Kubernaut Agent)",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": true },
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
-        "autoscaling": { "$ref": "#/definitions/autoscaling" },
+        "enabled": {
+          "type": "boolean",
+          "default": true
+        },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
+        "autoscaling": {
+          "$ref": "#/definitions/autoscaling"
+        },
         "image": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "repository": { "type": "string", "default": "ghcr.io/jordigilh/kubernaut/apifrontend" },
-            "pullPolicy": { "type": "string", "default": "IfNotPresent" },
-            "tag": { "type": "string", "default": "" }
+            "repository": {
+              "type": "string",
+              "default": "ghcr.io/jordigilh/kubernaut/apifrontend"
+            },
+            "pullPolicy": {
+              "type": "string",
+              "default": "IfNotPresent"
+            },
+            "tag": {
+              "type": "string",
+              "default": ""
+            }
           }
         },
-        "logging": { "$ref": "#/definitions/serviceLogging" },
+        "logging": {
+          "$ref": "#/definitions/serviceLogging"
+        },
         "fleet": {
           "type": "object",
-          "description": "Multi-cluster fleet configuration (BR-FLEET-054, ADR-068)",
+          "description": "Multi-cluster fleet configuration (BR-FLEET-054, ADR-068). On/off toggle consolidated into global.fleet.enabled (Issue #1707); mcpGatewayEndpoint/mcpGatewayType/tlsCAFile/oauth2.{enabled,tokenURL,scopes,tlsCAFile} consolidated into global.fleet.* (Issue #1707 follow-up).",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false },
-            "mcpGatewayEndpoint": { "type": "string", "default": "", "description": "MCP Gateway endpoint URL for remote cluster reads. Optional; falls back to global.fleet.mcpGatewayEndpoint when unset" },
-            "mcpGatewayType": { "type": "string", "default": "", "description": "MCP Gateway type: eaigw or kuadrant. Falls back to global.fleet.mcpGatewayType when unset" },
-            "tlsCAFile": { "type": "string", "default": "", "description": "Path to a CA bundle for verifying the MCP Gateway's TLS certificate. Falls back to global.fleet.tlsCAFile, then to the shared inter-service CA, when unset" },
-            "oauth2": { "$ref": "#/definitions/fleetOAuth2" }
+            "namespace": {
+              "type": "string",
+              "default": "",
+              "description": "Restricts the ClusterRegistry CRD watch to a single namespace instead of cluster-wide (BR-RBAC-020, #1686). Empty (default) watches all namespaces and grants cluster-wide RBAC"
+            },
+            "oauth2": {
+              "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            }
           }
+        },
+        "llmProfileRef": {
+          "type": "string",
+          "default": "",
+          "description": "DD-PLATFORM-007: name of an entry in global.llmProfiles for API Frontend's own agent-loop LLM connection. Empty (default) defaults to kubernautAgent.llmProfileRef's resolved profile, matching the Kubernaut Operator's AFLLMProfileRef fallback behavior. Newly exposed -- this Go capability (Config.Agent.LLM) existed but was previously unreachable via Helm."
         },
         "config": {
           "type": "object",
@@ -1219,55 +2358,132 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "httpPort": { "type": "integer", "default": 8443, "minimum": 1, "maximum": 65535 },
-                "metricsPort": { "type": "integer", "default": 9090, "minimum": 1, "maximum": 65535 },
-                "healthPort": { "type": "integer", "default": 8081, "minimum": 1, "maximum": 65535 }
+                "httpPort": {
+                  "type": "integer",
+                  "default": 8443,
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "metricsPort": {
+                  "type": "integer",
+                  "default": 9090,
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "healthPort": {
+                  "type": "integer",
+                  "default": 8081,
+                  "minimum": 1,
+                  "maximum": 65535
+                }
               }
             },
             "session": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "disconnectTTL": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "10m" },
-                "retentionTTL": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "720h" }
+                "disconnectTTL": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "10m"
+                },
+                "retentionTTL": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "720h"
+                }
               }
             },
             "severityTriage": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "cacheTTLSeconds": { "type": "integer", "default": 30, "minimum": 0 },
-                "llmConfidence": { "type": "number", "default": 0.7, "minimum": 0, "maximum": 1 }
+                "cacheTTLSeconds": {
+                  "type": "integer",
+                  "default": 30,
+                  "minimum": 0
+                },
+                "llmConfidence": {
+                  "type": "number",
+                  "default": 0.7,
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "llmProfileRef": {
+                  "type": "string",
+                  "default": "",
+                  "description": "DD-PLATFORM-007: name of an entry in global.llmProfiles for severity-triage's LLM fallback tiers, independent of API Frontend's own apifrontend.llmProfileRef connection. Empty (default) inherits API Frontend's own resolved profile, matching the Kubernaut Operator's APIFrontendSeverityTriageSpec.LLMProfileRef behavior. Newly exposed -- this Go capability (Config.SeverityTriage.LLM) existed but was previously unreachable via Helm. May reference a profile with a different provider/credentialsSecretName than API Frontend's own; the one exception is vertex_ai: when both resolve to vertex_ai, they must share credentialsSecretName (kubernaut#1731), enforced with a fail() guard."
+                },
+                "llmEnabled": {
+                  "type": "boolean",
+                  "default": true,
+                  "description": "DD-PLATFORM-007: whether LLM-based severity-triage tiers are active. When false, no llm block is rendered, forcing rule-based-only triage -- independent of llmProfileRef and of severity triage as a whole. Matches the Kubernaut Operator's APIFrontendSeverityTriageSpec.LLMEnabled (default true)."
+                }
               }
             },
             "auth": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "issuerURL": { "type": "string", "default": "", "description": "OIDC issuer URL for JWT validation. When set, OIDC/JWKS auth is used. When empty, K8s TokenReview is auto-detected." },
-                "audience": { "type": "string", "default": "", "description": "Expected JWT audience claim" },
+                "issuerURL": {
+                  "type": "string",
+                  "default": "",
+                  "description": "OIDC issuer URL for JWT validation. When set, OIDC/JWKS auth is used. When empty, K8s TokenReview is auto-detected."
+                },
+                "audience": {
+                  "type": "string",
+                  "default": "",
+                  "description": "Expected JWT audience claim"
+                },
                 "jwtProviders": {
                   "type": "array",
                   "description": "Multi-provider JWT configuration (#1436). When set, takes precedence over issuerURL/audience.",
                   "items": {
                     "type": "object",
-                    "required": ["name", "issuerURL", "audiences"],
+                    "required": [
+                      "name",
+                      "issuerURL",
+                      "audiences"
+                    ],
                     "additionalProperties": false,
                     "properties": {
-                      "name": { "type": "string", "description": "Unique provider name" },
-                      "issuerURL": { "type": "string", "description": "OIDC issuer URL (must match JWT iss claim)" },
-                      "jwksURL": { "type": "string", "description": "JWKS endpoint URL (optional, defaults to issuerURL)" },
+                      "name": {
+                        "type": "string",
+                        "description": "Unique provider name"
+                      },
+                      "issuerURL": {
+                        "type": "string",
+                        "description": "OIDC issuer URL (must match JWT iss claim)"
+                      },
+                      "jwksURL": {
+                        "type": "string",
+                        "description": "JWKS endpoint URL (optional, defaults to issuerURL)"
+                      },
                       "audiences": {
                         "type": "array",
-                        "items": { "type": "string" },
+                        "items": {
+                          "type": "string"
+                        },
                         "description": "Expected JWT audience claims"
                       },
                       "claimMappings": {
                         "type": "object",
                         "additionalProperties": false,
                         "properties": {
-                          "username": { "type": "string", "description": "Claim path or CEL expression for username" },
-                          "groups": { "type": "string", "description": "Claim path or CEL expression for groups" }
+                          "username": {
+                            "type": "string",
+                            "description": "Claim path or CEL expression for username"
+                          },
+                          "groups": {
+                            "type": "string",
+                            "description": "Claim path or CEL expression for groups"
+                          }
                         }
                       }
                     }
@@ -1278,8 +2494,17 @@
                   "additionalProperties": false,
                   "description": "GAP-08 (Issue #1505): distributed jti replay-detection backend, shared across all APIFrontend replicas via the cluster's Valkey instance. Disabled by default (legacy in-memory, single-process cache).",
                   "properties": {
-                    "enabled": { "type": "boolean", "default": false },
-                    "redisDB": { "type": "integer", "default": 1, "minimum": 0, "maximum": 15, "description": "Valkey logical DB index used for replay cache keys" }
+                    "enabled": {
+                      "type": "boolean",
+                      "default": false
+                    },
+                    "redisDB": {
+                      "type": "integer",
+                      "default": 1,
+                      "minimum": 0,
+                      "maximum": 15,
+                      "description": "Valkey logical DB index used for replay cache keys"
+                    }
                   }
                 }
               }
@@ -1288,27 +2513,53 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "sarCacheTTL": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "30s", "description": "TTL for SubjectAccessReview cache entries" },
+                "sarCacheTTL": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "30s",
+                  "description": "TTL for SubjectAccessReview cache entries"
+                },
                 "personas": {
                   "type": "object",
                   "description": "Map of persona name to list of allowed tool names for SAR-based authorization",
                   "additionalProperties": {
                     "type": "array",
-                    "items": { "type": "string" }
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 }
               }
             }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "podSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
-        "pdb": { "$ref": "#/definitions/pdb" },
-        "affinity": { "$ref": "#/definitions/affinity" },
-        "topologySpreadConstraints": { "$ref": "#/definitions/topologySpreadConstraints" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "podSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "containerSecurityContext": {
+          "$ref": "#/definitions/securityContext"
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
+        "affinity": {
+          "$ref": "#/definitions/affinity"
+        },
+        "topologySpreadConstraints": {
+          "$ref": "#/definitions/topologySpreadConstraints"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        }
       }
     },
     "console": {
@@ -1316,43 +2567,82 @@
       "description": "BR-PLATFORM-006: standalone web console (A2A chat UI), opt-in, Kubernaut Operator parity",
       "additionalProperties": false,
       "properties": {
-        "enabled": { "type": "boolean", "default": false },
-        "replicas": { "type": "integer", "default": 1, "minimum": 0 },
-        "pdb": { "$ref": "#/definitions/pdb" },
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "replicas": {
+          "type": "integer",
+          "default": 1,
+          "minimum": 0
+        },
+        "pdb": {
+          "$ref": "#/definitions/pdb"
+        },
         "auth": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "secretName": { "type": "string", "default": "", "description": "Pre-created Secret with keys: client-id, client-secret, cookie-secret. Required when console.enabled=true." }
+            "secretName": {
+              "type": "string",
+              "default": "",
+              "description": "Pre-created Secret with keys: client-id, client-secret, cookie-secret. Required when console.enabled=true."
+            }
           }
         },
         "oauth2Proxy": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "image": { "type": "string", "default": "quay.io/oauth2-proxy/oauth2-proxy:v7.15.3" }
+            "image": {
+              "type": "string",
+              "default": "quay.io/oauth2-proxy/oauth2-proxy:v7.15.3"
+            }
           }
         },
         "ingress": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": true },
-            "className": { "type": "string", "default": "" },
-            "host": { "type": "string", "default": "", "description": "Hostname for browser access. Leaving this empty matches all hosts on the ingress controller, which is usually undesirable when other apps share it." },
-            "annotations": { "type": "object", "default": {} },
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "className": {
+              "type": "string",
+              "default": ""
+            },
+            "host": {
+              "type": "string",
+              "default": "",
+              "description": "Hostname for browser access. Leaving this empty matches all hosts on the ingress controller, which is usually undesirable when other apps share it."
+            },
+            "annotations": {
+              "type": "object",
+              "default": {}
+            },
             "tls": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "secretName": { "type": "string", "default": "", "description": "Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or an ingress controller that provides its own default cert" }
+                "secretName": {
+                  "type": "string",
+                  "default": "",
+                  "description": "Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or an ingress controller that provides its own default cert"
+                }
               }
             }
           }
         },
-        "resources": { "$ref": "#/definitions/resources" },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "resources": {
+          "$ref": "#/definitions/resources"
+        },
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        }
       }
     },
     "hooks": {
@@ -1370,8 +2660,12 @@
             }
           }
         },
-        "nodeSelector": { "$ref": "#/definitions/nodeSelector" },
-        "tolerations": { "$ref": "#/definitions/tolerations" }
+        "nodeSelector": {
+          "$ref": "#/definitions/nodeSelector"
+        },
+        "tolerations": {
+          "$ref": "#/definitions/tolerations"
+        }
       }
     },
     "monitoring": {
@@ -1383,26 +2677,54 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false, "description": "Enable Prometheus integration for both EM and KA" },
-            "url": { "type": "string", "default": "", "description": "Prometheus API base URL." },
-            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS." }
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Enable Prometheus integration for both EM and KA"
+            },
+            "url": {
+              "type": "string",
+              "default": "",
+              "description": "Prometheus API base URL."
+            },
+            "tlsCaFile": {
+              "type": "string",
+              "default": "",
+              "description": "Path to PEM CA bundle for HTTPS."
+            }
           }
         },
         "alertManager": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false, "description": "Enable AlertManager integration for EM" },
-            "url": { "type": "string", "default": "", "description": "AlertManager API base URL." },
-            "tlsCaFile": { "type": "string", "default": "", "description": "Path to PEM CA bundle for HTTPS." }
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Enable AlertManager integration for EM"
+            },
+            "url": {
+              "type": "string",
+              "default": "",
+              "description": "AlertManager API base URL."
+            },
+            "tlsCaFile": {
+              "type": "string",
+              "default": "",
+              "description": "Path to PEM CA bundle for HTTPS."
+            }
           }
         },
         "serviceMonitor": {
           "type": "object",
-          "description": "ServiceMonitor resources for scraping each service's /metrics endpoint (BR-PLATFORM-003, Issue #1589). Requires monitoring.coreos.com/v1 CRD (kube-prometheus-stack) — no-op when absent, even if enabled=true. Not rendered for authwebhook (metrics intentionally disabled).",
+          "description": "ServiceMonitor resources for scraping each service's /metrics endpoint (BR-PLATFORM-003, Issue #1589). Requires monitoring.coreos.com/v1 CRD (kube-prometheus-stack) \u2014 no-op when absent, even if enabled=true. Not rendered for authwebhook (metrics intentionally disabled).",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false, "description": "Create ServiceMonitor resources for all metrics-emitting services" }
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Create ServiceMonitor resources for all metrics-emitting services"
+            }
           }
         },
         "prometheusRule": {
@@ -1410,20 +2732,80 @@
           "description": "PrometheusRule resource for interactive session SLO alerting (Issue #1005), and for DataStorage/APIFrontend availability/latency/error alerting (BR-PLATFORM-003, Issue #1589)",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": false, "description": "Create PrometheusRule resources (interactive session SLOs, DataStorage/APIFrontend alerting)" },
-            "additionalLabels": { "type": "object", "default": {}, "description": "Additional labels for PrometheusRule (e.g. prometheus: kube-prometheus)" },
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Create PrometheusRule resources (interactive session SLOs, DataStorage/APIFrontend alerting)"
+            },
+            "additionalLabels": {
+              "type": "object",
+              "default": {},
+              "description": "Additional labels for PrometheusRule (e.g. prometheus: kube-prometheus)"
+            },
             "thresholds": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "activeSessionsMax": { "type": "integer", "default": 10, "minimum": 0, "description": "Max concurrent interactive sessions before alerting" },
-                "activeSessionsFor": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "5m", "description": "Duration threshold must be exceeded before firing" },
-                "leaseContentionRateMax": { "type": "number", "default": 0.1, "minimum": 0, "description": "Max Lease contention events/sec (5m rate)" },
-                "leaseContentionFor": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "5m", "description": "Duration before firing" },
-                "commandDurationP99Max": { "type": "number", "default": 30, "minimum": 0, "description": "Max p99 command duration in seconds" },
-                "commandDurationFor": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "10m", "description": "Duration before firing" },
-                "takeoverRateMax": { "type": "number", "default": 0.05, "minimum": 0, "description": "Max takeover events/sec (5m rate)" },
-                "takeoverRateFor": { "allOf": [{ "$ref": "#/definitions/goDuration" }], "default": "15m", "description": "Duration before firing" }
+                "activeSessionsMax": {
+                  "type": "integer",
+                  "default": 10,
+                  "minimum": 0,
+                  "description": "Max concurrent interactive sessions before alerting"
+                },
+                "activeSessionsFor": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "5m",
+                  "description": "Duration threshold must be exceeded before firing"
+                },
+                "leaseContentionRateMax": {
+                  "type": "number",
+                  "default": 0.1,
+                  "minimum": 0,
+                  "description": "Max Lease contention events/sec (5m rate)"
+                },
+                "leaseContentionFor": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "5m",
+                  "description": "Duration before firing"
+                },
+                "commandDurationP99Max": {
+                  "type": "number",
+                  "default": 30,
+                  "minimum": 0,
+                  "description": "Max p99 command duration in seconds"
+                },
+                "commandDurationFor": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "10m",
+                  "description": "Duration before firing"
+                },
+                "takeoverRateMax": {
+                  "type": "number",
+                  "default": 0.05,
+                  "minimum": 0,
+                  "description": "Max takeover events/sec (5m rate)"
+                },
+                "takeoverRateFor": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "15m",
+                  "description": "Duration before firing"
+                }
               }
             }
           }
@@ -1447,7 +2829,9 @@
         },
         "apiServerCIDRs": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "description": "Additional K8s API server backend endpoint IPs as /32 CIDRs, for HA clusters with multiple control-plane nodes. Merged with apiServerCIDR. Usually left empty (see apiServerCIDR)."
         },
@@ -1523,36 +2907,66 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": true },
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
             "ingressNamespaces": {
               "type": "array",
-              "items": { "type": "string" },
+              "items": {
+                "type": "string"
+              },
               "default": [],
               "description": "Namespaces allowed to send ingress to Gateway (e.g., monitoring for AlertManager)"
             }
           }
         },
-        "datastorage": { "$ref": "#/definitions/serviceToggle" },
-        "aianalysis": { "$ref": "#/definitions/serviceToggle" },
+        "datastorage": {
+          "$ref": "#/definitions/serviceToggle"
+        },
+        "aianalysis": {
+          "$ref": "#/definitions/serviceToggle"
+        },
         "kubernautAgent": {
-          "allOf": [{ "$ref": "#/definitions/serviceToggle" }],
+          "allOf": [
+            {
+              "$ref": "#/definitions/serviceToggle"
+            }
+          ],
           "description": "NetworkPolicy toggle for Kubernaut Agent"
         },
-        "signalprocessing": { "$ref": "#/definitions/serviceToggle" },
-        "remediationorchestrator": { "$ref": "#/definitions/serviceToggle" },
-        "workflowexecution": { "$ref": "#/definitions/serviceToggle" },
-        "notification": { "$ref": "#/definitions/serviceToggle" },
-        "effectivenessmonitor": { "$ref": "#/definitions/serviceToggle" },
-        "authwebhook": { "$ref": "#/definitions/serviceToggle" },
+        "signalprocessing": {
+          "$ref": "#/definitions/serviceToggle"
+        },
+        "remediationorchestrator": {
+          "$ref": "#/definitions/serviceToggle"
+        },
+        "workflowexecution": {
+          "$ref": "#/definitions/serviceToggle"
+        },
+        "notification": {
+          "$ref": "#/definitions/serviceToggle"
+        },
+        "effectivenessmonitor": {
+          "$ref": "#/definitions/serviceToggle"
+        },
+        "authwebhook": {
+          "$ref": "#/definitions/serviceToggle"
+        },
         "apifrontend": {
           "type": "object",
           "description": "BR-PLATFORM-005: NetworkPolicy toggle for APIFrontend",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": true },
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
             "ingressNamespaces": {
               "type": "array",
-              "items": { "type": "string" },
+              "items": {
+                "type": "string"
+              },
               "default": [],
               "description": "Namespaces allowed to send ingress to APIFrontend (e.g., an ingress-controller namespace)"
             }
@@ -1563,17 +2977,26 @@
           "description": "BR-PLATFORM-006: NetworkPolicy toggle for the web console. A no-op when console.enabled=false.",
           "additionalProperties": false,
           "properties": {
-            "enabled": { "type": "boolean", "default": true },
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
             "ingressNamespaces": {
               "type": "array",
-              "items": { "type": "string" },
+              "items": {
+                "type": "string"
+              },
               "default": [],
               "description": "Namespaces allowed to send ingress to the console (e.g., an ingress-controller namespace)"
             }
           }
         },
-        "postgresql": { "$ref": "#/definitions/serviceToggle" },
-        "valkey": { "$ref": "#/definitions/serviceToggle" }
+        "postgresql": {
+          "$ref": "#/definitions/serviceToggle"
+        },
+        "valkey": {
+          "$ref": "#/definitions/serviceToggle"
+        }
       }
     }
   }

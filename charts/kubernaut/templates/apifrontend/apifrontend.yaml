@@ -1,12 +1,47 @@
 {{- if .Values.apifrontend.enabled }}
 {{- $apifrontendFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.apifrontend.fleet "oauth2" .Values.apifrontend.fleet.oauth2) | fromYaml }}
-{{- if and .Values.apifrontend.fleet.enabled .Values.apifrontend.fleet.oauth2.enabled }}
+{{- if and .Values.global.fleet.enabled $apifrontendFleetPreamble.oauth2.enabled }}
 {{- if not $apifrontendFleetPreamble.oauth2.tokenURL }}
-{{- fail "apifrontend.fleet.oauth2.tokenURL is required when apifrontend.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
+{{- fail "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true" }}
 {{- end }}
 {{- if not $apifrontendFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "apifrontend.fleet.oauth2.credentialsSecretRef is required when apifrontend.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
+{{- fail "global.fleet.oauth2.credentialsSecretRef (or apifrontend.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
 {{- end }}
+{{- end }}
+{{- /*
+DD-PLATFORM-007 / BR-PLATFORM-008: resolve AF's own agent.llm profile
+(apifrontend.llmProfileRef, defaulting to kubernautAgent.llmProfileRef) and
+severityTriage's independent llm profile (empty ref/nil inherits AF's own;
+llmEnabled=false disables it entirely, forcing rule-based-only triage).
+*/}}
+{{- $afProfileRefName := .Values.apifrontend.llmProfileRef | default .Values.kubernautAgent.llmProfileRef }}
+{{- $afProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $afProfileRefName) | fromYaml }}
+{{- $afAPIKeyFile := include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/apifrontend/llm-credentials" "provider" $afProfile.provider) }}
+{{- $stCfg := .Values.apifrontend.config.severityTriage }}
+{{- $stLLMEnabled := $stCfg.llmEnabled }}
+{{- $stProfileRefName := $stCfg.llmProfileRef }}
+{{- $stProfile := $afProfile }}
+{{- if and $stLLMEnabled $stProfileRefName }}
+{{- $stProfile = include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $stProfileRefName) | fromYaml }}
+{{- end }}
+{{- $stHasDedicatedSecret := and $stLLMEnabled (ne $stProfile.credentialsSecretName $afProfile.credentialsSecretName) }}
+{{- /*
+kubernaut#1731: GOOGLE_APPLICATION_CREDENTIALS is a single process-wide
+ambient-credential env var, so AF's own connection and severityTriage's
+cannot both be vertex_ai while pointing at different Secrets -- there would
+be no way to make both file paths visible to the SDK's ADC lookup at once.
+Every other cross-provider/cross-secret combination is fine, since only
+vertex_ai depends on this ambient env var (every other provider uses an
+explicit apiKeyFile mount instead).
+*/}}
+{{- if and $stHasDedicatedSecret (eq $afProfile.provider "vertex_ai") (eq $stProfile.provider "vertex_ai") }}
+{{- fail (printf "apifrontend.llmProfileRef (%q) and apifrontend.config.severityTriage.llmProfileRef (%q) both resolve to provider=vertex_ai but different credentialsSecretName values (%q vs %q) -- GOOGLE_APPLICATION_CREDENTIALS is a single process-wide ambient-credential path, so both must share the same Secret when both are vertex_ai (kubernaut#1731). Use the same credentialsSecretName for both, or use a non-vertex_ai provider for one of them." $afProfileRefName $stProfileRefName $afProfile.credentialsSecretName $stProfile.credentialsSecretName) }}
+{{- end }}
+{{- $stAPIKeyFile := "" }}
+{{- if $stHasDedicatedSecret }}
+{{- $stAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/apifrontend/severity-triage-credentials" "provider" $stProfile.provider) }}
+{{- else if $stLLMEnabled }}
+{{- $stAPIKeyFile = $afAPIKeyFile }}
 {{- end }}
 ---
 apiVersion: v1
@@ -77,7 +112,14 @@ rules:
   - apiGroups: ["authentication.k8s.io"]
     resources: ["tokenreviews"]
     verbs: ["create"]
-  {{- if eq $apifrontendFleetPreamble.config.mcpGatewayType "kuadrant" }}
+  {{- /*
+  #1686 (BR-RBAC-020): the mcpserverregistrations rule is only granted
+  cluster-wide here when no namespace scope is configured. When
+  apifrontend.fleet.namespace is set, the identical rule is granted instead
+  via a namespace-scoped Role/RoleBinding below, matching what the
+  ClusterRegistry informer actually watches (least privilege).
+  */}}
+  {{- if and (eq $apifrontendFleetPreamble.config.mcpGatewayType "kuadrant") (not .Values.apifrontend.fleet.namespace) }}
   # BR-FLEET-054: AF's ClusterRegistry watches MCPServerRegistration CRs
   # directly via a dynamic informer when the Kuadrant MCP Gateway is used.
   - apiGroups: ["mcp.kuadrant.io"]
@@ -100,6 +142,12 @@ subjects:
   - kind: ServiceAccount
     name: apifrontend
     namespace: {{ .Release.Namespace }}
+{{- if and (eq $apifrontendFleetPreamble.config.mcpGatewayType "kuadrant") .Values.apifrontend.fleet.namespace }}
+---
+# #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rule
+# above, granted instead of it when apifrontend.fleet.namespace is set.
+{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "apifrontend" "serviceAccount" "apifrontend" "namespace" .Values.apifrontend.fleet.namespace "appLabels" "app: apifrontend" "mcpServerRegistrations" true "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+{{- end }}
 ---
 # RoleBinding granting AF SA access to KA service (trusted intermediary, #1287)
 apiVersion: rbac.authorization.k8s.io/v1
@@ -136,6 +184,8 @@ data:
     agent:
       kaBaseURL: "https://kubernaut-agent.{{ .Release.Namespace }}.svc:8443"
       dsBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+      llm:
+        {{- include "kubernaut.llm.afBlock" (dict "profile" $afProfile "apiKeyFile" $afAPIKeyFile) | nindent 8 }}
     session:
       namespace: {{ .Release.Namespace }}
       disconnectTTL: {{ .Values.apifrontend.config.session.disconnectTTL | default "10m" }}
@@ -143,6 +193,12 @@ data:
     severityTriage:
       cacheTTLSeconds: {{ .Values.apifrontend.config.severityTriage.cacheTTLSeconds | default 30 }}
       llmConfidence: {{ .Values.apifrontend.config.severityTriage.llmConfidence | default 0.7 }}
+      {{- if $stLLMEnabled }}
+      llm:
+        {{- include "kubernaut.llm.afBlock" (dict "profile" $stProfile "apiKeyFile" $stAPIKeyFile) | nindent 8 }}
+      {{- else }}
+      llm: {}
+      {{- end }}
     auth:
       {{- with .Values.apifrontend.config.auth.issuerURL }}
       issuerURL: {{ . | quote }}
@@ -187,7 +243,7 @@ data:
     logging:
       level: {{ .Values.apifrontend.logging.level | default "INFO" }}
       format: json
-    {{- if .Values.apifrontend.fleet.enabled }}
+    {{- if .Values.global.fleet.enabled }}
     fleet:
       enabled: true
       mcpGatewayEndpoint: {{ $apifrontendFleetPreamble.config.mcpGatewayEndpoint | quote }}
@@ -195,7 +251,7 @@ data:
       mcpGatewayType: {{ $apifrontendFleetPreamble.config.mcpGatewayType | quote }}
       {{- end }}
       tlsCAFile: {{ $apifrontendFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
-      {{- if .Values.apifrontend.fleet.oauth2.enabled }}
+      {{- if $apifrontendFleetPreamble.oauth2.enabled }}
       oauth2:
         enabled: true
         tokenURL: {{ $apifrontendFleetPreamble.oauth2.tokenURL | quote }}
@@ -280,6 +336,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            {{- if eq $afProfile.provider "vertex_ai" }}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: "/etc/apifrontend/llm-credentials/credentials.json"
+            {{- end }}
+            {{- if and $stHasDedicatedSecret (eq $stProfile.provider "vertex_ai") }}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: "/etc/apifrontend/severity-triage-credentials/credentials.json"
+            {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/apifrontend
@@ -287,14 +351,22 @@ spec:
             - name: tls-certs
               mountPath: /etc/apifrontend/tls
               readOnly: true
+            - name: llm-credentials
+              mountPath: /etc/apifrontend/llm-credentials
+              readOnly: true
+            {{- if $stHasDedicatedSecret }}
+            - name: severity-triage-credentials
+              mountPath: /etc/apifrontend/severity-triage-credentials
+              readOnly: true
+            {{- end }}
             {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
             - name: valkey-secrets
               mountPath: /etc/apifrontend/valkey
               readOnly: true
             {{- end }}
-            {{- if .Values.apifrontend.fleet.enabled }}
+            {{- if .Values.global.fleet.enabled }}
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
-            {{- if .Values.apifrontend.fleet.oauth2.enabled }}
+            {{- if $apifrontendFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/apifrontend/{{ $apifrontendFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
@@ -325,6 +397,14 @@ spec:
           secret:
             secretName: apifrontend-tls
             optional: true
+        - name: llm-credentials
+          secret:
+            secretName: {{ $afProfile.credentialsSecretName }}
+        {{- if $stHasDedicatedSecret }}
+        - name: severity-triage-credentials
+          secret:
+            secretName: {{ $stProfile.credentialsSecretName }}
+        {{- end }}
         {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
         - name: valkey-secrets
           secret:
@@ -333,9 +413,9 @@ spec:
               - key: valkey-secrets.yaml
                 path: valkey-secrets.yaml
         {{- end }}
-        {{- if .Values.apifrontend.fleet.enabled }}
+        {{- if .Values.global.fleet.enabled }}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
-        {{- if .Values.apifrontend.fleet.oauth2.enabled }}
+        {{- if $apifrontendFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
             secretName: {{ $apifrontendFleetPreamble.oauth2.credentialsSecretRef }}

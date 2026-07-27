@@ -61,7 +61,7 @@ var _ = Describe("Structured Approval Events E2E — #1398", Ordered, Label("e2e
 
 	setupRRFixture := func() {
 		By("Creating RR fixture for approval E2E")
-		Expect(createRR(rrNamespace, rrName, "Deployment", "test-deploy-approval")).To(Succeed())
+		Expect(createRR(rrNamespace, rrName, "test-deploy-approval")).To(Succeed())
 		DeferCleanup(func() { deleteRR(rrNamespace, rrName) })
 	}
 
@@ -165,7 +165,7 @@ var _ = Describe("Structured Approval Events E2E — #1398", Ordered, Label("e2e
 			if json.Unmarshal([]byte(data), &frame) != nil {
 				continue
 			}
-			if frame.Result.Kind != "status-update" {
+			if frame.Result.Kind != statusUpdate {
 				continue
 			}
 			if frame.Result.Metadata == nil {

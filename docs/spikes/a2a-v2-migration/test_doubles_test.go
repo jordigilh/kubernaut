@@ -28,11 +28,17 @@ package a2av2migration
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"sync"
 	"testing"
 	"time"
+)
+
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	statusUpdate = "status-update"
 )
 
 // --- New test doubles for v2 iter.Seq2 executor ---
@@ -133,7 +139,7 @@ func (te *testableExecute) Run(ctx context.Context, inner iter.Seq2[Event, error
 func TestTestDouble_SingleEventEmission(t *testing.T) {
 	exec := &fakeIterExecutor{
 		events: []Event{
-			{Source: "inner", Text: "status-update"},
+			{Source: "inner", Text: statusUpdate},
 		},
 	}
 
@@ -144,7 +150,7 @@ func TestTestDouble_SingleEventEmission(t *testing.T) {
 	if len(events) != 1 {
 		t.Fatalf("expected 1 event, got %d", len(events))
 	}
-	if events[0].Text != "status-update" {
+	if events[0].Text != statusUpdate {
 		t.Errorf("text mismatch: got %q", events[0].Text)
 	}
 
@@ -187,7 +193,7 @@ func TestTestDouble_ErrorInjection(t *testing.T) {
 	}
 
 	events, err := collectEvents(exec.Execute(context.Background()))
-	if err != testErr {
+	if !errors.Is(err, testErr) {
 		t.Fatalf("expected testErr, got %v", err)
 	}
 	if len(events) != 1 {
@@ -264,7 +270,7 @@ func TestTestDouble_EventTypeAssertions(t *testing.T) {
 	exec := &fakeIterExecutor{
 		events: []Event{
 			{Source: "inner", Text: "reasoning-text"},
-			{Source: "inner", Text: "status-update"},
+			{Source: "inner", Text: statusUpdate},
 			{Source: "inner", Text: "artifact-data"},
 		},
 	}
@@ -278,7 +284,7 @@ func TestTestDouble_EventTypeAssertions(t *testing.T) {
 	if events[0].Text != "reasoning-text" {
 		t.Errorf("expected first event to be reasoning, got %q", events[0].Text)
 	}
-	if events[1].Text != "status-update" {
+	if events[1].Text != statusUpdate {
 		t.Errorf("expected second event to be status, got %q", events[1].Text)
 	}
 	if events[2].Text != "artifact-data" {
@@ -342,7 +348,7 @@ func TestTestDouble_CollectAllWithErrors(t *testing.T) {
 	if errs[0] != nil {
 		t.Errorf("first event should have no error")
 	}
-	if errs[1] != testErr {
+	if !errors.Is(errs[1], testErr) {
 		t.Errorf("second event should carry testErr")
 	}
 

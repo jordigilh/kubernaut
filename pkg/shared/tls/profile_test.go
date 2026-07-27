@@ -414,7 +414,7 @@ var _ = Describe("TLS Security Profiles (#748)", Label("BR-SECURITY-748"), func(
 
 			Expect(p2.CurvePreferences[0]).To(Equal(tls.X25519),
 				"second profile must be unaffected by mutation of first")
-			Expect(p2.CipherSuites[0]).To(Equal(uint16(tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256)),
+			Expect(p2.CipherSuites[0]).To(Equal(tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256),
 				"second profile ciphers must be unaffected by mutation of first")
 		})
 

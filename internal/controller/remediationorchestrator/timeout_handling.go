@@ -40,6 +40,7 @@ import (
 	eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	signalprocessingv1alpha1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/creator"
 	"github.com/jordigilh/kubernaut/pkg/remediationorchestrator/helpers"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
@@ -51,6 +52,8 @@ import (
 // BR-ORCH-027: Global Timeout Management
 // Business Value: Prevents stuck remediations from consuming resources indefinitely
 // Default timeout: 1 hour from CreationTimestamp
+//
+//nolint:unparam // ctrl.Result is always the zero value here; signature required to match the reconcile-chain return contract of its caller (checkAndHandleGlobalTimeout in reconcile_loop.go, itself feeding Reconcile's (ctrl.Result, error)) (Issue #1546 Tier 4)
 func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.RemediationRequest) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
 
@@ -85,7 +88,7 @@ func (r *Reconciler) handleGlobalTimeout(ctx context.Context, rr *remediationv1.
 // motion, no behavior change.
 func (r *Reconciler) transitionToTimedOut(ctx context.Context, rr *remediationv1.RemediationRequest) (remediationv1.RemediationPhase, error) {
 	logger := log.FromContext(ctx).WithValues("remediationRequest", rr.Name)
-	timeoutPhase := remediationv1.RemediationPhase(rr.Status.OverallPhase)
+	timeoutPhase := rr.Status.OverallPhase
 	oldPhase := rr.Status.OverallPhase
 
 	err := helpers.UpdateRemediationRequestStatus(ctx, r.client, rr, func(rr *remediationv1.RemediationRequest) error {
@@ -359,7 +362,7 @@ func (r *Reconciler) computeEADelays(rr *remediationv1.RemediationRequest, dualT
 
 	// #277: Detect proactive signals via AIAnalysis.Spec.AnalysisRequest.SignalContext.SignalMode.
 	// Proactive alerts (e.g. predict_linear) need extra time to resolve.
-	if ai != nil && ai.Spec.AnalysisRequest.SignalContext.SignalMode == "proactive" && asyncCfg.ProactiveAlertDelay > 0 {
+	if ai != nil && ai.Spec.AnalysisRequest.SignalContext.SignalMode == signalprocessingv1alpha1.SignalModeProactive && asyncCfg.ProactiveAlertDelay > 0 {
 		alertCheckDelay = &metav1.Duration{Duration: asyncCfg.ProactiveAlertDelay}
 		logger.Info("Proactive signal detected, setting alert check delay",
 			"signalMode", ai.Spec.AnalysisRequest.SignalContext.SignalMode,

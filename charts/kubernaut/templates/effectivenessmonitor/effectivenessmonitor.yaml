@@ -1,11 +1,11 @@
 {{- include "kubernaut.monitoring.validate" . -}}
 {{- $effectivenessmonitorFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.effectivenessmonitor.fleet "oauth2" .Values.effectivenessmonitor.fleet.oauth2) | fromYaml }}
-{{- if and .Values.effectivenessmonitor.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+{{- if and .Values.global.fleet.enabled $effectivenessmonitorFleetPreamble.oauth2.enabled }}
 {{- if not $effectivenessmonitorFleetPreamble.oauth2.tokenURL }}
-{{- fail "effectivenessmonitor.fleet.oauth2.tokenURL is required when effectivenessmonitor.fleet.oauth2.enabled=true (set it directly, or set global.fleet.oauth2.tokenURL if shared across services)" }}
+{{- fail "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true" }}
 {{- end }}
 {{- if not $effectivenessmonitorFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "effectivenessmonitor.fleet.oauth2.credentialsSecretRef is required when effectivenessmonitor.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret; set it directly, or set global.fleet.oauth2.credentialsSecretRef if shared across services)" }}
+{{- fail "global.fleet.oauth2.credentialsSecretRef (or effectivenessmonitor.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
 {{- end }}
 {{- end }}
 ---
@@ -46,7 +46,7 @@ data:
       {{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
       tlsCaFile: /etc/ssl/em/service-ca.crt
       {{- end }}
-    {{- if .Values.effectivenessmonitor.fleet.enabled }}
+    {{- if .Values.global.fleet.enabled }}
     fleet:
       enabled: true
       mcpGatewayEndpoint: {{ $effectivenessmonitorFleetPreamble.config.mcpGatewayEndpoint | quote }}
@@ -54,7 +54,7 @@ data:
       mcpGatewayType: {{ $effectivenessmonitorFleetPreamble.config.mcpGatewayType | quote }}
       {{- end }}
       tlsCAFile: {{ $effectivenessmonitorFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
-      {{- if .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+      {{- if $effectivenessmonitorFleetPreamble.oauth2.enabled }}
       oauth2:
         enabled: true
         tokenURL: {{ $effectivenessmonitorFleetPreamble.oauth2.tokenURL | quote }}
@@ -127,7 +127,14 @@ rules:
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-  {{- if eq $effectivenessmonitorFleetPreamble.config.mcpGatewayType "kuadrant" }}
+  {{- /*
+  #1686 (BR-RBAC-020): the mcpserverregistrations rule is only granted
+  cluster-wide here when no namespace scope is configured. When
+  effectivenessmonitor.fleet.namespace is set, the identical rule is
+  granted instead via a namespace-scoped Role/RoleBinding below, matching
+  what the ClusterRegistry informer actually watches (least privilege).
+  */}}
+  {{- if and (eq $effectivenessmonitorFleetPreamble.config.mcpGatewayType "kuadrant") (not .Values.effectivenessmonitor.fleet.namespace) }}
   # BR-FLEET-054: EM's ClusterRegistry watches MCPServerRegistration CRs
   # directly via a dynamic informer when the Kuadrant MCP Gateway is used.
   - apiGroups: ["mcp.kuadrant.io"]
@@ -149,6 +156,12 @@ subjects:
   - kind: ServiceAccount
     name: effectivenessmonitor-controller
     namespace: {{ .Release.Namespace }}
+{{- if and (eq $effectivenessmonitorFleetPreamble.config.mcpGatewayType "kuadrant") .Values.effectivenessmonitor.fleet.namespace }}
+---
+# #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rule
+# above, granted instead of it when effectivenessmonitor.fleet.namespace is set.
+{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "effectivenessmonitor" "serviceAccount" "effectivenessmonitor-controller" "namespace" .Values.effectivenessmonitor.fleet.namespace "appLabels" "app: effectivenessmonitor-controller" "mcpServerRegistrations" true "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+{{- end }}
 ---
 # Issue #545: Bind to built-in view ClusterRole for broad read access to CRDs
 # (cert-manager, Istio, etc.) needed for post-remediation hash capture (DD-EM-002).
@@ -236,7 +249,7 @@ spec:
               readOnly: true
             {{- end }}
             {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
-            {{- if and .Values.effectivenessmonitor.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+            {{- if and .Values.global.fleet.enabled $effectivenessmonitorFleetPreamble.oauth2.enabled }}
             - name: oauth2-credentials
               mountPath: "/etc/effectivenessmonitor/{{ $effectivenessmonitorFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
@@ -253,7 +266,7 @@ spec:
             name: effectivenessmonitor-service-ca
         {{- end }}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
-        {{- if and .Values.effectivenessmonitor.fleet.enabled .Values.effectivenessmonitor.fleet.oauth2.enabled }}
+        {{- if and .Values.global.fleet.enabled $effectivenessmonitorFleetPreamble.oauth2.enabled }}
         - name: oauth2-credentials
           secret:
             secretName: {{ $effectivenessmonitorFleetPreamble.oauth2.credentialsSecretRef }}

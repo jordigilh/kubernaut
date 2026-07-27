@@ -50,7 +50,7 @@ func HandleListRemediations(ctx context.Context, client crclient.Client, args Li
 		return ListRemediationsResult{}, ErrK8sUnavailable
 	}
 	if err := validate.Namespace(args.Namespace); err != nil {
-		return ListRemediationsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return ListRemediationsResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	var list remediationv1.RemediationRequestList
 	if err := client.List(ctx, &list, crclient.InNamespace(args.Namespace)); err != nil {
@@ -194,7 +194,7 @@ func HandleListApprovalRequests(ctx context.Context, client crclient.Client, arg
 		return ListApprovalRequestsResult{}, ErrK8sUnavailable
 	}
 	if err := validate.Namespace(args.Namespace); err != nil {
-		return ListApprovalRequestsResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return ListApprovalRequestsResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
 	var list remediationv1.RemediationApprovalRequestList
@@ -336,10 +336,10 @@ func HandleGetApprovalRequest(ctx context.Context, client crclient.Client, args 
 		return GetApprovalRequestResult{}, err
 	}
 	if errV := validate.Namespace(ns); errV != nil {
-		return GetApprovalRequestResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, errV)
+		return GetApprovalRequestResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, errV)
 	}
 	if errV := validate.ResourceName(name); errV != nil {
-		return GetApprovalRequestResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, errV)
+		return GetApprovalRequestResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, errV)
 	}
 
 	var rar remediationv1.RemediationApprovalRequest
@@ -435,10 +435,10 @@ func HandleApprove(ctx context.Context, client crclient.Client, args ApproveArgs
 		return ApproveResult{}, ErrK8sUnavailable
 	}
 	if err := validate.Namespace(args.Namespace); err != nil {
-		return ApproveResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return ApproveResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	if err := validate.ResourceName(args.RARName); err != nil {
-		return ApproveResult{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+		return ApproveResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 	if args.Decision == "" {
 		return ApproveResult{}, fmt.Errorf("%w: decision must not be empty", ErrInvalidInput)

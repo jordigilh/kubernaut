@@ -17,7 +17,6 @@ limitations under the License.
 package server
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -92,7 +91,7 @@ func (s *Server) HandleExportAuditEvents(w http.ResponseWriter, r *http.Request)
 	includeDetachedSignature := r.URL.Query().Get("include_detached_signature") == "true"
 
 	// Build export response
-	exportResp, err := s.buildExportResponse(ctx, exportResult, filters, format, includeDetachedSignature, exportedBy)
+	exportResp, err := s.buildExportResponse(exportResult, filters, format, includeDetachedSignature, exportedBy)
 	if err != nil {
 		response.WriteRFC7807InternalError(w,
 			"export/build-failed", "Export Failed", err, s.logger)
@@ -216,9 +215,10 @@ func parseExportFilters(r *http.Request) (repository.ExportFilters, error) {
 	return filters, nil
 }
 
-// buildExportResponse converts repository.ExportResult to OpenAPI AuditExportResponse
+// buildExportResponse converts repository.ExportResult to OpenAPI
+// AuditExportResponse. Signing (s.signExport) and JSON marshal/unmarshal are
+// pure in-memory operations, so this needs no context.
 func (s *Server) buildExportResponse(
-	ctx context.Context,
 	exportResult *repository.ExportResult,
 	filters repository.ExportFilters,
 	format string,
@@ -228,7 +228,7 @@ func (s *Server) buildExportResponse(
 	exportTimestamp := time.Now().UTC()
 
 	// Sign the export
-	signature, algorithm, certFingerprint, err := s.signExport(ctx, exportResult, exportTimestamp)
+	signature, algorithm, certFingerprint, err := s.signExport(exportResult, exportTimestamp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign export: %w", err)
 	}
@@ -259,9 +259,7 @@ func (s *Server) buildExportResponse(
 	// Redaction happens AFTER hash chain verification to maintain integrity
 	if filters.RedactPII {
 		s.logger.V(1).Info("Applying PII redaction to audit export", "exported_by", exportedBy)
-		if err := s.applyPIIRedaction(&response); err != nil {
-			return nil, fmt.Errorf("failed to apply PII redaction: %w", err)
-		}
+		s.applyPIIRedaction(&response)
 	}
 
 	// Add detached signature if requested
@@ -383,7 +381,8 @@ func convertExportEvents(exportEvents []*repository.ExportEvent) []map[string]in
 // SOC2 Day 9.1: Digital signature implementation
 // BR-AUDIT-007: Signed exports for tamper detection
 // Algorithm: SHA256withRSA (NIST recommended)
-func (s *Server) signExport(ctx context.Context, exportResult *repository.ExportResult, exportTimestamp time.Time) (string, string, string, error) {
+// Pure in-memory signing (s.signer.Sign), no I/O -- needs no context.
+func (s *Server) signExport(exportResult *repository.ExportResult, exportTimestamp time.Time) (string, string, string, error) {
 	if s.signer == nil {
 		return "", "", "", fmt.Errorf("signer not initialized")
 	}
@@ -439,7 +438,11 @@ Certificate-Fingerprint: %s
 // Target Fields:
 // - export_metadata.exported_by
 // - events[].event_data (all string fields)
-func (s *Server) applyPIIRedaction(response *ogenclient.AuditExportResponse) error {
+//
+// Malformed per-event JSON fields are logged and skipped rather than
+// failing the export (Issue #1546 Tier 4: dropped the vestigial error
+// return, which was always nil for this reason).
+func (s *Server) applyPIIRedaction(response *ogenclient.AuditExportResponse) {
 	redactor := pii.NewRedactor()
 
 	// Redact exported_by field (if it's an email) - OGEN-MIGRATION: Use OptString pattern
@@ -478,6 +481,4 @@ func (s *Server) applyPIIRedaction(response *ogenclient.AuditExportResponse) err
 
 	s.logger.V(1).Info("PII redaction applied successfully",
 		"events_processed", len(response.Events))
-
-	return nil
 }
