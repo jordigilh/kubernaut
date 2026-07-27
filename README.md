@@ -12,7 +12,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/jordigilh/kubernaut)](https://github.com/jordigilh/kubernaut/releases/latest)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
-Kubernaut closes the loop from Kubernetes alert to automated remediation. It operates in two modes: **autonomously** — detecting signals, investigating root causes, and executing fixes end-to-end without human involvement — and **interactively** — letting operators join an in-progress investigation via MCP or A2A, guide the agent, and approve remediations in real time. The LLM-powered agent uses native Go client-go bindings against the Kubernetes API, Prometheus, and log endpoints to investigate, select a remediation workflow, and execute the fix — or escalate to a human with a full RCA when it can't.
+Kubernaut closes the loop from Kubernetes alert to automated remediation. It operates in two modes: **autonomously** — detecting signals, investigating root causes, and executing fixes end-to-end without human involvement — and **interactively** — letting operators join an in-progress investigation via MCP or A2A, guide the agent, and approve remediations in real time. The LLM-powered agent uses native Go client-go bindings against the Kubernetes API, Prometheus, and log endpoints to investigate, select a remediation workflow, and execute the fix — or escalate to a human with a full RCA when it can't. See the **[full documentation](https://jordigilh.github.io/kubernaut-docs/)** for architecture, installation, and usage guides.
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/b95290db-412b-4d6d-81b8-f766ef4657e2" controls width="100%"></video>
@@ -23,12 +23,10 @@ Kubernaut closes the loop from Kubernetes alert to automated remediation. It ope
 <p align="center">
   <img src="https://raw.githubusercontent.com/jordigilh/kubernaut-demo-scenarios/main/scenarios/crashloop/crashloop-lite.gif" alt="CrashLoopBackOff demo — autonomous alert-to-fix" width="800"/>
 </p>
-</details>
-
 <p align="center">
-  <a href="https://jordigilh.github.io/kubernaut-docs/"><strong>Full Documentation</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/jordigilh/kubernaut-demo-scenarios"><strong>Demo Scenarios</strong></a>
+  This is 1 of 37 runnable scenarios in <a href="https://github.com/jordigilh/kubernaut-demo-scenarios"><strong>kubernaut-demo-scenarios</strong></a> — clone it and run any of them against your own cluster.
 </p>
+</details>
 
 ---
 
