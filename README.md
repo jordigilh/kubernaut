@@ -27,8 +27,7 @@ Kubernaut closes the loop from Kubernetes alert to automated remediation. It ope
 
 <p align="center">
   <a href="https://jordigilh.github.io/kubernaut-docs/"><strong>Full Documentation</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/jordigilh/kubernaut-demo-scenarios"><strong>Demo Scenarios</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.5.3"><strong>Latest Release (v1.5.3)</strong></a>
+  <a href="https://github.com/jordigilh/kubernaut-demo-scenarios"><strong>Demo Scenarios</strong></a>
 </p>
 
 ---
@@ -84,19 +83,12 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 ## Roadmap
 
-### v1.5.3 — OpenAI Adapter & Severity Model ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.5.3))
-
-- **OpenAI-compatible LLM adapter** — In-house adapter for OpenAI-compatible endpoints (LlamaStack, vLLM, Ollama, Azure OpenAI) with mTLS transport chain injection, streaming, and tool call support ([#1487](https://github.com/jordigilh/kubernaut/pull/1487), BR-INTEGRATION-1254)
-- **4-level severity model** — Replaced `medium`/`low` with `warning`/`info` across CRDs, APIs, policies, and prompts ([#1484](https://github.com/jordigilh/kubernaut/pull/1484), ADR-066)
-- **Cluster-scoped resource fixes** — Dynamic scope resolution for namespace handling in KA investigate, AF, and Effectiveness Monitor ([#1480](https://github.com/jordigilh/kubernaut/pull/1480))
-- **v1.5.3 patch** — Removed a DataStorage pre-flight registry check that unconditionally blocked valid `execution.bundle` registrations against self-signed or credential-required private registries ([#1642](https://github.com/jordigilh/kubernaut/issues/1642))
-
-### v1.6 — Fleet Remediation & ITSM (next)
+### v1.6 — Fleet Remediation & ITSM (in progress)
 
 - **Fleet operations** — Multi-cluster remediation orchestration via ACM/OCM, enabling policy-driven remediation across fleet-scale Kubernetes environments ([#54](https://github.com/jordigilh/kubernaut/issues/54))
 - **ServiceNow incident triage** — Consume ServiceNow incidents as signals through the API Frontend, enabling Kubernaut to investigate and remediate ITSM tickets alongside Kubernetes alerts ([#1338](https://github.com/jordigilh/kubernaut/issues/1338))
 
-**[Full roadmap](docs/roadmap/ROADMAP.md)** — For past releases, see the [CHANGELOG](CHANGELOG.md).
+**[Full roadmap](docs/roadmap/ROADMAP.md)** — for released features, see the [CHANGELOG](CHANGELOG.md).
 
 ---
 
@@ -117,13 +109,17 @@ See [`.github/workflows/release.yml`](.github/workflows/release.yml) for the ful
 Verify any image before you pull it:
 
 ```bash
+# Resolve the latest published release. GitHub's `releases/latest` endpoint always
+# excludes drafts and pre-releases, so this never resolves to an -rcN build.
+VERSION=$(curl -fsSL https://api.github.com/repos/jordigilh/kubernaut/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+
 # Verify the signature (keyless, tied to this repo's release workflow)
-cosign verify quay.io/kubernaut-ai/gateway:v1.5.3 \
+cosign verify quay.io/kubernaut-ai/gateway:${VERSION} \
   --certificate-identity-regexp "https://github.com/jordigilh/kubernaut/.github/workflows/release.yml@.*" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
 # Verify the SLSA build provenance attestation
-cosign verify-attestation quay.io/kubernaut-ai/gateway:v1.5.3 \
+cosign verify-attestation quay.io/kubernaut-ai/gateway:${VERSION} \
   --type slsaprovenance \
   --certificate-identity-regexp "https://github.com/jordigilh/kubernaut/.github/workflows/release.yml@.*" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
