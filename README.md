@@ -44,7 +44,7 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 ## What It Can Triage & Fix
 
-Validated against [37 runnable scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios), not synthetic toy examples:
+Validated against [37 runnable scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) covering real-world Kubernetes failure modes:
 
 | Category | Examples |
 |---|---|
