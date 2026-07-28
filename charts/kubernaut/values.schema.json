@@ -26,6 +26,93 @@
         }
       }
     },
+    "k8sLabelSelector": {
+      "description": "A Kubernetes LabelSelector (matchLabels/matchExpressions), used as a raw namespaceSelector value in a NetworkPolicy ingress peer.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "matchLabels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "matchExpressions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "operator": {
+                "type": "string",
+                "enum": ["In", "NotIn", "Exists", "DoesNotExist"]
+              },
+              "values": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["key", "operator"]
+          }
+        }
+      }
+    },
+    "ingressCIDRs": {
+      "description": "CIDR blocks allowed as ingress sources (ipBlock). Required for traffic not associated with any pod/namespace -- e.g. NodePort-sourced host traffic (SNAT'd to the node's own IP) or a hostNetwork-mode ingress controller/router -- since podSelector/namespaceSelector can never match non-pod-associated source IPs (Issue #1737).",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": []
+    },
+    "ingressNamespaceSelectors": {
+      "description": "Raw namespaceSelector label selectors allowed as ingress sources, for cases the simple name-based ingressNamespaces list cannot express.",
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/k8sLabelSelector"
+      },
+      "default": []
+    },
+    "httpIngress": {
+      "description": "A networking.k8s.io/v1 Ingress for external access to a service. Opt-in and disabled by default (BR-PLATFORM-009, Kubernaut Operator parity with Gateway/APIFrontend/Console Route resources) -- each of these is either a machine-facing pipeline entry point or optional/replaceable UI tooling, so external exposure is a deliberate per-service choice, not a default.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false
+        },
+        "className": {
+          "type": "string",
+          "default": ""
+        },
+        "host": {
+          "type": "string",
+          "default": "",
+          "description": "Hostname for external access. Leaving this empty renders a catch-all Ingress rule."
+        },
+        "annotations": {
+          "type": "object",
+          "default": {}
+        },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "secretName": {
+              "type": "string",
+              "default": "",
+              "description": "Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or an ingress controller that provides its own default cert"
+            }
+          }
+        }
+      }
+    },
     "autoscaling": {
       "description": "HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589). autoscaling/v2 is a stable core API \u2014 no CRD required.",
       "type": "object",
@@ -791,6 +878,9 @@
         },
         "service": {
           "$ref": "#/definitions/serviceConfig"
+        },
+        "ingress": {
+          "$ref": "#/definitions/httpIngress"
         },
         "auth": {
           "type": "object",
@@ -2315,6 +2405,12 @@
         "autoscaling": {
           "$ref": "#/definitions/autoscaling"
         },
+        "service": {
+          "$ref": "#/definitions/serviceConfig"
+        },
+        "ingress": {
+          "$ref": "#/definitions/httpIngress"
+        },
         "image": {
           "type": "object",
           "additionalProperties": false,
@@ -2406,10 +2502,66 @@
                 }
               }
             },
+            "mcp": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "AF's own /mcp protocol endpoint for external MCP clients (distinct from AF-as-a-client-of-KA's-MCP-server, which is always active). Issue #1737 gap found: never exposed via Helm, so this defaulted to disabled and every /mcp request returned 501 regardless of TLS/RBAC wiring.",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "sessionIdleTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "5m"
+                }
+              }
+            },
+            "interactive": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Session-dependent A2A/MCP tool registration (kubernaut_investigate, discover_workflows, select_workflow, message, complete, cancel, status, reconnect, await_session). Config.DefaultConfig() already defaults this true; exposed here for override/documentation clarity, not a behavior-changing fix (unlike apifrontend.config.mcp.enabled, which defaults false).",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "default": true
+                },
+                "awaitSessionTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "10s"
+                },
+                "bridgeInactivityTimeout": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/goDuration"
+                    }
+                  ],
+                  "default": "15s"
+                }
+              }
+            },
             "severityTriage": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
+                "maxQueriesPerCall": {
+                  "type": "integer",
+                  "default": 10,
+                  "minimum": 0
+                },
+                "maxRulesEvaluated": {
+                  "type": "integer",
+                  "default": 100,
+                  "minimum": 0
+                },
                 "cacheTTLSeconds": {
                   "type": "integer",
                   "default": 30,
@@ -2442,10 +2594,25 @@
                   "default": "",
                   "description": "OIDC issuer URL for JWT validation. When set, OIDC/JWKS auth is used. When empty, K8s TokenReview is auto-detected."
                 },
+                "jwksURL": {
+                  "type": "string",
+                  "default": "",
+                  "description": "JWKS endpoint URL for the legacy single-provider issuerURL (optional, defaults to issuerURL's well-known discovery when empty)"
+                },
                 "audience": {
                   "type": "string",
                   "default": "",
                   "description": "Expected JWT audience claim"
+                },
+                "oidcCaFile": {
+                  "type": "string",
+                  "default": "",
+                  "description": "Path to a CA bundle used when fetching JWKS from issuerURL over TLS with a private/self-signed CA (e.g. an in-cluster OIDC test double signed by the chart's own inter-service CA). Requires mounting that CA into the pod -- the chart does this automatically when this field is set (or when global.fleet.enabled is true)."
+                },
+                "allowInsecureIssuers": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Allow http:// (non-TLS) issuerURL/jwksURL values. Dev/test only -- never set true in production (SC-8)."
                 },
                 "jwtProviders": {
                   "type": "array",
@@ -2512,6 +2679,33 @@
                       "description": "Valkey logical DB index used for replay cache keys"
                     }
                   }
+                }
+              }
+            },
+            "rateLimit": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Issue #1737 gap found: never wired into the chart, so AF silently ran with a package-level fallback of only 3 concurrent sessions / 60 tool calls per minute (cfg.RateLimit.MaxConcurrentSessions/ToolCallsPerMinute only override that fallback when > 0) -- too low for realistic concurrent MCP/A2A session load.",
+              "properties": {
+                "ipRequestsPerSec": {
+                  "type": "integer",
+                  "default": 10000,
+                  "minimum": 0
+                },
+                "userRequestsPerSec": {
+                  "type": "integer",
+                  "default": 100,
+                  "minimum": 0
+                },
+                "maxConcurrentSessions": {
+                  "type": "integer",
+                  "default": 50,
+                  "minimum": 0
+                },
+                "toolCallsPerMinute": {
+                  "type": "integer",
+                  "default": 600,
+                  "minimum": 0
                 }
               }
             },
@@ -2607,38 +2801,7 @@
           }
         },
         "ingress": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": true
-            },
-            "className": {
-              "type": "string",
-              "default": ""
-            },
-            "host": {
-              "type": "string",
-              "default": "",
-              "description": "Hostname for browser access. Leaving this empty matches all hosts on the ingress controller, which is usually undesirable when other apps share it."
-            },
-            "annotations": {
-              "type": "object",
-              "default": {}
-            },
-            "tls": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "secretName": {
-                  "type": "string",
-                  "default": "",
-                  "description": "Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or an ingress controller that provides its own default cert"
-                }
-              }
-            }
-          }
+          "$ref": "#/definitions/httpIngress"
         },
         "resources": {
           "$ref": "#/definitions/resources"
@@ -2924,22 +3087,50 @@
               },
               "default": [],
               "description": "Namespaces allowed to send ingress to Gateway (e.g., monitoring for AlertManager)"
+            },
+            "ingressCIDRs": {
+              "$ref": "#/definitions/ingressCIDRs"
+            },
+            "ingressNamespaceSelectors": {
+              "$ref": "#/definitions/ingressNamespaceSelectors"
             }
           }
         },
         "datastorage": {
-          "$ref": "#/definitions/serviceToggle"
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "ingressCIDRs": {
+              "$ref": "#/definitions/ingressCIDRs"
+            },
+            "ingressNamespaceSelectors": {
+              "$ref": "#/definitions/ingressNamespaceSelectors"
+            }
+          }
         },
         "aianalysis": {
           "$ref": "#/definitions/serviceToggle"
         },
         "kubernautAgent": {
-          "allOf": [
-            {
-              "$ref": "#/definitions/serviceToggle"
+          "type": "object",
+          "additionalProperties": false,
+          "description": "NetworkPolicy toggle for Kubernaut Agent",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": true
+            },
+            "ingressCIDRs": {
+              "$ref": "#/definitions/ingressCIDRs"
+            },
+            "ingressNamespaceSelectors": {
+              "$ref": "#/definitions/ingressNamespaceSelectors"
             }
-          ],
-          "description": "NetworkPolicy toggle for Kubernaut Agent"
+          }
         },
         "signalprocessing": {
           "$ref": "#/definitions/serviceToggle"
@@ -2975,6 +3166,12 @@
               },
               "default": [],
               "description": "Namespaces allowed to send ingress to APIFrontend (e.g., an ingress-controller namespace)"
+            },
+            "ingressCIDRs": {
+              "$ref": "#/definitions/ingressCIDRs"
+            },
+            "ingressNamespaceSelectors": {
+              "$ref": "#/definitions/ingressNamespaceSelectors"
             }
           }
         },
@@ -2994,6 +3191,12 @@
               },
               "default": [],
               "description": "Namespaces allowed to send ingress to the console (e.g., an ingress-controller namespace)"
+            },
+            "ingressCIDRs": {
+              "$ref": "#/definitions/ingressCIDRs"
+            },
+            "ingressNamespaceSelectors": {
+              "$ref": "#/definitions/ingressNamespaceSelectors"
             }
           }
         },
@@ -3002,6 +3205,40 @@
         },
         "valkey": {
           "$ref": "#/definitions/serviceToggle"
+        },
+        "idp": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Egress target for the OIDC identity provider that Console/APIFrontend authenticate against (token exchange, JWKS discovery). Defaults to \"anywhere on 443\" for a real external IDP; override for an in-cluster or non-standard-port IDP (e.g. a test-only OIDC provider double).",
+          "properties": {
+            "cidr": {
+              "type": "string",
+              "default": "0.0.0.0/0"
+            },
+            "port": {
+              "type": "integer",
+              "default": 443,
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
+        },
+        "llm": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Egress target for the LLM provider APIFrontend's A2A launcher agent calls directly (apifrontend.config.agent.llm.endpoint -- mandatory AF config, so this egress rule is unconditional on the AF NetworkPolicy). Defaults to \"anywhere on 443\" for a real external LLM provider; override for an in-cluster or non-standard-port LLM (e.g. a test-only mock-LLM double).",
+          "properties": {
+            "cidr": {
+              "type": "string",
+              "default": "0.0.0.0/0"
+            },
+            "port": {
+              "type": "integer",
+              "default": 443,
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
         }
       }
     }

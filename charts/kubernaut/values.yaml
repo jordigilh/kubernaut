@@ -189,8 +189,30 @@ gateway:
       cpu: 500m
   service:
     type: ClusterIP
-    # SPIKE (Issue #1737): explicit NodePort when type=NodePort. 0 = auto-assign (default, unchanged behavior).
+    # -- Explicit NodePort for the http port when type=NodePort. 0 (default)
+    # preserves existing behavior -- Kubernetes auto-assigns a port from the
+    # 30000-32767 range. Setting this pins a deterministic, host-accessible
+    # port -- useful for CI/test environments (e.g. Kind's extraPortMappings,
+    # which must know the exact port before the cluster is even created) or
+    # bare-metal/on-prem installs whose firewall/LB rules expect a fixed
+    # port. Production installs that don't need a fixed port should leave
+    # this at 0 and use type=ClusterIP with an Ingress/Gateway instead
+    # (Issue #1737).
     nodePort: 0
+  # -- Ingress for external access (BR-PLATFORM-009, Kubernaut Operator parity
+  # with GatewayRoute). Opt-in and disabled by default: Gateway is a machine-
+  # facing pipeline entry point (webhook/signal ingestion), so exposing it
+  # externally is a deliberate choice, not a default. Unlike console.ingress,
+  # no field here is required -- Gateway has no internal component (e.g. an
+  # OIDC redirect URL) that depends on the hostname being set, so leaving
+  # `host` empty renders a catch-all rule instead of failing the render.
+  ingress:
+    enabled: false
+    className: ""
+    host: ""  # optional, e.g. "gateway.apps.example.com"; empty = catch-all rule
+    annotations: {}
+    tls:
+      secretName: ""  # pre-created Secret with a TLS cert for `host`; omit for HTTP-only or an ingress controller that provides its own default cert
   # BR-GATEWAY-036/037: Auth middleware configuration
   auth:
     # External signal sources that need RBAC to call the Gateway.
@@ -297,7 +319,8 @@ datastorage:
       cpu: 500m
   service:
     type: ClusterIP
-    # SPIKE (Issue #1737): explicit NodePort when type=NodePort. 0 = auto-assign (default, unchanged behavior).
+    # -- Explicit NodePort for the http port when type=NodePort. See
+    # gateway.service.nodePort for rationale/range (Issue #1737).
     nodePort: 0
 
 # -- AIAnalysis controller
@@ -583,10 +606,19 @@ kubernautAgent:
     # sessionTTL: "30m"
     # -- Session timeout after last operator activity (Go duration).
     # inactivityTimeout: "10m"
-    # -- Maximum concurrent interactive sessions per agent replica.
-    # maxConcurrentSessions: 5
+    # -- Maximum concurrent interactive sessions per agent replica. Issue
+    # #1737 gap found: the template's fallback of 5 (matching this
+    # commented-out value) is too low even for realistic production use (a
+    # handful of SREs running concurrent investigations already exhausts
+    # it) -- confirmed via full-suite E2E, which failed nearly every
+    # interactive/MCP spec with "max_sessions: Maximum concurrent sessions
+    # reached" purely from Ginkgo's own parallelism (12 procs), well before
+    # any application-level concurrency. Chart default raised to 50 in the
+    # template (see kubernaut-agent.yaml) -- override lower here for a
+    # genuinely single-operator deployment.
+    # maxConcurrentSessions: 50
     # -- Maximum MCP requests per second per authenticated user.
-    # rateLimitPerUser: 10
+    # rateLimitPerUser: 20
     # -- Extended analyzing timeout for RO when an interactive session is active (Go duration).
     # Prevents RO from timing out a RemediationRequest while an operator is investigating.
     # maxAnalyzingTimeout: "45m"
@@ -617,6 +649,14 @@ kubernautAgent:
       memory: 1Gi
   service:
     type: ClusterIP
+    # -- Explicit NodePort for the https (MCP/API) port when type=NodePort. 0
+    # (default) preserves existing behavior -- Kubernetes auto-assigns a port
+    # from the 30000-32767 range. Setting this pins a deterministic,
+    # host-accessible port -- useful for CI/test environments (e.g. Kind's
+    # extraPortMappings, which must know the exact port before the cluster is
+    # even created). Production installs that don't need a fixed port should
+    # leave this at 0 (Issue #1737).
+    nodePort: 0
   # -- Required. Name of an entry in global.llmProfiles used for KA's
   # investigator LLM calls (DD-PLATFORM-007). No default -- at least one
   # profile must be defined under global.llmProfiles and referenced here.
@@ -875,12 +915,43 @@ networkPolicies:
   gateway:
     enabled: true
     ingressNamespaces: []
+    # -- CIDR blocks allowed as ingress sources on Gateway's port (ipBlock).
+    # Required for traffic not associated with any pod/namespace -- e.g.
+    # NodePort-sourced host traffic (SNAT'd to the node's own IP) or a
+    # hostNetwork-mode ingress controller/router -- since ingressNamespaces/
+    # ingressNamespaceSelectors can never match non-pod-associated source IPs
+    # no matter how broadly scoped (Issue #1737).
+    ingressCIDRs: []
+    # -- Raw namespaceSelector label selectors (matchLabels/matchExpressions)
+    # allowed as ingress sources, for cases ingressNamespaces' simple
+    # name-based matching cannot express.
+    ingressNamespaceSelectors: []
   datastorage:
     enabled: true
+    # -- CIDR blocks allowed as ingress sources on DataStorage's http port
+    # (ipBlock). See networkPolicies.gateway.ingressCIDRs for why this is
+    # needed in addition to the existing podSelector-based rules -- NodePort-
+    # sourced host traffic (SNAT'd to the node's own IP) matches none of them
+    # no matter how they're scoped (Issue #1737).
+    ingressCIDRs: []
+    # -- Raw namespaceSelector label selectors (matchLabels/matchExpressions)
+    # allowed as ingress sources, for cases the podSelector-based rules
+    # cannot express.
+    ingressNamespaceSelectors: []
   aianalysis:
     enabled: true
   kubernautAgent:
     enabled: true
+    # -- CIDR blocks allowed as ingress sources on Kubernaut Agent's MCP/API
+    # port (ipBlock). See networkPolicies.gateway.ingressCIDRs for why this is
+    # needed in addition to the existing podSelector-based rules -- NodePort-
+    # sourced host traffic (SNAT'd to the node's own IP) matches none of them
+    # no matter how they're scoped (Issue #1737).
+    ingressCIDRs: []
+    # -- Raw namespaceSelector label selectors (matchLabels/matchExpressions)
+    # allowed as ingress sources, for cases the podSelector-based rules
+    # cannot express.
+    ingressNamespaceSelectors: []
   signalprocessing:
     enabled: true
   remediationorchestrator:
@@ -899,6 +970,14 @@ networkPolicies:
     # release namespace (e.g. an ingress-controller namespace). Same-namespace
     # traffic is always allowed regardless of this list (BR-PLATFORM-005).
     ingressNamespaces: []
+    # -- CIDR blocks allowed as ingress sources (ipBlock) -- see
+    # networkPolicies.gateway.ingressCIDRs for why this is needed in addition
+    # to ingressNamespaces (Issue #1737).
+    ingressCIDRs: []
+    # -- Raw namespaceSelector label selectors (matchLabels/matchExpressions)
+    # allowed as ingress sources, beyond ingressNamespaces' simple name-based
+    # matching.
+    ingressNamespaceSelectors: []
   console:
     enabled: true
     # -- Namespaces allowed to reach the console's oauth2-proxy port from outside
@@ -906,10 +985,36 @@ networkPolicies:
     # traffic is always allowed regardless of this list (BR-PLATFORM-006). Only
     # relevant when console.enabled=true (the NetworkPolicy is a no-op otherwise).
     ingressNamespaces: []
+    # -- CIDR blocks allowed as ingress sources (ipBlock) -- e.g. a
+    # hostNetwork-mode ingress controller/router (OpenShift Router et al.),
+    # whose traffic isn't associated with any pod/namespace (Issue #1737).
+    ingressCIDRs: []
+    # -- Raw namespaceSelector label selectors (matchLabels/matchExpressions)
+    # allowed as ingress sources, beyond ingressNamespaces' simple name-based
+    # matching.
+    ingressNamespaceSelectors: []
   postgresql:
     enabled: true
   valkey:
     enabled: true
+  # -- Egress target for the OIDC identity provider that Console/APIFrontend
+  # authenticate against (token exchange, JWKS discovery). Defaults to
+  # "anywhere on 443" -- correct for a real external IDP over HTTPS. Override
+  # for an in-cluster or non-standard-port IDP (e.g. a test-only OIDC
+  # provider double reachable only on the pod CIDR at a non-443 port).
+  idp:
+    cidr: "0.0.0.0/0"
+    port: 443
+  # -- Egress target for the LLM provider APIFrontend's A2A launcher agent
+  # calls directly (apifrontend.config.agent.llm.endpoint -- mandatory AF
+  # config, not opt-in, so this egress rule is unconditional on the AF
+  # NetworkPolicy). Defaults to "anywhere on 443" -- correct for a real
+  # external LLM provider (OpenAI/Vertex AI/etc.) over HTTPS. Override for
+  # an in-cluster or non-standard-port LLM (e.g. a test-only mock-LLM
+  # double reachable only on the pod CIDR at a non-443 port).
+  llm:
+    cidr: "0.0.0.0/0"
+    port: 443
 
 # API Frontend - MCP bridge between users and Kubernaut Agent
 apifrontend:
@@ -919,6 +1024,29 @@ apifrontend:
     enabled: true
     # minAvailable: 1
     maxUnavailable: 1
+  service:
+    type: ClusterIP
+    # -- Explicit NodePort for the https port when type=NodePort. See
+    # gateway.service.nodePort for rationale/range (Issue #1737).
+    nodePort: 0
+  # -- Ingress for external access (BR-PLATFORM-009, Kubernaut Operator parity
+  # with APIFrontendRoute). Opt-in and disabled by default, same as Gateway:
+  # AF is a machine-facing pipeline entry point (MCP/API), so exposing it
+  # externally is a deliberate choice. AF serves HTTPS internally with a
+  # self-signed inter-service certificate, so unlike Console/Gateway's plain-
+  # HTTP backend, a controller-specific backend-protocol/TLS-passthrough
+  # annotation is required (e.g. nginx-ingress:
+  # `nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"` plus
+  # `nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"` since the backend
+  # cert isn't signed by a CA the controller trusts). This chart does not
+  # hardcode one controller's annotation syntax -- set it via `annotations`.
+  ingress:
+    enabled: false
+    className: ""
+    host: ""  # optional, e.g. "apifrontend.apps.example.com"; empty = catch-all rule
+    annotations: {}
+    tls:
+      secretName: ""  # pre-created Secret with a TLS cert for `host`; omit for an ingress controller that provides its own default cert
   # -- HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589). autoscaling/v2 is a stable core
   # API — no CRD gate needed, unlike ServiceMonitor/PrometheusRule. Ported from the Kubernaut
   # Operator's APIFrontendHPA (kubernaut-operator/internal/resources/hpa.go).
@@ -967,7 +1095,36 @@ apifrontend:
     session:
       disconnectTTL: "10m"
       retentionTTL: "720h"
+    # -- MCP protocol server (AF's own /mcp endpoint for external MCP clients,
+    # distinct from AF-as-a-client-of-KA's-MCP-server). Issue #1737 gap found:
+    # never exposed via Helm, so mcp.enabled defaulted false
+    # (Config.DefaultConfig()) and every /mcp request 501'd ("MCP protocol is
+    # disabled in configuration") regardless of the tls-certs/RBAC wiring
+    # being otherwise correct.
+    mcp:
+      enabled: true
+      sessionIdleTimeout: "5m"
+    # -- A2A/MCP session-dependent tool registration (kubernaut_investigate,
+    # discover_workflows, select_workflow, message, complete, cancel, status,
+    # reconnect, await_session -- see pkg/apifrontend/tools/tool_categories.go).
+    # Config.DefaultConfig() already defaults this true, so exposing it here
+    # is for documentation/override clarity, not a behavior-changing fix
+    # (unlike mcp.enabled above, which defaults false).
+    interactive:
+      enabled: true
+      awaitSessionTimeout: "10s"
+      bridgeInactivityTimeout: "15s"
     severityTriage:
+      # -- Issue #1737 gap found: severityTriage.enabled/prometheusURL were never
+      # exposed via Helm, so the chart always silently ran with triage disabled
+      # (Config.SeverityTriage.Enabled defaults false) even though this is a core
+      # feature that IS configured in the pre-#1737 Go-native E2E harness
+      # (deploy/apifrontend/overlays/e2e/config.yaml). Rendered conditionally on
+      # monitoring.prometheus.enabled below (prometheusURL is a hard requirement
+      # of Config.Validate() whenever enabled=true) so a bare chart install
+      # without Prometheus wiring is unaffected.
+      maxQueriesPerCall: 10
+      maxRulesEvaluated: 100
       cacheTTLSeconds: 30
       llmConfidence: 0.7
       # -- Name of an entry in global.llmProfiles for severity-triage's LLM
@@ -1010,6 +1167,19 @@ apifrontend:
       # single-process behavior when replicas=1.
       replayCache:
         enabled: false
+    # -- Issue #1737 gap found: never wired into the chart, so AF silently ran
+    # with cmd/apifrontend/main.go's buildRateLimiters() package-level fallback
+    # (ratelimit.DefaultConfig(): only 3 concurrent sessions, 60 tool
+    # calls/minute -- cfg.RateLimit.MaxConcurrentSessions/ToolCallsPerMinute
+    # only override that fallback when > 0) instead of these values, which are
+    # generous enough for realistic concurrent MCP/A2A session load (confirmed
+    # via E2E: a cap of 3 causes "max_sessions: Maximum concurrent sessions
+    # reached" / MCP 429s under any meaningful concurrency).
+    rateLimit:
+      ipRequestsPerSec: 10000
+      userRequestsPerSec: 100
+      maxConcurrentSessions: 50
+      toolCallsPerMinute: 600
     rbac:
       sarCacheTTL: "30s"
       personas:
@@ -1130,8 +1300,15 @@ console:
   # whenever console.enabled=true — even if you set console.ingress.enabled=false
   # to manage external access with your own Ingress/Route — because oauth2-proxy
   # needs the browser-facing hostname for its OIDC redirect URL.
+  # Opt-in and disabled by default (BR-PLATFORM-009), consistent with
+  # Gateway/APIFrontend: Console is optional browser-facing UI tooling in
+  # front of APIFrontend that users may replace with their own UI, or front
+  # with their own Ingress/Route/mesh gateway -- not something the chart
+  # should expose externally without an explicit choice. This is a deviation
+  # from the Kubernaut Operator's ConsoleRouteSpec (which defaults to
+  # enabled=true, opt-out), made deliberately for this reason.
   ingress:
-    enabled: true
+    enabled: false
     className: ""
     host: ""  # required when console.enabled=true, e.g. "console.apps.example.com"
     annotations: {}
