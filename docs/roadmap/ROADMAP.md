@@ -39,12 +39,12 @@ Track progress on the [v1.5 milestone](https://github.com/jordigilh/kubernaut/mi
 
 *From one cluster to your entire fleet.* ([#54](https://github.com/jordigilh/kubernaut/issues/54))
 
-Single hub deployment manages remediations across multiple clusters using three purpose-built paths: K8s MCP for investigation, ACM for SA provisioning, and AAP for execution — with RHBK (Keycloak) JWT authentication.
+Single hub deployment manages remediations across multiple clusters through a unified MCP Gateway (Envoy AI Gateway or Kuadrant) that channels all remote cluster access — investigation and remediation execution (Jobs, Tekton PipelineRuns, Ansible/AAP playbooks) alike — authenticated via OAuth2/JWT (Keycloak or Dex). Scope checking (which resources Kubernaut may act on) is handled by a pluggable federated control plane adapter: Red Hat ACM/OCM for ACM shops, or the built-in Fleet Metadata Cache (FMC) for GitOps and standalone clusters with no fleet control plane — with Rancher and Clusterpedia adapters architected for other vendor fleet platforms ([ADR-068](../architecture/decisions/ADR-068-fleet-federation-architecture.md)).
 
-- **Multi-cluster investigation** — KA investigates remote clusters via MCP with RHBK JWT authentication — cluster-agnostic RCA from a single hub ([#1510](https://github.com/jordigilh/kubernaut/issues/1510))
-- **Fleet remediation** — Cluster-scoped workflow targeting via SP Rego classification ([#1511](https://github.com/jordigilh/kubernaut/issues/1511))
+- **Multi-cluster investigation** — KA investigates remote clusters via the MCP Gateway with OAuth2/JWT authentication — cluster-agnostic RCA from a single hub ([#1510](https://github.com/jordigilh/kubernaut/issues/1510))
+- **Fleet remediation** — Cluster-scoped workflow targeting via SP Rego classification; WE executes Jobs, Tekton PipelineRuns, and Ansible/AAP workflows on remote clusters through the same gateway ([#1511](https://github.com/jordigilh/kubernaut/issues/1511))
 - **Centralized observability** — Cluster identity threaded through event payloads for console context and audit trails across the fleet ([#1409](https://github.com/jordigilh/kubernaut/issues/1409))
-- **ACM Search integration** — Bearer-token authenticated ACM Search adapter for fleet-wide resource discovery ([#1556](https://github.com/jordigilh/kubernaut/issues/1556))
+- **Federated scope checking** — Pluggable `ScopeChecker` adapter: bearer-token authenticated ACM Search (GraphQL) for ACM/OCM shops, or the Fleet Metadata Cache (FMC) for GitOps/no-fleet-platform environments; Rancher and Clusterpedia adapters planned ([#1556](https://github.com/jordigilh/kubernaut/issues/1556))
 
 Track progress on the [v1.6 milestone](https://github.com/jordigilh/kubernaut/milestone/7) — `v1.6.0-rc1` tagged, GA pending remaining follow-up work.
 
