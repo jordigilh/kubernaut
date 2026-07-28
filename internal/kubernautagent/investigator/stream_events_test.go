@@ -19,6 +19,7 @@ package investigator_test
 import (
 	"context"
 	"encoding/json"
+
 	"github.com/go-logr/logr"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -30,9 +31,34 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"k8s.io/utils/ptr"
 )
+
+// streamTestInvestigatorWithParams builds an Investigator whose LLM client is
+// wrapped in a SwappableClient carrying the given RuntimeParams, so tests can
+// control what chatOrStream sees (mirrors streamTestInvestigator, but exposes
+// the runtime-params-driven, Swappable+PinDecorator resolution path that
+// chatOrStream's streaming branch runs through in production).
+func streamTestInvestigatorWithParams(client llm.Client, params llm.RuntimeParams) *investigator.Investigator {
+	logger := logr.Discard()
+	builder, _ := prompt.NewBuilder()
+	rp := parser.NewResultParser()
+	enricher := enrichment.NewEnricher(nopK8sClient{}, nopDSClient{}, audit.NopAuditStore{}, logger)
+	swappable, err := llm.NewSwappableClient(client, "test-model", params)
+	Expect(err).NotTo(HaveOccurred())
+	return investigator.New(investigator.Config{
+		Swappable:    swappable,
+		Builder:      builder,
+		ResultParser: rp,
+		Enricher:     enricher,
+		AuditStore:   audit.NopAuditStore{},
+		Logger:       logger,
+		MaxTurns:     15,
+		PhaseTools:   investigator.DefaultPhaseToolMap(),
+	})
+}
 
 func streamTestInvestigator(client llm.Client) *investigator.Investigator {
 	logger := logr.Discard()
@@ -367,6 +393,73 @@ var _ = Describe("Kubernaut Agent Investigator Stream Events — #823 PR4", func
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.RCASummary).NotTo(BeEmpty())
+		})
+	})
+
+	Describe("UT-KA-1749-003: chatOrStream (streaming path) omits temperature when not configured", func() {
+		It("should leave Options.Temperature nil on the streamed request when RuntimeParams.Temperature is nil", func() {
+			eventCh := make(chan session.InvestigationEvent, 64)
+			ctx := session.WithEventSink(context.Background(), eventCh)
+
+			mockClient := &cancelAwareMockClient{
+				responses: []llm.ChatResponse{
+					{
+						Message: llm.Message{
+							Role:    "assistant",
+							Content: `{"rca_summary":"pod OOM killed","confidence":0.9}`,
+						},
+						Usage: llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
+					},
+				},
+			}
+
+			// Temperature intentionally left nil (not configured) — this is the
+			// streaming path (chatOrStream, sink != nil), an independent code
+			// path from the non-streaming ChatWithParams (#1749).
+			inv := streamTestInvestigatorWithParams(mockClient, llm.RuntimeParams{})
+			go func() {
+				_, _ = inv.Investigate(ctx, streamSignal)
+				close(eventCh)
+			}()
+			collectEvents(eventCh)
+
+			Expect(mockClient.calls).NotTo(BeEmpty())
+			for i, call := range mockClient.calls {
+				Expect(call.Options.Temperature).To(BeNil(),
+					"call %d: chatOrStream must omit temperature from the streamed request when not "+
+						"explicitly configured (fixes claude-opus-4-8 400 'temperature is deprecated for this model')", i)
+			}
+		})
+	})
+
+	Describe("UT-KA-1749-004 (BR-HAPI-199): chatOrStream still sends an explicit temperature of 0", func() {
+		It("should set Options.Temperature to 0 on the streamed request when explicitly configured as 0.0", func() {
+			eventCh := make(chan session.InvestigationEvent, 64)
+			ctx := session.WithEventSink(context.Background(), eventCh)
+
+			mockClient := &cancelAwareMockClient{
+				responses: []llm.ChatResponse{
+					{
+						Message: llm.Message{
+							Role:    "assistant",
+							Content: `{"rca_summary":"pod OOM killed","confidence":0.9}`,
+						},
+						Usage: llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
+					},
+				},
+			}
+
+			inv := streamTestInvestigatorWithParams(mockClient, llm.RuntimeParams{Temperature: ptr.To(0.0)})
+			go func() {
+				_, _ = inv.Investigate(ctx, streamSignal)
+				close(eventCh)
+			}()
+			collectEvents(eventCh)
+
+			Expect(mockClient.calls).NotTo(BeEmpty())
+			Expect(mockClient.calls[0].Options.Temperature).NotTo(BeNil(),
+				"an explicit temperature of 0 must still be sent on the streamed request — BR-HAPI-199")
+			Expect(*mockClient.calls[0].Options.Temperature).To(Equal(0.0))
 		})
 	})
 })

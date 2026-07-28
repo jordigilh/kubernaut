@@ -1,0 +1,55 @@
+suite: kubernaut-agent-llm-runtime ConfigMap — optional temperature (#1749)
+templates:
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: dummy
+  aianalysis:
+    policies:
+      existingConfigMap: dummy
+  kubernautAgent:
+    llm:
+      provider: anthropic
+      model: claude-opus-4-8
+tests:
+  - it: omits the temperature key entirely when not set in values (default install)
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - notMatchRegex:
+          path: data["llm-runtime.yaml"]
+          pattern: "temperature:"
+
+  - it: renders the temperature key when explicitly set to a non-zero value
+    set:
+      kubernautAgent:
+        llm:
+          provider: anthropic
+          model: claude-opus-4-8
+          temperature: 0.7
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - matchRegex:
+          path: data["llm-runtime.yaml"]
+          pattern: "temperature: 0\\.7"
+
+  - it: renders the temperature key when explicitly set to 0 (BR-HAPI-199 — explicit zero must still be sent)
+    set:
+      kubernautAgent:
+        llm:
+          provider: anthropic
+          model: claude-opus-4-8
+          temperature: 0
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - matchRegex:
+          path: data["llm-runtime.yaml"]
+          pattern: "temperature: 0"

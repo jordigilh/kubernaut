@@ -40,10 +40,12 @@ type stubTool struct {
 	output string
 }
 
-func (s *stubTool) Name() string                                                    { return s.name }
-func (s *stubTool) Description() string                                             { return "stub desc" }
-func (s *stubTool) Parameters() json.RawMessage                                     { return json.RawMessage(`{}`) }
-func (s *stubTool) Execute(_ context.Context, _ json.RawMessage) (string, error)    { return s.output, nil }
+func (s *stubTool) Name() string                { return s.name }
+func (s *stubTool) Description() string         { return "stub desc" }
+func (s *stubTool) Parameters() json.RawMessage { return json.RawMessage(`{}`) }
+func (s *stubTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
+	return s.output, nil
+}
 
 var _ = Describe("Kubernaut Agent Summarizer Unit — #433", func() {
 
@@ -167,6 +169,23 @@ var _ = Describe("Kubernaut Agent Summarizer Unit — #433", func() {
 			prompt := fake.calls[0].Messages[0].Content
 			Expect(prompt).To(ContainSubstring(moderateOutput),
 				"full output should be in prompt when below maxInputSize")
+		})
+	})
+
+	Describe("UT-KA-1749-005: MaybeSummarize does not send a temperature parameter", func() {
+		It("should leave Options.Temperature nil on the summarization LLM call", func() {
+			fake := &fakeLLM{response: "summarized output"}
+			s := summarizer.New(fake, 100)
+
+			longOutput := strings.Repeat("data ", 50) // 250 chars
+			_, err := s.MaybeSummarize(context.Background(), "kubectl_logs", longOutput)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(fake.calls).To(HaveLen(1))
+			Expect(fake.calls[0].Options.Temperature).To(BeNil(),
+				"the summarizer must not hardcode a temperature — it shares the base LLM client/model "+
+					"with the rest of the agent and must not depend on that model supporting the "+
+					"parameter (fixes claude-opus-4-8 400 'temperature is deprecated for this model')")
 		})
 	})
 

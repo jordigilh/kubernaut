@@ -23,7 +23,6 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
-	"k8s.io/utils/ptr"
 )
 
 // Summarizer uses a secondary LLM call to shorten tool output that exceeds
@@ -84,12 +83,15 @@ func (s *Summarizer) MaybeSummarize(ctx context.Context, toolName string, result
 		)
 	}
 
+	// #1749: no Temperature is set here. This call shares the base LLM
+	// client/model with the rest of the agent, so it cannot assume the
+	// configured model supports the parameter at all (e.g. claude-opus-4-8
+	// rejects it outright with a 400) — omitting it entirely is safe for
+	// every provider, and summarization has no BR-HAPI-199-style
+	// determinism requirement that would justify forcing 0.
 	resp, err := s.llmClient.Chat(ctx, llm.ChatRequest{
 		Messages: []llm.Message{
 			{Role: "user", Content: prompt},
-		},
-		Options: llm.ChatOptions{
-			Temperature: ptr.To(0.0),
 		},
 	})
 	if err != nil {
@@ -124,7 +126,7 @@ type wrappedTool struct {
 	summarizer *Summarizer
 }
 
-func (w *wrappedTool) Name() string               { return w.inner.Name() }
+func (w *wrappedTool) Name() string                { return w.inner.Name() }
 func (w *wrappedTool) Description() string         { return w.inner.Description() }
 func (w *wrappedTool) Parameters() json.RawMessage { return w.inner.Parameters() }
 
