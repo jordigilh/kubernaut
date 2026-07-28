@@ -12,7 +12,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/jordigilh/kubernaut)](https://github.com/jordigilh/kubernaut/releases/latest)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
-Kubernaut closes the loop from Kubernetes alert to automated remediation. It operates in two modes: **autonomously** — detecting signals, investigating root causes, and executing fixes end-to-end without human involvement — and **interactively** — letting operators join an in-progress investigation via MCP or A2A, guide the agent, and approve remediations in real time. The LLM-powered agent uses native Go client-go bindings against the Kubernetes API, Prometheus, and log endpoints to investigate, select a remediation workflow, and execute the fix — or escalate to a human with a full RCA when it can't.
+Kubernaut closes the loop from Kubernetes alert to automated remediation. It operates in two modes: **autonomously** — detecting signals, investigating root causes, and executing fixes end-to-end without human involvement — and **interactively** — letting operators join an in-progress investigation via MCP or A2A, guide the agent, and approve remediations in real time. The LLM-powered agent uses native Go client-go bindings against the Kubernetes API, Prometheus, and log endpoints to investigate, select a remediation workflow, and execute the fix — or escalate to a human with a full RCA when it can't. See the **[full documentation](https://jordigilh.github.io/kubernaut-docs/)** for architecture, installation, and usage guides.
 
 <div align="center">
   <video src="https://github.com/user-attachments/assets/b95290db-412b-4d6d-81b8-f766ef4657e2" controls width="100%"></video>
@@ -23,13 +23,10 @@ Kubernaut closes the loop from Kubernetes alert to automated remediation. It ope
 <p align="center">
   <img src="https://raw.githubusercontent.com/jordigilh/kubernaut-demo-scenarios/main/scenarios/crashloop/crashloop-lite.gif" alt="CrashLoopBackOff demo — autonomous alert-to-fix" width="800"/>
 </p>
-</details>
-
 <p align="center">
-  <a href="https://jordigilh.github.io/kubernaut-docs/"><strong>Full Documentation</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/jordigilh/kubernaut-demo-scenarios"><strong>Demo Scenarios</strong></a> &nbsp;·&nbsp;
-  <a href="https://github.com/jordigilh/kubernaut/releases/tag/v1.5.3"><strong>Latest Release (v1.5.3)</strong></a>
+  This is 1 of 37 runnable scenarios in <a href="https://github.com/jordigilh/kubernaut-demo-scenarios"><strong>kubernaut-demo-scenarios</strong></a> — clone it and run any of them against your own cluster.
 </p>
+</details>
 
 ---
 
@@ -45,6 +42,23 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 ---
 
+## What It Can Triage & Fix
+
+Validated against [37 runnable scenarios](https://github.com/jordigilh/kubernaut-demo-scenarios) covering real-world Kubernetes failure modes:
+
+| Category | Examples |
+|---|---|
+| **Workload failures** | Crash loops, stuck rollouts, memory leaks/escalation, SLO error-budget burn |
+| **Resource & capacity** | HPA maxed out, PDB deadlocks, PVC capacity exhaustion (forecasted), DB connection pool saturation |
+| **Infrastructure** | Node failures, PVC/StatefulSet binding failures, scheduling taints, OCP operator/build/RBAC/SCC violations |
+| **Networking & delivery** | NetworkPolicy misconfigurations, Istio authorization failures, GitOps drift, cert-manager failures |
+| **Complex root-cause chains** | Cross-namespace dependency tracing, cascading multi-service failures, prioritizing causation over severity, filtering unrelated noise |
+| **Safety & reasoning robustness** | Prompt-injection detection (shadow agent), resistance to misleading alert descriptions, duplicate-alert suppression |
+
+See the [full scenario catalog](https://github.com/jordigilh/kubernaut-demo-scenarios/blob/main/docs/scenarios.md) for exact alerts, fault injection, and remediation workflows per scenario.
+
+---
+
 ## What It Does
 
 - **Detects** — Ingests Prometheus AlertManager alerts and Kubernetes Events, validates resource scope, and deduplicates by fingerprint
@@ -57,7 +71,9 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 <details>
 <summary>Architecture</summary>
 
-![Kubernaut Layered Architecture](docs/architecture/diagrams/kubernaut-layered-architecture.svg)
+![Kubernaut Remediation Pipeline](https://raw.githubusercontent.com/jordigilh/kubernaut-docs/main/docs/assets/images/pipeline-phases.svg)
+
+See the interactive version with per-phase detail: [How It Works](https://jordigilh.github.io/kubernaut-docs/latest/#how-it-works).
 
 </details>
 
@@ -84,19 +100,12 @@ Kubernaut bridges that gap. It uses an LLM agent that investigates the actual ro
 
 ## Roadmap
 
-### v1.5.3 — OpenAI Adapter & Severity Model ([released](https://github.com/jordigilh/kubernaut/releases/tag/v1.5.3))
-
-- **OpenAI-compatible LLM adapter** — In-house adapter for OpenAI-compatible endpoints (LlamaStack, vLLM, Ollama, Azure OpenAI) with mTLS transport chain injection, streaming, and tool call support ([#1487](https://github.com/jordigilh/kubernaut/pull/1487), BR-INTEGRATION-1254)
-- **4-level severity model** — Replaced `medium`/`low` with `warning`/`info` across CRDs, APIs, policies, and prompts ([#1484](https://github.com/jordigilh/kubernaut/pull/1484), ADR-066)
-- **Cluster-scoped resource fixes** — Dynamic scope resolution for namespace handling in KA investigate, AF, and Effectiveness Monitor ([#1480](https://github.com/jordigilh/kubernaut/pull/1480))
-- **v1.5.3 patch** — Removed a DataStorage pre-flight registry check that unconditionally blocked valid `execution.bundle` registrations against self-signed or credential-required private registries ([#1642](https://github.com/jordigilh/kubernaut/issues/1642))
-
-### v1.6 — Fleet Remediation & ITSM (next)
+### v1.6 — Fleet Remediation & ITSM (in progress)
 
 - **Fleet operations** — Multi-cluster remediation orchestration via ACM/OCM, enabling policy-driven remediation across fleet-scale Kubernetes environments ([#54](https://github.com/jordigilh/kubernaut/issues/54))
 - **ServiceNow incident triage** — Consume ServiceNow incidents as signals through the API Frontend, enabling Kubernaut to investigate and remediate ITSM tickets alongside Kubernetes alerts ([#1338](https://github.com/jordigilh/kubernaut/issues/1338))
 
-**[Full roadmap](docs/roadmap/ROADMAP.md)** — For past releases, see the [CHANGELOG](CHANGELOG.md).
+**[Full roadmap](docs/roadmap/ROADMAP.md)** — for released features, see the [CHANGELOG](CHANGELOG.md).
 
 ---
 
@@ -117,13 +126,17 @@ See [`.github/workflows/release.yml`](.github/workflows/release.yml) for the ful
 Verify any image before you pull it:
 
 ```bash
+# Resolve the latest published release. GitHub's `releases/latest` endpoint always
+# excludes drafts and pre-releases, so this never resolves to an -rcN build.
+VERSION=$(curl -fsSL https://api.github.com/repos/jordigilh/kubernaut/releases/latest | grep -o '"tag_name": *"[^"]*"' | cut -d'"' -f4)
+
 # Verify the signature (keyless, tied to this repo's release workflow)
-cosign verify quay.io/kubernaut-ai/gateway:v1.5.3 \
+cosign verify quay.io/kubernaut-ai/gateway:${VERSION} \
   --certificate-identity-regexp "https://github.com/jordigilh/kubernaut/.github/workflows/release.yml@.*" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
 
 # Verify the SLSA build provenance attestation
-cosign verify-attestation quay.io/kubernaut-ai/gateway:v1.5.3 \
+cosign verify-attestation quay.io/kubernaut-ai/gateway:${VERSION} \
   --type slsaprovenance \
   --certificate-identity-regexp "https://github.com/jordigilh/kubernaut/.github/workflows/release.yml@.*" \
   --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
