@@ -265,6 +265,213 @@ stringData:
 	return nil
 }
 
+// FleetHelmOptions carries the pre-provisioned fleet infrastructure
+// (MCP Gateway + OAuth2 IdP) endpoints and credentials needed to render
+// global.fleet.* correctly on the FIRST `helm install`, instead of patching
+// it in afterward via kubectl once the chart-managed pods are already
+// running (DD-TEST-015, "deploy correctly the first time" -- see
+// SetupFleetE2EInfrastructure). Nil (the FP suite's default, via
+// SetupFullPipelineInfrastructure's fleetProvisioner=nil) leaves fleet
+// disabled, matching the chart's own global.fleet.enabled=false default.
+//
+// Every referenced Secret (OAuth2CredentialsSecret/WEOAuth2CredentialsSecret)
+// MUST already exist in the target namespace before InstallFullPipelineHelmChart
+// runs, and the MCP Gateway (MCPGatewayEndpoint) MUST already be reachable
+// and AuthPolicy-converged -- see FleetProvisioner's doc comment for why.
+type FleetHelmOptions struct {
+	// MCPGatewayEndpoint is the shared Kuadrant/EAIGW MCP Gateway URL
+	// (global.fleet.mcpGatewayEndpoint), e.g.
+	// "http://mcp-gateway-istio.gateway-system.svc:8080/mcp".
+	MCPGatewayEndpoint string
+	// MCPGatewayType is "kuadrant" or "eaigw" (global.fleet.mcpGatewayType).
+	MCPGatewayType string
+	// OAuth2TokenURL is the IdP's client_credentials token endpoint
+	// (global.fleet.oauth2.tokenURL).
+	OAuth2TokenURL string
+	// OAuth2CredentialsSecret is the pre-created K8s Secret name (keys:
+	// client-id, client-secret) shared by every fleet-aware service except
+	// WorkflowExecution (global.fleet.oauth2.credentialsSecretRef).
+	OAuth2CredentialsSecret string
+	// OAuth2Scopes is the OAuth2 scope list requested from the IdP
+	// (global.fleet.oauth2.scopes).
+	OAuth2Scopes []string
+	// WEOAuth2CredentialsSecret is WorkflowExecution's OWN required
+	// credentialsSecretRef (workflowexecution.fleet.oauth2.credentialsSecretRef)
+	// -- REQUIRED with NO fallback to the shared secret above (AC-6 least
+	// privilege, see values.yaml doc comment). Callers may point this at
+	// the same Secret as OAuth2CredentialsSecret if per-service credential
+	// differentiation isn't in scope (e.g. E2E).
+	WEOAuth2CredentialsSecret string
+	// SignalProcessingNamespace restricts SP's ClusterRegistry CRD watch
+	// (signalprocessing.fleet.namespace) -- empty watches cluster-wide.
+	SignalProcessingNamespace string
+}
+
+// FleetProvisioner, when non-nil, is invoked by SetupFullPipelineInfrastructure
+// once the target namespace exists (end of PHASE 5) but before `helm install`
+// (PHASE 6), to deploy fleet-specific infrastructure (IdP, MCP Gateway,
+// remote cluster) that must already be reachable and AuthPolicy-converged
+// BEFORE any chart-managed pod boots with global.fleet.enabled=true --
+// otherwise AF/EM/WE/GW/RO/SP would spend their first boot racing an MCP
+// Gateway that doesn't exist yet, the exact race the old patch-after-deploy
+// design (kubectl-patching fleet config into already-running pods once
+// infra was ready) worked around instead of resolving. Returns the
+// global.fleet.* values InstallFullPipelineHelmChart should render with.
+//
+// Kept as a callback (not a pre-computed *FleetHelmOptions) specifically
+// because fleet infrastructure deployment needs a live Kind cluster + the
+// target namespace, both of which only exist partway through
+// SetupFullPipelineInfrastructure's own PHASE 1/2/5 -- this lets Fleet's
+// provisioning share that single cluster-creation path with FP instead of
+// duplicating it.
+type FleetProvisioner func(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) (*FleetHelmOptions, error)
+
+// provisionInterServiceCA self-signs a fresh ECDSA P-256 CA and creates both
+// the authwebhook-tls Secret (tls.crt/tls.key/ca.crt/ca.key) AND the
+// inter-service-ca ConfigMap (ca.crt) from it, matching exactly the shapes
+// the chart's own tls-cert-gen pre-install hook
+// (charts/kubernaut/templates/hooks/tls-cert-job.yaml, Sections 1-2) would
+// otherwise generate on its own -- but doing it here, BEFORE `helm install`
+// runs, serves two purposes:
+//
+//  1. Keycloak (ensureKeycloakTLSFromChartCA) can get a leaf cert signed
+//     from the SAME CA and be fully deployed and AuthPolicy-converged
+//     before any chart-managed pod boots with global.fleet.enabled=true.
+//  2. kube-mcp-server (deployKubeMCPServer, via DeployFleetGatewayInfra)
+//     mounts the inter-service-ca ConfigMap as a REQUIRED (non-optional)
+//     volume -- without pre-creating it here, that Deployment would sit in
+//     ContainerCreating ("configmap \"inter-service-ca\" not found") since
+//     it now deploys before `helm install`'s hook would otherwise create it.
+//
+// See FleetProvisioner's doc comment for why this ordering matters.
+//
+// The hook is idempotent (checks authwebhook-tls's expiry/ca.crt/ca.key
+// presence and skips regeneration if valid -- tls-cert-job.yaml Section 1,
+// lines 61-77), so pre-creating both resources here makes the hook a no-op
+// for authwebhook's own cert and makes it reuse THIS CA for Section 2
+// (gateway-tls/datastorage-tls/kubernautagent-tls/fleetmetadatacache-tls/
+// apifrontend-tls generation, plus re-applying the same inter-service-ca
+// ConfigMap content it finds already there), keeping every chart-managed
+// service, kube-mcp-server, and Keycloak on one shared root of trust.
+func provisionInterServiceCA(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  🔐 Pre-provisioning inter-service CA + authwebhook-tls (deploy fleet correctly the first time)...")
+
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return fmt.Errorf("failed to generate CA key: %w", err)
+	}
+	caTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(time.Now().UnixNano()),
+		Subject:               pkix.Name{CommonName: "authwebhook-ca"},
+		NotBefore:             time.Now().Add(-1 * time.Hour),
+		NotAfter:              time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caKey.PublicKey, caKey)
+	if err != nil {
+		return fmt.Errorf("failed to self-sign CA certificate: %w", err)
+	}
+	caCert, err := x509.ParseCertificate(caDER)
+	if err != nil {
+		return fmt.Errorf("failed to parse newly-created CA certificate: %w", err)
+	}
+	caCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+	caKeyDER, err := x509.MarshalECPrivateKey(caKey)
+	if err != nil {
+		return fmt.Errorf("failed to marshal CA private key: %w", err)
+	}
+	caKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER})
+
+	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return fmt.Errorf("failed to generate authwebhook leaf key: %w", err)
+	}
+	leafTemplate := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano() + 1),
+		Subject:      pkix.Name{CommonName: fmt.Sprintf("authwebhook.%s.svc", namespace)},
+		NotBefore:    time.Now().Add(-1 * time.Hour),
+		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames: []string{
+			"authwebhook",
+			fmt.Sprintf("authwebhook.%s", namespace),
+			fmt.Sprintf("authwebhook.%s.svc", namespace),
+			fmt.Sprintf("authwebhook.%s.svc.cluster.local", namespace),
+		},
+	}
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, caCert, &leafKey.PublicKey, caKey)
+	if err != nil {
+		return fmt.Errorf("failed to create authwebhook leaf certificate: %w", err)
+	}
+	leafCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER})
+	leafKeyDER, err := x509.MarshalECPrivateKey(leafKey)
+	if err != nil {
+		return fmt.Errorf("failed to marshal authwebhook leaf key: %w", err)
+	}
+	leafKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: leafKeyDER})
+
+	secret := fmt.Sprintf(`apiVersion: v1
+kind: Secret
+metadata:
+  name: authwebhook-tls
+  namespace: %s
+type: kubernetes.io/tls
+stringData:
+  tls.crt: |
+%s
+  tls.key: |
+%s
+  ca.crt: |
+%s
+  ca.key: |
+%s`, namespace,
+		indentPEM(string(leafCertPEM)), indentPEM(string(leafKeyPEM)),
+		indentPEM(string(caCertPEM)), indentPEM(string(caKeyPEM)))
+
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmd.Stdin = strings.NewReader(secret)
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to create authwebhook-tls Secret: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ authwebhook-tls Secret created (self-signed CA, will be reused by the chart's tls-cert-gen hook)")
+
+	caConfigMap := fmt.Sprintf(`apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inter-service-ca
+  namespace: %s
+data:
+  ca.crt: |
+%s`, namespace, indentPEM(string(caCertPEM)))
+	cmCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
+	cmCmd.Stdin = strings.NewReader(caConfigMap)
+	cmCmd.Stdout = writer
+	cmCmd.Stderr = writer
+	if err := cmCmd.Run(); err != nil {
+		return fmt.Errorf("failed to create inter-service-ca ConfigMap: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ inter-service-ca ConfigMap created (kube-mcp-server's required tls-ca volume can now mount it)")
+
+	// Write the CA PEM to the deterministic host-side path (InterServiceCAPath)
+	// so host-side TLS-aware clients (NewTLSAwareClient, e.g. waitForKeycloakReady)
+	// trust the SAME CA that was just used to sign every service's leaf cert in
+	// THIS run. Without this, a stale inter-service-ca.pem left on disk by a
+	// prior E2E run (same kubeconfig path, different self-signed CA) causes
+	// every host-side HTTPS health check to fail TLS verification silently
+	// and retry until timeout -- this bit us for Keycloak's readiness poll.
+	caPEMPath := InterServiceCAPath(kubeconfigPath)
+	if err := os.WriteFile(caPEMPath, caCertPEM, 0600); err != nil {
+		return fmt.Errorf("failed to write CA PEM to %s: %w", caPEMPath, err)
+	}
+	_, _ = fmt.Fprintf(writer, "  ✅ CA PEM written to %s (host-side TLS clients now trust this run's CA)\n", caPEMPath)
+	return nil
+}
+
 // ensureDexTLSFromChartCA creates the dex-tls Secret (tls.crt/tls.key) that
 // deployDexOIDCProviderForAF's dex.yaml mounts, signed by the SAME
 // inter-service CA the Helm chart's own tls-cert-job.yaml pre-install hook
@@ -293,6 +500,36 @@ func ensureDexTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace stri
 		fmt.Sprintf("dex.%s", namespace),
 		fmt.Sprintf("dex.%s.svc", namespace),
 		fmt.Sprintf("dex.%s.svc.cluster.local", namespace),
+	}, []net.IP{net.IPv4(127, 0, 0, 1)}, caCert, caKey, writer)
+}
+
+// ensureKeycloakTLSFromChartCA creates the keycloak-tls Secret (tls.crt/
+// tls.key) that DeployKeycloakInfra's Deployment mounts, signed by the SAME
+// inter-service CA the Helm chart's tls-cert-job.yaml pre-install hook
+// generates (see ensureDexTLSFromChartCA above -- this is the "fleet" suite's
+// exact counterpart to that DEX fix, Issue #1737 regression). Without this,
+// keycloak-tls is never created (the Go-native harness's GenerateInterServiceTLS,
+// which used to create it as a side effect of minting its own standalone CA,
+// is no longer called now that the chart owns inter-service TLS), and the
+// keycloak Deployment's Pod sits in ContainerCreating forever
+// ("FailedMount ... secret \"keycloak-tls\" not found") until the 180s
+// rollout-status wait in DeployKeycloakInfra times out.
+//
+// Must run AFTER `helm install` (Phase 6, via SetupFullPipelineInfrastructure)
+// and BEFORE DeployKeycloakInfra -- mirrors ensureDexTLSFromChartCA's ordering
+// constraint for the same reason (authwebhook-tls's ca.crt/ca.key must exist).
+func ensureKeycloakTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
+	_, _ = fmt.Fprintln(writer, "  🔐 Signing keycloak-tls leaf cert from the chart's inter-service CA...")
+	caCert, caKey, err := loadChartCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
+	if err != nil {
+		return err
+	}
+	return signAndApplyLeafTLSSecret(ctx, kubeconfigPath, namespace, "keycloak-tls", "keycloak", []string{
+		"localhost",
+		"keycloak",
+		fmt.Sprintf("keycloak.%s", namespace),
+		fmt.Sprintf("keycloak.%s.svc", namespace),
+		fmt.Sprintf("keycloak.%s.svc.cluster.local", namespace),
 	}, []net.IP{net.IPv4(127, 0, 0, 1)}, caCert, caKey, writer)
 }
 
@@ -710,7 +947,13 @@ default reason := "Auto-approved"
 // prerequisite Secrets must already be applied (createFullPipelineHelmSecrets).
 //
 // registry/tag: from ensureSharedChartImageTag (always "localhost"/<sharedTag>).
-func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace, registry, tag string, writer io.Writer) error {
+//
+// fleetOpts, when non-nil (from FleetProvisioner, see SetupFullPipelineInfrastructure),
+// renders global.fleet.* fleet-enabled from this SAME install instead of the
+// chart's own default-disabled state -- DD-TEST-015 "deploy correctly
+// the first time". Nil (FP's default) leaves fleet disabled, identical to
+// pre-refactor behavior.
+func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace, registry, tag string, fleetOpts *FleetHelmOptions, writer io.Writer) error {
 	projectRoot := getProjectRoot()
 	chartPath := filepath.Join(projectRoot, "charts", "kubernaut")
 
@@ -872,6 +1115,40 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		"--set-file", "signalprocessing.policies.content=" + spPolicyFile,
 		"--set-file", "signalprocessing.proactiveSignalMappings.content=" + spMappingsFile,
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
+	}
+
+	// Fleet federation (DD-TEST-015, Issue #54): rendering global.fleet.*
+	// on THIS install (instead of kubectl-patching it in after the fact)
+	// means the chart's own fleet templates -- RBAC, ConfigMap fleet blocks,
+	// oauth2-credentials/inter-service-ca volume mounts -- are the ones
+	// actually exercised by this suite, closing the gap where a regression
+	// in the chart's fleet templating could hide behind the Go harness's own
+	// (now-removed) kubectl patches. FMC follows the same global.fleet.*
+	// derivation as every other fleet-aware service once
+	// fleetmetadatacache.enabled=true (see fleetmetadatacache.yaml); unlike
+	// them, though, it does not resolve its image via global.image.* (see
+	// kubernaut.image helper vs. this service's dedicated image.repository/
+	// tag values), so it needs an explicit override reusing the SAME
+	// registry/tag every other chart-managed service already got above.
+	if fleetOpts != nil {
+		args = append(args,
+			"--set", "global.fleet.enabled=true",
+			"--set", "global.fleet.mcpGatewayEndpoint="+fleetOpts.MCPGatewayEndpoint,
+			"--set", "global.fleet.mcpGatewayType="+fleetOpts.MCPGatewayType,
+			"--set", "global.fleet.oauth2.enabled=true",
+			"--set", "global.fleet.oauth2.tokenURL="+fleetOpts.OAuth2TokenURL,
+			"--set", "global.fleet.oauth2.credentialsSecretRef="+fleetOpts.OAuth2CredentialsSecret,
+			"--set", "workflowexecution.fleet.oauth2.credentialsSecretRef="+fleetOpts.WEOAuth2CredentialsSecret,
+			"--set", "fleetmetadatacache.enabled=true",
+			"--set", "fleetmetadatacache.image.repository="+registry+"/fleetmetadatacache",
+			"--set", "fleetmetadatacache.image.tag="+tag,
+		)
+		for i, scope := range fleetOpts.OAuth2Scopes {
+			args = append(args, "--set", fmt.Sprintf("global.fleet.oauth2.scopes[%d]=%s", i, scope))
+		}
+		if fleetOpts.SignalProcessingNamespace != "" {
+			args = append(args, "--set", "signalprocessing.fleet.namespace="+fleetOpts.SignalProcessingNamespace)
+		}
 	}
 
 	_, _ = fmt.Fprintln(writer, "  🚀 helm install kubernaut charts/kubernaut ...")

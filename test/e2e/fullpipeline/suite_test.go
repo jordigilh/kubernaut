@@ -148,7 +148,7 @@ var _ = SynchronizedBeforeSuite(
 		By("Setting up Full Pipeline E2E infrastructure (Issue #39)")
 		ctx := context.Background()
 		images, seededUUIDs, remediateNS, err := infrastructure.SetupFullPipelineInfrastructure(
-			ctx, clusterName, tempKubeconfigPath, GinkgoWriter,
+			ctx, clusterName, tempKubeconfigPath, nil, GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Full pipeline infrastructure setup failed")
 		_ = images // builtImages stored locally on process 1 for cleanup

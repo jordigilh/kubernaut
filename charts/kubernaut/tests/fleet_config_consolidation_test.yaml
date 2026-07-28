@@ -75,6 +75,42 @@ tests:
           path: data["remediationorchestrator.yaml"]
           pattern: "(?m)^\\s*endpoint: \"https://acm-search\\.example\\.com/graphql\""
 
+  - it: "GW defaults backend to fleetmetadatacache when global.fleet.backend is unset (Issue #1737 DD-TEST-015 regression: endpoint auto-derivation must not outrun backend defaulting, else pkg/fleet/config.go's effectiveBackend() rejects Backend=\"\" + a non-empty auto-derived Endpoint)"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*backend: \"fleetmetadatacache\""
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*endpoint: \"https://fleetmetadatacache-service"
+
+  - it: "RO defaults backend to fleetmetadatacache when global.fleet.backend is unset (same Issue #1737 DD-TEST-015 regression as GW above)"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    template: templates/remediationorchestrator/remediationorchestrator.yaml
+    documentSelector:
+      path: metadata.name
+      value: remediationorchestrator-config
+    asserts:
+      - matchRegex:
+          path: data["remediationorchestrator.yaml"]
+          pattern: "(?m)^\\s*backend: \"fleetmetadatacache\""
+      - matchRegex:
+          path: data["remediationorchestrator.yaml"]
+          pattern: "(?m)^\\s*endpoint: \"https://fleetmetadatacache-service"
+
   - it: "the old per-service gateway.fleet.backend key is no longer recognized (schema rejects it)"
     set:
       gateway:
@@ -178,6 +214,27 @@ tests:
       - matchRegex:
           path: data["config.yaml"]
           pattern: "(?m)^\\s*tokenUrl: \"http://oauth\\.example\\.com\""
+
+  - it: "FMC defaults valkey.addr to the chart's own shared Valkey Service when fleetmetadatacache.valkeyAddr is unset (Issue #1737 DD-TEST-015 regression: values.yaml documents this default but the template never materialized it, so the Go binary's ServiceConfig.Validate() failed startup with \"valkey.addr is required\")"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: "kuadrant"
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*addr: \"valkey\\.[^\"]*:6379\""
 
   - it: "the old fleetmetadatacache.gatewayType top-level key is no longer recognized"
     set:

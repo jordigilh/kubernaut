@@ -122,11 +122,21 @@ var fullPipelineImageConfigs = []E2EImageConfig{
 //   - kubeconfigPath: Isolated kubeconfig path (e.g., ~/.kube/fullpipeline-e2e-config)
 //   - writer: Output writer for progress logging
 //
+// fleetProvisioner, when non-nil, is invoked once the target namespace
+// exists (end of PHASE 5) but before `helm install` (PHASE 6) to deploy
+// fleet-specific infrastructure (IdP, MCP Gateway, remote cluster) and
+// return the global.fleet.* values to render THIS install with --
+// DD-TEST-015 "deploy correctly the first time" (see
+// SetupFleetE2EInfrastructure). Nil (the FP suite's call) leaves fleet
+// disabled, unchanged from pre-refactor behavior. See FleetProvisioner's
+// doc comment for why this must be a callback rather than a pre-computed
+// value.
+//
 // Returns:
 //   - builtImages: Map of service name → full image reference (for cleanup)
 //   - seededUUIDs: Map of "workflow_name:environment" → UUID (seeded in Phase 6b)
 //   - error: First fatal error encountered
-func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) (builtImages map[string]string, seededUUIDs map[string]string, afRemediateNS map[string]string, err error) {
+func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfigPath string, fleetProvisioner FleetProvisioner, writer io.Writer) (builtImages map[string]string, seededUUIDs map[string]string, afRemediateNS map[string]string, err error) {
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "🚀 Full Pipeline E2E Infrastructure (Issue #39)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -252,6 +262,27 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 5 complete (%s)\n", time.Since(phase5Start).Round(time.Second))
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// PHASE 5b: Fleet infrastructure provisioning (DD-TEST-015)
+	//
+	// Runs the caller-supplied fleet provisioning (IdP, MCP Gateway, remote
+	// cluster) now that the namespace exists but before PHASE 6's
+	// `helm install` -- so any chart-managed pod that boots with
+	// global.fleet.enabled=true already has a live, authenticated MCP
+	// Gateway to connect to, instead of racing infrastructure that gets
+	// deployed afterward. Nil for the FP suite (fleet stays disabled).
+	// ═══════════════════════════════════════════════════════════════════════
+	var fleetOpts *FleetHelmOptions
+	if fleetProvisioner != nil {
+		_, _ = fmt.Fprintln(writer, "\n🌐 PHASE 5b: Provisioning fleet infrastructure (IdP + MCP Gateway)...")
+		phase5bStart := time.Now()
+		fleetOpts, err = fleetProvisioner(ctx, kubeconfigPath, namespace, writer)
+		if err != nil {
+			return builtImages, nil, nil, fmt.Errorf("PHASE 5b: fleet infrastructure provisioning failed: %w", err)
+		}
+		_, _ = fmt.Fprintf(writer, "✅ PHASE 5b complete (%s)\n", time.Since(phase5bStart).Round(time.Second))
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// PHASE 6: helm install charts/kubernaut (Issue #1737)
 	//
 	// Replaces the manual PostgreSQL + Redis + DB migrations + DataStorage +
@@ -272,7 +303,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	phase6Results := make(chan deployResult, 2)
 	go func() {
 		phase6Results <- deployResult{"HelmChart",
-			InstallFullPipelineHelmChart(ctx, kubeconfigPath, namespace, chartImageRegistry, chartImageTag, writer)}
+			InstallFullPipelineHelmChart(ctx, kubeconfigPath, namespace, chartImageRegistry, chartImageTag, fleetOpts, writer)}
 	}()
 	go func() {
 		phase6Results <- deployResult{"Mock-Slack",
@@ -523,6 +554,14 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 
 	if err := waitForFullPipelineServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8 failed: services not ready: %w", err)
+	}
+	// fleetmetadatacache is chart-managed only when fleetOpts != nil
+	// (fleetmetadatacache.enabled=true, PHASE 6) -- not part of the FP
+	// suite's fixed deployment list above.
+	if fleetOpts != nil {
+		if err := waitForDeployment(ctx, "fleetmetadatacache", namespace, kubeconfigPath, 3*time.Minute, writer); err != nil {
+			return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8 failed: fleetmetadatacache not ready: %w", err)
+		}
 	}
 	_, _ = fmt.Fprintf(writer, "✅ PHASE 8 complete (%s)\n", time.Since(phase8Start).Round(time.Second))
 
