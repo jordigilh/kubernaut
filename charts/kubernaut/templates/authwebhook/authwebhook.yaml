@@ -66,6 +66,22 @@ spec:
       port: 443
       targetPort: webhook
       protocol: TCP
+{{- define "kubernaut.authwebhook.configYAML" -}}
+logging:
+  level: {{ .Values.authwebhook.logging.level | default "INFO" | quote }}
+webhook:
+  port: 9443
+  certDir: /tmp/k8s-webhook-server/serving-certs
+  healthProbeAddr: ":8081"
+datastorage:
+  url: "{{ include "kubernaut.datastorage.url" . }}"
+  timeout: 30s
+  buffer:
+    bufferSize: 1000
+    batchSize: 100
+    flushInterval: 5s
+    maxRetries: 3
+{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -77,20 +93,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   authwebhook.yaml: |
-    logging:
-      level: {{ .Values.authwebhook.logging.level | default "INFO" | quote }}
-    webhook:
-      port: 9443
-      certDir: /tmp/k8s-webhook-server/serving-certs
-      healthProbeAddr: ":8081"
-    datastorage:
-      url: "{{ include "kubernaut.datastorage.url" . }}"
-      timeout: 30s
-      buffer:
-        bufferSize: 1000
-        batchSize: 100
-        flushInterval: 5s
-        maxRetries: 3
+    {{- include "kubernaut.authwebhook.configYAML" . | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -111,6 +114,8 @@ spec:
     metadata:
       labels:
         app: authwebhook
+      annotations:
+        checksum/config: {{ include "kubernaut.authwebhook.configYAML" . | sha256sum }}
     spec:
       serviceAccountName: authwebhook
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}

@@ -201,54 +201,58 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   workflowexecution.yaml: |
-    logging:
-      level: {{ .Values.workflowexecution.logging.level | default "INFO" | quote }}
-    controller:
-      metricsAddr: ":9090"
-      healthProbeAddr: ":8081"
-      leaderElection: false
-      leaderElectionId: workflowexecution.kubernaut.ai
-    execution:
-      namespace: {{ include "kubernaut.workflowNamespace" . }}
-      cooldownPeriod: {{ .Values.workflowexecution.config.execution.cooldownPeriod | default "1m" }}
-    datastorage:
-      url: "{{ include "kubernaut.datastorage.url" . }}"
-      timeout: 10s
-      buffer:
-        bufferSize: 10000
-        batchSize: 50
-        flushInterval: 100ms
-        maxRetries: 3
-    {{- if .Values.workflowexecution.config.ansible }}
-    ansible:
-      apiURL: {{ .Values.workflowexecution.config.ansible.apiURL | quote }}
-      organizationID: {{ .Values.workflowexecution.config.ansible.organizationID | default 1 }}
-      {{- if .Values.workflowexecution.config.ansible.tokenSecretRef }}
-      tokenSecretRef:
-        name: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.name | quote }}
-        key: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.key | default "token" | quote }}
-        {{- if .Values.workflowexecution.config.ansible.tokenSecretRef.namespace }}
-        namespace: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.namespace | quote }}
-        {{- end }}
+    {{- include "kubernaut.workflowexecution.configYAML" . | nindent 4 }}
+{{- define "kubernaut.workflowexecution.configYAML" -}}
+{{- $weFleetCredsRef := .Values.workflowexecution.fleet.oauth2.credentialsSecretRef -}}
+logging:
+  level: {{ .Values.workflowexecution.logging.level | default "INFO" | quote }}
+controller:
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: workflowexecution.kubernaut.ai
+execution:
+  namespace: {{ include "kubernaut.workflowNamespace" . }}
+  cooldownPeriod: {{ .Values.workflowexecution.config.execution.cooldownPeriod | default "1m" }}
+datastorage:
+  url: "{{ include "kubernaut.datastorage.url" . }}"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 50
+    flushInterval: 100ms
+    maxRetries: 3
+{{- if .Values.workflowexecution.config.ansible }}
+ansible:
+  apiURL: {{ .Values.workflowexecution.config.ansible.apiURL | quote }}
+  organizationID: {{ .Values.workflowexecution.config.ansible.organizationID | default 1 }}
+  {{- if .Values.workflowexecution.config.ansible.tokenSecretRef }}
+  tokenSecretRef:
+    name: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.name | quote }}
+    key: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.key | default "token" | quote }}
+    {{- if .Values.workflowexecution.config.ansible.tokenSecretRef.namespace }}
+    namespace: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.namespace | quote }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- if .Values.global.fleet.enabled }}
+fleet:
+  endpoint: {{ .Values.global.fleet.mcpGatewayEndpoint | quote }}
+  {{- if .Values.global.fleet.oauth2.enabled }}
+  oauth2:
+    enabled: true
+    tokenURL: {{ .Values.global.fleet.oauth2.tokenURL | quote }}
+    credentialsSecretRef: {{ $weFleetCredsRef | quote }}
+    {{- if .Values.global.fleet.oauth2.scopes }}
+    scopes:
+      {{- range .Values.global.fleet.oauth2.scopes }}
+      - {{ . | quote }}
       {{- end }}
     {{- end }}
-    {{- if .Values.global.fleet.enabled }}
-    fleet:
-      endpoint: {{ .Values.global.fleet.mcpGatewayEndpoint | quote }}
-      {{- if .Values.global.fleet.oauth2.enabled }}
-      oauth2:
-        enabled: true
-        tokenURL: {{ .Values.global.fleet.oauth2.tokenURL | quote }}
-        credentialsSecretRef: {{ $weFleetCredsRef | quote }}
-        {{- if .Values.global.fleet.oauth2.scopes }}
-        scopes:
-          {{- range .Values.global.fleet.oauth2.scopes }}
-          - {{ . | quote }}
-          {{- end }}
-        {{- end }}
-        tlsCAFile: {{ .Values.global.fleet.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
-      {{- end }}
-    {{- end }}
+    tlsCAFile: {{ .Values.global.fleet.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -271,6 +275,7 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
+        checksum/config: {{ include "kubernaut.workflowexecution.configYAML" . | sha256sum }}
     spec:
       serviceAccountName: workflowexecution-controller
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}

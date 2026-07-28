@@ -1,3 +1,41 @@
+{{- /*
+checksum/config (Issue #1737 gap) needs this content reachable from the
+Deployment's pod template annotations, a separate `include` call site from
+the ConfigMap below -- named templates don't inherit $-scoped variables from
+their caller (and can't be `define`d inside this file's top-level `if`
+below), so $fmcFleetPreamble must be recomputed here rather than reused.
+*/}}
+{{- define "kubernaut.fleetmetadatacache.configYAML" -}}
+{{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml -}}
+server:
+  apiAddr: ":8080"
+  healthAddr: ":8081"
+  metricsAddr: ":9090"
+  tls:
+    certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
+mcpGateway:
+  endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
+  gatewayType: {{ $fmcFleetPreamble.config.mcpGatewayType | quote }}
+  namespace: {{ .Values.fleetmetadatacache.namespace | quote }}
+valkey:
+  {{- /* values.yaml documents valkeyAddr: "" as "uses shared Valkey
+  instance", but left unimplemented that default actually falls through to
+  an empty string (Go binary's ServiceConfig.Validate() then rejects it with
+  "valkey.addr is required" at startup, Issue #1737 DD-TEST-015 regression --
+  same class of gap as global.fleet.backend above: a documented default that
+  was never materialized in the template). kubernaut.valkey.addr already
+  computes the chart's own shared Valkey Service address (or the BYO
+  valkey.host when valkey.enabled=false) for postgresql/datastorage; reuse it
+  here instead of requiring every fleetmetadatacache.enabled=true caller to
+  redundantly pass --set fleetmetadatacache.valkeyAddr=valkey:6379. */}}
+  addr: {{ .Values.fleetmetadatacache.valkeyAddr | default (include "kubernaut.valkey.addr" .) | quote }}
+sync:
+  interval: {{ .Values.fleetmetadatacache.syncInterval | quote }}
+  keyTtl: {{ .Values.fleetmetadatacache.keyTTL | quote }}
+oauth2:
+  tokenUrl: {{ $fmcFleetPreamble.oauth2.tokenURL | quote }}
+  credentialsDir: "/etc/fleetmetadatacache/fleet-oauth2"
+{{- end }}
 {{- if .Values.fleetmetadatacache.enabled }}
 {{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml }}
 {{- if not $fmcFleetPreamble.config.mcpGatewayEndpoint }}
@@ -21,24 +59,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   config.yaml: |
-    server:
-      apiAddr: ":8080"
-      healthAddr: ":8081"
-      metricsAddr: ":9090"
-      tls:
-        certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
-    mcpGateway:
-      endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
-      gatewayType: {{ $fmcFleetPreamble.config.mcpGatewayType | quote }}
-      namespace: {{ .Values.fleetmetadatacache.namespace | quote }}
-    valkey:
-      addr: {{ .Values.fleetmetadatacache.valkeyAddr | quote }}
-    sync:
-      interval: {{ .Values.fleetmetadatacache.syncInterval | quote }}
-      keyTtl: {{ .Values.fleetmetadatacache.keyTTL | quote }}
-    oauth2:
-      tokenUrl: {{ $fmcFleetPreamble.oauth2.tokenURL | quote }}
-      credentialsDir: "/etc/fleetmetadatacache/fleet-oauth2"
+    {{- include "kubernaut.fleetmetadatacache.configYAML" . | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -59,6 +80,8 @@ spec:
       labels:
         app.kubernetes.io/name: fleetmetadatacache
         app.kubernetes.io/component: fleet-metadata-cache
+      annotations:
+        checksum/config: {{ include "kubernaut.fleetmetadatacache.configYAML" . | sha256sum }}
     spec:
       serviceAccountName: fleetmetadatacache
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}

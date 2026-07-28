@@ -1,3 +1,9 @@
+{{- define "kubernaut.signalprocessing.policyYAML" -}}
+{{ .Values.signalprocessing.policies.content }}
+{{- end }}
+{{- define "kubernaut.signalprocessing.proactiveSignalMappingsYAML" -}}
+{{ .Values.signalprocessing.proactiveSignalMappings.content | default (.Files.Get "files/defaults/proactive-signal-mappings.yaml") }}
+{{- end }}
 {{- $signalprocessingFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.signalprocessing.fleet "oauth2" .Values.signalprocessing.fleet.oauth2) | fromYaml }}
 {{- if $signalprocessingFleetPreamble.oauth2.enabled }}
 {{- if not $signalprocessingFleetPreamble.oauth2.tokenURL }}
@@ -22,10 +28,9 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   policy.rego: |
-{{ .Values.signalprocessing.policies.content | indent 4 }}
+    {{- include "kubernaut.signalprocessing.policyYAML" . | nindent 4 }}
 {{- end }}
 {{- if not .Values.signalprocessing.proactiveSignalMappings.existingConfigMap }}
-{{- $mappingsContent := .Values.signalprocessing.proactiveSignalMappings.content | default (.Files.Get "files/defaults/proactive-signal-mappings.yaml") }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -37,7 +42,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   proactive-signal-mappings.yaml: |
-{{ $mappingsContent | indent 4 }}
+    {{- include "kubernaut.signalprocessing.proactiveSignalMappingsYAML" . | nindent 4 }}
 {{- end }}
 ---
 apiVersion: v1
@@ -50,51 +55,55 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   config.yaml: |
-    logging:
-      level: {{ .Values.signalprocessing.logging.level | default "INFO" | quote }}
-    controller:
-      metricsAddr: ":9090"
-      healthProbeAddr: ":8081"
-      leaderElection: false
-      leaderElectionId: "signalprocessing.kubernaut.ai"
-    enrichment:
-      cacheTtl: "5m"
-      timeout: "10s"
-    classifier:
-      regoConfigMapName: "signalprocessing-policy"
-      regoConfigMapKey: "policy.rego"
-      hotReloadInterval: "30s"
-    datastorage:
-      url: "{{ include "kubernaut.datastorage.url" . }}"
-      timeout: "10s"
-      buffer:
-        bufferSize: 10000
-        batchSize: 100
-        flushInterval: "1s"
-        maxRetries: 3
-    {{- if $signalprocessingFleetPreamble.config.mcpGatewayEndpoint }}
-    fleet:
-      endpoint: {{ $signalprocessingFleetPreamble.config.mcpGatewayEndpoint | quote }}
-      {{- if $signalprocessingFleetPreamble.config.mcpGatewayType }}
-      mcpGatewayType: {{ $signalprocessingFleetPreamble.config.mcpGatewayType | quote }}
-      {{- end }}
-      {{- if .Values.signalprocessing.fleet.namespace }}
-      namespace: {{ .Values.signalprocessing.fleet.namespace | quote }}
-      {{- end }}
-      {{- if $signalprocessingFleetPreamble.oauth2.enabled }}
-      oauth2:
-        enabled: true
-        tokenURL: {{ $signalprocessingFleetPreamble.oauth2.tokenURL | quote }}
-        credentialsSecretRef: {{ $signalprocessingFleetPreamble.oauth2.credentialsSecretRef | quote }}
-        {{- if $signalprocessingFleetPreamble.oauth2.scopes }}
-        scopes:
-          {{- range $signalprocessingFleetPreamble.oauth2.scopes }}
-          - {{ . | quote }}
-          {{- end }}
-        {{- end }}
-        tlsCAFile: {{ $signalprocessingFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+    {{- include "kubernaut.signalprocessing.configYAML" . | nindent 4 }}
+{{- define "kubernaut.signalprocessing.configYAML" -}}
+{{- $signalprocessingFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.signalprocessing.fleet "oauth2" .Values.signalprocessing.fleet.oauth2) | fromYaml -}}
+logging:
+  level: {{ .Values.signalprocessing.logging.level | default "INFO" | quote }}
+controller:
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: "signalprocessing.kubernaut.ai"
+enrichment:
+  cacheTtl: "5m"
+  timeout: "10s"
+classifier:
+  regoConfigMapName: "signalprocessing-policy"
+  regoConfigMapKey: "policy.rego"
+  hotReloadInterval: "30s"
+datastorage:
+  url: "{{ include "kubernaut.datastorage.url" . }}"
+  timeout: "10s"
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: "1s"
+    maxRetries: 3
+{{- if $signalprocessingFleetPreamble.config.mcpGatewayEndpoint }}
+fleet:
+  endpoint: {{ $signalprocessingFleetPreamble.config.mcpGatewayEndpoint | quote }}
+  {{- if $signalprocessingFleetPreamble.config.mcpGatewayType }}
+  mcpGatewayType: {{ $signalprocessingFleetPreamble.config.mcpGatewayType | quote }}
+  {{- end }}
+  {{- if .Values.signalprocessing.fleet.namespace }}
+  namespace: {{ .Values.signalprocessing.fleet.namespace | quote }}
+  {{- end }}
+  {{- if $signalprocessingFleetPreamble.oauth2.enabled }}
+  oauth2:
+    enabled: true
+    tokenURL: {{ $signalprocessingFleetPreamble.oauth2.tokenURL | quote }}
+    credentialsSecretRef: {{ $signalprocessingFleetPreamble.oauth2.credentialsSecretRef | quote }}
+    {{- if $signalprocessingFleetPreamble.oauth2.scopes }}
+    scopes:
+      {{- range $signalprocessingFleetPreamble.oauth2.scopes }}
+      - {{ . | quote }}
       {{- end }}
     {{- end }}
+    tlsCAFile: {{ $signalprocessingFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -200,6 +209,13 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
+        checksum/config: {{ include "kubernaut.signalprocessing.configYAML" . | sha256sum }}
+        {{- if not .Values.signalprocessing.policies.existingConfigMap }}
+        checksum/policy: {{ include "kubernaut.signalprocessing.policyYAML" . | sha256sum }}
+        {{- end }}
+        {{- if not .Values.signalprocessing.proactiveSignalMappings.existingConfigMap }}
+        checksum/proactive-signal-mappings: {{ include "kubernaut.signalprocessing.proactiveSignalMappingsYAML" . | sha256sum }}
+        {{- end }}
     spec:
       serviceAccountName: signalprocessing-controller
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
