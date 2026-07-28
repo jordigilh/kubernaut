@@ -266,8 +266,13 @@ spec:
   egress:
     - to:
         - podSelector:
+            # Issue #1737 gap found: infrastructure/valkey.yaml's pod template only
+            # carries the legacy "app: valkey" label (predates the
+            # "app.kubernetes.io/name" convention used elsewhere in this file) --
+            # the selector below never matched any pod, silently dropping all FMC
+            # egress to Valkey (default-deny) and blocking FMC's readiness probe.
             matchLabels:
-              app.kubernetes.io/name: valkey
+              app: valkey
       ports:
         - protocol: TCP
           port: 6379

@@ -945,6 +945,38 @@ Usage: {{ include "kubernaut.np.datastorageEgress" . | nindent 4 }}
 {{- end }}
 
 {{/*
+FleetMetadataCache egress rule: Gateway and RemediationOrchestrator call FMC
+directly for fleet scope-checking (kubernaut.fleetmetadatacache.url, port
+8080) whenever fleet federation is wired up. Issue #1737 gap found: FMC's own
+NetworkPolicy (fleetmetadatacache.yaml) already allows ingress FROM these two
+callers, but neither caller's NetworkPolicy ever had the reciprocal egress
+rule -- a one-sided wiring gap that silently timed out Gateway's/RO's fleet
+readiness probe ("FMC unreachable: ... context deadline exceeded").
+Unconditional (not gated on global.fleet.enabled or fleetmetadatacache.enabled):
+a podSelector matching zero live pods is a no-op, and the "fleet" E2E suite
+never sets either of those chart values true -- it deploys FMC via a raw
+kubectl manifest outside the chart (test/infrastructure/fleet_e2e.go's
+deployFMC, "app: fleetmetadatacache") and patches fleet config into
+Gateway/RO's ConfigMaps post-install rather than via `helm upgrade --set
+global.fleet.*` -- so gating on either value would leave the E2E lane
+unmatched. Both label conventions are listed to cover the chart's own
+template ("app.kubernetes.io/name") and that E2E-only path ("app").
+Usage: {{ include "kubernaut.np.fleetmetadatacacheEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.fleetmetadatacacheEgress" -}}
+- ports:
+    - port: 8080
+      protocol: TCP
+  to:
+    - podSelector:
+        matchLabels:
+          app: fleetmetadatacache
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: fleetmetadatacache
+{{- end }}
+
+{{/*
 Metrics scraping ingress rule: allow Prometheus scrape from monitoring namespace.
 Usage: {{ include "kubernaut.np.metricsIngress" . | nindent 4 }}
 */}}

@@ -34,4 +34,5 @@ spec:
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.fleetmetadatacacheEgress" . | nindent 4 }}
 {{- end }}
