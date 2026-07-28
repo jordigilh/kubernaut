@@ -328,6 +328,16 @@ spec:
             - name: health
               containerPort: 8081
               protocol: TCP
+          {{- /* DD-PLATFORM-008: WE connects to the fleet MCP Gateway (OAuth2
+          token fetch + registry.ClusterRegistry) at boot, same shape as
+          apifrontend/effectivenessmonitor -- can legitimately stall well
+          past the liveness probe's budget under load. Confirmed via live
+          debugging: WE's process was unresponsive to even a trivial,
+          dependency-free healthz.Ping handler for 5+ seconds at a time
+          during a multi-service restart under a CPU-constrained E2E
+          cluster, causing a self-inflicted, non-self-resolving crash loop.
+          See apifrontend.yaml's identical comment for further details. */}}
+          {{- include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}
           livenessProbe:
             httpGet:
               path: /healthz

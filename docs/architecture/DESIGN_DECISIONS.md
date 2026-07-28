@@ -124,6 +124,7 @@
 | DD-LLM-007 | AF and KA Intentionally Do Not Share an Anthropic Client | ✅ Approved | 2026-07-06 | [DD-LLM-007-af-ka-anthropic-client-divergence.md](decisions/DD-LLM-007-af-ka-anthropic-client-divergence.md) |
 | DD-LLM-008 | LLM Identity (Provider+Model) Requires a Restart to Change | ✅ Approved & Implemented | 2026-07-06 | [DD-LLM-008-restart-required-llm-identity-lock.md](decisions/DD-LLM-008-restart-required-llm-identity-lock.md) |
 | DD-FLEET-004 | FMC's Readiness Ping Targets `ClustersPath`, Not a Duplicated `/healthz` | ✅ Approved & Implemented | 2026-07-24 | [DD-FLEET-004-fmc-ping-clusters-endpoint.md](decisions/DD-FLEET-004-fmc-ping-clusters-endpoint.md) |
+| DD-PLATFORM-008 | `startupProbe` for Fleet-Aware Services with Slow Cold Starts (AF/EM/WE, `kubernaut.startupProbe` helper) | ✅ Approved & Implemented | 2026-07-28 | [DD-PLATFORM-008-fleet-aware-service-startup-probe.md](decisions/DD-PLATFORM-008-fleet-aware-service-startup-probe.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 

@@ -236,6 +236,12 @@ spec:
               name: metrics
             - containerPort: 8081
               name: health
+          {{- /* DD-PLATFORM-008: EM builds a registry.ClusterRegistry against
+          the fleet MCP Gateway at boot, same shape as apifrontend -- can
+          legitimately stall well past the liveness probe's budget under
+          load. See apifrontend.yaml's identical comment for the confirmed
+          incident details. */}}
+          {{- include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}
           readinessProbe:
             httpGet:
               path: /readyz

@@ -255,6 +255,18 @@ spec:
               mountPath: "/etc/gateway/{{ $gatewayFleetPreamble.config.tokenSecretRef }}"
               readOnly: true
             {{- end }}
+          {{- /* DD-PLATFORM-008: when global.fleet.enabled=true, Gateway builds
+          a federated scope-checker (fleet.NewScopeChecker) against FMC/ACM and
+          a registry.ClusterRegistry against the MCP Gateway synchronously at
+          boot -- the exact same blocking-dependency shape already fixed for
+          apifrontend/effectivenessmonitor/workflowexecution (confirmed via a
+          liveness-probe-induced crash loop against a cold FMC/Keycloak during
+          Issue #1737 Fleet E2E validation: "Readiness probe failed... connect:
+          connection refused" while the process was still resolving its fleet
+          dependencies). Applying the shared helper here follows the DD's own
+          "default remediation pattern going forward" guidance rather than
+          reinventing probe tuning for this service. */}}
+          {{- include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}
           livenessProbe:
             httpGet:
               path: /healthz

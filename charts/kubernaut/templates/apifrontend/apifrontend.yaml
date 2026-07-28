@@ -491,6 +491,13 @@ spec:
               mountPath: "/etc/apifrontend/{{ $apifrontendFleetPreamble.oauth2.credentialsSecretRef }}"
               readOnly: true
             {{- end }}
+          {{- /* DD-PLATFORM-008: AF builds a registry.ClusterRegistry against
+          the fleet MCP Gateway at boot (buildFleetReaderDeps ->
+          mcpclient.NewResilient + ClusterRegistry.Start's blocking
+          cache.WaitForCacheSync), which can legitimately stall well past the
+          liveness probe's budget under load -- confirmed via a 10+ minute
+          crash loop in a resource-constrained E2E cluster. */}}
+          {{- include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}
           readinessProbe:
             httpGet:
               path: /readyz

@@ -801,6 +801,38 @@ Usage: {{ include "kubernaut.mergedSecurityContext" (dict "override" .Values.pos
 {{- toYaml (merge $override .defaults) }}
 {{- end }}
 
+{{/*
+Generous startupProbe for components whose startup can legitimately stall
+past a steady-state liveness/readiness budget (DD-PLATFORM-008). Any
+component that builds a registry.ClusterRegistry / MCP client connection at
+boot (fleet-aware services: apifrontend, effectivenessmonitor,
+workflowexecution as of this writing) can block for 100+ seconds under a
+CPU-constrained or noisy-neighbor node -- well past a liveness probe tuned
+for steady-state response times -- causing kubelet to kill and restart the
+pod before it ever reports ready (a self-inflicted crash loop, confirmed via
+live debugging: the same 3 services observed 10+ minute crash loops in a
+resource-constrained Kind/podman E2E cluster, each recovering instantly once
+retried under lighter load). A startupProbe defers liveness/readiness
+enforcement entirely until it passes once, then hands off to the existing
+probes unchanged -- steady-state behavior is untouched. This is the DEFAULT
+pattern for any new component with the same "slow, one-time startup
+dependency" shape; add a startupProbe rather than loosening the steady-state
+liveness/readiness thresholds (which would also mask a genuinely hung
+process for that much longer). See DD-PLATFORM-008 for the full rationale
+and alternatives considered.
+Usage: {{ include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}
+*/}}
+{{- define "kubernaut.startupProbe" -}}
+startupProbe:
+  httpGet:
+    path: {{ .path | default "/healthz" }}
+    port: {{ .port | default "health" }}
+  initialDelaySeconds: {{ .initialDelaySeconds | default 5 }}
+  periodSeconds: {{ .periodSeconds | default 5 }}
+  timeoutSeconds: {{ .timeoutSeconds | default 5 }}
+  failureThreshold: {{ .failureThreshold | default 30 }}
+{{- end }}
+
 {{/* ===== NetworkPolicy Helpers (Issue #285) ===== */}}
 
 {{/*

@@ -289,6 +289,17 @@ spec:
             - name: metrics
               containerPort: 9090
               protocol: TCP
+          {{- /* DD-PLATFORM-008: when global.fleet.enabled=true, RO builds the
+          same federated scope-checker + registry.ClusterRegistry against the
+          fleet MCP Gateway synchronously at boot as Gateway does -- same
+          blocking-dependency shape already fixed for
+          apifrontend/effectivenessmonitor/workflowexecution (confirmed via a
+          liveness-probe-induced crash loop, "Liveness probe failed... context
+          deadline exceeded", during Issue #1737 Fleet E2E validation).
+          Applying the shared helper here follows the DD's own "default
+          remediation pattern going forward" guidance rather than reinventing
+          probe tuning for this service. */}}
+          {{- include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}
           livenessProbe:
             httpGet:
               path: /healthz
