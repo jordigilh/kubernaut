@@ -10,9 +10,11 @@
     <text id="badge1" xml:space="preserve" x="69" y="172" font-family="Helvetica Neue" font-size="11" font-weight="700" letter-spacing="1.5" fill="#d97706">IN PROGRESS · V1.6.0-RC1</text>
     <text id="title1" xml:space="preserve" x="69" y="200" font-family="Helvetica Neue" font-size="19" font-weight="700" fill="#cc0000">Fleet Operations</text>
     <text id="tagline1" xml:space="preserve" x="69" y="222" font-family="Helvetica Neue" font-size="12.5" font-style="italic" fill="#333333">From one cluster to your entire fleet</text>
-    <text id="bullet1-1" xml:space="preserve" x="77" y="250" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ Multi-cluster investigation (MCP + RHBK JWT)</text>
-    <text id="bullet1-2" xml:space="preserve" x="77" y="271" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ Fleet remediation (SP Rego targeting)</text>
-    <text id="bullet1-3" xml:space="preserve" x="77" y="292" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ Centralized observability (ACM Search)</text>
+    <text id="bullet1-1" xml:space="preserve" x="77" y="250" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ Multi-cluster investigation (MCP Gateway, OAuth2)</text>
+    <text id="bullet1-2" xml:space="preserve" x="77" y="271" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ Fleet remediation (Jobs/Tekton/AAP via gateway)</text>
+    <text id="bullet1-3" xml:space="preserve" x="77" y="292" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ Centralized observability (cluster-tagged audit)</text>
+    <text id="bullet1-4" xml:space="preserve" x="77" y="313" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">→ Federated scope: ACM/OCM or FMC (GitOps) —</text>
+    <text id="bullet1-4b" xml:space="preserve" x="92" y="330" font-family="Helvetica Neue" font-size="12.5" fill="#1a1a1a">Rancher/Clusterpedia adapters planned</text>
 
     <!-- Card 2: Custom Investigation Agents (v1.7 - planned) -->
     <rect id="accent2" x="528" y="150" width="405" height="4" fill="#cc0000"/>
