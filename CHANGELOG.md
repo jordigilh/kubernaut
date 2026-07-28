@@ -5,6 +5,12 @@ All notable changes to Kubernaut will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.5] - 2026-07-28
+
+### Fixed
+
+- **Kubernaut Agent unconditionally sent an LLM `temperature` parameter, breaking models that reject it (#1749, BR-HAPI-199)** — `claude-opus-4-8` rejects the `temperature` parameter outright with an HTTP 400 ("temperature is deprecated for this model"), which surfaced to users as a generic `internal_error: Internal service error` during workflow discovery (the real 400 is redacted by `ErrorBoundary` before reaching the console). `Temperature` is now a pointer end-to-end (`RuntimeParams`, `LLMRuntimeConfig`, `LLMOverrideConfig`) so "not configured" is distinguishable from "explicitly configured as 0", and is only placed on the wire request when explicitly set — fixed independently in both the non-streaming (`ChatWithParams`) and streaming (`chatOrStream`) call paths, which had each grown their own unconditional-set logic. Also drops the summarizer tool's hardcoded `Temperature: 0.0`, an independent source of the same 400. The `kubernaut-agent-llm-runtime` ConfigMap rendered by the Helm chart now omits `temperature` by default instead of defaulting to `0.7`; set `kubernautAgent.llm.temperature` explicitly (including `0`) if your model supports and requires it.
+
 ## [1.5.4] - 2026-07-24
 
 ### Fixed
