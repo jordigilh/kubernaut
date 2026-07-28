@@ -213,6 +213,25 @@ subjects:
     name: notification-controller
     namespace: {{ .Release.Namespace }}
 ---
+# APIFrontend (Issue #1737 gap found: AF calls DataStorage directly for audit
+# trail writes -- agent.dsBaseURL -- but was never granted this binding,
+# unlike every other DataStorage consumer above)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: apifrontend-data-storage-client
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: data-storage-client
+subjects:
+  - kind: ServiceAccount
+    name: apifrontend
+    namespace: {{ .Release.Namespace }}
+---
 # DataStorage self-access
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
