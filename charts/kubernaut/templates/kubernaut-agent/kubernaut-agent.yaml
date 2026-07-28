@@ -316,7 +316,14 @@ data:
   llm-runtime.yaml: |
     model: {{ .Values.kubernautAgent.llm.model | quote }}
     endpoint: {{ .Values.kubernautAgent.llm.endpoint | default "" | quote }}
-    temperature: {{ .Values.kubernautAgent.llm.temperature | default 0.7 }}
+    {{- /* #1749: only render temperature when explicitly set. Some models
+       (e.g. claude-opus-4-8) reject the parameter outright with a 400 if
+       it is present at all — omit it by default rather than forcing 0.7.
+       hasKey (not a truthy `if`) so an explicit `temperature: 0` still
+       renders (BR-HAPI-199 — explicit zero must still be sent). */}}
+    {{- if hasKey .Values.kubernautAgent.llm "temperature" }}
+    temperature: {{ .Values.kubernautAgent.llm.temperature }}
+    {{- end }}
     maxRetries: {{ .Values.kubernautAgent.llm.maxRetries | default 3 }}
     timeoutSeconds: {{ .Values.kubernautAgent.llm.timeoutSeconds | default 120 }}
 ---

@@ -71,16 +71,16 @@ type IntegrationsConfig struct {
 
 // LLMConfig holds static LLM provider settings that require a pod restart to change.
 type LLMConfig struct {
-	Provider        string              `yaml:"provider"`
-	AzureAPIVersion string              `yaml:"azureApiVersion"`
-	VertexProject   string              `yaml:"vertexProject"`
-	VertexLocation  string              `yaml:"vertexLocation"`
-	BedrockRegion   string              `yaml:"bedrockRegion"`
-	TLSCaFile       string              `yaml:"tlsCaFile,omitempty"`
-	TLSCertFile     string              `yaml:"tlsCertFile,omitempty"`
-	TLSKeyFile      string              `yaml:"tlsKeyFile,omitempty"`
-	OAuth2          OAuth2Config        `yaml:"oauth2,omitempty"`
-	CircuitBreaker  CircuitBreakerCfg   `yaml:"circuitBreaker,omitempty"`
+	Provider        string            `yaml:"provider"`
+	AzureAPIVersion string            `yaml:"azureApiVersion"`
+	VertexProject   string            `yaml:"vertexProject"`
+	VertexLocation  string            `yaml:"vertexLocation"`
+	BedrockRegion   string            `yaml:"bedrockRegion"`
+	TLSCaFile       string            `yaml:"tlsCaFile,omitempty"`
+	TLSCertFile     string            `yaml:"tlsCertFile,omitempty"`
+	TLSKeyFile      string            `yaml:"tlsKeyFile,omitempty"`
+	OAuth2          OAuth2Config      `yaml:"oauth2,omitempty"`
+	CircuitBreaker  CircuitBreakerCfg `yaml:"circuitBreaker,omitempty"`
 }
 
 // CircuitBreakerCfg configures the gobreaker circuit breaker for HTTP clients.
@@ -98,13 +98,19 @@ type CircuitBreakerCfg struct {
 // This struct maps to a separate ConfigMap (kubernaut-agent-llm-runtime) watched by
 // the FileWatcher.
 type LLMRuntimeConfig struct {
-	Model          string                       `yaml:"model"`
-	Endpoint       string                       `yaml:"endpoint"`
-	APIKey         string                       `yaml:"apiKey"`
-	Temperature    float64                      `yaml:"temperature"`
-	MaxRetries     int                          `yaml:"maxRetries"`
-	TimeoutSeconds int                          `yaml:"timeoutSeconds"`
-	CustomHeaders  []pkgconfig.HeaderDefinition `yaml:"customHeaders,omitempty"`
+	Model    string `yaml:"model"`
+	Endpoint string `yaml:"endpoint"`
+	APIKey   string `yaml:"apiKey"`
+	// Temperature is a pointer so "not configured" (nil, key absent from
+	// YAML) can be distinguished from "explicitly configured as 0"
+	// (BR-HAPI-199, #1749). Some models (e.g. claude-opus-4-8) reject the
+	// temperature parameter outright with a 400 if it is present at all,
+	// so it must be omitted from the wire request rather than defaulted to
+	// a numeric value when the operator never set it.
+	Temperature    *float64                      `yaml:"temperature,omitempty"`
+	MaxRetries     int                           `yaml:"maxRetries"`
+	TimeoutSeconds int                           `yaml:"timeoutSeconds"`
+	CustomHeaders  []pkgconfig.HeaderDefinition  `yaml:"customHeaders,omitempty"`
 	PhaseModels    map[string]*LLMOverrideConfig `yaml:"phaseModels,omitempty"`
 }
 
@@ -153,6 +159,9 @@ func (r *LLMRuntimeConfig) EffectivePhaseConfig(phase string, baseLLM LLMConfig,
 	}
 	if override.APIKey != "" {
 		runtimeOut.APIKey = override.APIKey
+	}
+	if override.Temperature != nil {
+		runtimeOut.Temperature = override.Temperature
 	}
 	return staticOut, runtimeOut
 }
@@ -240,8 +249,8 @@ type RateLimitConfig struct {
 }
 
 type SessionConfig struct {
-	TTL                        time.Duration `yaml:"ttl"`
-	MaxConcurrentInvestigations int          `yaml:"maxConcurrentInvestigations"`
+	TTL                         time.Duration `yaml:"ttl"`
+	MaxConcurrentInvestigations int           `yaml:"maxConcurrentInvestigations"`
 }
 
 type AuditConfig struct {
@@ -263,14 +272,14 @@ type MCPConfig struct {
 // When Enabled=true, KA exposes an SSE-based MCP endpoint for user-driven
 // investigations. Feature is gated off by default.
 type InteractiveConfig struct {
-	Enabled                bool                `yaml:"enabled"`
-	SessionTTL             time.Duration       `yaml:"sessionTTL"`
-	InactivityTimeout      time.Duration       `yaml:"inactivityTimeout"`
-	MaxConcurrentSessions  int                 `yaml:"maxConcurrentSessions"`
-	RateLimitPerUser       int                 `yaml:"rateLimitPerUser"`
-	MaxAnalyzingTimeout    time.Duration       `yaml:"maxAnalyzingTimeout"`
-	DisconnectGracePeriod  time.Duration       `yaml:"disconnectGracePeriod"`
-	JWTProviders []JWTProviderConfig `yaml:"jwtProviders,omitempty"`
+	Enabled               bool                `yaml:"enabled"`
+	SessionTTL            time.Duration       `yaml:"sessionTTL"`
+	InactivityTimeout     time.Duration       `yaml:"inactivityTimeout"`
+	MaxConcurrentSessions int                 `yaml:"maxConcurrentSessions"`
+	RateLimitPerUser      int                 `yaml:"rateLimitPerUser"`
+	MaxAnalyzingTimeout   time.Duration       `yaml:"maxAnalyzingTimeout"`
+	DisconnectGracePeriod time.Duration       `yaml:"disconnectGracePeriod"`
+	JWTProviders          []JWTProviderConfig `yaml:"jwtProviders,omitempty"`
 
 	// MCPKeepAlive is the server-side ping interval for MCP sessions (#1387).
 	// Keeps SSE streams alive through OCP router idle timeouts.
@@ -435,14 +444,14 @@ const (
 
 // AlignmentCheckConfig holds settings for the shadow agent alignment checker (#601).
 type AlignmentCheckConfig struct {
-	Enabled        bool                 `yaml:"enabled"`
-	Mode           AlignmentMode        `yaml:"mode"`
-	LLM            *LLMOverrideConfig   `yaml:"llm"`
-	Timeout        time.Duration        `yaml:"timeout"`
-	MaxStepTokens  int                  `yaml:"maxStepTokens"`
-	MaxRetries     int                  `yaml:"maxRetries"`
-	VerdictTimeout time.Duration        `yaml:"verdictTimeout"`
-	Canary         CanaryConfig         `yaml:"canary"`
+	Enabled         bool                  `yaml:"enabled"`
+	Mode            AlignmentMode         `yaml:"mode"`
+	LLM             *LLMOverrideConfig    `yaml:"llm"`
+	Timeout         time.Duration         `yaml:"timeout"`
+	MaxStepTokens   int                   `yaml:"maxStepTokens"`
+	MaxRetries      int                   `yaml:"maxRetries"`
+	VerdictTimeout  time.Duration         `yaml:"verdictTimeout"`
+	Canary          CanaryConfig          `yaml:"canary"`
 	GroundingReview GroundingReviewConfig `yaml:"groundingReview"`
 }
 
@@ -472,6 +481,10 @@ type LLMOverrideConfig struct {
 	VertexProject   string `yaml:"vertexProject"`
 	VertexLocation  string `yaml:"vertexLocation"`
 	BedrockRegion   string `yaml:"bedrockRegion"`
+	// Temperature overrides the base/phase temperature (#1749). Nil means
+	// "inherit the base value unchanged" — not "force omission" — mirroring
+	// LLMRuntimeConfig.Temperature's pointer semantics.
+	Temperature *float64 `yaml:"temperature,omitempty"`
 }
 
 // EffectiveLLM returns a merged set of static + runtime fields for the
@@ -505,6 +518,9 @@ func (c *AlignmentCheckConfig) EffectiveLLM(base LLMConfig, runtime LLMRuntimeCo
 	}
 	if c.LLM.APIKey != "" {
 		runtimeOut.APIKey = c.LLM.APIKey
+	}
+	if c.LLM.Temperature != nil {
+		runtimeOut.Temperature = c.LLM.Temperature
 	}
 	return staticOut, runtimeOut
 }
@@ -551,7 +567,8 @@ func (r *LLMRuntimeConfig) Validate(provider string) error {
 		if override == nil || (override.Provider == "" && override.Endpoint == "" &&
 			override.Model == "" && override.APIKey == "" &&
 			override.AzureAPIVersion == "" && override.VertexProject == "" &&
-			override.VertexLocation == "" && override.BedrockRegion == "") {
+			override.VertexLocation == "" && override.BedrockRegion == "" &&
+			override.Temperature == nil) {
 			return fmt.Errorf("phaseModels[%q]: at least one override field must be set", phase)
 		}
 	}
@@ -692,10 +709,10 @@ func DefaultConfig() *Config {
 		Runtime: RuntimeConfig{
 			Logging: internalconfig.DefaultLoggingConfig(),
 			Server: ServerConfig{
-			Address: "0.0.0.0", Port: 8443, HealthAddr: ":8081", MetricsAddr: ":9090",
-			DisableProfiling:      true,
-			DisableAdminEndpoints: true,
-			MaxConcurrentRequests: 100,
+				Address: "0.0.0.0", Port: 8443, HealthAddr: ":8081", MetricsAddr: ":9090",
+				DisableProfiling:      true,
+				DisableAdminEndpoints: true,
+				MaxConcurrentRequests: 100,
 				RateLimit: RateLimitConfig{
 					RequestsPerSecond: 5,
 					Burst:             10,
@@ -737,11 +754,11 @@ func DefaultConfig() *Config {
 				},
 			},
 			Safety: SafetyConfig{
-			Sanitization: SanitizationConfig{
-				InjectionPatternsEnabled: true,
-				CredentialScrubEnabled:   true,
-				SecretRedactionEnabled:   true,
-			},
+				Sanitization: SanitizationConfig{
+					InjectionPatternsEnabled: true,
+					CredentialScrubEnabled:   true,
+					SecretRedactionEnabled:   true,
+				},
 				Anomaly: AnomalyConfig{
 					MaxToolCallsPerTool: 10,
 					MaxTotalToolCalls:   30,
@@ -757,9 +774,13 @@ func DefaultConfig() *Config {
 }
 
 // DefaultLLMRuntime returns an LLMRuntimeConfig with sensible production defaults.
+//
+// Temperature is deliberately left nil (#1749): not every model/provider
+// accepts the parameter (e.g. claude-opus-4-8 rejects it with a 400), so
+// the safe default is to omit it from the wire request entirely unless an
+// operator explicitly configures one for their model.
 func DefaultLLMRuntime() *LLMRuntimeConfig {
 	return &LLMRuntimeConfig{
-		Temperature:    0.7,
 		MaxRetries:     3,
 		TimeoutSeconds: 120,
 	}

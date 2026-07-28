@@ -198,10 +198,10 @@ type Investigator struct {
 	pipeline      Pipeline
 	modelName     string
 	scopeResolver ScopeResolver
-	swappable      *llm.SwappableClient
-	metrics        *metrics.Metrics
-	pinDecorator   func(llm.Client) llm.Client
-	phaseResolver  PhaseClientResolver
+	swappable     *llm.SwappableClient
+	metrics       *metrics.Metrics
+	pinDecorator  func(llm.Client) llm.Client
+	phaseResolver PhaseClientResolver
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
@@ -256,10 +256,10 @@ func New(cfg Config) *Investigator {
 		pipeline:      pipeline,
 		modelName:     cfg.ModelName,
 		scopeResolver: cfg.ScopeResolver,
-		swappable:      cfg.Swappable,
-		metrics:        cfg.Metrics,
-		pinDecorator:   cfg.PinDecorator,
-		phaseResolver:  cfg.PhaseResolver,
+		swappable:     cfg.Swappable,
+		metrics:       cfg.Metrics,
+		pinDecorator:  cfg.PinDecorator,
+		phaseResolver: cfg.PhaseResolver,
 	}
 }
 
@@ -913,7 +913,6 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 	return nil
 }
 
-
 func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katypes.SignalContext, rcaSummary string, enrichData *prompt.EnrichmentData, p1Ctx *prompt.Phase1Data, tokens *TokenAccumulator, correlationID string, client llm.Client, modelName string, runtimeParams llm.RuntimeParams) (result *katypes.InvestigationResult, retErr error) {
 	// Apply signal label overrides (target_resource_kind / target_resource_name)
 	// before attaching to context. This ensures workflow discovery tools
@@ -1449,8 +1448,10 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 		"diag_dropped", diagSendDrop.Load(),
 		"diag_nil", diagSinkNil.Load())
 
-	temp := runtimeParams.Temperature
-	req.Options.Temperature = &temp
+	// #1749: shared with ChatWithParams's non-streaming path — see
+	// llm.ApplyTemperature's doc comment for why this was pulled out into
+	// one function.
+	llm.ApplyTemperature(&req.Options, runtimeParams)
 
 	bo := llm.ResolveRetryBackoff(runtimeParams)
 	maxAttempts := llm.ResolveMaxAttempts(runtimeParams)

@@ -398,7 +398,11 @@ kubernautAgent:
     # -- LLM runtime fields (hot-reloadable via kubernaut-agent-llm-runtime ConfigMap).
     model: ""      # e.g., "gpt-4o", "claude-sonnet-4-20250514"
     endpoint: ""   # e.g., "http://llm-gateway:8080/v1"
-    temperature: 0.7
+    # -- Sampling temperature. Omitted by default (#1749): some models
+    # (e.g. claude-opus-4-8) reject this parameter outright with a 400 if
+    # it is present at all. Uncomment and set an explicit value only if
+    # your model supports it.
+    # temperature: 0.7
     maxRetries: 3
     timeoutSeconds: 120
     # -- OAuth2 client credentials grant for enterprise LLM gateway authentication.
