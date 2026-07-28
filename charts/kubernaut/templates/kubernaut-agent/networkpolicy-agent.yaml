@@ -25,5 +25,7 @@ spec:
         - podSelector:
             matchLabels:
               app: apifrontend
+    {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.kubernautAgent.ingressCIDRs "port" 8443) | nindent 4 }}
+    {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.kubernautAgent.ingressNamespaceSelectors "port" 8443) | nindent 4 }}
     {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
 {{- end }}

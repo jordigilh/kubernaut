@@ -310,8 +310,13 @@ data:
       enabled: true
       sessionTTL: {{ .Values.kubernautAgent.interactive.sessionTTL | default "30m" | quote }}
       inactivityTimeout: {{ .Values.kubernautAgent.interactive.inactivityTimeout | default "10m" | quote }}
-      maxConcurrentSessions: {{ .Values.kubernautAgent.interactive.maxConcurrentSessions | default 5 }}
-      rateLimitPerUser: {{ .Values.kubernautAgent.interactive.rateLimitPerUser | default 10 }}
+      # Issue #1737 gap found: default of 5 was too low even for realistic
+      # production use, confirmed via full-suite E2E failing nearly every
+      # interactive/MCP spec with "max_sessions: Maximum concurrent sessions
+      # reached" from Ginkgo's own test parallelism alone (see values.yaml
+      # comment for kubernautAgent.interactive.maxConcurrentSessions).
+      maxConcurrentSessions: {{ .Values.kubernautAgent.interactive.maxConcurrentSessions | default 50 }}
+      rateLimitPerUser: {{ .Values.kubernautAgent.interactive.rateLimitPerUser | default 20 }}
       maxAnalyzingTimeout: {{ .Values.kubernautAgent.interactive.maxAnalyzingTimeout | default "45m" | quote }}
 {{- with .Values.kubernautAgent.interactive.jwtProviders }}
       jwtProviders:
@@ -607,6 +612,9 @@ spec:
     - name: https
       port: 8443
       targetPort: 8443
+      {{- if and (eq .Values.kubernautAgent.service.type "NodePort") .Values.kubernautAgent.service.nodePort }}
+      nodePort: {{ .Values.kubernautAgent.service.nodePort }}
+      {{- end }}
     - name: health
       port: 8081
       targetPort: 8081

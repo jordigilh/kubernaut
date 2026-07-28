@@ -19,6 +19,8 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ . }}
     {{- end }}
+    {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.gateway.ingressCIDRs "port" 8080) | nindent 4 }}
+    {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.gateway.ingressNamespaceSelectors "port" 8080) | nindent 4 }}
     {{- if .Values.networkPolicies.monitoring.namespace }}
     # Issue #673 H-1: Gateway serves metrics on 8080 (not 9090 like controller-runtime services)
     - ports:

@@ -960,6 +960,85 @@ Usage: {{ include "kubernaut.np.metricsIngress" . | nindent 4 }}
 {{- end }}
 {{- end }}
 
+{{/*
+Ingress rule(s) for a list of raw CIDR strings (ipBlock-based). Needed for
+peers whose traffic isn't associated with any pod/namespace, so
+podSelector/namespaceSelector can never match it regardless of how broadly
+they're scoped -- e.g. NodePort traffic (SNAT'd to the node's own IP by
+kube-proxy under the default externalTrafficPolicy: Cluster) and
+hostNetwork-mode ingress controllers/routers (e.g. OpenShift Router,
+typically a DaemonSet with hostNetwork: true). Confirmed empirically during
+Issue #1737: a wildcard `namespaceSelector: {}` did NOT unblock NodePort
+ingress, but `ipBlock: {cidr: 0.0.0.0/0}` did.
+Usage: {{ include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.gateway.ingressCIDRs "port" 8080) | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.ingressCIDRs" -}}
+{{- $port := .port -}}
+{{- range .cidrs }}
+- ports:
+    - port: {{ $port }}
+      protocol: TCP
+  from:
+    - ipBlock:
+        cidr: {{ . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Ingress rule(s) for a list of raw namespaceSelector label-selector objects
+(matchLabels/matchExpressions) -- more flexible than the simple name-based
+ingressNamespaces list (which can only match by exact
+kubernetes.io/metadata.name label value). Still pod/namespace-identity-based:
+does NOT help with NodePort- or hostNetwork-sourced traffic (see
+kubernaut.np.ingressCIDRs for that case).
+Usage: {{ include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.gateway.ingressNamespaceSelectors "port" 8080) | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.ingressNamespaceSelectors" -}}
+{{- $port := .port -}}
+{{- range .selectors }}
+- ports:
+    - port: {{ $port }}
+      protocol: TCP
+  from:
+    - namespaceSelector:
+        {{- toYaml . | nindent 8 }}
+{{- end }}
+{{- end }}
+
+{{/*
+Egress rule to reach the OIDC identity provider (token exchange, JWKS
+discovery). Defaults to "anywhere on 443" -- correct for a real external IDP
+over HTTPS and identical to the hardcoded rule this replaces. Override
+networkPolicies.idp.cidr/port for an in-cluster or non-standard-port IDP
+(e.g. a test-only OIDC provider double reachable only on the pod CIDR at a
+non-443 port).
+Usage: {{ include "kubernaut.np.idpEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.idpEgress" -}}
+- ports:
+    - port: {{ .Values.networkPolicies.idp.port | default 443 }}
+      protocol: TCP
+  to:
+    - ipBlock:
+        cidr: {{ .Values.networkPolicies.idp.cidr | default "0.0.0.0/0" }}
+{{- end }}
+
+{{/*
+Egress rule allowing traffic to the LLM provider APIFrontend's A2A launcher
+agent calls directly (apifrontend.config.agent.llm.endpoint). Mirrors
+kubernaut.np.idpEgress -- an ipBlock rather than podSelector/namespaceSelector
+because the target is normally an external HTTPS API, not a chart-managed pod.
+Usage: {{ include "kubernaut.np.llmEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.llmEgress" -}}
+- ports:
+    - port: {{ .Values.networkPolicies.llm.port | default 443 }}
+      protocol: TCP
+  to:
+    - ipBlock:
+        cidr: {{ .Values.networkPolicies.llm.cidr | default "0.0.0.0/0" }}
+{{- end }}
+
 {{/* ===== Console helpers (BR-PLATFORM-006, Kubernaut Operator parity) ===== */}}
 
 {{/*

@@ -1,7 +1,11 @@
-suite: gateway/datastorage NodePort configuration (SPIKE, Issue #1737)
+suite: gateway/datastorage/apifrontend/kubernautAgent NodePort configuration + NetworkPolicy ipBlock ingress (Issue #1737)
 templates:
   - templates/gateway/gateway.yaml
   - templates/datastorage/datastorage.yaml
+  - templates/apifrontend/apifrontend.yaml
+  - templates/datastorage/networkpolicy.yaml
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+  - templates/kubernaut-agent/networkpolicy-agent.yaml
 set:
   postgresql:
     auth:
@@ -23,6 +27,7 @@ set:
     policies:
       existingConfigMap: test-cm
 tests:
+  # --- Gateway ---
   - it: "gateway Service defaults to ClusterIP with no nodePort key (unchanged behavior)"
     template: templates/gateway/gateway.yaml
     documentSelector:
@@ -44,7 +49,7 @@ tests:
       gateway:
         service:
           type: NodePort
-          nodePort: 31080
+          nodePort: 30080
     asserts:
       - equal:
           path: spec.type
@@ -54,7 +59,7 @@ tests:
           value: http
       - equal:
           path: spec.ports[0].nodePort
-          value: 31080
+          value: 30080
       - notExists:
           path: spec.ports[1].nodePort
 
@@ -74,6 +79,7 @@ tests:
       - notExists:
           path: spec.ports[0].nodePort
 
+  # --- DataStorage ---
   - it: "datastorage Service defaults to ClusterIP with no nodePort key (unchanged behavior)"
     template: templates/datastorage/datastorage.yaml
     documentSelector:
@@ -95,7 +101,7 @@ tests:
       datastorage:
         service:
           type: NodePort
-          nodePort: 31081
+          nodePort: 30081
     asserts:
       - equal:
           path: spec.type
@@ -105,4 +111,331 @@ tests:
           value: http
       - equal:
           path: spec.ports[0].nodePort
-          value: 31081
+          value: 30081
+
+  - it: "datastorage NetworkPolicy has no ipBlock ingress rule by default (unchanged behavior)"
+    template: templates/datastorage/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.ingress
+          content:
+            from:
+              - ipBlock:
+                  cidr: 0.0.0.0/0
+            ports:
+              - port: 8080
+                protocol: TCP
+
+  - it: "datastorage NetworkPolicy renders an ipBlock ingress rule per ingressCIDRs entry (NodePort/hostNetwork traffic isn't pod/namespace-associated)"
+    template: templates/datastorage/networkpolicy.yaml
+    set:
+      networkPolicies:
+        datastorage:
+          ingressCIDRs:
+            - "0.0.0.0/0"
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "datastorage NetworkPolicy renders a namespaceSelector ingress rule per ingressNamespaceSelectors entry"
+    template: templates/datastorage/networkpolicy.yaml
+    set:
+      networkPolicies:
+        datastorage:
+          ingressNamespaceSelectors:
+            - matchLabels:
+                team: sre
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    team: sre
+
+  # --- APIFrontend ---
+  - it: "apifrontend Service defaults to ClusterIP with no nodePort key (unchanged behavior)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Service
+    asserts:
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - notExists:
+          path: spec.ports[0].nodePort
+
+  - it: "apifrontend Service pins the exact nodePort on the https port when type=NodePort and nodePort is set"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Service
+    set:
+      apifrontend:
+        service:
+          type: NodePort
+          nodePort: 30443
+    asserts:
+      - equal:
+          path: spec.type
+          value: NodePort
+      - equal:
+          path: spec.ports[0].name
+          value: https
+      - equal:
+          path: spec.ports[0].nodePort
+          value: 30443
+      - notExists:
+          path: spec.ports[1].nodePort
+
+  - it: "apifrontend ConfigMap wires server.tls.certDir to the mounted apifrontend-tls Secret (regression: chart previously mounted the volume but never told the binary to use it, so AF silently served plain HTTP on 8443 -- confirmed via pod logs during Issue #1737 validation)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'tls:\s*\n\s*certDir:\s*"/etc/apifrontend/tls"'
+
+  - it: "apifrontend ConfigMap wires auth.jwksURL/oidcCaFile/allowInsecureIssuers (Issue #1737 gap: chart exposed issuerURL/audience but not these, so AF's OIDC JWKS fetch to an in-cluster provider with a private CA had no way to be configured -- every DEX-issued token 401'd via silent TokenReview fallback)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      apifrontend:
+        config:
+          auth:
+            issuerURL: "https://dex:5556/dex"
+            jwksURL: "https://dex:5556/dex/keys"
+            oidcCaFile: "/etc/tls-ca/ca.crt"
+            allowInsecureIssuers: true
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'jwksURL:\s*"https://dex:5556/dex/keys"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'oidcCaFile:\s*"/etc/tls-ca/ca.crt"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'allowInsecureIssuers:\s*true'
+
+  - it: "apifrontend Deployment always mounts the tls-ca volume, even with no overrides set (Issue #1737 gap: agent.kaTlsCaFile/dsTlsCaFile in the ConfigMap always point at /etc/tls-ca/ca.crt, so this must be unconditional -- previously gated on fleet.enabled/auth.oidcCaFile, which left those config fields pointing at a path with nothing mounted, silently falling back to the system trust store for every AF->KA/AF->DS HTTPS call)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tls-ca
+            configMap:
+              name: inter-service-ca
+              optional: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tls-ca
+            mountPath: /etc/tls-ca
+            readOnly: true
+
+  - it: "apifrontend ConfigMap wires agent.kaMCPEndpoint/dsBaseURL/kaBearerTokenFile/kaTlsCaFile/dsTlsCaFile unconditionally (Issue #1737 gap: these were never wired, so AF fell back to Config.Validate()'s dev-only zero-value default for dsBaseURL -- http://localhost:9090, AF's own metrics port -- silently black-holing every DataStorage audit write, and left the KA/DS client transports without a trusted CA)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'kaMCPEndpoint:\s*"https://kubernaut-agent\.NAMESPACE\.svc:8443/api/v1/mcp/"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'dsBaseURL:\s*"https://data-storage-service\.NAMESPACE\.svc:8080"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'kaBearerTokenFile:\s*"/var/run/secrets/kubernetes\.io/serviceaccount/token"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'kaTlsCaFile:\s*"/etc/tls-ca/ca\.crt"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'dsTlsCaFile:\s*"/etc/tls-ca/ca\.crt"'
+
+  - it: "apifrontend ConfigMap wires mcp.enabled to true by default (Issue #1737 gap: never wired, so Config.DefaultConfig()'s MCP.Enabled=false meant AF's own /mcp endpoint always 501'd for external MCP clients); also asserts interactive.enabled=true and agentCard.url, both newly exposed for override/documentation clarity even though DefaultConfig() already defaults Interactive.Enabled=true"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'mcp:\s*\n\s*enabled:\s*true'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'interactive:\s*\n\s*enabled:\s*true'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'agentCard:\s*\n\s*url:\s*"https://apifrontend\.NAMESPACE\.svc:8443"'
+
+  - it: "apifrontend ConfigMap wires rateLimit.maxConcurrentSessions/toolCallsPerMinute (Issue #1737 gap: never wired, so cmd/apifrontend/main.go's buildRateLimiters() fell back to ratelimit.DefaultConfig()'s package-level 3 concurrent sessions / 60 tool calls per minute -- confirmed via full-suite E2E to cause 'max_sessions: Maximum concurrent sessions reached' and MCP 429s under realistic concurrent session load)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'rateLimit:\s*\n\s*ipRequestsPerSec:\s*10000\s*\n\s*userRequestsPerSec:\s*100\s*\n\s*maxConcurrentSessions:\s*50\s*\n\s*toolCallsPerMinute:\s*600'
+
+  - it: "apifrontend ConfigMap enables severityTriage with prometheusURL when monitoring.prometheus is enabled (Issue #1737 gap: severityTriage.enabled/prometheusURL were never wired, so triage always ran disabled even with Prometheus available)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      monitoring:
+        prometheus:
+          enabled: true
+          url: "http://prometheus-svc.NAMESPACE.svc.cluster.local:9090"
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'severityTriage:\s*\n\s*enabled:\s*true\s*\n\s*prometheusURL:\s*"http://prometheus-svc\.NAMESPACE\.svc\.cluster\.local:9090"'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'maxQueriesPerCall:\s*10'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'maxRulesEvaluated:\s*100'
+
+  - it: "apifrontend ConfigMap keeps severityTriage disabled when monitoring.prometheus is not enabled (unchanged default behavior, since Config.Validate() requires prometheusURL whenever enabled=true)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'severityTriage:\s*\n\s*enabled:\s*false'
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: 'prometheusURL:'
+
+  # --- Kubernaut Agent ---
+  - it: "kubernautAgent Service defaults to ClusterIP with no nodePort key (unchanged behavior)"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: kind
+      value: Service
+    asserts:
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - notExists:
+          path: spec.ports[0].nodePort
+
+  - it: "kubernautAgent Service pins the exact nodePort on the https port when type=NodePort and nodePort is set"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: kind
+      value: Service
+    set:
+      kubernautAgent:
+        service:
+          type: NodePort
+          nodePort: 30088
+    asserts:
+      - equal:
+          path: spec.type
+          value: NodePort
+      - equal:
+          path: spec.ports[0].name
+          value: https
+      - equal:
+          path: spec.ports[0].nodePort
+          value: 30088
+      - notExists:
+          path: spec.ports[1].nodePort
+
+  - it: "kubernautAgent NetworkPolicy has no ipBlock ingress rule by default (unchanged behavior)"
+    template: templates/kubernaut-agent/networkpolicy-agent.yaml
+    asserts:
+      - notContains:
+          path: spec.ingress
+          content:
+            from:
+              - ipBlock:
+                  cidr: 0.0.0.0/0
+            ports:
+              - port: 8443
+                protocol: TCP
+
+  - it: "kubernautAgent NetworkPolicy renders an ipBlock ingress rule per ingressCIDRs entry (NodePort/hostNetwork traffic isn't pod/namespace-associated)"
+    template: templates/kubernaut-agent/networkpolicy-agent.yaml
+    set:
+      networkPolicies:
+        kubernautAgent:
+          ingressCIDRs:
+            - "0.0.0.0/0"
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8443
+                protocol: TCP
+            from:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "kubernautAgent NetworkPolicy renders a namespaceSelector ingress rule per ingressNamespaceSelectors entry"
+    template: templates/kubernaut-agent/networkpolicy-agent.yaml
+    set:
+      networkPolicies:
+        kubernautAgent:
+          ingressNamespaceSelectors:
+            - matchLabels:
+                team: sre
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8443
+                protocol: TCP
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    team: sre
+
+  - it: "kubernautAgent interactive.maxConcurrentSessions/rateLimitPerUser default to 50/20 (Issue #1737 gap: chart fallback previously used 5/10 -- confirmed via full-suite E2E to cause '429: max_sessions: Maximum concurrent sessions reached' on nearly every interactive/MCP spec from Ginkgo's own test parallelism alone, well before any application-level concurrency)"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    set:
+      kubernautAgent:
+        interactive:
+          enabled: true
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'maxConcurrentSessions:\s*50'
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'rateLimitPerUser:\s*20'
