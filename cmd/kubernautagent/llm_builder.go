@@ -252,10 +252,11 @@ func mergeLLMConfig(base types.LLMConfig, rt *kaconfig.LLMRuntimeConfig) types.L
 	}
 	merged.TimeoutSeconds = rt.TimeoutSeconds
 	merged.CustomHeaders = rt.CustomHeaders
-	if rt.Temperature != 0 {
-		t := rt.Temperature
-		merged.Temperature = &t
-	}
+	// #1749: rt.Temperature is already *float64 — a direct pointer copy
+	// preserves "not configured" (nil) exactly, unlike the previous
+	// `if rt.Temperature != 0` check, which conflated "unset" with
+	// "explicitly configured as 0" and violated BR-HAPI-199.
+	merged.Temperature = rt.Temperature
 	if rt.MaxRetries != 0 {
 		r := rt.MaxRetries
 		merged.MaxRetries = &r

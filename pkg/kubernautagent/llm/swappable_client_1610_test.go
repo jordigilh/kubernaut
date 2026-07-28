@@ -25,6 +25,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"k8s.io/utils/ptr"
 )
 
 var _ = Describe("SwappableClient.Pin — atomic client+model+params snapshot (#1610)", func() {
@@ -34,7 +35,7 @@ var _ = Describe("SwappableClient.Pin — atomic client+model+params snapshot (#
 			const iterations = 5000
 
 			original := &recordingClient{id: "0"}
-			sc, err := llm.NewSwappableClient(original, "model-0", llm.RuntimeParams{Temperature: 0})
+			sc, err := llm.NewSwappableClient(original, "model-0", llm.RuntimeParams{Temperature: ptr.To(0.0)})
 			Expect(err).NotTo(HaveOccurred())
 
 			var mismatches atomic.Int64
@@ -49,7 +50,7 @@ var _ = Describe("SwappableClient.Pin — atomic client+model+params snapshot (#
 				defer close(stop)
 				for i := 1; i <= iterations; i++ {
 					id := strconv.Itoa(i)
-					_ = sc.Swap(&recordingClient{id: id}, "model-"+id, llm.RuntimeParams{Temperature: float64(i)})
+					_ = sc.Swap(&recordingClient{id: id}, "model-"+id, llm.RuntimeParams{Temperature: ptr.To(float64(i))})
 				}
 			}()
 
@@ -77,7 +78,9 @@ var _ = Describe("SwappableClient.Pin — atomic client+model+params snapshot (#
 							mismatches.Add(1)
 							continue
 						}
-						if snap.ModelName != "model-"+rc.id || snap.RuntimeParams.Temperature != float64(idx) {
+						if snap.ModelName != "model-"+rc.id ||
+							snap.RuntimeParams.Temperature == nil ||
+							*snap.RuntimeParams.Temperature != float64(idx) {
 							mismatches.Add(1)
 						}
 					}

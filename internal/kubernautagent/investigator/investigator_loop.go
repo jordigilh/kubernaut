@@ -398,8 +398,10 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 		"diag_dropped", diagSendDrop.Load(),
 		"diag_nil", diagSinkNil.Load())
 
-	temp := runtimeParams.Temperature
-	req.Options.Temperature = &temp
+	// #1749: shared with ChatWithParams's non-streaming path — see
+	// llm.ApplyTemperature's doc comment for why this was pulled out into
+	// one function.
+	llm.ApplyTemperature(&req.Options, runtimeParams)
 
 	bo := llm.ResolveRetryBackoff(runtimeParams)
 	maxAttempts := llm.ResolveMaxAttempts(runtimeParams)

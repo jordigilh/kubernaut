@@ -465,10 +465,9 @@
               },
               "temperature": {
                 "type": "number",
-                "default": 0.7,
                 "minimum": 0,
                 "maximum": 2,
-                "description": "LLM sampling temperature."
+                "description": "LLM sampling temperature. Omitted by default (#1749) -- some models (e.g. claude-opus-4-8) reject this parameter outright with a 400 if it is present at all. Only set this if your model supports it."
               },
               "maxRetries": {
                 "type": "integer",

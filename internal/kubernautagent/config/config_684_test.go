@@ -105,7 +105,19 @@ temperature: 0.7
 `)
 			rt, err := config.LoadLLMRuntime(rtYAML)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(rt.Temperature).To(BeNumerically("~", 0.7, 0.001))
+			Expect(rt.Temperature).NotTo(BeNil(), "temperature was explicitly set in YAML and must be parsed")
+			Expect(*rt.Temperature).To(BeNumerically("~", 0.7, 0.001))
+		})
+
+		It("UT-KA-1749-006: leaves temperature nil when omitted from runtime config YAML", func() {
+			rtYAML := []byte(`
+model: "claude-opus-4-8"
+`)
+			rt, err := config.LoadLLMRuntime(rtYAML)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rt.Temperature).To(BeNil(),
+				"omitting temperature from the ConfigMap YAML must leave it unset (nil), not default it to a "+
+					"numeric value — fixes claude-opus-4-8 400 'temperature is deprecated for this model'")
 		})
 
 		It("UT-KA-684-006: parses maxRetries and timeoutSeconds from runtime config", func() {
@@ -132,7 +144,8 @@ timeoutSeconds: 60
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rt.Model).To(Equal("claude-sonnet-4-20250514"))
 			Expect(rt.Endpoint).To(Equal("http://localhost:11434/v1"))
-			Expect(rt.Temperature).To(BeNumerically("~", 0.5, 0.001))
+			Expect(rt.Temperature).NotTo(BeNil(), "temperature was explicitly set in YAML and must be parsed")
+			Expect(*rt.Temperature).To(BeNumerically("~", 0.5, 0.001))
 			Expect(rt.MaxRetries).To(Equal(5))
 			Expect(rt.TimeoutSeconds).To(Equal(60))
 		})
