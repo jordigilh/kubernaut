@@ -1,0 +1,195 @@
+suite: gateway/apifrontend/console Ingress opt-in parity (Issue #1737 follow-up)
+templates:
+  - templates/gateway/ingress.yaml
+  - templates/apifrontend/ingress.yaml
+  - templates/console/ingress.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # --- Gateway ---
+  - it: "gateway Ingress is not rendered by default (opt-in, machine-facing pipeline entry point)"
+    template: templates/gateway/ingress.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "gateway Ingress renders when gateway.ingress.enabled=true, targeting gateway-service's http port"
+    template: templates/gateway/ingress.yaml
+    set:
+      gateway:
+        ingress:
+          enabled: true
+          className: nginx
+          host: gateway.apps.example.com
+          annotations:
+            nginx.ingress.kubernetes.io/proxy-body-size: 10m
+          tls:
+            secretName: gateway-ingress-tls
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Ingress
+      - equal:
+          path: spec.ingressClassName
+          value: nginx
+      - equal:
+          path: spec.rules[0].host
+          value: gateway.apps.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: gateway-service
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.name
+          value: http
+      - equal:
+          path: spec.tls[0].secretName
+          value: gateway-ingress-tls
+      - equal:
+          path: spec.tls[0].hosts[0]
+          value: gateway.apps.example.com
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/proxy-body-size"]
+          value: 10m
+
+  - it: "gateway Ingress omits spec.rules[0].host and spec.tls when host/tls.secretName are left empty (optional, no internal component depends on it)"
+    template: templates/gateway/ingress.yaml
+    set:
+      gateway:
+        ingress:
+          enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - notExists:
+          path: spec.rules[0].host
+      - notExists:
+          path: spec.tls
+
+  # --- APIFrontend ---
+  - it: "apifrontend Ingress is not rendered by default (opt-in, machine-facing pipeline entry point)"
+    template: templates/apifrontend/ingress.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "apifrontend Ingress renders when apifrontend.ingress.enabled=true, targeting apifrontend's https port"
+    template: templates/apifrontend/ingress.yaml
+    set:
+      apifrontend:
+        ingress:
+          enabled: true
+          className: nginx
+          host: apifrontend.apps.example.com
+          annotations:
+            nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+          tls:
+            secretName: apifrontend-ingress-tls
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Ingress
+      - equal:
+          path: spec.ingressClassName
+          value: nginx
+      - equal:
+          path: spec.rules[0].host
+          value: apifrontend.apps.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: apifrontend
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.name
+          value: https
+      - equal:
+          path: spec.tls[0].secretName
+          value: apifrontend-ingress-tls
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/backend-protocol"]
+          value: HTTPS
+
+  - it: "apifrontend Ingress is not rendered even when apifrontend.ingress.enabled=true if apifrontend.enabled=false"
+    template: templates/apifrontend/ingress.yaml
+    set:
+      apifrontend:
+        enabled: false
+        ingress:
+          enabled: true
+          host: apifrontend.apps.example.com
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # --- Console ---
+  - it: "console Ingress is NOT rendered by default when console.enabled=true (opt-in flip -- Console is optional UI tooling users may replace)"
+    template: templates/console/ingress.yaml
+    set:
+      console:
+        enabled: true
+        auth:
+          secretName: console-auth
+        ingress:
+          host: console.apps.example.com
+      apifrontend:
+        config:
+          auth:
+            issuerURL: https://dex.kubernaut-system.svc:5556
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "console Ingress renders when console.ingress.enabled=true is explicitly set (opt-in)"
+    template: templates/console/ingress.yaml
+    set:
+      console:
+        enabled: true
+        auth:
+          secretName: console-auth
+        ingress:
+          enabled: true
+          className: nginx
+          host: console.apps.example.com
+          annotations:
+            nginx.ingress.kubernetes.io/proxy-body-size: 10m
+          tls:
+            secretName: console-ingress-tls
+      apifrontend:
+        config:
+          auth:
+            issuerURL: https://dex.kubernaut-system.svc:5556
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: Ingress
+      - equal:
+          path: spec.rules[0].host
+          value: console.apps.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: console
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.name
+          value: http
+      - equal:
+          path: spec.tls[0].secretName
+          value: console-ingress-tls

@@ -1,9 +1,13 @@
 {{/*
-BR-PLATFORM-006 (Kubernaut Operator parity): the Operator exposes the console via
-an OCP Route; this chart targets vanilla Kubernetes, so a standard networking.k8s.io/v1
-Ingress is the equivalent. Unlike Gateway/APIFrontend (machine-facing APIs, where the
-chart leaves external exposure entirely to the user), the console is browser-facing,
-so an Ingress is created by default whenever the console is enabled.
+BR-PLATFORM-006/BR-PLATFORM-009 (Kubernaut Operator parity): the Operator exposes the
+console via an OCP Route; this chart targets vanilla Kubernetes, so a standard
+networking.k8s.io/v1 Ingress is the equivalent. Opt-in and disabled by default
+(console.ingress.enabled), same as gateway.ingress.enabled/apifrontend.ingress.enabled:
+Console is optional browser-facing UI tooling in front of APIFrontend that users may
+replace with their own UI or front with their own Ingress/Route/mesh gateway instead --
+not something the chart should expose externally without an explicit choice. This is a
+deliberate deviation from the Operator's ConsoleRouteSpec, which defaults to enabled=true
+(opt-out).
 */}}
 {{- if and .Values.console.enabled .Values.console.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
