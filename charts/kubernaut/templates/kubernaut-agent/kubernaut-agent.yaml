@@ -374,7 +374,14 @@ data:
   llm-runtime.yaml: |
     model: {{ $kaProfile.model | quote }}
     endpoint: {{ $kaProfile.endpoint | default "" | quote }}
-    temperature: {{ $kaProfile.temperature | default 0.7 }}
+    {{- /* #1749: only render temperature when explicitly set. Some models
+       (e.g. claude-opus-4-8) reject the parameter outright with a 400 if
+       it is present at all — omit it by default rather than forcing 0.7.
+       hasKey (not a truthy `if`) so an explicit `temperature: 0` still
+       renders (BR-HAPI-199 — explicit zero must still be sent). */}}
+    {{- if hasKey $kaProfile "temperature" }}
+    temperature: {{ $kaProfile.temperature }}
+    {{- end }}
     maxRetries: {{ $kaProfile.maxRetries | default 3 }}
     timeoutSeconds: {{ $kaProfile.timeoutSeconds | default 120 }}
 {{- if $kaPhaseProfiles }}

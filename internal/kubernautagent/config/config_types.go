@@ -98,10 +98,16 @@ type FleetOAuth2 struct {
 // This struct maps to a separate ConfigMap (kubernaut-agent-llm-runtime) watched by
 // the FileWatcher.
 type LLMRuntimeConfig struct {
-	Model          string                        `yaml:"model"`
-	Endpoint       string                        `yaml:"endpoint"`
-	APIKeyFile     string                        `yaml:"apiKeyFile,omitempty"`
-	Temperature    float64                       `yaml:"temperature"`
+	Model      string `yaml:"model"`
+	Endpoint   string `yaml:"endpoint"`
+	APIKeyFile string `yaml:"apiKeyFile,omitempty"`
+	// Temperature is a pointer so "not configured" (nil, key absent from
+	// YAML) can be distinguished from "explicitly configured as 0"
+	// (BR-HAPI-199, #1749). Some models (e.g. claude-opus-4-8) reject the
+	// temperature parameter outright with a 400 if it is present at all,
+	// so it must be omitted from the wire request rather than defaulted to
+	// a numeric value when the operator never set it.
+	Temperature    *float64                      `yaml:"temperature,omitempty"`
 	MaxRetries     int                           `yaml:"maxRetries"`
 	TimeoutSeconds int                           `yaml:"timeoutSeconds"`
 	CustomHeaders  []types.LLMHeaderDef          `yaml:"customHeaders,omitempty"`
@@ -164,6 +170,9 @@ func (r *LLMRuntimeConfig) EffectivePhaseConfig(phase string, baseLLM types.LLMC
 	}
 	if override.Reasoning != nil {
 		staticOut.Reasoning = override.Reasoning
+	}
+	if override.Temperature != nil {
+		runtimeOut.Temperature = override.Temperature
 	}
 	return staticOut, runtimeOut
 }
@@ -465,6 +474,10 @@ type LLMOverrideConfig struct {
 	// hot-reload changing only this field is not subject to the
 	// restart-required identity lock.
 	Reasoning *types.LLMReasoningConfig `yaml:"reasoning,omitempty"`
+	// Temperature overrides the base/phase temperature (#1749). Nil means
+	// "inherit the base value unchanged" — not "force omission" —
+	// mirroring LLMRuntimeConfig.Temperature's pointer semantics.
+	Temperature *float64 `yaml:"temperature,omitempty"`
 }
 
 // EffectiveLLM returns a merged set of static + runtime fields for the
@@ -507,6 +520,9 @@ func (c *AlignmentCheckConfig) EffectiveLLM(base types.LLMConfig, runtime LLMRun
 	}
 	if c.LLM.Reasoning != nil {
 		staticOut.Reasoning = c.LLM.Reasoning
+	}
+	if c.LLM.Temperature != nil {
+		runtimeOut.Temperature = c.LLM.Temperature
 	}
 	return staticOut, runtimeOut
 }

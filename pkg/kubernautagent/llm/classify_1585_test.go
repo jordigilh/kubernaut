@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"k8s.io/utils/ptr"
 )
 
 // Issue #1585: ChatWithParams retries on any non-nil error for the full
@@ -88,7 +89,7 @@ var _ = Describe("LLM error classification — #1585", func() {
 		It("makes exactly one call, consuming none of the retry budget", func() {
 			mock := &nonRetryableErrorClient{err: llm.MarkNonRetryable(errors.New("401: invalid api key"))}
 			params := llm.RuntimeParams{
-				Temperature:  0.7,
+				Temperature:  ptr.To(0.7),
 				MaxRetries:   5,
 				RetryBackoff: fastBackoff,
 			}

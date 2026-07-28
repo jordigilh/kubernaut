@@ -42,11 +42,18 @@ const oldClientCloseTimeout = 5 * time.Second
 //     one lock acquisition; callers needing more than one of these values
 //     together should use Pin rather than calling Snapshot/ModelName/
 //     RuntimeParameters separately, which can observe a torn combination.
+//
 // RuntimeParams holds LLM runtime parameters that can be hot-reloaded
 // alongside the client. Investigator reads these at the start of each
 // investigation to pin values for the duration.
+//
+// Temperature is a pointer so "not configured" (nil) can be distinguished
+// from "explicitly configured as 0" (BR-HAPI-199, #1749). Some models
+// (e.g. claude-opus-4-8) reject the temperature parameter outright with a
+// 400 if it is present at all, so it must be omitted from the wire request
+// rather than defaulted to a numeric value when the operator never set it.
 type RuntimeParams struct {
-	Temperature    float64
+	Temperature    *float64
 	TimeoutSeconds int
 	MaxRetries     int
 	// RetryBackoff overrides the default backoff config for ChatWithParams retries.

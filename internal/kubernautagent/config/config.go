@@ -96,7 +96,7 @@ func isEmptyPhaseOverride(override *LLMOverrideConfig) bool {
 		override.Model == "" && override.APIKeyFile == "" &&
 		override.AzureAPIVersion == "" && override.VertexProject == "" &&
 		override.VertexLocation == "" && override.BedrockRegion == "" &&
-		override.Reasoning == nil)
+		override.Reasoning == nil && override.Temperature == nil)
 }
 
 // Validate checks required fields and value constraints for the static config.
@@ -391,9 +391,13 @@ func DefaultConfig() *Config {
 }
 
 // DefaultLLMRuntime returns an LLMRuntimeConfig with sensible production defaults.
+//
+// Temperature is deliberately left nil (#1749): not every model/provider
+// accepts the parameter (e.g. claude-opus-4-8 rejects it with a 400), so
+// the safe default is to omit it from the wire request entirely unless an
+// operator explicitly configures one for their model.
 func DefaultLLMRuntime() *LLMRuntimeConfig {
 	return &LLMRuntimeConfig{
-		Temperature:    0.7,
 		MaxRetries:     3,
 		TimeoutSeconds: 120,
 	}

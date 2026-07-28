@@ -27,6 +27,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
+	"k8s.io/utils/ptr"
 )
 
 var fastBackoff = &backoff.Config{
@@ -98,7 +99,7 @@ var _ = Describe("ChatWithParams — BUG-1/BUG-3 fixes", func() {
 			}}
 
 			params := llm.RuntimeParams{
-				Temperature:    0.7,
+				Temperature:    ptr.To(0.7),
 				TimeoutSeconds: 5,
 			}
 			req := llm.ChatRequest{
@@ -121,7 +122,7 @@ var _ = Describe("ChatWithParams — BUG-1/BUG-3 fixes", func() {
 			}}
 
 			params := llm.RuntimeParams{
-				Temperature: 0.7,
+				Temperature: ptr.To(0.7),
 			}
 			req := llm.ChatRequest{
 				Messages: []llm.Message{{Role: "user", Content: "test"}},
@@ -139,6 +140,51 @@ var _ = Describe("ChatWithParams — BUG-1/BUG-3 fixes", func() {
 		})
 	})
 
+	Describe("UT-KA-1749-001: omits temperature from the wire request when not configured", func() {
+		It("should leave Options.Temperature nil when RuntimeParams.Temperature is nil", func() {
+			mock := &capturingClient{resp: llm.ChatResponse{
+				Message: llm.Message{Role: "assistant", Content: "ok"},
+			}}
+
+			params := llm.RuntimeParams{
+				Temperature: nil, // not configured — must not be sent to the provider
+			}
+			req := llm.ChatRequest{
+				Messages: []llm.Message{{Role: "user", Content: "test"}},
+			}
+
+			_, err := llm.ChatWithParams(context.Background(), mock, req, params)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mock.capturedReq.Options.Temperature).To(BeNil(),
+				"temperature must be omitted from the request when not explicitly configured "+
+					"(fixes claude-opus-4-8 400 'temperature is deprecated for this model')")
+		})
+	})
+
+	Describe("UT-KA-1749-002 (BR-HAPI-199): still sends an explicit temperature of 0", func() {
+		It("should set Options.Temperature to 0 when RuntimeParams.Temperature is an explicit pointer to 0.0", func() {
+			mock := &capturingClient{resp: llm.ChatResponse{
+				Message: llm.Message{Role: "assistant", Content: "ok"},
+			}}
+
+			params := llm.RuntimeParams{
+				Temperature: ptr.To(0.0), // explicitly configured as zero, not "unset"
+			}
+			req := llm.ChatRequest{
+				Messages: []llm.Message{{Role: "user", Content: "test"}},
+			}
+
+			_, err := llm.ChatWithParams(context.Background(), mock, req, params)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mock.capturedReq.Options.Temperature).NotTo(BeNil(),
+				"an explicit temperature of 0 must still be sent — BR-HAPI-199 requires "+
+					"deterministic output to be an explicit configuration, not confused with 'unset'")
+			Expect(*mock.capturedReq.Options.Temperature).To(Equal(0.0))
+		})
+	})
+
 	Describe("UT-KA-967-004: no timeout when TimeoutSeconds is 0", func() {
 		It("should not wrap context with timeout", func() {
 			mock := &capturingClient{resp: llm.ChatResponse{
@@ -146,7 +192,7 @@ var _ = Describe("ChatWithParams — BUG-1/BUG-3 fixes", func() {
 			}}
 
 			params := llm.RuntimeParams{
-				Temperature:    0.5,
+				Temperature:    ptr.To(0.5),
 				TimeoutSeconds: 0,
 			}
 			req := llm.ChatRequest{
@@ -168,7 +214,7 @@ var _ = Describe("ChatWithParams — BUG-1/BUG-3 fixes", func() {
 				successResp: llm.ChatResponse{Message: llm.Message{Role: "assistant", Content: "ok"}},
 			}
 			params := llm.RuntimeParams{
-				Temperature:  0.7,
+				Temperature:  ptr.To(0.7),
 				MaxRetries:   maxRetries,
 				RetryBackoff: fastBackoff,
 			}
@@ -208,7 +254,7 @@ var _ = Describe("ChatWithParams — BUG-1/BUG-3 fixes", func() {
 				Multiplier: 2.0, JitterPercent: 0,
 			}
 			params := llm.RuntimeParams{
-				Temperature:  0.7,
+				Temperature:  ptr.To(0.7),
 				MaxRetries:   5,
 				RetryBackoff: slowBackoff,
 			}

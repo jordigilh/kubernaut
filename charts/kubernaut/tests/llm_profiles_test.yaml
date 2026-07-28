@@ -113,6 +113,34 @@ tests:
           path: data['llm-runtime.yaml']
           pattern: "timeoutSeconds: 90"
 
+  - it: "IT-PLATFORM-LLM-003 (#1749): temperature is omitted entirely when not set on the profile"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - notMatchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: "temperature:"
+
+  - it: "IT-PLATFORM-LLM-003 (#1749, BR-HAPI-199): an explicit temperature of 0 still renders"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-opus-4-8
+            credentialsSecretName: llm-credentials-primary
+            temperature: 0
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - matchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: "temperature: 0"
+
   # -------------------------------------------------------------------------
   # IT-PLATFORM-LLM-004: phaseModels resolves per-phase; unknown phase fails
   # -------------------------------------------------------------------------

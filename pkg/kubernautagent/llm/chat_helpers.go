@@ -158,6 +158,23 @@ func IsNonRetryableHTTPStatus(code int) bool {
 	}
 }
 
+// ApplyTemperature copies params.Temperature onto opts only when it is
+// explicitly configured (non-nil). Some models (e.g. claude-opus-4-8)
+// reject the temperature parameter outright with a 400 if it is present
+// on the wire request at all, regardless of value — so "not configured"
+// must mean "omitted", not "defaulted to a numeric value" (#1749).
+//
+// Exported because both non-streaming (ChatWithParams, below) and
+// streaming (investigator's runLLMLoop/chatOrStream-equivalent) call
+// paths need it — a previous version of this logic was duplicated inline
+// in both places, which is exactly how the #1749 bug ended up with two
+// independent, easy-to-miss fix sites instead of one.
+func ApplyTemperature(opts *ChatOptions, params RuntimeParams) {
+	if params.Temperature != nil {
+		opts.Temperature = params.Temperature
+	}
+}
+
 // ChatWithParams wraps a Client.Chat call, injecting runtime parameters
 // (temperature, timeout, retries) from the hot-reloadable LLM config.
 // Each attempt gets a fresh context timeout; the timeout is cancelled
@@ -166,8 +183,7 @@ func IsNonRetryableHTTPStatus(code int) bool {
 // and fail fast on errors an adapter has classified as non-retryable
 // (#1585) instead of consuming the full retry budget.
 func ChatWithParams(ctx context.Context, client Client, req ChatRequest, params RuntimeParams) (ChatResponse, error) {
-	temp := params.Temperature
-	req.Options.Temperature = &temp
+	ApplyTemperature(&req.Options, params)
 
 	bo := ResolveRetryBackoff(params)
 	maxAttempts := ResolveMaxAttempts(params)
