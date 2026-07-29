@@ -215,6 +215,31 @@ spec:
               fi
 
               rm -rf "$TMPDIR"
+
+              {{- if and .Values.datastorage.config.auditHashKey.enabled (not .Values.datastorage.config.auditHashKey.existingSecret) }}
+              # ── Section 4: DataStorage audit-HMAC key (DD-PLATFORM-006 DA7) ──
+              # AU-9: exists-only check -- this key is NEVER rotated, unlike the
+              # certificates above. Regenerating it would silently corrupt hash-chain
+              # verification for every audit record already hashed with the old key,
+              # destroying the tamper-evidence guarantee for pre-existing records.
+              # Only auto-generated under the default secret name; when
+              # datastorage.config.auditHashKey.existingSecret is set, the operator
+              # is BYO-managing it manually (same contract as postgresql/valkey
+              # existingSecret), so this section is skipped for that name.
+              AUDIT_HMAC_SECRET="{{ include "kubernaut.datastorage.auditHashKeySecretName" . }}"
+              if kubectl get secret "$AUDIT_HMAC_SECRET" -n "$NAMESPACE" >/dev/null 2>&1; then
+                echo "==> $AUDIT_HMAC_SECRET already exists. Never rotating (would corrupt the audit hash chain). Skipping."
+              else
+                echo "==> Generating audit-HMAC key ($AUDIT_HMAC_SECRET)..."
+                HMAC_KEY=$(openssl rand -base64 32)
+                kubectl create secret generic "$AUDIT_HMAC_SECRET" \
+                  --from-literal=audit-hmac-key.yaml="$(printf 'hmacKey: %s' "$HMAC_KEY")" \
+                  -n "$NAMESPACE"
+                kubectl annotate secret "$AUDIT_HMAC_SECRET" -n "$NAMESPACE" "helm.sh/resource-policy=keep" --overwrite
+                echo "  Created $AUDIT_HMAC_SECRET (helm.sh/resource-policy=keep -- survives helm uninstall)"
+              fi
+              {{- end }}
+
               echo "==> TLS certificate generation complete"
 ---
 # Job 2: Patch webhook configurations with caBundle (post-install/post-upgrade).
@@ -516,5 +541,11 @@ spec:
               kubectl delete secret fleetmetadatacache-tls -n "$NAMESPACE" --ignore-not-found
               kubectl delete secret datastorage-signing-cert -n "$NAMESPACE" --ignore-not-found
               kubectl delete configmap inter-service-ca -n "$NAMESPACE" --ignore-not-found
+              # DD-PLATFORM-006 DA7: datastorage-audit-hmac-key is deliberately NOT
+              # deleted here. Unlike the certs above, it must survive helm
+              # uninstall/reinstall so the audit hash chain's cryptographic
+              # integrity is preserved across the project's reinstall-not-upgrade
+              # model -- deleting and regenerating it would corrupt verification
+              # for every audit record hashed with the old key.
               echo "==> Cleanup complete"
 {{- end }}

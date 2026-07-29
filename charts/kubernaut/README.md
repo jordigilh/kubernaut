@@ -279,18 +279,32 @@ infeasible. This is opt-in and backward compatible: existing events keep
 verifying under the legacy algorithm, and disabling it later simply reverts new
 writes to the unkeyed algorithm.
 
-```bash
-# Pre-create the HMAC key Secret (chart does not auto-generate it, same as
-# the PostgreSQL/Valkey secrets above)
-HMAC_KEY=$(openssl rand -base64 32)
-kubectl create secret generic datastorage-audit-hmac-key \
-  --from-literal=audit-hmac-key.yaml="$(printf 'hmacKey: %s' "$HMAC_KEY")" \
-  -n kubernaut-system
+With the default `tls.mode: hook` (see [TLS Certificate Provisioning](#tls-certificate-provisioning)
+below), the chart's `pre-install`/`pre-upgrade` hook auto-generates this key
+the first time it's needed and **never rotates it** afterward — regenerating
+it would silently corrupt hash-chain verification for every audit record
+already hashed with the old key. The generated Secret is not tracked by Helm
+and is intentionally excluded from the hook's own uninstall cleanup, so it
+also survives `helm uninstall` (and a subsequent reinstall picks the same key
+back up):
 
+```bash
 helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --reuse-values \
   --set datastorage.config.auditHashKey.enabled=true
+```
+
+If `tls.mode` is `cert-manager` or `manual`, or if you set
+`datastorage.config.auditHashKey.existingSecret` to BYO your own key (same
+contract as the PostgreSQL/Valkey secrets above), the chart does not
+auto-generate anything — pre-create the Secret yourself:
+
+```bash
+HMAC_KEY=$(openssl rand -base64 32)
+kubectl create secret generic datastorage-audit-hmac-key \
+  --from-literal=audit-hmac-key.yaml="$(printf 'hmacKey: %s' "$HMAC_KEY")" \
+  -n kubernaut-system
 ```
 
 ```yaml

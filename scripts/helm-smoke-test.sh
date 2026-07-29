@@ -496,6 +496,10 @@ production_secret_flags() {
   echo "--set gateway.auth.signalSources[0].name=alertmanager"
   echo "--set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager"
   echo "--set gateway.auth.signalSources[0].namespace=monitoring"
+  # DD-PLATFORM-006 DA7: exercises the audit-HMAC key auto-generation hook
+  # (tls-cert-job.yaml Section 4) on every Flow A install/upgrade -- see
+  # run_audithmac_001/002 below.
+  echo "--set datastorage.config.auditHashKey.enabled=true"
   policy_flags
 }
 
@@ -826,6 +830,45 @@ run_tls_interservice() {
       tap_not_ok "ST-TLS-INTERSERVICE-006: Leaf certs use ECDSA (not RSA)" "key type: ${key_type}"
       pass=false
     fi
+  fi
+}
+
+# DD-PLATFORM-006 DA7: audit-HMAC key auto-generation hook (never-rotate).
+# production_secret_flags() enables datastorage.config.auditHashKey, so
+# run_inst_001's fresh install already exercises the auto-gen path (Section 4
+# of tls-cert-job.yaml). If the secrets.yaml lookup+fail() guard's tls.mode
+# timing fix regressed, run_inst_001 itself would already have failed (the
+# guard would see the secret as "not found" during the pre-hook render pass
+# and block the install) -- Flow A reaching this point is itself part of the
+# proof, this function just asserts the concrete Secret contents.
+run_audithmac_001() {
+  local pass=true
+  assert_resource_exists secret datastorage-audit-hmac-key "$NAMESPACE" \
+    "ST-AUDITHMAC-001: datastorage-audit-hmac-key Secret auto-created by the pre-install hook" || pass=false
+
+  AUDIT_HMAC_INITIAL_VALUE=$(kubectl get secret datastorage-audit-hmac-key -n "$NAMESPACE" \
+    -o jsonpath='{.data.audit-hmac-key\.yaml}' 2>/dev/null || echo "")
+  if [[ -n "$AUDIT_HMAC_INITIAL_VALUE" ]]; then
+    tap_ok "ST-AUDITHMAC-002: datastorage-audit-hmac-key has audit-hmac-key.yaml key"
+  else
+    tap_not_ok "ST-AUDITHMAC-002: datastorage-audit-hmac-key has audit-hmac-key.yaml key" "key missing"
+    pass=false
+  fi
+}
+
+# Proves the "never-rotate" guarantee: a second Helm operation on the same
+# release (run_upg_001's helm upgrade, a pre-upgrade hook run) must not
+# regenerate this key -- doing so would silently corrupt hash-chain
+# verification for every audit record already hashed with the old key.
+run_audithmac_002() {
+  local current_value
+  current_value=$(kubectl get secret datastorage-audit-hmac-key -n "$NAMESPACE" \
+    -o jsonpath='{.data.audit-hmac-key\.yaml}' 2>/dev/null || echo "")
+  if [[ -n "$AUDIT_HMAC_INITIAL_VALUE" && "$current_value" == "$AUDIT_HMAC_INITIAL_VALUE" ]]; then
+    tap_ok "ST-AUDITHMAC-003: datastorage-audit-hmac-key unchanged after helm upgrade (never-rotate proof)"
+  else
+    tap_not_ok "ST-AUDITHMAC-003: datastorage-audit-hmac-key unchanged after helm upgrade" \
+      "value changed or was empty (initial ${#AUDIT_HMAC_INITIAL_VALUE} bytes, current ${#current_value} bytes)"
   fi
 }
 
@@ -1318,8 +1361,10 @@ flow_a_production() {
 
   run_tls_001
   run_tls_interservice
+  run_audithmac_001 || flow_failed=true
 
   run_upg_001 || flow_failed=true
+  run_audithmac_002
 
   run_edge_001
   run_guard_001
