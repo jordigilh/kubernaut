@@ -559,14 +559,9 @@ jobs:
           fi
 
       - name: Scan image for CVEs (Trivy)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        uses: ./.github/actions/trivy-scan-with-retry
         with:
           image-ref: ${{ steps.image-ref.outputs.image }}
-          format: table
-          exit-code: 1
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          version: v0.72.0
 
       - name: Save image to tarball
         run: |
@@ -671,14 +666,9 @@ jobs:
             ${CONTEXT}
 
       - name: Scan image for CVEs (trivy)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        uses: ./.github/actions/trivy-scan-with-retry
         with:
           image-ref: localhost/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}
-          format: table
-          exit-code: 1
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          version: v0.72.0
 
       - name: Save image to tarball
         run: |

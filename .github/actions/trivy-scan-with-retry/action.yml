@@ -1,0 +1,126 @@
+name: Trivy Scan With Retry
+description: >
+  Scans a container image for CVEs with Trivy, retrying on transient
+  vulnerability-DB download failures (Issue #1766) without masking genuine
+  vulnerability findings. aquasecurity/trivy-action's own DB-download step is a one-shot
+  `trivy image` invocation against mirror.gcr.io/aquasec/trivy-db; under the
+  ~30-way concurrent Build matrix in ci-pipeline.yml, a same-day cache miss
+  causes every job to hit the mirror at once, and it occasionally returns a
+  transient 404/429. A real vulnerability finding and a DB-download fatal
+  error both exit non-zero, so this action inspects Trivy's own output to
+  distinguish "found a CVE" (fail immediately) from "couldn't download the
+  DB" (retry with backoff) rather than retrying blindly.
+
+inputs:
+  image-ref:
+    description: Image reference to scan (e.g. localhost/gateway:pr-123).
+    required: true
+  format:
+    description: Trivy output format.
+    required: false
+    default: table
+  exit-code:
+    description: Exit code Trivy returns when vulnerabilities are found.
+    required: false
+    default: '1'
+  severity:
+    description: Comma-separated list of severities to report.
+    required: false
+    default: CRITICAL,HIGH
+  ignore-unfixed:
+    description: Skip vulnerabilities with no available fix.
+    required: false
+    default: 'true'
+  version:
+    description: Trivy version to install.
+    required: false
+    default: v0.72.0
+  max-attempts:
+    description: Maximum scan attempts before giving up on transient DB errors.
+    required: false
+    default: '3'
+  trivyignores:
+    description: Path to a .trivyignore file for time-bound CVE exceptions (optional).
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install Trivy
+      uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514 # v0.2.6
+      with:
+        version: ${{ inputs.version }}
+        cache: true
+
+    - name: Get current date (for DB cache key)
+      id: date
+      shell: bash
+      run: echo "date=$(date +'%Y-%m-%d')" >> "$GITHUB_OUTPUT"
+
+    # Same cache key scheme aquasecurity/trivy-action itself uses internally --
+    # shared across the whole ~30-way Build matrix so only the first job of the
+    # day needs a live DB download; every later job (and every later attempt
+    # below) reuses it, which is also what makes the download self-heal fast
+    # once one attempt in the run succeeds.
+    - name: Restore/save Trivy vulnerability DB cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ github.workspace }}/.cache/trivy
+        key: cache-trivy-${{ steps.date.outputs.date }}
+        restore-keys: cache-trivy-
+
+    - name: Scan image for CVEs (Trivy, with DB-download retry)
+      shell: bash
+      env:
+        TRIVY_CACHE_DIR: ${{ github.workspace }}/.cache/trivy
+      run: |
+        set -uo pipefail
+
+        IMAGE_REF="${{ inputs.image-ref }}"
+        IGNORE_UNFIXED_FLAG=()
+        if [ "${{ inputs.ignore-unfixed }}" == "true" ]; then
+          IGNORE_UNFIXED_FLAG=(--ignore-unfixed)
+        fi
+        IGNOREFILE_FLAG=()
+        if [ -n "${{ inputs.trivyignores }}" ]; then
+          IGNOREFILE_FLAG=(--ignorefile "${{ inputs.trivyignores }}")
+        fi
+
+        max_attempts=${{ inputs.max-attempts }}
+        attempt=1
+        while true; do
+          echo "🔍 Trivy scan attempt ${attempt}/${max_attempts}: ${IMAGE_REF}"
+          output=$(trivy image \
+            --format "${{ inputs.format }}" \
+            --exit-code "${{ inputs.exit-code }}" \
+            --severity "${{ inputs.severity }}" \
+            "${IGNORE_UNFIXED_FLAG[@]}" \
+            "${IGNOREFILE_FLAG[@]}" \
+            "${IMAGE_REF}" 2>&1)
+          status=$?
+          echo "${output}"
+
+          if [ "${status}" -eq 0 ]; then
+            echo "✅ Trivy scan passed (attempt ${attempt}, no reportable vulnerabilities)"
+            exit 0
+          fi
+
+          # Distinguish transient DB/network errors (retry-worthy) from genuine
+          # vulnerability findings or config errors, which must fail immediately
+          # rather than be masked by a retry.
+          if echo "${output}" | grep -qiE "failed to download vulnerability DB|DB error|unexpected status code|oci download error|dial tcp|context deadline exceeded|i/o timeout|connection reset"; then
+            if [ "${attempt}" -ge "${max_attempts}" ]; then
+              echo "❌ Trivy vulnerability DB download failed after ${max_attempts} attempts -- giving up."
+              exit "${status}"
+            fi
+            backoff=$(( attempt * 15 ))
+            echo "⚠️  Transient Trivy DB error detected (attempt ${attempt}/${max_attempts}), retrying in ${backoff}s..."
+            sleep "${backoff}"
+            attempt=$(( attempt + 1 ))
+            continue
+          fi
+
+          echo "❌ Trivy found reportable vulnerabilities or hit a non-transient error (exit ${status}) -- failing."
+          exit "${status}"
+        done
