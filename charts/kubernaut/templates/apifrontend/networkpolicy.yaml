@@ -6,7 +6,7 @@ authwebhook, kubernaut-agent) has a NetworkPolicy — APIFrontend was the one
 externally-facing gap. Ported from the Operator's apifrontendNetworkPolicy()
 (kubernaut-operator/internal/resources/networkpolicies.go).
 */}}
-{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.apifrontend.enabled .Values.apifrontend.enabled }}
+{{- if .Values.apifrontend.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 {{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "apifrontend" "appLabel" "apifrontend") }}

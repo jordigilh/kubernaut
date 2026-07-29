@@ -821,9 +821,13 @@ monitoring:
       takeoverRateMax: 0.05
       takeoverRateFor: "15m"
 
-# -- NetworkPolicies: default-deny with explicit allow rules (Issue #285)
+# -- NetworkPolicies: default-deny with explicit allow rules (Issue #285).
+# Unconditionally mandatory for every service (DD-PLATFORM-006 Decision Area
+# 3) -- there is no enabled toggle, top-level or per-service. The 4 policies
+# for optional services (apifrontend/console/postgresql/valkey) are still a
+# no-op when that service itself is disabled -- see each service's own
+# `enabled` field, not a NetworkPolicy-specific one.
 networkPolicies:
-  enabled: true
   # -- Usually safe to leave empty: during a real `helm install`/`upgrade`,
   # the chart auto-discovers the kube-apiserver's real backend endpoint
   # IP(s) via `lookup` against the live "kubernetes" Endpoints object, so
@@ -869,7 +873,6 @@ networkPolicies:
     cidr: "0.0.0.0/0"
     port: 443
   gateway:
-    enabled: true
     ingressNamespaces: []
     # -- CIDR blocks allowed as ingress sources on Gateway's port (ipBlock).
     # Required for traffic not associated with any pod/namespace -- e.g.
@@ -883,7 +886,6 @@ networkPolicies:
     # name-based matching cannot express.
     ingressNamespaceSelectors: []
   datastorage:
-    enabled: true
     # -- CIDR blocks allowed as ingress sources on DataStorage's http port
     # (ipBlock). See networkPolicies.gateway.ingressCIDRs for why this is
     # needed in addition to the existing podSelector-based rules -- NodePort-
@@ -894,10 +896,7 @@ networkPolicies:
     # allowed as ingress sources, for cases the podSelector-based rules
     # cannot express.
     ingressNamespaceSelectors: []
-  aianalysis:
-    enabled: true
   kubernautAgent:
-    enabled: true
     # -- CIDR blocks allowed as ingress sources on Kubernaut Agent's MCP/API
     # port (ipBlock). See networkPolicies.gateway.ingressCIDRs for why this is
     # needed in addition to the existing podSelector-based rules -- NodePort-
@@ -908,20 +907,7 @@ networkPolicies:
     # allowed as ingress sources, for cases the podSelector-based rules
     # cannot express.
     ingressNamespaceSelectors: []
-  signalprocessing:
-    enabled: true
-  remediationorchestrator:
-    enabled: true
-  workflowexecution:
-    enabled: true
-  notification:
-    enabled: true
-  effectivenessmonitor:
-    enabled: true
-  authwebhook:
-    enabled: true
   apifrontend:
-    enabled: true
     # -- Namespaces allowed to reach APIFrontend's https port from outside the
     # release namespace (e.g. an ingress-controller namespace). Same-namespace
     # traffic is always allowed regardless of this list (BR-PLATFORM-005).
@@ -935,7 +921,6 @@ networkPolicies:
     # matching.
     ingressNamespaceSelectors: []
   console:
-    enabled: true
     # -- Namespaces allowed to reach the console's oauth2-proxy port from outside
     # the release namespace (e.g. an ingress-controller namespace). Same-namespace
     # traffic is always allowed regardless of this list (BR-PLATFORM-006). Only
@@ -949,10 +934,6 @@ networkPolicies:
     # allowed as ingress sources, beyond ingressNamespaces' simple name-based
     # matching.
     ingressNamespaceSelectors: []
-  postgresql:
-    enabled: true
-  valkey:
-    enabled: true
   # -- Egress target for the OIDC identity provider that Console/APIFrontend
   # authenticate against (token exchange, JWKS discovery). Defaults to
   # "anywhere on 443" -- correct for a real external IDP over HTTPS. Override

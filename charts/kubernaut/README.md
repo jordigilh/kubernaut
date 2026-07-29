@@ -704,9 +704,14 @@ cluster's other known peers.
 
 ### NetworkPolicies
 
+NetworkPolicies are unconditionally mandatory for every service (DD-PLATFORM-006 Decision Area
+3) -- there is no `networkPolicies.enabled` or per-service `networkPolicies.<service>.enabled`
+toggle; `additionalProperties: false` in the schema rejects both if set. The 4 policies for
+optional services (apifrontend/console/postgresql/valkey) are still a no-op when that service
+itself is disabled -- gate on that service's own `enabled` field, not a NetworkPolicy-specific one.
+
 | Parameter | Description | Default |
 |---|---|---|
-| `networkPolicies.enabled` | Enable default-deny NetworkPolicies for all services | `true` |
 | `networkPolicies.apiServerCIDR` | K8s API server real backend endpoint CIDR (e.g., `10.89.0.2/32` -- NOT the `kubernetes` Service ClusterIP). Usually left empty: auto-discovered via `lookup` on a real `helm install`/`upgrade`; required if rendering via `helm template`/GitOps | `""` |
 | `networkPolicies.apiServerCIDRs` | Additional API server backend endpoint CIDRs for HA (multiple control-plane nodes). Merged with `apiServerCIDR`; usually left empty (see above) | `[]` |
 | `networkPolicies.apiServerPort` | API server backend endpoint port (commonly 6443). `0` = auto-discover alongside the CIDR | `0` |
@@ -715,13 +720,10 @@ cluster's other known peers.
 | `networkPolicies.monitoring.alertManagerPort` | AlertManager port to allow in the NetworkPolicy egress rule | `9093` |
 | `networkPolicies.externalWebhooks.cidr` | CIDR for Slack/PagerDuty/Teams webhook egress | `0.0.0.0/0` |
 | `networkPolicies.externalRegistry.cidr` | CIDR for OCI registry egress (datastorage bundle validation) | `0.0.0.0/0` |
-| `networkPolicies.<service>.enabled` | Per-service toggle (gateway, datastorage, etc.) | `true` |
-| `networkPolicies.apifrontend.enabled` | Enable the APIFrontend NetworkPolicy (BR-PLATFORM-005) | `true` |
-| `networkPolicies.apifrontend.ingressNamespaces` | External namespaces (e.g. an ingress-controller namespace) allowed to reach APIFrontend's https port. Same-namespace traffic is always allowed | `[]` |
-| `networkPolicies.console.enabled` | Enable the console NetworkPolicy (BR-PLATFORM-006). No-op unless `console.enabled=true` | `true` |
-| `networkPolicies.console.ingressNamespaces` | External namespaces (e.g. an ingress-controller namespace) allowed to reach the console's oauth2-proxy port. Same-namespace traffic is always allowed | `[]` |
+| `networkPolicies.apifrontend.ingressNamespaces` | External namespaces (e.g. an ingress-controller namespace) allowed to reach APIFrontend's https port. Same-namespace traffic is always allowed. No-op unless `apifrontend.enabled=true` | `[]` |
+| `networkPolicies.console.ingressNamespaces` | External namespaces (e.g. an ingress-controller namespace) allowed to reach the console's oauth2-proxy port. Same-namespace traffic is always allowed. No-op unless `console.enabled=true` | `[]` |
 
-When enabled, each service gets a NetworkPolicy with:
+Each service gets a NetworkPolicy with:
 - **Default-deny ingress** with service-specific allow rules
 - **Egress**: most services restrict egress to DNS, K8s API, and known peers; **Kubernaut Agent uses an ingress-only policy** (unrestricted egress) because it must reach arbitrary LLM providers, MCP servers, and tool endpoints
 - **Datastorage**: allows egress to PostgreSQL, Valkey, and external container registries (configurable CIDR for OCI bundle validation)
@@ -732,7 +734,6 @@ Example (API server CIDR/port are auto-discovered here; only set them explicitly
 
 ```bash
 helm install kubernaut charts/kubernaut \
-  --set networkPolicies.enabled=true \
   --set networkPolicies.monitoring.namespace=monitoring \
   --set "networkPolicies.gateway.ingressNamespaces[0]=monitoring"
 ```

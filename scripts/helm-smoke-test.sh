@@ -1677,36 +1677,41 @@ run_template_tests() {
       "signalprocessing-policy ConfigMap still rendered when policies.existingConfigMap is set"
   fi
 
-  echo "# --- Template Tests: NetworkPolicy (Issue #285) ---"
+  echo "# --- Template Tests: NetworkPolicy (Issue #285, DD-PLATFORM-006 DA3: unconditionally mandatory) ---"
 
-  # ST-NP-001: Default renders 13 NetworkPolicies (enabled by default)
-  # Count: 12 after removing orphaned legacy HAPI NP in v1.4, +1 for APIFrontend
-  # (BR-PLATFORM-005, Issue #1589 follow-up).
+  # ST-NP-001: Default renders 13 NetworkPolicies. There is no enable/disable
+  # toggle anymore (DD-PLATFORM-006 DA3) -- 14 NetworkPolicy-emitting
+  # templates total, minus console (the only one gated off by default, since
+  # console.enabled defaults false) = 13.
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 2>&1)
   local np_count
   np_count=$(grep -c "kind: NetworkPolicy" <<< "$output" || true)
   if [[ "$np_count" -eq 13 ]]; then
-    tap_ok "ST-NP-001: default renders 13 NetworkPolicies (enabled by default)"
+    tap_ok "ST-NP-001: default renders 13 NetworkPolicies (unconditionally mandatory)"
   else
     tap_not_ok "ST-NP-001: default should render 13 NetworkPolicies" \
       "Found ${np_count}"
   fi
 
-  # ST-NP-002: Disabling renders zero policies
-  output=$(helm template test "$CHART_PATH" \
+  # ST-NP-002: The global disable toggle no longer exists -- schema rejects it
+  # (DD-PLATFORM-006 DA3 removed the escape hatch entirely, not just flipped
+  # its default).
+  local np002_out
+  np002_out=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.enabled=false 2>&1)
-  np_count=$(grep -c "kind: NetworkPolicy" <<< "$output" || true)
-  if [[ "$np_count" -eq 0 ]]; then
-    tap_ok "ST-NP-002: networkPolicies.enabled=false renders zero NetworkPolicies"
+  if [[ $? -ne 0 ]] && grep -q "additional properties 'enabled' not allowed" <<< "$np002_out"; then
+    tap_ok "ST-NP-002: networkPolicies.enabled is schema-rejected (dead field, NetworkPolicies are mandatory)"
   else
-    tap_not_ok "ST-NP-002: expected zero NetworkPolicies when disabled" \
-      "Found ${np_count}"
+    tap_not_ok "ST-NP-002: networkPolicies.enabled should be schema-rejected" \
+      "$np002_out"
   fi
 
-  # ST-NP-003: Every policy includes DNS egress (port 53)
+  # ST-NP-003: Every policy includes DNS egress (port 53). Uses ST-NP-001's
+  # $output (the only NetworkPolicy-bearing render in this block since
+  # ST-NP-002 above -- schema-rejection -- deliberately produces none).
   local np_without_dns=0
   while IFS= read -r policy_name; do
     local policy_yaml
@@ -1735,27 +1740,29 @@ for d in docs:
       "${np_without_dns} policies missing DNS egress"
   fi
 
-  # ST-NP-004: Per-service disable skips that policy
-  output=$(helm template test "$CHART_PATH" \
+  # ST-NP-004: The per-service disable toggle no longer exists for the 10
+  # always-on services -- schema rejects it (notification has no owning-
+  # service .enabled of its own, so its NetworkPolicy has no gate at all now).
+  local np004_out
+  np004_out=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set networkPolicies.enabled=true \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
     --set networkPolicies.notification.enabled=false 2>&1)
-  local np_notif_count
-  np_notif_count=$(grep -A1 "kind: NetworkPolicy" <<< "$output" | grep -c "notification" || true)
-  if [[ "$np_notif_count" -eq 0 ]]; then
-    tap_ok "ST-NP-004: notification.enabled=false skips Notification NetworkPolicy"
+  if [[ $? -ne 0 ]] && grep -q "additional properties 'notification' not allowed" <<< "$np004_out"; then
+    tap_ok "ST-NP-004: networkPolicies.notification.enabled is schema-rejected (dead field, no owning-service gate for this always-on service)"
   else
-    tap_not_ok "ST-NP-004: per-service disable" \
-      "Notification NetworkPolicy still rendered when disabled"
+    tap_not_ok "ST-NP-004: networkPolicies.notification.enabled should be schema-rejected" \
+      "$np004_out"
   fi
 
-  # ST-NP-005: PostgreSQL/Valkey conditional on their enabled flags (F-7)
-  # postgresql.host is required when postgresql.enabled=false (migration-job validation).
-  # Count: 11 = 13 total - PG - VK (13 total after adding APIFrontend NetworkPolicy).
+  # ST-NP-005: PostgreSQL/Valkey NetworkPolicies still depend on the OWNING
+  # service's own .enabled (postgresql.enabled/valkey.enabled) -- the one
+  # gate DD-PLATFORM-006 DA3 keeps, since a NetworkPolicy for a service that
+  # isn't deployed is a no-op. postgresql.host is required when
+  # postgresql.enabled=false (migration-job validation).
+  # Count: 11 = 13 total - PG - VK.
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set networkPolicies.enabled=true \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
     --set postgresql.enabled=false \
     --set postgresql.host=external-pg.example.com \
@@ -1763,17 +1770,17 @@ for d in docs:
     --set valkey.host=external-valkey.example.com 2>&1)
   np_count=$(grep -c "kind: NetworkPolicy" <<< "$output" || true)
   if [[ "$np_count" -eq 11 ]]; then
-    tap_ok "ST-NP-005: postgresql/valkey disabled = 11 NetworkPolicies (no PG/VK)"
+    tap_ok "ST-NP-005: postgresql/valkey disabled = 11 NetworkPolicies (no PG/VK, owning-service gate preserved)"
   else
     tap_not_ok "ST-NP-005: infra conditional rendering" \
       "Expected 11 policies without PG/VK, got ${np_count}"
   fi
 
-  # ST-NP-006: helm lint passes with NetworkPolicies enabled
+  # ST-NP-006: helm lint passes with the (now-mandatory, no-toggle-needed)
+  # NetworkPolicies and an explicit apiServerCIDR (GitOps/restricted-RBAC path).
   if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set networkPolicies.enabled=true \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 >/dev/null 2>&1; then
-    tap_ok "ST-NP-006: helm lint passes with networkPolicies.enabled=true"
+    tap_ok "ST-NP-006: helm lint passes with mandatory NetworkPolicies + explicit apiServerCIDR"
   else
     tap_not_ok "ST-NP-006: helm lint with NetworkPolicies" \
       "helm lint failed"
@@ -2299,15 +2306,18 @@ for d in docs:
       "expected NetworkPolicy content not found"
   fi
 
+  # DD-PLATFORM-006 DA3: the NetworkPolicy-specific toggle is gone -- schema
+  # rejects it. apifrontend.enabled=false (the owning-service flag) is the
+  # only remaining gate, already proven by ST-NP-005-style coverage elsewhere.
   local af_np_disabled
   af_np_disabled=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.apifrontend.enabled=false 2>&1)
-  if ! grep -q "test-kubernaut-apifrontend" <<< "$af_np_disabled"; then
-    tap_ok "ST-CHART-AF-NP-001b: networkPolicies.apifrontend.enabled=false omits the NetworkPolicy"
+  if [[ $? -ne 0 ]] && grep -q "additional properties 'enabled' not allowed" <<< "$af_np_disabled"; then
+    tap_ok "ST-CHART-AF-NP-001b: networkPolicies.apifrontend.enabled is schema-rejected (dead field; apifrontend.enabled is the only remaining gate)"
   else
     tap_not_ok "ST-CHART-AF-NP-001b: APIFrontend NetworkPolicy disable toggle" \
-      "NetworkPolicy rendered despite networkPolicies.apifrontend.enabled=false"
+      "expected schema rejection of networkPolicies.apifrontend.enabled, got: $af_np_disabled"
   fi
 
   local valkey_np

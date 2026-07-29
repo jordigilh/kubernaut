@@ -916,7 +916,7 @@ Usage: {{ include "kubernaut.np.apiServerPeers" . | nindent 4 }}
 {{- end -}}
 {{- end -}}
 {{- if not $cidrs -}}
-{{- fail "networkPolicies.enabled=true but could not auto-discover the kube-apiserver endpoint (`lookup \"v1\" \"Endpoints\" \"default\" \"kubernetes\"` returned no addresses -- possible causes: the Helm installer ServiceAccount lacks permission to read Endpoints in the default namespace, or this is an unusual cluster). Set networkPolicies.apiServerCIDR (single control-plane) or networkPolicies.apiServerCIDRs (HA, one entry per control-plane node) explicitly -- see `kubectl get endpoints kubernetes -o wide`." -}}
+{{- fail "NetworkPolicies are mandatory (DD-PLATFORM-006) but could not auto-discover the kube-apiserver endpoint (`lookup \"v1\" \"Endpoints\" \"default\" \"kubernetes\"` returned no addresses -- possible causes: the Helm installer ServiceAccount lacks permission to read Endpoints in the default namespace, or this is an unusual cluster). Set networkPolicies.apiServerCIDR (single control-plane) or networkPolicies.apiServerCIDRs (HA, one entry per control-plane node) explicitly -- see `kubectl get endpoints kubernetes -o wide`." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}

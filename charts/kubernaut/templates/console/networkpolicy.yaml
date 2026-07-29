@@ -3,7 +3,7 @@ BR-PLATFORM-006 (Kubernaut Operator parity, chart-only enhancement — the Opera
 has no NetworkPolicy for Console). Follows the same default-deny + explicit-allow
 convention as every other component in the chart.
 */}}
-{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.console.enabled .Values.console.enabled }}
+{{- if .Values.console.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 {{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "console" "appLabel" "console") }}

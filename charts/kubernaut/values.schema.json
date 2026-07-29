@@ -15,17 +15,6 @@
       "type": "string",
       "pattern": "^[0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h)([0-9]+(\\.[0-9]+)?(ns|us|\u00b5s|ms|s|m|h))*$"
     },
-    "serviceToggle": {
-      "description": "Simple enabled/disabled toggle with no other configuration",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": true
-        }
-      }
-    },
     "k8sLabelSelector": {
       "description": "A Kubernetes LabelSelector (matchLabels/matchExpressions), used as a raw namespaceSelector value in a NetworkPolicy ingress peer.",
       "type": "object",
@@ -2984,11 +2973,6 @@
       "description": "NetworkPolicy configuration for all Kubernaut services (Issue #285)",
       "additionalProperties": false,
       "properties": {
-        "enabled": {
-          "type": "boolean",
-          "default": true,
-          "description": "Enable default-deny NetworkPolicies for all services"
-        },
         "apiServerCIDR": {
           "type": "string",
           "default": "",
@@ -3074,10 +3058,6 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": true
-            },
             "ingressNamespaces": {
               "type": "array",
               "items": {
@@ -3098,10 +3078,6 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": true
-            },
             "ingressCIDRs": {
               "$ref": "#/definitions/ingressCIDRs"
             },
@@ -3109,19 +3085,12 @@
               "$ref": "#/definitions/ingressNamespaceSelectors"
             }
           }
-        },
-        "aianalysis": {
-          "$ref": "#/definitions/serviceToggle"
         },
         "kubernautAgent": {
           "type": "object",
           "additionalProperties": false,
-          "description": "NetworkPolicy toggle for Kubernaut Agent",
+          "description": "NetworkPolicy ingress-source config for Kubernaut Agent (unconditionally mandatory -- DD-PLATFORM-006 DA3)",
           "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": true
-            },
             "ingressCIDRs": {
               "$ref": "#/definitions/ingressCIDRs"
             },
@@ -3130,33 +3099,11 @@
             }
           }
         },
-        "signalprocessing": {
-          "$ref": "#/definitions/serviceToggle"
-        },
-        "remediationorchestrator": {
-          "$ref": "#/definitions/serviceToggle"
-        },
-        "workflowexecution": {
-          "$ref": "#/definitions/serviceToggle"
-        },
-        "notification": {
-          "$ref": "#/definitions/serviceToggle"
-        },
-        "effectivenessmonitor": {
-          "$ref": "#/definitions/serviceToggle"
-        },
-        "authwebhook": {
-          "$ref": "#/definitions/serviceToggle"
-        },
         "apifrontend": {
           "type": "object",
-          "description": "BR-PLATFORM-005: NetworkPolicy toggle for APIFrontend",
+          "description": "BR-PLATFORM-005: NetworkPolicy ingress-source config for APIFrontend (unconditionally mandatory when apifrontend.enabled -- DD-PLATFORM-006 DA3)",
           "additionalProperties": false,
           "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": true
-            },
             "ingressNamespaces": {
               "type": "array",
               "items": {
@@ -3175,13 +3122,9 @@
         },
         "console": {
           "type": "object",
-          "description": "BR-PLATFORM-006: NetworkPolicy toggle for the web console. A no-op when console.enabled=false.",
+          "description": "BR-PLATFORM-006: NetworkPolicy ingress-source config for the web console. A no-op when console.enabled=false (unconditionally mandatory otherwise -- DD-PLATFORM-006 DA3).",
           "additionalProperties": false,
           "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": true
-            },
             "ingressNamespaces": {
               "type": "array",
               "items": {
@@ -3197,12 +3140,6 @@
               "$ref": "#/definitions/ingressNamespaceSelectors"
             }
           }
-        },
-        "postgresql": {
-          "$ref": "#/definitions/serviceToggle"
-        },
-        "valkey": {
-          "$ref": "#/definitions/serviceToggle"
         },
         "idp": {
           "type": "object",
