@@ -503,9 +503,7 @@ jobs:
       - name: Generate OpenAPI specs
         run: make generate
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
+        uses: ./.github/actions/install-podman
       - name: Setup envtest (K8s test binaries)
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.23
@@ -685,9 +683,7 @@ jobs:
       - name: Generate OpenAPI specs
         run: make generate
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
+        uses: ./.github/actions/install-podman
       - name: Login to GitHub Container Registry (for image pulls)
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -906,10 +902,7 @@ jobs:
           echo "PASS: values.schema.json is consistent with values.yaml"
 
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-          podman --version
+        uses: ./.github/actions/install-podman
 
       - name: Install Kind
         run: |
