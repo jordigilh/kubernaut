@@ -108,7 +108,15 @@ func (h *Handler) handleScopeCheck(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.logger.Error(err, "scope check failed",
 			"cluster", resource.ClusterID, "kind", resource.Kind, "name", resource.Name)
-		writeJSON(w, ScopeCheckResponse{Managed: false})
+		// Issue #54 fleet E2E RCA (CI run 30464667745): a checker error (e.g.
+		// context canceled/deadline exceeded under FMC resource pressure) is
+		// a failed *check*, not a completed check that determined "not
+		// managed" -- those must not be wire-indistinguishable. 503 lets
+		// HTTPClient (Gateway/RO) retry with backoff instead of the caller
+		// silently, permanently treating a transient blip as a final
+		// unmanaged determination. If retries are exhausted there,
+		// HTTPClient still fails safe to managed=false (SC-7 unchanged).
+		http.Error(w, "scope check temporarily unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
