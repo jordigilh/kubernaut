@@ -921,7 +921,35 @@ jobs:
 
       - name: Create Kind cluster
         run: |
-          kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s
+          # Issue #1769: GitHub-hosted runners intermittently resolve a
+          # podman/crun combination where the OCI runtime rejects the
+          # container config ("crun: unknown version specified"), failing
+          # `kind create cluster` with exit status 126 while starting the
+          # control-plane container. This is a transient runner-side
+          # container-runtime issue, not a config problem -- Kind already
+          # tears down the partially-created node before returning, so a
+          # bare retry of the whole invocation is safe. Mirrors the same
+          # fix applied to the Go E2E harness (test/infrastructure/
+          # kind_cluster_helpers.go's retryTransientKindRuntimeError).
+          max_attempts=3
+          attempt=1
+          while true; do
+            echo "🔧 kind create cluster attempt ${attempt}/${max_attempts}"
+            if output=$(kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s 2>&1); then
+              echo "${output}"
+              break
+            fi
+            echo "${output}"
+            if [ "${attempt}" -ge "${max_attempts}" ] || ! echo "${output}" | grep -qiE "crun: unknown version specified|OCI runtime error"; then
+              echo "❌ kind create cluster failed (attempt ${attempt}/${max_attempts}) -- not a known-transient error, giving up."
+              exit 1
+            fi
+            backoff=$(( attempt * 5 ))
+            echo "⚠️  Transient container-runtime error detected (attempt ${attempt}/${max_attempts}), retrying in ${backoff}s..."
+            sleep "${backoff}"
+            attempt=$(( attempt + 1 ))
+          done
+
           kubectl cluster-info
           kubectl get nodes -o wide
 
