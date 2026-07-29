@@ -82,14 +82,20 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintf(output, "\n📦 PHASE 1: Creating Kind cluster...\n")
 
-	createCmd := exec.CommandContext(context.Background(), "kind", "create", "cluster",
-		"--name", clusterName,
-		"--config", configPath,
-		"--kubeconfig", kubeconfigPath,
-	)
-	createCmd.Stdout = output
-	createCmd.Stderr = output
-	if err := createCmd.Run(); err != nil {
+	// Issue #1769: retry on transient container-runtime errors.
+	err = retryTransientKindRuntimeError(output, func() (string, error) {
+		var captured strings.Builder
+		createCmd := exec.CommandContext(context.Background(), "kind", "create", "cluster",
+			"--name", clusterName,
+			"--config", configPath,
+			"--kubeconfig", kubeconfigPath,
+		)
+		createCmd.Stdout = io.MultiWriter(output, &captured)
+		createCmd.Stderr = io.MultiWriter(output, &captured)
+		runErr := createCmd.Run()
+		return captured.String(), runErr
+	})
+	if err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 	_, _ = fmt.Fprintf(output, "✅ Kind cluster created\n")
