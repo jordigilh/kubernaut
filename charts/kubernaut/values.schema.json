@@ -667,6 +667,24 @@
               }
             }
           }
+        },
+        "podDefaults": {
+          "type": "object",
+          "description": "DD-PLATFORM-006 Decision Area 1: cluster-wide pod-level defaults, overridable per-service. Currently covers pdb only -- affinity/podSecurityContext/nodeSelector/tolerations already have their own default mechanisms (see templates/_helpers.tpl) and topologySpreadConstraints has no default.",
+          "additionalProperties": false,
+          "properties": {
+            "pdb": {
+              "$ref": "#/definitions/pdb"
+            }
+          }
+        },
+        "defaultResources": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/resources"
+            }
+          ],
+          "description": "DD-PLATFORM-006 Decision Area 2: schema-declared fallback-of-last-resort, used only if a future service is added without its own explicit resources block. Every one of the 14 current services keeps its own workload-appropriate resources block -- this does NOT override any of them."
         }
       }
     },

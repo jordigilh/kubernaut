@@ -14,8 +14,16 @@
   "fleetmetadatacache" (dict "values" $.Values.fleetmetadatacache "selectorLabel" "app.kubernetes.io/name")
 }}
 {{- $component := $entry.values }}
+{{/* DD-PLATFORM-006 Decision Area 1: per-service pdb.* falls back to
+global.podDefaults.pdb when unset. hasKey (not coalesce) for "enabled"
+specifically, since coalesce/default treat an explicit `false` as empty and
+would silently re-enable a service that opted out -- coalesce is fine for
+minAvailable/maxUnavailable since those aren't booleans. */}}
+{{- $pdb := $component.pdb | default dict }}
+{{- $pdbEnabled := $.Values.global.podDefaults.pdb.enabled }}
+{{- if hasKey $pdb "enabled" }}{{- $pdbEnabled = $pdb.enabled }}{{- end }}
 {{/* "console" and "fleetmetadatacache" are opt-in (enabled defaults false); skip their PDB entirely when disabled. */}}
-{{- if and $component.pdb $component.pdb.enabled (or (not (has $name (list "console" "fleetmetadatacache"))) $component.enabled) }}
+{{- if and $pdbEnabled (or (not (has $name (list "console" "fleetmetadatacache"))) $component.enabled) }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -29,10 +37,10 @@ spec:
   selector:
     matchLabels:
       {{ $entry.selectorLabel }}: {{ $name }}
-  {{- with $component.pdb.minAvailable }}
+  {{- with (coalesce $pdb.minAvailable $.Values.global.podDefaults.pdb.minAvailable) }}
   minAvailable: {{ . }}
   {{- end }}
-  {{- with $component.pdb.maxUnavailable }}
+  {{- with (coalesce $pdb.maxUnavailable $.Values.global.podDefaults.pdb.maxUnavailable) }}
   maxUnavailable: {{ . }}
   {{- end }}
 {{- end }}

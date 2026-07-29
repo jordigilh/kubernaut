@@ -95,6 +95,13 @@ global:
     #     budgetTokens: 0
     #     effort: ""
     #     capabilityOverride: ""
+  # -- DD-PLATFORM-006 Decision Area 1: cluster-wide PDB default, applied to
+  # any service whose own `pdb` block is unset. Per-service `pdb.enabled` /
+  # `pdb.minAvailable` / `pdb.maxUnavailable` still take precedence when set.
+  podDefaults:
+    pdb:
+      enabled: true
+      maxUnavailable: 1
 
 nameOverride: ""
 fullnameOverride: ""
@@ -143,10 +150,6 @@ tls:
 # -- Gateway service (AlertManager webhook target + external signal ingestion)
 gateway:
   replicas: 1
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   logging:
     level: "INFO"
   config:
@@ -247,10 +250,6 @@ datastorage:
     maxReplicas: 5
     cpuTarget: 75
     memoryTarget: 80
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   logging:
     level: "INFO"
   dbExistingSecret: ""  # DEPRECATED: db-secrets.yaml is now in postgresql-secret. Set only for BYO PostgreSQL with a separate DataStorage secret.
@@ -319,10 +318,6 @@ datastorage:
 # -- AIAnalysis controller
 aianalysis:
   replicas: 1
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   logging:
     level: "INFO"
   rego:
@@ -345,10 +340,6 @@ aianalysis:
 # -- SignalProcessing controller
 signalprocessing:
   replicas: 1
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   logging:
     level: "INFO"
   # -- Unified Rego policy externalization (ADR-060, #415).
@@ -395,10 +386,6 @@ signalprocessing:
 # -- RemediationOrchestrator controller
 remediationorchestrator:
   replicas: 1
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   logging:
     level: "INFO"
   resources:
@@ -454,10 +441,6 @@ remediationorchestrator:
 workflowexecution:
   workflowNamespace: kubernaut-workflows  # namespace for Job/PipelineRun execution
   replicas: 1
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   logging:
     level: "INFO"
   config:
@@ -516,10 +499,6 @@ workflowexecution:
 # -- Notification controller
 notification:
   replicas: 1
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   logging:
     level: "INFO"
   # -- Slack quickstart shortcut.
@@ -549,10 +528,6 @@ notification:
 # -- EffectivenessMonitor controller
 effectivenessmonitor:
   replicas: 1
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   logging:
     level: "INFO"
   config:
@@ -627,10 +602,6 @@ kubernautAgent:
     #     claimMappings:
     #       username: "preferred_username"
     #       groups: "groups"
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   logging:
     level: "INFO"
   resources:
@@ -674,10 +645,6 @@ kubernautAgent:
 # -- AuthWebhook admission controller
 authwebhook:
   replicas: 1
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   logging:
     level: "INFO"
   resources:
@@ -778,10 +745,6 @@ valkey:
 fleetmetadatacache:
   enabled: false
   replicas: 1
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   image:
     repository: quay.io/kubernaut-ai/fleetmetadatacache
     tag: v1.6.0
@@ -1024,10 +987,6 @@ networkPolicies:
 apifrontend:
   enabled: true
   replicas: 1
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   service:
     type: ClusterIP
     # -- Explicit NodePort for the https port when type=NodePort. See
@@ -1288,10 +1247,6 @@ apifrontend:
 console:
   enabled: false
   replicas: 1
-  pdb:
-    enabled: true
-    # minAvailable: 1
-    maxUnavailable: 1
   auth:
     # -- Pre-created Secret with keys: client-id, client-secret, cookie-secret
     # (generate cookie-secret with: openssl rand -base64 32 | head -c 32 | base64).
