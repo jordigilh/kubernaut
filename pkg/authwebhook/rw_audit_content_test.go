@@ -96,9 +96,13 @@ var _ = Describe("RemediationWorkflow Audit Content Enrichment (#1661)", func() 
 	// ========================================
 	Describe("UT-AW-311-002: UPDATE admitted audit event carries workflow_content and content_hash", func() {
 		It("should populate workflow_content from the updated rw.Spec", func() {
+			oldRW := buildRemediationWorkflow("scale-memory", "kubernaut-system")
 			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
 			rw.Spec.Version = "1.1.0"
-			admReq := buildUpdateAdmissionRequest(rw)
+			// Issue #1759: content-changing UPDATE needs a genuinely different
+			// OldObject -- buildUpdateAdmissionRequest's OldObject==Object is
+			// reserved for the no-op/idempotent case, which skips audit emission.
+			admReq := buildUpdateAdmissionRequestDiff(oldRW, rw)
 
 			resp := handler.Handle(ctx, admReq)
 
