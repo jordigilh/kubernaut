@@ -39,6 +39,13 @@ ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}
 # (compiled unconditionally by the core goose library, not gated by a
 # cmd/goose build tag) but is SQLite-based with no grpc/CVE-prone transitive
 # dependencies, so it's left as-is rather than chasing further.
+#
+# golang.org/x/text pin: unlike x/net/x/crypto/grpc above, this one can't be
+# removed by excluding drivers -- it's pulled in by github.com/jackc/pgx/v5,
+# the postgres driver we actually keep (`go mod graph` confirms; `go version -m`
+# on the built binary confirms it's actually linked in, not just resolved).
+# Pin to the same version used in the main project's go.mod to resolve
+# CVE-2026-56852 (golang.org/x/text < v0.39.0, norm.Iter infinite loop).
 RUN GOMODCACHE=$(mktemp -d) && \
     cd "$GOMODCACHE" && \
     go mod init tmp && \
