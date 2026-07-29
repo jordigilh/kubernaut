@@ -1108,6 +1108,41 @@ Usage: {{ include "kubernaut.np.idpEgress" . | nindent 4 }}
 {{- end }}
 
 {{/*
+Egress rule to reach the MCP Gateway (global.fleet.mcpGatewayEndpoint) that
+every fleet-aware service's mcpclient.NewResilient connects to directly
+(owner-chain resolution, remote-cluster tool calls, etc.) -- independent of
+FMC's own scope-check API (kubernaut.np.fleetmetadatacacheEgress). #1755
+DD-TEST-015 regression RCA (5th finding): FMC's networkpolicy has always
+carried its own ad hoc "namespaceSelector: {} + 443/8080" rule that happens
+to cover this by accident, but gateway/remediationorchestrator/
+effectivenessmonitor/workflowexecution/signalprocessing/apifrontend never
+had ANY egress rule for it at all. Confirmed live via
+remediationorchestrator's own /proc/net/tcp: a connection to the
+mcp-gateway-istio Service ClusterIP:8080 stuck in SYN_SENT (default-deny
+silently dropping the SYN) for 19+ minutes across 4 startupProbe-triggered
+restarts, blocking wireRemediationOrchestratorDependencies indefinitely --
+the exact same failure signature as the Keycloak/API-server/Valkey gaps
+above, just for a fourth distinct egress target. Uses ipBlock (like
+idpEgress/llmEgress) rather than namespaceSelector/podSelector because the
+MCP Gateway can be Kuadrant's mcp-gateway-istio (gateway-system namespace)
+or Envoy AI Gateway's equivalent (envoy-ai-gateway-system namespace) --
+either a different namespace than the calling pod, or genuinely external in
+a real deployment -- so no single podSelector/namespaceSelector could match
+both topologies. Both gateway variants listen on 8080
+(test/infrastructure/fleet_e2e.go's deployKubeMCPServerAndRegister and
+deployEnvoyAIGatewayInfra both hardcode :8080).
+Usage: {{ include "kubernaut.np.mcpGatewayEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.mcpGatewayEgress" -}}
+- ports:
+    - port: {{ .Values.networkPolicies.mcpGateway.port | default 8080 }}
+      protocol: TCP
+  to:
+    - ipBlock:
+        cidr: {{ .Values.networkPolicies.mcpGateway.cidr | default "0.0.0.0/0" }}
+{{- end }}
+
+{{/*
 Egress rule allowing traffic to the LLM provider APIFrontend's A2A launcher
 agent calls directly (apifrontend.config.agent.llm.endpoint). Mirrors
 kubernaut.np.idpEgress -- an ipBlock rather than podSelector/namespaceSelector

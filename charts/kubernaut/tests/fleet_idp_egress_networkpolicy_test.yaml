@@ -1,0 +1,293 @@
+suite: "Fleet IdP egress NetworkPolicy (#1755 DD-TEST-015 RCA): every fleet-aware service's OAuth2 token fetch to global.fleet.oauth2.tokenURL needs an egress rule, not just the common/datastorage/FMC ones"
+templates:
+  - templates/gateway/networkpolicy.yaml
+  - templates/remediationorchestrator/networkpolicy.yaml
+  - templates/effectivenessmonitor/networkpolicy.yaml
+  - templates/workflowexecution/networkpolicy.yaml
+  - templates/signalprocessing/networkpolicy.yaml
+  - templates/apifrontend/networkpolicy.yaml
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # --- Default (fleet disabled): no IdP egress rule anywhere ---
+  - it: "gateway NetworkPolicy has no IdP egress rule by default (global.fleet.enabled unset)"
+    template: templates/gateway/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "remediationorchestrator NetworkPolicy has no IdP egress rule by default"
+    template: templates/remediationorchestrator/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "effectivenessmonitor NetworkPolicy has no IdP egress rule by default"
+    template: templates/effectivenessmonitor/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "workflowexecution NetworkPolicy has no IdP egress rule by default"
+    template: templates/workflowexecution/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "signalprocessing NetworkPolicy has no IdP egress rule by default"
+    template: templates/signalprocessing/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  # --- global.fleet.enabled=true: IdP egress rule renders, using the shared
+  # networkPolicies.idp.port/cidr override knobs (default 443/0.0.0.0/0,
+  # exactly like apifrontend's pre-existing rule) ---
+  - it: "gateway NetworkPolicy renders the IdP egress rule when global.fleet.enabled=true, defaulting to 443/0.0.0.0/0"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "gateway NetworkPolicy IdP egress rule honors networkPolicies.idp.port override (e.g. an in-cluster Keycloak double on :8443)"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+      networkPolicies:
+        idp:
+          port: 8443
+          cidr: "10.244.0.0/16"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "10.244.0.0/16"
+
+  - it: "remediationorchestrator NetworkPolicy renders the IdP egress rule when global.fleet.enabled=true"
+    template: templates/remediationorchestrator/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "effectivenessmonitor NetworkPolicy renders the IdP egress rule when global.fleet.enabled=true"
+    template: templates/effectivenessmonitor/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "workflowexecution NetworkPolicy renders the IdP egress rule when global.fleet.enabled=true"
+    template: templates/workflowexecution/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "signalprocessing NetworkPolicy renders the IdP egress rule when global.fleet.enabled=true"
+    template: templates/signalprocessing/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "fleetmetadatacache NetworkPolicy renders the IdP egress rule (unconditional whenever fleetmetadatacache.enabled=true, since it always needs a fleet OAuth2 token)"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: NetworkPolicy
+    set:
+      fleetmetadatacache:
+        enabled: true
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            tokenURL: "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token"
+            credentialsSecretRef: fleet-oauth2-creds
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "fleetmetadatacache NetworkPolicy IdP egress rule honors networkPolicies.idp.port override"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: NetworkPolicy
+    set:
+      fleetmetadatacache:
+        enabled: true
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            tokenURL: "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token"
+            credentialsSecretRef: fleet-oauth2-creds
+      networkPolicies:
+        idp:
+          port: 8443
+          cidr: "10.244.0.0/16"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "10.244.0.0/16"
+
+  # --- APIFrontend: proves global.fleet.enabled=true renders the IdP egress
+  # rule even when auth.issuerURL/jwtProviders are unset (the pre-existing
+  # gate this fix is additive to) ---
+  - it: "apifrontend NetworkPolicy renders the IdP egress rule when global.fleet.enabled=true, even without auth.issuerURL set"
+    template: templates/apifrontend/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+    # Note: apifrontend also has an unconditional LLM egress rule
+    # (kubernaut.np.llmEgress) that defaults to the identical 443/0.0.0.0/0
+    # shape, so unlike the other services above there's no clean "neither
+    # rule renders" default-state assertion to add here without an idp-port
+    # override to disambiguate -- networkpolicy_ingress_flexibility_test.yaml
+    # already covers that disambiguated "no auth-only IdP egress rule"
+    # case for the pre-existing auth.issuerURL gate; this suite only adds
+    # the new global.fleet.enabled gate proven above.

@@ -602,8 +602,37 @@ func resignHostAccessedTLSCertsWithLocalhostSAN(ctx context.Context, kubeconfigP
 		}
 	}
 	for _, deploy := range deployments {
+		// DD-PLATFORM-009 (#1755 Fleet E2E re-validation): gateway's new pod
+		// answers /healthz=200 immediately (NewBootstrapServer) so its
+		// startupProbe passes quickly, but /readyz correctly stays 503 until
+		// wireFleetOwnerResolution's mcpclient.NewResilient MCP Gateway
+		// connection succeeds -- observed taking multiple ~40s backoff
+		// retries under Kind-cluster CPU contention from all four of these
+		// deployments restarting simultaneously. That's an honest, bounded
+		// wait (never restarts the container -- readiness failures don't).
+		//
+		// 480s (up from an original 300s that matched only
+		// mcpclient.Resilient's own 300s MaxElapsedTime ceiling, see
+		// pkg/fleet/mcpclient/resilience.go): datastorage/apifrontend/
+		// kubernaut-agent do NOT have gateway's NewBootstrapServer fix, so
+		// their /healthz (the startupProbe target) stays fully unbound
+		// behind the same blocking dependency-wiring call as /readyz --
+		// they need the startupProbe's own grace to elapse first.
+		// kubernaut.startupProbe's failureThreshold was independently
+		// raised (DD-PLATFORM-008 July 29 update) from 30 to 60
+		// (initialDelaySeconds=5 + 60*periodSeconds=5 = 305s) after live
+		// evidence (cgroup v2 cpu.stat: nr_throttled/nr_periods as high as
+		// 23/24 on a freshly-restarted pod) showed CFS bandwidth-quota
+		// throttling against the 500m CPU limit can stretch cold-start
+		// well past the previous 150s startupProbe budget under this same
+		// 4-deployments-at-once contention. A 300s outer rollout-status
+		// timeout left effectively zero margin for readinessProbe's own
+		// checks to run *after* a startupProbe that can itself now take
+		// close to 305s -- this was silently racing its own inner budget.
+		// 480s gives >150s of headroom above the 305s startupProbe ceiling
+		// for the subsequent readyz convergence.
 		waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
-			"rollout", "status", "deployment/"+deploy, "--timeout=120s")
+			"rollout", "status", "deployment/"+deploy, "--timeout=480s")
 		waitCmd.Stdout = writer
 		waitCmd.Stderr = writer
 		if err := waitCmd.Run(); err != nil {
@@ -1142,6 +1171,26 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 			"--set", "fleetmetadatacache.enabled=true",
 			"--set", "fleetmetadatacache.image.repository="+registry+"/fleetmetadatacache",
 			"--set", "fleetmetadatacache.image.tag="+tag,
+			// #1755 DD-TEST-015 RCA (3rd finding, live PRESERVE_E2E_CLUSTER=true
+			// re-validation): FMC/Gateway/SP/EM/WE/RO's fleet OAuth2 token fetch
+			// all POST to global.fleet.oauth2.tokenURL (Keycloak, :8443 in this
+			// harness -- see fleet_e2e.go's DeployKeycloakInfra), but every one of
+			// those services' kubernaut.np.idpEgress inclusion (just added to
+			// their networkpolicy.yaml templates) defaults to port 443 (values.
+			// yaml's networkPolicies.idp.port) -- this Kind cluster's kindnet
+			// build enforces NetworkPolicy (contrary to this investigation's
+			// earlier assumption otherwise), so every FMC/SP/Gateway
+			// token-fetch TCP SYN to :8443 was silently dropped, confirmed via
+			// `curl --connect-timeout` to both the Service ClusterIP and Pod IP
+			// directly (both time out identically) and via SP's own error log:
+			// `Post "https://keycloak:8443/...": context deadline exceeded`.
+			// Mirrors the pre-existing networkPolicies.idp.port=5556 override
+			// above for AF/DEX in the FP suite -- same override key, applied
+			// after (so it wins for) this fleet-enabled install; AF's own
+			// idpEgress (already conditionally rendered whenever auth.issuerURL
+			// is set, which the base args above always do) picks up this same
+			// override for free, no separate AF chart change needed.
+			"--set", "networkPolicies.idp.port=8443",
 		)
 		for i, scope := range fleetOpts.OAuth2Scopes {
 			args = append(args, "--set", fmt.Sprintf("global.fleet.oauth2.scopes[%d]=%s", i, scope))

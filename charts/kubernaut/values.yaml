@@ -1015,6 +1015,17 @@ networkPolicies:
   llm:
     cidr: "0.0.0.0/0"
     port: 443
+  # -- Egress target for the MCP Gateway (global.fleet.mcpGatewayEndpoint)
+  # that every fleet-aware service's resilient MCP client connects to
+  # directly (owner-chain resolution, remote-cluster tool calls). Defaults
+  # to "anywhere on 8080" -- both supported gateway variants (Kuadrant's
+  # mcp-gateway-istio and Envoy AI Gateway) listen on 8080, and the gateway
+  # commonly lives in a different namespace (gateway-system /
+  # envoy-ai-gateway-system) than the calling pod, or is genuinely external
+  # in a real deployment. Override for a non-standard-port MCP Gateway.
+  mcpGateway:
+    cidr: "0.0.0.0/0"
+    port: 8080
 
 # API Frontend - MCP bridge between users and Kubernaut Agent
 apifrontend:

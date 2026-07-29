@@ -3239,6 +3239,23 @@
               "maximum": 65535
             }
           }
+        },
+        "mcpGateway": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Egress target for the MCP Gateway (global.fleet.mcpGatewayEndpoint) that every fleet-aware service's resilient MCP client connects to directly. Defaults to \"anywhere on 8080\" -- both supported gateway variants (Kuadrant's mcp-gateway-istio and Envoy AI Gateway) listen on 8080 and commonly live in a different namespace than the calling pod, or are genuinely external in a real deployment; override for a non-standard-port MCP Gateway.",
+          "properties": {
+            "cidr": {
+              "type": "string",
+              "default": "0.0.0.0/0"
+            },
+            "port": {
+              "type": "integer",
+              "default": 8080,
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
         }
       }
     }
