@@ -1915,7 +1915,14 @@ func WaitForFleetReady(ctx context.Context, tokenFunc func() (string, error), no
 func waitForAuthenticatedMCPGateway(ctx context.Context, tokenFunc func() (string, error), gatewayURL, toolPrefix string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "  ⏳ Verifying authenticated tools/call succeeds (gateway AuthPolicy/SecurityPolicy convergence)...")
 
-	deadline := time.Now().Add(90 * time.Second)
+	// 180s (not the original 90s): PR #1755's CI run hit this exact timeout once
+	// ("unsupported content type \"\"" -- Envoy local-reply, AuthPolicy not yet
+	// converged) while an identical local run against the same CI-built images
+	// converged well within 90s -- a CI-runner-resource-contention timing gap,
+	// not a code defect, for the same reason DD-PLATFORM-008 gives fleet-aware
+	// services a generous startupProbe budget instead of tightening a probe
+	// that's occasionally-but-not-reliably fast enough.
+	deadline := time.Now().Add(180 * time.Second)
 	var lastErr error
 	for time.Now().Before(deadline) {
 		if err := probeAuthenticatedResourcesList(ctx, tokenFunc, gatewayURL, toolPrefix); err != nil {
@@ -1926,7 +1933,7 @@ func waitForAuthenticatedMCPGateway(ctx context.Context, tokenFunc func() (strin
 		_, _ = fmt.Fprintln(writer, "  ✅ Authenticated tools/call succeeded (gateway AuthPolicy/SecurityPolicy converged)")
 		return nil
 	}
-	return fmt.Errorf("authenticated MCP tools/call did not succeed within 90s (gateway convergence failure): %w", lastErr)
+	return fmt.Errorf("authenticated MCP tools/call did not succeed within 180s (gateway convergence failure): %w", lastErr)
 }
 
 // probeAuthenticatedResourcesList performs a single authenticated resources_list
