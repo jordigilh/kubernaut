@@ -53,17 +53,6 @@ func (inv *Investigator) sameKindValidationGate(
 		"signal_resource_kind", signal.ResourceKind,
 		"correlation_id", correlationID)
 
-	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
-	gateEvent.EventAction = audit.ActionSameKindGate
-	gateEvent.EventOutcome = audit.OutcomeSuccess
-	gateEvent.Data["model"] = modelName
-	gateEvent.Data["prompt_length"] = 0
-	gateEvent.Data["prompt_preview"] = ""
-	gateEvent.Data["signal_resource_kind"] = signal.ResourceKind
-	gateEvent.Data["target_kind"] = result.RemediationTarget.Kind
-	gateEvent.Data["target_name"] = result.RemediationTarget.Name
-	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
-
 	correctionMsg := fmt.Sprintf(
 		`Your remediation_target.kind is "%s", which is the same resource kind as the input signal. `+
 			`Signals often propagate upward: workload-level issues manifest as conditions on parent resources `+
@@ -89,6 +78,21 @@ func (inv *Investigator) sameKindValidationGate(
 	retryMessages = append(retryMessages,
 		llm.Message{Role: "user", Content: correctionMsg},
 	)
+
+	// #1777 (BR-AUDIT-005, FedRAMP AU-3): the audit event must reflect the
+	// retry prompt actually sent to the LLM. Building it before retryMessages
+	// exists forced prompt_length/prompt_preview to a hardcoded 0/"" that
+	// misrepresented every gate retry as an empty request.
+	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+	gateEvent.EventAction = audit.ActionSameKindGate
+	gateEvent.EventOutcome = audit.OutcomeSuccess
+	gateEvent.Data["model"] = modelName
+	gateEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
+	gateEvent.Data["prompt_preview"] = lastUserMessage(retryMessages, 500)
+	gateEvent.Data["signal_resource_kind"] = signal.ResourceKind
+	gateEvent.Data["target_kind"] = result.RemediationTarget.Kind
+	gateEvent.Data["target_name"] = result.RemediationTarget.Name
+	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
 	resp, err := llm.ChatWithParams(ctx, client, llm.ChatRequest{
 		Messages: retryMessages,
@@ -205,16 +209,6 @@ func (inv *Investigator) apiVersionValidationGate(
 	inv.logger.Info("apiVersionValidationGate triggered: ambiguous kind missing api_version",
 		"kind", kind, "conflicting_groups", groupList, "correlation_id", correlationID)
 
-	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
-	gateEvent.EventAction = audit.ActionAPIVersionGate
-	gateEvent.EventOutcome = audit.OutcomeSuccess
-	gateEvent.Data["model"] = modelName
-	gateEvent.Data["prompt_length"] = 0
-	gateEvent.Data["prompt_preview"] = ""
-	gateEvent.Data["ambiguous_kind"] = kind
-	gateEvent.Data["conflicting_groups"] = groupList
-	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
-
 	correctionMsg := fmt.Sprintf(
 		`Your remediation_target.kind is %q, which exists in multiple API groups: %s. `+
 			`Without an explicit api_version, the system cannot determine the correct API group `+
@@ -239,6 +233,20 @@ func (inv *Investigator) apiVersionValidationGate(
 	retryMessages = append(retryMessages,
 		llm.Message{Role: "user", Content: correctionMsg},
 	)
+
+	// #1777 (BR-AUDIT-005, FedRAMP AU-3): the audit event must reflect the
+	// retry prompt actually sent to the LLM. Building it before retryMessages
+	// exists forced prompt_length/prompt_preview to a hardcoded 0/"" that
+	// misrepresented every gate retry as an empty request.
+	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
+	gateEvent.EventAction = audit.ActionAPIVersionGate
+	gateEvent.EventOutcome = audit.OutcomeSuccess
+	gateEvent.Data["model"] = modelName
+	gateEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
+	gateEvent.Data["prompt_preview"] = lastUserMessage(retryMessages, 500)
+	gateEvent.Data["ambiguous_kind"] = kind
+	gateEvent.Data["conflicting_groups"] = groupList
+	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
 	resp, retryErr := llm.ChatWithParams(ctx, client, llm.ChatRequest{
 		Messages: retryMessages,
