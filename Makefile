@@ -321,16 +321,29 @@ test-unit-fleetmetadatacache: ginkgo ensure-coverage-dirs ## Run Fleet Metadata 
 		go tool cover -func=coverage_unit_fleetmetadatacache.out | grep total || echo "No coverage data"; \
 	fi
 
-# Shared packages unit tests: tests for pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared
+# Shared packages unit tests: tests for pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared,
+# pkg/fleet/{acm,mcpclient,readiness,registry,scopecache} (+ pkg/fleet root), pkg/ogenx, pkg/pii,
+# pkg/remediationapprovalrequest, pkg/remediationrequest, pkg/workflowschema.
 # These packages are not standalone services (no cmd/ entry), so they have no service-level
 # test target. This consolidated target runs all shared infrastructure package tests.
+#
+# pkg/fleet/{acm,mcpclient,readiness,registry,scopecache} + pkg/fleet root added (v1.6 feature
+# audit, 2026-07-29): same failure class as the #1756/#1757 cmd/* Makefile gap, but on the core
+# packages backing 3 of v1.6's 4 flagship features (multi-cluster investigation, fleet
+# remediation's tool-prefix resolution, federated scope checking) -- ~5,955 test LOC / 212+
+# specs had never been run by any make target or CI job. pkg/fleet/fmc is deliberately excluded
+# here (and pkg/fleet is listed non-recursively) since it already has dedicated coverage via
+# test-unit-fleetmetadatacache. pkg/ogenx, pkg/pii, pkg/remediationapprovalrequest,
+# pkg/remediationrequest, pkg/workflowschema were found orphaned by the same audit.
 .PHONY: test-unit-shared-packages
-test-unit-shared-packages: ginkgo ensure-coverage-dirs ## Run unit tests for shared infrastructure packages (audit, cache, http, k8sutil, shared)
+test-unit-shared-packages: ginkgo ensure-coverage-dirs ## Run unit tests for shared infrastructure packages (audit, cache, http, k8sutil, shared, fleet/{acm,mcpclient,readiness,registry,scopecache}, ogenx, pii, remediation{approval}request, workflowschema)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 shared-packages - Unit Tests ($(TEST_PROCS) procs)"
-	@echo "   Packages: pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared"
+	@echo "   Packages: pkg/audit, pkg/cache, pkg/http, pkg/k8sutil, pkg/shared,"
+	@echo "   pkg/fleet(+acm,mcpclient,readiness,registry,scopecache), pkg/ogenx, pkg/pii,"
+	@echo "   pkg/remediationapprovalrequest, pkg/remediationrequest, pkg/workflowschema"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_shared-packages.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/audit/...,github.com/jordigilh/kubernaut/pkg/cache/...,github.com/jordigilh/kubernaut/pkg/http/...,github.com/jordigilh/kubernaut/pkg/k8sutil/...,github.com/jordigilh/kubernaut/pkg/shared/... ./pkg/audit/... ./pkg/cache/redis/... ./pkg/http/cors/... ./pkg/k8sutil/... ./pkg/shared/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_shared-packages.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/audit/...,github.com/jordigilh/kubernaut/pkg/cache/...,github.com/jordigilh/kubernaut/pkg/http/...,github.com/jordigilh/kubernaut/pkg/k8sutil/...,github.com/jordigilh/kubernaut/pkg/shared/...,github.com/jordigilh/kubernaut/pkg/fleet,github.com/jordigilh/kubernaut/pkg/fleet/acm/...,github.com/jordigilh/kubernaut/pkg/fleet/mcpclient/...,github.com/jordigilh/kubernaut/pkg/fleet/readiness/...,github.com/jordigilh/kubernaut/pkg/fleet/registry/...,github.com/jordigilh/kubernaut/pkg/fleet/scopecache/...,github.com/jordigilh/kubernaut/pkg/ogenx/...,github.com/jordigilh/kubernaut/pkg/pii/...,github.com/jordigilh/kubernaut/pkg/remediationapprovalrequest/...,github.com/jordigilh/kubernaut/pkg/remediationrequest/...,github.com/jordigilh/kubernaut/pkg/workflowschema/... ./pkg/audit/... ./pkg/cache/redis/... ./pkg/http/cors/... ./pkg/k8sutil/... ./pkg/shared/... ./pkg/fleet ./pkg/fleet/acm/... ./pkg/fleet/mcpclient/... ./pkg/fleet/readiness/... ./pkg/fleet/registry/... ./pkg/fleet/scopecache/... ./pkg/ogenx/... ./pkg/pii/... ./pkg/remediationapprovalrequest/... ./pkg/remediationrequest/... ./pkg/workflowschema/...
 	@if [ -f coverage_unit_shared-packages.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_shared-packages.out"; \
