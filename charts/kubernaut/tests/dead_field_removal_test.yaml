@@ -1,0 +1,53 @@
+suite: "Decision Area 5 dead field removal (DD-PLATFORM-006): tls.interService.enabled + gateway.config.cors.allowedMethods"
+templates:
+  - templates/gateway/gateway.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "the tls.interService.enabled key is no longer recognized (dead field removed from schema -- nothing ever read it; inter-service TLS is unconditionally mandatory per Issue #753)"
+    set:
+      tls:
+        interService:
+          enabled: true
+    template: templates/gateway/gateway.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "the gateway.config.cors.allowedMethods key is no longer recognized (removed from schema; the method list becomes a template-hardcoded constant)"
+    set:
+      gateway:
+        config:
+          cors:
+            allowedMethods:
+              - "CUSTOM"
+    template: templates/gateway/gateway.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "gateway ConfigMap's CORS allowedMethods still renders the standard GET/POST/PUT/PATCH/DELETE/OPTIONS list once hardcoded (regression guard: hardcoding must not drop or reorder any pre-existing default method)"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: metadata.name
+      value: gateway-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?ms)allowedMethods:\\s*\\n\\s*-\\s*\"GET\"\\s*\\n\\s*-\\s*\"POST\"\\s*\\n\\s*-\\s*\"PUT\"\\s*\\n\\s*-\\s*\"PATCH\"\\s*\\n\\s*-\\s*\"DELETE\"\\s*\\n\\s*-\\s*\"OPTIONS\""

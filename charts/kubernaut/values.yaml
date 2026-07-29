@@ -169,13 +169,6 @@ gateway:
       # Override only if you have a browser-based client accessing the Gateway directly.
       allowedOrigins:
         - "https://no-browser-clients.invalid"
-      allowedMethods:
-        - "GET"
-        - "POST"
-        - "PUT"
-        - "PATCH"
-        - "DELETE"
-        - "OPTIONS"
       allowCredentials: false
       maxAge: 300
     deduplication:

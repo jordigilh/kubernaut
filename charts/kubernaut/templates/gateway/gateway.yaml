@@ -36,9 +36,12 @@ cors:
     - {{ . | quote }}
   {{- end }}
   allowedMethods:
-  {{- range .Values.gateway.config.cors.allowedMethods }}
-    - {{ . | quote }}
-  {{- end }}
+    - "GET"
+    - "POST"
+    - "PUT"
+    - "PATCH"
+    - "DELETE"
+    - "OPTIONS"
   allowCredentials: {{ .Values.gateway.config.cors.allowCredentials | default false }}
   maxAge: {{ .Values.gateway.config.cors.maxAge | default 300 }}
 middleware:
