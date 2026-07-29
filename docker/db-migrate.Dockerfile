@@ -43,6 +43,7 @@ RUN GOMODCACHE=$(mktemp -d) && \
     cd "$GOMODCACHE" && \
     go mod init tmp && \
     go get github.com/pressly/goose/v3/cmd/goose@v3.27.2 && \
+    go get golang.org/x/text@v0.40.0 && \
     go build -tags 'no_clickhouse no_mssql no_mysql no_sqlite3 no_turso no_vertica no_ydb' \
       -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
 
