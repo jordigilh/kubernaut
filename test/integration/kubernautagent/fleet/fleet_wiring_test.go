@@ -397,9 +397,26 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(defs).ToNot(BeEmpty())
 
+			// AC-4/Issue #1756: derive the wire prefix via the same
+			// gateway-agnostic PrefixFromToolNames helper production code
+			// uses (cmd/kubernautagent's gatewayOverlayResolver.Overlay()),
+			// instead of a hardcoded "prod_east_" literal that can silently
+			// drift from Kuadrant's actual (admin-set, non-{clusterID}__)
+			// MCPServerRegistration.spec.prefix convention. This proves the
+			// helper's extraction against real discover_tools/select_tools/
+			// ListTools MCP protocol traffic, not just a mocked table.
+			names := make([]string, len(defs))
+			for i, def := range defs {
+				names[i] = def.Name
+			}
+			prefix, err := mcpclient.PrefixFromToolNames("prod-east", names)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(prefix).To(Equal("prod_east_"),
+				"sanity check: the mock gateway's configured Prefix must round-trip through real discovery")
+
 			reg := toolregistry.New()
 			for _, def := range defs {
-				generic := strings.TrimPrefix(def.Name, "prod_east_")
+				generic := strings.TrimPrefix(def.Name, prefix)
 				bridge := mcpclient.NewBridgeTool(def, "prod-east", session)
 				reg.Register(&fleetGenericNameTool{inner: bridge, name: generic})
 			}

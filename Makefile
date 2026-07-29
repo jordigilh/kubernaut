@@ -30,6 +30,11 @@ SERVICES := $(filter-out README.md must-gather, $(notdir $(wildcard cmd/*)))
 # Result: aianalysis apifrontend authwebhook datastorage effectivenessmonitor gateway kubernautagent notification remediationorchestrator signalprocessing workflowexecution
 # Note: must-gather is a bash tool, built separately via cmd/must-gather/Makefile
 
+# COMMA: literal comma for use inside $(if ...) expressions building
+# comma-separated --coverpkg lists (a bare "," inside $(if ...) would be
+# parsed as an argument separator, not a literal character).
+COMMA := ,
+
 # Test configuration
 # Dynamically detect CPU cores (works on Linux and macOS)
 # Linux (GitHub Actions): nproc
@@ -253,50 +258,63 @@ ensure-coverage-dirs: ## Ensure coverage directories exist for all test tiers, p
 
 # Unit Tests
 .PHONY: test-unit-%
+# cmd/$* is included whenever it exists (true for every real SERVICES entry;
+# guarded via $(wildcard ...) so ad-hoc invocations against a non-service
+# pkg/ directory, e.g. `make test-unit-fleet`, keep working unchanged) --
+# closes a gap where cmd/<service>'s own Ginkgo suites (main-package wiring
+# code, white-box tests needing same-package access) were never executed by
+# any make target or CI job. See Issue #1756 discussion.
 test-unit-%: ginkgo ensure-coverage-dirs ## Run unit tests for specified service (e.g., make test-unit-gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 $* - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_$*.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/... ./pkg/$*/... ./internal/controller/$*/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_$*.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/$*/...,github.com/jordigilh/kubernaut/internal/controller/$*/...$(if $(wildcard cmd/$*),$(COMMA)github.com/jordigilh/kubernaut/cmd/$*/...) ./pkg/$*/... ./internal/controller/$*/...$(if $(wildcard cmd/$*), ./cmd/$*/...)
 	@if [ -f coverage_unit_$*.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_$*.out"; \
 		go tool cover -func=coverage_unit_$*.out | grep total || echo "No coverage data"; \
 	fi
 
-# Kubernaut Agent unit tests: internal code lives at internal/kubernautagent/ (not internal/controller/)
+# Kubernaut Agent unit tests: internal code lives at internal/kubernautagent/ (not internal/controller/).
+# cmd/kubernautagent/... is included (Issue #1756): its 20+ file Ginkgo suite
+# (main-package wiring, e.g. toolregistry.go's gatewayOverlayResolver) had no
+# make target or CI job executing it at all.
 .PHONY: test-unit-kubernautagent
-test-unit-kubernautagent: ginkgo ensure-coverage-dirs ## Run kubernaut agent unit tests (coverpkg: pkg + internal/kubernautagent)
+test-unit-kubernautagent: ginkgo ensure-coverage-dirs ## Run kubernaut agent unit tests (coverpkg: pkg + internal/kubernautagent + cmd/kubernautagent)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 kubernautagent - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/... ./pkg/kubernautagent/... ./internal/kubernautagent/...
+	@$(GINKGO) -v --race --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_kubernautagent.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/kubernautagent/...,github.com/jordigilh/kubernaut/internal/kubernautagent/...,github.com/jordigilh/kubernaut/cmd/kubernautagent/... ./pkg/kubernautagent/... ./internal/kubernautagent/... ./cmd/kubernautagent/...
 	@if [ -f coverage_unit_kubernautagent.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_kubernautagent.out"; \
 		go tool cover -func=coverage_unit_kubernautagent.out | grep total || echo "No coverage data"; \
 	fi
 
-# Gateway unit tests: no internal/controller/gateway/ exists, use pkg-only coverpkg
+# Gateway unit tests: no internal/controller/gateway/ exists, use pkg-only coverpkg.
+# cmd/gateway/... is included (Issue #1756 Makefile-gap fix): see the
+# test-unit-kubernautagent comment above for why this matters.
 .PHONY: test-unit-gateway
-test-unit-gateway: ginkgo ensure-coverage-dirs ## Run gateway unit tests (coverpkg: pkg/gateway only)
+test-unit-gateway: ginkgo ensure-coverage-dirs ## Run gateway unit tests (coverpkg: pkg/gateway + cmd/gateway)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 gateway - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_gateway.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/gateway/... ./pkg/gateway/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_gateway.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/gateway/...,github.com/jordigilh/kubernaut/cmd/gateway/... ./pkg/gateway/... ./cmd/gateway/...
 	@if [ -f coverage_unit_gateway.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_gateway.out"; \
 		go tool cover -func=coverage_unit_gateway.out | grep total || echo "No coverage data"; \
 	fi
 
-# Fleet Metadata Cache unit tests: code lives at pkg/fleet/fmc/
+# Fleet Metadata Cache unit tests: code lives at pkg/fleet/fmc/.
+# cmd/fleetmetadatacache/... is included (Issue #1756 Makefile-gap fix): see
+# the test-unit-kubernautagent comment above for why this matters.
 .PHONY: test-unit-fleetmetadatacache
-test-unit-fleetmetadatacache: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache unit tests (coverpkg: pkg/fleet/fmc)
+test-unit-fleetmetadatacache: ginkgo ensure-coverage-dirs ## Run Fleet Metadata Cache unit tests (coverpkg: pkg/fleet/fmc + cmd/fleetmetadatacache)
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 fleetmetadatacache - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_fleetmetadatacache.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/fleet/fmc/... ./pkg/fleet/fmc/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_fleetmetadatacache.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/fleet/fmc/...,github.com/jordigilh/kubernaut/cmd/fleetmetadatacache/... ./pkg/fleet/fmc/... ./cmd/fleetmetadatacache/...
 	@if [ -f coverage_unit_fleetmetadatacache.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_fleetmetadatacache.out"; \
@@ -325,7 +343,7 @@ test-unit-datastorage: ginkgo ensure-coverage-dirs ## Run datastorage unit tests
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 datastorage - Unit Tests ($(TEST_PROCS) procs) [coverage: hand-written code only]"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_datastorage.out --covermode=atomic --output-dir=. --coverpkg=$(DATASTORAGE_COVERPKG) ./pkg/datastorage/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_datastorage.out --covermode=atomic --output-dir=. --coverpkg=$(DATASTORAGE_COVERPKG),github.com/jordigilh/kubernaut/cmd/datastorage/... ./pkg/datastorage/... ./cmd/datastorage/...
 	@if [ -f coverage_unit_datastorage.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_datastorage.out"; \
@@ -767,12 +785,15 @@ test-e2e-kubernautagent: ginkgo ensure-coverage-dirs generate-agentclient ## Run
 
 ##@ Special Cases - Authentication Webhook
 
+# cmd/authwebhook/... has no test files today but is included for
+# consistency/future-proofing (Issue #1756 Makefile-gap fix): if tests are
+# added there later, they run automatically without another Makefile edit.
 .PHONY: test-unit-authwebhook
 test-unit-authwebhook: ginkgo ensure-coverage-dirs ## Run authentication webhook unit tests
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Authentication Webhook - Unit Tests ($(TEST_PROCS) procs)"
 	@echo "════════════════════════════════════════════════════════════════════════"
-	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_authwebhook.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/authwebhook/... ./pkg/authwebhook/...
+	@$(GINKGO) -v $(RACE_FLAG) --timeout=$(TEST_TIMEOUT_UNIT) --procs=$(TEST_PROCS) --coverprofile=coverage_unit_authwebhook.out --covermode=atomic --coverpkg=github.com/jordigilh/kubernaut/pkg/authwebhook/...,github.com/jordigilh/kubernaut/cmd/authwebhook/... ./pkg/authwebhook/... ./cmd/authwebhook/...
 	@if [ -f coverage_unit_authwebhook.out ]; then \
 		echo ""; \
 		echo "📊 Coverage report generated: coverage_unit_authwebhook.out"; \

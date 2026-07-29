@@ -192,12 +192,25 @@ func (r *gatewayOverlayResolver) Overlay(ctx context.Context, clusterID string) 
 		if err != nil {
 			return nil, fmt.Errorf("discover tools for cluster %q: %w", clusterID, err)
 		}
+		names := make([]string, len(defs))
+		for i, def := range defs {
+			names[i] = def.Name
+		}
+		// EAIGW names carry a "{clusterID}__" wire prefix; Kuadrant names
+		// carry whatever admin-set MCPServerRegistration.spec.prefix the
+		// cluster was registered with, which is NOT guaranteed to follow the
+		// "{clusterID}__" shape (Issue #1756). PrefixFromToolNames matches
+		// gateway-agnostically against the discovered names themselves
+		// rather than assuming either convention, so both gateway types
+		// resolve correctly without KA needing to know which one it's
+		// talking to.
+		prefix, prefixErr := fleetclient.PrefixFromToolNames(clusterID, names)
+		if prefixErr != nil {
+			return nil, fmt.Errorf("resolve tool prefix for cluster %q: %w", clusterID, prefixErr)
+		}
 		overlay := make(map[string]tools.Tool, len(defs))
 		for _, def := range defs {
-			// EAIGW names carry a "{clusterID}__" wire prefix; Kuadrant names
-			// (post select_tools) are already bare. TrimPrefix is a no-op for
-			// the latter, so this line handles both gateway types uniformly.
-			genericName := strings.TrimPrefix(def.Name, clusterID+"__")
+			genericName := strings.TrimPrefix(def.Name, prefix)
 			bridge := fleetclient.NewBridgeTool(def, clusterID, r.session)
 			overlay[genericName] = &genericNameTool{inner: bridge, name: genericName}
 		}
