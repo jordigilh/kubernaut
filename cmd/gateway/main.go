@@ -20,6 +20,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -38,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/adapters"
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
+	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"k8s.io/client-go/dynamic"
@@ -130,6 +132,27 @@ func run() int {
 	serverCtx, serverCancel := context.WithCancel(context.Background())
 	defer serverCancel()
 
+	// DD-PLATFORM-009 follow-up (#1755 DD-TEST-015 Fleet E2E re-validation):
+	// registerAdapters below blocks on wireFleetOwnerResolution's
+	// mcpclient.NewResilient MCP Gateway connection, and srv.Start() (which
+	// binds the real health server on serverCfg.Server.HealthAddr) doesn't
+	// run until after this whole block returns -- the exact "blocks before
+	// listening" shape DD-PLATFORM-009 fixed for FMC. DD-PLATFORM-009's own
+	// text anticipated this ("if a future change lengthens Gateway's...
+	// blocking dependency wiring again, applying NewBootstrapServer there is
+	// the same fix, not a new one") -- observed live during this
+	// re-validation: under Kind-cluster CPU contention from four services
+	// restarting simultaneously (TLS cert reload), Gateway's MCP Gateway
+	// connection attempts took ~40s each, and startupProbe's failureThreshold
+	// budget was being spent against "connection refused" instead of an
+	// honest 503 for that whole window.
+	bootstrapHealth := sharedhealth.NewBootstrapServer(serverCfg.Server.HealthAddr)
+	go func() {
+		if err := bootstrapHealth.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error(err, "bootstrap health server failed")
+		}
+	}()
+
 	// Issue #1029: Dynamic API resource registry — replaces static kindToGroup +
 	// resourceCandidates + LabelFilter with fully dynamic discovery.
 	apiRegistry, err := buildAPIRegistry(serverCtx, srv, logger)
@@ -154,6 +177,15 @@ func run() int {
 	if fleetReadinessGate != nil {
 		defer fleetReadinessGate.Stop()
 	}
+
+	// DD-PLATFORM-009: hand off from the bootstrap health server to the real
+	// one (bound inside srv.Start() below, same HealthAddr) now that the
+	// blocking dependency wiring above has completed.
+	bootstrapShutdownCtx, bootstrapShutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := bootstrapHealth.Shutdown(bootstrapShutdownCtx); err != nil {
+		logger.Error(err, "bootstrap health server shutdown failed")
+	}
+	bootstrapShutdownCancel()
 
 	// Start server in goroutine
 	errChan := make(chan error, 1)

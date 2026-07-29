@@ -46,11 +46,17 @@ AuthPolicy convergence lag under Fleet E2E's Kind cluster made this window
 long enough to exhaust even DD-PLATFORM-008's 150s startup grace.
 
 Gateway showed the same shape during the same validation run (its
-`fleet.NewScopeChecker`/`ClusterRegistry.Start` also blocks before its HTTP
-server starts), though DD-PLATFORM-008's `startupProbe` alone proved
-sufficient there once Fleet infrastructure was already converged
-pre-`helm install` (DD-TEST-015) -- FMC's additional OAuth2 token-source
-construction on the same blocking path made its window meaningfully longer.
+`wireFleetOwnerResolution`/`mcpclient.NewResilient` also blocks before its
+HTTP server starts). A first pass judged DD-PLATFORM-008's `startupProbe`
+alone sufficient there, since Fleet infrastructure was already converged
+pre-`helm install` (DD-TEST-015). A subsequent Fleet E2E re-validation run
+proved that judgment wrong: under Kind-cluster CPU contention from four
+services restarting simultaneously (TLS cert reload), Gateway's MCP Gateway
+connection attempts took ~40s each, and `kubectl rollout status` timed out
+waiting on a `startupProbe` whose `failureThreshold` budget was being spent
+against "connection refused" instead of an honest 503. Gateway now also
+carries the `NewBootstrapServer` fix (see Consequences) -- the "Follow-up"
+below is resolved, not merely anticipated.
 
 ## 🔍 **Alternatives Considered**
 
@@ -121,19 +127,24 @@ FMC's window is covered.
   goroutine immediately before `wireFMCDependencies`, then `Shutdown()`s it
   (bounded 5s context) immediately after, before `buildFMCServers` binds
   the real health server on the same address.
-- Validated: `go build ./...` clean; DD-TEST-015's Fleet E2E re-run (first
-  full-chart, fleet-enabled-from-first-install validation) is the proving
-  journey for this fix -- FMC's health port now answers throughout its
-  dependency-wiring window instead of refusing connections.
-- **Follow-up (not implemented by this DD)**: Gateway showed the same
-  blocking-before-listening shape during the same validation run but did
-  not require this fix once DD-TEST-015's pre-`helm install` Fleet
-  infrastructure ordering was in place (its window closed within
-  DD-PLATFORM-008's `startupProbe` budget). If a future change lengthens
-  Gateway's (or any other fleet-aware service's) blocking dependency wiring
-  again, applying `NewBootstrapServer` there is the same fix, not a new one
-  -- tracked as a candidate extension, not actioned here absent an observed
-  failure.
+- `cmd/gateway/main.go`: `run()` starts `NewBootstrapServer` in a goroutine
+  immediately before `buildAPIRegistry`/`registerAdapters` (the latter
+  performs the blocking `wireFleetOwnerResolution`/`mcpclient.NewResilient`
+  connection), then `Shutdown()`s it (bounded 5s context) right after
+  `registerAdapters` returns and before `srv.Start()` binds the real health
+  server on the same `HealthAddr`.
+- `pkg/shared/health/server_test.go` (new): unit-tests
+  `NewBootstrapServer`/`AlwaysReadyLiveness`/`NotYetReady` directly --
+  `/healthz`=200, `/readyz`=503, and that `Shutdown()` fully releases the
+  port so a subsequent `NewHealthServer` can bind the same address without
+  conflict (the exact handoff both `cmd/fleetmetadatacache` and
+  `cmd/gateway` rely on). This package had no prior test coverage.
+- Validated: `go build ./...` clean; `go test ./pkg/shared/health/...
+  ./cmd/gateway/... ./cmd/fleetmetadatacache/...` passing; DD-TEST-015's
+  Fleet E2E re-run (first full-chart, fleet-enabled-from-first-install
+  validation) is the proving journey for both fixes -- FMC's and Gateway's
+  health ports now answer throughout their dependency-wiring windows
+  instead of refusing connections.
 
 ## 🔗 Related Decisions
 
