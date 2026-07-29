@@ -1,0 +1,56 @@
+{{/*
+BR-PLATFORM-009 (Kubernaut Operator parity): the Operator exposes APIFrontend
+via an OCP Route with TLSTerminationReencrypt (APIFrontendRoute, opt-in via
+APIFrontendRouteSpec.Enabled, default false); this chart targets vanilla
+Kubernetes, so a standard networking.k8s.io/v1 Ingress is the equivalent.
+APIFrontend is a machine-facing pipeline entry point (MCP/API), so this is
+opt-in and disabled by default, same as Gateway.
+
+Unlike Gateway/Console, APIFrontend serves HTTPS internally on its "https"
+port using a self-signed inter-service certificate (not one a public CA or
+the ingress controller trusts). Vanilla Ingress has no equivalent of Route's
+TLSConfig.DestinationCACertificate for a self-signed backend, so reencrypting
+to it is entirely ingress-controller-specific -- set the required annotation
+yourself via apifrontend.ingress.annotations, e.g. for ingress-nginx:
+  nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+  nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"
+*/}}
+{{- if and .Values.apifrontend.enabled .Values.apifrontend.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: apifrontend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: apifrontend
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  {{- with .Values.apifrontend.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.apifrontend.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.apifrontend.ingress.tls.secretName }}
+  tls:
+    - {{- with .Values.apifrontend.ingress.host }}
+      hosts:
+        - {{ . }}
+      {{- end }}
+      secretName: {{ .Values.apifrontend.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - {{- with .Values.apifrontend.ingress.host }}
+      host: {{ . }}
+      {{- end }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: apifrontend
+                port:
+                  name: https
+{{- end }}

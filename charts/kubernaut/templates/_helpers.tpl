@@ -801,6 +801,58 @@ Usage: {{ include "kubernaut.mergedSecurityContext" (dict "override" .Values.pos
 {{- toYaml (merge $override .defaults) }}
 {{- end }}
 
+{{/*
+Generous startupProbe for components whose startup can legitimately stall
+past a steady-state liveness/readiness budget (DD-PLATFORM-008). Any
+component that builds a registry.ClusterRegistry / MCP client connection at
+boot (fleet-aware services: apifrontend, effectivenessmonitor,
+workflowexecution, gateway, remediationorchestrator, fleetmetadatacache,
+signalprocessing as of this writing) can block for 100+ seconds under a
+CPU-constrained or noisy-neighbor node -- well past a liveness probe tuned
+for steady-state response times -- causing kubelet to kill and restart the
+pod before it ever reports ready (a self-inflicted crash loop, confirmed via
+live debugging: the same services observed 10+ minute crash loops in a
+resource-constrained Kind/podman E2E cluster, each recovering instantly once
+retried under lighter load). A startupProbe defers liveness/readiness
+enforcement entirely until it passes once, then hands off to the existing
+probes unchanged -- steady-state behavior is untouched. This is the DEFAULT
+pattern for any new component with the same "slow, one-time startup
+dependency" shape; add a startupProbe rather than loosening the steady-state
+liveness/readiness thresholds (which would also mask a genuinely hung
+process for that much longer). See DD-PLATFORM-008 for the full rationale
+and alternatives considered.
+
+failureThreshold default of 60 (initialDelaySeconds=5 + 60*periodSeconds=5 =
+305s total grace) rather than an earlier 30 (155s): live re-validation of
+this same design decision (#1755 DD-TEST-015 fleet E2E hardening) caught
+effectivenessmonitor/remediationorchestrator/workflowexecution still being
+killed by the startupProbe itself under a 12-way-parallel Ginkgo fleet E2E
+run -- confirmed via direct cgroup v2 `cpu.stat` inspection
+(`kubectl exec <pod> -- cat /sys/fs/cgroup/cpu.stat`) showing nr_throttled/
+nr_periods ratios as high as 23/24 (96%) immediately after a fresh restart,
+i.e. near-constant CFS bandwidth-quota throttling against the 500m cpu
+limit during the cache-sync + MCP-client-connect cold-start burst (the
+well-documented "CPU limits throttle bursty startup work even when average
+utilization looks moderate" behavior of the Linux CFS bandwidth controller,
+kubernetes/kubernetes#67577). 305s matches the 5-minute ceiling already
+adopted elsewhere in this same investigation for mcpclient.NewResilient's
+own MaxElapsedTime backoff budget (pkg/fleet/mcpclient/resilience.go) and
+for the equivalent kubectl-rollout-status timeout in
+test/infrastructure/fullpipeline_e2e_helm.go -- the startupProbe should not
+give up before the client it's waiting on does.
+Usage: {{ include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}
+*/}}
+{{- define "kubernaut.startupProbe" -}}
+startupProbe:
+  httpGet:
+    path: {{ .path | default "/healthz" }}
+    port: {{ .port | default "health" }}
+  initialDelaySeconds: {{ .initialDelaySeconds | default 5 }}
+  periodSeconds: {{ .periodSeconds | default 5 }}
+  timeoutSeconds: {{ .timeoutSeconds | default 5 }}
+  failureThreshold: {{ .failureThreshold | default 60 }}
+{{- end }}
+
 {{/* ===== NetworkPolicy Helpers (Issue #285) ===== */}}
 
 {{/*
@@ -945,6 +997,38 @@ Usage: {{ include "kubernaut.np.datastorageEgress" . | nindent 4 }}
 {{- end }}
 
 {{/*
+FleetMetadataCache egress rule: Gateway and RemediationOrchestrator call FMC
+directly for fleet scope-checking (kubernaut.fleetmetadatacache.url, port
+8080) whenever fleet federation is wired up. Issue #1737 gap found: FMC's own
+NetworkPolicy (fleetmetadatacache.yaml) already allows ingress FROM these two
+callers, but neither caller's NetworkPolicy ever had the reciprocal egress
+rule -- a one-sided wiring gap that silently timed out Gateway's/RO's fleet
+readiness probe ("FMC unreachable: ... context deadline exceeded").
+Unconditional (not gated on global.fleet.enabled or fleetmetadatacache.enabled):
+a podSelector matching zero live pods is a no-op, and the "fleet" E2E suite
+never sets either of those chart values true -- it deploys FMC via a raw
+kubectl manifest outside the chart (test/infrastructure/fleet_e2e.go's
+deployFMC, "app: fleetmetadatacache") and patches fleet config into
+Gateway/RO's ConfigMaps post-install rather than via `helm upgrade --set
+global.fleet.*` -- so gating on either value would leave the E2E lane
+unmatched. Both label conventions are listed to cover the chart's own
+template ("app.kubernetes.io/name") and that E2E-only path ("app").
+Usage: {{ include "kubernaut.np.fleetmetadatacacheEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.fleetmetadatacacheEgress" -}}
+- ports:
+    - port: 8080
+      protocol: TCP
+  to:
+    - podSelector:
+        matchLabels:
+          app: fleetmetadatacache
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: fleetmetadatacache
+{{- end }}
+
+{{/*
 Metrics scraping ingress rule: allow Prometheus scrape from monitoring namespace.
 Usage: {{ include "kubernaut.np.metricsIngress" . | nindent 4 }}
 */}}
@@ -958,6 +1042,120 @@ Usage: {{ include "kubernaut.np.metricsIngress" . | nindent 4 }}
         matchLabels:
           kubernetes.io/metadata.name: {{ .Values.networkPolicies.monitoring.namespace }}
 {{- end }}
+{{- end }}
+
+{{/*
+Ingress rule(s) for a list of raw CIDR strings (ipBlock-based). Needed for
+peers whose traffic isn't associated with any pod/namespace, so
+podSelector/namespaceSelector can never match it regardless of how broadly
+they're scoped -- e.g. NodePort traffic (SNAT'd to the node's own IP by
+kube-proxy under the default externalTrafficPolicy: Cluster) and
+hostNetwork-mode ingress controllers/routers (e.g. OpenShift Router,
+typically a DaemonSet with hostNetwork: true). Confirmed empirically during
+Issue #1737: a wildcard `namespaceSelector: {}` did NOT unblock NodePort
+ingress, but `ipBlock: {cidr: 0.0.0.0/0}` did.
+Usage: {{ include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.gateway.ingressCIDRs "port" 8080) | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.ingressCIDRs" -}}
+{{- $port := .port -}}
+{{- range .cidrs }}
+- ports:
+    - port: {{ $port }}
+      protocol: TCP
+  from:
+    - ipBlock:
+        cidr: {{ . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Ingress rule(s) for a list of raw namespaceSelector label-selector objects
+(matchLabels/matchExpressions) -- more flexible than the simple name-based
+ingressNamespaces list (which can only match by exact
+kubernetes.io/metadata.name label value). Still pod/namespace-identity-based:
+does NOT help with NodePort- or hostNetwork-sourced traffic (see
+kubernaut.np.ingressCIDRs for that case).
+Usage: {{ include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.gateway.ingressNamespaceSelectors "port" 8080) | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.ingressNamespaceSelectors" -}}
+{{- $port := .port -}}
+{{- range .selectors }}
+- ports:
+    - port: {{ $port }}
+      protocol: TCP
+  from:
+    - namespaceSelector:
+        {{- toYaml . | nindent 8 }}
+{{- end }}
+{{- end }}
+
+{{/*
+Egress rule to reach the OIDC identity provider (token exchange, JWKS
+discovery). Defaults to "anywhere on 443" -- correct for a real external IDP
+over HTTPS and identical to the hardcoded rule this replaces. Override
+networkPolicies.idp.cidr/port for an in-cluster or non-standard-port IDP
+(e.g. a test-only OIDC provider double reachable only on the pod CIDR at a
+non-443 port).
+Usage: {{ include "kubernaut.np.idpEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.idpEgress" -}}
+- ports:
+    - port: {{ .Values.networkPolicies.idp.port | default 443 }}
+      protocol: TCP
+  to:
+    - ipBlock:
+        cidr: {{ .Values.networkPolicies.idp.cidr | default "0.0.0.0/0" }}
+{{- end }}
+
+{{/*
+Egress rule to reach the MCP Gateway (global.fleet.mcpGatewayEndpoint) that
+every fleet-aware service's mcpclient.NewResilient connects to directly
+(owner-chain resolution, remote-cluster tool calls, etc.) -- independent of
+FMC's own scope-check API (kubernaut.np.fleetmetadatacacheEgress). #1755
+DD-TEST-015 regression RCA (5th finding): FMC's networkpolicy has always
+carried its own ad hoc "namespaceSelector: {} + 443/8080" rule that happens
+to cover this by accident, but gateway/remediationorchestrator/
+effectivenessmonitor/workflowexecution/signalprocessing/apifrontend never
+had ANY egress rule for it at all. Confirmed live via
+remediationorchestrator's own /proc/net/tcp: a connection to the
+mcp-gateway-istio Service ClusterIP:8080 stuck in SYN_SENT (default-deny
+silently dropping the SYN) for 19+ minutes across 4 startupProbe-triggered
+restarts, blocking wireRemediationOrchestratorDependencies indefinitely --
+the exact same failure signature as the Keycloak/API-server/Valkey gaps
+above, just for a fourth distinct egress target. Uses ipBlock (like
+idpEgress/llmEgress) rather than namespaceSelector/podSelector because the
+MCP Gateway can be Kuadrant's mcp-gateway-istio (gateway-system namespace)
+or Envoy AI Gateway's equivalent (envoy-ai-gateway-system namespace) --
+either a different namespace than the calling pod, or genuinely external in
+a real deployment -- so no single podSelector/namespaceSelector could match
+both topologies. Both gateway variants listen on 8080
+(test/infrastructure/fleet_e2e.go's deployKubeMCPServerAndRegister and
+deployEnvoyAIGatewayInfra both hardcode :8080).
+Usage: {{ include "kubernaut.np.mcpGatewayEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.mcpGatewayEgress" -}}
+- ports:
+    - port: {{ .Values.networkPolicies.mcpGateway.port | default 8080 }}
+      protocol: TCP
+  to:
+    - ipBlock:
+        cidr: {{ .Values.networkPolicies.mcpGateway.cidr | default "0.0.0.0/0" }}
+{{- end }}
+
+{{/*
+Egress rule allowing traffic to the LLM provider APIFrontend's A2A launcher
+agent calls directly (apifrontend.config.agent.llm.endpoint). Mirrors
+kubernaut.np.idpEgress -- an ipBlock rather than podSelector/namespaceSelector
+because the target is normally an external HTTPS API, not a chart-managed pod.
+Usage: {{ include "kubernaut.np.llmEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.llmEgress" -}}
+- ports:
+    - port: {{ .Values.networkPolicies.llm.port | default 443 }}
+      protocol: TCP
+  to:
+    - ipBlock:
+        cidr: {{ .Values.networkPolicies.llm.cidr | default "0.0.0.0/0" }}
 {{- end }}
 
 {{/* ===== Console helpers (BR-PLATFORM-006, Kubernaut Operator parity) ===== */}}

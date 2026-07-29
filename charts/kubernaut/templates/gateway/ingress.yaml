@@ -1,0 +1,49 @@
+{{/*
+BR-PLATFORM-009 (Kubernaut Operator parity): the Operator exposes Gateway via
+an OCP Route (GatewayRoute, opt-in via RouteSpec.Enabled); this chart targets
+vanilla Kubernetes, so a standard networking.k8s.io/v1 Ingress is the
+equivalent. Gateway is a machine-facing pipeline entry point (webhook/signal
+ingestion), so -- unlike console's Ingress -- this is opt-in and disabled by
+default: exposing it externally is a deliberate choice, not a default.
+Gateway serves plain HTTP on its "http" port, so no backend-protocol
+annotation is needed (unlike apifrontend's HTTPS backend).
+*/}}
+{{- if .Values.gateway.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gateway
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: gateway
+    {{- include "kubernaut.labels" . | nindent 4 }}
+  {{- with .Values.gateway.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.gateway.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if .Values.gateway.ingress.tls.secretName }}
+  tls:
+    - {{- with .Values.gateway.ingress.host }}
+      hosts:
+        - {{ . }}
+      {{- end }}
+      secretName: {{ .Values.gateway.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    - {{- with .Values.gateway.ingress.host }}
+      host: {{ . }}
+      {{- end }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: gateway-service
+                port:
+                  name: http
+{{- end }}

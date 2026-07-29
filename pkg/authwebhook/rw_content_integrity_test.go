@@ -125,7 +125,7 @@ var _ = Describe("RemediationWorkflow Content-Integrity Check on UPDATE (#1661 C
 	// UT-AW-321-002: same version + same content -> idempotent, reaches DS
 	// ========================================
 	Describe("UT-AW-321-002: same spec.version with the same content hash is an idempotent re-apply", func() {
-		It("should return Allowed with zero DS calls (#1661 Change 8c)", func() {
+		It("should return Allowed with zero DS calls and zero audit events (#1661 Change 8c, Issue #1759)", func() {
 			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
 
 			dsCalled := false
@@ -136,7 +136,10 @@ var _ = Describe("RemediationWorkflow Content-Integrity Check on UPDATE (#1661 C
 
 			handler := authwebhook.NewRemediationWorkflowHandler(mockDS, mockAudit, nil)
 			// buildUpdateAdmissionRequestDiff with oldRW == newRW content: identical
-			// spec, so identical content hash -- a genuine no-op re-apply.
+			// spec, so identical content hash -- a genuine no-op re-apply. This is
+			// indistinguishable, from AW's perspective, from K8s sending an UPDATE
+			// admission request for a metadata-only change (e.g. the reconciler's
+			// finalizer-add immediately after CREATE) -- neither changes .spec.
 			admReq := buildUpdateAdmissionRequestDiff(rw, rw)
 
 			resp := handler.Handle(ctx, admReq)
@@ -145,6 +148,14 @@ var _ = Describe("RemediationWorkflow Content-Integrity Check on UPDATE (#1661 C
 				"UPDATE should be Allowed when content is unchanged (idempotent re-apply)")
 			Expect(dsCalled).To(BeFalse(),
 				"#1661 Change 8c: DS is never called -- registration is now a pure local computation")
+			// Issue #1759: emitting an admitted.update audit event here would
+			// misrepresent a no-op/metadata-only churn as a genuine content
+			// update (SOC2 CC8.1 accuracy) -- and is exactly what raced the
+			// real version-bump UPDATE in E2E-AW-773-001's finalizer-add
+			// scenario, non-deterministically returning the wrong (stale)
+			// workflow_content to a query keyed only on event_type + workflow_name.
+			Expect(mockAudit.StoredEvents).To(BeEmpty(),
+				"idempotent re-apply (unchanged content) must not emit a duplicate admitted.update audit event")
 		})
 	})
 })

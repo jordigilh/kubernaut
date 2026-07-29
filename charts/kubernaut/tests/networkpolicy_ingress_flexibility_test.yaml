@@ -1,0 +1,340 @@
+suite: gateway/apifrontend/console NetworkPolicy ingressCIDRs/ingressNamespaceSelectors/idp egress (Issue #1737)
+templates:
+  - templates/gateway/networkpolicy.yaml
+  - templates/apifrontend/networkpolicy.yaml
+  - templates/console/networkpolicy.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # --- Gateway ---
+  - it: "gateway NetworkPolicy has no ipBlock/extra namespaceSelector ingress rules by default (unchanged behavior)"
+    template: templates/gateway/networkpolicy.yaml
+    # Force a non-empty spec.ingress array (an all-default render has a null
+    # ingress list, which notContains cannot assert against) while leaving
+    # the new ingressCIDRs/ingressNamespaceSelectors knobs at their defaults.
+    set:
+      networkPolicies:
+        gateway:
+          ingressNamespaces:
+            - test-ns
+    asserts:
+      - notContains:
+          path: spec.ingress
+          content:
+            from:
+              - ipBlock:
+                  cidr: 0.0.0.0/0
+            ports:
+              - port: 8080
+                protocol: TCP
+
+  - it: "gateway NetworkPolicy renders an ipBlock ingress rule per ingressCIDRs entry (NodePort/hostNetwork traffic isn't pod/namespace-associated)"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      networkPolicies:
+        gateway:
+          ingressCIDRs:
+            - "0.0.0.0/0"
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "gateway NetworkPolicy renders a namespaceSelector ingress rule per ingressNamespaceSelectors entry (raw label selector, beyond simple name matching)"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      networkPolicies:
+        gateway:
+          ingressNamespaceSelectors:
+            - matchLabels:
+                team: sre
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    team: sre
+
+  - it: "gateway NetworkPolicy renders matchExpressions-based namespaceSelector ingress rules too"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      networkPolicies:
+        gateway:
+          ingressNamespaceSelectors:
+            - matchExpressions:
+                - key: team
+                  operator: Exists
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            from:
+              - namespaceSelector:
+                  matchExpressions:
+                    - key: team
+                      operator: Exists
+
+  # --- APIFrontend ---
+  - it: "apifrontend NetworkPolicy has no ipBlock ingress rule by default (unchanged behavior)"
+    template: templates/apifrontend/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.ingress
+          content:
+            from:
+              - ipBlock:
+                  cidr: 0.0.0.0/0
+            ports:
+              - port: 8443
+                protocol: TCP
+
+  - it: "apifrontend NetworkPolicy renders an ipBlock ingress rule per ingressCIDRs entry, on its configured httpPort"
+    template: templates/apifrontend/networkpolicy.yaml
+    set:
+      apifrontend:
+        config:
+          server:
+            httpPort: 8443
+      networkPolicies:
+        apifrontend:
+          ingressCIDRs:
+            - "0.0.0.0/0"
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8443
+                protocol: TCP
+            from:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "apifrontend NetworkPolicy IDP egress rule defaults to 0.0.0.0/0:443 when auth is configured and idp overrides are unset"
+    template: templates/apifrontend/networkpolicy.yaml
+    set:
+      apifrontend:
+        config:
+          auth:
+            issuerURL: "https://real-external-idp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "apifrontend NetworkPolicy IDP egress rule uses networkPolicies.idp.cidr/port overrides (e.g. an in-cluster test-only IDP double on a non-443 port). Note: the default 443/0.0.0.0/0 shape can still appear separately from the unconditional LLM egress rule (Issue #1737) -- that coexistence is expected, not asserted against here."
+    template: templates/apifrontend/networkpolicy.yaml
+    set:
+      apifrontend:
+        config:
+          auth:
+            issuerURL: "https://dex.kubernaut-system.svc:5556"
+      networkPolicies:
+        idp:
+          cidr: "10.244.0.0/24"
+          port: 5556
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 5556
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "10.244.0.0/24"
+
+  - it: "apifrontend NetworkPolicy omits the auth-only IDP egress rule when auth is not configured, but still renders the unconditional LLM egress rule (Issue #1737: agent.llm.endpoint is mandatory AF config, distinguished here via a non-default idp override so the two same-shaped-by-default rules don't mask each other)"
+    template: templates/apifrontend/networkpolicy.yaml
+    set:
+      networkPolicies:
+        idp:
+          cidr: "10.244.0.0/24"
+          port: 9999
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 9999
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "10.244.0.0/24"
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "apifrontend NetworkPolicy LLM egress rule defaults to 0.0.0.0/0:443 (agent.llm.endpoint is mandatory AF config, Issue #1737 gap: A2A launcher calls to mock-llm timed out post-401-fix because this egress was missing entirely)"
+    template: templates/apifrontend/networkpolicy.yaml
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "apifrontend NetworkPolicy LLM egress rule uses networkPolicies.llm.cidr/port overrides (e.g. an in-cluster mock-LLM double on a non-443 port)"
+    template: templates/apifrontend/networkpolicy.yaml
+    set:
+      networkPolicies:
+        llm:
+          cidr: "10.244.0.0/24"
+          port: 8080
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "10.244.0.0/24"
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  # --- Console ---
+  - it: "console NetworkPolicy renders ipBlock and namespaceSelector ingress rules and a configurable IDP egress rule"
+    template: templates/console/networkpolicy.yaml
+    set:
+      console:
+        enabled: true
+        auth:
+          secretName: console-auth
+        ingress:
+          host: console.example.com
+      apifrontend:
+        config:
+          auth:
+            issuerURL: "https://dex.kubernaut-system.svc:5556"
+      networkPolicies:
+        console:
+          ingressCIDRs:
+            - "10.0.0.0/8"
+          ingressNamespaceSelectors:
+            - matchLabels:
+                network.openshift.io/policy-group: ingress
+        idp:
+          cidr: "10.244.0.0/24"
+          port: 5556
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 4180
+                protocol: TCP
+            from:
+              - ipBlock:
+                  cidr: "10.0.0.0/8"
+      - contains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 4180
+                protocol: TCP
+            from:
+              - namespaceSelector:
+                  matchLabels:
+                    network.openshift.io/policy-group: ingress
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 5556
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "10.244.0.0/24"
+      # Console -> APIFrontend egress is unaffected by the new knobs (still
+      # the plain same-namespace podSelector rule).
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8443
+                protocol: TCP
+            to:
+              - podSelector:
+                  matchLabels:
+                    app: apifrontend
+
+  - it: "console NetworkPolicy IDP egress rule defaults to 0.0.0.0/0:443 when idp overrides are unset"
+    template: templates/console/networkpolicy.yaml
+    set:
+      console:
+        enabled: true
+        auth:
+          secretName: console-auth
+        ingress:
+          host: console.example.com
+      apifrontend:
+        config:
+          auth:
+            issuerURL: "https://real-external-idp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"

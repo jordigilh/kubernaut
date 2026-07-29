@@ -143,7 +143,7 @@ spec:
                   kubectl get secret authwebhook-tls -n "$NAMESPACE" -o jsonpath='{.data.ca\.crt}' | base64 -d > "$TMPDIR/ca.crt"
                 fi
 
-                for SVC_NAME in gateway-service data-storage-service kubernaut-agent fleetmetadatacache-service; do
+                for SVC_NAME in gateway-service data-storage-service kubernaut-agent fleetmetadatacache-service apifrontend; do
                   SECRET_NAME="${SVC_NAME%-service}-tls"
                   [ "$SVC_NAME" = "data-storage-service" ] && SECRET_NAME="datastorage-tls"
                   [ "$SVC_NAME" = "kubernaut-agent" ] && SECRET_NAME="kubernautagent-tls"

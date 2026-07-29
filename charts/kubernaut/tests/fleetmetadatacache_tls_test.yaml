@@ -79,6 +79,51 @@ tests:
               secretName: fleetmetadatacache-tls
               optional: true
 
+  - it: "ConfigMap's oauth2 block renders tlsCaFile so token fetches trust the inter-service CA (#1755 DD-TEST-015 regression: FMC was the only fleet-integration-capable service whose chart template never rendered this field -- unlike gateway/effectivenessmonitor/workflowexecution, which all default it from the same $fleetPreamble.oauth2.tlsCAFile -- so its OAuth2 client fell back to the system CA trust store and every client_credentials token fetch against Keycloak's self-signed inter-service-ca-signed cert failed TLS verification, permanently blocking FMC's API port from ever listening)"
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'oauth2:[\s\S]*tlsCaFile:\s*"/etc/tls-ca/ca\.crt"'
+
+  - it: "ConfigMap's oauth2 block renders scopes from global.fleet.oauth2.scopes (#1755 DD-TEST-015 2nd regression, surfaced only after the tlsCaFile fix above let the TLS handshake succeed: FMC's ConfigMap never rendered a scopes field at all -- unlike gateway/effectivenessmonitor/workflowexecution -- so pkg/fleet/fmc/config/config.go's DefaultServiceConfig Go-code default of [openid, groups] silently won instead of the intended kube-mcp-server-audience scope, and Keycloak's kubernaut-fleet-read client rejected every client_credentials token request with oauth2: \"invalid_scope\" \"Invalid scopes: openid groups\")"
+    set:
+      global:
+        fleet:
+          oauth2:
+            scopes: ["kube-mcp-server-audience"]
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: 'oauth2:[\s\S]*scopes:\s*\n\s*-\s*"kube-mcp-server-audience"'
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: 'oauth2:[\s\S]*(openid|groups)'
+
+  - it: "Deployment mounts the inter-service-ca ConfigMap at /etc/tls-ca so oauth2.tlsCaFile's default path actually exists in the container"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tls-ca
+            mountPath: /etc/tls-ca
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tls-ca
+            configMap:
+              name: inter-service-ca
+              optional: true
+
   - it: "Deployment's liveness and readiness probes both target the dedicated health port, not the API port"
     documentSelector:
       path: kind

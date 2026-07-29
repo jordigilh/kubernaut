@@ -58,3 +58,47 @@ func NewHealthServer(addr string, liveness, readiness http.HandlerFunc, enablePr
 		IdleTimeout:       120 * time.Second,
 	}
 }
+
+// AlwaysReadyLiveness responds 200 OK unconditionally. Suitable for a
+// bootstrap health server's /healthz endpoint (see NewBootstrapServer):
+// kubelet's startupProbe/livenessProbe only need to know the process itself
+// is alive and serving HTTP, not that its downstream dependencies are ready.
+func AlwaysReadyLiveness(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
+}
+
+// NotYetReady responds 503 Service Unavailable unconditionally. Suitable
+// for a bootstrap health server's /readyz endpoint (see NewBootstrapServer):
+// correctly reports NotReady while a service's blocking dependency wiring
+// is still in progress.
+func NotYetReady(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusServiceUnavailable)
+	_, _ = w.Write([]byte("starting up"))
+}
+
+// NewBootstrapServer creates a minimal health server (AlwaysReadyLiveness on
+// /healthz, NotYetReady on /readyz) for use BEFORE a service's real
+// dependency wiring (fleet MCP Gateway client, cluster registry cache sync,
+// etc.) completes and its real health server (NewHealthServer, gated on
+// actual dependency readiness) can be built (DD-PLATFORM-009).
+//
+// Without this, a service whose main() constructs its blocking dependencies
+// before starting any HTTP listener leaves its health port unbound for the
+// full duration of that wiring -- which can run for minutes under a
+// mcpclient.Resilient-style exponential backoff. kubelet's startupProbe can
+// only observe "connection refused" during that window (indistinguishable
+// from a hung process), so it eventually kills and restarts the pod,
+// repeating indefinitely whenever the dependency wiring is consistently
+// slower than the probe's budget -- confirmed during Issue #54/DD-TEST-015
+// Fleet E2E validation for cmd/fleetmetadatacache (Gateway showed the same
+// blocking-before-listening shape in the same run but didn't need this fix;
+// see DD-PLATFORM-009's "Follow-up" note).
+//
+// Callers own the lifecycle: start the returned server in a goroutine
+// immediately at the top of main, then Shutdown() it BEFORE starting the
+// real health server (NewHealthServer, or a controller-runtime manager's
+// HealthProbeBindAddress) on the same addr, to avoid a bind conflict.
+func NewBootstrapServer(addr string) *http.Server {
+	return NewHealthServer(addr, AlwaysReadyLiveness, NotYetReady, false)
+}

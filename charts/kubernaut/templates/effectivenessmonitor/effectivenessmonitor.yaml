@@ -8,6 +8,69 @@
 {{- fail "global.fleet.oauth2.credentialsSecretRef (or effectivenessmonitor.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
 {{- end }}
 {{- end }}
+{{- /*
+checksum/config (Issue #1737 gap) needs this content reachable from the
+Deployment's pod template annotations, a separate `include` call site from
+the ConfigMap below -- named templates don't inherit $-scoped variables from
+their caller, so $effectivenessmonitorFleetPreamble must be recomputed here
+rather than reused from the file-top declaration above.
+*/}}
+{{- define "kubernaut.effectivenessmonitor.configYAML" -}}
+{{- $effectivenessmonitorFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.effectivenessmonitor.fleet "oauth2" .Values.effectivenessmonitor.fleet.oauth2) | fromYaml -}}
+logging:
+  level: {{ .Values.effectivenessmonitor.logging.level | default "INFO" | quote }}
+assessment:
+  stabilizationWindow: {{ .Values.effectivenessmonitor.config.assessment.stabilizationWindow | default "30s" }}
+  validityWindow: {{ .Values.effectivenessmonitor.config.assessment.validityWindow | default "300s" }}
+datastorage:
+  url: {{ include "kubernaut.datastorage.url" . }}
+  timeout: 10s
+  buffer:
+    bufferSize: 100
+    batchSize: 10
+    flushInterval: 1s
+    maxRetries: 3
+controller:
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: "effectivenessmonitor.kubernaut.ai"
+external:
+  prometheusUrl: {{ include "kubernaut.monitoring.prometheus.url" . | default "" | quote }}
+  prometheusEnabled: {{ if include "kubernaut.monitoring.prometheus.enabled" . }}true{{ else }}false{{ end }}
+  alertManagerUrl: {{ include "kubernaut.monitoring.alertManager.url" . | default "" | quote }}
+  alertManagerEnabled: {{ if include "kubernaut.monitoring.alertManager.enabled" . }}true{{ else }}false{{ end }}
+  connectionTimeout: 10s
+  {{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
+  tlsCaFile: /etc/ssl/em/service-ca.crt
+  {{- end }}
+{{- if .Values.global.fleet.enabled }}
+fleet:
+  enabled: true
+  mcpGatewayEndpoint: {{ $effectivenessmonitorFleetPreamble.config.mcpGatewayEndpoint | quote }}
+  {{- if $effectivenessmonitorFleetPreamble.config.mcpGatewayType }}
+  mcpGatewayType: {{ $effectivenessmonitorFleetPreamble.config.mcpGatewayType | quote }}
+  {{- end }}
+  tlsCAFile: {{ $effectivenessmonitorFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+  {{- if $effectivenessmonitorFleetPreamble.oauth2.enabled }}
+  oauth2:
+    enabled: true
+    tokenURL: {{ $effectivenessmonitorFleetPreamble.oauth2.tokenURL | quote }}
+    credentialsSecretRef: {{ $effectivenessmonitorFleetPreamble.oauth2.credentialsSecretRef | quote }}
+    {{- if $effectivenessmonitorFleetPreamble.oauth2.scopes }}
+    scopes:
+      {{- range $effectivenessmonitorFleetPreamble.oauth2.scopes }}
+      - {{ . | quote }}
+      {{- end }}
+    {{- end }}
+    tlsCAFile: {{ $effectivenessmonitorFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{/* BYO ConfigMap (Issue #848 v1.5): the chart no longer auto-creates this ConfigMap (it
+     previously relied on an OCP-only service-ca auto-injection annotation, which never
+     populated real CA data on non-OCP clusters). Pre-create effectivenessmonitor-service-ca
+     in this namespace with the CA bundle when monitoring.prometheus.tlsCaFile is set. */}}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -19,59 +82,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   effectivenessmonitor.yaml: |
-    logging:
-      level: {{ .Values.effectivenessmonitor.logging.level | default "INFO" | quote }}
-    assessment:
-      stabilizationWindow: {{ .Values.effectivenessmonitor.config.assessment.stabilizationWindow | default "30s" }}
-      validityWindow: {{ .Values.effectivenessmonitor.config.assessment.validityWindow | default "300s" }}
-    datastorage:
-      url: {{ include "kubernaut.datastorage.url" . }}
-      timeout: 10s
-      buffer:
-        bufferSize: 100
-        batchSize: 10
-        flushInterval: 1s
-        maxRetries: 3
-    controller:
-      metricsAddr: ":9090"
-      healthProbeAddr: ":8081"
-      leaderElection: false
-      leaderElectionId: "effectivenessmonitor.kubernaut.ai"
-    external:
-      prometheusUrl: {{ include "kubernaut.monitoring.prometheus.url" . | default "" | quote }}
-      prometheusEnabled: {{ if include "kubernaut.monitoring.prometheus.enabled" . }}true{{ else }}false{{ end }}
-      alertManagerUrl: {{ include "kubernaut.monitoring.alertManager.url" . | default "" | quote }}
-      alertManagerEnabled: {{ if include "kubernaut.monitoring.alertManager.enabled" . }}true{{ else }}false{{ end }}
-      connectionTimeout: 10s
-      {{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
-      tlsCaFile: /etc/ssl/em/service-ca.crt
-      {{- end }}
-    {{- if .Values.global.fleet.enabled }}
-    fleet:
-      enabled: true
-      mcpGatewayEndpoint: {{ $effectivenessmonitorFleetPreamble.config.mcpGatewayEndpoint | quote }}
-      {{- if $effectivenessmonitorFleetPreamble.config.mcpGatewayType }}
-      mcpGatewayType: {{ $effectivenessmonitorFleetPreamble.config.mcpGatewayType | quote }}
-      {{- end }}
-      tlsCAFile: {{ $effectivenessmonitorFleetPreamble.config.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
-      {{- if $effectivenessmonitorFleetPreamble.oauth2.enabled }}
-      oauth2:
-        enabled: true
-        tokenURL: {{ $effectivenessmonitorFleetPreamble.oauth2.tokenURL | quote }}
-        credentialsSecretRef: {{ $effectivenessmonitorFleetPreamble.oauth2.credentialsSecretRef | quote }}
-        {{- if $effectivenessmonitorFleetPreamble.oauth2.scopes }}
-        scopes:
-          {{- range $effectivenessmonitorFleetPreamble.oauth2.scopes }}
-          - {{ . | quote }}
-          {{- end }}
-        {{- end }}
-        tlsCAFile: {{ $effectivenessmonitorFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
-      {{- end }}
-    {{- end }}
-{{/* BYO ConfigMap (Issue #848 v1.5): the chart no longer auto-creates this ConfigMap (it
-     previously relied on an OCP-only service-ca auto-injection annotation, which never
-     populated real CA data on non-OCP clusters). Pre-create effectivenessmonitor-service-ca
-     in this namespace with the CA bundle when monitoring.prometheus.tlsCaFile is set. */}}
+    {{- include "kubernaut.effectivenessmonitor.configYAML" . | nindent 4 }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -201,6 +212,7 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
+        checksum/config: {{ include "kubernaut.effectivenessmonitor.configYAML" . | sha256sum }}
     spec:
       serviceAccountName: effectivenessmonitor-controller
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
@@ -224,6 +236,12 @@ spec:
               name: metrics
             - containerPort: 8081
               name: health
+          {{- /* DD-PLATFORM-008: EM builds a registry.ClusterRegistry against
+          the fleet MCP Gateway at boot, same shape as apifrontend -- can
+          legitimately stall well past the liveness probe's budget under
+          load. See apifrontend.yaml's identical comment for the confirmed
+          incident details. */}}
+          {{- include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}
           readinessProbe:
             httpGet:
               path: /readyz

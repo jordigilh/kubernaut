@@ -1,3 +1,64 @@
+{{- define "kubernaut.datastorage.configYAML" -}}
+server:
+  port: 8080
+  host: "0.0.0.0"
+  healthPort: 8081
+  metricsPort: 9090
+  readTimeout: 30s
+  writeTimeout: 30s
+  # #1048 Phase 4 / SC-5: Maximum request body size in bytes (default: 5242880 = 5 MiB)
+  maxBodySize: {{ .Values.datastorage.config.server.maxBodySize | default "5242880" | quote }}
+  # SEC-H3 / AC-4: CORS allowed origins (default: [] = reject all cross-origin)
+  corsAllowedOrigins:
+  {{- if .Values.datastorage.config.server.corsAllowedOrigins }}
+    {{- toYaml .Values.datastorage.config.server.corsAllowedOrigins | nindent 4 }}
+  {{- end }}
+  signerCertDir: {{ .Values.datastorage.config.server.signerCertDir | default "/etc/certs" | quote }}
+  # GAP-09 (Issue #1505) / SC-5: Per-IP rate limiting, disabled by default
+  # (existing deployments may rely on an external ingress/proxy for this).
+  rateLimit:
+    enabled: {{ .Values.datastorage.config.server.rateLimit.enabled | default false }}
+    requestsPerSecond: {{ .Values.datastorage.config.server.rateLimit.requestsPerSecond | default 50 }}
+    burst: {{ .Values.datastorage.config.server.rateLimit.burst | default 100 }}
+  tls:
+    certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
+database:
+  host: {{ include "kubernaut.postgresql.host" . }}
+  port: {{ include "kubernaut.postgresql.port" . }}
+  name: {{ include "kubernaut.postgresql.database" . }}
+  user: {{ include "kubernaut.postgresql.username" . }}
+  sslMode: {{ .Values.datastorage.config.database.sslMode | default "disable" }}
+  maxOpenConns: {{ .Values.datastorage.config.database.maxOpenConns | default 100 }}
+  maxIdleConns: {{ .Values.datastorage.config.database.maxIdleConns | default 20 }}
+  connMaxLifetime: {{ .Values.datastorage.config.database.connMaxLifetime | default "1h" }}
+  connMaxIdleTime: 10m
+  secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
+  usernameKey: "username"
+  passwordKey: "password"
+redis:
+  addr: {{ include "kubernaut.valkey.addr" . }}
+  dlqMaxLen: {{ .Values.datastorage.config.redis.dlqMaxLen | default "10000" }}
+  secretsFile: "/etc/datastorage/secrets/valkey-secrets.yaml"
+  passwordKey: "password"
+  tls:
+    enabled: {{ .Values.datastorage.config.redis.tls.enabled | default false }}
+    certFile: {{ .Values.datastorage.config.redis.tls.certFile | default "" | quote }}
+    keyFile: {{ .Values.datastorage.config.redis.tls.keyFile | default "" | quote }}
+    caFile: {{ .Values.datastorage.config.redis.tls.caFile | default "" | quote }}
+retention:
+  enabled: {{ .Values.datastorage.config.retention.enabled | default true }}
+  interval: {{ .Values.datastorage.config.retention.interval | default "24h" | quote }}
+  batchSize: {{ .Values.datastorage.config.retention.batchSize | default 1000 }}
+  defaultDays: {{ .Values.datastorage.config.retention.defaultDays | default 2555 }}
+{{- if .Values.datastorage.config.auditHashKey.enabled }}
+# GAP-05 (Issue #1505) / AU-9: Keyed HMAC-SHA256 audit hash chain.
+audit:
+  hashKeySecretsFile: "/etc/datastorage/secrets/audit-hmac-key.yaml"
+  hashKeyKey: {{ .Values.datastorage.config.auditHashKey.secretKey | default "hmacKey" | quote }}
+{{- end }}
+logging:
+  level: {{ .Values.datastorage.logging.level | default "INFO" | upper | quote }}
+{{- end }}
 ---
 # DD-PLATFORM-003: DataStorage (ConfigMap + Deployment + Service) renders in
 # ArgoCD's "-1" sync-wave -- it is the sole dependency of ~11 other
@@ -17,65 +78,7 @@ metadata:
     "argocd.argoproj.io/sync-wave": "-1"
 data:
   config.yaml: |
-    server:
-      port: 8080
-      host: "0.0.0.0"
-      healthPort: 8081
-      metricsPort: 9090
-      readTimeout: 30s
-      writeTimeout: 30s
-      # #1048 Phase 4 / SC-5: Maximum request body size in bytes (default: 5242880 = 5 MiB)
-      maxBodySize: {{ .Values.datastorage.config.server.maxBodySize | default "5242880" | quote }}
-      # SEC-H3 / AC-4: CORS allowed origins (default: [] = reject all cross-origin)
-      corsAllowedOrigins:
-      {{- if .Values.datastorage.config.server.corsAllowedOrigins }}
-        {{- toYaml .Values.datastorage.config.server.corsAllowedOrigins | nindent 8 }}
-      {{- end }}
-      signerCertDir: {{ .Values.datastorage.config.server.signerCertDir | default "/etc/certs" | quote }}
-      # GAP-09 (Issue #1505) / SC-5: Per-IP rate limiting, disabled by default
-      # (existing deployments may rely on an external ingress/proxy for this).
-      rateLimit:
-        enabled: {{ .Values.datastorage.config.server.rateLimit.enabled | default false }}
-        requestsPerSecond: {{ .Values.datastorage.config.server.rateLimit.requestsPerSecond | default 50 }}
-        burst: {{ .Values.datastorage.config.server.rateLimit.burst | default 100 }}
-      tls:
-        certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
-    database:
-      host: {{ include "kubernaut.postgresql.host" . }}
-      port: {{ include "kubernaut.postgresql.port" . }}
-      name: {{ include "kubernaut.postgresql.database" . }}
-      user: {{ include "kubernaut.postgresql.username" . }}
-      sslMode: {{ .Values.datastorage.config.database.sslMode | default "disable" }}
-      maxOpenConns: {{ .Values.datastorage.config.database.maxOpenConns | default 100 }}
-      maxIdleConns: {{ .Values.datastorage.config.database.maxIdleConns | default 20 }}
-      connMaxLifetime: {{ .Values.datastorage.config.database.connMaxLifetime | default "1h" }}
-      connMaxIdleTime: 10m
-      secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
-      usernameKey: "username"
-      passwordKey: "password"
-    redis:
-      addr: {{ include "kubernaut.valkey.addr" . }}
-      dlqMaxLen: {{ .Values.datastorage.config.redis.dlqMaxLen | default "10000" }}
-      secretsFile: "/etc/datastorage/secrets/valkey-secrets.yaml"
-      passwordKey: "password"
-      tls:
-        enabled: {{ .Values.datastorage.config.redis.tls.enabled | default false }}
-        certFile: {{ .Values.datastorage.config.redis.tls.certFile | default "" | quote }}
-        keyFile: {{ .Values.datastorage.config.redis.tls.keyFile | default "" | quote }}
-        caFile: {{ .Values.datastorage.config.redis.tls.caFile | default "" | quote }}
-    retention:
-      enabled: {{ .Values.datastorage.config.retention.enabled | default true }}
-      interval: {{ .Values.datastorage.config.retention.interval | default "24h" | quote }}
-      batchSize: {{ .Values.datastorage.config.retention.batchSize | default 1000 }}
-      defaultDays: {{ .Values.datastorage.config.retention.defaultDays | default 2555 }}
-    {{- if .Values.datastorage.config.auditHashKey.enabled }}
-    # GAP-05 (Issue #1505) / AU-9: Keyed HMAC-SHA256 audit hash chain.
-    audit:
-      hashKeySecretsFile: "/etc/datastorage/secrets/audit-hmac-key.yaml"
-      hashKeyKey: {{ .Values.datastorage.config.auditHashKey.secretKey | default "hmacKey" | quote }}
-    {{- end }}
-    logging:
-      level: {{ .Values.datastorage.logging.level | default "INFO" | upper | quote }}
+    {{- include "kubernaut.datastorage.configYAML" . | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -100,6 +103,7 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
+        checksum/config: {{ include "kubernaut.datastorage.configYAML" . | sha256sum }}
     spec:
       serviceAccountName: data-storage-sa
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
@@ -234,6 +238,9 @@ spec:
       port: 8080
       targetPort: 8080
       protocol: TCP
+      {{- if and (eq .Values.datastorage.service.type "NodePort") .Values.datastorage.service.nodePort }}
+      nodePort: {{ .Values.datastorage.service.nodePort }}
+      {{- end }}
     - name: health
       port: 8081
       targetPort: 8081

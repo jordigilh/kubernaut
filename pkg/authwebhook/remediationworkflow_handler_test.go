@@ -95,6 +95,14 @@ func (m *MockAuditStoreRW) Close() error                  { return nil }
 const testUserEmail = "admin@example.com"
 const testUserUID = "uid-12345"
 
+// testOldSpecVersion is a placeholder "prior" spec.version used to build a
+// genuinely-different OldObject for content-changing UPDATE tests (Issue
+// #1759) via buildUpdateAdmissionRequestDiff -- distinct from
+// buildRemediationWorkflow's default "1.0.0", and distinct enough from any
+// per-test override that validateContentIntegrity always treats it as a
+// version bump (never a same-version content conflict).
+const testOldSpecVersion = "0.9.0"
+
 func buildRemediationWorkflow(name, namespace string) *rwv1alpha1.RemediationWorkflow {
 	return &rwv1alpha1.RemediationWorkflow{
 		TypeMeta: metav1.TypeMeta{
@@ -478,8 +486,14 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	Describe("UT-AW-371-001: UPDATE registers the updated content locally with zero DS calls", func() {
 		It("should return Allowed and carry the updated content in the audit event, without calling DS", func() {
+			oldRW := buildRemediationWorkflow("git-revert-v1", "kubernaut-system")
+			oldRW.Spec.Version = testOldSpecVersion
 			rw := buildRemediationWorkflow("git-revert-v1", "kubernaut-system")
-			admReq := buildUpdateAdmissionRequest(rw)
+			// Issue #1759: a genuine content-changing UPDATE needs an OldObject
+			// that actually differs from Object -- buildUpdateAdmissionRequest's
+			// OldObject==Object is reserved for the no-op/idempotent case (see
+			// UT-AW-321-002), which now (correctly) skips audit emission.
+			admReq := buildUpdateAdmissionRequestDiff(oldRW, rw)
 
 			dsCalled := false
 			mockDS.createFn = func(_ context.Context, _, _, _ string) error {
@@ -597,8 +611,12 @@ var _ = Describe("RemediationWorkflow Admission Handler (#299)", func() {
 	// ========================================
 	Describe("UT-AW-773-005: UPDATE success emits distinct update audit event", func() {
 		It("should emit remediationworkflow.admitted.update audit event on success", func() {
+			oldRW := buildRemediationWorkflow("scale-memory", "kubernaut-system")
+			oldRW.Spec.Version = testOldSpecVersion
 			rw := buildRemediationWorkflow("scale-memory", "kubernaut-system")
-			admReq := buildUpdateAdmissionRequest(rw)
+			// Issue #1759: content-changing UPDATE needs a genuinely different
+			// OldObject -- see UT-AW-371-001 comment above.
+			admReq := buildUpdateAdmissionRequestDiff(oldRW, rw)
 
 			resp := handler.Handle(ctx, admReq)
 

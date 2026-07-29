@@ -41,6 +41,8 @@ spec:
         - podSelector:
             matchLabels:
               app: kubernaut-agent
+    {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.datastorage.ingressCIDRs "port" 8080) | nindent 4 }}
+    {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.datastorage.ingressNamespaceSelectors "port" 8080) | nindent 4 }}
     {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}

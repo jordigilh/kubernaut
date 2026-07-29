@@ -20,4 +20,15 @@ spec:
     - ports:
         - port: {{ .Values.networkPolicies.monitoring.alertManagerPort | default 9093 }}
           protocol: TCP
+    {{- if .Values.global.fleet.enabled }}
+    {{- /* #1755 DD-TEST-015 RCA: EM's fleet OAuth2 token fetch to
+    global.fleet.oauth2.tokenURL was missing an egress rule entirely -- same
+    gap as FMC's/Gateway's identical fix (see fleetmetadatacache.yaml's
+    comment for the full RCA). */}}
+    {{- include "kubernaut.np.idpEgress" . | nindent 4 }}
+    {{- /* #1755 DD-TEST-015 RCA (5th finding): EM's own MCP client also
+    needs direct egress to the MCP Gateway itself -- see
+    kubernaut.np.mcpGatewayEgress's doc comment for the full RCA. */}}
+    {{- include "kubernaut.np.mcpGatewayEgress" . | nindent 4 }}
+    {{- end }}
 {{- end }}

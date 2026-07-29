@@ -123,6 +123,20 @@ tests:
             resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
             verbs: ["get", "patch"]
 
+  - it: "hook mode: tls-cert-gen Job's SVC_NAME loop includes apifrontend (Issue #1737 regression guard -- chart previously mounted apifrontend-tls but never generated it, so AF always fell back to plain HTTP)"
+    set:
+      tls:
+        mode: hook
+    template: templates/hooks/tls-cert-job.yaml
+    documentIndex: 0 # first document in this file is the tls-cert-gen Job
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-kubernaut-tls-cert-gen
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'for SVC_NAME in [^\n]*\bapifrontend\b'
+
   - it: "cert-manager mode: datastorage-signing-cert Certificate is auto-provisioned"
     set:
       tls:
