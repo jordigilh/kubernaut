@@ -439,5 +439,33 @@ var _ = Describe("ResourceClient (BR-FLEET-002, Phase 0)", func() {
 			Expect(list.Items[0].GetNamespace()).To(Equal("sc-ns"))
 			Expect(list.Items[0].GetLabels()).To(HaveKeyWithValue("app", "structured"))
 		})
+
+		It("IT-FLEET-PARSE-004 [SI-10]: List with a successful, zero-match response (no StructuredContent field) returns an empty list, not an error", func() {
+			// Root cause (Issue #54 fleet E2E RCA, CI run 30464667745): real
+			// kube-mcp-server omits StructuredContent entirely for a
+			// zero-match List call (IsError=false) rather than returning
+			// `{"items": []}`. pkg/fleet/fmc's syncer hit this for every
+			// resource kind with zero kubernaut.ai/managed=true matches
+			// (StatefulSet/DaemonSet/Service), logging "structuredContent
+			// required but not present in response" on every 10s sync cycle
+			// for the pod's entire lifetime -- a successful "nothing matched"
+			// outcome must not be treated as a parse failure.
+			gw = mockgw.NewMockGateway(
+				mockgw.WithMultiCluster("empty-cluster"),
+				mockgw.WithEmptyResourcesList(),
+			)
+
+			c, err := mcpclient.New(ctx, gw.URL(), mcpclient.WithClusterID("empty-cluster"))
+			Expect(err).ToNot(HaveOccurred())
+			defer c.Close()
+
+			list := &unstructured.UnstructuredList{}
+			list.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "StatefulSetList"})
+
+			err = c.List(ctx, list, client.InNamespace("kubernaut-system"))
+			Expect(err).ToNot(HaveOccurred(),
+				"a successful zero-match List response must not surface as an error")
+			Expect(list.Items).To(BeEmpty())
+		})
 	})
 })
