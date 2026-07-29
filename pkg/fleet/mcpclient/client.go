@@ -349,11 +349,15 @@ func (c *Client) listResources(ctx context.Context, kind, apiVersion, namespace 
 		return nil, fmt.Errorf("call %s returned error: %s", toolName, ExtractText(result))
 	}
 
+	// A successful call (IsError=false) with no StructuredContent means
+	// kube-mcp-server found zero matching resources for this kind/selector --
+	// not a parse failure. Issue #54 fleet E2E RCA (CI run 30464667745):
+	// treating this as a hard error caused FMC's syncer to log "structuredContent
+	// required but not present in response" on every sync cycle for every
+	// resource kind with zero kubernaut.ai/managed=true matches
+	// (StatefulSet/DaemonSet/Service), for the pod's entire lifetime.
+	// normalizeTableItems(nil, ...) already returns an empty (non-nil) slice.
 	sc := extractStructuredList(result)
-	if sc == nil {
-		return nil, fmt.Errorf("call %s: structuredContent required but not present in response", toolName)
-	}
-
 	return normalizeTableItems(sc, kind, apiVersion), nil
 }
 
@@ -500,4 +504,3 @@ func ExtractText(result *mcp.CallToolResult) string {
 	}
 	return string(data)
 }
-

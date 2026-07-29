@@ -65,6 +65,7 @@ type gatewayConfig struct {
 	discoverableClusters         []discoverableCluster
 	structuredContent            []map[string]any
 	allowExternalContainerAccess bool
+	emptyResourcesList           bool
 }
 
 // WithTool registers a static tool on the mock gateway.
@@ -109,6 +110,25 @@ func WithExternalContainerAccess() Option {
 func WithStructuredContent(data []map[string]any) Option {
 	return func(cfg *gatewayConfig) {
 		cfg.structuredContent = data
+	}
+}
+
+// WithEmptyResourcesList configures the mock's resources_list tool to
+// simulate the real kube-mcp-server's observed behavior for a genuinely
+// empty match set: a successful (IsError=false) response that omits the
+// StructuredContent field entirely, rather than returning an empty list.
+//
+// Root cause (Issue #54 fleet E2E RCA, CI run 30464667745): the default mock
+// behavior (and the mock behavior WithStructuredContent produces) always
+// populates StructuredContent, which never matched what real kube-mcp-server
+// does when zero resources match a List call's label selector -- it omits
+// the field rather than returning `{"items": []}`. This option reproduces
+// that divergence so pkg/fleet/mcpclient's handling of a nil StructuredContent
+// on a successful call can be tested against the real-world shape instead of
+// only the mock's previously-idealized always-populated shape.
+func WithEmptyResourcesList() Option {
+	return func(cfg *gatewayConfig) {
+		cfg.emptyResourcesList = true
 	}
 }
 
@@ -327,6 +347,7 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 
 	listResourcesName := prefix + "resources_list"
 	structuredContent := cfg.structuredContent
+	emptyResourcesList := cfg.emptyResourcesList
 	gw.server.AddTool(&mcp.Tool{
 		Name:        listResourcesName,
 		Description: fmt.Sprintf("List Kubernetes resources from cluster %s", cluster),
@@ -345,6 +366,14 @@ func (gw *MockGateway) registerClusterToolsWithPrefix(cluster, prefix string, cf
 			return &mcp.CallToolResult{
 				Content: []mcp.Content{&mcp.TextContent{Text: `{"error":"apiVersion is required"}`}},
 				IsError: true,
+			}, nil
+		}
+
+		if emptyResourcesList {
+			return &mcp.CallToolResult{
+				Content: []mcp.Content{&mcp.TextContent{Text: "No resources found"}},
+				// StructuredContent deliberately omitted (nil) -- matches
+				// real kube-mcp-server's observed shape for a zero-match List.
 			}, nil
 		}
 

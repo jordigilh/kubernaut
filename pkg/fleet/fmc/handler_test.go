@@ -170,14 +170,25 @@ var _ = Describe("FMC HTTP Handler (BR-INTEGRATION-065, ADR-068)", func() {
 			Expect(w.Code).To(Equal(http.StatusMethodNotAllowed))
 		})
 
-		It("UT-FMC-API-007 [SC-7]: cache error falls back to managed=false — boundary conservative under failure", func() {
+		It("UT-FMC-API-007 [SC-7]: cache error returns 503, distinguishable from a genuine managed=false", func() {
+			// Issue #54 fleet E2E RCA (CI run 30464667745): a checker error
+			// (e.g. "context canceled" during FMC's own resource pressure)
+			// used to be silently masked as a normal 200 {"managed":false} --
+			// byte-identical to a genuine "not managed" determination. That
+			// made a transient backend hiccup indistinguishable from a real
+			// scope decision, so callers (Gateway/RO's HTTPClient) had no
+			// signal to retry on. A checker error now surfaces as 503 so the
+			// caller can retry with backoff instead of failing the alert
+			// closed on the very first transient blip; if retries are
+			// exhausted, HTTPClient still falls back to fail-safe
+			// managed=false (SC-7 unchanged), just no longer on transient
+			// failure alone.
 			checker.err = fmt.Errorf("valkey: connection refused")
 
 			w := doGet(mux, "/api/v1/scope/check?cluster=prod-east&group=apps&version=v1&kind=Deployment&namespace=default&name=nginx")
 
-			Expect(w.Code).To(Equal(http.StatusOK))
-			Expect(decodeScopeCheck(w).Managed).To(BeFalse(),
-				"checker errors must fall back to unmanaged (fail-safe)")
+			Expect(w.Code).To(Equal(http.StatusServiceUnavailable),
+				"checker errors must be surfaced distinctly (503), not masked as a final managed=false")
 		})
 
 		It("UT-FMC-API-008 [AC-4]: core group resources (empty group) are queryable", func() {

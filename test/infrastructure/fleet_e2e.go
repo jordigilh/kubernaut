@@ -2147,11 +2147,25 @@ spec:
           periodSeconds: 5
         resources:
           requests:
-            memory: "32Mi"
-            cpu: "25m"
-          limits:
             memory: "64Mi"
-            cpu: "100m"
+            cpu: "50m"
+          limits:
+            # Issue #54 fleet E2E RCA (CI run 30464667745): 64Mi/100m was too
+            # tight for FMC's actual workload (TLS/mTLS termination, OAuth2
+            # token refresh, MCP client, concurrent scope-check serving under
+            # ~12 parallel Ginkgo processes). Under load the process couldn't
+            # service its own /healthz probe (default 1s timeout) in time,
+            # kubelet killed+restarted the container (exitCode 137, liveness
+            # probe "context deadline exceeded"), and every scope check
+            # in-flight during that window failed with "context canceled" --
+            # which the (pre-fix) handler indistinguishably reported as
+            # managed=false, causing Gateway to reject alerts as unmanaged.
+            # Raised to match/exceed the production Helm chart's default
+            # (charts/kubernaut/values.yaml fleetmetadatacache.resources:
+            # 128Mi/200m) since this test infra was actually *tighter* than
+            # production.
+            memory: "128Mi"
+            cpu: "200m"
       volumes:
       - name: config
         configMap:
