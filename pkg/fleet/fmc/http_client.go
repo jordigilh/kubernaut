@@ -24,8 +24,36 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
+
+// Issue #54 fleet E2E RCA (CI run 30464667745): FMC's handler distinguishes
+// a failed check (503 -- e.g. Valkey "context canceled" under resource
+// pressure) from a completed check that determined "not managed" (200).
+// IsManagedResource retries only the former: a small, bounded number of
+// attempts with exponential backoff, wrapped in a hard wall-clock ceiling.
+// This sits on Gateway/RO's synchronous alert-ingestion path, so the ceiling
+// is deliberately short (seconds, not the 45s a test's own outer retry
+// loop might use) -- a transient blip gets a couple of quick retries, but a
+// real outage still fails safe (managed=false, SC-7) promptly rather than
+// stalling the caller.
+const (
+	scopeCheckMaxAttempts  = 3
+	scopeCheckRetryCeiling = 2 * time.Second
+)
+
+// scopeCheckBackoff configures the delay between retry attempts. With
+// BasePeriod=100ms, Multiplier=2, MaxPeriod=500ms: attempt 1 waits ~100ms,
+// attempt 2 waits ~200ms (both ±10% jitter) before the next try; combined
+// with scopeCheckMaxAttempts=3, worst-case pure backoff overhead is ~300ms,
+// well inside scopeCheckRetryCeiling.
+var scopeCheckBackoff = backoff.Config{
+	BasePeriod:    100 * time.Millisecond,
+	MaxPeriod:     500 * time.Millisecond,
+	Multiplier:    2.0,
+	JitterPercent: 10,
+}
 
 // HTTPClient is a scope.ScopeChecker that calls the FMC REST API over HTTP.
 // ADR-068: GW/RO use this client to resolve federated scope instead of connecting
@@ -66,8 +94,38 @@ func NewHTTPClient(baseURL string, opts ...ClientOption) *HTTPClient {
 }
 
 // IsManagedResource checks whether a resource is in-scope by calling FMC's
-// /api/v1/scope/check endpoint. Returns false on any error (fail-safe per SC-7).
+// /api/v1/scope/check endpoint. A transient failure (5xx / transport error)
+// is retried a bounded number of times with backoff (see scopeCheckMaxAttempts,
+// scopeCheckRetryCeiling); a definitive response (200, whether managed true
+// or false) is never retried. All failures ultimately return false, nil
+// (fail-safe per SC-7) -- retries improve resilience to short blips, they
+// never change the fail-closed guarantee on exhaustion.
 func (c *HTTPClient) IsManagedResource(ctx context.Context, r scope.ResourceIdentity) (bool, error) {
+	reqURL := c.buildScopeCheckURL(r)
+
+	ctx, cancel := context.WithTimeout(ctx, scopeCheckRetryCeiling)
+	defer cancel()
+
+	for attempt := int32(1); attempt <= scopeCheckMaxAttempts; attempt++ {
+		managed, final, retryable := c.attemptScopeCheck(ctx, reqURL)
+		if final {
+			return managed, nil
+		}
+		if !retryable || attempt == scopeCheckMaxAttempts {
+			return false, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return false, nil
+		case <-time.After(scopeCheckBackoff.Calculate(attempt)):
+		}
+	}
+	return false, nil
+}
+
+// buildScopeCheckURL constructs the FMC scope-check request URL for a resource.
+func (c *HTTPClient) buildScopeCheckURL(r scope.ResourceIdentity) string {
 	params := url.Values{}
 	params.Set("cluster", r.ClusterID)
 	params.Set("group", r.Group)
@@ -76,29 +134,42 @@ func (c *HTTPClient) IsManagedResource(ctx context.Context, r scope.ResourceIden
 	params.Set("namespace", r.Namespace)
 	params.Set("name", r.Name)
 
-	reqURL := c.baseURL + ScopeCheckPath + "?" + params.Encode()
+	return c.baseURL + ScopeCheckPath + "?" + params.Encode()
+}
 
+// attemptScopeCheck performs a single scope-check HTTP round-trip.
+//
+// final=true means the response is a definitive answer (200 OK, decoded
+// successfully) that must not be retried, regardless of the managed value.
+// retryable=true means the failure looks transient (transport error, or a
+// 5xx indicating FMC's own check failed rather than completed) and is worth
+// a bounded retry. A non-retryable failure (e.g. 4xx, or a malformed 200
+// body) ends the attempt loop immediately, fail-safe.
+func (c *HTTPClient) attemptScopeCheck(ctx context.Context, reqURL string) (managed, final, retryable bool) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
-		return false, nil
+		return false, false, false
 	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return false, nil
+		return false, false, true // transport error: transient, worth a retry
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode >= http.StatusInternalServerError {
+		return false, false, true // 5xx: FMC's check failed (e.g. transient backend error), worth a retry
+	}
 	if resp.StatusCode != http.StatusOK {
-		return false, nil
+		return false, false, false // e.g. 4xx: caller-side problem, not transient -- fail fast
 	}
 
 	var result ScopeCheckResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return false, nil
+		return false, false, false // malformed 200 body: not transient -- fail fast
 	}
 
-	return result.Managed, nil
+	return result.Managed, true, false
 }
 
 // Ping checks connectivity to FMC's API by calling ClustersPath on the same
