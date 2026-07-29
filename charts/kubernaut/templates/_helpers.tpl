@@ -806,11 +806,12 @@ Generous startupProbe for components whose startup can legitimately stall
 past a steady-state liveness/readiness budget (DD-PLATFORM-008). Any
 component that builds a registry.ClusterRegistry / MCP client connection at
 boot (fleet-aware services: apifrontend, effectivenessmonitor,
-workflowexecution as of this writing) can block for 100+ seconds under a
+workflowexecution, gateway, remediationorchestrator, fleetmetadatacache,
+signalprocessing as of this writing) can block for 100+ seconds under a
 CPU-constrained or noisy-neighbor node -- well past a liveness probe tuned
 for steady-state response times -- causing kubelet to kill and restart the
 pod before it ever reports ready (a self-inflicted crash loop, confirmed via
-live debugging: the same 3 services observed 10+ minute crash loops in a
+live debugging: the same services observed 10+ minute crash loops in a
 resource-constrained Kind/podman E2E cluster, each recovering instantly once
 retried under lighter load). A startupProbe defers liveness/readiness
 enforcement entirely until it passes once, then hands off to the existing
@@ -820,6 +821,25 @@ dependency" shape; add a startupProbe rather than loosening the steady-state
 liveness/readiness thresholds (which would also mask a genuinely hung
 process for that much longer). See DD-PLATFORM-008 for the full rationale
 and alternatives considered.
+
+failureThreshold default of 60 (initialDelaySeconds=5 + 60*periodSeconds=5 =
+305s total grace) rather than an earlier 30 (155s): live re-validation of
+this same design decision (#1755 DD-TEST-015 fleet E2E hardening) caught
+effectivenessmonitor/remediationorchestrator/workflowexecution still being
+killed by the startupProbe itself under a 12-way-parallel Ginkgo fleet E2E
+run -- confirmed via direct cgroup v2 `cpu.stat` inspection
+(`kubectl exec <pod> -- cat /sys/fs/cgroup/cpu.stat`) showing nr_throttled/
+nr_periods ratios as high as 23/24 (96%) immediately after a fresh restart,
+i.e. near-constant CFS bandwidth-quota throttling against the 500m cpu
+limit during the cache-sync + MCP-client-connect cold-start burst (the
+well-documented "CPU limits throttle bursty startup work even when average
+utilization looks moderate" behavior of the Linux CFS bandwidth controller,
+kubernetes/kubernetes#67577). 305s matches the 5-minute ceiling already
+adopted elsewhere in this same investigation for mcpclient.NewResilient's
+own MaxElapsedTime backoff budget (pkg/fleet/mcpclient/resilience.go) and
+for the equivalent kubectl-rollout-status timeout in
+test/infrastructure/fullpipeline_e2e_helm.go -- the startupProbe should not
+give up before the client it's waiting on does.
 Usage: {{ include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}
 */}}
 {{- define "kubernaut.startupProbe" -}}
@@ -830,7 +850,7 @@ startupProbe:
   initialDelaySeconds: {{ .initialDelaySeconds | default 5 }}
   periodSeconds: {{ .periodSeconds | default 5 }}
   timeoutSeconds: {{ .timeoutSeconds | default 5 }}
-  failureThreshold: {{ .failureThreshold | default 30 }}
+  failureThreshold: {{ .failureThreshold | default 60 }}
 {{- end }}
 
 {{/* ===== NetworkPolicy Helpers (Issue #285) ===== */}}

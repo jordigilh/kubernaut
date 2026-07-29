@@ -238,6 +238,18 @@ spec:
             - name: health
               containerPort: 8081
               protocol: TCP
+          {{- /* DD-PLATFORM-008: SP builds a registry.ClusterRegistry against
+          the fleet MCP Gateway at boot, same shape as apifrontend/
+          effectivenessmonitor/workflowexecution -- can legitimately stall
+          well past the liveness probe's budget under load. Confirmed live
+          during #1755 DD-TEST-015 fleet E2E re-validation: SP crash-looped
+          (exit 137, "Liveness probe failed ... context deadline exceeded")
+          without this startupProbe while its 6 sibling fleet-aware services
+          already had it -- a gap in the original DD-PLATFORM-008 rollout.
+          See apifrontend.yaml's identical comment for the confirmed
+          incident details and _helpers.tpl's kubernaut.startupProbe doc for
+          the failureThreshold=60 (305s) sizing rationale. */}}
+          {{- include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}
           livenessProbe:
             httpGet:
               path: /healthz

@@ -3,10 +3,10 @@
 **Date**: July 28, 2026
 **Status**: ✅ **APPROVED**
 **Confidence**: 92%
-**Last Reviewed**: July 28, 2026
-**Related**: Issue #1737 (E2E FP/Fleet Helm chart migration), `pkg/fleet/registry`
-(`ClusterRegistry.Start`), `pkg/fleet/mcpclient` (`NewResilient`), `cmd/workflowexecution/main.go`
-(`buildClientFactory`)
+**Last Reviewed**: July 29, 2026
+**Related**: Issue #1737 (E2E FP/Fleet Helm chart migration), Issue #1755 (DD-TEST-015 Fleet
+E2E hardening), `pkg/fleet/registry` (`ClusterRegistry.Start`), `pkg/fleet/mcpclient`
+(`NewResilient`), `cmd/workflowexecution/main.go` (`buildClientFactory`)
 
 ---
 
@@ -21,17 +21,51 @@ the default remediation pattern going forward -- new components with the
 same shape should adopt it, not reinvent probe tuning per-service.**
 
 The helper defaults to `initialDelaySeconds: 5, periodSeconds: 5,
-timeoutSeconds: 5, failureThreshold: 30` (150s total grace) against
-`/healthz` on the `health` named port, fully overridable via its input
-`dict`. It only **defers** liveness/readiness enforcement until the first
-successful check; steady-state probe behavior for a healthy, already-started
-pod is completely unchanged.
+timeoutSeconds: 5, failureThreshold: 60` (305s total grace, updated from an
+initial `30`/150s -- see the July 29 update below) against `/healthz` on the
+`health` named port, fully overridable via its input `dict`. It only
+**defers** liveness/readiness enforcement until the first successful check;
+steady-state probe behavior for a healthy, already-started pod is
+completely unchanged.
 
 Applied to `apifrontend`, `effectivenessmonitor`, `workflowexecution`,
-`gateway`, `remediationorchestrator`, and `fleetmetadatacache` -- the six
-chart-managed services that build a fleet MCP Gateway connection
-(`registry.ClusterRegistry` / `mcpclient.NewResilient`, or an OAuth2 token
-fetch gating that connection) synchronously at process startup.
+`gateway`, `remediationorchestrator`, `fleetmetadatacache`, and
+`signalprocessing` -- the seven chart-managed services that build a fleet
+MCP Gateway connection (`registry.ClusterRegistry` / `mcpclient.NewResilient`,
+or an OAuth2 token fetch gating that connection) synchronously at process
+startup.
+
+**Update (July 29, 2026)**: two further gaps surfaced during live
+re-validation of the DD-TEST-015 fleet E2E refactor (single `helm install`
+with `global.fleet.enabled=true`, all seven services cold-starting
+concurrently under a 12-way-parallel Ginkgo run):
+
+1. **`signalprocessing` was missing entirely** from the original six-service
+   rollout despite being fleet-aware (it builds the same
+   `registry.ClusterRegistry` via its own MCP Gateway connection at boot,
+   confirmed in `signalprocessing.yaml`'s `fleet.oauth2` config block) --
+   an oversight in the original audit, not a "correctly excluded"
+   non-fleet-aware service as this doc previously (incorrectly) listed it.
+   It crash-looped (exit 137, `Liveness probe failed ... context deadline
+   exceeded`) with the exact same signature AF/EM/WE had before their fix.
+2. **`failureThreshold: 30` (150s) was insufficient** even for the six
+   services that already had it: `effectivenessmonitor`,
+   `remediationorchestrator`, and `workflowexecution` were all still being
+   killed by their own `startupProbe` (not just the liveness probe it was
+   meant to defer) under the same 12-way-parallel run. Direct evidence via
+   cgroup v2 `cpu.stat` inspection (`kubectl exec <pod> -- cat
+   /sys/fs/cgroup/cpu.stat`) on a freshly-restarted `effectivenessmonitor`
+   pod showed `nr_throttled: 23` of `nr_periods: 24` (96%) -- near-constant
+   CFS bandwidth-quota throttling against the default `500m` CPU limit
+   during the cache-sync + MCP-client-connect cold-start burst. This is the
+   well-documented Linux CFS bandwidth controller behavior where a CPU
+   *limit* throttles bursty startup work in discrete quota periods even
+   when the container's average utilization looks moderate
+   (kubernetes/kubernetes#67577). `failureThreshold` raised from `30` to
+   `60` (150s -> 305s), matching the 5-minute ceiling already adopted
+   elsewhere in this same investigation for `mcpclient.NewResilient`'s own
+   `MaxElapsedTime` backoff budget (`pkg/fleet/mcpclient/resilience.go`) --
+   the probe should not give up before the client it's waiting on does.
 
 **Update (July 28, 2026)**: extended from the original three (AF/EM/WE) to
 `gateway` and `remediationorchestrator` after the first Fleet E2E run against
@@ -169,36 +203,37 @@ Keep the chart's probes as-is; add a retry loop in
 
 ## ✅ **Consequences**
 
-- `charts/kubernaut/templates/_helpers.tpl`: new `kubernaut.startupProbe`
-  named template. Input `dict` accepts `path`, `port`,
-  `initialDelaySeconds`, `periodSeconds`, `timeoutSeconds`,
-  `failureThreshold`, all with sensible defaults
-  (`/healthz`, `health`, `5`, `5`, `5`, `30`).
+- `charts/kubernaut/templates/_helpers.tpl`: `kubernaut.startupProbe` named
+  template. Input `dict` accepts `path`, `port`, `initialDelaySeconds`,
+  `periodSeconds`, `timeoutSeconds`, `failureThreshold`, all with sensible
+  defaults (`/healthz`, `health`, `5`, `5`, `5`, `60` -- `failureThreshold`
+  raised from an initial `30` per the July 29 update above).
 - `charts/kubernaut/templates/apifrontend/apifrontend.yaml`,
   `templates/effectivenessmonitor/effectivenessmonitor.yaml`,
   `templates/workflowexecution/workflowexecution.yaml`,
   `templates/gateway/gateway.yaml`,
   `templates/remediationorchestrator/remediationorchestrator.yaml`,
-  `templates/fleetmetadatacache/fleetmetadatacache.yaml`: each gets
+  `templates/fleetmetadatacache/fleetmetadatacache.yaml`,
+  `templates/signalprocessing/signalprocessing.yaml`: each gets
   `{{- include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}`
   immediately before its existing `readinessProbe`/`livenessProbe` block, with a
   comment documenting the specific blocking dependency and the confirmed
   incident. No other fields on the existing liveness/readiness probes changed.
 - `charts/kubernaut/tests/startup_probe_test.yaml`: asserts the
-  `startupProbe` renders with the expected path/port/thresholds on all six
-  services, and that the existing liveness/readiness `initialDelaySeconds`
-  values are untouched. The original negative check ("`gateway` does *not*
-  get one -- targeted rollout, not chart-wide") was retired and replaced with
-  a positive assertion once Gateway was confirmed to share the same blocking
-  dependency shape (see Update note above); this remains a *targeted*
-  rollout to services with the confirmed dependency shape, not an
-  unconditional chart-wide default -- non-fleet-aware services (Console,
-  DataStorage, KubernautAgent, SignalProcessing, AIAnalysis, Notification,
-  AuthWebhook) still correctly have no `startupProbe`.
+  `startupProbe` renders with the expected path/port/thresholds on all
+  seven services, and that the existing liveness/readiness
+  `initialDelaySeconds` values are untouched. The original negative check
+  ("`gateway` does *not* get one -- targeted rollout, not chart-wide") was
+  retired and replaced with a positive assertion once Gateway was confirmed
+  to share the same blocking dependency shape (see Update notes above);
+  this remains a *targeted* rollout to services with the confirmed
+  dependency shape, not an unconditional chart-wide default --
+  non-fleet-aware services (Console, DataStorage, KubernautAgent,
+  AIAnalysis, Notification, AuthWebhook) still correctly have no
+  `startupProbe`.
 - Validated: `helm lint --strict` clean, `helm template` output inspected
-  for correct probe rendering/indentation on all six services, full
-  `helm-unittest` suite green (230/230, up from 225/225 baseline + 5 new
-  assertions' worth of test cases across the July 28 update).
+  for correct probe rendering/indentation on all seven services, full
+  `helm-unittest` suite green (250/250 as of the July 29 update).
 - **Follow-up (not implemented by this DD)**: `kubernaut-operator` is the
   production deployment path (the Helm chart is development/E2E-test-only,
   per existing project convention) and defines its own Deployment specs

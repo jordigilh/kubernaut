@@ -6,6 +6,7 @@ templates:
   - templates/gateway/gateway.yaml
   - templates/remediationorchestrator/remediationorchestrator.yaml
   - templates/fleetmetadatacache/fleetmetadatacache.yaml
+  - templates/signalprocessing/signalprocessing.yaml
 set:
   postgresql:
     auth:
@@ -41,7 +42,7 @@ tests:
           value: health
       - equal:
           path: spec.template.spec.containers[0].startupProbe.failureThreshold
-          value: 30
+          value: 60
       - equal:
           path: spec.template.spec.containers[0].startupProbe.periodSeconds
           value: 5
@@ -69,7 +70,7 @@ tests:
           value: health
       - equal:
           path: spec.template.spec.containers[0].startupProbe.failureThreshold
-          value: 30
+          value: 60
       - equal:
           path: spec.template.spec.containers[0].startupProbe.periodSeconds
           value: 5
@@ -94,7 +95,7 @@ tests:
           value: health
       - equal:
           path: spec.template.spec.containers[0].startupProbe.failureThreshold
-          value: 30
+          value: 60
       - equal:
           path: spec.template.spec.containers[0].startupProbe.periodSeconds
           value: 5
@@ -119,7 +120,7 @@ tests:
           value: health
       - equal:
           path: spec.template.spec.containers[0].startupProbe.failureThreshold
-          value: 30
+          value: 60
       - equal:
           path: spec.template.spec.containers[0].startupProbe.periodSeconds
           value: 5
@@ -144,7 +145,7 @@ tests:
           value: health
       - equal:
           path: spec.template.spec.containers[0].startupProbe.failureThreshold
-          value: 30
+          value: 60
       - equal:
           path: spec.template.spec.containers[0].startupProbe.periodSeconds
           value: 5
@@ -180,7 +181,7 @@ tests:
           value: health
       - equal:
           path: spec.template.spec.containers[0].startupProbe.failureThreshold
-          value: 30
+          value: 60
       - equal:
           path: spec.template.spec.containers[0].startupProbe.periodSeconds
           value: 5
@@ -190,3 +191,28 @@ tests:
       - equal:
           path: spec.template.spec.containers[0].readinessProbe.initialDelaySeconds
           value: 3
+
+  - it: "signalprocessing-controller Deployment has a generous startupProbe ahead of its liveness/readiness probes (#1755 DD-TEST-015 fleet E2E re-validation: SP was missing from the original DD-PLATFORM-008 rollout and crash-looped under load exactly like AF/EM/WE did before their fix)"
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /healthz
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.port
+          value: health
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.failureThreshold
+          value: 60
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.periodSeconds
+          value: 5
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.initialDelaySeconds
+          value: 15
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.initialDelaySeconds
+          value: 5
