@@ -810,9 +810,7 @@ jobs:
         if: steps.gen-cache.outputs.cache-hit != 'true'
         run: make generate
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
+        uses: ./.github/actions/install-podman
       - name: Setup envtest (K8s test binaries)
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@f9589b9f2b9dddf8532b432bb8315f2820ab9971 # release-0.23
@@ -1026,9 +1024,7 @@ jobs:
         if: steps.gen-cache.outputs.cache-hit != 'true'
         run: make generate
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
+        uses: ./.github/actions/install-podman
       - name: Load pre-built images (artifact-based, no registry)
         uses: ./.github/actions/load-ci-images
       - name: Install Kind v0.32.0
@@ -1258,10 +1254,7 @@ jobs:
           echo "PASS: values.schema.json is consistent with values.yaml"
 
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-          podman --version
+        uses: ./.github/actions/install-podman
 
       - name: Install Kind
         run: |

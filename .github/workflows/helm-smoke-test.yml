@@ -49,10 +49,7 @@ jobs:
           go-version: '1.26.5'
 
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-          podman --version
+        uses: ./.github/actions/install-podman
 
       - name: Install Kind
         run: |
