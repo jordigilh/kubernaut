@@ -61,9 +61,24 @@ const fleetE2EMarker = "kubernaut-fleet-e2e-remote-marker-1732"
 // (test/integration/kubernautagent/fleet/fleet_wiring_test.go); duplicated
 // here because the production type is unexported and this package cannot
 // import cmd/kubernautagent (a main package).
+//
+// wirePrefix is threaded in explicitly by each test rather than derived via
+// fleetclient.PrefixFromToolNames: this resolver's job is to prove
+// Investigator.Investigate() correctly CONSUMES an overlay (map key identity
+// + wire-name preservation) through a real MCP session end to end -- not to
+// re-derive the wire prefix, which is already proven against the real
+// production helper by UT-MCP-TN-* (pkg/fleet/mcpclient), UT-KA-FLEET-024/025
+// (cmd/kubernautagent, calling the real unexported gatewayOverlayResolver.
+// Overlay() directly), and IT-KA-FLEET-010 (real discover_tools/select_tools
+// protocol round trip). Each test sets wirePrefix to exactly what it
+// configured its own mock gateway with, so the mapping stays visible and
+// auditable in the same file rather than silently duplicating (and risking
+// drift from) the derivation formula -- the exact anti-pattern Issue #1756
+// found in the pre-fix IT-KA-FLEET-010.
 type fleetE2EOverlayResolver struct {
 	discoverer fleetclient.GatewayDiscoverer
 	session    fleetclient.Session
+	wirePrefix string
 }
 
 func (r *fleetE2EOverlayResolver) Overlay(ctx context.Context, clusterID string) (map[string]tools.Tool, error) {
@@ -73,11 +88,38 @@ func (r *fleetE2EOverlayResolver) Overlay(ctx context.Context, clusterID string)
 	}
 	overlay := make(map[string]tools.Tool, len(defs))
 	for _, def := range defs {
-		generic := strings.TrimPrefix(def.Name, clusterID+"__")
+		generic := strings.TrimPrefix(def.Name, r.wirePrefix)
 		bridge := fleetclient.NewBridgeTool(def, clusterID, r.session)
 		overlay[generic] = &fleetE2EGenericNameTool{inner: bridge, name: generic}
 	}
 	return overlay, nil
+}
+
+// fleetE2EFixedDiscoverer implements fleetclient.GatewayDiscoverer, returning
+// a fixed set of ToolDefinitions for one clusterID. Used by the Kuadrant
+// journey scenario (E2E-KA-FLEET-002) in place of the real KuadrantDiscoverer:
+// that discoverer's ToolsForCluster() requires the discover_tools/select_tools
+// meta-tools (mockgw.WithDiscoverableTools), which only support the 4 fixed
+// kube-mcp-server tool base names -- IT-KA-FLEET-010 already proves that real
+// two-phase protocol round trip against the real KuadrantDiscoverer. This
+// journey test's distinct job is proving Investigator.Investigate() reaches
+// the remote gateway under a non-"{clusterID}__" wire prefix end to end, so a
+// fixed discoverer stands in for the discovery step while the actual
+// mcp.CallTool wire dispatch below still goes through a real MCP session.
+type fleetE2EFixedDiscoverer struct {
+	clusterID string
+	defs      []fleetclient.ToolDefinition
+}
+
+func (d *fleetE2EFixedDiscoverer) ListClusters(_ context.Context, _ string) ([]fleetclient.ClusterInfo, error) {
+	return nil, nil
+}
+
+func (d *fleetE2EFixedDiscoverer) ToolsForCluster(_ context.Context, clusterID string) ([]fleetclient.ToolDefinition, error) {
+	if clusterID != d.clusterID {
+		return nil, nil
+	}
+	return d.defs, nil
 }
 
 // fleetE2EGenericNameTool locally mirrors cmd/kubernautagent's unexported
@@ -133,6 +175,54 @@ func (fleetE2EScenario) ConfigForContext(ctx *scenarios.DetectionContext) scenar
 	}
 	return scenarios.MockScenarioConfig{
 		ScenarioName: "fleet_e2e_journey_1732",
+		ToolCallName: "kubectl_get_by_name",
+		ToolCallArgs: map[string]interface{}{
+			"kind": "Pod", "name": "api-server-abc", "namespace": "production",
+		},
+		ForceText: scenarios.BoolPtr(false),
+	}
+}
+
+// fleetE2EKuadrantMarker is fleetE2EMarker's counterpart for the Kuadrant
+// journey scenario (E2E-KA-FLEET-002, Issue #1756): a distinctive string
+// embedded in the mock gateway's tool result so the mock-LLM scenario can
+// detect whether the remote tool has already executed.
+const fleetE2EKuadrantMarker = "kubernaut-fleet-e2e-remote-marker-1756"
+
+// fleetE2EKuadrantScenario mirrors fleetE2EScenario for the Kuadrant
+// convention journey (Issue #1756 regression guard): same turn-dependent
+// tool-call-then-RCA-text shape, targeting cluster prod-east under a
+// Kuadrant-style admin-set prefix ("prod_east_") instead of EAIGW's
+// "{clusterID}__".
+type fleetE2EKuadrantScenario struct{}
+
+func (fleetE2EKuadrantScenario) Name() string { return "fleet_e2e_journey_kuadrant_1756" }
+func (fleetE2EKuadrantScenario) Metadata() scenarios.ScenarioMetadata {
+	return scenarios.ScenarioMetadata{Name: "fleet_e2e_journey_kuadrant_1756", Description: "E2E-KA-FLEET-002"}
+}
+func (fleetE2EKuadrantScenario) DAG() *conversation.DAG { return nil }
+func (fleetE2EKuadrantScenario) Match(ctx *scenarios.DetectionContext) (bool, float64) {
+	if strings.Contains(ctx.Content, "fleetkuadranttransparencyprobe") {
+		return true, 1.0
+	}
+	return false, 0
+}
+func (fleetE2EKuadrantScenario) ConfigForContext(ctx *scenarios.DetectionContext) scenarios.MockScenarioConfig {
+	if strings.Contains(ctx.AllText, fleetE2EKuadrantMarker) {
+		actionable := true
+		return scenarios.MockScenarioConfig{
+			ScenarioName:         "fleet_e2e_journey_kuadrant_1756",
+			SignalName:           "FleetKuadrantTransparencyProbe",
+			Severity:             "critical",
+			RootCause:            "remote pod api-server-abc confirmed OOMKilled via a fleet-transparent tool call routed to Kuadrant cluster prod-east",
+			InvestigationOutcome: "actionable",
+			IsActionable:         &actionable,
+			Confidence:           0.9,
+			ForceText:            scenarios.BoolPtr(true),
+		}
+	}
+	return scenarios.MockScenarioConfig{
+		ScenarioName: "fleet_e2e_journey_kuadrant_1756",
 		ToolCallName: "kubectl_get_by_name",
 		ToolCallArgs: map[string]interface{}{
 			"kind": "Pod", "name": "api-server-abc", "namespace": "production",
@@ -204,7 +294,7 @@ var _ = Describe("Fleet cluster-transparent tool exposure — full journey (BR-I
 				MaxTurns:             5,
 				PhaseTools:           investigator.DefaultPhaseToolMap(),
 				Registry:             reg,
-				FleetOverlayResolver: &fleetE2EOverlayResolver{discoverer: disc, session: session},
+				FleetOverlayResolver: &fleetE2EOverlayResolver{discoverer: disc, session: session, wirePrefix: "remote-east__"},
 			})
 
 			signal := katypes.SignalContext{
@@ -234,6 +324,112 @@ var _ = Describe("Fleet cluster-transparent tool exposure — full journey (BR-I
 				"DD-FLEET-004: the LLM only ever named the generic tool 'kubectl_get_by_name', "+
 					"yet the wire call must reach cluster remote-east's own prefixed tool -- proving "+
 					"cluster-transparent resolution end to end through a real MCP client/session, not a mock")
+
+			Expect(result.RCASummary).NotTo(ContainSubstring("local-hub"),
+				"the hub-local fakeTool registered under the same generic name must never execute "+
+					"for a fleet-target investigation")
+		})
+	})
+
+	Describe("E2E-KA-FLEET-002 [AC-4]: a real mock-LLM issues a tool call under a generic name during a Kuadrant fleet-target investigation, and it reaches the remote cluster via the cluster's admin-set (non-\"{clusterID}__\") prefix", func() {
+		It("routes kubectl_get_by_name to the prod-east mock gateway via the fleet overlay under Kuadrant's prefix convention, never the hub-local tool (Issue #1756 regression guard)", func() {
+			// --- Remote cluster side: mock MCP gateway exposing exactly one
+			// wire-prefixed tool for cluster "prod-east", using a Kuadrant-
+			// style admin-set prefix ("prod_east_") that does NOT follow
+			// EAIGW's "{clusterID}__" convention -- exactly the shape of
+			// prefix Issue #1756 found gatewayOverlayResolver.Overlay()
+			// mis-resolving. ---
+			inputSchema := json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"},"name":{"type":"string"},"namespace":{"type":"string"}},"required":["kind","name"]}`)
+			gw := mockgw.NewMockGateway(mockgw.WithTool(
+				"prod_east_kubectl_get_by_name",
+				"Get a Kubernetes resource by name from the remote cluster",
+				inputSchema,
+				func(_ context.Context, _ *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+					text := fmt.Sprintf(`{"marker":%q,"cluster":"prod-east","kind":"Pod","name":"api-server-abc","namespace":"production","status":"OOMKilled"}`, fleetE2EKuadrantMarker)
+					return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
+				},
+			))
+			defer gw.Close()
+
+			mcpC, err := fleetclient.New(context.Background(), gw.URL())
+			Expect(err).NotTo(HaveOccurred())
+			defer mcpC.Close()
+			session := mcpC.Session()
+
+			// See fleetE2EFixedDiscoverer's doc comment: stands in for
+			// KuadrantDiscoverer's discover_tools/select_tools round trip
+			// (already proven for real by IT-KA-FLEET-010), so this test can
+			// focus on proving Investigator.Investigate() itself resolves
+			// and executes correctly under a non-"{clusterID}__" prefix.
+			disc := &fleetE2EFixedDiscoverer{
+				clusterID: "prod-east",
+				defs: []fleetclient.ToolDefinition{{
+					Name:        "prod_east_kubectl_get_by_name",
+					Description: "Get a Kubernetes resource by name from the remote cluster",
+					InputSchema: inputSchema,
+				}},
+			}
+
+			// --- Mock LLM side: a real HTTP server serving the hand-rolled
+			// turn-aware scenario above. ---
+			reg2 := scenarios.NewRegistry()
+			reg2.Register(fleetE2EKuadrantScenario{})
+			llmServer := httptest.NewServer(handlers.NewRouter(reg2, false, ""))
+			defer llmServer.Close()
+
+			llmClient := kaopenai.New("test-model", llmServer.URL, "test-key")
+			sw, err := llm.NewSwappableClient(llmClient, "test-model")
+			Expect(err).NotTo(HaveOccurred())
+
+			builder, err := prompt.NewBuilder()
+			Expect(err).NotTo(HaveOccurred())
+
+			// --- Hub-local side: a local registry with a fakeTool under the
+			// SAME generic name the remote overlay will also use (see
+			// E2E-KA-FLEET-001's identical comment above for why). ---
+			reg := registry.New()
+			reg.Register(&fakeTool{name: "kubectl_get_by_name", result: `{"source":"local-hub","warning":"must never be reached for a fleet-target investigation"}`})
+
+			auditStore := newCapturingAuditStore(suiteAuditStore)
+
+			inv := investigator.New(investigator.Config{
+				PhaseResolver:        investigator.NewDefaultPhaseResolver(sw, nil),
+				Builder:              builder,
+				ResultParser:         parser.NewResultParser(),
+				AuditStore:           auditStore,
+				Logger:               logr.Discard(),
+				MaxTurns:             5,
+				PhaseTools:           investigator.DefaultPhaseToolMap(),
+				Registry:             reg,
+				FleetOverlayResolver: &fleetE2EOverlayResolver{discoverer: disc, session: session, wirePrefix: "prod_east_"},
+			})
+
+			signal := katypes.SignalContext{
+				Name:          "FleetKuadrantTransparencyProbe",
+				Namespace:     "production",
+				Severity:      "critical",
+				Message:       "OOMKilled",
+				ClusterID:     "prod-east",
+				ResourceKind:  "Pod",
+				ResourceName:  "api-server-abc",
+				RemediationID: "rem-e2e-fleet-kuadrant-1756",
+				// Interactive: RCA-only short-circuit, mirroring E2E-KA-FLEET-001.
+				Interactive: true,
+			}
+
+			result, err := inv.Investigate(context.Background(), signal)
+			Expect(err).NotTo(HaveOccurred(),
+				"E2E-KA-FLEET-002: a Kuadrant fleet-target investigation through a real mock-LLM + real mock MCP gateway must complete without error")
+			Expect(result).NotTo(BeNil())
+
+			calls := gw.CallLog()
+			Expect(calls).To(HaveLen(1),
+				"the remote mock gateway must receive exactly one real MCP tool call")
+			Expect(calls[0].ToolName).To(Equal("prod_east_kubectl_get_by_name"),
+				"Issue #1756 regression guard (AC-4): the LLM only ever named the generic tool 'kubectl_get_by_name', "+
+					"yet the wire call must reach cluster prod-east's Kuadrant-prefixed tool ('prod_east_', NOT the "+
+					"buggy '{clusterID}__' assumption) -- proving cluster-transparent resolution end to end under a "+
+					"real, non-EAIGW gateway wire convention")
 
 			Expect(result.RCASummary).NotTo(ContainSubstring("local-hub"),
 				"the hub-local fakeTool registered under the same generic name must never execute "+

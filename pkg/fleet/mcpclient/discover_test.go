@@ -135,3 +135,54 @@ var _ = Describe("DiscoverToolPrefix (BR-INTEGRATION-054, ADR-068 #10)", func() 
 		Expect(err.Error()).To(ContainSubstring("no tools found for cluster"))
 	})
 })
+
+// PrefixFromToolNames is DiscoverToolPrefix's pure extraction logic, operating
+// on an already-discovered slice of tool names rather than a live MCP
+// session. Extracted for issue #1756: gatewayOverlayResolver.Overlay()
+// (cmd/kubernautagent) needs the exact same gateway-agnostic matching against
+// names it already has from ToolsForCluster(), without an extra ListTools()
+// round trip and without duplicating (and silently drifting from) this logic.
+//
+// Authority: ADR-068 decision #10 (gateway-agnostic business logic),
+// DD-FLEET-004, BR-INTEGRATION-054, BR-INTEGRATION-1489, Issue #1756.
+var _ = Describe("PrefixFromToolNames (BR-INTEGRATION-054, BR-INTEGRATION-1489, ADR-068 #10) [AC-4]", func() {
+	DescribeTable("derives the gateway-specific prefix from an already-discovered tool name list",
+		func(clusterID string, names []string, expectedPrefix string) {
+			prefix, err := mcpclient.PrefixFromToolNames(clusterID, names)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(prefix).To(Equal(expectedPrefix))
+		},
+
+		Entry("UT-MCP-TN-101 [AC-4]: EAIGW convention (cluster-a -> cluster-a__)",
+			"cluster-a",
+			[]string{"cluster-a__resources_get", "cluster-a__resources_list"},
+			"cluster-a__",
+		),
+		Entry("UT-MCP-TN-102 [AC-4]: Kuadrant convention (cluster-a -> cluster_a_)",
+			"cluster-a",
+			[]string{"cluster_a_resources_get", "cluster_a_resources_list"},
+			"cluster_a_",
+		),
+		Entry("UT-MCP-TN-103 [AC-4]: Kuadrant multi-segment prefix (prod-east -> prod_east_)",
+			"prod-east",
+			[]string{"prod_east_resources_get"},
+			"prod_east_",
+		),
+		Entry("UT-MCP-TN-104 [AC-4]: mixed tool list -- only the target cluster's own tools match (AC-4 cross-cluster isolation)",
+			"prod-east",
+			[]string{"prod_west_resources_get", "prod_east_resources_list"},
+			"prod_east_",
+		),
+	)
+
+	It("UT-MCP-TN-105 [AC-4]: returns an error (never a wrong-cluster guess) when no name matches the cluster ID", func() {
+		_, err := mcpclient.PrefixFromToolNames("nonexistent", []string{"cluster-a__resources_get"})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("no tools found for cluster"))
+	})
+
+	It("UT-MCP-TN-106 [AC-4]: returns an error for an empty name list", func() {
+		_, err := mcpclient.PrefixFromToolNames("cluster-a", nil)
+		Expect(err).To(HaveOccurred())
+	})
+})
