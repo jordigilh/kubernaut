@@ -123,8 +123,10 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --set kubernautAgent.llmProfileRef=primary \
   --set-file signalprocessing.policies.content=path/to/policy.rego \
   --set-file aianalysis.policies.content=path/to/approval.rego \
-  --set effectivenessmonitor.external.prometheusEnabled=true \
-  --set effectivenessmonitor.external.alertManagerEnabled=true \
+  --set monitoring.prometheus.enabled=true \
+  --set monitoring.prometheus.url=http://kube-prometheus-stack-prometheus.monitoring.svc:9090 \
+  --set monitoring.alertManager.enabled=true \
+  --set monitoring.alertManager.url=http://kube-prometheus-stack-alertmanager.monitoring.svc:9093 \
   --set gateway.auth.signalSources[0].name=alertmanager \
   --set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager \
   --set gateway.auth.signalSources[0].namespace=monitoring
@@ -713,7 +715,7 @@ helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
 > manager. Subsequent `helm upgrade` will fail with a server-side apply conflict.
 >
 > Instead, use Helm values at install/upgrade time:
-> - **Prometheus toolset**: `--set kubernautAgent.prometheus.enabled=true --set kubernautAgent.prometheus.url=<url>`
+> - **Prometheus toolset**: `--set monitoring.prometheus.enabled=true --set monitoring.prometheus.url=<url>`
 > - **Ansible/AAP engine**: `--set workflowexecution.config.ansible.apiURL=<url>`
 >
 > If you already have conflicting ConfigMaps, delete them before upgrading — Helm
