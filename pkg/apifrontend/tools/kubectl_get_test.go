@@ -6,6 +6,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -238,5 +240,69 @@ var _ = Describe("kubectl_get", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Kind).To(Equal("Endpoints"))
 		Expect(result.Object).To(HaveKey("subsets"))
+	})
+
+	// UT-AF-1772-001/002 (BR-AI, SI-10 input validation / correctness):
+	// resolveGVRAndGVK must use the discovery-backed RESTMapper's real plural
+	// instead of meta.UnsafeGuessKindToResource's naive heuristic, which
+	// mis-pluralizes irregular Kinds (e.g. "AIAnalysis" -> "aianalysises"
+	// instead of the real "aianalyses") and surfaces as a misleading
+	// RBAC/403 error (#1772).
+	It("UT-AF-1772-001: resolves the discovery-backed plural for an irregular Kind (AIAnalysis)", func() {
+		mapper := meta.NewDefaultRESTMapper([]schema.GroupVersion{
+			{Group: "kubernaut.ai", Version: "v1alpha1"},
+		})
+		aiaGVK := schema.GroupVersionKind{Group: "kubernaut.ai", Version: "v1alpha1", Kind: "AIAnalysis"}
+		aiaGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "aianalyses"}
+		mapper.AddSpecific(aiaGVK, aiaGVR, aiaGVR, meta.RESTScopeNamespace)
+
+		gvrs := map[schema.GroupVersionResource]string{
+			aiaGVR: "AIAnalysisList",
+		}
+		scheme := runtime.NewScheme()
+		// The fake tracker's Add() always places seed objects under
+		// meta.UnsafeGuessKindToResource's plural, which would silently make
+		// this test pass against the *buggy* resolveGVRAndGVK too (both sides
+		// guessing "aianalysises"). Bypass that by seeding via an explicit
+		// Create call under the real, discovery-correct GVR instead.
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, gvrs)
+		aia := &unstructured.Unstructured{
+			Object: map[string]interface{}{
+				"apiVersion": "kubernaut.ai/v1alpha1",
+				"kind":       "AIAnalysis",
+				"metadata": map[string]interface{}{
+					"name":      "rr-123-analysis",
+					"namespace": "prod",
+				},
+			},
+		}
+		_, err := client.Resource(aiaGVR).Namespace("prod").Create(context.Background(), aia, metav1.CreateOptions{})
+		Expect(err).NotTo(HaveOccurred())
+
+		result, err := tools.HandleKubectlGet(context.Background(), &tools.DynamicResourceReader{Client: client}, mapper, tools.KubectlGetArgs{
+			Kind:      "AIAnalysis",
+			Name:      "rr-123-analysis",
+			Namespace: "prod",
+		})
+		Expect(err).NotTo(HaveOccurred(),
+			"kubectl_get must resolve AIAnalysis's real discovery-backed plural (aianalyses), "+
+				"not the naive guess (aianalysises), which would 404 and be misreported as an RBAC error")
+		Expect(result.Kind).To(Equal("AIAnalysis"))
+		Expect(result.Name).To(Equal("rr-123-analysis"))
+	})
+
+	It("UT-AF-1772-002: falls back to the naive plural guess when mapper is nil", func() {
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs,
+			newUnstructuredService("prod", "web-svc", "10.0.0.1"),
+		)
+
+		result, err := tools.HandleKubectlGet(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlGetArgs{
+			Kind:      "Service",
+			Name:      "web-svc",
+			Namespace: "prod",
+		})
+		Expect(err).NotTo(HaveOccurred(), "regular Kinds must still resolve when no RESTMapper is available")
+		Expect(result.Kind).To(Equal("Service"))
 	})
 })
