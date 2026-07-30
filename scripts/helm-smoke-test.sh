@@ -1295,10 +1295,22 @@ for item in data.get('items', []):
 preload_hook_image() {
   local desc="ST-CHART-PRELOAD: Pre-load Helm hook image into Kind cluster"
   local hook_image
-  hook_image=$(grep -A5 'tlsCerts:' "$CHART_PATH/values.yaml" | grep 'image:' | awk '{print $2}' | head -1)
+  # DD-PLATFORM-006 DA14 broke the previous `grep values.yaml` approach: once
+  # hooks.tlsCerts.image had a non-zero schema default, its only trace in
+  # values.yaml became a commented-out example (see values.yaml's "hooks:"
+  # section), and `grep -A5 'tlsCerts:'` matched that comment just as
+  # happily as a live field -- `awk '{print $2}'` then grabbed the "image:"
+  # token itself (comment's $1 is "#"), not the actual image reference, so
+  # every run "pre-loaded" the literal string "image:" and failed. Render
+  # the hook template instead so this always reflects the effective
+  # (schema-default-merged) value, the same way Helm resolves it.
+  hook_image=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    -s templates/hooks/tls-cert-job.yaml 2>/dev/null | \
+    grep -m1 '^\s*image:' | awk '{print $2}')
 
   if [[ -z "$hook_image" ]]; then
-    tap_not_ok "$desc" "Could not determine hook image from chart values"
+    tap_not_ok "$desc" "Could not determine hook image from rendered chart template"
     return 0
   fi
 
