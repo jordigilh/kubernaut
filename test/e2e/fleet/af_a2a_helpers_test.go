@@ -124,6 +124,38 @@ type afA2ATaskResult struct {
 		State   string          `json:"state"`
 		Message json.RawMessage `json:"message,omitempty"`
 	} `json:"status"`
+	// Artifacts carries the accumulated text/data content for a synchronous
+	// message/send call under OutputArtifactPerEvent mode. The terminal
+	// TaskStatusUpdateEvent's own Message field is nil for a genuinely
+	// successful completion -- ADK only populates it for the
+	// failed/input-required cases (see eventProcessor.makeFinalStatusUpdate
+	// in google.golang.org/adk/server/adka2a/v2/processor.go) -- so a
+	// completed task's final answer must be read from here, mirroring the
+	// established fpA2ATaskResult/fpA2AArtifact pattern in
+	// test/e2e/fullpipeline/af_helpers_test.go.
+	Artifacts []afA2AArtifact `json:"artifacts,omitempty"`
+}
+
+type afA2AArtifact struct {
+	Parts []afA2AArtifactPart `json:"parts"`
+}
+
+type afA2AArtifactPart struct {
+	Kind string `json:"kind"`
+	Text string `json:"text,omitempty"`
+}
+
+// afArtifactText concatenates the text of every part in every artifact on
+// task, i.e. the full accumulated final-answer text for a completed task
+// under OutputArtifactPerEvent mode (see afA2ATaskResult.Artifacts doc).
+func afArtifactText(task afA2ATaskResult) string {
+	var text string
+	for _, art := range task.Artifacts {
+		for _, p := range art.Parts {
+			text += p.Text
+		}
+	}
+	return text
 }
 
 // afA2AInvokeWithTimeout sends a JSON-RPC request to POST /a2a/invoke with a

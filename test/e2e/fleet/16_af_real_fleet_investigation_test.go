@@ -24,8 +24,8 @@ import (
 )
 
 // E2E-FLEET-016 [SI-4, AC-4, AU-2/AU-3]: real AF binary calls its own
-// fleet-aware tools (list_clusters, kubectl_get with cluster_id) via a real
-// A2A request, closing issue #1768 Gaps A+C.
+// fleet-aware kubectl_get tool with cluster_id via a real A2A request,
+// closing issue #1768 Gaps A+C.
 //
 // Authority: issue #1768, ADR-068, DD-FLEET-004, docs/testing/1768/TEST_PLAN.md
 //
@@ -88,9 +88,9 @@ var _ = Describe("E2E-FLEET-016 [SI-4, AC-4, AU-2/AU-3]: AF real A2A fleet kubec
 		GinkgoWriter.Printf("  E2E-FLEET-016 task: %s (state: %s)\n", task.ID, task.Status.State)
 
 		By("Verifying AF's real kubectl_get tool call reached the remote cluster (AC-4: cross-cluster routing)")
-		Expect(task.Status.Message).NotTo(BeNil(),
-			"completed task must carry a final status message with the echoed tool results")
-		msgStr := string(task.Status.Message)
+		msgStr := afArtifactText(task)
+		Expect(msgStr).NotTo(BeEmpty(),
+			"completed task must carry accumulated artifact text with the echoed tool results")
 		Expect(msgStr).NotTo(ContainSubstring("unable to reach cluster"),
 			"kubectl_get must not fail to reach cluster_id=remote-cluster")
 		Expect(msgStr).NotTo(ContainSubstring("fleet reader"),

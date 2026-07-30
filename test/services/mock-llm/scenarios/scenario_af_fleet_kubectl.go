@@ -31,19 +31,34 @@ const afFleetKubectlE2EKeyword = "fleet-kubectl-e2e-test"
 const afFleetKubectlRemoteClusterID = "remote-cluster"
 
 // afFleetKubectlScenario drives AF's real ADK agent (via a real A2A call, no
-// mocked ResourceReaderFactory) to call its own list_clusters and
-// kubectl_get(cluster_id=remote-cluster) tools, closing E2E-FLEET-016
-// (issue #1768, Gaps A+C): no existing test drives a real AF binary against
-// the Fleet E2E suite's real second cluster + gateway.
+// mocked ResourceReaderFactory) to call its own kubectl_get(cluster_id=
+// remote-cluster) tool, closing E2E-FLEET-016 (issue #1768, Gaps A+C): no
+// existing test drives a real AF binary against the Fleet E2E suite's real
+// second cluster + gateway.
 //
-// Turn 1 (no function results yet): emits list_clusters + kubectl_get in a
-// single MultiToolCalls batch — the LLM "decides" to check the fleet roster
-// and then read the remote cluster's coredns Deployment.
+// Deliberately does NOT also call list_clusters (unlike the original design):
+// a live run (2026-07-29) proved AF's SAR-based tool authorization
+// (pkg/apifrontend/auth/sar.go, SubjectAccessReview on kubernaut.ai/tools)
+// denies "list_clusters" for the "sre" persona this suite's Dex user
+// authenticates as — the "sre" persona's ClusterRole
+// (PersonaToolClusterRolesYAML, test/infrastructure/apifrontend_e2e.go)
+// grants kubectl_get/kubectl_list/kubectl_list_events but not list_clusters.
+// That SAR denial cascaded into an ADK reinvocation that failed calling the
+// mock LLM ("consumer stopped"), leaving the completed task with a nil
+// status message. This is a real, intentional persona-scoping policy (see
+// DD-FLEET-005), not a bug to route around — kubectl_get(cluster_id) alone
+// is sufficient to prove Gaps A+C (a real cross-cluster read via AF's own
+// binary), so this scenario is scoped to it.
+//
+// Turn 1 (no function results yet): emits kubectl_get for the remote
+// cluster's coredns Deployment as a single-entry MultiToolCalls batch (kept
+// as MultiToolCalls rather than ToolCallName for parity with other AF
+// dynamic scenarios and to leave room for a future multi-tool addition).
 //
 // Turn 2 (function results present): AF's ADK loop has, by this point,
-// already executed both tools for real (against the Fleet E2E suite's real
+// already executed the tool for real (against the Fleet E2E suite's real
 // FleetReaderFactory -> kube-mcp-server -> Kuadrant gateway -> remote Kind
-// cluster) and appended their FunctionResponse payloads to the conversation.
+// cluster) and appended its FunctionResponse payload to the conversation.
 // ConfigForContext echoes ctx.AllText (which response.ExtractTextFromContents
 // includes FunctionResponse.Response JSON in, per gemini.go) back verbatim as
 // the final answer text, so the E2E test can assert on genuine remote-cluster
@@ -61,7 +76,7 @@ func (s *afFleetKubectlScenario) Name() string { return "af_fleet_kubectl_e2e" }
 func (s *afFleetKubectlScenario) Metadata() ScenarioMetadata {
 	return ScenarioMetadata{
 		Name:        "af_fleet_kubectl_e2e",
-		Description: "E2E-FLEET-016: real AF binary calls list_clusters + kubectl_get(cluster_id) via real A2A",
+		Description: "E2E-FLEET-016: real AF binary calls kubectl_get(cluster_id) via real A2A",
 	}
 }
 
@@ -80,7 +95,6 @@ func (s *afFleetKubectlScenario) ConfigForContext(ctx *DetectionContext) MockSce
 		ScenarioName: s.Name(),
 		ForceText:    BoolPtr(false),
 		MultiToolCalls: []MultiToolCallEntry{
-			{Name: "list_clusters"},
 			{Name: "kubectl_get", Arguments: map[string]interface{}{
 				"kind":       "Deployment",
 				"name":       "coredns",
