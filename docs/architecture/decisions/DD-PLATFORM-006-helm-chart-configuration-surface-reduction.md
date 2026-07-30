@@ -2,11 +2,12 @@
 
 **Status**: 🟡 **PROPOSED** (pending user approval)
 **Decision Date**: TBD (on approval)
-**Version**: 5.8 (Decision Area 4 correction + new Decision Area 14: retracted the premise that a
-field removed from `values.yaml` automatically "keeps its schema default" — Helm does not inject
-`values.schema.json` defaults at render time. Split Decision Area 4 into 4a, the 95-field
-zero-value-default trim already implemented, and a new Decision Area 14, the remaining 234
-non-zero-default fields, deferred to a dedicated PR9 pending a materialized-defaults generator)
+**Version**: 5.9 (new Decision Area 15: `monitoring.*.enabled`'s default-off blast radius is larger
+than Decision Area 6 assumed — EffectivenessMonitor's alert-resolution scoring, KubernautAgent's
+Prometheus/AlertManager MCP tools, and APIFrontend's severity triage all silently degrade with zero
+onboarding visibility. Decision: keep opt-in (no safe universal default `url` exists), add a
+NOTES.txt hint naming the specific lost capabilities and the fix — Decision Area 6's toggle-mandate
+decision itself is unchanged)
 **Date**: 2026-07-29
 **Deciders**: Kubernaut Platform (chart maintainers)
 **Applies To**: `charts/kubernaut` (Helm chart) only — no Kubernaut Operator changes
@@ -357,7 +358,9 @@ is not opt-in, unlike `helm lint --strict`, which only promotes lint *warnings* 
 
 **Explicitly excluded** (feature/topology toggles, not security controls — no change):
 `global.fleet.enabled`, `fleetmetadatacache.enabled` (see Decision Area 10), `console.enabled`,
-`apifrontend.enabled`, all `<service>.autoscaling.enabled`, all `monitoring.*.enabled`,
+`apifrontend.enabled`, all `<service>.autoscaling.enabled`, all `monitoring.*.enabled` (staying
+opt-in is correct — no safe universal default `url` exists — but see Decision Area 15 for the
+onboarding-visibility gap this left behind),
 `kubernautAgent.interactive.enabled` (see Decision Area 11), `workflowexecution.config.tekton`,
 `datastorage.config.retention.enabled` (not purging is the *safer* default against AU-11's 7-year
 floor), `kubernautAgent.alignmentCheck.enabled` (a genuine cost/benefit trade-off — 2x LLM calls —
@@ -695,6 +698,68 @@ scoped as its own PR with its own render-validity gate rather than folded into D
 
 ---
 
+### Decision Area 15 — Monitoring Opt-In Blast Radius (NOTES.txt Visibility)
+
+**Finding, raised on user review of Decision Area 6's exclusion list**: `monitoring.*.enabled`
+was excluded from Decision Area 6 on the correct narrow ground that it's a feature/integration
+toggle, not a security control. Re-examined more broadly, its default-off blast radius is larger
+than "just an optional integration" and ships with zero onboarding visibility:
+
+1. **EffectivenessMonitor** (`pkg/effectivenessmonitor/alert/alert.go`, BR-EM-002) — deployed
+   unconditionally, no `enabled` toggle of its own — loses its alert-resolution scoring component
+   entirely when `monitoring.alertManager.enabled=false` (the default): `Score: nil`, "AlertManager
+   unavailable or disabled." It cannot confirm whether a remediation's triggering alert actually
+   cleared.
+2. **KubernautAgent's RCA** (`templates/kubernaut-agent/kubernaut-agent.yaml:182-195`) — loses the
+   `prometheus`/`alertmanager` MCP investigation tools outright when the corresponding `monitoring.*
+   .enabled` is false. The LLM performing root-cause analysis has no live metric/alert-state query
+   capability.
+3. **APIFrontend's severity triage** (`templates/apifrontend/apifrontend.yaml:91-96`) — silently
+   falls back to its non-Prometheus default when `monitoring.prometheus.enabled=false`.
+4. **No NOTES.txt hint** existed for any of the above — unlike `console.ingress.enabled=false`
+   (Decision Area 9), which does get a post-install hint, a fresh installer had no way to learn any
+   of this three-way degradation was in effect.
+
+**Why "just default it to `true`" doesn't work**: `kubernaut.monitoring.validate` (`_helpers.tpl`)
+unconditionally `fail()`s if `enabled=true` but `url` is empty, and unlike `postgresql`/`valkey`
+(in-chart, deterministic address) or `networkPolicies.apiServerCIDR` (auto-discoverable via a
+`lookup` on the universally-present `kubernetes` Endpoints object), Prometheus/AlertManager are
+external to the chart with **no single discoverable convention** — kube-prometheus-stack, OpenShift's
+`openshift-monitoring`, and hand-rolled installs each use different Service names/namespaces.
+Guessing wrong would silently point EffectivenessMonitor/KubernautAgent at a nonexistent or
+wrong-tenant endpoint, producing misleading effectiveness scores — a worse failure mode than an
+honest, visible "disabled."
+
+**Options considered**:
+1. **NOTES.txt hint only (selected)**: extend the chart's existing (unconditional) `=== Monitoring
+   ===` NOTES.txt block — currently only about wiring AlertManager's webhook to Gateway, i.e.
+   Kubernaut *receiving* alerts — with a second, conditional paragraph naming exactly which of the
+   three capabilities above are degraded and the `--set` flags to fix it. Zero risk, no change to
+   already-approved defaults or the mandatory-field count, ships immediately.
+2. **Auto-discovery via `lookup`** for the 1-2 most common conventions (kube-prometheus-stack
+   Service names, OpenShift's `openshift-monitoring`) with `enabled` defaulting to "try, fall back to
+   off" — rejected for this DD: real risk of silently guessing a wrong or nonexistent endpoint on
+   non-standard clusters (see above), and `lookup` requires a live cluster (same
+   `helm template`/GitOps blind spot already documented for Decision Area 3/7). Worth its own future
+   DD/spike if pursued, not folded into this one.
+3. **Make `monitoring.prometheus/alertManager.url` mandatory fields**, forcing every installer to
+   decide — rejected: directly conflicts with this DD's own purpose of *shrinking* the mandatory-field
+   count, and would block legitimate zero-metrics trial/demo installs that have no Prometheus stack
+   at all.
+
+**Decision**: option 1. Add a conditional block to the existing `=== Monitoring ===` NOTES.txt
+section, firing independently per sub-toggle (`monitoring.prometheus.enabled=false` and/or
+`monitoring.alertManager.enabled=false`), each naming its specific lost capability and the exact
+`--set` flags to restore it. No default value changes; Decision Area 6's exclusion of
+`monitoring.*.enabled` stands as correct on its narrow "not a security control" ground — this only
+closes the separate visibility gap.
+
+**Confidence**: 97% — pure documentation/template-string change, no behavioral or default-value
+change, tested via `helm-unittest` `matchRegexRaw`/`notMatchRegexRaw` assertions against
+`NOTES.txt`'s rendered output for the three states (both off, one off, both on).
+
+---
+
 ## Considered and Declined: Removing `postgresql`/`valkey` from the Chart
 
 Removing `postgresql`/`valkey` from the chart entirely — making an externally-provisioned
@@ -775,6 +840,10 @@ needed; this is closed, not deferred.
    which excludes `values.schema.json` from its cache key and wouldn't reliably catch this.
 7. See the implementation plan (`.cursor/plans/dd-platform-006_full_implementation_10d3769d.plan.md`)
    for the full RED/GREEN test breakdown and pre-assigned Test Scenario IDs per PR.
+8. **Decision Area 15-specific**: `helm-unittest` asserting the `NOTES.txt` monitoring hint renders
+   independently per sub-toggle (`monitoring.prometheus.enabled` off, `monitoring.alertManager
+   .enabled` off, both on) with the exact lost-capability wording and `--set` fix commands present
+   or absent as expected.
 
 ---
 
@@ -795,13 +864,14 @@ needed; this is closed, not deferred.
 
 ---
 
-**Document Version**: 5.8 (Decision Area 4 correction + new Decision Area 14: retracted DA4's
-original "removed fields keep their schema default automatically" premise — Helm doesn't inject
-`values.schema.json` defaults into `.Values` at render time, a fact the `mcpGatewayEndpoint`/
-`mcpGatewayType` `quote`-nil-drop bugs found during DA4a's implementation demonstrated concretely.
-Split DA4 into DA4a (the 95-field zero-value-default trim, implemented) and DA14 (the remaining
-234 non-zero-default fields, deferred to a dedicated PR9 pending a materialized-defaults
-generator))
+**Document Version**: 5.9 (new Decision Area 15: on user review of Decision Area 6's exclusion list,
+found `monitoring.*.enabled`'s default-off state silently degrades EffectivenessMonitor's
+alert-resolution scoring (BR-EM-002), KubernautAgent's RCA tool access (Prometheus/AlertManager MCP
+tools), and APIFrontend's severity triage — with no NOTES.txt visibility, unlike the
+`console.ingress.enabled=false` hint added in Decision Area 9. No safe universal default `url`
+exists for either dependency (unlike `postgresql`/`valkey`, in-chart with a deterministic address,
+or `apiServerCIDR`, `lookup`-discoverable), so `monitoring.*.enabled` stays opt-in; closed the
+visibility gap with a NOTES.txt hint instead, implemented and tested)
 **Last Updated**: 2026-07-29
 **Status**: 🟡 Proposed — awaiting user approval. Field-census recount and file/line-reference
 verification against `main` post-PR #1755 completed (Decision Area 12) — no Decision Area's
@@ -817,4 +887,6 @@ becoming unusable. Its drift-freshness check is enforced by dedicated new steps 
 `ci-pipeline.yml` and `chart-release.yml` (verified the `generate-crd-docs` precedent this was
 modeled on is actually unenforced anywhere in CI today, and that the existing Go-codegen cache
 path excludes `values.schema.json` from its cache key — neither could be relied on as-is). No
-local git hook — CI enforcement is sufficient, hooks are bypassable.
+local git hook — CI enforcement is sufficient, hooks are bypassable. Decision Area 15 (monitoring
+opt-in visibility) implemented as a NOTES.txt hint — no default-value change, Decision Area 6's
+exclusion of `monitoring.*.enabled` stands.

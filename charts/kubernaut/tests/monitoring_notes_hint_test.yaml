@@ -1,0 +1,71 @@
+suite: "DD-PLATFORM-006 Decision Area 15: NOTES.txt hints at the RCA/scoring capability lost when monitoring.prometheus/alertManager stays at its default (disabled)"
+templates:
+  - templates/NOTES.txt
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "both monitoring.prometheus and monitoring.alertManager unset (default): NOTES.txt warns about both lost capabilities and gives the fix"
+    asserts:
+      - matchRegexRaw:
+          pattern: "monitoring\\.prometheus/alertManager integration is OFF by default"
+      - matchRegexRaw:
+          pattern: "EffectivenessMonitor cannot score metric-based remediation effectiveness"
+      - matchRegexRaw:
+          pattern: "KubernautAgent's RCA loses its Prometheus MCP investigation tool"
+      - matchRegexRaw:
+          pattern: "EffectivenessMonitor cannot confirm whether the triggering alert actually"
+      - matchRegexRaw:
+          pattern: "KubernautAgent's RCA loses its AlertManager MCP investigation tool"
+      - matchRegexRaw:
+          pattern: "--set monitoring\\.prometheus\\.enabled=true --set monitoring\\.prometheus\\.url="
+      - matchRegexRaw:
+          pattern: "--set monitoring\\.alertManager\\.enabled=true --set monitoring\\.alertManager\\.url="
+
+  - it: "monitoring.prometheus.enabled=true, alertManager still unset: only the AlertManager-specific warning renders"
+    set:
+      monitoring:
+        prometheus:
+          enabled: true
+          url: "http://prometheus.monitoring.svc.cluster.local:9090"
+    asserts:
+      - matchRegexRaw:
+          pattern: "monitoring\\.prometheus/alertManager integration is OFF by default"
+      - notMatchRegexRaw:
+          pattern: "EffectivenessMonitor cannot score metric-based remediation effectiveness"
+      - notMatchRegexRaw:
+          pattern: "KubernautAgent's RCA loses its Prometheus MCP investigation tool"
+      - matchRegexRaw:
+          pattern: "EffectivenessMonitor cannot confirm whether the triggering alert actually"
+      - matchRegexRaw:
+          pattern: "KubernautAgent's RCA loses its AlertManager MCP investigation tool"
+
+  - it: "both monitoring.prometheus and monitoring.alertManager enabled with URLs: the hint block is entirely absent"
+    set:
+      monitoring:
+        prometheus:
+          enabled: true
+          url: "http://prometheus.monitoring.svc.cluster.local:9090"
+        alertManager:
+          enabled: true
+          url: "http://alertmanager.monitoring.svc.cluster.local:9093"
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "monitoring\\.prometheus/alertManager integration is OFF by default"
