@@ -2,7 +2,10 @@
 
 **Status**: 🟡 **PROPOSED** (pending user approval)
 **Decision Date**: TBD (on approval)
-**Version**: 5.0 (lean reconstruction)
+**Version**: 5.7 (PR5/DA8 pre-implementation finding, new Decision Area 13: Decision Area 8's
+Valkey TLS-only cutover would have permanently broken APIFrontend's replay-cache Valkey client,
+which had zero TLS support in Go — closed with a small, in-scope Go change mirroring the fleet's
+existing shared TLS pattern, not deferred or worked around with a dual-listener compromise)
 **Date**: 2026-07-29
 **Deciders**: Kubernaut Platform (chart maintainers)
 **Applies To**: `charts/kubernaut` (Helm chart) only — no Kubernaut Operator changes
@@ -38,9 +41,8 @@
 - #1737 / PR #1755 (merged): E2E Helm migration work that added `nodePort`, `ingress`
   (Gateway/APIFrontend, new), and NetworkPolicy `ingressCIDRs`/`ingressNamespaceSelectors` fields,
   and flipped `console.ingress.enabled`'s default `true`→`false` (formalized as BR-PLATFORM-009).
-  **A full field-census recount against these new schema fields, and verification that this DD's
-  file/line references still match post-merge `main`, is an outstanding follow-up** — not yet
-  completed as of this reconstruction.
+  Field-census recount and file/line-reference verification against post-merge `main` completed —
+  see Decision Area 12.
 
 ---
 
@@ -143,27 +145,94 @@ fastest self-service escape hatch and must `kubectl delete networkpolicy/<name>`
 Mitigated: the traffic matrix has shipped since #285 with no reported connectivity gaps; direct
 `kubectl delete` remains available even without a Helm-managed toggle.
 
-**Pre-merge gate**: `kubernaut.np.apiServerPeers`'s `apiServerCIDR`/`apiServerCIDRs`
-auto-discovery uses the `lookup` function, which returns empty under `helm template`-only
-rendering (the mode ArgoCD/Flux GitOps pipelines use). This change removes the
-`networkPolicies.enabled=false` escape hatch a GitOps user previously had if they hit this —
-verify this repo's own ArgoCD GitOps CI step already sets `apiServerCIDR`/`apiServerCIDRs`
-explicitly before this Decision Area's PR merges, not just document the risk.
+**Pre-merge gate — verified, not just documented**: `kubernaut.np.apiServerPeers`'s
+`apiServerCIDR`/`apiServerCIDRs` auto-discovery is guarded by `kubernaut.hasClusterAccess`
+(a `lookup "v1" "Namespace" "" "kube-system"` probe), which is false under `helm template`-only
+rendering (the mode ArgoCD/Flux GitOps pipelines use) — so the `fail()` for "could not
+auto-discover" is structurally unreachable in that mode regardless of whether
+`apiServerCIDR`/`apiServerCIDRs` is set. Confirmed empirically: this repo's own ArgoCD GitOps CI
+leg (`ci-pipeline.yml`'s `Create ArgoCD Application` step) does **not** set `apiServerCIDR`/
+`apiServerCIDRs` in its `valuesObject` and relies on `networkPolicies.enabled`'s prior default of
+`true` (never overridden to `false` there) — i.e. this exact code path (mandatory NetworkPolicies,
+no CIDR override, GitOps rendering) is already exercised by that currently-green CI leg today.
+Removing the `networkPolicies.enabled=false` escape hatch changes nothing for it. No CI change
+required for this Decision Area.
 
 ### Decision Area 4 — Values.yaml Trim
 
 **Decision**: trim the shipped `values.yaml` to mandatory fields (7) + feature-enable toggles
-(~7-12) only; every already-defaulted field keeps its schema default and moves to the README's
-configuration reference table instead. Acceptance gate: `helm lint` clean + `helm template`
-renders without error for the trimmed file (and `+ values-fleet.yaml`) — a *different* rendered
-value than before is acceptable, an error or invalid manifest is not (no backward-compatibility
-requirement, pre-GA).
+(~7-12) only; every already-defaulted field keeps its schema default and moves to an
+**auto-generated** reference doc instead of a hand-authored README table (see "Configuration
+reference generation" below). Acceptance gate: `helm lint` clean + `helm template` renders without
+error for the trimmed file (and a helm-unittest fixture with the Fleet fields below set inline) —
+a *different* rendered value than before is acceptable, an error or invalid manifest is not (no
+backward-compatibility requirement, pre-GA).
+
+**Configuration reference generation (revises the plan's original "moves to the README's
+configuration reference table" framing, per direct user instruction)**: hand-transcribing ~394
+fields into README tables was found to not scale. `charts/kubernaut/README.md` is already 895
+lines, of which the existing "Configuration Reference" section (a curated, not exhaustive, subset)
+is already 385 lines; exhaustively covering every trimmed field the same way would push the file
+past 1,500 lines. Neither `helm show values` nor `helm show all` renders `values.schema.json`'s
+`description` fields, so once a field's inline YAML comment is deleted from the trimmed
+`values.yaml`, standard Helm tooling can no longer surface it at all — some external reference is
+required, not optional.
+
+The repo already has an established, working pattern for exactly this shape of problem:
+`generate-crd-docs`/`gen-diff` (Makefile) auto-generates `docs/generated/crds.md` from Go API
+types via `crd-ref-docs`, committed to git, staleness-checked in CI (`make gen-diff` fails the
+build if the generated file doesn't match a fresh run). This decision mirrors that pattern instead
+of introducing a new one: a new small Go generator (`hack/gen-helm-config-docs/`, no new external
+dependency — pure `encoding/json` walking `values.schema.json`'s `properties`/`definitions`/
+`$ref`/`required`) emits `docs/generated/helm-values-reference.md`, one table per top-level
+service (mirroring the README's existing per-service `###` structure) with Parameter/Type/
+Description/Default/Required columns sourced directly from the schema. Wired into the existing
+`generate`/`gen-diff` targets — no new CI workflow needed. Because the generator walks the schema
+itself rather than a hand-maintained list, it closes **both** directions of drift discussed above
+for the Fleet fields: a renamed/removed field disappears from the next generated run (no stale
+row), and a newly-added field appears automatically (no missing row) — stronger than the
+`additionalProperties: false`-only protection available to hand-authored content.
+
+README's existing Fleet section keeps its genuinely narrative content (the "sole source of truth"
+architecture explanation, the `mcpGatewayEndpoint`-is-required-for-which-services callout); only
+its exhaustive field-listing table is replaced with a pointer to
+`docs/generated/helm-values-reference.md`'s Global section plus one short worked example.
+
+Output location is `docs/generated/` (matching `crds.md`'s existing convention) rather than inside
+`charts/kubernaut/` — deliberately different from the Fleet-overlay-file reasoning earlier in this
+Decision Area, because this is a *passive reference* a user consults optionally (readable on
+GitHub, or by browsing a git checkout), not a file required to *complete* an install via `-f`; the
+OCI/airgap unreachability concern that ruled out a shipped `values-fleet.yaml` doesn't apply here.
+
+**CI enforcement, corrected after checking the actual precedent (per direct user instruction —
+"this should be part of the release phase: if any drift is found the release should fail")**: the
+claim above that "the existing `gen-diff` CI gate covers it automatically" doesn't hold up under
+verification and is retracted. `generate-crd-docs` is never invoked by any `.github/workflows/*`
+file — `docs/generated/crds.md` can silently drift today with zero CI enforcement, a pre-existing
+gap unrelated to this DD (out of scope to fix here, flagged for awareness only). Separately, simply
+chaining the new target onto the plain `generate` target wouldn't be sufficient even if `generate`
+itself were CI-enforced: `ci-pipeline.yml`'s Go-codegen step is cache-gated by a hash of
+`api/**/*.go`/`pkg/shared/types/**/*.go`/OpenAPI files only, which excludes
+`values.schema.json` — a schema-only change could get a false cache-hit and skip regeneration
+silently. The actual design: a new, uncached, dedicated step in both `ci-pipeline.yml` (every PR —
+`ci-pipeline.yml` has no path filter excluding chart changes; it already runs `helm lint --strict`/
+`helm unittest` unconditionally) and `chart-release.yml` (currently has zero `make` steps of any
+kind, on `chart-v*` tags only — a release-time backstop for a tag ever cut from a commit that
+bypassed PR CI), each independently running `make generate-helm-config-docs` then `git diff
+--exit-code -- docs/generated/helm-values-reference.md`, scoped to that one file rather than
+piggy-backing on the cached Go-codegen infrastructure.
+
+**Git hook considered and declined**: the generator itself is expected to be sub-second (pure
+`encoding/json` over a single ~3,300-line file, no network calls), so a pre-commit/pre-push hook
+wouldn't have a real performance problem. Declined anyway — a git hook is opt-in and bypassable
+(`--no-verify`, or simply never installed), so it can never substitute for the CI gate above; add
+it only as a convenience if the two CI gates prove insufficient in practice.
 
 **`postgresql.enabled`/`valkey.enabled`**: included in the standard trim (both already default
 `true`; the fully functional `--set postgresql.enabled=false --set postgresql.host=...` BYO
-override, and the Valkey equivalent, remain unaffected) — documented as one README row each, not
-shown in the example file. This is a visibility-only change; no schema field is removed or
-renamed.
+override, and the Valkey equivalent, remain unaffected) — covered by the auto-generated reference
+(below), not shown in the example file; README keeps a short narrative callout for the BYO
+override. This is a visibility-only change; no schema field is removed or renamed.
 
 **`kubernautAgent.llmProfileRef` default (mandatory count 8→7)**: defaults to `"primary"` instead
 of an unconditional `fail()`, grounded in `"primary"` already being the universal, 100%-consistent
@@ -175,18 +244,57 @@ existing `fail()` fires instead, with a more actionable message. The guarantee m
 template `fail()` to a schema-level requirement on whichever profile ends up referenced; it isn't
 removed.
 
-**New `values-fleet.yaml`**: a Fleet-Federation-specific overlay (~19 fields: `global.fleet.*` +
-per-service `fleet.oauth2.credentialsSecretRef`/`namespace` overrides), following
-`values-airgap.yaml`'s header-comment style but with a working `-f values.yaml -f
-values-fleet.yaml` example.
+**No separate `values-fleet.yaml` overlay (reversed from an earlier draft of this decision, per
+direct user instruction)**: a second overlay file only works cleanly for a *local checkout*
+install (`-f charts/kubernaut/values-fleet.yaml`, a real path on disk). For a pure OCI install
+(`helm install kubernaut oci://.../kubernaut --version X.Y.Z -f my-values.yaml`, the pattern
+`DEVELOPER_GUIDE.md` documents as the production default) that file exists only inside the
+packaged chart tarball and isn't reachable by `-f` without first `helm pull ... --untar`-ing the
+chart to disk. A version-pinned `raw.githubusercontent.com` URL was considered (Helm's `-f`
+officially accepts a URL, not just a path) and rejected for two independent reasons: (1)
+Fleet-Federation edge clusters are exactly the population most likely to run in a
+restricted-network or airgapped environment, where a live fetch from `github.com` at install time
+is not a safe assumption; (2) a URL pinned to a specific git ref is one more artifact that can
+silently drift out of sync with schema changes if a release forgets to update it — a maintenance
+liability independent of the network concern. Instead, the ~19 Fleet-specific fields
+(`global.fleet.*` + per-service `fleet.oauth2.credentialsSecretRef`/`namespace` overrides) are
+covered automatically by the auto-generated reference (below) rather than a hand-copied README
+block — README keeps only a short worked example (concrete values enabling Fleet) plus its
+existing narrative explanation of the shared-vs-per-service semantics. A Fleet user adds the
+fields directly to the single `values.yaml` they already maintain and pass via `-f`, identical
+mechanism regardless of OCI vs. local-checkout, airgapped or not.
+
+**Drift protection for the README's Fleet block**: `global.fleet` and every per-service `fleet`
+block have `"additionalProperties": false` in the schema (verified) — if a documented field name
+is ever renamed or removed, `helm template`/`helm lint` hard-fails with a schema violation rather
+than silently ignoring the stale key, *provided* a helm-unittest fixture actually exercises the
+README's exact field set (this DD's render-validity gate below requires exactly that). This closes
+the "documentation goes stale and silently wrong" failure mode. It does **not** close the opposite
+one — a new Fleet field added to the schema without anyone remembering to add it to the README
+block — which is a human-process risk shared by any documentation-based approach, including a real
+committed file (nothing auto-detects "a related field was added, should this mention it too").
+
+**`values-airgap.yaml`'s existing usage docs have the same root-cause bug, fixed as part of this
+DD**: its own header comment shows `-f charts/kubernaut/values-demo.yaml -f
+charts/kubernaut/values-airgap.yaml` — `values-demo.yaml` does not exist anywhere in the chart, and
+even if it did, `values.yaml` is loaded automatically as the chart's default layer and never needs
+an explicit `-f`. Unlike Fleet, disconnected/airgapped installs are *not* well served by a raw-URL
+fetch either (the whole premise of airgap is no live internet access), so the correct fix here is
+different: document the actual working OCI-compatible sequence, `helm pull
+oci://quay.io/kubernaut-ai/charts/kubernaut --version <X.Y.Z> --untar` followed by `helm install
+kubernaut ./kubernaut -f ./kubernaut/values-airgap.yaml --set global.image.registry=...` — extract
+first, then install from the now-local directory, consistent with an airgapped user needing a local
+mirror step anyway.
 
 **The 7 mandatory fields**: `aianalysis.policies.{content,existingConfigMap}` and
 `signalprocessing.policies.{content,existingConfigMap}` (either/or pairs, unconditional `fail()`),
 and whatever profile `kubernautAgent.llmProfileRef` resolves to (by default `"primary"`, or
 explicitly) must itself supply `global.llmProfiles.<name>.{provider,model,
-credentialsSecretName}` (schema `required`, enforced by `helm lint --strict`) — `global.llmProfiles`
-ships as `{}` with no default profile, so there is nothing for `credentialsSecretName` in
-particular to fall back to.
+credentialsSecretName}` (schema `required` on `global.llmProfiles`'s `additionalProperties`,
+enforced unconditionally by `helm install`/`helm template`/`helm upgrade` — JSON-schema validation
+is not opt-in, unlike `helm lint --strict`, which only promotes lint *warnings* to errors) —
+`global.llmProfiles` ships as `{}` with no default profile, so there is nothing for
+`credentialsSecretName` in particular to fall back to.
 
 ### Decision Area 5 — Remove Dead/Non-Configurable Fields
 
@@ -241,6 +349,39 @@ cryptographically continuous sequence over Postgres audit records, which *do* su
 (their PVC already has `resource-policy: keep`). Without the same annotation here, a reinstall
 would silently break hash-chain verifiability at the reinstall boundary. The exists-only check and
 the annotation are both required together — either alone is insufficient.
+
+**Correction found during implementation — `resource-policy: keep` is inert here, the real
+mechanism is omission**: unlike `postgresql-data`/`valkey-data` (PVCs Helm itself creates and
+tracks in its release manifest, where `resource-policy: keep` genuinely instructs Helm's own
+uninstall logic to skip deletion), the audit-HMAC Secret is created out-of-band by `kubectl create
+secret` inside a hook Job's shell script — Helm never tracks it as part of the release at all, so
+`helm uninstall` was never going to touch it regardless of any annotation. The annotation is kept
+anyway (cheap, matches repo convention, self-documents intent to a human running `kubectl get
+secret -o yaml`), but the actual survival guarantee comes from deliberately never adding
+`datastorage-audit-hmac-key` to `tls-cert-job.yaml`'s Job 4 (`tls-cleanup`, `post-delete`)
+`kubectl delete secret ...` list — the same Job that already, correctly, deletes the *TLS* secrets
+it created (which must not survive, since they rotate). A code comment at the omission point flags
+this as deliberate, not an oversight, for future editors.
+
+**Correction found during implementation — a second `lookup`+`fail()` timing bug, same shape as
+Decision Area 3's**: `templates/infrastructure/secrets.yaml` already had an *opt-in* validation
+block for `datastorage.config.auditHashKey` — `lookup` the Secret, `fail()` if absent — gated by a
+local "does this look like a live cluster" canary (`lookup "v1" "Namespace" "" "kube-system"`,
+functionally identical to Decision Area 3's `kubernaut.hasClusterAccess`). Helm renders **all**
+templates (including this `lookup`) in a single pass *before* any `pre-install`/`pre-upgrade` hook
+executes (confirmed against Helm's documented hook lifecycle) — so on every fresh `helm install`
+against a real cluster, this check would see the not-yet-hook-created Secret as absent and `fail()`
+the entire install, unconditionally defeating Section 4's auto-generation. This is a pre-existing
+latent bug in the opt-in validation, now surfaced by Section 4 giving `tls.mode=hook` users a
+working alternative to pre-creation. **Fix**: scope the existing check to `(existingSecret set) OR
+(tls.mode != "hook")` — i.e. skip it exactly when Section 4 will handle auto-generation itself
+(default name, hook mode), keep it in force for BYO (`existingSecret` set, same contract as
+postgresql/valkey) and non-hook `tls.mode`s, where no auto-generation mechanism exists and
+pre-creation is genuinely required. Verified empirically: this repo's own dev kubeconfig has no
+reachable cluster, so this class of `lookup`-gated behavior (postgresql/valkey secret checks
+included) is structurally untestable via `helm template`/`helm-unittest` in this environment or in
+GitOps rendering — proof is necessarily deferred to the Kind-based CI smoke test (Validation
+Strategy item 4).
 
 ### Decision Area 8 — Valkey Server-Side TLS (prerequisite for Decision Area 6)
 
@@ -336,6 +477,127 @@ zero other callers).
 `apifrontend.enabled=true`, since APIFrontend is currently the sole consumer, making the dependency
 explicit rather than an unenforced possibility that renders successfully but can never be used.
 
+### Decision Area 12 — Post-#1755 Regression Check & Field Census
+
+PR #1755 raised the schema's total leaf-field count from ~375 to **404** (net +29 — new
+Gateway/APIFrontend `ingress`/`nodePort` fields, NetworkPolicy `ingressCIDRs`/
+`ingressNamespaceSelectors` + new `idp`/`llm`/`mcpGateway` blocks, and three new APIFrontend
+config blocks: `mcp`, `interactive`, `rateLimit`). Verified directly against merged `main` that
+none of these new fields conflict with or require redesigning Decision Areas 1-11:
+
+- **DA1/DA3 structurally unaffected**: `pdb.yaml`'s shared per-service loop and all 14
+  NetworkPolicy templates' `{{- if and .Values.networkPolicies.enabled
+  .Values.networkPolicies.<service>.enabled ... }}` guards are unchanged in shape — #1755's new
+  `ingressCIDRs`/`ingressNamespaceSelectors` fields are used *inside* the guarded block, not part
+  of the enabling condition.
+- **DA7/DA8 implementation detail**: `tls-cert-job.yaml`'s Section 2 per-service cert loop already
+  includes `apifrontend` (added by #1755, independently of this DD) — Decision Area 8's "add
+  `valkey-service` to the loop" step targets the *current* membership (`gateway-service
+  data-storage-service kubernaut-agent fleetmetadatacache-service apifrontend`). No
+  section-renumbering conflict — the file's Section 1/2/3 structure is unchanged, so Decision
+  Area 7's planned "Section 4" is still a clean append.
+- **DA9 guards confirmed present**, at shifted line numbers only (`console.yaml`'s three `fail()`
+  guards now sit around lines 86-92) — the design is unaffected; exact lines should be re-grepped
+  at implementation time rather than trusted from any prior write-up, including this one.
+- **Three new #1755 toggles categorized, no new Decision Area needed**:
+  - `apifrontend.config.mcp.enabled` (defaults `true`) — a genuine feature toggle for AF's own
+    external-facing `/mcp` endpoint. Belongs in Decision Area 4's "feature-enable toggle" bucket
+    (shown in the trimmed `values.yaml`), not a security control.
+  - `apifrontend.config.interactive.enabled` (defaults `true`, own doc comment states "not a
+    behavior-changing fix") — a Decision Area 4 "Bucket 98" trim candidate, hidden with its
+    working default.
+  - `apifrontend.config.rateLimit` (no `enabled` field at all — AF's own concurrent-session/
+    request-rate limits, always on, four tuning fields each with a safe default) — Bucket 98 trim
+    candidate, distinct from `datastorage.config.server.rateLimit.enabled` (Decision Area 6's
+    target).
+
+**Outcome**: no Decision Area's chosen alternative changes. The mandatory-field count (7) and this
+DD's confidence levels are unaffected — this is a scope-expansion of Decision Area 4's trim
+candidate set (+29 fields to categorize, following the same test-then-trim methodology already
+established) plus a handful of implementation-detail corrections (current loop membership, current
+line numbers), not a design change.
+
+### Decision Area 13 — APIFrontend Replay-Cache TLS Client (prerequisite for Decision Area 8)
+
+**Finding, discovered during PR5/Decision Area 8 pre-implementation analysis**: Decision Area 8
+makes the in-chart Valkey Deployment TLS-only (disables the plaintext port entirely). Two Go
+clients connect to it:
+
+| Client | Go-side TLS support (before this Decision Area) |
+|---|---|
+| DataStorage (`pkg/datastorage/server/server_construction.go`) | Full — `appCfg.Redis.TLS.Enabled` → `RedisTLSConfig.BuildTLSConfig()` → `redisOpts.TLSConfig`, already wired |
+| APIFrontend replay cache (`cmd/apifrontend/auth_wiring.go`'s `newValkeyReplayCache`, `pkg/apifrontend/config.ReplayCacheConfig`) | **None** — `redis.Options{Addr, Password, DB}` had no `TLSConfig` field anywhere, and `ReplayCacheConfig` had no CA/cert fields to even plumb one through |
+
+Left unaddressed, Decision Area 8 landing would have permanently broken
+`apifrontend.config.auth.replayCache.enabled=true` (TLS handshake against a plaintext client) —
+not a hypothetical edge case, since Decision Area 6/PR6 makes that same toggle mandatory-on by
+default, and `scripts/helm-smoke-test.sh` already exercises it today (template-only assertions
+currently, so CI would not have caught the runtime break). This is a genuine cross-Decision-Area
+gap: Decision Area 6's table justified mandating `replayCache.enabled` with "None — Valkey already
+load-bearing," drafted before Decision Area 8's TLS-only change existed.
+
+**Options considered** (escalated to the user given the architectural/scope implications):
+1. Add minimal Go TLS support to the replay-cache client — **selected**.
+2. Dual-listener Valkey (keep plaintext 6379 alongside TLS 6380) — rejected: only partially
+   encrypts Valkey traffic (DataStorage's, not the replay cache's jti state), undermining Decision
+   Area 8's stated intent for a security-hardening pass explicitly about closing exactly this kind
+   of gap.
+3. Defer Decision Area 8 (and Decision Area 6's `redis.tls` mandate) to a separate follow-up issue
+   — rejected: delays needed hardening without technical justification once option 1 was shown to
+   be small and low-risk.
+
+**Decision**: implement option 1, explicitly requiring the result be "on par with the rest of the
+services" (the user's words) rather than a stripped-down, replay-cache-specific implementation —
+i.e. reuse the fleet's existing shared TLS hardening primitive, not a smaller ad-hoc one:
+
+1. **`pkg/shared/tls`**: extract `BuildTLSConfig(caFile string, opts ...TLSTransportOption)
+   (*tls.Config, error)` — the CA-verified, security-profile-hardened (`ApplyProfile`,
+   `getDefaultSecurityProfile()`), optional-mTLS (`WithClientCert`) `*tls.Config` construction
+   logic already inside `NewTLSTransport`, which now becomes a thin wrapper:
+   `NewTLSTransport` = `BuildTLSConfig` + `&http.Transport{TLSClientConfig: ...}`. This is the same
+   hardening every other outbound TLS client in the fleet gets (BR-ENC-001, SC-8), just exposed in
+   a form usable by non-HTTP clients (go-redis's `redis.Options.TLSConfig` wants a raw
+   `*tls.Config`, not an `*http.Transport`). Zero behavior change for existing `NewTLSTransport`
+   callers (proven by UT-TLS-DA9-006, asserting output parity between the two functions).
+2. **`pkg/apifrontend/config`**: add `ReplayCacheConfig.TLS *ReplayCacheTLSConfig`, a new type
+   mirroring `pkg/datastorage/config.RedisTLSConfig`'s field shape (`Enabled`, `CAFile`,
+   `CertFile`, `KeyFile`) for cross-service consistency — deliberately a separate type (not a
+   cross-package import), consistent with each service owning its own config package, with only
+   the `pkg/shared/tls` builder function shared. `CertFile`/`KeyFile` are unused against the
+   chart's own Valkey (`--tls-auth-clients no`, one-way TLS per Decision Area 8), kept for BYO
+   Valkey/Redis that does require mTLS — same optionality precedent as DataStorage's identical
+   fields.
+3. **`cmd/apifrontend/auth_wiring.go`**: `newValkeyReplayCache` calls `sharedtls.BuildTLSConfig`
+   when `cfg.TLS != nil && cfg.TLS.Enabled` and sets `redis.Options.TLSConfig`. A failed TLS
+   handshake (untrusted CA, unreachable host) falls into the same existing fail-open path as any
+   other connection failure — `buildReplayCache` degrades to the in-memory cache rather than
+   disabling replay protection outright (pre-existing behavior, proven unchanged by
+   `TestBuildReplayCache_TLSEnabledWrongCA_FallsBackToInMemory`).
+4. **Helm**: `apifrontend.config.auth.replayCache.tls.{enabled,caFile,certFile,keyFile}`, schema
+   and `values.yaml` defaults mirroring `datastorage.config.redis.tls`'s existing shape exactly
+   (minus `insecureSkipVerify`, a pre-existing dead field on DataStorage's side — present in its
+   JSON schema but never read by `pkg/datastorage/config.RedisTLSConfig` — deliberately not
+   propagated into a second config surface). `caFile` defaults to the already-distributed
+   inter-service CA (`kubernaut.interServiceTLS.caFile`, `/etc/tls-ca/ca.crt` — APIFrontend's pod
+   already mounts this via `kubernaut.tlsCaVolumeMount`/`kubernaut.tlsCaVolume` for unrelated
+   REST-API-client purposes, confirmed by grep, no new mount needed) so `tls.enabled=true` works
+   against the chart's own Valkey without any extra configuration; explicit override remains
+   available for a BYO Valkey/Redis signed by a different CA.
+
+**Not addressed here (separate, pre-existing, unrelated gap noted for awareness only)**:
+`datastorage.config.redis.tls.caFile` has the identical "defaults to empty string, chart doesn't
+mount `/etc/tls-ca` in `datastorage.yaml`" problem this Decision Area fixes for APIFrontend —
+tracked as an explicit line item in Decision Area 8's own PR5 implementation (add the mount, fix
+the default), not duplicated here.
+
+**Confidence**: 95% — the Go-side change reuses an existing, already-tested primitive
+(`NewTLSTransport`'s internals) behind a new exported name with a proven zero-behavior-change
+refactor; the config/wiring shape directly mirrors DataStorage's already-shipped, already-verified
+`RedisTLSConfig` pattern; the Helm CA mount is confirmed already present, not newly added. Full UT
+coverage includes a real TLS handshake against a `miniredis.RunTLS` server (not just YAML parsing)
+and its rejection path (wrong CA → fail-open fallback, confirmed via the same log line a real
+production Valkey TLS misconfiguration would emit).
+
 ---
 
 ## Considered and Declined: Removing `postgresql`/`valkey` from the Chart
@@ -358,12 +620,17 @@ needed; this is closed, not deferred.
 
 ### Positive
 1. New-user-facing `values.yaml` shrinks to roughly 7 mandatory fields + ~7-12 feature-enable
-   toggles, from ~375 total leaf fields today.
+   toggles, from 404 total leaf fields today (see Decision Area 12).
 2. Decision Areas 1-2 close real value-level duplication on top of an already-shared schema
    shape.
 3. Decision Area 3's `enabled`-toggle removal closes a latent AC-4/SC-8 compliance gap as a
    byproduct of the same onboarding-friction-reduction pass, not a separate effort.
-4. `values-fleet.yaml` gives Fleet Federation its own minimal on-ramp.
+4. Fleet Federation's ~19 fields get a documented on-ramp (worked example in the README, full
+   field list in the auto-generated reference) that works identically for OCI and local-checkout
+   installs, airgapped or not — no second file to fetch. `values-airgap.yaml`'s own OCI usage
+   docs get fixed as a byproduct (same root cause). The auto-generated
+   `docs/generated/helm-values-reference.md` keeps README's size bounded regardless of how many
+   fields the schema grows to, and can never drift from it (Decision Area 4's generation strategy).
 5. Decision Areas 7-8 deliver two independently-useful capabilities (audit-HMAC-key
    auto-provisioning, Valkey transport encryption) as a byproduct of unblocking Decision Area 6.
 6. Decision Areas 10-11 close two silent-misconfiguration gaps (FMC/backend mismatch,
@@ -392,7 +659,9 @@ needed; this is closed, not deferred.
 ## Validation Strategy
 
 1. **Render-validity gate** (all areas): `helm lint` clean, `helm template` renders without error
-   for the trimmed default `values.yaml` and `values.yaml` + `values-fleet.yaml`.
+   for the trimmed default `values.yaml` and for a helm-unittest fixture with the README's
+   documented Fleet field set applied inline (no shipped `values-fleet.yaml` file — see Decision
+   Area 4).
 2. **helm-unittest additions**: per-service merge-behavior cases for Decision Areas 1-2; explicit
    "key entirely absent" cases for every shared helper touched by Decision Area 4's trim.
 3. **Decision Area 6-specific**: `helm-unittest` asserting each of the four security-relevant
@@ -401,7 +670,11 @@ needed; this is closed, not deferred.
    audit-HMAC Secret's value is byte-identical before and after an upgrade with no other changes.
 5. **Decision Area 8-specific**: CI-integrated (not just locally-run) Kind-based `helm upgrade`
    test exercising the plaintext→TLS transition through the real `helm upgrade` command.
-6. See the implementation plan (`.cursor/plans/dd-platform-006_full_implementation_10d3769d.plan.md`)
+6. **Decision Area 4's generated reference**: dedicated, uncached `git diff --exit-code --
+   docs/generated/helm-values-reference.md` steps added to both `ci-pipeline.yml` (every PR) and
+   `chart-release.yml` (release-time backstop) — not the existing `gen-diff`/Go-codegen cache path,
+   which excludes `values.schema.json` from its cache key and wouldn't reliably catch this.
+7. See the implementation plan (`.cursor/plans/dd-platform-006_full_implementation_10d3769d.plan.md`)
    for the full RED/GREEN test breakdown and pre-assigned Test Scenario IDs per PR.
 
 ---
@@ -410,6 +683,8 @@ needed; this is closed, not deferred.
 
 - `charts/kubernaut/values.schema.json`, `charts/kubernaut/values.yaml`,
   `charts/kubernaut/values-airgap.yaml`, `charts/kubernaut/templates/**`
+- `hack/gen-helm-config-docs/` (new), `docs/generated/helm-values-reference.md` (new, generated) —
+  modeled on the existing `hack/crd-ref-docs/`/`docs/generated/crds.md` pattern
 - DD-PLATFORM-004: Anti-Affinity and PDB Enabled by Default
 - DD-PLATFORM-005: helm-unittest as a Dedicated Fast-Fail CI Gate
 - BR-PLATFORM-007: Helm Chart Minimal-Configuration Onboarding
@@ -419,8 +694,20 @@ needed; this is closed, not deferred.
 
 ---
 
-**Document Version**: 5.0 (lean reconstruction)
+**Document Version**: 5.7 (Decision Area 13: closed a PR5/Decision Area 8 blocker discovered during
+implementation — APIFrontend's replay-cache Valkey client had zero TLS support in Go, which would
+have permanently broken it once Valkey went TLS-only; fixed with a small Go change reusing the
+fleet's existing shared TLS hardening primitive rather than a dual-listener compromise or deferral)
 **Last Updated**: 2026-07-29
-**Status**: 🟡 Proposed — awaiting user approval. Outstanding follow-up: full field-census
-recount and file/line-reference verification against `main` post-PR #1755 (see "Related Issues"
-above) — not yet completed as of this reconstruction.
+**Status**: 🟡 Proposed — awaiting user approval. Field-census recount and file/line-reference
+verification against `main` post-PR #1755 completed (Decision Area 12) — no Decision Area's
+chosen alternative changed. Decision Area 4's Fleet overlay approach reversed from a shipped
+`values-fleet.yaml` file to fields folded into the user's own `values.yaml`, after identifying it
+would have been unusable for pure-OCI/airgapped Fleet installs. The ~394 fields removed from
+`values.yaml` are documented via a new auto-generated `docs/generated/helm-values-reference.md`
+rather than hand-authored README tables, after finding README.md (895 lines) couldn't scale to an
+exhaustive field-by-field transcription without becoming unusable. Its drift-freshness check is
+enforced by dedicated new steps in both `ci-pipeline.yml` and `chart-release.yml` (verified the
+`generate-crd-docs` precedent this was modeled on is actually unenforced anywhere in CI today, and
+that the existing Go-codegen cache path excludes `values.schema.json` from its cache key — neither
+could be relied on as-is). No local git hook — CI enforcement is sufficient, hooks are bypassable.

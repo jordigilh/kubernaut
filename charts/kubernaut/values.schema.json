@@ -2664,6 +2664,33 @@
                       "minimum": 0,
                       "maximum": 15,
                       "description": "Valkey logical DB index used for replay cache keys"
+                    },
+                    "tls": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "description": "DD-PLATFORM-006 DA9: TLS for the replay-cache Valkey connection. Required once the target Valkey is TLS-only (the chart's own bundled Valkey, per Decision Area 8's default).",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "default": false,
+                          "description": "Enable TLS for the replay-cache Valkey/Redis connection"
+                        },
+                        "certFile": {
+                          "type": "string",
+                          "default": "",
+                          "description": "Client certificate file path (mTLS) -- unused against the chart's own Valkey (no client cert required), available for BYO Redis that requires mTLS"
+                        },
+                        "keyFile": {
+                          "type": "string",
+                          "default": "",
+                          "description": "Client key file path (mTLS)"
+                        },
+                        "caFile": {
+                          "type": "string",
+                          "default": "",
+                          "description": "CA bundle to verify the Valkey/Redis server certificate. Defaults to the chart's distributed inter-service CA (/etc/tls-ca/ca.crt) when left empty; override only for a BYO Valkey/Redis signed by a different CA."
+                        }
+                      }
                     }
                   }
                 }

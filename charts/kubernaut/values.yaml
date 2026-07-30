@@ -1111,6 +1111,15 @@ apifrontend:
       # single-process behavior when replicas=1.
       replayCache:
         enabled: false
+        # DD-PLATFORM-006 DA9: TLS for this connection. Required once the
+        # target Valkey is TLS-only (the chart's own bundled Valkey, per
+        # Decision Area 8's default) -- leaving caFile empty defaults to the
+        # already-distributed inter-service CA at render time.
+        tls:
+          enabled: false
+          certFile: ""
+          keyFile: ""
+          caFile: ""
     # -- Issue #1737 gap found: never wired into the chart, so AF silently ran
     # with cmd/apifrontend/main.go's buildRateLimiters() package-level fallback
     # (ratelimit.DefaultConfig(): only 3 concurrent sessions, 60 tool

@@ -156,6 +156,22 @@ auth:
     redisAddr: {{ include "kubernaut.valkey.addr" . }}
     redisDB: {{ .Values.apifrontend.config.auth.replayCache.redisDB | default 1 }}
     credentialsPath: "/etc/apifrontend/valkey/valkey-secrets.yaml"
+    {{- if .Values.apifrontend.config.auth.replayCache.tls.enabled }}
+    # DD-PLATFORM-006 DA9: the chart's own Valkey is TLS-only by default
+    # (Decision Area 8), so this connection needs TLS too -- caFile defaults
+    # to the already-mounted inter-service CA (see the tls-ca volume/mount
+    # below) so this works without extra configuration against the chart's
+    # own Valkey; override only for a BYO Valkey/Redis signed by another CA.
+    tls:
+      enabled: true
+      caFile: {{ .Values.apifrontend.config.auth.replayCache.tls.caFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+      {{- with .Values.apifrontend.config.auth.replayCache.tls.certFile }}
+      certFile: {{ . | quote }}
+      {{- end }}
+      {{- with .Values.apifrontend.config.auth.replayCache.tls.keyFile }}
+      keyFile: {{ . | quote }}
+      {{- end }}
+    {{- end }}
   {{- end }}
 # Issue #1737 gap found: never wired into the chart, so AF silently ran
 # with cmd/apifrontend/main.go's buildRateLimiters() package-level
