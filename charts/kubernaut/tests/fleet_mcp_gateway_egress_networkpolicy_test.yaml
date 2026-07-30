@@ -1,0 +1,240 @@
+suite: "Fleet MCP Gateway egress NetworkPolicy (#1755 DD-TEST-015 RCA, 5th finding): every fleet-aware service's own mcpclient.NewResilient connection to the MCP Gateway itself needs an egress rule, independent of the IdP token-fetch and FMC scope-check egress rules"
+templates:
+  - templates/gateway/networkpolicy.yaml
+  - templates/remediationorchestrator/networkpolicy.yaml
+  - templates/effectivenessmonitor/networkpolicy.yaml
+  - templates/workflowexecution/networkpolicy.yaml
+  - templates/signalprocessing/networkpolicy.yaml
+  - templates/apifrontend/networkpolicy.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # --- Default (fleet disabled): no MCP Gateway egress rule anywhere ---
+  - it: "gateway NetworkPolicy has no MCP Gateway egress rule by default (global.fleet.enabled unset)"
+    template: templates/gateway/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "remediationorchestrator NetworkPolicy has no MCP Gateway egress rule by default"
+    template: templates/remediationorchestrator/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "effectivenessmonitor NetworkPolicy has no MCP Gateway egress rule by default"
+    template: templates/effectivenessmonitor/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "workflowexecution NetworkPolicy has no MCP Gateway egress rule by default"
+    template: templates/workflowexecution/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "signalprocessing NetworkPolicy has no MCP Gateway egress rule by default"
+    template: templates/signalprocessing/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "apifrontend NetworkPolicy has no MCP Gateway egress rule by default"
+    template: templates/apifrontend/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  # --- global.fleet.enabled=true: MCP Gateway egress rule renders, using the
+  # shared networkPolicies.mcpGateway.port/cidr override knobs (default
+  # 8080/0.0.0.0/0) ---
+  - it: "gateway NetworkPolicy renders the MCP Gateway egress rule when global.fleet.enabled=true, defaulting to 8080/0.0.0.0/0"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "gateway NetworkPolicy MCP Gateway egress rule honors networkPolicies.mcpGateway.port/cidr override"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+      networkPolicies:
+        mcpGateway:
+          port: 9443
+          cidr: "10.244.0.0/16"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 9443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "10.244.0.0/16"
+
+  - it: "remediationorchestrator NetworkPolicy renders the MCP Gateway egress rule when global.fleet.enabled=true"
+    template: templates/remediationorchestrator/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "effectivenessmonitor NetworkPolicy renders the MCP Gateway egress rule when global.fleet.enabled=true"
+    template: templates/effectivenessmonitor/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "workflowexecution NetworkPolicy renders the MCP Gateway egress rule when global.fleet.enabled=true"
+    template: templates/workflowexecution/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "signalprocessing NetworkPolicy renders the MCP Gateway egress rule when global.fleet.enabled=true"
+    template: templates/signalprocessing/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "apifrontend NetworkPolicy renders the MCP Gateway egress rule when global.fleet.enabled=true"
+    template: templates/apifrontend/networkpolicy.yaml
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"

@@ -5,6 +5,82 @@ Ported from the Operator's ConsoleDeployment/ConsoleService/ConsoleNginxConfigMa
 since it requires a pre-existing OIDC client Secret and an OIDC issuer configured
 on APIFrontend.
 */}}
+{{- /*
+checksum/config (Issue #1737 gap) needs both nginx config blocks reachable
+from the Deployment's pod template annotations, a separate `include` call
+site from the ConfigMap below -- named templates need their own top-level
+define (Go templates forbid nesting `define` inside an open `if`, and this
+whole file is wrapped in `.Values.console.enabled`).
+*/}}
+{{- define "kubernaut.console.httpConfYAML" -}}
+limit_req_zone $binary_remote_addr zone=api:10m rate=30r/s;
+limit_req_zone $binary_remote_addr zone=mcp:10m rate=10r/s;
+
+gzip on;
+gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript image/svg+xml;
+gzip_min_length 256;
+gzip_vary on;
+{{- end }}
+{{- define "kubernaut.console.serverConfYAML" -}}
+add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+add_header X-Content-Type-Options "nosniff" always;
+add_header X-Frame-Options "DENY" always;
+add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+proxy_ssl_trusted_certificate /etc/tls-ca/ca.crt;
+proxy_ssl_verify on;
+proxy_ssl_server_name on;
+
+location /a2a/ {
+  limit_req zone=api burst=50 nodelay;
+  proxy_pass {{ include "kubernaut.console.apifrontendURL" . }};
+  proxy_http_version 1.1;
+  proxy_set_header Connection "";
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header Authorization "Bearer $http_x_forwarded_access_token";
+  proxy_buffering off;
+  proxy_cache off;
+  proxy_read_timeout 3600s;
+  proxy_send_timeout 3600s;
+  send_timeout 3600s;
+  keepalive_timeout 3600s;
+}
+
+location = /mcp {
+  limit_req zone=mcp burst=20 nodelay;
+  proxy_pass {{ include "kubernaut.console.apifrontendURL" . }};
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+  proxy_set_header Authorization "Bearer $http_x_forwarded_access_token";
+  proxy_set_header Mcp-Session-Id $http_mcp_session_id;
+  proxy_read_timeout 30s;
+  proxy_hide_header Access-Control-Expose-Headers;
+  add_header Access-Control-Expose-Headers "Mcp-Session-Id" always;
+}
+
+location /.well-known/ {
+  proxy_pass {{ include "kubernaut.console.apifrontendURL" . }};
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+}
+
+location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?|ttf|eot)$ {
+  expires 1y;
+  add_header Cache-Control "public, immutable";
+  try_files $uri =404;
+}
+
+location / {
+  add_header Cache-Control "no-cache, must-revalidate";
+  try_files $uri $uri/ /index.html;
+}
+{{- end }}
 {{- if .Values.console.enabled }}
 {{- if not .Values.console.auth.secretName }}
 {{- fail "console.auth.secretName is required when console.enabled=true (Secret must contain keys: client-id, client-secret, cookie-secret)" }}
@@ -26,72 +102,9 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   http.conf: |
-    limit_req_zone $binary_remote_addr zone=api:10m rate=30r/s;
-    limit_req_zone $binary_remote_addr zone=mcp:10m rate=10r/s;
-
-    gzip on;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript image/svg+xml;
-    gzip_min_length 256;
-    gzip_vary on;
+    {{- include "kubernaut.console.httpConfYAML" . | nindent 4 }}
   server.conf: |
-    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data:; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-Frame-Options "DENY" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-
-    proxy_ssl_trusted_certificate /etc/tls-ca/ca.crt;
-    proxy_ssl_verify on;
-    proxy_ssl_server_name on;
-
-    location /a2a/ {
-      limit_req zone=api burst=50 nodelay;
-      proxy_pass {{ include "kubernaut.console.apifrontendURL" . }};
-      proxy_http_version 1.1;
-      proxy_set_header Connection "";
-      proxy_set_header Host $host;
-      proxy_set_header X-Real-IP $remote_addr;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      proxy_set_header Authorization "Bearer $http_x_forwarded_access_token";
-      proxy_buffering off;
-      proxy_cache off;
-      proxy_read_timeout 3600s;
-      proxy_send_timeout 3600s;
-      send_timeout 3600s;
-      keepalive_timeout 3600s;
-    }
-
-    location = /mcp {
-      limit_req zone=mcp burst=20 nodelay;
-      proxy_pass {{ include "kubernaut.console.apifrontendURL" . }};
-      proxy_http_version 1.1;
-      proxy_set_header Host $host;
-      proxy_set_header X-Real-IP $remote_addr;
-      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-      proxy_set_header Authorization "Bearer $http_x_forwarded_access_token";
-      proxy_set_header Mcp-Session-Id $http_mcp_session_id;
-      proxy_read_timeout 30s;
-      proxy_hide_header Access-Control-Expose-Headers;
-      add_header Access-Control-Expose-Headers "Mcp-Session-Id" always;
-    }
-
-    location /.well-known/ {
-      proxy_pass {{ include "kubernaut.console.apifrontendURL" . }};
-      proxy_http_version 1.1;
-      proxy_set_header Host $host;
-    }
-
-    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff2?|ttf|eot)$ {
-      expires 1y;
-      add_header Cache-Control "public, immutable";
-      try_files $uri =404;
-    }
-
-    location / {
-      add_header Cache-Control "no-cache, must-revalidate";
-      try_files $uri $uri/ /index.html;
-    }
+    {{- include "kubernaut.console.serverConfYAML" . | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -110,6 +123,8 @@ spec:
     metadata:
       labels:
         app: console
+      annotations:
+        checksum/config: {{ printf "%s%s" (include "kubernaut.console.httpConfYAML" .) (include "kubernaut.console.serverConfYAML" .) | sha256sum }}
     spec:
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
       automountServiceAccountToken: false

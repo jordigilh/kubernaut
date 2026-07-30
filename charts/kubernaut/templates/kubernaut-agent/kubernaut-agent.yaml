@@ -42,6 +42,183 @@ Operator's sort.Strings(phases)).
 {{- if $kaAlignmentNeedsMount }}
 {{- $kaAlignmentAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/alignment-check-credentials" "provider" $kaAlignmentProfile.provider) }}
 {{- end }}
+{{- /*
+checksum/config + checksum/llm-runtime (Issue #1737 gap) need this content
+reachable from the Deployment's pod template annotations, a separate
+`include` call site from the two ConfigMaps below -- named templates don't
+inherit $-scoped variables from their caller, so the LLM profile resolution
+above must be recomputed here rather than reused from the file-top
+declarations.
+*/}}
+{{- define "kubernaut.kubernautAgent.configYAML" -}}
+{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
+{{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default .Values.kubernautAgent.llmProfileRef }}
+{{- $kaAlignmentProfile := dict }}
+{{- if .Values.kubernautAgent.alignmentCheck.enabled }}
+{{- $kaAlignmentProfile = include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaAlignmentProfileRef) | fromYaml }}
+{{- end }}
+{{- $kaAlignmentNeedsMount := and .Values.kubernautAgent.alignmentCheck.enabled (ne $kaAlignmentProfile.credentialsSecretName $kaProfile.credentialsSecretName) }}
+{{- $kaAlignmentAPIKeyFile := "" }}
+{{- if $kaAlignmentNeedsMount }}
+{{- $kaAlignmentAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/kubernaut-agent/alignment-check-credentials" "provider" $kaAlignmentProfile.provider) }}
+{{- end -}}
+runtime:
+  logging:
+    level: {{ .Values.kubernautAgent.logging.level | default "INFO" | quote }}
+  server:
+    address: "0.0.0.0"
+    port: 8443
+    healthAddr: ":8081"
+    metricsAddr: ":9090"
+    tls:
+      certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
+  audit:
+    flushIntervalSeconds: 1.0
+    bufferSize: 10000
+    batchSize: 50
+ai:
+  llm:
+    provider: {{ $kaProfile.provider | quote }}
+{{- $kaOAuth2 := $kaProfile.oauth2 | default dict }}
+{{- if $kaOAuth2.enabled }}
+    oauth2:
+      enabled: true
+      tokenURL: {{ $kaOAuth2.tokenURL | quote }}
+      credentialsDir: "/etc/kubernaut-agent/oauth2"
+{{- if $kaOAuth2.scopes }}
+      scopes:
+{{- range (splitList " " $kaOAuth2.scopes) }}
+        - {{ . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if $kaProfile.vertexProject }}
+    vertexProject: {{ $kaProfile.vertexProject | quote }}
+{{- end }}
+{{- if $kaProfile.vertexLocation }}
+    vertexLocation: {{ $kaProfile.vertexLocation | quote }}
+{{- end }}
+{{- if $kaProfile.azureApiVersion }}
+    azureApiVersion: {{ $kaProfile.azureApiVersion | quote }}
+{{- end }}
+{{- if $kaProfile.tlsCaFile }}
+    tlsCaFile: {{ $kaProfile.tlsCaFile | quote }}
+{{- end }}
+{{- $kaReasoning := $kaProfile.reasoning | default dict }}
+{{- if or $kaReasoning.enabled $kaReasoning.capabilityOverride $kaReasoning.effort }}
+    reasoning:
+{{- if $kaReasoning.enabled }}
+      enabled: true
+{{- end }}
+{{- if $kaReasoning.budgetTokens }}
+      budgetTokens: {{ $kaReasoning.budgetTokens }}
+{{- end }}
+{{- if $kaReasoning.effort }}
+      effort: {{ $kaReasoning.effort | quote }}
+{{- end }}
+{{- if $kaReasoning.capabilityOverride }}
+      capabilityOverride: {{ $kaReasoning.capabilityOverride | quote }}
+{{- end }}
+{{- end }}
+  investigation:
+    maxTurns: 40
+{{- if .Values.kubernautAgent.alignmentCheck.enabled }}
+  alignmentCheck:
+    enabled: true
+    timeout: {{ .Values.kubernautAgent.alignmentCheck.timeout | default "10s" }}
+    maxStepTokens: {{ .Values.kubernautAgent.alignmentCheck.maxStepTokens | default 500 }}
+    llm:
+      {{- include "kubernaut.llm.overrideBlock" (dict "profile" $kaAlignmentProfile "apiKeyFile" $kaAlignmentAPIKeyFile) | nindent 6 }}
+{{- end }}
+{{- if .Values.kubernautAgent.interactive.enabled }}
+interactive:
+  enabled: true
+  sessionTTL: {{ .Values.kubernautAgent.interactive.sessionTTL | default "30m" | quote }}
+  inactivityTimeout: {{ .Values.kubernautAgent.interactive.inactivityTimeout | default "10m" | quote }}
+  # Issue #1737 gap found: default of 5 was too low even for realistic
+  # production use, confirmed via full-suite E2E failing nearly every
+  # interactive/MCP spec with "max_sessions: Maximum concurrent sessions
+  # reached" from Ginkgo's own test parallelism alone (see values.yaml
+  # comment for kubernautAgent.interactive.maxConcurrentSessions).
+  maxConcurrentSessions: {{ .Values.kubernautAgent.interactive.maxConcurrentSessions | default 50 }}
+  rateLimitPerUser: {{ .Values.kubernautAgent.interactive.rateLimitPerUser | default 20 }}
+  maxAnalyzingTimeout: {{ .Values.kubernautAgent.interactive.maxAnalyzingTimeout | default "45m" | quote }}
+{{- with .Values.kubernautAgent.interactive.jwtProviders }}
+  jwtProviders:
+{{- range . }}
+    - name: {{ .name | quote }}
+      issuer: {{ .issuer | quote }}
+      jwksURL: {{ .jwksURL | quote }}
+      audience: {{ .audience | quote }}
+{{- if .claimMappings }}
+      claimMappings:
+        username: {{ .claimMappings.username | default "preferred_username" | quote }}
+        groups: {{ .claimMappings.groups | default "groups" | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+integrations:
+  dataStorage:
+    url: "{{ include "kubernaut.datastorage.url" . }}"
+{{- if include "kubernaut.agent.tlsEnabled" . }}
+    tls:
+      caFile: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
+{{- end }}
+{{- if or (include "kubernaut.monitoring.prometheus.enabled" .) (include "kubernaut.monitoring.alertManager.enabled" .) }}
+  tools:
+{{- if include "kubernaut.monitoring.prometheus.enabled" . }}
+    prometheus:
+      url: {{ include "kubernaut.monitoring.prometheus.url" . | quote }}
+{{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
+      tlsCaFile: {{ include "kubernaut.monitoring.prometheus.tlsCaFile" . | quote }}
+{{- end }}
+{{- end }}
+{{- if include "kubernaut.monitoring.alertManager.enabled" . }}
+    alertmanager:
+      url: {{ include "kubernaut.monitoring.alertManager.url" . | quote }}
+{{- if include "kubernaut.monitoring.alertManager.tlsCaFile" . }}
+      tlsCaFile: {{ include "kubernaut.monitoring.alertManager.tlsCaFile" . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- define "kubernaut.kubernautAgent.llmRuntimeYAML" -}}
+{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
+{{- $validPhases := list "rca" "workflow_discovery" "validation" }}
+{{- $kaPhaseProfiles := dict }}
+{{- range $phase, $profileName := .Values.kubernautAgent.phaseModels }}
+{{- if not (has $phase $validPhases) }}
+{{- fail (printf "kubernautAgent.phaseModels: unrecognized phase name %q (valid: %s)" $phase (join ", " $validPhases)) }}
+{{- end }}
+{{- $p := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $profileName) | fromYaml }}
+{{- $_ := set $kaPhaseProfiles $phase $p }}
+{{- end -}}
+model: {{ $kaProfile.model | quote }}
+endpoint: {{ $kaProfile.endpoint | default "" | quote }}
+{{- /* #1749: only render temperature when explicitly set. Some models
+   (e.g. claude-opus-4-8) reject the parameter outright with a 400 if
+   it is present at all — omit it by default rather than forcing 0.7.
+   hasKey (not a truthy `if`) so an explicit `temperature: 0` still
+   renders (BR-HAPI-199 — explicit zero must still be sent). */}}
+{{- if hasKey $kaProfile "temperature" }}
+temperature: {{ $kaProfile.temperature }}
+{{- end }}
+maxRetries: {{ $kaProfile.maxRetries | default 3 }}
+timeoutSeconds: {{ $kaProfile.timeoutSeconds | default 120 }}
+{{- if $kaPhaseProfiles }}
+phaseModels:
+{{- range $phase := (keys $kaPhaseProfiles | sortAlpha) }}
+{{- $p := index $kaPhaseProfiles $phase }}
+{{- $phaseAPIKeyFile := "" }}
+{{- if ne $p.credentialsSecretName $kaProfile.credentialsSecretName }}
+{{- $phaseAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" (printf "/etc/kubernaut-agent/phase-credentials/%s" $phase) "provider" $p.provider) }}
+{{- end }}
+  {{ $phase }}:
+    {{- include "kubernaut.llm.overrideBlock" (dict "profile" $p "apiKeyFile" $phaseAPIKeyFile) | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -237,121 +414,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   config.yaml: |
-    runtime:
-      logging:
-        level: {{ .Values.kubernautAgent.logging.level | default "INFO" | quote }}
-      server:
-        address: "0.0.0.0"
-        port: 8443
-        healthAddr: ":8081"
-        metricsAddr: ":9090"
-        tls:
-          certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
-      audit:
-        flushIntervalSeconds: 1.0
-        bufferSize: 10000
-        batchSize: 50
-    ai:
-      llm:
-        provider: {{ $kaProfile.provider | quote }}
-{{- $kaOAuth2 := $kaProfile.oauth2 | default dict }}
-{{- if $kaOAuth2.enabled }}
-        oauth2:
-          enabled: true
-          tokenURL: {{ $kaOAuth2.tokenURL | quote }}
-          credentialsDir: "/etc/kubernaut-agent/oauth2"
-{{- if $kaOAuth2.scopes }}
-          scopes:
-{{- range (splitList " " $kaOAuth2.scopes) }}
-            - {{ . | quote }}
-{{- end }}
-{{- end }}
-{{- end }}
-{{- if $kaProfile.vertexProject }}
-        vertexProject: {{ $kaProfile.vertexProject | quote }}
-{{- end }}
-{{- if $kaProfile.vertexLocation }}
-        vertexLocation: {{ $kaProfile.vertexLocation | quote }}
-{{- end }}
-{{- if $kaProfile.azureApiVersion }}
-        azureApiVersion: {{ $kaProfile.azureApiVersion | quote }}
-{{- end }}
-{{- if $kaProfile.tlsCaFile }}
-        tlsCaFile: {{ $kaProfile.tlsCaFile | quote }}
-{{- end }}
-{{- $kaReasoning := $kaProfile.reasoning | default dict }}
-{{- if or $kaReasoning.enabled $kaReasoning.capabilityOverride $kaReasoning.effort }}
-        reasoning:
-{{- if $kaReasoning.enabled }}
-          enabled: true
-{{- end }}
-{{- if $kaReasoning.budgetTokens }}
-          budgetTokens: {{ $kaReasoning.budgetTokens }}
-{{- end }}
-{{- if $kaReasoning.effort }}
-          effort: {{ $kaReasoning.effort | quote }}
-{{- end }}
-{{- if $kaReasoning.capabilityOverride }}
-          capabilityOverride: {{ $kaReasoning.capabilityOverride | quote }}
-{{- end }}
-{{- end }}
-      investigation:
-        maxTurns: 40
-{{- if .Values.kubernautAgent.alignmentCheck.enabled }}
-      alignmentCheck:
-        enabled: true
-        timeout: {{ .Values.kubernautAgent.alignmentCheck.timeout | default "10s" }}
-        maxStepTokens: {{ .Values.kubernautAgent.alignmentCheck.maxStepTokens | default 500 }}
-        llm:
-          {{- include "kubernaut.llm.overrideBlock" (dict "profile" $kaAlignmentProfile "apiKeyFile" $kaAlignmentAPIKeyFile) | nindent 10 }}
-{{- end }}
-{{- if .Values.kubernautAgent.interactive.enabled }}
-    interactive:
-      enabled: true
-      sessionTTL: {{ .Values.kubernautAgent.interactive.sessionTTL | default "30m" | quote }}
-      inactivityTimeout: {{ .Values.kubernautAgent.interactive.inactivityTimeout | default "10m" | quote }}
-      maxConcurrentSessions: {{ .Values.kubernautAgent.interactive.maxConcurrentSessions | default 5 }}
-      rateLimitPerUser: {{ .Values.kubernautAgent.interactive.rateLimitPerUser | default 10 }}
-      maxAnalyzingTimeout: {{ .Values.kubernautAgent.interactive.maxAnalyzingTimeout | default "45m" | quote }}
-{{- with .Values.kubernautAgent.interactive.jwtProviders }}
-      jwtProviders:
-{{- range . }}
-        - name: {{ .name | quote }}
-          issuer: {{ .issuer | quote }}
-          jwksURL: {{ .jwksURL | quote }}
-          audience: {{ .audience | quote }}
-{{- if .claimMappings }}
-          claimMappings:
-            username: {{ .claimMappings.username | default "preferred_username" | quote }}
-            groups: {{ .claimMappings.groups | default "groups" | quote }}
-{{- end }}
-{{- end }}
-{{- end }}
-{{- end }}
-    integrations:
-      dataStorage:
-        url: "{{ include "kubernaut.datastorage.url" . }}"
-{{- if include "kubernaut.agent.tlsEnabled" . }}
-        tls:
-          caFile: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"
-{{- end }}
-{{- if or (include "kubernaut.monitoring.prometheus.enabled" .) (include "kubernaut.monitoring.alertManager.enabled" .) }}
-      tools:
-{{- if include "kubernaut.monitoring.prometheus.enabled" . }}
-        prometheus:
-          url: {{ include "kubernaut.monitoring.prometheus.url" . | quote }}
-{{- if include "kubernaut.monitoring.prometheus.tlsCaFile" . }}
-          tlsCaFile: {{ include "kubernaut.monitoring.prometheus.tlsCaFile" . | quote }}
-{{- end }}
-{{- end }}
-{{- if include "kubernaut.monitoring.alertManager.enabled" . }}
-        alertmanager:
-          url: {{ include "kubernaut.monitoring.alertManager.url" . | quote }}
-{{- if include "kubernaut.monitoring.alertManager.tlsCaFile" . }}
-          tlsCaFile: {{ include "kubernaut.monitoring.alertManager.tlsCaFile" . | quote }}
-{{- end }}
-{{- end }}
-{{- end }}
+    {{- include "kubernaut.kubernautAgent.configYAML" . | nindent 4 }}
 {{- $kaBaseOAuth2 := $kaProfile.oauth2 | default dict }}
 {{- if $kaBaseOAuth2.enabled }}
 {{- if not $kaBaseOAuth2.tokenURL }}
@@ -372,30 +435,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   llm-runtime.yaml: |
-    model: {{ $kaProfile.model | quote }}
-    endpoint: {{ $kaProfile.endpoint | default "" | quote }}
-    {{- /* #1749: only render temperature when explicitly set. Some models
-       (e.g. claude-opus-4-8) reject the parameter outright with a 400 if
-       it is present at all — omit it by default rather than forcing 0.7.
-       hasKey (not a truthy `if`) so an explicit `temperature: 0` still
-       renders (BR-HAPI-199 — explicit zero must still be sent). */}}
-    {{- if hasKey $kaProfile "temperature" }}
-    temperature: {{ $kaProfile.temperature }}
-    {{- end }}
-    maxRetries: {{ $kaProfile.maxRetries | default 3 }}
-    timeoutSeconds: {{ $kaProfile.timeoutSeconds | default 120 }}
-{{- if $kaPhaseProfiles }}
-    phaseModels:
-{{- range $phase := (keys $kaPhaseProfiles | sortAlpha) }}
-{{- $p := index $kaPhaseProfiles $phase }}
-{{- $phaseAPIKeyFile := "" }}
-{{- if ne $p.credentialsSecretName $kaProfile.credentialsSecretName }}
-{{- $phaseAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" (printf "/etc/kubernaut-agent/phase-credentials/%s" $phase) "provider" $p.provider) }}
-{{- end }}
-      {{ $phase }}:
-        {{- include "kubernaut.llm.overrideBlock" (dict "profile" $p "apiKeyFile" $phaseAPIKeyFile) | nindent 8 }}
-{{- end }}
-{{- end }}
+    {{- include "kubernaut.kubernautAgent.llmRuntimeYAML" . | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -418,6 +458,8 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
+        checksum/config: {{ include "kubernaut.kubernautAgent.configYAML" . | sha256sum }}
+        checksum/llm-runtime: {{ include "kubernaut.kubernautAgent.llmRuntimeYAML" . | sha256sum }}
     spec:
       serviceAccountName: kubernaut-agent-sa
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
@@ -607,6 +649,9 @@ spec:
     - name: https
       port: 8443
       targetPort: 8443
+      {{- if and (eq .Values.kubernautAgent.service.type "NodePort") .Values.kubernautAgent.service.nodePort }}
+      nodePort: {{ .Values.kubernautAgent.service.nodePort }}
+      {{- end }}
     - name: health
       port: 8081
       targetPort: 8081

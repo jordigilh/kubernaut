@@ -97,6 +97,12 @@ var (
 	// DataStorage client for workflow seeding and audit queries
 	dataStorageClient *ogenclient.Client
 
+	// gatewayBaseURL is the host-reachable base URL for fpPostSignalToGateway
+	// (af_helpers_test.go), via the chart's pinned NodePort (30080, DD-TEST-001,
+	// Issue #1737). Gateway still serves plain HTTP internally (TLS wiring is a
+	// separate, tracked follow-up).
+	gatewayBaseURL string
+
 	// DD-AUTH-014: ServiceAccount token for DataStorage authentication
 	e2eAuthToken string
 
@@ -142,7 +148,7 @@ var _ = SynchronizedBeforeSuite(
 		By("Setting up Full Pipeline E2E infrastructure (Issue #39)")
 		ctx := context.Background()
 		images, seededUUIDs, remediateNS, err := infrastructure.SetupFullPipelineInfrastructure(
-			ctx, clusterName, tempKubeconfigPath, GinkgoWriter,
+			ctx, clusterName, tempKubeconfigPath, nil, GinkgoWriter,
 		)
 		Expect(err).ToNot(HaveOccurred(), "Full pipeline infrastructure setup failed")
 		_ = images // builtImages stored locally on process 1 for cleanup
@@ -262,7 +268,17 @@ var _ = SynchronizedBeforeSuite(
 		apiReader, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Setting up authenticated DataStorage client (DD-TEST-001: port 30081, Issue #785: HTTPS)")
+		// Gateway/DataStorage/APIFrontend are reached via the chart's pinned
+		// NodePort (DD-TEST-001 v2.8, Issue #1737): gateway/datastorage/
+		// apifrontend.service.{type,nodePort} + networkPolicies.<svc>.
+		// ingressCIDRs=0.0.0.0/0 (both set at `helm install` time in
+		// InstallFullPipelineHelmChart) admit the NodePort-sourced,
+		// SNAT'd-to-node-IP traffic through the otherwise default-deny
+		// NetworkPolicy, and kind-fullpipeline-config.yaml's extraPortMappings
+		// map those exact ports (30080/30081/30443) to the same host ports.
+		gatewayBaseURL = "http://localhost:30080"
+
+		By("Setting up authenticated DataStorage client (DD-TEST-001 exception, Issue #785: HTTPS)")
 		dataStorageURL := "https://localhost:30081"
 		tlsBase, tlsCErr := infrastructure.NewTLSAwareTransport(kubeconfigPath)
 		Expect(tlsCErr).ToNot(HaveOccurred(), "TLS transport for DataStorage client")
@@ -274,8 +290,19 @@ var _ = SynchronizedBeforeSuite(
 		dataStorageClient, err = ogenclient.NewClient(dataStorageURL, ogenclient.WithClient(httpClient))
 		Expect(err).ToNot(HaveOccurred())
 
-		By("Setting up API Frontend HTTP client (NodePort 30443, self-signed TLS)")
+		By("Setting up API Frontend HTTP client (chart-pinned NodePort, self-signed TLS)")
 		afBaseURL = "https://localhost:30443"
+		// 06_af_audit_trace_test.go reads this via envOrDefault("AF_FP_BASE_URL", ...)
+		// -- set per-process so its fallback default stays in sync.
+		Expect(os.Setenv("AF_FP_BASE_URL", afBaseURL)).To(Succeed())
+		// 06_af_audit_trace_test.go's envOrDefault("AF_FP_DEX_URL", ...) fallback
+		// (https://localhost:5556/dex) is stale: kind-fullpipeline-config.yaml maps
+		// DEX's NodePort to host port 30556, not 5556 (that mapping is only used by
+		// kind-kubernautagent-config.yaml's own, unrelated DEX instance -- see
+		// dex_e2e.go's waitForDexReady doc comment). Without this override, every
+		// run of E2E-FP-AF-001 dials a port nothing listens on and self-skips via
+		// "DEX not available" -- a pre-existing bug, not a Helm-migration regression.
+		Expect(os.Setenv("AF_FP_DEX_URL", "https://localhost:30556/dex")).To(Succeed())
 		afHTTPClient = &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // E2E self-signed cert

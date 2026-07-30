@@ -37,6 +37,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
+// operationUpdate identifies the "UPDATE" admission operation as passed
+// between handleUpdate, registerWorkflow, validateContentIntegrity, and
+// isNoOpContentUpdate. A named constant (vs. repeating the literal) satisfies
+// goconst and gives the four call sites a single source of truth.
+const operationUpdate = "UPDATE"
+
 // WorkflowCatalogClient is now an empty marker interface. #1661 Change 8c
 // removed both of its methods (CreateWorkflowInline, DisableWorkflow) --
 // registerWorkflow/handleDelete compute and patch everything locally with
@@ -143,7 +149,7 @@ func (h *RemediationWorkflowHandler) handleUpdate(ctx context.Context, req admis
 	if err := json.Unmarshal(req.Object.Raw, rw); err == nil && rw.DeletionTimestamp != nil {
 		return admission.Allowed("update during deletion — skipped (DELETE handles DS lifecycle)")
 	}
-	return h.registerWorkflow(ctx, req, "UPDATE", EventTypeRWAdmittedUpdate)
+	return h.registerWorkflow(ctx, req, operationUpdate, EventTypeRWAdmittedUpdate)
 }
 
 // registerWorkflow is the shared implementation for CREATE and UPDATE operations.
@@ -231,7 +237,21 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 	// audit_events, not in CRD status.
 	logger.Info("Workflow registered locally", "workflow_id", workflowID, "workflow_name", rw.Name)
 
-	h.emitAdmitAudit(ctx, req, auditEventType, workflowID, rw.Name, &rw.Spec, contentHash)
+	// Issue #1759: a genuine no-op UPDATE (content hash identical to
+	// OldObject's) never reaches here for CREATE, but for UPDATE it means
+	// K8s sent an admission request for a metadata-only change -- e.g. the
+	// reconciler's finalizer-add immediately after CREATE, or a label/
+	// annotation resync -- not an actual workflow content change. Emitting
+	// an admitted.update audit event here would misrepresent that churn as
+	// a real content update (SOC2 CC8.1 accuracy) and can race the *next*
+	// genuine content update: a query for the single admitted.update event
+	// matching this workflow_name could non-deterministically return this
+	// spurious, stale-content one instead (E2E-AW-773-001 flake). The async
+	// status/count refreshes below are unaffected -- they idempotently
+	// re-write already-correct values, which is harmless.
+	if !isNoOpContentUpdate(operation, req.OldObject.Raw, contentHash) {
+		h.emitAdmitAudit(ctx, req, auditEventType, workflowID, rw.Name, &rw.Spec, contentHash)
+	}
 
 	// ADR-058: Update CRD .status asynchronously after admission to avoid blocking
 	// the API server. The status subresource is used so this doesn't conflict with
@@ -242,6 +262,29 @@ func (h *RemediationWorkflowHandler) registerWorkflow(ctx context.Context, req a
 	go h.refreshActionTypeWorkflowCount(rw.Spec.ActionType, req.Namespace, "") //nolint:contextcheck // refreshActionTypeWorkflowCount runs async after admission response (Phase 3c best-effort cross-update); see doc comment
 
 	return admission.Allowed("workflow registered in catalog")
+}
+
+// isNoOpContentUpdate reports whether operation is an UPDATE whose content
+// hash is identical to OldObject's -- i.e., only Kubernetes metadata changed
+// (finalizers, labels, resourceVersion, ...), not the workflow spec itself.
+// CREATE has no OldObject, so it is never a no-op. Best-effort: an
+// unparsable/absent OldObject fails open (returns false, audit proceeds
+// normally) -- mirrors validateContentIntegrity's identical fail-open
+// precedent just above, since correctness there already covers the cases
+// that matter (Issue #1759).
+func isNoOpContentUpdate(operation string, oldObjectRaw []byte, newContentHash string) bool {
+	if operation != operationUpdate || len(oldObjectRaw) == 0 {
+		return false
+	}
+	oldRW := &rwv1alpha1.RemediationWorkflow{}
+	if err := json.Unmarshal(oldObjectRaw, oldRW); err != nil {
+		return false
+	}
+	oldHash, err := computeRWContentHash(oldRW)
+	if err != nil {
+		return false
+	}
+	return oldHash == newContentHash
 }
 
 // validateActionTypeExists checks whether an Active ActionType CRD exists for
@@ -287,7 +330,7 @@ func (h *RemediationWorkflowHandler) validateActionTypeExists(ctx context.Contex
 // is empty for CREATE (no prior state to compare against), so the check is a
 // no-op there.
 func validateContentIntegrity(operation string, oldObjectRaw []byte, newVersion, newContentHash string) error {
-	if operation != "UPDATE" || len(oldObjectRaw) == 0 {
+	if operation != operationUpdate || len(oldObjectRaw) == 0 {
 		return nil
 	}
 

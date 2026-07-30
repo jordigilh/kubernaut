@@ -1,3 +1,76 @@
+{{- /*
+checksum/config (Issue #1737 gap) needs this content reachable from the
+Deployment's pod template annotations, a separate `include` call site from
+the ConfigMap below -- named templates don't inherit $-scoped variables from
+their caller (and can't be `define`d inside this file's top-level `if`
+below), so $fmcFleetPreamble must be recomputed here rather than reused.
+*/}}
+{{- define "kubernaut.fleetmetadatacache.configYAML" -}}
+{{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml -}}
+server:
+  apiAddr: ":8080"
+  healthAddr: ":8081"
+  metricsAddr: ":9090"
+  tls:
+    certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
+mcpGateway:
+  endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
+  gatewayType: {{ $fmcFleetPreamble.config.mcpGatewayType | quote }}
+  namespace: {{ .Values.fleetmetadatacache.namespace | quote }}
+valkey:
+  {{- /* values.yaml documents valkeyAddr: "" as "uses shared Valkey
+  instance", but left unimplemented that default actually falls through to
+  an empty string (Go binary's ServiceConfig.Validate() then rejects it with
+  "valkey.addr is required" at startup, Issue #1737 DD-TEST-015 regression --
+  same class of gap as global.fleet.backend above: a documented default that
+  was never materialized in the template). kubernaut.valkey.addr already
+  computes the chart's own shared Valkey Service address (or the BYO
+  valkey.host when valkey.enabled=false) for postgresql/datastorage; reuse it
+  here instead of requiring every fleetmetadatacache.enabled=true caller to
+  redundantly pass --set fleetmetadatacache.valkeyAddr=valkey:6379. */}}
+  addr: {{ .Values.fleetmetadatacache.valkeyAddr | default (include "kubernaut.valkey.addr" .) | quote }}
+sync:
+  interval: {{ .Values.fleetmetadatacache.syncInterval | quote }}
+  keyTtl: {{ .Values.fleetmetadatacache.keyTTL | quote }}
+oauth2:
+  tokenUrl: {{ $fmcFleetPreamble.oauth2.tokenURL | quote }}
+  credentialsDir: "/etc/fleetmetadatacache/fleet-oauth2"
+  {{- /* #1755 DD-TEST-015 regression RCA (2nd finding, surfaced only after
+     the tlsCaFile fix above let the TLS handshake to Keycloak succeed):
+     this scopes block was also missing entirely (unlike gateway/
+     effectivenessmonitor/workflowexecution, which all render it from the
+     same $fleetPreamble.oauth2.scopes). Because it's a struct field with no
+     YAML key present, FMC's own OAuth2Config Go default of
+     []string{"openid", "groups"} (pkg/fleet/fmc/config/config.go
+     DefaultServiceConfig) silently won -- those two scopes are not what
+     Keycloak's kubernaut-fleet-read client is configured to grant for the
+     client_credentials flow, so every token request failed with
+     `oauth2: "invalid_scope" "Invalid scopes: openid groups"` (visible only
+     via a temporarily Debug-leveled logger; production logs it at V(1) and
+     just show endless "OAuth2 TokenSource rebuilt" retries). Confirmed live:
+     gateway's identical clientID (kubernaut-fleet-read) succeeds because its
+     ConfigMap actually renders scopes: ["kube-mcp-server-audience"]. */}}
+  {{- if $fmcFleetPreamble.oauth2.scopes }}
+  scopes:
+    {{- range $fmcFleetPreamble.oauth2.scopes }}
+    - {{ . | quote }}
+    {{- end }}
+  {{- end }}
+  {{- /* #1755 DD-TEST-015 regression RCA: this tlsCaFile line was missing
+     entirely (unlike gateway/effectivenessmonitor/workflowexecution/etc.,
+     which all render it from the same $fleetPreamble.oauth2.tlsCAFile),
+     so FMC's OAuth2 token-fetch HTTP client fell back to the system CA
+     trust store and could never verify Keycloak's inter-service-CA-signed
+     cert -- every client_credentials token fetch failed TLS verification
+     (silently, at V(1) log level) and mcpclient.NewResilient retried for
+     its full 5-minute MaxElapsedTime budget before giving up, permanently
+     blocking FMC's API port (Gateway/RO's readiness dependency) from ever
+     listening. Confirmed via live cluster: the exact same MCP Gateway
+     call FMC makes succeeds instantly through curl -k (bypassing CA
+     verification) using FMC's real credentials, while FMC's pod sits
+     stuck retrying with TLS verification enabled and no CA configured. */}}
+  tlsCaFile: {{ $fmcFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+{{- end }}
 {{- if .Values.fleetmetadatacache.enabled }}
 {{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml }}
 {{- if not $fmcFleetPreamble.config.mcpGatewayEndpoint }}
@@ -21,24 +94,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   config.yaml: |
-    server:
-      apiAddr: ":8080"
-      healthAddr: ":8081"
-      metricsAddr: ":9090"
-      tls:
-        certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
-    mcpGateway:
-      endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
-      gatewayType: {{ $fmcFleetPreamble.config.mcpGatewayType | quote }}
-      namespace: {{ .Values.fleetmetadatacache.namespace | quote }}
-    valkey:
-      addr: {{ .Values.fleetmetadatacache.valkeyAddr | quote }}
-    sync:
-      interval: {{ .Values.fleetmetadatacache.syncInterval | quote }}
-      keyTtl: {{ .Values.fleetmetadatacache.keyTTL | quote }}
-    oauth2:
-      tokenUrl: {{ $fmcFleetPreamble.oauth2.tokenURL | quote }}
-      credentialsDir: "/etc/fleetmetadatacache/fleet-oauth2"
+    {{- include "kubernaut.fleetmetadatacache.configYAML" . | nindent 4 }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -59,6 +115,8 @@ spec:
       labels:
         app.kubernetes.io/name: fleetmetadatacache
         app.kubernetes.io/component: fleet-metadata-cache
+      annotations:
+        checksum/config: {{ include "kubernaut.fleetmetadatacache.configYAML" . | sha256sum }}
     spec:
       serviceAccountName: fleetmetadatacache
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
@@ -84,6 +142,19 @@ spec:
             - name: metrics
               containerPort: 9090
               protocol: TCP
+          {{- /* DD-PLATFORM-008: FMC (always fleet-enabled by definition --
+          this whole Deployment is gated on fleetmetadatacache.enabled=true)
+          builds its OAuth2 token source and MCP Gateway connection
+          synchronously at boot (main.go's "FMC starting" log precedes any
+          successful sync), the same blocking-dependency shape already fixed
+          for apifrontend/effectivenessmonitor/workflowexecution (confirmed
+          via a liveness-probe-induced crash loop, "Readiness probe
+          failed... connection refused" then "Liveness probe failed... will
+          be restarted", during Issue #1737 Fleet E2E validation). Applying
+          the shared helper here follows the DD's own "default remediation
+          pattern going forward" guidance rather than reinventing probe
+          tuning for this service. */}}
+          {{- include "kubernaut.startupProbe" (dict "port" "health") | nindent 10 }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -108,6 +179,13 @@ spec:
             - name: tls-certs
               mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
               readOnly: true
+            {{- /* #1755 DD-TEST-015 regression RCA companion to the oauth2.tlsCaFile
+               fix above: without this mount, the CA path that tlsCaFile now points
+               to (default /etc/tls-ca/ca.crt) would not exist in the container,
+               turning the "can't verify Keycloak's cert" hang into an equally fatal
+               "failed to read TLS CA file" error instead. gateway/effectivenessmonitor/
+               workflowexecution all include this mount for the exact same reason. */}}
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
       volumes:
         - name: config
           configMap:
@@ -119,6 +197,7 @@ spec:
           secret:
             secretName: fleetmetadatacache-tls
             optional: true
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
 ---
 apiVersion: v1
 kind: Service
@@ -229,10 +308,33 @@ spec:
     - Ingress
     - Egress
   ingress:
+    {{- /* #1755 DD-TEST-015 regression RCA (5th finding): this rule never
+       matched anything. gateway.yaml's and remediationorchestrator.yaml's
+       Deployments both label their pods with the legacy `app: <name>`
+       convention (`app: gateway`, `app: remediationorchestrator-controller`
+       -- confirmed live via `kubectl get pod --show-labels`, neither carries
+       an `app.kubernetes.io/name` label at all), not the
+       `app.kubernetes.io/name` convention this rule was written against --
+       the exact same convention mismatch already fixed once for Valkey's
+       ingress rule above (see infrastructure/networkpolicy-valkey.yaml's
+       identical comment). Default-deny NetworkPolicy silently dropped 100%
+       of Gateway's/RO's traffic to FMC as a result -- confirmed live via
+       Gateway's own readiness log ("FMC unreachable: ... context deadline
+       exceeded") persisting even after FMC itself became fully Ready (1/1)
+       once the egress fix above was applied, isolating this as a distinct,
+       second bug on the ingress side. Matches both conventions per pod, as
+       kubernaut.np.fleetmetadatacacheEgress already does for the reciprocal
+       egress rule on the caller side. */}}
     - from:
         - podSelector:
             matchLabels:
+              app: gateway
+        - podSelector:
+            matchLabels:
               app.kubernetes.io/name: gateway
+        - podSelector:
+            matchLabels:
+              app: remediationorchestrator-controller
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: remediationorchestrator
@@ -241,10 +343,42 @@ spec:
           port: 8080
     {{- include "kubernaut.np.metricsIngress" . | nindent 4 }}
   egress:
+    {{- /* #1755 DD-TEST-015 regression RCA (4th finding, surfaced only after
+       the tlsCaFile/scopes/idpEgress fixes let FMC's OAuth2 client and
+       Keycloak handshake succeed): FMC's ClusterRegistry.Start()
+       (pkg/fleet/registry/kuadrant_registry.go) builds a K8s dynamic
+       informer watching MCPServerRegistration CRs via the in-cluster
+       kubeconfig (ctrl.GetConfig(), i.e. https://kubernetes.default.svc:443)
+       -- but unlike every OTHER fleet-aware service's NetworkPolicy
+       (gateway/effectivenessmonitor/workflowexecution/remediationorchestrator/
+       signalprocessing, all of which include kubernaut.np.commonEgress),
+       this file never included it. The "443/namespaceSelector: {}" rule
+       below looks like it should cover the API server's Service port, but
+       does not: the API server here is a hostNetwork static pod (`kubectl
+       get endpoints kubernetes` -> 10.89.0.78:6443, entirely outside the
+       10.244.0.0/16 pod CIDR every other Service backend lives in), and
+       namespaceSelector-based rules only match pod-network pods, not
+       host-network ones -- a well-documented NetworkPolicy limitation.
+       kubernaut.np.apiServerEgress (inside commonEgress) exists precisely
+       to resolve the API server's real backend ipBlock instead. Confirmed
+       live: a raw `/dev/tcp/kubernetes.default.svc/443` connect from inside
+       the FMC pod hung past a 10s timeout (SYN silently dropped, the same
+       signature as the Keycloak :8443 gap above) while the identical
+       request succeeded instantly once this rule was added -- and without
+       it, the informer's initial LIST retries forever with no error ever
+       surfaced to the caller, permanently hanging wireFMCDependencies (and
+       therefore /readyz, and therefore every caller of FMC's scope-check
+       API, e.g. Gateway/RO) with no timeout and no log line. */}}
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     - to:
         - podSelector:
+            # Issue #1737 gap found: infrastructure/valkey.yaml's pod template only
+            # carries the legacy "app: valkey" label (predates the
+            # "app.kubernetes.io/name" convention used elsewhere in this file) --
+            # the selector below never matched any pod, silently dropping all FMC
+            # egress to Valkey (default-deny) and blocking FMC's readiness probe.
             matchLabels:
-              app.kubernetes.io/name: valkey
+              app: valkey
       ports:
         - protocol: TCP
           port: 6379
@@ -260,4 +394,23 @@ spec:
       ports:
         - protocol: UDP
           port: 53
+    {{- /* #1755 DD-TEST-015 regression RCA (3rd finding, surfaced only after
+       the tlsCaFile and scopes fixes above let FMC's OAuth2 client actually
+       attempt a TLS handshake to Keycloak): the "443"/"8080" rule above
+       assumes the fleet OAuth2 IdP always listens on 443 (correct for a real
+       external IdP over HTTPS), but this E2E harness's Keycloak double
+       listens on 8443 (test/infrastructure/fleet_e2e.go DeployKeycloakInfra).
+       A newer kindnet build enforces NetworkPolicy by default (contrary to
+       older assumptions in this investigation), so every FMC->Keycloak
+       token-fetch TCP SYN to :8443 was silently dropped -- confirmed live via
+       `curl --connect-timeout` to both the Service ClusterIP and the Pod IP
+       directly, both timing out identically, while the same request to :443
+       or a podSelector-matched target succeeds instantly. Reuses
+       kubernaut.np.idpEgress (already used by apifrontend/networkpolicy.yaml
+       for the identical DEX-on-5556 case in the FP suite) rather than a new
+       helper -- its own doc comment already anticipates "a test-only OIDC
+       provider ... at a non-443 port". See
+       fullpipeline_e2e_helm.go's networkPolicies.idp.port=8443 override for
+       the fleet-enabled install. */}}
+    {{- include "kubernaut.np.idpEgress" . | nindent 4 }}
 {{- end }}

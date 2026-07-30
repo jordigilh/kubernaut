@@ -44,10 +44,7 @@ jobs:
           kind version
 
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-          podman --version
+        uses: ./.github/actions/install-podman
 
       - name: Install kubectl
         run: |

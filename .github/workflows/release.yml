@@ -372,14 +372,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Scan for CVEs (Trivy)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        uses: ./.github/actions/trivy-scan-with-retry
         with:
           image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-amd64
-          format: table
-          exit-code: 1
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          version: v0.72.0
           # DD-PLATFORM-003: time-bound exceptions for must-gather's kubectl CVEs
           # with no fix available yet in any published kubectl release.
           trivyignores: ${{ matrix.service == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
@@ -426,14 +421,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Scan for CVEs (Trivy)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        uses: ./.github/actions/trivy-scan-with-retry
         with:
           image-ref: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-arm64
-          format: table
-          exit-code: 1
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          version: v0.72.0
           # DD-PLATFORM-003: time-bound exceptions for must-gather's kubectl CVEs
           # with no fix available yet in any published kubectl release.
           trivyignores: ${{ matrix.service == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
@@ -486,10 +476,7 @@ jobs:
           cache: true
 
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-          podman --version
+        uses: ./.github/actions/install-podman
 
       - name: Install Kind
         run: |

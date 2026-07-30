@@ -19,6 +19,8 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ . }}
     {{- end }}
+    {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.gateway.ingressCIDRs "port" 8080) | nindent 4 }}
+    {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.gateway.ingressNamespaceSelectors "port" 8080) | nindent 4 }}
     {{- if .Values.networkPolicies.monitoring.namespace }}
     # Issue #673 H-1: Gateway serves metrics on 8080 (not 9090 like controller-runtime services)
     - ports:
@@ -32,4 +34,21 @@ spec:
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.fleetmetadatacacheEgress" . | nindent 4 }}
+    {{- if .Values.global.fleet.enabled }}
+    {{- /* #1755 DD-TEST-015 RCA: Gateway's own wireFleetOwnerResolution
+    (mcpclient.NewResilient) fetches an OAuth2 token from the fleet IdP
+    (global.fleet.oauth2.tokenURL) before it can call the MCP Gateway --
+    same missing-egress gap as FMC's identical fix above (see that file's
+    comment for the full RCA). */}}
+    {{- include "kubernaut.np.idpEgress" . | nindent 4 }}
+    {{- /* #1755 DD-TEST-015 RCA (5th finding): Gateway's own MCP client
+    (mcpclient.NewResilient, same wireFleetOwnerResolution call above) also
+    needs direct egress to the MCP Gateway itself, independent of the IdP
+    token fetch and of the FMC scope-check API -- see
+    kubernaut.np.mcpGatewayEgress's doc comment for the full RCA (confirmed
+    live via remediationorchestrator's /proc/net/tcp showing an identical
+    SYN_SENT-stuck connection to the same target). */}}
+    {{- include "kubernaut.np.mcpGatewayEgress" . | nindent 4 }}
+    {{- end }}
 {{- end }}

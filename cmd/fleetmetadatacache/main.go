@@ -417,8 +417,26 @@ func run() int {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGTERM, syscall.SIGINT)
 
+	// DD-PLATFORM-009: answer kubelet's startupProbe/livenessProbe truthfully
+	// while wireFMCDependencies' blocking MCP Gateway connection
+	// (mcpclient.NewResilient) and cluster registry cache sync are still in
+	// progress, instead of leaving the health port unbound until they
+	// complete or time out.
+	bootstrapHealth := sharedhealth.NewBootstrapServer(cfg.Server.HealthAddr)
+	go func() {
+		if err := bootstrapHealth.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error(err, "bootstrap health server failed")
+		}
+	}()
+
 	deps := wireFMCDependencies(ctx, cfg, logger)
 	defer deps.close()
+
+	bootstrapShutdownCtx, bootstrapShutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := bootstrapHealth.Shutdown(bootstrapShutdownCtx); err != nil {
+		logger.Error(err, "bootstrap health server shutdown failed")
+	}
+	bootstrapShutdownCancel()
 
 	var ready atomic.Bool
 	servers := buildFMCServers(cfg, deps, &ready, logger)

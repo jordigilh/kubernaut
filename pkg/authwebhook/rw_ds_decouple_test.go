@@ -89,12 +89,19 @@ var _ = Describe("UT-AW-360: AW removes the DS round-trip entirely for Remediati
 			"a successfully-admitted workflow is always Active once there is no DS-side lifecycle to defer to")
 	})
 
-	It("UPDATE (idempotent re-apply) patches .status locally with zero DS calls", func() {
+	It("UPDATE (content change) patches .status locally with zero DS calls", func() {
+		oldRW := buildRemediationWorkflow("ds-decouple-update", "kubernaut-system")
+		oldRW.Spec.Version = testOldSpecVersion
 		rw := buildRemediationWorkflow("ds-decouple-update", "kubernaut-system")
 		fakeK8s := fakeK8sWithRWAndActiveActionType(rw)
 		handler := authwebhook.NewRemediationWorkflowHandler(failingMockDS, mockAudit, fakeK8s)
 
-		admReq := buildUpdateAdmissionRequest(rw)
+		// Issue #1759: this test needs a genuine content-changing UPDATE (it
+		// derives expectedID from the emitted audit event below) --
+		// buildUpdateAdmissionRequest's OldObject==Object is now reserved for
+		// the no-op/idempotent case, which correctly skips audit emission
+		// (see UT-AW-321-002 and rw_content_integrity_test.go).
+		admReq := buildUpdateAdmissionRequestDiff(oldRW, rw)
 		resp := handler.Handle(ctx, admReq)
 		Expect(resp.Allowed).To(BeTrue(), "UPDATE should be allowed without any DS round-trip")
 

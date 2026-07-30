@@ -14,4 +14,20 @@ spec:
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.fleetmetadatacacheEgress" . | nindent 4 }}
+    {{- if .Values.global.fleet.enabled }}
+    {{- /* #1755 DD-TEST-015 RCA: RO's fleet OAuth2 token fetch to
+    global.fleet.oauth2.tokenURL was missing an egress rule entirely -- same
+    gap as FMC's/Gateway's identical fix (see fleetmetadatacache.yaml's
+    comment for the full RCA). */}}
+    {{- include "kubernaut.np.idpEgress" . | nindent 4 }}
+    {{- /* #1755 DD-TEST-015 RCA (5th finding): RO's own MCP client also
+    needs direct egress to the MCP Gateway itself, independent of the IdP
+    token fetch and of the FMC scope-check API -- see
+    kubernaut.np.mcpGatewayEgress's doc comment for the full RCA. This is
+    the finding: confirmed live via RO's own /proc/net/tcp showing a
+    connection to the mcp-gateway-istio Service ClusterIP:8080 stuck in
+    SYN_SENT for 19+ minutes across 4 startupProbe-triggered restarts. */}}
+    {{- include "kubernaut.np.mcpGatewayEgress" . | nindent 4 }}
+    {{- end }}
 {{- end }}

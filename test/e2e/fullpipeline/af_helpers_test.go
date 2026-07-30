@@ -422,7 +422,7 @@ type gatewaySignalResponse struct {
 // Returns the RemediationRequest name from the Gateway response.
 // #1432: First use of fpAuthToken for direct Gateway signal injection in FP suite.
 func fpPostSignalToGateway(reason, podName, podNamespace string) string {
-	gwURL := "http://localhost:30080/api/v1/signals/kubernetes-event"
+	gwURL := gatewayBaseURL + "/api/v1/signals/kubernetes-event"
 	now := time.Now()
 	payload := map[string]interface{}{
 		"type":    "Warning",

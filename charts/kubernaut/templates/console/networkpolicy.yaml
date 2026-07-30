@@ -33,8 +33,16 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ . }}
     {{- end }}
+    {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.console.ingressCIDRs "port" 4180) | nindent 4 }}
+    {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.console.ingressNamespaceSelectors "port" 4180) | nindent 4 }}
   egress:
     {{- include "kubernaut.np.dnsEgress" . | nindent 4 }}
+    # APIFrontend: same-namespace by default (kubernaut.np.metadata's
+    # namespace == Release.Namespace, matching APIFrontend's own
+    # NetworkPolicy "same-namespace callers" ingress rule) -- Console and
+    # APIFrontend are always deployed into the same release namespace, so no
+    # additional ingressCIDRs/ingressNamespaceSelectors is needed on either
+    # side purely for this link.
     - ports:
         - port: {{ .Values.apifrontend.config.server.httpPort | default 8443 }}
           protocol: TCP
@@ -42,8 +50,5 @@ spec:
         - podSelector:
             matchLabels:
               app: apifrontend
-    # OIDC token exchange / JWKS discovery may be outside the cluster.
-    - ports:
-        - port: 443
-          protocol: TCP
+    {{- include "kubernaut.np.idpEgress" . | nindent 4 }}
 {{- end }}

@@ -60,35 +60,7 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   config.yaml: |
-    logging:
-      level: {{ .Values.notification.logging.level | default "INFO" | quote }}
-    controller:
-      metricsAddr: ":9090"
-      healthProbeAddr: ":8081"
-      leaderElection: false
-      leaderElectionId: "notification.kubernaut.ai"
-    delivery:
-      console:
-        enabled: true
-      file:
-        outputDir: "/tmp/notifications"
-        format: "json"
-        timeout: 5s
-      log:
-        enabled: true
-        format: "json"
-      slack:
-        timeout: 10s
-      credentials:
-        dir: "/etc/notification/credentials"
-    datastorage:
-      url: "{{ include "kubernaut.datastorage.url" . }}"
-      timeout: 10s
-      buffer:
-        bufferSize: 10000
-        batchSize: 100
-        flushInterval: 1s
-        maxRetries: 3
+    {{- include "kubernaut.notification.configYAML" . | nindent 4 }}
 ---
 {{- if not .Values.notification.routing.existingConfigMap }}
 # Routing ConfigMap: Alertmanager-compatible routing rules (BR-NOT-066, #207)
@@ -102,25 +74,59 @@ metadata:
     {{- include "kubernaut.labels" . | nindent 4 }}
 data:
   routing.yaml: |
-{{- if .Values.notification.routing.content }}
-{{ .Values.notification.routing.content | indent 4 }}
-{{- else if .Values.notification.slack.secretName }}
-    route:
-      receiver: slack-and-console
-    receivers:
-      - name: slack-and-console
-        consoleConfigs:
-          - enabled: true
-        slackConfigs:
-          - channel: {{ .Values.notification.slack.channel | default "#kubernaut-alerts" | quote }}
-            credentialRef: slack-webhook
-{{- else }}
-    route:
-      receiver: default-console
-    receivers:
-      - name: default-console
-        consoleConfigs:
-          - enabled: true
+    {{- include "kubernaut.notification.routingYAML" . | nindent 4 }}
+{{- end }}
+{{- define "kubernaut.notification.configYAML" -}}
+logging:
+  level: {{ .Values.notification.logging.level | default "INFO" | quote }}
+controller:
+  metricsAddr: ":9090"
+  healthProbeAddr: ":8081"
+  leaderElection: false
+  leaderElectionId: "notification.kubernaut.ai"
+delivery:
+  console:
+    enabled: true
+  file:
+    outputDir: "/tmp/notifications"
+    format: "json"
+    timeout: 5s
+  log:
+    enabled: true
+    format: "json"
+  slack:
+    timeout: 10s
+  credentials:
+    dir: "/etc/notification/credentials"
+datastorage:
+  url: "{{ include "kubernaut.datastorage.url" . }}"
+  timeout: 10s
+  buffer:
+    bufferSize: 10000
+    batchSize: 100
+    flushInterval: 1s
+    maxRetries: 3
+{{- end }}
+{{- define "kubernaut.notification.routingYAML" -}}
+{{- if .Values.notification.routing.content -}}
+{{ .Values.notification.routing.content }}
+{{- else if .Values.notification.slack.secretName -}}
+route:
+  receiver: slack-and-console
+receivers:
+  - name: slack-and-console
+    consoleConfigs:
+      - enabled: true
+    slackConfigs:
+      - channel: {{ .Values.notification.slack.channel | default "#kubernaut-alerts" | quote }}
+        credentialRef: slack-webhook
+{{- else -}}
+route:
+  receiver: default-console
+receivers:
+  - name: default-console
+    consoleConfigs:
+      - enabled: true
 {{- end }}
 {{- end }}
 ---
@@ -148,6 +154,10 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: "/metrics"
+        checksum/config: {{ include "kubernaut.notification.configYAML" . | sha256sum }}
+        {{- if not .Values.notification.routing.existingConfigMap }}
+        checksum/routing-config: {{ include "kubernaut.notification.routingYAML" . | sha256sum }}
+        {{- end }}
     spec:
       serviceAccountName: notification-controller
       {{- include "kubernaut.imagePullSecrets" . | nindent 6 }}
