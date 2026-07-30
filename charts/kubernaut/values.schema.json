@@ -3160,6 +3160,16 @@
               "default": 443,
               "minimum": 1,
               "maximum": 65535
+            },
+            "extraPorts": {
+              "type": "array",
+              "default": [],
+              "description": "Additional IdP ports to open egress on against the same cidr, for deployments where one service must reach two different IdPs on two different ports.",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              }
             }
           }
         },

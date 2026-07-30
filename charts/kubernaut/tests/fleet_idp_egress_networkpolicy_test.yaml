@@ -304,3 +304,45 @@ tests:
     # already covers that disambiguated "no auth-only IdP egress rule"
     # case for the pre-existing auth.issuerURL gate; this suite only adds
     # the new global.fleet.enabled gate proven above.
+
+  # --- Issue #1782 regression: APIFrontend is the one service that can need
+  # TWO different IdP ports simultaneously -- auth.issuerURL's DEX (end-user
+  # JWT validation) AND global.fleet's Keycloak (its own fleet-MCP OAuth2
+  # token fetch). Before extraPorts existed, both call sites set the SAME
+  # networkPolicies.idp.port key via `helm --set`, so whichever applied last
+  # silently clobbered the other's egress rule -- confirmed root cause of
+  # E2E-FLEET-016's deterministic 401s (AF's own JWKS-fetch egress to DEX was
+  # dropped). extraPorts must be additive to `port`, not a replacement. ---
+  - it: "apifrontend NetworkPolicy IdP egress rule opens BOTH auth.issuerURL's port AND fleet's extraPorts simultaneously (issue #1782 regression)"
+    template: templates/apifrontend/networkpolicy.yaml
+    set:
+      apifrontend:
+        config:
+          auth:
+            issuerURL: "https://dex:5556/dex"
+      networkPolicies:
+        idp:
+          port: 5556
+          extraPorts: [8443]
+      global:
+        fleet:
+          enabled: true
+          # DD-PLATFORM-006 Decision Area 10: backend pinned to "acm" so this
+          # unrelated-to-FMC test doesn't implicitly derive
+          # fleetmetadatacache.enabled=true (which would need its own
+          # oauth2.tokenURL/credentialsSecretRef -- see the "acm" comment
+          # earlier in this same suite).
+          backend: "acm"
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 5556
+                protocol: TCP
+              - port: 8443
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"

@@ -633,6 +633,12 @@ monitoring:
 #   idp:
 #     cidr: "10.0.0.0/8"
 #     port: 8443
+# idp.extraPorts (zero-value default []) additively opens egress on further
+# IdP ports against the same cidr -- e.g. when APIFrontend must validate
+# end-user JWTs against one IdP while also fetching its own fleet-MCP OAuth2
+# token from a second, differently-ported IdP (issue #1782):
+#   idp:
+#     extraPorts: [8443]
 networkPolicies:
   # -- Present as an empty map (not omitted) because kubernaut.np.metricsIngress
   # in _helpers.tpl reads .Values.networkPolicies.monitoring.namespace directly

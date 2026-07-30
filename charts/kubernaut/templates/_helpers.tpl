@@ -1144,6 +1144,16 @@ over HTTPS and identical to the hardcoded rule this replaces. Override
 networkPolicies.idp.cidr/port for an in-cluster or non-standard-port IDP
 (e.g. a test-only OIDC provider double reachable only on the pod CIDR at a
 non-443 port).
+
+networkPolicies.idp.extraPorts (list of ints, default none) additively opens
+egress on further ports against the SAME cidr, for deployments where a
+single service must reach two different IdPs on two different ports (e.g.
+APIFrontend validating end-user JWTs against one IdP on :5556 while also
+fetching its own fleet-MCP OAuth2 token from a second IdP on :8443 --
+confirmed root cause of issue #1782's E2E-FLEET-016 401s: the two suites
+each set networkPolicies.idp.port to their own single IdP's port via `helm
+--set`, so whichever one applied LAST silently clobbered the other's egress
+rule instead of both being additive).
 Usage: {{ include "kubernaut.np.idpEgress" . | nindent 4 }}
 */}}
 {{- define "kubernaut.np.idpEgress" -}}
@@ -1151,6 +1161,10 @@ Usage: {{ include "kubernaut.np.idpEgress" . | nindent 4 }}
 - ports:
     - port: {{ $v.idp.port }}
       protocol: TCP
+    {{- range $v.idp.extraPorts }}
+    - port: {{ . }}
+      protocol: TCP
+    {{- end }}
   to:
     - ipBlock:
         cidr: {{ $v.idp.cidr }}

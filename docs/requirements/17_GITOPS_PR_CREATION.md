@@ -1,8 +1,52 @@
 # GitOps PR Creation - Business Requirements
 
-**Document Version**: 1.0
+## ⚠️ DEPRECATED (2026-07-29)
+
+**This business requirements specification has been DEPRECATED and is not supported.**
+
+### Deprecation Reason
+
+This spec predates the current `RemediationWorkflow`/`WorkflowExecution` CRD-based execution
+architecture. It was written when the plan was for the AI Analysis service to directly embed a
+bespoke Git client (`pkg/gitops/`, `go-git`, `google/go-github`) and open GitHub pull requests
+itself — including a proposed `awaiting_git_pr` AIAnalysis phase and an `alertremediation` CR name
+that no longer exist. That design was superseded before implementation began; Kubernaut does not
+plan to build an in-process Git-PR-bot.
+
+### Replacement
+
+The underlying business need (auditable, reversible, human-gated changes for GitOps-managed
+resources) is already met by mechanisms that shipped instead of this spec:
+
+- **GitOps detection**: `DetectedLabels.GitOpsManaged` / `GitOpsTool`, sourced from ArgoCD/Flux
+  annotations, flows into every AI Analysis decision
+- **Policy-driven escalation**: `git_ops_managed` is a Rego input (`AnalyzingHandler.detectedLabelsToMap`)
+  — operators write the "declarative changes require a human/Git workflow" rule themselves, rather
+  than Kubernaut hardcoding a GitHub-specific flow
+- **Human-in-the-loop gate**: the `RemediationApprovalRequest` CRD (ADR-040) blocks execution
+  pending an operator decision — the same outcome a "must open a PR for review" requirement is
+  after, without requiring Kubernaut to hold Git provider credentials or embed a Git/GitHub client
+- **GitOps-sync-aware verification**: the effectiveness pipeline tracks `GitOpsSyncDelay` /
+  `IsGitOpsManaged` and waits for the GitOps tool to reconcile before judging a fix, rather than
+  racing it
+
+No `pkg/gitops/` package, `go-git`, or `google/go-github` dependency exists in this repository, and
+none is planned. Do not cite this document as a roadmap item.
+
+### See Also
+
+- `pkg/shared/types/enrichment.go` — `GitOpsManaged` field
+- `pkg/aianalysis/handlers/analyzing.go` — Rego policy input
+- `api/remediation/v1alpha1/remediationapprovalrequest_types.go` — approval gate CRD
+- `pkg/remediationorchestrator/audit/manager.go` — GitOps-sync-aware verification
+
+---
+
+## Original Document (Archived)
+
+**Document Version**: 1.0 (DEPRECATED)
 **Date**: October 2025
-**Status**: Business Requirements Specification - MVP Scope
+**Status**: ❌ DEPRECATED - See above
 **Module**: GitOps PR Creation (`pkg/gitops/`, AI Analysis Service integration)
 
 ---

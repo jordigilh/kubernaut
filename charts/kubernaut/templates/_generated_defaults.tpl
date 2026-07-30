@@ -327,6 +327,7 @@ networkPolicies:
         ingressNamespaces: []
     idp:
         cidr: 0.0.0.0/0
+        extraPorts: []
         port: 443
     kubernautAgent:
         ingressCIDRs: []

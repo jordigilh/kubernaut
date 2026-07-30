@@ -13,6 +13,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
+// NewReinvokingRunnerForTest exports newReinvokingRunner for unit testing
+// (UT-AF-REINV-002/003, issue #1776).
+func NewReinvokingRunnerForTest(inner adka2a.Runner, sessionService session.Service, appName string, logger logr.Logger) *reinvokingRunner {
+	return newReinvokingRunner(inner, sessionService, appName, logger)
+}
+
 // EnrichRRDetailForTest exports enrichRRDetail for unit testing.
 func EnrichRRDetailForTest(ctx context.Context, detail map[string]string) {
 	enrichRRDetail(ctx, detail)

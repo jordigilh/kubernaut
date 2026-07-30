@@ -51,10 +51,17 @@ func totalPromptLength(messages []llm.Message) int {
 	return total
 }
 
-func lastUserMessage(messages []llm.Message, maxLen int) string {
+// lastUserMessagePreviewLen is the fixed truncation length for audit
+// prompt_preview fields derived from the last user message. Every caller of
+// lastUserMessage uses this same length (unlike truncatePreview's other call
+// sites, which vary), so it is hardcoded here rather than threaded as a
+// parameter (100 Go Mistakes: unparam).
+const lastUserMessagePreviewLen = 500
+
+func lastUserMessage(messages []llm.Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if messages[i].Role == "user" {
-			return truncatePreview(messages[i].Content, maxLen)
+			return truncatePreview(messages[i].Content, lastUserMessagePreviewLen)
 		}
 	}
 	return ""
@@ -110,7 +117,7 @@ func (inv *Investigator) emitRetryAudit(ctx context.Context, p retryAuditParams)
 	retryEvent.EventOutcome = audit.OutcomeSuccess
 	retryEvent.Data["model"] = p.modelName
 	retryEvent.Data["prompt_length"] = totalPromptLength(p.messages)
-	retryEvent.Data["prompt_preview"] = lastUserMessage(p.messages, 500)
+	retryEvent.Data["prompt_preview"] = lastUserMessage(p.messages)
 	retryEvent.Data["retry_attempt"] = p.attempt
 	retryEvent.Data["retry_max"] = p.maxAttempts
 	retryEvent.Data["phase"] = string(p.phase)

@@ -413,6 +413,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `gateway.ingressNamespaceSelectors` | array of object | Raw namespaceSelector label selectors allowed as ingress sources, for cases the simple name-based ingressNamespaces list cannot express. | `[]` | No |
 | `gateway.ingressNamespaces` | array of string | Namespaces allowed to send ingress to Gateway (e.g., monitoring for AlertManager) | `[]` | No |
 | `idp.cidr` | string |  | `"0.0.0.0/0"` | No |
+| `idp.extraPorts` | array of integer | Additional IdP ports to open egress on against the same cidr, for deployments where one service must reach two different IdPs on two different ports. | `[]` | No |
 | `idp.port` | integer |  | `443` | No |
 | `kubernautAgent.ingressCIDRs` | array of string | CIDR blocks allowed as ingress sources (ipBlock). Required for traffic not associated with any pod/namespace -- e.g. NodePort-sourced host traffic (SNAT'd to the node's own IP) or a hostNetwork-mode ingress controller/router -- since podSelector/namespaceSelector can never match non-pod-associated source IPs (Issue #1737). | `[]` | No |
 | `kubernautAgent.ingressNamespaceSelectors` | array of object | Raw namespaceSelector label selectors allowed as ingress sources, for cases the simple name-based ingressNamespaces list cannot express. | `[]` | No |

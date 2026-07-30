@@ -1189,13 +1189,20 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 			// `curl --connect-timeout` to both the Service ClusterIP and Pod IP
 			// directly (both time out identically) and via SP's own error log:
 			// `Post "https://keycloak:8443/...": context deadline exceeded`.
-			// Mirrors the pre-existing networkPolicies.idp.port=5556 override
-			// above for AF/DEX in the FP suite -- same override key, applied
-			// after (so it wins for) this fleet-enabled install; AF's own
-			// idpEgress (already conditionally rendered whenever auth.issuerURL
-			// is set, which the base args above always do) picks up this same
-			// override for free, no separate AF chart change needed.
-			"--set", "networkPolicies.idp.port=8443",
+			//
+			// Issue #1782 RCA (E2E-FLEET-016 deterministic 401s): this used to
+			// set networkPolicies.idp.port=8443, clobbering the
+			// networkPolicies.idp.port=5556 override set above for AF/DEX in
+			// the FP suite (same --set key, last one wins) -- since AF alone
+			// needs BOTH: :5556 to validate incoming end-user JWTs against DEX,
+			// and :8443 to fetch its own fleet-MCP OAuth2 token from Keycloak
+			// (apifrontend.fleet-mcp.reloadable-oauth2). Losing the :5556 rule
+			// silently dropped AF's own JWKS-fetch egress to DEX, so every A2A
+			// call 401'd with no diagnostic trail (JWKS-fetch failures are
+			// logged at V(1)/debug, and circuit-breaker trips only update a
+			// metric, never log). Fixed by adding Keycloak's :8443 as an
+			// *additional* port (extraPorts) instead of replacing :5556.
+			"--set", "networkPolicies.idp.extraPorts[0]=8443",
 		)
 		for i, scope := range fleetOpts.OAuth2Scopes {
 			args = append(args, "--set", fmt.Sprintf("global.fleet.oauth2.scopes[%d]=%s", i, scope))
