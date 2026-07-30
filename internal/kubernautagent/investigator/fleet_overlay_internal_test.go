@@ -19,10 +19,13 @@ package investigator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
+	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 )
 
@@ -96,5 +99,119 @@ var _ = Describe("Fleet overlay context carrier and resolution (BR-INTEGRATION-1
 			_, found := resolveTool(nil, "kubectl_get_by_name")
 			Expect(found).To(BeFalse(), "UT-KA-FLEET-018: nil overlay must behave identically to an empty overlay")
 		})
+	})
+})
+
+// fleetOverlayRecordingAuditStore is a minimal audit.AuditStore double that
+// records every event handed to it, for the observability tests below —
+// no DataStorage/DS involved, this suite only proves prescopeFleetOverlay's
+// own decision of *whether* to emit, not the audit transport.
+type fleetOverlayRecordingAuditStore struct{ events []*audit.AuditEvent }
+
+func (s *fleetOverlayRecordingAuditStore) StoreAudit(_ context.Context, event *audit.AuditEvent) error {
+	s.events = append(s.events, event)
+	return nil
+}
+
+// fleetOverlayErrResolver always fails Overlay, for the pre-existing
+// "resolver configured but errored" branch — kept distinct from the "no
+// resolver configured at all" branch under test below.
+type fleetOverlayErrResolver struct{}
+
+func (fleetOverlayErrResolver) Overlay(_ context.Context, _ string) (map[string]tools.Tool, error) {
+	return nil, errors.New("gateway unreachable")
+}
+
+// fleetOverlaySuccessResolver always succeeds with a non-empty overlay.
+type fleetOverlaySuccessResolver struct{}
+
+func (fleetOverlaySuccessResolver) Overlay(_ context.Context, _ string) (map[string]tools.Tool, error) {
+	return map[string]tools.Tool{"kubectl_get_by_name": &fleetOverlayFakeTool{name: "kubectl_get_by_name"}}, nil
+}
+
+// Issue #1768 follow-up (Gap D E2E scoping discussion): prescopeFleetOverlay
+// previously returned ctx completely unchanged -- no log, no audit event --
+// whenever inv.fleetOverlayResolver was nil, for ANY clusterID (including a
+// genuinely fleet-targeted one). That is indistinguishable, from the
+// outside, from "prescopeFleetOverlay was never reached at all" (e.g. a
+// regression removing the call, or RunInteractiveTurn/Investigate silently
+// no-op'ing) -- there was no observable signal proving "a fleet-target
+// investigation arrived at a KA instance with no fleet capability" versus
+// "this investigation never carried a target cluster in the first place."
+// This matters operationally (an SRE's fleet-targeted investigation
+// silently ran against local/hub tools with zero trace) and for E2E
+// testability (no way to assert the pre-scoping call site was reached
+// without a real, wired FleetOverlayResolver).
+var _ = Describe("UT-KA-FLEET-028 [AU-3, GA Readiness Dim. 12]: prescopeFleetOverlay observability for an unconfigured fleet", Label("fleet", "unit"), func() {
+
+	It("emits EventTypeFleetOverlayUnavailable when a fleet-target investigation hits a nil resolver", func() {
+		store := &fleetOverlayRecordingAuditStore{}
+		inv := &Investigator{
+			logger:               logr.Discard(),
+			auditStore:           store,
+			fleetOverlayResolver: nil,
+		}
+
+		got := inv.prescopeFleetOverlay(context.Background(), "remote-cluster", "corr-unavailable-1")
+
+		_, ok := FleetOverlayFromContext(got)
+		Expect(ok).To(BeFalse(), "UT-KA-FLEET-028: ctx must carry no overlay when fleet isn't configured")
+
+		Expect(store.events).To(HaveLen(1),
+			"UT-KA-FLEET-028: a fleet-target investigation hitting a nil resolver must be independently "+
+				"observable, not silently indistinguishable from prescopeFleetOverlay never having been called")
+		evt := store.events[0]
+		Expect(evt.EventType).To(Equal(audit.EventTypeFleetOverlayUnavailable))
+		Expect(evt.EventAction).To(Equal(audit.ActionFleetOverlayUnavailable))
+		Expect(evt.EventOutcome).To(Equal(audit.OutcomeFailure))
+		Expect(evt.ClusterID).To(Equal("remote-cluster"))
+		Expect(evt.CorrelationID).To(Equal("corr-unavailable-1"))
+		Expect(evt.Data["cluster_id"]).To(Equal("remote-cluster"))
+	})
+
+	It("emits nothing for a hub-local investigation (clusterID empty) even with a nil resolver", func() {
+		store := &fleetOverlayRecordingAuditStore{}
+		inv := &Investigator{
+			logger:               logr.Discard(),
+			auditStore:           store,
+			fleetOverlayResolver: nil,
+		}
+
+		_ = inv.prescopeFleetOverlay(context.Background(), "", "corr-hub-1")
+
+		Expect(store.events).To(BeEmpty(),
+			"UT-KA-FLEET-028: a hub-local investigation (no target cluster) must stay silent -- "+
+				"this is the expected, unchanged zero-regression path, not a degraded one")
+	})
+
+	It("emits the pre-existing EventTypeFleetOverlayFailed (not Unavailable) when a real resolver errors", func() {
+		store := &fleetOverlayRecordingAuditStore{}
+		inv := &Investigator{
+			logger:               logr.Discard(),
+			auditStore:           store,
+			fleetOverlayResolver: fleetOverlayErrResolver{},
+		}
+
+		_ = inv.prescopeFleetOverlay(context.Background(), "remote-cluster", "corr-err-1")
+
+		Expect(store.events).To(HaveLen(1))
+		Expect(store.events[0].EventType).To(Equal(audit.EventTypeFleetOverlayFailed),
+			"UT-KA-FLEET-028: a configured-but-erroring resolver is a distinct condition from "+
+				"'not configured at all' and must keep using the pre-existing event type")
+	})
+
+	It("emits nothing when a real resolver succeeds", func() {
+		store := &fleetOverlayRecordingAuditStore{}
+		inv := &Investigator{
+			logger:               logr.Discard(),
+			auditStore:           store,
+			fleetOverlayResolver: fleetOverlaySuccessResolver{},
+		}
+
+		got := inv.prescopeFleetOverlay(context.Background(), "remote-cluster", "corr-ok-1")
+
+		Expect(store.events).To(BeEmpty(), "UT-KA-FLEET-028: a successful resolution needs no degradation event")
+		_, ok := FleetOverlayFromContext(got)
+		Expect(ok).To(BeTrue(), "a successful resolver must still populate the overlay as before")
 	})
 })
