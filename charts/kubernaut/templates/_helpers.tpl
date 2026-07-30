@@ -45,8 +45,9 @@ cluster access (helm template/GitOps must set this explicitly).
 Usage: {{ include "kubernaut.tls.issuerName" . }}
 */}}
 {{- define "kubernaut.tls.issuerName" -}}
-{{- if .Values.tls.certManager.issuerRef.name -}}
-{{- .Values.tls.certManager.issuerRef.name -}}
+{{- $explicitIssuerName := dig "certManager" "issuerRef" "name" "" .Values.tls -}}
+{{- if $explicitIssuerName -}}
+{{- $explicitIssuerName -}}
 {{- else if eq (include "kubernaut.hasClusterAccess" .) "true" -}}
 {{- $tlsV := include "kubernaut.mergedValues" (dict "root" . "service" "tls") | fromYaml -}}
 {{- $kind := $tlsV.certManager.issuerRef.kind -}}
