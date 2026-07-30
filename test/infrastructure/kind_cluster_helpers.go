@@ -25,6 +25,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // minKindVersionMajor, minKindVersionMinor define the minimum supported Kind
@@ -92,6 +93,68 @@ type ExtraMount struct {
 	HostPath      string
 	ContainerPath string
 	ReadOnly      bool
+}
+
+// kindCreateClusterMaxAttempts caps retries for `kind create cluster` when it
+// fails with a known-transient container-runtime error (Issue #1769).
+//
+// GitHub-hosted runners intermittently install a podman/crun combination where
+// the OCI runtime rejects the generated container config ("crun: unknown
+// version specified"), causing `kind create cluster` to fail with exit status
+// 126 while starting the control-plane container. This is a transient
+// container-runtime hiccup on the runner -- not a Kind config, kubeconfig, or
+// application-code problem -- and Kind itself already tears down the
+// partially-created node ("Deleted nodes: [...]") before returning, so retrying
+// the whole `kind create cluster` invocation from scratch is safe.
+const kindCreateClusterMaxAttempts = 3
+
+// transientKindRuntimeErrorPatterns are substrings of `kind create cluster`
+// output that indicate a transient container-runtime failure worth retrying,
+// as opposed to a genuine config/environment problem that would just fail
+// identically on every attempt.
+var transientKindRuntimeErrorPatterns = []string{
+	"crun: unknown version specified",
+	"OCI runtime error",
+}
+
+// isTransientKindRuntimeError reports whether kind's combined output matches a
+// known-transient container-runtime failure signature.
+func isTransientKindRuntimeError(output string) bool {
+	for _, pattern := range transientKindRuntimeErrorPatterns {
+		if strings.Contains(output, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// retryTransientKindRuntimeError runs runOnce (a `kind create cluster`
+// invocation) up to kindCreateClusterMaxAttempts times, retrying only when
+// runOnce fails AND its captured output matches a known-transient
+// container-runtime error (see isTransientKindRuntimeError). Any other
+// failure (bad config, missing binary, etc.) returns immediately on the first
+// attempt, since retrying would just reproduce the same error.
+func retryTransientKindRuntimeError(writer io.Writer, runOnce func() (output string, err error)) error {
+	const label = "kind create cluster"
+	var lastErr error
+	for attempt := 1; attempt <= kindCreateClusterMaxAttempts; attempt++ {
+		output, err := runOnce()
+		if err == nil {
+			if attempt > 1 {
+				_, _ = fmt.Fprintf(writer, "   ✅ %s succeeded on attempt %d/%d\n", label, attempt, kindCreateClusterMaxAttempts)
+			}
+			return nil
+		}
+		lastErr = err
+		if attempt >= kindCreateClusterMaxAttempts || !isTransientKindRuntimeError(output) {
+			return lastErr
+		}
+		backoff := time.Duration(attempt) * 5 * time.Second
+		_, _ = fmt.Fprintf(writer, "   ⚠️  %s hit a transient container-runtime error (attempt %d/%d), retrying in %v: %v\n",
+			label, attempt, kindCreateClusterMaxAttempts, backoff, err)
+		time.Sleep(backoff)
+	}
+	return lastErr
 }
 
 // CreateKindClusterWithExtraMounts creates a Kind cluster with dynamically added extraMounts
@@ -194,15 +257,19 @@ func CreateKindClusterWithExtraMounts(
 		_, _ = fmt.Fprintf(writer, "      %s → %s%s\n", mount.HostPath, mount.ContainerPath, readOnlyStr)
 	}
 
-	// 7. Create Kind cluster
-	cmd := exec.Command("kind", "create", "cluster",
-		"--name", clusterName,
-		"--config", tmpConfig.Name(),
-		"--kubeconfig", kubeconfigPath)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-
-	if err := cmd.Run(); err != nil {
+	// 7. Create Kind cluster (Issue #1769: retry on transient runtime errors)
+	err = retryTransientKindRuntimeError(writer, func() (string, error) {
+		var captured strings.Builder
+		cmd := exec.Command("kind", "create", "cluster",
+			"--name", clusterName,
+			"--config", tmpConfig.Name(),
+			"--kubeconfig", kubeconfigPath)
+		cmd.Stdout = io.MultiWriter(writer, &captured)
+		cmd.Stderr = io.MultiWriter(writer, &captured)
+		runErr := cmd.Run()
+		return captured.String(), runErr
+	})
+	if err != nil {
 		return fmt.Errorf("kind create cluster failed: %w", err)
 	}
 
@@ -399,27 +466,32 @@ func CreateKindClusterWithConfig(opts KindClusterOptions, writer io.Writer) erro
 		waitTimeout = "60s"
 	}
 
-	cmd := exec.Command("kind", "create", "cluster",
-		"--name", opts.ClusterName,
-		"--config", absoluteConfigPath,
-		"--kubeconfig", opts.KubeconfigPath,
-		"--wait", waitTimeout)
+	// 9. Create cluster (Issue #1769: retry on transient runtime errors)
+	err = retryTransientKindRuntimeError(writer, func() (string, error) {
+		var captured strings.Builder
+		cmd := exec.Command("kind", "create", "cluster",
+			"--name", opts.ClusterName,
+			"--config", absoluteConfigPath,
+			"--kubeconfig", opts.KubeconfigPath,
+			"--wait", waitTimeout)
 
-	cmd.Stdout = writer
-	cmd.Stderr = writer
+		cmd.Stdout = io.MultiWriter(writer, &captured)
+		cmd.Stderr = io.MultiWriter(writer, &captured)
 
-	// 7. Set working directory to project root if requested (for ./coverdata resolution)
-	if opts.ProjectRootAsWorkingDir {
-		cmd.Dir = workspaceRoot
-	}
+		// 7. Set working directory to project root if requested (for ./coverdata resolution)
+		if opts.ProjectRootAsWorkingDir {
+			cmd.Dir = workspaceRoot
+		}
 
-	// 8. Set Podman provider if requested
-	if opts.UsePodman {
-		cmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
-	}
+		// 8. Set Podman provider if requested
+		if opts.UsePodman {
+			cmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+		}
 
-	// 9. Create cluster
-	if err := cmd.Run(); err != nil {
+		runErr := cmd.Run()
+		return captured.String(), runErr
+	})
+	if err != nil {
 		return fmt.Errorf("kind create cluster failed: %w", err)
 	}
 
