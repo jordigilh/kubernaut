@@ -32,6 +32,7 @@ type HistoryOpts struct {
 	Kind      string
 	Name      string
 	Since     string
+	SpecHash  string
 }
 
 // HistoricalRemediation is a past remediation record from the Data Store.

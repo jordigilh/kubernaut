@@ -78,11 +78,24 @@ func HandleKubectlGet(ctx context.Context, client dynamic.Interface, mapper meta
 }
 
 // resolveGVR maps a Kind string to a GroupVersionResource using the static
-// table in pkg/shared/k8s and UnsafeGuessKindToResource for pluralization.
+// table in pkg/shared/k8s for the GVK, then the discovery-backed RESTMapper
+// for the real plural resource name. Falls back to
+// meta.UnsafeGuessKindToResource's naive heuristic only when no mapper is
+// available (e.g. some unit tests) or the mapper has no mapping for the GVK.
+//
+// #1772: the naive guesser mis-pluralizes irregular Kinds (e.g.
+// "AIAnalysis" -> "aianalysises" instead of the real "aianalyses"), which
+// 404s at the API server and gets misreported by ToUserFriendlyError as an
+// RBAC/403 problem even when the caller's permissions are correct.
 func resolveGVR(mapper meta.RESTMapper, kind string) (schema.GroupVersionResource, error) {
 	gvk, err := sharedK8s.ResolveGVKForKind(mapper, kind)
 	if err != nil {
 		return schema.GroupVersionResource{}, err
+	}
+	if mapper != nil {
+		if mapping, mErr := mapper.RESTMapping(gvk.GroupKind(), gvk.Version); mErr == nil {
+			return mapping.Resource, nil
+		}
 	}
 	plural, _ := meta.UnsafeGuessKindToResource(gvk)
 	return plural, nil
