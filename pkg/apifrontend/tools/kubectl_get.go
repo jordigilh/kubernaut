@@ -73,10 +73,22 @@ func HandleKubectlGet(ctx context.Context, reader ResourceReader, mapper meta.RE
 // resolveGVRAndGVK maps a Kind string to both GroupVersionResource and
 // GroupVersionKind using the static table in pkg/shared/k8s. Both are
 // needed: GVR for dynamic.Interface and GVK for client.Reader dispatch.
+//
+// #1772: the plural must come from the RESTMapper (which reflects the API
+// server's actual resource naming) whenever one is available. Falling back
+// straight to meta.UnsafeGuessKindToResource's naive kind-lowercase+"s"
+// heuristic mis-pluralizes irregular kinds (e.g. Ingress -> "ingresss"),
+// causing kubectl_get to look up the wrong resource and return a false
+// "not found".
 func resolveGVRAndGVK(mapper meta.RESTMapper, kind string) (schema.GroupVersionResource, schema.GroupVersionKind, error) {
 	gvk, err := sharedK8s.ResolveGVKForKind(mapper, kind)
 	if err != nil {
 		return schema.GroupVersionResource{}, schema.GroupVersionKind{}, err
+	}
+	if mapper != nil {
+		if mapping, mErr := mapper.RESTMapping(gvk.GroupKind(), gvk.Version); mErr == nil {
+			return mapping.Resource, gvk, nil
+		}
 	}
 	plural, _ := meta.UnsafeGuessKindToResource(gvk)
 	return plural, gvk, nil

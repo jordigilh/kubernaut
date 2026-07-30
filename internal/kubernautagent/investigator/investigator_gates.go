@@ -81,18 +81,18 @@ func (inv *Investigator) sameKindValidationGate(
 		"signal_resource_kind", signal.ResourceKind,
 		"correlation_id", correlationID)
 
+	// #1777 (BR-AUDIT-005, FedRAMP AU-3): prompt_length/prompt_preview are
+	// populated in retryForSameKind, once the actual retry prompt exists —
+	// see the audit.StoreBestEffort call there for why.
 	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
 	gateEvent.EventAction = audit.ActionSameKindGate
 	gateEvent.EventOutcome = audit.OutcomeSuccess
 	gateEvent.Data["model"] = modelName
-	gateEvent.Data["prompt_length"] = 0
-	gateEvent.Data["prompt_preview"] = ""
 	gateEvent.Data["signal_resource_kind"] = signal.ResourceKind
 	gateEvent.Data["target_kind"] = result.RemediationTarget.Kind
 	gateEvent.Data["target_name"] = result.RemediationTarget.Name
-	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
-	return inv.retryForSameKind(ctx, result, history, llmCtx)
+	return inv.retryForSameKind(ctx, result, history, llmCtx, gateEvent)
 }
 
 // sameKindCorrectionMessage builds the LLM correction message asking it to
@@ -116,12 +116,22 @@ func sameKindCorrectionMessage(targetKind string) string {
 // the retry response. Falls back to the original result at every failure
 // point: LLM error, empty response, parse error, or a retry result that
 // lost the remediation target.
-func (inv *Investigator) retryForSameKind(ctx context.Context, result *katypes.InvestigationResult, history []llm.Message, llmCtx LLMInvocationContext) *katypes.InvestigationResult {
+func (inv *Investigator) retryForSameKind(ctx context.Context, result *katypes.InvestigationResult, history []llm.Message, llmCtx LLMInvocationContext, gateEvent *audit.AuditEvent) *katypes.InvestigationResult {
 	tokens, correlationID, client, runtimeParams := llmCtx.Tokens, llmCtx.CorrelationID, llmCtx.Client, llmCtx.RuntimeParams
 	correctionMsg := sameKindCorrectionMessage(result.RemediationTarget.Kind)
+	retryMessages := appendCorrectionMessage(history, correctionMsg)
+
+	// #1777 (BR-AUDIT-005, FedRAMP AU-3): the audit event must reflect the
+	// retry prompt actually sent to the LLM. Populating these fields before
+	// retryMessages exists forced prompt_length/prompt_preview to a
+	// hardcoded 0/"" that misrepresented every gate retry as an empty
+	// request.
+	gateEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
+	gateEvent.Data["prompt_preview"] = lastUserMessage(retryMessages)
+	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
 	resp, err := llm.ChatWithParams(ctx, client, llm.ChatRequest{
-		Messages: appendCorrectionMessage(history, correctionMsg),
+		Messages: retryMessages,
 		Tools:    submitOnlyRCATools(),
 		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
 	}, runtimeParams)
@@ -209,15 +219,15 @@ func (inv *Investigator) apiVersionValidationGate(
 	inv.logger.Info("apiVersionValidationGate triggered: ambiguous kind missing api_version",
 		"kind", kind, "conflicting_groups", groupList, "correlation_id", correlationID)
 
+	// #1777 (BR-AUDIT-005, FedRAMP AU-3): prompt_length/prompt_preview are
+	// populated in retryForAPIVersion, once the actual retry prompt exists —
+	// see the audit.StoreBestEffort call there for why.
 	gateEvent := audit.NewEvent(audit.EventTypeLLMRequest, correlationID)
 	gateEvent.EventAction = audit.ActionAPIVersionGate
 	gateEvent.EventOutcome = audit.OutcomeSuccess
 	gateEvent.Data["model"] = modelName
-	gateEvent.Data["prompt_length"] = 0
-	gateEvent.Data["prompt_preview"] = ""
 	gateEvent.Data["ambiguous_kind"] = kind
 	gateEvent.Data["conflicting_groups"] = groupList
-	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
 	return inv.retryForAPIVersion(ctx, retryForAPIVersionParams{
 		Result: result, History: history, Client: client, RuntimeParams: runtimeParams, Tokens: tokens,
@@ -289,9 +299,19 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 			`API group the target %s/%s belongs to.`,
 		kind, groupList, kind, result.RemediationTarget.Name,
 	)
+	retryMessages := appendCorrectionMessage(history, correctionMsg)
+
+	// #1777 (BR-AUDIT-005, FedRAMP AU-3): the audit event must reflect the
+	// retry prompt actually sent to the LLM. Populating these fields before
+	// retryMessages exists forced prompt_length/prompt_preview to a
+	// hardcoded 0/"" that misrepresented every gate retry as an empty
+	// request.
+	gateEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
+	gateEvent.Data["prompt_preview"] = lastUserMessage(retryMessages)
+	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
 	resp, retryErr := llm.ChatWithParams(ctx, client, llm.ChatRequest{
-		Messages: appendCorrectionMessage(history, correctionMsg),
+		Messages: retryMessages,
 		Tools:    submitOnlyRCATools(),
 		Options:  llm.ChatOptions{JSONMode: true, OutputSchema: parser.RCAResultSchema()},
 	}, runtimeParams)

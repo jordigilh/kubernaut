@@ -659,6 +659,14 @@ func extractTextDelta(event anthropic.MessageStreamEventUnion) (string, bool) {
 	if event.Delta.Text != "" {
 		return event.Delta.Text, true
 	}
+	// #1775: extended/interleaved thinking (Claude's thinking: {type: "enabled"}
+	// param) streams its content as thinking_delta events, populating
+	// event.Delta.Thinking rather than event.Delta.Text. Without this branch,
+	// that content is silently dropped from the token_delta sink the moment
+	// extended thinking is enabled on a request.
+	if event.Delta.Thinking != "" {
+		return event.Delta.Thinking, true
+	}
 	return "", false
 }
 

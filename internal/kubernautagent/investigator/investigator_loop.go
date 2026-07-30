@@ -247,7 +247,7 @@ func (inv *Investigator) emitLLMRequestAudit(ctx context.Context, correlationID,
 	reqEvent.EventOutcome = audit.OutcomeSuccess
 	reqEvent.Data["model"] = modelName
 	reqEvent.Data["prompt_length"] = totalPromptLength(messages)
-	reqEvent.Data["prompt_preview"] = lastUserMessage(messages, 500)
+	reqEvent.Data["prompt_preview"] = lastUserMessage(messages)
 	reqEvent.Data["toolsets_enabled"] = toolNames(toolDefs)
 	reqEvent.Data["messages"] = messagesToAuditFormat(messages)
 	audit.StoreBestEffort(ctx, inv.auditStore, reqEvent, inv.auditLog())
