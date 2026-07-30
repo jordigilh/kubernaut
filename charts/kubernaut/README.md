@@ -406,34 +406,33 @@ management, automated upgrades). See the
 
 All values are validated against `values.schema.json`. Run `helm lint` to check your overrides.
 
-### Global
+**Full field-by-field reference**: every parameter's type, description, default, and
+required/optional state is auto-generated straight from `values.schema.json` into
+[`docs/generated/helm-values-reference.md`](../../docs/generated/helm-values-reference.md)
+(`make generate-helm-config-docs`, CI-enforced freshness) — one table per service, always
+in sync with what Helm actually validates. This section covers only the narrative parts
+(architecture, cross-field dependencies, worked examples) that a flat field table can't
+convey.
 
-| Parameter | Description | Default |
-|---|---|---|
-| `global.image.registry` | Container image registry | `quay.io` |
-| `global.image.namespace` | Image namespace prefix | `kubernaut-ai` |
-| `global.image.separator` | Namespace-to-service separator (`/` nested, `-` flat) | `/` |
-| `global.image.tag` | Image tag (defaults to `appVersion`) | `""` |
-| `global.image.digest` | Image digest (overrides tag when set) | `""` |
-| `global.image.pullPolicy` | Image pull policy | `IfNotPresent` |
-| `global.nodeSelector` | Global node selector | `{}` |
-| `global.tolerations` | Global tolerations | `[]` |
-| `global.fleet.enabled` | Multi-cluster fleet federation on/off (BR-INTEGRATION-065, ADR-068), consolidated from four independent per-service toggles ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707)) | `false` |
-| `global.fleet.backend` | Federated scope-check backend for GW/RO: `""` (defaults to `fleetmetadatacache`), `fleetmetadatacache`, or `acm`. Enum-validated — `helm template`/`install` fails at render time for any other value ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up) | `""` |
-| `global.fleet.endpoint` | Endpoint for the selected `backend`. Auto-derived for `fleetmetadatacache`; required for `acm` | `""` |
-| `global.fleet.mcpGatewayEndpoint` | Shared MCP Gateway endpoint URL, used by every fleet-integration-capable service (global-only, no per-service override) | `""` |
-| `global.fleet.mcpGatewayType` | Shared MCP Gateway type: `""`, `eaigw`, or `kuadrant`. Enum-validated — `helm template`/`install` fails at render time for any other value | `""` |
-| `global.fleet.tlsCAFile` | Shared CA bundle for verifying the MCP Gateway's TLS cert (global-only, no per-service override) | `""` |
-| `global.fleet.tokenSecretRef` | Secret (key `token`) with an ACM Search bearer token. **Mandatory when `backend: "acm"`** — GW/RO fail `FleetConfig.Validate()` at startup without it ([Issue #1556](https://github.com/jordigilh/kubernaut/issues/1556)) | `""` |
-| `global.fleet.oauth2.enabled` | OAuth2 `client_credentials` auth on/off for MCP Gateway authentication (global-only, no per-service override) | `false` |
-| `global.fleet.oauth2.tokenURL` | Shared MCP Gateway OAuth2 token URL (global-only, no per-service override) | `""` |
-| `global.fleet.oauth2.credentialsSecretRef` | Shared MCP Gateway OAuth2 credentials Secret (keys: `client-id`, `client-secret`), used as the default when a service's own `fleet.oauth2.credentialsSecretRef` is unset | `""` |
-| `global.fleet.oauth2.scopes` | Shared MCP Gateway OAuth2 scopes (global-only, no per-service override) | `[]` |
-| `global.fleet.oauth2.tlsCAFile` | Shared CA bundle for verifying `tokenURL`'s TLS cert (global-only, no per-service override) | `""` |
+### Global / Fleet Federation
 
 Every fleet-integration-capable service (`gateway`, `signalprocessing`, `remediationorchestrator`, `effectivenessmonitor`, `apifrontend`, `fleetmetadatacache`) points at the same physical MCP Gateway instance (and, for `gateway`/`remediationorchestrator`, the same scope-check backend), so `global.fleet` is the **sole source of truth** for all of it ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up). The single per-service exception is `fleet.oauth2.credentialsSecretRef`, which each service can still override individually (see each service's own `fleet.oauth2` block, or `fleetmetadatacache.oauth2` for FMC) — every other field that used to be duplicated per service (`backend`, `endpoint`, `mcpGatewayEndpoint`, `mcpGatewayType`, `tlsCAFile`, `tokenSecretRef`, `oauth2.enabled`/`tokenURL`/`scopes`/`tlsCAFile`) was removed from every per-service schema entirely; setting it there now fails Helm schema validation at render time instead of being silently ignored. `global.fleet.enabled` is the single on/off switch for multi-cluster fleet federation across `gateway`, `remediationorchestrator`, `apifrontend`, and `effectivenessmonitor` — there is no per-service equivalent. `fleetmetadatacache.enabled` (whether to deploy that service at all) remains independent and is not controlled by this global.
 
 `global.fleet.mcpGatewayEndpoint` is required when `global.fleet.enabled` / `fleetmetadatacache.enabled` is `true` for `gateway`, `remediationorchestrator`, and `fleetmetadatacache` — `helm install`/`upgrade` fails fast with a remediation message if it's unset. It's optional for `effectivenessmonitor` and `apifrontend`, where an empty value just means those services fall back to reading local-cluster-only state instead of federating through the MCP Gateway.
+
+**Worked example** (enabling Fleet with the FleetMetadataCache backend and OAuth2 auth; see
+`docs/generated/helm-values-reference.md#global` for the complete field list including
+`backend: "acm"`'s additional requirements):
+
+```bash
+helm install kubernaut charts/kubernaut \
+  --set global.fleet.enabled=true \
+  --set global.fleet.mcpGatewayEndpoint=http://envoy-ai-gateway.kubernaut-system.svc:8080/mcp \
+  --set global.fleet.oauth2.enabled=true \
+  --set global.fleet.oauth2.tokenURL=https://dex.example.com/token \
+  --set global.fleet.oauth2.credentialsSecretRef=fleet-oauth2-creds \
+  --set fleetmetadatacache.enabled=true
+```
 
 ### LLM Profiles (DD-PLATFORM-007)
 
@@ -444,80 +443,29 @@ backward-compat shim, since the chart is pre-GA.
 
 At least one profile is required — `kubernautAgent.llmProfileRef` defaults to `"primary"`
 (matching the convention used throughout this README/`quickstart.sh`), and the chart fails
-fast at render time if the referenced profile (whatever its name) is undefined.
-
-| Parameter | Description | Default |
-|---|---|---|
-| `global.llmProfiles.<name>.provider` | LLM provider: `openai`, `anthropic`, `vertex_ai`, or `openai_compatible` — **required** | none |
-| `global.llmProfiles.<name>.model` | Model name (`gpt-4o`, `claude-sonnet-4-20250514`, `gemini-2.5-pro`, ...) | `""` |
-| `global.llmProfiles.<name>.credentialsSecretName` | Secret with the LLM API key (key `api_key`) or, for `vertex_ai`, a service-account JSON key (key `credentials.json`) — **required** | none |
-| `global.llmProfiles.<name>.endpoint` | Endpoint URL, functionally required for `openai`/`openai_compatible` on both KA and AF (e.g. `https://api.openai.com/v1` for real OpenAI, or a self-hosted/Azure (`azureApiVersion`) base URL) — neither client defaults it. API Frontend fails fast at startup if it's unset for these providers; Kubernaut Agent does not validate it upfront, but every LLM call fails at request time without it | `""` |
-| `global.llmProfiles.<name>.temperature` | Sampling temperature | `0.7` |
-| `global.llmProfiles.<name>.maxRetries` | Max retry attempts on transient LLM errors | `3` |
-| `global.llmProfiles.<name>.timeoutSeconds` | Per-request timeout | `120` |
-| `global.llmProfiles.<name>.vertexProject` | GCP project ID (`vertex_ai` only) | `""` |
-| `global.llmProfiles.<name>.vertexLocation` | GCP region (`vertex_ai` only) | `""` |
-| `global.llmProfiles.<name>.azureApiVersion` | Switches `openai`/`openai_compatible` into Azure OpenAI mode | `""` |
-| `global.llmProfiles.<name>.tlsCaFile` | PEM CA cert path for internal LLM endpoints behind a private CA | `""` |
-| `global.llmProfiles.<name>.oauth2.enabled` | Enable OAuth2 client-credentials auth for the LLM gateway | `false` |
-| `global.llmProfiles.<name>.oauth2.tokenURL` | OAuth2 token endpoint URL | `""` |
-| `global.llmProfiles.<name>.oauth2.credentialsSecretRef` | Secret with `client-id`/`client-secret` keys (mounted as files) | `""` |
-| `global.llmProfiles.<name>.reasoning.enabled` | Request model reasoning/thinking output (BR-AI-086). Supported today on the Anthropic-family client (native + Vertex) | `false` |
-| `global.llmProfiles.<name>.reasoning.budgetTokens` | Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). `0` lets the client choose a default. Anthropic-only; always wins over `effort` when set | `0` |
-| `global.llmProfiles.<name>.reasoning.effort` | Unified, provider-agnostic reasoning-depth knob (#1604): `""` (vendor/provider default), `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Supported on Anthropic, real OpenAI/gpt-5/o-series models, and DeepSeek | `""` |
-| `global.llmProfiles.<name>.reasoning.capabilityOverride` | Override reasoning-capability auto-detection for `openai_compatible` self-hosted models: `""` (auto), `force_on`, or `force_off` | `""` |
+fast at render time if the referenced profile (whatever its name) is undefined. See
+`docs/generated/helm-values-reference.md#global` for the full `llmProfiles.<name>.*` field
+list (provider, model, credentials, reasoning knobs, etc.).
 
 ### Kubernaut Agent (LLM)
-
-| Parameter | Description | Default |
-|---|---|---|
-| `kubernautAgent.llmProfileRef` | Name of an entry in `global.llmProfiles` for KA's main investigation LLM (the named profile must still exist) | `primary` |
-| `kubernautAgent.phaseModels.<phase>` | Per-phase LLM override, one of `rca`, `workflow_discovery`, `validation` → a `global.llmProfiles` name. Omitted phases use `llmProfileRef`'s profile unchanged | `{}` |
-| `kubernautAgent.alignmentCheck.llmProfileRef` | Name of an entry in `global.llmProfiles` for the plan-alignment-check LLM call. Empty (default) inherits `llmProfileRef`'s resolved profile. Fixes a dead-field bug where the chart previously wrote an `apiKey` the Go binary never read (it expects `apiKeyFile`) | `""` |
-| `kubernautAgent.prometheus.enabled` | Enable Prometheus toolset | `false` |
-| `kubernautAgent.prometheus.url` | Prometheus/Thanos URL | `""` |
-| `kubernautAgent.prometheus.tls.enabled` | Enable TLS CA trust for Prometheus connections | `false` |
-| `kubernautAgent.prometheus.tls.caConfigMapName` | ConfigMap with CA PEM | `""` |
-| `kubernautAgent.service.type` | Kubernetes Service type (`ClusterIP`, `NodePort`, `LoadBalancer`) | `ClusterIP` |
-| `kubernautAgent.service.nodePort` | Explicit NodePort for the https (MCP/API) port when `type=NodePort`. `0` = Kubernetes auto-assigns; see `gateway.service.nodePort` for rationale | `0` |
-| `kubernautAgent.interactive.maxConcurrentSessions` | Max concurrent MCP interactive sessions per agent replica. Issue #1737 gap found: raised from a too-low prior default of `5` -- confirmed via full-suite E2E to cause "max_sessions: Maximum concurrent sessions reached" from Ginkgo's own test parallelism alone | `50` |
-| `kubernautAgent.interactive.rateLimitPerUser` | Max MCP requests per second per authenticated user | `20` |
 
 All LLM configuration is part of the main `kubernaut-agent-config`/`kubernaut-agent-llm-runtime`
 ConfigMaps. Credentials (API keys, `vertex_ai` service-account JSON, OAuth2 client secrets) are
 always mounted from a Secret as files — never exposed as environment variables or inlined in a
 ConfigMap. Distinct `credentialsSecretName`s across `phaseModels`/`alignmentCheck` each get their
 own dedicated Secret mount; a phase/alignment-check profile that shares `llmProfileRef`'s own
-`credentialsSecretName` reuses that existing mount instead of duplicating it.
+`credentialsSecretName` reuses that existing mount instead of duplicating it. See
+`docs/generated/helm-values-reference.md#kubernautagent` for the full field list
+(`llmProfileRef`, `phaseModels.<phase>`, `alignmentCheck.llmProfileRef`, Prometheus toolset,
+service/interactive settings).
 
 ### API Frontend (LLM)
 
 API Frontend's own agent-loop LLM connection and severity-triage LLM tiers were previously
-unreachable via Helm despite being fully implemented in Go — both are now wired.
-
-| Parameter | Description | Default |
-|---|---|---|
-| `apifrontend.llmProfileRef` | Name of an entry in `global.llmProfiles` for AF's own `agent.llm` connection. Empty (default) falls back to `kubernautAgent.llmProfileRef`'s resolved profile | `""` |
-| `apifrontend.config.severityTriage.llmProfileRef` | Name of an entry in `global.llmProfiles` for severity-triage's LLM fallback tier, independent of `apifrontend.llmProfileRef`. Empty (default) inherits AF's own resolved profile | `""` |
-| `apifrontend.config.severityTriage.llmEnabled` | Whether LLM-based severity-triage tiers are active. `false` forces rule-based-only triage (no `llm` block rendered) | `true` |
-| `apifrontend.config.severityTriage.maxQueriesPerCall` | Max Prometheus queries per triage call | `10` |
-| `apifrontend.config.severityTriage.maxRulesEvaluated` | Max rule-based triage rules evaluated per call | `100` |
-| `apifrontend.config.mcp.enabled` | Enables AF's own `/mcp` protocol endpoint for external MCP clients (distinct from AF-as-a-client-of-KA's-MCP-server, always active). Go's `Config.DefaultConfig()` defaults this `false`, so it must be explicitly enabled here; `false` returns 501 for every `/mcp` request | `true` |
-| `apifrontend.config.mcp.sessionIdleTimeout` | Idle timeout for AF's `/mcp` sessions | `5m` |
-| `apifrontend.config.interactive.enabled` | Enables session-dependent A2A/MCP tools (`kubernaut_investigate`, `discover_workflows`, `select_workflow`, `message`, `complete`, `cancel`, `status`, `reconnect`, `await_session`). Go's `Config.DefaultConfig()` already defaults this `true`; exposed here for override/documentation clarity | `true` |
-| `apifrontend.config.interactive.awaitSessionTimeout` | Timeout for the `kubernaut_await_session` tool | `10s` |
-| `apifrontend.config.interactive.bridgeInactivityTimeout` | Inactivity timeout for the KA session bridge | `15s` |
-| `apifrontend.config.rateLimit.ipRequestsPerSec` | Per-IP request rate limit | `10000` |
-| `apifrontend.config.rateLimit.userRequestsPerSec` | Per-user request rate limit | `100` |
-| `apifrontend.config.rateLimit.maxConcurrentSessions` | Max concurrent MCP/interactive sessions per user. Go's package-level fallback (used whenever this is `0`) is only `3` -- confirmed via E2E to cause "Maximum concurrent sessions reached" under realistic concurrent load | `50` |
-| `apifrontend.config.rateLimit.toolCallsPerMinute` | Max tool calls per minute per user. Go's package-level fallback (used whenever this is `0`) is only `60` | `600` |
-| `apifrontend.service.type` | Kubernetes Service type (`ClusterIP`/`NodePort`/`LoadBalancer`) | `ClusterIP` |
-| `apifrontend.service.nodePort` | Explicit NodePort for the https port when `type=NodePort`. `0` = Kubernetes auto-assigns; see `gateway.service.nodePort` for rationale | `0` |
-| `apifrontend.ingress.enabled` | Create a `networking.k8s.io/v1` Ingress for external access (BR-PLATFORM-009, Kubernaut Operator `APIFrontendRoute` parity). Opt-in: AF is a machine-facing pipeline entry point, so external exposure is a deliberate choice | `false` |
-| `apifrontend.ingress.className` | `spec.ingressClassName` | `""` |
-| `apifrontend.ingress.host` | External hostname. Optional -- unlike Console, no internal component depends on it; empty renders a catch-all rule | `""` |
-| `apifrontend.ingress.annotations` | Extra Ingress annotations. **Required in practice**: AF serves HTTPS internally with a self-signed cert, so a controller-specific backend-protocol/TLS-passthrough annotation is needed (e.g. ingress-nginx: `nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"` + `nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"`) -- the chart does not hardcode one controller's syntax | `{}` |
-| `apifrontend.ingress.tls.secretName` | Pre-created Secret with a TLS cert for `host`; omit for a controller with its own default cert | `""` |
+unreachable via Helm despite being fully implemented in Go — both are now wired. See
+`docs/generated/helm-values-reference.md#apifrontend` for the full field list
+(`llmProfileRef`, `config.severityTriage.*`, `config.mcp.*`, `config.interactive.*`,
+`config.rateLimit.*`, service/ingress settings).
 
 `vertex_ai` authenticates via ambient `GOOGLE_APPLICATION_CREDENTIALS` (set automatically on the
 Deployment when a resolved profile is `vertex_ai`), so AF's own connection and severity-triage's
@@ -526,51 +474,21 @@ different credential files visible to the SDK's ADC lookup at the same time. The
 at render time (`kubernaut#1731`) if this combination is configured; use the same
 `credentialsSecretName` for both, or a non-`vertex_ai` provider for one of them.
 
-### SignalProcessing
+### SignalProcessing / AIAnalysis / Notification
 
-| Parameter | Description | Default |
-|---|---|---|
-| `signalprocessing.policies.content` | Rego policy content (via `--set-file`) — **required** | `""` |
-| `signalprocessing.policies.existingConfigMap` | Pre-existing ConfigMap with `policy.rego` key | `""` |
-| `signalprocessing.proactiveSignalMappings.content` | Proactive signal mappings YAML (via `--set-file`) | `""` |
-| `signalprocessing.proactiveSignalMappings.existingConfigMap` | Pre-existing ConfigMap | `""` |
-
-### AIAnalysis
-
-| Parameter | Description | Default |
-|---|---|---|
-| `aianalysis.policies.content` | Approval policy Rego (via `--set-file`) — **required** | `""` |
-| `aianalysis.policies.existingConfigMap` | Pre-existing ConfigMap with `approval.rego` key | `""` |
-| `aianalysis.rego.confidenceThreshold` | Confidence threshold for auto-approval (nil = Rego default 0.8) | `null` |
-
-### Notification
-
-| Parameter | Description | Default |
-|---|---|---|
-| `notification.slack.secretName` | Secret with Slack webhook URL (enables Slack) | `""` |
-| `notification.slack.secretKey` | Key in Secret containing the webhook URL | `webhook-url` |
-| `notification.slack.channel` | Slack channel | `#kubernaut-alerts` |
-| `notification.routing.content` | Full routing YAML (via `--set-file`; overrides slack shortcut) | `""` |
-| `notification.routing.existingConfigMap` | Pre-existing routing ConfigMap (highest priority) | `""` |
-| `notification.credentials` | Additional projected volume sources from Secrets | `[]` |
+See `docs/generated/helm-values-reference.md#signalprocessing`,
+`docs/generated/helm-values-reference.md#aianalysis`, and
+`docs/generated/helm-values-reference.md#notification` for the full field lists (Rego policy
+sourcing, proactive signal mappings, Slack/routing/credentials).
 
 ### WorkflowExecution
 
-| Parameter | Description | Default |
-|---|---|---|
-| `workflowexecution.config.execution.cooldownPeriod` | Cooldown between workflow executions | `1m` |
-| `workflowexecution.config.tekton.enabled` | `true`/omit = auto-discover Tekton CRDs; `false` = disable (#868) | _(auto-discover)_ |
-| `workflowexecution.config.ansible.apiURL` | AWX/AAP API URL (enables Ansible engine) | _(not set)_ |
-| `workflowexecution.config.ansible.organizationID` | AWX organization ID | `1` |
-| `workflowexecution.config.ansible.tokenSecretRef.name` | Secret containing AWX API token | `""` |
-| `workflowexecution.config.ansible.tokenSecretRef.key` | Key within the Secret | `token` |
-| `workflowexecution.config.ansible.tokenSecretRef.namespace` | Secret namespace (defaults to release namespace) | _(release ns)_ |
-| `workflowexecution.config.ansible.caCertSecretRef.name` | Secret with a custom/private CA cert for a self-signed AWX/AAP endpoint (BR-PLATFORM-005) | `""` |
-| `workflowexecution.config.ansible.caCertSecretRef.key` | Key within the Secret (PEM) | `ca.crt` |
-| `workflowexecution.fleet.oauth2.credentialsSecretRef` | K8s Secret (keys: `client-id`, `client-secret`) for a **write-scoped** OAuth2 client. **REQUIRED when `global.fleet.oauth2.enabled=true`** — `helm template`/`install` fails at render time if unset. Does **NOT** fall back to `global.fleet.oauth2.credentialsSecretRef`: WE is the only fleet-integration-capable service that calls MCP write tools (`resources_create_or_update`/`resources_delete`) instead of the read-only tools every other service (`gateway`/`remediationorchestrator`/`apifrontend`/`effectivenessmonitor`/`signalprocessing`/`fleetmetadatacache`) uses, so sharing their credential here would be a least-privilege violation | `""` |
+See `docs/generated/helm-values-reference.md#workflowexecution` for the full field list
+(`config.execution.*`, `config.tekton.enabled`, `config.ansible.*`,
+`fleet.oauth2.credentialsSecretRef`).
 
 WE's remote-execution `fleet.endpoint` and `fleet.oauth2.{enabled,tokenURL,scopes,tlsCAFile}` come
-entirely from [`global.fleet.*`](#global) — there is no per-service override for them, since WE has
+entirely from [`global.fleet.*`](#global--fleet-federation) — there is no per-service override for them, since WE has
 no `ClusterRegistry`/CRD-watch capability (no `mcpGatewayType`, no `namespace`; it discovers MCP tool
 prefixes dynamically via `tools/list`). Unlike GW/RO/FMC, an empty `global.fleet.mcpGatewayEndpoint`
 is a valid, supported state even with `global.fleet.enabled=true` — WE simply stays in local-only
@@ -582,74 +500,39 @@ the inter-service CA into one trust bundle (`TLS_CA_FILE`), mirroring the Kubern
 NetworkPolicy also allows HTTPS (443) egress, since the AWX/AAP endpoint may be outside the
 cluster's other known peers.
 
-### Gateway
+### Gateway / RemediationOrchestrator / EffectivenessMonitor
 
-| Parameter | Description | Default |
-|---|---|---|
-| `gateway.auth.signalSources` | External signal sources needing RBAC | `[]` |
-| `gateway.service.type` | Kubernetes Service type (`ClusterIP`/`NodePort`/`LoadBalancer`) | `ClusterIP` |
-| `gateway.service.nodePort` | Explicit NodePort for the http port when `type=NodePort`. `0` = Kubernetes auto-assigns from the 30000-32767 range. Useful for CI/test environments needing a deterministic, host-accessible port (e.g. Kind's `extraPortMappings`, which must know the exact port before cluster creation) or on-prem installs with fixed firewall/LB rules | `0` |
-| `gateway.ingress.enabled` | Create a `networking.k8s.io/v1` Ingress for external access (BR-PLATFORM-009, Kubernaut Operator `GatewayRoute` parity). Opt-in: Gateway is a machine-facing pipeline entry point, so external exposure is a deliberate choice | `false` |
-| `gateway.ingress.className` | `spec.ingressClassName` | `""` |
-| `gateway.ingress.host` | External hostname. Optional -- unlike Console, no internal component depends on it; empty renders a catch-all rule | `""` |
-| `gateway.ingress.annotations` | Extra Ingress annotations | `{}` |
-| `gateway.ingress.tls.secretName` | Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or a controller with its own default cert | `""` |
-| `gateway.fleet.oauth2.credentialsSecretRef` | K8s Secret (keys: `client-id`, `client-secret`) overriding `global.fleet.oauth2.credentialsSecretRef` for Gateway only. All other fleet fields (`backend`, `endpoint`, `tokenSecretRef`, `mcpGatewayEndpoint`, `mcpGatewayType`, `tlsCAFile`, `oauth2.enabled`/`tokenURL`/`scopes`/`tlsCAFile`) moved to [`global.fleet.*`](#global) ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up) | `""` |
-
-### RemediationOrchestrator
-
-| Parameter | Description | Default |
-|---|---|---|
-| `remediationorchestrator.fleet.oauth2.credentialsSecretRef` | K8s Secret (keys: `client-id`, `client-secret`) overriding `global.fleet.oauth2.credentialsSecretRef` for RemediationOrchestrator only. All other fleet fields (`backend`, `endpoint`, `tokenSecretRef`, `mcpGatewayEndpoint`, `mcpGatewayType`, `tlsCAFile`, `oauth2.enabled`/`tokenURL`/`scopes`/`tlsCAFile`) moved to [`global.fleet.*`](#global) ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up) | `""` |
-
-### EffectivenessMonitor
-
-| Parameter | Description | Default |
-|---|---|---|
-| `effectivenessmonitor.external.prometheusEnabled` | Enable Prometheus integration | `false` |
-| `effectivenessmonitor.external.prometheusUrl` | Prometheus URL | `http://kube-prometheus-stack-prometheus.monitoring.svc:9090` |
-| `effectivenessmonitor.external.alertManagerEnabled` | Enable AlertManager integration | `false` |
-| `effectivenessmonitor.external.alertManagerUrl` | AlertManager URL | `http://kube-prometheus-stack-alertmanager.monitoring.svc:9093` |
+See `docs/generated/helm-values-reference.md#gateway`,
+`docs/generated/helm-values-reference.md#remediationorchestrator`, and
+`docs/generated/helm-values-reference.md#effectivenessmonitor` for the full field lists
+(ingress, service type/nodePort, per-service `fleet.oauth2.credentialsSecretRef` override,
+external Prometheus/AlertManager for EM).
 
 ### Infrastructure
 
-| Parameter | Description | Default |
-|---|---|---|
-| `postgresql.enabled` | Deploy in-chart PostgreSQL | `true` |
-| `postgresql.auth.existingSecret` | Pre-created Secret name (empty = expect `postgresql-secret`) | `""` |
-| `postgresql.host` | External host (when `enabled=false`) | `""` |
-| `datastorage.dbExistingSecret` | DEPRECATED: db-secrets.yaml is now in postgresql-secret | `""` |
-| `datastorage.service.type` | Kubernetes Service type (`ClusterIP`/`NodePort`/`LoadBalancer`) | `ClusterIP` |
-| `datastorage.service.nodePort` | Explicit NodePort for the http port when `type=NodePort`. `0` = Kubernetes auto-assigns; see `gateway.service.nodePort` for rationale | `0` |
-| `valkey.enabled` | Deploy in-chart Valkey | `true` |
-| `valkey.existingSecret` | Pre-created Secret name (empty = expect `valkey-secret`) | `""` |
-| `valkey.host` | External host (when `enabled=false`) | `""` |
-| `datastorage.config.auditHashKey.existingSecret` | Pre-created HMAC key Secret name (empty = chart auto-generates one, GAP-05, mandatory); see [Keyed Audit Hash Chain](#keyed-audit-hash-chain-gap-05) | `""` |
-| `apifrontend.config.auth.replayCache.redisDB` | Valkey logical DB index used for the (mandatory, GAP-08) distributed JWT replay cache; see [Distributed JWT Replay Cache](#distributed-jwt-replay-cache-gap-08) | `1` |
-| `apifrontend.config.auth.replayCache.tls.caFile` | CA bundle for verifying Valkey's TLS cert (mandatory) | `/etc/tls-ca/ca.crt` |
-| `datastorage.config.server.rateLimit.requestsPerSecond` | Sustained per-IP requests/second (mandatory, GAP-09); see [Data Storage Per-IP Rate Limiting](#data-storage-per-ip-rate-limiting-gap-09) | `50` |
-| `datastorage.config.server.rateLimit.burst` | Per-IP token bucket burst size | `100` |
+**PostgreSQL/Valkey are deployed in-chart by default** (`postgresql.enabled`/`valkey.enabled`
+both default `true`, hidden from the example `values.yaml` since the in-chart path is the
+common case). See [BYO PostgreSQL / Valkey](#byo-postgresql--valkey) above to bring your own,
+and `docs/generated/helm-values-reference.md#postgresql` /
+`docs/generated/helm-values-reference.md#valkey` for the complete field lists.
+
+See `docs/generated/helm-values-reference.md#datastorage` for DataStorage's own fields,
+including the mandatory (GAP-05/08/09) `config.auditHashKey.existingSecret` (see
+[Keyed Audit Hash Chain](#keyed-audit-hash-chain-gap-05)),
+`apifrontend.config.auth.replayCache.*` (see
+[Distributed JWT Replay Cache](#distributed-jwt-replay-cache-gap-08)), and
+`config.server.rateLimit.*` (see
+[Data Storage Per-IP Rate Limiting](#data-storage-per-ip-rate-limiting-gap-09)).
 
 ### Console
 
-| Parameter | Description | Default |
-|---|---|---|
-| `console.enabled` | Deploy the standalone web console (BR-PLATFORM-006); see [Optional: Web Console](#optional-web-console-br-platform-006) | `false` |
-| `console.replicas` | Replica count | `1` |
-| `console.auth.secretName` | Secret with keys: `client-id`, `client-secret`, `cookie-secret`. **Required** when `console.enabled=true` | `""` |
-| `console.oauth2Proxy.image` | Third-party oauth2-proxy sidecar image | `quay.io/oauth2-proxy/oauth2-proxy:v7.15.3` |
-| `console.ingress.enabled` | Create a `networking.k8s.io/v1` Ingress for browser access (BR-PLATFORM-009). Opt-in: Console is optional UI tooling in front of APIFrontend that users may replace or front with their own Ingress/Route -- a deliberate deviation from the Operator's `ConsoleRouteSpec`, which defaults to opt-out | `false` |
-| `console.ingress.className` | `spec.ingressClassName` | `""` |
-| `console.ingress.host` | Browser-facing hostname. **Required** when `console.enabled=true` (even if `ingress.enabled=false`) | `""` |
-| `console.ingress.tls.secretName` | Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or a controller with its own default cert | `""` |
-| `console.pdb.{enabled,minAvailable,maxUnavailable}` | PodDisruptionBudget | `enabled: false` |
+See `docs/generated/helm-values-reference.md#console` for the full field list
+(`auth.secretName`, `oauth2Proxy.image`, `ingress.*`, `pdb.*`) and
+[Optional: Web Console](#optional-web-console-br-platform-006) for the narrative walkthrough.
 
 ### TLS
 
-| Parameter | Description | Default |
-|---|---|---|
-| `tls.mode` | `hook` (self-signed), `cert-manager` (production), or `manual` | `hook` |
-| `tls.certManager.issuerRef.name` | Issuer/ClusterIssuer name. When mode=cert-manager and left empty, auto-selected via `lookup` if exactly one exists in the cluster (real `helm install`/`upgrade` only); required if rendering via `helm template`/GitOps or if multiple issuers exist | `""` |
+See `docs/generated/helm-values-reference.md#tls` for `tls.mode`/`tls.certManager.issuerRef.name`.
 
 > **`datastorage-signing-cert` prerequisite** (#334): DataStorage signs audit exports with an
 > RSA 2048 key for tamper-evidence (AU-9) and **fails to start with no fallback** if this key is
@@ -704,19 +587,9 @@ NetworkPolicies are unconditionally mandatory for every service (DD-PLATFORM-006
 toggle; `additionalProperties: false` in the schema rejects both if set. The 4 policies for
 optional services (apifrontend/console/postgresql/valkey) are still a no-op when that service
 itself is disabled -- gate on that service's own `enabled` field, not a NetworkPolicy-specific one.
-
-| Parameter | Description | Default |
-|---|---|---|
-| `networkPolicies.apiServerCIDR` | K8s API server real backend endpoint CIDR (e.g., `10.89.0.2/32` -- NOT the `kubernetes` Service ClusterIP). Usually left empty: auto-discovered via `lookup` on a real `helm install`/`upgrade`; required if rendering via `helm template`/GitOps | `""` |
-| `networkPolicies.apiServerCIDRs` | Additional API server backend endpoint CIDRs for HA (multiple control-plane nodes). Merged with `apiServerCIDR`; usually left empty (see above) | `[]` |
-| `networkPolicies.apiServerPort` | API server backend endpoint port (commonly 6443). `0` = auto-discover alongside the CIDR | `0` |
-| `networkPolicies.monitoring.namespace` | Namespace for Prometheus metrics scraping ingress | `""` |
-| `networkPolicies.monitoring.prometheusPort` | Prometheus port to allow in the NetworkPolicy egress rule | `9090` |
-| `networkPolicies.monitoring.alertManagerPort` | AlertManager port to allow in the NetworkPolicy egress rule | `9093` |
-| `networkPolicies.externalWebhooks.cidr` | CIDR for Slack/PagerDuty/Teams webhook egress | `0.0.0.0/0` |
-| `networkPolicies.externalRegistry.cidr` | CIDR for OCI registry egress (datastorage bundle validation) | `0.0.0.0/0` |
-| `networkPolicies.apifrontend.ingressNamespaces` | External namespaces (e.g. an ingress-controller namespace) allowed to reach APIFrontend's https port. Same-namespace traffic is always allowed. No-op unless `apifrontend.enabled=true` | `[]` |
-| `networkPolicies.console.ingressNamespaces` | External namespaces (e.g. an ingress-controller namespace) allowed to reach the console's oauth2-proxy port. Same-namespace traffic is always allowed. No-op unless `console.enabled=true` | `[]` |
+See `docs/generated/helm-values-reference.md#networkpolicies` for the full field list
+(`apiServerCIDR(s)`, `apiServerPort`, `monitoring.*`, `externalWebhooks.cidr`,
+`externalRegistry.cidr`, `apifrontend.ingressNamespaces`, `console.ingressNamespaces`).
 
 Each service gets a NetworkPolicy with:
 - **Default-deny ingress** with service-specific allow rules

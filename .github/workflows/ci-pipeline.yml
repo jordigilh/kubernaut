@@ -119,6 +119,7 @@ jobs:
               - 'charts/**'
               - 'scripts/helm-smoke-test.sh'
               - 'config/**'
+              - 'hack/**'
 
   # ========================================
   # STAGE 1: LINT, LICENSE SCAN & UNIT TESTS (ALL PARALLEL)
@@ -289,6 +290,26 @@ jobs:
 
       - name: Run helm-unittest specs
         run: helm unittest charts/kubernaut/
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.5'
+          cache: true
+
+      # DD-PLATFORM-006 Decision Area 4: docs/generated/helm-values-reference.md
+      # is generated from charts/kubernaut/values.schema.json by
+      # hack/gen-helm-config-docs. Deliberately NOT chained onto the existing
+      # `make gen-diff` (Go-codegen) target -- that step's cache key excludes
+      # values.schema.json and could false-cache-hit, silently skipping this
+      # check. This is its own uncached, dedicated step instead.
+      - name: Helm values reference freshness check
+        run: |
+          make generate-helm-config-docs
+          if ! git diff --exit-code -- docs/generated/helm-values-reference.md; then
+            echo "::error::docs/generated/helm-values-reference.md is stale. Run 'make generate-helm-config-docs' and commit the result."
+            exit 1
+          fi
 
   unit-tests:
     name: Unit Tests (${{ matrix.service }})
