@@ -3,7 +3,9 @@
 ## Status
 
 **Approved**: 2026-07-30
-**Confidence**: 95%
+**Confidence**: 97% (raised from 95% on 2026-07-30 after Phase 3 closed the one
+open question about whether a machine-to-machine AAP auth path could avoid Option 1's
+gateway-credential blocker — see Validation Results Phase 3)
 **Milestone**: v1.6
 **Related Issue**: #1761
 
@@ -50,10 +52,23 @@ gateway instead of raw AWX REST.
   `tools/list` introspection against a real AAP 2.7 instance)
 
 **Cons**:
-- **No `credentials_destroy` tool exists anywhere in the 101-tool surface.** Confirmed by
-  exhaustively checking every toolset's `tools/list` output. Kubernaut's ephemeral AWX
-  credential cleanup (`cleanupEphemeralCredentials`, BR-WE-015) has no MCP equivalent —
-  ephemeral credentials would accumulate in AAP indefinitely.
+- **No `credentials_destroy` tool is exposed by any default toolset in the deployed
+  101-tool surface.** Confirmed by exhaustively checking every toolset's `tools/list`
+  output. Kubernaut's ephemeral AWX credential cleanup (`cleanupEphemeralCredentials`,
+  BR-WE-015) has no MCP equivalent today — ephemeral credentials would accumulate in AAP
+  indefinitely. **Root-caused (2026-07-30) as a toolset-curation gap, not a capability
+  gap**: the AAP Controller API underlying the MCP server does support
+  `DELETE /api/v2/credentials/{id}/` (`credentials_destroy`, confirmed present in the
+  OpenAPI schema bundled in
+  [`ansible/aap-mcp-server`](https://github.com/ansible/aap-mcp-server)`/data/controller-schema.json`)
+  — it is simply never included in any of the server's default toolset definitions
+  (`aap-mcp.sample.yaml` includes `credential_types_destroy`, i.e. delete a credential
+  *type*, but never `credentials_destroy`, delete a credential *instance*, in any
+  toolset, including `security_compliance`). The server supports fully custom toolset
+  configs, so this is technically addressable via configuration or an upstream PR — as
+  of this writing, no issue or PR in that 4-issue repo tracks it. This does not change
+  the verdict below: it does not resolve Option 1's second, independent blocker (gateway
+  auth), and no fix has actually landed.
 - **`MCPServerRegistration.credentialRef` is discovery-only, never injected into actual
   `tools/call` requests** — confirmed two ways against a real, live Kuadrant gateway
   (v0.7.1): (a) the CRD's own field docs state this explicitly; (b) empirically, calling
@@ -64,6 +79,26 @@ gateway instead of raw AWX REST.
 - ADR-068's own stated mitigation for this exact risk (Alternative H: *"the
   `MCPRoute.backendRefs[].securityPolicy` handles upstream credential injection"*) does
   not hold for the Kuadrant gateway this repo actually uses — confirmed live, not assumed.
+- **Fixing the `credentialRef` injection bug alone would not be enough — confirmed
+  2026-07-30 by inspecting AAP's own auth surface directly**, not by inference from
+  Kuadrant's side. `GET /api/gateway/v1/authenticator_plugins/` against the live AAP 2.7
+  instance lists all 11 supported authenticator plugin types (`azuread`, `github` +4
+  variants, `google_oauth2`, `keycloak`, `ldap`, `local`, `oidc`, `radius`, `saml`,
+  `tacacs`). The `keycloak` and `oidc` plugins — the only two capable of trusting
+  kubernaut's existing fleet identity provider — are both built on `python-social-auth`
+  and require `AUTHORIZATION_URL`/`CALLBACK_URL`/`RESPONSE_TYPE=code` in their
+  configuration schema: a browser-redirect login flow, not a machine-to-machine
+  JWT-bearer grant (RFC 7523) or resource-server-style JWT validation. A headless
+  controller like `WorkflowExecution` cannot complete a redirect-based login on its own.
+  This is the structural reason Option 2 and Option 1 behave so differently under the
+  *same* gateway: Kubernetes API servers natively validate OIDC-federated identities as
+  resource servers on every request (observed directly in this spike — the fleet
+  identity mapped to `keycloak:service-account-kubernaut-fleet-read` for RBAC purposes,
+  no redirect involved); AAP has no equivalent mode behind any of its 11 auth plugins.
+  Even a bug-free `credentialRef` injection could therefore only ever forward a static,
+  pre-provisioned AAP credential (OAuth Application or Personal Access Token) per
+  registration — the same per-cluster raw-credential-vending shape already rejected as
+  Option 3, just relocated into a Kuadrant CRD field instead of kubernaut's own code.
 
 **Confidence in rejecting**: high — both blockers reproduced against real, live
 components (real AAP 2.7, real Kuadrant gateway, real Keycloak token exchange), not
@@ -206,13 +241,19 @@ path.
 
 ## Validation Results
 
-Both alternatives were validated against real, live infrastructure across two spike
+Both alternatives were validated against real, live infrastructure across three spike
 phases:
 
 - **Phase 1**: A real `AnsibleAutomationPlatform` v2.7 aggregate CR was stood up on a live
   OCP dev cluster (controller + MCP enabled), subscription activated via the real
   Gateway API, and the combined `/mcp` endpoint's `tools/list` introspected directly
-  (101 real tools across 6 toolsets). The `credentials_destroy` gap was found here.
+  (101 real tools across 6 toolsets). The `credentials_destroy` gap was found here, then
+  root-caused (2026-07-30) against the upstream
+  [`ansible/aap-mcp-server`](https://github.com/ansible/aap-mcp-server) repo's own bundled
+  OpenAPI schema (`data/controller-schema.json`) and sample toolset config
+  (`aap-mcp.sample.yaml`) — confirmed as a toolset-curation omission, not a missing AAP
+  API capability (see Option 1 Cons above). Checked that repo's issue/PR history (4
+  issues total, none related) — no existing tracking.
 - **Phase 2**: Used this repo's own CI-validated `PRESERVE_E2E_CLUSTER=true make
   test-e2e-fleetmetadatacache-kuadrant` automation to stand up a real, isolated Kind
   cluster with a live Keycloak + Istio + Kuadrant MCP Gateway + `kube-mcp-server` stack.
@@ -221,6 +262,15 @@ phases:
   (`resources_create_or_update`/`resources_get`/`resources_delete`, all PASS). Option 1's
   AAP MCP Server was registered as a second live backend on the same gateway
   (`credentialRef`-based registration, discovery PASS, all `tools/call` FAIL with `500`).
+- **Phase 3** (2026-07-30, after the Kind clusters were torn down): re-verified against
+  the still-live OCP AAP 2.7 instance whether the Phase 2 gateway-auth blocker could be
+  closed by any AAP-side mechanism rather than a Kuadrant fix. Queried
+  `GET /api/gateway/v1/authenticator_plugins/` directly (all 11 plugin types + full
+  configuration schemas) and `GET /api/gateway/v1/authenticators/` (confirmed only
+  "Local Database Authenticator" configured, `ALLOW_OAUTH2_FOR_EXTERNAL_USERS: false` —
+  no external IdP wired in at all today). Result: no plugin supports machine-to-machine
+  JWT exchange; see Option 1 Cons for the full finding. This closes the residual
+  uncertainty flagged when this DD was first drafted.
 - Upstream evidence: [awx-resource-operator#130](https://github.com/ansible/awx-resource-operator/issues/130),
   [#164](https://github.com/ansible/awx-resource-operator/issues/164), and
   [PR #124](https://github.com/ansible/awx-resource-operator/pull/124) (root cause).
@@ -245,13 +295,20 @@ fixed without kubernaut's knowledge between this decision and its next review.
 **When to Revisit**:
 - If [awx-resource-operator#130](https://github.com/ansible/awx-resource-operator/issues/130)
   is fixed upstream **and** `AnsibleCredential` is promoted out of Tech Preview
-- If the Kuadrant `mcp-gateway` project adds per-call credential injection for non-K8s
-  backends (would close Option 1's auth blocker; the `credentials_destroy` gap would
-  still need a separate upstream fix)
+- If **both** of the following land upstream — fixing either alone is not sufficient,
+  confirmed 2026-07-30: (a) the Kuadrant `mcp-gateway` project adds per-call credential
+  injection for non-K8s backends, **and** (b) AAP's platform gateway adds a
+  machine-to-machine JWT-bearer/resource-server auth mode capable of validating an
+  externally-federated identity per-call (no such mode exists in any of AAP's 11
+  authenticator plugins today — all are interactive, redirect-based). A
+  `credentials_destroy` tool would also still need to be added to a toolset, via custom
+  config or an upstream PR to `ansible/aap-mcp-server` — a smaller, independently
+  actionable fix, not blocked on either of the above.
 - If a genuine, prioritized business requirement for fleet-Ansible remediation emerges —
-  per direct guidance, escalate the two upstream gaps to the Ansible/AAP team directly
-  rather than re-attempting a kubernaut-side workaround, since both root causes are
-  upstream defects, not architecture gaps on kubernaut's side
+  per direct guidance, escalate the gateway-auth and JWT-federation gaps to the
+  Kuadrant/Ansible teams directly rather than re-attempting a kubernaut-side workaround,
+  since these root causes are upstream defects/gaps, not architecture gaps on
+  kubernaut's side
 
 **Success Metrics**:
 - `AnsibleExecutor.Create` returns a clear, actionable error (never a silent
