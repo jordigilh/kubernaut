@@ -1005,6 +1005,13 @@ networkPolicies:
   idp:
     cidr: "0.0.0.0/0"
     port: 443
+    # -- Additional IdP ports to open egress on against the same cidr, for
+    # deployments where one service must reach two different IdPs on two
+    # different ports (e.g. APIFrontend validating end-user JWTs against one
+    # IdP while also fetching its own fleet-MCP OAuth2 token from a second,
+    # differently-ported IdP). Empty by default; the single `port` above
+    # remains the common case.
+    extraPorts: []
   # -- Egress target for the LLM provider APIFrontend's A2A launcher agent
   # calls directly (apifrontend.config.agent.llm.endpoint -- mandatory AF
   # config, not opt-in, so this egress rule is unconditional on the AF

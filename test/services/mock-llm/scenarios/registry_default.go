@@ -229,6 +229,10 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// and upgrade detection before the session completes naturally.
 	r.Register(mockKeywordScenario("brief_investigation", "brief-investigation-test", briefInvestigationConfig()))
 
+	// E2E-FLEET-016 (issue #1768, Gaps A+C): real AF binary calls
+	// list_clusters + kubectl_get(cluster_id) via a real A2A request.
+	r.Register(afFleetKubectlE2EScenario())
+
 	// Default fallback (lowest priority = 0.01)
 	r.Register(defaultFallbackScenario())
 

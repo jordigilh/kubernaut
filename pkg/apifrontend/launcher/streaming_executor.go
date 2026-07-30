@@ -23,11 +23,9 @@ import (
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
 	"github.com/go-logr/logr"
-	adksession "google.golang.org/adk/session"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
 // SessionPhaseUpdater provides the subset of session.CRDSessionService needed
@@ -53,8 +51,6 @@ type StreamingExecutor struct {
 	bridgeMetrics BridgeMetrics
 	sessionSvc    SessionPhaseUpdater
 	llmSemaphore  ConcurrencyLimiter
-	adkSessionSvc adksession.Service
-	appName       string
 }
 
 // NewStreamingExecutor creates a StreamingExecutor that wraps the given executor.
@@ -77,16 +73,6 @@ type StreamingExecutorOption func(*StreamingExecutor)
 // that cannot acquire a slot fail with a capacity error.
 func WithLLMSemaphore(sem ConcurrencyLimiter) StreamingExecutorOption {
 	return func(se *StreamingExecutor) { se.llmSemaphore = sem }
-}
-
-// WithReinvocation enables the text-only turn-end re-invocation loop (BR-SESS-013).
-// When the agent produces a text-only response without tool calls, the executor
-// injects a synthetic "continue" message and re-invokes up to MaxReinvocations times.
-func WithReinvocation(svc adksession.Service, appName string) StreamingExecutorOption {
-	return func(se *StreamingExecutor) {
-		se.adkSessionSvc = svc
-		se.appName = appName
-	}
 }
 
 // Execute injects the EventBridge into the context and delegates to the inner executor.
@@ -127,13 +113,6 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 	stopKeepalive := startKeepalive(ctx)
 
 	err := s.inner.Execute(ctx, reqCtx, queue)
-
-	// BR-SESS-013: Re-invocation loop — when the agent produces a text-only
-	// response without tool calls, inject a synthetic "continue" message and
-	// re-invoke. This handles premature turn ends during active investigations.
-	if err == nil && s.adkSessionSvc != nil {
-		err = s.runReinvocationLoop(ctx, reqCtx, queue, username)
-	}
 
 	close(stopKeepalive)
 
@@ -186,45 +165,6 @@ func startKeepalive(ctx context.Context) chan struct{} {
 		}
 	}()
 	return stopKeepalive
-}
-
-// runReinvocationLoop implements BR-SESS-013: when the agent produces a
-// text-only response without tool calls, inject a synthetic "continue"
-// message and re-invoke the inner executor. This handles premature turn
-// ends during active investigations.
-func (s *StreamingExecutor) runReinvocationLoop(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue, username string) error {
-	var err error
-	reinvokeCount := 0
-	for {
-		resp, getErr := s.adkSessionSvc.Get(ctx, &adksession.GetRequest{
-			AppName:         s.appName,
-			UserID:          username,
-			SessionID:       reqCtx.ContextID,
-			NumRecentEvents: 1,
-		})
-		if getErr != nil || resp == nil || resp.Session == nil {
-			return err
-		}
-		if !session.NeedsReinvocationCtx(ctx, isv1alpha1.SessionPhaseActive, resp.Session.Events(), reinvokeCount) {
-			return err
-		}
-		reinvokeCount++
-		s.logger.Info("re-invoking agent after text-only turn end",
-			"task_id", string(reqCtx.TaskID),
-			"reinvoke_count", reinvokeCount,
-		)
-		syntheticEvent := adksession.NewEvent("")
-		syntheticEvent.Author = "user"
-		syntheticEvent.Content = session.SyntheticMessage()
-		if appendErr := s.adkSessionSvc.AppendEvent(ctx, resp.Session, syntheticEvent); appendErr != nil {
-			s.logger.Error(appendErr, "failed to append synthetic re-invocation message")
-			return err
-		}
-		err = s.inner.Execute(ctx, reqCtx, queue)
-		if err != nil {
-			return err
-		}
-	}
 }
 
 // handleSSEDisconnect implements BR-SESS-003 / SI-4: on client SSE
