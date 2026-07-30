@@ -85,7 +85,7 @@ func CreateWorkflowExecutionClusterParallel(clusterName, kubeconfigPath string, 
 	// Issue #1769: retry on transient container-runtime errors.
 	err = retryTransientKindRuntimeError(output, func() (string, error) {
 		var captured strings.Builder
-		createCmd := exec.CommandContext(context.Background(), "kind", "create", "cluster",
+		createCmd := exec.Command("kind", "create", "cluster",
 			"--name", clusterName,
 			"--config", configPath,
 			"--kubeconfig", kubeconfigPath,

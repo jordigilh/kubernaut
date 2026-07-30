@@ -1,0 +1,52 @@
+name: Install Podman (crun-pinned)
+description: >
+  Installs podman via apt, then replaces the runner's bundled crun binary
+  with a pinned release known to be compatible with podman's generated OCI
+  Runtime Spec configs (Issue #1769). GitHub's ubuntu-24.04 runner images
+  ship a crun version older than 1.14.3, which rejects podman-generated
+  container configs with "Error: OCI runtime error: crun: unknown version
+  specified" -- a deterministic version-compatibility bug, not a transient
+  flake: it reproduces on every `podman run`/`kind create cluster` call
+  that hits it, on that exact podman+crun pairing, until crun is upgraded.
+  See https://github.com/containers/podman/issues/27272 (root cause: crun
+  rejects OCI Runtime Spec v1.2.1 configs below v1.14.3) and
+  https://github.com/containers/crun/releases/tag/1.14.3 (fix version).
+
+inputs:
+  crun-version:
+    description: Pinned crun release to install (must be >= 1.14.3).
+    required: false
+    default: '1.28'
+
+runs:
+  using: composite
+  steps:
+    - name: Install podman
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y podman
+
+    - name: Pin crun >= 1.14.3 (Issue #1769)
+      shell: bash
+      run: |
+        CRUN_VERSION="${{ inputs.crun-version }}"
+        ARCH=$(dpkg --print-architecture)
+        case "$ARCH" in
+          amd64) CRUN_ARCH="linux-amd64" ;;
+          arm64) CRUN_ARCH="linux-arm64" ;;
+          *) echo "Unsupported architecture for crun pin: $ARCH"; exit 1 ;;
+        esac
+
+        echo "Runner-provided crun: $(crun --version 2>&1 | head -1 || echo 'not found')"
+
+        curl -fsSL -o /tmp/crun \
+          "https://github.com/containers/crun/releases/download/${CRUN_VERSION}/crun-${CRUN_VERSION}-${CRUN_ARCH}"
+        chmod +x /tmp/crun
+        sudo mv /tmp/crun /usr/bin/crun
+
+        echo "Pinned crun: $(crun --version | head -1)"
+
+    - name: Print podman version
+      shell: bash
+      run: podman --version

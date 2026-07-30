@@ -503,20 +503,7 @@ jobs:
       - name: Generate OpenAPI specs
         run: make generate
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-      # crun pin (#1784): the ubuntu-latest runner image's preinstalled crun
-      # predates 1.14.3 and cannot parse the OCI Runtime Spec v1.2.1
-      # config.json that current Podman generates, failing every container
-      # start with "OCI runtime error: crun: unknown version specified"
-      # (https://github.com/containers/podman/issues/27272, resolved in
-      # crun v1.14.3). apt's crun lags behind apt's podman, so pin explicitly.
-      - name: Pin crun >= 1.14.3 (podman/crun OCI spec compat)
-        run: |
-          sudo curl -fL "https://github.com/containers/crun/releases/download/1.14.3/crun-1.14.3-linux-amd64" -o /usr/bin/crun
-          sudo chmod +x /usr/bin/crun
-          crun --version
+        uses: ./.github/actions/install-podman
       - name: Setup envtest (K8s test binaries)
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.23
@@ -696,21 +683,7 @@ jobs:
       - name: Generate OpenAPI specs
         run: make generate
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-      # crun pin (#1784): the ubuntu-latest runner image's preinstalled crun
-      # predates 1.14.3 and cannot parse the OCI Runtime Spec v1.2.1
-      # config.json that current Podman generates, failing every container
-      # start (including Kind's own control-plane container) with
-      # "OCI runtime error: crun: unknown version specified"
-      # (https://github.com/containers/podman/issues/27272, resolved in
-      # crun v1.14.3). apt's crun lags behind apt's podman, so pin explicitly.
-      - name: Pin crun >= 1.14.3 (podman/crun OCI spec compat)
-        run: |
-          sudo curl -fL "https://github.com/containers/crun/releases/download/1.14.3/crun-1.14.3-linux-amd64" -o /usr/bin/crun
-          sudo chmod +x /usr/bin/crun
-          crun --version
+        uses: ./.github/actions/install-podman
       - name: Login to GitHub Container Registry (for image pulls)
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -929,22 +902,7 @@ jobs:
           echo "PASS: values.schema.json is consistent with values.yaml"
 
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-
-      # crun pin (#1784): the ubuntu-latest runner image's preinstalled crun
-      # predates 1.14.3 and cannot parse the OCI Runtime Spec v1.2.1
-      # config.json that current Podman generates, failing every container
-      # start (including Kind's own control-plane container) with
-      # "OCI runtime error: crun: unknown version specified"
-      # (https://github.com/containers/podman/issues/27272, resolved in
-      # crun v1.14.3). apt's crun lags behind apt's podman, so pin explicitly.
-      - name: Pin crun >= 1.14.3 (podman/crun OCI spec compat)
-        run: |
-          sudo curl -fL "https://github.com/containers/crun/releases/download/1.14.3/crun-1.14.3-linux-amd64" -o /usr/bin/crun
-          sudo chmod +x /usr/bin/crun
-          crun --version
+        uses: ./.github/actions/install-podman
 
       - name: Install Kind
         run: |
