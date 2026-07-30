@@ -71,10 +71,21 @@ func getAFA2AToken() string {
 	Expect(err).NotTo(HaveOccurred())
 	defer func() { _ = resp.Body.Close() }()
 
+	body, readErr := io.ReadAll(resp.Body)
+	Expect(readErr).NotTo(HaveOccurred())
+	// Dex's /token endpoint returns a 200 with an access_token on success, or a
+	// non-200 with a JSON {"error": "...", "error_description": "..."} body on
+	// failure (e.g. unsupported_grant_type, invalid_grant). Both decode fine as
+	// JSON, so without this status check a rejected grant silently yields an
+	// empty AccessToken that AF then 401s with no diagnostic trail back to the
+	// actual Dex-side cause (Issue #1768 E2E-FLEET-016 CI flake RCA).
+	Expect(resp.StatusCode).To(Equal(http.StatusOK), "Dex token endpoint rejected the grant: %s", string(body))
+
 	var tokenResp struct {
 		AccessToken string `json:"access_token"`
 	}
-	Expect(json.NewDecoder(resp.Body).Decode(&tokenResp)).To(Succeed())
+	Expect(json.Unmarshal(body, &tokenResp)).To(Succeed())
+	Expect(tokenResp.AccessToken).NotTo(BeEmpty(), "Dex returned 200 but no access_token: %s", string(body))
 	afA2AAuthToken = tokenResp.AccessToken
 	return afA2AAuthToken
 }

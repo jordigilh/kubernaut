@@ -52,18 +52,20 @@ import (
 //
 // Design: single-turn message/send. The "fleet-kubectl-e2e-test" keyword
 // selects a dedicated mock-LLM scenario (scenario_af_fleet_kubectl.go) that
-// emits list_clusters + kubectl_get(cluster_id="remote-cluster",
-// kind=Deployment, name=coredns, namespace=kube-system) as a single
-// MultiToolCalls batch. AF's ADK loop executes both tools for real against
-// this suite's FleetReaderFactory -> kube-mcp-server -> Kuadrant gateway ->
-// remote Kind cluster, then the scenario echoes the accumulated conversation
-// text (which by then contains the real kubectl_get FunctionResponse) back
-// as the final answer. Asserting on "coredns" in that final answer proves a
-// literal round trip through the remote cluster, not a canned string that
-// would pass even if the cluster_id routing silently no-op'd.
+// emits kubectl_get(cluster_id="remote-cluster", kind=Deployment,
+// name=coredns, namespace=kube-system) as a single MultiToolCalls batch
+// (list_clusters is deliberately excluded -- see the scenario's own doc
+// comment and DD-FLEET-005: the "sre" persona's ClusterRole does not grant
+// it). AF's ADK loop executes the tool for real against this suite's
+// FleetReaderFactory -> kube-mcp-server -> Kuadrant gateway -> remote Kind
+// cluster, then the scenario echoes the accumulated conversation text (which
+// by then contains the real kubectl_get FunctionResponse) back as the final
+// answer. Asserting on "coredns" in that final answer proves a literal round
+// trip through the remote cluster, not a canned string that would pass even
+// if the cluster_id routing silently no-op'd.
 var _ = Describe("E2E-FLEET-016 [SI-4, AC-4, AU-2/AU-3]: AF real A2A fleet kubectl_get", Label("fleet", "af", "a2a", "issue-1768"), func() {
 
-	It("should call list_clusters and kubectl_get(cluster_id=remote-cluster) via a real A2A request and return remote cluster data", func() {
+	It("should call kubectl_get(cluster_id=remote-cluster) via a real A2A request and return remote cluster data", func() {
 		By("Verifying AF is reachable")
 		resp, err := afHTTPClient.Get(afBaseURL + "/healthz")
 		if err != nil || resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
@@ -71,8 +73,8 @@ var _ = Describe("E2E-FLEET-016 [SI-4, AC-4, AU-2/AU-3]: AF real A2A fleet kubec
 		}
 		_ = resp.Body.Close()
 
-		By("Sending A2A message: fleet-kubectl-e2e-test (selects list_clusters + kubectl_get scenario)")
-		body := afA2ATasksSend("fleet-016-1", "fleet-kubectl-e2e-test: list clusters then read coredns on remote-cluster")
+		By("Sending A2A message: fleet-kubectl-e2e-test (selects kubectl_get scenario)")
+		body := afA2ATasksSend("fleet-016-1", "fleet-kubectl-e2e-test: read coredns on remote-cluster")
 		resp, err = afA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
@@ -97,10 +99,10 @@ var _ = Describe("E2E-FLEET-016 [SI-4, AC-4, AU-2/AU-3]: AF real A2A fleet kubec
 			"kubectl_get must not surface a fleet reader construction error")
 		Expect(msgStr).To(ContainSubstring("coredns"),
 			"SI-4, AU-3: the coredns Deployment object from the REAL remote cluster must surface in AF's "+
-				"final A2A answer, proving list_clusters + kubectl_get(cluster_id) round-tripped through AF's "+
-				"own compiled binary, its own tool wiring, and the real Kuadrant gateway -> kube-mcp-server -> "+
-				"remote Kind cluster bridge (DD-TEST-013) -- not a mocked ResourceReaderFactory or a loopback "+
-				"single-cluster fiction")
+				"final A2A answer, proving kubectl_get(cluster_id) round-tripped through AF's own compiled "+
+				"binary, its own tool wiring, and the real Kuadrant gateway -> kube-mcp-server -> remote Kind "+
+				"cluster bridge (DD-TEST-013) -- not a mocked ResourceReaderFactory or a loopback single-cluster "+
+				"fiction")
 		GinkgoWriter.Printf("  E2E-FLEET-016: confirmed real remote-cluster round trip via AF A2A\n")
 	})
 })
