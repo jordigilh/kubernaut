@@ -555,8 +555,9 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	if err := waitForFullPipelineServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8 failed: services not ready: %w", err)
 	}
-	// fleetmetadatacache is chart-managed only when fleetOpts != nil
-	// (fleetmetadatacache.enabled=true, PHASE 6) -- not part of the FP
+	// fleetmetadatacache is chart-managed only when fleetOpts != nil (its
+	// enabled state is derived by the chart itself from global.fleet.enabled,
+	// PHASE 6 -- DD-PLATFORM-006 Decision Area 10) -- not part of the FP
 	// suite's fixed deployment list above.
 	if fleetOpts != nil {
 		if err := waitForDeployment(ctx, "fleetmetadatacache", namespace, kubeconfigPath, 3*time.Minute, writer); err != nil {

@@ -1036,7 +1036,10 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		"--set", "global.llmProfiles.primary.model=mock-model",
 		"--set", "global.llmProfiles.primary.endpoint=http://mock-llm." + namespace + ".svc.cluster.local:8080",
 		"--set", "global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary",
-		"--set", "kubernautAgent.llmProfileRef=primary",
+		// kubernautAgent.llmProfileRef is deliberately NOT set here -- it defaults
+		// to "primary" in the chart's own schema (DD-PLATFORM-006 Decision Area 4
+		// Addendum 2), so this install exercises that default instead of shadowing
+		// it with a redundant override.
 		// MCP interactive mode (#703) is opt-in (default false) -- without this,
 		// KA never registers the POST /api/v1/mcp Streamable HTTP handler at all,
 		// so every MCP client `initialize` call gets a plain HTTP 404 from Go's
@@ -1152,12 +1155,15 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 	// oauth2-credentials/inter-service-ca volume mounts -- are the ones
 	// actually exercised by this suite, closing the gap where a regression
 	// in the chart's fleet templating could hide behind the Go harness's own
-	// (now-removed) kubectl patches. FMC follows the same global.fleet.*
-	// derivation as every other fleet-aware service once
-	// fleetmetadatacache.enabled=true (see fleetmetadatacache.yaml); unlike
-	// them, though, it does not resolve its image via global.image.* (see
+	// (now-removed) kubectl patches. fleetmetadatacache.enabled is
+	// deliberately NOT set here: DD-PLATFORM-006 Decision Area 10 derives it
+	// from global.fleet.enabled=true + global.fleet.backend defaulting to
+	// "fleetmetadatacache" (kubernaut.fleetmetadatacache.effectiveEnabled in
+	// _helpers.tpl) -- this install exercises that derivation for real
+	// against a live cluster instead of shadowing it with a redundant
+	// override. FMC does not resolve its image via global.image.* (see
 	// kubernaut.image helper vs. this service's dedicated image.repository/
-	// tag values), so it needs an explicit override reusing the SAME
+	// tag values), so it still needs an explicit override reusing the SAME
 	// registry/tag every other chart-managed service already got above.
 	if fleetOpts != nil {
 		args = append(args,
@@ -1168,7 +1174,6 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 			"--set", "global.fleet.oauth2.tokenURL="+fleetOpts.OAuth2TokenURL,
 			"--set", "global.fleet.oauth2.credentialsSecretRef="+fleetOpts.OAuth2CredentialsSecret,
 			"--set", "workflowexecution.fleet.oauth2.credentialsSecretRef="+fleetOpts.WEOAuth2CredentialsSecret,
-			"--set", "fleetmetadatacache.enabled=true",
 			"--set", "fleetmetadatacache.image.repository="+registry+"/fleetmetadatacache",
 			"--set", "fleetmetadatacache.image.tag="+tag,
 			// #1755 DD-TEST-015 RCA (3rd finding, live PRESERVE_E2E_CLUSTER=true
