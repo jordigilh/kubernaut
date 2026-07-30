@@ -186,15 +186,20 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 		return fmt.Errorf("failed to find Kind config: %w", err)
 	}
 
-	// Create Kind cluster
-	createCmd := exec.Command("kind", "create", "cluster",
-		"--name", clusterName,
-		"--config", configPath,
-		"--kubeconfig", kubeconfigPath,
-	)
-	createCmd.Stdout = writer
-	createCmd.Stderr = writer
-	if err := createCmd.Run(); err != nil {
+	// Create Kind cluster (Issue #1769: retry on transient runtime errors)
+	err = retryTransientKindRuntimeError(writer, func() (string, error) {
+		var captured strings.Builder
+		createCmd := exec.Command("kind", "create", "cluster",
+			"--name", clusterName,
+			"--config", configPath,
+			"--kubeconfig", kubeconfigPath,
+		)
+		createCmd.Stdout = io.MultiWriter(writer, &captured)
+		createCmd.Stderr = io.MultiWriter(writer, &captured)
+		runErr := createCmd.Run()
+		return captured.String(), runErr
+	})
+	if err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
 	}
 
