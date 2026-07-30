@@ -216,8 +216,8 @@ spec:
 
               rm -rf "$TMPDIR"
 
-              {{- if and .Values.datastorage.config.auditHashKey.enabled (not .Values.datastorage.config.auditHashKey.existingSecret) }}
-              # ── Section 4: DataStorage audit-HMAC key (DD-PLATFORM-006 DA7) ──
+              {{- if not .Values.datastorage.config.auditHashKey.existingSecret }}
+              # ── Section 4: DataStorage audit-HMAC key (DD-PLATFORM-006 DA6/DA7) ──
               # AU-9: exists-only check -- this key is NEVER rotated, unlike the
               # certificates above. Regenerating it would silently corrupt hash-chain
               # verification for every audit record already hashed with the old key,

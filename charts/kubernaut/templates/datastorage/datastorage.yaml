@@ -17,7 +17,7 @@ server:
   # GAP-09 (Issue #1505) / SC-5: Per-IP rate limiting, disabled by default
   # (existing deployments may rely on an external ingress/proxy for this).
   rateLimit:
-    enabled: {{ .Values.datastorage.config.server.rateLimit.enabled | default false }}
+    enabled: true
     requestsPerSecond: {{ .Values.datastorage.config.server.rateLimit.requestsPerSecond | default 50 }}
     burst: {{ .Values.datastorage.config.server.rateLimit.burst | default 100 }}
   tls:
@@ -41,29 +41,23 @@ redis:
   secretsFile: "/etc/datastorage/secrets/valkey-secrets.yaml"
   passwordKey: "password"
   tls:
-    enabled: {{ .Values.datastorage.config.redis.tls.enabled | default false }}
+    enabled: true
     certFile: {{ .Values.datastorage.config.redis.tls.certFile | default "" | quote }}
     keyFile: {{ .Values.datastorage.config.redis.tls.keyFile | default "" | quote }}
-    {{- if .Values.datastorage.config.redis.tls.enabled }}
     # DD-PLATFORM-006 DA8: the chart's own Valkey is TLS-only -- caFile defaults
     # to the already-mounted inter-service CA (see the tls-ca volume/mount
     # below) so this works without extra configuration; override only for a
     # BYO Valkey/Redis signed by a different CA.
     caFile: {{ .Values.datastorage.config.redis.tls.caFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
-    {{- else }}
-    caFile: {{ .Values.datastorage.config.redis.tls.caFile | default "" | quote }}
-    {{- end }}
 retention:
   enabled: {{ .Values.datastorage.config.retention.enabled | default true }}
   interval: {{ .Values.datastorage.config.retention.interval | default "24h" | quote }}
   batchSize: {{ .Values.datastorage.config.retention.batchSize | default 1000 }}
   defaultDays: {{ .Values.datastorage.config.retention.defaultDays | default 2555 }}
-{{- if .Values.datastorage.config.auditHashKey.enabled }}
 # GAP-05 (Issue #1505) / AU-9: Keyed HMAC-SHA256 audit hash chain.
 audit:
   hashKeySecretsFile: "/etc/datastorage/secrets/audit-hmac-key.yaml"
   hashKeyKey: {{ .Values.datastorage.config.auditHashKey.secretKey | default "hmacKey" | quote }}
-{{- end }}
 logging:
   level: {{ .Values.datastorage.logging.level | default "INFO" | upper | quote }}
 {{- end }}
@@ -215,13 +209,11 @@ spec:
                   items:
                     - key: valkey-secrets.yaml
                       path: valkey-secrets.yaml
-              {{- if .Values.datastorage.config.auditHashKey.enabled }}
               - secret:
                   name: {{ include "kubernaut.datastorage.auditHashKeySecretName" . }}
                   items:
                     - key: audit-hmac-key.yaml
                       path: audit-hmac-key.yaml
-              {{- end }}
         - name: tls-certs
           secret:
             secretName: datastorage-tls

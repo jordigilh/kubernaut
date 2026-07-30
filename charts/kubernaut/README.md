@@ -264,36 +264,23 @@ kubectl create secret generic my-valkey-credentials \
   -n kubernaut-system
 ```
 
-### Optional: Keyed Audit Hash Chain (GAP-05)
+### Keyed Audit Hash Chain (GAP-05)
 
-DataStorage tamper-evidences audit events with a hash chain. By default this
-uses a plain (unkeyed) SHA256 hash — sufficient to detect accidental
-corruption, but recomputable by anyone with database read/write access, so an
-attacker with DB privileges could tamper with a row and recompute a
-self-consistent chain.
-
-Enabling `datastorage.config.auditHashKey` switches **newly written** events to
-a keyed HMAC-SHA256 hash chain, using a secret key stored outside the database
-(a Kubernetes Secret). Forging a valid hash without that key is computationally
-infeasible. This is opt-in and backward compatible: existing events keep
-verifying under the legacy algorithm, and disabling it later simply reverts new
-writes to the unkeyed algorithm.
+DataStorage tamper-evidences audit events with a keyed HMAC-SHA256 hash chain
+(mandatory, no toggle — [DD-PLATFORM-006](../../docs/architecture/decisions/DD-PLATFORM-006-helm-chart-configuration-surface-reduction.md)
+DA6), using a secret key stored outside the database (a Kubernetes Secret).
+Forging a valid hash without that key is computationally infeasible — a
+meaningfully stronger guarantee than a plain unkeyed hash, which anyone with
+database read/write access could recompute after tampering with a row.
 
 With the default `tls.mode: hook` (see [TLS Certificate Provisioning](#tls-certificate-provisioning)
 below), the chart's `pre-install`/`pre-upgrade` hook auto-generates this key
-the first time it's needed and **never rotates it** afterward — regenerating
-it would silently corrupt hash-chain verification for every audit record
-already hashed with the old key. The generated Secret is not tracked by Helm
-and is intentionally excluded from the hook's own uninstall cleanup, so it
-also survives `helm uninstall` (and a subsequent reinstall picks the same key
-back up):
-
-```bash
-helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
-  --namespace kubernaut-system \
-  --reuse-values \
-  --set datastorage.config.auditHashKey.enabled=true
-```
+on first install and **never rotates it** afterward — regenerating it would
+silently corrupt hash-chain verification for every audit record already
+hashed with the old key. The generated Secret is not tracked by Helm and is
+intentionally excluded from the hook's own uninstall cleanup, so it also
+survives `helm uninstall` (and a subsequent reinstall picks the same key back
+up). No action is required to enable this — it is on by default.
 
 If `tls.mode` is `cert-manager` or `manual`, or if you set
 `datastorage.config.auditHashKey.existingSecret` to BYO your own key (same
@@ -320,49 +307,44 @@ valkey:
   existingSecret: my-valkey-credentials
 ```
 
-### Optional: Distributed JWT Replay Cache (GAP-08)
+### Distributed JWT Replay Cache (GAP-08)
 
-APIFrontend detects replayed JWTs via their `jti` claim. By default this uses
-an in-memory cache that is per-process: in a multi-replica deployment, a token
-replayed against a different replica than the one that first observed it is
-not detected.
-
-Enabling `apifrontend.config.auth.replayCache` shares replay state across all
-APIFrontend replicas via the cluster's Valkey instance (the same instance and
-Secret already used by DataStorage) — closing this HA gap. If Valkey is
-unreachable at runtime, APIFrontend falls back to the in-memory cache and logs
-the degradation rather than disabling replay protection outright.
-
-```bash
-helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
-  --namespace kubernaut-system \
-  --reuse-values \
-  --set apifrontend.config.auth.replayCache.enabled=true
-```
+APIFrontend detects replayed JWTs via their `jti` claim, sharing replay state
+across all APIFrontend replicas via the cluster's Valkey instance (the same
+instance and Secret already used by DataStorage; mandatory, no toggle —
+[DD-PLATFORM-006](../../docs/architecture/decisions/DD-PLATFORM-006-helm-chart-configuration-surface-reduction.md)
+DA6). This closes the HA gap a per-process in-memory cache would have: without
+it, a token replayed against a different replica than the one that first
+observed it would go undetected. If Valkey is unreachable at runtime,
+APIFrontend falls back to an in-memory cache and logs the degradation rather
+than disabling replay protection outright.
 
 No additional Secret is required beyond the existing Valkey credentials
 (`valkey.existingSecret` / the `valkey-secret` created above), since the
-replay cache uses that same shared instance and Secret.
+replay cache uses that same shared instance and Secret. The connection to
+Valkey is TLS-verified by default (`apifrontend.config.auth.replayCache.tls`),
+matching Valkey's TLS-only listener — see [BYO PostgreSQL / Valkey](#byo-postgresql--valkey)
+for pointing this at an external Valkey/Redis instance.
 
-### Optional: Data Storage Per-IP Rate Limiting (GAP-09)
+### Data Storage Per-IP Rate Limiting (GAP-09)
 
-The Data Storage HTTP API does not rate limit requests by default — existing
-deployments may already enforce this at an external ingress/proxy layer.
-Enabling `datastorage.config.server.rateLimit` adds an in-process, per-IP
-token-bucket limiter (SC-5 DoS protection) as a defense-in-depth backstop.
-Denied requests are self-audited (`datastorage.ratelimit.denied`, FedRAMP
-AU-12).
+The Data Storage HTTP API applies an in-process, per-IP token-bucket limiter
+(SC-5 DoS protection; mandatory, no toggle — [DD-PLATFORM-006](../../docs/architecture/decisions/DD-PLATFORM-006-helm-chart-configuration-surface-reduction.md)
+DA6) as a defense-in-depth backstop, on top of whatever an external
+ingress/proxy layer may already enforce. Denied requests are self-audited
+(`datastorage.ratelimit.denied`, FedRAMP AU-12).
+
+Tune `datastorage.config.server.rateLimit.requestsPerSecond` (default `50`)
+and `.burst` (default `100`) to match expected legitimate traffic (e.g.
+KubernautAgent/APIFrontend polling volume):
 
 ```bash
 helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --reuse-values \
-  --set datastorage.config.server.rateLimit.enabled=true
+  --set datastorage.config.server.rateLimit.requestsPerSecond=200 \
+  --set datastorage.config.server.rateLimit.burst=400
 ```
-
-Tune `datastorage.config.server.rateLimit.requestsPerSecond` (default `50`)
-and `.burst` (default `100`) to match expected legitimate traffic (e.g.
-KubernautAgent/APIFrontend polling volume) before enabling in production.
 
 ### Optional: Web Console (BR-PLATFORM-006)
 
@@ -641,13 +623,11 @@ cluster's other known peers.
 | `valkey.enabled` | Deploy in-chart Valkey | `true` |
 | `valkey.existingSecret` | Pre-created Secret name (empty = expect `valkey-secret`) | `""` |
 | `valkey.host` | External host (when `enabled=false`) | `""` |
-| `datastorage.config.auditHashKey.enabled` | Enable keyed HMAC-SHA256 audit hash chain (GAP-05); see [Optional: Keyed Audit Hash Chain](#optional-keyed-audit-hash-chain-gap-05) | `false` |
-| `apifrontend.config.auth.replayCache.enabled` | Enable distributed (Valkey-backed) JWT replay cache (GAP-08); see [Optional: Distributed JWT Replay Cache](#optional-distributed-jwt-replay-cache-gap-08) | `false` |
-| `apifrontend.config.auth.replayCache.redisDB` | Valkey logical DB index used for replay cache keys | `1` |
-| `datastorage.config.server.rateLimit.enabled` | Enable per-IP rate limiting on the DS HTTP API (GAP-09); see [Optional: Data Storage Per-IP Rate Limiting](#optional-data-storage-per-ip-rate-limiting-gap-09) | `false` |
-| `datastorage.config.server.rateLimit.requestsPerSecond` | Sustained per-IP requests/second | `50` |
+| `datastorage.config.auditHashKey.existingSecret` | Pre-created HMAC key Secret name (empty = chart auto-generates one, GAP-05, mandatory); see [Keyed Audit Hash Chain](#keyed-audit-hash-chain-gap-05) | `""` |
+| `apifrontend.config.auth.replayCache.redisDB` | Valkey logical DB index used for the (mandatory, GAP-08) distributed JWT replay cache; see [Distributed JWT Replay Cache](#distributed-jwt-replay-cache-gap-08) | `1` |
+| `apifrontend.config.auth.replayCache.tls.caFile` | CA bundle for verifying Valkey's TLS cert (mandatory) | `/etc/tls-ca/ca.crt` |
+| `datastorage.config.server.rateLimit.requestsPerSecond` | Sustained per-IP requests/second (mandatory, GAP-09); see [Data Storage Per-IP Rate Limiting](#data-storage-per-ip-rate-limiting-gap-09) | `50` |
 | `datastorage.config.server.rateLimit.burst` | Per-IP token bucket burst size | `100` |
-| `datastorage.config.auditHashKey.existingSecret` | Pre-created Secret name (empty = expect `datastorage-audit-hmac-key`) | `""` |
 
 ### Console
 

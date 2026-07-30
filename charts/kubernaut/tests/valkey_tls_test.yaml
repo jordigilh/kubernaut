@@ -128,12 +128,6 @@ tests:
   # ── NetworkPolicies: all 4 egress/ingress rules to Valkey use 6380 ────────
   - it: "Valkey's own NetworkPolicy ingress rule allows port 6380, not 6379"
     template: templates/infrastructure/networkpolicy-valkey.yaml
-    set:
-      apifrontend:
-        config:
-          auth:
-            replayCache:
-              enabled: true
     asserts:
       - equal:
           path: spec.ingress[0].ports[0].port
@@ -151,12 +145,6 @@ tests:
 
   - it: "APIFrontend NetworkPolicy egress-to-Valkey rule (replayCache) targets port 6380"
     template: templates/apifrontend/networkpolicy.yaml
-    set:
-      apifrontend:
-        config:
-          auth:
-            replayCache:
-              enabled: true
     asserts:
       - equal:
           path: spec.egress[3].ports[0].port
@@ -203,14 +191,8 @@ tests:
               name: inter-service-ca
               optional: true
 
-  - it: "DataStorage redis.tls.caFile defaults to the mounted inter-service CA when redis.tls.enabled=true and no override is set"
+  - it: "DataStorage redis.tls.caFile defaults to the mounted inter-service CA (redis.tls is mandatory-on, DA6) when no override is set"
     template: templates/datastorage/datastorage.yaml
-    set:
-      datastorage:
-        config:
-          redis:
-            tls:
-              enabled: true
     documentSelector:
       path: kind
       value: ConfigMap
@@ -226,7 +208,6 @@ tests:
         config:
           redis:
             tls:
-              enabled: true
               caFile: "/etc/custom-ca/ca.crt"
     documentSelector:
       path: kind

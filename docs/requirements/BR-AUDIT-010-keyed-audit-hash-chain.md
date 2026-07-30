@@ -10,6 +10,15 @@
 **Related BRs**: BR-AUDIT-005 (Core Audit Business Requirement), BR-AUDIT-007 (Tamper-evident audit exports)
 **GitHub Issues**: [#1505](https://github.com/jordigilh/kubernaut/issues/1505) (GAP-05)
 
+> **Superseded (Helm gating only)**: [DD-PLATFORM-006](../architecture/decisions/DD-PLATFORM-006-helm-chart-configuration-surface-reduction.md)
+> Decision Areas 6/7 made `datastorage.config.auditHashKey` mandatory (the
+> `enabled` toggle described below no longer exists in the chart schema) and
+> added chart-managed auto-generation of the HMAC key via a `pre-install`/
+> `pre-upgrade` hook. The algorithm design, hash-chain mechanics, and residual
+> risk discussion below are still accurate; only the "opt-in"/"no
+> chart-managed secret generation" framing in the Decision and Success
+> Criteria sections is superseded.
+
 ---
 
 ## Business Need

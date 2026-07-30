@@ -296,7 +296,7 @@ When using external Valkey, falls through to the external settings.
 
 {{/*
 Return the Secret name for the DataStorage audit hash-chain HMAC key
-(GAP-05, Issue #1505). Only relevant when datastorage.config.auditHashKey.enabled.
+(GAP-05, Issue #1505). Mandatory, no enabled gate (DD-PLATFORM-006 DA6).
 Precedence: datastorage.config.auditHashKey.existingSecret > "datastorage-audit-hmac-key".
 */}}
 {{- define "kubernaut.datastorage.auditHashKeySecretName" -}}

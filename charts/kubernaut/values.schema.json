@@ -988,12 +988,8 @@
                 "rateLimit": {
                   "type": "object",
                   "additionalProperties": false,
-                  "description": "GAP-09 (Issue #1505) / SC-5: Per-IP rate limiting for the DS HTTP API. Disabled by default.",
+                  "description": "GAP-09 (Issue #1505) / SC-5: Per-IP rate limiting for the DS HTTP API. DD-PLATFORM-006 DA6: mandatory, no enabled gate.",
                   "properties": {
-                    "enabled": {
-                      "type": "boolean",
-                      "default": false
-                    },
                     "requestsPerSecond": {
                       "type": "number",
                       "default": 50,
@@ -1056,13 +1052,8 @@
                 "tls": {
                   "type": "object",
                   "additionalProperties": false,
-                  "description": "#1048 Phase 5 / AU-9: Redis TLS client configuration",
+                  "description": "#1048 Phase 5 / AU-9: Redis TLS client configuration. DD-PLATFORM-006 DA6: mandatory, no enabled gate.",
                   "properties": {
-                    "enabled": {
-                      "type": "boolean",
-                      "default": false,
-                      "description": "Enable TLS for Redis/Valkey connections"
-                    },
                     "certFile": {
                       "type": "string",
                       "default": "",
@@ -1123,13 +1114,8 @@
             "auditHashKey": {
               "type": "object",
               "additionalProperties": false,
-              "description": "GAP-05 (Issue #1505) / AU-9: Optional keyed HMAC-SHA256 audit hash chain",
+              "description": "GAP-05 (Issue #1505) / AU-9: keyed HMAC-SHA256 audit hash chain. DD-PLATFORM-006 DA6: mandatory, no enabled gate.",
               "properties": {
-                "enabled": {
-                  "type": "boolean",
-                  "default": false,
-                  "description": "Enable keyed HMAC-SHA256 hash chaining (requires a pre-created Secret)"
-                },
                 "existingSecret": {
                   "type": "string",
                   "default": "",
@@ -2652,12 +2638,8 @@
                 "replayCache": {
                   "type": "object",
                   "additionalProperties": false,
-                  "description": "GAP-08 (Issue #1505): distributed jti replay-detection backend, shared across all APIFrontend replicas via the cluster's Valkey instance. Disabled by default (legacy in-memory, single-process cache).",
+                  "description": "GAP-08 (Issue #1505): distributed jti replay-detection backend, shared across all APIFrontend replicas via the cluster's Valkey instance. DD-PLATFORM-006 DA6: mandatory, no enabled gate.",
                   "properties": {
-                    "enabled": {
-                      "type": "boolean",
-                      "default": false
-                    },
                     "redisDB": {
                       "type": "integer",
                       "default": 1,
@@ -2668,13 +2650,8 @@
                     "tls": {
                       "type": "object",
                       "additionalProperties": false,
-                      "description": "DD-PLATFORM-006 DA9: TLS for the replay-cache Valkey connection. Required once the target Valkey is TLS-only (the chart's own bundled Valkey, per Decision Area 8's default).",
+                      "description": "DD-PLATFORM-006 DA6/DA9: TLS for the replay-cache Valkey connection. Mandatory, no enabled gate -- the chart's own bundled Valkey is TLS-only (Decision Area 8's default).",
                       "properties": {
-                        "enabled": {
-                          "type": "boolean",
-                          "default": false,
-                          "description": "Enable TLS for the replay-cache Valkey/Redis connection"
-                        },
                         "certFile": {
                           "type": "string",
                           "default": "",

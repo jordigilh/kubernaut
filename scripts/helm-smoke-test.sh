@@ -496,10 +496,10 @@ production_secret_flags() {
   echo "--set gateway.auth.signalSources[0].name=alertmanager"
   echo "--set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager"
   echo "--set gateway.auth.signalSources[0].namespace=monitoring"
-  # DD-PLATFORM-006 DA7: exercises the audit-HMAC key auto-generation hook
-  # (tls-cert-job.yaml Section 4) on every Flow A install/upgrade -- see
+  # DD-PLATFORM-006 DA6/DA7: auditHashKey is mandatory (no enabled gate) --
+  # the audit-HMAC key auto-generation hook (tls-cert-job.yaml Section 4)
+  # now runs on every Flow A install/upgrade unconditionally -- see
   # run_audithmac_001/002 below.
-  echo "--set datastorage.config.auditHashKey.enabled=true"
   policy_flags
 }
 
@@ -2339,12 +2339,11 @@ for d in docs:
   af_np=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set "networkPolicies.apifrontend.ingressNamespaces[0]=ingress-nginx" \
-    --set apifrontend.config.auth.replayCache.enabled=true \
     --set apifrontend.config.auth.issuerURL=https://issuer.example.com \
     -s templates/apifrontend/networkpolicy.yaml 2>&1)
   if grep -q "kind: NetworkPolicy" <<< "$af_np" && \
      grep -q "kubernetes.io/metadata.name: ingress-nginx" <<< "$af_np" && \
-     grep -A5 "port: 6379" <<< "$af_np" | grep -q "app: valkey"; then
+     grep -A5 "port: 6380" <<< "$af_np" | grep -q "app: valkey"; then
     tap_ok "ST-CHART-AF-NP-001a: APIFrontend NetworkPolicy renders ingressNamespaces + Valkey egress"
   else
     tap_not_ok "ST-CHART-AF-NP-001a: APIFrontend NetworkPolicy" \
@@ -2365,16 +2364,17 @@ for d in docs:
       "expected schema rejection of networkPolicies.apifrontend.enabled, got: $af_np_disabled"
   fi
 
+  # DD-PLATFORM-006 DA6: replayCache (and its Valkey ingress rule) is mandatory
+  # now -- no enabled flag needed to exercise this path.
   local valkey_np
   valkey_np=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set apifrontend.config.auth.replayCache.enabled=true \
     -s templates/infrastructure/networkpolicy-valkey.yaml 2>&1)
   if grep -q "app: apifrontend" <<< "$valkey_np"; then
-    tap_ok "ST-CHART-AF-NP-001c: Valkey NetworkPolicy allows APIFrontend ingress when replayCache enabled"
+    tap_ok "ST-CHART-AF-NP-001c: Valkey NetworkPolicy allows APIFrontend ingress (replayCache is mandatory-on)"
   else
     tap_not_ok "ST-CHART-AF-NP-001c: Valkey NetworkPolicy" \
-      "apifrontend podSelector not found in Valkey ingress despite replayCache.enabled=true"
+      "apifrontend podSelector not found in Valkey ingress despite replayCache being mandatory-on"
   fi
 
   # ST-CHART-KA-SATOKEN-001: BR-PLATFORM-005 — kubernaut-agent (highest-risk,

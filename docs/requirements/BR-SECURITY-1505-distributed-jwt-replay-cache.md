@@ -8,6 +8,14 @@
 **Date**: June 30, 2026
 **GitHub Issues**: [#1505](https://github.com/jordigilh/kubernaut/issues/1505) (GAP-08)
 
+> **Superseded (Helm gating only)**: [DD-PLATFORM-006](../architecture/decisions/DD-PLATFORM-006-helm-chart-configuration-surface-reduction.md)
+> Decision Area 6 made `apifrontend.config.auth.replayCache` mandatory — the
+> `enabled` toggle described below no longer exists in the chart schema; the
+> Valkey-backed cache is always on. Decision Area 9/13 additionally added TLS
+> support to this client (`replayCache.tls`), required once Valkey became
+> TLS-only (Decision Area 8). The cache design and fallback behavior below are
+> still accurate.
+
 ---
 
 ## Business Need

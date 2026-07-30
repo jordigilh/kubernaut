@@ -18,19 +18,14 @@ set:
   tls:
     mode: hook
 tests:
-  - it: "default (auditHashKey.enabled=false): tls-cert-gen Job has no audit-HMAC key section"
+  - it: "default (DD-PLATFORM-006 DA6: auditHashKey is mandatory, no enabled gate): tls-cert-gen Job always has the audit-HMAC key section"
     documentIndex: 0 # first document in this file is the tls-cert-gen Job
     asserts:
-      - notMatchRegex:
+      - matchRegex:
           path: spec.template.spec.containers[0].command[2]
           pattern: "datastorage-audit-hmac-key"
 
-  - it: "auditHashKey.enabled=true (default name): tls-cert-gen Job checks exists-only before creating -- never regenerates an existing key, since rotating it would silently corrupt hash-chain verification for every audit record hashed with the old key"
-    set:
-      datastorage:
-        config:
-          auditHashKey:
-            enabled: true
+  - it: "tls-cert-gen Job checks exists-only before creating (default name) -- never regenerates an existing key, since rotating it would silently corrupt hash-chain verification for every audit record hashed with the old key"
     documentIndex: 0
     asserts:
       - matchRegex:
@@ -46,24 +41,18 @@ tests:
           path: spec.template.spec.containers[0].command[2]
           pattern: 'kubectl create secret generic "\$AUDIT_HMAC_SECRET"'
 
-  - it: "auditHashKey.enabled=true: never checks certificate expiry for the audit-HMAC key -- it is a static key, not a rotating certificate"
-    set:
-      datastorage:
-        config:
-          auditHashKey:
-            enabled: true
+  - it: "never checks certificate expiry for the audit-HMAC key -- it is a static key, not a rotating certificate"
     documentIndex: 0
     asserts:
       - notMatchRegex:
           path: spec.template.spec.containers[0].command[2]
           pattern: "audit-hmac-key[\\s\\S]{0,400}checkend"
 
-  - it: "auditHashKey.enabled=true + existingSecret set (BYO): auto-gen is skipped for the custom-named secret, matching postgresql/valkey existingSecret semantics where the user manages the secret manually"
+  - it: "existingSecret set (BYO): auto-gen is skipped for the custom-named secret, matching postgresql/valkey existingSecret semantics where the user manages the secret manually"
     set:
       datastorage:
         config:
           auditHashKey:
-            enabled: true
             existingSecret: my-custom-hmac-secret
     documentIndex: 0
     asserts:
@@ -75,11 +64,6 @@ tests:
     documentSelector:
       path: metadata.name
       value: RELEASE-NAME-kubernaut-tls-cleanup
-    set:
-      datastorage:
-        config:
-          auditHashKey:
-            enabled: true
     asserts:
       - notMatchRegex:
           path: spec.template.spec.containers[0].command[2]

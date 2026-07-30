@@ -148,20 +148,20 @@ auth:
       {{- end }}
   {{- end }}
   {{- end }}
-  {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
-  # GAP-08 (Issue #1505): distributed jti replay cache shared across all
-  # APIFrontend replicas via the cluster's Valkey instance.
+  # GAP-08 (Issue #1505) / DD-PLATFORM-006 DA6: distributed jti replay cache
+  # shared across all APIFrontend replicas via the cluster's Valkey instance
+  # -- mandatory, no enabled gate.
   replayCache:
     backend: redis
     redisAddr: {{ include "kubernaut.valkey.addr" . }}
     redisDB: {{ .Values.apifrontend.config.auth.replayCache.redisDB | default 1 }}
     credentialsPath: "/etc/apifrontend/valkey/valkey-secrets.yaml"
-    {{- if .Values.apifrontend.config.auth.replayCache.tls.enabled }}
-    # DD-PLATFORM-006 DA9: the chart's own Valkey is TLS-only by default
-    # (Decision Area 8), so this connection needs TLS too -- caFile defaults
-    # to the already-mounted inter-service CA (see the tls-ca volume/mount
-    # below) so this works without extra configuration against the chart's
-    # own Valkey; override only for a BYO Valkey/Redis signed by another CA.
+    # DD-PLATFORM-006 DA6/DA9: TLS is also mandatory here -- the chart's own
+    # Valkey is TLS-only (Decision Area 8), so a plaintext replay-cache
+    # connection could never succeed. caFile defaults to the already-mounted
+    # inter-service CA (see the tls-ca volume/mount below) so this works
+    # without extra configuration against the chart's own Valkey; override
+    # only for a BYO Valkey/Redis signed by another CA.
     tls:
       enabled: true
       caFile: {{ .Values.apifrontend.config.auth.replayCache.tls.caFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
@@ -171,8 +171,6 @@ auth:
       {{- with .Values.apifrontend.config.auth.replayCache.tls.keyFile }}
       keyFile: {{ . | quote }}
       {{- end }}
-    {{- end }}
-  {{- end }}
 # Issue #1737 gap found: never wired into the chart, so AF silently ran
 # with cmd/apifrontend/main.go's buildRateLimiters() package-level
 # fallback (ratelimit.DefaultConfig(): only 3 concurrent sessions, 60
@@ -488,11 +486,9 @@ spec:
               mountPath: /etc/apifrontend/severity-triage-credentials
               readOnly: true
             {{- end }}
-            {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
             - name: valkey-secrets
               mountPath: /etc/apifrontend/valkey
               readOnly: true
-            {{- end }}
             {{- /* Issue #1737: mount the inter-service CA unconditionally (matches
             gateway.yaml/kubernaut-agent.yaml) -- agent.kaTlsCaFile/dsTlsCaFile above
             always reference it now, so AF's KA/DS client transports can validate
@@ -547,14 +543,12 @@ spec:
           secret:
             secretName: {{ $stProfile.credentialsSecretName }}
         {{- end }}
-        {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
         - name: valkey-secrets
           secret:
             secretName: {{ include "kubernaut.valkey.secretName" . }}
             items:
               - key: valkey-secrets.yaml
                 path: valkey-secrets.yaml
-        {{- end }}
         {{- /* Issue #1737: unconditional, see volumeMounts comment above. */}}
         {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
         {{- if and .Values.global.fleet.enabled $apifrontendFleetPreamble.oauth2.enabled }}
