@@ -326,6 +326,53 @@ var _ = Describe("AnsibleExecutor (BR-WE-015)", func() {
 		})
 	})
 
+	Context("ClusterID fail-closed (#1761, DD-FLEET-005)", func() {
+		It("UT-WE-1761-001: should fail closed and never contact AWX when ClusterID targets a remote cluster", func() {
+			var awxCalled bool
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) {
+				awxCalled = true
+				return 99, nil
+			}
+			awxClient.launchFunc = func(_ context.Context, _ int, _ map[string]interface{}) (int, error) {
+				awxCalled = true
+				return 42, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/restart.yml",
+				"jobTemplateName": "restart-pod",
+			})
+			wfe := newAnsibleWFE("remote-wfe", "default", engineConfig, nil)
+			wfe.Spec.ClusterID = "remote-cluster-1"
+
+			_, err := ansibleExec.Create(ctx, wfe, "default", executor.CreateOptions{})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("remote-cluster-1"), "error should name the rejected cluster")
+			Expect(err.Error()).To(ContainSubstring("ansible"), "error should name the engine that rejected the request")
+			Expect(awxCalled).To(BeFalse(), "AWX must never be contacted for a remote ClusterID -- DD-FLEET-005 fails closed before any AWX interaction")
+		})
+
+		It("UT-WE-1761-002: should execute normally when ClusterID is empty (local/hub, unchanged behavior)", func() {
+			awxClient.findTemplateByNameFn = func(_ context.Context, _ string) (int, error) {
+				return 99, nil
+			}
+			awxClient.launchFunc = func(_ context.Context, _ int, _ map[string]interface{}) (int, error) {
+				return 42, nil
+			}
+
+			engineConfig, _ := json.Marshal(map[string]interface{}{
+				"playbookPath":    "playbooks/restart.yml",
+				"jobTemplateName": "restart-pod",
+			})
+			wfe := newAnsibleWFE("local-wfe", "default", engineConfig, nil)
+			Expect(wfe.Spec.ClusterID).To(BeEmpty(), "sanity check: local/hub WFEs have no ClusterID set")
+
+			result, err := ansibleExec.Create(ctx, wfe, "default", executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.ResourceName).To(ContainSubstring("awx-job-"))
+		})
+	})
+
 	Context("GetStatus", func() {
 		It("UT-WE-015-002: should map all 7 AWX states to correct WFE phases", func() {
 			testCases := []struct {
