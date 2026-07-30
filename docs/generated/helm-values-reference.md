@@ -219,7 +219,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 |-----------|------|--------------|---------|----------|
 | `affinity` | object | Kubernetes affinity rules | `` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
-| `enabled` | boolean |  | `false` | No |
+| `enabled` | boolean | DD-PLATFORM-006 Decision Area 10: when unset, the effective value is derived from global.fleet.enabled + global.fleet.backend (true whenever the fleet backend resolves to "fleetmetadatacache"); set explicitly to override. An explicit false that contradicts a derived-true fails the render. | `false` | No |
 | `image.pullPolicy` | string |  | `"IfNotPresent"` | No |
 | `image.repository` | string |  | `"quay.io/kubernaut-ai/fleetmetadatacache"` | No |
 | `image.tag` | string |  | `"v1.6.0"` | No |
@@ -337,7 +337,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `alignmentCheck.maxStepTokens` | integer | Max evaluator response tokens per step. | `500` | No |
 | `alignmentCheck.timeout` | string | Per-step evaluation timeout. | `"10s"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
-| `interactive.enabled` | boolean | Enable MCP interactive mode endpoint and Lease-based session management. | `false` | No |
+| `interactive.enabled` | boolean | Enable MCP interactive mode endpoint and Lease-based session management. DD-PLATFORM-006 Decision Area 11: requires apifrontend.enabled=true (APIFrontend's ka.NewSDKMCPClient is the only caller of this endpoint); the render fails otherwise. | `false` | No |
 | `interactive.inactivityTimeout` | string | Session timeout after last activity. | `"10m"` | No |
 | `interactive.jwtProviders` | array of object | JWT providers for Pattern B authentication (DD-AUTH-MCP-001 v2.0). | `` | No |
 | `interactive.maxAnalyzingTimeout` | string | Extended analyzing timeout for RO when an interactive session is active. Prevents RO from timing out a RemediationRequest while an operator is investigating. | `"45m"` | No |

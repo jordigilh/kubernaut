@@ -11,6 +11,16 @@ undefined profile (including an explicit empty-string override) is caught by
 kubernaut.llm.resolveProfile's own fail() below, with a message naming the
 actual (possibly empty) reference.
 */}}
+{{- /*
+DD-PLATFORM-006 Decision Area 11: APIFrontend's ka.NewSDKMCPClient
+(pkg/apifrontend/ka/) is the only MCP client anywhere in the codebase that
+connects to KA's interactive /api/v1/mcp endpoint (verified: zero other
+callers) -- fail fast instead of rendering an interactive endpoint that can
+never be reached.
+*/}}
+{{- if and .Values.kubernautAgent.interactive.enabled (not .Values.apifrontend.enabled) }}
+{{- fail "kubernautAgent.interactive.enabled=true requires apifrontend.enabled=true (APIFrontend's ka.NewSDKMCPClient is the only MCP client that connects to KubernautAgent's interactive endpoint, with no other possible caller)" }}
+{{- end }}
 {{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
 {{- $validPhases := list "rca" "workflow_discovery" "validation" }}
 {{- $kaPhaseProfiles := dict }}

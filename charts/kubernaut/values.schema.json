@@ -1996,7 +1996,7 @@
             "enabled": {
               "type": "boolean",
               "default": false,
-              "description": "Enable MCP interactive mode endpoint and Lease-based session management."
+              "description": "Enable MCP interactive mode endpoint and Lease-based session management. DD-PLATFORM-006 Decision Area 11: requires apifrontend.enabled=true (APIFrontend's ka.NewSDKMCPClient is the only caller of this endpoint); the render fails otherwise."
             },
             "sessionTTL": {
               "allOf": [
