@@ -103,6 +103,13 @@ tests:
       global:
         fleet:
           enabled: true
+          # DD-PLATFORM-006 Decision Area 10: backend pinned to "acm" so this
+          # unrelated-to-FMC test doesn't implicitly derive
+          # fleetmetadatacache.enabled=true (which would need its own
+          # oauth2.tokenURL/credentialsSecretRef -- see
+          # values_yaml_trim_test.yaml / mandatory_security_toggles_test.yaml
+          # for FMC-specific coverage).
+          backend: "acm"
           mcpGatewayEndpoint: "http://mcp.example.com"
     asserts:
       - contains:
@@ -121,6 +128,7 @@ tests:
       global:
         fleet:
           enabled: true
+          backend: "acm"
           mcpGatewayEndpoint: "http://mcp.example.com"
       networkPolicies:
         idp:
@@ -143,6 +151,7 @@ tests:
       global:
         fleet:
           enabled: true
+          backend: "acm"
           mcpGatewayEndpoint: "http://mcp.example.com"
     asserts:
       - contains:
@@ -161,6 +170,7 @@ tests:
       global:
         fleet:
           enabled: true
+          backend: "acm"
           mcpGatewayEndpoint: "http://mcp.example.com"
     asserts:
       - contains:
@@ -179,6 +189,7 @@ tests:
       global:
         fleet:
           enabled: true
+          backend: "acm"
           mcpGatewayEndpoint: "http://mcp.example.com"
     asserts:
       - contains:
@@ -197,6 +208,7 @@ tests:
       global:
         fleet:
           enabled: true
+          backend: "acm"
           mcpGatewayEndpoint: "http://mcp.example.com"
     asserts:
       - contains:
@@ -272,6 +284,7 @@ tests:
       global:
         fleet:
           enabled: true
+          backend: "acm"
           mcpGatewayEndpoint: "http://mcp.example.com"
     asserts:
       - contains:

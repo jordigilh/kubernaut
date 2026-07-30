@@ -71,7 +71,11 @@ oauth2:
      stuck retrying with TLS verification enabled and no CA configured. */}}
   tlsCaFile: {{ $fmcFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
 {{- end }}
-{{- if .Values.fleetmetadatacache.enabled }}
+{{- /* DD-PLATFORM-006 Decision Area 10: fleetmetadatacache.enabled's effective value is derived
+from global.fleet.enabled + global.fleet.backend when not explicitly set -- see
+kubernaut.fleetmetadatacache.effectiveEnabled for the full rationale and the contradictory-
+override fail() case. */}}
+{{- if eq (include "kubernaut.fleetmetadatacache.effectiveEnabled" .) "true" }}
 {{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml }}
 {{- if not $fmcFleetPreamble.config.mcpGatewayEndpoint }}
 {{- fail "global.fleet.mcpGatewayEndpoint is required when fleetmetadatacache.enabled=true — FleetMetadataCache polls remote clusters via the MCP Gateway" }}

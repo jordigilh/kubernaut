@@ -2283,7 +2283,8 @@
       "properties": {
         "enabled": {
           "type": "boolean",
-          "default": false
+          "default": false,
+          "description": "DD-PLATFORM-006 Decision Area 10: when unset, the effective value is derived from global.fleet.enabled + global.fleet.backend (true whenever the fleet backend resolves to \"fleetmetadatacache\"); set explicitly to override. An explicit false that contradicts a derived-true fails the render."
         },
         "replicas": {
           "type": "integer",

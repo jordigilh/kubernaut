@@ -81,6 +81,13 @@ tests:
         fleet:
           enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
+          # DD-PLATFORM-006 Decision Area 10: an unset backend here resolves
+          # to "fleetmetadatacache" (the very default this test proves), so
+          # fleetmetadatacache.enabled is now derived true too and needs its
+          # own required oauth2 fields for the render to succeed.
+          oauth2:
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
     template: templates/gateway/gateway.yaml
     documentSelector:
       path: metadata.name
@@ -99,6 +106,9 @@ tests:
         fleet:
           enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
     template: templates/remediationorchestrator/remediationorchestrator.yaml
     documentSelector:
       path: metadata.name

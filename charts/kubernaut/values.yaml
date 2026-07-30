@@ -616,8 +616,12 @@ valkey:
 # -- FleetMetadataCache: Fleet Metadata Cache service (BR-INTEGRATION-065, ADR-068).
 # Polls remote clusters via MCP Gateway and caches managed resource metadata in Valkey.
 # Serves an HTTP API for federated scope checking consumed by GW and RO.
+# DD-PLATFORM-006 Decision Area 10: `enabled` is deliberately left unset here (not `enabled:
+# false`) so its effective value can be derived from global.fleet.enabled + global.fleet.backend
+# when a user hasn't set it explicitly -- see kubernaut.fleetmetadatacache.effectiveEnabled in
+# _helpers.tpl. Set fleetmetadatacache.enabled explicitly (true or false) to override the
+# derived default.
 fleetmetadatacache:
-  enabled: false
   replicas: 1
   image:
     repository: quay.io/kubernaut-ai/fleetmetadatacache

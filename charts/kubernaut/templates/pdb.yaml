@@ -22,8 +22,12 @@ minAvailable/maxUnavailable since those aren't booleans. */}}
 {{- $pdb := $component.pdb | default dict }}
 {{- $pdbEnabled := $.Values.global.podDefaults.pdb.enabled }}
 {{- if hasKey $pdb "enabled" }}{{- $pdbEnabled = $pdb.enabled }}{{- end }}
-{{/* "console" and "fleetmetadatacache" are opt-in (enabled defaults false); skip their PDB entirely when disabled. */}}
-{{- if and $pdbEnabled (or (not (has $name (list "console" "fleetmetadatacache"))) $component.enabled) }}
+{{/* "console" and "fleetmetadatacache" are opt-in (enabled defaults false); skip their PDB entirely when disabled. fleetmetadatacache's opt-in state must go through
+DD-PLATFORM-006 Decision Area 10's derived-default helper (not a raw $component.enabled read), since global.fleet.enabled=true + a "fleetmetadatacache" backend
+implicitly turns FMC on even when fleetmetadatacache.enabled is never set explicitly -- a raw read would skip its PDB even though the Deployment itself renders. */}}
+{{- $fmcEffectiveEnabled := $component.enabled }}
+{{- if eq $name "fleetmetadatacache" }}{{- $fmcEffectiveEnabled = eq (include "kubernaut.fleetmetadatacache.effectiveEnabled" $) "true" }}{{- end }}
+{{- if and $pdbEnabled (or (not (has $name (list "console" "fleetmetadatacache"))) $fmcEffectiveEnabled) }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
