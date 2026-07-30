@@ -297,7 +297,28 @@ func New(cfg Config) *Investigator {
 // RunInteractiveTurn executes a single interactive LLM loop iteration.
 // Used by the MCP kubernaut_investigate tool for interactive sessions.
 // Uses PhaseRCA tool set. Streaming works via LazySink on context.
+//
+// Issue #1768 Gap D: an interactive session's tool calls must be pre-scoped
+// to the operator's actual target cluster, exactly like Investigate()'s
+// autonomous path (DD-FLEET-004), instead of silently defaulting to the hub
+// cluster's tools. InvestigateTool.handleMessage already resolves the
+// target ClusterID via signalResolver and attaches it to ctx on every turn
+// (#1374/F9, katypes.WithSignalContext) — this reuses that existing value
+// rather than threading a new parameter through the MCP dispatch path.
+//
+// Fail-open by design, at two layers: (1) if ctx carries no SignalContext at
+// all — hub-local sessions, and the reconstruction-turn replay path
+// (ReconRunnerAdapter.RunReconTurn, see TEST_PLAN_TRACK2.md §6 out-of-scope)
+// — pre-scoping is skipped entirely and behavior is byte-identical to
+// pre-#1768; (2) if a SignalContext IS present but overlay resolution itself
+// fails, prescopeFleetOverlay logs the error, emits an AU-3
+// EventTypeFleetOverlayFailed audit event, and returns ctx unmodified so the
+// turn still proceeds against the local tool registry rather than aborting
+// the investigation.
 func (inv *Investigator) RunInteractiveTurn(ctx context.Context, messages []llm.Message, correlationID string) (LoopResult, error) {
+	if signal, ok := katypes.SignalContextFromContext(ctx); ok {
+		ctx = inv.prescopeFleetOverlay(ctx, signal.ClusterID, correlationID)
+	}
 	client, modelName, runtimeParams := inv.resolveForPhase(katypes.PhaseRCA)
 	return inv.runLLMLoop(ctx, messages, katypes.PhaseRCA, LLMInvocationContext{
 		CorrelationID: correlationID,

@@ -425,4 +425,144 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 					"replaces LLM-driven tool discovery entirely)")
 		})
 	})
+
+	// Issue #1768 Gap D / Track 2: interactive AF<->KA sessions (RunInteractiveTurn)
+	// never applied prescopeFleetOverlay, so a fleet-targeted interactive
+	// investigation silently resolved tool calls against the HUB cluster instead
+	// of the operator's actual target cluster. InvestigateTool.handleMessage
+	// (internal/kubernautagent/mcp/tools/investigate_takeover.go) already resolves
+	// SignalContext (including ClusterID) onto ctx via signalResolver on every
+	// turn (#1374/F9) -- these specs prove RunInteractiveTurn now consumes that
+	// ClusterID the same way Investigate() consumes signal.ClusterID.
+	Describe("IT-KA-FLEET-022 [AC-4]: RunInteractiveTurn pre-scopes via FleetOverlayResolver from ctx SignalContext", func() {
+		It("calls Overlay with the ClusterID carried on ctx for a fleet-target interactive turn", func() {
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}}
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: "no root cause identified yet"}},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: registry.New(),
+				FleetOverlayResolver: spy,
+			})
+
+			ctx := katypes.WithSignalContext(context.Background(), katypes.SignalContext{
+				ClusterID: "remote-east", RemediationID: "rem-interactive-fleet-001",
+			})
+			_, err := inv.RunInteractiveTurn(ctx, []llm.Message{
+				{Role: "user", Content: "what is wrong with the deployment?"},
+			}, "rem-interactive-fleet-001")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(spy.calls).To(ConsistOf("remote-east"),
+				"IT-KA-FLEET-022: an interactive turn for a fleet-target investigation must resolve "+
+					"the fleet overlay for the ClusterID carried on ctx (AC-4: enforced against the "+
+					"operator's actual target cluster, not silently defaulted to the hub)")
+		})
+
+		It("never calls Overlay for an interactive turn with no SignalContext on ctx (hub-local regression safety)", func() {
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}}
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: "no root cause identified yet"}},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: registry.New(),
+				FleetOverlayResolver: spy,
+			})
+
+			_, err := inv.RunInteractiveTurn(context.Background(), []llm.Message{
+				{Role: "user", Content: "what is wrong with the deployment?"},
+			}, "rem-interactive-hub-001")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(spy.calls).To(BeEmpty(),
+				"IT-KA-FLEET-022: a hub-local interactive turn (no SignalContext on ctx) must never "+
+					"invoke the fleet resolver -- zero behavior change for non-fleet deployments")
+		})
+	})
+
+	Describe("IT-KA-FLEET-023 [AC-6]: interactive turn tool calls resolve via the overlay ahead of the local registry", func() {
+		It("routes a tool call to the overlay's BridgeTool stand-in, under the exact same name the local registry uses", func() {
+			overlayTool := &fakeTool{name: "kubectl_get_by_name", result: `{"source":"remote-cluster-east"}`}
+			localTool := &fakeTool{name: "kubectl_get_by_name", result: `{"source":"local-hub"}`}
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{"kubectl_get_by_name": overlayTool}}
+
+			reg := registry.New()
+			reg.Register(localTool)
+
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{
+					Message:   llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{{ID: "tc_get", Name: "kubectl_get_by_name", Arguments: `{}`}},
+				},
+				{Message: llm.Message{Role: "assistant", Content: "deployment looks healthy"}},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: reg,
+				FleetOverlayResolver: spy,
+			})
+
+			ctx := katypes.WithSignalContext(context.Background(), katypes.SignalContext{
+				ClusterID: "remote-east", RemediationID: "rem-interactive-fleet-002",
+			})
+			_, err := inv.RunInteractiveTurn(ctx, []llm.Message{
+				{Role: "user", Content: "check the deployment status"},
+			}, "rem-interactive-fleet-002")
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(allMessageContent(mockClient.calls[1].Messages)).To(ContainSubstring("remote-cluster-east"),
+				"IT-KA-FLEET-023: a fleet-target interactive turn must route 'kubectl_get_by_name' to "+
+					"the overlay's BridgeTool, not the local registry's tool of the same name")
+			Expect(allMessageContent(mockClient.calls[1].Messages)).NotTo(ContainSubstring("local-hub"))
+		})
+
+		It("falls back to the local registry for the same generic name in a hub-local interactive turn", func() {
+			localTool := &fakeTool{name: "kubectl_get_by_name", result: `{"source":"local-hub"}`}
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{}}
+
+			reg := registry.New()
+			reg.Register(localTool)
+
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{
+					Message:   llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{{ID: "tc_get", Name: "kubectl_get_by_name", Arguments: `{}`}},
+				},
+				{Message: llm.Message{Role: "assistant", Content: "deployment looks healthy"}},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: reg,
+				FleetOverlayResolver: spy,
+			})
+
+			_, err := inv.RunInteractiveTurn(context.Background(), []llm.Message{
+				{Role: "user", Content: "check the deployment status"},
+			}, "rem-interactive-hub-002")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(allMessageContent(mockClient.calls[1].Messages)).To(ContainSubstring("local-hub"),
+				"IT-KA-FLEET-023: with no overlay (hub-local), the same generic name must resolve to "+
+					"the local registry unchanged (zero regression)")
+		})
+	})
 })
