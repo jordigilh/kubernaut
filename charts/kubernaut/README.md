@@ -595,7 +595,7 @@ Each service gets a NetworkPolicy with:
 - **Default-deny ingress** with service-specific allow rules
 - **Egress**: most services restrict egress to DNS, K8s API, and known peers; **Kubernaut Agent uses an ingress-only policy** (unrestricted egress) because it must reach arbitrary LLM providers, MCP servers, and tool endpoints
 - **Datastorage**: allows egress to PostgreSQL, Valkey, and external container registries (configurable CIDR for OCI bundle validation)
-- **APIFrontend** (BR-PLATFORM-005, Kubernaut Operator parity — previously the only mesh component without a NetworkPolicy): ingress from same-namespace callers plus `networkPolicies.apifrontend.ingressNamespaces`; egress to DataStorage, Valkey (only when `apifrontend.config.auth.replayCache.enabled=true`), and OIDC/JWKS discovery (only when OIDC is configured)
+- **APIFrontend** (BR-PLATFORM-005, Kubernaut Operator parity — previously the only mesh component without a NetworkPolicy): ingress from same-namespace callers plus `networkPolicies.apifrontend.ingressNamespaces`; egress to DataStorage, Valkey (DD-PLATFORM-006 DA6: the JWT replay-cache is now mandatory, so this egress rule is unconditional), and OIDC/JWKS discovery (only when OIDC is configured)
 - **Console** (BR-PLATFORM-006; a no-op unless `console.enabled=true`): ingress from same-namespace callers plus `networkPolicies.console.ingressNamespaces`; egress to APIFrontend and OIDC token/JWKS discovery
 
 Example (API server CIDR/port are auto-discovered here; only set them explicitly for `helm template`/GitOps rendering, see [NetworkPolicy API Server Discovery](#networkpolicy-api-server-discovery)):
