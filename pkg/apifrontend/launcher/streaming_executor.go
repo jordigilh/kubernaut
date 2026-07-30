@@ -24,11 +24,9 @@ import (
 	"github.com/a2aproject/a2a-go/a2a"
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/a2aproject/a2a-go/a2asrv/eventqueue"
-	adksession "google.golang.org/adk/session"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
 // SessionPhaseUpdater provides the subset of session.CRDSessionService needed
@@ -49,13 +47,11 @@ type ConcurrencyLimiter interface {
 // execution context. This enables tool handlers (e.g., kubernaut_investigate)
 // to emit progressive reasoning artifacts directly to the A2A event queue.
 type StreamingExecutor struct {
-	inner          a2asrv.AgentExecutor
-	logger         logr.Logger
-	bridgeMetrics  BridgeMetrics
-	sessionSvc     SessionPhaseUpdater
-	llmSemaphore   ConcurrencyLimiter
-	adkSessionSvc  adksession.Service
-	appName        string
+	inner         a2asrv.AgentExecutor
+	logger        logr.Logger
+	bridgeMetrics BridgeMetrics
+	sessionSvc    SessionPhaseUpdater
+	llmSemaphore  ConcurrencyLimiter
 }
 
 // NewStreamingExecutor creates a StreamingExecutor that wraps the given executor.
@@ -78,16 +74,6 @@ type StreamingExecutorOption func(*StreamingExecutor)
 // that cannot acquire a slot fail with a capacity error.
 func WithLLMSemaphore(sem ConcurrencyLimiter) StreamingExecutorOption {
 	return func(se *StreamingExecutor) { se.llmSemaphore = sem }
-}
-
-// WithReinvocation enables the text-only turn-end re-invocation loop (BR-SESS-013).
-// When the agent produces a text-only response without tool calls, the executor
-// injects a synthetic "continue" message and re-invokes up to MaxReinvocations times.
-func WithReinvocation(svc adksession.Service, appName string) StreamingExecutorOption {
-	return func(se *StreamingExecutor) {
-		se.adkSessionSvc = svc
-		se.appName = appName
-	}
 }
 
 // Execute injects the EventBridge into the context and delegates to the inner executor.
@@ -143,44 +129,16 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 		}
 	}()
 
+	// BR-SESS-013's re-invocation loop no longer lives here (issue #1776):
+	// it previously ran *after* Execute() returned, by which point
+	// adka2a.Executor.process() had often already published a premature
+	// "final" TaskStatusUpdateEvent and the a2a-go consumer had torn the
+	// shared context down, racing the reinvocation's second LLM call. The
+	// decision now runs inside reinvokingRunner, wrapped around the real
+	// ADK Runner via adka2a.ExecutorConfig.RunnerProvider (see launcher.go),
+	// *before* the iterator this Execute() call is built on top of ever
+	// reports a final event.
 	err := s.inner.Execute(ctx, reqCtx, queue)
-
-	// BR-SESS-013: Re-invocation loop — when the agent produces a text-only
-	// response without tool calls, inject a synthetic "continue" message and
-	// re-invoke. This handles premature turn ends during active investigations.
-	if err == nil && s.adkSessionSvc != nil {
-		reinvokeCount := 0
-		for {
-			resp, getErr := s.adkSessionSvc.Get(ctx, &adksession.GetRequest{
-				AppName:         s.appName,
-				UserID:          username,
-				SessionID:       reqCtx.ContextID,
-				NumRecentEvents: 1,
-			})
-			if getErr != nil || resp == nil || resp.Session == nil {
-				break
-			}
-			if !session.NeedsReinvocationCtx(ctx, isv1alpha1.SessionPhaseActive, resp.Session.Events(), reinvokeCount) {
-				break
-			}
-			reinvokeCount++
-			s.logger.Info("re-invoking agent after text-only turn end",
-				"task_id", string(reqCtx.TaskID),
-				"reinvoke_count", reinvokeCount,
-			)
-			syntheticEvent := adksession.NewEvent("")
-			syntheticEvent.Author = "user"
-			syntheticEvent.Content = session.SyntheticMessage()
-			if appendErr := s.adkSessionSvc.AppendEvent(ctx, resp.Session, syntheticEvent); appendErr != nil {
-				s.logger.Error(appendErr, "failed to append synthetic re-invocation message")
-				break
-			}
-			err = s.inner.Execute(ctx, reqCtx, queue)
-			if err != nil {
-				break
-			}
-		}
-	}
 
 	close(stopKeepalive)
 
