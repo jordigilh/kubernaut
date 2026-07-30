@@ -49,8 +49,9 @@ spec:
     {{- include "kubernaut.np.llmEgress" . | nindent 4 }}
     {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
     # GAP-08 (#1505): JWT replay-cache egress to Valkey.
+    # DD-PLATFORM-006 DA8: Valkey is TLS-only on 6380.
     - ports:
-        - port: 6379
+        - port: 6380
           protocol: TCP
       to:
         - podSelector:

@@ -234,7 +234,7 @@ tests:
     asserts:
       - matchRegex:
           path: data["config.yaml"]
-          pattern: "(?m)^\\s*addr: \"valkey\\.[^\"]*:6379\""
+          pattern: "(?m)^\\s*addr: \"valkey\\.[^\"]*:6380\""
 
   - it: "the old fleetmetadatacache.gatewayType top-level key is no longer recognized"
     set:

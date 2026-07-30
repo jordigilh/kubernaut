@@ -23,9 +23,9 @@ conversation record, with the iterative alternatives/version history omitted for
 
 ### Problem Statement
 
-`charts/kubernaut/values.yaml` exposes roughly 375 configurable fields as a single flat example
-file. A new user deploying Kubernaut to a vanilla Kubernetes cluster cannot tell, from the file
-alone, which handful of fields they must actually set versus which ~368 already have a safe,
+`charts/kubernaut/values.yaml` exposes 404 configurable fields (post-PR #1755) as a single flat
+example file. A new user deploying Kubernaut to a vanilla Kubernetes cluster cannot tell, from the
+file alone, which handful of fields they must actually set versus which ~397 already have a safe,
 working default. This inflates perceived complexity, slows first-deployment time, and increases
 support burden — directly working against fast time-to-value for a new install.
 

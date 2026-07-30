@@ -53,7 +53,8 @@ spec:
             matchLabels:
               app: postgresql
     - ports:
-        - port: 6379
+        # DD-PLATFORM-006 DA8: Valkey is TLS-only on 6380.
+        - port: 6380
           protocol: TCP
       to:
         - podSelector:

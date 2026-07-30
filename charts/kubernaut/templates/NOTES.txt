@@ -118,10 +118,11 @@ start without it, with no fallback (#334):
    kubectl create secret tls datastorage-signing-cert \
      --cert=/tmp/signing-tls.crt --key=/tmp/signing-tls.key -n {{ .Release.Namespace }}
 
-You must also create gateway-tls, datastorage-tls, kubernautagent-tls Secrets
-(type kubernetes.io/tls) plus an inter-service-ca ConfigMap (key ca.crt) for
-inter-service mTLS -- DD-PLATFORM-001. Without these, inter-service traffic
-silently falls back to plain HTTP (SC-8 gap). See the chart README's
+You must also create gateway-tls, datastorage-tls, kubernautagent-tls, valkey-tls
+Secrets (type kubernetes.io/tls) plus an inter-service-ca ConfigMap (key ca.crt)
+for inter-service mTLS -- DD-PLATFORM-001. Without these, inter-service traffic
+silently falls back to plain HTTP (SC-8 gap), and Valkey (TLS-only, DD-PLATFORM-006
+Decision Area 8) will refuse all connections. See the chart README's
 "Inter-service mTLS prerequisite" section for full openssl commands.
 {{- end }}
 

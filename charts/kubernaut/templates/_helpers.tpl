@@ -376,10 +376,14 @@ Return the Valkey data directory mount path.
 
 {{/*
 Return the Valkey address (host:port).
+DD-PLATFORM-006 DA8: the in-chart Valkey is TLS-only on 6380. The BYO branch
+(valkey.enabled=false) is unaffected -- an external Valkey/Redis's port is the
+operator's own concern (default 6379 matches upstream Redis/Valkey's own
+plaintext default, not this chart's TLS decision).
 */}}
 {{- define "kubernaut.valkey.addr" -}}
 {{- if .Values.valkey.enabled -}}
-valkey.{{ .Release.Namespace }}.svc.cluster.local:6379
+valkey.{{ .Release.Namespace }}.svc.cluster.local:6380
 {{- else -}}
 {{- $host := required "valkey.host is required when valkey.enabled=false" .Values.valkey.host -}}
 {{- printf "%s:%d" $host (int (.Values.valkey.port | default 6379)) -}}

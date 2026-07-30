@@ -27,7 +27,7 @@ valkey:
   computes the chart's own shared Valkey Service address (or the BYO
   valkey.host when valkey.enabled=false) for postgresql/datastorage; reuse it
   here instead of requiring every fleetmetadatacache.enabled=true caller to
-  redundantly pass --set fleetmetadatacache.valkeyAddr=valkey:6379. */}}
+  redundantly pass --set fleetmetadatacache.valkeyAddr=valkey:6380. */}}
   addr: {{ .Values.fleetmetadatacache.valkeyAddr | default (include "kubernaut.valkey.addr" .) | quote }}
 sync:
   interval: {{ .Values.fleetmetadatacache.syncInterval | quote }}
@@ -380,8 +380,9 @@ spec:
             matchLabels:
               app: valkey
       ports:
+        # DD-PLATFORM-006 DA8: Valkey is TLS-only on 6380.
         - protocol: TCP
-          port: 6379
+          port: 6380
     - to:
         - namespaceSelector: {}
       ports:

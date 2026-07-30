@@ -44,7 +44,15 @@ redis:
     enabled: {{ .Values.datastorage.config.redis.tls.enabled | default false }}
     certFile: {{ .Values.datastorage.config.redis.tls.certFile | default "" | quote }}
     keyFile: {{ .Values.datastorage.config.redis.tls.keyFile | default "" | quote }}
+    {{- if .Values.datastorage.config.redis.tls.enabled }}
+    # DD-PLATFORM-006 DA8: the chart's own Valkey is TLS-only -- caFile defaults
+    # to the already-mounted inter-service CA (see the tls-ca volume/mount
+    # below) so this works without extra configuration; override only for a
+    # BYO Valkey/Redis signed by a different CA.
+    caFile: {{ .Values.datastorage.config.redis.tls.caFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
+    {{- else }}
     caFile: {{ .Values.datastorage.config.redis.tls.caFile | default "" | quote }}
+    {{- end }}
 retention:
   enabled: {{ .Values.datastorage.config.retention.enabled | default true }}
   interval: {{ .Values.datastorage.config.retention.interval | default "24h" | quote }}
@@ -166,6 +174,10 @@ spec:
             - name: signing-certs
               mountPath: {{ .Values.datastorage.config.server.signerCertDir | default "/etc/certs" }}
               readOnly: true
+            # DD-PLATFORM-006 DA8: lets redis.tls.caFile verify the chart's own
+            # TLS-only Valkey without any extra configuration (defaults to this
+            # mount's ca.crt above).
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
             - name: tmp
               mountPath: /tmp
           resources:
@@ -217,6 +229,7 @@ spec:
         - name: signing-certs
           secret:
             secretName: datastorage-signing-cert
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
