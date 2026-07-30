@@ -2,10 +2,11 @@
 
 **Status**: 🟡 **PROPOSED** (pending user approval)
 **Decision Date**: TBD (on approval)
-**Version**: 5.7 (PR5/DA8 pre-implementation finding, new Decision Area 13: Decision Area 8's
-Valkey TLS-only cutover would have permanently broken APIFrontend's replay-cache Valkey client,
-which had zero TLS support in Go — closed with a small, in-scope Go change mirroring the fleet's
-existing shared TLS pattern, not deferred or worked around with a dual-listener compromise)
+**Version**: 5.8 (Decision Area 4 correction + new Decision Area 14: retracted the premise that a
+field removed from `values.yaml` automatically "keeps its schema default" — Helm does not inject
+`values.schema.json` defaults at render time. Split Decision Area 4 into 4a, the 95-field
+zero-value-default trim already implemented, and a new Decision Area 14, the remaining 234
+non-zero-default fields, deferred to a dedicated PR9 pending a materialized-defaults generator)
 **Date**: 2026-07-29
 **Deciders**: Kubernaut Platform (chart maintainers)
 **Applies To**: `charts/kubernaut` (Helm chart) only — no Kubernaut Operator changes
@@ -161,12 +162,46 @@ required for this Decision Area.
 ### Decision Area 4 — Values.yaml Trim
 
 **Decision**: trim the shipped `values.yaml` to mandatory fields (7) + feature-enable toggles
-(~7-12) only; every already-defaulted field keeps its schema default and moves to an
+(~7-12) only; every trimmed field's rendered behavior is unchanged, and each field moves to an
 **auto-generated** reference doc instead of a hand-authored README table (see "Configuration
 reference generation" below). Acceptance gate: `helm lint` clean + `helm template` renders without
 error for the trimmed file (and a helm-unittest fixture with the Fleet fields below set inline) —
 a *different* rendered value than before is acceptable, an error or invalid manifest is not (no
 backward-compatibility requirement, pre-GA).
+
+**Correction (post-implementation, 2026-07-29) — the original framing above was imprecise and is
+retracted**: an earlier draft of this Decision Area assumed removing a field from `values.yaml`
+"keeps its schema default" automatically, as if Helm injects `values.schema.json`'s declared
+`default` into `.Values` at render time. It does not — `values.schema.json` is a **validation**
+schema only; a template only ever sees a trimmed field's default if the template itself already
+asks for one (e.g. `{{ .Values.x.y | default "foo" }}`) or the field's Go zero value happens to
+already be what every consuming template treats as "unset." Removing a field whose template
+consumer has no such guard silently changes rendered output instead of preserving it — exactly the
+render-validity gate this Decision Area's acceptance criteria exists to catch, but a risk that
+scales with how many of the ~359 leaf fields get trimmed at once.
+
+This was caught in practice, not just in theory: the field-by-field audit (Decision Area 4a below)
+found `global.fleet.mcpGatewayEndpoint`/`mcpGatewayType` piped through Sprig's `quote` filter with
+no `if`/`default` guard in `workflowexecution.yaml`/`fleetmetadatacache.yaml`. Sprig's `quote`
+silently drops a `nil` argument instead of quoting it, so removing either field would have rendered
+a bare `key:` (YAML null) instead of the intended `key: ""` — a real, silent behavior change that
+would have passed `helm lint`/`helm template` without error. Both fields were kept in `values.yaml`
+with explicit empty-string defaults and an inline comment explaining why, rather than removed.
+
+Given this, the trim was split into two independently-scoped efforts instead of one:
+
+- **Decision Area 4a (this DD's initial implementation, done)**: trim only the subset of fields
+  whose `values.schema.json` default already equals Go's zero value (`""`, `0`, `false`, `{}`,
+  `[]`, `null`) — for this subset, "field absent" and "field explicitly set to its default" are
+  indistinguishable to every Go template helper already in the codebase (`default`, `hasKey`,
+  truthiness checks), so no template-level change is required to remove them safely. Verified
+  per-field against Decision Area 6/10-style `hasKey`-vs-explicit-`false` logic before removal (the
+  audit that caught the `quote`/nil-drop bugs above), not assumed safe by category alone. Census:
+  359 total leaf fields, 125 zero-value-default (2 excluded per the finding above → 95 actually
+  removed), 234 non-zero-default (out of scope for Decision Area 4a).
+- **Decision Area 14 (deferred, new, own PR9)**: the remaining 234 non-zero-default fields need a
+  template-level materialized-defaults mechanism *before* they can be safely trimmed — see Decision
+  Area 14 below.
 
 **Configuration reference generation (revises the plan's original "moves to the README's
 configuration reference table" framing, per direct user instruction)**: hand-transcribing ~394
@@ -600,6 +635,66 @@ production Valkey TLS misconfiguration would emit).
 
 ---
 
+### Decision Area 14 — Materialized Defaults Generator (deferred, own PR9)
+
+**Finding, discovered during Decision Area 4's implementation (Decision Area 4a's field-by-field
+audit)**: Decision Area 4's original framing assumed all ~359 trimmed leaf fields could be removed
+from `values.yaml` uniformly, on the premise that a removed field "keeps its schema default." That
+premise doesn't hold in general (see Decision Area 4's correction above) — only the 125 fields
+whose default equals Go's zero value are safe to remove without a template change, because for
+those, "absent" and "explicitly zero" already render identically everywhere. The remaining 234
+non-zero-default fields (e.g. `replicas: 1`, `pdb.enabled: true`, numeric timeouts/ports/thresholds)
+would each need either (a) an individual template-level `default` guard added at every consuming
+call site, or (b) a systematic mechanism that materializes `values.schema.json`'s defaults into
+`.Values` before templates ever see them — auditing and patching (a) one field/template at a time
+across ~30-40 template files is the same class of error-prone, hard-to-verify-complete work the
+`quote`/nil-drop bugs were found in, just at 2.5x the field count.
+
+**Options considered**:
+1. **Materialized-defaults generator (selected, deferred to PR9)**: a new build-time Go generator
+   (extending `hack/gen-helm-config-docs`'s existing `values.schema.json` walker, which already
+   resolves `$ref`/`allOf`/`definitions`) emits a committed, CI-drift-checked
+   `charts/kubernaut/templates/_generated_defaults.tpl` — a Helm template partial defining a
+   `kubernaut.defaults` value tree with every schema default materialized as literal YAML. Each
+   service's top-level template merges its own `.Values.<service>` over
+   `(include "kubernaut.defaults" . | fromYaml).<service>` (last-write-wins, `.Values` always
+   overrides the generated default) via Sprig's `mergeOverwrite`/a `deepCopy`-based merge helper,
+   once per service entry point — not once per field — so the 234 fields can be removed from
+   `values.yaml` in one pass with a single, auditable merge point per service instead of ~234
+   individual template edits.
+2. **Manually add a `default` guard at every one of the 234 call sites** — rejected: this is
+   exactly the error-prone, per-field manual process that produced the `quote`/nil-drop bugs found
+   in the 125-field set (a much smaller set); doing it 234 times with no generator support has a
+   materially higher chance of silent gaps, and no automated way to prove completeness the way a
+   generated, schema-driven `git diff --exit-code` check can.
+3. **Leave the 234 fields in `values.yaml` indefinitely, close Decision Area 4 at 95 fields
+   removed** — viable fallback if PR9 is never resourced, but leaves most of the onboarding-friction
+   problem this DD exists to solve unsolved (95 of ~359 fields removed, vs. the ~264 the full trim
+   would remove); not selected as the final state, but the safe baseline this DD's initial
+   implementation already achieves independent of PR9 landing.
+
+**Decision**: pursue option 1, as a **dedicated, separate PR9** — not part of this DD's initial
+implementation. Rationale for deferring rather than blocking: PR9 touches ~30-40 template files
+(a genuine "moderate architecture impact" per `AGENTS.md`'s Preflight Checks, warranting its own
+RED/GREEN/REFACTOR cycle and render-validity gate independent of the rest of this DD), while
+Decision Area 4a's 95-field trim is already a complete, independently-valuable, low-risk unit of
+work that shouldn't wait on PR9's larger scope to ship.
+
+**Scope for PR9** (tracked in the implementation plan, not expanded on further here): build the
+`$ref`/`allOf`-resolving generator emitting `_generated_defaults.tpl`; add the per-service
+`deepCopy .Values` + generated-defaults merge helper; refactor each of the ~30-40 template files
+that reference one of the 234 fields to read from the merged tree instead of `.Values` directly;
+remove the 234 fields from `values.yaml`; extend the existing helm-unittest render-validity suite
+(Decision Area 4a's `values_yaml_trim_test.yaml` pattern) to cover the larger field set.
+
+**Confidence**: 90% — the schema-walking half of the generator is a direct extension of
+`hack/gen-helm-config-docs`, already built and tested; the residual uncertainty is in the ~30-40
+template refactor's blast radius (verifying every one of the 234 fields' consuming templates
+correctly falls back to the merged-defaults tree with no behavioral drift), which is why this is
+scoped as its own PR with its own render-validity gate rather than folded into Decision Area 4a.
+
+---
+
 ## Considered and Declined: Removing `postgresql`/`valkey` from the Chart
 
 Removing `postgresql`/`valkey` from the chart entirely — making an externally-provisioned
@@ -620,7 +715,11 @@ needed; this is closed, not deferred.
 
 ### Positive
 1. New-user-facing `values.yaml` shrinks to roughly 7 mandatory fields + ~7-12 feature-enable
-   toggles, from 404 total leaf fields today (see Decision Area 12).
+   toggles, from 404 total leaf fields today (see Decision Area 12) — **once Decision Area 14/PR9
+   lands**. Decision Area 4a's initial implementation (this DD's first pass) removes 95 of the 359
+   zero-value-default fields on its own, a partial but immediately-realized reduction; the remaining
+   234 fields require Decision Area 14's materialized-defaults generator before they can be removed
+   without risking the same class of silent-render-drift bug that generator exists to close.
 2. Decision Areas 1-2 close real value-level duplication on top of an already-shared schema
    shape.
 3. Decision Area 3's `enabled`-toggle removal closes a latent AC-4/SC-8 compliance gap as a
@@ -691,23 +790,31 @@ needed; this is closed, not deferred.
 - BR-PLATFORM-009: Helm Chart Gateway/APIFrontend Ingress Parity with the Kubernaut Operator
 - Issues #1725 (merged), #1730 (open), #1729 (open), #1737/#1755 (merged)
 - Implementation plan: `.cursor/plans/dd-platform-006_full_implementation_10d3769d.plan.md`
+- PR9 (tracked in the implementation plan, not yet its own issue): Decision Area 14's
+  materialized-defaults generator
 
 ---
 
-**Document Version**: 5.7 (Decision Area 13: closed a PR5/Decision Area 8 blocker discovered during
-implementation — APIFrontend's replay-cache Valkey client had zero TLS support in Go, which would
-have permanently broken it once Valkey went TLS-only; fixed with a small Go change reusing the
-fleet's existing shared TLS hardening primitive rather than a dual-listener compromise or deferral)
+**Document Version**: 5.8 (Decision Area 4 correction + new Decision Area 14: retracted DA4's
+original "removed fields keep their schema default automatically" premise — Helm doesn't inject
+`values.schema.json` defaults into `.Values` at render time, a fact the `mcpGatewayEndpoint`/
+`mcpGatewayType` `quote`-nil-drop bugs found during DA4a's implementation demonstrated concretely.
+Split DA4 into DA4a (the 95-field zero-value-default trim, implemented) and DA14 (the remaining
+234 non-zero-default fields, deferred to a dedicated PR9 pending a materialized-defaults
+generator))
 **Last Updated**: 2026-07-29
 **Status**: 🟡 Proposed — awaiting user approval. Field-census recount and file/line-reference
 verification against `main` post-PR #1755 completed (Decision Area 12) — no Decision Area's
 chosen alternative changed. Decision Area 4's Fleet overlay approach reversed from a shipped
 `values-fleet.yaml` file to fields folded into the user's own `values.yaml`, after identifying it
-would have been unusable for pure-OCI/airgapped Fleet installs. The ~394 fields removed from
-`values.yaml` are documented via a new auto-generated `docs/generated/helm-values-reference.md`
-rather than hand-authored README tables, after finding README.md (895 lines) couldn't scale to an
-exhaustive field-by-field transcription without becoming unusable. Its drift-freshness check is
-enforced by dedicated new steps in both `ci-pipeline.yml` and `chart-release.yml` (verified the
-`generate-crd-docs` precedent this was modeled on is actually unenforced anywhere in CI today, and
-that the existing Go-codegen cache path excludes `values.schema.json` from its cache key — neither
-could be relied on as-is). No local git hook — CI enforcement is sufficient, hooks are bypassable.
+would have been unusable for pure-OCI/airgapped Fleet installs. Of the ~394 fields originally
+targeted for removal from `values.yaml`, 95 (Decision Area 4a, zero-value-default) have been
+removed; the remaining 234 (Decision Area 14) are deferred to PR9 pending a materialized-defaults
+generator. All fields — trimmed or not — are documented via a new auto-generated
+`docs/generated/helm-values-reference.md` rather than hand-authored README tables, after finding
+README.md (895 lines) couldn't scale to an exhaustive field-by-field transcription without
+becoming unusable. Its drift-freshness check is enforced by dedicated new steps in both
+`ci-pipeline.yml` and `chart-release.yml` (verified the `generate-crd-docs` precedent this was
+modeled on is actually unenforced anywhere in CI today, and that the existing Go-codegen cache
+path excludes `values.schema.json` from its cache key — neither could be relied on as-is). No
+local git hook — CI enforcement is sufficient, hooks are bypassable.
