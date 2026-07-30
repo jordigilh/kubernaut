@@ -1476,9 +1476,15 @@ run_tls_cm_datastorage() {
   $pass
 }
 
-# DD-PLATFORM-001 regression guard: the dedicated internal CA, its three leaf
-# certs, and the inter-service-ca ConfigMap sync hook must all provision
-# correctly and be internally consistent (not just individually present).
+# DD-PLATFORM-001 regression guard: the dedicated internal CA, its five leaf
+# certs (templates/interservice/leaf-certs.yaml), and the inter-service-ca
+# ConfigMap sync hook must all provision correctly and be internally
+# consistent (not just individually present). valkey-tls added after #1790
+# round-3 RCA: it was missing from leaf-certs.yaml entirely (present in
+# tls-cert-job.yaml's hook-mode equivalent, DD-PLATFORM-006 DA8 made it a
+# mandatory, non-optional volume mount), so Valkey never started in
+# cert-manager mode -- this loop would have caught it had it covered all
+# five leaf-certs.yaml entries instead of three.
 run_tls_cm_interservice() {
   local pass=true
 
@@ -1486,7 +1492,7 @@ run_tls_cm_interservice() {
     "ST-CHART-TLS-CM-002a: kubernaut-interservice-ca-secret exists (DD-PLATFORM-001)" || pass=false
 
   local leaf
-  for leaf in gateway-tls datastorage-tls kubernautagent-tls; do
+  for leaf in gateway-tls datastorage-tls kubernautagent-tls fleetmetadatacache-tls valkey-tls; do
     assert_resource_exists secret "$leaf" "$NAMESPACE" \
       "ST-CHART-TLS-CM-002b: ${leaf} leaf Secret exists" || pass=false
   done

@@ -9,6 +9,7 @@
     (dict "name" "datastorage-tls" "dnsNameBase" "data-storage-service")
     (dict "name" "kubernautagent-tls" "dnsNameBase" "kubernaut-agent")
     (dict "name" "fleetmetadatacache-tls" "dnsNameBase" "fleetmetadatacache-service")
+    (dict "name" "valkey-tls" "dnsNameBase" "valkey")
   }}
 {{- if $i }}
 ---
