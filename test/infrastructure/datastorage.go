@@ -2353,6 +2353,17 @@ func WaitForCertManagerReady(kubeconfigPath string, writer io.Writer) error {
 // - ClusterIssuer "selfsigned-issuer" (self-signed CA)
 //
 // Note: For production, this would be replaced with Let's Encrypt or organizational CA.
+//
+// Issue #1765: kubectl wait --for=condition=available on deployment/cert-manager-webhook
+// (in WaitForCertManagerReady) only proves the Deployment's own readiness probe passed --
+// it does NOT prove the webhook Service's Endpoints have propagated through kube-proxy/CNI,
+// nor that cainjector has finished injecting the CA bundle into the
+// ValidatingWebhookConfiguration/MutatingWebhookConfiguration. cert-manager's own webhook
+// troubleshooting guide (https://cert-manager.io/docs/troubleshooting/webhook/) documents
+// "connection refused" errors immediately after install as this exact transient race and
+// recommends retrying. Wrap the apply in the same exponential-backoff retry pattern already
+// used for image pulls (see PullImageWithRetry in datastorage_bootstrap.go) rather than
+// failing the whole SOC2 E2E suite on a one-shot apply.
 func ApplyCertManagerIssuer(kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "📋 Creating cert-manager ClusterIssuer...")
 
@@ -2374,18 +2385,34 @@ func ApplyCertManagerIssuer(kubeconfigPath string, writer io.Writer) error {
 		return fmt.Errorf("ClusterIssuer manifest not found at %s", issuerPath)
 	}
 
-	cmd := exec.CommandContext(context.Background(), "kubectl", "apply",
-		"--kubeconfig", kubeconfigPath,
-		"-f", issuerPath)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
+	const maxRetries = 8
+	var lastErr error
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		cmd := exec.CommandContext(context.Background(), "kubectl", "apply",
+			"--kubeconfig", kubeconfigPath,
+			"-f", issuerPath)
+		cmd.Stdout = writer
+		cmd.Stderr = writer
 
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to create ClusterIssuer: %w", err)
+		if err := cmd.Run(); err != nil {
+			lastErr = err
+			if attempt < maxRetries {
+				backoff := time.Duration(attempt) * 3 * time.Second // 3s, 6s, 9s... capped total ~108s
+				_, _ = fmt.Fprintf(writer, "   ⚠️  ClusterIssuer apply failed (attempt %d/%d, likely webhook endpoint not yet propagated), retrying in %v: %v\n",
+					attempt, maxRetries, backoff, err)
+				time.Sleep(backoff)
+			}
+			continue
+		}
+
+		if attempt > 1 {
+			_, _ = fmt.Fprintf(writer, "   ✅ ClusterIssuer apply succeeded on attempt %d/%d\n", attempt, maxRetries)
+		}
+		_, _ = fmt.Fprintln(writer, "✅ ClusterIssuer 'selfsigned-issuer' created")
+		return nil
 	}
 
-	_, _ = fmt.Fprintln(writer, "✅ ClusterIssuer 'selfsigned-issuer' created")
-	return nil
+	return fmt.Errorf("failed to create ClusterIssuer after %d attempts: %w", maxRetries, lastErr)
 }
 
 // DeployCertManagerDataStorage deploys DataStorage with cert-manager Certificate resource.

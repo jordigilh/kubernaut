@@ -36,10 +36,17 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ . }}
     {{- end }}
+    {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.apifrontend.ingressCIDRs "port" ($.Values.apifrontend.config.server.httpPort | default 8443)) | nindent 4 }}
+    {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.apifrontend.ingressNamespaceSelectors "port" ($.Values.apifrontend.config.server.httpPort | default 8443)) | nindent 4 }}
     {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    {{- /* Issue #1737 gap found: agent.llm.endpoint (apifrontend.yaml ConfigMap)
+    is mandatory AF config -- the A2A launcher agent calls it directly for
+    planning/reasoning -- yet the NetworkPolicy never allowed this egress,
+    silently dropping every LLM call once auth got past the OIDC 401 fix. */}}
+    {{- include "kubernaut.np.llmEgress" . | nindent 4 }}
     {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
     # GAP-08 (#1505): JWT replay-cache egress to Valkey.
     - ports:
@@ -50,10 +57,24 @@ spec:
             matchLabels:
               app: valkey
     {{- end }}
-    {{- if or .Values.apifrontend.config.auth.issuerURL (gt (len (.Values.apifrontend.config.auth.jwtProviders | default list)) 0) }}
-    # OIDC/JWKS discovery may be outside the cluster.
-    - ports:
-        - port: 443
-          protocol: TCP
+    {{- /* #1755 DD-TEST-015 RCA: AF's own fleet OAuth2 token fetch to
+    global.fleet.oauth2.tokenURL (same missing-egress gap fixed for FMC/
+    Gateway/SP/EM/WE/RO -- see fleetmetadatacache.yaml's comment for the full
+    RCA) also needs this rule whenever global.fleet.enabled=true, independent
+    of the JWT-issuer condition below (which happens to also gate this same
+    rule today only because this E2E harness points both auth.issuerURL and
+    global.fleet.oauth2.tokenURL at the same Keycloak instance -- a
+    coincidence, not a guarantee, for a real deployment with distinct
+    providers). `or` avoids rendering the identical rule twice when both
+    conditions are true. */}}
+    {{- if or .Values.apifrontend.config.auth.issuerURL (gt (len (.Values.apifrontend.config.auth.jwtProviders | default list)) 0) .Values.global.fleet.enabled }}
+    {{- include "kubernaut.np.idpEgress" . | nindent 4 }}
+    {{- end }}
+    {{- if .Values.global.fleet.enabled }}
+    {{- /* #1755 DD-TEST-015 RCA (5th finding): AF's own MCP client
+    (buildFleetReaderDeps -> mcpclient.NewResilient) also needs direct
+    egress to the MCP Gateway itself -- see kubernaut.np.mcpGatewayEgress's
+    doc comment for the full RCA. */}}
+    {{- include "kubernaut.np.mcpGatewayEgress" . | nindent 4 }}
     {{- end }}
 {{- end }}

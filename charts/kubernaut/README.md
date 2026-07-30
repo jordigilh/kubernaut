@@ -367,22 +367,33 @@ kubectl create secret generic console-oauth-creds \
   -n kubernaut-system
 
 # 2. Enable the console (requires apifrontend.config.auth.issuerURL or .jwtProviders to
-#    already be configured, since the console reuses APIFrontend's OIDC provider)
+#    already be configured, since the console reuses APIFrontend's OIDC provider) and
+#    opt in to its Ingress for browser access
 helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --namespace kubernaut-system \
   --reuse-values \
   --set console.enabled=true \
   --set console.auth.secretName=console-oauth-creds \
-  --set console.ingress.host=console.apps.example.com
+  --set console.ingress.host=console.apps.example.com \
+  --set console.ingress.enabled=true
 ```
 
-- `console.ingress.host` is **required** whenever `console.enabled=true` — even if you set
-  `console.ingress.enabled=false` to front the console with your own Ingress/Route — because
-  oauth2-proxy needs the browser-facing hostname for its OIDC redirect URL.
-- Unlike Gateway/APIFrontend (machine-facing APIs, where the chart leaves external exposure
-  entirely to the user), the console is browser-facing, so the chart creates a
-  `networking.k8s.io/v1` Ingress by default (`console.ingress.enabled=true`) — the
-  vanilla-Kubernetes equivalent of the Operator's OCP Route.
+- `console.ingress.host` is **required** whenever `console.enabled=true` — even if you leave
+  `console.ingress.enabled=false` (the default) to front the console with your own
+  Ingress/Route — because oauth2-proxy needs the browser-facing hostname for its OIDC
+  redirect URL regardless of who creates the Ingress.
+- `console.ingress.enabled` is **opt-in, disabled by default** (BR-PLATFORM-009), same as
+  `gateway.ingress.enabled`/`apifrontend.ingress.enabled`: Console is optional browser-facing
+  UI tooling in front of APIFrontend that users may replace with their own UI or front with
+  their own Ingress/Route/mesh gateway instead — not something the chart should expose
+  externally without an explicit choice. This is a deliberate deviation from the Kubernaut
+  Operator's `ConsoleRouteSpec` (which defaults to enabled=true, opt-out). When enabled, the
+  chart creates a `networking.k8s.io/v1` Ingress — the vanilla-Kubernetes equivalent of the
+  Operator's OCP Route.
+- Gateway and APIFrontend have the same opt-in `<service>.ingress.enabled` knob
+  (BR-PLATFORM-009, parity with the Operator's `GatewayRoute`/`APIFrontendRoute`) for their
+  own external access, since both are machine-facing pipeline entry points where exposure is
+  a deliberate security decision. Unlike Console, neither requires a `host` to be set.
 - The chart fails fast at `helm template`/`helm install` time (before any resources are
   applied) if `console.enabled=true` and `console.auth.secretName`, a resolvable OIDC issuer,
   or `console.ingress.host` is missing.
@@ -470,6 +481,10 @@ chart fails fast at render time if it's unset or names an undefined profile.
 | `kubernautAgent.prometheus.url` | Prometheus/Thanos URL | `""` |
 | `kubernautAgent.prometheus.tls.enabled` | Enable TLS CA trust for Prometheus connections | `false` |
 | `kubernautAgent.prometheus.tls.caConfigMapName` | ConfigMap with CA PEM | `""` |
+| `kubernautAgent.service.type` | Kubernetes Service type (`ClusterIP`, `NodePort`, `LoadBalancer`) | `ClusterIP` |
+| `kubernautAgent.service.nodePort` | Explicit NodePort for the https (MCP/API) port when `type=NodePort`. `0` = Kubernetes auto-assigns; see `gateway.service.nodePort` for rationale | `0` |
+| `kubernautAgent.interactive.maxConcurrentSessions` | Max concurrent MCP interactive sessions per agent replica. Issue #1737 gap found: raised from a too-low prior default of `5` -- confirmed via full-suite E2E to cause "max_sessions: Maximum concurrent sessions reached" from Ginkgo's own test parallelism alone | `50` |
+| `kubernautAgent.interactive.rateLimitPerUser` | Max MCP requests per second per authenticated user | `20` |
 
 All LLM configuration is part of the main `kubernaut-agent-config`/`kubernaut-agent-llm-runtime`
 ConfigMaps. Credentials (API keys, `vertex_ai` service-account JSON, OAuth2 client secrets) are
@@ -488,6 +503,24 @@ unreachable via Helm despite being fully implemented in Go — both are now wire
 | `apifrontend.llmProfileRef` | Name of an entry in `global.llmProfiles` for AF's own `agent.llm` connection. Empty (default) falls back to `kubernautAgent.llmProfileRef`'s resolved profile | `""` |
 | `apifrontend.config.severityTriage.llmProfileRef` | Name of an entry in `global.llmProfiles` for severity-triage's LLM fallback tier, independent of `apifrontend.llmProfileRef`. Empty (default) inherits AF's own resolved profile | `""` |
 | `apifrontend.config.severityTriage.llmEnabled` | Whether LLM-based severity-triage tiers are active. `false` forces rule-based-only triage (no `llm` block rendered) | `true` |
+| `apifrontend.config.severityTriage.maxQueriesPerCall` | Max Prometheus queries per triage call | `10` |
+| `apifrontend.config.severityTriage.maxRulesEvaluated` | Max rule-based triage rules evaluated per call | `100` |
+| `apifrontend.config.mcp.enabled` | Enables AF's own `/mcp` protocol endpoint for external MCP clients (distinct from AF-as-a-client-of-KA's-MCP-server, always active). Go's `Config.DefaultConfig()` defaults this `false`, so it must be explicitly enabled here; `false` returns 501 for every `/mcp` request | `true` |
+| `apifrontend.config.mcp.sessionIdleTimeout` | Idle timeout for AF's `/mcp` sessions | `5m` |
+| `apifrontend.config.interactive.enabled` | Enables session-dependent A2A/MCP tools (`kubernaut_investigate`, `discover_workflows`, `select_workflow`, `message`, `complete`, `cancel`, `status`, `reconnect`, `await_session`). Go's `Config.DefaultConfig()` already defaults this `true`; exposed here for override/documentation clarity | `true` |
+| `apifrontend.config.interactive.awaitSessionTimeout` | Timeout for the `kubernaut_await_session` tool | `10s` |
+| `apifrontend.config.interactive.bridgeInactivityTimeout` | Inactivity timeout for the KA session bridge | `15s` |
+| `apifrontend.config.rateLimit.ipRequestsPerSec` | Per-IP request rate limit | `10000` |
+| `apifrontend.config.rateLimit.userRequestsPerSec` | Per-user request rate limit | `100` |
+| `apifrontend.config.rateLimit.maxConcurrentSessions` | Max concurrent MCP/interactive sessions per user. Go's package-level fallback (used whenever this is `0`) is only `3` -- confirmed via E2E to cause "Maximum concurrent sessions reached" under realistic concurrent load | `50` |
+| `apifrontend.config.rateLimit.toolCallsPerMinute` | Max tool calls per minute per user. Go's package-level fallback (used whenever this is `0`) is only `60` | `600` |
+| `apifrontend.service.type` | Kubernetes Service type (`ClusterIP`/`NodePort`/`LoadBalancer`) | `ClusterIP` |
+| `apifrontend.service.nodePort` | Explicit NodePort for the https port when `type=NodePort`. `0` = Kubernetes auto-assigns; see `gateway.service.nodePort` for rationale | `0` |
+| `apifrontend.ingress.enabled` | Create a `networking.k8s.io/v1` Ingress for external access (BR-PLATFORM-009, Kubernaut Operator `APIFrontendRoute` parity). Opt-in: AF is a machine-facing pipeline entry point, so external exposure is a deliberate choice | `false` |
+| `apifrontend.ingress.className` | `spec.ingressClassName` | `""` |
+| `apifrontend.ingress.host` | External hostname. Optional -- unlike Console, no internal component depends on it; empty renders a catch-all rule | `""` |
+| `apifrontend.ingress.annotations` | Extra Ingress annotations. **Required in practice**: AF serves HTTPS internally with a self-signed cert, so a controller-specific backend-protocol/TLS-passthrough annotation is needed (e.g. ingress-nginx: `nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"` + `nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"`) -- the chart does not hardcode one controller's syntax | `{}` |
+| `apifrontend.ingress.tls.secretName` | Pre-created Secret with a TLS cert for `host`; omit for a controller with its own default cert | `""` |
 
 `vertex_ai` authenticates via ambient `GOOGLE_APPLICATION_CREDENTIALS` (set automatically on the
 Deployment when a resolved profile is `vertex_ai`), so AF's own connection and severity-triage's
@@ -557,7 +590,13 @@ cluster's other known peers.
 | Parameter | Description | Default |
 |---|---|---|
 | `gateway.auth.signalSources` | External signal sources needing RBAC | `[]` |
-| `gateway.service.type` | Service type | `ClusterIP` |
+| `gateway.service.type` | Kubernetes Service type (`ClusterIP`/`NodePort`/`LoadBalancer`) | `ClusterIP` |
+| `gateway.service.nodePort` | Explicit NodePort for the http port when `type=NodePort`. `0` = Kubernetes auto-assigns from the 30000-32767 range. Useful for CI/test environments needing a deterministic, host-accessible port (e.g. Kind's `extraPortMappings`, which must know the exact port before cluster creation) or on-prem installs with fixed firewall/LB rules | `0` |
+| `gateway.ingress.enabled` | Create a `networking.k8s.io/v1` Ingress for external access (BR-PLATFORM-009, Kubernaut Operator `GatewayRoute` parity). Opt-in: Gateway is a machine-facing pipeline entry point, so external exposure is a deliberate choice | `false` |
+| `gateway.ingress.className` | `spec.ingressClassName` | `""` |
+| `gateway.ingress.host` | External hostname. Optional -- unlike Console, no internal component depends on it; empty renders a catch-all rule | `""` |
+| `gateway.ingress.annotations` | Extra Ingress annotations | `{}` |
+| `gateway.ingress.tls.secretName` | Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or a controller with its own default cert | `""` |
 | `gateway.fleet.oauth2.credentialsSecretRef` | K8s Secret (keys: `client-id`, `client-secret`) overriding `global.fleet.oauth2.credentialsSecretRef` for Gateway only. All other fleet fields (`backend`, `endpoint`, `tokenSecretRef`, `mcpGatewayEndpoint`, `mcpGatewayType`, `tlsCAFile`, `oauth2.enabled`/`tokenURL`/`scopes`/`tlsCAFile`) moved to [`global.fleet.*`](#global) ([Issue #1707](https://github.com/jordigilh/kubernaut/issues/1707) follow-up) | `""` |
 
 ### RemediationOrchestrator
@@ -583,6 +622,8 @@ cluster's other known peers.
 | `postgresql.auth.existingSecret` | Pre-created Secret name (empty = expect `postgresql-secret`) | `""` |
 | `postgresql.host` | External host (when `enabled=false`) | `""` |
 | `datastorage.dbExistingSecret` | DEPRECATED: db-secrets.yaml is now in postgresql-secret | `""` |
+| `datastorage.service.type` | Kubernetes Service type (`ClusterIP`/`NodePort`/`LoadBalancer`) | `ClusterIP` |
+| `datastorage.service.nodePort` | Explicit NodePort for the http port when `type=NodePort`. `0` = Kubernetes auto-assigns; see `gateway.service.nodePort` for rationale | `0` |
 | `valkey.enabled` | Deploy in-chart Valkey | `true` |
 | `valkey.existingSecret` | Pre-created Secret name (empty = expect `valkey-secret`) | `""` |
 | `valkey.host` | External host (when `enabled=false`) | `""` |
@@ -602,7 +643,7 @@ cluster's other known peers.
 | `console.replicas` | Replica count | `1` |
 | `console.auth.secretName` | Secret with keys: `client-id`, `client-secret`, `cookie-secret`. **Required** when `console.enabled=true` | `""` |
 | `console.oauth2Proxy.image` | Third-party oauth2-proxy sidecar image | `quay.io/oauth2-proxy/oauth2-proxy:v7.15.3` |
-| `console.ingress.enabled` | Create a `networking.k8s.io/v1` Ingress for browser access | `true` |
+| `console.ingress.enabled` | Create a `networking.k8s.io/v1` Ingress for browser access (BR-PLATFORM-009). Opt-in: Console is optional UI tooling in front of APIFrontend that users may replace or front with their own Ingress/Route -- a deliberate deviation from the Operator's `ConsoleRouteSpec`, which defaults to opt-out | `false` |
 | `console.ingress.className` | `spec.ingressClassName` | `""` |
 | `console.ingress.host` | Browser-facing hostname. **Required** when `console.enabled=true` (even if `ingress.enabled=false`) | `""` |
 | `console.ingress.tls.secretName` | Pre-created Secret with a TLS cert for `host`; omit for HTTP-only or a controller with its own default cert | `""` |

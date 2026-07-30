@@ -162,7 +162,17 @@ var _ = Describe("#1111 RW/AT Webhook Admission Audit Events", Label("integratio
 			req.Object = runtime.RawExtension{Raw: rwJSON}
 		case admissionv1.Update:
 			req.Object = runtime.RawExtension{Raw: rwJSON}
-			req.OldObject = runtime.RawExtension{Raw: rwJSON}
+			// Issue #1759: OldObject must genuinely differ from Object so this
+			// exercises a real content-changing UPDATE (which emits an
+			// admitted.update audit event) rather than a no-op/idempotent
+			// re-apply -- which registerWorkflow's isNoOpContentUpdate now
+			// correctly skips auditing, since it never represents a real
+			// workflow content change (e.g. reconciler finalizer-add).
+			oldRW := rw.DeepCopy()
+			oldRW.Spec.Version = "0.0.0-it-old"
+			oldJSON, err := json.Marshal(oldRW)
+			Expect(err).ToNot(HaveOccurred())
+			req.OldObject = runtime.RawExtension{Raw: oldJSON}
 		case admissionv1.Delete:
 			req.OldObject = runtime.RawExtension{Raw: rwJSON}
 		}

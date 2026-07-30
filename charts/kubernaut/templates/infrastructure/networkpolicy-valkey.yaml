@@ -24,6 +24,24 @@ spec:
             matchLabels:
               app: apifrontend
         {{- end }}
+        # Issue #1737 gap found: FleetMetadataCache uses Valkey directly as its
+        # sync cache (fleetmetadatacache.yaml ConfigMap's valkey.addr) but was
+        # never added here, leaving FMC's readiness probe permanently failing
+        # ("redis: connection pool: ... i/o timeout") whenever FMC is deployed.
+        # Unconditional (not gated on fleetmetadatacache.enabled): a NetworkPolicy
+        # ingress rule with a podSelector matching zero live pods is a no-op, and
+        # the "fleet" E2E suite deploys FMC via a raw kubectl manifest outside the
+        # chart (test/infrastructure/fleet_e2e.go's deployFMC, "app: fleetmetadatacache")
+        # rather than setting fleetmetadatacache.enabled=true -- so gating this on
+        # that value would leave the E2E lane's FMC pod unmatched. Both label
+        # conventions are listed to cover the chart's own template (line 71 of
+        # fleetmetadatacache.yaml, "app.kubernetes.io/name") and that E2E-only path.
+        - podSelector:
+            matchLabels:
+              app: fleetmetadatacache
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: fleetmetadatacache
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
 {{- end }}

@@ -2415,6 +2415,7 @@ for d in docs:
     --set console.enabled=true \
     --set console.auth.secretName=console-oauth-creds \
     --set console.ingress.host=console.apps.example.com \
+    --set console.ingress.enabled=true \
     --set apifrontend.config.auth.issuerURL=https://issuer.example.com 2>&1)
   if grep -q "name: oauth2-proxy" <<< "$console_full" && \
      grep -q "name: console" <<< "$console_full" && \

@@ -559,14 +559,9 @@ jobs:
           fi
 
       - name: Scan image for CVEs (Trivy)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        uses: ./.github/actions/trivy-scan-with-retry
         with:
           image-ref: ${{ steps.image-ref.outputs.image }}
-          format: table
-          exit-code: 1
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          version: v0.72.0
 
       - name: Save image to tarball
         run: |
@@ -671,14 +666,9 @@ jobs:
             ${CONTEXT}
 
       - name: Scan image for CVEs (trivy)
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        uses: ./.github/actions/trivy-scan-with-retry
         with:
           image-ref: localhost/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}
-          format: table
-          exit-code: 1
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          version: v0.72.0
 
       - name: Save image to tarball
         run: |
@@ -820,9 +810,7 @@ jobs:
         if: steps.gen-cache.outputs.cache-hit != 'true'
         run: make generate
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
+        uses: ./.github/actions/install-podman
       - name: Setup envtest (K8s test binaries)
         run: |
           go install sigs.k8s.io/controller-runtime/tools/setup-envtest@f9589b9f2b9dddf8532b432bb8315f2820ab9971 # release-0.23
@@ -1036,9 +1024,7 @@ jobs:
         if: steps.gen-cache.outputs.cache-hit != 'true'
         run: make generate
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
+        uses: ./.github/actions/install-podman
       - name: Load pre-built images (artifact-based, no registry)
         uses: ./.github/actions/load-ci-images
       - name: Install Kind v0.32.0
@@ -1268,10 +1254,7 @@ jobs:
           echo "PASS: values.schema.json is consistent with values.yaml"
 
       - name: Install Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-          podman --version
+        uses: ./.github/actions/install-podman
 
       - name: Install Kind
         run: |
@@ -1297,7 +1280,36 @@ jobs:
               hostPort: 8080
               protocol: TCP
           EOF
-          kind create cluster --name "$KIND_CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 120s
+
+          # Issue #1769: GitHub-hosted runners intermittently resolve a
+          # podman/crun combination where the OCI runtime rejects the
+          # container config ("crun: unknown version specified"), failing
+          # `kind create cluster` with exit status 126 while starting the
+          # control-plane container. This is a transient runner-side
+          # container-runtime issue, not a config problem -- Kind already
+          # tears down the partially-created node before returning, so a
+          # bare retry of the whole invocation is safe. Mirrors the same
+          # fix applied to the Go E2E harness (test/infrastructure/
+          # kind_cluster_helpers.go's retryTransientKindRuntimeError).
+          max_attempts=3
+          attempt=1
+          while true; do
+            echo "🔧 kind create cluster attempt ${attempt}/${max_attempts}"
+            if output=$(kind create cluster --name "$KIND_CLUSTER_NAME" --config /tmp/kind-config.yaml --wait 120s 2>&1); then
+              echo "${output}"
+              break
+            fi
+            echo "${output}"
+            if [ "${attempt}" -ge "${max_attempts}" ] || ! echo "${output}" | grep -qiE "crun: unknown version specified|OCI runtime error"; then
+              echo "❌ kind create cluster failed (attempt ${attempt}/${max_attempts}) -- not a known-transient error, giving up."
+              exit 1
+            fi
+            backoff=$(( attempt * 5 ))
+            echo "⚠️  Transient container-runtime error detected (attempt ${attempt}/${max_attempts}), retrying in ${backoff}s..."
+            sleep "${backoff}"
+            attempt=$(( attempt + 1 ))
+          done
+
           kubectl cluster-info
           kubectl get nodes -o wide
 

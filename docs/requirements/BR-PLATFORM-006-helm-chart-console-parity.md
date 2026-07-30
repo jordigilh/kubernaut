@@ -40,11 +40,17 @@ OCP-removal scope).
    `/.well-known/` to APIFrontend with the same CSP/security headers and rate limits.
 2. Opt-in, disabled by default (`console.enabled=false`), matching `ConsoleSpec.Enabled`.
 3. External (browser) access is provided via a standard `networking.k8s.io/v1` Ingress — the
-   vanilla-Kubernetes equivalent of the Operator's OCP Route — created by default whenever the
-   console is enabled (unlike Gateway/APIFrontend, which are machine-facing and leave external
-   exposure entirely to the user; the console is human/browser-facing, so a working default
-   matters more here). Toggleable via `console.ingress.enabled` for users who front the `console`
-   Service with their own Ingress/Route/mesh gateway instead.
+   vanilla-Kubernetes equivalent of the Operator's OCP Route. Toggleable via
+   `console.ingress.enabled` for users who front the `console` Service with their own
+   Ingress/Route/mesh gateway instead.
+   > **Superseded by BR-PLATFORM-009**: this criterion originally made `console.ingress.enabled`
+   > default to `true` (opt-out), on the rationale that Console -- unlike machine-facing
+   > Gateway/APIFrontend -- is browser-facing so "a working default matters more here."
+   > BR-PLATFORM-009 flips this to opt-in (`false`), for consistency with Gateway/APIFrontend's
+   > `ingress.enabled` (both later added, also opt-in) and because Console is itself optional,
+   > replaceable UI tooling in front of APIFrontend -- not something the chart should expose
+   > externally without an explicit choice. This is a deliberate deviation from the Operator's
+   > `ConsoleRouteSpec`, which defaults to opt-out.
 4. Fails fast at template-render time (before any resources are applied) when `console.enabled=true`
    and any of the following are missing: `console.auth.secretName`, a resolvable OIDC issuer
    (`apifrontend.config.auth.issuerURL` or `.jwtProviders[0].issuerURL`), or `console.ingress.host`

@@ -93,14 +93,24 @@ var _ = Describe("E2E-FP-AF-001: AF audit trace coverage in happy-path MCP lifec
 			Expect(token).NotTo(BeEmpty())
 
 			By("Initializing MCP session through AF")
-			Expect(fpInitMCPSessionExplicit(afHTTPClient, afBaseURL, token)).To(Succeed())
+			sessionID, err := fpInitMCPSessionExplicit(afHTTPClient, afBaseURL, token)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sessionID).NotTo(BeEmpty(), "AF must return an Mcp-Session-Id on initialize")
 
 			By("Calling kubernaut_list_remediations tool through AF MCP (generates tool.executed audit event)")
 			toolBody := fpBuildJSONRPC("fp-af-audit-1", "tools/call", map[string]interface{}{
 				"name":      "kubernaut_list_remediations",
 				"arguments": map[string]interface{}{},
 			})
-			_, code, err := fpMCPPOST(afHTTPClient, afBaseURL, token, "", toolBody)
+			// Issue #1767: the tool call MUST reuse the session established by
+			// initialize (above) -- an empty session ID here silently drops the
+			// request into the MCP SDK's stateless fallback path (a brand-new,
+			// throwaway session distinct from the one initialize ran in), so
+			// the tool handler never executes and no tool.executed/tool_failed
+			// audit event is emitted at all. Every other AF test (unit,
+			// integration) already captures+forwards Mcp-Session-Id this way;
+			// this test was the sole exception.
+			_, code, err := fpMCPPOST(afHTTPClient, afBaseURL, token, sessionID, toolBody)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(code).To(BeNumerically("<", 500), "tool call should not return 5xx")
 
@@ -227,26 +237,65 @@ func fpFetchDEXToken(dexURL, clientID, clientSecret, username, password string) 
 	return tokenResp.IDToken, nil
 }
 
-func fpInitMCPSessionExplicit(client *http.Client, baseURL, token string) error {
+// fpInitMCPSessionExplicit performs the full MCP handshake (initialize +
+// notifications/initialized) and returns the server-assigned session ID.
+//
+// Issue #1767: a prior version of this helper only sent "initialize" and
+// discarded the response, so subsequent "tools/call" requests carried no
+// Mcp-Session-Id. The MCP Go SDK's Streamable HTTP transport treats a
+// sessionless request as a brand-new, throwaway stateless session (see
+// mcp.StreamableHTTPHandler.ServeHTTP in the go-sdk), so the tool call
+// silently ran in a session that was never initialized -- no tool handler
+// ever executed, and no tool.executed/tool_failed audit event was emitted,
+// while the HTTP response still returned a non-5xx status. Every other AF
+// test (pkg/apifrontend/handler/mcp_bridge_test.go's mcpInitHTTPClient, and
+// friends) already captures+forwards Mcp-Session-Id and sends the
+// notifications/initialized notification; this mirrors that pattern.
+func fpInitMCPSessionExplicit(client *http.Client, baseURL, token string) (string, error) {
 	body := fpBuildJSONRPC("fp-init-1", "initialize", map[string]interface{}{
 		"protocolVersion": "2024-11-05",
 		"capabilities":    map[string]interface{}{},
 		"clientInfo":      map[string]interface{}{"name": "fp-e2e", "version": "1.0"},
 	})
-	raw, code, err := fpMCPPOST(client, baseURL, token, "", body)
+	raw, code, headers, err := fpMCPPOSTWithHeaders(client, baseURL, token, "", body)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if code >= http.StatusBadRequest {
-		return fmt.Errorf("MCP initialize: HTTP %d: %s", code, string(raw))
+		return "", fmt.Errorf("MCP initialize: HTTP %d: %s", code, string(raw))
 	}
-	return nil
+	sessionID := headers.Get("Mcp-Session-Id")
+	if sessionID == "" {
+		return "", fmt.Errorf("MCP initialize: response carried no Mcp-Session-Id header")
+	}
+
+	// Notifications carry no "id" field per JSON-RPC 2.0 -- build manually
+	// rather than via fpBuildJSONRPC, which always sets one.
+	notifyBody, err := json.Marshal(map[string]interface{}{
+		"jsonrpc": "2.0",
+		"method":  "notifications/initialized",
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal notifications/initialized: %w", err)
+	}
+	if _, notifyCode, _, err := fpMCPPOSTWithHeaders(client, baseURL, token, sessionID, string(notifyBody)); err != nil {
+		return "", fmt.Errorf("MCP notifications/initialized: %w", err)
+	} else if notifyCode >= http.StatusBadRequest {
+		return "", fmt.Errorf("MCP notifications/initialized: HTTP %d", notifyCode)
+	}
+
+	return sessionID, nil
 }
 
 func fpMCPPOST(client *http.Client, baseURL, token, sessionID, jsonBody string) ([]byte, int, error) {
+	raw, code, _, err := fpMCPPOSTWithHeaders(client, baseURL, token, sessionID, jsonBody)
+	return raw, code, err
+}
+
+func fpMCPPOSTWithHeaders(client *http.Client, baseURL, token, sessionID, jsonBody string) ([]byte, int, http.Header, error) {
 	req, err := http.NewRequest(http.MethodPost, baseURL+"/mcp", strings.NewReader(jsonBody))
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json, text/event-stream")
@@ -256,9 +305,9 @@ func fpMCPPOST(client *http.Client, baseURL, token, sessionID, jsonBody string) 
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
-	return body, resp.StatusCode, err
+	return body, resp.StatusCode, resp.Header, err
 }
