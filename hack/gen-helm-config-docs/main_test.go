@@ -9,6 +9,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/jordigilh/kubernaut/hack/internal/helmschema"
 )
 
 // TestWalksNestedRefsAndDefinitions verifies a property that references a
@@ -37,7 +39,7 @@ func TestWalksNestedRefsAndDefinitions(t *testing.T) {
 		}
 	}`)
 
-	root, err := parseSchema(schema)
+	root, err := helmschema.ParseSchema(schema)
 	if err != nil {
 		t.Fatalf("parseSchema failed: %v", err)
 	}
@@ -80,7 +82,7 @@ func TestMarksRequiredFields(t *testing.T) {
 		}
 	}`)
 
-	root, err := parseSchema(schema)
+	root, err := helmschema.ParseSchema(schema)
 	if err != nil {
 		t.Fatalf("parseSchema failed: %v", err)
 	}
@@ -121,7 +123,7 @@ func TestOneTablePerTopLevelService(t *testing.T) {
 		}
 	}`)
 
-	root, err := parseSchema(schema)
+	root, err := helmschema.ParseSchema(schema)
 	if err != nil {
 		t.Fatalf("parseSchema failed: %v", err)
 	}
