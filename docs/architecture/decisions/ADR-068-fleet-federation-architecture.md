@@ -4,7 +4,7 @@
 **Date**: 2026-06-19
 **Deciders**: Architecture Team
 **Context**: Multi-cluster federation requires coordinated architecture across GW, KA, RO, WE, and a new FMC Writer service (#54)
-**Related**: ADR-064 (MCP Gateway - deferred), ADR-065 (ClusterID on RR), ADR-067 (KA MCP Dynamic Tool Discovery), DD-FLEET-004 (Cluster-Transparent Tool Exposure — supersedes decision #11's LLM-facing discovery tools)
+**Related**: ADR-064 (MCP Gateway - deferred), ADR-065 (ClusterID on RR), ADR-067 (KA MCP Dynamic Tool Discovery), DD-FLEET-004 (Cluster-Transparent Tool Exposure — supersedes decision #11's LLM-facing discovery tools), DD-FLEET-005 (Ansible Engine Not Supported for Fleet Execution — amends decision #9 and Alternative H)
 
 ## Context
 
@@ -155,6 +155,7 @@ business logic.
 8. **Gateway CRDs as source of truth** (not ConfigMap): The gateway's native CRDs (`MCPRoute`/`Backend` for EAIGW, `MCPServerRegistration` for Kuadrant) are the authoritative registry of MCP backends. Kubernaut is a **read-only consumer** — it watches but never creates or modifies these CRDs. The control plane (ACM, Rancher, GitOps) owns their lifecycle.
 
 9. **MCP Gateway as unified chokepoint for all remote cluster access** (not separate auth paths per backend type): All Kubernaut services that interact with remote clusters — GW, KA, RO, SP, AF, EM (read-only), FMC (metadata sync), and WE (remediation execution) — access remote clusters exclusively through the MCP Gateway. The K8s MCP Server and AAP MCP Server are both registered as backends behind the same gateway. This eliminates the need for service-specific credential management (e.g., separate AAP bearer token injection). Auth is enforced at two layers: (a) the gateway validates caller credentials via its native auth model (OAuth + CEL for EAIGW, Authorino + OPA for Kuadrant), and (b) each MCP Server authenticates against its own local APIs using its own ServiceAccount. No per-cluster SA tokens are maintained by Kubernaut services.
+   > **Amended by [DD-FLEET-005](DD-FLEET-005-ansible-engine-not-supported-for-remote-execution.md) (2026-07-30)**: live validation against a real Kuadrant gateway found `MCPServerRegistration.credentialRef` is discovery-only and is **not** injected into actual `tools/call` requests, so the AAP-MCP-Server-as-backend design described here does not work for WE's Ansible engine as-is. WE's Ansible engine does not use this chokepoint for remote clusters; it fails closed instead (see DD-FLEET-005). The chokepoint principle itself remains correct and unaffected for K8s MCP backends (Job/Tekton engines, all other services).
 
 10. **Gateway-agnostic business logic** (not per-gateway code paths): Services that need to call MCP tools on a remote cluster use the `GatewayDiscoverer` interface (decision #11) to discover clusters and tools. The only gateway-aware components are the `GatewayDiscoverer` implementations and the cluster registry in FMC (`pkg/fleet/registry/`). All other services — GW, SP, WE, KA, RO, AF, EM — are fully gateway-agnostic.
 
@@ -263,6 +264,7 @@ business logic.
 - -: Separate credential management and rotation for AAP tokens outside the gateway
 - -: AAP MCP backends are treated differently from K8s MCP backends, violating the unified chokepoint principle
 - **Deferred**: AAP MCP Server is now registered as a standard `Backend` behind the MCP Gateway, same as K8s MCP Servers. The gateway handles routing to both. WE calls tools through the gateway without knowing whether the backend is K8s-native or AAP. If AAP MCP requires its own auth, the `MCPRoute.backendRefs[].securityPolicy` handles upstream credential injection — Kubernaut services are not involved.
+- **Superseded (2026-07-30, [DD-FLEET-005](DD-FLEET-005-ansible-engine-not-supported-for-remote-execution.md))**: this mitigation does not hold for the Kuadrant gateway implementation actually in use — live testing confirmed per-call credential injection for non-K8s backends does not work (see DD-FLEET-005 Option 1 findings). Combined with a second, independent blocker (no credential-delete tool in the AAP MCP Server's API surface), the Ansible engine does not use the MCP Gateway for remote clusters at all; it fails closed on any non-empty `ClusterID` instead. This does not reopen Alternative H for K8s MCP backends — the chokepoint principle remains sound there.
 
 ## Consequences
 
@@ -383,6 +385,7 @@ for the full method and results.
 | SP Enrichment | SP remote cluster enrichment via MCP Gateway (BR-INTEGRATION-054) | Complete |
 | RO Fleet Scope | RO scope routing via FederatedScopeChecker (BR-FLEET-054) | Complete |
 | WE Fleet Routing | WE JobExecutor.IsCompleted ClusterID propagation (BR-FLEET-054) | Complete |
+| WE Ansible Fleet Routing | WE AnsibleExecutor remote (ClusterID != "") execution — evaluated, not pursued; fails closed instead (DD-FLEET-005) | Not Pursued (#1761) |
 | EM Fleet Routing | EM target-read routing via ReaderFactory (BR-FLEET-054) | Complete |
 | AF Fleet Routing | AF kubectl_get/kubectl_list ResourceReader abstraction + list_clusters tool (BR-FLEET-054) | Complete |
 | Fleet Readiness Gate | Fail-closed, pod-wide `/readyz` for runtime Fleet dependency unreachability across all 7 services (#1553) | Complete |
