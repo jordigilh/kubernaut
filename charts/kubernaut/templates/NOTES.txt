@@ -7,7 +7,8 @@ Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Na
    kubectl get pods -n {{ .Release.Namespace }}
 
 2. Verify LLM credentials secret exists:
-{{- $kaNotesProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
+{{- $kaNotesV := include "kubernaut.mergedValues" (dict "root" $ "service" "kubernautAgent") | fromYaml }}
+{{- $kaNotesProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaNotesV.llmProfileRef) | fromYaml }}
 
    kubectl get secret {{ $kaNotesProfile.credentialsSecretName }} -n {{ .Release.Namespace }}
 
@@ -123,10 +124,11 @@ CRDs are NOT upgraded automatically by `helm upgrade`. To update CRDs:
 
 Run this BEFORE `helm upgrade` when CRD schemas have changed between versions.
 
-{{- if eq .Values.tls.mode "hook" }}
+{{- $tlsNotesV := include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml }}
+{{- if eq $tlsNotesV.mode "hook" }}
 TLS mode: hook (self-signed certificates via Helm hooks).
 Certificates are automatically renewed during upgrade if they expire within 30 days.
-{{- else if eq .Values.tls.mode "cert-manager" }}
+{{- else if eq $tlsNotesV.mode "cert-manager" }}
 TLS mode: cert-manager (certificates managed by cert-manager).
 The authwebhook-cert Certificate resource provisions the authwebhook-tls Secret.
 The datastorage-signing-cert Certificate resource provisions DataStorage's AU-9
@@ -134,7 +136,7 @@ audit-signing key (#334). A dedicated internal CA (kubernaut-interservice-ca,
 DD-PLATFORM-001) auto-provisions inter-service mTLS: gateway-tls, datastorage-tls,
 kubernautagent-tls, and the inter-service-ca ConfigMap. cert-manager handles
 renewal automatically for all of these.
-{{- else if eq .Values.tls.mode "manual" }}
+{{- else if eq $tlsNotesV.mode "manual" }}
 TLS mode: manual (user-managed certificates).
 You must create the authwebhook-tls Secret (type kubernetes.io/tls) and patch the
 MutatingWebhookConfiguration and ValidatingWebhookConfiguration with the CA bundle:

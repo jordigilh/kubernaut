@@ -1,4 +1,5 @@
-{{- if .Values.valkey.enabled }}
+{{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "valkey") | fromYaml }}
+{{- if $v.enabled }}
 # DD-PLATFORM-003: Valkey renders in ArgoCD's "-1" sync-wave (ahead of the
 # default "0" application controllers) -- DataStorage needs it Ready before
 # its own wave can proceed, and running it concurrently with ~14 application
@@ -49,7 +50,7 @@ metadata:
   annotations:
     "argocd.argoproj.io/sync-wave": "-1"
 spec:
-  replicas: {{ .Values.valkey.replicas | default 1 }}
+  replicas: {{ $v.replicas }}
   selector:
     matchLabels:
       app: valkey
@@ -66,8 +67,8 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.valkey "global" .Values.global) | nindent 6 }}
       containers:
         - name: valkey
-          image: {{ .Values.valkey.image }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ $v.image }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.valkey.containerSecurityContext "defaults" (dict "allowPrivilegeEscalation" false "readOnlyRootFilesystem" false "runAsNonRoot" true "runAsUser" 999)) | nindent 12 }}
           # DD-PLATFORM-006 DA8: Valkey is TLS-only -- the plaintext port is
@@ -136,10 +137,10 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  {{- if .Values.valkey.storage.storageClassName }}
-  storageClassName: {{ .Values.valkey.storage.storageClassName }}
+  {{- if $v.storage.storageClassName }}
+  storageClassName: {{ $v.storage.storageClassName }}
   {{- end }}
   resources:
     requests:
-      storage: {{ .Values.valkey.storage.size }}
+      storage: {{ $v.storage.size }}
 {{- end }}

@@ -44,7 +44,7 @@ spec:
     # additional ingressCIDRs/ingressNamespaceSelectors is needed on either
     # side purely for this link.
     - ports:
-        - port: {{ .Values.apifrontend.config.server.httpPort | default 8443 }}
+        - port: {{ (include "kubernaut.mergedValues" (dict "root" $ "service" "apifrontend") | fromYaml).config.server.httpPort }}
           protocol: TCP
       to:
         - podSelector:

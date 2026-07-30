@@ -2018,15 +2018,15 @@
             },
             "maxConcurrentSessions": {
               "type": "integer",
-              "default": 5,
+              "default": 50,
               "minimum": 1,
-              "description": "Maximum concurrent interactive sessions per instance."
+              "description": "Maximum concurrent interactive sessions per instance. Issue #1737: raised from 5 to 50 -- the old default was too low even for realistic production use and caused full-suite E2E failures purely from Ginkgo's own test parallelism."
             },
             "rateLimitPerUser": {
               "type": "integer",
-              "default": 10,
+              "default": 20,
               "minimum": 1,
-              "description": "Maximum requests per second per authenticated user."
+              "description": "Maximum requests per second per authenticated user. Issue #1737: raised from 10 to 20, alongside maxConcurrentSessions."
             },
             "maxAnalyzingTimeout": {
               "allOf": [

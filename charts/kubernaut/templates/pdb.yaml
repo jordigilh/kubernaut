@@ -1,3 +1,4 @@
+{{- $globalV := include "kubernaut.mergedValues" (dict "root" $ "service" "global") | fromYaml }}
 {{- range $name, $entry := dict
   "gateway" (dict "values" $.Values.gateway "selectorLabel" "app")
   "datastorage" (dict "values" $.Values.datastorage "selectorLabel" "app")
@@ -20,7 +21,7 @@ specifically, since coalesce/default treat an explicit `false` as empty and
 would silently re-enable a service that opted out -- coalesce is fine for
 minAvailable/maxUnavailable since those aren't booleans. */}}
 {{- $pdb := $component.pdb | default dict }}
-{{- $pdbEnabled := $.Values.global.podDefaults.pdb.enabled }}
+{{- $pdbEnabled := $globalV.podDefaults.pdb.enabled }}
 {{- if hasKey $pdb "enabled" }}{{- $pdbEnabled = $pdb.enabled }}{{- end }}
 {{/* "console" and "fleetmetadatacache" are opt-in (enabled defaults false); skip their PDB entirely when disabled. fleetmetadatacache's opt-in state must go through
 DD-PLATFORM-006 Decision Area 10's derived-default helper (not a raw $component.enabled read), since global.fleet.enabled=true + a "fleetmetadatacache" backend

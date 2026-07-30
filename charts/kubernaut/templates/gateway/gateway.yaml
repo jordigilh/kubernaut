@@ -19,20 +19,21 @@ from the ConfigMap below -- named templates don't inherit $-scoped variables
 from their caller, so $gatewayFleetPreamble must be recomputed here rather than
 reused from the file-top declaration below. */}}
 {{- $gatewayFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.gateway.fleet "oauth2" .Values.gateway.fleet.oauth2) | fromYaml -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "gateway") | fromYaml -}}
 logging:
-  level: {{ .Values.gateway.logging.level | default "INFO" | quote }}
+  level: {{ $v.logging.level | quote }}
 server:
   listenAddr: ":8080"
   healthAddr: ":8081"
   metricsAddr: ":9090"
-  maxConcurrentRequests: {{ .Values.gateway.config.server.maxConcurrentRequests | default 100 }}
-  readTimeout: {{ .Values.gateway.config.server.readTimeout | default "30s" }}
-  writeTimeout: {{ .Values.gateway.config.server.writeTimeout | default "30s" }}
+  maxConcurrentRequests: {{ $v.config.server.maxConcurrentRequests }}
+  readTimeout: {{ $v.config.server.readTimeout }}
+  writeTimeout: {{ $v.config.server.writeTimeout }}
   idleTimeout: 120s
-  k8sRequestTimeout: {{ .Values.gateway.config.server.k8sRequestTimeout | default "15s" }}
+  k8sRequestTimeout: {{ $v.config.server.k8sRequestTimeout }}
 cors:
   allowedOrigins:
-  {{- range .Values.gateway.config.cors.allowedOrigins }}
+  {{- range $v.config.cors.allowedOrigins }}
     - {{ . | quote }}
   {{- end }}
   allowedMethods:
@@ -42,8 +43,8 @@ cors:
     - "PATCH"
     - "DELETE"
     - "OPTIONS"
-  allowCredentials: {{ .Values.gateway.config.cors.allowCredentials | default false }}
-  maxAge: {{ .Values.gateway.config.cors.maxAge | default 300 }}
+  allowCredentials: {{ $v.config.cors.allowCredentials }}
+  maxAge: {{ $v.config.cors.maxAge }}
 middleware:
   trustedProxyCIDRs:
   {{- range .Values.gateway.config.middleware.trustedProxyCIDRs }}
@@ -59,7 +60,7 @@ datastorage:
     maxRetries: 3
 processing:
   deduplication:
-    cooldownPeriod: {{ .Values.gateway.config.deduplication.cooldownPeriod | default "5m" }}
+    cooldownPeriod: {{ $v.config.deduplication.cooldownPeriod }}
   retry:
     maxAttempts: 3
     initialBackoff: 100ms
@@ -194,7 +195,8 @@ metadata:
     app: gateway
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.gateway.replicas }}
+  {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "gateway") | fromYaml }}
+  replicas: {{ $v.replicas }}
   selector:
     matchLabels:
       app: gateway
@@ -216,8 +218,8 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.gateway "global" .Values.global) | nindent 6 }}
       containers:
         - name: gateway
-          image: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.global "appVersion" .Chart.AppVersion) }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ include "kubernaut.image" (dict "service" "gateway" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.gateway | nindent 12 }}
           args:
@@ -313,7 +315,7 @@ metadata:
     app: gateway
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.gateway.service.type }}
+  type: {{ $v.service.type }}
   selector:
     app: gateway
   ports:
@@ -321,8 +323,8 @@ spec:
       protocol: TCP
       port: 8080
       targetPort: 8080
-      {{- if and (eq .Values.gateway.service.type "NodePort") .Values.gateway.service.nodePort }}
-      nodePort: {{ .Values.gateway.service.nodePort }}
+      {{- if and (eq $v.service.type "NodePort") $v.service.nodePort }}
+      nodePort: {{ $v.service.nodePort }}
       {{- end }}
     - name: health
       protocol: TCP

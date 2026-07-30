@@ -77,8 +77,9 @@ data:
     {{- include "kubernaut.notification.routingYAML" . | nindent 4 }}
 {{- end }}
 {{- define "kubernaut.notification.configYAML" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "notification") | fromYaml -}}
 logging:
-  level: {{ .Values.notification.logging.level | default "INFO" | quote }}
+  level: {{ $v.logging.level | quote }}
 controller:
   metricsAddr: ":9090"
   healthProbeAddr: ":8081"
@@ -108,6 +109,7 @@ datastorage:
     maxRetries: 3
 {{- end }}
 {{- define "kubernaut.notification.routingYAML" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "notification") | fromYaml -}}
 {{- if .Values.notification.routing.content -}}
 {{ .Values.notification.routing.content }}
 {{- else if .Values.notification.slack.secretName -}}
@@ -118,7 +120,7 @@ receivers:
     consoleConfigs:
       - enabled: true
     slackConfigs:
-      - channel: {{ .Values.notification.slack.channel | default "#kubernaut-alerts" | quote }}
+      - channel: {{ $v.slack.channel | quote }}
         credentialRef: slack-webhook
 {{- else -}}
 route:
@@ -140,7 +142,8 @@ metadata:
     control-plane: controller-manager
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.notification.replicas }}
+  {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "notification") | fromYaml }}
+  replicas: {{ $v.replicas }}
   selector:
     matchLabels:
       app: notification-controller
@@ -167,8 +170,8 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.notification "global" .Values.global) | nindent 6 }}
       containers:
         - name: manager
-          image: {{ include "kubernaut.image" (dict "service" "notification" "global" .Values.global "appVersion" .Chart.AppVersion) }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ include "kubernaut.image" (dict "service" "notification" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.notification | nindent 12 }}
           env:
@@ -247,7 +250,7 @@ spec:
               - secret:
                   name: {{ .Values.notification.slack.secretName }}
                   items:
-                    - key: {{ .Values.notification.slack.secretKey | default "webhook-url" }}
+                    - key: {{ $v.slack.secretKey }}
                       path: slack-webhook
           {{- else }}
           emptyDir: {}

@@ -1,4 +1,6 @@
-{{- if eq .Values.tls.mode "hook" }}
+{{- $tlsV := include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml }}
+{{- $hooksV := include "kubernaut.mergedValues" (dict "root" $ "service" "hooks") | fromYaml }}
+{{- if eq $tlsV.mode "hook" }}
 # Job 1: Generate TLS certificates (pre-install/pre-upgrade).
 # Runs BEFORE chart resources so the authwebhook pod can mount the TLS secret.
 # Embeds the CA cert as a ca.crt key in the Secret for the init-container
@@ -34,7 +36,7 @@ spec:
             sizeLimit: 1Mi
       containers:
         - name: tls-cert-gen
-          image: {{ .Values.hooks.tlsCerts.image }}
+          image: {{ $hooksV.tlsCerts.image }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
           volumeMounts:
@@ -272,7 +274,7 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.hooks "global" .Values.global) | nindent 6 }}
       containers:
         - name: tls-cabundle-patch
-          image: {{ .Values.hooks.tlsCerts.image }}
+          image: {{ $hooksV.tlsCerts.image }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
           resources:
@@ -405,7 +407,7 @@ rules:
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
     verbs: ["delete"]
-  {{- if eq .Values.tls.mode "hook" }}
+  {{- if eq $tlsV.mode "hook" }}
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
     verbs: ["get", "patch"]
@@ -467,7 +469,7 @@ spec:
         {{- include "kubernaut.podSecurityContext" .Values.hooks | nindent 8 }}
       containers:
         - name: webhook-cleanup
-          image: {{ .Values.hooks.tlsCerts.image }}
+          image: {{ $hooksV.tlsCerts.image }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
           resources:
@@ -486,7 +488,7 @@ spec:
               kubectl delete validatingwebhookconfiguration authwebhook-validating --ignore-not-found
               kubectl delete mutatingwebhookconfiguration authwebhook-mutating --ignore-not-found
               echo "==> Webhook cleanup complete"
-{{- if eq .Values.tls.mode "hook" }}
+{{- if eq $tlsV.mode "hook" }}
 ---
 # Job 4: Clean up hook-created resources on uninstall (post-delete).
 # Removes authwebhook-tls Secret that is created by kubectl (not tracked
@@ -517,7 +519,7 @@ spec:
         {{- include "kubernaut.podSecurityContext" .Values.hooks | nindent 8 }}
       containers:
         - name: tls-cleanup
-          image: {{ .Values.hooks.tlsCerts.image }}
+          image: {{ $hooksV.tlsCerts.image }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
           resources:

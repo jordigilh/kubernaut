@@ -1,3 +1,5 @@
+{{- $tlsV := include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml -}}
+{{- $hooksV := include "kubernaut.mergedValues" (dict "root" $ "service" "hooks") | fromYaml -}}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -28,7 +30,7 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["workflowexecutions/status", "remediationapprovalrequests/status", "remediationrequests/status", "remediationworkflows/status", "actiontypes/status"]
     verbs: ["update", "patch"]
-  {{- if eq .Values.tls.mode "hook" }}
+  {{- if eq $tlsV.mode "hook" }}
   - apiGroups: ["admissionregistration.k8s.io"]
     resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
     verbs: ["get", "patch"]
@@ -67,8 +69,9 @@ spec:
       targetPort: webhook
       protocol: TCP
 {{- define "kubernaut.authwebhook.configYAML" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "authwebhook") | fromYaml -}}
 logging:
-  level: {{ .Values.authwebhook.logging.level | default "INFO" | quote }}
+  level: {{ $v.logging.level | quote }}
 webhook:
   port: 9443
   certDir: /tmp/k8s-webhook-server/serving-certs
@@ -104,7 +107,8 @@ metadata:
     app: authwebhook
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.authwebhook.replicas }}
+  {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "authwebhook") | fromYaml }}
+  replicas: {{ $v.replicas }}
   strategy:
     type: Recreate
   selector:
@@ -123,11 +127,11 @@ spec:
         {{- include "kubernaut.podSecurityContext" .Values.authwebhook | nindent 8 }}
       {{- include "kubernaut.affinity" (dict "component" .Values.authwebhook "matchLabels" (dict "app" "authwebhook")) | nindent 6 }}
       {{- include "kubernaut.scheduling" (dict "component" .Values.authwebhook "global" .Values.global) | nindent 6 }}
-      {{- if eq .Values.tls.mode "hook" }}
+      {{- if eq $tlsV.mode "hook" }}
       initContainers:
         - name: patch-cabundle
-          image: {{ .Values.hooks.tlsCerts.image }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ $hooksV.tlsCerts.image }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
           resources:
@@ -228,8 +232,8 @@ spec:
       {{- end }}
       containers:
         - name: authwebhook
-          image: {{ include "kubernaut.image" (dict "service" "authwebhook" "global" .Values.global "appVersion" .Chart.AppVersion) }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ include "kubernaut.image" (dict "service" "authwebhook" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.authwebhook | nindent 12 }}
           args:

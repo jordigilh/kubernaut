@@ -7,6 +7,7 @@ below), so $fmcFleetPreamble must be recomputed here rather than reused.
 */}}
 {{- define "kubernaut.fleetmetadatacache.configYAML" -}}
 {{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "fleetmetadatacache") | fromYaml -}}
 server:
   apiAddr: ":8080"
   healthAddr: ":8081"
@@ -16,7 +17,7 @@ server:
 mcpGateway:
   endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
   gatewayType: {{ $fmcFleetPreamble.config.mcpGatewayType | quote }}
-  namespace: {{ .Values.fleetmetadatacache.namespace | quote }}
+  namespace: {{ $v.namespace | quote }}
 valkey:
   {{- /* values.yaml documents valkeyAddr: "" as "uses shared Valkey
   instance", but left unimplemented that default actually falls through to
@@ -30,8 +31,8 @@ valkey:
   redundantly pass --set fleetmetadatacache.valkeyAddr=valkey:6380. */}}
   addr: {{ .Values.fleetmetadatacache.valkeyAddr | default (include "kubernaut.valkey.addr" .) | quote }}
 sync:
-  interval: {{ .Values.fleetmetadatacache.syncInterval | quote }}
-  keyTtl: {{ .Values.fleetmetadatacache.keyTTL | quote }}
+  interval: {{ $v.syncInterval | quote }}
+  keyTtl: {{ $v.keyTTL | quote }}
 oauth2:
   tokenUrl: {{ $fmcFleetPreamble.oauth2.tokenURL | quote }}
   credentialsDir: "/etc/fleetmetadatacache/fleet-oauth2"
@@ -77,6 +78,7 @@ kubernaut.fleetmetadatacache.effectiveEnabled for the full rationale and the con
 override fail() case. */}}
 {{- if eq (include "kubernaut.fleetmetadatacache.effectiveEnabled" .) "true" }}
 {{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml }}
+{{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "fleetmetadatacache") | fromYaml }}
 {{- if not $fmcFleetPreamble.config.mcpGatewayEndpoint }}
 {{- fail "global.fleet.mcpGatewayEndpoint is required when fleetmetadatacache.enabled=true — FleetMetadataCache polls remote clusters via the MCP Gateway" }}
 {{- end }}
@@ -110,7 +112,7 @@ metadata:
     app.kubernetes.io/component: fleet-metadata-cache
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.fleetmetadatacache.replicas }}
+  replicas: {{ $v.replicas }}
   selector:
     matchLabels:
       app.kubernetes.io/name: fleetmetadatacache
@@ -130,8 +132,8 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.fleetmetadatacache "global" .Values.global) | nindent 6 }}
       containers:
         - name: fleetmetadatacache
-          image: "{{ .Values.fleetmetadatacache.image.repository }}:{{ .Values.fleetmetadatacache.image.tag }}"
-          imagePullPolicy: {{ .Values.fleetmetadatacache.image.pullPolicy }}
+          image: "{{ $v.image.repository }}:{{ $v.image.tag }}"
+          imagePullPolicy: {{ $v.image.pullPolicy }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.fleetmetadatacache | nindent 12 }}
           args:
@@ -247,7 +249,7 @@ ClusterRole/ClusterRoleBinding are skipped entirely in favor of the
 namespace-scoped Role/RoleBinding below (least privilege) instead of
 rendering a redundant empty ClusterRole.
 */}}
-{{- if not .Values.fleetmetadatacache.namespace }}
+{{- if not $v.namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -292,7 +294,7 @@ subjects:
 ---
 # #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rules
 # above, granted instead of them when fleetmetadatacache.namespace is set.
-{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "fleetmetadatacache" "serviceAccount" "fleetmetadatacache" "namespace" .Values.fleetmetadatacache.namespace "appLabels" "app.kubernetes.io/name: fleetmetadatacache" "mcpServerRegistrations" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "kuadrantGateways" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "eaigwBackends" (ne $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "fleetmetadatacache" "serviceAccount" "fleetmetadatacache" "namespace" $v.namespace "appLabels" "app.kubernetes.io/name: fleetmetadatacache" "mcpServerRegistrations" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "kuadrantGateways" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "eaigwBackends" (ne $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 {{- end }}
 ---
 apiVersion: networking.k8s.io/v1
