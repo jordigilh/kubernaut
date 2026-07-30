@@ -607,6 +607,25 @@ run_pre_004() {
   fi
 }
 
+# DD-PLATFORM-006 DA6/DA7: datastorage-audit-hmac-key is mandatory (AU-9) with
+# no enabled gate, but secrets.yaml's fail() guard only skips validation when
+# tls.mode=hook (that mode's tls-cert-job pre-install hook auto-generates the
+# secret -- see run_audithmac_001/002). cert-manager mode (Flow C) has no such
+# hook, so unlike Flow A/B this secret must be pre-created manually here, the
+# same way postgresql/valkey/llm-credentials are in run_pre_003.
+run_pre_005() {
+  local desc="ST-CHART-PRE-005: Provision DataStorage audit-HMAC key (cert-manager mode)"
+  local hmac_key
+  hmac_key=$(openssl rand -base64 32)
+  if kubectl create secret generic datastorage-audit-hmac-key \
+    --from-literal="audit-hmac-key.yaml=$(printf 'hmacKey: %s' "$hmac_key")" \
+    -n "$NAMESPACE" >/dev/null 2>&1; then
+    tap_ok "$desc"
+  else
+    tap_not_ok "$desc" "kubectl create secret failed"
+  fi
+}
+
 run_inst_001() {
   local desc="ST-CHART-INST-001: Production install"
   local flags
@@ -1520,6 +1539,7 @@ flow_c_cert_manager() {
   # NOTE: run_pre_004 (manual authwebhook-tls pre-seed) is intentionally
   # skipped -- in cert-manager mode, cert-manager owns that Secret's
   # lifecycle via the authwebhook-cert Certificate resource.
+  run_pre_005
   run_inst_cm_001 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow C tests"; must_gather "$NAMESPACE" "install-failure"; return 1; }
 
   run_verify_001 || flow_failed=true
