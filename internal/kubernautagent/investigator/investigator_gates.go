@@ -127,7 +127,7 @@ func (inv *Investigator) retryForSameKind(ctx context.Context, result *katypes.I
 	// hardcoded 0/"" that misrepresented every gate retry as an empty
 	// request.
 	gateEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
-	gateEvent.Data["prompt_preview"] = lastUserMessage(retryMessages, 500)
+	gateEvent.Data["prompt_preview"] = lastUserMessage(retryMessages)
 	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
 	resp, err := llm.ChatWithParams(ctx, client, llm.ChatRequest{
@@ -307,7 +307,7 @@ func (inv *Investigator) retryForAPIVersion(ctx context.Context, p retryForAPIVe
 	// hardcoded 0/"" that misrepresented every gate retry as an empty
 	// request.
 	gateEvent.Data["prompt_length"] = totalPromptLength(retryMessages)
-	gateEvent.Data["prompt_preview"] = lastUserMessage(retryMessages, 500)
+	gateEvent.Data["prompt_preview"] = lastUserMessage(retryMessages)
 	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
 	resp, retryErr := llm.ChatWithParams(ctx, client, llm.ChatRequest{
