@@ -591,6 +591,19 @@ func resignHostAccessedTLSCertsWithLocalhostSAN(ctx context.Context, kubeconfigP
 	// bundle) -- all pods are already Running from PHASE 6's `helm install`
 	// using the ORIGINAL chart-generated certs, so a restart is required for
 	// them to pick up the re-signed ones above.
+	//
+	// PR #1790 round-9 RCA: restart+wait were previously two SEPARATE loops
+	// (restart all 4, then wait on all 4), which fired all 4 pods' expensive
+	// startup work (client-go discovery, dependency wiring) at essentially
+	// the same instant -- precisely the "4-deployments-at-once contention"
+	// the 480s timeout below was already enlarged to tolerate (see its own
+	// comment's cgroup v2 evidence). Interleaving restart+wait per
+	// deployment instead staggers that CPU burst to one pod at a time,
+	// addressing the contention at its source rather than just extending
+	// the timeout to survive it -- consistent with every other
+	// restart-then-wait call site in this package (e.g.
+	// apifrontend_prometheus_e2e.go, mock_llm.go, awx_e2e.go), which never
+	// batched restarts across multiple deployments like this one did.
 	deployments := []string{"gateway", "datastorage", "apifrontend", "kubernaut-agent"}
 	for _, deploy := range deployments {
 		restartCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
@@ -600,8 +613,7 @@ func resignHostAccessedTLSCertsWithLocalhostSAN(ctx context.Context, kubeconfigP
 		if err := restartCmd.Run(); err != nil {
 			return fmt.Errorf("failed to restart %s for TLS cert reload: %w", deploy, err)
 		}
-	}
-	for _, deploy := range deployments {
+
 		// DD-PLATFORM-009 (#1755 Fleet E2E re-validation): gateway's new pod
 		// answers /healthz=200 immediately (NewBootstrapServer) so its
 		// startupProbe passes quickly, but /readyz correctly stays 503 until
@@ -630,7 +642,11 @@ func resignHostAccessedTLSCertsWithLocalhostSAN(ctx context.Context, kubeconfigP
 		// checks to run *after* a startupProbe that can itself now take
 		// close to 305s -- this was silently racing its own inner budget.
 		// 480s gives >150s of headroom above the 305s startupProbe ceiling
-		// for the subsequent readyz convergence.
+		// for the subsequent readyz convergence. Kept unchanged (rather
+		// than shortened) even after staggering the restarts above: it's a
+		// per-deployment ceiling that only matters if that single pod
+		// itself is slow, so the added margin is now pure safety headroom,
+		// not a symptom of contention it needs to keep tolerating.
 		waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
 			"rollout", "status", "deployment/"+deploy, "--timeout=480s")
 		waitCmd.Stdout = writer

@@ -43,7 +43,7 @@ tests:
             - "--tls-key-file"
             - "/certs/tls.key"
             - "--tls-ca-cert-file"
-            - "/certs/ca.crt"
+            - "/etc/tls-ca/ca.crt"
             - "--tls-auth-clients"
             - "no"
 
@@ -57,7 +57,7 @@ tests:
           path: spec.template.spec.containers[0].ports[0].containerPort
           value: 6380
 
-  - it: "Valkey Deployment mounts the valkey-tls secret for its cert/key/ca"
+  - it: "Valkey Deployment mounts the valkey-tls secret for its own cert/key (not the CA)"
     template: templates/infrastructure/valkey.yaml
     documentSelector:
       path: kind
@@ -76,7 +76,36 @@ tests:
             secret:
               secretName: valkey-tls
 
-  - it: "Valkey readinessProbe/livenessProbe use TLS-aware valkey-cli against port 6380"
+  # PR #1790 round-9 RCA: valkey-tls's own Secret carries tls.crt/tls.key
+  # only -- it must NOT be the source of ca.crt. In tls.mode=hook,
+  # tls-cert-job.yaml's inter-service loop creates it via a plain `kubectl
+  # create secret tls` (no ca.crt key; only authwebhook-tls gets that
+  # patched in separately), so a ca.crt read from here always 404s in hook
+  # mode -- it only ever appeared to work in tls.mode=cert-manager, where
+  # cert-manager auto-populates ca.crt into every Certificate-issued Secret,
+  # masking the gap. Valkey must source its CA from the same shared tls-ca
+  # volume (inter-service-ca ConfigMap) as every other consumer instead.
+  - it: "Valkey Deployment sources its CA from the shared tls-ca volume, not from within valkey-tls"
+    template: templates/infrastructure/valkey.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tls-ca
+            mountPath: /etc/tls-ca
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tls-ca
+            configMap:
+              name: inter-service-ca
+              optional: true
+
+  - it: "Valkey readinessProbe/livenessProbe use TLS-aware valkey-cli against port 6380 with the shared CA"
     template: templates/infrastructure/valkey.yaml
     documentSelector:
       path: kind
@@ -84,10 +113,10 @@ tests:
     asserts:
       - equal:
           path: spec.template.spec.containers[0].readinessProbe.exec.command
-          value: ["valkey-cli", "--tls", "--cacert", "/certs/ca.crt", "-p", "6380", "ping"]
+          value: ["valkey-cli", "--tls", "--cacert", "/etc/tls-ca/ca.crt", "-p", "6380", "ping"]
       - equal:
           path: spec.template.spec.containers[0].livenessProbe.exec.command
-          value: ["valkey-cli", "--tls", "--cacert", "/certs/ca.crt", "-p", "6380", "ping"]
+          value: ["valkey-cli", "--tls", "--cacert", "/etc/tls-ca/ca.crt", "-p", "6380", "ping"]
 
   - it: "Valkey Service exposes port 6380, not 6379"
     template: templates/infrastructure/valkey.yaml
