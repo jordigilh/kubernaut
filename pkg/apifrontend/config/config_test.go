@@ -421,6 +421,65 @@ auth:
 		Expect(rc.IsDistributed()).To(BeFalse())
 	})
 
+	// DD-PLATFORM-006 DA9: the replay-cache Valkey connection had no TLS
+	// support at all -- discovered when DA8 made Valkey TLS-only. These
+	// tests prove the new optional tls block parses and defaults safely.
+	It("DD-PLATFORM-006 DA9 loads a replay cache TLS block", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  replayCache:
+    backend: redis
+    redisAddr: "valkey.kubernaut-system.svc:6380"
+    tls:
+      enabled: true
+      caFile: "/etc/tls-ca/ca.crt"
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Validate()).To(Succeed())
+		Expect(cfg.Auth.ReplayCache.TLS).NotTo(BeNil())
+		Expect(cfg.Auth.ReplayCache.TLS.Enabled).To(BeTrue())
+		Expect(cfg.Auth.ReplayCache.TLS.CAFile).To(Equal("/etc/tls-ca/ca.crt"))
+	})
+
+	It("DD-PLATFORM-006 DA9 defaults replay cache TLS to nil (unencrypted) when omitted", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  replayCache:
+    backend: redis
+    redisAddr: "valkey.kubernaut-system.svc:6379"
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Validate()).To(Succeed())
+		Expect(cfg.Auth.ReplayCache.TLS).To(BeNil())
+	})
+
+	It("DD-PLATFORM-006 DA9 loads optional mTLS certFile/keyFile alongside caFile", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  replayCache:
+    backend: redis
+    redisAddr: "valkey.kubernaut-system.svc:6380"
+    tls:
+      enabled: true
+      caFile: "/etc/tls-ca/ca.crt"
+      certFile: "/etc/certs/client.crt"
+      keyFile: "/etc/certs/client.key"
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Validate()).To(Succeed())
+		Expect(cfg.Auth.ReplayCache.TLS.CertFile).To(Equal("/etc/certs/client.crt"))
+		Expect(cfg.Auth.ReplayCache.TLS.KeyFile).To(Equal("/etc/certs/client.key"))
+	})
+
 	It("UT-AF-1247-001 loads allowInsecureIssuers field", func() {
 		data := []byte(`
 auth:
