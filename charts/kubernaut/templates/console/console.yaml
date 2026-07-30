@@ -82,6 +82,9 @@ location / {
 }
 {{- end }}
 {{- if .Values.console.enabled }}
+{{- if not .Values.apifrontend.enabled }}
+{{- fail "console.enabled=true requires apifrontend.enabled=true (Console's nginx sidecar reverse-proxies exclusively to APIFrontend, with no other possible backend)" }}
+{{- end }}
 {{- if not .Values.console.auth.secretName }}
 {{- fail "console.auth.secretName is required when console.enabled=true (Secret must contain keys: client-id, client-secret, cookie-secret)" }}
 {{- end }}

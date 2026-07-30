@@ -1,0 +1,105 @@
+suite: "DD-PLATFORM-006 Decision Area 9: console.enabled requires apifrontend.enabled; console.ingress.enabled=false gets a NOTES.txt hint"
+templates:
+  - templates/console/console.yaml
+  - templates/NOTES.txt
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "console.enabled=true + apifrontend.enabled=false fails the render -- Console's nginx sidecar hardcodes a reverse-proxy to APIFrontend with no other possible backend"
+    template: templates/console/console.yaml
+    set:
+      apifrontend:
+        enabled: false
+        config:
+          auth:
+            issuerURL: https://sso.example.com/realms/kubernaut
+      console:
+        enabled: true
+        auth:
+          secretName: console-auth
+        ingress:
+          host: console.apps.example.com
+    asserts:
+      - failedTemplate:
+          errorMessage: "console.enabled=true requires apifrontend.enabled=true (Console's nginx sidecar reverse-proxies exclusively to APIFrontend, with no other possible backend)"
+
+  - it: "console.enabled=true + apifrontend.enabled=true (default) renders successfully -- no new false-positive from the added guard"
+    template: templates/console/console.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      console:
+        enabled: true
+        auth:
+          secretName: console-auth
+        ingress:
+          host: console.apps.example.com
+      apifrontend:
+        config:
+          auth:
+            issuerURL: https://sso.example.com/realms/kubernaut
+    asserts:
+      - isKind:
+          of: Deployment
+
+  - it: "NOTES.txt hints at console.ingress.enabled=false when console is enabled but its Ingress is not, pointing at the two ways to reach it"
+    template: templates/NOTES.txt
+    set:
+      console:
+        enabled: true
+        auth:
+          secretName: console-auth
+        ingress:
+          host: console.apps.example.com
+      apifrontend:
+        config:
+          auth:
+            issuerURL: https://sso.example.com/realms/kubernaut
+    asserts:
+      - matchRegexRaw:
+          pattern: "console\\.ingress\\.enabled=true"
+      - matchRegexRaw:
+          pattern: "port-forward"
+
+  - it: "NOTES.txt does NOT render the console-ingress hint when console.ingress.enabled=true (nothing to hint about)"
+    template: templates/NOTES.txt
+    set:
+      console:
+        enabled: true
+        auth:
+          secretName: console-auth
+        ingress:
+          enabled: true
+          host: console.apps.example.com
+      apifrontend:
+        config:
+          auth:
+            issuerURL: https://sso.example.com/realms/kubernaut
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "console\\.ingress\\.enabled=true"
+
+  - it: "NOTES.txt does NOT render the console-ingress hint when console.enabled=false (default, nothing to hint about)"
+    template: templates/NOTES.txt
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "console\\.ingress\\.enabled=true"

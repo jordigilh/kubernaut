@@ -442,8 +442,9 @@ and referenced by name from every consumer — mirroring the Kubernaut Operator'
 `spec.llmProfiles`. This replaces the old `kubernautAgent.llm.*` literal block; there is no
 backward-compat shim, since the chart is pre-GA.
 
-At least one profile is required — `kubernautAgent.llmProfileRef` has no default and the
-chart fails fast at render time if it's unset or names an undefined profile.
+At least one profile is required — `kubernautAgent.llmProfileRef` defaults to `"primary"`
+(matching the convention used throughout this README/`quickstart.sh`), and the chart fails
+fast at render time if the referenced profile (whatever its name) is undefined.
 
 | Parameter | Description | Default |
 |---|---|---|
@@ -470,7 +471,7 @@ chart fails fast at render time if it's unset or names an undefined profile.
 
 | Parameter | Description | Default |
 |---|---|---|
-| `kubernautAgent.llmProfileRef` | Name of an entry in `global.llmProfiles` for KA's main investigation LLM — **required, no default** | none |
+| `kubernautAgent.llmProfileRef` | Name of an entry in `global.llmProfiles` for KA's main investigation LLM (the named profile must still exist) | `primary` |
 | `kubernautAgent.phaseModels.<phase>` | Per-phase LLM override, one of `rca`, `workflow_discovery`, `validation` → a `global.llmProfiles` name. Omitted phases use `llmProfileRef`'s profile unchanged | `{}` |
 | `kubernautAgent.alignmentCheck.llmProfileRef` | Name of an entry in `global.llmProfiles` for the plan-alignment-check LLM call. Empty (default) inherits `llmProfileRef`'s resolved profile. Fixes a dead-field bug where the chart previously wrote an `apiKey` the Go binary never read (it expects `apiKeyFile`) | `""` |
 | `kubernautAgent.prometheus.enabled` | Enable Prometheus toolset | `false` |

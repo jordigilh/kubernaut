@@ -62,6 +62,20 @@ configured Prometheus in the agent's config.yaml (tools.prometheus.url).
 No additional SDK config changes are needed for Prometheus access.
 
 {{- end }}
+{{- if and .Values.console.enabled (not .Values.console.ingress.enabled) }}
+=== Console Access ===
+
+The web console is enabled but its Ingress is not (console.ingress.enabled=false,
+the default -- DD-PLATFORM-006 Decision Area 9, matching Gateway/APIFrontend's
+own opt-in Ingress posture, BR-PLATFORM-009). To reach it, either:
+
+  --set console.ingress.enabled=true
+
+  or, without exposing it externally:
+
+  kubectl port-forward -n {{ .Release.Namespace }} svc/console 4180:4180
+
+{{- end }}
 === Monitoring ===
 
 Kubernaut is designed to work with kube-prometheus-stack.

@@ -4,9 +4,13 @@ at the top of this multi-document template so every ConfigMap/Deployment
 section below shares identical resolution -- avoids re-deriving (and
 potentially drifting) the same lookups per-section.
 */}}
-{{- if not .Values.kubernautAgent.llmProfileRef }}
-{{- fail "kubernautAgent.llmProfileRef is required (name of an entry in global.llmProfiles)" }}
-{{- end }}
+{{- /*
+DD-PLATFORM-006 DA4: llmProfileRef defaults to "primary" (values.yaml/schema),
+so there is no separate "field is required" fail() here anymore -- an
+undefined profile (including an explicit empty-string override) is caught by
+kubernaut.llm.resolveProfile's own fail() below, with a message naming the
+actual (possibly empty) reference.
+*/}}
 {{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
 {{- $validPhases := list "rca" "workflow_discovery" "validation" }}
 {{- $kaPhaseProfiles := dict }}

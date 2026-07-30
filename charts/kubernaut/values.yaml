@@ -620,10 +620,13 @@ kubernautAgent:
     # even created). Production installs that don't need a fixed port should
     # leave this at 0 (Issue #1737).
     nodePort: 0
-  # -- Required. Name of an entry in global.llmProfiles used for KA's
-  # investigator LLM calls (DD-PLATFORM-007). No default -- at least one
-  # profile must be defined under global.llmProfiles and referenced here.
-  llmProfileRef: ""   # e.g., "primary"
+  # -- Name of an entry in global.llmProfiles used for KA's investigator LLM
+  # calls (DD-PLATFORM-007). Defaults to "primary" (DD-PLATFORM-006 DA4),
+  # matching the universal convention used across this repo's own README/
+  # quickstart/CI examples -- a profile named "primary" must still be defined
+  # under global.llmProfiles (or whatever name this is overridden to); an
+  # undefined profile fails the render with an actionable message either way.
+  llmProfileRef: "primary"
   # -- Per-phase LLM profile overrides (DD-PLATFORM-007), newly exposed.
   # Maps a phase name to a profile name in global.llmProfiles; unlisted
   # phases use llmProfileRef's profile unchanged.
