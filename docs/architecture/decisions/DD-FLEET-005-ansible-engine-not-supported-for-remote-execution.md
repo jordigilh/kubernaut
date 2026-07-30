@@ -84,25 +84,64 @@ gateway instead of raw AWX REST.
   Kuadrant's side. `GET /api/gateway/v1/authenticator_plugins/` against the live AAP 2.7
   instance lists all 11 supported authenticator plugin types (`azuread`, `github` +4
   variants, `google_oauth2`, `keycloak`, `ldap`, `local`, `oidc`, `radius`, `saml`,
-  `tacacs`). The `keycloak` and `oidc` plugins — the only two capable of trusting
-  kubernaut's existing fleet identity provider — are both built on `python-social-auth`
-  and require `AUTHORIZATION_URL`/`CALLBACK_URL`/`RESPONSE_TYPE=code` in their
-  configuration schema: a browser-redirect login flow, not a machine-to-machine
-  JWT-bearer grant (RFC 7523) or resource-server-style JWT validation. A headless
-  controller like `WorkflowExecution` cannot complete a redirect-based login on its own.
-  This is the structural reason Option 2 and Option 1 behave so differently under the
-  *same* gateway: Kubernetes API servers natively validate OIDC-federated identities as
-  resource servers on every request (observed directly in this spike — the fleet
-  identity mapped to `keycloak:service-account-kubernaut-fleet-read` for RBAC purposes,
-  no redirect involved); AAP has no equivalent mode behind any of its 11 auth plugins.
-  Even a bug-free `credentialRef` injection could therefore only ever forward a static,
-  pre-provisioned AAP credential (OAuth Application or Personal Access Token) per
-  registration — the same per-cluster raw-credential-vending shape already rejected as
-  Option 3, just relocated into a Kuadrant CRD field instead of kubernaut's own code.
+  `tacacs`) — none support machine-to-machine JWT exchange. See
+  [Root Cause](#root-cause-why-aap-cannot-accept-a-keycloak-issued-token-for-api-authorization)
+  below for the full mechanism and why this isn't fixable by a PR to Kuadrant, the AAP
+  MCP Server, or anything on kubernaut's side.
 
 **Confidence in rejecting**: high — both blockers reproduced against real, live
 components (real AAP 2.7, real Kuadrant gateway, real Keycloak token exchange), not
 simulated.
+
+#### Root Cause: Why AAP Cannot Accept a Keycloak-Issued Token for API Authorization
+
+This is not a Kuadrant bug, not a kubernaut gap, and not something addressable by
+contributing a PR to `ansible/aap-mcp-server` or the Kuadrant `mcp-gateway` project —
+unlike the two toolset/injection issues above, it is architectural, on AAP's own side,
+and independent of both. Fixing either or both of those two issues would not unblock
+Option 1 without this also being fixed:
+
+- AAP's platform gateway is a Django + Django REST Framework application using
+  `django-oauth-toolkit` (DOT) as its OAuth2 provider. DOT's token model is
+  **stateful and database-backed**: an issued access token is an opaque string
+  persisted as an `AccessToken` row, linked by foreign key to a local Django `User`
+  row. Authenticating a request means a **database lookup** — "does this token value
+  exist, is it unexpired, which `User` does it point to?" — not cryptographic
+  signature verification against an issuer's public key.
+- Every downstream permission check, audit record, and ownership relationship in AAP
+  (RBAC, `created_by`/`modified_by` attribution, Organization/Team membership) is a
+  foreign key to that same local `User` row. A cryptographically valid Keycloak JWT
+  has no such row behind it — AAP's authorization stack has nothing to attach it to.
+- Creating that row (JIT-provisioning) is precisely what the interactive `keycloak`/
+  `oidc` authenticator plugins' login pipeline does the first time a given external
+  identity logs in (per Red Hat's own SSO docs: *"if this is your first time logging
+  in with this SSO method, platform gateway creates a user linked to your... user"*).
+  This is not a side effect of requiring a browser — it **is** the mechanism, and it
+  has no headless equivalent: there is no supported API that performs this
+  resolve-or-create step outside the interactive login view.
+- Keycloak **is** already meaningfully delegated to for interactive users today — it
+  handles authentication and can drive AAP Team/Role assignment via the
+  `GROUPS_CLAIM` mapping at login time. What's missing is specifically a
+  **stateless, per-call** path for headless/machine callers: nothing in AAP's request
+  authentication stack validates a live, externally-issued JWT signature on an
+  ordinary API call the way a JWT-bearer resource server would.
+- **This is a design choice, not a limitation of OAuth2/OIDC itself.** Contrast with
+  Kubernetes' own API server, which implements OIDC authentication in a genuinely
+  stateless, claims-based way (`--oidc-issuer-url`): a JWT's `sub`/`groups` claims map
+  directly to RBAC subjects, with **no persisted "User" object required anywhere**.
+  This is exactly why Option 2 (creating `tower.ansible.com` CRDs through the
+  K8s-native `kube-mcp-server`) worked cleanly in this same spike — the fleet
+  identity resolved live to `keycloak:service-account-kubernaut-fleet-read` for RBAC
+  purposes, no login ceremony, no local row required — while Option 1 (AAP's own API)
+  structurally cannot work the same way, independent of any Kuadrant-side fix.
+- **Practical consequence**: fixing Kuadrant's `credentialRef` injection bug alone
+  would not unlock Option 1. Even a bug-free Kuadrant could only ever forward a
+  static, pre-provisioned AAP credential (OAuth Application or Personal Access
+  Token) configured on the `MCPServerRegistration` — never one dynamically derived
+  from the caller's actual Keycloak identity — because AAP has no mechanism to accept
+  the latter at all. That reintroduces the same per-cluster raw-credential-vending
+  shape already rejected as Option 3, just relocated into a Kuadrant CRD field
+  instead of kubernaut's own code.
 
 ---
 
@@ -300,7 +339,9 @@ fixed without kubernaut's knowledge between this decision and its next review.
   injection for non-K8s backends, **and** (b) AAP's platform gateway adds a
   machine-to-machine JWT-bearer/resource-server auth mode capable of validating an
   externally-federated identity per-call (no such mode exists in any of AAP's 11
-  authenticator plugins today — all are interactive, redirect-based). A
+  authenticator plugins today — all are interactive, redirect-based; see
+  [Root Cause](#root-cause-why-aap-cannot-accept-a-keycloak-issued-token-for-api-authorization)
+  for why this is an AAP-side architectural gap, not a Kuadrant one). A
   `credentials_destroy` tool would also still need to be added to a toolset, via custom
   config or an upstream PR to `ansible/aap-mcp-server` — a smaller, independently
   actionable fix, not blocked on either of the above.
