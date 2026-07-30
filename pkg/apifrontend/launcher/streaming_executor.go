@@ -99,7 +99,12 @@ var ErrLLMCapacity = fmt.Errorf("LLM concurrency limit reached — request rejec
 
 func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue) error {
 	ctx = logr.NewContext(ctx, s.logger)
-	ctx = WithEventBridge(ctx, queue, reqCtx.TaskID, reqCtx.ContextID, s.bridgeMetrics)
+
+	// #1774: gate the terminal Completed status so a2a-go's own task
+	// processor never sees it until we've confirmed BR-SESS-013's
+	// re-invocation loop is done. See completionGateQueue doc comment.
+	gateQ := newCompletionGateQueue(queue)
+	ctx = WithEventBridge(ctx, gateQ, reqCtx.TaskID, reqCtx.ContextID, s.bridgeMetrics)
 
 	user := auth.UserIdentityFromContext(ctx)
 	username := ""
@@ -143,7 +148,7 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 		}
 	}()
 
-	err := s.inner.Execute(ctx, reqCtx, queue)
+	err := s.inner.Execute(ctx, reqCtx, gateQ)
 
 	// BR-SESS-013: Re-invocation loop — when the agent produces a text-only
 	// response without tool calls, inject a synthetic "continue" message and
@@ -163,6 +168,11 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 			if !session.NeedsReinvocationCtx(ctx, isv1alpha1.SessionPhaseActive, resp.Session.Events(), reinvokeCount) {
 				break
 			}
+			// #1774: this turn's Completed status (if any, held by gateQ)
+			// was premature — discard it before re-invoking so a2a-go's
+			// task processor never observes it and tears down the shared
+			// execution context out from under the next Execute call.
+			gateQ.dropHeld()
 			reinvokeCount++
 			s.logger.Info("re-invoking agent after text-only turn end",
 				"task_id", string(reqCtx.TaskID),
@@ -175,11 +185,19 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 				s.logger.Error(appendErr, "failed to append synthetic re-invocation message")
 				break
 			}
-			err = s.inner.Execute(ctx, reqCtx, queue)
+			err = s.inner.Execute(ctx, reqCtx, gateQ)
 			if err != nil {
 				break
 			}
 		}
+	}
+
+	// #1774: release the genuinely final Completed event, if any, now that
+	// re-invocation is exhausted (or was never needed). This is the only
+	// point at which a2a-go's task processor is allowed to observe task
+	// completion.
+	if flushErr := gateQ.flushHeld(ctx); flushErr != nil && err == nil {
+		err = flushErr
 	}
 
 	close(stopKeepalive)
@@ -230,6 +248,75 @@ func (s *StreamingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestC
 	}
 
 	return err
+}
+
+// completionGateQueue wraps the real per-task event queue and defers
+// delivery of the task's terminal a2a.TaskStateCompleted status update
+// until the caller explicitly flushes it.
+//
+// #1774 / DD-AF-009 (BR-SESS-013): a2a-go's task processor treats the first
+// TaskStatusUpdateEvent{State: Completed} it observes as definitive task
+// end — its producer/consumer errgroup returns a sentinel error the moment
+// the consumer sees one, which cancels the shared execution context because
+// "there's no point for [the producer] to continue"
+// (a2a-go internal/taskexec/execution_handler.go). BR-SESS-013's
+// re-invocation loop, however, calls s.inner.Execute again on that same
+// context after a text-only turn end, believing the task is still active.
+// Without this gate, the ADK's Completed status from that text-only turn
+// reaches a2a-go immediately, the shared context is torn down, and the
+// re-invoked call fails with "context canceled" on its next outbound
+// LLM/tool call — with timing that varies (194s-352s observed) based on how
+// long that next call takes to run.
+//
+// Only TaskStateCompleted is held; every other event (Working status,
+// artifacts, reasoning deltas) is forwarded immediately so live streaming
+// visibility during reinvoked turns is unaffected.
+type completionGateQueue struct {
+	real eventqueue.Queue
+	held a2a.Event
+}
+
+func newCompletionGateQueue(real eventqueue.Queue) *completionGateQueue {
+	return &completionGateQueue{real: real}
+}
+
+func (q *completionGateQueue) Write(ctx context.Context, event a2a.Event) error {
+	if su, ok := event.(*a2a.TaskStatusUpdateEvent); ok && su.Status.State == a2a.TaskStateCompleted {
+		q.held = event
+		return nil
+	}
+	return q.real.Write(ctx, event)
+}
+
+func (q *completionGateQueue) WriteVersioned(ctx context.Context, event a2a.Event, version a2a.TaskVersion) error {
+	return q.real.WriteVersioned(ctx, event, version)
+}
+
+func (q *completionGateQueue) Read(ctx context.Context) (a2a.Event, a2a.TaskVersion, error) {
+	return q.real.Read(ctx)
+}
+
+func (q *completionGateQueue) Close() error {
+	return q.real.Close()
+}
+
+// dropHeld discards a held Completed event without forwarding it — used
+// when the turn that produced it turns out to be a premature, text-only
+// checkpoint and the agent is about to be re-invoked.
+func (q *completionGateQueue) dropHeld() {
+	q.held = nil
+}
+
+// flushHeld forwards a held Completed event to the real queue, if any is
+// held. Called once the caller has confirmed the task is genuinely
+// finished — no further re-invocation will happen.
+func (q *completionGateQueue) flushHeld(ctx context.Context) error {
+	if q.held == nil {
+		return nil
+	}
+	held := q.held
+	q.held = nil
+	return q.real.Write(ctx, held)
 }
 
 // Cancel delegates directly to the inner executor.

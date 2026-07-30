@@ -587,3 +587,169 @@ var _ = Describe("Re-invocation Wiring (BR-SESS-013)", func() {
 	})
 })
 
+// reinvokeEventEmittingExecutor simulates what adka2a actually writes to the
+// queue it's handed: a Working status followed by a terminal Completed
+// status on every single Execute call (mirroring one ADK agent turn ending).
+// Used to prove #1774's queue-gating behavior in isolation from the real
+// a2a-go task processor, which is what would otherwise tear down the shared
+// execution context the instant it observes the first Completed status.
+type reinvokeEventEmittingExecutor struct {
+	callCount atomic.Int32
+}
+
+func (e *reinvokeEventEmittingExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue) error {
+	e.callCount.Add(1)
+	return writeWorkingThenCompleted(ctx, queue, reqCtx.TaskID)
+}
+
+func (e *reinvokeEventEmittingExecutor) Cancel(_ context.Context, _ *a2asrv.RequestContext, _ eventqueue.Queue) error {
+	return nil
+}
+
+// writeWorkingThenCompleted simulates the two status updates adka2a writes
+// to the queue it's handed for a single, ordinary ADK agent turn: a Working
+// status followed by the terminal Completed status.
+func writeWorkingThenCompleted(ctx context.Context, queue eventqueue.Queue, taskID a2a.TaskID) error {
+	if err := queue.Write(ctx, &a2a.TaskStatusUpdateEvent{
+		TaskID: taskID,
+		Status: a2a.TaskStatus{State: a2a.TaskStateWorking},
+	}); err != nil {
+		return err
+	}
+	return queue.Write(ctx, &a2a.TaskStatusUpdateEvent{
+		TaskID: taskID,
+		Final:  true,
+		Status: a2a.TaskStatus{State: a2a.TaskStateCompleted},
+	})
+}
+
+func countStatus(events []a2a.Event, state a2a.TaskState) int {
+	count := 0
+	for _, evt := range events {
+		if su, ok := evt.(*a2a.TaskStatusUpdateEvent); ok && su.Status.State == state {
+			count++
+		}
+	}
+	return count
+}
+
+// #1774: a2a-go's task processor ends the entire task's producer/consumer
+// pipeline (and cancels its shared execution context) the moment it
+// observes a Completed status update. BR-SESS-013 re-invokes the agent on
+// that same context after a text-only turn end, so any Completed status
+// from a turn that gets re-invoked must never reach the real downstream
+// queue — only the genuinely last turn's Completed status may.
+var _ = Describe("StreamingExecutor — #1774 Completed-status gating during re-invocation (BR-SESS-013)", func() {
+	newReinvokingSession := func() *fakeSessionService {
+		textOnlyEvent := adksession.NewEvent("inv-1774")
+		textOnlyEvent.Author = "model"
+		textOnlyEvent.Content = genai.NewContentFromText("Still investigating.", genai.RoleModel)
+		textOnlyEvent.Timestamp = time.Now()
+		return &fakeSessionService{events: []*adksession.Event{textOnlyEvent}}
+	}
+
+	It("UT-AF-1774-001: only the final turn's Completed status reaches the downstream queue", func() {
+		inner := &reinvokeEventEmittingExecutor{}
+		executor := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, nil,
+			launcher.WithReinvocation(newReinvokingSession(), "test-app"),
+		)
+
+		queue := &fakeQueue{}
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-1774", ContextID: "sess-1"}
+		err := executor.Execute(context.Background(), reqCtx, queue)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(inner.callCount.Load()).To(BeNumerically(">", 1),
+			"sanity: an always text-only turn must trigger at least one re-invocation")
+
+		Expect(countStatus(queue.events, a2a.TaskStateCompleted)).To(Equal(1),
+			"#1774: every reinvoked turn's Completed status must be suppressed except the "+
+				"genuinely last one — otherwise a2a-go tears down the shared execution context "+
+				"out from under the still-running re-invocation, surfacing as \"context canceled\"")
+
+		Expect(queue.events).NotTo(BeEmpty())
+		lastEvt, ok := queue.events[len(queue.events)-1].(*a2a.TaskStatusUpdateEvent)
+		Expect(ok).To(BeTrue(), "the single surviving Completed event must be the LAST event written")
+		Expect(lastEvt.Status.State).To(Equal(a2a.TaskStateCompleted))
+	})
+
+	It("UT-AF-1774-002: Working status from every turn still reaches the queue live (no visibility regression)", func() {
+		inner := &reinvokeEventEmittingExecutor{}
+		executor := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, nil,
+			launcher.WithReinvocation(newReinvokingSession(), "test-app"),
+		)
+
+		queue := &fakeQueue{}
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-1774b", ContextID: "sess-1"}
+		err := executor.Execute(context.Background(), reqCtx, queue)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(countStatus(queue.events, a2a.TaskStateWorking)).To(Equal(int(inner.callCount.Load())),
+			"#1774: only the premature Completed signal is gated — every turn's non-terminal "+
+				"status/artifact events must still stream to the client in real time")
+	})
+
+	It("UT-AF-1774-003: single-turn completion (no re-invocation) still delivers exactly one Completed event", func() {
+		inner := &reinvokeEventEmittingExecutor{}
+
+		toolCallEvent := adksession.NewEvent("inv-1774c")
+		toolCallEvent.Author = "model"
+		toolCallEvent.Content = &genai.Content{
+			Role: "model",
+			Parts: []*genai.Part{
+				{FunctionCall: &genai.FunctionCall{Name: "kubernaut_investigate", Args: map[string]any{}}},
+			},
+		}
+		toolCallEvent.Timestamp = time.Now()
+		sessSvc := &fakeSessionService{events: []*adksession.Event{toolCallEvent}}
+
+		executor := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, nil,
+			launcher.WithReinvocation(sessSvc, "test-app"),
+		)
+
+		queue := &fakeQueue{}
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-1774c", ContextID: "sess-1"}
+		err := executor.Execute(context.Background(), reqCtx, queue)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(inner.callCount.Load()).To(Equal(int32(1)),
+			"sanity: a turn ending in a tool call must not be re-invoked")
+
+		Expect(countStatus(queue.events, a2a.TaskStateCompleted)).To(Equal(1),
+			"regression guard: normal single-turn completion must still deliver its Completed event")
+	})
+
+	It("UT-AF-1774-004: an error from a re-invoked turn is still returned, without a spurious Completed event", func() {
+		inner := &reinvokeThenFailExecutor{failOnCall: 2}
+		executor := launcher.NewStreamingExecutor(inner, logr.Discard(), nil, nil,
+			launcher.WithReinvocation(newReinvokingSession(), "test-app"),
+		)
+
+		queue := &fakeQueue{}
+		reqCtx := &a2asrv.RequestContext{TaskID: "task-1774d", ContextID: "sess-1"}
+		err := executor.Execute(context.Background(), reqCtx, queue)
+		Expect(err).To(HaveOccurred(), "the re-invoked turn's failure must propagate")
+		Expect(countStatus(queue.events, a2a.TaskStateCompleted)).To(Equal(0),
+			"a failed re-invoked turn must not leave a stale Completed event to be flushed")
+	})
+})
+
+// reinvokeThenFailExecutor emits a Working+Completed pair on every call up
+// to failOnCall, then fails without emitting anything further — simulating a
+// re-invoked turn that errors out before producing a new terminal status.
+type reinvokeThenFailExecutor struct {
+	callCount  atomic.Int32
+	failOnCall int32
+}
+
+func (e *reinvokeThenFailExecutor) Execute(ctx context.Context, reqCtx *a2asrv.RequestContext, queue eventqueue.Queue) error {
+	n := e.callCount.Add(1)
+	if n >= e.failOnCall {
+		return context.DeadlineExceeded
+	}
+	return writeWorkingThenCompleted(ctx, queue, reqCtx.TaskID)
+}
+
+func (e *reinvokeThenFailExecutor) Cancel(_ context.Context, _ *a2asrv.RequestContext, _ eventqueue.Queue) error {
+	return nil
+}
+
