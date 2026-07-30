@@ -79,13 +79,17 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 
 	log := cfg.logger().WithValues("component", "a2a-launcher")
 
+	runnerCfg := runner.Config{
+		AppName:           cfg.AppName,
+		Agent:             cfg.Agent,
+		SessionService:    cfg.SessionService,
+		AutoCreateSession: true,
+	}
 	execCfg := adka2a.ExecutorConfig{
-		RunnerConfig: runner.Config{
-			AppName:           cfg.AppName,
-			Agent:             cfg.Agent,
-			SessionService:    cfg.SessionService,
-			AutoCreateSession: true,
-		},
+		// RunnerProvider (not the plain RunnerConfig) wraps the real ADK
+		// runner in a reinvokingRunner, moving BR-SESS-013's reinvocation
+		// decision inside runner.Runner.Run's own iterator (issue #1776).
+		RunnerProvider:        newReinvokingRunnerProvider(runnerCfg, log),
 		BeforeExecuteCallback: buildBeforeExecuteCallback(cfg.BeforeExecute, cfg.Auditor),
 		AfterExecuteCallback:  buildAfterExecuteCallback(log, cfg.Auditor),
 		GenAIPartConverter:    buildStreamingPartConverter(),
@@ -97,7 +101,6 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 	if cfg.LLMSemaphore != nil {
 		seOpts = append(seOpts, WithLLMSemaphore(cfg.LLMSemaphore))
 	}
-	seOpts = append(seOpts, WithReinvocation(cfg.SessionService, cfg.AppName))
 	executor := NewStreamingExecutor(inner, log, cfg.BridgeMetrics, cfg.SessionPhaseUpdater, seOpts...)
 
 	var handlerOpts []a2asrv.RequestHandlerOption

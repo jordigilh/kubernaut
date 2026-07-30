@@ -189,7 +189,7 @@ func SetupWorkflowExecutionInfrastructureHybridWithCoverage(ctx context.Context,
 	// Create Kind cluster (Issue #1769: retry on transient runtime errors)
 	err = retryTransientKindRuntimeError(writer, func() (string, error) {
 		var captured strings.Builder
-		createCmd := exec.Command("kind", "create", "cluster",
+		createCmd := exec.CommandContext(ctx, "kind", "create", "cluster",
 			"--name", clusterName,
 			"--config", configPath,
 			"--kubeconfig", kubeconfigPath,
