@@ -63,6 +63,18 @@ jobs:
             exit 1
           fi
 
+      # DD-PLATFORM-006 Decision Area 14 (PR9): release-time backstop for a
+      # chart-v* tag ever cut from a commit that bypassed PR CI's own
+      # freshness check (ci-pipeline.yml's "Helm materialized defaults
+      # freshness check" step).
+      - name: Helm materialized defaults freshness check
+        run: |
+          make generate-helm-defaults
+          if ! git diff --exit-code -- charts/kubernaut/templates/_generated_defaults.tpl; then
+            echo "::error::charts/kubernaut/templates/_generated_defaults.tpl is stale for this release tag. Run 'make generate-helm-defaults' and commit the result before re-tagging."
+            exit 1
+          fi
+
       - name: Login to Quay.io OCI registry
         run: |
           echo "${{ secrets.QUAY_ROBOT_TOKEN }}" | helm registry login quay.io \

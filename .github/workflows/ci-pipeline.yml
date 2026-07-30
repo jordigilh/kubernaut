@@ -311,6 +311,27 @@ jobs:
             exit 1
           fi
 
+      # DD-PLATFORM-006 Decision Area 14 (PR9):
+      # charts/kubernaut/templates/_generated_defaults.tpl is generated from
+      # the same schema by hack/gen-helm-defaults. Same rationale as the
+      # freshness check above -- its own uncached, dedicated step.
+      - name: Helm materialized defaults freshness check
+        run: |
+          make generate-helm-defaults
+          if ! git diff --exit-code -- charts/kubernaut/templates/_generated_defaults.tpl; then
+            echo "::error::charts/kubernaut/templates/_generated_defaults.tpl is stale. Run 'make generate-helm-defaults' and commit the result."
+            exit 1
+          fi
+
+      # DD-PLATFORM-006 Decision Area 14 (PR9): proves omitting a
+      # schema-defaulted field from values.yaml is render-neutral -- catches
+      # a template reading .Values.<path> directly instead of through
+      # kubernaut.mergedValues (which would silently render empty/zero
+      # instead of the documented schema default once the field is
+      # trimmed from values.yaml).
+      - name: Helm values.yaml defaults parity check
+        run: make verify-helm-defaults-parity
+
   unit-tests:
     name: Unit Tests (${{ matrix.service }})
     needs: [detect-changes]
