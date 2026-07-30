@@ -1464,6 +1464,22 @@ jobs:
             --from-literal="valkey-secrets.yaml=password: gitops-smoke-pass"
           kubectl create secret generic kubernaut-llm-credentials -n "$GITOPS_NAMESPACE" \
             --from-literal=OPENAI_API_KEY=sk-gitops-smoke-placeholder # pre-commit:allow-sensitive
+          # DD-PLATFORM-006 DA6/DA7 (PR #1790 round-7 RCA): datastorage-audit-hmac-key
+          # is mandatory (AU-9) with no enabled gate, but secrets.yaml's fail() guard
+          # only skips validation when tls.mode=hook (that mode's tls-cert-job
+          # pre-install hook auto-generates it). cert-manager mode has no such hook,
+          # so it must be pre-created -- exactly like scripts/helm-smoke-test.sh's
+          # run_pre_005 already does for the plain `helm install` smoke test below,
+          # which this GitOps-via-ArgoCD leg has its own separate secret-provisioning
+          # step for and had never been updated to match. Without it, datastorage's
+          # non-optional /etc/datastorage/secrets volume mount fails
+          # (MountVolume.SetUp failed: secret "datastorage-audit-hmac-key" not
+          # found), so its pod never leaves Init:, blocking ArgoCD's sync-wave "-1"
+          # from ever completing -- which cascades into every sync-wave "0" resource
+          # (gateway, authwebhook-cert, etc.) never being applied within the sync
+          # timeout.
+          kubectl create secret generic datastorage-audit-hmac-key -n "$GITOPS_NAMESPACE" \
+            --from-literal="audit-hmac-key.yaml=$(printf 'hmacKey: %s' "$(openssl rand -base64 32)")"
 
       # targetRevision uses the same merge commit this job already checked
       # out and built images from (refs/pull/<n>/merge is maintained by
