@@ -4,7 +4,7 @@
 
 **Approved**: 2026-07-30
 **Confidence**: 95%
-**Milestone**: v1.5
+**Milestone**: v1.6
 **Related Issue**: #1761
 
 ## Context & Problem
@@ -140,7 +140,7 @@ not a simpler one.
 ## Decision
 
 **Neither remote-execution option is adopted.** The Ansible/AAP engine is **not
-supported** for fleet (`Spec.ClusterID != ""`) `WorkflowExecution` in v1.5.
+supported** for fleet (`Spec.ClusterID != ""`) `WorkflowExecution` in v1.6.
 `AnsibleExecutor.Create` fails closed with a clear, actionable error whenever
 `wfe.Spec.ClusterID != ""` — this is exactly the "safe minimum" fallback issue #1761
 itself proposed if a real remote path proved infeasible. Local/hub execution via
@@ -194,7 +194,7 @@ path.
   ongoing test/support burden for a fraction of full parity
 
 **Negative**:
-- Remote/fleet clusters cannot use the Ansible/AAP engine at all in v1.5 — workflows
+- Remote/fleet clusters cannot use the Ansible/AAP engine at all in v1.6 — workflows
   targeting a managed/remote cluster must use the Job or Tekton engine instead
 - If a genuine business need for fleet-Ansible remediation emerges, it is blocked on
   upstream fixes outside kubernaut's control (see Review & Evolution)
