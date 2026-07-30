@@ -879,8 +879,12 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 			tokens.Add(resp.Usage)
 		}
 
+		// #1771/#1634: field name must be "text" — this is what AF's
+		// FormatEventForUser (pkg/apifrontend/tools/ka_investigate_mcp.go)
+		// reads. A prior "content" key here meant AF silently dropped every
+		// one of these events (extractJSONField returned "").
 		emitToSink(ctx, session.EventTypeReasoningDelta, attempt+1, string(katypes.PhaseRCA), map[string]interface{}{
-			"content":       resp.Message.Content,
+			"text":          resp.Message.Content,
 			"retry_attempt": attempt + 1,
 		})
 
@@ -1199,8 +1203,10 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 			tokens.Add(resp.Usage)
 		}
 
+		// #1771/#1634: field name must be "text" (see attemptRCASubmitRetry's
+		// equivalent emitToSink call above for rationale).
 		emitToSink(ctx, session.EventTypeReasoningDelta, attempt+1, string(katypes.PhaseWorkflowDiscovery), map[string]interface{}{
-			"content":       resp.Message.Content,
+			"text":          resp.Message.Content,
 			"retry_attempt": attempt + 1,
 		})
 
@@ -1325,8 +1331,10 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		respEvent.Data["finish_reason"] = resp.FinishReason
 		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.auditLog())
 
+		// #1771/#1634: field name must be "text" (see attemptRCASubmitRetry's
+		// equivalent emitToSink call for rationale).
 		emitToSink(ctx, session.EventTypeReasoningDelta, turn, string(phase), map[string]interface{}{
-			"content_preview": truncatePreview(resp.Message.Content, 200),
+			"text":            truncatePreview(resp.Message.Content, 200),
 			"tool_call_count": len(resp.ToolCalls),
 		})
 

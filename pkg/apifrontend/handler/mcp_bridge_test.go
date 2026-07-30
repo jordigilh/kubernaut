@@ -726,7 +726,7 @@ var _ = Describe("MCP Bridge - Tier 1: Core Dispatch", Label("tier1", "bridge"),
 
 		It("UT-AF-B-012: kubernaut_get_remediation_history dispatches correctly", func() {
 			_, body := mcpCallTool(h, sessionID, "kubernaut_get_remediation_history",
-				map[string]any{}, testUser)
+				map[string]any{"kind": "Deployment", "name": "api", "spec_hash": "sha256:abc123"}, testUser)
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("remediations"))
 		})
