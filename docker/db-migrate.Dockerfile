@@ -20,12 +20,20 @@ FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi10/go-toolset:10.2 
 USER root
 ARG TARGETARCH
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH}
+# golang.org/x/text pin (#1763, CVE-2026-56852, norm.Iter infinite loop,
+# fixed in v0.39.0): this isolated `go mod init tmp` module doesn't see the
+# main project's go.mod, so its x/text bump doesn't reach goose's build.
+# `go mod graph` confirms x/text is pulled in transitively (via the grpc/
+# crypto/net pins below); pin explicitly to the same version already used
+# in the main project's go.mod, following the same precedent as the
+# x/crypto/x/net/grpc pins already in this file.
 RUN GOMODCACHE=$(mktemp -d) && \
     cd "$GOMODCACHE" && \
     go mod init tmp && \
     go get github.com/pressly/goose/v3/cmd/goose@v3.27.1 && \
     go get golang.org/x/crypto@v0.53.0 && \
     go get golang.org/x/net@v0.56.0 && \
+    go get golang.org/x/text@v0.40.0 && \
     go get google.golang.org/grpc@v1.82.1 && \
     go build -o /go/bin/goose github.com/pressly/goose/v3/cmd/goose
 
