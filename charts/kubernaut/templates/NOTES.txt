@@ -92,8 +92,11 @@ If deployed, configure AlertManager to send alerts to the Gateway:
 
 IMPORTANT -- monitoring.prometheus/alertManager integration is OFF by default
 (separate from the webhook wiring above, which only covers Kubernaut
-*receiving* alerts). The chart does not deploy or auto-discover
-Prometheus/AlertManager -- point it at your own. Without this:
+*receiving* alerts). This is a real cost to remediation quality, not just an
+optional integration -- KubernautAgent investigates with fewer live signals,
+and EffectivenessMonitor cannot fully confirm whether remediations worked.
+The chart does not deploy or auto-discover Prometheus/AlertManager -- point
+it at your own. Without this:
 {{- if not (include "kubernaut.monitoring.prometheus.enabled" .) }}
   - EffectivenessMonitor cannot score metric-based remediation effectiveness (BR-EM-002).
   - KubernautAgent's RCA loses its Prometheus MCP investigation tool.

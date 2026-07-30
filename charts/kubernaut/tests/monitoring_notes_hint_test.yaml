@@ -27,6 +27,8 @@ tests:
       - matchRegexRaw:
           pattern: "monitoring\\.prometheus/alertManager integration is OFF by default"
       - matchRegexRaw:
+          pattern: "real\\s+cost\\s+to\\s+remediation\\s+quality,\\s+not\\s+just\\s+an\\s+optional\\s+integration"
+      - matchRegexRaw:
           pattern: "EffectivenessMonitor cannot score metric-based remediation effectiveness"
       - matchRegexRaw:
           pattern: "KubernautAgent's RCA loses its Prometheus MCP investigation tool"

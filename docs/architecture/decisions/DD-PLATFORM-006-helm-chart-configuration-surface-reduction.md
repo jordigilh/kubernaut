@@ -2,12 +2,11 @@
 
 **Status**: 🟡 **PROPOSED** (pending user approval)
 **Decision Date**: TBD (on approval)
-**Version**: 5.9 (new Decision Area 15: `monitoring.*.enabled`'s default-off blast radius is larger
-than Decision Area 6 assumed — EffectivenessMonitor's alert-resolution scoring, KubernautAgent's
-Prometheus/AlertManager MCP tools, and APIFrontend's severity triage all silently degrade with zero
-onboarding visibility. Decision: keep opt-in (no safe universal default `url` exists), add a
-NOTES.txt hint naming the specific lost capabilities and the fix — Decision Area 6's toggle-mandate
-decision itself is unchanged)
+**Version**: 5.10 (Decision Area 15 refined: made explicit, per user review, that the NOTES.txt hint
+makes the monitoring-opt-in gap *visible* but does not *close* it — reduced KubernautAgent RCA
+signal and unconfirmed EffectivenessMonitor remediation outcomes are a genuine, accepted cost to
+remediation quality on a default install, now named as such in both the NOTES.txt hint text and a
+new Consequences > Negative/Accepted item, not just implied by a list of lost MCP tools)
 **Date**: 2026-07-29
 **Deciders**: Kubernaut Platform (chart maintainers)
 **Applies To**: `charts/kubernaut` (Helm chart) only — no Kubernaut Operator changes
@@ -754,6 +753,17 @@ section, firing independently per sub-toggle (`monitoring.prometheus.enabled=fal
 `monitoring.*.enabled` stands as correct on its narrow "not a security control" ground — this only
 closes the separate visibility gap.
 
+**Accepted residual cost (explicitly not eliminated by this decision)**: the NOTES.txt hint makes
+the gap *visible*, it does not close it. On the default install, KubernautAgent's RCA runs with
+fewer live signals (no Prometheus/AlertManager query access) and EffectivenessMonitor cannot fully
+confirm whether a remediation actually worked (BR-EM-002's alert-resolution and metric-based
+scoring both return unavailable). This is a genuine cost to remediation quality/confidence, not
+merely an optional integration — accepted here in exchange for keeping the chart installable
+without a pre-existing Prometheus/AlertManager stack (see the rejected mandatory-field alternative
+above). The hint text says so explicitly (`NOTES.txt`: "This is a real cost to remediation
+quality, not just an optional integration") so this trade-off is visible per-install, not just in
+this design record.
+
 **Confidence**: 97% — pure documentation/template-string change, no behavioral or default-value
 change, tested via `helm-unittest` `matchRegexRaw`/`notMatchRegexRaw` assertions against
 `NOTES.txt`'s rendered output for the three states (both off, one off, both on).
@@ -809,6 +819,14 @@ needed; this is closed, not deferred.
    reason loses that self-service escape hatch — mitigated by `kubectl delete
    networkpolicy/<name>` remaining available, and by each removed toggle's sibling tuning fields
    staying adjustable.
+3. **Default-install remediation quality is lower than it could be** (Decision Area 15): with
+   `monitoring.prometheus/alertManager.enabled` staying opt-in, KubernautAgent's RCA loses live
+   Prometheus/AlertManager query access and EffectivenessMonitor cannot fully confirm remediation
+   outcomes on a fresh install. Explicitly accepted, not overlooked — the alternative (mandatory
+   monitoring wiring) was evaluated and rejected because it hard-blocks any install without a
+   pre-existing metrics stack and reverses this DD's own mandatory-field-count reduction (see
+   Decision Area 15's "Options considered" #3). Mitigated by making the cost visible per-install
+   via a `NOTES.txt` hint rather than leaving it silent.
 
 ---
 
@@ -864,14 +882,19 @@ needed; this is closed, not deferred.
 
 ---
 
-**Document Version**: 5.9 (new Decision Area 15: on user review of Decision Area 6's exclusion list,
+**Document Version**: 5.10 (Decision Area 15: on user review of Decision Area 6's exclusion list,
 found `monitoring.*.enabled`'s default-off state silently degrades EffectivenessMonitor's
 alert-resolution scoring (BR-EM-002), KubernautAgent's RCA tool access (Prometheus/AlertManager MCP
 tools), and APIFrontend's severity triage — with no NOTES.txt visibility, unlike the
 `console.ingress.enabled=false` hint added in Decision Area 9. No safe universal default `url`
 exists for either dependency (unlike `postgresql`/`valkey`, in-chart with a deterministic address,
-or `apiServerCIDR`, `lookup`-discoverable), so `monitoring.*.enabled` stays opt-in; closed the
-visibility gap with a NOTES.txt hint instead, implemented and tested)
+or `apiServerCIDR`, `lookup`-discoverable), so `monitoring.*.enabled` stays opt-in. A follow-up
+review confirmed making it mandatory was rejected on evidence, not just principle: it would hard-
+block any install without a pre-existing Prometheus/AlertManager stack and reverse the mandatory
+field count from 7 back to 9, while costing nothing on the E2E side (already wired unconditionally
+there). Closed the visibility gap with a NOTES.txt hint instead, and — per further user review —
+made explicit, in both the hint text and a new Consequences item, that this is a genuine accepted
+cost to remediation quality/confidence, not merely an invisible nice-to-have)
 **Last Updated**: 2026-07-29
 **Status**: 🟡 Proposed — awaiting user approval. Field-census recount and file/line-reference
 verification against `main` post-PR #1755 completed (Decision Area 12) — no Decision Area's
@@ -889,4 +912,8 @@ modeled on is actually unenforced anywhere in CI today, and that the existing Go
 path excludes `values.schema.json` from its cache key — neither could be relied on as-is). No
 local git hook — CI enforcement is sufficient, hooks are bypassable. Decision Area 15 (monitoring
 opt-in visibility) implemented as a NOTES.txt hint — no default-value change, Decision Area 6's
-exclusion of `monitoring.*.enabled` stands.
+exclusion of `monitoring.*.enabled` stands. The mandatory-monitoring alternative's blast radius was
+quantified on request (schema/template changes are cheap, ~29 of 33 helm-unittest suites would need
+new required fields, E2E needs zero changes since it already wires monitoring unconditionally, but
+it hard-blocks metrics-less installs and reverses the 7-field count) and rejected on that evidence;
+the residual remediation-quality cost of staying opt-in is now explicitly named, not just implied.
