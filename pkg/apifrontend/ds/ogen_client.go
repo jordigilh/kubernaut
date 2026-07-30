@@ -91,6 +91,7 @@ func (c *OgenClient) GetRemediationHistory(ctx context.Context, opts HistoryOpts
 		TargetKind:      opts.Kind,
 		TargetName:      opts.Name,
 		TargetNamespace: opts.Namespace,
+		CurrentSpecHash: opts.SpecHash,
 	}
 	if opts.Since != "" {
 		params.Tier1Window = ogenclient.NewOptString(opts.Since)

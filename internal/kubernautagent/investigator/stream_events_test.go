@@ -177,7 +177,9 @@ var _ = Describe("Kubernaut Agent Investigator Stream Events — #823 PR4", func
 
 			var data map[string]interface{}
 			Expect(json.Unmarshal(responseEvent.Data, &data)).To(Succeed())
-			Expect(data).To(HaveKey("content_preview"))
+			// #1771/#1634: renamed from "content_preview" to "text" to match what
+			// AF's FormatEventForUser (pkg/apifrontend/tools) actually reads.
+			Expect(data).To(HaveKey("text"))
 		})
 	})
 

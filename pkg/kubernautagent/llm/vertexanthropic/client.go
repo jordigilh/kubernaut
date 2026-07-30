@@ -392,14 +392,24 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 	return c.mapResponse(&acc), nil
 }
 
-// extractTextDelta extracts the text delta from a content_block_delta event.
-// Returns ("", false) for non-delta events or non-text deltas (e.g., tool input).
+// extractTextDelta extracts the visible-text delta from a content_block_delta
+// event. Returns ("", false) for non-delta events or deltas with no visible
+// content (e.g., tool input_json_delta, citations, signature).
+//
+// #1775: extended/interleaved thinking (Claude's thinking: {type: "enabled"}
+// param) streams its content as thinking_delta events, populating
+// event.Delta.Thinking rather than event.Delta.Text. Without this branch,
+// that content is silently dropped from the token_delta sink the moment
+// extended thinking is enabled on a request.
 func extractTextDelta(event anthropic.MessageStreamEventUnion) (string, bool) {
 	if event.Type != "content_block_delta" {
 		return "", false
 	}
 	if event.Delta.Text != "" {
 		return event.Delta.Text, true
+	}
+	if event.Delta.Thinking != "" {
+		return event.Delta.Thinking, true
 	}
 	return "", false
 }
