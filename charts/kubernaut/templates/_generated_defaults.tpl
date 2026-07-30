@@ -264,8 +264,8 @@ kubernautAgent:
         enabled: false
         inactivityTimeout: 10m
         maxAnalyzingTimeout: 45m
-        maxConcurrentSessions: 5
-        rateLimitPerUser: 10
+        maxConcurrentSessions: 50
+        rateLimitPerUser: 20
         sessionTTL: 30m
     llmProfileRef: primary
     logging:

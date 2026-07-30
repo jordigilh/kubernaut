@@ -341,8 +341,8 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `interactive.inactivityTimeout` | string | Session timeout after last activity. | `"10m"` | No |
 | `interactive.jwtProviders` | array of object | JWT providers for Pattern B authentication (DD-AUTH-MCP-001 v2.0). | `` | No |
 | `interactive.maxAnalyzingTimeout` | string | Extended analyzing timeout for RO when an interactive session is active. Prevents RO from timing out a RemediationRequest while an operator is investigating. | `"45m"` | No |
-| `interactive.maxConcurrentSessions` | integer | Maximum concurrent interactive sessions per instance. | `5` | No |
-| `interactive.rateLimitPerUser` | integer | Maximum requests per second per authenticated user. | `10` | No |
+| `interactive.maxConcurrentSessions` | integer | Maximum concurrent interactive sessions per instance. Issue #1737: raised from 5 to 50 -- the old default was too low even for realistic production use and caused full-suite E2E failures purely from Ginkgo's own test parallelism. | `50` | No |
+| `interactive.rateLimitPerUser` | integer | Maximum requests per second per authenticated user. Issue #1737: raised from 10 to 20, alongside maxConcurrentSessions. | `20` | No |
 | `interactive.sessionTTL` | string | Maximum duration for an interactive session before auto-release. | `"30m"` | No |
 | `llmProfileRef` | string | Name of an entry in global.llmProfiles used for KA's investigator LLM calls (DD-PLATFORM-007). Defaults to "primary" (DD-PLATFORM-006 DA4); an undefined profile still fails the render. Replaces the old kubernautAgent.llm.* literal block. | `"primary"` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
