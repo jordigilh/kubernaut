@@ -1234,7 +1234,16 @@ jobs:
     # cert-manager leg additionally runs the ArgoCD GitOps validation (see
     # "Install ArgoCD" onward below) on top of the plain helm-install smoke
     # test, so it needs materially more headroom than the hook leg.
-    timeout-minutes: ${{ matrix.tls_mode == 'cert-manager' && 45 || 30 }}
+    #
+    # hook leg 30->35 (PR #1790 round-8 RCA): two consecutive runs hit this
+    # exact 30min ceiling with the *entire* 120-test TAP suite passing
+    # (0 failures) -- scripts/helm-smoke-test.sh itself took ~26min end to
+    # end (21:44:52->22:10:51), leaving under 2min of the 30min budget for
+    # cleanup, which the job then got `cancelled` mid-teardown for. Not a
+    # test regression, just a suite that has grown past its original budget;
+    # +5min gives comparable proportional headroom to cert-manager's 45min
+    # for its own (bigger) ArgoCD-inclusive suite.
+    timeout-minutes: ${{ matrix.tls_mode == 'cert-manager' && 45 || 35 }}
     strategy:
       fail-fast: false
       matrix:
