@@ -32,6 +32,7 @@ import (
 	internaltransport "github.com/jordigilh/kubernaut/internal/kubernautagent/llm/transport"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/anthropicfamily"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/geminifamily"
 	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
 	llmtransport "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/transport"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -46,33 +47,122 @@ import (
 func buildLLMClientFromConfig(ctx context.Context, cfg types.LLMConfig) (llm.Client, error) {
 	switch cfg.Provider {
 	case types.LLMProviderVertexAI:
-		var vertexOpts []anthropicfamily.Option
-		timeout := 120 * time.Second
-		if cfg.TimeoutSeconds > 0 {
-			timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+		// provider: vertex_ai can host either Claude or Gemini models
+		// (#1778, #1792) — disambiguate on the model name using the
+		// shared detectors rather than assuming Anthropic unconditionally,
+		// and fail fast on a model that matches neither family instead of
+		// silently defaulting to Gemini and failing later with a
+		// confusing SDK-level error (found in the #1778 GA readiness
+		// audit).
+		if types.IsAnthropicModel(cfg.Model) {
+			return buildAnthropicVertexClient(ctx, cfg)
 		}
-		vertexOpts = append(vertexOpts, anthropicfamily.WithHTTPTimeout(timeout))
-		vertexOpts = append(vertexOpts, anthropicReasoningOptions(cfg)...)
-
-		chain, err := buildTransportChain(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
-		if err != nil {
-			return nil, fmt.Errorf("vertex_ai transport chain: %w", err)
+		if types.IsGeminiModel(cfg.Model) {
+			return buildGeminiVertexClient(ctx, cfg)
 		}
-		if chain != nil {
-			vertexOpts = append(vertexOpts, anthropicfamily.WithBaseTransport(chain))
-		}
-
-		return anthropicfamily.New(ctx,
-			cfg.Model, []byte(cfg.APIKey),
-			cfg.VertexProject, cfg.VertexLocation,
-			vertexOpts...)
+		return nil, fmt.Errorf("vertex_ai: unrecognized model family for model %q (expected a claude-* or gemini-* model)", cfg.Model)
 	case types.LLMProviderAnthropic:
 		return buildAnthropicNativeClient(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
+	case types.LLMProviderGemini:
+		return buildGeminiNativeClient(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
 	case types.LLMProviderOpenAI, types.LLMProviderOpenAICompatible:
 		return buildOpenAICompatClient(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
 	default:
 		return nil, fmt.Errorf("unsupported LLM provider: %q", cfg.Provider)
 	}
+}
+
+// buildAnthropicVertexClient constructs an anthropicfamily.Client for a
+// Claude model hosted on Vertex AI. Extracted from buildLLMClientFromConfig
+// so the vertex_ai case can branch to either this or
+// buildGeminiVertexClient based on the configured model (#1778, #1792).
+func buildAnthropicVertexClient(ctx context.Context, cfg types.LLMConfig) (llm.Client, error) {
+	var vertexOpts []anthropicfamily.Option
+	timeout := 120 * time.Second
+	if cfg.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+	}
+	vertexOpts = append(vertexOpts, anthropicfamily.WithHTTPTimeout(timeout))
+	vertexOpts = append(vertexOpts, anthropicReasoningOptions(cfg)...)
+
+	chain, err := buildTransportChain(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
+	if err != nil {
+		return nil, fmt.Errorf("vertex_ai transport chain: %w", err)
+	}
+	if chain != nil {
+		vertexOpts = append(vertexOpts, anthropicfamily.WithBaseTransport(chain))
+	}
+
+	return anthropicfamily.New(ctx,
+		cfg.Model, []byte(cfg.APIKey),
+		cfg.VertexProject, cfg.VertexLocation,
+		vertexOpts...)
+}
+
+// buildGeminiVertexClient constructs a geminifamily.Client for a Gemini
+// model hosted on Vertex AI (BR-AI-087, #1778, #1792), mirroring
+// buildAnthropicVertexClient's transport/timeout/reasoning wiring.
+func buildGeminiVertexClient(ctx context.Context, cfg types.LLMConfig) (llm.Client, error) {
+	var vertexOpts []geminifamily.Option
+	timeout := 120 * time.Second
+	if cfg.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+	}
+	vertexOpts = append(vertexOpts, geminifamily.WithHTTPTimeout(timeout))
+	vertexOpts = append(vertexOpts, geminiReasoningOptions(cfg)...)
+
+	chain, err := buildTransportChain(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
+	if err != nil {
+		return nil, fmt.Errorf("vertex_ai (gemini) transport chain: %w", err)
+	}
+	if chain != nil {
+		vertexOpts = append(vertexOpts, geminifamily.WithBaseTransport(chain))
+	}
+
+	return geminifamily.New(ctx,
+		cfg.Model, []byte(cfg.APIKey),
+		cfg.VertexProject, cfg.VertexLocation,
+		vertexOpts...)
+}
+
+// buildGeminiNativeClient constructs a geminifamily.Client for the native
+// Gemini API (generativelanguage.googleapis.com), issue #1778, BR-AI-087.
+// Distinct from buildGeminiVertexClient: no GCP project/location is
+// required or consulted, mirroring buildAnthropicNativeClient's split from
+// buildAnthropicVertexClient.
+func buildGeminiNativeClient(cfg types.LLMConfig) (llm.Client, error) {
+	var opts []geminifamily.Option
+	timeout := 120 * time.Second
+	if cfg.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+	}
+	opts = append(opts, geminifamily.WithHTTPTimeout(timeout))
+	opts = append(opts, geminiReasoningOptions(cfg)...)
+
+	chain, err := buildTransportChain(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("gemini transport chain: %w", err)
+	}
+	if chain != nil {
+		opts = append(opts, geminifamily.WithBaseTransport(chain))
+	}
+
+	return geminifamily.NewWithAPIKey(cfg.APIKey, cfg.Model, opts...)
+}
+
+// geminiReasoningOptions maps the operator's ai.llm.reasoning config into a
+// geminifamily.WithReasoning construction option, mirroring
+// anthropicReasoningOptions (DD-HAPI-019, llm.ReasoningRequest doc
+// contract).
+func geminiReasoningOptions(cfg types.LLMConfig) []geminifamily.Option {
+	if cfg.Reasoning == nil || !cfg.Reasoning.Enabled {
+		return nil
+	}
+	return []geminifamily.Option{geminifamily.WithReasoning(llm.ReasoningRequest{
+		Enabled:      true,
+		BudgetTokens: cfg.Reasoning.BudgetTokens,
+		Effort:       cfg.Reasoning.Effort,
+	})}
 }
 
 // buildAnthropicNativeClient constructs an anthropicfamily.Client for the

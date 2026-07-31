@@ -1369,13 +1369,19 @@ apiKeyFile: {{ .apiKeyFile | quote }}
 {{/*
 Render an agent.llm / severityTriage.llm block from a resolved LLM profile
 (DD-PLATFORM-007), field-for-field against pkg/apifrontend/config's
-types.LLMConfig. apiKeyFile is rendered only for non-vertex_ai providers --
-vertex_ai authenticates via the ambient GOOGLE_APPLICATION_CREDENTIALS env
-var set on the Deployment instead (mirrors the Kubernaut Operator's
-afAgentLLMConfig: "vertex_ai itself never gets an apiKeyFile"). The caller
-computes apiKeyFile's mount path (AF's own "llm-credentials" mount, or a
-dedicated "severity-triage-credentials" mount when severityTriage resolves
-a distinct credentialsSecretName from AF's own).
+types.LLMConfig. apiKeyFile is always rendered when a mount path is
+supplied, including for vertex_ai (kubernaut#1801) -- cmd/apifrontend reads
+it two ways depending on the resolved model family: Gemini-on-Vertex passes
+its content as explicit credential bytes (zero env var touched, matching
+Kubernaut Agent), while Claude-on-Vertex's SDK (adk-anthropic-go) has no
+explicit-bytes option and can only discover credentials via ambient ADC, so
+cmd/apifrontend injects GOOGLE_APPLICATION_CREDENTIALS=apiKeyFile
+in-process at construction time instead (pkg/apifrontend/launcher.
+InjectAmbientGoogleCredentials) rather than declaring it statically here in
+the Deployment manifest. The caller computes apiKeyFile's mount path (AF's
+own "llm-credentials" mount, or a dedicated "severity-triage-credentials"
+mount when severityTriage resolves a distinct credentialsSecretName from
+AF's own).
 Usage:
   {{ include "kubernaut.llm.afBlock" (dict "profile" $afProfile "apiKeyFile" "/etc/apifrontend/llm-credentials/api_key") | nindent 8 }}
 */}}
@@ -1386,7 +1392,7 @@ model: {{ $p.model | quote }}
 {{- if $p.endpoint }}
 endpoint: {{ $p.endpoint | quote }}
 {{- end }}
-{{- if and .apiKeyFile (ne $p.provider "vertex_ai") }}
+{{- if .apiKeyFile }}
 apiKeyFile: {{ .apiKeyFile | quote }}
 {{- end }}
 {{- if $p.vertexProject }}

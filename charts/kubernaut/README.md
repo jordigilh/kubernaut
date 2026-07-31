@@ -470,6 +470,13 @@ fast at render time if the referenced profile (whatever its name) is undefined. 
 `docs/generated/helm-values-reference.md#global` for the full `llmProfiles.<name>.*` field
 list (provider, model, credentials, reasoning knobs, etc.).
 
+`global.llmProfiles.<name>.provider` accepts `openai`, `anthropic`, `gemini`, `vertex_ai`, or
+`openai_compatible`. `vertex_ai` hosts either Claude or Gemini models depending on `model` —
+both KA and AF auto-detect which client to construct from the model name prefix (`claude-*`
+vs `gemini-*`, #1778, #1792). Both Anthropic and Kubernaut Agent's Gemini-family client
+(BR-AI-087) have no `reasoning.effort` tier above `high`, so `xhigh` is accepted but clamped
+down to `high` on those two providers (not an error).
+
 ### Kubernaut Agent (LLM)
 
 All LLM configuration is part of the main `kubernaut-agent-config`/`kubernaut-agent-llm-runtime`
@@ -490,12 +497,18 @@ unreachable via Helm despite being fully implemented in Go — both are now wire
 (`llmProfileRef`, `config.severityTriage.*`, `config.mcp.*`, `config.interactive.*`,
 `config.rateLimit.*`, service/ingress settings).
 
-`vertex_ai` authenticates via ambient `GOOGLE_APPLICATION_CREDENTIALS` (set automatically on the
-Deployment when a resolved profile is `vertex_ai`), so AF's own connection and severity-triage's
-cannot both be `vertex_ai` while pointing at *different* Secrets — there's no way to make two
-different credential files visible to the SDK's ADC lookup at the same time. The chart fails fast
-at render time (`kubernaut#1731`) if this combination is configured; use the same
-`credentialsSecretName` for both, or a non-`vertex_ai` provider for one of them.
+`vertex_ai` for Claude models (and AF's severity-triage Gemini-on-Vertex path) authenticates via
+ambient `GOOGLE_APPLICATION_CREDENTIALS` — as of `kubernaut#1801`, `cmd/apifrontend` injects this
+env var in-process at startup (`pkg/apifrontend/launcher.InjectAmbientGoogleCredentials`), reading
+the same mounted `apiKeyFile` path used by every other provider, rather than declaring it
+statically on the Deployment. It remains a single process-wide variable either way, so AF's own
+connection and severity-triage's still cannot both be `vertex_ai` while pointing at *different*
+Secrets — there's no way to make two different credential files visible to the SDK's ADC lookup at
+the same time. The chart fails fast at render time (`kubernaut#1731`) if this combination is
+configured; use the same `credentialsSecretName` for both, or a non-`vertex_ai` provider for one of
+them. AF's main-agent Gemini-on-Vertex path is unaffected by this constraint — it authenticates
+with the `apiKeyFile`'s content passed as explicit credential bytes, never touching the ambient env
+var at all (matching Kubernaut Agent's Gemini client).
 
 ### SignalProcessing / AIAnalysis / Notification
 

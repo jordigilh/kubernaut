@@ -17,6 +17,7 @@ limitations under the License.
 package launcher
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -25,6 +26,8 @@ import (
 	"time"
 
 	adkanthropic "github.com/Alcova-AI/adk-anthropic-go"
+	"cloud.google.com/go/auth/credentials"
+	"cloud.google.com/go/auth/httptransport"
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/genai"
@@ -36,6 +39,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
+
+// gcpAuthScope is the OAuth2 scope requested for Vertex AI credentials,
+// matching kubernautagent/llm/geminifamily and anthropicfamily's own Vertex
+// auth resolution (DD-LLM-010).
+const gcpAuthScope = "https://www.googleapis.com/auth/cloud-platform"
 
 // NewModelFromConfig constructs an ADK model.LLM from the AF LLM configuration.
 // It builds the appropriate transport chain (TLS CA, OAuth2, custom headers,
@@ -69,12 +77,39 @@ func NewModelFromConfig(ctx context.Context, cfg types.LLMConfig) (model.LLM, er
 	}
 }
 
-func newVertexAIModel(ctx context.Context, cfg types.LLMConfig) (m model.LLM, err error) {
+// newVertexAIModel dispatches provider: vertex_ai to the correct
+// model.LLM implementation for the configured model family. vertex_ai can
+// host either Claude or Gemini models (#1778, #1792) — previously this
+// unconditionally assumed Claude, silently mis-constructing an
+// adk-anthropic-go model for a gemini-* model. Disambiguated here using
+// the shared types.IsAnthropicModel/IsGeminiModel detectors, the same
+// ones KA's llm_builder.go uses for the identical ambiguity. A model
+// matching neither family fails fast here instead of silently falling
+// through to Gemini and failing later with a confusing SDK-level error
+// (found in the #1778/#1792 GA readiness audit).
+func newVertexAIModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {
+	if types.IsAnthropicModel(cfg.Model) {
+		return newVertexAnthropicModel(ctx, cfg)
+	}
+	if types.IsGeminiModel(cfg.Model) {
+		return newVertexGeminiModel(ctx, cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
+	}
+	return nil, fmt.Errorf("vertex_ai: unrecognized model family for model %q (expected a claude-* or gemini-* model)", cfg.Model)
+}
+
+// newVertexAnthropicModel constructs the adk-anthropic-go Vertex AI model
+// for a Claude-family model. Extracted, unchanged in behavior, from the
+// original newVertexAIModel so that function could become the vertex_ai
+// dispatch point above (#1778, #1792).
+func newVertexAnthropicModel(ctx context.Context, cfg types.LLMConfig) (m model.LLM, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("vertex_ai: GCP ADC unavailable — set GOOGLE_APPLICATION_CREDENTIALS or provide credentials: %v", r)
 		}
 	}()
+	if err := InjectAmbientGoogleCredentials(cfg); err != nil {
+		return nil, fmt.Errorf("vertex_ai: %w", err)
+	}
 	adkCfg := &adkanthropic.Config{
 		Variant:         adkanthropic.VariantVertexAI,
 		VertexProjectID: cfg.VertexProject,
@@ -84,6 +119,111 @@ func newVertexAIModel(ctx context.Context, cfg types.LLMConfig) (m model.LLM, er
 		adkCfg.BaseURL = cfg.Endpoint
 	}
 	return adkanthropic.NewModel(ctx, cfg.Model, adkCfg)
+}
+
+// newVertexGeminiModel constructs an ADK model.LLM for a Gemini model
+// hosted on Vertex AI (BR-AI-087, #1778, #1792).
+//
+// Deliberately distinct from newGeminiModel (native Gemini API, apiKey
+// auth against generativelanguage.googleapis.com): Vertex AI authenticates
+// with GCP credentials against a project/location-scoped
+// aiplatform.googleapis.com endpoint. genai.ClientConfig has no
+// "credentials JSON bytes" field — only a resolved *auth.Credentials or an
+// already-authenticated *http.Client — so credentials must be resolved
+// explicitly here (credentials.DetectDefault, mirroring
+// kubernautagent/llm/geminifamily.New, DD-LLM-010) rather than left to
+// genai's own Vertex auto-ADC fallback, which only activates when no
+// HTTPClient is set at all and would otherwise bypass AF's transport chain
+// (TLS CA, custom headers, circuit breaker) entirely.
+//
+// cfg.APIKey carries the mounted credentials.json's content here (resolved
+// generically by pkg/apifrontend/config's resolveLLMKey from
+// cfg.APIKeyFile) — as of kubernaut#1801, this is real service-account
+// bytes rather than always-empty, since the Helm chart now renders
+// apiKeyFile for vertex_ai too. No env var is touched on this path, ever,
+// matching Kubernaut Agent's geminifamily.New.
+func newVertexGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {
+	cred, err := credentials.DetectDefault(&credentials.DetectOptions{
+		CredentialsJSON: bytes.TrimSpace([]byte(cfg.APIKey)),
+		Scopes:          []string{gcpAuthScope},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vertex_ai (gemini): resolving credentials: %w", err)
+	}
+
+	base, err := buildTransportChain(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
+	if err != nil {
+		return nil, fmt.Errorf("vertex_ai (gemini) transport chain: %w", err)
+	}
+
+	httpClient, err := httptransport.NewClient(&httptransport.Options{
+		Credentials:      cred,
+		BaseRoundTripper: base,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vertex_ai (gemini): building HTTP client: %w", err)
+	}
+	httpClient.Timeout = time.Duration(types.DefaultLLMTimeoutSeconds) * time.Second
+	if cfg.TimeoutSeconds > 0 {
+		httpClient.Timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+	}
+
+	clientCfg := &genai.ClientConfig{
+		Backend:    genai.BackendVertexAI,
+		Project:    cfg.VertexProject,
+		Location:   cfg.VertexLocation,
+		HTTPClient: httpClient,
+	}
+	if cfg.Endpoint != "" {
+		clientCfg.HTTPOptions = genai.HTTPOptions{BaseURL: cfg.Endpoint}
+	}
+
+	return gemini.NewModel(ctx, cfg.Model, clientCfg)
+}
+
+// InjectAmbientGoogleCredentials sets GOOGLE_APPLICATION_CREDENTIALS
+// in-process to cfg.APIKeyFile, for the provider: vertex_ai model families
+// whose upstream SDK has no explicit-credentials-bytes option and can only
+// discover credentials via ambient ADC (ADC = Google's Application Default
+// Credentials lookup chain, which checks this env var first): Claude-on-
+// Vertex via adk-anthropic-go/anthropic-sdk-go's vertex.WithGoogleAuth, and
+// AF's severityTriage Gemini-on-Vertex path, which today constructs its
+// genai.Client without an explicit HTTPClient (cmd/apifrontend's
+// newGenAITriagerForVertex).
+//
+// This performs the env var assignment here, in Go, immediately before
+// each such construction call, rather than declaring it statically in the
+// Helm Deployment manifest (kubernaut#1801) -- mirroring the same
+// runtime-injection pattern already used elsewhere in Kubernaut (Kubernaut
+// Agent never touches this env var at all, passing credential bytes
+// explicitly instead; the HolmesGPT API predecessor used an analogous
+// _inject_runtime_env() at startup) to avoid exposing credential-adjacent
+// config statically in the pod spec, where it's visible via `kubectl get
+// pod -o yaml` to anyone with pod-read RBAC.
+//
+// Safe to call repeatedly with different cfg values across sequential,
+// single-threaded startup construction calls (AF's main agent LLM and
+// severityTriage LLM are both built once at process startup, never
+// concurrently and never per-request, per buildA2AHandler/
+// buildSeverityTriageDeps) -- the underlying oauth2/google credential
+// resolution captures the parsed credential material at construction time,
+// not lazily on each token refresh, so changing the env var afterward
+// doesn't affect an already-constructed client. The pre-existing #1731
+// Helm-render guard independently prevents the one scenario where this
+// would matter (AF's main and severityTriage profiles both resolving to
+// vertex_ai with two different credentialsSecretName values).
+//
+// No-ops when cfg.APIKeyFile is empty (non-vertex_ai providers, or a
+// vertex_ai profile that -- unexpectedly -- has no resolved credentials
+// file), leaving any pre-existing ambient ADC state untouched.
+func InjectAmbientGoogleCredentials(cfg types.LLMConfig) error {
+	if cfg.APIKeyFile == "" {
+		return nil
+	}
+	if err := os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", cfg.APIKeyFile); err != nil {
+		return fmt.Errorf("set GOOGLE_APPLICATION_CREDENTIALS: %w", err)
+	}
+	return nil
 }
 
 func newGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {

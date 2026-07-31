@@ -528,10 +528,11 @@
                 "enum": [
                   "openai",
                   "anthropic",
+                  "gemini",
                   "vertex_ai",
                   "openai_compatible"
                 ],
-                "description": "LLM provider name. NOT currently supported: bedrock (tracked in #1582). For Mistral/Ollama/HuggingFace TGI/self-hosted vLLM or LlamaStack, use 'openai_compatible' with `endpoint` set. For Azure OpenAI, use 'openai' or 'openai_compatible' with `azureApiVersion` set (#1600) -- there is no dedicated 'azure' provider value."
+                "description": "LLM provider name. NOT currently supported: bedrock (tracked in #1582). For Mistral/Ollama/HuggingFace TGI/self-hosted vLLM or LlamaStack, use 'openai_compatible' with `endpoint` set. For Azure OpenAI, use 'openai' or 'openai_compatible' with `azureApiVersion` set (#1600) -- there is no dedicated 'azure' provider value. 'vertex_ai' hosts either Claude or Gemini models depending on `model` (#1778, #1792) -- both KA and AF auto-detect which client to construct from the model name prefix (`claude-*` vs `gemini-*`)."
               },
               "model": {
                 "type": "string",
@@ -625,7 +626,7 @@
                     "type": "integer",
                     "default": 0,
                     "minimum": 0,
-                    "description": "Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). 0 lets the provider/client choose a default."
+                    "description": "Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget; also used as Gemini's thinkingBudget on Kubernaut Agent's Gemini-family client, BR-AI-087). 0 lets the provider/client choose a default."
                   },
                   "effort": {
                     "type": "string",
@@ -639,7 +640,7 @@
                       "xhigh"
                     ],
                     "default": "",
-                    "description": "Unified, provider-agnostic reasoning-depth knob (#1604): empty lets the vendor/provider choose its own default."
+                    "description": "Unified, provider-agnostic reasoning-depth knob (#1604): empty lets the vendor/provider choose its own default. Anthropic and Gemini have no tier above \"high\", so \"xhigh\" is accepted but clamped down to \"high\" on those two providers (not an error)."
                   },
                   "capabilityOverride": {
                     "type": "string",
