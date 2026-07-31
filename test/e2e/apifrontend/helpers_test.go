@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 )
 
 // persona holds credentials for a DEX E2E user with a specific RBAC role.
@@ -370,6 +371,20 @@ func extractMCPResultText(root map[string]interface{}) string {
 	return t
 }
 
+// dexTokenRetryBackoff bounds the retry delay for transient network errors
+// (e.g. "connection reset by peer") observed when many Ginkgo-parallel
+// processes fetch fresh Dex tokens concurrently through the single Kind
+// hostPort -> Dex NodePort path (issue #1807). Short base period: these are
+// sub-second network hiccups, not slow-server backoff.
+var dexTokenRetryBackoff = backoff.Config{
+	BasePeriod:    200 * time.Millisecond,
+	MaxPeriod:     2 * time.Second,
+	Multiplier:    2.0,
+	JitterPercent: 10,
+}
+
+const dexTokenMaxAttempts = 4
+
 func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (string, error) {
 	tokenURL := dexURL + "/token"
 	data := url.Values{
@@ -387,30 +402,52 @@ func fetchDEXToken(dexURL, clientID, clientSecret, username, password string) (s
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // G402: E2E self-signed certs
 		},
 	}
+
+	var lastErr error
+	for attempt := int32(1); attempt <= dexTokenMaxAttempts; attempt++ {
+		token, retriable, err := postDEXTokenRequest(tlsClient, tokenURL, data)
+		if err == nil {
+			return token, nil
+		}
+		lastErr = err
+		if !retriable || attempt == dexTokenMaxAttempts {
+			break
+		}
+		time.Sleep(dexTokenRetryBackoff.Calculate(attempt))
+	}
+	return "", lastErr
+}
+
+// postDEXTokenRequest performs a single Dex token request attempt.
+// retriable reports whether err is a transient network-level failure (no
+// HTTP response received) worth retrying, as opposed to a deterministic
+// auth/protocol failure (bad credentials, malformed response) that would
+// fail identically on every retry.
+func postDEXTokenRequest(tlsClient *http.Client, tokenURL string, data url.Values) (token string, retriable bool, err error) {
 	resp, err := tlsClient.PostForm(tokenURL, data)
 	if err != nil {
-		return "", fmt.Errorf("token request: %w", err)
+		return "", true, fmt.Errorf("token request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("read token response: %w", err)
+		return "", true, fmt.Errorf("read token response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("token request returned %d: %s", resp.StatusCode, body)
+		return "", false, fmt.Errorf("token request returned %d: %s", resp.StatusCode, body)
 	}
 
 	var tokenResp struct {
 		IDToken string `json:"id_token"`
 	}
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return "", fmt.Errorf("unmarshal token response: %w", err)
+		return "", false, fmt.Errorf("unmarshal token response: %w", err)
 	}
 	if tokenResp.IDToken == "" {
-		return "", fmt.Errorf("id_token not found in response: %s", body)
+		return "", false, fmt.Errorf("id_token not found in response: %s", body)
 	}
-	return tokenResp.IDToken, nil
+	return tokenResp.IDToken, false, nil
 }
 
 func buildRR(namespace, rrName, targetName string) *remediationv1alpha1.RemediationRequest {
