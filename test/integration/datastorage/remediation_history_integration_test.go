@@ -121,6 +121,48 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 	}
 
 	// ============================================================================
+	// Helper: insertROEventWithCluster inserts a remediation.workflow_created
+	// audit event with a top-level cluster_id column value (Issue #1802,
+	// migration 014). Used only by cluster-scoping tests — insertROEvent above
+	// leaves cluster_id NULL, matching unscoped/release-v1.5 semantics.
+	// ============================================================================
+	insertROEventWithCluster := func(
+		correlationID string,
+		target string,
+		clusterID string,
+		preHash string,
+		actionType string,
+		ts time.Time,
+	) {
+		GinkgoHelper()
+		eventData, err := json.Marshal(map[string]interface{}{
+			"target_resource":           target,
+			"pre_remediation_spec_hash": preHash,
+			"action_type":               actionType,
+			"signal_type":               "HighCPULoad",
+			"signal_fingerprint":        "fp-" + testID,
+			"outcome":                   "success",
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = db.ExecContext(testCtx,
+			`INSERT INTO audit_events (
+				event_id, event_date, event_timestamp, event_type, event_version,
+				event_category, event_action, event_outcome, correlation_id,
+				resource_type, resource_id, actor_id, actor_type,
+				retention_days, is_sensitive, event_data, cluster_id
+			) VALUES (
+				$1, $2, $3, 'remediation.workflow_created', '1.0',
+				'remediation', 'create', 'success', $4,
+				'test', 'test', 'test', 'system',
+				90, false, $5, $6
+			)`,
+			uuid.New(), ts.Format("2006-01-02"), ts, correlationID, eventData, clusterID,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to insert cluster-scoped RO audit event")
+	}
+
+	// ============================================================================
 	// Helper: insertEMEvents inserts a full set of EM component events for scoring.
 	// reason: "full", "spec_drift", "partial", etc.
 	// ============================================================================
@@ -326,6 +368,38 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rows).To(HaveLen(1), "the 3-part canonical format (leading slash for empty namespace) must match the stored row")
 			Expect(rows[0].CorrelationID).To(Equal(cid))
+		})
+
+		It("IT-DS-1802-003: optional clusterId further restricts results to the requesting cluster (main-only fleet scoping)", func() {
+			// Two clusters can have an identically-named/namespaced resource
+			// sharing a spec hash (e.g. GitOps-templated across a fleet). The
+			// same target-resource string alone is insufficient once fleet
+			// deployments are in play — cluster_id must additionally scope.
+			now := time.Now().UTC()
+			sameTarget := fmt.Sprintf("prod-%s/Deployment/app", testID)
+			sameHash := "sha256:fleet_" + testID
+			cidClusterA := fmt.Sprintf("corr-1802-clusterA-%s", testID)
+			cidClusterB := fmt.Sprintf("corr-1802-clusterB-%s", testID)
+
+			insertROEventWithCluster(cidClusterA, sameTarget, "cluster-a", sameHash, "ScaleUp", now.Add(-2*time.Hour))
+			insertROEventWithCluster(cidClusterB, sameTarget, "cluster-b", sameHash, "ScaleUp", now.Add(-1*time.Hour))
+
+			// Act: scope to cluster-a only
+			rowsA, err := rhRepo.QueryROEventsBySpecHash(testCtx, sameTarget, "cluster-a", sameHash, now.Add(-3*time.Hour), now)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rowsA).To(HaveLen(1), "must return only cluster-a's row, excluding cluster-b's same-target same-hash row")
+			Expect(rowsA[0].CorrelationID).To(Equal(cidClusterA))
+
+			// Cross-check: cluster-b scope returns only cluster-b's row
+			rowsB, err := rhRepo.QueryROEventsBySpecHash(testCtx, sameTarget, "cluster-b", sameHash, now.Add(-3*time.Hour), now)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rowsB).To(HaveLen(1))
+			Expect(rowsB[0].CorrelationID).To(Equal(cidClusterB))
+
+			// Backward compatibility: empty clusterID (release/v1.5 semantics) is unscoped — returns both
+			rowsUnscoped, err := rhRepo.QueryROEventsBySpecHash(testCtx, sameTarget, "", sameHash, now.Add(-3*time.Hour), now)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rowsUnscoped).To(HaveLen(2), "empty clusterID must not filter by cluster, matching release/v1.5 behavior")
 		})
 	})
 

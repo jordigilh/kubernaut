@@ -682,6 +682,12 @@ type GetRemediationHistoryContextParams struct {
 	Tier1Window OptString `json:",omitempty,omitzero"`
 	// Tier 2 lookback window (default 2160h / 90d). Accepts Go duration strings.
 	Tier2Window OptString `json:",omitempty,omitzero"`
+	// Optional fleet-scoping filter (Issue #1802). When present, restricts
+	// results to remediation history recorded on the named cluster, in
+	// addition to the existing target-resource scope. Omit for unscoped
+	// (all-clusters) matching, which is the only supported behavior on
+	// deployments without multi-cluster fleet tracking.
+	ClusterId OptString `json:",omitempty,omitzero"`
 }
 
 func unpackGetRemediationHistoryContextParams(packed middleware.Parameters) (params GetRemediationHistoryContextParams) {
@@ -729,6 +735,15 @@ func unpackGetRemediationHistoryContextParams(packed middleware.Parameters) (par
 		}
 		if v, ok := packed[key]; ok {
 			params.Tier2Window = v.(OptString)
+		}
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "clusterId",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.ClusterId = v.(OptString)
 		}
 	}
 	return params
@@ -968,6 +983,47 @@ func decodeGetRemediationHistoryContextParams(args [0]string, argsEscaped bool, 
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "tier2Window",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	// Decode query: clusterId.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "clusterId",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotClusterIdVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotClusterIdVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.ClusterId.SetTo(paramsDotClusterIdVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "clusterId",
 			In:   "query",
 			Err:  err,
 		}
