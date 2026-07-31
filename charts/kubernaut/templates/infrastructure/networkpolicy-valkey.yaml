@@ -1,4 +1,4 @@
-{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.valkey.enabled .Values.valkey.enabled }}
+{{- if (include "kubernaut.mergedValues" (dict "root" $ "service" "valkey") | fromYaml).enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 {{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "valkey" "appLabel" "valkey") }}
@@ -11,7 +11,8 @@ spec:
     - Egress
   ingress:
     - ports:
-        - port: 6379
+        # DD-PLATFORM-006 DA8: Valkey is TLS-only on 6380.
+        - port: 6380
           protocol: TCP
       from:
         - podSelector:

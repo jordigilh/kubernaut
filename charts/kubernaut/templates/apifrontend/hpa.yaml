@@ -2,5 +2,12 @@
   APIFrontend HorizontalPodAutoscaler (BR-PLATFORM-003, Issue #1589).
   Ported from the Kubernaut Operator's APIFrontendHPA (kubernaut-operator/internal/resources/hpa.go).
   autoscaling/v2 is a stable core API — no CRD gate needed (unlike ServiceMonitor/PrometheusRule).
+  Must read through kubernaut.mergedValues (not .Values.apifrontend.autoscaling
+  directly): cpuTarget/memoryTarget/minReplicas/maxReplicas are schema-only
+  defaults post-DD-PLATFORM-006, so a raw .Values read leaves them nil the
+  moment a caller sets only `autoscaling.enabled=true` without also repeating
+  every other field -- producing an HPA with an empty averageUtilization that
+  the Kubernetes API rejects outright.
 */}}
-{{- include "kubernaut.hpa" (dict "root" $ "name" "apifrontend" "autoscaling" .Values.apifrontend.autoscaling) }}
+{{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "apifrontend") | fromYaml }}
+{{- include "kubernaut.hpa" (dict "root" $ "name" "apifrontend" "autoscaling" $v.autoscaling) }}

@@ -36,14 +36,14 @@ tests:
       - failedTemplate:
           errorMessage: 'global.llmProfiles["does-not-exist"] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
 
-  - it: "IT-PLATFORM-LLM-001: an empty kubernautAgent.llmProfileRef fails the render (required field)"
+  - it: "IT-PLATFORM-LLM-001: an explicit empty-string kubernautAgent.llmProfileRef override still fails the render -- DD-PLATFORM-006 DA4 moved this guarantee from a template required-field fail() to resolveProfile's own fail(), naming the (empty) reference"
     set:
       kubernautAgent:
         llmProfileRef: ""
     template: templates/kubernaut-agent/kubernaut-agent.yaml
     asserts:
       - failedTemplate:
-          errorMessage: "kubernautAgent.llmProfileRef is required (name of an entry in global.llmProfiles)"
+          errorMessage: 'global.llmProfiles[""] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
 
   # -------------------------------------------------------------------------
   # IT-PLATFORM-LLM-002: KA static SDK config resolves llmProfileRef

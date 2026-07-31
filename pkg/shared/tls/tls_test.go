@@ -216,6 +216,79 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 		})
 	})
 
+	// DD-PLATFORM-006 DA9: BuildTLSConfig is the *tls.Config-returning building
+	// block NewTLSTransport wraps in an *http.Transport -- non-HTTP clients
+	// (e.g. go-redis's redis.Options.TLSConfig for the APIFrontend replay-cache
+	// Valkey connection) need the *tls.Config directly, with the exact same
+	// CA verification, optional mTLS, and security-profile hardening every
+	// other outbound TLS client in the fleet already gets via NewTLSTransport.
+	Describe("BuildTLSConfig", func() {
+
+		// UT-TLS-DA9-001: BuildTLSConfig builds a *tls.Config with custom CA pool
+		It("UT-TLS-DA9-001: should build a tls.Config with custom CA pool", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			cfg, err := sharedtls.BuildTLSConfig(certPath)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.RootCAs.Subjects()).ToNot(BeEmpty(), //nolint:staticcheck // no alternative for validating cert pool content
+				"tls.Config CA pool should contain the loaded CA certificate")
+		})
+
+		// UT-TLS-DA9-002: BuildTLSConfig returns error for missing CA file
+		It("UT-TLS-DA9-002: should return error for missing CA file", func() {
+			_, err := sharedtls.BuildTLSConfig("/nonexistent/ca.crt")
+			Expect(err).To(HaveOccurred())
+		})
+
+		// UT-TLS-DA9-003: WithClientCert loads client certificate into the tls.Config (mTLS)
+		It("UT-TLS-DA9-003: should load client certificate when WithClientCert is provided", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			cfg, err := sharedtls.BuildTLSConfig(certPath, sharedtls.WithClientCert(certPath, keyPath))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Certificates).To(HaveLen(1),
+				"mTLS tls.Config must contain exactly one client certificate")
+		})
+
+		// UT-TLS-DA9-004: WithClientCert returns error for invalid cert file
+		It("UT-TLS-DA9-004: should return error when client cert file is invalid", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			_, err := sharedtls.BuildTLSConfig(certPath,
+				sharedtls.WithClientCert("/nonexistent/client.crt", "/nonexistent/client.key"),
+			)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("client certificate"))
+		})
+
+		// UT-TLS-DA9-005: Security profile (min TLS version) is applied
+		// BR-ENC-001: FIPS 140-2 approved algorithms
+		It("UT-TLS-DA9-005: should apply security profile enforcing TLS 1.2+", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			cfg, err := sharedtls.BuildTLSConfig(certPath)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.MinVersion).To(BeNumerically(">=", tls.VersionTLS12),
+				"tls.Config must enforce TLS 1.2+ (SC-8)")
+		})
+
+		// UT-TLS-DA9-006: NewTLSTransport delegates to BuildTLSConfig (no behavior
+		// drift from the refactor -- same RootCAs/Certificates end up on the
+		// wrapping http.Transport).
+		It("UT-TLS-DA9-006: NewTLSTransport's TLSClientConfig matches BuildTLSConfig's output", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			builtCfg, err := sharedtls.BuildTLSConfig(certPath, sharedtls.WithClientCert(certPath, keyPath))
+			Expect(err).ToNot(HaveOccurred())
+
+			transport, err := sharedtls.NewTLSTransport(certPath, sharedtls.WithClientCert(certPath, keyPath))
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(transport.TLSClientConfig.MinVersion).To(Equal(builtCfg.MinVersion))
+			Expect(transport.TLSClientConfig.Certificates).To(HaveLen(len(builtCfg.Certificates)))
+		})
+	})
+
 	Describe("DefaultBaseTransport (#753)", func() {
 
 		AfterEach(func() {

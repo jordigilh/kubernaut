@@ -1,4 +1,4 @@
-{{- if eq .Values.tls.mode "cert-manager" }}
+{{- if eq (include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml).mode "cert-manager" }}
 # DD-PLATFORM-001: publishes the dedicated inter-service CA's public cert
 # (kubernaut-interservice-ca-secret, created by templates/interservice/ca.yaml)
 # into the inter-service-ca ConfigMap that ~11 services already mount as
@@ -64,7 +64,7 @@ spec:
             sizeLimit: 1Mi
       containers:
         - name: interservice-ca-sync
-          image: {{ .Values.hooks.tlsCerts.image }}
+          image: {{ (include "kubernaut.mergedValues" (dict "root" $ "service" "hooks") | fromYaml).tlsCerts.image }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
           volumeMounts:

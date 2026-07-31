@@ -1,4 +1,4 @@
-{{- if eq .Values.tls.mode "cert-manager" }}
+{{- if eq (include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml).mode "cert-manager" }}
 # DD-PLATFORM-001: leaf certificates for inter-service mTLS, issued by the
 # dedicated internal CA (templates/interservice/ca.yaml), not by
 # tls.certManager.issuerRef. ECDSA P-256 and DNS SANs mirror hook mode's
@@ -9,6 +9,7 @@
     (dict "name" "datastorage-tls" "dnsNameBase" "data-storage-service")
     (dict "name" "kubernautagent-tls" "dnsNameBase" "kubernaut-agent")
     (dict "name" "fleetmetadatacache-tls" "dnsNameBase" "fleetmetadatacache-service")
+    (dict "name" "valkey-tls" "dnsNameBase" "valkey")
   }}
 {{- if $i }}
 ---

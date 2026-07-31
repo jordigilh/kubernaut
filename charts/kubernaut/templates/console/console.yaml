@@ -82,6 +82,17 @@ location / {
 }
 {{- end }}
 {{- if .Values.console.enabled }}
+{{- /*
+DD-PLATFORM-006 Decision Area 14 (PR9): cross-service reference -- reads
+apifrontend's own merged value (schema default true, once apifrontend.enabled
+is removed from values.yaml), not console's. A raw .Values.apifrontend.enabled
+read would incorrectly fail this guard for any user relying on the schema's
+default instead of an explicit true.
+*/}}
+{{- $afV := include "kubernaut.mergedValues" (dict "root" . "service" "apifrontend") | fromYaml }}
+{{- if not $afV.enabled }}
+{{- fail "console.enabled=true requires apifrontend.enabled=true (Console's nginx sidecar reverse-proxies exclusively to APIFrontend, with no other possible backend)" }}
+{{- end }}
 {{- if not .Values.console.auth.secretName }}
 {{- fail "console.auth.secretName is required when console.enabled=true (Secret must contain keys: client-id, client-secret, cookie-secret)" }}
 {{- end }}
@@ -115,7 +126,8 @@ metadata:
     app: console
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.console.replicas }}
+  {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "console") | fromYaml }}
+  replicas: {{ $v.replicas }}
   selector:
     matchLabels:
       app: console
@@ -134,8 +146,8 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.console "global" .Values.global) | nindent 6 }}
       containers:
         - name: oauth2-proxy
-          image: {{ .Values.console.oauth2Proxy.image | quote }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ $v.oauth2Proxy.image | quote }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           args:
             - --provider=oidc
             - --oidc-issuer-url={{ include "kubernaut.console.issuerURL" . }}
@@ -195,8 +207,8 @@ spec:
               cpu: 100m
               memory: 128Mi
         - name: console
-          image: {{ include "kubernaut.image" (dict "service" "kubernaut-console" "global" .Values.global "appVersion" .Chart.AppVersion) }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ include "kubernaut.image" (dict "service" "kubernaut-console" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           ports:
             - name: static
               containerPort: 8080

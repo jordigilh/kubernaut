@@ -5,6 +5,32 @@ All notable changes to Kubernaut will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Helm chart configuration surface reduction (#1743, DD-PLATFORM-006, BR-PLATFORM-007)** — Reduced the mandatory-field count for a minimal `helm install` and hardened several security-relevant defaults so they can no longer be silently disabled:
+  - **PDB/resources consolidation (DA1/2)** — 13 duplicated per-service `pdb.{enabled,minAvailable,maxUnavailable}` blocks replaced with a single `global.podDefaults.pdb`; added `global.defaultResources` as a schema-only fallback for services that don't set their own `resources`.
+  - **NetworkPolicies unconditionally mandatory (DA3)** — Removed the `networkPolicies.enabled`/per-service `networkPolicies.<service>.enabled` toggles entirely (`additionalProperties: false` now rejects them at render time); every service gets a default-deny NetworkPolicy with no opt-out.
+  - **`values.yaml` trim + auto-generated reference (DA4)** — Removed 95 zero-value-default fields from the example `values.yaml` (schema defaults untouched); `kubernautAgent.llmProfileRef` now defaults to `"primary"`, dropping the mandatory-field count for a minimal install from 8 to 7. Added `hack/gen-helm-config-docs`, a `values.schema.json`-driven Markdown generator producing `docs/generated/helm-values-reference.md` (CI drift-checked), replacing the hand-maintained per-service field tables in `charts/kubernaut/README.md`.
+  - **Dead field removal (DA5)** — Removed `tls.interService.enabled` (inter-service mTLS was already unconditionally on; the toggle did nothing) and `gateway.config.cors.allowedMethods` (never read by Go).
+  - **Mandatory security-relevant toggles (DA6)** — `datastorage.config.auditHashKey`, `datastorage.config.redis.tls`/replay-cache TLS, `apifrontend.config.auth.replayCache`, and `datastorage.config.server.rateLimit` are now always-on, unconditional features instead of opt-in toggles that could weaken a default deployment.
+  - **Audit-HMAC key auto-generation (DA7)** — A `pre-install`/`pre-upgrade` Helm hook now auto-generates and persists (`helm.sh/resource-policy: keep`) the audit hash-chain HMAC key when `datastorage.config.auditHashKey.existingSecret` is unset, instead of requiring a manually pre-created Secret.
+  - **Valkey server-side TLS-only (DA8) + APIFrontend replay-cache TLS client (DA13)** — The in-chart Valkey Deployment now serves TLS-only (plaintext port disabled); APIFrontend's replay-cache Valkey client gained full TLS support (cert/key/CA, matching the hardening level of the chart's other inter-service TLS clients) to connect to it.
+  - **Console/APIFrontend consistency (DA9)** — `console.enabled=true` now requires `apifrontend.enabled=true` (fails fast at render time); a `NOTES.txt` hint is shown when `console.ingress.enabled=false`.
+
+  Deferred to a dedicated follow-up (DA14, PR9): removing the remaining ~234 non-zero-default fields (including `postgresql.enabled`/`valkey.enabled`, which already default `true`) from the example `values.yaml` needs a materialized-defaults template generator first, to avoid silently changing rendered output for anyone who was relying on the inline default being visible.
+
+### Added
+
+- **Native Gemini client for Kubernaut Agent (#1778, BR-AI-087, DD-LLM-010)** — `provider: vertex_ai` no longer assumes every model is Claude. Both Kubernaut Agent and API Frontend now auto-detect Claude vs. Gemini from the model name prefix (`claude-*` vs `gemini-*`) and dispatch to the correct client, fail-fast with a clear error on an unrecognized model family instead of silently defaulting to one, and support `provider: gemini` for the native Gemini API. Kubernaut Agent's Gemini client (`pkg/kubernautagent/llm/geminifamily`) wraps `eino-ext`'s `agenticgemini` component rather than reimplementing the SDK.
+
+### Fixed
+
+- **API Frontend's `vertex_ai` + Gemini gap (#1792)** — API Frontend previously routed every `provider: vertex_ai` profile to the Claude client regardless of the configured model, so a Gemini model under `vertex_ai` would silently misbehave. Fixed with the same model-name dispatch as #1778.
+- **Misleading `vertex_ai` + Gemini chart docs/examples (#1793)** — `charts/kubernaut`'s README and values examples suggested `gemini-2.5-pro` worked under `provider: vertex_ai` when it did not; now genuinely supported and covered by Helm + Go wiring tests.
+- **`GOOGLE_APPLICATION_CREDENTIALS` no longer statically declared in API Frontend's Deployment (#1801)** — This credential-adjacent env var was previously rendered as a static `env:` entry whenever `provider: vertex_ai` was configured, visible via `kubectl get pod -o yaml` to anyone with pod-read RBAC. It's now injected in-process at construction time (`pkg/apifrontend/launcher.InjectAmbientGoogleCredentials`) only for the model families whose SDK has no explicit-credentials-bytes option, matching Kubernaut Agent's and the HolmesGPT API predecessor's precedent. API Frontend's Gemini-on-Vertex path now authenticates with explicit credential bytes end-to-end, touching zero env vars.
+
 ## [1.5.2] - 2026-06-24
 
 ### Added

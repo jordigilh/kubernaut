@@ -1,4 +1,5 @@
-{{- if .Values.postgresql.enabled }}
+{{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "postgresql") | fromYaml }}
+{{- if $v.enabled }}
 # DD-PLATFORM-003: PostgreSQL renders in ArgoCD's "-1" sync-wave (ahead of the
 # default "0" application controllers) -- db-migration and DataStorage's own
 # wait-for-postgres initContainer both need it Ready before their wave can
@@ -47,7 +48,7 @@ metadata:
   annotations:
     "argocd.argoproj.io/sync-wave": "-1"
 spec:
-  replicas: {{ .Values.postgresql.replicas | default 1 }}
+  replicas: {{ $v.replicas }}
   selector:
     matchLabels:
       app: postgresql
@@ -64,8 +65,8 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.postgresql "global" .Values.global) | nindent 6 }}
       containers:
         - name: postgresql
-          image: {{ .Values.postgresql.image }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ $v.image }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.mergedSecurityContext" (dict "override" .Values.postgresql.containerSecurityContext "defaults" (dict "allowPrivilegeEscalation" false "readOnlyRootFilesystem" false "runAsNonRoot" true "runAsUser" 70)) | nindent 12 }}
           ports:
@@ -96,14 +97,14 @@ spec:
             {{- toYaml .Values.postgresql.resources | nindent 12 }}
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", {{ .Values.postgresql.auth.username | quote }}, "-d", {{ .Values.postgresql.auth.database | quote }}]
+              command: ["pg_isready", "-U", {{ $v.auth.username | quote }}, "-d", {{ $v.auth.database | quote }}]
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
           livenessProbe:
             exec:
-              command: ["pg_isready", "-U", {{ .Values.postgresql.auth.username | quote }}, "-d", {{ .Values.postgresql.auth.database | quote }}]
+              command: ["pg_isready", "-U", {{ $v.auth.username | quote }}, "-d", {{ $v.auth.database | quote }}]
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
@@ -127,10 +128,10 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
-  {{- if .Values.postgresql.storage.storageClassName }}
-  storageClassName: {{ .Values.postgresql.storage.storageClassName }}
+  {{- if $v.storage.storageClassName }}
+  storageClassName: {{ $v.storage.storageClassName }}
   {{- end }}
   resources:
     requests:
-      storage: {{ .Values.postgresql.storage.size }}
+      storage: {{ $v.storage.size }}
 {{- end }}

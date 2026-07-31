@@ -1,4 +1,4 @@
-{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.notification.enabled }}
+{{- $npV := include "kubernaut.mergedValues" (dict "root" $ "service" "networkPolicies") | fromYaml }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 {{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "notification" "appLabel" "notification-controller") }}
@@ -15,12 +15,11 @@ spec:
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
-    {{- if .Values.networkPolicies.externalWebhooks.cidr }}
+    {{- if $npV.externalWebhooks.cidr }}
     - ports:
-        - port: {{ .Values.networkPolicies.externalWebhooks.port | default 443 }}
+        - port: {{ $npV.externalWebhooks.port }}
           protocol: TCP
       to:
         - ipBlock:
-            cidr: {{ .Values.networkPolicies.externalWebhooks.cidr }}
+            cidr: {{ $npV.externalWebhooks.cidr }}
     {{- end }}
-{{- end }}

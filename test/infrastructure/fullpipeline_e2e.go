@@ -325,17 +325,20 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6: dex-tls provisioning failed: %w", err)
 	}
 
-	// Issue #1737: host-side E2E clients hit DataStorage, APIFrontend, and
-	// KubernautAgent via their chart-pinned NodePorts ("https://localhost:30081",
-	// "https://localhost:30443", "https://localhost:8088") with full hostname
-	// verification -- the chart's own tls-cert-job.yaml hook omits
-	// "localhost"/127.0.0.1 from these SANs (correct for real clusters, which
-	// never use localhost), so those leaf certs must be re-signed here for
-	// host access to work at all (confirmed via "connection reset by peer" on
-	// the audit API during validation).
-	if err := resignHostAccessedTLSCertsWithLocalhostSAN(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 6: gateway/datastorage/apifrontend/kubernautagent TLS re-sign failed: %w", err)
-	}
+	// PR #1790 round-14 RCA: gateway/datastorage/apifrontend/kubernautagent's
+	// "localhost" SAN (needed for host-side E2E clients dialing their
+	// chart-pinned NodePorts with full hostname verification, Issue #785/
+	// #1737) is now baked into the ORIGINAL chart-issued certs via
+	// InstallFullPipelineHelmChart's `--set hooks.tlsCerts.extraSANs[0]=
+	// localhost`, instead of being re-signed here post-install. The former
+	// re-sign-then-rolling-restart-4-deployments pass
+	// (resignHostAccessedTLSCertsWithLocalhostSAN, removed) was the
+	// deterministic root cause of fleet E2E's PHASE 6 rollout timeouts: its
+	// CPU burst on top of fleet's already-heavier Istio/Kuadrant/Keycloak/
+	// kube-mcp-server footprint made "gateway" deployment's old pod
+	// consistently fail to finish terminating within even a 720s wait
+	// (5/5 CI runs, identical failure). No restart is needed now since the
+	// certs are already correct from `helm install` onward.
 
 	// Issue #785 + #1737: suite_test.go's NewTLSAwareTransport (host-side E2E
 	// HTTP client) reads the inter-service CA from a local file that the
@@ -555,8 +558,9 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	if err := waitForFullPipelineServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return builtImages, seededUUIDs, nil, fmt.Errorf("PHASE 8 failed: services not ready: %w", err)
 	}
-	// fleetmetadatacache is chart-managed only when fleetOpts != nil
-	// (fleetmetadatacache.enabled=true, PHASE 6) -- not part of the FP
+	// fleetmetadatacache is chart-managed only when fleetOpts != nil (its
+	// enabled state is derived by the chart itself from global.fleet.enabled,
+	// PHASE 6 -- DD-PLATFORM-006 Decision Area 10) -- not part of the FP
 	// suite's fixed deployment list above.
 	if fleetOpts != nil {
 		if err := waitForDeployment(ctx, "fleetmetadatacache", namespace, kubeconfigPath, 3*time.Minute, writer); err != nil {
@@ -1172,12 +1176,36 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 	totalChecks := len(deployments) + len(controllers)
 	results := make(chan readyResult, totalChecks)
 
+	// PR #1790 round-15 RCA (run 30633836502, first time fleet's Helm E2E
+	// flow ever reached PHASE 8 -- round-14's DA17 fix eliminated the PHASE 6
+	// bottleneck that previously masked this): "gateway not ready after 3m
+	// RemediationOrchestrator controller not ready after 3m" while all 13
+	// other services (including non-fleet-MCP-dependent controllers) became
+	// ready well inside 3m. Both gateway's and RO's own /readyz handlers
+	// legitimately block on wireFleetOwnerResolution's mcpclient.NewResilient
+	// MCP Gateway connection succeeding (pkg/fleet/mcpclient/resilience.go's
+	// DefaultResilienceConfig.MaxElapsedTime = 5 minutes) when
+	// global.fleet.enabled=true -- fullpipeline never exercises this path at
+	// all (fleetProvisioner is nil there, fleet stays disabled), which is why
+	// it has never hit this. The NetworkPolicy egress this connection needs
+	// was already fixed in #1755/DD-TEST-015
+	// (kubernaut.np.mcpGatewayEgress) -- this is a plain timeout-ceiling
+	// mismatch, not a missing rule: the harness's own 3-minute poll window
+	// was simply never long enough to cover the dependency's own designed
+	// 5-minute retry budget, structurally identical to DA17's
+	// progressDeadlineSeconds-vs-kubectl-timeout mismatch. 6 minutes (+1min
+	// margin over the 5min ceiling) applies uniformly to both checks below
+	// (not just gateway/RO) to keep this function simple -- every other
+	// service converges in seconds regardless, so this only affects the
+	// failure-case ceiling, not typical-case latency.
+	const serviceReadyTimeout = 6 * time.Minute
+
 	// Deployment readiness checks
 	for _, deplName := range deployments {
 		deplName := deplName // capture
 		go func() {
 			_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s...\n", deplName)
-			pollErr := pollUntilReady(ctx, 3*time.Minute, 2*time.Second, func() bool {
+			pollErr := pollUntilReady(ctx, serviceReadyTimeout, 2*time.Second, func() bool {
 				depl, getErr := clientset.AppsV1().Deployments(namespace).Get(ctx, deplName, metav1.GetOptions{})
 				if getErr != nil {
 					return false
@@ -1185,7 +1213,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 				return depl.Status.ReadyReplicas >= 1
 			})
 			if pollErr != nil {
-				results <- readyResult{deplName, fmt.Errorf("%s not ready after 3m", deplName)}
+				results <- readyResult{deplName, fmt.Errorf("%s not ready after %s", deplName, serviceReadyTimeout)}
 			} else {
 				_, _ = fmt.Fprintf(writer, "  ✅ %s ready\n", deplName)
 				results <- readyResult{deplName, nil}
@@ -1198,7 +1226,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		ctrl := ctrl // capture
 		go func() {
 			_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s controller...\n", ctrl.name)
-			pollErr := pollUntilReady(ctx, 3*time.Minute, 2*time.Second, func() bool {
+			pollErr := pollUntilReady(ctx, serviceReadyTimeout, 2*time.Second, func() bool {
 				pods, listErr := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 					LabelSelector: ctrl.selector,
 				})
@@ -1217,7 +1245,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 				return false
 			})
 			if pollErr != nil {
-				results <- readyResult{ctrl.name, fmt.Errorf("%s controller not ready after 3m", ctrl.name)}
+				results <- readyResult{ctrl.name, fmt.Errorf("%s controller not ready after %s", ctrl.name, serviceReadyTimeout)}
 			} else {
 				_, _ = fmt.Fprintf(writer, "  ✅ %s controller ready\n", ctrl.name)
 				results <- readyResult{ctrl.name, nil}

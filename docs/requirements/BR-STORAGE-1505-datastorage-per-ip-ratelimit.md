@@ -8,6 +8,12 @@
 **Date**: June 30, 2026
 **GitHub Issues**: [#1505](https://github.com/jordigilh/kubernaut/issues/1505) (GAP-09)
 
+> **Superseded (Helm gating only)**: [DD-PLATFORM-006](../architecture/decisions/DD-PLATFORM-006-helm-chart-configuration-surface-reduction.md)
+> Decision Area 6 made `datastorage.config.server.rateLimit` mandatory — the
+> `enabled` toggle described below no longer exists in the chart schema; the
+> limiter is always on (`requestsPerSecond`/`burst` remain tunable). The
+> limiter design and audit-event behavior below are still accurate.
+
 ---
 
 ## Business Need

@@ -1,4 +1,4 @@
-{{- if eq .Values.tls.mode "cert-manager" }}
+{{- if eq (include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml).mode "cert-manager" }}
 # DD-PLATFORM-001: dedicated internal CA for inter-service mTLS, deliberately
 # decoupled from tls.certManager.issuerRef -- internal service-to-service
 # trust must not depend on whatever external/public PKI issues webhook or

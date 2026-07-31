@@ -7,7 +7,8 @@ Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Na
    kubectl get pods -n {{ .Release.Namespace }}
 
 2. Verify LLM credentials secret exists:
-{{- $kaNotesProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
+{{- $kaNotesV := include "kubernaut.mergedValues" (dict "root" $ "service" "kubernautAgent") | fromYaml }}
+{{- $kaNotesProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaNotesV.llmProfileRef) | fromYaml }}
 
    kubectl get secret {{ $kaNotesProfile.credentialsSecretName }} -n {{ .Release.Namespace }}
 
@@ -62,6 +63,20 @@ configured Prometheus in the agent's config.yaml (tools.prometheus.url).
 No additional SDK config changes are needed for Prometheus access.
 
 {{- end }}
+{{- if and .Values.console.enabled (not .Values.console.ingress.enabled) }}
+=== Console Access ===
+
+The web console is enabled but its Ingress is not (console.ingress.enabled=false,
+the default -- DD-PLATFORM-006 Decision Area 9, matching Gateway/APIFrontend's
+own opt-in Ingress posture, BR-PLATFORM-009). To reach it, either:
+
+  --set console.ingress.enabled=true
+
+  or, without exposing it externally:
+
+  kubectl port-forward -n {{ .Release.Namespace }} svc/console 4180:4180
+
+{{- end }}
 === Monitoring ===
 
 Kubernaut is designed to work with kube-prometheus-stack.
@@ -74,6 +89,31 @@ If deployed, configure AlertManager to send alerts to the Gateway:
           send_resolved: true
           http_config:
             bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+{{- if or (not (include "kubernaut.monitoring.prometheus.enabled" .)) (not (include "kubernaut.monitoring.alertManager.enabled" .)) }}
+
+IMPORTANT -- monitoring.prometheus/alertManager integration is OFF by default
+(separate from the webhook wiring above, which only covers Kubernaut
+*receiving* alerts). This is a real cost to remediation quality, not just an
+optional integration -- KubernautAgent investigates with fewer live signals,
+and EffectivenessMonitor cannot fully confirm whether remediations worked.
+The chart does not deploy or auto-discover Prometheus/AlertManager -- point
+it at your own. Without this:
+{{- if not (include "kubernaut.monitoring.prometheus.enabled" .) }}
+  - EffectivenessMonitor cannot score metric-based remediation effectiveness (BR-EM-002).
+  - KubernautAgent's RCA loses its Prometheus MCP investigation tool.
+  - APIFrontend's severity triage falls back to its non-Prometheus default.
+{{- end }}
+{{- if not (include "kubernaut.monitoring.alertManager.enabled" .) }}
+  - EffectivenessMonitor cannot confirm whether the triggering alert actually
+    resolved after a remediation (BR-EM-002 alert-resolution scoring).
+  - KubernautAgent's RCA loses its AlertManager MCP investigation tool.
+{{- end }}
+
+To enable:
+
+  --set monitoring.prometheus.enabled=true --set monitoring.prometheus.url=http://<prometheus-host>:9090
+  --set monitoring.alertManager.enabled=true --set monitoring.alertManager.url=http://<alertmanager-host>:9093
+{{- end }}
 
 === Upgrading ===
 
@@ -84,10 +124,11 @@ CRDs are NOT upgraded automatically by `helm upgrade`. To update CRDs:
 
 Run this BEFORE `helm upgrade` when CRD schemas have changed between versions.
 
-{{- if eq .Values.tls.mode "hook" }}
+{{- $tlsNotesV := include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml }}
+{{- if eq $tlsNotesV.mode "hook" }}
 TLS mode: hook (self-signed certificates via Helm hooks).
 Certificates are automatically renewed during upgrade if they expire within 30 days.
-{{- else if eq .Values.tls.mode "cert-manager" }}
+{{- else if eq $tlsNotesV.mode "cert-manager" }}
 TLS mode: cert-manager (certificates managed by cert-manager).
 The authwebhook-cert Certificate resource provisions the authwebhook-tls Secret.
 The datastorage-signing-cert Certificate resource provisions DataStorage's AU-9
@@ -95,7 +136,7 @@ audit-signing key (#334). A dedicated internal CA (kubernaut-interservice-ca,
 DD-PLATFORM-001) auto-provisions inter-service mTLS: gateway-tls, datastorage-tls,
 kubernautagent-tls, and the inter-service-ca ConfigMap. cert-manager handles
 renewal automatically for all of these.
-{{- else if eq .Values.tls.mode "manual" }}
+{{- else if eq $tlsNotesV.mode "manual" }}
 TLS mode: manual (user-managed certificates).
 You must create the authwebhook-tls Secret (type kubernetes.io/tls) and patch the
 MutatingWebhookConfiguration and ValidatingWebhookConfiguration with the CA bundle:
@@ -118,10 +159,11 @@ start without it, with no fallback (#334):
    kubectl create secret tls datastorage-signing-cert \
      --cert=/tmp/signing-tls.crt --key=/tmp/signing-tls.key -n {{ .Release.Namespace }}
 
-You must also create gateway-tls, datastorage-tls, kubernautagent-tls Secrets
-(type kubernetes.io/tls) plus an inter-service-ca ConfigMap (key ca.crt) for
-inter-service mTLS -- DD-PLATFORM-001. Without these, inter-service traffic
-silently falls back to plain HTTP (SC-8 gap). See the chart README's
+You must also create gateway-tls, datastorage-tls, kubernautagent-tls, valkey-tls
+Secrets (type kubernetes.io/tls) plus an inter-service-ca ConfigMap (key ca.crt)
+for inter-service mTLS -- DD-PLATFORM-001. Without these, inter-service traffic
+silently falls back to plain HTTP (SC-8 gap), and Valkey (TLS-only, DD-PLATFORM-006
+Decision Area 8) will refuse all connections. See the chart README's
 "Inter-service mTLS prerequisite" section for full openssl commands.
 {{- end }}
 

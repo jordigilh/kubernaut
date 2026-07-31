@@ -7,6 +7,14 @@
 **Status**: Approved
 **Date**: 2026-07-06
 
+> **Superseded (toggle removal only)**: [DD-PLATFORM-006](../architecture/decisions/DD-PLATFORM-006-helm-chart-configuration-surface-reduction.md)
+> removed both `networkPolicies.apifrontend.enabled` (Decision Area 3 — all
+> NetworkPolicies are now unconditionally mandatory) and the
+> `apifrontend.config.auth.replayCache.enabled` conditional referenced in FR-3
+> below (Decision Area 6 — the Valkey ingress rule from `apifrontend` pods is
+> now unconditional too). The parity intent (APIFrontend gets a NetworkPolicy;
+> its Valkey access is scoped by one) is unchanged.
+
 ---
 
 ## Business Need

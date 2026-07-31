@@ -58,8 +58,9 @@ data:
     {{- include "kubernaut.signalprocessing.configYAML" . | nindent 4 }}
 {{- define "kubernaut.signalprocessing.configYAML" -}}
 {{- $signalprocessingFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.signalprocessing.fleet "oauth2" .Values.signalprocessing.fleet.oauth2) | fromYaml -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "signalprocessing") | fromYaml -}}
 logging:
-  level: {{ .Values.signalprocessing.logging.level | default "INFO" | quote }}
+  level: {{ $v.logging.level | quote }}
 controller:
   metricsAddr: ":9090"
   healthProbeAddr: ":8081"
@@ -197,7 +198,8 @@ metadata:
     app: signalprocessing-controller
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.signalprocessing.replicas }}
+  {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "signalprocessing") | fromYaml }}
+  replicas: {{ $v.replicas }}
   selector:
     matchLabels:
       app: signalprocessing-controller
@@ -225,8 +227,8 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.signalprocessing "global" .Values.global) | nindent 6 }}
       containers:
         - name: signalprocessing-controller
-          image: {{ include "kubernaut.image" (dict "service" "signalprocessing" "global" .Values.global "appVersion" .Chart.AppVersion) }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ include "kubernaut.image" (dict "service" "signalprocessing" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.signalprocessing | nindent 12 }}
           args:

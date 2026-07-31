@@ -39,6 +39,11 @@ mcp-server
 /kubernautagent
 /mock-llm
 
+# Compiled Go binary from hack/gen-helm-config-docs (main package, no ext) --
+# `go build ./hack/gen-helm-config-docs` produces this locally; only main.go/
+# main_test.go are meant to be committed
+/hack/gen-helm-config-docs/gen-helm-config-docs
+
 # Root directory markdown files (except README.md and CHANGELOG*.md)
 # Note: Leading slash ensures this only applies to root directory
 /*.md
