@@ -378,17 +378,40 @@ All `pkg/` business logic must always use real implementations — never mock in
 
 ### Production — Helm chart
 
-```bash
-helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
-  --namespace kubernaut-system --create-namespace
+The chart lives in `charts/kubernaut/`. `values.yaml` in that directory is the chart's own
+baseline (schema defaults + mandatory-field placeholders) — you don't pass it with `-f`; Helm
+loads it automatically. Instead, supply your own minimal values file with the chart's 7
+mandatory fields (Rego policies + one LLM profile):
+
+```yaml
+# my-values.yaml
+global:
+  llmProfiles:
+    primary:
+      provider: openai
+      model: gpt-4o
+      endpoint: https://api.openai.com/v1
+      credentialsSecretName: llm-credentials
+
+signalprocessing:
+  policies:
+    content: |
+      # your Rego classification policy
+
+aianalysis:
+  policies:
+    content: |
+      # your Rego approval policy
 ```
 
-The chart lives in `charts/kubernaut/` and supports value files for different environments:
+```bash
+helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --namespace kubernaut-system --create-namespace \
+  -f my-values.yaml
+```
 
-| Values file | Purpose |
-|-------------|---------|
-| `values.yaml` | Default (Kind / vanilla Kubernetes) |
-| `values-airgap.yaml` | Air-gapped / disconnected environments |
+For air-gapped/disconnected environments, see `charts/kubernaut/values-airgap.yaml`'s header
+comment for the pull-and-extract sequence (no live OCI reference at install time).
 
 For OpenShift, use the [Kubernaut Operator](https://jordigilh.github.io/kubernaut-docs/operations/operator/) instead of this Helm chart.
 
@@ -397,7 +420,7 @@ For OpenShift, use the [Kubernaut Operator](https://jordigilh.github.io/kubernau
 ```bash
 helm install kubernaut ./charts/kubernaut \
   --namespace kubernaut-system --create-namespace \
-  -f charts/kubernaut/values.yaml
+  -f my-values.yaml
 ```
 
 ### Individual services — Kustomize

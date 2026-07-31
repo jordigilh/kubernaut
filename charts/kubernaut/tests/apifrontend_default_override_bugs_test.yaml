@@ -1,0 +1,125 @@
+suite: "DD-PLATFORM-006 Decision Area 14 (PR9): APIFrontend true-defaulting toggles must honor explicit/absent overrides"
+# Three confirmed live bugs, all in templates/apifrontend/apifrontend.yaml's
+# kubernaut.apifrontend.configYAML named template, all with the same root
+# cause class: a true-defaulting boolean field whose Helm wiring cannot
+# distinguish "user explicitly disabled this" (or "field absent, should fall
+# back to the schema's documented true default") from "user left it
+# unset, use my hardcoded fallback":
+#
+#   1. config.mcp.enabled           -- `| default true` (Sprig's `default`
+#      treats an explicit `false` input as empty, silently substituting
+#      `true` -- the override is discarded).
+#   2. config.interactive.enabled   -- same `| default true` bug.
+#   3. config.severityTriage.llmEnabled -- NO guard at all (`$stCfg.llmEnabled`
+#      read raw). When absent from values.yaml (as it will be once DA14
+#      removes DA14's 154 explicit fields from values.yaml), this silently
+#      resolves to Go's zero value (false/nil) instead of the schema's
+#      documented `true` default -- LLM-based severity triage silently
+#      disables itself for any user who doesn't explicitly re-set it.
+#
+# All three are fixed identically by routing through
+# kubernaut.mergedValues ($v), which always carries *some* value for these
+# fields (the schema default, or the user's override, mergeOverwrite-merged
+# so explicit false/0/"" always wins over a non-zero default -- see
+# kubernaut.mergedValues' own doc comment in _helpers.tpl).
+templates:
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  apifrontend:
+    config:
+      auth:
+        issuerURL: "https://sso.example.com/realms/kubernaut"
+tests:
+  - it: "BUG 1: config.mcp.enabled=false override actually disables MCP (previously silently re-enabled by Sprig's `| default true`)"
+    set:
+      apifrontend:
+        config:
+          mcp:
+            enabled: false
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'mcp:\s*\n\s*enabled: false'
+
+  - it: "BUG 1 (regression guard): mcp.enabled unset still defaults to true (the pre-existing correct behavior must not regress)"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'mcp:\s*\n\s*enabled: true'
+
+  - it: "BUG 2: config.interactive.enabled=false override actually disables the interactive bridge (previously silently re-enabled by `| default true`)"
+    set:
+      apifrontend:
+        config:
+          interactive:
+            enabled: false
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'interactive:\s*\n\s*enabled: false'
+
+  - it: "BUG 2 (regression guard): interactive.enabled unset still defaults to true"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'interactive:\s*\n\s*enabled: true'
+
+  - it: "BUG 3: severityTriage.llmEnabled left entirely unset still defaults to true (previously silently disabled -- zero guard read the Go zero value instead of the schema's true default)"
+    # No `set:` override for llmEnabled: post-DA14, values.yaml no longer
+    # carries an explicit true default for this field, so the suite-level
+    # `set:` block above already exercises the "entirely absent" case this
+    # test targets. (An explicit `llmEnabled: null` override, as this test
+    # used pre-DA14 to simulate "unset" against an explicit values.yaml
+    # true, now fails values.schema.json validation instead of deleting the
+    # key -- Helm's `--set key=null` only deletes a key that already has a
+    # value to coalesce over; with no base value left, it becomes a literal
+    # JSON null, which `type: boolean` rejects.)
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'llm: \{\}'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'severityTriage:[\s\S]{0,400}llm:\s*\n\s*provider: "openai"'
+
+  - it: "BUG 3 (regression guard): severityTriage.llmEnabled=false still disables LLM triage (rule-based-only, unaffected by the fix)"
+    set:
+      apifrontend:
+        config:
+          severityTriage:
+            llmEnabled: false
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'llm: \{\}'

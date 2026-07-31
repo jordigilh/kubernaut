@@ -71,7 +71,7 @@ spec:
       containers:
         - name: apply-crds
           # Reuses the shared kubectl image from hooks.tlsCerts.image
-          image: {{ .Values.hooks.tlsCerts.image }}
+          image: {{ (include "kubernaut.mergedValues" (dict "root" $ "service" "hooks") | fromYaml).tlsCerts.image }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.hooks | nindent 12 }}
           resources:

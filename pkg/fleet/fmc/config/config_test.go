@@ -55,6 +55,8 @@ var _ = Describe("FMC ServiceConfig [BR-FLEET-054, ADR-030]", func() {
 			Expect(cfg.MCPGateway.GatewayType).To(Equal("eaigw"))
 			Expect(cfg.MCPGateway.Namespace).To(Equal("kubernaut-system"))
 			Expect(cfg.Valkey.Addr).To(Equal("valkey:6379"))
+			Expect(cfg.Valkey.TLS.Enabled).To(BeFalse(),
+				"DD-PLATFORM-006 DA9 follow-up: TLS is opt-in at the Go-defaults level; the Helm chart renders it mandatory-on for chart-deployed installs")
 			Expect(cfg.Sync.Interval).To(Equal(30 * time.Second))
 			Expect(cfg.Sync.KeyTTL).To(Equal(45 * time.Second))
 			Expect(cfg.Sync.ResourceKinds).To(ConsistOf(
@@ -89,6 +91,11 @@ mcpGateway:
   namespace: "fleet-system"
 valkey:
   addr: "redis.fleet:6380"
+  tls:
+    enabled: true
+    caFile: "/etc/fleetmetadatacache/tls/ca.crt"
+    certFile: "/etc/fleetmetadatacache/tls/tls.crt"
+    keyFile: "/etc/fleetmetadatacache/tls/tls.key"
 sync:
   interval: 60s
   keyTtl: 90s
@@ -118,6 +125,10 @@ oauth2:
 			Expect(cfg.MCPGateway.GatewayType).To(Equal("kuadrant"))
 			Expect(cfg.MCPGateway.Namespace).To(Equal("fleet-system"))
 			Expect(cfg.Valkey.Addr).To(Equal("redis.fleet:6380"))
+			Expect(cfg.Valkey.TLS.Enabled).To(BeTrue())
+			Expect(cfg.Valkey.TLS.CAFile).To(Equal("/etc/fleetmetadatacache/tls/ca.crt"))
+			Expect(cfg.Valkey.TLS.CertFile).To(Equal("/etc/fleetmetadatacache/tls/tls.crt"))
+			Expect(cfg.Valkey.TLS.KeyFile).To(Equal("/etc/fleetmetadatacache/tls/tls.key"))
 			Expect(cfg.Sync.Interval).To(Equal(60 * time.Second))
 			Expect(cfg.Sync.KeyTTL).To(Equal(90 * time.Second))
 			Expect(cfg.Sync.ResourceKinds).To(Equal([]string{"Deployment", "Pod"}))
@@ -220,6 +231,32 @@ oauth2:
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("mcpGateway.gatewayType is required"))
+		})
+
+		It("UT-FMC-CFG-014: fails when valkey.tls.enabled is true but caFile is empty [SC-8]", func() {
+			// DD-PLATFORM-006 DA9 follow-up (round-16 RCA, PR #1790): mirrors
+			// pkg/datastorage/config's validateRedis SC-8 guard -- a
+			// half-configured TLS setup (enabled, no trust anchor) must fail
+			// fast at startup, not silently fall back to plaintext or hang.
+			cfg := config.DefaultServiceConfig()
+			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.OAuth2.TokenURL = urlIdpToken
+			cfg.Valkey.TLS.Enabled = true
+
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("valkey TLS enabled but no caFile specified"))
+			Expect(err.Error()).To(ContainSubstring("SC-8"))
+		})
+
+		It("UT-FMC-CFG-015: passes when valkey.tls.enabled is true and caFile is set [SC-8]", func() {
+			cfg := config.DefaultServiceConfig()
+			cfg.MCPGateway.Endpoint = urlGateway8080
+			cfg.OAuth2.TokenURL = urlIdpToken
+			cfg.Valkey.TLS.Enabled = true
+			cfg.Valkey.TLS.CAFile = "/etc/fleetmetadatacache/tls/ca.crt"
+
+			Expect(cfg.Validate()).To(Succeed())
 		})
 
 		It("UT-FMC-CFG-013: fails when mcpGateway.gatewayType is unsupported [SI-10]", func() {

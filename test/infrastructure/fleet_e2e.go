@@ -577,9 +577,10 @@ stringData:
 // raw-manifest FMC/Valkey stack alongside the gateway -- the dedicated
 // fleetmetadatacache E2E lane (SetupFMCE2EInfrastructure), which deploys
 // only DataStorage + Dex + this core alongside FMC. The full "fleet" suite
-// (SetupFleetE2EInfrastructure) chart-manages FMC/Valkey instead
-// (fleetmetadatacache.enabled=true via `helm install`, DD-TEST-015) and
-// calls DeployFleetGatewayInfra (Phases 1-3 only) directly.
+// (SetupFleetE2EInfrastructure) chart-manages FMC/Valkey instead (FMC's
+// enabled state is derived by the chart itself from global.fleet.enabled,
+// DD-TEST-015 / DD-PLATFORM-006 Decision Area 10) and calls
+// DeployFleetGatewayInfra (Phases 1-3 only) directly.
 //
 // authConfig controls how kube-mcp-server authenticates to the target
 // Kubernetes API server -- see KubeMCPServerAuthConfig. Both the "fleet"
@@ -608,9 +609,10 @@ func DeployFleetCoreInfra(ctx context.Context, namespace, kubeconfigPath, fmcIma
 // Gateway API CRDs + Istio (or Envoy AI Gateway), the Kuadrant/EAIGW MCP
 // Gateway itself, and the kube-mcp-server backend + registrations -- WITHOUT
 // Phase 4 (Valkey + FMC). Extracted (DD-TEST-015) so callers that
-// chart-manage FMC/Valkey themselves (fleetmetadatacache.enabled=true +
-// valkey.enabled=true via `helm install`, see SetupFleetE2EInfrastructure)
-// can deploy just the gateway, instead of DeployFleetCoreInfra's Phase 4
+// chart-manage FMC/Valkey themselves via `helm install` (FMC's enabled state
+// derived from global.fleet.enabled per DD-PLATFORM-006 Decision Area 10;
+// valkey.enabled defaults true -- see SetupFleetE2EInfrastructure) can
+// deploy just the gateway, instead of DeployFleetCoreInfra's Phase 4
 // deploying a redundant, raw-manifest FMC/Valkey stack alongside the
 // chart-managed one. DeployFleetCoreInfra remains the entry point for
 // callers that still need Phase 4 (the standalone FMC E2E lane, which does

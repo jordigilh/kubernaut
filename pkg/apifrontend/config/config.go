@@ -133,6 +133,23 @@ type ReplayCacheConfig struct {
 	// projection at /etc/apifrontend/valkey/valkey-secrets.yaml). Optional —
 	// leave empty for an unauthenticated Valkey instance.
 	CredentialsPath string `yaml:"credentialsPath,omitempty"`
+	// TLS configures TLS for the Valkey/Redis connection (DD-PLATFORM-006
+	// DA9). Optional: nil or Enabled=false connects in plaintext. Required
+	// once the Valkey instance is TLS-only (DD-PLATFORM-006 DA8's default).
+	TLS *ReplayCacheTLSConfig `yaml:"tls,omitempty"`
+}
+
+// ReplayCacheTLSConfig selects TLS settings for the replay-cache Valkey/Redis
+// client connection. Mirrors pkg/datastorage/config.RedisTLSConfig's field
+// shape for consistency across the two Valkey-consuming services (SC-8: TLS
+// always validates the server certificate via CAFile; CertFile/KeyFile are
+// optional mTLS, unused against the shipped chart's Valkey which does not
+// require client certs, but available for BYO Valkey/Redis that does).
+type ReplayCacheTLSConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	CAFile   string `yaml:"caFile,omitempty"`
+	CertFile string `yaml:"certFile,omitempty"`
+	KeyFile  string `yaml:"keyFile,omitempty"`
 }
 
 // IsDistributed reports whether the configured backend is the distributed

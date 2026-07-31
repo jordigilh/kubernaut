@@ -45,11 +45,13 @@ cluster access (helm template/GitOps must set this explicitly).
 Usage: {{ include "kubernaut.tls.issuerName" . }}
 */}}
 {{- define "kubernaut.tls.issuerName" -}}
-{{- if .Values.tls.certManager.issuerRef.name -}}
-{{- .Values.tls.certManager.issuerRef.name -}}
+{{- $explicitIssuerName := dig "certManager" "issuerRef" "name" "" .Values.tls -}}
+{{- if $explicitIssuerName -}}
+{{- $explicitIssuerName -}}
 {{- else if eq (include "kubernaut.hasClusterAccess" .) "true" -}}
-{{- $kind := .Values.tls.certManager.issuerRef.kind -}}
-{{- $apiVersion := printf "%s/v1" .Values.tls.certManager.issuerRef.group -}}
+{{- $tlsV := include "kubernaut.mergedValues" (dict "root" . "service" "tls") | fromYaml -}}
+{{- $kind := $tlsV.certManager.issuerRef.kind -}}
+{{- $apiVersion := printf "%s/v1" $tlsV.certManager.issuerRef.group -}}
 {{- $ns := "" -}}
 {{- if eq $kind "Issuer" -}}{{- $ns = .Release.Namespace -}}{{- end -}}
 {{- $result := lookup $apiVersion $kind $ns "" -}}
@@ -152,7 +154,14 @@ HorizontalPodAutoscaler (autoscaling/v2) for a component, targeting a
 same-named Deployment. Ported from the Kubernaut Operator's HPA builders
 (kubernaut-operator/internal/resources/hpa.go); identical across every
 autoscaling-capable service — only name/autoscaling values vary.
-Usage: {{ include "kubernaut.hpa" (dict "root" $ "name" "datastorage" "autoscaling" .Values.datastorage.autoscaling) }}
+Callers MUST pass the schema-default-merged `autoscaling` block (via
+`kubernaut.mergedValues`), not `.Values.<service>.autoscaling` directly --
+`cpuTarget`/`memoryTarget`/`minReplicas`/`maxReplicas` have no literal entry
+in values.yaml post-DD-PLATFORM-006, so a raw `.Values` read yields an empty
+`averageUtilization` and a Kubernetes API rejection the moment autoscaling is
+enabled without every field also being explicitly set.
+Usage: {{ $v := include "kubernaut.mergedValues" (dict "root" $ "service" "datastorage") | fromYaml }}
+       {{ include "kubernaut.hpa" (dict "root" $ "name" "datastorage" "autoscaling" $v.autoscaling) }}
 */}}
 {{- define "kubernaut.hpa" -}}
 {{- if .autoscaling.enabled }}
@@ -242,17 +251,37 @@ Constructs: {registry}/{namespace}{separator}{service}:{tag|@digest}
   separator="/" → quay.io/kubernaut-ai/gateway:tag        (nested registries)
   separator="-" → quay.io/myorg/kubernaut-ai-gateway:tag   (flat registries)
 When namespace is empty the separator is omitted: {registry}/{service}:{tag}
-Usage: {{ include "kubernaut.image" (dict "service" "gateway" "global" .Values.global "appVersion" .Chart.AppVersion) }}
+
+DD-PLATFORM-006 Decision Area 14 (PR9): takes "root" (the top-level `$`/`.`),
+not a pre-fetched "global" dict, and resolves global.image.* through
+kubernaut.mergedValues -- registry/namespace/separator all have non-zero
+schema defaults ("quay.io"/"kubernaut-ai"/"/"), so once global.image is
+removed from values.yaml a raw .Values.global.image.* read would silently
+regress to an empty/wrong value instead of the schema default.
+Usage: {{ include "kubernaut.image" (dict "service" "gateway" "root" $ "appVersion" .Chart.AppVersion) }}
 */}}
 {{- define "kubernaut.image" -}}
-{{- $ns := .global.image.namespace | default "" -}}
-{{- $sep := .global.image.separator | default "/" -}}
+{{- $g := include "kubernaut.mergedValues" (dict "root" .root "service" "global") | fromYaml -}}
+{{- $ns := $g.image.namespace -}}
+{{- $sep := $g.image.separator -}}
 {{- $repo := ternary (printf "%s%s%s" $ns $sep .service) .service (ne $ns "") -}}
-{{- if .global.image.digest -}}
-{{- printf "%s/%s@%s" .global.image.registry $repo .global.image.digest -}}
+{{- if $g.image.digest -}}
+{{- printf "%s/%s@%s" $g.image.registry $repo $g.image.digest -}}
 {{- else -}}
-{{- printf "%s/%s:%s" .global.image.registry $repo (.global.image.tag | default .appVersion) -}}
+{{- printf "%s/%s:%s" $g.image.registry $repo (default .appVersion $g.image.tag) -}}
 {{- end -}}
+{{- end }}
+
+{{/*
+Return the effective image pull policy (global.image.pullPolicy, schema
+default "IfNotPresent"). DD-PLATFORM-006 Decision Area 14 (PR9): routed
+through kubernaut.mergedValues for the same reason as kubernaut.image --
+once global.image is removed from values.yaml, a raw .Values read (with no
+`| default` guard at all today) would render an empty imagePullPolicy.
+Usage: {{ include "kubernaut.imagePullPolicy" $ }}
+*/}}
+{{- define "kubernaut.imagePullPolicy" -}}
+{{- (include "kubernaut.mergedValues" (dict "root" . "service" "global") | fromYaml).image.pullPolicy -}}
 {{- end }}
 
 {{/*
@@ -296,7 +325,7 @@ When using external Valkey, falls through to the external settings.
 
 {{/*
 Return the Secret name for the DataStorage audit hash-chain HMAC key
-(GAP-05, Issue #1505). Only relevant when datastorage.config.auditHashKey.enabled.
+(GAP-05, Issue #1505). Mandatory, no enabled gate (DD-PLATFORM-006 DA6).
 Precedence: datastorage.config.auditHashKey.existingSecret > "datastorage-audit-hmac-key".
 */}}
 {{- define "kubernaut.datastorage.auditHashKeySecretName" -}}
@@ -312,7 +341,8 @@ Return the PostgreSQL host.
 Uses in-chart service DNS when postgresql.enabled, otherwise externalPostgresql.host.
 */}}
 {{- define "kubernaut.postgresql.host" -}}
-{{- if .Values.postgresql.enabled -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "postgresql") | fromYaml -}}
+{{- if $v.enabled -}}
 postgresql.{{ .Release.Namespace }}.svc.cluster.local
 {{- else -}}
 {{- required "postgresql.host is required when postgresql.enabled=false" .Values.postgresql.host -}}
@@ -323,10 +353,11 @@ postgresql.{{ .Release.Namespace }}.svc.cluster.local
 Return the PostgreSQL port.
 */}}
 {{- define "kubernaut.postgresql.port" -}}
-{{- if .Values.postgresql.enabled -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "postgresql") | fromYaml -}}
+{{- if $v.enabled -}}
 5432
 {{- else -}}
-{{- .Values.postgresql.port | default 5432 -}}
+{{- $v.port -}}
 {{- end -}}
 {{- end }}
 
@@ -334,14 +365,14 @@ Return the PostgreSQL port.
 Return the PostgreSQL username (for config files / readiness probes).
 */}}
 {{- define "kubernaut.postgresql.username" -}}
-{{- .Values.postgresql.auth.username | default "slm_user" -}}
+{{- (include "kubernaut.mergedValues" (dict "root" . "service" "postgresql") | fromYaml).auth.username -}}
 {{- end }}
 
 {{/*
 Return the PostgreSQL database name.
 */}}
 {{- define "kubernaut.postgresql.database" -}}
-{{- .Values.postgresql.auth.database | default "action_history" -}}
+{{- (include "kubernaut.mergedValues" (dict "root" . "service" "postgresql") | fromYaml).auth.database -}}
 {{- end }}
 
 {{/*
@@ -376,13 +407,18 @@ Return the Valkey data directory mount path.
 
 {{/*
 Return the Valkey address (host:port).
+DD-PLATFORM-006 DA8: the in-chart Valkey is TLS-only on 6380. The BYO branch
+(valkey.enabled=false) is unaffected -- an external Valkey/Redis's port is the
+operator's own concern (default 6379 matches upstream Redis/Valkey's own
+plaintext default, not this chart's TLS decision).
 */}}
 {{- define "kubernaut.valkey.addr" -}}
-{{- if .Values.valkey.enabled -}}
-valkey.{{ .Release.Namespace }}.svc.cluster.local:6379
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "valkey") | fromYaml -}}
+{{- if $v.enabled -}}
+valkey.{{ .Release.Namespace }}.svc.cluster.local:6380
 {{- else -}}
 {{- $host := required "valkey.host is required when valkey.enabled=false" .Values.valkey.host -}}
-{{- printf "%s:%d" $host (int (.Values.valkey.port | default 6379)) -}}
+{{- printf "%s:%d" $host (int $v.port) -}}
 {{- end -}}
 {{- end }}
 
@@ -405,6 +441,34 @@ https://fleetmetadatacache-service.{{ .Release.Namespace }}.svc.cluster.local:80
 {{- end }}
 
 {{/*
+DD-PLATFORM-006 Decision Area 10: derive fleetmetadatacache.enabled's default from
+global.fleet.enabled + global.fleet.backend instead of requiring a second, easy-to-miss manual
+toggle. Gateway/RemediationOrchestrator's own fleet config already resolves an empty
+global.fleet.backend to "fleetmetadatacache" (see gateway.yaml/remediationorchestrator.yaml), so
+there is no scenario where global.fleet.enabled=true and the resolved backend is
+"fleetmetadatacache" but FMC should stay off. An explicit, contradictory override
+(fleetmetadatacache.enabled: false while the derived default would be true) has no sane
+interpretation and fails loudly instead of silently deploying a fleet that can never reach its
+own scope-check backend -- detected via hasKey (not `default`/`coalesce`, which can't
+distinguish "unset" from "explicitly false").
+Usage: {{ include "kubernaut.fleetmetadatacache.effectiveEnabled" . }} -- renders the literal
+string "true" or "false"; compare with `eq (include "kubernaut.fleetmetadatacache.effectiveEnabled" .) "true"`.
+*/}}
+{{- define "kubernaut.fleetmetadatacache.effectiveEnabled" -}}
+{{- $backend := default "fleetmetadatacache" .Values.global.fleet.backend -}}
+{{- $derivedDefault := and .Values.global.fleet.enabled (eq $backend "fleetmetadatacache") -}}
+{{- if hasKey .Values.fleetmetadatacache "enabled" -}}
+  {{- if and (not .Values.fleetmetadatacache.enabled) $derivedDefault -}}
+    {{- fail "fleetmetadatacache.enabled=false conflicts with global.fleet.enabled=true + global.fleet.backend resolving to \"fleetmetadatacache\" -- FleetMetadataCache must run when it is the selected fleet scope-check backend. Either remove the fleetmetadatacache.enabled=false override, or point global.fleet.backend at a different backend (e.g. \"acm\")." -}}
+  {{- else -}}
+    {{- printf "%t" .Values.fleetmetadatacache.enabled -}}
+  {{- end -}}
+{{- else -}}
+  {{- printf "%t" $derivedDefault -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Return the in-cluster Gateway service URL.
 Issue #678: switches to https:// when tls.interService.enabled is true.
 */}}
@@ -416,22 +480,14 @@ https://gateway-service.{{ .Release.Namespace }}.svc.cluster.local:8080
 Inter-service TLS cert directory (server side).
 */}}
 {{- define "kubernaut.interServiceTLS.certDir" -}}
-{{- if and .Values.tls .Values.tls.interService .Values.tls.interService.certDir -}}
-{{- .Values.tls.interService.certDir -}}
-{{- else -}}
-/etc/tls
-{{- end -}}
+{{- (include "kubernaut.mergedValues" (dict "root" . "service" "tls") | fromYaml).interService.certDir -}}
 {{- end -}}
 
 {{/*
 Inter-service TLS CA file path (client side).
 */}}
 {{- define "kubernaut.interServiceTLS.caFile" -}}
-{{- if and .Values.tls .Values.tls.interService .Values.tls.interService.caFile -}}
-{{- .Values.tls.interService.caFile -}}
-{{- else -}}
-/etc/tls-ca/ca.crt
-{{- end -}}
+{{- (include "kubernaut.mergedValues" (dict "root" . "service" "tls") | fromYaml).interService.caFile -}}
 {{- end -}}
 
 {{/*
@@ -439,7 +495,7 @@ Return the namespace used for workflow execution (Jobs, PipelineRuns).
 Defaults to "kubernaut-workflows".
 */}}
 {{- define "kubernaut.workflowNamespace" -}}
-{{- .Values.workflowexecution.workflowNamespace | default "kubernaut-workflows" -}}
+{{- (include "kubernaut.mergedValues" (dict "root" . "service" "workflowexecution") | fromYaml).workflowNamespace -}}
 {{- end }}
 
 {{/*
@@ -916,7 +972,7 @@ Usage: {{ include "kubernaut.np.apiServerPeers" . | nindent 4 }}
 {{- end -}}
 {{- end -}}
 {{- if not $cidrs -}}
-{{- fail "networkPolicies.enabled=true but could not auto-discover the kube-apiserver endpoint (`lookup \"v1\" \"Endpoints\" \"default\" \"kubernetes\"` returned no addresses -- possible causes: the Helm installer ServiceAccount lacks permission to read Endpoints in the default namespace, or this is an unusual cluster). Set networkPolicies.apiServerCIDR (single control-plane) or networkPolicies.apiServerCIDRs (HA, one entry per control-plane node) explicitly -- see `kubectl get endpoints kubernetes -o wide`." -}}
+{{- fail "NetworkPolicies are mandatory (DD-PLATFORM-006) but could not auto-discover the kube-apiserver endpoint (`lookup \"v1\" \"Endpoints\" \"default\" \"kubernetes\"` returned no addresses -- possible causes: the Helm installer ServiceAccount lacks permission to read Endpoints in the default namespace, or this is an unusual cluster). Set networkPolicies.apiServerCIDR (single control-plane) or networkPolicies.apiServerCIDRs (HA, one entry per control-plane node) explicitly -- see `kubectl get endpoints kubernetes -o wide`." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -1109,16 +1165,17 @@ rule instead of both being additive).
 Usage: {{ include "kubernaut.np.idpEgress" . | nindent 4 }}
 */}}
 {{- define "kubernaut.np.idpEgress" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "networkPolicies") | fromYaml -}}
 - ports:
-    - port: {{ .Values.networkPolicies.idp.port | default 443 }}
+    - port: {{ $v.idp.port }}
       protocol: TCP
-    {{- range .Values.networkPolicies.idp.extraPorts }}
+    {{- range $v.idp.extraPorts }}
     - port: {{ . }}
       protocol: TCP
     {{- end }}
   to:
     - ipBlock:
-        cidr: {{ .Values.networkPolicies.idp.cidr | default "0.0.0.0/0" }}
+        cidr: {{ $v.idp.cidr }}
 {{- end }}
 
 {{/*
@@ -1148,12 +1205,13 @@ deployEnvoyAIGatewayInfra both hardcode :8080).
 Usage: {{ include "kubernaut.np.mcpGatewayEgress" . | nindent 4 }}
 */}}
 {{- define "kubernaut.np.mcpGatewayEgress" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "networkPolicies") | fromYaml -}}
 - ports:
-    - port: {{ .Values.networkPolicies.mcpGateway.port | default 8080 }}
+    - port: {{ $v.mcpGateway.port }}
       protocol: TCP
   to:
     - ipBlock:
-        cidr: {{ .Values.networkPolicies.mcpGateway.cidr | default "0.0.0.0/0" }}
+        cidr: {{ $v.mcpGateway.cidr }}
 {{- end }}
 
 {{/*
@@ -1164,12 +1222,13 @@ because the target is normally an external HTTPS API, not a chart-managed pod.
 Usage: {{ include "kubernaut.np.llmEgress" . | nindent 4 }}
 */}}
 {{- define "kubernaut.np.llmEgress" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "networkPolicies") | fromYaml -}}
 - ports:
-    - port: {{ .Values.networkPolicies.llm.port | default 443 }}
+    - port: {{ $v.llm.port }}
       protocol: TCP
   to:
     - ipBlock:
-        cidr: {{ .Values.networkPolicies.llm.cidr | default "0.0.0.0/0" }}
+        cidr: {{ $v.llm.cidr }}
 {{- end }}
 
 {{/* ===== Console helpers (BR-PLATFORM-006, Kubernaut Operator parity) ===== */}}
@@ -1194,7 +1253,8 @@ In-cluster APIFrontend URL the console's nginx sidecar reverse-proxies to.
 Usage: {{ include "kubernaut.console.apifrontendURL" . }}
 */}}
 {{- define "kubernaut.console.apifrontendURL" -}}
-{{- printf "https://apifrontend.%s.svc:%v" .Release.Namespace (.Values.apifrontend.config.server.httpPort | default 8443) -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "apifrontend") | fromYaml -}}
+{{- printf "https://apifrontend.%s.svc:%v" .Release.Namespace $v.config.server.httpPort -}}
 {{- end }}
 
 {{/* ===== LLM Profile Consolidation Helpers (DD-PLATFORM-007 / BR-PLATFORM-008) ===== */}}
@@ -1368,3 +1428,46 @@ reasoning:
 {{- end }}
 {{- end }}
 {{- end }}
+
+{{/*
+DD-PLATFORM-006 Decision Area 14 (PR9): merges a service's block of
+charts/kubernaut/templates/_generated_defaults.tpl (kubernaut.defaults,
+schema-derived) with the user's own .Values.<service> overrides, user values
+always winning -- including an explicit false/0/"" override of a
+true/non-zero/non-empty default. Returns the merged block as a dict (via
+fromYaml), so callers read $v.<field> instead of .Values.<service>.<field>.
+
+Deliberately uses `mergeOverwrite (dict) $svcDefaults $svcValues`, NOT
+`merge $svcValues $svcDefaults`. Sprig's `merge` gives the first argument's
+keys precedence, but inherits a well-documented mergo limitation
+(https://github.com/helm/helm/issues/13309,
+https://github.com/Masterminds/sprig/issues/255): if the winning side's leaf
+value is a Go zero value (false/0/""), mergo treats it as "unset" and lets
+the losing side's non-zero value leak through anyway -- silently discarding
+an explicit user override back to a true-defaulting boolean's zero value.
+This is the exact bug class this PR exists to fix (three confirmed live
+instances: apifrontend.config.mcp.enabled / .interactive.enabled /
+.severityTriage.llmEnabled all silently re-enable themselves when a user
+sets them to false via the old `| default true` pattern). `mergeOverwrite`
+gives the *last* argument precedence unconditionally, including its zero
+values, so ordering defaults first and user values last is what makes
+explicit zero-value overrides survive. Starting from an empty `dict` (per
+Sprig's own documented gotcha) avoids mutating $svcDefaults/$svcValues in
+place. Verified empirically (not just from docs) against
+bool/int/string zero-value overrides and nested partial-object overrides
+before adoption -- see the PR9 plan's Preflight finding 6.
+
+datastorage.config.retention.enabled is the one field deliberately NOT
+routed through this helper (see datastorage.yaml) -- its schema default
+(false) diverges from the intentionally-hardened values.yaml default (true,
+FED-C2/AU-11 compliance), so it stays on a direct .Values read.
+
+Usage: {{ $v := include "kubernaut.mergedValues" (dict "root" $ "service" "gateway") | fromYaml }}
+       then read $v.replicas instead of .Values.gateway.replicas.
+*/}}
+{{- define "kubernaut.mergedValues" -}}
+{{- $defaults := include "kubernaut.defaults" .root | fromYaml -}}
+{{- $svcDefaults := deepCopy (default dict (index $defaults .service)) -}}
+{{- $svcValues := deepCopy (default dict (index .root.Values .service)) -}}
+{{- mergeOverwrite (dict) $svcDefaults $svcValues | toYaml -}}
+{{- end -}}

@@ -12,6 +12,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/prometheus/client_golang/prometheus"
 	gobreaker "github.com/sony/gobreaker/v2"
+	"golang.org/x/sync/singleflight"
 )
 
 // NewCircuitBreakerStateGauge creates a fresh circuit breaker state gauge.
@@ -42,6 +43,19 @@ type JWKSCache struct {
 	refreshInterval time.Duration
 	breakers        map[string]*gobreaker.CircuitBreaker[*jose.JSONWebKeySet]
 	fetchLimiter    FetchLimiter
+	// sf deduplicates concurrent cold-cache fetches for the same issuer.
+	// PR #1790 round-12 RCA: without this, two requests arriving within the
+	// same cold-cache window (e.g. right after a pod restart) each pass the
+	// freshCachedKeys/throttledCachedKeys checks below with no entry yet,
+	// so both independently call fetchJWKS. Under load, one of those two
+	// concurrent fetches can fail (network blip / provider slow to
+	// respond) while the other succeeds -- the "unlucky" request then 401s
+	// even though a JWKS fetch for this exact issuer succeeded
+	// milliseconds earlier. singleflight.Group collapses concurrent
+	// callers for the same issuerURL into a single in-flight fetch, so
+	// only one real network call happens and every caller observes its
+	// outcome. Zero value is ready to use.
+	sf singleflight.Group
 }
 
 type jwksCacheEntry struct {
@@ -148,10 +162,19 @@ func (c *JWKSCache) GetKeys(ctx context.Context, issuerURL string) (*jose.JSONWe
 		return keys, nil
 	}
 
-	result, err := cb.Execute(func() (*jose.JSONWebKeySet, error) {
-		return c.fetchJWKS(ctx, issuerURL)
+	// singleflight.Do: only the first concurrent caller for this issuerURL
+	// actually runs fetchJWKS; the rest block and share its result. Since
+	// the shared call runs with whichever caller's context "won" the race,
+	// a piggybacking caller's own ctx cancellation won't abort a fetch
+	// already in flight for others -- an accepted tradeoff for a short,
+	// non-user-scoped background fetch (see struct field doc above).
+	untyped, err, _ := c.sf.Do(issuerURL, func() (interface{}, error) {
+		return cb.Execute(func() (*jose.JSONWebKeySet, error) {
+			return c.fetchJWKS(ctx, issuerURL)
+		})
 	})
 	if err == nil {
+		result, _ := untyped.(*jose.JSONWebKeySet)
 		c.mu.Lock()
 		c.entries[issuerURL] = &jwksCacheEntry{keys: result, fetchedAt: time.Now()}
 		c.mu.Unlock()

@@ -1,17 +1,26 @@
 # Air-gapped / disconnected overlay for Kubernaut Helm chart.
 #
-# Usage (nested registry — Harbor, Artifactory, generic Docker v2):
-#   helm install kubernaut charts/kubernaut \
-#     -f charts/kubernaut/values-demo.yaml \
-#     -f charts/kubernaut/values-airgap.yaml \
-#     --set global.image.registry=harbor.corp
+# Airgapped installs have no live internet access, so pull and extract the
+# chart locally first rather than referencing it by OCI URL at install time.
+# Combine this overlay with your own values file supplying the chart's
+# mandatory fields (Rego policies + LLM profile -- see README's "Quick Start"
+# for the minimal example) and your mirror registry:
 #
-# Usage (flat registry — quay.io, Docker Hub):
-#   helm install kubernaut charts/kubernaut \
-#     -f charts/kubernaut/values-demo.yaml \
-#     -f charts/kubernaut/values-airgap.yaml \
-#     --set global.image.registry=quay.io/myorg \
-#     --set global.image.separator=-
+# 1. Pull and extract the chart version you're deploying:
+#      helm pull oci://quay.io/kubernaut-ai/charts/kubernaut --version <X.Y.Z> --untar
+#
+# 2. Install from the now-local directory (nested registry — Harbor, Artifactory, generic Docker v2):
+#      helm install kubernaut ./kubernaut \
+#        -f my-values.yaml \
+#        -f ./kubernaut/values-airgap.yaml \
+#        --set global.image.registry=harbor.corp
+#
+#    Flat registry (quay.io, Docker Hub):
+#      helm install kubernaut ./kubernaut \
+#        -f my-values.yaml \
+#        -f ./kubernaut/values-airgap.yaml \
+#        --set global.image.registry=quay.io/myorg \
+#        --set global.image.separator=-
 #
 # Prerequisites:
 #   1. Mirror all images listed by hack/airgap/generate-image-list.sh

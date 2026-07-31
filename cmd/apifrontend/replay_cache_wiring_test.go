@@ -1,9 +1,19 @@
 package main
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-logr/logr"
@@ -117,6 +127,124 @@ func TestLoadReplayCachePassword_MissingPasswordKey_ReturnsError(t *testing.T) {
 func TestLoadReplayCachePassword_MissingFile_ReturnsError(t *testing.T) {
 	if _, err := loadReplayCachePassword(filepath.Join(t.TempDir(), "does-not-exist.yaml")); err == nil {
 		t.Error("expected an error for a missing credentials file")
+	}
+}
+
+// generateSelfSignedCertPair writes a self-signed CA/leaf cert (usable as
+// both server cert and its own trust root, mirroring the pattern in
+// pkg/shared/tls/tls_test.go) to certFile/keyFile.
+func generateSelfSignedCertPair(t *testing.T, certFile, keyFile string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		NotBefore:    time.Now().Add(-1 * time.Hour),
+		NotAfter:     time.Now().Add(24 * time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1)},
+		DNSNames:     []string{"localhost"},
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("failed to create certificate: %v", err)
+	}
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	if err := os.WriteFile(certFile, certPEM, 0o644); err != nil { //nolint:gosec // test fixture
+		t.Fatalf("failed to write cert: %v", err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("failed to marshal key: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	if err := os.WriteFile(keyFile, keyPEM, 0o600); err != nil {
+		t.Fatalf("failed to write key: %v", err)
+	}
+}
+
+// DD-PLATFORM-006 DA9: Decision Area 8 makes Valkey TLS-only, but the
+// replay-cache Valkey client had zero TLS support -- these tests prove the
+// new config.ReplayCacheConfig.TLS block is actually wired into a real TLS
+// handshake against a TLS-only Valkey, not just parsed and dropped.
+
+func TestBuildReplayCache_TLSEnabled_ConnectsOverTLS(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "tls.crt")
+	keyFile := filepath.Join(dir, "tls.key")
+	generateSelfSignedCertPair(t, certFile, keyFile)
+
+	serverCert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	if err != nil {
+		t.Fatalf("failed to load server cert: %v", err)
+	}
+	mr, err := miniredis.RunTLS(&tls.Config{Certificates: []tls.Certificate{serverCert}}) //nolint:gosec // test-only min version default is fine
+	if err != nil {
+		t.Fatalf("failed to start TLS miniredis: %v", err)
+	}
+	defer mr.Close()
+
+	rc := buildReplayCache(&config.ReplayCacheConfig{
+		Backend:   "redis",
+		RedisAddr: mr.Addr(),
+		TLS: &config.ReplayCacheTLSConfig{
+			Enabled: true,
+			CAFile:  certFile, // self-signed cert doubles as its own CA
+		},
+	}, false, logr.Discard())
+	defer rc.Stop()
+
+	if _, ok := rc.(*auth.ValkeyReplayCache); !ok {
+		t.Fatalf("expected a TLS-enabled config to still construct a ValkeyReplayCache (successful TLS handshake), got %T", rc)
+	}
+	if rc.Seen("jti-tls-wiring-check") {
+		t.Error("expected a fresh jti to not be seen yet")
+	}
+	if !rc.Seen("jti-tls-wiring-check") {
+		t.Error("expected the same jti to be detected as seen on the second call")
+	}
+}
+
+func TestBuildReplayCache_TLSEnabledWrongCA_FallsBackToInMemory(t *testing.T) {
+	serverDir := t.TempDir()
+	serverCertFile := filepath.Join(serverDir, "tls.crt")
+	serverKeyFile := filepath.Join(serverDir, "tls.key")
+	generateSelfSignedCertPair(t, serverCertFile, serverKeyFile)
+
+	otherDir := t.TempDir()
+	wrongCAFile := filepath.Join(otherDir, "other.crt")
+	wrongKeyFile := filepath.Join(otherDir, "other.key")
+	generateSelfSignedCertPair(t, wrongCAFile, wrongKeyFile)
+
+	serverCert, err := tls.LoadX509KeyPair(serverCertFile, serverKeyFile)
+	if err != nil {
+		t.Fatalf("failed to load server cert: %v", err)
+	}
+	mr, err := miniredis.RunTLS(&tls.Config{Certificates: []tls.Certificate{serverCert}}) //nolint:gosec // test-only min version default is fine
+	if err != nil {
+		t.Fatalf("failed to start TLS miniredis: %v", err)
+	}
+	defer mr.Close()
+
+	// wrongCAFile does not trust the server's actual cert, so the TLS
+	// handshake must fail closed into the in-memory fallback -- exactly like
+	// the existing "unreachable backend" fallback test above.
+	rc := buildReplayCache(&config.ReplayCacheConfig{
+		Backend:   "redis",
+		RedisAddr: mr.Addr(),
+		TLS: &config.ReplayCacheTLSConfig{
+			Enabled: true,
+			CAFile:  wrongCAFile,
+		},
+	}, false, logr.Discard())
+	defer rc.Stop()
+
+	if _, ok := rc.(*auth.ReplayCache); !ok {
+		t.Errorf("expected a TLS handshake failure (untrusted CA) to fall back to in-memory ReplayCache, got %T", rc)
 	}
 }
 

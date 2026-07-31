@@ -26,19 +26,20 @@ data:
     {{- include "kubernaut.remediationorchestrator.configYAML" . | nindent 4 }}
 {{- define "kubernaut.remediationorchestrator.configYAML" -}}
 {{- $remediationorchestratorFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.remediationorchestrator.fleet "oauth2" .Values.remediationorchestrator.fleet.oauth2) | fromYaml -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "remediationorchestrator") | fromYaml -}}
 logging:
-  level: {{ .Values.remediationorchestrator.logging.level | default "INFO" | quote }}
+  level: {{ $v.logging.level | quote }}
 controller:
   metricsAddr: ":9090"
   healthProbeAddr: ":8081"
   leaderElection: false
   leaderElectionId: "remediationorchestrator.kubernaut.ai"
 timeouts:
-  global: {{ .Values.remediationorchestrator.config.timeouts.global | default "1h" | quote }}
-  processing: {{ .Values.remediationorchestrator.config.timeouts.processing | default "5m" | quote }}
-  analyzing: {{ .Values.remediationorchestrator.config.timeouts.analyzing | default "10m" | quote }}
-  executing: {{ .Values.remediationorchestrator.config.timeouts.executing | default "30m" | quote }}
-  verifying: {{ .Values.remediationorchestrator.config.timeouts.verifying | default "30m" | quote }}
+  global: {{ $v.config.timeouts.global | quote }}
+  processing: {{ $v.config.timeouts.processing | quote }}
+  analyzing: {{ $v.config.timeouts.analyzing | quote }}
+  executing: {{ $v.config.timeouts.executing | quote }}
+  verifying: {{ $v.config.timeouts.verifying | quote }}
 datastorage:
   url: "{{ include "kubernaut.datastorage.url" . }}"
   timeout: "10s"
@@ -48,28 +49,28 @@ datastorage:
     flushInterval: "1s"
     maxRetries: 3
 effectivenessAssessment:
-  stabilizationWindow: {{ .Values.remediationorchestrator.config.effectivenessAssessment.stabilizationWindow | default "5m" | quote }}
+  stabilizationWindow: {{ $v.config.effectivenessAssessment.stabilizationWindow | quote }}
 asyncPropagation:
-  gitOpsSyncDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.gitOpsSyncDelay | default "3m" | quote }}
-  operatorReconcileDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.operatorReconcileDelay | default "1m" | quote }}
-  proactiveAlertDelay: {{ .Values.remediationorchestrator.config.asyncPropagation.proactiveAlertDelay | default "5m" | quote }}
+  gitOpsSyncDelay: {{ $v.config.asyncPropagation.gitOpsSyncDelay | quote }}
+  operatorReconcileDelay: {{ $v.config.asyncPropagation.operatorReconcileDelay | quote }}
+  proactiveAlertDelay: {{ $v.config.asyncPropagation.proactiveAlertDelay | quote }}
 notifications:
   notifySelfResolved: {{ ((.Values.remediationorchestrator.config.notifications).notifySelfResolved) | default false }}
 routing:
-  consecutiveFailureThreshold: {{ .Values.remediationorchestrator.config.routing.consecutiveFailureThreshold | default 3 }}
-  consecutiveFailureCooldown: {{ .Values.remediationorchestrator.config.routing.consecutiveFailureCooldown | default "1h" | quote }}
-  recentlyRemediatedCooldown: {{ .Values.remediationorchestrator.config.routing.recentlyRemediatedCooldown | default "5m" | quote }}
+  consecutiveFailureThreshold: {{ $v.config.routing.consecutiveFailureThreshold }}
+  consecutiveFailureCooldown: {{ $v.config.routing.consecutiveFailureCooldown | quote }}
+  recentlyRemediatedCooldown: {{ $v.config.routing.recentlyRemediatedCooldown | quote }}
   exponentialBackoffBase: "1m"
   exponentialBackoffMax: "10m"
   exponentialBackoffMaxExponent: 4
   scopeBackoffBase: "5s"
   scopeBackoffMax: "5m"
   noActionRequiredDelayHours: 24
-  ineffectiveChainThreshold: {{ .Values.remediationorchestrator.config.routing.ineffectiveChainThreshold | default 3 }}
-  recurrenceCountThreshold: {{ .Values.remediationorchestrator.config.routing.recurrenceCountThreshold | default 5 }}
-  ineffectiveTimeWindow: {{ .Values.remediationorchestrator.config.routing.ineffectiveTimeWindow | default "4h" | quote }}
+  ineffectiveChainThreshold: {{ $v.config.routing.ineffectiveChainThreshold }}
+  recurrenceCountThreshold: {{ $v.config.routing.recurrenceCountThreshold }}
+  ineffectiveTimeWindow: {{ $v.config.routing.ineffectiveTimeWindow | quote }}
 retention:
-  period: {{ .Values.remediationorchestrator.config.retention.period | default "24h" | quote }}
+  period: {{ $v.config.retention.period | quote }}
 {{- if .Values.global.fleet.enabled }}
 fleet:
   enabled: true
@@ -243,7 +244,8 @@ metadata:
     app: remediationorchestrator-controller
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.remediationorchestrator.replicas }}
+  {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "remediationorchestrator") | fromYaml }}
+  replicas: {{ $v.replicas }}
   selector:
     matchLabels:
       app: remediationorchestrator-controller
@@ -265,8 +267,8 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.remediationorchestrator "global" .Values.global) | nindent 6 }}
       containers:
         - name: remediationorchestrator-controller
-          image: {{ include "kubernaut.image" (dict "service" "remediationorchestrator" "global" .Values.global "appVersion" .Chart.AppVersion) }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ include "kubernaut.image" (dict "service" "remediationorchestrator" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.remediationorchestrator | nindent 12 }}
           args:

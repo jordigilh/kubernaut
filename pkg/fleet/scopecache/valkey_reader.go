@@ -18,6 +18,7 @@ package scopecache
 
 import (
 	"context"
+	"crypto/tls"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -27,10 +28,28 @@ type ValkeyCacheReader struct {
 	client *redis.Client
 }
 
+// ValkeyOption configures optional behavior on the redis.Client constructed
+// by NewValkeyCacheReader. Variadic so existing plaintext callers (tests,
+// BYO Valkey without TLS) keep compiling unchanged.
+type ValkeyOption func(*redis.Options)
+
+// WithTLSConfig enables TLS on the Valkey connection using a pre-built
+// *tls.Config (DD-PLATFORM-006 DA9 follow-up). A nil tlsConfig is a no-op,
+// leaving the connection in plaintext.
+func WithTLSConfig(tlsConfig *tls.Config) ValkeyOption {
+	return func(o *redis.Options) {
+		o.TLSConfig = tlsConfig
+	}
+}
+
 // NewValkeyCacheReader creates a CacheReader backed by Valkey.
-func NewValkeyCacheReader(addr string) *ValkeyCacheReader {
+func NewValkeyCacheReader(addr string, opts ...ValkeyOption) *ValkeyCacheReader {
+	redisOpts := &redis.Options{Addr: addr}
+	for _, opt := range opts {
+		opt(redisOpts)
+	}
 	return &ValkeyCacheReader{
-		client: redis.NewClient(&redis.Options{Addr: addr}),
+		client: redis.NewClient(redisOpts),
 	}
 }
 

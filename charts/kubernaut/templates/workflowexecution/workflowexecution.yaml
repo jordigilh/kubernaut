@@ -204,8 +204,9 @@ data:
     {{- include "kubernaut.workflowexecution.configYAML" . | nindent 4 }}
 {{- define "kubernaut.workflowexecution.configYAML" -}}
 {{- $weFleetCredsRef := .Values.workflowexecution.fleet.oauth2.credentialsSecretRef -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "workflowexecution") | fromYaml -}}
 logging:
-  level: {{ .Values.workflowexecution.logging.level | default "INFO" | quote }}
+  level: {{ $v.logging.level | quote }}
 controller:
   metricsAddr: ":9090"
   healthProbeAddr: ":8081"
@@ -213,7 +214,7 @@ controller:
   leaderElectionId: workflowexecution.kubernaut.ai
 execution:
   namespace: {{ include "kubernaut.workflowNamespace" . }}
-  cooldownPeriod: {{ .Values.workflowexecution.config.execution.cooldownPeriod | default "1m" }}
+  cooldownPeriod: {{ $v.config.execution.cooldownPeriod }}
 datastorage:
   url: "{{ include "kubernaut.datastorage.url" . }}"
   timeout: 10s
@@ -225,11 +226,11 @@ datastorage:
 {{- if .Values.workflowexecution.config.ansible }}
 ansible:
   apiURL: {{ .Values.workflowexecution.config.ansible.apiURL | quote }}
-  organizationID: {{ .Values.workflowexecution.config.ansible.organizationID | default 1 }}
+  organizationID: {{ $v.config.ansible.organizationID }}
   {{- if .Values.workflowexecution.config.ansible.tokenSecretRef }}
   tokenSecretRef:
     name: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.name | quote }}
-    key: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.key | default "token" | quote }}
+    key: {{ $v.config.ansible.tokenSecretRef.key | quote }}
     {{- if .Values.workflowexecution.config.ansible.tokenSecretRef.namespace }}
     namespace: {{ .Values.workflowexecution.config.ansible.tokenSecretRef.namespace | quote }}
     {{- end }}
@@ -263,7 +264,8 @@ metadata:
     app: workflowexecution-controller
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.workflowexecution.replicas }}
+  {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "workflowexecution") | fromYaml }}
+  replicas: {{ $v.replicas }}
   selector:
     matchLabels:
       app: workflowexecution-controller
@@ -290,8 +292,8 @@ spec:
       # disabled (inter-service-ca ConfigMap absent/empty).
       initContainers:
         - name: build-ca-bundle
-          image: {{ .Values.hooks.tlsCerts.image }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ (include "kubernaut.mergedValues" (dict "root" $ "service" "hooks") | fromYaml).tlsCerts.image }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.workflowexecution | nindent 12 }}
           command: ["sh", "-c"]
@@ -315,8 +317,8 @@ spec:
       {{- end }}
       containers:
         - name: workflowexecution-controller
-          image: {{ include "kubernaut.image" (dict "service" "workflowexecution" "global" .Values.global "appVersion" .Chart.AppVersion) }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ include "kubernaut.image" (dict "service" "workflowexecution" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.workflowexecution | nindent 12 }}
           args:
@@ -388,7 +390,7 @@ spec:
           secret:
             secretName: {{ .Values.workflowexecution.config.ansible.caCertSecretRef.name }}
             items:
-              - key: {{ .Values.workflowexecution.config.ansible.caCertSecretRef.key | default "ca.crt" }}
+              - key: {{ $v.config.ansible.caCertSecretRef.key }}
                 path: aap-ca.crt
         - name: combined-ca
           emptyDir:

@@ -1,4 +1,4 @@
-{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.effectivenessmonitor.enabled }}
+{{- $npV := include "kubernaut.mergedValues" (dict "root" $ "service" "networkPolicies") | fromYaml }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 {{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "effectivenessmonitor" "appLabel" "effectivenessmonitor-controller") }}
@@ -15,10 +15,10 @@ spec:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
     - ports:
-        - port: {{ .Values.networkPolicies.monitoring.prometheusPort | default 9090 }}
+        - port: {{ $npV.monitoring.prometheusPort }}
           protocol: TCP
     - ports:
-        - port: {{ .Values.networkPolicies.monitoring.alertManagerPort | default 9093 }}
+        - port: {{ $npV.monitoring.alertManagerPort }}
           protocol: TCP
     {{- if .Values.global.fleet.enabled }}
     {{- /* #1755 DD-TEST-015 RCA: EM's fleet OAuth2 token fetch to
@@ -31,4 +31,3 @@ spec:
     kubernaut.np.mcpGatewayEgress's doc comment for the full RCA. */}}
     {{- include "kubernaut.np.mcpGatewayEgress" . | nindent 4 }}
     {{- end }}
-{{- end }}

@@ -1,0 +1,85 @@
+suite: "Issue #1803: apifrontend interactive timeout defaults must match Go code defaults exactly"
+# values.schema.json's apifrontend.config.interactive.{awaitSessionTimeout,
+# bridgeInactivityTimeout} defaults were "10s"/"15s" -- dramatically shorter
+# than the Go package vars they were meant to merely *document*
+# (pkg/apifrontend/tools/crd_tools_session.go:AwaitSessionTimeout = 3m,
+# pkg/apifrontend/tools/ka_investigate_bridge.go:BridgeInactivityTimeout =
+# 180s). Because values.yaml never sets these two fields (they only appear
+# as a commented-out documentation example), kubernaut.mergedValues falls
+# through to the wrong schema defaults on every real chart-based deployment
+# -- cmd/apifrontend/main.go only skips overriding the safe Go defaults when
+# the configured value is <= 0, so the short chart defaults always win.
+# Caught by E2E-FP-1189-005 (#1799): the interactive SSE bridge abandoned an
+# in-flight investigation after only 15s of KA silence.
+templates:
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  apifrontend:
+    config:
+      auth:
+        issuerURL: "https://sso.example.com/realms/kubernaut"
+tests:
+  - it: "default install (no interactive.* override) renders awaitSessionTimeout: \"3m\", matching the Go default exactly (AwaitSessionTimeout = 3 * time.Minute)"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'awaitSessionTimeout: "3m"'
+
+  - it: "default install (no interactive.* override) renders bridgeInactivityTimeout: \"180s\", matching the Go default exactly (BridgeInactivityTimeout = 180 * time.Second)"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'bridgeInactivityTimeout: "180s"'
+
+  - it: "regression guard: an explicit awaitSessionTimeout override still wins over the (now-corrected) schema default"
+    set:
+      apifrontend:
+        config:
+          interactive:
+            awaitSessionTimeout: "45s"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'awaitSessionTimeout: "45s"'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'awaitSessionTimeout: "3m"'
+
+  - it: "regression guard: an explicit bridgeInactivityTimeout override still wins over the (now-corrected) schema default"
+    set:
+      apifrontend:
+        config:
+          interactive:
+            bridgeInactivityTimeout: "30s"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'bridgeInactivityTimeout: "30s"'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'bridgeInactivityTimeout: "180s"'

@@ -1,0 +1,126 @@
+suite: "DD-PLATFORM-006 Decision Area 14 (PR9): kubernaut.mergedValues merge semantics (mergeOverwrite, not merge)"
+# Generalizes apifrontend_default_override_bugs_test.yaml's 3 confirmed bool
+# bugs into the broader merge-mechanism guarantees kubernaut.mergedValues
+# must hold for every field type, exercised through apifrontend's real
+# schema fields (not a synthetic scaffold) so these assertions run against
+# production template code. Permanently codifies the pre-implementation
+# spike finding that Sprig's plain `merge` silently discards zero-value
+# overrides (https://github.com/helm/helm/issues/13309) -- see
+# kubernaut.mergedValues' doc comment in _helpers.tpl for why
+# `mergeOverwrite (dict) $svcDefaults $svcValues` is required instead.
+templates:
+  - templates/apifrontend/apifrontend.yaml
+  - templates/datastorage/datastorage.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  apifrontend:
+    config:
+      auth:
+        issuerURL: "https://sso.example.com/realms/kubernaut"
+tests:
+  - it: "int zero-value override survives: rateLimit.maxConcurrentSessions=0 renders 0, not the non-zero default (50)"
+    template: templates/apifrontend/apifrontend.yaml
+    set:
+      apifrontend:
+        config:
+          rateLimit:
+            maxConcurrentSessions: 0
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'maxConcurrentSessions: 0\s*\n'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'maxConcurrentSessions: 50'
+
+  - it: "empty-string override survives: datastorage.config.server.maxBodySize=\"\" renders empty, not the non-empty default (\"5242880\")"
+    template: templates/datastorage/datastorage.yaml
+    set:
+      datastorage:
+        config:
+          server:
+            maxBodySize: ""
+    documentSelector:
+      path: metadata.name
+      value: datastorage-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'maxBodySize: ""'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'maxBodySize: "5242880"'
+
+  - it: "nested partial override: overriding only severityTriage.cacheTTLSeconds leaves sibling fields (maxQueriesPerCall/maxRulesEvaluated/llmConfidence) at their schema defaults, not wiped out by the override"
+    template: templates/apifrontend/apifrontend.yaml
+    set:
+      monitoring:
+        prometheus:
+          enabled: true
+          url: "http://prometheus.monitoring.svc:9090"
+      apifrontend:
+        config:
+          severityTriage:
+            cacheTTLSeconds: 999
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'cacheTTLSeconds: 999'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'maxQueriesPerCall: 10'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'maxRulesEvaluated: 100'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'llmConfidence: 0\.7'
+
+  - it: "float zero-value-adjacent override survives: severityTriage.llmConfidence=0 renders 0, not the non-zero default (0.7)"
+    template: templates/apifrontend/apifrontend.yaml
+    set:
+      apifrontend:
+        config:
+          severityTriage:
+            llmConfidence: 0
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'llmConfidence: 0\s*\n'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'llmConfidence: 0\.7'
+
+  - it: "no overrides at all: every schema default for a nested multi-level path (config.session.*) still renders correctly end to end"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'disconnectTTL: 10m'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'retentionTTL: 720h'

@@ -173,7 +173,7 @@ sync-version: ## Propagate VERSION and CHART_VERSION files to Chart.yaml, values
 	echo "✅ Version v$$VER synced to all targets"
 
 .PHONY: generate
-generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
+generate: controller-gen ogen generate-helm-config-docs generate-helm-defaults ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./api/..."
 	$(CONTROLLER_GEN) object:headerFile="hack/boilerplate.go.txt" paths="./pkg/shared/types/..."
 	@echo "📋 Generating OpenAPI spec copies for embedding (DD-API-002)..."
@@ -220,6 +220,28 @@ generate-crd-docs: crd-ref-docs ## Generate CRD API reference docs from Go types
 		--max-depth=10
 	@hack/crd-ref-docs/clean-output.sh docs/generated/crds.md
 	@echo "✅ CRD docs generated: docs/generated/crds.md"
+
+.PHONY: generate-helm-config-docs
+generate-helm-config-docs: ## Generate Helm chart configuration reference from values.schema.json (DD-PLATFORM-006)
+	@echo "📋 Generating Helm values reference from charts/kubernaut/values.schema.json..."
+	@mkdir -p docs/generated
+	@go run ./hack/gen-helm-config-docs \
+		--schema charts/kubernaut/values.schema.json \
+		--output docs/generated/helm-values-reference.md
+	@echo "✅ Helm values reference generated: docs/generated/helm-values-reference.md"
+
+.PHONY: generate-helm-defaults
+generate-helm-defaults: ## Generate materialized Helm chart defaults template from values.schema.json (DD-PLATFORM-006 Decision Area 14)
+	@echo "📋 Generating Helm materialized defaults from charts/kubernaut/values.schema.json..."
+	@go run ./hack/gen-helm-defaults \
+		--schema charts/kubernaut/values.schema.json \
+		--output charts/kubernaut/templates/_generated_defaults.tpl
+	@echo "✅ Helm materialized defaults generated: charts/kubernaut/templates/_generated_defaults.tpl"
+
+.PHONY: verify-helm-defaults-parity
+verify-helm-defaults-parity: generate-helm-defaults ## Prove trimmed values.yaml renders identically to explicit-full-defaults (DD-PLATFORM-006 Decision Area 14)
+	@command -v helm >/dev/null 2>&1 || { echo "❌ helm not found; install Helm first"; exit 1; }
+	@hack/verify-helm-defaults-parity.sh
 
 .PHONY: fmt
 fmt: ## Format code

@@ -1,4 +1,5 @@
-{{- if eq .Values.tls.mode "cert-manager" }}
+{{- $tlsV := include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml }}
+{{- if eq $tlsV.mode "cert-manager" }}
 # #334: datastorage-signing-cert is DataStorage's AU-9 audit-signing key
 # (pkg/cert.Signer), not a network-facing TLS cert -- no dnsNames needed,
 # just a stable RSA keypair signed by the configured issuer. Mirrors what the
@@ -27,7 +28,7 @@ spec:
     size: 2048
   issuerRef:
     name: {{ include "kubernaut.tls.issuerName" . }}
-    kind: {{ .Values.tls.certManager.issuerRef.kind }}
-    group: {{ .Values.tls.certManager.issuerRef.group }}
+    kind: {{ $tlsV.certManager.issuerRef.kind }}
+    group: {{ $tlsV.certManager.issuerRef.group }}
   commonName: datastorage-signing-cert
 {{- end }}

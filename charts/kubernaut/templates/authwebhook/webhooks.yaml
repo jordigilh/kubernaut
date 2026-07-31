@@ -1,6 +1,7 @@
 {{- /* caBundle is NOT managed by Helm (avoids SSA field manager conflicts on upgrade).
      In hook mode: post-install/post-upgrade tls-cabundle-patch hook injects it via kubectl patch.
      In cert-manager mode: cainjector writes it via the inject-ca-from annotation. */ -}}
+{{- $tlsV := include "kubernaut.mergedValues" (dict "root" $ "service" "tls") | fromYaml -}}
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
@@ -8,7 +9,7 @@ metadata:
   name: authwebhook-mutating
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
-  {{- if eq .Values.tls.mode "cert-manager" }}
+  {{- if eq $tlsV.mode "cert-manager" }}
   annotations:
     cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/authwebhook-cert
   {{- end }}
@@ -71,7 +72,7 @@ metadata:
   name: authwebhook-validating
   labels:
     {{- include "kubernaut.labels" . | nindent 4 }}
-  {{- if eq .Values.tls.mode "cert-manager" }}
+  {{- if eq $tlsV.mode "cert-manager" }}
   annotations:
     cert-manager.io/inject-ca-from: {{ .Release.Namespace }}/authwebhook-cert
   {{- end }}
