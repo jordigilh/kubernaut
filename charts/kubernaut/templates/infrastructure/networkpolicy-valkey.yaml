@@ -18,12 +18,13 @@ spec:
         - podSelector:
             matchLabels:
               app: datastorage
-        # GAP-08 (#1505) / DD-PLATFORM-006 DA6: APIFrontend connects to Valkey
-        # directly for the JWT replay-detection cache (bypasses DataStorage)
-        # -- mandatory, no enabled gate.
+        {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
+        # GAP-08 (#1505): APIFrontend connects to Valkey directly for the JWT
+        # replay-detection cache (bypasses DataStorage).
         - podSelector:
             matchLabels:
               app: apifrontend
+        {{- end }}
         # Issue #1737 gap found: FleetMetadataCache uses Valkey directly as its
         # sync cache (fleetmetadatacache.yaml ConfigMap's valkey.addr) but was
         # never added here, leaving FMC's readiness probe permanently failing

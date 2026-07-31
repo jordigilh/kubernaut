@@ -157,6 +157,12 @@ tests:
   # ── NetworkPolicies: all 4 egress/ingress rules to Valkey use 6380 ────────
   - it: "Valkey's own NetworkPolicy ingress rule allows port 6380, not 6379"
     template: templates/infrastructure/networkpolicy-valkey.yaml
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
     asserts:
       - equal:
           path: spec.ingress[0].ports[0].port
@@ -174,6 +180,12 @@ tests:
 
   - it: "APIFrontend NetworkPolicy egress-to-Valkey rule (replayCache) targets port 6380"
     template: templates/apifrontend/networkpolicy.yaml
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
     asserts:
       - equal:
           path: spec.egress[3].ports[0].port

@@ -1,4 +1,4 @@
-suite: "DD-PLATFORM-006 Decision Area 9: APIFrontend replay-cache Valkey TLS client"
+suite: "DD-PLATFORM-006 Decision Area 9/16: APIFrontend replay-cache Valkey TLS client (opt-in)"
 templates:
   - templates/apifrontend/apifrontend.yaml
 set:
@@ -20,27 +20,47 @@ set:
       auth:
         issuerURL: "https://sso.example.com/realms/kubernaut"
 tests:
-  # NOTE: replayCache and replayCache.tls are both mandatory (no enabled gate)
-  # as of DD-PLATFORM-006 DA6 -- see tests/mandatory_security_toggles_test.yaml
-  # for the "always renders" assertions. This file covers the caFile/certFile/
-  # keyFile override behavior on top of that mandatory-on default.
+  - it: "replayCache.enabled=true, tls unset (default): config.yaml has no tls block -- backward compatible, matches pre-DA9 behavior"
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: "replayCache:[\\s\\S]{0,200}tls:"
 
-  - it: "no caFile override: caFile defaults to the already-mounted inter-service-ca path so it works out of the box against the chart's own TLS-only Valkey (DA8)"
+  - it: "replayCache.enabled=true, tls.enabled=true, no caFile override: caFile defaults to the already-mounted inter-service-ca path so it works out of the box against the chart's own TLS-only Valkey (DA8)"
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+              tls:
+                enabled: true
     documentSelector:
       path: kind
       value: ConfigMap
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: 'replayCache:[\s\S]{0,800}tls:\s*\n\s*enabled: true\s*\n\s*caFile: "/etc/tls-ca/ca\.crt"'
+          pattern: 'replayCache:[\s\S]{0,600}tls:\s*\n\s*enabled: true\s*\n\s*caFile: "/etc/tls-ca/ca\.crt"'
 
-  - it: "explicit caFile override: uses the override instead of the default (BYO CA)"
+  - it: "replayCache.enabled=true, tls.enabled=true, explicit caFile override: uses the override instead of the default (BYO CA)"
     set:
       apifrontend:
         config:
           auth:
             replayCache:
+              enabled: true
               tls:
+                enabled: true
                 caFile: "/etc/custom-ca/ca.crt"
     documentSelector:
       path: kind
@@ -48,15 +68,17 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: 'replayCache:[\s\S]{0,800}tls:\s*\n\s*enabled: true\s*\n\s*caFile: "/etc/custom-ca/ca\.crt"'
+          pattern: 'replayCache:[\s\S]{0,600}tls:\s*\n\s*enabled: true\s*\n\s*caFile: "/etc/custom-ca/ca\.crt"'
 
-  - it: "optional mTLS certFile/keyFile: both render alongside caFile"
+  - it: "replayCache.enabled=true, tls.enabled=true with optional mTLS certFile/keyFile: both render alongside caFile"
     set:
       apifrontend:
         config:
           auth:
             replayCache:
+              enabled: true
               tls:
+                enabled: true
                 certFile: "/etc/certs/client.crt"
                 keyFile: "/etc/certs/client.key"
     documentSelector:
@@ -70,13 +92,32 @@ tests:
           path: data['config.yaml']
           pattern: 'keyFile: "/etc/certs/client\.key"'
 
+  - it: "replayCache.enabled=true, tls.enabled=false explicitly: no tls block rendered (plaintext opt-out for a non-chart, plaintext-capable Redis)"
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+              tls:
+                enabled: false
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: "replayCache:[\\s\\S]{0,200}tls:"
+
   - it: "schema rejects unknown replayCache.tls fields (additionalProperties: false)"
     set:
       apifrontend:
         config:
           auth:
             replayCache:
+              enabled: true
               tls:
+                enabled: true
                 bogusField: nope
     asserts:
       - failedTemplate: {}

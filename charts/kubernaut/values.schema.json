@@ -2639,8 +2639,12 @@
                 "replayCache": {
                   "type": "object",
                   "additionalProperties": false,
-                  "description": "GAP-08 (Issue #1505): distributed jti replay-detection backend, shared across all APIFrontend replicas via the cluster's Valkey instance. DD-PLATFORM-006 DA6: mandatory, no enabled gate.",
+                  "description": "GAP-08 (Issue #1505): distributed jti replay-detection backend, shared across all APIFrontend replicas via the cluster's Valkey instance. Disabled by default (legacy in-memory, single-process cache) -- DD-PLATFORM-006 DA6 briefly made this mandatory, but reverted: jti-uniqueness-based replay detection rejects any second presentation of the same token within the cache TTL, which is exactly how a legitimate client is expected to reuse an OAuth2 Bearer token across multiple requests, so mandating it on breaks normal multi-call sessions, not just a multi-replica edge case.",
                   "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "default": false
+                    },
                     "redisDB": {
                       "type": "integer",
                       "default": 1,
@@ -2651,8 +2655,13 @@
                     "tls": {
                       "type": "object",
                       "additionalProperties": false,
-                      "description": "DD-PLATFORM-006 DA6/DA9: TLS for the replay-cache Valkey connection. Mandatory, no enabled gate -- the chart's own bundled Valkey is TLS-only (Decision Area 8's default).",
+                      "description": "DD-PLATFORM-006 DA9: TLS for the replay-cache Valkey connection. Required once the target Valkey is TLS-only (the chart's own bundled Valkey, per Decision Area 8's default).",
                       "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "default": false,
+                          "description": "Enable TLS for the replay-cache Valkey/Redis connection"
+                        },
                         "certFile": {
                           "type": "string",
                           "default": "",

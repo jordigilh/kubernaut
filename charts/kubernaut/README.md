@@ -309,17 +309,38 @@ valkey:
   existingSecret: my-valkey-credentials
 ```
 
-### Distributed JWT Replay Cache (GAP-08)
+### Optional: Distributed JWT Replay Cache (GAP-08)
 
-APIFrontend detects replayed JWTs via their `jti` claim, sharing replay state
-across all APIFrontend replicas via the cluster's Valkey instance (the same
-instance and Secret already used by DataStorage; mandatory, no toggle —
-[DD-PLATFORM-006](../../docs/architecture/decisions/DD-PLATFORM-006-helm-chart-configuration-surface-reduction.md)
-DA6). This closes the HA gap a per-process in-memory cache would have: without
-it, a token replayed against a different replica than the one that first
-observed it would go undetected. If Valkey is unreachable at runtime,
-APIFrontend falls back to an in-memory cache and logs the degradation rather
-than disabling replay protection outright.
+APIFrontend detects replayed JWTs via their `jti` claim. By default this uses
+an in-memory cache that is per-process: in a multi-replica deployment, a token
+replayed against a *different* replica than the one that first observed it is
+not detected.
+
+**Left opt-in, disabled by default — reverted from a brief mandatory-by-default
+window** ([DD-PLATFORM-006](../../docs/architecture/decisions/DD-PLATFORM-006-helm-chart-configuration-surface-reduction.md)
+DA6 addendum): unlike the audit-hash-chain and rate-limiting toggles above,
+this control is **jti-uniqueness-based**, not replica-count-aware — it rejects
+*any* second presentation of the same token within the cache TTL (10 minutes),
+which is exactly how a legitimate client is expected to use an OAuth2 Bearer
+token (fetch once, reuse for many requests until it expires). Making it
+mandatory broke normal multi-call sessions for every client, not just a
+multi-replica edge case. See [BR-SECURITY-1505](../../docs/requirements/BR-SECURITY-1505-distributed-jwt-replay-cache.md)
+for the full design; enable it only if your deployment's clients mint a fresh
+token per request (e.g. a token-exchange flow), not a reused session token.
+
+Enabling `apifrontend.config.auth.replayCache` shares replay state across all
+APIFrontend replicas via the cluster's Valkey instance (the same instance and
+Secret already used by DataStorage) — closing the HA gap a per-process
+in-memory cache would have. If Valkey is unreachable at runtime, APIFrontend
+falls back to the in-memory cache and logs the degradation rather than
+disabling replay protection outright.
+
+```bash
+helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --namespace kubernaut-system \
+  --reuse-values \
+  --set apifrontend.config.auth.replayCache.enabled=true
+```
 
 No additional Secret is required beyond the existing Valkey credentials
 (`valkey.existingSecret` / the `valkey-secret` created above), since the
@@ -519,12 +540,13 @@ and `docs/generated/helm-values-reference.md#postgresql` /
 `docs/generated/helm-values-reference.md#valkey` for the complete field lists.
 
 See `docs/generated/helm-values-reference.md#datastorage` for DataStorage's own fields,
-including the mandatory (GAP-05/08/09) `config.auditHashKey.existingSecret` (see
-[Keyed Audit Hash Chain](#keyed-audit-hash-chain-gap-05)),
-`apifrontend.config.auth.replayCache.*` (see
-[Distributed JWT Replay Cache](#distributed-jwt-replay-cache-gap-08)), and
+including the mandatory (GAP-05/09) `config.auditHashKey.existingSecret` (see
+[Keyed Audit Hash Chain](#keyed-audit-hash-chain-gap-05)) and
 `config.server.rateLimit.*` (see
 [Data Storage Per-IP Rate Limiting](#data-storage-per-ip-rate-limiting-gap-09)).
+See `docs/generated/helm-values-reference.md#apifrontend` for the optional,
+opt-in (GAP-08) `config.auth.replayCache.*` (see
+[Distributed JWT Replay Cache](#optional-distributed-jwt-replay-cache-gap-08)).
 
 ### Console
 

@@ -351,7 +351,7 @@ is not opt-in, unlike `helm lint --strict`, which only promotes lint *warnings* 
 | Field | Control | Prerequisite |
 |---|---|---|
 | `datastorage.config.server.rateLimit.enabled` | Per-IP DoS protection (GAP-09) | None — immediate |
-| `apifrontend.config.auth.replayCache.enabled` | JWT replay-attack detection (GAP-08) | None — Valkey already load-bearing |
+| ~~`apifrontend.config.auth.replayCache.enabled`~~ | ~~JWT replay-attack detection (GAP-08)~~ | **Reverted — see Decision Area 16.** Mandating this on rejects any second use of a legitimate, reused Bearer token, not just an actual replay attack. |
 | `datastorage.config.auditHashKey.enabled` | Audit log tamper-evidence, AU-9 | Decision Area 7 |
 | `datastorage.config.redis.tls.enabled` | DataStorage↔Valkey transport encryption, SC-8 | Decision Area 8 |
 
@@ -767,6 +767,72 @@ this design record.
 **Confidence**: 97% — pure documentation/template-string change, no behavioral or default-value
 change, tested via `helm-unittest` `matchRegexRaw`/`notMatchRegexRaw` assertions against
 `NOTES.txt`'s rendered output for the three states (both off, one off, both on).
+
+---
+
+### Decision Area 16 — Revert `apifrontend.config.auth.replayCache` to Opt-In (partial reversal of Decision Area 6)
+
+**Finding, discovered during PR #1790 E2E stabilization (round-13 RCA)**: with Decision Area 6's
+mandate in place, `E2E (fullpipeline)`'s A2A/MCP specs failed intermittently with HTTP 401
+("token jti already used") on the *second* authenticated call any Ginkgo process made, while the
+*first* call always succeeded. Root cause traced to `pkg/apifrontend/auth/jwt.go`'s replay check
+(`v.replayCache.Seen(jti)` → `ErrTokenReplayed`): a JWT's `jti` claim is fixed for the token's
+entire lifetime, so this check rejects **any second presentation of the same token** within the
+cache's 10-minute TTL (`cmd/apifrontend/auth_wiring.go`'s `replayCacheTTL`), regardless of source,
+timing, or legitimacy. Standard OAuth2 Bearer-token usage is exactly "fetch once, reuse for many
+requests until it expires" — the E2E harness's `getAFToken()` (fetch once per Ginkgo process,
+cache and reuse for every subsequent A2A/MCP call) is not a test-only shortcut, it is how any real
+UI/CLI/agent client is expected to behave. Confirmed via the user's own regression bisection: the
+pre-Helm, Go/kustomize-based deployment path (`deploy/apifrontend/overlays/e2e/config.yaml`,
+still what `main` uses) carries no `auth.replayCache` block at all, so this control was never
+active there — the 401s were exclusively a product of this Helm chart mandating it on by default,
+not of any code or resource change in this PR.
+
+**Why Decision Area 6's original justification doesn't hold for this specific toggle**: DA6's
+table justified mandating `replayCache.enabled` with "None — Valkey already load-bearing,"
+reasoning about the toggle's *infrastructure* prerequisite (Valkey being reachable), not its
+*security-semantic* fitness as a blanket, always-on control. Unlike the other three DA6 toggles —
+`datastorage.config.server.rateLimit` (per-IP request throttling, does not depend on request
+content), `datastorage.config.auditHashKey` (hash-chain the audit log, invisible to legitimate
+callers), `datastorage.config.redis.tls` (transport encryption, invisible to legitimate callers)
+— none of which change whether a *valid, legitimately-reused* credential is accepted,
+`replayCache` is jti-uniqueness-based and therefore inherently punishes the single most common
+legitimate Bearer-token access pattern. This is a control that needs the operator to know their
+own clients mint a fresh token per request (e.g. a token-exchange flow) before enabling it safely
+— exactly the kind of judgment call BR-SECURITY-1505 originally scoped it as ("disabled by
+default... matches pre-GAP-08 behavior for single-replica/dev deployments"), and Decision Area 6
+overrode without re-examining that specific semantic.
+
+**Decision**: revert `apifrontend.config.auth.replayCache.enabled` (and its nested
+`tls.enabled`) to an opt-in toggle, default `false` — restoring BR-SECURITY-1505's original
+design. The other three Decision Area 6 toggles (`datastorage.config.server.rateLimit`,
+`datastorage.config.auditHashKey`, `datastorage.config.redis.tls`) are unaffected and remain
+mandatory; none of them share this failure mode. The mandatory-field count established by
+Decision Area 4 (7 mandatory fields) is unaffected — `replayCache.enabled` was never counted as a
+mandatory field in the first place (mandatory *toggles* in DA6 removed an `enabled` gate but
+didn't add a user-facing required field; this reversal simply restores that gate).
+
+**Options considered**:
+1. **Revert to opt-in, default off (selected)** — matches the original BR's design intent, zero
+   risk to the other three DA6 controls, immediately unblocks both the E2E suite and any real
+   multi-call client against a Helm-deployed AF.
+2. Keep mandatory, fix only the E2E harness to mint a fresh token per call — rejected: masks the
+   symptom in tests without addressing that any real client reusing a Bearer token in production
+   would hit the identical 401, which is the more consequential half of this finding.
+3. Keep mandatory, redesign the replay-detection algorithm to distinguish "legitimate reuse" from
+   "actual replay" (e.g. flag only same-jti-from-conflicting-source-context) — rejected as
+   out-of-scope for this DD: a materially larger security-logic change requiring its own design
+   review, disproportionate to unblocking this PR's E2E migration.
+
+**Confidence**: 95% — root cause is directly reproducible from the validator's own code path and
+corroborated by `ADV-017`'s existing unit test (`pkg/apifrontend/auth/adversarial_jwt_test.go`),
+which already documents "replayed token with same jti is rejected" as the exact, intentional
+behavior of `Seen()`. The 5% residual is operational: this reversal restores the pre-DA6 default
+for new installs, but any environment that ran a chart version between DA6 landing and this
+reversion, with a real (not just Bearer-token-reusing) attacker in scope, briefly had this second
+line of defense active; signature/expiry/audience/issuer validation (unaffected by this change)
+remained the primary authentication control throughout, per BR-SECURITY-1505's own "defense in
+depth, not the sole authentication control" design note.
 
 ---
 

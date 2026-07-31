@@ -48,9 +48,9 @@ spec:
     planning/reasoning -- yet the NetworkPolicy never allowed this egress,
     silently dropping every LLM call once auth got past the OIDC 401 fix. */}}
     {{- include "kubernaut.np.llmEgress" . | nindent 4 }}
-    # GAP-08 (#1505) / DD-PLATFORM-006 DA6: JWT replay-cache egress to Valkey
-    # -- mandatory, no enabled gate. DD-PLATFORM-006 DA8: Valkey is TLS-only
-    # on 6380.
+    {{- if $v.config.auth.replayCache.enabled }}
+    # GAP-08 (#1505): JWT replay-cache egress to Valkey.
+    # DD-PLATFORM-006 DA8: Valkey is TLS-only on 6380.
     - ports:
         - port: 6380
           protocol: TCP
@@ -58,6 +58,7 @@ spec:
         - podSelector:
             matchLabels:
               app: valkey
+    {{- end }}
     {{- /* #1755 DD-TEST-015 RCA: AF's own fleet OAuth2 token fetch to
     global.fleet.oauth2.tokenURL (same missing-egress gap fixed for FMC/
     Gateway/SP/EM/WE/RO -- see fleetmetadatacache.yaml's comment for the full

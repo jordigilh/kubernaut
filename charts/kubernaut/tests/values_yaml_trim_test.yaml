@@ -129,6 +129,14 @@ tests:
   # ── apifrontend.config.auth.replayCache.tls: {} collapse ───────────────────
   - it: "apifrontend replayCache.tls renders default caFile when the tls block is entirely absent"
     template: templates/apifrontend/apifrontend.yaml
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+              tls:
+                enabled: true
     documentSelector:
       path: metadata.name
       value: apifrontend-config

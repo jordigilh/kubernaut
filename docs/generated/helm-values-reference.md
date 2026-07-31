@@ -41,9 +41,11 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.auth.jwksURL` | string | JWKS endpoint URL for the legacy single-provider issuerURL (optional, defaults to issuerURL's well-known discovery when empty) | `""` | No |
 | `config.auth.jwtProviders` | array of object | Multi-provider JWT configuration (#1436). When set, takes precedence over issuerURL/audience. | `` | No |
 | `config.auth.oidcCaFile` | string | Path to a CA bundle used when fetching JWKS from issuerURL over TLS with a private/self-signed CA (e.g. an in-cluster OIDC test double signed by the chart's own inter-service CA). Requires mounting that CA into the pod -- the chart does this automatically when this field is set (or when global.fleet.enabled is true). | `""` | No |
+| `config.auth.replayCache.enabled` | boolean |  | `false` | No |
 | `config.auth.replayCache.redisDB` | integer | Valkey logical DB index used for replay cache keys | `1` | No |
 | `config.auth.replayCache.tls.caFile` | string | CA bundle to verify the Valkey/Redis server certificate. Defaults to the chart's distributed inter-service CA (/etc/tls-ca/ca.crt) when left empty; override only for a BYO Valkey/Redis signed by a different CA. | `""` | No |
 | `config.auth.replayCache.tls.certFile` | string | Client certificate file path (mTLS) -- unused against the chart's own Valkey (no client cert required), available for BYO Redis that requires mTLS | `""` | No |
+| `config.auth.replayCache.tls.enabled` | boolean | Enable TLS for the replay-cache Valkey/Redis connection | `false` | No |
 | `config.auth.replayCache.tls.keyFile` | string | Client key file path (mTLS) | `""` | No |
 | `config.interactive.awaitSessionTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"10s"` | No |
 | `config.interactive.bridgeInactivityTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"15s"` | No |

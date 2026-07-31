@@ -1,9 +1,6 @@
-suite: "DD-PLATFORM-006 Decision Area 6: security-relevant toggles are unconditional (no enabled gate)"
+suite: "DD-PLATFORM-006 Decision Area 6: security-relevant toggles are unconditional (no enabled gate) -- apifrontend.config.auth.replayCache EXCLUDED, see tests/apifrontend_replaycache_tls_test.yaml (Decision Area 16 reverted it to opt-in)"
 templates:
   - templates/datastorage/datastorage.yaml
-  - templates/apifrontend/apifrontend.yaml
-  - templates/apifrontend/networkpolicy.yaml
-  - templates/infrastructure/networkpolicy-valkey.yaml
 set:
   postgresql:
     auth:
@@ -103,79 +100,5 @@ tests:
         config:
           auditHashKey:
             enabled: false
-    asserts:
-      - failedTemplate: {}
-
-  # ── apifrontend.config.auth.replayCache: always enabled, no schema toggle ─
-  - it: "APIFrontend always renders the replayCache block, with no --set override needed"
-    template: templates/apifrontend/apifrontend.yaml
-    documentSelector:
-      path: kind
-      value: ConfigMap
-    asserts:
-      - matchRegex:
-          path: data['config.yaml']
-          pattern: 'replayCache:\s*\n\s*backend: redis'
-
-  - it: "APIFrontend replayCache.tls is always enabled too -- Valkey is TLS-only (DA8), so a mandatory replayCache with plaintext TLS could never connect"
-    template: templates/apifrontend/apifrontend.yaml
-    documentSelector:
-      path: kind
-      value: ConfigMap
-    asserts:
-      - matchRegex:
-          path: data['config.yaml']
-          pattern: 'replayCache:[\s\S]{0,800}tls:\s*\n\s*enabled: true'
-
-  - it: "APIFrontend Deployment always mounts the valkey-secrets volume"
-    template: templates/apifrontend/apifrontend.yaml
-    documentSelector:
-      path: kind
-      value: Deployment
-    asserts:
-      - contains:
-          path: spec.template.spec.containers[0].volumeMounts
-          content:
-            name: valkey-secrets
-            mountPath: /etc/apifrontend/valkey
-            readOnly: true
-
-  - it: "APIFrontend NetworkPolicy always allows egress to Valkey"
-    template: templates/apifrontend/networkpolicy.yaml
-    asserts:
-      - equal:
-          path: spec.egress[3].ports[0].port
-          value: 6380
-
-  - it: "Valkey's own NetworkPolicy always allows ingress from apifrontend"
-    template: templates/infrastructure/networkpolicy-valkey.yaml
-    asserts:
-      - contains:
-          path: spec.ingress[0].from
-          content:
-            podSelector:
-              matchLabels:
-                app: apifrontend
-
-  - it: "schema rejects apifrontend.config.auth.replayCache.enabled -- the gate is fully removed"
-    template: templates/apifrontend/apifrontend.yaml
-    set:
-      apifrontend:
-        config:
-          auth:
-            replayCache:
-              enabled: false
-    asserts:
-      - failedTemplate: {}
-
-  - it: "schema rejects apifrontend.config.auth.replayCache.tls.enabled -- the gate is fully removed"
-    template: templates/apifrontend/apifrontend.yaml
-    set:
-      apifrontend:
-        config:
-          auth:
-            replayCache:
-              tls:
-                enabled: false
     asserts:
       - failedTemplate: {}

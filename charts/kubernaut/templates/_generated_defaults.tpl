@@ -35,10 +35,12 @@ apifrontend:
             jwksURL: ""
             oidcCaFile: ""
             replayCache:
+                enabled: false
                 redisDB: 1
                 tls:
                     caFile: ""
                     certFile: ""
+                    enabled: false
                     keyFile: ""
         interactive:
             awaitSessionTimeout: 10s

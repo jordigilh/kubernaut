@@ -2377,6 +2377,7 @@ for d in docs:
   af_np=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set "networkPolicies.apifrontend.ingressNamespaces[0]=ingress-nginx" \
+    --set apifrontend.config.auth.replayCache.enabled=true \
     --set apifrontend.config.auth.issuerURL=https://issuer.example.com \
     -s templates/apifrontend/networkpolicy.yaml 2>&1)
   if grep -q "kind: NetworkPolicy" <<< "$af_np" && \
@@ -2402,17 +2403,19 @@ for d in docs:
       "expected schema rejection of networkPolicies.apifrontend.enabled, got: $af_np_disabled"
   fi
 
-  # DD-PLATFORM-006 DA6: replayCache (and its Valkey ingress rule) is mandatory
-  # now -- no enabled flag needed to exercise this path.
+  # DD-PLATFORM-006 DA16 (reverted DA6): replayCache is opt-in again -- pass
+  # enabled=true explicitly to exercise the Valkey ingress rule this test
+  # targets.
   local valkey_np
   valkey_np=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
+    --set apifrontend.config.auth.replayCache.enabled=true \
     -s templates/infrastructure/networkpolicy-valkey.yaml 2>&1)
   if grep -q "app: apifrontend" <<< "$valkey_np"; then
-    tap_ok "ST-CHART-AF-NP-001c: Valkey NetworkPolicy allows APIFrontend ingress (replayCache is mandatory-on)"
+    tap_ok "ST-CHART-AF-NP-001c: Valkey NetworkPolicy allows APIFrontend ingress when replayCache enabled"
   else
     tap_not_ok "ST-CHART-AF-NP-001c: Valkey NetworkPolicy" \
-      "apifrontend podSelector not found in Valkey ingress despite replayCache being mandatory-on"
+      "apifrontend podSelector not found in Valkey ingress despite replayCache.enabled=true"
   fi
 
   # ST-CHART-KA-SATOKEN-001: BR-PLATFORM-005 — kubernaut-agent (highest-risk,
