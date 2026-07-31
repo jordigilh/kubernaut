@@ -49,11 +49,18 @@ func buildLLMClientFromConfig(ctx context.Context, cfg types.LLMConfig) (llm.Cli
 	case types.LLMProviderVertexAI:
 		// provider: vertex_ai can host either Claude or Gemini models
 		// (#1778, #1792) — disambiguate on the model name using the
-		// shared detector rather than assuming Anthropic unconditionally.
+		// shared detectors rather than assuming Anthropic unconditionally,
+		// and fail fast on a model that matches neither family instead of
+		// silently defaulting to Gemini and failing later with a
+		// confusing SDK-level error (found in the #1778 GA readiness
+		// audit).
 		if types.IsAnthropicModel(cfg.Model) {
 			return buildAnthropicVertexClient(ctx, cfg)
 		}
-		return buildGeminiVertexClient(ctx, cfg)
+		if types.IsGeminiModel(cfg.Model) {
+			return buildGeminiVertexClient(ctx, cfg)
+		}
+		return nil, fmt.Errorf("vertex_ai: unrecognized model family for model %q (expected a claude-* or gemini-* model)", cfg.Model)
 	case types.LLMProviderAnthropic:
 		return buildAnthropicNativeClient(cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
 	case types.LLMProviderGemini:

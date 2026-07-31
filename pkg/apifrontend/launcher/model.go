@@ -82,13 +82,19 @@ func NewModelFromConfig(ctx context.Context, cfg types.LLMConfig) (model.LLM, er
 // host either Claude or Gemini models (#1778, #1792) — previously this
 // unconditionally assumed Claude, silently mis-constructing an
 // adk-anthropic-go model for a gemini-* model. Disambiguated here using
-// the shared types.IsAnthropicModel detector, the same one KA's
-// llm_builder.go uses for the identical ambiguity.
+// the shared types.IsAnthropicModel/IsGeminiModel detectors, the same
+// ones KA's llm_builder.go uses for the identical ambiguity. A model
+// matching neither family fails fast here instead of silently falling
+// through to Gemini and failing later with a confusing SDK-level error
+// (found in the #1778/#1792 GA readiness audit).
 func newVertexAIModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {
 	if types.IsAnthropicModel(cfg.Model) {
 		return newVertexAnthropicModel(ctx, cfg)
 	}
-	return newVertexGeminiModel(ctx, cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
+	if types.IsGeminiModel(cfg.Model) {
+		return newVertexGeminiModel(ctx, cfg) //nolint:contextcheck // LLM transport chain lazily builds an OAuth2 client-credentials token source shared across future requests
+	}
+	return nil, fmt.Errorf("vertex_ai: unrecognized model family for model %q (expected a claude-* or gemini-* model)", cfg.Model)
 }
 
 // newVertexAnthropicModel constructs the adk-anthropic-go Vertex AI model

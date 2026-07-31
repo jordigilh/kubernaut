@@ -105,6 +105,26 @@ var _ = Describe("Model Factory", func() {
 			Expect(fmt.Sprintf("%T", m)).To(ContainSubstring("anthropic"))
 		})
 
+		// IT-AF-1792-005: vertex_ai + an unrecognized model family. Found
+		// during the post-merge GA readiness audit: before this fix, a
+		// model that is neither claude-* nor gemini-* silently fell
+		// through newVertexAIModel's implicit else-branch to
+		// newVertexGeminiModel, failing later with a confusing
+		// Gemini-SDK-level error instead of a clear one here.
+		It("IT-AF-1792-005: vertex_ai with an unrecognized model family fails fast with a clear error", func() {
+			cfg := types.LLMConfig{
+				Provider:       types.LLMProviderVertexAI,
+				Model:          "llama-3.1-70b",
+				VertexProject:  "test-project",
+				VertexLocation: "us-central1",
+			}
+			m, err := launcher.NewModelFromConfig(context.Background(), cfg)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unrecognized model family"))
+			Expect(err.Error()).To(ContainSubstring("llama-3.1-70b"))
+			Expect(m).To(BeNil())
+		})
+
 		// UT-AF-1254-010: factory dispatches to openai_compatible adapter
 		It("UT-AF-1254-010: constructs openai_compatible model with endpoint", func() {
 			cfg := types.LLMConfig{

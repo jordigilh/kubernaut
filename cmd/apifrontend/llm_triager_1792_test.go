@@ -76,4 +76,24 @@ var _ = Describe("newLLMTriagerFromConfig — vertex_ai model-family dispatch (#
 		Expect(triager).To(BeAssignableToTypeOf(&severity.AnthropicTriager{}),
 			"vertex_ai + a claude-* model must remain routed to AnthropicTriager")
 	})
+
+	// IT-AF-1792-005: found during the post-merge GA readiness audit —
+	// before this fix, a model that is neither claude-* nor gemini-*
+	// silently fell through to newGenAITriagerForVertex via the implicit
+	// else-branch, failing later with a confusing GenAI-SDK-level error
+	// instead of a clear one here.
+	It("IT-AF-1792-005: vertex_ai with an unrecognized model family fails fast with a clear error", func() {
+		cfg := types.LLMConfig{
+			Provider:       types.LLMProviderVertexAI,
+			Model:          "llama-3.1-70b",
+			VertexProject:  "test-project",
+			VertexLocation: "us-central1",
+		}
+
+		triager, err := newLLMTriagerFromConfig(context.Background(), cfg, logr.Discard())
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("unrecognized model family"))
+		Expect(err.Error()).To(ContainSubstring("llama-3.1-70b"))
+		Expect(triager).To(BeNil())
+	})
 })

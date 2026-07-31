@@ -583,7 +583,10 @@ func adaptFleetReaderFactory(rf fleet.ReaderFactory) tools.ResourceReaderFactory
 // newLLMTriagerFromConfig creates a provider-aware LLMTriager based on the resolved
 // LLM configuration. Routes by provider + model family:
 //   - vertex_ai + claude-* model → AnthropicTriager (Anthropic SDK + Vertex)
-//   - vertex_ai + other model → GenAITriager (Google GenAI SDK)
+//   - vertex_ai + gemini-* model → GenAITriager (Google GenAI SDK)
+//   - vertex_ai + anything else → error (fail fast rather than silently
+//     defaulting to Gemini and failing later with a confusing SDK-level
+//     error; found in the #1778/#1792 GA readiness audit)
 //   - gemini → GenAITriager (Gemini API)
 //   - anthropic → AnthropicTriager (direct Anthropic API)
 //   - openai / openai_compatible → OpenAICompatibleTriager (shared openaicompat
@@ -594,7 +597,10 @@ func newLLMTriagerFromConfig(ctx context.Context, llmCfg types.LLMConfig, logger
 		if types.IsAnthropicModel(llmCfg.Model) {
 			return newAnthropicTriagerForVertex(ctx, llmCfg, logger)
 		}
-		return newGenAITriagerForVertex(ctx, llmCfg, logger)
+		if types.IsGeminiModel(llmCfg.Model) {
+			return newGenAITriagerForVertex(ctx, llmCfg, logger)
+		}
+		return nil, fmt.Errorf("vertex_ai: unrecognized model family for model %q (expected a claude-* or gemini-* model)", llmCfg.Model)
 	case types.LLMProviderGemini:
 		return newGenAITriagerForGemini(ctx, llmCfg, logger)
 	case types.LLMProviderAnthropic:

@@ -130,6 +130,29 @@ var _ = Describe("buildLLMClientFromConfig — Gemini dispatch (#1778 #1792 BR-A
 		})
 	})
 
+	Describe("provider: vertex_ai with an unrecognized model family (IT-KA-1778-005)", func() {
+		// Found during the post-merge GA readiness audit: before this
+		// fix, an unrecognized/typo'd model under vertex_ai (neither
+		// claude-* nor gemini-*) silently fell through to
+		// buildGeminiVertexClient via the implicit else-branch, failing
+		// later with a confusing Gemini-SDK-level error instead of a
+		// clear one at construction time.
+		It("fails fast with a clear error instead of silently defaulting to Gemini", func() {
+			cfg := types.LLMConfig{
+				Provider:       types.LLMProviderVertexAI,
+				Model:          "llama-3.1-70b",
+				VertexProject:  "my-project",
+				VertexLocation: "us-central1",
+			}
+
+			client, err := buildLLMClientFromConfig(context.Background(), cfg)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unrecognized model family"))
+			Expect(err.Error()).To(ContainSubstring("llama-3.1-70b"))
+			Expect(client).To(BeNil())
+		})
+	})
+
 	Describe("provider: vertex_ai with a Claude model — no regression (IT-KA-1778-002)", func() {
 		It("still dispatches to anthropicfamily.Client, unchanged from before this fix", func() {
 			cfg := types.LLMConfig{
