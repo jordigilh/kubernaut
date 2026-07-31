@@ -43,8 +43,8 @@ apifrontend:
                     enabled: false
                     keyFile: ""
         interactive:
-            awaitSessionTimeout: 10s
-            bridgeInactivityTimeout: 15s
+            awaitSessionTimeout: 3m
+            bridgeInactivityTimeout: 180s
             enabled: true
         mcp:
             enabled: true

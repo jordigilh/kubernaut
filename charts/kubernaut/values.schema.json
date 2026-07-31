@@ -2532,7 +2532,7 @@
                       "$ref": "#/definitions/goDuration"
                     }
                   ],
-                  "default": "10s"
+                  "default": "3m"
                 },
                 "bridgeInactivityTimeout": {
                   "allOf": [
@@ -2540,7 +2540,7 @@
                       "$ref": "#/definitions/goDuration"
                     }
                   ],
-                  "default": "15s"
+                  "default": "180s"
                 }
               }
             },

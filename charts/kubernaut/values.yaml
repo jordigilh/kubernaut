@@ -721,8 +721,8 @@ apifrontend:
     # default (DD-PLATFORM-006 DA14) -- omitted here; set false to disable.
     # interactive:
     #   enabled: true
-    #   awaitSessionTimeout: "10s"
-    #   bridgeInactivityTimeout: "15s"
+    #   awaitSessionTimeout: "3m"
+    #   bridgeInactivityTimeout: "180s"
     # -- Issue #1737 gap found: severityTriage.enabled/prometheusURL were never
     # exposed via Helm, so the chart always silently ran with triage disabled
     # (Config.SeverityTriage.Enabled defaults false) even though this is a core
