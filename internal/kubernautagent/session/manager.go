@@ -245,7 +245,7 @@ func (m *Manager) runInvestigation(bgCtx context.Context, id, correlationID stri
 	defer m.recoverPanic(id, correlationID) //nolint:contextcheck // recoverPanic emits a best-effort failure audit event; must survive whatever context state caused the panic
 
 	result, fnErr := fn(bgCtx)
-	m.emitCompleteEvent(id)
+	m.emitCompleteEvent(id, result)
 	if fnErr != nil {
 		m.handleInvestigationFailure(bgCtx, id, correlationID, result, fnErr)
 		return
