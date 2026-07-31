@@ -54,7 +54,7 @@ func (f *rcaK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string
 
 type rcaDSClient struct{}
 
-func (f *rcaDSClient) GetRemediationHistory(_ context.Context, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
+func (f *rcaDSClient) GetRemediationHistory(_ context.Context, _, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
 	return &enrichment.RemediationHistoryResult{}, nil
 }
 

@@ -392,7 +392,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 
 	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
 	signalNS = inv.normalizeNamespace(signalKind, signalNS)
-	enrichData := inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.IncidentID)
+	enrichData := inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.ClusterID, signal.IncidentID)
 	tokens := &TokenAccumulator{}
 
 	rcaResult, err := inv.runRCA(ctx, signal, LLMInvocationContext{
@@ -601,7 +601,7 @@ func (inv *Investigator) applyReEnrichedTarget(ctx context.Context, p reEnriched
 		"signal", p.SignalKind+"/"+p.SignalName,
 		"rca_target", p.PostRCAKind+"/"+p.PostRCAName,
 	)
-	reEnriched := inv.resolveEnrichmentCached(ctx, p.EnrichmentCache, p.PostRCAKind, p.PostRCAName, p.PostRCANS, p.Signal.IncidentID)
+	reEnriched := inv.resolveEnrichmentCached(ctx, p.EnrichmentCache, p.PostRCAKind, p.PostRCAName, p.PostRCANS, p.Signal.ClusterID, p.Signal.IncidentID)
 
 	// BR-HAPI-261 AC#7 / #704: check HardFail BEFORE label merge
 	// to prevent the merge from silently dropping the failure signal.
@@ -773,11 +773,14 @@ func ResolveEnrichmentTarget(signal katypes.SignalContext, rcaResult *katypes.In
 	return kind, name, signal.Namespace
 }
 
-func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, namespace, incidentID string) *enrichment.EnrichmentResult {
+func (inv *Investigator) resolveEnrichment(ctx context.Context, kind, name, namespace, clusterID, incidentID string) *enrichment.EnrichmentResult {
 	if inv.enricher == nil {
 		return nil
 	}
-	result, err := inv.enricher.Enrich(ctx, kind, name, namespace, "", "", incidentID)
+	result, err := inv.enricher.Enrich(ctx, enrichment.EnrichRequest{
+		Kind: kind, Name: name, Namespace: namespace,
+		ClusterID: clusterID, IncidentID: incidentID,
+	})
 	if err != nil {
 		inv.logger.Error(err, "enrichment failed")
 		return nil
