@@ -1017,7 +1017,17 @@ jobs:
             timeout: 20
           - service: fleet
             service_name: "Fleet Multi-Cluster"
-            timeout: 35
+            # 45 (up from 35, PR #1790 round-12 RCA): PHASE 6's per-deployment
+            # rollout-status wait grew from 480s to 720s (see
+            # resignHostAccessedTLSCertsWithLocalhostSAN's round-12 comment in
+            # test/infrastructure/fullpipeline_e2e_helm.go) to tolerate
+            # confirmed node-wide kubelet starvation under this suite's full
+            # (dependencies + 12-service chart) footprint. +10min keeps that
+            # extra per-deployment headroom from silently eating into the
+            # budget the rest of the suite's actual test execution needs,
+            # comparable to the existing +10min cert-manager-vs-hook headroom
+            # further down in this file for the same class of contention.
+            timeout: 45
           - service: fleetmetadatacache-kuadrant
             service_name: "Fleet Metadata Cache (Kuadrant)"
             timeout: 15

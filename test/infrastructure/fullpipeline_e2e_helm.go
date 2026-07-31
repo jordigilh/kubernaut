@@ -647,8 +647,31 @@ func resignHostAccessedTLSCertsWithLocalhostSAN(ctx context.Context, kubeconfigP
 		// per-deployment ceiling that only matters if that single pod
 		// itself is slow, so the added margin is now pure safety headroom,
 		// not a symptom of contention it needs to keep tolerating.
+		//
+		// 720s (PR #1790 round-12 RCA, July 30/31): even after round-9's
+		// stagger fix above, gateway alone -- first in the sequence, no
+		// other restart racing it -- still hit this ceiling, stuck at
+		// "1 old replicas are pending termination" (a DIFFERENT symptom
+		// than the readyz-convergence one 480s was sized for: the NEW pod
+		// had already become Available, but the OLD pod would not finish
+		// terminating). Direct kubelet-log evidence from the failing Kind
+		// node at the same timestamp confirms node-wide starvation, not an
+		// app bug: "Failed to update lease" (context deadline exceeded on
+		// the kubelet's own heartbeat PUT to the API server),
+		// "ExecSync cmd from runtime service failed" (3s exec-probe
+		// timeouts for pg_isready/valkey-cli), and "Failed to process
+		// watch event" (containerd cgroup watch itself timing out). Old-pod
+		// termination depends entirely on kubelet responsiveness, so it
+		// can starve arbitrarily long under this condition -- cross-checked
+		// against main's own CI history (run 30464667745, pre-dating this
+		// PR's changes), which hit the identical "pending termination"
+		// message on 8+ unrelated deployments at once, confirming this is
+		// a pre-existing whole-cluster capacity ceiling, not a regression.
+		// 720s (+240s over 480s) buys real margin without three of the
+		// four deployments needing it in practice (only the first,
+		// highest-contention restart has ever been observed to time out).
 		waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
-			"rollout", "status", "deployment/"+deploy, "--timeout=480s")
+			"rollout", "status", "deployment/"+deploy, "--timeout=720s")
 		waitCmd.Stdout = writer
 		waitCmd.Stderr = writer
 		if err := waitCmd.Run(); err != nil {
