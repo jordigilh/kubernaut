@@ -58,6 +58,10 @@ tests:
           path: data['config.yaml']
           pattern: 'provider: "?anthropic"?'
 
+  # vertex_ai + gemini-2.5-pro is a genuinely supported combination as of
+  # #1778 -- see cmd/kubernautagent/llm_builder_1778_test.go for the
+  # Go-level dispatch proof; this test only asserts vertexProject/
+  # vertexLocation template-field resolution, which is model-agnostic.
   - it: "IT-PLATFORM-LLM-002: KA static config.yaml resolves vertexProject/vertexLocation from the profile"
     set:
       global:
@@ -415,6 +419,19 @@ tests:
 
   # -------------------------------------------------------------------------
   # IT-PLATFORM-LLM-008: multi-secret-mount dedup + #1731 vertex_ai guard
+  #
+  # These fixtures deliberately pair provider: vertex_ai with gemini-2.5-pro/
+  # gemini-2.5-flash model names -- the #1731 guard below triggers on the
+  # `provider` field alone (regardless of model family), so any vertex_ai
+  # model name exercises it identically. Historically (#1793) this was a
+  # false-confidence pairing: KA/AF both silently misrouted vertex_ai+Gemini
+  # to an Anthropic-only client, so this template-rendering suite couldn't
+  # have caught that. #1778/#1792 fixed the underlying Go-level dispatch, so
+  # vertex_ai+Gemini is now a genuinely supported, wiring-tested combination
+  # -- see cmd/kubernautagent/llm_builder_1778_test.go (KA) and
+  # pkg/apifrontend/launcher/model_test.go's IT-AF-1792-001/002 (AF) for the
+  # actual client-construction proof; this suite only asserts Secret/volume
+  # wiring, which is model-family-agnostic by design.
   # -------------------------------------------------------------------------
   - it: "IT-PLATFORM-LLM-008: a phaseModels entry sharing KA's base secret gets no dedicated mount"
     set:

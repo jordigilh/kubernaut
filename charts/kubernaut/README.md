@@ -451,9 +451,9 @@ chart fails fast at render time if it's unset or names an undefined profile.
 
 | Parameter | Description | Default |
 |---|---|---|
-| `global.llmProfiles.<name>.provider` | LLM provider: `openai`, `anthropic`, `vertex_ai`, or `openai_compatible` — **required** | none |
-| `global.llmProfiles.<name>.model` | Model name (`gpt-4o`, `claude-sonnet-4-20250514`, `gemini-2.5-pro`, ...) | `""` |
-| `global.llmProfiles.<name>.credentialsSecretName` | Secret with the LLM API key (key `api_key`) or, for `vertex_ai`, a service-account JSON key (key `credentials.json`) — **required** | none |
+| `global.llmProfiles.<name>.provider` | LLM provider: `openai`, `anthropic`, `gemini`, `vertex_ai`, or `openai_compatible` — **required**. `vertex_ai` hosts either Claude or Gemini models depending on `model` — both KA and AF auto-detect which client to construct from the model name prefix (`claude-*` vs `gemini-*`, #1778, #1792) | none |
+| `global.llmProfiles.<name>.model` | Model name (`gpt-4o`, `claude-sonnet-4-20250514`, `gemini-2.5-pro`, ...) — for `provider: gemini` or `provider: vertex_ai` with a Gemini model, any `gemini-*` model name is valid | `""` |
+| `global.llmProfiles.<name>.credentialsSecretName` | Secret with the LLM API key (key `api_key`) or, for `vertex_ai` (Claude or Gemini alike), a service-account JSON key (key `credentials.json`) — **required** | none |
 | `global.llmProfiles.<name>.endpoint` | Endpoint URL, functionally required for `openai`/`openai_compatible` on both KA and AF (e.g. `https://api.openai.com/v1` for real OpenAI, or a self-hosted/Azure (`azureApiVersion`) base URL) — neither client defaults it. API Frontend fails fast at startup if it's unset for these providers; Kubernaut Agent does not validate it upfront, but every LLM call fails at request time without it | `""` |
 | `global.llmProfiles.<name>.temperature` | Sampling temperature | `0.7` |
 | `global.llmProfiles.<name>.maxRetries` | Max retry attempts on transient LLM errors | `3` |
@@ -465,9 +465,9 @@ chart fails fast at render time if it's unset or names an undefined profile.
 | `global.llmProfiles.<name>.oauth2.enabled` | Enable OAuth2 client-credentials auth for the LLM gateway | `false` |
 | `global.llmProfiles.<name>.oauth2.tokenURL` | OAuth2 token endpoint URL | `""` |
 | `global.llmProfiles.<name>.oauth2.credentialsSecretRef` | Secret with `client-id`/`client-secret` keys (mounted as files) | `""` |
-| `global.llmProfiles.<name>.reasoning.enabled` | Request model reasoning/thinking output (BR-AI-086). Supported today on the Anthropic-family client (native + Vertex) | `false` |
-| `global.llmProfiles.<name>.reasoning.budgetTokens` | Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget). `0` lets the client choose a default. Anthropic-only; always wins over `effort` when set | `0` |
-| `global.llmProfiles.<name>.reasoning.effort` | Unified, provider-agnostic reasoning-depth knob (#1604): `""` (vendor/provider default), `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Supported on Anthropic, real OpenAI/gpt-5/o-series models, and DeepSeek | `""` |
+| `global.llmProfiles.<name>.reasoning.enabled` | Request model reasoning/thinking output (BR-AI-086). Supported today on the Anthropic-family client (native + Vertex) and, on Kubernaut Agent only, the Gemini-family client (native + Vertex, BR-AI-087) | `false` |
+| `global.llmProfiles.<name>.reasoning.budgetTokens` | Max tokens the model may spend on reasoning/thinking (Anthropic extended thinking budget; also used as Gemini's `thinkingBudget` on Kubernaut Agent's Gemini-family client, BR-AI-087). `0` lets the client choose a default. Always wins over `effort` when set | `0` |
+| `global.llmProfiles.<name>.reasoning.effort` | Unified, provider-agnostic reasoning-depth knob (#1604): `""` (vendor/provider default), `none`, `minimal`, `low`, `medium`, `high`, or `xhigh`. Supported on Anthropic, Kubernaut Agent's Gemini-family client (BR-AI-087), real OpenAI/gpt-5/o-series models, and DeepSeek | `""` |
 | `global.llmProfiles.<name>.reasoning.capabilityOverride` | Override reasoning-capability auto-detection for `openai_compatible` self-hosted models: `""` (auto), `force_on`, or `force_off` | `""` |
 
 ### Kubernaut Agent (LLM)

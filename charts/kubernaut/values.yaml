@@ -74,7 +74,7 @@ global:
   # profile is required (kubernautAgent.llmProfileRef has no default).
   llmProfiles: {}
     # primary:
-    #   provider: "openai"   # openai | anthropic | vertex_ai | openai_compatible
+    #   provider: "openai"   # openai | anthropic | gemini | vertex_ai | openai_compatible
     #   model: "gpt-4o"
     #   credentialsSecretName: "llm-credentials"
     #   endpoint: ""
