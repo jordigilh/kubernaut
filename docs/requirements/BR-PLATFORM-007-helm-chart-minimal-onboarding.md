@@ -4,7 +4,8 @@
 **Category**: Platform
 **Priority**: P2
 **Target Version**: V1.5
-**Status**: 🟡 Proposed
+**Status**: ✅ Implemented (merged via [PR #1790](https://github.com/jordigilh/kubernaut/pull/1790),
+2026-07-31)
 **Date**: 2026-07-25 (lean reconstruction 2026-07-29 — see Document Note below)
 
 ---
@@ -102,7 +103,11 @@ security/stability-relevant opt-out gaps identified during this effort.
 - **FR-11**: Require `apifrontend.enabled=true` whenever `kubernautAgent.interactive.enabled=true`
   (APIFrontend is currently the sole consumer of KubernautAgent's interactive MCP endpoint), and
   whenever `console.enabled=true` (Console's nginx sidecar has no other backend).
-- **FR-12**: Add a `values-fleet.yaml` overlay covering Fleet-Federation-specific fields.
+- **FR-12**: ~~Add a `values-fleet.yaml` overlay covering Fleet-Federation-specific fields.~~
+  Superseded during implementation (DD-PLATFORM-006 Decision Area 4): a shipped overlay file is
+  unreachable via `-f` for a pure-OCI/airgapped install without a `helm pull --untar` step first,
+  so Fleet-specific fields are instead documented inline in the README/generated values reference
+  for the user's own `values.yaml`, with no shipped overlay file.
 
 ---
 
@@ -131,5 +136,8 @@ security/stability-relevant opt-out gaps identified during this effort.
 
 ---
 
-**Document Status**: 🟡 Proposed
+**Document Status**: ✅ Implemented — merged to `main` via
+[PR #1790](https://github.com/jordigilh/kubernaut/pull/1790), tracking issue
+[#1743](https://github.com/jordigilh/kubernaut/issues/1743) closed. FR-12 superseded per the note
+above; all other Functional Requirements implemented as designed in DD-PLATFORM-006.
 **Priority**: P2
