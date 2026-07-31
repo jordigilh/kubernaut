@@ -124,6 +124,36 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 	})
 
 	// ========================================
+	// Target-Resource Format Unification (Issue #1802)
+	// ========================================
+	// RO's audit emission (emitWorkflowCreatedAudit) always writes
+	// target_resource as the unconditional 3-part "{namespace}/{kind}/{name}"
+	// (empty namespace produces a leading "/"). Now that QueryROEventsBySpecHash
+	// filters on this column (Issue #1802 target-resource scoping), the
+	// handler's parsed target-resource string MUST match that exact format —
+	// otherwise cluster-scoped resources would silently never match any
+	// stored history, defeating the new filter.
+	Describe("Target-Resource Format Unification (Issue #1802)", func() {
+		It("UT-DS-1802-002: should emit the canonical 3-part format for cluster-scoped (namespace-less) resources", func() {
+			var capturedTargetResource string
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, targetResource, _, _ string, _, _ time.Time) ([]repository.RawAuditRow, error) {
+				capturedTargetResource = targetResource
+				return nil, nil
+			}
+
+			req := httptest.NewRequest("GET",
+				"/api/v1/remediation-history/context?targetKind=Node&targetName=node-1&currentSpecHash=sha256:abc",
+				nil)
+			handler.HandleGetRemediationHistoryContext(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(capturedTargetResource).To(Equal("/Node/node-1"),
+				"cluster-scoped target-resource string must match the 3-part canonical format "+
+					"written by RO's audit emission (emitWorkflowCreatedAudit), not a bare 2-part 'Kind/Name'")
+		})
+	})
+
+	// ========================================
 	// Successful Responses
 	// ========================================
 	Describe("Successful Responses", func() {

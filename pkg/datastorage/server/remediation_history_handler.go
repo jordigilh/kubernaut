@@ -166,13 +166,15 @@ func (h *Handler) parseRemediationHistoryRequest(w http.ResponseWriter, r *http.
 		return remediationHistoryRequest{}, false
 	}
 
-	// Build target resource string: "{namespace}/{kind}/{name}" or "{kind}/{name}" for cluster-scoped (#762)
-	var targetResource string
-	if targetNamespace != "" {
-		targetResource = fmt.Sprintf("%s/%s/%s", targetNamespace, targetKind, targetName)
-	} else {
-		targetResource = fmt.Sprintf("%s/%s", targetKind, targetName)
-	}
+	// Build target resource string: unconditional "{namespace}/{kind}/{name}"
+	// (Issue #1802). This MUST match the exact format RO's audit emission
+	// writes to event_data->>'target_resource' (emitWorkflowCreatedAudit,
+	// internal/controller/remediationorchestrator/audit_events.go), which
+	// always uses this 3-part form — cluster-scoped resources produce a
+	// leading "/" (empty namespace segment). Now that QueryROEventsBySpecHash
+	// filters on target_resource equality, a mismatched format here would
+	// silently exclude all history for cluster-scoped resources.
+	targetResource := fmt.Sprintf("%s/%s/%s", targetNamespace, targetKind, targetName)
 
 	return remediationHistoryRequest{
 		targetResource:  targetResource,
