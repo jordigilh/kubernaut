@@ -142,4 +142,55 @@ var _ = Describe("CheckIneffectiveRemediationChain target-resource scoping (Issu
 			"Issue #1802 regression: target B must not be blocked by target A's cross-namespace "+
 				"same-hash remediation chain — target-resource scoping must isolate the two targets")
 	})
+
+	It("IT-RO-1802-002: RemediationRequest.Spec.ClusterID reaches the DS query and isolates fleet clusters (main only)", func() {
+		sharedHash := "sha256:1802-fleet-" + testID
+		ns := "prod-1802fleet-" + testID
+		// Same target (namespace/kind/name) on two different clusters -- a
+		// realistic fleet scenario (GitOps-templated manifests applied
+		// identically across clusters).
+		target := routing.TargetResource{Namespace: ns, Kind: "Deployment", Name: "app"}
+
+		for i := 0; i < 3; i++ {
+			event, err := auditManager.BuildRemediationWorkflowCreatedEvent(
+				fmt.Sprintf("corr-1802-fleet-clusterA-%s-%d", testID, i),
+				ns, fmt.Sprintf("corr-1802-fleet-clusterA-%s-%d", testID, i), "cluster-a-"+testID,
+				roaudit.RemediationWorkflowCreatedData{
+					PreRemediationSpecHash: sharedHash,
+					TargetResource:         target.String(),
+					WorkflowID:             "wf-fleet-a",
+					ActionType:             "ScaleUp",
+					SignalType:             "HighCPULoad",
+					SignalFingerprint:      "fp-fleet-a-" + testID,
+				},
+			)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(auditStore.StoreAudit(ctx, event)).To(Succeed())
+		}
+		Expect(auditStore.Flush(ctx)).To(Succeed())
+
+		// RR arriving on cluster-b, same target, same spec hash, but ZERO
+		// history of its own on cluster-b.
+		rrClusterB := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "rr-1802-fleetb-" + testID, Namespace: ns, UID: types.UID("uid-1802-fleetb-" + testID)},
+			Spec:       remediationv1.RemediationRequestSpec{ClusterID: "cluster-b-" + testID},
+		}
+		targetClusterB := target
+		targetClusterB.ClusterID = rrClusterB.Spec.ClusterID
+
+		blockedClusterB := engine.CheckIneffectiveRemediationChain(ctx, rrClusterB, targetClusterB, sharedHash, "ScaleUp")
+		Expect(blockedClusterB).To(BeNil(),
+			"cluster-b must not be blocked by cluster-a's identically-named-resource chain -- "+
+				"RemediationRequest.Spec.ClusterID must reach the DS query and isolate fleet clusters")
+
+		// Sanity: cluster-a's own chain (matching ClusterID) still blocks.
+		rrClusterA := &remediationv1.RemediationRequest{
+			ObjectMeta: metav1.ObjectMeta{Name: "rr-1802-fleeta-" + testID, Namespace: ns, UID: types.UID("uid-1802-fleeta-" + testID)},
+			Spec:       remediationv1.RemediationRequestSpec{ClusterID: "cluster-a-" + testID},
+		}
+		targetClusterA := target
+		targetClusterA.ClusterID = rrClusterA.Spec.ClusterID
+		blockedClusterA := engine.CheckIneffectiveRemediationChain(ctx, rrClusterA, targetClusterA, sharedHash, "ScaleUp")
+		Expect(blockedClusterA).ToNot(BeNil(), "cluster-a's own 3-entry chain must still trigger the block")
+	})
 })
