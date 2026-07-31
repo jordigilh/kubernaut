@@ -229,19 +229,21 @@ var _ = Describe("buildLLMClientFromConfig — provider dispatch wiring (#1578 #
 	})
 
 	Describe("buildLLMClientFromConfig — unsupported provider (UT-KA-1581-002b)", func() {
-		// An unrecognized provider (Gemini native, never had a langchaingo
-		// case either) still falls through to the default branch and gets an
-		// explicit error, proving the anthropic/openai cases above are
-		// additive and the removed-langchaingo default path fails loudly
-		// rather than silently.
-		It("returns an explicit error for gemini: no langchaingo fallback exists anymore", func() {
+		// A truly unrecognized provider still falls through to the default
+		// branch and gets an explicit error, proving the anthropic/openai/
+		// gemini cases above are additive and the removed-langchaingo
+		// default path fails loudly rather than silently. (Gemini itself
+		// now has a real dispatch path — see llm_builder_1778_test.go —
+		// this spec was updated accordingly, #1778.)
+		It("returns an explicit error for a provider with no registered case", func() {
 			cfg := types.LLMConfig{
-				Provider: types.LLMProviderGemini,
-				Model:    "gemini-not-yet-migrated",
+				Provider: "bedrock",
+				Model:    "not-yet-migrated",
 			}
 
 			_, err := buildLLMClientFromConfig(context.Background(), cfg)
 			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unsupported LLM provider"))
 		})
 	})
 })
