@@ -18,6 +18,14 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"os"
+	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -26,6 +34,35 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/geminifamily"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
+
+// generateFakeServiceAccountJSON builds a GCP service account credential
+// blob with a real RSA-2048 key so credentials.DetectDefault (invoked
+// transitively by both anthropicfamily.New and geminifamily.New's Vertex AI
+// paths) can parse and accept it without any live network call or
+// dependency on the host's real ambient ADC state. Mirrors
+// anthropicfamily's and geminifamily's identically-named test helpers.
+func generateFakeServiceAccountJSON() []byte {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(fmt.Sprintf("generate RSA key for test credentials: %v", err))
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})
+	creds := map[string]string{
+		"type":           "service_account",
+		"project_id":     "test-project",
+		"private_key_id": "key123",
+		"private_key":    string(keyPEM), // notsecret — generated at runtime via rsa.GenerateKey
+		"client_email":   "test@test-project.iam.gserviceaccount.com",
+		"client_id":      "123456789",
+		"auth_uri":       "https://accounts.google.com/o/oauth2/auth",
+		"token_uri":      "https://oauth2.googleapis.com/token",
+	}
+	b, _ := json.Marshal(creds)
+	return b
+}
 
 // IT-KA-1778: buildLLMClientFromConfig's Gemini dispatch (BR-AI-087).
 //
@@ -41,6 +78,30 @@ import (
 // through the real production dispatch switch in buildLLMClientFromConfig
 // — not a direct call to the geminifamily constructors (CHECKPOINT W).
 var _ = Describe("buildLLMClientFromConfig — Gemini dispatch (#1778 #1792 BR-AI-087)", func() {
+	// The vertex_ai cases below pass no credentials in cfg, exercising the
+	// "ambient ADC" path of both geminifamily.New and anthropicfamily.New
+	// (credentials.DetectDefault). Without pinning
+	// GOOGLE_APPLICATION_CREDENTIALS to a fake-but-well-formed credential
+	// file, these specs' pass/fail would depend on whatever GCP ADC state
+	// happens to exist on the machine running the tests rather than on the
+	// dispatch logic under test — found via a CI failure of the sibling
+	// geminifamily package-level constructor tests exercising the same path.
+	var origADC string
+
+	BeforeEach(func() {
+		origADC = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+		adcPath := filepath.Join(GinkgoT().TempDir(), "adc.json")
+		Expect(os.WriteFile(adcPath, generateFakeServiceAccountJSON(), 0600)).To(Succeed())
+		Expect(os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", adcPath)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		if origADC != "" {
+			Expect(os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", origADC)).To(Succeed())
+		} else {
+			Expect(os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")).To(Succeed())
+		}
+	})
 
 	Describe("provider: vertex_ai with a Gemini model (IT-KA-1778-001)", func() {
 		It("dispatches to geminifamily.Client, not anthropicfamily.Client", func() {

@@ -18,10 +18,16 @@ package geminifamily_test
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 
 	"google.golang.org/genai"
 
@@ -32,7 +38,60 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/geminifamily"
 )
 
+// generateFakeServiceAccountJSON builds a GCP service account credential
+// blob with a real RSA-2048 key so credentials.DetectDefault can parse and
+// accept it without any live network call. Mirrors
+// anthropicfamily's identically-named test helper exactly, so both clients'
+// "ambient ADC" constructor paths are exercised the same deterministic way.
+func generateFakeServiceAccountJSON() []byte {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		panic(fmt.Sprintf("generate RSA key for test credentials: %v", err))
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})
+	creds := map[string]string{
+		"type":           "service_account",
+		"project_id":     "test-project",
+		"private_key_id": "key123",
+		"private_key":    string(keyPEM), // notsecret — generated at runtime via rsa.GenerateKey
+		"client_email":   "test@test-project.iam.gserviceaccount.com",
+		"client_id":      "123456789",
+		"auth_uri":       "https://accounts.google.com/o/oauth2/auth",
+		"token_uri":      "https://oauth2.googleapis.com/token",
+	}
+	b, _ := json.Marshal(creds)
+	return b
+}
+
 var _ = Describe("geminifamily.New (Vertex AI) constructor validation — #1778 BR-AI-087", func() {
+	// UT-GM-1778-101/102 pass nil credentialsJSON to exercise the "ambient
+	// ADC" path (credentials.DetectDefault falling back to
+	// GOOGLE_APPLICATION_CREDENTIALS/well-known locations). Without
+	// pinning that env var to a fake-but-well-formed credential file, these
+	// specs would pass or fail based on whatever GCP ADC state happens to
+	// exist on the machine running the tests (developer laptops with
+	// `gcloud auth application-default login` vs. a clean CI runner) — a
+	// non-deterministic dependency on host state, found via CI failure.
+	var origADC string
+
+	BeforeEach(func() {
+		origADC = os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+		adcPath := filepath.Join(GinkgoT().TempDir(), "adc.json")
+		Expect(os.WriteFile(adcPath, generateFakeServiceAccountJSON(), 0600)).To(Succeed())
+		Expect(os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", adcPath)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		if origADC != "" {
+			Expect(os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", origADC)).To(Succeed())
+		} else {
+			Expect(os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")).To(Succeed())
+		}
+	})
+
 	It("UT-GM-1778-100: returns error when project is empty", func() {
 		client, err := geminifamily.New(context.Background(), "gemini-2.5-pro", nil, "", "us-central1")
 		Expect(err).To(HaveOccurred())
