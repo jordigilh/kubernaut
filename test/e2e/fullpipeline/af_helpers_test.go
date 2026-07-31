@@ -1,6 +1,7 @@
 package fullpipeline
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,8 @@ const (
 	// from oomkilled (container termination Reason, PascalCase) and oomkill
 	// (workflow catalog key prefix).
 	oomkilledLower = "oomkilled"
+	// fpPartKindText is the A2A ContentPart "kind" discriminator for text parts.
+	fpPartKindText = "text"
 )
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -71,6 +74,28 @@ func fpA2ATasksSendWithTask(id, taskID, text string) string {
 		"message": map[string]interface{}{
 			"messageId": "msg-" + id,
 			"contextId": "ctx-" + taskID,
+			"role":      "user",
+			"parts": []map[string]interface{}{
+				{"kind": "text", "text": text},
+			},
+		},
+	})
+}
+
+// fpA2AMessageStreamWithContext is a message/stream JSON-RPC payload builder
+// (SSE variant of fpA2ATasksSend/fpA2ATasksSendWithTask) that takes an
+// explicit shared contextID instead of deriving one from id, so a later SSE
+// turn lands in the same ADK session as an earlier one. Mirrors
+// test/e2e/apifrontend/helpers_test.go's a2aMessageStreamWithContext, which
+// is the established pattern for multi-turn SSE conversations (SessionInterceptor
+// only overrides ContextID when the message doesn't already set one).
+//
+//nolint:unparam // contextID currently only varies within a single test's own turns (sharedCtxID), but the param must stay generic — future FP SSE tests (e.g. a client-disconnect-during-reinvocation scenario) will call this with their own distinct context IDs, mirroring apifrontend's helpers_test.go equivalent.
+func fpA2AMessageStreamWithContext(id, contextID, text string) string {
+	return fpBuildJSONRPC(id, "message/stream", map[string]interface{}{
+		"message": map[string]interface{}{
+			"messageId": "msg-" + id,
+			"contextId": contextID,
 			"role":      "user",
 			"parts": []map[string]interface{}{
 				{"kind": "text", "text": text},
@@ -167,6 +192,228 @@ func fpA2AInvokeWithTimeout(body string, timeout time.Duration) (*http.Response,
 		return client.Do(req)
 	}
 	return afHTTPClient.Do(req)
+}
+
+// fpA2ASSEInvoke sends a JSON-RPC request to POST /a2a/invoke with
+// Accept: text/event-stream, so AF returns a live SSE stream instead of a
+// single blocking JSON response. This is the transport a real Kubernaut
+// Console client uses (see test/e2e/apifrontend/streaming_test.go); FP's
+// other fpA2A* helpers all use message/send and never exercise it against the
+// full RO/SP/AA/KA/WE pipeline (E2E-FP-1189-005 closes that gap).
+// A zero timeout uses the default afHTTPClient (30s); pass an explicit
+// timeout for turns that block until the pipeline (or KA tool call) completes.
+func fpA2ASSEInvoke(body string, timeout time.Duration) (*http.Response, error) {
+	token := getAFToken()
+	req, err := http.NewRequest(http.MethodPost, afBaseURL+"/a2a/invoke", strings.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Authorization", "Bearer "+token)
+	if timeout > 0 {
+		streamClient := &http.Client{
+			Transport: afHTTPClient.Transport,
+			Timeout:   timeout,
+		}
+		return streamClient.Do(req)
+	}
+	return afHTTPClient.Do(req)
+}
+
+// fpSSEEvent is the JSON-RPC envelope carried by each SSE "data:" frame.
+type fpSSEEvent struct {
+	JSONRPC string          `json:"jsonrpc"`
+	Result  json.RawMessage `json:"result"`
+}
+
+// fpTaskStatusUpdate mirrors A2A's TaskStatusUpdateEvent — carries lifecycle
+// state (working/completed/failed/input-required) plus optional status
+// message text (e.g. reasoning/progress narration a Console user would see).
+type fpTaskStatusUpdate struct {
+	Kind   string `json:"kind"`
+	Status struct {
+		State   string `json:"state"`
+		Message *struct {
+			Parts []struct {
+				Kind string `json:"kind"`
+				Text string `json:"text"`
+			} `json:"parts"`
+		} `json:"message,omitempty"`
+	} `json:"status"`
+	Metadata map[string]any `json:"metadata,omitempty"`
+}
+
+// fpTaskArtifactUpdate mirrors A2A's TaskArtifactUpdateEvent — carries the
+// progressively-streamed LLM output/tool results a Console renders as the
+// main response. Metadata/Data are captured (not just Text) because
+// production schema-tagging (e.g. metadata.type="execution_progress" from
+// pkg/apifrontend/tools/execution_progress.go's BuildProgressSnapshot) lives
+// on the artifact/DataPart, not the text fallback.
+type fpTaskArtifactUpdate struct {
+	Kind     string `json:"kind"`
+	Artifact struct {
+		Metadata map[string]any `json:"metadata,omitempty"`
+		Parts    []struct {
+			Kind string         `json:"kind"`
+			Text string         `json:"text"`
+			Data map[string]any `json:"data,omitempty"`
+		} `json:"parts"`
+	} `json:"artifact"`
+}
+
+// fpArtifactDataPart returns the merged data map of the first DataPart in
+// the artifact, or nil if none is present.
+func fpArtifactDataPart(art fpTaskArtifactUpdate) map[string]any {
+	for _, p := range art.Artifact.Parts {
+		if p.Kind == "data" && p.Data != nil {
+			return p.Data
+		}
+	}
+	return nil
+}
+
+// fpStatusesBySchema returns the status-update events whose metadata.schema
+// matches the given value (e.g. "early_rca" — see emitEarlyRCA in
+// pkg/apifrontend/tools/ka_investigate_bridge.go).
+func fpStatusesBySchema(statuses []fpTaskStatusUpdate, schema string) []fpTaskStatusUpdate {
+	var out []fpTaskStatusUpdate
+	for _, st := range statuses {
+		if s, _ := st.Metadata["schema"].(string); s == schema {
+			out = append(out, st)
+		}
+	}
+	return out
+}
+
+// fpArtifactsByMetaType returns the artifact-update events whose
+// metadata.type matches the given value (e.g. "execution_progress" — see
+// BuildProgressSnapshot in pkg/apifrontend/tools/execution_progress.go).
+func fpArtifactsByMetaType(artifacts []fpTaskArtifactUpdate, metaType string) []fpTaskArtifactUpdate {
+	var out []fpTaskArtifactUpdate
+	for _, art := range artifacts {
+		if t, _ := art.Artifact.Metadata["type"].(string); t == metaType {
+			out = append(out, art)
+		}
+	}
+	return out
+}
+
+// fpArtifactsBySchema returns the artifact-update events whose metadata.schema
+// matches the given value. Unlike fpArtifactsByMetaType (which filters on the
+// coarse-grained metadata.type, e.g. "execution_progress"), this targets the
+// finer-grained "schema" key production uses to distinguish sibling payloads
+// that share the same type -- e.g. emitFallbackInvestigationArtifact
+// (pkg/apifrontend/tools/ka_investigate_bridge.go) tags its artifact
+// metadata.type="decision" + metadata.schema="investigation_summary", the
+// same "decision" type emitEarlyRCA uses for its early_rca status-update.
+func fpArtifactsBySchema(artifacts []fpTaskArtifactUpdate, schema string) []fpTaskArtifactUpdate {
+	var out []fpTaskArtifactUpdate
+	for _, art := range artifacts {
+		if s, _ := art.Artifact.Metadata["schema"].(string); s == schema {
+			out = append(out, art)
+		}
+	}
+	return out
+}
+
+// fpStatusText concatenates all text parts of a status-update's message.
+func fpStatusText(st fpTaskStatusUpdate) string {
+	if st.Status.Message == nil {
+		return ""
+	}
+	var sb strings.Builder
+	for _, part := range st.Status.Message.Parts {
+		if part.Kind == fpPartKindText {
+			sb.WriteString(part.Text)
+		}
+	}
+	return sb.String()
+}
+
+// fpScanSSEFrames drains an SSE response body, decoding every "data:" frame
+// into either an artifact-update or status-update event. Mirrors
+// test/e2e/apifrontend/streaming_test.go's scanSSEFrames so FP and AF-only
+// suites assert streaming behavior identically.
+func fpScanSSEFrames(resp *http.Response) (artifacts []fpTaskArtifactUpdate, statuses []fpTaskStatusUpdate) {
+	sc := bufio.NewScanner(resp.Body)
+	// SSE lines can be very long (investigation summaries); allow a larger token than default.
+	sc.Buffer(make([]byte, 64*1024), 1024*1024)
+
+	for sc.Scan() {
+		line := strings.TrimRight(sc.Text(), "\r")
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if !strings.HasPrefix(payload, "{") {
+			continue
+		}
+
+		var evt fpSSEEvent
+		if err := json.Unmarshal([]byte(payload), &evt); err != nil {
+			continue
+		}
+		if len(evt.Result) == 0 {
+			continue
+		}
+
+		var raw map[string]interface{}
+		if err := json.Unmarshal(evt.Result, &raw); err != nil {
+			continue
+		}
+
+		switch kind, _ := raw["kind"].(string); kind {
+		case "artifact-update":
+			var art fpTaskArtifactUpdate
+			if json.Unmarshal(evt.Result, &art) == nil {
+				artifacts = append(artifacts, art)
+			}
+		case "status-update":
+			var st fpTaskStatusUpdate
+			if json.Unmarshal(evt.Result, &st) == nil {
+				statuses = append(statuses, st)
+			}
+		}
+	}
+	return artifacts, statuses
+}
+
+// fpSSETerminalState returns the last terminal state (completed/failed/
+// input-required) seen across the given status-update events, or "" if none
+// reached a terminal state before the stream closed.
+func fpSSETerminalState(statuses []fpTaskStatusUpdate) string {
+	for i := len(statuses) - 1; i >= 0; i-- {
+		switch statuses[i].Status.State {
+		case "completed", "failed", "input-required":
+			return statuses[i].Status.State
+		}
+	}
+	return ""
+}
+
+// fpSSEHasNonEmptyText reports whether any artifact or status-message text
+// part carries visible, non-whitespace content — i.e. whether a Console user
+// watching this stream would have actually seen something render.
+func fpSSEHasNonEmptyText(artifacts []fpTaskArtifactUpdate, statuses []fpTaskStatusUpdate) bool {
+	for _, art := range artifacts {
+		for _, part := range art.Artifact.Parts {
+			if part.Kind == fpPartKindText && strings.TrimSpace(part.Text) != "" {
+				return true
+			}
+		}
+	}
+	for _, st := range statuses {
+		if st.Status.Message == nil {
+			continue
+		}
+		for _, part := range st.Status.Message.Parts {
+			if part.Kind == fpPartKindText && strings.TrimSpace(part.Text) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func fpParseRPC(resp *http.Response) (fpRPCResponse, error) {
