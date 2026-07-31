@@ -78,6 +78,11 @@ type LLMReasoningConfig struct {
 	//     contradiction (Anthropic has no "thinking enabled with zero
 	//     effort" state) and is rejected by Validate rather than silently
 	//     reinterpreted — see validateReasoning.
+	//   - Gemini (native/Vertex, Kubernaut Agent only, BR-AI-087): maps
+	//     through the same genai.ThinkingLevel tiers as Anthropic above
+	//     (shared llm.EffortToThinkingConfig/EffortToThinkingLevel), so
+	//     "xhigh" clamps to "high" here too, for the same reason —
+	//     Gemini's ThinkingLevel has no tier above High either.
 	//   - Real OpenAI/Azure o-series & gpt-5 models: passed through
 	//     verbatim as the wire "reasoning_effort" value.
 	//   - DeepSeek (openai_compatible): downscaled to DeepSeek's own

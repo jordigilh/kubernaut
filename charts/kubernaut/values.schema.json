@@ -651,7 +651,7 @@
                       "xhigh"
                     ],
                     "default": "",
-                    "description": "Unified, provider-agnostic reasoning-depth knob (#1604): empty lets the vendor/provider choose its own default."
+                    "description": "Unified, provider-agnostic reasoning-depth knob (#1604): empty lets the vendor/provider choose its own default. Anthropic and Gemini have no tier above \"high\", so \"xhigh\" is accepted but clamped down to \"high\" on those two providers (not an error)."
                   },
                   "capabilityOverride": {
                     "type": "string",
