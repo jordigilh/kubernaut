@@ -52,6 +52,7 @@ const (
 // parameters for HandleGetRemediationHistoryContext.
 type remediationHistoryRequest struct {
 	targetResource  string
+	clusterID       string // Issue #1802: optional fleet scoping (main only; empty = unscoped)
 	currentSpecHash string
 	tier1Window     time.Duration
 	tier2Window     time.Duration
@@ -128,6 +129,7 @@ func (h *Handler) parseRemediationHistoryRequest(w http.ResponseWriter, r *http.
 	targetName := q.Get("targetName")
 	targetNamespace := q.Get("targetNamespace")
 	currentSpecHash := q.Get("currentSpecHash")
+	clusterID := q.Get("clusterId") // Issue #1802: optional fleet scoping (main only)
 
 	if targetKind == "" {
 		response.WriteRFC7807Error(w, http.StatusBadRequest,
@@ -174,6 +176,7 @@ func (h *Handler) parseRemediationHistoryRequest(w http.ResponseWriter, r *http.
 
 	return remediationHistoryRequest{
 		targetResource:  targetResource,
+		clusterID:       clusterID,
 		currentSpecHash: currentSpecHash,
 		tier1Window:     tier1Window,
 		tier2Window:     tier2Window,
@@ -206,7 +209,7 @@ func (h *Handler) parseHistoryWindow(w http.ResponseWriter, q url.Values, param 
 // — pure code motion, no behavior change.
 func (h *Handler) queryTier1History(w http.ResponseWriter, ctx context.Context, req remediationHistoryRequest, now time.Time) ([]api.RemediationHistoryEntry, time.Time, bool) {
 	tier1Since := now.Add(-req.tier1Window)
-	roEvents, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, req.currentSpecHash, tier1Since, now)
+	roEvents, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, req.targetResource, req.clusterID, req.currentSpecHash, tier1Since, now)
 	if err != nil {
 		h.logger.Error(err, "Failed to query Tier 1 RO events",
 			"spec_hash", req.currentSpecHash, "since", tier1Since, "until", now)
@@ -245,7 +248,7 @@ func (h *Handler) queryTier1History(w http.ResponseWriter, ctx context.Context, 
 // — pure code motion, no behavior change.
 func (h *Handler) queryTier2History(ctx context.Context, req remediationHistoryRequest, now, tier1Since time.Time) []api.RemediationHistorySummary {
 	tier2Since := now.Add(-req.tier2Window)
-	tier2RO, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, req.currentSpecHash, tier2Since, tier1Since)
+	tier2RO, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, req.targetResource, req.clusterID, req.currentSpecHash, tier2Since, tier1Since)
 	if err != nil {
 		h.logger.Error(err, "Failed to query Tier 2 events (non-fatal, continuing with empty Tier 2)",
 			"spec_hash", req.currentSpecHash, "since", tier2Since, "until", tier1Since)

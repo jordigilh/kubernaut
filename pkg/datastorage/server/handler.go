@@ -34,7 +34,7 @@ import (
 // BR-HAPI-016: Remediation history context for LLM prompt enrichment.
 // DD-HAPI-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
 type RemediationHistoryQuerier interface {
-	QueryROEventsBySpecHash(ctx context.Context, specHash string, since, until time.Time) ([]repository.RawAuditRow, error)
+	QueryROEventsBySpecHash(ctx context.Context, targetResource, clusterID, specHash string, since, until time.Time) ([]repository.RawAuditRow, error)
 	QueryEffectivenessEventsBatch(ctx context.Context, correlationIDs []string) (map[string][]*EffectivenessEvent, error)
 }
 
