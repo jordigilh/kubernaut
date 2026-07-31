@@ -154,7 +154,14 @@ HorizontalPodAutoscaler (autoscaling/v2) for a component, targeting a
 same-named Deployment. Ported from the Kubernaut Operator's HPA builders
 (kubernaut-operator/internal/resources/hpa.go); identical across every
 autoscaling-capable service — only name/autoscaling values vary.
-Usage: {{ include "kubernaut.hpa" (dict "root" $ "name" "datastorage" "autoscaling" .Values.datastorage.autoscaling) }}
+Callers MUST pass the schema-default-merged `autoscaling` block (via
+`kubernaut.mergedValues`), not `.Values.<service>.autoscaling` directly --
+`cpuTarget`/`memoryTarget`/`minReplicas`/`maxReplicas` have no literal entry
+in values.yaml post-DD-PLATFORM-006, so a raw `.Values` read yields an empty
+`averageUtilization` and a Kubernetes API rejection the moment autoscaling is
+enabled without every field also being explicitly set.
+Usage: {{ $v := include "kubernaut.mergedValues" (dict "root" $ "service" "datastorage") | fromYaml }}
+       {{ include "kubernaut.hpa" (dict "root" $ "name" "datastorage" "autoscaling" $v.autoscaling) }}
 */}}
 {{- define "kubernaut.hpa" -}}
 {{- if .autoscaling.enabled }}
