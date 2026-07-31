@@ -108,6 +108,12 @@ metadata:
     "argocd.argoproj.io/sync-wave": "-1"
 spec:
   replicas: {{ $v.replicas }}
+  # PR #1790 round-13 RCA: see gateway.yaml's progressDeadlineSeconds comment
+  # -- K8s's Deployment controller enforces this SERVER-SIDE (default 600s)
+  # independently of `kubectl rollout status --timeout`, which is why round-12's
+  # 480s->720s CLI timeout bump had no effect. 750s makes that 720s CLI
+  # timeout the real ceiling again.
+  progressDeadlineSeconds: 750
   selector:
     matchLabels:
       app: datastorage

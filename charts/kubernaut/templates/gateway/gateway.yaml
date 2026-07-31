@@ -197,6 +197,22 @@ metadata:
 spec:
   {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "gateway") | fromYaml }}
   replicas: {{ $v.replicas }}
+  # PR #1790 round-13 RCA: K8s's own Deployment controller enforces
+  # spec.progressDeadlineSeconds (default 600s) SERVER-SIDE, independently of
+  # any `kubectl rollout status --timeout` value passed client-side -- once
+  # exceeded, the Deployment is marked `Progressing=False,
+  # reason=ProgressDeadlineExceeded` and `kubectl rollout status` exits
+  # immediately with "deployment exceeded its progress deadline" regardless
+  # of a larger --timeout (see kubernetes/kubernetes#129959 for the identical
+  # symptom, and https://kubernetes.io/docs/concepts/workloads/controllers/deployment/#progress-deadline-seconds).
+  # This is why round-12's bump of the E2E harness's `kubectl rollout status
+  # --timeout` from 480s->720s (test/infrastructure/fullpipeline_e2e_helm.go)
+  # had zero effect: the 600s default fired first every time. 750s (+30s
+  # margin over that 720s client-side timeout) makes the client-side timeout
+  # the actual effective ceiling again, restoring round-12's intended
+  # tolerance for the confirmed node-wide kubelet starvation under this
+  # suite's load (see that commit's cgroup/kubelet-log evidence).
+  progressDeadlineSeconds: 750
   selector:
     matchLabels:
       app: gateway
