@@ -229,12 +229,14 @@ var _ = Describe("RemediationHistoryRepository", func() {
 	// =========================================================================
 	Describe("QueryROEventsBySpecHash", func() {
 		var (
-			specHash string
-			since    time.Time
-			until    time.Time
+			targetResource string
+			specHash       string
+			since          time.Time
+			until          time.Time
 		)
 
 		BeforeEach(func() {
+			targetResource = "prod/Deployment/my-app"
 			specHash = "sha256:aabb1122"
 			since = time.Now().Add(-90 * 24 * time.Hour) // 90 days ago
 			until = time.Now().Add(-24 * time.Hour)       // 24h ago (beyond tier 1)
@@ -256,10 +258,10 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				)
 
 				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
-					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(targetResource, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
-				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
+				results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, specHash, since, until)
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(results).To(HaveLen(1))
@@ -275,10 +277,10 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				})
 
 				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
-					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(targetResource, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
-				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
+				results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, specHash, since, until)
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(results).To(BeEmpty())
@@ -288,10 +290,10 @@ var _ = Describe("RemediationHistoryRepository", func() {
 		Context("when database returns an error", func() {
 			It("UT-RH-011: should propagate the error", func() {
 				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
-					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(targetResource, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnError(sql.ErrConnDone)
 
-				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
+				results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, specHash, since, until)
 
 				Expect(err).To(HaveOccurred())
 				Expect(err).To(MatchError(sql.ErrConnDone))
@@ -311,10 +313,10 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				)
 
 				sqlMock.ExpectQuery(`SELECT event_type, event_data, event_timestamp, correlation_id FROM`).
-					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(targetResource, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
-				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
+				results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, specHash, since, until)
 
 				Expect(err).To(HaveOccurred())
 				Expect(results).To(BeNil())
@@ -330,10 +332,10 @@ var _ = Describe("RemediationHistoryRepository", func() {
 				})
 
 				sqlMock.ExpectQuery(`ORDER BY event_timestamp ASC, event_id ASC`).
-					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(targetResource, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
-				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
+				results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, specHash, since, until)
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(results).To(BeEmpty())
@@ -359,15 +361,51 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 				// Regex requires event_type filter - without it, query would leak EM events
 				sqlMock.ExpectQuery(`event_type = 'remediation\.workflow_created'`).
-					WithArgs(specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WithArgs(targetResource, specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
 					WillReturnRows(rows)
 
-				results, err := repo.QueryROEventsBySpecHash(ctx, specHash, since, until)
+				results, err := repo.QueryROEventsBySpecHash(ctx, targetResource, specHash, since, until)
 
 				Expect(err).ToNot(HaveOccurred())
 				Expect(results).To(HaveLen(1))
 				Expect(results[0].EventType).To(Equal("remediation.workflow_created"))
 				Expect(results[0].CorrelationID).To(Equal("rr-old-002"))
+			})
+		})
+
+		// =====================================================================
+		// UT-DS-1802-001: Target-resource and cluster scoping (Issue #1802)
+		// BR-ORCH-042.5: Ineffective-chain detection must not cross target
+		// resource boundaries. Two unrelated Deployments sharing an identical
+		// Pod spec (and thus an identical spec hash) must not be treated as
+		// the same remediation target.
+		// =====================================================================
+		Context("target-resource scoping (Issue #1802)", func() {
+			It("UT-DS-1802-001: should exclude a same-hash row belonging to a different target resource", func() {
+				// Only the ns-a row should be returned when querying for ns-a's target,
+				// even though an ns-b row shares the exact same spec hash.
+				eventData, _ := json.Marshal(map[string]interface{}{
+					"target_resource":           "ns-a/Deployment/app",
+					"pre_remediation_spec_hash": specHash,
+					"action_type":              "ScaleUp",
+				})
+
+				rows := sqlmock.NewRows([]string{
+					"event_type", "event_data", "event_timestamp", "correlation_id",
+				}).AddRow(
+					"remediation.workflow_created", eventData,
+					time.Now().Add(-21*24*time.Hour), "rr-ns-a-001",
+				)
+
+				sqlMock.ExpectQuery(`event_data->>'target_resource' = \$1`).
+					WithArgs("ns-a/Deployment/app", specHash, sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).
+					WillReturnRows(rows)
+
+				results, err := repo.QueryROEventsBySpecHash(ctx, "ns-a/Deployment/app", specHash, since, until)
+
+				Expect(err).ToNot(HaveOccurred())
+				Expect(results).To(HaveLen(1), "only the requested target's row should be returned, not the cross-namespace ns-b row sharing the same hash")
+				Expect(results[0].CorrelationID).To(Equal("rr-ns-a-001"))
 			})
 		})
 	})

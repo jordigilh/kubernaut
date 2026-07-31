@@ -211,7 +211,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			insertROEvent(cidOther, targetResource, "sha256:different_hash", "ScaleUp", now.Add(-1*time.Hour))
 
 			// Act: query by spec hash with 3-hour lookback
-			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, matchHash, now.Add(-3*time.Hour), now)
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, matchHash, now.Add(-3*time.Hour), now)
 
 			// Assert
 			Expect(err).ToNot(HaveOccurred())
@@ -258,7 +258,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			insertROEvent(cidNoMatch, targetResource, "sha256:different_hash", "ScaleDown", now.Add(-40*time.Hour))
 
 			// Act: query for matchHash within 72h-24h window (Tier 2)
-			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, matchHash, now.Add(-72*time.Hour), now.Add(-24*time.Hour))
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, matchHash, now.Add(-72*time.Hour), now.Add(-24*time.Hour))
 
 			// Assert
 			Expect(err).ToNot(HaveOccurred())
@@ -330,10 +330,9 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 		//   4. DetectRegression (hash match analysis)
 		queryAndCorrelate := func(target, specHash string, since time.Time) ([]api.RemediationHistoryEntry, bool) {
 			GinkgoHelper()
-			_ = target // retained for call-site readability; Tier 1 now queries by spec hash
 
-			// Step 1: Query RO events by spec hash (#586)
-			roEvents, err := adapter.QueryROEventsBySpecHash(testCtx, specHash, since, time.Now().UTC())
+			// Step 1: Query RO events by target resource + spec hash (#586, #1802)
+			roEvents, err := adapter.QueryROEventsBySpecHash(testCtx, target, specHash, since, time.Now().UTC())
 			Expect(err).ToNot(HaveOccurred())
 
 			// Step 2: Batch query EM events
