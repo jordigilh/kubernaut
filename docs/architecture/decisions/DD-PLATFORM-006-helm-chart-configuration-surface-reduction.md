@@ -906,6 +906,22 @@ follow-up CI run of `E2E (fleet)`, rather than by a from-scratch local Kind flee
 (cost-prohibitive to run repeatedly locally; CI is the authoritative validation environment for
 this specific fix).
 
+**Addendum (round-15 RCA, run 30633836502)**: with the PHASE 6 restart eliminated, `E2E (fleet)`
+reached PHASE 8 for the first time ever in this PR's Helm-based flow, exposing a second, unrelated
+latent bug: `waitForFullPipelineServicesReady`'s per-service readiness poll (3 minutes) was
+structurally shorter than `pkg/fleet/mcpclient/resilience.go`'s own `DefaultResilienceConfig.
+MaxElapsedTime` (5 minutes) — the retry ceiling `gateway`'s and `RemediationOrchestrator`'s
+`/readyz` handlers legitimately wait on for their `mcpclient.NewResilient` MCP Gateway connection
+when `global.fleet.enabled=true`. `fullpipeline` never exercises this path (`fleetProvisioner` is
+nil there), so this timeout mismatch had never been reachable before either. The NetworkPolicy
+egress this connection needs was already fixed in #1755/DD-TEST-015
+(`kubernaut.np.mcpGatewayEgress`) — this is a plain timeout-ceiling mismatch, structurally
+identical in kind to this Decision Area's own `progressDeadlineSeconds`-vs-`kubectl`-timeout
+pattern (DD-PLATFORM-006 round-13). Fix: raised both readiness-poll timeouts in
+`waitForFullPipelineServicesReady` from 3 to 6 minutes (+1min margin over the 5min ceiling),
+applied uniformly rather than per-service to keep the function simple, since every other service
+converges in seconds regardless and this only affects the failure-case ceiling.
+
 ---
 
 ## Considered and Declined: Removing `postgresql`/`valkey` from the Chart

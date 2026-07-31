@@ -1176,12 +1176,36 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 	totalChecks := len(deployments) + len(controllers)
 	results := make(chan readyResult, totalChecks)
 
+	// PR #1790 round-15 RCA (run 30633836502, first time fleet's Helm E2E
+	// flow ever reached PHASE 8 -- round-14's DA17 fix eliminated the PHASE 6
+	// bottleneck that previously masked this): "gateway not ready after 3m
+	// RemediationOrchestrator controller not ready after 3m" while all 13
+	// other services (including non-fleet-MCP-dependent controllers) became
+	// ready well inside 3m. Both gateway's and RO's own /readyz handlers
+	// legitimately block on wireFleetOwnerResolution's mcpclient.NewResilient
+	// MCP Gateway connection succeeding (pkg/fleet/mcpclient/resilience.go's
+	// DefaultResilienceConfig.MaxElapsedTime = 5 minutes) when
+	// global.fleet.enabled=true -- fullpipeline never exercises this path at
+	// all (fleetProvisioner is nil there, fleet stays disabled), which is why
+	// it has never hit this. The NetworkPolicy egress this connection needs
+	// was already fixed in #1755/DD-TEST-015
+	// (kubernaut.np.mcpGatewayEgress) -- this is a plain timeout-ceiling
+	// mismatch, not a missing rule: the harness's own 3-minute poll window
+	// was simply never long enough to cover the dependency's own designed
+	// 5-minute retry budget, structurally identical to DA17's
+	// progressDeadlineSeconds-vs-kubectl-timeout mismatch. 6 minutes (+1min
+	// margin over the 5min ceiling) applies uniformly to both checks below
+	// (not just gateway/RO) to keep this function simple -- every other
+	// service converges in seconds regardless, so this only affects the
+	// failure-case ceiling, not typical-case latency.
+	const serviceReadyTimeout = 6 * time.Minute
+
 	// Deployment readiness checks
 	for _, deplName := range deployments {
 		deplName := deplName // capture
 		go func() {
 			_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s...\n", deplName)
-			pollErr := pollUntilReady(ctx, 3*time.Minute, 2*time.Second, func() bool {
+			pollErr := pollUntilReady(ctx, serviceReadyTimeout, 2*time.Second, func() bool {
 				depl, getErr := clientset.AppsV1().Deployments(namespace).Get(ctx, deplName, metav1.GetOptions{})
 				if getErr != nil {
 					return false
@@ -1189,7 +1213,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 				return depl.Status.ReadyReplicas >= 1
 			})
 			if pollErr != nil {
-				results <- readyResult{deplName, fmt.Errorf("%s not ready after 3m", deplName)}
+				results <- readyResult{deplName, fmt.Errorf("%s not ready after %s", deplName, serviceReadyTimeout)}
 			} else {
 				_, _ = fmt.Fprintf(writer, "  ✅ %s ready\n", deplName)
 				results <- readyResult{deplName, nil}
@@ -1202,7 +1226,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		ctrl := ctrl // capture
 		go func() {
 			_, _ = fmt.Fprintf(writer, "  ⏳ Waiting for %s controller...\n", ctrl.name)
-			pollErr := pollUntilReady(ctx, 3*time.Minute, 2*time.Second, func() bool {
+			pollErr := pollUntilReady(ctx, serviceReadyTimeout, 2*time.Second, func() bool {
 				pods, listErr := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{
 					LabelSelector: ctrl.selector,
 				})
@@ -1221,7 +1245,7 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 				return false
 			})
 			if pollErr != nil {
-				results <- readyResult{ctrl.name, fmt.Errorf("%s controller not ready after 3m", ctrl.name)}
+				results <- readyResult{ctrl.name, fmt.Errorf("%s controller not ready after %s", ctrl.name, serviceReadyTimeout)}
 			} else {
 				_, _ = fmt.Fprintf(writer, "  ✅ %s controller ready\n", ctrl.name)
 				results <- readyResult{ctrl.name, nil}

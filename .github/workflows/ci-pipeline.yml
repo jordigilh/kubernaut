@@ -1017,16 +1017,19 @@ jobs:
             timeout: 20
           - service: fleet
             service_name: "Fleet Multi-Cluster"
-            # 45 (up from 35, PR #1790 round-12 RCA): PHASE 6's per-deployment
-            # rollout-status wait grew from 480s to 720s (see
-            # resignHostAccessedTLSCertsWithLocalhostSAN's round-12 comment in
-            # test/infrastructure/fullpipeline_e2e_helm.go) to tolerate
-            # confirmed node-wide kubelet starvation under this suite's full
-            # (dependencies + 12-service chart) footprint. +10min keeps that
-            # extra per-deployment headroom from silently eating into the
-            # budget the rest of the suite's actual test execution needs,
-            # comparable to the existing +10min cert-manager-vs-hook headroom
-            # further down in this file for the same class of contention.
+            # 45 (up from 35, PR #1790 round-12 RCA): originally sized around
+            # PHASE 6's per-deployment rollout-status wait (480s->720s) to
+            # tolerate node-wide kubelet starvation from a since-removed
+            # post-install TLS re-sign + 4-deployment rolling restart (DA17,
+            # round-14, eliminated the restart entirely by baking host-access
+            # SANs into the original chart-issued certs). Kept at 45 rather
+            # than lowered back down: round-15's PHASE 8 readiness-timeout fix
+            # (waitForFullPipelineServicesReady, test/infrastructure/
+            # fullpipeline_e2e.go) added its own up-to-6-minute-per-service
+            # margin for fleet's MCP-Gateway-dependent gateway/RO readiness
+            # checks, and this job's heavier Istio/Kuadrant/Keycloak/
+            # kube-mcp-server footprint (vs. fullpipeline's 20min budget)
+            # still warrants headroom the other E2E jobs don't need.
             timeout: 45
           - service: fleetmetadatacache-kuadrant
             service_name: "Fleet Metadata Cache (Kuadrant)"
