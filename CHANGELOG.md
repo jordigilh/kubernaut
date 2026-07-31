@@ -21,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Deferred to a dedicated follow-up (DA14, PR9): removing the remaining ~234 non-zero-default fields (including `postgresql.enabled`/`valkey.enabled`, which already default `true`) from the example `values.yaml` needs a materialized-defaults template generator first, to avoid silently changing rendered output for anyone who was relying on the inline default being visible.
 
+### Added
+
+- **Native Gemini client for Kubernaut Agent (#1778, BR-AI-087, DD-LLM-010)** — `provider: vertex_ai` no longer assumes every model is Claude. Both Kubernaut Agent and API Frontend now auto-detect Claude vs. Gemini from the model name prefix (`claude-*` vs `gemini-*`) and dispatch to the correct client, fail-fast with a clear error on an unrecognized model family instead of silently defaulting to one, and support `provider: gemini` for the native Gemini API. Kubernaut Agent's Gemini client (`pkg/kubernautagent/llm/geminifamily`) wraps `eino-ext`'s `agenticgemini` component rather than reimplementing the SDK.
+
+### Fixed
+
+- **API Frontend's `vertex_ai` + Gemini gap (#1792)** — API Frontend previously routed every `provider: vertex_ai` profile to the Claude client regardless of the configured model, so a Gemini model under `vertex_ai` would silently misbehave. Fixed with the same model-name dispatch as #1778.
+- **Misleading `vertex_ai` + Gemini chart docs/examples (#1793)** — `charts/kubernaut`'s README and values examples suggested `gemini-2.5-pro` worked under `provider: vertex_ai` when it did not; now genuinely supported and covered by Helm + Go wiring tests.
+- **`GOOGLE_APPLICATION_CREDENTIALS` no longer statically declared in API Frontend's Deployment (#1801)** — This credential-adjacent env var was previously rendered as a static `env:` entry whenever `provider: vertex_ai` was configured, visible via `kubectl get pod -o yaml` to anyone with pod-read RBAC. It's now injected in-process at construction time (`pkg/apifrontend/launcher.InjectAmbientGoogleCredentials`) only for the model families whose SDK has no explicit-credentials-bytes option, matching Kubernaut Agent's and the HolmesGPT API predecessor's precedent. API Frontend's Gemini-on-Vertex path now authenticates with explicit credential bytes end-to-end, touching zero env vars.
+
 ## [1.5.2] - 2026-06-24
 
 ### Added

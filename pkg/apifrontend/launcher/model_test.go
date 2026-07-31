@@ -2,6 +2,7 @@ package launcher_test
 
 import (
 	"context"
+	"fmt"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -54,6 +55,74 @@ var _ = Describe("Model Factory", func() {
 			if err != nil {
 				Expect(err.Error()).To(ContainSubstring("GCP ADC unavailable"))
 			}
+		})
+
+		// IT-AF-1792: vertex_ai + a Gemini model previously unconditionally
+		// constructed an adk-anthropic-go (Claude-typed) model regardless of
+		// the configured model — the AF counterpart of #1778's KA bug.
+		// Proven fixed here through the real production dispatch
+		// (NewModelFromConfig -> newVertexAIModel), not a direct call to an
+		// unexported constructor (CHECKPOINT W). Ambient GCP ADC may or may
+		// not be present in the test environment (ADC-dependent, matching
+		// UT-AF-1252-004's own soft-check pattern above): either outcome
+		// proves the fix as long as the underlying model.LLM's concrete
+		// type is Gemini-family, never Claude-family, whenever construction
+		// succeeds.
+		It("IT-AF-1792-001: dispatches vertex_ai + a gemini-* model to a Gemini-backed model.LLM, not Claude", func() {
+			cfg := types.LLMConfig{
+				Provider:       types.LLMProviderVertexAI,
+				Model:          "gemini-2.5-pro",
+				VertexProject:  "test-project",
+				VertexLocation: "us-central1",
+			}
+			m, err := launcher.NewModelFromConfig(context.Background(), cfg)
+			if err != nil {
+				Expect(err.Error()).To(Or(ContainSubstring("credentials"), ContainSubstring("ADC")))
+				return
+			}
+			Expect(m).NotTo(BeNil())
+			typeName := fmt.Sprintf("%T", m)
+			Expect(typeName).To(ContainSubstring("gemini"),
+				"vertex_ai + a gemini-* model must construct a Gemini-backed model.LLM (#1792 root-cause fix)")
+			Expect(typeName).NotTo(ContainSubstring("anthropic"))
+		})
+
+		// IT-AF-1792-002: vertex_ai + a Claude model — no regression. Must
+		// remain routed to adk-anthropic-go exactly as before this fix.
+		It("IT-AF-1792-002: still dispatches vertex_ai + a claude-* model to an Anthropic-backed model.LLM", func() {
+			cfg := types.LLMConfig{
+				Provider:       types.LLMProviderVertexAI,
+				Model:          "claude-sonnet-4-20250514",
+				VertexProject:  "test-project",
+				VertexLocation: "us-central1",
+			}
+			m, err := launcher.NewModelFromConfig(context.Background(), cfg)
+			if err != nil {
+				Expect(err.Error()).To(ContainSubstring("GCP ADC unavailable"))
+				return
+			}
+			Expect(m).NotTo(BeNil())
+			Expect(fmt.Sprintf("%T", m)).To(ContainSubstring("anthropic"))
+		})
+
+		// IT-AF-1792-005: vertex_ai + an unrecognized model family. Found
+		// during the post-merge GA readiness audit: before this fix, a
+		// model that is neither claude-* nor gemini-* silently fell
+		// through newVertexAIModel's implicit else-branch to
+		// newVertexGeminiModel, failing later with a confusing
+		// Gemini-SDK-level error instead of a clear one here.
+		It("IT-AF-1792-005: vertex_ai with an unrecognized model family fails fast with a clear error", func() {
+			cfg := types.LLMConfig{
+				Provider:       types.LLMProviderVertexAI,
+				Model:          "llama-3.1-70b",
+				VertexProject:  "test-project",
+				VertexLocation: "us-central1",
+			}
+			m, err := launcher.NewModelFromConfig(context.Background(), cfg)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unrecognized model family"))
+			Expect(err.Error()).To(ContainSubstring("llama-3.1-70b"))
+			Expect(m).To(BeNil())
 		})
 
 		// UT-AF-1254-010: factory dispatches to openai_compatible adapter

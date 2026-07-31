@@ -478,3 +478,35 @@ reasoning:
 		Expect(*restored.Reasoning).To(Equal(*original.Reasoning))
 	})
 })
+
+// BR-AI-087: model-family detectors shared by AF (severity triage, launcher
+// vertex_ai dispatch) and KA (llm_builder vertex_ai dispatch) to disambiguate
+// which SDK a provider: vertex_ai model name requires (#1778, #1792).
+var _ = Describe("UT-SH-AI-087-001: IsAnthropicModel", func() {
+	DescribeTable("should detect Claude-family models by prefix",
+		func(model string, want bool) {
+			Expect(types.IsAnthropicModel(model)).To(Equal(want))
+		},
+		Entry("claude-sonnet-4-6", "claude-sonnet-4-6", true),
+		Entry("claude-3-5-sonnet-20241022", "claude-3-5-sonnet-20241022", true),
+		Entry("claude-3-haiku-20240307", "claude-3-haiku-20240307", true),
+		Entry("gemini-2.5-pro", "gemini-2.5-pro", false),
+		Entry("gemini-2.0-flash", "gemini-2.0-flash", false),
+		Entry("gpt-4", "gpt-4", false),
+		Entry("empty string", "", false),
+	)
+})
+
+var _ = Describe("UT-SH-AI-087-002: IsGeminiModel", func() {
+	DescribeTable("should detect Gemini-family models by prefix",
+		func(model string, want bool) {
+			Expect(types.IsGeminiModel(model)).To(Equal(want))
+		},
+		Entry("gemini-2.5-pro", "gemini-2.5-pro", true),
+		Entry("gemini-2.5-flash", "gemini-2.5-flash", true),
+		Entry("gemini-1.5-pro", "gemini-1.5-pro", true),
+		Entry("claude-sonnet-4-6", "claude-sonnet-4-6", false),
+		Entry("gpt-4", "gpt-4", false),
+		Entry("empty string", "", false),
+	)
+})

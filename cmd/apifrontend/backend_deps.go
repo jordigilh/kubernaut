@@ -583,7 +583,10 @@ func adaptFleetReaderFactory(rf fleet.ReaderFactory) tools.ResourceReaderFactory
 // newLLMTriagerFromConfig creates a provider-aware LLMTriager based on the resolved
 // LLM configuration. Routes by provider + model family:
 //   - vertex_ai + claude-* model → AnthropicTriager (Anthropic SDK + Vertex)
-//   - vertex_ai + other model → GenAITriager (Google GenAI SDK)
+//   - vertex_ai + gemini-* model → GenAITriager (Google GenAI SDK)
+//   - vertex_ai + anything else → error (fail fast rather than silently
+//     defaulting to Gemini and failing later with a confusing SDK-level
+//     error; found in the #1778/#1792 GA readiness audit)
 //   - gemini → GenAITriager (Gemini API)
 //   - anthropic → AnthropicTriager (direct Anthropic API)
 //   - openai / openai_compatible → OpenAICompatibleTriager (shared openaicompat
@@ -591,10 +594,13 @@ func adaptFleetReaderFactory(rf fleet.ReaderFactory) tools.ResourceReaderFactory
 func newLLMTriagerFromConfig(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
 	switch llmCfg.Provider {
 	case types.LLMProviderVertexAI:
-		if severity.IsAnthropicModel(llmCfg.Model) {
+		if types.IsAnthropicModel(llmCfg.Model) {
 			return newAnthropicTriagerForVertex(ctx, llmCfg, logger)
 		}
-		return newGenAITriagerForVertex(ctx, llmCfg, logger)
+		if types.IsGeminiModel(llmCfg.Model) {
+			return newGenAITriagerForVertex(ctx, llmCfg, logger)
+		}
+		return nil, fmt.Errorf("vertex_ai: unrecognized model family for model %q (expected a claude-* or gemini-* model)", llmCfg.Model)
 	case types.LLMProviderGemini:
 		return newGenAITriagerForGemini(ctx, llmCfg, logger)
 	case types.LLMProviderAnthropic:
@@ -607,6 +613,13 @@ func newLLMTriagerFromConfig(ctx context.Context, llmCfg types.LLMConfig, logger
 }
 
 func newGenAITriagerForVertex(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	// #1801: this path constructs genai.NewClient below without an
+	// explicit HTTPClient/credentials, so it relies on genai's own ADC
+	// auto-detect, which checks GOOGLE_APPLICATION_CREDENTIALS -- inject
+	// it in-process here rather than via a static Helm-declared env var.
+	if err := launcher.InjectAmbientGoogleCredentials(llmCfg); err != nil {
+		return nil, fmt.Errorf("vertex_ai GenAI triager: %w", err)
+	}
 	clientCfg := &genai.ClientConfig{
 		Project:  llmCfg.VertexProject,
 		Location: llmCfg.VertexLocation,
@@ -646,6 +659,13 @@ func newGenAITriagerForGemini(ctx context.Context, llmCfg types.LLMConfig, logge
 }
 
 func newAnthropicTriagerForVertex(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	// #1801: severity.NewAnthropicVertexClient's vertex.WithGoogleAuth has
+	// no explicit-credentials-bytes option and can only discover
+	// credentials via ambient ADC -- inject it in-process here rather
+	// than via a static Helm-declared env var.
+	if err := launcher.InjectAmbientGoogleCredentials(llmCfg); err != nil {
+		return nil, fmt.Errorf("vertex_ai Anthropic triager: %w", err)
+	}
 	client, err := severity.NewAnthropicVertexClient(ctx, llmCfg.VertexProject, llmCfg.VertexLocation)
 	if err != nil {
 		return nil, fmt.Errorf("vertex_ai Anthropic client: %w", err)
