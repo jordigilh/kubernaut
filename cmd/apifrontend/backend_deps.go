@@ -591,7 +591,7 @@ func adaptFleetReaderFactory(rf fleet.ReaderFactory) tools.ResourceReaderFactory
 func newLLMTriagerFromConfig(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
 	switch llmCfg.Provider {
 	case types.LLMProviderVertexAI:
-		if severity.IsAnthropicModel(llmCfg.Model) {
+		if types.IsAnthropicModel(llmCfg.Model) {
 			return newAnthropicTriagerForVertex(ctx, llmCfg, logger)
 		}
 		return newGenAITriagerForVertex(ctx, llmCfg, logger)

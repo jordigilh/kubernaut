@@ -114,23 +114,7 @@ func TestAnthropicTriager_EmptyResponse(t *testing.T) {
 	}
 }
 
-// BR-AI-1404: Model family detection for factory routing
-func TestIsAnthropicModel(t *testing.T) {
-	tests := []struct {
-		model string
-		want  bool
-	}{
-		{"claude-sonnet-4-6", true},
-		{"claude-3-5-sonnet-20241022", true},
-		{"claude-3-haiku-20240307", true},
-		{"gemini-2.0-flash", false},
-		{"gemini-1.5-pro", false},
-		{"gpt-4", false},
-		{"", false},
-	}
-	for _, tc := range tests {
-		if got := IsAnthropicModel(tc.model); got != tc.want {
-			t.Errorf("IsAnthropicModel(%q) = %v, want %v", tc.model, got, tc.want)
-		}
-	}
-}
+// BR-AI-1404 / BR-AI-087: model family detection for factory routing moved
+// to the shared types.IsAnthropicModel (pkg/shared/types/llm_test.go,
+// UT-SH-AI-087-001) so AF and KA share one canonical detector instead of
+// independent copies (#1778, #1792).

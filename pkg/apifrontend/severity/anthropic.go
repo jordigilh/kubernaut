@@ -126,12 +126,6 @@ func extractAnthropicText(resp *anthropic.Message) string {
 	return ""
 }
 
-// IsAnthropicModel returns true if the model name indicates an Anthropic model
-// (Claude family) that requires the Anthropic SDK rather than the Google GenAI SDK.
-func IsAnthropicModel(model string) bool {
-	return strings.HasPrefix(model, "claude-")
-}
-
 // NewAnthropicVertexClient creates an Anthropic SDK client configured for
 // Claude on Vertex AI using Google Cloud ADC (Application Default Credentials).
 func NewAnthropicVertexClient(ctx context.Context, project, location string) (client *anthropic.Client, err error) {

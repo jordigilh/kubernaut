@@ -116,6 +116,25 @@ var anthropicFamilyProviders = map[string]bool{
 	LLMProviderVertexAI:  true,
 }
 
+// IsAnthropicModel returns true if the model name indicates an Anthropic
+// model (Claude family) that requires the Anthropic SDK/API rather than
+// Google's GenAI SDK. Shared by AF (severity triage, launcher's vertex_ai
+// dispatch) and KA (llm_builder's vertex_ai dispatch) to disambiguate the
+// provider: vertex_ai config value, which can host either Claude or Gemini
+// models (#1778, #1792) — promoted here (from what was previously an
+// AF-only pkg/apifrontend/severity helper) so both services share one
+// canonical detector instead of independent copies.
+func IsAnthropicModel(model string) bool {
+	return strings.HasPrefix(model, "claude-")
+}
+
+// IsGeminiModel returns true if the model name indicates a Gemini model,
+// the counterpart disambiguator to IsAnthropicModel for the same
+// provider: vertex_ai ambiguity (#1778, #1792).
+func IsGeminiModel(model string) bool {
+	return strings.HasPrefix(model, "gemini-")
+}
+
 // LLMOAuth2Config holds OAuth2 client credentials for auth-gated LLM gateways.
 type LLMOAuth2Config struct {
 	Enabled        bool     `yaml:"enabled"`
