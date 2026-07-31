@@ -613,6 +613,13 @@ func newLLMTriagerFromConfig(ctx context.Context, llmCfg types.LLMConfig, logger
 }
 
 func newGenAITriagerForVertex(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	// #1801: this path constructs genai.NewClient below without an
+	// explicit HTTPClient/credentials, so it relies on genai's own ADC
+	// auto-detect, which checks GOOGLE_APPLICATION_CREDENTIALS -- inject
+	// it in-process here rather than via a static Helm-declared env var.
+	if err := launcher.InjectAmbientGoogleCredentials(llmCfg); err != nil {
+		return nil, fmt.Errorf("vertex_ai GenAI triager: %w", err)
+	}
 	clientCfg := &genai.ClientConfig{
 		Project:  llmCfg.VertexProject,
 		Location: llmCfg.VertexLocation,
@@ -652,6 +659,13 @@ func newGenAITriagerForGemini(ctx context.Context, llmCfg types.LLMConfig, logge
 }
 
 func newAnthropicTriagerForVertex(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	// #1801: severity.NewAnthropicVertexClient's vertex.WithGoogleAuth has
+	// no explicit-credentials-bytes option and can only discover
+	// credentials via ambient ADC -- inject it in-process here rather
+	// than via a static Helm-declared env var.
+	if err := launcher.InjectAmbientGoogleCredentials(llmCfg); err != nil {
+		return nil, fmt.Errorf("vertex_ai Anthropic triager: %w", err)
+	}
 	client, err := severity.NewAnthropicVertexClient(ctx, llmCfg.VertexProject, llmCfg.VertexLocation)
 	if err != nil {
 		return nil, fmt.Errorf("vertex_ai Anthropic client: %w", err)

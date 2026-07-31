@@ -107,6 +107,9 @@ func newVertexAnthropicModel(ctx context.Context, cfg types.LLMConfig) (m model.
 			err = fmt.Errorf("vertex_ai: GCP ADC unavailable — set GOOGLE_APPLICATION_CREDENTIALS or provide credentials: %v", r)
 		}
 	}()
+	if err := InjectAmbientGoogleCredentials(cfg); err != nil {
+		return nil, fmt.Errorf("vertex_ai: %w", err)
+	}
 	adkCfg := &adkanthropic.Config{
 		Variant:         adkanthropic.VariantVertexAI,
 		VertexProjectID: cfg.VertexProject,
@@ -132,6 +135,13 @@ func newVertexAnthropicModel(ctx context.Context, cfg types.LLMConfig) (m model.
 // genai's own Vertex auto-ADC fallback, which only activates when no
 // HTTPClient is set at all and would otherwise bypass AF's transport chain
 // (TLS CA, custom headers, circuit breaker) entirely.
+//
+// cfg.APIKey carries the mounted credentials.json's content here (resolved
+// generically by pkg/apifrontend/config's resolveLLMKey from
+// cfg.APIKeyFile) — as of kubernaut#1801, this is real service-account
+// bytes rather than always-empty, since the Helm chart now renders
+// apiKeyFile for vertex_ai too. No env var is touched on this path, ever,
+// matching Kubernaut Agent's geminifamily.New.
 func newVertexGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {
 	cred, err := credentials.DetectDefault(&credentials.DetectOptions{
 		CredentialsJSON: bytes.TrimSpace([]byte(cfg.APIKey)),
@@ -169,6 +179,51 @@ func newVertexGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, 
 	}
 
 	return gemini.NewModel(ctx, cfg.Model, clientCfg)
+}
+
+// InjectAmbientGoogleCredentials sets GOOGLE_APPLICATION_CREDENTIALS
+// in-process to cfg.APIKeyFile, for the provider: vertex_ai model families
+// whose upstream SDK has no explicit-credentials-bytes option and can only
+// discover credentials via ambient ADC (ADC = Google's Application Default
+// Credentials lookup chain, which checks this env var first): Claude-on-
+// Vertex via adk-anthropic-go/anthropic-sdk-go's vertex.WithGoogleAuth, and
+// AF's severityTriage Gemini-on-Vertex path, which today constructs its
+// genai.Client without an explicit HTTPClient (cmd/apifrontend's
+// newGenAITriagerForVertex).
+//
+// This performs the env var assignment here, in Go, immediately before
+// each such construction call, rather than declaring it statically in the
+// Helm Deployment manifest (kubernaut#1801) -- mirroring the same
+// runtime-injection pattern already used elsewhere in Kubernaut (Kubernaut
+// Agent never touches this env var at all, passing credential bytes
+// explicitly instead; the HolmesGPT API predecessor used an analogous
+// _inject_runtime_env() at startup) to avoid exposing credential-adjacent
+// config statically in the pod spec, where it's visible via `kubectl get
+// pod -o yaml` to anyone with pod-read RBAC.
+//
+// Safe to call repeatedly with different cfg values across sequential,
+// single-threaded startup construction calls (AF's main agent LLM and
+// severityTriage LLM are both built once at process startup, never
+// concurrently and never per-request, per buildA2AHandler/
+// buildSeverityTriageDeps) -- the underlying oauth2/google credential
+// resolution captures the parsed credential material at construction time,
+// not lazily on each token refresh, so changing the env var afterward
+// doesn't affect an already-constructed client. The pre-existing #1731
+// Helm-render guard independently prevents the one scenario where this
+// would matter (AF's main and severityTriage profiles both resolving to
+// vertex_ai with two different credentialsSecretName values).
+//
+// No-ops when cfg.APIKeyFile is empty (non-vertex_ai providers, or a
+// vertex_ai profile that -- unexpectedly -- has no resolved credentials
+// file), leaving any pre-existing ambient ADC state untouched.
+func InjectAmbientGoogleCredentials(cfg types.LLMConfig) error {
+	if cfg.APIKeyFile == "" {
+		return nil
+	}
+	if err := os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", cfg.APIKeyFile); err != nil {
+		return fmt.Errorf("set GOOGLE_APPLICATION_CREDENTIALS: %w", err)
+	}
+	return nil
 }
 
 func newGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, error) {

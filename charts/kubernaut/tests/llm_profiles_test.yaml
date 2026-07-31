@@ -679,3 +679,109 @@ tests:
             name: severity-triage-credentials
             mountPath: /etc/apifrontend/severity-triage-credentials
             readOnly: true
+
+  # -------------------------------------------------------------------------
+  # #1801: GOOGLE_APPLICATION_CREDENTIALS must never be statically declared
+  # in the Deployment's env: block for vertex_ai profiles -- the mounted
+  # credentials file's path is now carried via apiKeyFile in AF's own
+  # config.yaml instead, and cmd/apifrontend injects the env var in-process
+  # at startup for the SDK paths that still need ambient ADC (see
+  # pkg/apifrontend/launcher.InjectAmbientGoogleCredentials and its callers).
+  # This mirrors Kubernaut Agent's and HAPI's precedent of never exposing
+  # credential-adjacent config statically in the pod manifest.
+  # -------------------------------------------------------------------------
+  - it: "IT-PLATFORM-LLM-008 (#1801): vertex_ai main LLM profile never gets a static GOOGLE_APPLICATION_CREDENTIALS env var"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: vertex_ai
+            model: claude-sonnet-4-20250514
+            vertexProject: test-project
+            vertexLocation: us-central1
+            credentialsSecretName: llm-credentials-primary
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOOGLE_APPLICATION_CREDENTIALS
+            value: "/etc/apifrontend/llm-credentials/credentials.json"
+
+  - it: "IT-PLATFORM-LLM-008 (#1801): vertex_ai severityTriage profile with a dedicated secret never gets a static GOOGLE_APPLICATION_CREDENTIALS env var"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          triage-profile:
+            provider: vertex_ai
+            model: gemini-2.5-pro
+            vertexProject: test-project
+            vertexLocation: us-central1
+            credentialsSecretName: llm-credentials-triage
+      apifrontend:
+        config:
+          severityTriage:
+            llmProfileRef: triage-profile
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: GOOGLE_APPLICATION_CREDENTIALS
+            value: "/etc/apifrontend/severity-triage-credentials/credentials.json"
+
+  - it: "IT-PLATFORM-LLM-008 (#1801): vertex_ai main LLM profile now renders apiKeyFile pointing at the mounted credentials.json"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: vertex_ai
+            model: claude-sonnet-4-20250514
+            vertexProject: test-project
+            vertexLocation: us-central1
+            credentialsSecretName: llm-credentials-primary
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: '(?s)agent:.*llm:.*apiKeyFile: "/etc/apifrontend/llm-credentials/credentials\.json"'
+
+  - it: "IT-PLATFORM-LLM-008 (#1801): vertex_ai severityTriage profile with a dedicated secret renders apiKeyFile pointing at its own mount"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+          triage-profile:
+            provider: vertex_ai
+            model: gemini-2.5-pro
+            vertexProject: test-project
+            vertexLocation: us-central1
+            credentialsSecretName: llm-credentials-triage
+      apifrontend:
+        config:
+          severityTriage:
+            llmProfileRef: triage-profile
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: '(?s)severityTriage:.*llm:.*apiKeyFile: "/etc/apifrontend/severity-triage-credentials/credentials\.json"'

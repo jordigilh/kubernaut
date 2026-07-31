@@ -522,12 +522,18 @@ unreachable via Helm despite being fully implemented in Go — both are now wire
 | `apifrontend.ingress.annotations` | Extra Ingress annotations. **Required in practice**: AF serves HTTPS internally with a self-signed cert, so a controller-specific backend-protocol/TLS-passthrough annotation is needed (e.g. ingress-nginx: `nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"` + `nginx.ingress.kubernetes.io/proxy-ssl-verify: "off"`) -- the chart does not hardcode one controller's syntax | `{}` |
 | `apifrontend.ingress.tls.secretName` | Pre-created Secret with a TLS cert for `host`; omit for a controller with its own default cert | `""` |
 
-`vertex_ai` authenticates via ambient `GOOGLE_APPLICATION_CREDENTIALS` (set automatically on the
-Deployment when a resolved profile is `vertex_ai`), so AF's own connection and severity-triage's
-cannot both be `vertex_ai` while pointing at *different* Secrets — there's no way to make two
-different credential files visible to the SDK's ADC lookup at the same time. The chart fails fast
-at render time (`kubernaut#1731`) if this combination is configured; use the same
-`credentialsSecretName` for both, or a non-`vertex_ai` provider for one of them.
+`vertex_ai` for Claude models (and AF's severity-triage Gemini-on-Vertex path) authenticates via
+ambient `GOOGLE_APPLICATION_CREDENTIALS` — as of `kubernaut#1801`, `cmd/apifrontend` injects this
+env var in-process at startup (`pkg/apifrontend/launcher.InjectAmbientGoogleCredentials`), reading
+the same mounted `apiKeyFile` path used by every other provider, rather than declaring it
+statically on the Deployment. It remains a single process-wide variable either way, so AF's own
+connection and severity-triage's still cannot both be `vertex_ai` while pointing at *different*
+Secrets — there's no way to make two different credential files visible to the SDK's ADC lookup at
+the same time. The chart fails fast at render time (`kubernaut#1731`) if this combination is
+configured; use the same `credentialsSecretName` for both, or a non-`vertex_ai` provider for one of
+them. AF's main-agent Gemini-on-Vertex path is unaffected by this constraint — it authenticates
+with the `apiKeyFile`'s content passed as explicit credential bytes, never touching the ambient env
+var at all (matching Kubernaut Agent's Gemini client).
 
 ### SignalProcessing
 
