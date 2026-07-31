@@ -1,4 +1,5 @@
 {{- define "kubernaut.datastorage.configYAML" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "datastorage") | fromYaml -}}
 server:
   port: 8080
   host: "0.0.0.0"
@@ -7,19 +8,19 @@ server:
   readTimeout: 30s
   writeTimeout: 30s
   # #1048 Phase 4 / SC-5: Maximum request body size in bytes (default: 5242880 = 5 MiB)
-  maxBodySize: {{ .Values.datastorage.config.server.maxBodySize | default "5242880" | quote }}
+  maxBodySize: {{ $v.config.server.maxBodySize | quote }}
   # SEC-H3 / AC-4: CORS allowed origins (default: [] = reject all cross-origin)
   corsAllowedOrigins:
-  {{- if .Values.datastorage.config.server.corsAllowedOrigins }}
-    {{- toYaml .Values.datastorage.config.server.corsAllowedOrigins | nindent 4 }}
+  {{- if $v.config.server.corsAllowedOrigins }}
+    {{- toYaml $v.config.server.corsAllowedOrigins | nindent 4 }}
   {{- end }}
-  signerCertDir: {{ .Values.datastorage.config.server.signerCertDir | default "/etc/certs" | quote }}
+  signerCertDir: {{ $v.config.server.signerCertDir | quote }}
   # GAP-09 (Issue #1505) / SC-5: Per-IP rate limiting, disabled by default
   # (existing deployments may rely on an external ingress/proxy for this).
   rateLimit:
-    enabled: {{ .Values.datastorage.config.server.rateLimit.enabled | default false }}
-    requestsPerSecond: {{ .Values.datastorage.config.server.rateLimit.requestsPerSecond | default 50 }}
-    burst: {{ .Values.datastorage.config.server.rateLimit.burst | default 100 }}
+    enabled: true
+    requestsPerSecond: {{ $v.config.server.rateLimit.requestsPerSecond }}
+    burst: {{ $v.config.server.rateLimit.burst }}
   tls:
     certDir: {{ include "kubernaut.interServiceTLS.certDir" . | quote }}
 database:
@@ -27,37 +28,46 @@ database:
   port: {{ include "kubernaut.postgresql.port" . }}
   name: {{ include "kubernaut.postgresql.database" . }}
   user: {{ include "kubernaut.postgresql.username" . }}
-  sslMode: {{ .Values.datastorage.config.database.sslMode | default "disable" }}
-  maxOpenConns: {{ .Values.datastorage.config.database.maxOpenConns | default 100 }}
-  maxIdleConns: {{ .Values.datastorage.config.database.maxIdleConns | default 20 }}
-  connMaxLifetime: {{ .Values.datastorage.config.database.connMaxLifetime | default "1h" }}
+  sslMode: {{ $v.config.database.sslMode }}
+  maxOpenConns: {{ $v.config.database.maxOpenConns }}
+  maxIdleConns: {{ $v.config.database.maxIdleConns }}
+  connMaxLifetime: {{ $v.config.database.connMaxLifetime }}
   connMaxIdleTime: 10m
   secretsFile: "/etc/datastorage/secrets/db-secrets.yaml"
   usernameKey: "username"
   passwordKey: "password"
 redis:
   addr: {{ include "kubernaut.valkey.addr" . }}
-  dlqMaxLen: {{ .Values.datastorage.config.redis.dlqMaxLen | default "10000" }}
+  dlqMaxLen: {{ $v.config.redis.dlqMaxLen }}
   secretsFile: "/etc/datastorage/secrets/valkey-secrets.yaml"
   passwordKey: "password"
   tls:
-    enabled: {{ .Values.datastorage.config.redis.tls.enabled | default false }}
+    enabled: true
     certFile: {{ .Values.datastorage.config.redis.tls.certFile | default "" | quote }}
     keyFile: {{ .Values.datastorage.config.redis.tls.keyFile | default "" | quote }}
-    caFile: {{ .Values.datastorage.config.redis.tls.caFile | default "" | quote }}
+    # DD-PLATFORM-006 DA8: the chart's own Valkey is TLS-only -- caFile defaults
+    # to the already-mounted inter-service CA (see the tls-ca volume/mount
+    # below) so this works without extra configuration; override only for a
+    # BYO Valkey/Redis signed by a different CA.
+    caFile: {{ .Values.datastorage.config.redis.tls.caFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
 retention:
+  # DD-PLATFORM-006 DA14 (PR9): deliberately NOT routed through $v/kubernaut.
+  # mergedValues -- values.schema.json's own default (false) intentionally
+  # diverges from this chart's hardened default (true, AU-11 minimum
+  # retention floor). Routing this through the generic schema-defaults
+  # merge would silently flip retention off whenever a user's values.yaml
+  # omits it, defeating the hardening. Stays a direct .Values read with its
+  # own explicit `default true` fallback.
   enabled: {{ .Values.datastorage.config.retention.enabled | default true }}
-  interval: {{ .Values.datastorage.config.retention.interval | default "24h" | quote }}
-  batchSize: {{ .Values.datastorage.config.retention.batchSize | default 1000 }}
-  defaultDays: {{ .Values.datastorage.config.retention.defaultDays | default 2555 }}
-{{- if .Values.datastorage.config.auditHashKey.enabled }}
+  interval: {{ $v.config.retention.interval | quote }}
+  batchSize: {{ $v.config.retention.batchSize }}
+  defaultDays: {{ $v.config.retention.defaultDays }}
 # GAP-05 (Issue #1505) / AU-9: Keyed HMAC-SHA256 audit hash chain.
 audit:
   hashKeySecretsFile: "/etc/datastorage/secrets/audit-hmac-key.yaml"
-  hashKeyKey: {{ .Values.datastorage.config.auditHashKey.secretKey | default "hmacKey" | quote }}
-{{- end }}
+  hashKeyKey: {{ $v.config.auditHashKey.secretKey | quote }}
 logging:
-  level: {{ .Values.datastorage.logging.level | default "INFO" | upper | quote }}
+  level: {{ $v.logging.level | upper | quote }}
 {{- end }}
 ---
 # DD-PLATFORM-003: DataStorage (ConfigMap + Deployment + Service) renders in
@@ -80,6 +90,12 @@ data:
   config.yaml: |
     {{- include "kubernaut.datastorage.configYAML" . | nindent 4 }}
 ---
+{{- /*
+DD-PLATFORM-006 Decision Area 14 (PR9): recomputed here since this is a
+separate top-level scope from kubernaut.datastorage.configYAML above (not a
+nested named-template call).
+*/}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "datastorage") | fromYaml }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -91,7 +107,13 @@ metadata:
   annotations:
     "argocd.argoproj.io/sync-wave": "-1"
 spec:
-  replicas: {{ .Values.datastorage.replicas }}
+  replicas: {{ $v.replicas }}
+  # PR #1790 round-13 RCA: see gateway.yaml's progressDeadlineSeconds comment
+  # -- K8s's Deployment controller enforces this SERVER-SIDE (default 600s)
+  # independently of `kubectl rollout status --timeout`, which is why round-12's
+  # 480s->720s CLI timeout bump had no effect. 750s makes that 720s CLI
+  # timeout the real ceiling again.
+  progressDeadlineSeconds: 750
   selector:
     matchLabels:
       app: datastorage
@@ -114,8 +136,8 @@ spec:
       terminationGracePeriodSeconds: 90
       initContainers:
         - name: wait-for-postgres
-          image: {{ .Values.postgresql.image }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ (include "kubernaut.mergedValues" (dict "root" $ "service" "postgresql") | fromYaml).image }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             runAsNonRoot: true
             runAsUser: 70
@@ -135,8 +157,8 @@ spec:
           command: ['sh', '-c', 'until pg_isready -h {{ include "kubernaut.postgresql.host" . }} -p {{ include "kubernaut.postgresql.port" . }}; do echo "waiting for postgresql..."; sleep 2; done']
       containers:
         - name: datastorage
-          image: {{ include "kubernaut.image" (dict "service" "datastorage" "global" .Values.global "appVersion" .Chart.AppVersion) }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ include "kubernaut.image" (dict "service" "datastorage" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.datastorage | nindent 12 }}
           ports:
@@ -164,8 +186,12 @@ spec:
               mountPath: {{ include "kubernaut.interServiceTLS.certDir" . }}
               readOnly: true
             - name: signing-certs
-              mountPath: {{ .Values.datastorage.config.server.signerCertDir | default "/etc/certs" }}
+              mountPath: {{ $v.config.server.signerCertDir }}
               readOnly: true
+            # DD-PLATFORM-006 DA8: lets redis.tls.caFile verify the chart's own
+            # TLS-only Valkey without any extra configuration (defaults to this
+            # mount's ca.crt above).
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
             - name: tmp
               mountPath: /tmp
           resources:
@@ -203,13 +229,11 @@ spec:
                   items:
                     - key: valkey-secrets.yaml
                       path: valkey-secrets.yaml
-              {{- if .Values.datastorage.config.auditHashKey.enabled }}
               - secret:
                   name: {{ include "kubernaut.datastorage.auditHashKeySecretName" . }}
                   items:
                     - key: audit-hmac-key.yaml
                       path: audit-hmac-key.yaml
-              {{- end }}
         - name: tls-certs
           secret:
             secretName: datastorage-tls
@@ -217,6 +241,7 @@ spec:
         - name: signing-certs
           secret:
             secretName: datastorage-signing-cert
+        {{- include "kubernaut.tlsCaVolume" . | nindent 8 }}
         - name: tmp
           emptyDir:
             sizeLimit: 64Mi
@@ -232,14 +257,14 @@ metadata:
   annotations:
     "argocd.argoproj.io/sync-wave": "-1"
 spec:
-  type: {{ .Values.datastorage.service.type }}
+  type: {{ $v.service.type }}
   ports:
     - name: http
       port: 8080
       targetPort: 8080
       protocol: TCP
-      {{- if and (eq .Values.datastorage.service.type "NodePort") .Values.datastorage.service.nodePort }}
-      nodePort: {{ .Values.datastorage.service.nodePort }}
+      {{- if and (eq $v.service.type "NodePort") $v.service.nodePort }}
+      nodePort: {{ $v.service.nodePort }}
       {{- end }}
     - name: health
       port: 8081

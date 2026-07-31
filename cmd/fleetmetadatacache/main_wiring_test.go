@@ -133,6 +133,33 @@ func caPoolFromCert(certFile string) *x509.CertPool {
 	return pool
 }
 
+// DD-PLATFORM-006 Decision Area 13 follow-up (round-16 RCA, PR #1790): proves
+// buildValkeyTLSConfig -- the wiring point between fmcconfig.ValkeyTLSConfig
+// and pkg/shared/tls.BuildTLSConfig -- actually constructs a usable
+// *tls.Config from the on-disk CA file, not just that it compiles/is called.
+var _ = Describe("buildValkeyTLSConfig (DD-PLATFORM-006 Decision Area 13 follow-up)", func() {
+	var certDir string
+
+	BeforeEach(func() {
+		certDir = GinkgoT().TempDir()
+	})
+
+	It("IT-FMC-VALKEYTLS-001 [SC-8]: returns nil (plaintext) when TLS is disabled", func() {
+		got := buildValkeyTLSConfig(fmcconfig.ValkeyTLSConfig{Enabled: false}, logr.Discard())
+		Expect(got).To(BeNil())
+	})
+
+	It("IT-FMC-VALKEYTLS-002 [SC-8]: returns a *tls.Config trusting the configured CA when TLS is enabled", func() {
+		certFile := filepath.Join(certDir, "tls.crt")
+		keyFile := filepath.Join(certDir, "tls.key")
+		generateSelfSignedCert(certFile, keyFile)
+
+		got := buildValkeyTLSConfig(fmcconfig.ValkeyTLSConfig{Enabled: true, CAFile: certFile}, logr.Discard())
+		Expect(got).ToNot(BeNil())
+		Expect(got.RootCAs).ToNot(BeNil(), "the configured caFile must be loaded into RootCAs so the server cert can be verified")
+	})
+})
+
 var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065)", func() {
 	var (
 		certDir string

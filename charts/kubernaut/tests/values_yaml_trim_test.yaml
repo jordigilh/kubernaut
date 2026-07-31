@@ -1,0 +1,224 @@
+suite: "DD-PLATFORM-006 Decision Area 4a: values.yaml zero-value-default trim renders identically to explicit-zero"
+# PR6d: 97 leaf fields whose values.yaml default already equals Go's zero value
+# ("", 0, false, null, [], {}) were removed from values.yaml (values.schema.json
+# defaults untouched). Absent-key and explicit-zero-value must render identically
+# for every template that reads them -- this is NOT universally true in Helm: a
+# field consumed through a `{{ define }}` helper via a bare (unpiped) top-level
+# print action and then boolean-checked via `include "helper" .` at the call site
+# renders the missing key as the literal text "<no value>" (truthy!) instead of ""
+# (falsy) -- see kubernaut.console.issuerURL and the four
+# kubernaut.monitoring.{prometheus,alertManager}.{url,tlsCaFile} helpers, which
+# were deliberately EXCLUDED from the trim for this exact reason and are
+# guarded by the last four test cases below.
+#
+# A second, distinct gap was found empirically the same way: Sprig's `quote`
+# function silently DROPS nil arguments (it does not print `""`) instead of
+# rendering the two-character empty-string literal it produces for an
+# explicit `""` value -- see
+# https://github.com/Masterminds/sprig/blob/master/strings.go (`quote`/
+# `squote`). Every OTHER `| quote` call site on a to-be-trimmed field is
+# protected by a preceding `if`/`with` guard or a `default(...)` wrapper
+# (both treat nil and "" identically via Sprig's `empty()`), so the gap is
+# invisible there -- but global.fleet.mcpGatewayEndpoint (consumed unguarded
+# by workflowexecution.yaml, whose local-only mode intentionally allows an
+# empty endpoint with no upstream fail() guard) and global.fleet.mcpGatewayType
+# (consumed unguarded by fleetmetadatacache.yaml's `gatewayType:` line, unlike
+# every other consumer which wraps it in `{{- if }}`) render `endpoint:`/
+# `gatewayType:` (YAML null) instead of `endpoint: ""`/`gatewayType: ""` once
+# absent. Both fields were deliberately EXCLUDED from the trim and are
+# guarded by workflowexecution_fleet_wiring_test.yaml and the last test case
+# below, respectively.
+templates:
+  - templates/gateway/networkpolicy.yaml
+  - templates/datastorage/networkpolicy.yaml
+  - templates/datastorage/datastorage.yaml
+  - templates/kubernaut-agent/networkpolicy-agent.yaml
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+  - templates/apifrontend/networkpolicy.yaml
+  - templates/apifrontend/apifrontend.yaml
+  - templates/console/networkpolicy.yaml
+  - templates/console/console.yaml
+  - templates/gateway/gateway.yaml
+  - templates/effectivenessmonitor/effectivenessmonitor.yaml
+  - templates/aianalysis/aianalysis.yaml
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  apifrontend:
+    config:
+      auth:
+        issuerURL: "https://sso.example.com/realms/kubernaut"
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # ── networkPolicies.<service>: {} collapse (was: 3 explicit empty-list
+  # fields per service) -- absent parent dict must behave like an empty one,
+  # not panic on `.ingressCIDRs`/`.ingressNamespaceSelectors` lookups ─────────
+  - it: "gateway NetworkPolicy renders with no CIDR/selector ingress rules when networkPolicies.gateway is entirely absent"
+    template: templates/gateway/networkpolicy.yaml
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+      - equal:
+          path: spec.ingress
+          value: null
+
+  - it: "datastorage NetworkPolicy renders with no CIDR/selector ingress rules when networkPolicies.datastorage is entirely absent"
+    template: templates/datastorage/networkpolicy.yaml
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+
+  - it: "kubernautAgent NetworkPolicy renders with no CIDR/selector ingress rules when networkPolicies.kubernautAgent is entirely absent"
+    template: templates/kubernaut-agent/networkpolicy-agent.yaml
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+
+  - it: "apifrontend NetworkPolicy renders with no ingressNamespaces/CIDR/selector rules when networkPolicies.apifrontend is entirely absent"
+    template: templates/apifrontend/networkpolicy.yaml
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+
+  - it: "console NetworkPolicy renders with no ingressNamespaces/CIDR/selector rules when networkPolicies.console is entirely absent"
+    template: templates/console/networkpolicy.yaml
+    set:
+      console:
+        enabled: true
+        auth:
+          secretName: console-secret
+        ingress:
+          host: console.apps.example.com
+    asserts:
+      - isKind:
+          of: NetworkPolicy
+
+  # ── datastorage.config.redis.tls: {} collapse (was: certFile/keyFile/caFile
+  # explicit "") -- mandatory `enabled: true` and the caFile fallback must
+  # still render from an absent block, not a nil-pointer panic ──────────────
+  - it: "datastorage redis.tls renders mandatory enabled:true and default caFile when the tls block is entirely absent"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'redis:[\s\S]{0,200}tls:\s*\n\s*enabled: true'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'caFile: "/etc/tls-ca/ca\.crt"'
+
+  # ── apifrontend.config.auth.replayCache.tls: {} collapse ───────────────────
+  - it: "apifrontend replayCache.tls renders default caFile when the tls block is entirely absent"
+    template: templates/apifrontend/apifrontend.yaml
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+              tls:
+                enabled: true
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'replayCache:[\s\S]{0,800}caFile: "/etc/tls-ca/ca\.crt"'
+
+  # ── aianalysis.rego: {} collapse (was: confidenceThreshold null) ──────────
+  - it: "aianalysis rego config omits confidenceThreshold when the rego block is entirely absent"
+    template: templates/aianalysis/aianalysis.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'confidenceThreshold'
+
+  # ── nameOverride/fullnameOverride removal: kubernaut.fullname must still
+  # resolve to the release-based default, not panic or produce "<no value>" ──
+  - it: "gateway resource name resolves via the chart-default fullname when nameOverride/fullnameOverride are entirely absent"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notMatchRegex:
+          path: metadata.name
+          pattern: 'no value'
+      - matchRegex:
+          path: metadata.name
+          pattern: '^[a-z0-9-]+$'
+
+  # ── Guard-rail: monitoring.prometheus/alertManager.{url,tlsCaFile} were
+  # deliberately KEPT (not trimmed) because they're consumed through a bare
+  # `{{ define }}` helper -- if a future change removes them, Helm's
+  # missingkey placeholder ("<no value>") is truthy, silently flipping these
+  # `if include ...` gates from off to on. Assert the off-by-default state
+  # explicitly so a regression here fails loudly. ───────────────────────────
+  - it: "REGRESSION GUARD: effectivenessmonitor does not mount a TLS CA volume when monitoring.prometheus.tlsCaFile is unset (would break if the field were ever trimmed)"
+    template: templates/effectivenessmonitor/effectivenessmonitor.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: service-ca
+
+  - it: "REGRESSION GUARD: apifrontend severity-triage omits prometheusTlsCaFile when monitoring.prometheus.tlsCaFile is unset (would break if the field were ever trimmed)"
+    template: templates/apifrontend/apifrontend.yaml
+    set:
+      monitoring:
+        prometheus:
+          enabled: true
+          url: "http://prometheus.monitoring.svc:9090"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'prometheusTlsCaFile'
+
+  - it: "REGRESSION GUARD: fleetmetadatacache renders mcpGateway.gatewayType as an explicit empty string, not YAML null, when global.fleet.mcpGatewayType is unset (Sprig `quote` drops nil args -- would silently become `gatewayType:` if the field were ever trimmed, since this call site has no if/default guard unlike every other mcpGatewayType consumer). mcpGatewayEndpoint is set here only to satisfy FMC's own fail()-guard requiring it non-empty -- that field's equivalent nil-quote gap is already covered by workflowexecution_fleet_wiring_test.yaml."
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    set:
+      fleetmetadatacache:
+        enabled: true
+        oauth2:
+          credentialsSecretRef: fmc-creds
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            tokenURL: "https://dex.example.com/token"
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'gatewayType: ""'

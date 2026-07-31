@@ -63,7 +63,30 @@ type ServerConfig struct {
 
 // ValkeyConfig contains Valkey cache connectivity.
 type ValkeyConfig struct {
-	Addr string `yaml:"addr"`
+	Addr string          `yaml:"addr"`
+	TLS  ValkeyTLSConfig `yaml:"tls,omitempty"`
+}
+
+// ValkeyTLSConfig selects TLS settings for FMC's Valkey client connection.
+// DD-PLATFORM-006 DA9 follow-up (round-16 RCA, PR #1790): DA9's original
+// audit of Valkey-consuming Go clients covered DataStorage and the
+// APIFrontend replay cache, but missed FMC -- a third client whose
+// pkg/fleet/fmc.ValkeyWriter / pkg/fleet/scopecache.ValkeyCacheReader had
+// zero TLS support, silently broken the moment DA8 made the chart's Valkey
+// TLS-only (confirmed live: valkey-server logs "SSL routines::wrong version
+// number" for every FMC connection attempt, and FMC's own /readyz -- gated
+// on a Valkey PING -- never turns healthy, permanently blocking Gateway/RO's
+// dependent readiness in fleet-enabled installs). Mirrors
+// pkg/datastorage/config.RedisTLSConfig's and
+// pkg/apifrontend/config.ReplayCacheTLSConfig's field shape for
+// cross-service consistency (SC-8: TLS always validates the server
+// certificate via CAFile; CertFile/KeyFile are optional mTLS, unused against
+// the chart's own Valkey which does not require client certs).
+type ValkeyTLSConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	CAFile   string `yaml:"caFile,omitempty"`
+	CertFile string `yaml:"certFile,omitempty"`
+	KeyFile  string `yaml:"keyFile,omitempty"`
 }
 
 // SyncConfig contains syncer timing and resource settings.
@@ -153,6 +176,9 @@ func (c *ServiceConfig) Validate() error {
 	}
 	if c.Valkey.Addr == "" {
 		return fmt.Errorf("valkey.addr is required")
+	}
+	if c.Valkey.TLS.Enabled && c.Valkey.TLS.CAFile == "" {
+		return fmt.Errorf("valkey TLS enabled but no caFile specified; mount the CA certificate (SC-8)")
 	}
 	if c.OAuth2.TokenURL == "" {
 		return fmt.Errorf("oauth2.tokenUrl is required — MCP Gateway requires authentication")

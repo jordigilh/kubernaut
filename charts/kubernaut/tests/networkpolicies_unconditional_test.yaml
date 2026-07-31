@@ -1,0 +1,213 @@
+suite: "Decision Area 3 (DD-PLATFORM-006): NetworkPolicies are unconditionally mandatory, no enable/disable toggle"
+templates:
+  - templates/aianalysis/networkpolicy.yaml
+  - templates/authwebhook/networkpolicy.yaml
+  - templates/datastorage/networkpolicy.yaml
+  - templates/effectivenessmonitor/networkpolicy.yaml
+  - templates/gateway/networkpolicy.yaml
+  - templates/kubernaut-agent/networkpolicy-agent.yaml
+  - templates/notification/networkpolicy.yaml
+  - templates/remediationorchestrator/networkpolicy.yaml
+  - templates/signalprocessing/networkpolicy.yaml
+  - templates/workflowexecution/networkpolicy.yaml
+  - templates/apifrontend/networkpolicy.yaml
+  - templates/console/networkpolicy.yaml
+  - templates/infrastructure/networkpolicy-postgresql.yaml
+  - templates/infrastructure/networkpolicy-valkey.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # --- Group A: the 10 always-on services render unconditionally (no if-guard at all after GREEN) ---
+  - it: "aianalysis NetworkPolicy always renders (no enabled toggle exists anymore)"
+    template: templates/aianalysis/networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "authwebhook NetworkPolicy always renders (no enabled toggle exists anymore)"
+    template: templates/authwebhook/networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "datastorage NetworkPolicy always renders (no enabled toggle exists anymore)"
+    template: templates/datastorage/networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "effectivenessmonitor NetworkPolicy always renders (no enabled toggle exists anymore)"
+    template: templates/effectivenessmonitor/networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "gateway NetworkPolicy always renders (no enabled toggle exists anymore)"
+    template: templates/gateway/networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "kubernautAgent NetworkPolicy always renders (no enabled toggle exists anymore)"
+    template: templates/kubernaut-agent/networkpolicy-agent.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "notification NetworkPolicy always renders (no enabled toggle exists anymore)"
+    template: templates/notification/networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "remediationorchestrator NetworkPolicy always renders (no enabled toggle exists anymore)"
+    template: templates/remediationorchestrator/networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "signalprocessing NetworkPolicy always renders (no enabled toggle exists anymore)"
+    template: templates/signalprocessing/networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "workflowexecution NetworkPolicy always renders (no enabled toggle exists anymore)"
+    template: templates/workflowexecution/networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  # --- Group B: the 4 services whose NetworkPolicy still depends on the OWNING service's own .enabled (not a NetworkPolicy-specific toggle) ---
+  - it: "apifrontend NetworkPolicy renders by default (apifrontend.enabled defaults true)"
+    template: templates/apifrontend/networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "apifrontend NetworkPolicy is NOT rendered when apifrontend.enabled=false (owning-service gate, not a NetworkPolicy toggle, still respected)"
+    template: templates/apifrontend/networkpolicy.yaml
+    set:
+      apifrontend:
+        enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "console NetworkPolicy is NOT rendered by default (console.enabled defaults false)"
+    template: templates/console/networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "console NetworkPolicy renders when console.enabled=true (owning-service gate, not a NetworkPolicy toggle, still respected)"
+    template: templates/console/networkpolicy.yaml
+    set:
+      console:
+        enabled: true
+        auth:
+          secretName: console-auth
+        ingress:
+          host: console.apps.example.com
+      apifrontend:
+        config:
+          auth:
+            issuerURL: https://dex.kubernaut-system.svc:5556
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "postgresql NetworkPolicy renders by default (postgresql.enabled defaults true)"
+    template: templates/infrastructure/networkpolicy-postgresql.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "postgresql NetworkPolicy is NOT rendered when postgresql.enabled=false (owning-service gate, not a NetworkPolicy toggle, still respected)"
+    template: templates/infrastructure/networkpolicy-postgresql.yaml
+    set:
+      postgresql:
+        enabled: false
+        host: external-pg.example.com
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: "valkey NetworkPolicy renders by default (valkey.enabled defaults true)"
+    template: templates/infrastructure/networkpolicy-valkey.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "valkey NetworkPolicy is NOT rendered when valkey.enabled=false (owning-service gate, not a NetworkPolicy toggle, still respected)"
+    template: templates/infrastructure/networkpolicy-valkey.yaml
+    set:
+      valkey:
+        enabled: false
+        host: external-valkey.example.com
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  # --- Group C: the removed toggle fields are schema-rejected (dead-field-removal pattern, same as DD-PLATFORM-006 DA5) ---
+  - it: "networkPolicies.enabled is no longer a recognized field (schema-rejected -- NetworkPolicies are unconditionally mandatory)"
+    set:
+      networkPolicies:
+        enabled: false
+    template: templates/gateway/networkpolicy.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "networkPolicies.gateway.enabled is no longer recognized (kept-object case: gateway's ingressCIDRs/ingressNamespaces/ingressNamespaceSelectors remain, only enabled was removed)"
+    set:
+      networkPolicies:
+        gateway:
+          enabled: false
+    template: templates/gateway/networkpolicy.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "networkPolicies.apifrontend.enabled is no longer recognized (kept-object case)"
+    set:
+      networkPolicies:
+        apifrontend:
+          enabled: false
+    template: templates/apifrontend/networkpolicy.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "networkPolicies.aianalysis is no longer recognized at all (fully-removed-key case: aianalysis had no other NetworkPolicy config besides enabled)"
+    set:
+      networkPolicies:
+        aianalysis:
+          enabled: false
+    template: templates/aianalysis/networkpolicy.yaml
+    asserts:
+      - failedTemplate: {}
+
+  - it: "networkPolicies.postgresql is no longer recognized at all (fully-removed-key case)"
+    set:
+      networkPolicies:
+        postgresql:
+          enabled: false
+    template: templates/infrastructure/networkpolicy-postgresql.yaml
+    asserts:
+      - failedTemplate: {}

@@ -253,11 +253,14 @@ func WithClientCert(certFile, keyFile string) TLSTransportOption {
 	}
 }
 
-// NewTLSTransport creates an http.Transport configured with a custom CA pool
-// for verifying server certificates on outbound HTTPS calls.
-// Optional TLSTransportOption values (e.g. WithClientCert) extend the transport
-// with mTLS or other features without breaking existing callers.
-func NewTLSTransport(caFile string, opts ...TLSTransportOption) (*http.Transport, error) {
+// BuildTLSConfig builds a *tls.Config with a custom CA pool for verifying
+// server certificates, the fleet's default security profile (min TLS
+// version, cipher suites, curve preferences), and optional mTLS via
+// WithClientCert. This is the building block NewTLSTransport wraps in an
+// *http.Transport; callers that need a raw *tls.Config directly (e.g.
+// go-redis's redis.Options.TLSConfig) should call this instead of
+// constructing their own ad-hoc tls.Config (DD-PLATFORM-006 DA9).
+func BuildTLSConfig(caFile string, opts ...TLSTransportOption) (*tls.Config, error) {
 	pool, err := LoadCACert(caFile)
 	if err != nil {
 		return nil, err
@@ -282,5 +285,17 @@ func NewTLSTransport(caFile string, opts ...TLSTransportOption) (*http.Transport
 	}
 
 	ApplyProfile(tlsCfg, getDefaultSecurityProfile())
+	return tlsCfg, nil
+}
+
+// NewTLSTransport creates an http.Transport configured with a custom CA pool
+// for verifying server certificates on outbound HTTPS calls.
+// Optional TLSTransportOption values (e.g. WithClientCert) extend the transport
+// with mTLS or other features without breaking existing callers.
+func NewTLSTransport(caFile string, opts ...TLSTransportOption) (*http.Transport, error) {
+	tlsCfg, err := BuildTLSConfig(caFile, opts...)
+	if err != nil {
+		return nil, err
+	}
 	return &http.Transport{TLSClientConfig: tlsCfg}, nil
 }

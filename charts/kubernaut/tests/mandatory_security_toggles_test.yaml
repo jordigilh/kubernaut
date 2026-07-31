@@ -1,0 +1,104 @@
+suite: "DD-PLATFORM-006 Decision Area 6: security-relevant toggles are unconditional (no enabled gate) -- apifrontend.config.auth.replayCache EXCLUDED, see tests/apifrontend_replaycache_tls_test.yaml (Decision Area 16 reverted it to opt-in)"
+templates:
+  - templates/datastorage/datastorage.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  apifrontend:
+    config:
+      auth:
+        issuerURL: "https://sso.example.com/realms/kubernaut"
+tests:
+  # ── datastorage.config.server.rateLimit: always enabled, no schema toggle ─
+  - it: "DataStorage rateLimit is always enabled, with no --set override needed"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'rateLimit:\s*\n\s*enabled: true'
+
+  - it: "schema rejects datastorage.config.server.rateLimit.enabled -- the gate is fully removed, not just defaulted true"
+    template: templates/datastorage/datastorage.yaml
+    set:
+      datastorage:
+        config:
+          server:
+            rateLimit:
+              enabled: false
+    asserts:
+      - failedTemplate: {}
+
+  # ── datastorage.config.redis.tls: always enabled, no schema toggle ────────
+  - it: "DataStorage redis.tls is always enabled, with no --set override needed"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'redis:[\s\S]{0,200}tls:\s*\n\s*enabled: true'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'caFile: "/etc/tls-ca/ca\.crt"'
+
+  - it: "schema rejects datastorage.config.redis.tls.enabled -- the gate is fully removed"
+    template: templates/datastorage/datastorage.yaml
+    set:
+      datastorage:
+        config:
+          redis:
+            tls:
+              enabled: false
+    asserts:
+      - failedTemplate: {}
+
+  # ── datastorage.config.auditHashKey: always enabled, no schema toggle ─────
+  - it: "DataStorage always renders the audit hash-chain block, with no --set override needed"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'audit:\s*\n\s*hashKeySecretsFile: "/etc/datastorage/secrets/audit-hmac-key\.yaml"'
+
+  - it: "DataStorage Deployment always projects the audit-HMAC key secret"
+    template: templates/datastorage/datastorage.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes[1].projected.sources
+          content:
+            secret:
+              name: datastorage-audit-hmac-key
+              items:
+                - key: audit-hmac-key.yaml
+                  path: audit-hmac-key.yaml
+
+  - it: "schema rejects datastorage.config.auditHashKey.enabled -- the gate is fully removed"
+    template: templates/datastorage/datastorage.yaml
+    set:
+      datastorage:
+        config:
+          auditHashKey:
+            enabled: false
+    asserts:
+      - failedTemplate: {}

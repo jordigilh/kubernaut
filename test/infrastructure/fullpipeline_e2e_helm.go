@@ -533,115 +533,14 @@ func ensureKeycloakTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace
 	}, []net.IP{net.IPv4(127, 0, 0, 1)}, caCert, caKey, writer)
 }
 
-// resignHostAccessedTLSCertsWithLocalhostSAN re-signs gateway-tls,
-// datastorage-tls, apifrontend-tls, and kubernautagent-tls (still using the
-// chart's own CA from authwebhook-tls) to ADD "localhost"/127.0.0.1 to their SANs,
-// overwriting the chart-generated leaf certs that the chart's
-// tls-cert-job.yaml hook produced.
-//
-// Why: the chart's own hook (Section 2, SVC_NAME loop) deliberately omits
-// "localhost"/127.0.0.1 from these SANs -- correct for a real cluster, which
-// never accesses these Services via localhost. But host-side test clients
-// dial DataStorage over "https://localhost:30081" and Kubernaut Agent's MCP
-// endpoint over "https://localhost:8088", and AF's over "https://localhost:30443"
-// via the chart's pinned NodePorts
-// (Issue #1737: type=NodePort + networkPolicies.<svc>.ingressCIDRs=0.0.0.0/0
-// admits the NodePort-sourced, SNAT'd-to-node-IP traffic through the
-// default-deny NetworkPolicy) with full hostname verification (suite_test.go's
-// NewTLSAwareClient/NewTLSAwareTransport, Issue #785) -- without "localhost"
-// in the SAN, that handshake fails ("read: connection reset by peer",
-// confirmed during Issue #1737 validation). gateway-tls is re-signed too even
-// though Gateway itself still serves plain HTTP today (TLS wiring is a
-// separate, tracked follow-up) -- keeping all certs consistent avoids a
-// silent trap for whoever wires Gateway's HTTPS listener next. The Go-native
-// harness's GenerateInterServiceTLS always included these SANs for exactly
-// this reason; re-signing here restores that host-access property without
-// modifying the chart's own hook (which stays correct for production).
-func resignHostAccessedTLSCertsWithLocalhostSAN(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  🔐 Re-signing gateway-tls/datastorage-tls/apifrontend-tls/kubernautagent-tls with localhost SAN (host NodePort access)...")
-	caCert, caKey, err := loadChartCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
-	if err != nil {
-		return err
-	}
-	targets := []struct {
-		secretName string
-		commonName string
-		svcName    string
-	}{
-		{"gateway-tls", "gateway-service", "gateway-service"},
-		{"datastorage-tls", "data-storage-service", "data-storage-service"},
-		{"apifrontend-tls", "apifrontend", "apifrontend"},
-		{"kubernautagent-tls", "kubernaut-agent", "kubernaut-agent"},
-	}
-	for _, t := range targets {
-		dnsNames := []string{
-			"localhost",
-			t.svcName,
-			fmt.Sprintf("%s.%s", t.svcName, namespace),
-			fmt.Sprintf("%s.%s.svc", t.svcName, namespace),
-			fmt.Sprintf("%s.%s.svc.cluster.local", t.svcName, namespace),
-		}
-		if err := signAndApplyLeafTLSSecret(ctx, kubeconfigPath, namespace, t.secretName, t.commonName, dnsNames, []net.IP{net.IPv4(127, 0, 0, 1)}, caCert, caKey, writer); err != nil {
-			return err
-		}
-	}
-
-	// gateway/datastorage/apifrontend/kubernaut-agent load tls.crt/tls.key once
-	// at startup (no hot-reload for the server's own leaf cert, unlike the CA
-	// bundle) -- all pods are already Running from PHASE 6's `helm install`
-	// using the ORIGINAL chart-generated certs, so a restart is required for
-	// them to pick up the re-signed ones above.
-	deployments := []string{"gateway", "datastorage", "apifrontend", "kubernaut-agent"}
-	for _, deploy := range deployments {
-		restartCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
-			"rollout", "restart", "deployment/"+deploy)
-		restartCmd.Stdout = writer
-		restartCmd.Stderr = writer
-		if err := restartCmd.Run(); err != nil {
-			return fmt.Errorf("failed to restart %s for TLS cert reload: %w", deploy, err)
-		}
-	}
-	for _, deploy := range deployments {
-		// DD-PLATFORM-009 (#1755 Fleet E2E re-validation): gateway's new pod
-		// answers /healthz=200 immediately (NewBootstrapServer) so its
-		// startupProbe passes quickly, but /readyz correctly stays 503 until
-		// wireFleetOwnerResolution's mcpclient.NewResilient MCP Gateway
-		// connection succeeds -- observed taking multiple ~40s backoff
-		// retries under Kind-cluster CPU contention from all four of these
-		// deployments restarting simultaneously. That's an honest, bounded
-		// wait (never restarts the container -- readiness failures don't).
-		//
-		// 480s (up from an original 300s that matched only
-		// mcpclient.Resilient's own 300s MaxElapsedTime ceiling, see
-		// pkg/fleet/mcpclient/resilience.go): datastorage/apifrontend/
-		// kubernaut-agent do NOT have gateway's NewBootstrapServer fix, so
-		// their /healthz (the startupProbe target) stays fully unbound
-		// behind the same blocking dependency-wiring call as /readyz --
-		// they need the startupProbe's own grace to elapse first.
-		// kubernaut.startupProbe's failureThreshold was independently
-		// raised (DD-PLATFORM-008 July 29 update) from 30 to 60
-		// (initialDelaySeconds=5 + 60*periodSeconds=5 = 305s) after live
-		// evidence (cgroup v2 cpu.stat: nr_throttled/nr_periods as high as
-		// 23/24 on a freshly-restarted pod) showed CFS bandwidth-quota
-		// throttling against the 500m CPU limit can stretch cold-start
-		// well past the previous 150s startupProbe budget under this same
-		// 4-deployments-at-once contention. A 300s outer rollout-status
-		// timeout left effectively zero margin for readinessProbe's own
-		// checks to run *after* a startupProbe that can itself now take
-		// close to 305s -- this was silently racing its own inner budget.
-		// 480s gives >150s of headroom above the 305s startupProbe ceiling
-		// for the subsequent readyz convergence.
-		waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
-			"rollout", "status", "deployment/"+deploy, "--timeout=480s")
-		waitCmd.Stdout = writer
-		waitCmd.Stderr = writer
-		if err := waitCmd.Run(); err != nil {
-			return fmt.Errorf("failed waiting for %s rollout after TLS cert reload: %w", deploy, err)
-		}
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ gateway/datastorage/apifrontend/kubernaut-agent restarted with localhost-SAN certs")
-	return nil
-}
+// PR #1790 round-14 RCA: resignHostAccessedTLSCertsWithLocalhostSAN (which
+// re-signed gateway-tls/datastorage-tls/apifrontend-tls/kubernautagent-tls
+// post-install, then did a rolling restart+wait per deployment to pick them
+// up) was removed. Its restart pass was the deterministic root cause of
+// fleet E2E's PHASE 6 rollout timeouts -- see InstallFullPipelineHelmChart's
+// `hooks.tlsCerts.extraSANs` comment for the full RCA. "localhost" SAN is
+// now baked into the ORIGINAL chart-issued certs at `helm install` time via
+// that values override, so no re-sign or restart is needed at all.
 
 // writeInterServiceCAPEMFromCluster copies the chart-generated "inter-service-ca"
 // ConfigMap's ca.crt (created by the pre-install tls-cert-gen hook, PHASE 6) to
@@ -1036,7 +935,10 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		"--set", "global.llmProfiles.primary.model=mock-model",
 		"--set", "global.llmProfiles.primary.endpoint=http://mock-llm." + namespace + ".svc.cluster.local:8080",
 		"--set", "global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary",
-		"--set", "kubernautAgent.llmProfileRef=primary",
+		// kubernautAgent.llmProfileRef is deliberately NOT set here -- it defaults
+		// to "primary" in the chart's own schema (DD-PLATFORM-006 Decision Area 4
+		// Addendum 2), so this install exercises that default instead of shadowing
+		// it with a redundant override.
 		// MCP interactive mode (#703) is opt-in (default false) -- without this,
 		// KA never registers the POST /api/v1/mcp Streamable HTTP handler at all,
 		// so every MCP client `initialize` call gets a plain HTTP 404 from Go's
@@ -1141,6 +1043,22 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		// (30s/120s) already match the old Go-native harness's
 		// effectivenessmonitor_e2e.go values verbatim, so no override needed there.
 		"--set", "remediationorchestrator.config.effectivenessAssessment.stabilizationWindow=10s",
+		// PR #1790 round-14 RCA: gateway/datastorage/apifrontend/kubernaut-agent
+		// leaf certs need "localhost" (+ auto-appended IP:127.0.0.1) in their
+		// SAN for host-side E2E clients dialing their chart-pinned NodePorts
+		// ("https://localhost:30081" etc. with full hostname verification --
+		// Issue #785/#1737). Setting this AT INSTALL TIME (hooks.tlsCerts.
+		// extraSANs) bakes it into the ORIGINAL chart-issued certs, replacing
+		// the previous post-install re-sign + 4-deployment rolling-restart
+		// pass (resignHostAccessedTLSCertsWithLocalhostSAN, removed) that was
+		// the deterministic root cause of fleet E2E's PHASE 6 rollout timeouts
+		// (5/5 CI runs failed identically at "gateway ... 1 old replicas are
+		// pending termination" even after raising the wait to 720s -- the
+		// restart's CPU burst on top of fleet's already-heavier Istio/
+		// Kuadrant/Keycloak/kube-mcp-server footprint was the actual
+		// bottleneck, not an insufficient timeout). Zero effect on production
+		// installs: this value defaults to an empty list (values.schema.json).
+		"--set", `hooks.tlsCerts.extraSANs[0]=localhost`,
 		"--set-file", "signalprocessing.policies.content=" + spPolicyFile,
 		"--set-file", "signalprocessing.proactiveSignalMappings.content=" + spMappingsFile,
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
@@ -1152,12 +1070,15 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 	// oauth2-credentials/inter-service-ca volume mounts -- are the ones
 	// actually exercised by this suite, closing the gap where a regression
 	// in the chart's fleet templating could hide behind the Go harness's own
-	// (now-removed) kubectl patches. FMC follows the same global.fleet.*
-	// derivation as every other fleet-aware service once
-	// fleetmetadatacache.enabled=true (see fleetmetadatacache.yaml); unlike
-	// them, though, it does not resolve its image via global.image.* (see
+	// (now-removed) kubectl patches. fleetmetadatacache.enabled is
+	// deliberately NOT set here: DD-PLATFORM-006 Decision Area 10 derives it
+	// from global.fleet.enabled=true + global.fleet.backend defaulting to
+	// "fleetmetadatacache" (kubernaut.fleetmetadatacache.effectiveEnabled in
+	// _helpers.tpl) -- this install exercises that derivation for real
+	// against a live cluster instead of shadowing it with a redundant
+	// override. FMC does not resolve its image via global.image.* (see
 	// kubernaut.image helper vs. this service's dedicated image.repository/
-	// tag values), so it needs an explicit override reusing the SAME
+	// tag values), so it still needs an explicit override reusing the SAME
 	// registry/tag every other chart-managed service already got above.
 	if fleetOpts != nil {
 		args = append(args,
@@ -1168,7 +1089,6 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 			"--set", "global.fleet.oauth2.tokenURL="+fleetOpts.OAuth2TokenURL,
 			"--set", "global.fleet.oauth2.credentialsSecretRef="+fleetOpts.OAuth2CredentialsSecret,
 			"--set", "workflowexecution.fleet.oauth2.credentialsSecretRef="+fleetOpts.WEOAuth2CredentialsSecret,
-			"--set", "fleetmetadatacache.enabled=true",
 			"--set", "fleetmetadatacache.image.repository="+registry+"/fleetmetadatacache",
 			"--set", "fleetmetadatacache.image.tag="+tag,
 			// #1755 DD-TEST-015 RCA (3rd finding, live PRESERVE_E2E_CLUSTER=true

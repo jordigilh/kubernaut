@@ -1,0 +1,70 @@
+suite: "DD-PLATFORM-006 Decision Area 7: audit-HMAC key auto-generation hook (never-rotate)"
+templates:
+  - templates/hooks/tls-cert-job.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  tls:
+    mode: hook
+tests:
+  - it: "default (DD-PLATFORM-006 DA6: auditHashKey is mandatory, no enabled gate): tls-cert-gen Job always has the audit-HMAC key section"
+    documentIndex: 0 # first document in this file is the tls-cert-gen Job
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "datastorage-audit-hmac-key"
+
+  - it: "tls-cert-gen Job checks exists-only before creating (default name) -- never regenerates an existing key, since rotating it would silently corrupt hash-chain verification for every audit record hashed with the old key"
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'AUDIT_HMAC_SECRET="datastorage-audit-hmac-key"'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'kubectl get secret "\$AUDIT_HMAC_SECRET" -n "\$NAMESPACE" >/dev/null 2>&1'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "openssl rand -base64 32"
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'kubectl create secret generic "\$AUDIT_HMAC_SECRET"'
+
+  - it: "never checks certificate expiry for the audit-HMAC key -- it is a static key, not a rotating certificate"
+    documentIndex: 0
+    asserts:
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "audit-hmac-key[\\s\\S]{0,400}checkend"
+
+  - it: "existingSecret set (BYO): auto-gen is skipped for the custom-named secret, matching postgresql/valkey existingSecret semantics where the user manages the secret manually"
+    set:
+      datastorage:
+        config:
+          auditHashKey:
+            existingSecret: my-custom-hmac-secret
+    documentIndex: 0
+    asserts:
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "AUDIT_HMAC_SECRET="
+
+  - it: "tls-cleanup Job (post-delete, hook mode) never deletes the audit-HMAC key -- it must survive helm uninstall/reinstall to preserve the audit hash chain's cryptographic integrity across the project's reinstall-not-upgrade model"
+    documentSelector:
+      path: metadata.name
+      value: RELEASE-NAME-kubernaut-tls-cleanup
+    asserts:
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: "kubectl delete secret datastorage-audit-hmac-key"

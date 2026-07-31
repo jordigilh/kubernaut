@@ -1,0 +1,57 @@
+suite: "DD-PLATFORM-006 Decision Area 11: kubernautAgent.interactive.enabled requires apifrontend.enabled"
+templates:
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "kubernautAgent.interactive.enabled=true + apifrontend.enabled=false fails the render -- APIFrontend's ka.NewSDKMCPClient is the only caller of KA's interactive endpoint"
+    set:
+      kubernautAgent:
+        interactive:
+          enabled: true
+      apifrontend:
+        enabled: false
+    asserts:
+      - failedTemplate:
+          errorMessage: "kubernautAgent.interactive.enabled=true requires apifrontend.enabled=true (APIFrontend's ka.NewSDKMCPClient is the only MCP client that connects to KubernautAgent's interactive endpoint, with no other possible caller)"
+
+  - it: "kubernautAgent.interactive.enabled=true + apifrontend.enabled=true (default) renders successfully -- no new false-positive from the added guard"
+    set:
+      kubernautAgent:
+        interactive:
+          enabled: true
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - isKind:
+          of: Deployment
+
+  - it: "kubernautAgent.interactive.enabled=false (default) + apifrontend.enabled=false renders successfully -- the guard is scoped to interactive mode only"
+    set:
+      apifrontend:
+        enabled: false
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - isKind:
+          of: Deployment

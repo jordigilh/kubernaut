@@ -1,4 +1,3 @@
-{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.gateway.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 {{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "gateway" "appLabel" "gateway") }}
@@ -51,4 +50,3 @@ spec:
     SYN_SENT-stuck connection to the same target). */}}
     {{- include "kubernaut.np.mcpGatewayEgress" . | nindent 4 }}
     {{- end }}
-{{- end }}

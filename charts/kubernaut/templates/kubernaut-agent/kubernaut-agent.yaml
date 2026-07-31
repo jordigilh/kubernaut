@@ -4,10 +4,26 @@ at the top of this multi-document template so every ConfigMap/Deployment
 section below shares identical resolution -- avoids re-deriving (and
 potentially drifting) the same lookups per-section.
 */}}
-{{- if not .Values.kubernautAgent.llmProfileRef }}
-{{- fail "kubernautAgent.llmProfileRef is required (name of an entry in global.llmProfiles)" }}
+{{- /*
+DD-PLATFORM-006 DA4: llmProfileRef defaults to "primary" (values.yaml/schema),
+so there is no separate "field is required" fail() here anymore -- an
+undefined profile (including an explicit empty-string override) is caught by
+kubernaut.llm.resolveProfile's own fail() below, with a message naming the
+actual (possibly empty) reference.
+*/}}
+{{- /*
+DD-PLATFORM-006 Decision Area 11: APIFrontend's ka.NewSDKMCPClient
+(pkg/apifrontend/ka/) is the only MCP client anywhere in the codebase that
+connects to KA's interactive /api/v1/mcp endpoint (verified: zero other
+callers) -- fail fast instead of rendering an interactive endpoint that can
+never be reached.
+*/}}
+{{- $kaV := include "kubernaut.mergedValues" (dict "root" $ "service" "kubernautAgent") | fromYaml }}
+{{- $afV := include "kubernaut.mergedValues" (dict "root" $ "service" "apifrontend") | fromYaml }}
+{{- if and .Values.kubernautAgent.interactive.enabled (not $afV.enabled) }}
+{{- fail "kubernautAgent.interactive.enabled=true requires apifrontend.enabled=true (APIFrontend's ka.NewSDKMCPClient is the only MCP client that connects to KubernautAgent's interactive endpoint, with no other possible caller)" }}
 {{- end }}
-{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
+{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaV.llmProfileRef) | fromYaml }}
 {{- $validPhases := list "rca" "workflow_discovery" "validation" }}
 {{- $kaPhaseProfiles := dict }}
 {{- range $phase, $profileName := .Values.kubernautAgent.phaseModels }}
@@ -17,7 +33,7 @@ potentially drifting) the same lookups per-section.
 {{- $p := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $profileName) | fromYaml }}
 {{- $_ := set $kaPhaseProfiles $phase $p }}
 {{- end }}
-{{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default .Values.kubernautAgent.llmProfileRef }}
+{{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default $kaV.llmProfileRef }}
 {{- $kaAlignmentProfile := dict }}
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
 {{- $kaAlignmentProfile = include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaAlignmentProfileRef) | fromYaml }}
@@ -51,8 +67,9 @@ above must be recomputed here rather than reused from the file-top
 declarations.
 */}}
 {{- define "kubernaut.kubernautAgent.configYAML" -}}
-{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
-{{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default .Values.kubernautAgent.llmProfileRef }}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "kubernautAgent") | fromYaml }}
+{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $v.llmProfileRef) | fromYaml }}
+{{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default $v.llmProfileRef }}
 {{- $kaAlignmentProfile := dict }}
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
 {{- $kaAlignmentProfile = include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaAlignmentProfileRef) | fromYaml }}
@@ -64,7 +81,7 @@ declarations.
 {{- end -}}
 runtime:
   logging:
-    level: {{ .Values.kubernautAgent.logging.level | default "INFO" | quote }}
+    level: {{ $v.logging.level | quote }}
   server:
     address: "0.0.0.0"
     port: 8443
@@ -125,24 +142,24 @@ ai:
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
   alignmentCheck:
     enabled: true
-    timeout: {{ .Values.kubernautAgent.alignmentCheck.timeout | default "10s" }}
-    maxStepTokens: {{ .Values.kubernautAgent.alignmentCheck.maxStepTokens | default 500 }}
+    timeout: {{ $v.alignmentCheck.timeout }}
+    maxStepTokens: {{ $v.alignmentCheck.maxStepTokens }}
     llm:
       {{- include "kubernaut.llm.overrideBlock" (dict "profile" $kaAlignmentProfile "apiKeyFile" $kaAlignmentAPIKeyFile) | nindent 6 }}
 {{- end }}
 {{- if .Values.kubernautAgent.interactive.enabled }}
 interactive:
   enabled: true
-  sessionTTL: {{ .Values.kubernautAgent.interactive.sessionTTL | default "30m" | quote }}
-  inactivityTimeout: {{ .Values.kubernautAgent.interactive.inactivityTimeout | default "10m" | quote }}
+  sessionTTL: {{ $v.interactive.sessionTTL | quote }}
+  inactivityTimeout: {{ $v.interactive.inactivityTimeout | quote }}
   # Issue #1737 gap found: default of 5 was too low even for realistic
   # production use, confirmed via full-suite E2E failing nearly every
   # interactive/MCP spec with "max_sessions: Maximum concurrent sessions
   # reached" from Ginkgo's own test parallelism alone (see values.yaml
   # comment for kubernautAgent.interactive.maxConcurrentSessions).
-  maxConcurrentSessions: {{ .Values.kubernautAgent.interactive.maxConcurrentSessions | default 50 }}
-  rateLimitPerUser: {{ .Values.kubernautAgent.interactive.rateLimitPerUser | default 20 }}
-  maxAnalyzingTimeout: {{ .Values.kubernautAgent.interactive.maxAnalyzingTimeout | default "45m" | quote }}
+  maxConcurrentSessions: {{ $v.interactive.maxConcurrentSessions }}
+  rateLimitPerUser: {{ $v.interactive.rateLimitPerUser }}
+  maxAnalyzingTimeout: {{ $v.interactive.maxAnalyzingTimeout | quote }}
 {{- with .Values.kubernautAgent.interactive.jwtProviders }}
   jwtProviders:
 {{- range . }}
@@ -184,7 +201,8 @@ integrations:
 {{- end }}
 {{- end }}
 {{- define "kubernaut.kubernautAgent.llmRuntimeYAML" -}}
-{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" .Values.kubernautAgent.llmProfileRef) | fromYaml }}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "kubernautAgent") | fromYaml }}
+{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $v.llmProfileRef) | fromYaml }}
 {{- $validPhases := list "rca" "workflow_discovery" "validation" }}
 {{- $kaPhaseProfiles := dict }}
 {{- range $phase, $profileName := .Values.kubernautAgent.phaseModels }}
@@ -418,10 +436,10 @@ data:
 {{- $kaBaseOAuth2 := $kaProfile.oauth2 | default dict }}
 {{- if $kaBaseOAuth2.enabled }}
 {{- if not $kaBaseOAuth2.tokenURL }}
-{{- fail (printf "global.llmProfiles[%q].oauth2.tokenURL is required when oauth2.enabled=true" .Values.kubernautAgent.llmProfileRef) }}
+{{- fail (printf "global.llmProfiles[%q].oauth2.tokenURL is required when oauth2.enabled=true" $kaV.llmProfileRef) }}
 {{- end }}
 {{- if not $kaBaseOAuth2.credentialsSecretRef }}
-{{- fail (printf "global.llmProfiles[%q].oauth2.credentialsSecretRef is required when oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" .Values.kubernautAgent.llmProfileRef) }}
+{{- fail (printf "global.llmProfiles[%q].oauth2.credentialsSecretRef is required when oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" $kaV.llmProfileRef) }}
 {{- end }}
 {{- end }}
 ---
@@ -446,7 +464,13 @@ metadata:
     app: kubernaut-agent
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.kubernautAgent.replicas }}
+  replicas: {{ $kaV.replicas }}
+  # PR #1790 round-13 RCA: see gateway.yaml's progressDeadlineSeconds comment
+  # -- K8s's Deployment controller enforces this SERVER-SIDE (default 600s)
+  # independently of `kubectl rollout status --timeout`, which is why round-12's
+  # 480s->720s CLI timeout bump had no effect. 750s makes that 720s CLI
+  # timeout the real ceiling again.
+  progressDeadlineSeconds: 750
   selector:
     matchLabels:
       app: kubernaut-agent
@@ -469,8 +493,8 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.kubernautAgent "global" .Values.global) | nindent 6 }}
       containers:
         - name: kubernaut-agent
-          image: {{ include "kubernaut.image" (dict "service" "kubernautagent" "global" .Values.global "appVersion" .Chart.AppVersion) }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ include "kubernaut.image" (dict "service" "kubernautagent" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.kubernautAgent | nindent 12 }}
           ports:
@@ -644,13 +668,13 @@ metadata:
     app: kubernaut-agent
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.kubernautAgent.service.type }}
+  type: {{ $kaV.service.type }}
   ports:
     - name: https
       port: 8443
       targetPort: 8443
-      {{- if and (eq .Values.kubernautAgent.service.type "NodePort") .Values.kubernautAgent.service.nodePort }}
-      nodePort: {{ .Values.kubernautAgent.service.nodePort }}
+      {{- if and (eq $kaV.service.type "NodePort") $kaV.service.nodePort }}
+      nodePort: {{ $kaV.service.nodePort }}
       {{- end }}
     - name: health
       port: 8081

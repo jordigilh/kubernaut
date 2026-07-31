@@ -119,6 +119,7 @@ jobs:
               - 'charts/**'
               - 'scripts/helm-smoke-test.sh'
               - 'config/**'
+              - 'hack/**'
 
   # ========================================
   # STAGE 1: LINT, LICENSE SCAN & UNIT TESTS (ALL PARALLEL)
@@ -289,6 +290,47 @@ jobs:
 
       - name: Run helm-unittest specs
         run: helm unittest charts/kubernaut/
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.5'
+          cache: true
+
+      # DD-PLATFORM-006 Decision Area 4: docs/generated/helm-values-reference.md
+      # is generated from charts/kubernaut/values.schema.json by
+      # hack/gen-helm-config-docs. Deliberately NOT chained onto the existing
+      # `make gen-diff` (Go-codegen) target -- that step's cache key excludes
+      # values.schema.json and could false-cache-hit, silently skipping this
+      # check. This is its own uncached, dedicated step instead.
+      - name: Helm values reference freshness check
+        run: |
+          make generate-helm-config-docs
+          if ! git diff --exit-code -- docs/generated/helm-values-reference.md; then
+            echo "::error::docs/generated/helm-values-reference.md is stale. Run 'make generate-helm-config-docs' and commit the result."
+            exit 1
+          fi
+
+      # DD-PLATFORM-006 Decision Area 14 (PR9):
+      # charts/kubernaut/templates/_generated_defaults.tpl is generated from
+      # the same schema by hack/gen-helm-defaults. Same rationale as the
+      # freshness check above -- its own uncached, dedicated step.
+      - name: Helm materialized defaults freshness check
+        run: |
+          make generate-helm-defaults
+          if ! git diff --exit-code -- charts/kubernaut/templates/_generated_defaults.tpl; then
+            echo "::error::charts/kubernaut/templates/_generated_defaults.tpl is stale. Run 'make generate-helm-defaults' and commit the result."
+            exit 1
+          fi
+
+      # DD-PLATFORM-006 Decision Area 14 (PR9): proves omitting a
+      # schema-defaulted field from values.yaml is render-neutral -- catches
+      # a template reading .Values.<path> directly instead of through
+      # kubernaut.mergedValues (which would silently render empty/zero
+      # instead of the documented schema default once the field is
+      # trimmed from values.yaml).
+      - name: Helm values.yaml defaults parity check
+        run: make verify-helm-defaults-parity
 
   unit-tests:
     name: Unit Tests (${{ matrix.service }})
@@ -975,7 +1017,20 @@ jobs:
             timeout: 20
           - service: fleet
             service_name: "Fleet Multi-Cluster"
-            timeout: 35
+            # 45 (up from 35, PR #1790 round-12 RCA): originally sized around
+            # PHASE 6's per-deployment rollout-status wait (480s->720s) to
+            # tolerate node-wide kubelet starvation from a since-removed
+            # post-install TLS re-sign + 4-deployment rolling restart (DA17,
+            # round-14, eliminated the restart entirely by baking host-access
+            # SANs into the original chart-issued certs). Kept at 45 rather
+            # than lowered back down: round-15's PHASE 8 readiness-timeout fix
+            # (waitForFullPipelineServicesReady, test/infrastructure/
+            # fullpipeline_e2e.go) added its own up-to-6-minute-per-service
+            # margin for fleet's MCP-Gateway-dependent gateway/RO readiness
+            # checks, and this job's heavier Istio/Kuadrant/Keycloak/
+            # kube-mcp-server footprint (vs. fullpipeline's 20min budget)
+            # still warrants headroom the other E2E jobs don't need.
+            timeout: 45
           - service: fleetmetadatacache-kuadrant
             service_name: "Fleet Metadata Cache (Kuadrant)"
             timeout: 15
@@ -1192,7 +1247,16 @@ jobs:
     # cert-manager leg additionally runs the ArgoCD GitOps validation (see
     # "Install ArgoCD" onward below) on top of the plain helm-install smoke
     # test, so it needs materially more headroom than the hook leg.
-    timeout-minutes: ${{ matrix.tls_mode == 'cert-manager' && 45 || 30 }}
+    #
+    # hook leg 30->35 (PR #1790 round-8 RCA): two consecutive runs hit this
+    # exact 30min ceiling with the *entire* 120-test TAP suite passing
+    # (0 failures) -- scripts/helm-smoke-test.sh itself took ~26min end to
+    # end (21:44:52->22:10:51), leaving under 2min of the 30min budget for
+    # cleanup, which the job then got `cancelled` mid-teardown for. Not a
+    # test regression, just a suite that has grown past its original budget;
+    # +5min gives comparable proportional headroom to cert-manager's 45min
+    # for its own (bigger) ArgoCD-inclusive suite.
+    timeout-minutes: ${{ matrix.tls_mode == 'cert-manager' && 45 || 35 }}
     strategy:
       fail-fast: false
       matrix:
@@ -1422,6 +1486,22 @@ jobs:
             --from-literal="valkey-secrets.yaml=password: gitops-smoke-pass"
           kubectl create secret generic kubernaut-llm-credentials -n "$GITOPS_NAMESPACE" \
             --from-literal=OPENAI_API_KEY=sk-gitops-smoke-placeholder # pre-commit:allow-sensitive
+          # DD-PLATFORM-006 DA6/DA7 (PR #1790 round-7 RCA): datastorage-audit-hmac-key
+          # is mandatory (AU-9) with no enabled gate, but secrets.yaml's fail() guard
+          # only skips validation when tls.mode=hook (that mode's tls-cert-job
+          # pre-install hook auto-generates it). cert-manager mode has no such hook,
+          # so it must be pre-created -- exactly like scripts/helm-smoke-test.sh's
+          # run_pre_005 already does for the plain `helm install` smoke test below,
+          # which this GitOps-via-ArgoCD leg has its own separate secret-provisioning
+          # step for and had never been updated to match. Without it, datastorage's
+          # non-optional /etc/datastorage/secrets volume mount fails
+          # (MountVolume.SetUp failed: secret "datastorage-audit-hmac-key" not
+          # found), so its pod never leaves Init:, blocking ArgoCD's sync-wave "-1"
+          # from ever completing -- which cascades into every sync-wave "0" resource
+          # (gateway, authwebhook-cert, etc.) never being applied within the sync
+          # timeout.
+          kubectl create secret generic datastorage-audit-hmac-key -n "$GITOPS_NAMESPACE" \
+            --from-literal="audit-hmac-key.yaml=$(printf 'hmacKey: %s' "$(openssl rand -base64 32)")"
 
       # targetRevision uses the same merge commit this job already checked
       # out and built images from (refs/pull/<n>/merge is maintained by

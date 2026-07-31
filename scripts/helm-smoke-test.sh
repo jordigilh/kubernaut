@@ -496,6 +496,10 @@ production_secret_flags() {
   echo "--set gateway.auth.signalSources[0].name=alertmanager"
   echo "--set gateway.auth.signalSources[0].serviceAccount=alertmanager-kube-prometheus-stack-alertmanager"
   echo "--set gateway.auth.signalSources[0].namespace=monitoring"
+  # DD-PLATFORM-006 DA6/DA7: auditHashKey is mandatory (no enabled gate) --
+  # the audit-HMAC key auto-generation hook (tls-cert-job.yaml Section 4)
+  # now runs on every Flow A install/upgrade unconditionally -- see
+  # run_audithmac_001/002 below.
   policy_flags
 }
 
@@ -600,6 +604,25 @@ run_pre_004() {
     tap_ok "$desc"
   else
     tap_not_ok "$desc" "TLS cert generation or resource creation failed"
+  fi
+}
+
+# DD-PLATFORM-006 DA6/DA7: datastorage-audit-hmac-key is mandatory (AU-9) with
+# no enabled gate, but secrets.yaml's fail() guard only skips validation when
+# tls.mode=hook (that mode's tls-cert-job pre-install hook auto-generates the
+# secret -- see run_audithmac_001/002). cert-manager mode (Flow C) has no such
+# hook, so unlike Flow A/B this secret must be pre-created manually here, the
+# same way postgresql/valkey/llm-credentials are in run_pre_003.
+run_pre_005() {
+  local desc="ST-CHART-PRE-005: Provision DataStorage audit-HMAC key (cert-manager mode)"
+  local hmac_key
+  hmac_key=$(openssl rand -base64 32)
+  if kubectl create secret generic datastorage-audit-hmac-key \
+    --from-literal="audit-hmac-key.yaml=$(printf 'hmacKey: %s' "$hmac_key")" \
+    -n "$NAMESPACE" >/dev/null 2>&1; then
+    tap_ok "$desc"
+  else
+    tap_not_ok "$desc" "kubectl create secret failed"
   fi
 }
 
@@ -826,6 +849,45 @@ run_tls_interservice() {
       tap_not_ok "ST-TLS-INTERSERVICE-006: Leaf certs use ECDSA (not RSA)" "key type: ${key_type}"
       pass=false
     fi
+  fi
+}
+
+# DD-PLATFORM-006 DA7: audit-HMAC key auto-generation hook (never-rotate).
+# production_secret_flags() enables datastorage.config.auditHashKey, so
+# run_inst_001's fresh install already exercises the auto-gen path (Section 4
+# of tls-cert-job.yaml). If the secrets.yaml lookup+fail() guard's tls.mode
+# timing fix regressed, run_inst_001 itself would already have failed (the
+# guard would see the secret as "not found" during the pre-hook render pass
+# and block the install) -- Flow A reaching this point is itself part of the
+# proof, this function just asserts the concrete Secret contents.
+run_audithmac_001() {
+  local pass=true
+  assert_resource_exists secret datastorage-audit-hmac-key "$NAMESPACE" \
+    "ST-AUDITHMAC-001: datastorage-audit-hmac-key Secret auto-created by the pre-install hook" || pass=false
+
+  AUDIT_HMAC_INITIAL_VALUE=$(kubectl get secret datastorage-audit-hmac-key -n "$NAMESPACE" \
+    -o jsonpath='{.data.audit-hmac-key\.yaml}' 2>/dev/null || echo "")
+  if [[ -n "$AUDIT_HMAC_INITIAL_VALUE" ]]; then
+    tap_ok "ST-AUDITHMAC-002: datastorage-audit-hmac-key has audit-hmac-key.yaml key"
+  else
+    tap_not_ok "ST-AUDITHMAC-002: datastorage-audit-hmac-key has audit-hmac-key.yaml key" "key missing"
+    pass=false
+  fi
+}
+
+# Proves the "never-rotate" guarantee: a second Helm operation on the same
+# release (run_upg_001's helm upgrade, a pre-upgrade hook run) must not
+# regenerate this key -- doing so would silently corrupt hash-chain
+# verification for every audit record already hashed with the old key.
+run_audithmac_002() {
+  local current_value
+  current_value=$(kubectl get secret datastorage-audit-hmac-key -n "$NAMESPACE" \
+    -o jsonpath='{.data.audit-hmac-key\.yaml}' 2>/dev/null || echo "")
+  if [[ -n "$AUDIT_HMAC_INITIAL_VALUE" && "$current_value" == "$AUDIT_HMAC_INITIAL_VALUE" ]]; then
+    tap_ok "ST-AUDITHMAC-003: datastorage-audit-hmac-key unchanged after helm upgrade (never-rotate proof)"
+  else
+    tap_not_ok "ST-AUDITHMAC-003: datastorage-audit-hmac-key unchanged after helm upgrade" \
+      "value changed or was empty (initial ${#AUDIT_HMAC_INITIAL_VALUE} bytes, current ${#current_value} bytes)"
   fi
 }
 
@@ -1233,10 +1295,22 @@ for item in data.get('items', []):
 preload_hook_image() {
   local desc="ST-CHART-PRELOAD: Pre-load Helm hook image into Kind cluster"
   local hook_image
-  hook_image=$(grep -A5 'tlsCerts:' "$CHART_PATH/values.yaml" | grep 'image:' | awk '{print $2}' | head -1)
+  # DD-PLATFORM-006 DA14 broke the previous `grep values.yaml` approach: once
+  # hooks.tlsCerts.image had a non-zero schema default, its only trace in
+  # values.yaml became a commented-out example (see values.yaml's "hooks:"
+  # section), and `grep -A5 'tlsCerts:'` matched that comment just as
+  # happily as a live field -- `awk '{print $2}'` then grabbed the "image:"
+  # token itself (comment's $1 is "#"), not the actual image reference, so
+  # every run "pre-loaded" the literal string "image:" and failed. Render
+  # the hook template instead so this always reflects the effective
+  # (schema-default-merged) value, the same way Helm resolves it.
+  hook_image=$(helm template test "$CHART_PATH" \
+    $(template_common_args) $(template_llm_args) $(policy_flags) \
+    -s templates/hooks/tls-cert-job.yaml 2>/dev/null | \
+    grep -m1 '^\s*image:' | awk '{print $2}')
 
   if [[ -z "$hook_image" ]]; then
-    tap_not_ok "$desc" "Could not determine hook image from chart values"
+    tap_not_ok "$desc" "Could not determine hook image from rendered chart template"
     return 0
   fi
 
@@ -1318,8 +1392,10 @@ flow_a_production() {
 
   run_tls_001
   run_tls_interservice
+  run_audithmac_001 || flow_failed=true
 
   run_upg_001 || flow_failed=true
+  run_audithmac_002
 
   run_edge_001
   run_guard_001
@@ -1412,9 +1488,15 @@ run_tls_cm_datastorage() {
   $pass
 }
 
-# DD-PLATFORM-001 regression guard: the dedicated internal CA, its three leaf
-# certs, and the inter-service-ca ConfigMap sync hook must all provision
-# correctly and be internally consistent (not just individually present).
+# DD-PLATFORM-001 regression guard: the dedicated internal CA, its five leaf
+# certs (templates/interservice/leaf-certs.yaml), and the inter-service-ca
+# ConfigMap sync hook must all provision correctly and be internally
+# consistent (not just individually present). valkey-tls added after #1790
+# round-3 RCA: it was missing from leaf-certs.yaml entirely (present in
+# tls-cert-job.yaml's hook-mode equivalent, DD-PLATFORM-006 DA8 made it a
+# mandatory, non-optional volume mount), so Valkey never started in
+# cert-manager mode -- this loop would have caught it had it covered all
+# five leaf-certs.yaml entries instead of three.
 run_tls_cm_interservice() {
   local pass=true
 
@@ -1422,7 +1504,7 @@ run_tls_cm_interservice() {
     "ST-CHART-TLS-CM-002a: kubernaut-interservice-ca-secret exists (DD-PLATFORM-001)" || pass=false
 
   local leaf
-  for leaf in gateway-tls datastorage-tls kubernautagent-tls; do
+  for leaf in gateway-tls datastorage-tls kubernautagent-tls fleetmetadatacache-tls valkey-tls; do
     assert_resource_exists secret "$leaf" "$NAMESPACE" \
       "ST-CHART-TLS-CM-002b: ${leaf} leaf Secret exists" || pass=false
   done
@@ -1475,6 +1557,7 @@ flow_c_cert_manager() {
   # NOTE: run_pre_004 (manual authwebhook-tls pre-seed) is intentionally
   # skipped -- in cert-manager mode, cert-manager owns that Secret's
   # lifecycle via the authwebhook-cert Certificate resource.
+  run_pre_005
   run_inst_cm_001 || { echo "# FAIL-FAST: helm install failed, skipping remaining Flow C tests"; must_gather "$NAMESPACE" "install-failure"; return 1; }
 
   run_verify_001 || flow_failed=true
@@ -1677,36 +1760,41 @@ run_template_tests() {
       "signalprocessing-policy ConfigMap still rendered when policies.existingConfigMap is set"
   fi
 
-  echo "# --- Template Tests: NetworkPolicy (Issue #285) ---"
+  echo "# --- Template Tests: NetworkPolicy (Issue #285, DD-PLATFORM-006 DA3: unconditionally mandatory) ---"
 
-  # ST-NP-001: Default renders 13 NetworkPolicies (enabled by default)
-  # Count: 12 after removing orphaned legacy HAPI NP in v1.4, +1 for APIFrontend
-  # (BR-PLATFORM-005, Issue #1589 follow-up).
+  # ST-NP-001: Default renders 13 NetworkPolicies. There is no enable/disable
+  # toggle anymore (DD-PLATFORM-006 DA3) -- 14 NetworkPolicy-emitting
+  # templates total, minus console (the only one gated off by default, since
+  # console.enabled defaults false) = 13.
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 2>&1)
   local np_count
   np_count=$(grep -c "kind: NetworkPolicy" <<< "$output" || true)
   if [[ "$np_count" -eq 13 ]]; then
-    tap_ok "ST-NP-001: default renders 13 NetworkPolicies (enabled by default)"
+    tap_ok "ST-NP-001: default renders 13 NetworkPolicies (unconditionally mandatory)"
   else
     tap_not_ok "ST-NP-001: default should render 13 NetworkPolicies" \
       "Found ${np_count}"
   fi
 
-  # ST-NP-002: Disabling renders zero policies
-  output=$(helm template test "$CHART_PATH" \
+  # ST-NP-002: The global disable toggle no longer exists -- schema rejects it
+  # (DD-PLATFORM-006 DA3 removed the escape hatch entirely, not just flipped
+  # its default).
+  local np002_out
+  np002_out=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.enabled=false 2>&1)
-  np_count=$(grep -c "kind: NetworkPolicy" <<< "$output" || true)
-  if [[ "$np_count" -eq 0 ]]; then
-    tap_ok "ST-NP-002: networkPolicies.enabled=false renders zero NetworkPolicies"
+  if [[ $? -ne 0 ]] && grep -q "additional properties 'enabled' not allowed" <<< "$np002_out"; then
+    tap_ok "ST-NP-002: networkPolicies.enabled is schema-rejected (dead field, NetworkPolicies are mandatory)"
   else
-    tap_not_ok "ST-NP-002: expected zero NetworkPolicies when disabled" \
-      "Found ${np_count}"
+    tap_not_ok "ST-NP-002: networkPolicies.enabled should be schema-rejected" \
+      "$np002_out"
   fi
 
-  # ST-NP-003: Every policy includes DNS egress (port 53)
+  # ST-NP-003: Every policy includes DNS egress (port 53). Uses ST-NP-001's
+  # $output (the only NetworkPolicy-bearing render in this block since
+  # ST-NP-002 above -- schema-rejection -- deliberately produces none).
   local np_without_dns=0
   while IFS= read -r policy_name; do
     local policy_yaml
@@ -1735,27 +1823,29 @@ for d in docs:
       "${np_without_dns} policies missing DNS egress"
   fi
 
-  # ST-NP-004: Per-service disable skips that policy
-  output=$(helm template test "$CHART_PATH" \
+  # ST-NP-004: The per-service disable toggle no longer exists for the 10
+  # always-on services -- schema rejects it (notification has no owning-
+  # service .enabled of its own, so its NetworkPolicy has no gate at all now).
+  local np004_out
+  np004_out=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set networkPolicies.enabled=true \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
     --set networkPolicies.notification.enabled=false 2>&1)
-  local np_notif_count
-  np_notif_count=$(grep -A1 "kind: NetworkPolicy" <<< "$output" | grep -c "notification" || true)
-  if [[ "$np_notif_count" -eq 0 ]]; then
-    tap_ok "ST-NP-004: notification.enabled=false skips Notification NetworkPolicy"
+  if [[ $? -ne 0 ]] && grep -q "additional properties 'notification' not allowed" <<< "$np004_out"; then
+    tap_ok "ST-NP-004: networkPolicies.notification.enabled is schema-rejected (dead field, no owning-service gate for this always-on service)"
   else
-    tap_not_ok "ST-NP-004: per-service disable" \
-      "Notification NetworkPolicy still rendered when disabled"
+    tap_not_ok "ST-NP-004: networkPolicies.notification.enabled should be schema-rejected" \
+      "$np004_out"
   fi
 
-  # ST-NP-005: PostgreSQL/Valkey conditional on their enabled flags (F-7)
-  # postgresql.host is required when postgresql.enabled=false (migration-job validation).
-  # Count: 11 = 13 total - PG - VK (13 total after adding APIFrontend NetworkPolicy).
+  # ST-NP-005: PostgreSQL/Valkey NetworkPolicies still depend on the OWNING
+  # service's own .enabled (postgresql.enabled/valkey.enabled) -- the one
+  # gate DD-PLATFORM-006 DA3 keeps, since a NetworkPolicy for a service that
+  # isn't deployed is a no-op. postgresql.host is required when
+  # postgresql.enabled=false (migration-job validation).
+  # Count: 11 = 13 total - PG - VK.
   output=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set networkPolicies.enabled=true \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 \
     --set postgresql.enabled=false \
     --set postgresql.host=external-pg.example.com \
@@ -1763,17 +1853,17 @@ for d in docs:
     --set valkey.host=external-valkey.example.com 2>&1)
   np_count=$(grep -c "kind: NetworkPolicy" <<< "$output" || true)
   if [[ "$np_count" -eq 11 ]]; then
-    tap_ok "ST-NP-005: postgresql/valkey disabled = 11 NetworkPolicies (no PG/VK)"
+    tap_ok "ST-NP-005: postgresql/valkey disabled = 11 NetworkPolicies (no PG/VK, owning-service gate preserved)"
   else
     tap_not_ok "ST-NP-005: infra conditional rendering" \
       "Expected 11 policies without PG/VK, got ${np_count}"
   fi
 
-  # ST-NP-006: helm lint passes with NetworkPolicies enabled
+  # ST-NP-006: helm lint passes with the (now-mandatory, no-toggle-needed)
+  # NetworkPolicies and an explicit apiServerCIDR (GitOps/restricted-RBAC path).
   if helm lint "$CHART_PATH" $(template_common_args) $(template_llm_args) $(policy_flags) \
-    --set networkPolicies.enabled=true \
     --set networkPolicies.apiServerCIDR=10.96.0.1/32 >/dev/null 2>&1; then
-    tap_ok "ST-NP-006: helm lint passes with networkPolicies.enabled=true"
+    tap_ok "ST-NP-006: helm lint passes with mandatory NetworkPolicies + explicit apiServerCIDR"
   else
     tap_not_ok "ST-NP-006: helm lint with NetworkPolicies" \
       "helm lint failed"
@@ -2292,24 +2382,30 @@ for d in docs:
     -s templates/apifrontend/networkpolicy.yaml 2>&1)
   if grep -q "kind: NetworkPolicy" <<< "$af_np" && \
      grep -q "kubernetes.io/metadata.name: ingress-nginx" <<< "$af_np" && \
-     grep -A5 "port: 6379" <<< "$af_np" | grep -q "app: valkey"; then
+     grep -A5 "port: 6380" <<< "$af_np" | grep -q "app: valkey"; then
     tap_ok "ST-CHART-AF-NP-001a: APIFrontend NetworkPolicy renders ingressNamespaces + Valkey egress"
   else
     tap_not_ok "ST-CHART-AF-NP-001a: APIFrontend NetworkPolicy" \
       "expected NetworkPolicy content not found"
   fi
 
+  # DD-PLATFORM-006 DA3: the NetworkPolicy-specific toggle is gone -- schema
+  # rejects it. apifrontend.enabled=false (the owning-service flag) is the
+  # only remaining gate, already proven by ST-NP-005-style coverage elsewhere.
   local af_np_disabled
   af_np_disabled=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set networkPolicies.apifrontend.enabled=false 2>&1)
-  if ! grep -q "test-kubernaut-apifrontend" <<< "$af_np_disabled"; then
-    tap_ok "ST-CHART-AF-NP-001b: networkPolicies.apifrontend.enabled=false omits the NetworkPolicy"
+  if [[ $? -ne 0 ]] && grep -q "additional properties 'enabled' not allowed" <<< "$af_np_disabled"; then
+    tap_ok "ST-CHART-AF-NP-001b: networkPolicies.apifrontend.enabled is schema-rejected (dead field; apifrontend.enabled is the only remaining gate)"
   else
     tap_not_ok "ST-CHART-AF-NP-001b: APIFrontend NetworkPolicy disable toggle" \
-      "NetworkPolicy rendered despite networkPolicies.apifrontend.enabled=false"
+      "expected schema rejection of networkPolicies.apifrontend.enabled, got: $af_np_disabled"
   fi
 
+  # DD-PLATFORM-006 DA16 (reverted DA6): replayCache is opt-in again -- pass
+  # enabled=true explicitly to exercise the Valkey ingress rule this test
+  # targets.
   local valkey_np
   valkey_np=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \

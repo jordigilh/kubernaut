@@ -23,6 +23,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/metrics"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ratelimit"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // replayCacheTTL matches (and slightly exceeds) the maximum expected token
@@ -65,11 +66,22 @@ func newValkeyReplayCache(cfg *config.ReplayCacheConfig, logger logr.Logger) (*a
 	if err != nil {
 		return nil, fmt.Errorf("load replay cache credentials: %w", err)
 	}
-	client := redis.NewClient(&redis.Options{
+	opts := &redis.Options{
 		Addr:     cfg.RedisAddr,
 		Password: password,
 		DB:       cfg.RedisDB,
-	})
+	}
+	// DD-PLATFORM-006 DA9: Valkey is TLS-only by default (DA8), so this
+	// connection needs the same CA-verified TLS every other outbound client
+	// in the fleet gets via pkg/shared/tls.
+	if cfg.TLS != nil && cfg.TLS.Enabled {
+		tlsCfg, err := sharedtls.BuildTLSConfig(cfg.TLS.CAFile, sharedtls.WithClientCert(cfg.TLS.CertFile, cfg.TLS.KeyFile))
+		if err != nil {
+			return nil, fmt.Errorf("configure replay cache TLS: %w", err)
+		}
+		opts.TLSConfig = tlsCfg
+	}
+	client := redis.NewClient(opts)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := client.Ping(ctx).Err(); err != nil {

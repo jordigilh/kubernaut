@@ -1,0 +1,63 @@
+suite: "DD-PLATFORM-006 Decision Area 4: kubernautAgent.llmProfileRef defaults to \"primary\" (mandatory-field count 8->7)"
+templates:
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # NOTE: kubernautAgent.llmProfileRef is deliberately omitted from every
+  # `set` block in this file -- that omission is exactly what's under test.
+
+  - it: "llmProfileRef omitted entirely: resolves to the 'primary' profile (no fail(), matches the universal repo-wide convention) instead of the old unconditional 'required' fail()"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-llm-runtime
+    asserts:
+      - matchRegex:
+          path: data['llm-runtime.yaml']
+          pattern: "claude-sonnet-4-20250514"
+
+  - it: "llmProfileRef omitted AND global.llmProfiles.primary undefined: still fails, but with resolveProfile's actionable message naming \"primary\" explicitly -- the guarantee moves from a template-level required-field fail() to a profile-resolution fail(), it isn't dropped"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
+    asserts:
+      - failedTemplate:
+          errorMessage: 'global.llmProfiles["primary"] is not defined -- add it under global.llmProfiles, or fix the llmProfileRef/phaseModels entry that references it.'
+
+  - it: "apifrontend.yaml's own llmProfileRef fallback chain also resolves to 'primary' when both apifrontend.llmProfileRef and kubernautAgent.llmProfileRef are omitted"
+    set:
+      global:
+        llmProfiles:
+          primary:
+            provider: anthropic
+            model: claude-sonnet-4-20250514
+            credentialsSecretName: llm-credentials-primary
+      apifrontend:
+        config:
+          auth:
+            issuerURL: "https://sso.example.com/realms/kubernaut"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: "claude-sonnet-4-20250514"

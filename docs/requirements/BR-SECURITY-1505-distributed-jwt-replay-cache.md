@@ -8,6 +8,19 @@
 **Date**: June 30, 2026
 **GitHub Issues**: [#1505](https://github.com/jordigilh/kubernaut/issues/1505) (GAP-08)
 
+> **Partially superseded (Helm gating only)**: [DD-PLATFORM-006](../architecture/decisions/DD-PLATFORM-006-helm-chart-configuration-surface-reduction.md)
+> Decision Area 9/13 added TLS support to this client (`replayCache.tls`),
+> required once Valkey became TLS-only (Decision Area 8) — the `tls` block
+> described below is now available for BYO Valkey/Redis setups that need it.
+> Decision Area 6 briefly made `apifrontend.config.auth.replayCache` mandatory
+> (no `enabled` gate), but this was reverted by Decision Area 16: jti-based
+> replay detection rejects any second presentation of the same token, which
+> is exactly how a legitimate client reuses an OAuth2 Bearer token across
+> multiple requests, so mandating it broke normal multi-call sessions. The
+> `enabled` toggle described below still exists, still defaults to `false`,
+> exactly as originally designed in this BR. The cache design and fallback
+> behavior below are still accurate.
+
 ---
 
 ## Business Need

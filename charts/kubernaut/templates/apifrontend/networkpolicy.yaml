@@ -6,7 +6,8 @@ authwebhook, kubernaut-agent) has a NetworkPolicy — APIFrontend was the one
 externally-facing gap. Ported from the Operator's apifrontendNetworkPolicy()
 (kubernaut-operator/internal/resources/networkpolicies.go).
 */}}
-{{- if and .Values.networkPolicies.enabled .Values.networkPolicies.apifrontend.enabled .Values.apifrontend.enabled }}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "apifrontend") | fromYaml }}
+{{- if $v.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 {{ include "kubernaut.np.metadata" (dict "root" $ "nameSuffix" "apifrontend" "appLabel" "apifrontend") }}
@@ -20,7 +21,7 @@ spec:
   ingress:
     # Same-namespace callers (port-forward, in-cluster MCP clients, kagenti gateway).
     - ports:
-        - port: {{ .Values.apifrontend.config.server.httpPort | default 8443 }}
+        - port: {{ $v.config.server.httpPort }}
           protocol: TCP
       from:
         - namespaceSelector:
@@ -29,15 +30,15 @@ spec:
     {{- range .Values.networkPolicies.apifrontend.ingressNamespaces }}
     # External ingress-controller / route namespace (user-configured).
     - ports:
-        - port: {{ $.Values.apifrontend.config.server.httpPort | default 8443 }}
+        - port: {{ $v.config.server.httpPort }}
           protocol: TCP
       from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ . }}
     {{- end }}
-    {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.apifrontend.ingressCIDRs "port" ($.Values.apifrontend.config.server.httpPort | default 8443)) | nindent 4 }}
-    {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.apifrontend.ingressNamespaceSelectors "port" ($.Values.apifrontend.config.server.httpPort | default 8443)) | nindent 4 }}
+    {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.apifrontend.ingressCIDRs "port" $v.config.server.httpPort) | nindent 4 }}
+    {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.apifrontend.ingressNamespaceSelectors "port" $v.config.server.httpPort) | nindent 4 }}
     {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
@@ -47,10 +48,11 @@ spec:
     planning/reasoning -- yet the NetworkPolicy never allowed this egress,
     silently dropping every LLM call once auth got past the OIDC 401 fix. */}}
     {{- include "kubernaut.np.llmEgress" . | nindent 4 }}
-    {{- if .Values.apifrontend.config.auth.replayCache.enabled }}
+    {{- if $v.config.auth.replayCache.enabled }}
     # GAP-08 (#1505): JWT replay-cache egress to Valkey.
+    # DD-PLATFORM-006 DA8: Valkey is TLS-only on 6380.
     - ports:
-        - port: 6379
+        - port: 6380
           protocol: TCP
       to:
         - podSelector:

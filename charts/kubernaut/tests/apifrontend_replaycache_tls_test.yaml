@@ -1,0 +1,123 @@
+suite: "DD-PLATFORM-006 Decision Area 9/16: APIFrontend replay-cache Valkey TLS client (opt-in)"
+templates:
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  apifrontend:
+    config:
+      auth:
+        issuerURL: "https://sso.example.com/realms/kubernaut"
+tests:
+  - it: "replayCache.enabled=true, tls unset (default): config.yaml has no tls block -- backward compatible, matches pre-DA9 behavior"
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: "replayCache:[\\s\\S]{0,200}tls:"
+
+  - it: "replayCache.enabled=true, tls.enabled=true, no caFile override: caFile defaults to the already-mounted inter-service-ca path so it works out of the box against the chart's own TLS-only Valkey (DA8)"
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+              tls:
+                enabled: true
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'replayCache:[\s\S]{0,600}tls:\s*\n\s*enabled: true\s*\n\s*caFile: "/etc/tls-ca/ca\.crt"'
+
+  - it: "replayCache.enabled=true, tls.enabled=true, explicit caFile override: uses the override instead of the default (BYO CA)"
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+              tls:
+                enabled: true
+                caFile: "/etc/custom-ca/ca.crt"
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'replayCache:[\s\S]{0,600}tls:\s*\n\s*enabled: true\s*\n\s*caFile: "/etc/custom-ca/ca\.crt"'
+
+  - it: "replayCache.enabled=true, tls.enabled=true with optional mTLS certFile/keyFile: both render alongside caFile"
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+              tls:
+                enabled: true
+                certFile: "/etc/certs/client.crt"
+                keyFile: "/etc/certs/client.key"
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'certFile: "/etc/certs/client\.crt"'
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'keyFile: "/etc/certs/client\.key"'
+
+  - it: "replayCache.enabled=true, tls.enabled=false explicitly: no tls block rendered (plaintext opt-out for a non-chart, plaintext-capable Redis)"
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+              tls:
+                enabled: false
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: "replayCache:[\\s\\S]{0,200}tls:"
+
+  - it: "schema rejects unknown replayCache.tls fields (additionalProperties: false)"
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+              tls:
+                enabled: true
+                bogusField: nope
+    asserts:
+      - failedTemplate: {}

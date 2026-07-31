@@ -7,6 +7,7 @@ below), so $fmcFleetPreamble must be recomputed here rather than reused.
 */}}
 {{- define "kubernaut.fleetmetadatacache.configYAML" -}}
 {{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "fleetmetadatacache") | fromYaml -}}
 server:
   apiAddr: ":8080"
   healthAddr: ":8081"
@@ -16,7 +17,7 @@ server:
 mcpGateway:
   endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
   gatewayType: {{ $fmcFleetPreamble.config.mcpGatewayType | quote }}
-  namespace: {{ .Values.fleetmetadatacache.namespace | quote }}
+  namespace: {{ $v.namespace | quote }}
 valkey:
   {{- /* values.yaml documents valkeyAddr: "" as "uses shared Valkey
   instance", but left unimplemented that default actually falls through to
@@ -27,11 +28,30 @@ valkey:
   computes the chart's own shared Valkey Service address (or the BYO
   valkey.host when valkey.enabled=false) for postgresql/datastorage; reuse it
   here instead of requiring every fleetmetadatacache.enabled=true caller to
-  redundantly pass --set fleetmetadatacache.valkeyAddr=valkey:6379. */}}
+  redundantly pass --set fleetmetadatacache.valkeyAddr=valkey:6380. */}}
   addr: {{ .Values.fleetmetadatacache.valkeyAddr | default (include "kubernaut.valkey.addr" .) | quote }}
+  {{- /* DD-PLATFORM-006 Decision Area 13 follow-up (round-16 RCA, PR #1790):
+  Decision Area 13's original client census (prompted by Decision Area 8
+  making the chart's own Valkey TLS-only) covered DataStorage and the
+  APIFrontend replay cache, but missed FMC -- a third Go client
+  (pkg/fleet/fmc.ValkeyWriter, pkg/fleet/scopecache.ValkeyCacheReader) that
+  had zero TLS support. Unlike the replay cache (which fails open to an
+  in-memory fallback on a bad handshake), FMC's Valkey dependency is
+  load-bearing -- its own /readyz gates on a Valkey PING -- so this mirrors
+  DataStorage's config.redis.tls pattern (mandatory, no enabled gate) rather
+  than the replay cache's opt-in one. caFile defaults to the already-
+  distributed inter-service CA (kubernaut.tlsCaVolumeMount/Volume already
+  mount /etc/tls-ca on this pod for the OAuth2 tlsCaFile use above, so no new
+  mount is needed) so tls "just works" against the chart's own Valkey without
+  any extra configuration. */}}
+  tls:
+    enabled: true
+    certFile: {{ .Values.fleetmetadatacache.valkeyTLS.certFile | default "" | quote }}
+    keyFile: {{ .Values.fleetmetadatacache.valkeyTLS.keyFile | default "" | quote }}
+    caFile: {{ .Values.fleetmetadatacache.valkeyTLS.caFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
 sync:
-  interval: {{ .Values.fleetmetadatacache.syncInterval | quote }}
-  keyTtl: {{ .Values.fleetmetadatacache.keyTTL | quote }}
+  interval: {{ $v.syncInterval | quote }}
+  keyTtl: {{ $v.keyTTL | quote }}
 oauth2:
   tokenUrl: {{ $fmcFleetPreamble.oauth2.tokenURL | quote }}
   credentialsDir: "/etc/fleetmetadatacache/fleet-oauth2"
@@ -71,8 +91,13 @@ oauth2:
      stuck retrying with TLS verification enabled and no CA configured. */}}
   tlsCaFile: {{ $fmcFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
 {{- end }}
-{{- if .Values.fleetmetadatacache.enabled }}
+{{- /* DD-PLATFORM-006 Decision Area 10: fleetmetadatacache.enabled's effective value is derived
+from global.fleet.enabled + global.fleet.backend when not explicitly set -- see
+kubernaut.fleetmetadatacache.effectiveEnabled for the full rationale and the contradictory-
+override fail() case. */}}
+{{- if eq (include "kubernaut.fleetmetadatacache.effectiveEnabled" .) "true" }}
 {{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml }}
+{{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "fleetmetadatacache") | fromYaml }}
 {{- if not $fmcFleetPreamble.config.mcpGatewayEndpoint }}
 {{- fail "global.fleet.mcpGatewayEndpoint is required when fleetmetadatacache.enabled=true — FleetMetadataCache polls remote clusters via the MCP Gateway" }}
 {{- end }}
@@ -106,7 +131,7 @@ metadata:
     app.kubernetes.io/component: fleet-metadata-cache
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.fleetmetadatacache.replicas }}
+  replicas: {{ $v.replicas }}
   selector:
     matchLabels:
       app.kubernetes.io/name: fleetmetadatacache
@@ -126,8 +151,8 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.fleetmetadatacache "global" .Values.global) | nindent 6 }}
       containers:
         - name: fleetmetadatacache
-          image: "{{ .Values.fleetmetadatacache.image.repository }}:{{ .Values.fleetmetadatacache.image.tag }}"
-          imagePullPolicy: {{ .Values.fleetmetadatacache.image.pullPolicy }}
+          image: "{{ $v.image.repository }}:{{ $v.image.tag }}"
+          imagePullPolicy: {{ $v.image.pullPolicy }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.fleetmetadatacache | nindent 12 }}
           args:
@@ -243,7 +268,7 @@ ClusterRole/ClusterRoleBinding are skipped entirely in favor of the
 namespace-scoped Role/RoleBinding below (least privilege) instead of
 rendering a redundant empty ClusterRole.
 */}}
-{{- if not .Values.fleetmetadatacache.namespace }}
+{{- if not $v.namespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -288,7 +313,7 @@ subjects:
 ---
 # #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rules
 # above, granted instead of them when fleetmetadatacache.namespace is set.
-{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "fleetmetadatacache" "serviceAccount" "fleetmetadatacache" "namespace" .Values.fleetmetadatacache.namespace "appLabels" "app.kubernetes.io/name: fleetmetadatacache" "mcpServerRegistrations" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "kuadrantGateways" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "eaigwBackends" (ne $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "fleetmetadatacache" "serviceAccount" "fleetmetadatacache" "namespace" $v.namespace "appLabels" "app.kubernetes.io/name: fleetmetadatacache" "mcpServerRegistrations" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "kuadrantGateways" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "eaigwBackends" (ne $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 {{- end }}
 ---
 apiVersion: networking.k8s.io/v1
@@ -380,8 +405,9 @@ spec:
             matchLabels:
               app: valkey
       ports:
+        # DD-PLATFORM-006 DA8: Valkey is TLS-only on 6380.
         - protocol: TCP
-          port: 6379
+          port: 6380
     - to:
         - namespaceSelector: {}
       ports:

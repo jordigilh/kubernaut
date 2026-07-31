@@ -17,11 +17,12 @@ rather than reused from the file-top declaration above.
 */}}
 {{- define "kubernaut.effectivenessmonitor.configYAML" -}}
 {{- $effectivenessmonitorFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.effectivenessmonitor.fleet "oauth2" .Values.effectivenessmonitor.fleet.oauth2) | fromYaml -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "effectivenessmonitor") | fromYaml -}}
 logging:
-  level: {{ .Values.effectivenessmonitor.logging.level | default "INFO" | quote }}
+  level: {{ $v.logging.level | quote }}
 assessment:
-  stabilizationWindow: {{ .Values.effectivenessmonitor.config.assessment.stabilizationWindow | default "30s" }}
-  validityWindow: {{ .Values.effectivenessmonitor.config.assessment.validityWindow | default "300s" }}
+  stabilizationWindow: {{ $v.config.assessment.stabilizationWindow }}
+  validityWindow: {{ $v.config.assessment.validityWindow }}
 datastorage:
   url: {{ include "kubernaut.datastorage.url" . }}
   timeout: 10s
@@ -200,7 +201,8 @@ metadata:
     app: effectivenessmonitor-controller
     {{- include "kubernaut.labels" . | nindent 4 }}
 spec:
-  replicas: {{ .Values.effectivenessmonitor.replicas }}
+  {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "effectivenessmonitor") | fromYaml }}
+  replicas: {{ $v.replicas }}
   selector:
     matchLabels:
       app: effectivenessmonitor-controller
@@ -222,8 +224,8 @@ spec:
       {{- include "kubernaut.scheduling" (dict "component" .Values.effectivenessmonitor "global" .Values.global) | nindent 6 }}
       containers:
         - name: controller
-          image: {{ include "kubernaut.image" (dict "service" "effectivenessmonitor" "global" .Values.global "appVersion" .Chart.AppVersion) }}
-          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          image: {{ include "kubernaut.image" (dict "service" "effectivenessmonitor" "root" $ "appVersion" .Chart.AppVersion) }}
+          imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}
           securityContext:
             {{- include "kubernaut.containerSecurityContext" .Values.effectivenessmonitor | nindent 12 }}
           args:
