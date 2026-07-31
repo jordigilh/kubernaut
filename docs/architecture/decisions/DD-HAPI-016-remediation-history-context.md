@@ -2,9 +2,11 @@
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
-**Version**: 1.3
+**Version**: 1.5
 **Confidence**: 95%
-**Applies To**: HolmesGPT API (HAPI), DataStorage Service (DS)
+**Applies To**: Kubernaut Agent (KA, formerly "HAPI"/"HolmesGPT API" — see naming note below), Remediation Orchestrator (RO), DataStorage Service (DS)
+
+> **Naming note**: This document still uses "HAPI" in most section headings and body text below for historical continuity with v1.0–v1.4. "HAPI"/"HolmesGPT API" is deprecated terminology; the component is now the Go-native **Kubernaut Agent (KA)** (`internal/kubernautagent/`). A dedicated rename pass across this doc (and the rest of the docs tree) is tracked in [issue #1806](https://github.com/jordigilh/kubernaut/issues/1806) — out of scope for the v1.5 update below, which only adds target-resource/cluster scoping and RO as a consumer.
 
 ---
 
@@ -17,6 +19,7 @@
 | 1.2 | 2026-02-12 | Architecture Team | DRIFT-DS-1: Corrected sort order to descending (most recent first) per implementation. DRIFT-HAPI-1: Added spec_drift Assessment Reason Handling section documenting INCONCLUSIVE semantics, declining effectiveness exclusion, causal chain detection, and LLM reasoning guidance. |
 | 1.3 | 2026-03-27 | Architecture Team | Remediation history API and examples: `workflowType` renamed to `actionType`; RO audit skeleton field `workflow_type` renamed to `action_type` (Issue #528, v1.2). |
 | 1.4 | 2026-03-28 | Architecture Team | Issue #586: Corrected Tier 1 query key from `target_resource` to `pre_remediation_spec_hash`. Both tiers now query by spec hash to preserve causal chain integrity for LLM reasoning. Removed `QueryROEventsByTarget` dead code. |
+| 1.5 | 2026-07-31 | Architecture Team | **Issue #1802**: v1.4's spec-hash-only query key let two unrelated resources sharing an identical Pod/container spec (e.g., templated Deployments from the same Helm chart/GitOps repo) collide — both RO's ineffective-chain blocking (BR-ORCH-042.5) and KA's history-based prompt enrichment could attribute one target's remediation chain to another. Both Tier 1 and Tier 2 now additionally scope by `target_resource` (exact match on the existing `{namespace}/{kind}/{name}` composite), and — **main branch only** — by optional `cluster_id` for fleet deployments where identically-named/-namespaced/-spec'd resources can exist on different clusters (`release/v1.5` has no `cluster_id` concept; that branch's port is target-resource-only). Added **RO** as a formal consumer of this DD: RO's `RoutingEngine.CheckIneffectiveRemediationChain` calls the same DS endpoint/query path KA's enrichment does, so both now share identical target/cluster scoping semantics. New index: `idx_audit_events_cluster_id` (migration 017, main only). |
 
 ---
 
@@ -166,6 +169,7 @@ GET /api/v1/remediation-history/context
     &currentSpecHash=sha256:aabb1122...
     &tier1Window=24h
     &tier2Window=90d
+    &clusterId=cluster-a          # optional, main only (Issue #1802, fleet deployments)
 ```
 
 **Response**:
@@ -288,7 +292,7 @@ GET /api/v1/remediation-history/context
 
 DS performs the following when serving this endpoint:
 
-1. **Query Tier 1 — RO events**: Query `remediation.workflow_created` audit events by `pre_remediation_spec_hash` matching `currentSpecHash` (JSONB expression index `idx_audit_events_pre_remediation_spec_hash`) within the Tier 1 time window (default 24h). These events provide the remediation chain skeleton: `correlation_id` (RR name), `pre_remediation_spec_hash`, `action_type` (DD-WORKFLOW-016 action type, e.g., "ScaleReplicas"), `outcome`, `signal_name`, `signal_fingerprint`. Querying by spec hash (not target resource) ensures the LLM only receives history from the same configuration, preserving causal chain integrity (Issue #586).
+1. **Query Tier 1 — RO events**: Query `remediation.workflow_created` audit events by `pre_remediation_spec_hash` matching `currentSpecHash` (JSONB expression index `idx_audit_events_pre_remediation_spec_hash`) **AND** `target_resource` matching the requested `{namespace}/{kind}/{name}` **AND** (main only, when supplied) `cluster_id` matching the requesting cluster, within the Tier 1 time window (default 24h). These events provide the remediation chain skeleton: `correlation_id` (RR name), `pre_remediation_spec_hash`, `action_type` (DD-WORKFLOW-016 action type, e.g., "ScaleReplicas"), `outcome`, `signal_name`, `signal_fingerprint`. Querying by spec hash alone (v1.4, Issue #586) preserved causal chain integrity across a *single* target's own history, but let two *different* targets with identical specs collide; adding `target_resource` (+ `cluster_id` on main) scoping (v1.5, Issue #1802) closes that gap while keeping the spec-hash match for chain integrity.
 2. **Query Tier 1 — EM component events**: For each RO event's `correlation_id`, batch-query EM component events (`event_category = 'effectiveness'`). The EM emits component-level audit events per ADR-EM-001 v1.3:
    - `effectiveness.health.assessed` — health score + typed `health_checks` sub-object (`pod_running`, `readiness_pass`, `restart_delta`, `crash_loops`, `oom_killed`, `pending_count`)
    - `effectiveness.alert.assessed` — alert score + typed `alert_resolution` sub-object (`alert_resolved`, `active_count`, `resolution_time_seconds`)
@@ -296,7 +300,7 @@ DS performs the following when serving this endpoint:
    - `effectiveness.hash.computed` — `pre_remediation_spec_hash`, `post_remediation_spec_hash`, `hash_match` (boolean)
    - `effectiveness.assessment.completed` — lifecycle marker with `reason` ("full", "partial", "expired")
 3. **Correlate**: Join RO and EM events by `correlation_id` (the RemediationRequest name). For each RO event, compute the weighted effectiveness score using `ComputeWeightedScore()` from `effectiveness_handler.go` (DD-017 v2.1 formula). Read `signalResolved` from `alert_resolution.alert_resolved`. Read `healthChecks` and `metricDeltas` from the typed ogen sub-objects on the corresponding EM component events.
-4. **Query Tier 2**: If `regressionDetected` (any entry's `preRemediationSpecHash` matches `currentSpecHash`), search audit events beyond Tier 1 (up to 90 days) for any `preRemediationSpecHash` matching `currentSpecHash` using expression index `idx_audit_events_pre_remediation_spec_hash`. Return the full chain from that historical window in summary form.
+4. **Query Tier 2**: If `regressionDetected` (any entry's `preRemediationSpecHash` matches `currentSpecHash`), search audit events beyond Tier 1 (up to 90 days) for any `preRemediationSpecHash` matching `currentSpecHash` **AND** `target_resource` (+ `cluster_id` on main, when supplied) matching, using expression index `idx_audit_events_pre_remediation_spec_hash` combined with `idx_audit_events_cluster_id` (migration 017, main only). Return the full chain from that historical window in summary form.
 5. **Hash comparison**: For each remediation record, compare `currentSpecHash` against both `preRemediationSpecHash` and `postRemediationSpecHash`. Tag each record with `hashMatch`: `"preRemediation"`, `"postRemediation"`, or `"none"`. The `preRemediationSpecHash` match signals configuration regression.
 6. **Regression detection**: Set `regressionDetected: true` if any record's `preRemediationSpecHash` matches `currentSpecHash` — the target resource has been reverted to a configuration that previously caused issues.
 7. **Order by completedAt descending**: Both Tier 1 and Tier 2 chains are ordered by `completedAt` descending (most recent first). *V1.0 implementation sorts most-recent-first to prioritize recent effectiveness data for LLM context window optimization.*
@@ -310,7 +314,7 @@ DS uses expression index `idx_audit_events_pre_remediation_spec_hash` for both T
 ### Tier 1: Recent History (24h, Detailed)
 
 - **Purpose**: Full effectiveness data for recent remediations on the same target
-- **Query key**: `pre_remediation_spec_hash` matching `currentSpecHash` + 24h window (v1.4, Issue #586)
+- **Query key**: `pre_remediation_spec_hash` matching `currentSpecHash` (v1.4, Issue #586) **AND** `target_resource` matching (+ optional `cluster_id` on main) (v1.5, Issue #1802) + 24h window
 - **Additional filter**: Signal fingerprint (for exact recurrence detection)
 - **Returns**: Full remediation chain with all fields — effectiveness scores, metric deltas, health checks, dual hashes
 - **Prompt framing**: Strong signal — "these remediations were attempted recently"
@@ -318,10 +322,19 @@ DS uses expression index `idx_audit_events_pre_remediation_spec_hash` for both T
 ### Tier 2: Historical Hash Lookup (Beyond 24h, Summary)
 
 - **Purpose**: Detect configuration regressions that cross the 24h TTL boundary
-- **Query key**: `preRemediationSpecHash` match against `currentSpecHash`, up to 90 days
+- **Query key**: `preRemediationSpecHash` match against `currentSpecHash`, **AND** `target_resource` matching (+ optional `cluster_id` on main) (v1.5, Issue #1802), up to 90 days
 - **Returns**: Full remediation chain from the matched historical window, in summary form (no metric deltas or health check details)
 - **Prompt framing**: Softer lead — "this configuration was previously observed N days ago, here is the complete remediation sequence that followed"
 - **Lookback cap**: 90 days (hardcoded, can be made configurable if needed)
+
+### Target-Resource and Fleet-Cluster Scoping (v1.5, Issue #1802)
+
+Both tiers additionally scope by the existing `target_resource` composite string (`{namespace}/{kind}/{name}`, already used for audit reconstruction elsewhere — no new field or migration for the base fix) and, **main branch only**, by optional `cluster_id`:
+
+- **Why**: Spec-hash-only matching (v1.4) is correct for tracking one target's *own* remediation chain over time, but two *different* targets can legitimately share an identical Pod/container spec — most commonly, Deployments templated from the same Helm chart or GitOps repo across namespaces, or (on `main`, fleet deployments) across clusters. Without target scoping, an ineffective chain on target A would incorrectly block or bias target B.
+- **RO consumer**: `RoutingEngine.CheckIneffectiveRemediationChain` (BR-ORCH-042.5) queries the identical DS endpoint/repository path used by KA's enrichment. A false cross-target match there is a functional bug (blocks a `WorkflowExecution` that should have been created), not just a prompt-quality issue — this is what Issue #1802 originally reported.
+- **`cluster_id` (main only)**: `release/v1.5` has no `cluster_id` concept; its port of this fix is target-resource-only. On `main`, `cluster_id` is optional — a query with `cluster_id = ""` remains unscoped by cluster (matches pre-#1802/release-v1.5 behavior), preserving hub-local (non-fleet) semantics unchanged.
+- **Index**: `idx_audit_events_cluster_id`, a partial btree index (`WHERE cluster_id IS NOT NULL`) added in migration 017 (main only), lets the planner combine it with the existing `idx_audit_events_target_resource` expression index via a BitmapAnd for fleet-scoped queries.
 
 ### Fallthrough Logic
 
@@ -502,5 +515,5 @@ No architectural change to HAPI, DS endpoint contract, or query design. The enha
 
 ---
 
-**Status**: ✅ APPROVED — V1.0
-**Next Review**: When DD-017 Level 2 implementation begins (estimated V1.1, Q2 2026)
+**Status**: ✅ APPROVED — V1.5
+**Next Review**: When DD-017 Level 2 implementation begins (estimated V1.1, Q2 2026); or when issue #1806 (HAPI → Kubernaut Agent rename) lands, whichever is sooner
