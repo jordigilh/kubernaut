@@ -22,6 +22,8 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 	gemini_schema "github.com/cloudwego/eino/schema/gemini"
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -184,23 +186,28 @@ var _ = Describe("toEinoTools — #1778 BR-AI-087", func() {
 				Description: "Describe a Kubernetes resource",
 				Parameters:  json.RawMessage(`{"type":"object","properties":{"kind":{"type":"string"}},"required":["kind"]}`),
 			},
-		})
+		}, logr.Discard())
 		Expect(tools).To(HaveLen(1))
 		Expect(tools[0].Name).To(Equal("kubectl_describe"))
 		Expect(tools[0].Desc).To(Equal("Describe a Kubernetes resource"))
 		Expect(tools[0].ParamsOneOf).NotTo(BeNil())
 	})
 
-	It("UT-GM-1778-031: tolerates malformed parameter schemas rather than failing", func() {
+	It("UT-GM-1778-031: tolerates malformed parameter schemas rather than failing, and logs the occurrence", func() {
+		var logged []string
+		logger := funcr.New(func(_, args string) { logged = append(logged, args) }, funcr.Options{})
+
 		tools := toEinoTools([]llm.ToolDefinition{
 			{Name: "broken", Description: "x", Parameters: json.RawMessage(`not-json`)},
-		})
+		}, logger)
 		Expect(tools).To(HaveLen(1))
 		Expect(tools[0].Name).To(Equal("broken"))
+		Expect(logged).To(ContainElement(ContainSubstring("malformed tool parameter schema")),
+			"a malformed tool schema must be observable (Fail-Open Safety: no silent failures), not just silently defaulted")
 	})
 
 	It("UT-GM-1778-032: empty tool list yields an empty (non-nil) slice", func() {
-		tools := toEinoTools(nil)
+		tools := toEinoTools(nil, logr.Discard())
 		Expect(tools).To(BeEmpty())
 	})
 })

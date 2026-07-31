@@ -294,7 +294,7 @@ func (c *Client) StreamChat(ctx context.Context, req llm.ChatRequest, callback f
 func (c *Client) callOptions(req llm.ChatRequest) []model.Option {
 	var opts []model.Option
 	if len(req.Tools) > 0 {
-		opts = append(opts, model.WithTools(toEinoTools(req.Tools)))
+		opts = append(opts, model.WithTools(toEinoTools(req.Tools, c.logger)))
 	}
 
 	reasoning := req.Options.Reasoning

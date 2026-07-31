@@ -25,6 +25,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	gemini_schema "github.com/cloudwego/eino/schema/gemini"
 	einojsonschema "github.com/eino-contrib/jsonschema"
+	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
@@ -188,14 +189,19 @@ func convertAssistantMessage(m llm.Message) *schema.AgenticMessage {
 
 // toEinoTools translates Kubernaut's provider-agnostic tool definitions
 // into eino's schema.ToolInfo list, tolerating malformed parameter schemas
-// (falls back to an empty schema) rather than failing the whole request —
-// mirroring anthropicfamily's buildAnthropicTools resilience.
-func toEinoTools(toolDefs []llm.ToolDefinition) []*schema.ToolInfo {
+// (logged, falls back to an empty schema) rather than failing the whole
+// request — mirroring anthropicfamily's buildAnthropicTools/parseInputSchema
+// resilience, including the log-on-malformed-schema observability (Fail-Open
+// Safety: no silent failures).
+func toEinoTools(toolDefs []llm.ToolDefinition, logger logr.Logger) []*schema.ToolInfo {
 	tools := make([]*schema.ToolInfo, 0, len(toolDefs))
 	for _, td := range toolDefs {
 		s := &einojsonschema.Schema{}
 		if len(td.Parameters) > 0 {
-			_ = json.Unmarshal(td.Parameters, s)
+			if err := json.Unmarshal(td.Parameters, s); err != nil {
+				logger.Info("geminifamily: malformed tool parameter schema, using empty schema",
+					"tool", td.Name, "error", err.Error())
+			}
 		}
 		tools = append(tools, &schema.ToolInfo{
 			Name:        td.Name,
