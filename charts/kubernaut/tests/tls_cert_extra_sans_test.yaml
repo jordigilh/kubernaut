@@ -1,0 +1,89 @@
+suite: "PR #1790 round-14 RCA: hooks.tlsCerts.extraSANs (host-based test/dev cert access without a post-install re-sign+restart pass)"
+templates:
+  - templates/hooks/tls-cert-job.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  tls:
+    mode: hook
+tests:
+  - it: "default (empty): EXTRA_SAN_DNS_NAMES env var is empty (so the script's own runtime `if [ -n ... ]` guard never appends IP:127.0.0.1 or any DNS: entries -- runtime behavior, not template-render-time, per the shell logic asserted separately below), and the SAN string template still carries the ${EXTRA_SAN} placeholder consistently"
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[0].name
+          value: EXTRA_SAN_DNS_NAMES
+      - equal:
+          path: spec.template.spec.containers[0].env[0].value
+          value: ""
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'subjectAltName=DNS:\$\{SVC_NAME\},DNS:\$\{SVC_NAME\}\.\$\{NAMESPACE\},DNS:\$\{SVC_NAME\}\.\$\{NAMESPACE\}\.svc,DNS:\$\{SVC_NAME\}\.\$\{NAMESPACE\}\.svc\.cluster\.local\$\{EXTRA_SAN\}'
+
+  - it: "single extra SAN (e.g. localhost): env var carries it through, and IP:127.0.0.1 is auto-appended alongside it"
+    set:
+      hooks:
+        tlsCerts:
+          extraSANs:
+            - localhost
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[0].name
+          value: EXTRA_SAN_DNS_NAMES
+      - equal:
+          path: spec.template.spec.containers[0].env[0].value
+          value: "localhost"
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'for extra in \$EXTRA_SAN_DNS_NAMES'
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'EXTRA_SAN="\$\{EXTRA_SAN\},IP:127\.0\.0\.1"'
+
+  - it: "multiple extra SANs: comma-joined into the env var"
+    set:
+      hooks:
+        tlsCerts:
+          extraSANs:
+            - localhost
+            - my-host.example.internal
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[0].value
+          value: "localhost,my-host.example.internal"
+
+  - it: "AuthWebhook's own cert (Section 1) never gets the extra-SAN suffix -- it's only ever dialed in-cluster by the API server's webhook client, never from a host-based test/dev client"
+    set:
+      hooks:
+        tlsCerts:
+          extraSANs:
+            - localhost
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: 'subjectAltName=DNS:\$\{SERVICE\},DNS:\$\{SERVICE\}\.\$\{NAMESPACE\},DNS:\$\{SERVICE\}\.\$\{NAMESPACE\}\.svc,DNS:\$\{SERVICE\}\.\$\{NAMESPACE\}\.svc\.cluster\.local" > "\$TMPDIR/san\.cnf"'
+
+  - it: "golden-render parity: omitting hooks.tlsCerts.extraSANs from values.yaml renders byte-identical to explicitly setting it to an empty list (schema default)"
+    documentIndex: 0
+    set:
+      hooks:
+        tlsCerts:
+          extraSANs: []
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].env[0].value
+          value: ""

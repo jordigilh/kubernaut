@@ -325,17 +325,20 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6: dex-tls provisioning failed: %w", err)
 	}
 
-	// Issue #1737: host-side E2E clients hit DataStorage, APIFrontend, and
-	// KubernautAgent via their chart-pinned NodePorts ("https://localhost:30081",
-	// "https://localhost:30443", "https://localhost:8088") with full hostname
-	// verification -- the chart's own tls-cert-job.yaml hook omits
-	// "localhost"/127.0.0.1 from these SANs (correct for real clusters, which
-	// never use localhost), so those leaf certs must be re-signed here for
-	// host access to work at all (confirmed via "connection reset by peer" on
-	// the audit API during validation).
-	if err := resignHostAccessedTLSCertsWithLocalhostSAN(ctx, kubeconfigPath, namespace, writer); err != nil {
-		return builtImages, nil, nil, fmt.Errorf("PHASE 6: gateway/datastorage/apifrontend/kubernautagent TLS re-sign failed: %w", err)
-	}
+	// PR #1790 round-14 RCA: gateway/datastorage/apifrontend/kubernautagent's
+	// "localhost" SAN (needed for host-side E2E clients dialing their
+	// chart-pinned NodePorts with full hostname verification, Issue #785/
+	// #1737) is now baked into the ORIGINAL chart-issued certs via
+	// InstallFullPipelineHelmChart's `--set hooks.tlsCerts.extraSANs[0]=
+	// localhost`, instead of being re-signed here post-install. The former
+	// re-sign-then-rolling-restart-4-deployments pass
+	// (resignHostAccessedTLSCertsWithLocalhostSAN, removed) was the
+	// deterministic root cause of fleet E2E's PHASE 6 rollout timeouts: its
+	// CPU burst on top of fleet's already-heavier Istio/Kuadrant/Keycloak/
+	// kube-mcp-server footprint made "gateway" deployment's old pod
+	// consistently fail to finish terminating within even a 720s wait
+	// (5/5 CI runs, identical failure). No restart is needed now since the
+	// certs are already correct from `helm install` onward.
 
 	// Issue #785 + #1737: suite_test.go's NewTLSAwareTransport (host-side E2E
 	// HTTP client) reads the inter-service CA from a local file that the

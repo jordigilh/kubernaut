@@ -836,6 +836,78 @@ depth, not the sole authentication control" design note.
 
 ---
 
+### Decision Area 17 — `hooks.tlsCerts.extraSANs`: Bake Host-Access SANs into Original Certs (eliminates fleet E2E's PHASE 6 restart)
+
+**Finding, discovered during PR #1790 E2E stabilization (round-14 RCA)**: `E2E (fleet)` failed
+deterministically in **5 of 5** CI runs across this PR's history, always at the identical step —
+`gateway`'s old pod stuck "1 old replicas are pending termination" during a post-`helm install`
+step that re-signed `gateway-tls`/`datastorage-tls`/`apifrontend-tls`/`kubernautagent-tls` to add
+a `localhost` SAN (needed because host-side E2E clients dial these services' chart-pinned
+NodePorts, e.g. `https://localhost:30081`, with full TLS hostname verification — the chart's own
+`tls-cert-job.yaml` hook correctly omits `localhost` from these SANs for real clusters, which
+never use it), then did a rolling restart of all four Deployments to pick up the re-signed certs.
+Raising the per-deployment `kubectl rollout status` timeout from 480s (round-9) to 720s
+(round-12) did not fix it — this run's `gateway` restart genuinely exhausted the full 720s before
+the client-side wait gave up. Confirmed via `git show origin/main` that `main`'s (pre-Helm)
+`test/e2e/fleet/suite_test.go` calls the Go-native `SetupFleetE2EInfrastructure`, which generates
+certs with the correct SANs once, upfront, and never needed a post-install re-sign-and-restart
+pass at all — validating the user's own regression bisection that this cost is specific to the
+Helm chart's deployment approach, not a pre-existing resource-contention flake, a code change, or
+an increased resource requirement introduced by this PR. `fleet`'s heavier total footprint
+(Istio + Kuadrant + Keycloak + kube-mcp-server, on top of the 12-service chart) left materially
+less CPU headroom than `fullpipeline` for this restart's burst, which is why `fullpipeline`
+consistently passed once its own, unrelated bugs (JWKS `singleflight`, `apifrontend.config.auth
+.replayCache`) were fixed, while `fleet` did not.
+
+**Decision**: add `hooks.tlsCerts.extraSANs` (array of strings, schema default `[]`) to the
+chart's TLS cert-generation hook (`templates/hooks/tls-cert-job.yaml`). When set, every
+inter-service leaf cert the hook issues (Section 2's `SVC_NAME` loop — not AuthWebhook's own
+cert, which is only ever dialed in-cluster by the API server's webhook client) gets the listed
+DNS names appended to its SAN, plus `IP:127.0.0.1` automatically. This bakes `localhost` into the
+**original** chart-issued certs at `helm install` time via `--set
+hooks.tlsCerts.extraSANs[0]=localhost` (`InstallFullPipelineHelmChart`), eliminating the need for
+any post-install re-sign or restart — `resignHostAccessedTLSCertsWithLocalhostSAN` and its
+4-deployment rolling-restart loop were removed entirely from
+`test/infrastructure/fullpipeline_e2e_helm.go`/`fullpipeline_e2e.go`. Default is an empty list:
+zero effect on production installs, and the golden-render parity check
+(`make verify-helm-defaults-parity`) confirms omitting it renders byte-identical to explicitly
+setting `[]`.
+
+**Why this is a narrow, justified exception to this DD's own surface-reduction goal**: one new
+schema field (vs. the alternative of a larger post-install-orchestration redesign, or accepting
+indefinite `fleet` E2E flakiness) is a proportionate trade — it is a single, well-scoped,
+zero-default field analogous to other charts' `extraHosts`/`extraSANs`-style escape hatches, not
+a reopening of the 153-field reduction Decision Areas 1-14 already closed. `additionalProperties:
+false` (this DD's own hardening default) meant a raw `--set` for an undeclared key would have been
+rejected by Helm's schema validation regardless — the field has to exist in the schema for any
+`--set`-based override to work at all, hidden or not.
+
+**Options considered**:
+1. **Bake extra SANs into original cert issuance via a new schema field (selected)** — eliminates
+   the root cause (the restart itself) rather than tolerating it with a longer timeout; minimal,
+   auditable chart-schema footprint (one field, empty by default); validated via golden-render
+   parity + new `helm-unittest` coverage (`tests/tls_cert_extra_sans_test.yaml`).
+2. Force-delete the stuck old pod (`kubectl delete pod --grace-period=0 --force`) instead of
+   waiting on graceful `rollout status` — rejected as the primary fix: still requires the restart
+   (and its CPU burst) to happen at all, only makes its failure mode less visible; kept as a
+   candidate defense-in-depth measure if a different rollout ever gets stuck for unrelated reasons,
+   but not needed once the restart itself is eliminated.
+3. Increase the CI runner size for the `fleet` E2E job — rejected as this PR's fix: addresses
+   symptom (insufficient CPU) not cause (unnecessary restart), and larger GitHub-hosted runners are
+   an org-level cost/governance decision outside this PR's scope.
+4. Keep the restart, keep raising the timeout further — rejected: round-12 (480s→720s) already
+   proved this doesn't converge, and further increases only delay discovering the next ceiling.
+
+**Confidence**: 92% — the schema/template change is small, fully covered by new `helm-unittest`
+cases, and preserves golden-render parity for the (overwhelmingly common) default-empty case. The
+5% residual is the E2E harness's Go-level change (removing ~150 lines including three rounds'
+worth of RCA-driven timeout tuning) which is validated by local `go build`/`go vet`/lint plus a
+follow-up CI run of `E2E (fleet)`, rather than by a from-scratch local Kind fleet reproduction
+(cost-prohibitive to run repeatedly locally; CI is the authoritative validation environment for
+this specific fix).
+
+---
+
 ## Considered and Declined: Removing `postgresql`/`valkey` from the Chart
 
 Removing `postgresql`/`valkey` from the chart entirely — making an externally-provisioned

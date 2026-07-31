@@ -326,6 +326,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | Parameter | Type | Description | Default | Required |
 |-----------|------|--------------|---------|----------|
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |
+| `tlsCerts.extraSANs` | array of string | PR #1790 round-14 RCA: extra DNS names added to every chart-issued inter-service leaf cert's SAN (gateway/datastorage/kubernaut-agent/fleetmetadatacache/apifrontend/valkey), alongside the standard in-cluster Service DNS names. 'IP:127.0.0.1' is added automatically whenever this is non-empty. Empty by default -- a real cluster is never accessed via localhost, so this has zero effect on production installs. Exists so host-based test/dev clients (e.g. `https://localhost:<nodePort>`) can pass full TLS hostname verification against the chart's own certs without a separate post-install re-sign+restart pass (which previously caused deterministic rollout timeouts under E2E's resource-constrained CI runners -- see resignHostAccessedTLSCertsWithLocalhostSAN's removal in test/infrastructure/fullpipeline_e2e.go). | `[]` | No |
 | `tlsCerts.image` | string |  | `"docker.io/bitnami/kubectl:latest@sha256:6e2cdb22d6ab7264ea198c717f555e30536b54029d26c8781b9f25f78951b564"` | No |
 | `tolerations` | array of object | Pod tolerations (overrides global.tolerations for this component) | `` | No |
 

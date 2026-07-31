@@ -42,6 +42,12 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+          env:
+            # PR #1790 round-14 RCA: extra inter-service-cert SANs (see
+            # hooks.tlsCerts.extraSANs schema description) -- empty by default,
+            # zero effect on production installs.
+            - name: EXTRA_SAN_DNS_NAMES
+              value: {{ $hooksV.tlsCerts.extraSANs | join "," | quote }}
           resources:
             requests:
               cpu: 10m
@@ -57,6 +63,22 @@ spec:
               NAMESPACE="{{ .Release.Namespace }}"
               SERVICE="authwebhook"
               TMPDIR=$(mktemp -d)
+
+              # PR #1790 round-14 RCA: build the extra-SAN suffix once (used by
+              # the inter-service loop below, Section 2). Not applied to
+              # AuthWebhook's own cert (Section 1 below) -- it's only ever
+              # dialed in-cluster by the API server's webhook client, never
+              # from a host-based test/dev client.
+              EXTRA_SAN=""
+              if [ -n "$EXTRA_SAN_DNS_NAMES" ]; then
+                OLDIFS=$IFS
+                IFS=','
+                for extra in $EXTRA_SAN_DNS_NAMES; do
+                  EXTRA_SAN="${EXTRA_SAN},DNS:${extra}"
+                done
+                IFS=$OLDIFS
+                EXTRA_SAN="${EXTRA_SAN},IP:127.0.0.1"
+              fi
 
               # ── Section 1: AuthWebhook TLS ──────────────────────────────
               # Issue #753 C-1: decoupled from inter-service section below.
@@ -155,10 +177,10 @@ spec:
                   openssl req -new -key "$TMPDIR/svc-tls.key" \
                     -out "$TMPDIR/svc-tls.csr" \
                     -subj "/CN=${SVC_NAME}.${NAMESPACE}.svc" \
-                    -addext "subjectAltName=DNS:${SVC_NAME},DNS:${SVC_NAME}.${NAMESPACE},DNS:${SVC_NAME}.${NAMESPACE}.svc,DNS:${SVC_NAME}.${NAMESPACE}.svc.cluster.local" \
+                    -addext "subjectAltName=DNS:${SVC_NAME},DNS:${SVC_NAME}.${NAMESPACE},DNS:${SVC_NAME}.${NAMESPACE}.svc,DNS:${SVC_NAME}.${NAMESPACE}.svc.cluster.local${EXTRA_SAN}" \
                     2>/dev/null
 
-                  echo "subjectAltName=DNS:${SVC_NAME},DNS:${SVC_NAME}.${NAMESPACE},DNS:${SVC_NAME}.${NAMESPACE}.svc,DNS:${SVC_NAME}.${NAMESPACE}.svc.cluster.local" > "$TMPDIR/svc-san.cnf"
+                  echo "subjectAltName=DNS:${SVC_NAME},DNS:${SVC_NAME}.${NAMESPACE},DNS:${SVC_NAME}.${NAMESPACE}.svc,DNS:${SVC_NAME}.${NAMESPACE}.svc.cluster.local${EXTRA_SAN}" > "$TMPDIR/svc-san.cnf"
 
                   openssl x509 -req -in "$TMPDIR/svc-tls.csr" \
                     -CA "$TMPDIR/ca.crt" -CAkey "$TMPDIR/ca.key" -CAcreateserial \

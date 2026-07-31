@@ -533,154 +533,14 @@ func ensureKeycloakTLSFromChartCA(ctx context.Context, kubeconfigPath, namespace
 	}, []net.IP{net.IPv4(127, 0, 0, 1)}, caCert, caKey, writer)
 }
 
-// resignHostAccessedTLSCertsWithLocalhostSAN re-signs gateway-tls,
-// datastorage-tls, apifrontend-tls, and kubernautagent-tls (still using the
-// chart's own CA from authwebhook-tls) to ADD "localhost"/127.0.0.1 to their SANs,
-// overwriting the chart-generated leaf certs that the chart's
-// tls-cert-job.yaml hook produced.
-//
-// Why: the chart's own hook (Section 2, SVC_NAME loop) deliberately omits
-// "localhost"/127.0.0.1 from these SANs -- correct for a real cluster, which
-// never accesses these Services via localhost. But host-side test clients
-// dial DataStorage over "https://localhost:30081" and Kubernaut Agent's MCP
-// endpoint over "https://localhost:8088", and AF's over "https://localhost:30443"
-// via the chart's pinned NodePorts
-// (Issue #1737: type=NodePort + networkPolicies.<svc>.ingressCIDRs=0.0.0.0/0
-// admits the NodePort-sourced, SNAT'd-to-node-IP traffic through the
-// default-deny NetworkPolicy) with full hostname verification (suite_test.go's
-// NewTLSAwareClient/NewTLSAwareTransport, Issue #785) -- without "localhost"
-// in the SAN, that handshake fails ("read: connection reset by peer",
-// confirmed during Issue #1737 validation). gateway-tls is re-signed too even
-// though Gateway itself still serves plain HTTP today (TLS wiring is a
-// separate, tracked follow-up) -- keeping all certs consistent avoids a
-// silent trap for whoever wires Gateway's HTTPS listener next. The Go-native
-// harness's GenerateInterServiceTLS always included these SANs for exactly
-// this reason; re-signing here restores that host-access property without
-// modifying the chart's own hook (which stays correct for production).
-func resignHostAccessedTLSCertsWithLocalhostSAN(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
-	_, _ = fmt.Fprintln(writer, "  🔐 Re-signing gateway-tls/datastorage-tls/apifrontend-tls/kubernautagent-tls with localhost SAN (host NodePort access)...")
-	caCert, caKey, err := loadChartCAFromAuthwebhookTLS(ctx, kubeconfigPath, namespace)
-	if err != nil {
-		return err
-	}
-	targets := []struct {
-		secretName string
-		commonName string
-		svcName    string
-	}{
-		{"gateway-tls", "gateway-service", "gateway-service"},
-		{"datastorage-tls", "data-storage-service", "data-storage-service"},
-		{"apifrontend-tls", "apifrontend", "apifrontend"},
-		{"kubernautagent-tls", "kubernaut-agent", "kubernaut-agent"},
-	}
-	for _, t := range targets {
-		dnsNames := []string{
-			"localhost",
-			t.svcName,
-			fmt.Sprintf("%s.%s", t.svcName, namespace),
-			fmt.Sprintf("%s.%s.svc", t.svcName, namespace),
-			fmt.Sprintf("%s.%s.svc.cluster.local", t.svcName, namespace),
-		}
-		if err := signAndApplyLeafTLSSecret(ctx, kubeconfigPath, namespace, t.secretName, t.commonName, dnsNames, []net.IP{net.IPv4(127, 0, 0, 1)}, caCert, caKey, writer); err != nil {
-			return err
-		}
-	}
-
-	// gateway/datastorage/apifrontend/kubernaut-agent load tls.crt/tls.key once
-	// at startup (no hot-reload for the server's own leaf cert, unlike the CA
-	// bundle) -- all pods are already Running from PHASE 6's `helm install`
-	// using the ORIGINAL chart-generated certs, so a restart is required for
-	// them to pick up the re-signed ones above.
-	//
-	// PR #1790 round-9 RCA: restart+wait were previously two SEPARATE loops
-	// (restart all 4, then wait on all 4), which fired all 4 pods' expensive
-	// startup work (client-go discovery, dependency wiring) at essentially
-	// the same instant -- precisely the "4-deployments-at-once contention"
-	// the 480s timeout below was already enlarged to tolerate (see its own
-	// comment's cgroup v2 evidence). Interleaving restart+wait per
-	// deployment instead staggers that CPU burst to one pod at a time,
-	// addressing the contention at its source rather than just extending
-	// the timeout to survive it -- consistent with every other
-	// restart-then-wait call site in this package (e.g.
-	// apifrontend_prometheus_e2e.go, mock_llm.go, awx_e2e.go), which never
-	// batched restarts across multiple deployments like this one did.
-	deployments := []string{"gateway", "datastorage", "apifrontend", "kubernaut-agent"}
-	for _, deploy := range deployments {
-		restartCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
-			"rollout", "restart", "deployment/"+deploy)
-		restartCmd.Stdout = writer
-		restartCmd.Stderr = writer
-		if err := restartCmd.Run(); err != nil {
-			return fmt.Errorf("failed to restart %s for TLS cert reload: %w", deploy, err)
-		}
-
-		// DD-PLATFORM-009 (#1755 Fleet E2E re-validation): gateway's new pod
-		// answers /healthz=200 immediately (NewBootstrapServer) so its
-		// startupProbe passes quickly, but /readyz correctly stays 503 until
-		// wireFleetOwnerResolution's mcpclient.NewResilient MCP Gateway
-		// connection succeeds -- observed taking multiple ~40s backoff
-		// retries under Kind-cluster CPU contention from all four of these
-		// deployments restarting simultaneously. That's an honest, bounded
-		// wait (never restarts the container -- readiness failures don't).
-		//
-		// 480s (up from an original 300s that matched only
-		// mcpclient.Resilient's own 300s MaxElapsedTime ceiling, see
-		// pkg/fleet/mcpclient/resilience.go): datastorage/apifrontend/
-		// kubernaut-agent do NOT have gateway's NewBootstrapServer fix, so
-		// their /healthz (the startupProbe target) stays fully unbound
-		// behind the same blocking dependency-wiring call as /readyz --
-		// they need the startupProbe's own grace to elapse first.
-		// kubernaut.startupProbe's failureThreshold was independently
-		// raised (DD-PLATFORM-008 July 29 update) from 30 to 60
-		// (initialDelaySeconds=5 + 60*periodSeconds=5 = 305s) after live
-		// evidence (cgroup v2 cpu.stat: nr_throttled/nr_periods as high as
-		// 23/24 on a freshly-restarted pod) showed CFS bandwidth-quota
-		// throttling against the 500m CPU limit can stretch cold-start
-		// well past the previous 150s startupProbe budget under this same
-		// 4-deployments-at-once contention. A 300s outer rollout-status
-		// timeout left effectively zero margin for readinessProbe's own
-		// checks to run *after* a startupProbe that can itself now take
-		// close to 305s -- this was silently racing its own inner budget.
-		// 480s gives >150s of headroom above the 305s startupProbe ceiling
-		// for the subsequent readyz convergence. Kept unchanged (rather
-		// than shortened) even after staggering the restarts above: it's a
-		// per-deployment ceiling that only matters if that single pod
-		// itself is slow, so the added margin is now pure safety headroom,
-		// not a symptom of contention it needs to keep tolerating.
-		//
-		// 720s (PR #1790 round-12 RCA, July 30/31): even after round-9's
-		// stagger fix above, gateway alone -- first in the sequence, no
-		// other restart racing it -- still hit this ceiling, stuck at
-		// "1 old replicas are pending termination" (a DIFFERENT symptom
-		// than the readyz-convergence one 480s was sized for: the NEW pod
-		// had already become Available, but the OLD pod would not finish
-		// terminating). Direct kubelet-log evidence from the failing Kind
-		// node at the same timestamp confirms node-wide starvation, not an
-		// app bug: "Failed to update lease" (context deadline exceeded on
-		// the kubelet's own heartbeat PUT to the API server),
-		// "ExecSync cmd from runtime service failed" (3s exec-probe
-		// timeouts for pg_isready/valkey-cli), and "Failed to process
-		// watch event" (containerd cgroup watch itself timing out). Old-pod
-		// termination depends entirely on kubelet responsiveness, so it
-		// can starve arbitrarily long under this condition -- cross-checked
-		// against main's own CI history (run 30464667745, pre-dating this
-		// PR's changes), which hit the identical "pending termination"
-		// message on 8+ unrelated deployments at once, confirming this is
-		// a pre-existing whole-cluster capacity ceiling, not a regression.
-		// 720s (+240s over 480s) buys real margin without three of the
-		// four deployments needing it in practice (only the first,
-		// highest-contention restart has ever been observed to time out).
-		waitCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
-			"rollout", "status", "deployment/"+deploy, "--timeout=720s")
-		waitCmd.Stdout = writer
-		waitCmd.Stderr = writer
-		if err := waitCmd.Run(); err != nil {
-			return fmt.Errorf("failed waiting for %s rollout after TLS cert reload: %w", deploy, err)
-		}
-	}
-	_, _ = fmt.Fprintln(writer, "  ✅ gateway/datastorage/apifrontend/kubernaut-agent restarted with localhost-SAN certs")
-	return nil
-}
+// PR #1790 round-14 RCA: resignHostAccessedTLSCertsWithLocalhostSAN (which
+// re-signed gateway-tls/datastorage-tls/apifrontend-tls/kubernautagent-tls
+// post-install, then did a rolling restart+wait per deployment to pick them
+// up) was removed. Its restart pass was the deterministic root cause of
+// fleet E2E's PHASE 6 rollout timeouts -- see InstallFullPipelineHelmChart's
+// `hooks.tlsCerts.extraSANs` comment for the full RCA. "localhost" SAN is
+// now baked into the ORIGINAL chart-issued certs at `helm install` time via
+// that values override, so no re-sign or restart is needed at all.
 
 // writeInterServiceCAPEMFromCluster copies the chart-generated "inter-service-ca"
 // ConfigMap's ca.crt (created by the pre-install tls-cert-gen hook, PHASE 6) to
@@ -1183,6 +1043,22 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		// (30s/120s) already match the old Go-native harness's
 		// effectivenessmonitor_e2e.go values verbatim, so no override needed there.
 		"--set", "remediationorchestrator.config.effectivenessAssessment.stabilizationWindow=10s",
+		// PR #1790 round-14 RCA: gateway/datastorage/apifrontend/kubernaut-agent
+		// leaf certs need "localhost" (+ auto-appended IP:127.0.0.1) in their
+		// SAN for host-side E2E clients dialing their chart-pinned NodePorts
+		// ("https://localhost:30081" etc. with full hostname verification --
+		// Issue #785/#1737). Setting this AT INSTALL TIME (hooks.tlsCerts.
+		// extraSANs) bakes it into the ORIGINAL chart-issued certs, replacing
+		// the previous post-install re-sign + 4-deployment rolling-restart
+		// pass (resignHostAccessedTLSCertsWithLocalhostSAN, removed) that was
+		// the deterministic root cause of fleet E2E's PHASE 6 rollout timeouts
+		// (5/5 CI runs failed identically at "gateway ... 1 old replicas are
+		// pending termination" even after raising the wait to 720s -- the
+		// restart's CPU burst on top of fleet's already-heavier Istio/
+		// Kuadrant/Keycloak/kube-mcp-server footprint was the actual
+		// bottleneck, not an insufficient timeout). Zero effect on production
+		// installs: this value defaults to an empty list (values.schema.json).
+		"--set", `hooks.tlsCerts.extraSANs[0]=localhost`,
 		"--set-file", "signalprocessing.policies.content=" + spPolicyFile,
 		"--set-file", "signalprocessing.proactiveSignalMappings.content=" + spMappingsFile,
 		"--set-file", "aianalysis.policies.content=" + aaPolicyFile,
