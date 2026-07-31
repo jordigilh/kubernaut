@@ -1,7 +1,8 @@
 # DD-PLATFORM-006: Helm Chart Configuration Surface Reduction
 
-**Status**: 🟡 **PROPOSED** (pending user approval)
-**Decision Date**: TBD (on approval)
+**Status**: ✅ **IMPLEMENTED** (merged via [PR #1790](https://github.com/jordigilh/kubernaut/pull/1790))
+**Decision Date**: 2026-07-31 (merge date; Decision Area 14's materialized-defaults generator
+remains deferred to its own follow-up PR — see Status section below)
 **Version**: 5.11 (Decision Area 13 addendum, round-16 RCA: FMC was a third Go Valkey client missed
 by this Decision Area's original DataStorage/APIFrontend-only census — fixed with the identical
 `sharedtls.BuildTLSConfig` pattern, mandatory-on per DataStorage's shape rather than the replay
@@ -1111,7 +1112,12 @@ further user review — made explicit, in both the hint text and a new Consequen
 is a genuine accepted cost to remediation quality/confidence, not merely an invisible
 nice-to-have)
 **Last Updated**: 2026-07-31
-**Status**: 🟡 Proposed — awaiting user approval. Field-census recount and file/line-reference
+**Status**: ✅ Implemented — merged to `main` via [PR #1790](https://github.com/jordigilh/kubernaut/pull/1790)
+(merge commit `80daf42f7`), tracking issue [#1743](https://github.com/jordigilh/kubernaut/issues/1743)
+closed. All CI suites (unit, integration, helm-unittest, E2E fullpipeline, E2E fleet) green on the
+merge commit. Decision Area 14's materialized-defaults generator (234 fields) remains deferred to
+PR9, tracked as an explicit follow-up rather than blocking this DD's Decision Areas 1-13/15-17.
+Field-census recount and file/line-reference
 verification against `main` post-PR #1755 completed (Decision Area 12) — no Decision Area's
 chosen alternative changed. Decision Area 4's Fleet overlay approach reversed from a shipped
 `values-fleet.yaml` file to fields folded into the user's own `values.yaml`, after identifying it
