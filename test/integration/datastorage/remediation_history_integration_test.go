@@ -269,6 +269,67 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 	})
 
 	// ============================================================================
+	// 1a. Target-Resource Scoping Tests (Issue #1802)
+	//
+	// Per TESTING_GUIDELINES.md "HTTP Testing in Integration Tests" anti-pattern:
+	// no net/http layer — component coordination proven via direct repository/
+	// adapter calls against real PostgreSQL.
+	// ============================================================================
+
+	Describe("Target-Resource Scoping (Issue #1802)", func() {
+		It("IT-DS-1802-001: cross-namespace same-hash rows are excluded by target-resource scoping against real Postgres", func() {
+			// Reproduces the exact #1802 symptom: two unrelated Deployments in
+			// different namespaces share an identical spec hash (e.g. templated
+			// manifests from the same Helm chart). Querying for ns-a's target
+			// must NOT return ns-b's row, even though both match the hash.
+			now := time.Now().UTC()
+			sharedHash := "sha256:shared_" + testID
+			targetA := fmt.Sprintf("ns-a-%s/Deployment/app", testID)
+			targetB := fmt.Sprintf("ns-b-%s/Deployment/app", testID)
+			cidA := fmt.Sprintf("corr-1802-a-%s", testID)
+			cidB := fmt.Sprintf("corr-1802-b-%s", testID)
+
+			insertROEvent(cidA, targetA, sharedHash, "ScaleUp", now.Add(-2*time.Hour))
+			insertROEvent(cidB, targetB, sharedHash, "ScaleUp", now.Add(-1*time.Hour))
+
+			// Act: query for ns-a's target only
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetA, sharedHash, now.Add(-3*time.Hour), now)
+
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rows).To(HaveLen(1), "must return only ns-a's row, excluding ns-b's cross-namespace same-hash row")
+			Expect(rows[0].CorrelationID).To(Equal(cidA))
+
+			// Cross-check: querying for ns-b's target returns only ns-b's row (symmetric proof)
+			rowsB, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetB, sharedHash, now.Add(-3*time.Hour), now)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rowsB).To(HaveLen(1), "must return only ns-b's row")
+			Expect(rowsB[0].CorrelationID).To(Equal(cidB))
+		})
+
+		It("IT-DS-1802-002: cluster-scoped (3-part, leading-slash) target-resource format matches correctly against real Postgres", func() {
+			// UT-DS-1802-002 proves the handler emits "/{kind}/{name}" (unconditional
+			// 3-part with empty namespace segment) for cluster-scoped resources —
+			// matching RO's audit emission format exactly. This proves that literal
+			// string, as stored in a real audit_events row, round-trips correctly
+			// through the JSONB equality predicate (no Postgres/JSON quirk with the
+			// leading-slash empty-namespace segment).
+			now := time.Now().UTC()
+			clusterScopedTarget := fmt.Sprintf("/Node/node-%s", testID) // 3-part canonical, empty namespace
+			hash := "sha256:clusterscoped_" + testID
+			cid := fmt.Sprintf("corr-1802-cluster-%s", testID)
+
+			insertROEvent(cid, clusterScopedTarget, hash, "CordonNode", now.Add(-1*time.Hour))
+
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, clusterScopedTarget, hash, now.Add(-3*time.Hour), now)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rows).To(HaveLen(1), "the 3-part canonical format (leading slash for empty namespace) must match the stored row")
+			Expect(rows[0].CorrelationID).To(Equal(cid))
+		})
+	})
+
+	// ============================================================================
 	// 2. Adapter Layer Tests
 	// ============================================================================
 
