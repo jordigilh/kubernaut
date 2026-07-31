@@ -61,7 +61,6 @@ import (
 	"github.com/go-logr/logr"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
-	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
@@ -339,53 +338,9 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 // models have no separate effort dial on the wire, so callers should only
 // set params.OutputConfig.Effort when it is non-empty.
 func resolveThinkingParam(r *llm.ReasoningRequest, model anthropic.Model) (anthropic.ThinkingConfigParamUnion, anthropic.OutputConfigEffort) {
-	cfg := effortToThinkingConfig(r)
+	cfg := llm.EffortToThinkingConfig(r)
 	mapping := converters.ThinkingConfigToAnthropic(cfg, model)
 	return mapping.Thinking, mapping.Effort
-}
-
-// effortToThinkingConfig resolves the effective genai.ThinkingConfig for a
-// ReasoningRequest. See resolveThinkingParam for the precedence rule.
-func effortToThinkingConfig(r *llm.ReasoningRequest) *genai.ThinkingConfig {
-	if r.BudgetTokens > 0 {
-		budget := int32(r.BudgetTokens)
-		return &genai.ThinkingConfig{ThinkingBudget: &budget}
-	}
-	if level, ok := effortToThinkingLevel(r.Effort); ok {
-		return &genai.ThinkingConfig{ThinkingLevel: level}
-	}
-	return &genai.ThinkingConfig{ThinkingLevel: genai.ThinkingLevelHigh}
-}
-
-// effortToThinkingLevel maps the canonical, provider-agnostic Effort
-// vocabulary (#1604) onto genai.ThinkingLevel. "none" maps to Minimal —
-// genai's Minimal already means "no thinking" via the converter (a
-// coherent, real off-state, not a contradiction at this layer); the
-// enabled:true + effort:none contradiction is rejected earlier, at config
-// validation (shared/types.LLMConfig.Validate), for operator-facing
-// clarity — this mapping stays defensively correct even if that gate is
-// ever bypassed. "xhigh" clamps to High: genai.ThinkingLevel has no tier
-// above High, even though Anthropic's raw OutputConfigEffort enum does
-// (up to "max") — reusing the shared converter (DD-LLM-005) means staying
-// within its intermediate representation rather than hand-mapping a
-// second, independently-maintained table straight to the SDK's fuller
-// enum. The empty string (unset) is intentionally not handled here; it is
-// only reachable via effortToThinkingConfig's default-High fallback.
-func effortToThinkingLevel(effort string) (genai.ThinkingLevel, bool) {
-	switch effort {
-	case "none":
-		return genai.ThinkingLevelMinimal, true
-	case "minimal":
-		return genai.ThinkingLevelMinimal, true
-	case "low":
-		return genai.ThinkingLevelLow, true
-	case "medium":
-		return genai.ThinkingLevelMedium, true
-	case "high", "xhigh":
-		return genai.ThinkingLevelHigh, true
-	default:
-		return "", false
-	}
 }
 
 // convertMessagesToAnthropic translates Kubernaut's role-tagged message

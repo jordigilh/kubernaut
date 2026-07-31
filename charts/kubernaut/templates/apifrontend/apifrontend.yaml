@@ -277,7 +277,11 @@ cannot both be vertex_ai while pointing at different Secrets -- there would
 be no way to make both file paths visible to the SDK's ADC lookup at once.
 Every other cross-provider/cross-secret combination is fine, since only
 vertex_ai depends on this ambient env var (every other provider uses an
-explicit apiKeyFile mount instead).
+explicit apiKeyFile mount instead). Still true after kubernaut#1801 moved
+the assignment from a static Deployment env: entry to an in-process
+os.Setenv in cmd/apifrontend (pkg/apifrontend/launcher.
+InjectAmbientGoogleCredentials) -- it's the same single process-wide
+variable either way, just no longer statically declared in the pod spec.
 */}}
 {{- if and $stHasDedicatedSecret (eq $afProfile.provider "vertex_ai") (eq $stProfile.provider "vertex_ai") }}
 {{- fail (printf "apifrontend.llmProfileRef (%q) and apifrontend.config.severityTriage.llmProfileRef (%q) both resolve to provider=vertex_ai but different credentialsSecretName values (%q vs %q) -- GOOGLE_APPLICATION_CREDENTIALS is a single process-wide ambient-credential path, so both must share the same Secret when both are vertex_ai (kubernaut#1731). Use the same credentialsSecretName for both, or use a non-vertex_ai provider for one of them." $afProfileRefName $stProfileRefName $afProfile.credentialsSecretName $stProfile.credentialsSecretName) }}
@@ -502,14 +506,14 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            {{- if eq $afProfile.provider "vertex_ai" }}
-            - name: GOOGLE_APPLICATION_CREDENTIALS
-              value: "/etc/apifrontend/llm-credentials/credentials.json"
-            {{- end }}
-            {{- if and $stHasDedicatedSecret (eq $stProfile.provider "vertex_ai") }}
-            - name: GOOGLE_APPLICATION_CREDENTIALS
-              value: "/etc/apifrontend/severity-triage-credentials/credentials.json"
-            {{- end }}
+            {{- /* kubernaut#1801: GOOGLE_APPLICATION_CREDENTIALS is deliberately
+            NOT declared here. It's now injected in-process by cmd/apifrontend
+            at construction time for the vertex_ai model families whose SDK
+            requires ambient ADC (pkg/apifrontend/launcher.
+            InjectAmbientGoogleCredentials), reading the same apiKeyFile path
+            rendered into config.yaml by kubernaut.llm.afBlock below --
+            avoiding a static, credential-adjacent env var in the pod spec
+            (mirrors Kubernaut Agent's and HAPI's precedent). */}}
           volumeMounts:
             - name: config
               mountPath: /etc/apifrontend

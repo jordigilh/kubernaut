@@ -47,8 +47,8 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.auth.replayCache.tls.certFile` | string | Client certificate file path (mTLS) -- unused against the chart's own Valkey (no client cert required), available for BYO Redis that requires mTLS | `""` | No |
 | `config.auth.replayCache.tls.enabled` | boolean | Enable TLS for the replay-cache Valkey/Redis connection | `false` | No |
 | `config.auth.replayCache.tls.keyFile` | string | Client key file path (mTLS) | `""` | No |
-| `config.interactive.awaitSessionTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"10s"` | No |
-| `config.interactive.bridgeInactivityTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"15s"` | No |
+| `config.interactive.awaitSessionTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"3m"` | No |
+| `config.interactive.bridgeInactivityTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"180s"` | No |
 | `config.interactive.enabled` | boolean |  | `true` | No |
 | `config.mcp.enabled` | boolean |  | `true` | No |
 | `config.mcp.sessionIdleTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"5m"` | No |
