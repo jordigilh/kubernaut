@@ -2329,6 +2329,28 @@
           "type": "string",
           "default": ""
         },
+        "valkeyTLS": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "DD-PLATFORM-006 Decision Area 13 follow-up (round-16 RCA, PR #1790): TLS client configuration for FMC's Valkey connection (pkg/fleet/fmc.ValkeyWriter, pkg/fleet/scopecache.ValkeyCacheReader). Mandatory (no enabled gate) -- the chart's own Valkey is TLS-only (Decision Area 8), and unlike the APIFrontend replay cache this dependency has no fail-open fallback, so it must match DataStorage's config.redis.tls hardening rather than the replay cache's opt-in one.",
+          "properties": {
+            "certFile": {
+              "type": "string",
+              "default": "",
+              "description": "Client certificate file path (mTLS) -- unused against the chart's own Valkey (no client cert required), available for BYO Valkey/Redis that requires mTLS"
+            },
+            "keyFile": {
+              "type": "string",
+              "default": "",
+              "description": "Client key file path (mTLS)"
+            },
+            "caFile": {
+              "type": "string",
+              "default": "",
+              "description": "CA bundle to verify the Valkey server certificate. Defaults to the chart's distributed inter-service CA (/etc/tls-ca/ca.crt) when left empty; override only for a BYO Valkey/Redis signed by a different CA."
+            }
+          }
+        },
         "namespace": {
           "type": "string",
           "default": "kubernaut-system"

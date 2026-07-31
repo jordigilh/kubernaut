@@ -30,6 +30,25 @@ valkey:
   here instead of requiring every fleetmetadatacache.enabled=true caller to
   redundantly pass --set fleetmetadatacache.valkeyAddr=valkey:6380. */}}
   addr: {{ .Values.fleetmetadatacache.valkeyAddr | default (include "kubernaut.valkey.addr" .) | quote }}
+  {{- /* DD-PLATFORM-006 Decision Area 13 follow-up (round-16 RCA, PR #1790):
+  Decision Area 13's original client census (prompted by Decision Area 8
+  making the chart's own Valkey TLS-only) covered DataStorage and the
+  APIFrontend replay cache, but missed FMC -- a third Go client
+  (pkg/fleet/fmc.ValkeyWriter, pkg/fleet/scopecache.ValkeyCacheReader) that
+  had zero TLS support. Unlike the replay cache (which fails open to an
+  in-memory fallback on a bad handshake), FMC's Valkey dependency is
+  load-bearing -- its own /readyz gates on a Valkey PING -- so this mirrors
+  DataStorage's config.redis.tls pattern (mandatory, no enabled gate) rather
+  than the replay cache's opt-in one. caFile defaults to the already-
+  distributed inter-service CA (kubernaut.tlsCaVolumeMount/Volume already
+  mount /etc/tls-ca on this pod for the OAuth2 tlsCaFile use above, so no new
+  mount is needed) so tls "just works" against the chart's own Valkey without
+  any extra configuration. */}}
+  tls:
+    enabled: true
+    certFile: {{ .Values.fleetmetadatacache.valkeyTLS.certFile | default "" | quote }}
+    keyFile: {{ .Values.fleetmetadatacache.valkeyTLS.keyFile | default "" | quote }}
+    caFile: {{ .Values.fleetmetadatacache.valkeyTLS.caFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
 sync:
   interval: {{ $v.syncInterval | quote }}
   keyTtl: {{ $v.keyTTL | quote }}

@@ -191,6 +191,10 @@ fleetmetadatacache:
     replicas: 1
     syncInterval: 30s
     valkeyAddr: ""
+    valkeyTLS:
+        caFile: ""
+        certFile: ""
+        keyFile: ""
 gateway:
     config:
         cors:

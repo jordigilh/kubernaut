@@ -2,11 +2,10 @@
 
 **Status**: 🟡 **PROPOSED** (pending user approval)
 **Decision Date**: TBD (on approval)
-**Version**: 5.10 (Decision Area 15 refined: made explicit, per user review, that the NOTES.txt hint
-makes the monitoring-opt-in gap *visible* but does not *close* it — reduced KubernautAgent RCA
-signal and unconfirmed EffectivenessMonitor remediation outcomes are a genuine, accepted cost to
-remediation quality on a default install, now named as such in both the NOTES.txt hint text and a
-new Consequences > Negative/Accepted item, not just implied by a list of lost MCP tools)
+**Version**: 5.11 (Decision Area 13 addendum, round-16 RCA: FMC was a third Go Valkey client missed
+by this Decision Area's original DataStorage/APIFrontend-only census — fixed with the identical
+`sharedtls.BuildTLSConfig` pattern, mandatory-on per DataStorage's shape rather than the replay
+cache's opt-in one, since FMC's Valkey dependency has no fail-open fallback)
 **Date**: 2026-07-29
 **Deciders**: Kubernaut Platform (chart maintainers)
 **Applies To**: `charts/kubernaut` (Helm chart) only — no Kubernaut Operator changes
@@ -635,6 +634,61 @@ coverage includes a real TLS handshake against a `miniredis.RunTLS` server (not 
 and its rejection path (wrong CA → fail-open fallback, confirmed via the same log line a real
 production Valkey TLS misconfiguration would emit).
 
+**Addendum (round-16 RCA, run 30636663811)**: this Decision Area's original client census (both
+here and in Decision Area 8's own PR5 audit) covered exactly two Go clients connecting to the
+chart's Valkey — DataStorage and the APIFrontend replay cache — because those were the only two
+that existed in the codebase at the time. `E2E (fleet)` continued failing after Decision Area 17's
+fix (PHASE 6 restart eliminated, PHASE 8 timeout ceiling raised) with a third, distinct symptom:
+`gateway` and `RemediationOrchestrator` never became Ready because `fleetmetadatacache-service`
+itself never turned Ready. `kubectl logs` on the in-chart Valkey pod showed
+`Error accepting a client connection: error:0A00010B:SSL routines::wrong version number` on every
+connection attempt from FMC — a plaintext RESP client speaking to a TLS-only listener. FMC's own
+Valkey clients (`pkg/fleet/fmc.ValkeyWriter`, `pkg/fleet/scopecache.ValkeyCacheReader`,
+constructed in `cmd/fleetmetadatacache/main.go`'s `wireFMCDependencies`) had **zero** TLS support —
+plain `redis.NewClient(&redis.Options{Addr: addr})`, no `TLSConfig` field, no config surface to set
+one — the exact same gap this Decision Area found and fixed for the replay cache, just in a client
+that didn't exist yet when this Decision Area's table was written. Confirmed via a local Kind
+`fleet` install reproduction using this PR's own CI-built arm64 images (`gh run download` +
+`kind load`), reaching the identical PHASE 8 timeout with the identical FMC-not-Ready /
+Valkey-SSL-error signature before the fix, and passing after it.
+
+Unlike the replay cache, FMC's Valkey dependency has **no fail-open fallback** — FMC's own
+`/readyz` handler gates on a live Valkey `PING` (`fmc.ReadyzHandler`), so a broken Valkey
+connection doesn't degrade FMC's own functionality gracefully, it permanently blocks FMC's
+readiness and therefore every consumer of FMC's federated scope-check API. This is a load-bearing
+dependency, not a best-effort cache, so the fix mirrors **DataStorage's** `config.redis.tls`
+pattern (mandatory-on, no `enabled` gate in the schema — `tls.enabled: true` is a template literal,
+not a value) rather than the replay cache's opt-in `tls.enabled` toggle from this Decision Area's
+main text above.
+
+**Fix** (same shape as this Decision Area, mirrored a third time):
+1. `pkg/fleet/fmc/config.ValkeyTLSConfig` (`Enabled`, `CAFile`, `CertFile`, `KeyFile`) added to
+   `ValkeyConfig.TLS`, with a `Validate()` guard identical in wording to DataStorage's
+   `validateRedis` (`"valkey TLS enabled but no caFile specified; mount the CA certificate (SC-8)"`).
+2. `fmc.NewValkeyWriter`/`scopecache.NewValkeyCacheReader` gain a variadic `...ValkeyOption` /
+   `WithTLSConfig(*tls.Config)` parameter (backward-compatible — every existing plaintext caller,
+   all test-only, keeps compiling unchanged).
+3. `cmd/fleetmetadatacache/main.go`'s new `buildValkeyTLSConfig` helper calls the same
+   `sharedtls.BuildTLSConfig` primitive this Decision Area introduced, failing fast
+   (`logger.Error` + `os.Exit(1)`) on a bad CA/cert rather than the replay cache's fail-open
+   fallback — correct given FMC has no equivalent in-memory degradation path.
+4. Helm: `fleetmetadatacache.valkeyTLS.{certFile,keyFile,caFile}` (schema + `values.yaml`
+   placeholder, mirroring `datastorage.config.redis.tls`'s exact shape), rendered into
+   `fleetmetadatacache.yaml`'s `configYAML` as `tls.enabled: true` (literal) +
+   `caFile` defaulting to the already-mounted inter-service CA (FMC's pod already mounts
+   `/etc/tls-ca` via `kubernaut.tlsCaVolumeMount`/`kubernaut.tlsCaVolume` for its OAuth2
+   `tlsCaFile` use — no new mount needed). Golden-render parity
+   (`make verify-helm-defaults-parity`) confirms the new zero-default fields are render-neutral
+   when omitted.
+
+**Confidence**: 95% — identical shape to this Decision Area's already-95%-confidence fix, applied
+to a third client; validated by new Ginkgo UT coverage performing real TLS handshakes against
+`miniredis.RunTLS` (both the writer and reader, success and fail-closed-without-TLS paths) and a
+new `IT-FMC-VALKEYTLS-*` suite proving `buildValkeyTLSConfig`'s wiring, plus `helm-unittest`
+coverage of the mandatory-on rendering and `caFile` default/override behavior. Full local `fleet`
+E2E re-run against this PR's own CI-built images is the final validation step before push, per this
+DD's own "ground findings in authoritative references" standard.
+
 ---
 
 ### Decision Area 14 — Materialized Defaults Generator (deferred, own PR9)
@@ -1036,20 +1090,27 @@ needed; this is closed, not deferred.
 
 ---
 
-**Document Version**: 5.10 (Decision Area 15: on user review of Decision Area 6's exclusion list,
-found `monitoring.*.enabled`'s default-off state silently degrades EffectivenessMonitor's
-alert-resolution scoring (BR-EM-002), KubernautAgent's RCA tool access (Prometheus/AlertManager MCP
-tools), and APIFrontend's severity triage — with no NOTES.txt visibility, unlike the
-`console.ingress.enabled=false` hint added in Decision Area 9. No safe universal default `url`
-exists for either dependency (unlike `postgresql`/`valkey`, in-chart with a deterministic address,
-or `apiServerCIDR`, `lookup`-discoverable), so `monitoring.*.enabled` stays opt-in. A follow-up
-review confirmed making it mandatory was rejected on evidence, not just principle: it would hard-
-block any install without a pre-existing Prometheus/AlertManager stack and reverse the mandatory
-field count from 7 back to 9, while costing nothing on the E2E side (already wired unconditionally
-there). Closed the visibility gap with a NOTES.txt hint instead, and — per further user review —
-made explicit, in both the hint text and a new Consequences item, that this is a genuine accepted
-cost to remediation quality/confidence, not merely an invisible nice-to-have)
-**Last Updated**: 2026-07-29
+**Document Version**: 5.11 (Decision Area 13 addendum: round-16 RCA found FMC's Valkey client
+[`pkg/fleet/fmc.ValkeyWriter`, `pkg/fleet/scopecache.ValkeyCacheReader`] had zero TLS support,
+blocking `E2E (fleet)` PHASE 8 readiness after Decision Area 17's fix landed — a third client this
+Decision Area's original two-client [DataStorage, APIFrontend replay cache] census missed. Fixed
+with the identical `pkg/shared/tls.BuildTLSConfig` pattern this Decision Area introduced, mandatory-
+on [`fleetmetadatacache.valkeyTLS`, no `enabled` gate] rather than opt-in, since FMC's dependency —
+unlike the replay cache — has no fail-open fallback. Previously 5.10 — Decision Area 15: on user
+review of Decision Area 6's exclusion list, found `monitoring.*.enabled`'s default-off state
+silently degrades EffectivenessMonitor's alert-resolution scoring (BR-EM-002), KubernautAgent's RCA
+tool access (Prometheus/AlertManager MCP tools), and APIFrontend's severity triage — with no
+NOTES.txt visibility, unlike the `console.ingress.enabled=false` hint added in Decision Area 9. No
+safe universal default `url` exists for either dependency (unlike `postgresql`/`valkey`, in-chart
+with a deterministic address, or `apiServerCIDR`, `lookup`-discoverable), so `monitoring.*.enabled`
+stays opt-in. A follow-up review confirmed making it mandatory was rejected on evidence, not just
+principle: it would hard-block any install without a pre-existing Prometheus/AlertManager stack and
+reverse the mandatory field count from 7 back to 9, while costing nothing on the E2E side (already
+wired unconditionally there). Closed the visibility gap with a NOTES.txt hint instead, and — per
+further user review — made explicit, in both the hint text and a new Consequences item, that this
+is a genuine accepted cost to remediation quality/confidence, not merely an invisible
+nice-to-have)
+**Last Updated**: 2026-07-31
 **Status**: 🟡 Proposed — awaiting user approval. Field-census recount and file/line-reference
 verification against `main` post-PR #1755 completed (Decision Area 12) — no Decision Area's
 chosen alternative changed. Decision Area 4's Fleet overlay approach reversed from a shipped

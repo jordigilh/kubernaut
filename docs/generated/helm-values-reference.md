@@ -242,6 +242,9 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `tolerations` | array of object | Pod tolerations (overrides global.tolerations for this component) | `` | No |
 | `topologySpreadConstraints` | array of object | Kubernetes topology spread constraints | `` | No |
 | `valkeyAddr` | string |  | `""` | No |
+| `valkeyTLS.caFile` | string | CA bundle to verify the Valkey server certificate. Defaults to the chart's distributed inter-service CA (/etc/tls-ca/ca.crt) when left empty; override only for a BYO Valkey/Redis signed by a different CA. | `""` | No |
+| `valkeyTLS.certFile` | string | Client certificate file path (mTLS) -- unused against the chart's own Valkey (no client cert required), available for BYO Valkey/Redis that requires mTLS | `""` | No |
+| `valkeyTLS.keyFile` | string | Client key file path (mTLS) | `""` | No |
 
 ## fullnameOverride
 

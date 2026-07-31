@@ -565,6 +565,9 @@ valkey:
 # non-zero schema defaults -- omitted here, override only what you need.
 fleetmetadatacache:
   oauth2: {}
+  # DD-PLATFORM-006 Decision Area 13 follow-up (round-16 RCA): mandatory Valkey
+  # TLS (no enabled gate) -- the chart's own Valkey is TLS-only (Decision Area 8).
+  valkeyTLS: {}
   resources:
     requests:
       memory: 64Mi

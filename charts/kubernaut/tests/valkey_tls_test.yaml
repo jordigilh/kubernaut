@@ -257,3 +257,101 @@ tests:
       - matchRegex:
           path: data['config.yaml']
           pattern: 'caFile: "/etc/custom-ca/ca\.crt"'
+
+  # ── FMC client-side TLS: DD-PLATFORM-006 Decision Area 13 follow-up ────────
+  # (round-16 RCA, PR #1790). FMC is a third Go Valkey client, missed by
+  # Decision Area 13's original DataStorage/APIFrontend-only census -- these
+  # mirror the DataStorage assertions above for the same reason (FMC's
+  # dependency is load-bearing, not fail-open, so it follows DataStorage's
+  # mandatory-on pattern rather than the replay cache's opt-in one).
+  - it: "FMC valkey.tls is mandatory-on (enabled: true, no toggle) in the rendered ConfigMap"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      fleetmetadatacache:
+        enabled: true
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: "tls:\\n\\s+enabled: true"
+
+  - it: "FMC valkey.tls.caFile defaults to the mounted inter-service CA when no override is set"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      fleetmetadatacache:
+        enabled: true
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'caFile: "/etc/tls-ca/ca\.crt"'
+
+  - it: "FMC valkey.tls.caFile explicit override still wins over the default"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    set:
+      fleetmetadatacache:
+        enabled: true
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+        valkeyTLS:
+          caFile: "/etc/custom-ca/ca.crt"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'caFile: "/etc/custom-ca/ca\.crt"'
+
+  - it: "FMC Deployment mounts the shared inter-service CA (tls-ca) so valkeyTLS.caFile can verify Valkey's cert"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    set:
+      fleetmetadatacache:
+        enabled: true
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tls-ca
+            mountPath: /etc/tls-ca
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tls-ca
+            configMap:
+              name: inter-service-ca
+              optional: true

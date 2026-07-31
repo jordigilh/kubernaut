@@ -23,6 +23,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"net/http"
 	"os"
@@ -81,6 +82,25 @@ func (d *fmcDeps) close() {
 // cluster registry), and Valkey (read/write), then constructs and starts
 // the cluster registry and metadata syncer. Exits the process on any
 // failure, matching main()'s original fail-fast behavior.
+// buildValkeyTLSConfig constructs the *tls.Config for FMC's Valkey client
+// connection (DD-PLATFORM-006 Decision Area 13 follow-up, round-16 RCA): the
+// chart's own Valkey is TLS-only (Decision Area 8), and unlike the
+// APIFrontend replay cache, FMC's Valkey dependency has no fail-open
+// fallback -- so a misconfigured TLS setup must fail fast at startup rather
+// than surface as an opaque connection error later. Returns nil (plaintext)
+// when TLS is disabled.
+func buildValkeyTLSConfig(tlsCfg fmcconfig.ValkeyTLSConfig, logger logr.Logger) *tls.Config {
+	if !tlsCfg.Enabled {
+		return nil
+	}
+	valkeyTLSConfig, err := sharedtls.BuildTLSConfig(tlsCfg.CAFile, sharedtls.WithClientCert(tlsCfg.CertFile, tlsCfg.KeyFile))
+	if err != nil {
+		logger.Error(err, "Failed to configure Valkey TLS")
+		os.Exit(1)
+	}
+	return valkeyTLSConfig
+}
+
 func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) *fmcDeps {
 	reg := prometheus.NewRegistry()
 	metrics := fmc.NewMetrics(reg)
@@ -118,8 +138,9 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		os.Exit(1)
 	}
 
-	writer := fmc.NewValkeyWriter(cfg.Valkey.Addr)
-	cacheReader := scopecache.NewValkeyCacheReader(cfg.Valkey.Addr)
+	valkeyTLSConfig := buildValkeyTLSConfig(cfg.Valkey.TLS, logger)
+	writer := fmc.NewValkeyWriter(cfg.Valkey.Addr, fmc.WithTLSConfig(valkeyTLSConfig))
+	cacheReader := scopecache.NewValkeyCacheReader(cfg.Valkey.Addr, scopecache.WithTLSConfig(valkeyTLSConfig))
 
 	clusterRegistry, err := registry.NewClusterRegistry(registry.MCPGatewayType(cfg.MCPGateway.GatewayType), dynClient, registry.RegistryConfig{
 		Namespace: cfg.MCPGateway.Namespace,
