@@ -1,21 +1,25 @@
-package severity
+package severity_test
 
 import (
 	"context"
 	"errors"
-	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 )
 
+// mockAnthropicMessager implements severity.Messager for AnthropicTriager
+// tests, avoiding a live Anthropic/Vertex API dependency.
 type mockAnthropicMessager struct {
 	resp *anthropic.Message
 	err  error
 }
 
-func (m *mockAnthropicMessager) Create(ctx context.Context, params anthropic.MessageNewParams) (*anthropic.Message, error) {
+func (m *mockAnthropicMessager) Create(_ context.Context, _ anthropic.MessageNewParams) (*anthropic.Message, error) {
 	return m.resp, m.err
 }
 
@@ -28,91 +32,71 @@ func makeAnthropicResponse(text string) *anthropic.Message {
 	}
 }
 
-// BR-AI-1404 / FedRAMP SI-4: Severity classification correctness
-func TestAnthropicTriager_ClassifyHappyPath(t *testing.T) {
-	mock := &mockAnthropicMessager{resp: makeAnthropicResponse("critical")}
-	triager := NewAnthropicTriager(AnthropicTriagerConfig{
-		Messager: mock,
-		Model:    "claude-sonnet-4-6",
+// BR-AI-1404 / FedRAMP SI-4: AnthropicTriager severity classification
+// correctness, error propagation, and confidence scoring for the audit
+// trail.
+var _ = Describe("AnthropicTriager", func() {
+	It("UT-AF-1404-001: classifies a clear-cut response with full confidence", func() {
+		mock := &mockAnthropicMessager{resp: makeAnthropicResponse("critical")}
+		triager := severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{
+			Messager: mock,
+			Model:    "claude-sonnet-4-6",
+		})
+
+		result, err := triager.TriagePure(context.Background(), severity.TriageInput{Description: "HighCPU pod restart loop"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Severity).To(Equal("critical"))
+		Expect(result.Confidence).To(Equal(1.0))
 	})
 
-	result, err := triager.TriagePure(context.Background(), TriageInput{Description: "HighCPU pod restart loop"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Severity != "critical" {
-		t.Errorf("expected severity 'critical', got %q", result.Severity)
-	}
-	if result.Confidence != 1.0 {
-		t.Errorf("expected confidence 1.0, got %v", result.Confidence)
-	}
-}
+	It("UT-AF-1404-002: propagates the underlying SDK error for the audit trail", func() {
+		mock := &mockAnthropicMessager{err: errors.New("vertex auth failure")}
+		triager := severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{
+			Messager: mock,
+			Model:    "claude-sonnet-4-6",
+		})
 
-// BR-AI-1404 / FedRAMP SI-4: Error propagation for audit trail
-func TestAnthropicTriager_ClassifyErrorPath(t *testing.T) {
-	mock := &mockAnthropicMessager{err: errors.New("vertex auth failure")}
-	triager := NewAnthropicTriager(AnthropicTriagerConfig{
-		Messager: mock,
-		Model:    "claude-sonnet-4-6",
+		_, err := triager.TriagePure(context.Background(), severity.TriageInput{Description: "HighCPU"})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).NotTo(BeEmpty())
 	})
 
-	_, err := triager.TriagePure(context.Background(), TriageInput{Description: "HighCPU"})
-	if err == nil {
-		t.Fatal("expected error from failed Anthropic call")
-	}
-	if got := err.Error(); got == "" {
-		t.Error("expected non-empty error message")
-	}
-}
+	It("UT-AF-1404-003: degrades confidence for an ambiguous LLM response", func() {
+		mock := &mockAnthropicMessager{resp: makeAnthropicResponse("I think it might be medium to high")}
+		triager := severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{
+			Messager: mock,
+			Model:    "claude-sonnet-4-6",
+		})
 
-// BR-AI-1404 / FedRAMP SI-4: Degraded confidence for ambiguous LLM output
-func TestAnthropicTriager_AmbiguousResponse(t *testing.T) {
-	mock := &mockAnthropicMessager{resp: makeAnthropicResponse("I think it might be medium to high")}
-	triager := NewAnthropicTriager(AnthropicTriagerConfig{
-		Messager: mock,
-		Model:    "claude-sonnet-4-6",
+		result, err := triager.TriagePure(context.Background(), severity.TriageInput{Description: "Some alert"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Confidence).To(BeNumerically("<", 1.0))
 	})
 
-	result, err := triager.TriagePure(context.Background(), TriageInput{Description: "Some alert"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Confidence >= 1.0 {
-		t.Errorf("expected degraded confidence for ambiguous response, got %v", result.Confidence)
-	}
-}
+	It("UT-AF-1404-004: TriageWithRules includes rule context in classification", func() {
+		mock := &mockAnthropicMessager{resp: makeAnthropicResponse("high")}
+		triager := severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{
+			Messager: mock,
+			Model:    "claude-sonnet-4-6",
+		})
 
-// BR-AI-1404: TriageWithRules includes rule context in classification
-func TestAnthropicTriager_WithRules(t *testing.T) {
-	mock := &mockAnthropicMessager{resp: makeAnthropicResponse("high")}
-	triager := NewAnthropicTriager(AnthropicTriagerConfig{
-		Messager: mock,
-		Model:    "claude-sonnet-4-6",
+		rules := []prom.Rule{{Name: "HighCPU", Query: `rate(cpu[5m]) > 0.9`}}
+		result, err := triager.TriageWithRules(context.Background(), rules, severity.TriageInput{Description: "CPU spike"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Severity).To(Equal("high"))
 	})
 
-	rules := []prom.Rule{{Name: "HighCPU", Query: `rate(cpu[5m]) > 0.9`}}
-	result, err := triager.TriageWithRules(context.Background(), rules, TriageInput{Description: "CPU spike"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result.Severity != "high" {
-		t.Errorf("expected severity 'high', got %q", result.Severity)
-	}
-}
+	It("UT-AF-1404-005: rejects an empty model response instead of guessing", func() {
+		mock := &mockAnthropicMessager{resp: &anthropic.Message{Content: []anthropic.ContentBlockUnion{}}}
+		triager := severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{
+			Messager: mock,
+			Model:    "claude-sonnet-4-6",
+		})
 
-// BR-AI-1404: Empty response handling
-func TestAnthropicTriager_EmptyResponse(t *testing.T) {
-	mock := &mockAnthropicMessager{resp: &anthropic.Message{Content: []anthropic.ContentBlockUnion{}}}
-	triager := NewAnthropicTriager(AnthropicTriagerConfig{
-		Messager: mock,
-		Model:    "claude-sonnet-4-6",
+		_, err := triager.TriagePure(context.Background(), severity.TriageInput{Description: "Something"})
+		Expect(err).To(HaveOccurred())
 	})
-
-	_, err := triager.TriagePure(context.Background(), TriageInput{Description: "Something"})
-	if err == nil {
-		t.Fatal("expected error for empty response")
-	}
-}
+})
 
 // BR-AI-1404 / BR-AI-087: model family detection for factory routing moved
 // to the shared types.IsAnthropicModel (pkg/shared/types/llm_test.go,
