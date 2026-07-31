@@ -531,11 +531,14 @@ func (h *Handler) terminalSessionSSE(sessionID string) (agentclient.SessionStrea
 		Type:  session.EventTypeComplete,
 		Turn:  0,
 		Phase: "complete",
+		// #1794: use the bounded RCA subset (severity/confidence/rca_summary/...)
+		// rather than a raw dump of sess.Result, which also carries internal
+		// workflow/validation state (workflow_id, validation_attempts_history,
+		// etc.) that must not leak to AF/Console (SI-10). Matches what the live
+		// path (Manager.emitCompleteEvent) now attaches.
 	}
 	if sess.Result != nil {
-		if data, marshalErr := json.Marshal(sess.Result); marshalErr == nil {
-			completeEvent.Data = data
-		}
+		completeEvent.Data = session.MarshalRCASubset(sess.Result)
 	}
 
 	frame, err := json.Marshal(completeEvent)
