@@ -260,6 +260,8 @@ And "warnings" SHALL be empty or contain only informational messages
 ## Related Documents
 
 - [DD-KA-001: Workflow Response Validation Architecture](../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md) (supersedes the retired DD-HAPI-002)
+- [BR-KA-200: Handling Inconclusive Investigations](BR-KA-200-resolved-stale-signals.md) — the `low_confidence`/`investigation_inconclusive` triggers in the table above
+- [BR-AI-088: Operator-Configurable Confidence Thresholds](BR-AI-088-configurable-confidence-thresholds.md) — the separate, downstream, AIAnalysis-owned approval gate applied to an already-selected workflow's confidence (do not confuse with this BR's or BR-KA-200's KA-side triggers)
 - [NOTICE_NEEDS_HUMAN_REVIEW_FIELD.md](../handoff/NOTICE_NEEDS_HUMAN_REVIEW_FIELD.md)
 - [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md)
 
@@ -270,4 +272,5 @@ And "warnings" SHALL be empty or contain only informational messages
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2025-12-06 | Initial business requirement |
+| 1.1 | 2026-08-01 | Added cross-references to BR-KA-200 and BR-AI-088 to clarify these are three distinct confidence-related gates, not overlapping/duplicate logic ([Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806) follow-up). |
 

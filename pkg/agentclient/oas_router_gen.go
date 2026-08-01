@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	rn8AllowedHeaders = map[string]string{
+	rn5AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 )
@@ -55,9 +55,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		switch elem[0] {
-		case '/': // Prefix: "/"
+		case '/': // Prefix: "/api/v1/incident/"
 
-			if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+			if l := len("/api/v1/incident/"); len(elem) >= l && elem[0:l] == "/api/v1/incident/" {
 				elem = elem[l:]
 			} else {
 				break
@@ -67,81 +67,135 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			switch elem[0] {
-			case 'a': // Prefix: "api/v1/incident/"
+			case 'a': // Prefix: "analyze"
 
-				if l := len("api/v1/incident/"); len(elem) >= l && elem[0:l] == "api/v1/incident/" {
+				if l := len("analyze"); len(elem) >= l && elem[0:l] == "analyze" {
 					elem = elem[l:]
 				} else {
 					break
 				}
 
 				if len(elem) == 0 {
+					// Leaf node.
+					switch r.Method {
+					case "POST":
+						s.handleIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRequest([0]string{}, elemIsEscaped, w, r)
+					default:
+						s.notAllowed(w, r, notAllowedParams{
+							allowedMethods: "POST",
+							allowedHeaders: rn5AllowedHeaders,
+							acceptPost:     "application/json",
+							acceptPatch:    "",
+						})
+					}
+
+					return
+				}
+
+			case 's': // Prefix: "session/"
+
+				if l := len("session/"); len(elem) >= l && elem[0:l] == "session/" {
+					elem = elem[l:]
+				} else {
 					break
 				}
+
+				// Param: "session_id"
+				// Match until "/"
+				idx := strings.IndexByte(elem, '/')
+				if idx < 0 {
+					idx = len(elem)
+				}
+				args[0] = elem[:idx]
+				elem = elem[idx:]
+
+				if len(elem) == 0 {
+					switch r.Method {
+					case "GET":
+						s.handleIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRequest([1]string{
+							args[0],
+						}, elemIsEscaped, w, r)
+					default:
+						s.notAllowed(w, r, notAllowedParams{
+							allowedMethods: "GET",
+							allowedHeaders: nil,
+							acceptPost:     "",
+							acceptPatch:    "",
+						})
+					}
+
+					return
+				}
 				switch elem[0] {
-				case 'a': // Prefix: "analyze"
+				case '/': // Prefix: "/"
 
-					if l := len("analyze"); len(elem) >= l && elem[0:l] == "analyze" {
+					if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 						elem = elem[l:]
 					} else {
 						break
 					}
 
 					if len(elem) == 0 {
-						// Leaf node.
-						switch r.Method {
-						case "POST":
-							s.handleIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRequest([0]string{}, elemIsEscaped, w, r)
-						default:
-							s.notAllowed(w, r, notAllowedParams{
-								allowedMethods: "POST",
-								allowedHeaders: rn8AllowedHeaders,
-								acceptPost:     "application/json",
-								acceptPatch:    "",
-							})
-						}
-
-						return
-					}
-
-				case 's': // Prefix: "session/"
-
-					if l := len("session/"); len(elem) >= l && elem[0:l] == "session/" {
-						elem = elem[l:]
-					} else {
 						break
-					}
-
-					// Param: "session_id"
-					// Match until "/"
-					idx := strings.IndexByte(elem, '/')
-					if idx < 0 {
-						idx = len(elem)
-					}
-					args[0] = elem[:idx]
-					elem = elem[idx:]
-
-					if len(elem) == 0 {
-						switch r.Method {
-						case "GET":
-							s.handleIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRequest([1]string{
-								args[0],
-							}, elemIsEscaped, w, r)
-						default:
-							s.notAllowed(w, r, notAllowedParams{
-								allowedMethods: "GET",
-								allowedHeaders: nil,
-								acceptPost:     "",
-								acceptPatch:    "",
-							})
-						}
-
-						return
 					}
 					switch elem[0] {
-					case '/': // Prefix: "/"
+					case 'c': // Prefix: "cancel"
 
-						if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+						if l := len("cancel"); len(elem) >= l && elem[0:l] == "cancel" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch r.Method {
+							case "POST":
+								s.handleCancelSessionAPIV1IncidentSessionSessionIDCancelPostRequest([1]string{
+									args[0],
+								}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "POST",
+									allowedHeaders: nil,
+									acceptPost:     "",
+									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+
+					case 'r': // Prefix: "result"
+
+						if l := len("result"); len(elem) >= l && elem[0:l] == "result" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch r.Method {
+							case "GET":
+								s.handleIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRequest([1]string{
+									args[0],
+								}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "GET",
+									allowedHeaders: nil,
+									acceptPost:     "",
+									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+
+					case 's': // Prefix: "s"
+
+						if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
 							elem = elem[l:]
 						} else {
 							break
@@ -151,36 +205,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							break
 						}
 						switch elem[0] {
-						case 'c': // Prefix: "cancel"
+						case 'n': // Prefix: "napshot"
 
-							if l := len("cancel"); len(elem) >= l && elem[0:l] == "cancel" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								// Leaf node.
-								switch r.Method {
-								case "POST":
-									s.handleCancelSessionAPIV1IncidentSessionSessionIDCancelPostRequest([1]string{
-										args[0],
-									}, elemIsEscaped, w, r)
-								default:
-									s.notAllowed(w, r, notAllowedParams{
-										allowedMethods: "POST",
-										allowedHeaders: nil,
-										acceptPost:     "",
-										acceptPatch:    "",
-									})
-								}
-
-								return
-							}
-
-						case 'r': // Prefix: "result"
-
-							if l := len("result"); len(elem) >= l && elem[0:l] == "result" {
+							if l := len("napshot"); len(elem) >= l && elem[0:l] == "napshot" {
 								elem = elem[l:]
 							} else {
 								break
@@ -190,7 +217,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								// Leaf node.
 								switch r.Method {
 								case "GET":
-									s.handleIncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRequest([1]string{
+									s.handleSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRequest([1]string{
 										args[0],
 									}, elemIsEscaped, w, r)
 								default:
@@ -205,153 +232,37 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								return
 							}
 
-						case 's': // Prefix: "s"
+						case 't': // Prefix: "tream"
 
-							if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+							if l := len("tream"); len(elem) >= l && elem[0:l] == "tream" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
 							if len(elem) == 0 {
-								break
-							}
-							switch elem[0] {
-							case 'n': // Prefix: "napshot"
-
-								if l := len("napshot"); len(elem) >= l && elem[0:l] == "napshot" {
-									elem = elem[l:]
-								} else {
-									break
+								// Leaf node.
+								switch r.Method {
+								case "GET":
+									s.handleSessionStreamAPIV1IncidentSessionSessionIDStreamGetRequest([1]string{
+										args[0],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "GET",
+										allowedHeaders: nil,
+										acceptPost:     "",
+										acceptPatch:    "",
+									})
 								}
 
-								if len(elem) == 0 {
-									// Leaf node.
-									switch r.Method {
-									case "GET":
-										s.handleSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, notAllowedParams{
-											allowedMethods: "GET",
-											allowedHeaders: nil,
-											acceptPost:     "",
-											acceptPatch:    "",
-										})
-									}
-
-									return
-								}
-
-							case 't': // Prefix: "tream"
-
-								if l := len("tream"); len(elem) >= l && elem[0:l] == "tream" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									// Leaf node.
-									switch r.Method {
-									case "GET":
-										s.handleSessionStreamAPIV1IncidentSessionSessionIDStreamGetRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, notAllowedParams{
-											allowedMethods: "GET",
-											allowedHeaders: nil,
-											acceptPost:     "",
-											acceptPatch:    "",
-										})
-									}
-
-									return
-								}
-
+								return
 							}
 
 						}
 
 					}
 
-				}
-
-			case 'c': // Prefix: "config"
-
-				if l := len("config"); len(elem) >= l && elem[0:l] == "config" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch r.Method {
-					case "GET":
-						s.handleGetConfigConfigGetRequest([0]string{}, elemIsEscaped, w, r)
-					default:
-						s.notAllowed(w, r, notAllowedParams{
-							allowedMethods: "GET",
-							allowedHeaders: nil,
-							acceptPost:     "",
-							acceptPatch:    "",
-						})
-					}
-
-					return
-				}
-
-			case 'h': // Prefix: "healthz"
-
-				if l := len("healthz"); len(elem) >= l && elem[0:l] == "healthz" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch r.Method {
-					case "GET":
-						s.handleHealthCheckHealthzGetRequest([0]string{}, elemIsEscaped, w, r)
-					default:
-						s.notAllowed(w, r, notAllowedParams{
-							allowedMethods: "GET",
-							allowedHeaders: nil,
-							acceptPost:     "",
-							acceptPatch:    "",
-						})
-					}
-
-					return
-				}
-
-			case 'r': // Prefix: "readyz"
-
-				if l := len("readyz"); len(elem) >= l && elem[0:l] == "readyz" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch r.Method {
-					case "GET":
-						s.handleReadinessCheckReadyzGetRequest([0]string{}, elemIsEscaped, w, r)
-					default:
-						s.notAllowed(w, r, notAllowedParams{
-							allowedMethods: "GET",
-							allowedHeaders: nil,
-							acceptPost:     "",
-							acceptPatch:    "",
-						})
-					}
-
-					return
 				}
 
 			}
@@ -442,9 +353,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 			break
 		}
 		switch elem[0] {
-		case '/': // Prefix: "/"
+		case '/': // Prefix: "/api/v1/incident/"
 
-			if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+			if l := len("/api/v1/incident/"); len(elem) >= l && elem[0:l] == "/api/v1/incident/" {
 				elem = elem[l:]
 			} else {
 				break
@@ -454,79 +365,129 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 				break
 			}
 			switch elem[0] {
-			case 'a': // Prefix: "api/v1/incident/"
+			case 'a': // Prefix: "analyze"
 
-				if l := len("api/v1/incident/"); len(elem) >= l && elem[0:l] == "api/v1/incident/" {
+				if l := len("analyze"); len(elem) >= l && elem[0:l] == "analyze" {
 					elem = elem[l:]
 				} else {
 					break
 				}
 
 				if len(elem) == 0 {
+					// Leaf node.
+					switch method {
+					case "POST":
+						r.name = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostOperation
+						r.summary = "Incident Analyze Endpoint"
+						r.operationID = "incident_analyze_endpoint_api_v1_incident_analyze_post"
+						r.operationGroup = ""
+						r.pathPattern = "/api/v1/incident/analyze"
+						r.args = args
+						r.count = 0
+						return r, true
+					default:
+						return
+					}
+				}
+
+			case 's': // Prefix: "session/"
+
+				if l := len("session/"); len(elem) >= l && elem[0:l] == "session/" {
+					elem = elem[l:]
+				} else {
 					break
 				}
+
+				// Param: "session_id"
+				// Match until "/"
+				idx := strings.IndexByte(elem, '/')
+				if idx < 0 {
+					idx = len(elem)
+				}
+				args[0] = elem[:idx]
+				elem = elem[idx:]
+
+				if len(elem) == 0 {
+					switch method {
+					case "GET":
+						r.name = IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation
+						r.summary = "Incident Session Status Endpoint"
+						r.operationID = "incident_session_status_endpoint_api_v1_incident_session__session_id__get"
+						r.operationGroup = ""
+						r.pathPattern = "/api/v1/incident/session/{session_id}"
+						r.args = args
+						r.count = 1
+						return r, true
+					default:
+						return
+					}
+				}
 				switch elem[0] {
-				case 'a': // Prefix: "analyze"
+				case '/': // Prefix: "/"
 
-					if l := len("analyze"); len(elem) >= l && elem[0:l] == "analyze" {
+					if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 						elem = elem[l:]
 					} else {
 						break
 					}
 
 					if len(elem) == 0 {
-						// Leaf node.
-						switch method {
-						case "POST":
-							r.name = IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostOperation
-							r.summary = "Incident Analyze Endpoint"
-							r.operationID = "incident_analyze_endpoint_api_v1_incident_analyze_post"
-							r.operationGroup = ""
-							r.pathPattern = "/api/v1/incident/analyze"
-							r.args = args
-							r.count = 0
-							return r, true
-						default:
-							return
-						}
-					}
-
-				case 's': // Prefix: "session/"
-
-					if l := len("session/"); len(elem) >= l && elem[0:l] == "session/" {
-						elem = elem[l:]
-					} else {
 						break
-					}
-
-					// Param: "session_id"
-					// Match until "/"
-					idx := strings.IndexByte(elem, '/')
-					if idx < 0 {
-						idx = len(elem)
-					}
-					args[0] = elem[:idx]
-					elem = elem[idx:]
-
-					if len(elem) == 0 {
-						switch method {
-						case "GET":
-							r.name = IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetOperation
-							r.summary = "Incident Session Status Endpoint"
-							r.operationID = "incident_session_status_endpoint_api_v1_incident_session__session_id__get"
-							r.operationGroup = ""
-							r.pathPattern = "/api/v1/incident/session/{session_id}"
-							r.args = args
-							r.count = 1
-							return r, true
-						default:
-							return
-						}
 					}
 					switch elem[0] {
-					case '/': // Prefix: "/"
+					case 'c': // Prefix: "cancel"
 
-						if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+						if l := len("cancel"); len(elem) >= l && elem[0:l] == "cancel" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "POST":
+								r.name = CancelSessionAPIV1IncidentSessionSessionIDCancelPostOperation
+								r.summary = "Cancel Session"
+								r.operationID = "cancel_session_api_v1_incident_session__session_id__cancel_post"
+								r.operationGroup = ""
+								r.pathPattern = "/api/v1/incident/session/{session_id}/cancel"
+								r.args = args
+								r.count = 1
+								return r, true
+							default:
+								return
+							}
+						}
+
+					case 'r': // Prefix: "result"
+
+						if l := len("result"); len(elem) >= l && elem[0:l] == "result" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "GET":
+								r.name = IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation
+								r.summary = "Incident Session Result Endpoint"
+								r.operationID = "incident_session_result_endpoint_api_v1_incident_session__session_id__result_get"
+								r.operationGroup = ""
+								r.pathPattern = "/api/v1/incident/session/{session_id}/result"
+								r.args = args
+								r.count = 1
+								return r, true
+							default:
+								return
+							}
+						}
+
+					case 's': // Prefix: "s"
+
+						if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
 							elem = elem[l:]
 						} else {
 							break
@@ -536,34 +497,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							break
 						}
 						switch elem[0] {
-						case 'c': // Prefix: "cancel"
+						case 'n': // Prefix: "napshot"
 
-							if l := len("cancel"); len(elem) >= l && elem[0:l] == "cancel" {
-								elem = elem[l:]
-							} else {
-								break
-							}
-
-							if len(elem) == 0 {
-								// Leaf node.
-								switch method {
-								case "POST":
-									r.name = CancelSessionAPIV1IncidentSessionSessionIDCancelPostOperation
-									r.summary = "Cancel Session"
-									r.operationID = "cancel_session_api_v1_incident_session__session_id__cancel_post"
-									r.operationGroup = ""
-									r.pathPattern = "/api/v1/incident/session/{session_id}/cancel"
-									r.args = args
-									r.count = 1
-									return r, true
-								default:
-									return
-								}
-							}
-
-						case 'r': // Prefix: "result"
-
-							if l := len("result"); len(elem) >= l && elem[0:l] == "result" {
+							if l := len("napshot"); len(elem) >= l && elem[0:l] == "napshot" {
 								elem = elem[l:]
 							} else {
 								break
@@ -573,11 +509,11 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								// Leaf node.
 								switch method {
 								case "GET":
-									r.name = IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetOperation
-									r.summary = "Incident Session Result Endpoint"
-									r.operationID = "incident_session_result_endpoint_api_v1_incident_session__session_id__result_get"
+									r.name = SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetOperation
+									r.summary = "Session Snapshot"
+									r.operationID = "session_snapshot_api_v1_incident_session__session_id__snapshot_get"
 									r.operationGroup = ""
-									r.pathPattern = "/api/v1/incident/session/{session_id}/result"
+									r.pathPattern = "/api/v1/incident/session/{session_id}/snapshot"
 									r.args = args
 									r.count = 1
 									return r, true
@@ -586,149 +522,35 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								}
 							}
 
-						case 's': // Prefix: "s"
+						case 't': // Prefix: "tream"
 
-							if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+							if l := len("tream"); len(elem) >= l && elem[0:l] == "tream" {
 								elem = elem[l:]
 							} else {
 								break
 							}
 
 							if len(elem) == 0 {
-								break
-							}
-							switch elem[0] {
-							case 'n': // Prefix: "napshot"
-
-								if l := len("napshot"); len(elem) >= l && elem[0:l] == "napshot" {
-									elem = elem[l:]
-								} else {
-									break
+								// Leaf node.
+								switch method {
+								case "GET":
+									r.name = SessionStreamAPIV1IncidentSessionSessionIDStreamGetOperation
+									r.summary = "Session Stream"
+									r.operationID = "session_stream_api_v1_incident_session__session_id__stream_get"
+									r.operationGroup = ""
+									r.pathPattern = "/api/v1/incident/session/{session_id}/stream"
+									r.args = args
+									r.count = 1
+									return r, true
+								default:
+									return
 								}
-
-								if len(elem) == 0 {
-									// Leaf node.
-									switch method {
-									case "GET":
-										r.name = SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetOperation
-										r.summary = "Session Snapshot"
-										r.operationID = "session_snapshot_api_v1_incident_session__session_id__snapshot_get"
-										r.operationGroup = ""
-										r.pathPattern = "/api/v1/incident/session/{session_id}/snapshot"
-										r.args = args
-										r.count = 1
-										return r, true
-									default:
-										return
-									}
-								}
-
-							case 't': // Prefix: "tream"
-
-								if l := len("tream"); len(elem) >= l && elem[0:l] == "tream" {
-									elem = elem[l:]
-								} else {
-									break
-								}
-
-								if len(elem) == 0 {
-									// Leaf node.
-									switch method {
-									case "GET":
-										r.name = SessionStreamAPIV1IncidentSessionSessionIDStreamGetOperation
-										r.summary = "Session Stream"
-										r.operationID = "session_stream_api_v1_incident_session__session_id__stream_get"
-										r.operationGroup = ""
-										r.pathPattern = "/api/v1/incident/session/{session_id}/stream"
-										r.args = args
-										r.count = 1
-										return r, true
-									default:
-										return
-									}
-								}
-
 							}
 
 						}
 
 					}
 
-				}
-
-			case 'c': // Prefix: "config"
-
-				if l := len("config"); len(elem) >= l && elem[0:l] == "config" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch method {
-					case "GET":
-						r.name = GetConfigConfigGetOperation
-						r.summary = "Get Config"
-						r.operationID = "get_config_config_get"
-						r.operationGroup = ""
-						r.pathPattern = "/config"
-						r.args = args
-						r.count = 0
-						return r, true
-					default:
-						return
-					}
-				}
-
-			case 'h': // Prefix: "healthz"
-
-				if l := len("healthz"); len(elem) >= l && elem[0:l] == "healthz" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch method {
-					case "GET":
-						r.name = HealthCheckHealthzGetOperation
-						r.summary = "Health Check"
-						r.operationID = "health_check_healthz_get"
-						r.operationGroup = ""
-						r.pathPattern = "/healthz"
-						r.args = args
-						r.count = 0
-						return r, true
-					default:
-						return
-					}
-				}
-
-			case 'r': // Prefix: "readyz"
-
-				if l := len("readyz"); len(elem) >= l && elem[0:l] == "readyz" {
-					elem = elem[l:]
-				} else {
-					break
-				}
-
-				if len(elem) == 0 {
-					// Leaf node.
-					switch method {
-					case "GET":
-						r.name = ReadinessCheckReadyzGetOperation
-						r.summary = "Readiness Check"
-						r.operationID = "readiness_check_readyz_get"
-						r.operationGroup = ""
-						r.pathPattern = "/readyz"
-						r.args = args
-						r.count = 0
-						return r, true
-					default:
-						return
-					}
 				}
 
 			}

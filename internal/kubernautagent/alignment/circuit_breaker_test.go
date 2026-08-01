@@ -273,7 +273,7 @@ var _ = Describe("Circuit Breaker — #1076", func() {
 	})
 
 	Describe("UT-SA-1076-METRIC-001: Circuit breaker counter increments", func() {
-		It("should increment kubernaut_alignment_circuit_breaker_total on circuit break", func() {
+		It("should increment aiagent_alignment_circuit_breaker_total on circuit break", func() {
 			shadowClient = &mockLLMClient{
 				responses: []llm.ChatResponse{
 					suspiciousResponse(), // canary

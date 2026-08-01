@@ -67,7 +67,7 @@ func (h *handler) handleOllama(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := conversation.NewContext(messages)
-	detCtx := buildDetectionContext(ctx)
+	detCtx := buildDetectionContext(ctx, nil)
 
 	if isPermanentError(detCtx) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{

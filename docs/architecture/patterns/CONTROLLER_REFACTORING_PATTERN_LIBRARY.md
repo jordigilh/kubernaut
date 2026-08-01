@@ -1740,17 +1740,32 @@ Use this template to track refactoring progress:
 
 **Problem**: Service metrics don't follow DD-005 naming standards, causing E2E test failures
 
+**Correction (2026-08-01)**: The original version of this lesson claimed DD-005 requires a
+leading `kubernaut_` namespace built via `Namespace: "kubernaut"` + `Subsystem: "[service]"`.
+That is incorrect and does not match [DD-005](../decisions/DD-005-OBSERVABILITY-STANDARDS.md)'s
+actual rule, which is a flat `{service}_{component}_{metric_name}_{unit}` prefix with **no**
+leading `kubernaut_` (DD-005's own canonical examples: `gateway_signals_received_total`,
+`aiagent_api_llm_tokens_total`). Following the incorrect version of this lesson is what produced
+KA's `kubernaut_alignment_*` metrics (since corrected to `aiagent_alignment_*`) — a second,
+independent instance of the same misalignment this lesson was meant to prevent.
+
 **NT Case Study**:
 - NT metrics used flat prefix: `notification_delivery_attempts_total`
-- DD-005 requires: `kubernaut_notification_delivery_attempts_total`
-- Root cause: Missing `Namespace` and `Subsystem` in metric definitions
+- DD-005 requires: `kubernaut_notification_delivery_attempts_total` ⚠️ **this line was the error** — DD-005 does not add a `kubernaut_` prefix on top of the service prefix; the correct DD-005-compliant name is simply `notification_delivery_attempts_total`, matching the `{service}_...` format the NT team already had
+- Root cause (as originally understood): Missing `Namespace` and `Subsystem` in metric definitions
 - Time lost: 2 hours debugging E2E failures
 
 **Solution**:
 - ✅ **Before metrics refactoring**: Consult Gateway team on DD-005 compliance
-- ✅ Always use `Namespace: "kubernaut"` and `Subsystem: "[service]"` in metrics
-- ✅ Compare with working reference (RO service) before implementing
+- ✅ Use a flat metric-name string (or `Name` field alone, no `Namespace`/`Subsystem`) prefixed with the service name per DD-005's `{service}_{component}_{metric_name}_{unit}` format — do **not** add `Namespace: "kubernaut"`
+- ✅ Compare with working reference (RO service, or DD-005's own examples) before implementing
 - ✅ Cross-team expert consultation resolves domain issues 80% faster than solo debugging
+
+**Known pre-existing drift from this corrected guidance** (not fixed as part of this correction —
+each needs its own blast-radius check before renaming): `pkg/notification/metrics/metrics.go`
+still uses `kubernaut_notification_*`. If pursued, that rename needs its own audit of Helm
+`PrometheusRule`/dashboard consumers before proceeding, the same way KA's `aiagent_alignment_*`
+rename did.
 
 **Pattern**: When refactoring shared infrastructure (metrics, audit, observability):
 1. Identify domain expert team (Gateway for metrics, Audit for events)

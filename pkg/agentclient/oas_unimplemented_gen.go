@@ -5,7 +5,6 @@ package agentclient
 import (
 	"context"
 
-	"github.com/go-faster/jx"
 	ht "github.com/ogen-go/ogen/http"
 )
 
@@ -21,27 +20,6 @@ var _ Handler = UnimplementedHandler{}
 //
 // POST /api/v1/incident/session/{session_id}/cancel
 func (UnimplementedHandler) CancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx context.Context, params CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams) (r CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// GetConfigConfigGet implements get_config_config_get operation.
-//
-// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
-// port.
-// Business Requirement: BR-HAPI-128 (Configuration endpoint).
-//
-// GET /config
-func (UnimplementedHandler) GetConfigConfigGet(ctx context.Context) (r jx.Raw, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// HealthCheckHealthzGet implements health_check_healthz_get operation.
-//
-// Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.
-// Business Requirement: BR-HAPI-126 (Health check endpoint).
-//
-// GET /healthz
-func (UnimplementedHandler) HealthCheckHealthzGet(ctx context.Context) (r jx.Raw, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -75,18 +53,6 @@ func (UnimplementedHandler) IncidentSessionResultEndpointAPIV1IncidentSessionSes
 //
 // GET /api/v1/incident/session/{session_id}
 func (UnimplementedHandler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx context.Context, params IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams) (r IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ReadinessCheckReadyzGet implements readiness_check_readyz_get operation.
-//
-// Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.
-// Business Requirements:
-// - BR-HAPI-127 (Readiness check endpoint)
-// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern).
-//
-// GET /readyz
-func (UnimplementedHandler) ReadinessCheckReadyzGet(ctx context.Context) (r jx.Raw, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

@@ -1180,6 +1180,23 @@ jobs:
             ls -la /tmp/kubernaut-must-gather/
             tar -czf must-gather-e2e-${{ matrix.service }}-${TIMESTAMP}.tar.gz -C /tmp kubernaut-must-gather/
             echo "✅ Created must-gather archive: must-gather-e2e-${{ matrix.service }}-${TIMESTAMP}.tar.gz"
+          elif compgen -G "/tmp/*-e2e-logs-*" > /dev/null; then
+            # test/infrastructure DeleteCluster/ExportMustGatherLogs's "local mode"
+            # (IMAGE_REGISTRY unset, which this job never sets -- it reuses
+            # CI-prebuilt artifacts via KUBERNAUT_CI_ARTIFACT_TAG instead of pushing
+            # to a registry) already exported to /tmp/<serviceName>-e2e-logs-<ts>/
+            # AND deleted the Kind cluster itself, BEFORE this step ever runs --
+            # multi-cluster suites (e.g. fleet: local + remote) can produce more
+            # than one such directory. The "no must-gather dir -> try a live `kind
+            # export logs`" fallback below always found zero clusters in this case
+            # (RCA: PR #1820 E2E-FLEET-017 CI run 30702631735, "No kind clusters
+            # found") since the suite's own AfterSuite had already deleted them --
+            # collecting these already-exported directories directly, instead of
+            # attempting a live export, is the fix.
+            echo "✅ Found suite-exported log directory(ies) (local-mode AfterSuite already ran)"
+            ls -la /tmp/*-e2e-logs-*/ 2>/dev/null || true
+            tar -czf must-gather-e2e-${{ matrix.service }}-${TIMESTAMP}.tar.gz -C /tmp $(cd /tmp && compgen -G "*-e2e-logs-*")
+            echo "✅ Created must-gather archive: must-gather-e2e-${{ matrix.service }}-${TIMESTAMP}.tar.gz"
           else
             echo "⚠️  No must-gather directory found (BeforeSuite failure)"
             echo "📋 Manually exporting Kind cluster logs..."

@@ -468,6 +468,22 @@ kubernautAgent:
   # -- Shadow agent alignment check (#601): parallel audit for prompt injection detection.
   alignmentCheck:
     enabled: false
+  # -- Multi-cluster fleet configuration (BR-FLEET-054, ADR-068, issue #1729).
+  # Gated by global.fleet.enabled (Issue #1707) -- when true and
+  # global.fleet.mcpGatewayEndpoint/mcpGatewayType are set, KA's investigator
+  # additionally advertises the fleet MCP Gateway's remote-cluster tools
+  # (e.g. resources_get) for fleet-tagged investigations, alongside its
+  # local kubectl_* tools (DD-FLEET-004). Before this, KA's Go-side fleet
+  # client (cmd/kubernautagent/toolregistry.go registerFleetTools) was fully
+  # wired but never reachable via Helm at all -- a fleet-tagged investigation
+  # would silently fall back to hub-local tools regardless of
+  # global.fleet.enabled (#1729). No namespace field here (unlike
+  # apifrontend.fleet/effectivenessmonitor.fleet): KA has no ClusterRegistry
+  # informer/watch. mcpGatewayEndpoint/mcpGatewayType/
+  # oauth2.{enabled,tokenURL,scopes} come from global.fleet.* (Issue #1707
+  # follow-up); only oauth2.credentialsSecretRef remains overridable here.
+  fleet:
+    oauth2: {}
 
 # -- AuthWebhook admission controller
 # DD-PLATFORM-006 DA14: replicas (1) / logging.level ("INFO") have non-zero

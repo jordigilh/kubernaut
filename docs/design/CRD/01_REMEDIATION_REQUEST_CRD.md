@@ -710,7 +710,7 @@ rules:
 - ~~[Multi-CRD Reconciliation Architecture](../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)~~ (DEPRECATED)
 - [Business Requirements Overview](../requirements/00_REQUIREMENTS_OVERVIEW.md)
 - [AlertProcessing CRD Design](./02_ALERT_PROCESSING_CRD.md) *(Next)*
-- [AIAnalysis CRD Design](./03_AI_ANALYSIS_CRD.md) *(Planned)*
+- [AIAnalysis CRD Schema](../../services/crd-controllers/02-aianalysis/crd-schema.md) *(current)*
 - [WorkflowExecution CRD Design](./04_WORKFLOW_EXECUTION_CRD.md) *(Planned)*
 - ~~KubernetesExecution CRD Design~~ *(removed - ADR-025)*
 

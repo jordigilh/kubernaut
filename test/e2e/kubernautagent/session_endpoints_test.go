@@ -303,7 +303,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// ========================================
 			// ASSERT
 			// ========================================
-			// BR-HAPI-197 + BR-HAPI-198: KA returns confidence but does NOT enforce thresholds
+			// BR-KA-197 + BR-AI-088: KA returns confidence but does NOT enforce thresholds
 			// AIAnalysis owns the threshold logic
 			Expect(result.NeedsHumanReview.Value).To(BeFalse(),
 				"KA should NOT set needs_human_review based on confidence thresholds (BR-HAPI-197)")

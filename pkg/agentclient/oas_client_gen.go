@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/go-faster/errors"
-	"github.com/go-faster/jx"
 	"github.com/ogen-go/ogen/conv"
 	ht "github.com/ogen-go/ogen/http"
 	"github.com/ogen-go/ogen/otelogen"
@@ -35,21 +34,6 @@ type Invoker interface {
 	//
 	// POST /api/v1/incident/session/{session_id}/cancel
 	CancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx context.Context, params CancelSessionAPIV1IncidentSessionSessionIDCancelPostParams) (CancelSessionAPIV1IncidentSessionSessionIDCancelPostRes, error)
-	// GetConfigConfigGet invokes get_config_config_get operation.
-	//
-	// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
-	// port.
-	// Business Requirement: BR-HAPI-128 (Configuration endpoint).
-	//
-	// GET /config
-	GetConfigConfigGet(ctx context.Context) (jx.Raw, error)
-	// HealthCheckHealthzGet invokes health_check_healthz_get operation.
-	//
-	// Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.
-	// Business Requirement: BR-HAPI-126 (Health check endpoint).
-	//
-	// GET /healthz
-	HealthCheckHealthzGet(ctx context.Context) (jx.Raw, error)
 	// IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost invokes incident_analyze_endpoint_api_v1_incident_analyze_post operation.
 	//
 	// Submit incident analysis request (async session-based pattern).
@@ -74,15 +58,6 @@ type Invoker interface {
 	//
 	// GET /api/v1/incident/session/{session_id}
 	IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx context.Context, params IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams) (IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, error)
-	// ReadinessCheckReadyzGet invokes readiness_check_readyz_get operation.
-	//
-	// Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.
-	// Business Requirements:
-	// - BR-HAPI-127 (Readiness check endpoint)
-	// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern).
-	//
-	// GET /readyz
-	ReadinessCheckReadyzGet(ctx context.Context) (jx.Raw, error)
 	// SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet invokes session_snapshot_api_v1_incident_session__session_id__snapshot_get operation.
 	//
 	// PR3 extends the response with CancelledResult fields (messages, turn, phase, tokens).
@@ -225,157 +200,6 @@ func (c *Client) sendCancelSessionAPIV1IncidentSessionSessionIDCancelPost(ctx co
 
 	stage = "DecodeResponse"
 	result, err := decodeCancelSessionAPIV1IncidentSessionSessionIDCancelPostResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// GetConfigConfigGet invokes get_config_config_get operation.
-//
-// Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API
-// port.
-// Business Requirement: BR-HAPI-128 (Configuration endpoint).
-//
-// GET /config
-func (c *Client) GetConfigConfigGet(ctx context.Context) (jx.Raw, error) {
-	res, err := c.sendGetConfigConfigGet(ctx)
-	return res, err
-}
-
-func (c *Client) sendGetConfigConfigGet(ctx context.Context) (res jx.Raw, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("get_config_config_get"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/config"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, GetConfigConfigGetOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/config"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "GET", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeGetConfigConfigGetResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// HealthCheckHealthzGet invokes health_check_healthz_get operation.
-//
-// Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.
-// Business Requirement: BR-HAPI-126 (Health check endpoint).
-//
-// GET /healthz
-func (c *Client) HealthCheckHealthzGet(ctx context.Context) (jx.Raw, error) {
-	res, err := c.sendHealthCheckHealthzGet(ctx)
-	return res, err
-}
-
-func (c *Client) sendHealthCheckHealthzGet(ctx context.Context) (res jx.Raw, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("health_check_healthz_get"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/healthz"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, HealthCheckHealthzGetOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/healthz"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "GET", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeHealthCheckHealthzGetResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -644,83 +468,6 @@ func (c *Client) sendIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDG
 
 	stage = "DecodeResponse"
 	result, err := decodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// ReadinessCheckReadyzGet invokes readiness_check_readyz_get operation.
-//
-// Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.
-// Business Requirements:
-// - BR-HAPI-127 (Readiness check endpoint)
-// - BR-HAPI-201 (Graceful shutdown with DD-007 pattern).
-//
-// GET /readyz
-func (c *Client) ReadinessCheckReadyzGet(ctx context.Context) (jx.Raw, error) {
-	res, err := c.sendReadinessCheckReadyzGet(ctx)
-	return res, err
-}
-
-func (c *Client) sendReadinessCheckReadyzGet(ctx context.Context) (res jx.Raw, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("readiness_check_readyz_get"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/readyz"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ReadinessCheckReadyzGetOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/readyz"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "GET", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeReadinessCheckReadyzGetResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
