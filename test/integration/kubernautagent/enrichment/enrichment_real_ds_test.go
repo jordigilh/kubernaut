@@ -183,6 +183,43 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 	})
 
 	// ============================================================================
+	// IT-KA-1802-001: Target-resource scoping isolates remediation history
+	// across namespaces (Issue #1802, release/v1.5 backport — target-resource
+	// only; no cluster_id concept on this branch, see docs/testing/1802/TEST_PLAN.md
+	// Section 1.3). Zero KA code changes: this proves KA's existing, unchanged
+	// enrichment path (Enricher.Enrich -> DSAdapter -> real DS -> real Postgres)
+	// transparently inherits the DS-side target-resource WHERE-clause fix (D0).
+	// ============================================================================
+	Describe("IT-KA-1802-001: target-resource scoping isolates remediation history across namespaces (Issue #1802)", Label("integration", "issue-1802"), func() {
+		It("should not surface a different namespace's history when enriching an identically-named/-spec'd resource, with zero KA code changes", func() {
+			sharedHash := "sha256:1802-" + testID
+			nsA := "ka1802a-" + testID
+			targetA := nsA + "/Pod/web-pod-1"
+			corrA := fmt.Sprintf("ka1802-a-%s", testID)
+			now := time.Now().Add(-1 * time.Hour)
+
+			By("Seeding namespace A's remediation history for the shared resource name + spec hash")
+			insertROEvent(corrA, targetA, sharedHash, "IncreaseMemory", now)
+
+			By("Enriching for namespace B (it-enrichment), targeting the identically-named/-spec'd resource")
+			resultB, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "", sharedHash, "incident-1802b-"+testID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resultB.RemediationHistory).ToNot(BeNil())
+			Expect(resultB.RemediationHistory.Tier1).To(BeEmpty(),
+				"Issue #1802: namespace B's investigation must NOT be enriched with namespace A's remediation "+
+					"history for an identically-named/-spec'd resource -- target-resource scoping must isolate the "+
+					"two namespaces, proving KA's unchanged DS adapter transparently inherits the DS-side fix")
+
+			By("Sanity: namespace A's own investigation DOES see its own history")
+			resultA, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", nsA, "", sharedHash, "incident-1802a-"+testID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resultA.RemediationHistory.Tier1).To(HaveLen(1),
+				"namespace A's own matching target-resource history must still be surfaced")
+			Expect(resultA.RemediationHistory.Tier1[0].RemediationUID).To(Equal(corrA))
+		})
+	})
+
+	// ============================================================================
 	// IT-KA-433-ENR-002: specHash auto-computation from real K8s
 	// ============================================================================
 	Describe("IT-KA-433-ENR-002: specHash auto-computation from real K8s", func() {

@@ -149,11 +149,11 @@ Every test answers a business question, not a code-path question: "Does an unrel
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
-| BR-ORCH-042.5 | Ineffective chain detection must not cross target-resource boundaries | P0 | Unit | `UT-DS-1802-001` | Pending |
-| BR-ORCH-042.5 | " | P0 | Integration | `IT-DS-1802-001`, `IT-RO-1802-001` | Pending |
-| BR-ORCH-042.5 | " | P0 | E2E | `E2E-RO-1802-001` | Pending |
-| BR-INS-001/002 | Remediation-effectiveness correlation must not cross target boundaries in LLM enrichment | P1 | Integration | `IT-KA-1802-001` | Pending |
-| (structural) | Cluster-scoped target-resource string format must be internally consistent | P1 | Unit + Integration | `UT-DS-1802-002`, `IT-DS-1802-002` | Pending |
+| BR-ORCH-042.5 | Ineffective chain detection must not cross target-resource boundaries | P0 | Unit | `UT-DS-1802-001` | Passed |
+| BR-ORCH-042.5 | " | P0 | Integration | `IT-DS-1802-001`, `IT-RO-1802-001` | Passed |
+| BR-ORCH-042.5 | " | P0 | E2E | `E2E-RO-1802-001` | Passed |
+| BR-INS-001/002 | Remediation-effectiveness correlation must not cross target boundaries in LLM enrichment | P1 | Integration | `IT-KA-1802-001` | Passed |
+| (structural) | Cluster-scoped target-resource string format must be internally consistent | P1 | Unit + Integration | `UT-DS-1802-002`, `IT-DS-1802-002` | Passed |
 
 ---
 
@@ -169,23 +169,23 @@ Every test answers a business question, not a code-path question: "Does an unrel
 
 | ID | Business Outcome Under Test | Phase |
 |----|------------------------------|-------|
-| `UT-DS-1802-001` | Given a same-hash row belonging to a *different* target resource, the query predicate excludes it | Pending |
-| `UT-DS-1802-002` | Given a cluster-scoped (non-namespaced) resource, the handler's target-resource string uses the same unconditional 3-part canonical format used for namespaced resources | Pending |
+| `UT-DS-1802-001` | Given a same-hash row belonging to a *different* target resource, the query predicate excludes it | Passed |
+| `UT-DS-1802-002` | Given a cluster-scoped (non-namespaced) resource, the handler's target-resource string uses the same unconditional 3-part canonical format used for namespaced resources | Passed |
 
 ### Tier 2: Integration Tests
 
 | ID | Business Outcome Under Test | Phase |
 |----|------------------------------|-------|
-| `IT-DS-1802-001` | Against a real Postgres instance, `QueryROEventsBySpecHash` (via the full handler stack) returns only same-target rows for a given spec hash | Pending |
-| `IT-DS-1802-002` | The handler's target-resource string, as sent to the repository layer, is 3-part for cluster-scoped resources (end-to-end through the real HTTP handler) | Pending |
-| `IT-RO-1802-001` | The exact #1802 repro: two `Deployment`s, identical spec hash, different namespaces — the second target's `WorkflowExecution` is NOT blocked, proven through RO's real `CheckIneffectiveRemediationChain` call chain against a real DS/Postgres | Pending |
-| `IT-KA-1802-001` | KA's real enrichment path (`Enricher.Enrich` -> `DSAdapter` -> real DS/Postgres) does not surface a different namespace's identically-specced-resource history — zero KA code changes, proving transparent inheritance (D0) | Pending |
+| `IT-DS-1802-001` | Against a real Postgres instance, `QueryROEventsBySpecHash` (via the full handler stack) returns only same-target rows for a given spec hash | Passed |
+| `IT-DS-1802-002` | The handler's target-resource string, as sent to the repository layer, is 3-part for cluster-scoped resources (end-to-end through the real HTTP handler) | Passed |
+| `IT-RO-1802-001` | The exact #1802 repro: two `Deployment`s, identical spec hash, different namespaces — the second target's `WorkflowExecution` is NOT blocked, proven through RO's real `CheckIneffectiveRemediationChain` call chain against a real DS/Postgres | Passed |
+| `IT-KA-1802-001` | KA's real enrichment path (`Enricher.Enrich` -> `DSAdapter` -> real DS/Postgres) does not surface a different namespace's identically-specced-resource history — zero KA code changes, proving transparent inheritance (D0) | Passed |
 
 ### Tier 3: E2E Tests
 
 | ID | Business Outcome Under Test | Phase |
 |----|------------------------------|-------|
-| `E2E-RO-1802-001` | Through the real deployed RO controller (Kind cluster, real Postgres, real DataStorage), creating two `Deployment`s with identical spec hash in different namespaces does NOT cause the second `WorkflowExecution` to be blocked as "ineffective" | Pending |
+| `E2E-RO-1802-001` | Through the real deployed RO controller (Kind cluster, real Postgres, real DataStorage), creating two `Deployment`s with identical spec hash in different namespaces does NOT cause the second `WorkflowExecution` to be blocked as "ineffective" | Passed |
 
 ### Tier Skip Rationale
 
@@ -243,3 +243,4 @@ Every test answers a business question, not a code-path question: "Does an unrel
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-07-31 | Initial backport test plan, written before backport implementation per AGENTS.md Pre-Implementation Workflow. Adapted from `main`'s TP-1802-v1.0 (this same document, ported wholesale by `git cherry-pick` then rewritten to accurately scope this branch — see Section 1.3 for what was dropped and why). |
+| 1.1 | 2026-07-31 | All test items executed: `IT-RO-1802-001` (real DS/Postgres, 132/132 RO integration specs green), `E2E-RO-1802-001` (new, real Kind cluster + real RO controller + real DataStorage, 1/1 focused spec green), `IT-KA-1802-001` (new, real DS/Postgres via KA's unchanged `Enricher.Enrich` path, full 15-suite KA integration run green). Pyramid Invariant fully satisfied for this branch's scope — statuses updated Pending -> Passed. |
