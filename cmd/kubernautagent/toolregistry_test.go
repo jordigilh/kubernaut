@@ -184,6 +184,43 @@ var _ = Describe("fleetOAuth2CredentialsBasePath", func() {
 })
 
 // ============================================================================
+// buildFleetOAuth2Config — CI RCA (PR #1820, E2E-FLEET-017 CI run 30712261367):
+// KA's FleetOAuth2 carried no TLS CA override, so the OAuth2 token-fetch HTTP
+// client always fell back to the system CA trust store. Against Fleet E2E's
+// Kind cluster (Keycloak's cert-manager-issued, cluster-local certificate),
+// every reconnect attempt failed with "tls: failed to verify certificate:
+// x509: certificate signed by unknown authority", leaving kubernaut-agent's
+// fleet readiness gate permanently NotReady (no crash loop post-DD-PLATFORM-009,
+// but never Ready either). pkg/fleet/config.go's FleetOAuth2Config.TLSCAFile
+// doc comment records this exact same root cause already fixed for every
+// other fleet-aware service (GW/RO/SP/WE/EM/AF) via a shared TLSCAFile field
+// -- KA was the last holdout because it carries its own parallel FleetOAuth2
+// struct instead of the shared type.
+// ============================================================================
+
+var _ = Describe("buildFleetOAuth2Config", func() {
+	It("wires TLSCaFile from FleetOAuth2.TLSCaFile into the ReloadableOAuth2Config so the OAuth2 token-fetch HTTP client trusts a cluster-local IdP CA instead of falling back to the system trust store", func() {
+		oauth2 := kaconfig.FleetOAuth2{
+			TokenURL:  "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+			TLSCaFile: "/etc/tls-ca/ca.crt",
+		}
+
+		reloadCfg := buildFleetOAuth2Config(oauth2, "/etc/kubernaut-agent/fleet-oauth2")
+
+		Expect(reloadCfg.TlsCaFile).To(Equal("/etc/tls-ca/ca.crt"))
+		Expect(reloadCfg.TokenURL).To(Equal(oauth2.TokenURL))
+		Expect(reloadCfg.ClientIDPath).To(Equal("/etc/kubernaut-agent/fleet-oauth2/client-id"))
+		Expect(reloadCfg.ClientSecretPath).To(Equal("/etc/kubernaut-agent/fleet-oauth2/client-secret"))
+	})
+
+	It("leaves TlsCaFile empty when FleetOAuth2.TLSCaFile is unset, preserving the system-CA-trust-store fallback for deployments against a publicly-trusted IdP", func() {
+		reloadCfg := buildFleetOAuth2Config(kaconfig.FleetOAuth2{TokenURL: "https://idp.example.com/token"}, "/etc/kubernaut-agent/fleet-oauth2")
+
+		Expect(reloadCfg.TlsCaFile).To(BeEmpty())
+	})
+})
+
+// ============================================================================
 // buildWorkflowMeta / applyParsedSchemaMeta — pure-function unit tests.
 //
 // #1677 Phase 2g follow-up (DD-WORKFLOW-019): these previously drove

@@ -229,9 +229,7 @@ the MCP Gateway at all. Rendered unconditionally (not only when both are
 set) so an operator who enables global.fleet but leaves mcpGatewayType
 unset gets the same graceful "fleet disabled" fallback already built into
 registerFleetTools, rather than a materially different (and undocumented)
-Helm-side behavior. No tlsCAFile field: FleetOAuth2 has no such field --
-unlike apifrontend/effectivenessmonitor's fleet OAuth2, KA's fleet MCP
-client has no separate CA override today.
+Helm-side behavior.
 */}}
 {{- if .Values.global.fleet.enabled }}
   fleet:
@@ -248,6 +246,19 @@ client has no separate CA override today.
         - {{ . | quote }}
 {{- end }}
 {{- end }}
+      {{- /*
+      PR #1820 CI RCA (E2E-FLEET-017, run 30712261367): without this, KA's
+      OAuth2 token-fetch HTTP client fell back to the system CA trust store
+      and failed to verify a cluster-local IdP's cert-manager-issued
+      certificate ("x509: certificate signed by unknown authority"),
+      leaving the fleet readiness gate permanently NotReady. Mirrors
+      apifrontend/effectivenessmonitor's fleet oauth2.tlsCAFile rendering:
+      $kaFleetPreamble.oauth2.tlsCAFile already resolves from the
+      global-only global.fleet.oauth2.tlsCAFile (kubernaut.fleet.oauth2
+      helper) -- defaulting to the same CA bundle already mounted for
+      inter-service mTLS trust when unset.
+      */}}
+      tlsCaFile: {{ $kaFleetPreamble.oauth2.tlsCAFile | default (include "kubernaut.interServiceTLS.caFile" .) | quote }}
 {{- end }}
 {{- end }}
 {{- end }}

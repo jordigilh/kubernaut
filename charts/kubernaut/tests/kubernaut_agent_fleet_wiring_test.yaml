@@ -64,6 +64,52 @@ tests:
           pattern: "(?m)^\\s*credentialsSecretRef: \"fleet-creds\""
 
   # ---------------------------------------------------------------------
+  # oauth2.tlsCaFile (PR #1820 CI RCA, E2E-FLEET-017 run 30712261367): KA's
+  # OAuth2 token-fetch HTTP client had no CA override and always fell back
+  # to the system trust store, so it could not verify a cluster-local IdP's
+  # cert-manager-issued certificate ("x509: certificate signed by unknown
+  # authority"), leaving the fleet readiness gate permanently NotReady.
+  # ---------------------------------------------------------------------
+  - it: "KA renders fleet oauth2.tlsCaFile from global.fleet.oauth2.tlsCAFile when explicitly set"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: "kuadrant"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "fleet-creds"
+            tlsCAFile: "/etc/custom-ca/ca.crt"
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*tlsCaFile: \"/etc/custom-ca/ca\\.crt\""
+
+  - it: "KA fleet oauth2.tlsCaFile defaults to the inter-service mTLS CA bundle (/etc/tls-ca/ca.crt, already mounted into every KA pod) when global.fleet.oauth2.tlsCAFile is unset"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: "kuadrant"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "fleet-creds"
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*tlsCaFile: \"/etc/tls-ca/ca\\.crt\""
+
+  # ---------------------------------------------------------------------
   # Fail-closed guards: KA falls back to the shared global.fleet.oauth2
   # credential, same as GW/RO/AF/EM/SP/FMC (unlike WE's non-fallback-able
   # write-scoped credential).

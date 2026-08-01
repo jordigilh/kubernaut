@@ -271,6 +271,28 @@ func fleetOAuth2CredentialsBasePath(oauth2 kaconfig.FleetOAuth2) string {
 	return "/etc/kubernaut-agent/" + secretRef
 }
 
+// buildFleetOAuth2Config translates KA's FleetOAuth2 settings into the
+// mcpclient.ReloadableOAuth2Config the fleet client's transport needs.
+//
+// PR #1820 CI RCA (E2E-FLEET-017, run 30712261367): TlsCaFile was previously
+// never set here, so the OAuth2 token-fetch HTTP client always fell back to
+// the system CA trust store. Against a cluster-local IdP with a
+// cert-manager-issued certificate (e.g. Fleet E2E's Keycloak), every token
+// request failed with "tls: failed to verify certificate: x509: certificate
+// signed by unknown authority", leaving kubernaut-agent's fleet readiness
+// gate permanently NotReady. See pkg/fleet/config.go's FleetOAuth2Config.TLSCAFile
+// for the equivalent field already wired for every other fleet-aware service.
+func buildFleetOAuth2Config(oauth2 kaconfig.FleetOAuth2, basePath string) fleetclient.ReloadableOAuth2Config {
+	return fleetclient.ReloadableOAuth2Config{
+		TokenURL:         oauth2.TokenURL,
+		ClientIDPath:     basePath + "/client-id",
+		ClientSecretPath: basePath + "/client-secret",
+		Scopes:           fleetclient.DefaultFleetScopes(oauth2.Scopes),
+		TokenTimeout:     10 * time.Second,
+		TlsCaFile:        oauth2.TLSCaFile,
+	}
+}
+
 // registerFleetTools connects to the MCP Gateway and creates a
 // GatewayDiscoverer for the configured gateway type, returning an
 // investigator.FleetOverlayResolver that pre-scopes tools for each
@@ -296,17 +318,12 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.L
 	var opts []fleetclient.Option
 	if cfg.Integrations.Fleet.OAuth2.Enabled {
 		basePath := fleetOAuth2CredentialsBasePath(cfg.Integrations.Fleet.OAuth2)
-		reloadCfg := fleetclient.ReloadableOAuth2Config{
-			TokenURL:         cfg.Integrations.Fleet.OAuth2.TokenURL,
-			ClientIDPath:     basePath + "/client-id",
-			ClientSecretPath: basePath + "/client-secret",
-			Scopes:           fleetclient.DefaultFleetScopes(cfg.Integrations.Fleet.OAuth2.Scopes),
-			TokenTimeout:     10 * time.Second,
-		}
+		reloadCfg := buildFleetOAuth2Config(cfg.Integrations.Fleet.OAuth2, basePath)
 		opts = append(opts, fleetclient.WithReloadableOAuth2Transport(reloadCfg, fleetLog)) //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
 		fleetLog.Info("fleet OAuth2 authentication configured (hot-reloadable)",
 			"tokenURL", cfg.Integrations.Fleet.OAuth2.TokenURL,
-			"secretPath", basePath)
+			"secretPath", basePath,
+			"tlsCaFile", cfg.Integrations.Fleet.OAuth2.TLSCaFile)
 	}
 
 	resilienceCfg := fleetclient.DefaultResilienceConfig()
