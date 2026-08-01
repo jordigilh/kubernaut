@@ -67,12 +67,6 @@ func (o *OpenAICompatibleTriager) TriageWithRules(ctx context.Context, rules []p
 	return o.classify(ctx, prompt)
 }
 
-// TriagePure classifies severity using LLM without rule context (pure fallback).
-func (o *OpenAICompatibleTriager) TriagePure(ctx context.Context, input TriageInput) (TriageResult, error) {
-	prompt := BuildTriagePrompt(input, nil)
-	return o.classify(ctx, prompt)
-}
-
 func (o *OpenAICompatibleTriager) classify(ctx context.Context, prompt string) (TriageResult, error) {
 	req := openaicompat.Request{
 		Model:    o.model,

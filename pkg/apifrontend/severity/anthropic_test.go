@@ -43,7 +43,7 @@ var _ = Describe("AnthropicTriager", func() {
 			Model:    "claude-sonnet-4-6",
 		})
 
-		result, err := triager.TriagePure(context.Background(), severity.TriageInput{Description: "HighCPU pod restart loop"})
+		result, err := triager.TriageWithRules(context.Background(), nil, severity.TriageInput{Description: "HighCPU pod restart loop"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Severity).To(Equal("critical"))
 		Expect(result.Confidence).To(Equal(1.0))
@@ -56,7 +56,7 @@ var _ = Describe("AnthropicTriager", func() {
 			Model:    "claude-sonnet-4-6",
 		})
 
-		_, err := triager.TriagePure(context.Background(), severity.TriageInput{Description: "HighCPU"})
+		_, err := triager.TriageWithRules(context.Background(), nil, severity.TriageInput{Description: "HighCPU"})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).NotTo(BeEmpty())
 	})
@@ -68,7 +68,7 @@ var _ = Describe("AnthropicTriager", func() {
 			Model:    "claude-sonnet-4-6",
 		})
 
-		result, err := triager.TriagePure(context.Background(), severity.TriageInput{Description: "Some alert"})
+		result, err := triager.TriageWithRules(context.Background(), nil, severity.TriageInput{Description: "Some alert"})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Confidence).To(BeNumerically("<", 1.0))
 	})
@@ -93,7 +93,7 @@ var _ = Describe("AnthropicTriager", func() {
 			Model:    "claude-sonnet-4-6",
 		})
 
-		_, err := triager.TriagePure(context.Background(), severity.TriageInput{Description: "Something"})
+		_, err := triager.TriageWithRules(context.Background(), nil, severity.TriageInput{Description: "Something"})
 		Expect(err).To(HaveOccurred())
 	})
 })

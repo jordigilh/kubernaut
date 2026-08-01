@@ -166,13 +166,41 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			tc := newTypedFakeClient()
 			noopLLM := severity.NewNoopLLMTriager(logr.Discard())
 			cfg := severity.DefaultConfig()
-			triager := severity.NewTriager(&noopPromClient{}, noopLLM, cfg, logr.Discard())
+			mockProm := &alertOverridePromClient{
+				alerts: []prom.Alert{
+					{State: "firing", Labels: map[string]string{
+						"alertname": "TestAlert", "namespace": "prod", "kind": "Deployment", "name": "web", "severity": "critical",
+					}},
+				},
+			}
+			triager := severity.NewTriager(mockProm, noopLLM, cfg, logr.Discard())
 
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: triager}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "test triage", APIVersion: "apps/v1",
 			}, "alice")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
+
+			created := verifyTypedRR(tc, "prod", extractRRName(result.RRID))
+			Expect(created.Spec.Severity).To(Equal("critical"), "severity must come from the real Prometheus alert, not a default")
+		})
+
+		It("UT-AF-1839-001: HandleCreateRR fails closed (no RR created) when severity cannot be grounded in a real alert or rule", func() {
+			tc := newTypedFakeClient()
+			noopLLM := severity.NewNoopLLMTriager(logr.Discard())
+			cfg := severity.DefaultConfig()
+			triager := severity.NewTriager(&noopPromClient{}, noopLLM, cfg, logr.Discard())
+
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: triager}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "no alert or rule exists for this resource", APIVersion: "apps/v1",
+			}, "alice")
+			Expect(err).To(MatchError(ContainSubstring("cannot determine severity")),
+				"#1839: must fail closed instead of fabricating a severity when there is no grounding evidence")
+			Expect(result.RRID).To(BeEmpty())
+
+			var rrList remediationv1.RemediationRequestList
+			Expect(tc.List(context.Background(), &rrList, crclient.InNamespace("prod"))).To(Succeed())
+			Expect(rrList.Items).To(BeEmpty(), "no RemediationRequest should be created when severity cannot be determined")
 		})
 
 		It("UT-AF-1282-MIN-007: nil Triager defaults severity to medium", func() {

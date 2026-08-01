@@ -141,7 +141,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		a2aCreateRRAndWait("sev-tier2-ns", "test-inactive-target", "")
 		rr := findRRByTarget("sev-tier2-ns", "test-inactive-target")
 		src := rr.Spec.SignalLabels["severity_source"]
-		Expect(src).To(BeElementOf("rule_evaluation", "llm_rule_informed", "llm_triage"),
+		Expect(src).To(BeElementOf("rule_evaluation", "llm_rule_informed"),
 			"expected Tier 2 or Tier 2.5 source, got: %s", src)
 	})
 
@@ -149,15 +149,48 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		a2aCreateRRAndWait("no-data-ns", "test-nodata-target", "")
 		rr := findRRByTarget("no-data-ns", "test-nodata-target")
 		src := rr.Spec.SignalLabels["severity_source"]
-		Expect(src).To(BeElementOf("llm_rule_informed", "llm_triage"),
-			"expected Tier 2.5 or Tier 3 source, got: %s", src)
+		Expect(src).To(Equal("llm_rule_informed"), "expected Tier 2.5 source, got: %s", src)
 	})
 
-	It("TC-E2E-SEV-05: Tier 3 — No rules", func() {
-		a2aCreateRRAndWait("no-rules-ns", "test-norules-target", "")
-		rr := findRRByTarget("no-rules-ns", "test-norules-target")
-		src := rr.Spec.SignalLabels["severity_source"]
-		Expect(src).To(Equal("llm_triage"), "Tier 3: no rules => pure LLM triage")
+	It("TC-E2E-SEV-05: No alert or rule correlates — fails closed instead of an ungrounded LLM guess (#1839)", func() {
+		// #1839: the "Tier 3" pure-LLM fallback that used to fire here
+		// (source=llm_triage, classifying severity from resource identity
+		// alone) has been removed. A resource with no Prometheus alert or
+		// rule coverage at all must now fail RR creation instead of
+		// fabricating a severity.
+		prompt := fmt.Sprintf("Create a remediation request for deployment %s in %s namespace", "test-norules-target", "no-rules-ns")
+		taskID := fmt.Sprintf("g12-sev-%s-%d", "test-norules-target", time.Now().UnixNano())
+		resp, err := a2aInvoke(httpClient, baseURL, authToken, a2aTasksSendWithContext(
+			taskID, "sev-ctx-"+taskID, prompt))
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		rpc, err := parseRPCResponse(resp)
+		Expect(err).NotTo(HaveOccurred())
+
+		var outcomeMsg string
+		switch {
+		case rpc.Error != nil:
+			outcomeMsg = rpc.Error.Message
+		case rpc.Result != nil:
+			task, taskErr := extractTaskFromResult(rpc.Result)
+			Expect(taskErr).NotTo(HaveOccurred())
+			if task.Status.Message != nil {
+				outcomeMsg = string(task.Status.Message)
+			}
+		}
+		Expect(outcomeMsg).To(ContainSubstring("severity"),
+			"agent must explain that severity could not be determined, whether the task is marked failed or completed-with-explanation")
+
+		// No RemediationRequest should be fabricated for this target.
+		Consistently(func(g Gomega) {
+			list := &remediationv1alpha1.RemediationRequestList{}
+			g.Expect(k8sClient.List(context.Background(), list, client.InNamespace(e2eNamespace))).To(Succeed())
+			for i := range list.Items {
+				g.Expect(list.Items[i].Spec.TargetResource.Name).NotTo(Equal("test-norules-target"),
+					"no RR should be created when severity cannot be grounded in a real alert or rule")
+			}
+		}, 5*time.Second, 1*time.Second).Should(Succeed())
 	})
 
 	It("TC-E2E-SEV-06: User severity hint does not bypass triage pipeline", func() {
