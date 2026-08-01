@@ -12,10 +12,10 @@
 
 | ID | Runbook | Triggers On | Automation |
 |----|---------|-------------|------------|
-| RB-SA-001 | [Suspicious Verdict Escalation](#rb-sa-001-suspicious-verdict-escalation) | `kubernaut_alignment_verdict_total{result="suspicious"}` | Alert |
+| RB-SA-001 | [Suspicious Verdict Escalation](#rb-sa-001-suspicious-verdict-escalation) | `aiagent_alignment_verdict_total{result="suspicious"}` | Alert |
 | RB-SA-002 | [Circuit Breaker Activation](#rb-sa-002-circuit-breaker-activation) | `alignment_verdict.circuit_breaker_activated=true` in AA status | Alert |
-| RB-SA-003 | [Canary Integrity Failure](#rb-sa-003-canary-integrity-failure) | `kubernaut_alignment_canary_total{result="fail"}` | Alert |
-| RB-SA-004 | [High Verdict Timeout Rate](#rb-sa-004-high-verdict-timeout-rate) | `kubernaut_alignment_step_total{outcome="panic"}` spike | Dashboard |
+| RB-SA-003 | [Canary Integrity Failure](#rb-sa-003-canary-integrity-failure) | `aiagent_alignment_canary_total{result="fail"}` | Alert |
+| RB-SA-004 | [High Verdict Timeout Rate](#rb-sa-004-high-verdict-timeout-rate) | `aiagent_alignment_step_total{outcome="panic"}` spike | Dashboard |
 | RB-SA-005 | [Shadow Agent Unavailable](#rb-sa-005-shadow-agent-unavailable) | KA startup failure with alignment enabled | Alert |
 
 ---
@@ -33,7 +33,7 @@ groups:
   - name: shadow-agent
     rules:
       - alert: ShadowAgentSuspiciousVerdict
-        expr: rate(kubernaut_alignment_verdict_total{result="suspicious"}[5m]) > 0
+        expr: rate(aiagent_alignment_verdict_total{result="suspicious"}[5m]) > 0
         for: 1m
         labels:
           severity: warning
@@ -90,7 +90,7 @@ The shadow agent detected suspicious content **during** an active investigation 
 
 ```yaml
       - alert: ShadowAgentCircuitBreakerActivated
-        expr: rate(kubernaut_alignment_verdict_total{result="suspicious",mode="enforce"}[5m]) > 0
+        expr: rate(aiagent_alignment_verdict_total{result="suspicious",mode="enforce"}[5m]) > 0
         for: 0m
         labels:
           severity: critical
@@ -132,7 +132,7 @@ The pre-investigation canary check failed — the shadow model did not flag a kn
 
 ```yaml
       - alert: ShadowAgentCanaryFailure
-        expr: kubernaut_alignment_canary_total{result="fail"} > 0
+        expr: aiagent_alignment_canary_total{result="fail"} > 0
         for: 0m
         labels:
           severity: critical
@@ -166,7 +166,7 @@ Shadow evaluations are frequently timing out or panicking, leading to fail-close
 
 ```yaml
       - alert: ShadowAgentHighTimeoutRate
-        expr: rate(kubernaut_alignment_step_total{outcome="panic"}[10m]) / rate(kubernaut_alignment_step_total[10m]) > 0.1
+        expr: rate(aiagent_alignment_step_total{outcome="panic"}[10m]) / rate(aiagent_alignment_step_total[10m]) > 0.1
         for: 5m
         labels:
           severity: warning
@@ -178,7 +178,7 @@ Shadow evaluations are frequently timing out or panicking, leading to fail-close
 
 ### Triage Steps
 
-1. **Check shadow LLM latency**: High latency causes per-step timeouts. Check `kubernaut_alignment_verdict_duration_seconds` histogram.
+1. **Check shadow LLM latency**: High latency causes per-step timeouts. Check `aiagent_alignment_verdict_duration_seconds` histogram.
 2. **Check concurrency**: With the default limit of 10 concurrent evaluations and high-volume investigations, evaluations may queue behind the semaphore.
 3. **Check shadow LLM error rate**: Query `aiagent.shadow.llm.response` audit events for error responses.
 
