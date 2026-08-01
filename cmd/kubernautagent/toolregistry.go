@@ -242,6 +242,35 @@ func (g *genericNameTool) Execute(ctx context.Context, args json.RawMessage) (st
 	return g.inner.Execute(ctx, args)
 }
 
+// fleetOAuth2CredentialsDefaultSecretName is the fleet OAuth2 Secret name
+// assumed when oauth2.CredentialsSecretRef is not explicitly overridden --
+// matches fleetmetadatacache's own default (/etc/fleetmetadatacache/
+// fleet-oauth2, see charts/kubernaut/templates/fleetmetadatacache/
+// fleetmetadatacache.yaml) so the "fleet-oauth2" Secret name convention is
+// shared across every fleet-aware service.
+const fleetOAuth2CredentialsDefaultSecretName = "fleet-oauth2"
+
+// fleetOAuth2CredentialsBasePath returns the on-disk directory KA's fleet
+// OAuth2 client-id/client-secret files are mounted at, matching the Helm
+// chart's "/etc/kubernaut-agent/..." mount convention used for every other
+// KA credential (base LLM OAuth2, phase credentials, alignment-check
+// credentials -- see charts/kubernaut/templates/kubernaut-agent/
+// kubernaut-agent.yaml).
+//
+// Issue #1729: this previously hardcoded the un-hyphenated
+// "/etc/kubernautagent/" prefix, a latent mismatch (no Helm-exposed
+// kubernautAgent.fleet.oauth2 existed to reach this code path at all) that
+// would have made fleet OAuth2 authentication silently fail to find its
+// mounted credential files the moment Helm wiring was added, had it not
+// been caught and fixed here first.
+func fleetOAuth2CredentialsBasePath(oauth2 kaconfig.FleetOAuth2) string {
+	secretRef := oauth2.CredentialsSecretRef
+	if secretRef == "" {
+		secretRef = fleetOAuth2CredentialsDefaultSecretName
+	}
+	return "/etc/kubernaut-agent/" + secretRef
+}
+
 // registerFleetTools connects to the MCP Gateway and creates a
 // GatewayDiscoverer for the configured gateway type, returning an
 // investigator.FleetOverlayResolver that pre-scopes tools for each
@@ -266,10 +295,7 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.L
 
 	var opts []fleetclient.Option
 	if cfg.Integrations.Fleet.OAuth2.Enabled {
-		basePath := "/etc/kubernautagent/fleet-oauth2"
-		if cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef != "" {
-			basePath = "/etc/kubernautagent/" + cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef
-		}
+		basePath := fleetOAuth2CredentialsBasePath(cfg.Integrations.Fleet.OAuth2)
 		reloadCfg := fleetclient.ReloadableOAuth2Config{
 			TokenURL:         cfg.Integrations.Fleet.OAuth2.TokenURL,
 			ClientIDPath:     basePath + "/client-id",

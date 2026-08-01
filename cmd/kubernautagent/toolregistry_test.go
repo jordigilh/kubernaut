@@ -156,6 +156,34 @@ var _ = Describe("buildToolRegistry", func() {
 })
 
 // ============================================================================
+// fleetOAuth2CredentialsBasePath — issue #1729 path-consistency fix.
+//
+// Before this fix, registerFleetTools hardcoded the un-hyphenated
+// "/etc/kubernautagent/" prefix while the Helm chart mounts every other KA
+// credential (base LLM OAuth2, phase credentials, alignment-check
+// credentials -- see charts/kubernaut/templates/kubernaut-agent/
+// kubernaut-agent.yaml) under the hyphenated "/etc/kubernaut-agent/". That
+// mismatch was latent (no Helm-exposed kubernautAgent.fleet.oauth2 existed
+// to reach this code path at all), but must be corrected now that #1729
+// wires fleet config through Helm -- otherwise fleet OAuth2 authentication
+// would silently fail to find its mounted credential files at startup.
+// ============================================================================
+
+var _ = Describe("fleetOAuth2CredentialsBasePath", func() {
+	It("issue #1729: defaults to the hyphenated /etc/kubernaut-agent/fleet-oauth2 path (matching the Helm chart's mount convention) when no CredentialsSecretRef override is set", func() {
+		path := fleetOAuth2CredentialsBasePath(kaconfig.FleetOAuth2{})
+
+		Expect(path).To(Equal("/etc/kubernaut-agent/fleet-oauth2"))
+	})
+
+	It("issue #1729: uses the hyphenated /etc/kubernaut-agent/ prefix (not /etc/kubernautagent/) when CredentialsSecretRef overrides the default secret name", func() {
+		path := fleetOAuth2CredentialsBasePath(kaconfig.FleetOAuth2{CredentialsSecretRef: "custom-fleet-secret"})
+
+		Expect(path).To(Equal("/etc/kubernaut-agent/custom-fleet-secret"))
+	})
+})
+
+// ============================================================================
 // buildWorkflowMeta / applyParsedSchemaMeta — pure-function unit tests.
 //
 // #1677 Phase 2g follow-up (DD-WORKFLOW-019): these previously drove

@@ -23,6 +23,25 @@ never be reached.
 {{- if and .Values.kubernautAgent.interactive.enabled (not $afV.enabled) }}
 {{- fail "kubernautAgent.interactive.enabled=true requires apifrontend.enabled=true (APIFrontend's ka.NewSDKMCPClient is the only MCP client that connects to KubernautAgent's interactive endpoint, with no other possible caller)" }}
 {{- end }}
+{{- /*
+Issue #1729: KA's fleet MCP Gateway client (cmd/kubernautagent/toolregistry.go
+registerFleetTools) was fully wired in Go but had no Helm-exposed
+kubernautAgent.fleet block at all, so a fleet-tagged investigation always
+fell back to hub-local tools regardless of global.fleet.enabled. Computed
+once here (used by the guard below and the Deployment's fleet-oauth2
+volume/volumeMount further down); configYAML recomputes its own copy since
+named templates don't inherit file-top variables (see the comment above
+kubernaut.kubernautAgent.configYAML's define).
+*/}}
+{{- $kaFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.kubernautAgent.fleet "oauth2" .Values.kubernautAgent.fleet.oauth2) | fromYaml }}
+{{- if and .Values.global.fleet.enabled $kaFleetPreamble.oauth2.enabled }}
+{{- if not $kaFleetPreamble.oauth2.tokenURL }}
+{{- fail "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true" }}
+{{- end }}
+{{- if not $kaFleetPreamble.oauth2.credentialsSecretRef }}
+{{- fail "global.fleet.oauth2.credentialsSecretRef (or kubernautAgent.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
+{{- end }}
+{{- end }}
 {{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaV.llmProfileRef) | fromYaml }}
 {{- $validPhases := list "rca" "workflow_discovery" "validation" }}
 {{- $kaPhaseProfiles := dict }}
@@ -68,6 +87,7 @@ declarations.
 */}}
 {{- define "kubernaut.kubernautAgent.configYAML" -}}
 {{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "kubernautAgent") | fromYaml }}
+{{- $kaFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.kubernautAgent.fleet "oauth2" .Values.kubernautAgent.fleet.oauth2) | fromYaml }}
 {{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $v.llmProfileRef) | fromYaml }}
 {{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default $v.llmProfileRef }}
 {{- $kaAlignmentProfile := dict }}
@@ -196,6 +216,37 @@ integrations:
       url: {{ include "kubernaut.monitoring.alertManager.url" . | quote }}
 {{- if include "kubernaut.monitoring.alertManager.tlsCaFile" . }}
       tlsCaFile: {{ include "kubernaut.monitoring.alertManager.tlsCaFile" . | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- /*
+Issue #1729: closes the Helm-wiring parity gap versus apifrontend.fleet/
+effectivenessmonitor.fleet -- kubernautAgent.fleet.{endpoint,gatewayType}
+map directly onto FleetConfig.{Endpoint,GatewayType}'s yaml tags
+(internal/kubernautagent/config/config_types.go), which registerFleetTools
+(cmd/kubernautagent/toolregistry.go) requires BOTH non-empty to connect to
+the MCP Gateway at all. Rendered unconditionally (not only when both are
+set) so an operator who enables global.fleet but leaves mcpGatewayType
+unset gets the same graceful "fleet disabled" fallback already built into
+registerFleetTools, rather than a materially different (and undocumented)
+Helm-side behavior. No tlsCAFile field: FleetOAuth2 has no such field --
+unlike apifrontend/effectivenessmonitor's fleet OAuth2, KA's fleet MCP
+client has no separate CA override today.
+*/}}
+{{- if .Values.global.fleet.enabled }}
+  fleet:
+    endpoint: {{ $kaFleetPreamble.config.mcpGatewayEndpoint | quote }}
+    gatewayType: {{ $kaFleetPreamble.config.mcpGatewayType | quote }}
+{{- if $kaFleetPreamble.oauth2.enabled }}
+    oauth2:
+      enabled: true
+      tokenURL: {{ $kaFleetPreamble.oauth2.tokenURL | quote }}
+      credentialsSecretRef: {{ $kaFleetPreamble.oauth2.credentialsSecretRef | quote }}
+{{- if $kaFleetPreamble.oauth2.scopes }}
+      scopes:
+{{- range $kaFleetPreamble.oauth2.scopes }}
+        - {{ . | quote }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- end }}
@@ -527,6 +578,11 @@ spec:
               mountPath: /etc/kubernaut-agent/oauth2
               readOnly: true
 {{- end }}
+{{- if $kaFleetPreamble.oauth2.enabled }}
+            - name: fleet-oauth2-credentials
+              mountPath: "/etc/kubernaut-agent/{{ $kaFleetPreamble.oauth2.credentialsSecretRef }}"
+              readOnly: true
+{{- end }}
 {{- range $kaPhaseMounts }}
             - name: phase-credentials-{{ .phase }}
               mountPath: /etc/kubernaut-agent/phase-credentials/{{ .phase }}
@@ -585,6 +641,11 @@ spec:
         - name: oauth2-credentials
           secret:
             secretName: {{ $kaBaseOAuth2.credentialsSecretRef }}
+{{- end }}
+{{- if $kaFleetPreamble.oauth2.enabled }}
+        - name: fleet-oauth2-credentials
+          secret:
+            secretName: {{ $kaFleetPreamble.oauth2.credentialsSecretRef }}
 {{- end }}
 {{- range $kaPhaseMounts }}
         - name: phase-credentials-{{ .phase }}

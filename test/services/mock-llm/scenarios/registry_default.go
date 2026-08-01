@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -232,6 +232,14 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// E2E-FLEET-016 (issue #1768, Gaps A+C): real AF binary calls
 	// list_clusters + kubectl_get(cluster_id) via a real A2A request.
 	r.Register(afFleetKubectlE2EScenario())
+
+	// E2E-FLEET-017 (issue #1729): real KA investigation loop calls the
+	// correct (local or fleet) real K8s read tool -- strictly based on
+	// which tool names are actually advertised in the request -- and
+	// echoes back proof of a genuine, correctly-targeted round trip. One
+	// scenario, one keyword, for both the hub-local and fleet test cases
+	// (see scenario_ka_fleet_investigation.go).
+	r.Register(kaToolCallE2EInvestigationScenario())
 
 	// Default fallback (lowest priority = 0.01)
 	r.Register(defaultFallbackScenario())
