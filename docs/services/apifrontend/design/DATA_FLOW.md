@@ -37,7 +37,7 @@ graph TB
     Bridge -->|DS tools| DS
     Bridge -->|af_create_rr| Triager
     Triager -->|/api/v1/alerts,rules,query| PromAPI
-    Triager -->|Tier 2.5/3 fallback| LLMProv
+    Triager -->|Tier 2.5 fallback| LLMProv
     Bridge --> Audit
     PromScrape -->|GET /metrics| Metrics
 ```

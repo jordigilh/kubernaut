@@ -14,6 +14,16 @@
 |---------|------|--------|---------|
 | 1.0 | 2026-05-30 | Architecture Team | Initial design: pod-based alert correlation in Tier 1, PodResolver interface, GA readiness audit incorporated. |
 
+> **Note (2026-08-01, #1839)**: The "Tier 3: LLM-based fallback via
+> `NoopLLMTriager`" referenced in the Context section below was removed
+> entirely — see [DD-AF-010](DD-AF-010-remove-ungrounded-severity-inference.md).
+> A pod-level alert that still fails to correlate in Tier 1 (the gap this
+> decision fixes) now falls through Tier 1.5 → 2 → 2.5 and, if none of
+> those find a real alert or rule either, `Triage()` returns
+> `ErrSeverityUndetermined` rather than defaulting to "medium". The
+> pod-correlation mechanism itself (this DD) is unaffected — it still
+> improves the odds of a Tier 1 hit before reaching that terminal state.
+
 ---
 
 ## Context & Problem
