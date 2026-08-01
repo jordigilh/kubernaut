@@ -165,7 +165,7 @@ The LLM architecture (AIAnalysis → HolmesGPT API → Embedding Service MCP →
 - Q4: Does the LLM handle edge cases (false positives, ambiguous alerts)?
 
 **Recommendation**:
-- Start with initial prompt (INITIAL_PROMPT_DESIGN.md)
+- Start with a well-structured initial prompt
 - Test with 10-20 different alert scenarios during AIAnalysis development
 - Refine prompt based on LLM behavior
 - Add few-shot examples if needed
@@ -289,7 +289,7 @@ All components have ≥85% confidence, indicating a solid architecture with mana
 - Operators lose trust in AI recommendations
 
 **Mitigation**:
-- ✅ Start with well-structured initial prompt (INITIAL_PROMPT_DESIGN.md)
+- ✅ Start with well-structured initial prompt
 - ✅ Test with 10-20 different alert scenarios
 - ✅ Iterative prompt refinement based on results
 - ✅ Add few-shot examples if needed
@@ -414,7 +414,7 @@ All components have ≥85% confidence, indicating a solid architecture with mana
 
 ### During AIAnalysis Implementation
 
-1. ✅ **Test Initial Prompt** - Use INITIAL_PROMPT_DESIGN.md as starting point
+1. ✅ **Test Initial Prompt** - Use the implemented KA prompt templates as a starting point
 2. ✅ **Collect LLM Responses** - Analyze quality, identify patterns
 3. ✅ **Refine Prompt Iteratively** - 3-5 iterations expected
 4. ✅ **Add Few-Shot Examples** - If LLM doesn't use tools correctly

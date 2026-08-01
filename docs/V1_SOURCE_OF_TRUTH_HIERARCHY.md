@@ -155,7 +155,7 @@ These documents define **data structures and contracts** that implement Tier 1 a
 |----------|---------|-----------|
 | **[01_REMEDIATION_REQUEST_CRD.md](design/CRD/01_REMEDIATION_REQUEST_CRD.md)** | RemediationRequest CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | **[02_REMEDIATION_PROCESSING_CRD.md](design/CRD/02_REMEDIATION_PROCESSING_CRD.md)** | SignalProcessing CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
-| **[03_AI_ANALYSIS_CRD.md](design/CRD/03_AI_ANALYSIS_CRD.md)** | AIAnalysis CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
+| **[crd-schema.md](services/crd-controllers/02-aianalysis/crd-schema.md)** | AIAnalysis CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | **[04_WORKFLOW_EXECUTION_CRD.md](design/CRD/04_WORKFLOW_EXECUTION_CRD.md)** | WorkflowExecution CRD OpenAPI schema | References Tier 1: CRD_SCHEMAS.md |
 | ~~05_KUBERNETES_EXECUTION_CRD.md~~ | KubernetesExecution CRD (removed - ADR-025) | Eliminated; see ADR-025 |
 
