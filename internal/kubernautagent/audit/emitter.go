@@ -85,9 +85,14 @@ const (
 	// and reconstructed context are included in event data.
 	EventTypeSessionResumed = "aiagent.session.resumed"
 
-	// EventTypeInteractiveK8sCall is emitted for each impersonated K8s API call
-	// made during an interactive MCP session (BR-INTERACTIVE-003, BR-AUDIT-005).
-	// Provides per-request audit granularity for SOC2 CC8.1 compliance.
+	// EventTypeInteractiveK8sCall is emitted for the K8s lookup
+	// enrichment.Enricher performs on behalf of the acting user during
+	// interactive kubernaut_select_workflow (BR-INTERACTIVE-003 #3,
+	// BR-AUDIT-005). Per #1288, KA never impersonates the user at the K8s
+	// API level -- the call always runs under KA's own SA -- so this event
+	// is for audit attribution, not RBAC impersonation. One event
+	// summarizes each Enrich() call (owner-chain walk + spec-hash fetch),
+	// not each raw K8s Get.
 	EventTypeInteractiveK8sCall = "aiagent.interactive.k8s_call"
 
 	EventTypeShadowLLMRequest  = "aiagent.shadow.llm.request"
