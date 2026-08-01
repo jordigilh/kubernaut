@@ -91,7 +91,7 @@ This is a live-progress-stream reliability fix (BR-INTERACTIVE-004/010), not a c
 | UT-KA-1811-002 | Unit | A full `Manager.StartInvestigation` → synchronous `InteractiveHold` completion → `UpgradeToInteractive` → `Subscribe` sequence (the exact #1811 ordering) delivers the RCA-phase events and the terminal `EventTypeComplete` (with non-empty RCA data) to the late subscriber, where today's code delivers zero | SI-4, AU-3 | BR-INTERACTIVE-004 | `internal/kubernautagent/session/late_subscribe_replay_1811_test.go` |
 | UT-KA-1811-003 | Unit | The already-working case (sink active before emission) is unaffected: no double-delivery, no reordering | SI-4 | BR-INTERACTIVE-004 | `internal/kubernautagent/session/late_subscribe_replay_1811_test.go` |
 | IT-KA-1811-001 | Integration | The real `kubernaut_investigate` MCP tool path (`InvestigateTool.Handle` action=start → `upgradeOrCreateInteractiveSession` → `UpgradeToInteractive`, then `InvestigateTool.SubscribeEvents` — the exact `registration.go` `wireInvestigationEventBridge` call chain) exercised against a real `Manager`, proving the production wiring point (not just direct `Manager` calls) delivers buffered events after a late `Subscribe` | SI-4 | BR-INTERACTIVE-004 | `internal/kubernautagent/mcp/tools/late_subscribe_replay_1811_it_test.go` |
-| E2E-FP-1189-005 | E2E | Existing test (`test/e2e/fullpipeline/15_af_a2a_interactive_streaming_test.go`) — the `TODO(#1795)`-softened RCA-content assertion is now hardened to require non-empty content, closing the loop this issue opened | SI-4 | BR-INTERACTIVE-004 | `test/e2e/fullpipeline/15_af_a2a_interactive_streaming_test.go` |
+| E2E-FP-1189-005 | E2E | Existing test (`test/e2e/fullpipeline/15_af_a2a_interactive_streaming_test.go`) — attempted to harden the `TODO(#1795)`-softened RCA-content assertion; CI surfaced a **distinct** race (#1818, see Section 6) that this fix does not address, so the assertion remains softened pending #1818 | SI-4 | BR-INTERACTIVE-004 | `test/e2e/fullpipeline/15_af_a2a_interactive_streaming_test.go` |
 
 ## 5. Wiring Manifest
 
@@ -114,6 +114,19 @@ No new production components — this closes a gap in existing, already-wired ma
 - `release/v1.5` applicability — assessed separately after `main` fix lands (same
   `LazySink`/`InteractiveHold` architecture is present on `v1.5`, confirmed during #1811
   triage; backport tracked as a follow-up once the `main` fix is verified in CI).
+- **[#1818](https://github.com/jordigilh/kubernaut/issues/1818)** (filed during this fix's CI
+  verification): attempting to harden `E2E-FP-1189-005`'s RCA-content assertion surfaced a
+  *third*, architecturally distinct race, confirmed via CI must-gather KA logs — AA's
+  `RequestBuilder.BuildIncidentRequest` never sets `IncidentRequest.Interactive`, so KA always
+  takes the autonomous/immediate path; when that autonomous investigation is fast enough to
+  reach `StatusCompleted` before AF's `kubernaut_investigate` arrives, KA can no longer
+  reattach to it (`LaunchDeferredInvestigation` rejects non-`Pending`, `FindByRemediationID`
+  only matches `StatusRunning`), so `createFallbackSession` creates a fresh, RCA-less session
+  and the real RCA is orphaned. This fix's `LazySink` buffering is verified working correctly
+  in the same CI logs (`sink_nil=6, dropped=0` for the original session) — #1818 is about the
+  original session never being found again, not about its buffered events being lost. Left
+  the E2E assertion in its pre-existing softened form (now referencing #1818 instead of
+  #1795) rather than folding an unrelated architectural fix into this PR.
 
 ## 7. Final Results
 
