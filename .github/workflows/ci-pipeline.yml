@@ -110,7 +110,11 @@ jobs:
     needs: [detect-changes]
     if: needs.detect-changes.outputs.code_changed == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 8
+    # Bumped from 8 to match main's 15: golangci-lint's own --timeout is now
+    # 10m (see .golangci.yml), so the enclosing job needs enough headroom for
+    # that plus checkout/setup-go/generate/validate-embed steps that run
+    # before it.
+    timeout-minutes: 15
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -146,7 +150,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.9.0
-          args: cmd/... pkg/... internal/... test/...
+          args: --timeout=10m cmd/... pkg/... internal/... test/...
           only-new-issues: true
 
       - name: Dependency vulnerability scan (govulncheck)
