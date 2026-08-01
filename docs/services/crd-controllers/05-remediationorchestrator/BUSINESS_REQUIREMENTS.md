@@ -78,15 +78,15 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: HolmesGPT-API resolves `workflow_id → container_image` during MCP search (per DD-CONTRACT-001 v1.2). AIAnalysis.status.selectedWorkflow contains the fully resolved workflow reference including containerImage and containerDigest. RO's responsibility is to pass this data through to WorkflowExecution, not to perform additional catalog lookups.
+**Rationale**: Kubernaut Agent (KA) resolves `workflow_id → container_image` during MCP search (per DD-CONTRACT-001 v1.2). AIAnalysis.status.selectedWorkflow contains the fully resolved workflow reference including containerImage and containerDigest. RO's responsibility is to pass this data through to WorkflowExecution, not to perform additional catalog lookups.
 
 **Implementation**:
 - Read `AIAnalysis.status.selectedWorkflow` when phase = "Completed"
 - Pass through all fields to `WorkflowExecution.spec.workflowRef`:
   - `workflowId` ← `selectedWorkflow.workflowId`
   - `version` ← `selectedWorkflow.version`
-  - `containerImage` ← `selectedWorkflow.containerImage` (resolved by HolmesGPT-API)
-  - `containerDigest` ← `selectedWorkflow.containerDigest` (resolved by HolmesGPT-API)
+  - `containerImage` ← `selectedWorkflow.containerImage` (resolved by Kubernaut Agent)
+  - `containerDigest` ← `selectedWorkflow.containerDigest` (resolved by Kubernaut Agent)
 - Pass through `parameters` unchanged (UPPER_SNAKE_CASE keys)
 - Pass through `confidence` and `rationale` for audit trail
 - Fail if `selectedWorkflow` is nil or missing required fields
@@ -147,7 +147,7 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: Without global timeout, stuck remediations (due to hung HolmesGPT, unresponsive approvers, stuck Tekton pipelines) would never terminate. Global timeout ensures all remediations eventually reach a terminal state.
+**Rationale**: Without global timeout, stuck remediations (due to hung Kubernaut Agent, unresponsive approvers, stuck Tekton pipelines) would never terminate. Global timeout ensures all remediations eventually reach a terminal state.
 
 **Implementation**:
 - Default global timeout: 1 hour (configurable)

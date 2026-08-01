@@ -133,7 +133,7 @@ var _ = Describe("UT-KA-779-PC: K8s tool parameter capture via PrependReactor", 
 	Describe("UT-KA-779-PC-003: kubectl_logs default TailLines is applied correctly", func() {
 		It("should use DefaultLogTailLines when neither tailLines nor limitBytes is set", func() {
 			Expect(k8s.DefaultLogTailLines).To(Equal(int64(500)),
-				"DefaultLogTailLines must be 500 per DD-HAPI-019")
+				"DefaultLogTailLines must be 500 per DD-KA-019")
 		})
 	})
 })

@@ -20,7 +20,7 @@ limitations under the License.
 // OpenAI-compatible endpoints).
 //
 // Deliberately independent of both genai.Content (used by the AI Frontend's
-// ADK-based launcher) and llm.Message (used by Kubernaut Agent) — DD-HAPI-019
+// ADK-based launcher) and llm.Message (used by Kubernaut Agent) — DD-KA-019
 // Framework Isolation — so this package can be shared by both consumers
 // without either depending on the other's types. Each consumer owns a thin
 // translation layer at its boundary.
@@ -79,7 +79,7 @@ type Request struct {
 	// is replayed back to the provider on this call. Resolved once via
 	// DetectReasoningMode at client-construction time — never left as the
 	// zero value ("none") by accident for a model that needs a different
-	// mode, and never guessed per-call from business logic (DD-HAPI-019).
+	// mode, and never guessed per-call from business logic (DD-KA-019).
 	ReasoningMode ReasoningMode
 	// Effort is the canonical, provider-agnostic reasoning-depth value
 	// ("", "none", "minimal", "low", "medium", "high", "xhigh" — #1604).

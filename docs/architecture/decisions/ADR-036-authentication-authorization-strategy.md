@@ -18,12 +18,12 @@
 - Gateway is **external-facing** (AlertManager, K8s Event forwarders) - different threat model
 - **Zero-trust architecture**: Network Policies alone insufficient for external-facing services
 - **SOC2 compliance**: Operator attribution required (CC8.1)
-- **Proven pattern**: DataStorage/HAPI SAR implementation successful
+- **Proven pattern**: DataStorage/KA SAR implementation successful
 
 **Updated Service Status**:
 - **Gateway**: ✅ **SAR Auth Required** (DD-AUTH-014 V2.0) - Exception to ADR-036
 - **DataStorage**: ✅ **SAR Auth Required** (DD-AUTH-014 V1.0)
-- **HolmesGPT API**: ✅ **SAR Auth Required** (DD-AUTH-014 V1.0)
+- **Kubernaut Agent (KA)**: ✅ **SAR Auth Required** (DD-AUTH-014 V1.0)
 - **Others**: Network Policies + TLS (per this ADR)
 
 **See**: BR-GATEWAY-182, BR-GATEWAY-183 for Gateway auth requirements
@@ -34,7 +34,7 @@
 
 ## Context
 
-Kubernaut consists of multiple services (Gateway, Context API, Data Storage, Dynamic Toolset, HolmesGPT API, Notification Service, etc.) that communicate within a Kubernetes cluster. Initially, some services implemented OAuth2-based authentication (TokenReview) and authorization (SubjectAccessReview) middleware. However, this approach created several challenges:
+Kubernaut consists of multiple services (Gateway, Context API, Data Storage, Dynamic Toolset, Kubernaut Agent, Notification Service, etc.) that communicate within a Kubernetes cluster. Initially, some services implemented OAuth2-based authentication (TokenReview) and authorization (SubjectAccessReview) middleware. However, this approach created several challenges:
 
 1. **Testing Complexity**: Setting up ServiceAccounts, tokens, and RBAC for integration tests added significant complexity
 2. **K8s API Throttling**: TokenReview and SubjectAccessReview calls on every request created K8s API load
@@ -191,7 +191,7 @@ spec:
   policyTypes:
   - Ingress
   ingress:
-  # Allow HolmesGPT API
+  # Allow Kubernaut Agent
   - from:
     - namespaceSelector:
         matchLabels:
@@ -320,7 +320,7 @@ For each service with authentication middleware:
 |---------|--------|-----------------|-------|
 | **Gateway** | ⚠️ **Exception** | **SAR Auth Required** (DD-AUTH-014 V2.0) | External-facing - requires app-level auth |
 | **Data Storage** | ⚠️ **Exception** | **SAR Auth Complete** (DD-AUTH-014 V1.0) | Internal REST API - SAR for audit compliance |
-| **HolmesGPT API** | ⚠️ **Exception** | **SAR Auth Complete** (DD-AUTH-014 V1.0) | Internal REST API - SAR for audit compliance |
+| **Kubernaut Agent** | ⚠️ **Exception** | **SAR Auth Complete** (DD-AUTH-014 V1.0) | Internal REST API - SAR for audit compliance |
 | **Context API** | ✅ Follows ADR | Network Policies + TLS | - |
 | **Notification Service** | ✅ Follows ADR | CRD controller, K8s RBAC only | - |
 | **Dynamic Toolset** | ✅ Follows ADR | Network Policies + TLS | - |

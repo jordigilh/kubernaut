@@ -12,7 +12,7 @@
 - BR-INT-020: ServiceNow as signal target type
 
 **Related Design Decisions**:
-- DD-HAPI-019: KA Go rewrite design (prompt builder, parser, tool registry)
+- DD-KA-019: KA Go rewrite design (prompt builder, parser, tool registry)
 - DD-WORKFLOW-001: Mandatory label schema (workflow contract description)
 - DD-RO-002: Centralized routing responsibility (scope, blocking conditions)
 

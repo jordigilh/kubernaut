@@ -40,7 +40,7 @@ sequenceDiagram
     participant Gateway
     participant RO as Remediation<br/>Orchestrator
     participant AI as AI Analysis
-    participant HG as HolmesGPT
+    participant HG as Kubernaut Agent (KA)
 
     Note over Prometheus,HG: Correlation ID: req-2025-10-06-abc123
 
@@ -91,7 +91,7 @@ sequenceDiagram
 | **Workflow Execution** | `wf` | `wf-2025-10-06-mno345` | Only if generating new ID |
 | **Kubernetes Executor** (DEPRECATED - ADR-025) | `ke` | `ke-2025-10-06-pqr678` | Only if generating new ID |
 | **Notification Service** | `ntf` | `ntf-2025-10-06-stu901` | Only if generating new ID |
-| **HolmesGPT API** | `hg` | `hg-2025-10-06-vwx234` | Only if generating new ID |
+| **Kubernaut Agent** | `hg` | `hg-2025-10-06-vwx234` | Only if generating new ID |
 | **Context API** | `ctx` | `ctx-2025-10-06-yza567` | Only if generating new ID |
 | **Data Storage** | `ds` | `ds-2025-10-06-bcd890` | Only if generating new ID |
 
@@ -144,7 +144,7 @@ func GenerateID(servicePrefix string) string {
 
 ---
 
-### HTTP Service Pattern (Gateway, Notification, HolmesGPT, Context, Data Storage)
+### HTTP Service Pattern (Gateway, Notification, Kubernaut Agent, Context, Data Storage)
 
 #### Incoming Request Handling
 
@@ -376,7 +376,7 @@ func (r *RemediationRequestReconciler) Reconcile(
 
 ### Pattern: Child Controller → HTTP Service Call
 
-#### AI Analysis Controller → HolmesGPT API
+#### AI Analysis Controller → Kubernaut Agent
 
 ```go
 // pkg/aianalysis/reconciler.go
@@ -418,7 +418,7 @@ func (r *AIAnalysisReconciler) Reconcile(
     ctx = correlation.WithContext(ctx, correlationID)
     log = log.WithValues("correlation_id", correlationID)
 
-    // Call HolmesGPT API with correlation ID in header
+    // Call Kubernaut Agent with correlation ID in header
     investigationReq := map[string]interface{}{
         "signal_type": aiAnalysis.Spec.SignalType,
         "context":     aiAnalysis.Spec.Context,
@@ -438,12 +438,12 @@ func (r *AIAnalysisReconciler) Reconcile(
 
     resp, err := r.httpClient.Do(httpReq)
     if err != nil {
-        log.Error(err, "HolmesGPT API call failed")
+        log.Error(err, "Kubernaut Agent call failed")
         return ctrl.Result{}, err
     }
     defer resp.Body.Close()
 
-    log.Info("HolmesGPT investigation completed", "status_code", resp.StatusCode)
+    log.Info("Kubernaut Agent investigation completed", "status_code", resp.StatusCode)
     return ctrl.Result{}, nil
 }
 ```
@@ -739,14 +739,14 @@ workflowExecution.Labels["kubernaut.io/correlation-id"] = correlationID
 
 ### AI Analysis
 
-**Responsibility**: Propagate correlation ID to HolmesGPT API
+**Responsibility**: Propagate correlation ID to Kubernaut Agent
 
 ```go
 // Extract from AIAnalysis CRD
 correlationID := aiAnalysis.Labels["kubernaut.io/correlation-id"]
 ctx = correlation.WithContext(ctx, correlationID)
 
-// Add to HolmesGPT HTTP request
+// Add to Kubernaut Agent HTTP request
 httpReq, _ := http.NewRequestWithContext(ctx, "POST", holmesGPTURL, body)
 httpclient.AddCorrelationID(ctx, httpReq)
 ```
@@ -859,7 +859,7 @@ done
 
 === ai-analysis ===
 2025-10-06T14:30:47.123Z    ai-analysis             Starting AI investigation
-2025-10-06T14:30:52.789Z    ai-analysis             HolmesGPT investigation completed
+2025-10-06T14:30:52.789Z    ai-analysis             Kubernaut Agent investigation completed
 ```
 
 ---
@@ -904,8 +904,8 @@ kubectl logs -n kubernaut-system -l app=gateway-service | \
 # Calculate time between services
 # Gateway → Orchestrator: 1.0s
 # Orchestrator → AI: 0.667s
-# AI → HolmesGPT: 5.666s (SLOW!)
-# HolmesGPT → Response: 0.5s
+# AI → Kubernaut Agent: 5.666s (SLOW!)
+# Kubernaut Agent → Response: 0.5s
 ```
 
 ---
@@ -945,7 +945,7 @@ Remediation Orchestrator
   │
   ├── AIAnalysis CRD
   │     ↓ HTTP header: X-Correlation-ID
-  │   HolmesGPT API (POST /api/v1/investigate)
+  │   Kubernaut Agent (POST /api/v1/investigate)
   │
   └── WorkflowExecution CRD
         ↓ CRD label (propagate)

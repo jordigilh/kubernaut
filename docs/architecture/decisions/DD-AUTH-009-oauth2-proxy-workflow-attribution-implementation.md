@@ -92,7 +92,7 @@
 | Service | Image | Namespace | OIDC Provider | User Header | SAR Support |
 |---------|-------|-----------|---------------|-------------|-------------|
 | **DataStorage** | `quay.io/openshift/origin-oauth-proxy:latest` | `kubernaut-system` | K8s/OpenShift OAuth | `X-Auth-Request-User` | ✅ Yes |
-| **HolmesGPT API** | `quay.io/openshift/origin-oauth-proxy:latest` | `kubernaut-system` | K8s/OpenShift OAuth | `X-Auth-Request-User` | ✅ Yes |
+| **Kubernaut Agent (KA)** | `quay.io/openshift/origin-oauth-proxy:latest` | `kubernaut-system` | K8s/OpenShift OAuth | `X-Auth-Request-User` | ✅ Yes |
 
 **Architecture**: amd64 only (no arm64 support for local development)
 
@@ -123,11 +123,11 @@ stringData:
 | Environment | Service | Image | Arch | OIDC Provider | User Header | SAR Support |
 |-------------|---------|-------|------|---------------|-------------|-------------|
 | **Development** | DataStorage | `quay.io/jordigilh/ose-oauth-proxy:latest` | arm64+amd64 | K8s OAuth | `X-Auth-Request-User` | ✅ Yes |
-| **Development** | HAPI | `quay.io/jordigilh/ose-oauth-proxy:latest` | arm64+amd64 | K8s OAuth | `X-Auth-Request-User` | ✅ Yes |
+| **Development** | KA | `quay.io/jordigilh/ose-oauth-proxy:latest` | arm64+amd64 | K8s OAuth | `X-Auth-Request-User` | ✅ Yes |
 | **E2E Tests** | DataStorage | `quay.io/jordigilh/ose-oauth-proxy:latest` | arm64+amd64 | K8s OAuth | `X-Auth-Request-User` | ✅ Yes |
-| **E2E Tests** | HAPI | `quay.io/jordigilh/ose-oauth-proxy:latest` | arm64+amd64 | K8s OAuth | `X-Auth-Request-User` | ✅ Yes |
+| **E2E Tests** | KA | `quay.io/jordigilh/ose-oauth-proxy:latest` | arm64+amd64 | K8s OAuth | `X-Auth-Request-User` | ✅ Yes |
 | **Production** | DataStorage | `quay.io/openshift/origin-oauth-proxy:latest` | amd64 | OpenShift OAuth | `X-Auth-Request-User` | ✅ Yes |
-| **Production** | HAPI | `quay.io/openshift/origin-oauth-proxy:latest` | amd64 | OpenShift OAuth | `X-Auth-Request-User` | ✅ Yes |
+| **Production** | KA | `quay.io/openshift/origin-oauth-proxy:latest` | amd64 | OpenShift OAuth | `X-Auth-Request-User` | ✅ Yes |
 
 **Benefits**:
 - ✅ **SAR Enforcement**: `--openshift-sar` flag enables Kubernetes RBAC validation
@@ -298,7 +298,7 @@ kubectl logs -n kubernaut-system deployment/data-storage-service -c oauth-proxy
 
 ---
 
-### **Phase 3: HolmesGPT API OAuth2-Proxy Migration** (1 hour)
+### **Phase 3: Kubernaut Agent OAuth2-Proxy Migration** (1 hour)
 
 **Authority**: DD-AUTH-007
 
@@ -306,7 +306,7 @@ kubectl logs -n kubernaut-system deployment/data-storage-service -c oauth-proxy
 
 **File**: `deploy/kubernaut-agent/06-deployment.yaml`
 
-**Changes**: Same as DataStorage (adjusted for HAPI-specific configuration)
+**Changes**: Same as DataStorage (adjusted for KA-specific configuration)
 
 ```yaml
 - name: oauth-proxy
@@ -325,11 +325,11 @@ kubectl logs -n kubernaut-system deployment/data-storage-service -c oauth-proxy
     - --set-xauthrequest=true
     - --set-authorization-header=true
     - --pass-user-headers=true
-    # SAR for HAPI: LLM cost attribution
+    # SAR for KA: LLM cost attribution
     - --openshift-sar={"namespace":"kubernaut-system","resource":"services","resourceName":"kubernaut-agent","verb":"get"}
 ```
 
-#### **Task 3.2: Test HolmesGPT API**
+#### **Task 3.2: Test Kubernaut Agent**
 
 ```bash
 kubectl apply -f deploy/kubernaut-agent/06-deployment.yaml
@@ -788,7 +788,7 @@ spec:
 
 ### **OAuth2-Proxy Migration (Phase 2-3)**
 - [ ] DataStorage using `oauth2-proxy:v7.5.1`
-- [ ] HolmesGPT API using `oauth2-proxy:v7.5.1`
+- [ ] Kubernaut Agent using `oauth2-proxy:v7.5.1`
 - [ ] Pods running successfully (all containers ready)
 - [ ] No error logs from oauth2-proxy containers
 - [ ] User headers injected correctly (`X-Auth-Request-User`)
@@ -853,7 +853,7 @@ If issues arise during deployment:
 # Rollback DataStorage
 kubectl rollout undo deployment/data-storage-service -n kubernaut-system
 
-# Rollback HolmesGPT API
+# Rollback Kubernaut Agent
 kubectl rollout undo deployment/kubernaut-agent -n kubernaut-system
 
 # Revert to old secrets

@@ -29,10 +29,10 @@ Dynamic Toolset Service acts as the **intelligent service discovery engine** in 
 │                    Upstream Services                        │
 │  (Poll toolset configuration)                               │
 │                                                             │
-│  • HolmesGPT API Service                                    │
+│  • Kubernaut Agent (KA)                                     │
 └────────────────────┬────────────────────────────────────────┘
                      │
-                     │ ConfigMap Poll (holmesgpt-toolset)
+                     │ ConfigMap Poll (kubernaut-toolset-config)
                      │ or GET /api/v1/toolset
                      ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -42,7 +42,7 @@ Dynamic Toolset Service acts as the **intelligent service discovery engine** in 
 │  2. Detect service types (Prometheus, Grafana, etc.)        │
 │  3. Validate service health                                 │
 │  4. Generate toolset configuration                          │
-│  5. Write to ConfigMap (holmesgpt-toolset)                  │
+│  5. Write to ConfigMap (kubernaut-toolset-config)           │
 │  6. Reconcile ConfigMap (prevent deletion)                  │
 └────────────────────┬────────────────────────────────────────┘
                      │
@@ -65,7 +65,7 @@ Dynamic Toolset Service acts as the **intelligent service discovery engine** in 
 
 ## Upstream Services (Toolset Consumers)
 
-### **1. HolmesGPT API Service**
+### **1. Kubernaut Agent**
 
 **Purpose**: Loads toolset configuration for AI-powered investigations
 
@@ -76,7 +76,7 @@ Dynamic Toolset Service acts as the **intelligent service discovery engine** in 
 #### **ConfigMap Polling (Primary)**
 
 ```python
-# In HolmesGPT API Service (Python)
+# In Kubernaut Agent (Python)
 from kubernetes import client, config, watch
 import yaml
 import logging
@@ -86,7 +86,7 @@ logger = logging.getLogger(__name__)
 class ToolsetLoader:
     """Load toolset from ConfigMap with hot-reload."""
 
-    def __init__(self, namespace: str = "kubernaut-system", configmap_name: str = "holmesgpt-toolset"):
+    def __init__(self, namespace: str = "kubernaut-system", configmap_name: str = "kubernaut-toolset-config"):
         try:
             config.load_incluster_config()
         except config.ConfigException:
@@ -173,7 +173,7 @@ class DynamicToolsetClient:
 
 ### **1. Prometheus (Monitoring)**
 
-**Purpose**: Metrics querying for HolmesGPT investigations
+**Purpose**: Metrics querying for Kubernaut Agent investigations
 
 **Integration Pattern**: Service discovery → Health check → Toolset inclusion
 **Health Check**: `GET http://<endpoint>/-/healthy`
@@ -358,7 +358,7 @@ func (d *DiscoveryService) PeriodicDiscovery(ctx context.Context, interval time.
             }
 
             // Update ConfigMap
-            err = d.configMapWriter.WriteToolset(ctx, "kubernaut-system", "holmesgpt-toolset", toolset)
+            err = d.configMapWriter.WriteToolset(ctx, "kubernaut-system", "kubernaut-toolset-config", toolset)
             if err != nil {
                 d.logger.Error("ConfigMap update failed", zap.Error(err))
                 continue
@@ -623,24 +623,24 @@ func (hc *ServiceHealthChecker) CheckHealth(ctx context.Context, serviceType, en
 ┌──────────────────────────────────────────────────────────────────┐
 │ Step 5: Generate Toolset Configuration                          │
 │   - Filter out unhealthy services                                │
-│   - Format as HolmesGPT toolset YAML                             │
+│   - Format as Kubernaut Agent toolset YAML                       │
 │   - Preserve manual overrides (if any)                           │
 └─────────────────────────┬────────────────────────────────────────┘
                           │
                           ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │ Step 6: Write to ConfigMap                                      │
-│   - Create/Update holmesgpt-toolset ConfigMap                    │
+│   - Create/Update kubernaut-toolset-config ConfigMap             │
 │   - Write toolset.yaml data                                      │
 │   - Set owner references                                         │
 └─────────────────────────┬────────────────────────────────────────┘
                           │
                           ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│ Step 7: HolmesGPT API Detects Change                            │
+│ Step 7: Kubernaut Agent Detects Change                          │
 │   - ConfigMap watch detects modification                         │
 │   - Trigger toolset reload                                       │
-│   - Update HolmesGPT SDK configuration                           │
+│   - Update Kubernaut Agent SDK configuration                     │
 └──────────────────────────────────────────────────────────────────┘
 ```
 

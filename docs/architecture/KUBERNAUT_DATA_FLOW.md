@@ -65,16 +65,16 @@ This document defines the **authoritative data flow** for the Kubernaut incident
 │                                       ▼                                                     │
 │  ┌──────────────────────────────────────────────────────────────────────────────────────┐   │
 │  │  4. AI ANALYSIS (CRD Controller)                                                     │   │
-│  │     • Calls HolmesGPT-API with enriched signal context                               │   │
+│  │     • Calls Kubernaut Agent (KA) with enriched signal context                        │   │
 │  │     ┌─────────────────────────────────────────────────────────────────────────────┐  │   │
-│  │     │  4a. HOLMESGPT-API (Stateless Service)                                      │  │   │
+│  │     │  4a. KUBERNAUT AGENT (Stateless Service)                                    │  │   │
 │  │     │      • Queries workflow catalog via Data Storage API (MCP search)           │  │   │
 │  │     │      • Constructs LLM prompt with available workflows                       │  │   │
 │  │     │      • Calls LLM provider (OpenAI, Anthropic, etc.)                         │  │   │
 │  │     │      • Parses response per ADR-041 contract                                 │  │   │
 │  │     │      • **RESOLVES workflow_id → containerImage** (from catalog)             │  │   │
 │  │     └─────────────────────────────────────────────────────────────────────────────┘  │   │
-│  │     • Receives SelectedWorkflow from HolmesGPT-API (incl. containerImage)            │   │
+│  │     • Receives SelectedWorkflow from Kubernaut Agent (incl. containerImage)          │   │
 │  │     • Updates AIAnalysis.status.selectedWorkflow (containerImage included)           │   │
 │  │     • Sets approvalRequired: true if confidence < 80%                                │   │
 │  │     • Phase: Completed (NOT "Approving")                                             │   │
@@ -180,7 +180,7 @@ This document defines the **authoritative data flow** for the Kubernaut incident
 | 2 | RO | Watches RemediationRequest | SignalProcessing |
 | 3 | Signal Processing | Enriches signal, classifies | - |
 | 4 | RO | Watches SignalProcessing | AIAnalysis |
-| 5 | AI Analysis | Calls HolmesGPT-API | - |
+| 5 | AI Analysis | Calls Kubernaut Agent | - |
 | 6 | RO | Watches AIAnalysis (if approval needed) | NotificationRequest + RemediationApprovalRequest |
 | 7 | Notification | Delivers approval request | - |
 | 8 | Approval Request | Manages approval lifecycle | - |
@@ -198,8 +198,8 @@ This document defines the **authoritative data flow** for the Kubernaut incident
 | **Gateway** | Entry point, normalization | Creates RemediationRequest |
 | **Remediation Orchestrator** | Central coordinator | Creates ALL child CRDs, watches status, orchestrates flow |
 | **Signal Processing** | Signal enrichment, classification | Updates status with enriched context |
-| **AI Analysis** | AI investigation, workflow selection | Calls HolmesGPT-API, populates selectedWorkflow |
-| **HolmesGPT-API** | LLM integration | Queries catalog, calls LLM, parses response |
+| **AI Analysis** | AI investigation, workflow selection | Calls Kubernaut Agent, populates selectedWorkflow |
+| **Kubernaut Agent** | LLM integration | Queries catalog, calls LLM, parses response |
 | **Notification** | Alert delivery | Routes via Alertmanager, delivers to channels |
 | **Approval Request** | Approval lifecycle | Manages timeout, records decision |
 | **Workflow Execution** | Workflow orchestration | Creates PipelineRun, watches status |

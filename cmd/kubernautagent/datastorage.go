@@ -164,7 +164,7 @@ func buildEnricher(cfg *kaconfig.Config, ds *dsClients, infra *k8sInfra, auditSt
 }
 
 // buildSanitizationPipeline creates the sanitization pipeline with G4 (credential scrub),
-// K8S-SECRET (JSON Secret redaction), and I1 (injection patterns) stages per DD-HAPI-019-003.
+// K8S-SECRET (JSON Secret redaction), and I1 (injection patterns) stages per DD-KA-019-003.
 // Returns nil when all stages are disabled.
 func buildSanitizationPipeline(cfg *kaconfig.Config, logger logr.Logger) *sanitization.Pipeline {
 	var stages []sanitization.Stage

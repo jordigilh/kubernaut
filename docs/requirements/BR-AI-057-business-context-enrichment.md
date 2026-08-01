@@ -5,13 +5,13 @@
 **Created**: 2025-11-15
 **Target Release**: v1.1
 **Service**: AI Analysis Service
-**Related**: DD-HOLMESGPT-002, BR-HAPI-001, BR-PLAYBOOK-001
+**Related**: DD-HOLMESGPT-002, BR-KA-001, BR-PLAYBOOK-001
 
 ---
 
 ## Business Requirement
 
-The AI Analysis Service SHALL enrich incident context with organizational business policies and constraints to enable business-aware recovery recommendations from the HolmesGPT API.
+The AI Analysis Service SHALL enrich incident context with organizational business policies and constraints to enable business-aware recovery recommendations from the Kubernaut Agent (KA).
 
 ---
 
@@ -47,7 +47,7 @@ The AI Analysis Service SHALL retrieve business policies for the affected namesp
 3. External policy service (future - v2.0)
 
 ### FR-AI-057-002: Business Context Fields
-The AI Analysis Service SHALL provide the following business context fields to HolmesGPT API:
+The AI Analysis Service SHALL provide the following business context fields to Kubernaut Agent:
 
 | Field | Type | Source | Example Values |
 |-------|------|--------|----------------|
@@ -58,7 +58,7 @@ The AI Analysis Service SHALL provide the following business context fields to H
 | `sla_tier` | enum | Namespace label: `kubernaut.ai/sla-tier` | `CRITICAL`, `HIGH`, `STANDARD` |
 
 ### FR-AI-057-003: Context Enrichment
-The AI Analysis Service SHALL enrich the recovery request context before sending to HolmesGPT API:
+The AI Analysis Service SHALL enrich the recovery request context before sending to Kubernaut Agent:
 
 **Input** (from incident):
 ```json
@@ -139,7 +139,7 @@ metadata:
 
 **Implementation**:
 - Add namespace label reader to AI Analysis Service
-- Enrich context before HolmesGPT API call
+- Enrich context before Kubernaut Agent call
 - Use defaults for unlabeled namespaces
 
 ### Phase 2: v1.2 (Policy ConfigMap)
@@ -212,7 +212,7 @@ And no additional Kubernetes API call SHALL be made
 - RBAC permissions: `get`, `list` on `namespaces`
 
 **Downstream**:
-- HolmesGPT API must accept enriched business context (DD-HOLMESGPT-002)
+- Kubernaut Agent must accept enriched business context (DD-HOLMESGPT-002)
 - Playbook catalog must support business context matching (BR-PLAYBOOK-001)
 
 ---
@@ -227,7 +227,7 @@ And no additional Kubernetes API call SHALL be made
 
 ### Integration Tests
 - End-to-end context enrichment
-- HolmesGPT API integration
+- Kubernaut Agent integration
 - Policy ConfigMap reading (Phase 2)
 
 ### Performance Tests

@@ -35,7 +35,7 @@ limitations under the License.
 //
 // This package is deliberately NOT shared with the API Frontend's Anthropic
 // path (which uses adk-anthropic-go's full model.LLM wrapper for Google
-// ADK compatibility): KA is framework-isolated by design (DD-HAPI-019-001)
+// ADK compatibility): KA is framework-isolated by design (DD-KA-019-001)
 // while AF's entire agent loop is ADK-based. Only framework-independent
 // protocol logic (like the converters import above) is reused; the model
 // wrapper layers stay separate on purpose. See DD-LLM-007.
@@ -107,7 +107,7 @@ func WithBaseTransport(rt http.RoundTripper) Option {
 // ONCE at client-construction time, per the documented contract on
 // llm.ReasoningRequest ("resolved once at LLM-client-construction time from
 // operator config, never threaded per-call from business logic",
-// DD-HAPI-019). Chat/StreamChat apply this default whenever the caller's
+// DD-KA-019). Chat/StreamChat apply this default whenever the caller's
 // per-call req.Options.Reasoning is nil; an explicit per-call value (set or
 // unset) still wins, preserving test/override flexibility (#1578 fix: prior
 // to this, no production call site ever set Options.Reasoning, making
@@ -276,7 +276,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespons
 // (400/401/403/404-class) StatusCode. Classification happens here, at this
 // package's own translation boundary, rather than in the shared llm
 // package, so the generic retry machinery never needs to import a
-// provider SDK (DD-HAPI-019 Framework Isolation).
+// provider SDK (DD-KA-019 Framework Isolation).
 func classifyErr(err error) error {
 	var apiErr *anthropic.Error
 	if errors.As(err, &apiErr) && llm.IsNonRetryableHTTPStatus(apiErr.StatusCode) {

@@ -909,7 +909,7 @@ BeforeAll(func() {
 })
 ```
 
-#### Stateless Services (Data Storage, Gateway, HolmesGPT-API)
+#### Stateless Services (Data Storage, Gateway, Kubernaut Agent)
 
 ```go
 // ✅ CORRECT: Unit test - test-specific registry (similar to CRD controllers)
@@ -1383,7 +1383,7 @@ linters-settings:
 
 ### Integration Test Container Orchestration
 
-Integration tests require real service dependencies (HolmesGPT-API, Data Storage, PostgreSQL, Redis). Services are orchestrated using **programmatic Go** via `test/infrastructure/container_management.go`.
+Integration tests require real service dependencies (Kubernaut Agent, Data Storage, PostgreSQL, Redis). Services are orchestrated using **programmatic Go** via `test/infrastructure/container_management.go`.
 
 #### Available Infrastructure
 
@@ -1392,7 +1392,7 @@ Integration tests require real service dependencies (HolmesGPT-API, Data Storage
 | **PostgreSQL** | `quay.io/jordigilh/pgvector:pg16` | 5432 | Audit trail storage (pgvector) |
 | **Redis** | `quay.io/jordigilh/redis:7-alpine` | 6379 | Caching layer |
 | **Data Storage** | Built from `docker/data-storage.Dockerfile` | 8080 | Audit persistence API |
-| **HolmesGPT-API** | Built from `kubernaut-agent/Dockerfile` | 8081 | AI analysis service |
+| **Kubernaut Agent** | Built from `kubernaut-agent/Dockerfile` | 8081 | AI analysis service |
 
 #### Running Integration Tests
 
@@ -1595,7 +1595,7 @@ Integration tests detect running services via environment variables:
 
 ```bash
 # Set by podman-compose or manually for local development
-export HOLMESGPT_API_URL=http://localhost:8081
+export KUBERNAUT_AGENT_URL=http://localhost:8081
 export DATASTORAGE_URL=http://localhost:8080
 export POSTGRES_HOST=localhost
 export POSTGRES_PORT=5432
@@ -1620,7 +1620,7 @@ export REDIS_PORT=6379
 
 #### Mock LLM in All Tiers
 
-**LLM is mocked across ALL test tiers** due to cost constraints. HolmesGPT-API is LLM-agnostic; point `LLM_ENDPOINT` at a standalone Mock LLM service for deterministic responses.
+**LLM is mocked across ALL test tiers** due to cost constraints. Kubernaut Agent is LLM-agnostic; point `LLM_ENDPOINT` at a standalone Mock LLM service for deterministic responses.
 
 ```yaml
 # podman-compose.test.yml - kubernaut-agent service

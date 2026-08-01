@@ -34,7 +34,7 @@ import (
 // will never succeed on retry. These tests RED-prove the provider-agnostic
 // classification primitives (IsNonRetryableHTTPStatus, MarkNonRetryable,
 // IsRetryable) that provider adapters (anthropicfamily, openai) use to
-// classify their own errors at the translation boundary, per DD-HAPI-019
+// classify their own errors at the translation boundary, per DD-KA-019
 // Framework Isolation — this package must never import a provider SDK.
 var _ = Describe("LLM error classification — #1585", func() {
 

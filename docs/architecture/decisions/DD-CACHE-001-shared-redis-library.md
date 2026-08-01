@@ -4,7 +4,7 @@
 **Status**: ✅ **APPROVED**
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: DD-INFRASTRUCTURE-001 (Redis Separation), DD-INFRASTRUCTURE-002 (Data Storage Redis Strategy)
-**Affects**: Gateway, Data Storage, HolmesGPT API, Signal Processing (future)
+**Affects**: Gateway, Data Storage, Kubernaut Agent (KA), Signal Processing (future)
 **Version**: 1.0
 
 ---
@@ -30,7 +30,7 @@ Multiple Kubernaut services need Redis for caching, but each service is implemen
 **Current State**:
 - ✅ **Gateway**: Fully implemented Redis patterns in `pkg/gateway/processing/deduplication.go`
 - ⏸️ **Data Storage**: About to implement Redis cache for embeddings (copy-paste approach)
-- 📋 **HolmesGPT API**: Will need Redis for investigation results cache (V1.1)
+- 📋 **Kubernaut Agent**: Will need Redis for investigation results cache (V1.1)
 - 📋 **Signal Processing**: Will need Redis for pattern detection cache (V1.1)
 
 **Problem**: Should we extract Gateway's Redis patterns into a shared library, or continue copy-pasting?
@@ -76,7 +76,7 @@ if cached, err := embeddingCache.Get(ctx, text); err == nil {
 - ✅ **Maintainability**: Fix bugs once, all services benefit
 - ✅ **Proven Patterns**: Gateway's implementation is battle-tested
 - ✅ **Type Safety**: Generic `Cache[T]` interface with compile-time type checking
-- ✅ **Future-Proof**: Easy to add new services (HolmesGPT, Signal Processing)
+- ✅ **Future-Proof**: Easy to add new services (Kubernaut Agent, Signal Processing)
 - ✅ **Same Effort**: 4-6 hours (same as copy-paste for 4 services)
 
 **Cons**:
@@ -108,7 +108,7 @@ if cached, err := embeddingCache.Get(ctx, text); err == nil {
 - ✅ **No Shared Dependencies**: No risk of breaking changes
 
 **Cons**:
-- ❌ **Code Duplication**: 4x copies of same code (Gateway, Data Storage, HolmesGPT, Signal Processing)
+- ❌ **Code Duplication**: 4x copies of same code (Gateway, Data Storage, Kubernaut Agent, Signal Processing)
 - ❌ **Inconsistency**: Each service might implement differently
 - ❌ **Bug Fixes**: Need to fix in 4 places
 - ❌ **Technical Debt**: Harder to maintain over time
@@ -118,7 +118,7 @@ if cached, err := embeddingCache.Get(ctx, text); err == nil {
 | Service | Time | Cumulative |
 |---------|------|------------|
 | Data Storage | 1.5 hours | 1.5 hours |
-| HolmesGPT API | 1.5 hours | 3 hours |
+| Kubernaut Agent | 1.5 hours | 3 hours |
 | Signal Processing | 1.5 hours | 4.5 hours |
 | Future Service | 1.5 hours | 6 hours |
 
@@ -154,7 +154,7 @@ if cached, err := embeddingCache.Get(ctx, text); err == nil {
 **APPROVED: Alternative A** - Shared Redis Library
 
 **Rationale**:
-1. **Break-even at 3 services** - We already have Gateway + Data Storage + HolmesGPT (V1.1)
+1. **Break-even at 3 services** - We already have Gateway + Data Storage + Kubernaut Agent (V1.1)
 2. **Same effort as copy-paste** - 5 hours vs 6 hours for 4 services
 3. **Better maintainability** - Single source of truth
 4. **Proven patterns** - Gateway's implementation is battle-tested
@@ -414,7 +414,7 @@ func (c *Cache[T]) hashKey(key string) string {
 
 ### **Phase 4: Future Services** (0.5 hours each)
 
-1. HolmesGPT API: Investigation results cache
+1. Kubernaut Agent: Investigation results cache
 2. Signal Processing: Pattern detection cache
 
 ---
@@ -461,7 +461,7 @@ func (c *Cache[T]) hashKey(key string) string {
 | **Copy-Paste** | 3 | 4.5 hours (1.5h × 3) |
 | **Copy-Paste** | 4 | 6 hours (1.5h × 4) |
 
-**Current Services**: Gateway + Data Storage + HolmesGPT (V1.1) = 3 services
+**Current Services**: Gateway + Data Storage + Kubernaut Agent (V1.1) = 3 services
 **Future Services**: Signal Processing (V1.1), Notification (V2.0) = 5 services
 
 **Conclusion**: Shared library breaks even at 3 services, saves time at 4+ services
@@ -478,7 +478,7 @@ func (c *Cache[T]) hashKey(key string) string {
   - BR-INFRASTRUCTURE-001 (Shared Redis Infrastructure)
 - **Enables**:
   - Data Storage embedding cache
-  - HolmesGPT API investigation cache (V1.1)
+  - Kubernaut Agent investigation cache (V1.1)
   - Signal Processing pattern cache (V1.1)
 
 ---
@@ -490,7 +490,7 @@ func (c *Cache[T]) hashKey(key string) string {
 1. **After 3 months**: Evaluate if shared library is being used correctly
 2. **If breaking changes needed**: Consider versioning strategy
 3. **If new Redis patterns emerge**: Evaluate if they should be added to shared library
-4. **After V1.1 services**: Validate shared library works for HolmesGPT, Signal Processing
+4. **After V1.1 services**: Validate shared library works for Kubernaut Agent, Signal Processing
 
 ### **Success Metrics**
 

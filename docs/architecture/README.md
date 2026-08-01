@@ -104,7 +104,7 @@ These documents describe how Kubernaut transforms raw alert data into intelligen
     - **Purpose**: Dynamic context gathering and AI-driven investigations
     - **Audience**: AI engineers, context developers
     - **Key Content**: Context API design, historical intelligence, vector similarity search
-    - **Connects To**: HolmesGPT API → Context enhancement
+    - **Connects To**: Kubernaut Agent → Context enhancement
     - **Read Time**: 22 minutes
 
 #### **🔍 Pattern Discovery & Intelligence**
@@ -120,7 +120,7 @@ These documents describe how Kubernaut transforms raw alert data into intelligen
     - **Purpose**: Dynamic toolset discovery and configuration for AI agents
     - **Audience**: AI engineers, toolset developers
     - **Key Content**: Toolset discovery, dynamic configuration, AI agent integration
-    - **Connects To**: HolmesGPT API → Toolset management
+    - **Connects To**: Kubernaut Agent → Toolset management
     - **Read Time**: 16 minutes
 
 ## 💾 **DATA & STORAGE ARCHITECTURE**
@@ -228,7 +228,7 @@ These 4 documents are the **ONLY** authoritative sources for architecture decisi
 - 🔄 **DRAFT** - Work in progress, not for production use
 
 ### **Architecture Standards**
-- **Port Assignments**: Context API (8091), HolmesGPT-API (8090) - standardized
+- **Port Assignments**: Context API (8091), Kubernaut Agent (8090) - standardized
 - **Service Count**: V1.0 = 8 services, V1.1 = 9 services (+Effectiveness Monitor), V2.0 = 14+ services (+Dynamic Toolset, +others)
 - **Architecture Version**: V1.0 is current implementation, V1.1 adds continuous improvement, V2 is future roadmap
 - **Deferrals**: Dynamic Toolset→V2.0 (DD-016), Effectiveness Monitor→V1.1 (DD-017)
@@ -246,7 +246,7 @@ These 4 documents are the **ONLY** authoritative sources for architecture decisi
 ### **V1 Architecture Metrics**
 - **Services**: 10 core microservices with single responsibility
 - **Timeline**: 3-4 weeks to production (95% confidence)
-- **AI Integration**: HolmesGPT-API as primary investigation service
+- **AI Integration**: Kubernaut Agent (KA) as primary investigation service
 - **Performance**: <5s alert processing, 99.9% availability target
 - **Business Value**: 40-60% faster MTTR, 20% operational cost reduction
 
