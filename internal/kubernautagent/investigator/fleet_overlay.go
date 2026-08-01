@@ -72,19 +72,31 @@ func FleetOverlayFromContext(ctx context.Context) (map[string]tools.Tool, bool) 
 
 // prescopeFleetOverlay resolves the fleet tool overlay for clusterID and
 // returns a derived context carrying it, for a fleet-target investigation
-// (clusterID != ""). For a hub-local investigation (clusterID == "") or a
-// deployment with fleet disabled (inv.fleetOverlayResolver == nil), ctx is
-// returned unchanged — pre-scoping is skipped entirely, not attempted and
-// discarded, so hub-local investigations never pay the resolver's cost.
+// (clusterID != ""). For a hub-local investigation (clusterID == ""), ctx is
+// returned unchanged with no observable side effect at all — pre-scoping is
+// skipped entirely, not attempted and discarded, so hub-local investigations
+// never pay the resolver's cost and this remains a true zero-regression
+// no-op for the overwhelming majority of (non-fleet) deployments.
 //
-// On resolver error, the investigation fails open: it proceeds with ctx
-// unchanged (no overlay), behaving like a hub-local investigation minus
-// remote-cluster tool access, rather than aborting the investigation over a
-// degraded fleet dependency (GA Readiness Dimension 12: no silent failures).
-// The failure is both logged and recorded as an EventTypeFleetOverlayFailed
-// audit event (AU-3) carrying clusterID and correlationID, so a degraded
-// fleet investigation is independently queryable, not just grep-able from
-// logs.
+// A fleet-target investigation (clusterID != "") arriving at a KA instance
+// with no FleetOverlayResolver configured at all (inv.fleetOverlayResolver
+// == nil, i.e. fleet mode isn't wired on this instance) is a DIFFERENT,
+// degraded condition — distinct from the hub-local no-op above — and is
+// logged plus recorded as an EventTypeFleetOverlayUnavailable audit event
+// (issue #1768 follow-up). Before this, the two cases were indistinguishable
+// from the outside: no log, no audit event, no way to tell "a fleet-scoped
+// investigation silently ran against local/hub tools" apart from "this
+// investigation never had a target cluster" or even "prescopeFleetOverlay
+// was never reached" (e.g. a regression removing the call).
+//
+// On resolver error (resolver present but Overlay itself fails), the
+// investigation fails open: it proceeds with ctx unchanged (no overlay),
+// behaving like a hub-local investigation minus remote-cluster tool access,
+// rather than aborting the investigation over a degraded fleet dependency
+// (GA Readiness Dimension 12: no silent failures). The failure is both
+// logged and recorded as an EventTypeFleetOverlayFailed audit event (AU-3)
+// carrying clusterID and correlationID, so a degraded fleet investigation is
+// independently queryable, not just grep-able from logs.
 //
 // On success, ctx also gains audit.WithClusterID(ctx, clusterID) — this is
 // the same context.WithClusterID session.Manager's attachInvestigationContext
@@ -95,7 +107,15 @@ func FleetOverlayFromContext(ctx context.Context) (map[string]tools.Tool, bool) 
 // Investigate() directly without going through session.Manager (as KA's own
 // integration tests do).
 func (inv *Investigator) prescopeFleetOverlay(ctx context.Context, clusterID, correlationID string) context.Context {
-	if inv.fleetOverlayResolver == nil || clusterID == "" {
+	if clusterID == "" {
+		return ctx
+	}
+	if inv.fleetOverlayResolver == nil {
+		inv.logger.Info("fleet-target investigation reached prescopeFleetOverlay but no FleetOverlayResolver "+
+			"is configured on this KA instance; proceeding without remote-cluster tools",
+			"cluster_id", clusterID,
+		)
+		inv.emitFleetOverlayUnavailableAudit(ctx, clusterID, correlationID)
 		return ctx
 	}
 	overlay, err := inv.fleetOverlayResolver.Overlay(ctx, clusterID)
@@ -121,6 +141,20 @@ func (inv *Investigator) emitFleetOverlayFailedAudit(ctx context.Context, cluste
 	event.ClusterID = clusterID
 	event.Data["cluster_id"] = clusterID
 	event.Data["error_message"] = resolveErr.Error()
+	audit.StoreBestEffort(ctx, inv.auditStore, event, inv.auditLog())
+}
+
+// emitFleetOverlayUnavailableAudit records the AU-3/AC-4 audit event for a
+// fleet-target investigation that reached prescopeFleetOverlay with no
+// FleetOverlayResolver configured at all (see prescopeFleetOverlay).
+// Best-effort, same rationale as emitFleetOverlayFailedAudit.
+func (inv *Investigator) emitFleetOverlayUnavailableAudit(ctx context.Context, clusterID, correlationID string) {
+	event := audit.NewEvent(audit.EventTypeFleetOverlayUnavailable, correlationID)
+	event.EventAction = audit.ActionFleetOverlayUnavailable
+	event.EventOutcome = audit.OutcomeFailure
+	event.ClusterID = clusterID
+	event.Data["cluster_id"] = clusterID
+	event.Data["reason"] = "no FleetOverlayResolver configured on this kubernaut-agent instance"
 	audit.StoreBestEffort(ctx, inv.auditStore, event, inv.auditLog())
 }
 

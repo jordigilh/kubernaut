@@ -43,6 +43,27 @@ spec:
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    {{- /* Issue #1795 gap found: AF's own KubernautAgent MCP clients (pooled
+    session-per-call AND the dedicated per-investigation streaming client --
+    see cmd/apifrontend/backend_deps.go's buildKAClientDeps) call KA directly
+    at kaMCPEndpoint (kubernaut-agent:8443) for kubernaut_investigate/
+    select_workflow/discover_workflows/etc. KA's own NetworkPolicy
+    (kubernaut-agent/networkpolicy-agent.yaml) already allows this ingress FROM
+    apifrontend, and aianalysis/networkpolicy.yaml has the reciprocal AA->KA
+    egress rule below -- but AF's NetworkPolicy never had the matching AF->KA
+    egress rule, a one-sided wiring gap identical in shape to the FMC/Gateway/
+    RO fleet-OAuth2 gap and AF's own llmEgress/idpEgress gaps documented
+    elsewhere in this file. Confirmed via E2E-FP-1189-005 (Console-equivalent
+    SSE interactive remediation): every dial from AF to KA:8443 timed out at
+    exactly ~60s ("dial tcp ... i/o timeout"), consistent with a silently
+    dropped SYN rather than an application-level failure. */}}
+    - ports:
+        - port: 8443
+          protocol: TCP
+      to:
+        - podSelector:
+            matchLabels:
+              app: kubernaut-agent
     {{- /* Issue #1737 gap found: agent.llm.endpoint (apifrontend.yaml ConfigMap)
     is mandatory AF config -- the A2A launcher agent calls it directly for
     planning/reasoning -- yet the NetworkPolicy never allowed this egress,

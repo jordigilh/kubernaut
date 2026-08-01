@@ -433,6 +433,15 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		// into kubernaut_present_decision to prove cluster_id reaches the
 		// SSE-visible investigation_summary artifact end-to-end.
 		"fleet": fmt.Sprintf("fp-fleet-%s", uuid.New().String()[:8]),
+		// interactive-streaming: dedicated namespace for E2E-FP-1189-005, kept
+		// distinct from "interactive" above so its memory-eater Deployment's
+		// signal fingerprint never collides with E2E-FP-1189-003/-004's. This
+		// scenario replays the same 5-turn conversation as -003/-004 but over
+		// message/stream (SSE) instead of message/send, closing the gap where
+		// no single test combined the real Console-facing SSE transport with a
+		// full RO->SP->AA->KA->WE pipeline run to completion (see session notes,
+		// issue #1189).
+		"interactive-streaming": fmt.Sprintf("fp-ints-%s", uuid.New().String()[:8]),
 	}
 	_, _ = fmt.Fprintln(writer, "  📌 AF remediate namespaces:")
 	for key, ns := range afRemediateNS {
