@@ -245,6 +245,35 @@ func fleetClusterIDScenarioYAML(fleetNS string) string {
 `, fleetNS)
 }
 
+// resolveWorkflowUUID looks up the real catalog UUID seeded for a workflow
+// fixture (keyed "<workflowName>:<environment>" in workflowUUIDs, per
+// SeedWorkflowsViaKubectlApply/SeedWorkflowsViaDirectCRDCreationFromKubeconfig)
+// so mock-LLM scenarios can reference the UUID that a real discover_workflows
+// call will actually return, instead of the human-readable fixture name.
+// Prefers the ":production" entry when a workflow was seeded under multiple
+// environments (mirrors SortedWorkflowUUIDKeys' production-preference
+// ordering). Falls back to workflowName itself when no seeded entry matches,
+// preserving prior behavior for callers that don't seed this workflow.
+func resolveWorkflowUUID(workflowUUIDs map[string]string, workflowName string) string {
+	prefix := workflowName + ":"
+	fallback := ""
+	for key, uuid := range workflowUUIDs {
+		if !strings.HasPrefix(key, prefix) || uuid == "" {
+			continue
+		}
+		if strings.HasSuffix(key, ":production") {
+			return uuid
+		}
+		if fallback == "" {
+			fallback = uuid
+		}
+	}
+	if fallback != "" {
+		return fallback
+	}
+	return workflowName
+}
+
 // DeployMockLLMInNamespace deploys the Go Mock LLM service to a Kind namespace.
 // Uses ClusterIP for internal access only (no NodePort needed for E2E).
 //
@@ -328,6 +357,20 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
             description: "FP E2E test remediation request"
 `
 	}
+	// PR #1799 QE audit follow-up (tracked as #1834): af_select_workflow's workflow_id argument
+	// must be the *real* catalog UUID that discover_workflows will report
+	// back in its (nested, un-templatable via $from_tool) DiscoveryResult --
+	// not the human-readable fixture name. KA's kubernaut_select_workflow
+	// strictly gates on isWorkflowInDiscoveryResult, which compares against
+	// DiscoveryResult.Recommended.WorkflowID verbatim; every FP seeding path
+	// (SeedWorkflowsViaKubectlApply/SeedWorkflowsViaDirectCRDCreationFromKubeconfig)
+	// assigns that workflow a real/deterministic UUID keyed as
+	// "<fixture-name>:<environment>" in workflowUUIDs, so a hardcoded literal
+	// like "oomkill-increase-memory-v1" here can never match and
+	// kubernaut_select_workflow deterministically fails with
+	// invalid_workflow (silently, unless the caller strictly asserts on
+	// tool-call success) -- root cause of the E2E-FP-1189-005 Turn 5 stall.
+	afSelectWorkflowID := resolveWorkflowUUID(workflowUUIDs, "oomkill-increase-memory-v1")
 	afKeywordYAML := "keyword_scenarios:\n" + remediateScenarios + `      - name: "af_investigate"
         keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
@@ -352,7 +395,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           name: "kubernaut_select_workflow"
           arguments:
             rr_id: "$from_tool:kubernaut_remediate:rr_id"
-            workflow_id: "oomkill-increase-memory-v1"
+            workflow_id: "` + afSelectWorkflowID + `"
       - name: "af_watch"
         keywords: ["watch remediation", "watch pipeline", "watch progress"]
         match_last_only: true
