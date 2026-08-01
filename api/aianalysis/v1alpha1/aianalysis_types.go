@@ -378,8 +378,8 @@ type AIAnalysisStatus struct {
 	// +optional
 	Reason AIAnalysisReason `json:"reason,omitempty"`
 	// SubReason provides specific failure cause within the Reason category
-	// BR-HAPI-197: Maps to needs_human_review triggers from KA
-	// BR-HAPI-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
+	// BR-KA-197: Maps to needs_human_review triggers from KA
+	// BR-KA-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
 	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;NotActionable;MaxRetriesExceeded;SessionRegenerationExceeded;RcaIncomplete;InvestigationFailed;OperatorEscalation
 	// +optional
 	SubReason string `json:"subReason,omitempty"`
@@ -617,7 +617,7 @@ type RootCauseAnalysis struct {
 	// Contributing factors
 	ContributingFactors []string `json:"contributingFactors,omitempty"`
 	// RemediationTarget identifies the actual resource the LLM determined should be remediated.
-	// BR-HAPI-191: The LLM may identify a higher-level resource (e.g., Deployment) rather than
+	// BR-KA-212: The LLM may identify a higher-level resource (e.g., Deployment) rather than
 	// the Pod that generated the signal. The WFE creator should prefer this over the RR's
 	// TargetResource when available to ensure the correct resource is patched.
 	// +optional

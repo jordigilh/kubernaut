@@ -23,7 +23,7 @@ import (
 	sharedsanitization "github.com/jordigilh/kubernaut/pkg/shared/sanitization"
 )
 
-// CredentialSanitizer scrubs credentials from tool output (G4 per DD-HAPI-005 / BR-HAPI-211).
+// CredentialSanitizer scrubs credentials from tool output (G4 per DD-KA-005 / BR-KA-211).
 // Wraps the shared pkg/shared/sanitization.Sanitizer with an enhanced authorization-header
 // rule that captures multi-word values (e.g., "Basic <base64>").
 type CredentialSanitizer struct {

@@ -122,7 +122,7 @@ func CreateTLSAuthenticatedDataStorageClient(dataStorageURL, saToken, kubeconfig
 // Source of truth: test/e2e/kubernaut-agent/test_workflows.go:GetKAE2ETestWorkflows()
 // Acceptable trade-off: Small duplication avoids architectural issues
 func GetKAE2ETestWorkflows() []TestWorkflow {
-	// BR-HAPI-191: SchemaParameters MUST match Mock LLM scenario parameters
+	// BR-KA-191: SchemaParameters MUST match Mock LLM scenario parameters
 	// KA validates LLM response parameters against workflow schema from DataStorage
 	// DD-WORKFLOW-016: ActionType values MUST match Python fixtures (workflow_fixtures.py)
 	// DD-WORKFLOW-017: SchemaImage references real OCI images at quay.io/kubernaut-cicd/test-workflows

@@ -289,7 +289,7 @@ All AIAnalysis integration tests MUST:
 - `DD-AIANALYSIS-001` - Rego policy loading strategy
 - `DD-AIANALYSIS-002` - Rego policy startup validation
 - `DD-CONTRACT-001` - AIAnalysis-WorkflowExecution alignment
-- `DD-HAPI-003` - Confidence scoring
+- `DD-KA-004` - Confidence scoring
 
 **Test Standards**:
 - `DD-TEST-002` - Parallel test execution standard

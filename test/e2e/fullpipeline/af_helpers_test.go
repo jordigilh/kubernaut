@@ -634,7 +634,7 @@ func fpAssertNoISForRR(rrName, ns string) {
 
 // fpAssertNoWEForRR asserts that no WorkflowExecution owned by the given RR
 // exists over a 10-second observation window. Pattern from RO E2E dryrun_e2e_test.go.
-// #1432 / BR-HAPI-200: Verifies no WE is created for the no-action path.
+// #1432 / BR-KA-200: Verifies no WE is created for the no-action path.
 func fpAssertNoWEForRR(rrName string) {
 	Consistently(func() int {
 		weList := &workflowexecutionv1.WorkflowExecutionList{}

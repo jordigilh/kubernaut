@@ -472,7 +472,7 @@ The **RemediationOrchestrator** is the central coordinator for the Kubernaut rem
 - Same pass-through pattern as BR-ORCH-025 (workflow data)
 
 **Test Coverage**: Pending (see [TEST_PLAN_PART_A](../../../tests/462/TEST_PLAN_PART_A.md))
-**Related BRs**: BR-ORCH-025 (Workflow Data Pass-Through), BR-GATEWAY-185 (Signal Description Capture), BR-HAPI-213 (Signal Description in Prompt)
+**Related BRs**: BR-ORCH-025 (Workflow Data Pass-Through), BR-GATEWAY-185 (Signal Description Capture), BR-KA-213 (Signal Description in Prompt)
 
 ---
 

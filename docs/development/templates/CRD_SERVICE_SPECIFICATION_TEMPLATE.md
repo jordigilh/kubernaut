@@ -53,7 +53,7 @@ docs/services/crd-controllers/
 | **SERVICE-SPECIFIC** | Domain-specific documents unique to this service. Not all services will have these. | When service has unique domain requirements not covered by common patterns |
 
 **SERVICE-SPECIFIC Examples**:
-- **AIAnalysis**: `REGO_POLICY_EXAMPLES.md` (approval policies), `ai-holmesgpt-approval.md`
+- **AIAnalysis**: `REGO_POLICY_EXAMPLES.md` (approval policies), `ka-approval.md`
 - **WorkflowExecution**: `tekton-pipeline-spec.md`, `workflow-parameters.md`
 - **Notification**: `notification-channels.md`, `template-engine.md`
 - **SignalProcessing**: `label-extraction.md`, `enrichment-pipeline.md`

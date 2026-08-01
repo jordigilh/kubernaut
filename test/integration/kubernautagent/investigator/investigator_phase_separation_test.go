@@ -212,7 +212,7 @@ var _ = Describe("Phase Separation: Investigator — #700", func() {
 		})
 	})
 
-	Describe("IT-KA-700-002: RCA HR fields stripped from pipeline (BR-HAPI-200)", func() {
+	Describe("IT-KA-700-002: RCA HR fields stripped from pipeline (BR-KA-200)", func() {
 		It("should proceed to workflow selection — RCA submit_result HR fields are ignored by parser", func() {
 			rcaSubmitArgs := `{"root_cause_analysis":{"summary":"Memory leak in api-server"},"confidence":0.7}`
 			mockClient.responses = []llm.ChatResponse{

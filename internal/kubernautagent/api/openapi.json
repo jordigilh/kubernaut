@@ -82,7 +82,7 @@
                     "instance"
                   ],
                   "title": "HTTPError",
-                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nBusiness Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
+                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
                   "example": {
                     "detail": "Missing required field: 'namespace'",
                     "instance": "/api/v1/incident/analyze",
@@ -147,7 +147,7 @@
                     "instance"
                   ],
                   "title": "HTTPError",
-                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nBusiness Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
+                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
                   "example": {
                     "detail": "Missing required field: 'namespace'",
                     "instance": "/api/v1/incident/analyze",
@@ -166,7 +166,7 @@
             }
           },
           "400": {
-            "description": "Bad Request - Invalid request parameters or validation failure.\n\n**Source**: HAPI middleware (RFC 7807)\n\n**Cause**: Pydantic validation error, missing required fields, invalid field values.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "description": "Bad Request - Invalid request parameters or validation failure.\n\n**Source**: Kubernaut Agent (KA) middleware (RFC 7807)\n\n**Cause**: Pydantic validation error, missing required fields, invalid field values.\n\n**Authority**: DD-004 (RFC 7807 Problem Details)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -212,7 +212,7 @@
                     "instance"
                   ],
                   "title": "HTTPError",
-                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nBusiness Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
+                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
                   "example": {
                     "detail": "Missing required field: 'namespace'",
                     "instance": "/api/v1/incident/analyze",
@@ -231,7 +231,7 @@
             }
           },
           "422": {
-            "description": "Unprocessable Entity - Request validation failed.\n\n**Source**: HAPI middleware (RFC 7807)\n\n**Cause**: Pydantic validation error.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "description": "Unprocessable Entity - Request validation failed.\n\n**Source**: Kubernaut Agent (KA) middleware (RFC 7807)\n\n**Cause**: Pydantic validation error.\n\n**Authority**: DD-004 (RFC 7807 Problem Details)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -277,7 +277,7 @@
                     "instance"
                   ],
                   "title": "HTTPError",
-                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nBusiness Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
+                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
                   "example": {
                     "detail": "Missing required field: 'namespace'",
                     "instance": "/api/v1/incident/analyze",
@@ -296,7 +296,7 @@
             }
           },
           "500": {
-            "description": "Internal server error - Unexpected failure in HolmesGPT API service.\n\n**Source**: HAPI application\n\n**Causes**: LLM provider API failure, database error, unhandled exception.\n\n**Authority**: BR-HAPI-200 (RFC 7807 Error Response Standard)",
+            "description": "Internal server error - Unexpected failure in HolmesGPT API service.\n\n**Source**: HAPI application\n\n**Causes**: LLM provider API failure, database error, unhandled exception.\n\n**Authority**: DD-004 (RFC 7807 Problem Details)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -342,7 +342,7 @@
                     "instance"
                   ],
                   "title": "HTTPError",
-                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nBusiness Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
+                  "description": "RFC 7807 Problem Details for HTTP APIs\n\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
                   "example": {
                     "detail": "Missing required field: 'namespace'",
                     "instance": "/api/v1/incident/analyze",
@@ -1023,7 +1023,7 @@
           "instance"
         ],
         "title": "HTTPError",
-        "description": "RFC 7807 Problem Details for HTTP APIs\n\nBusiness Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
+        "description": "RFC 7807 Problem Details for HTTP APIs\n\nDesign Decision: DD-004 - RFC 7807 Problem Details\n\nReference: https://tools.ietf.org/html/rfc7807\nReference: Gateway Service (pkg/gateway/errors/rfc7807.go)\nReference: Context API (pkg/contextapi/errors/rfc7807.go)\nReference: Dynamic Toolset (pkg/toolset/errors/rfc7807.go)\n\nNamed HTTPError in OpenAPI spec for compatibility with existing Go client.",
         "example": {
           "detail": "Missing required field: 'namespace'",
           "instance": "/api/v1/incident/analyze",
@@ -1061,7 +1061,7 @@
           "operator_escalation"
         ],
         "title": "HumanReviewReason",
-        "description": "Structured reason for needs_human_review=true.\n\nBusiness Requirements: BR-HAPI-197, BR-HAPI-200, BR-496, BR-AI-601, BR-WORKFLOW-1418\nDesign Decision: DD-HAPI-002 v1.2, DD-HAPI-006 v1.3, DD-AF-007\n\nAIAnalysis uses this for reliable subReason mapping instead of parsing warnings."
+        "description": "Structured reason for needs_human_review=true.\n\nBusiness Requirements: BR-KA-197, BR-KA-200, BR-496, BR-AI-601, BR-WORKFLOW-1418\nDesign Decision: DD-KA-001 (formerly DD-HAPI-002 v1.2), DD-KA-006 (formerly DD-HAPI-006 v1.3), DD-AF-007\n\nAIAnalysis uses this for reliable subReason mapping instead of parsing warnings."
       },
       "IncidentRequest": {
         "properties": {

@@ -1,12 +1,13 @@
-# BR-HAPI-200: Handling Inconclusive Investigations
+# BR-KA-200: Handling Inconclusive Investigations
 
-**ID**: BR-HAPI-200
+**ID**: BR-KA-200
 **Title**: Handling Inconclusive LLM Investigations and Self-Resolved Signals
-**Category**: HAPI (HolmesGPT-API)
+**Category**: Kubernaut Agent (KA)
 **Priority**: 🔴 P0 (V1.0 BLOCKER)
 **Version**: V1.0
-**Status**: ⏳ IN PROGRESS
+**Status**: ✅ Implemented (KA/AIAnalysis complete; see Implementation Status)
 **Date**: December 7, 2025
+**Last Updated**: 2026-08-01 (Renamed `BR-HAPI-200` → `BR-KA-200`, terminology corrected to KA, `HumanReviewReason` snippet corrected from Python to the current Go/OpenAPI enum — [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))
 
 ---
 
@@ -22,7 +23,7 @@ In production Kubernetes environments, signals (alerts/events) can **self-resolv
 | **Transient Network** | Network partition resolves before investigation |
 | **Auto-scaling** | HPA scales up, resolving resource pressure |
 | **Self-Healing** | Application recovers from temporary failure |
-| **Race Condition** | Signal created, but issue resolves before HAPI processes it |
+| **Race Condition** | Signal created, but issue resolves before KA processes it |
 
 **Current Gap**: When the LLM investigates and finds **no reproducible problem**, there is:
 1. No explicit `HumanReviewReason` for this case
@@ -51,14 +52,26 @@ In production Kubernetes environments, signals (alerts/events) can **self-resolv
 
 ## Requirements
 
-### BR-HAPI-200.1: New HumanReviewReason Value
+### BR-KA-200.1: New HumanReviewReason Value
 
-**MUST**: Add `INVESTIGATION_INCONCLUSIVE` to the `HumanReviewReason` enum.
+**MUST**: Add `investigation_inconclusive` to the `HumanReviewReason` enum.
 
-```python
-class HumanReviewReason(str, Enum):
-    # ... existing values ...
-    INVESTIGATION_INCONCLUSIVE = "investigation_inconclusive"
+**Implemented** as an `ogen`-generated OpenAPI enum (`pkg/agentclient/oas_json_gen.go`), not a hand-written Go type:
+
+```go
+// Generated from KA's OpenAPI spec (internal/kubernautagent/api/openapi.json)
+const (
+	HumanReviewReasonWorkflowNotFound            HumanReviewReason = "workflow_not_found"
+	HumanReviewReasonImageMismatch                HumanReviewReason = "image_mismatch"
+	HumanReviewReasonParameterValidationFailed    HumanReviewReason = "parameter_validation_failed"
+	HumanReviewReasonNoMatchingWorkflows          HumanReviewReason = "no_matching_workflows"
+	HumanReviewReasonLowConfidence                HumanReviewReason = "low_confidence"
+	HumanReviewReasonLlmParsingError              HumanReviewReason = "llm_parsing_error"
+	HumanReviewReasonInvestigationInconclusive    HumanReviewReason = "investigation_inconclusive"
+	HumanReviewReasonRcaIncomplete                HumanReviewReason = "rca_incomplete"       // BR-KA-212
+	HumanReviewReasonAlignmentCheckFailed         HumanReviewReason = "alignment_check_failed" // shadow-agent
+	HumanReviewReasonOperatorEscalation           HumanReviewReason = "operator_escalation"
+)
 ```
 
 **Semantics**: LLM investigation did not yield conclusive results - could not determine root cause or current state.
@@ -69,7 +82,7 @@ class HumanReviewReason(str, Enum):
 
 ---
 
-### BR-HAPI-200.2: LLM Prompt Guidance
+### BR-KA-200.2: LLM Prompt Guidance
 
 **MUST**: The LLM investigation prompt SHALL include explicit guidance for this scenario:
 
@@ -112,7 +125,7 @@ This is distinct from Outcome A (resolved) where the problem WENT AWAY.
 
 ---
 
-### BR-HAPI-200.3: Response Structure - Two Distinct Outcomes
+### BR-KA-200.3: Response Structure - Two Distinct Outcomes
 
 #### Outcome A: Problem Confirmed Resolved (No Human Review)
 
@@ -164,7 +177,7 @@ This is distinct from Outcome A (resolved) where the problem WENT AWAY.
 
 ---
 
-### BR-HAPI-200.4: Confidence Semantics
+### BR-KA-200.4: Confidence Semantics
 
 **SHOULD**: The `confidence` field SHALL reflect the LLM's confidence in its assessment (not confidence in a workflow selection).
 
@@ -176,7 +189,7 @@ This is distinct from Outcome A (resolved) where the problem WENT AWAY.
 
 ---
 
-### BR-HAPI-200.5: Audit Requirements
+### BR-KA-200.5: Audit Requirements
 
 **MUST**: For both investigation outcomes, the audit trail SHALL capture:
 
@@ -192,7 +205,7 @@ This is distinct from Outcome A (resolved) where the problem WENT AWAY.
 
 ## Consumer Behavior Requirements
 
-### BR-HAPI-200.6: AIAnalysis Handling
+### BR-KA-200.6: AIAnalysis Handling
 
 **MUST**: AIAnalysis SHALL handle both outcomes:
 
@@ -214,14 +227,14 @@ Evaluating in the wrong order causes high-confidence inconclusive investigations
 ```
 
 **Defense-in-Depth (Layer 2)**: Even when `needs_human_review=false`, the "ProblemResolved" path
-verifies that HAPI's warnings do not contain signals indicating an active problem. This catches
-edge cases where the LLM incorrectly overrides `needs_human_review=false` but HAPI's
+verifies that KA's warnings do not contain signals indicating an active problem. This catches
+edge cases where the LLM incorrectly overrides `needs_human_review=false` but KA's
 `result_parser` still appends diagnostic warnings from `investigation_outcome` processing.
 
 Warning signals that block "ProblemResolved" classification:
-- `"inconclusive"` - from HAPI when `investigation_outcome == "inconclusive"`
-- `"no workflows matched"` - from HAPI when `selected_workflow` is null and outcome is not "resolved"
-- `"human review recommended"` - general HAPI safety signal
+- `"inconclusive"` - from KA when `investigation_outcome == "inconclusive"`
+- `"no workflows matched"` - from KA when `selected_workflow` is null and outcome is not "resolved"
+- `"human review recommended"` - general KA safety signal
 
 #### Outcome A: Problem Resolved (`needs_human_review=false`, `human_review_reason=null`)
 
@@ -245,7 +258,7 @@ status:
 1. **NOT** create a WorkflowExecution CRD
 2. Transition to `Failed` phase
 3. Set `reason: WorkflowResolutionFailed`
-4. Set `subReason: InvestigationInconclusive` (from HAPI enum)
+4. Set `subReason: InvestigationInconclusive` (from KA enum)
 
 ```yaml
 status:
@@ -261,7 +274,7 @@ Added by Issue #388 Fix A. Labeled "Outcome D" to align with the LLM prompt cont
 (Outcome C in the prompt is "Problem Identified, No Automated Remediation Available",
 handled by the `NoWorkflowTerminalFailure` code path).
 
-When HAPI returns `actionable: false` with confidence >= 0.7:
+When KA returns `actionable: false` with confidence >= 0.7:
 
 1. **NOT** create a WorkflowExecution CRD
 2. Transition to `Completed` phase
@@ -287,7 +300,7 @@ status:
 
 ---
 
-### BR-HAPI-200.7: Remediation Orchestrator Handling
+### BR-KA-200.7: Remediation Orchestrator Handling
 
 **SHOULD**: When AIAnalysis completes with `reason: WorkflowNotNeeded`, RO SHALL:
 
@@ -297,7 +310,7 @@ status:
 
 ---
 
-### BR-HAPI-200.8: Notification Handling
+### BR-KA-200.8: Notification Handling
 
 **SHOULD**: Operators MAY configure notification rules for self-resolved incidents:
 
@@ -311,7 +324,7 @@ status:
 
 ## Detection Criteria
 
-### BR-HAPI-200.9: When to Report Each Outcome
+### BR-KA-200.9: When to Report Each Outcome
 
 #### Outcome A: Report "Resolved" (High Confidence)
 
@@ -374,7 +387,7 @@ Then "investigation_inconclusive" SHALL be a valid option
 Given a signal for pod "myapp" with status "OOMKilled"
 And the pod has since restarted and is now healthy
 And the LLM is confident (≥0.7) the problem is resolved
-When the LLM investigates via HolmesGPT-API
+When the LLM investigates via Kubernaut Agent (KA)
 Then "needs_human_review" SHALL be false
 And "human_review_reason" SHALL be null
 And "selected_workflow" SHALL be null
@@ -387,7 +400,7 @@ And "confidence" SHALL be ≥0.7
 ```gherkin
 Given a signal for pod "myapp" with status "OOMKilled"
 And the LLM cannot determine the current state
-When the LLM investigates via HolmesGPT-API
+When the LLM investigates via Kubernaut Agent (KA)
 Then "needs_human_review" SHALL be true
 And "human_review_reason" SHALL be "investigation_inconclusive"
 And "selected_workflow" SHALL be null
@@ -398,7 +411,7 @@ And "confidence" SHALL be <0.5
 ### AC-4: AIAnalysis Handles Resolved Outcome
 
 ```gherkin
-Given HolmesGPT-API returns needs_human_review=false AND selected_workflow=null AND confidence≥0.7
+Given Kubernaut Agent (KA) returns needs_human_review=false AND selected_workflow=null AND confidence≥0.7
 When AIAnalysis processes the response
 Then NO WorkflowExecution CRD SHALL be created
 And AIAnalysis status.phase SHALL be "Completed"
@@ -409,7 +422,7 @@ And AIAnalysis status.subReason SHALL be "ProblemResolved"
 ### AC-5: AIAnalysis Handles Inconclusive Outcome
 
 ```gherkin
-Given HolmesGPT-API returns needs_human_review=true with human_review_reason="investigation_inconclusive"
+Given Kubernaut Agent (KA) returns needs_human_review=true with human_review_reason="investigation_inconclusive"
 When AIAnalysis processes the response
 Then NO WorkflowExecution CRD SHALL be created
 And AIAnalysis status.phase SHALL be "Failed"
@@ -421,17 +434,17 @@ And AIAnalysis status.subReason SHALL be "InvestigationInconclusive"
 
 ```gherkin
 Given a signal investigation completes with either outcome
-When HolmesGPT-API returns the result
+When Kubernaut Agent (KA) returns the result
 Then an audit event SHALL be written with the investigation outcome
 And the event SHALL include the LLM's investigation_summary
 ```
 
-### AC-7: Alert Not Actionable - HAPI Response (#388)
+### AC-7: Alert Not Actionable - KA Response (#388)
 
 ```gherkin
 Given the LLM determines an alert is benign (e.g., orphaned PVC from completed batch job)
 And the LLM sets actionable=false with confidence >= 0.7
-When HolmesGPT-API returns the result
+When Kubernaut Agent (KA) returns the result
 Then "is_actionable" SHALL be false
 And "needs_human_review" SHALL be false
 And "selected_workflow" SHALL be null
@@ -441,7 +454,7 @@ And warnings SHALL include "Alert not actionable"
 ### AC-8: Alert Not Actionable - AIAnalysis Handling (#388)
 
 ```gherkin
-Given HolmesGPT-API returns is_actionable=false AND confidence >= 0.7 AND "alert not actionable" warning
+Given Kubernaut Agent (KA) returns is_actionable=false AND confidence >= 0.7 AND "alert not actionable" warning
 When AIAnalysis processes the response
 Then NO WorkflowExecution CRD SHALL be created
 And AIAnalysis status.phase SHALL be "Completed"
@@ -457,7 +470,7 @@ And AIAnalysis status.needsHumanReview SHALL be false
 
 | Test Category | Test Count | Coverage |
 |---------------|------------|----------|
-| Unit Tests (HolmesGPT-API) | 8 | Prompt, parsing, enum |
+| Unit Tests (Kubernaut Agent (KA)) | 8 | Prompt, parsing, enum |
 | Integration Tests | 4 | Mock LLM scenarios |
 | E2E Tests | 2 | Full flow with mock LLM |
 
@@ -467,17 +480,17 @@ And AIAnalysis status.needsHumanReview SHALL be false
 
 | Component | Status | Owner |
 |-----------|--------|-------|
-| HumanReviewReason Enum (`INVESTIGATION_INCONCLUSIVE`) | ✅ Complete | HAPI Team |
-| LLM Prompt Update (investigation_outcome guidance) | ✅ Complete | HAPI Team |
-| Response Parsing (handle "resolved" and "inconclusive") | ✅ Complete | HAPI Team |
-| Unit Tests | ✅ Complete | HAPI Team |
-| AIAnalysis Handler (BR-HAPI-200.6 decision tree + defense-in-depth) | ✅ Complete | AIAnalysis Team |
-| #388 `actionable` field in prompt, parser, Pydantic model | ✅ Complete | HAPI Team |
-| #388 `is_actionable` in OpenAPI spec + Go client regeneration | ✅ Complete | HAPI Team |
+| HumanReviewReason Enum (`INVESTIGATION_INCONCLUSIVE`) | ✅ Complete | KA Team |
+| LLM Prompt Update (investigation_outcome guidance) | ✅ Complete | KA Team |
+| Response Parsing (handle "resolved" and "inconclusive") | ✅ Complete | KA Team |
+| Unit Tests | ✅ Complete | KA Team |
+| AIAnalysis Handler (BR-KA-200.6 decision tree + defense-in-depth) | ✅ Complete | AIAnalysis Team |
+| #388 `actionable` field in prompt, parser, Pydantic model | ✅ Complete | KA Team |
+| #388 `is_actionable` in OpenAPI spec + Go client regeneration | ✅ Complete | KA Team |
 | #388 `Actionability` CRD field + NotActionable routing | ✅ Complete | AIAnalysis Team |
-| #388 Unit Tests (Python: 7, Go: 3) | ✅ Complete | Both |
-| RO Handler | ⏳ Day 7 | RO Team |
-| Notification Rules | ⏳ Day 15 | Notification Team |
+| #388 Unit Tests | ✅ Complete | Both |
+| RO Handler (`AnalyzingCallbacks.HandleWorkflowNotNeeded`, `internal/controller/remediationorchestrator/analyzing_handler.go`) | ✅ Complete | RO Team |
+| Notification Rules (BR-KA-200.8, operator-configurable) | 🟡 Not yet implemented as a dedicated rule set — no action currently means no notification by default | Notification Team |
 
 ---
 
@@ -485,9 +498,8 @@ And AIAnalysis status.needsHumanReview SHALL be false
 
 | Document | Relationship |
 |----------|-------------|
-| [BR-HAPI-197](BR-HAPI-197-needs-human-review-field.md) | Parent: needs_human_review field |
+| [BR-KA-197](BR-KA-197-needs-human-review-field.md) | Parent: needs_human_review field |
 | [DD-KA-001](../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md) | Design: Validation architecture (supersedes the retired DD-HAPI-002) |
-| [NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md](../handoff/NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md) | Handoff: Team notification |
 
 ---
 
@@ -497,10 +509,11 @@ And AIAnalysis status.needsHumanReview SHALL be false
 |---------|------|---------|
 | 1.0 | 2025-12-07 | Initial business requirement |
 | 1.1 | 2025-12-07 | Aligned with authoritative implementation: replaced `problem_not_reproducible` with `investigation_inconclusive`, clarified two distinct outcomes (Resolved vs Inconclusive) |
-| 1.2 | 2026-02-09 | BR-HAPI-200.6: Documented corrected decision tree evaluation order (needs_human_review BEFORE ProblemResolved), added defense-in-depth via warnings-based check. Fixed misclassification bug where high-confidence inconclusive investigations were routed to ProblemResolved. AIAnalysis Handler marked complete. |
+| 1.2 | 2026-02-09 | BR-KA-200.6: Documented corrected decision tree evaluation order (needs_human_review BEFORE ProblemResolved), added defense-in-depth via warnings-based check. Fixed misclassification bug where high-confidence inconclusive investigations were routed to ProblemResolved. AIAnalysis Handler marked complete. |
 | 1.3 | 2026-03-02 | Issue #388 Fix A: Added Outcome D (Alert Not Actionable) with new `actionable` boolean field, `is_actionable` in IncidentResponse, `Actionability` CRD enum field, `NotActionable` SubReason. Updated decision tree (step 3). Added AC-7, AC-8. Relabeled from "Outcome C" to "Outcome D" to align with prompt contract (Outcome C = No Automated Remediation). |
+| 1.4 | 2026-08-01 | Renamed `BR-HAPI-200` → `BR-KA-200`, `HolmesGPT-API`/`HAPI` → `Kubernaut Agent (KA)`/`KA` ([Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)). Replaced the Python `HumanReviewReason` enum snippet with the current Go/`ogen`-generated enum. Verified the decision tree, warnings-based defense-in-depth, and AIAnalysis routing logic against `pkg/aianalysis/handlers/response_processor.go` — unchanged, still accurate. Confirmed RO Handler is implemented (`AnalyzingCallbacks.HandleWorkflowNotNeeded`); corrected Notification Rules status to reflect it is not yet implemented as a dedicated rule set. Removed a dead link to a non-existent `docs/handoff/` notice. |
 
 ---
 
-**Maintained By**: HolmesGPT-API Team
+**Maintained By**: Kubernaut Agent (KA) Team
 

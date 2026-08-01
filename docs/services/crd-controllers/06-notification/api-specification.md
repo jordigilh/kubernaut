@@ -606,7 +606,7 @@ Routing uses spec fields, `spec.context` (via `FlattenToMap`), and `spec.extensi
 | `spec.reviewSource` | `review-source` | Manual review source | `WorkflowResolutionFailed`, `ExhaustedRetries`, etc. | Route by review trigger |
 | `spec.remediationRequestRef` | (correlation) | Parent remediation link | ObjectReference | ownerRef/spec ref sufficient |
 | `spec.extensions["skip-reason"]` | `skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` | Route execution failures to PagerDuty |
-| `spec.extensions["investigation-outcome"]` | `investigation-outcome` | HolmesGPT outcome (BR-HAPI-200) | `resolved`, `inconclusive`, `workflow_selected` | Route inconclusive to ops for review |
+| `spec.extensions["investigation-outcome"]` | `investigation-outcome` | HolmesGPT outcome (BR-KA-200) | `resolved`, `inconclusive`, `workflow_selected` | Route inconclusive to ops for review |
 
 **Removed** (Issue #91): `kubernaut.ai/component` (ownerRef sufficient), `kubernaut.ai/remediation-request` (use `spec.remediationRequestRef`).
 
@@ -657,7 +657,7 @@ receivers:
       - channel: '#kubernaut-alerts'
 ```
 
-### **Investigation-Outcome Routing (BR-HAPI-200)**
+### **Investigation-Outcome Routing (BR-KA-200)**
 
 The `spec.extensions["investigation-outcome"]` attribute enables routing based on HolmesGPT investigation results:
 
@@ -699,8 +699,8 @@ receivers:
 ```
 
 **Related Documentation**:
-- [BR-HAPI-200](../../../../handoff/NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md) - Cross-team notice
-- [BR-HAPI-197](../../../../docs/requirements/BR-HAPI-197-needs-human-review-field.md) - Parent requirement
+- [BR-KA-200](../../../requirements/BR-KA-200-resolved-stale-signals.md) - Resolved/stale signal handling
+- [BR-KA-197](../../../requirements/BR-KA-197-needs-human-review-field.md) - Parent requirement
 
 ---
 
@@ -728,7 +728,7 @@ const (
     SkipReasonRecentlyRemediated      = "RecentlyRemediated"       // LOW
 )
 
-// Investigation outcome values (BR-HAPI-200)
+// Investigation outcome values (BR-KA-200)
 const (
     InvestigationOutcomeResolved         = "resolved"          // No action needed
     InvestigationOutcomeInconclusive     = "inconclusive"      // Human review required

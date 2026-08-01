@@ -100,7 +100,7 @@ func validateSelectedWorkflow(ai *aianalysisv1.AIAnalysis) error {
 }
 
 // buildWorkflowExecution constructs the WorkflowExecution CRD object (unpersisted) with
-// pass-through from ai.Status.SelectedWorkflow (BR-ORCH-025, BR-HAPI-191).
+// pass-through from ai.Status.SelectedWorkflow (BR-ORCH-025, BR-KA-212).
 func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, name string) *workflowexecutionv1.WorkflowExecution {
 	return &workflowexecutionv1.WorkflowExecution{
 		ObjectMeta: metav1.ObjectMeta{
@@ -120,7 +120,7 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 			// WorkflowRef: Direct pass-through from AIAnalysis (BR-ORCH-025)
 			WorkflowRef: buildWorkflowRef(ai.Status.SelectedWorkflow),
 			// TargetResource: String format "namespace/kind/name" (per API contract)
-			// BR-HAPI-191: Prefer LLM-identified RemediationTarget (e.g., Deployment)
+			// BR-KA-212: Prefer LLM-identified RemediationTarget (e.g., Deployment)
 			// over the RR's TargetResource (e.g., Pod) when available.
 			// The LLM often identifies the correct higher-level resource to patch.
 			TargetResource: resolveTargetResource(rr, ai),
@@ -257,7 +257,7 @@ func BuildTargetResourceString(rr *remediationv1.RemediationRequest) string {
 }
 
 // resolveTargetResource determines the target resource string for the WorkflowExecution.
-// BR-HAPI-191: Prefers the LLM-identified RemediationTarget from RootCauseAnalysis when
+// BR-KA-212: Prefers the LLM-identified RemediationTarget from RootCauseAnalysis when
 // available, falling back to the RemediationRequest's TargetResource.
 // The LLM may identify a higher-level owner resource (e.g., Deployment) rather than the
 // Pod that generated the signal, which is the correct target for patching operations.

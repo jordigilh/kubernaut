@@ -34,7 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
-var _ = Describe("BR-HAPI-191: Parameter Validation Self-Correction Integration (#1170)", func() {
+var _ = Describe("BR-KA-191: Parameter Validation Self-Correction Integration (#1170)", func() {
 
 	var (
 		invLogger  logr.Logger

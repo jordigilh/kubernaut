@@ -24,7 +24,7 @@ import (
 )
 
 // paramValidationSelfcorrectScenario is a stateful scenario that simulates
-// LLM self-correction for parameter validation (BR-HAPI-191, #1170).
+// LLM self-correction for parameter validation (BR-KA-191, #1170).
 //
 // Turn 1: Returns submit_result_with_workflow with invalid params (type
 // mismatch: REPLICA_COUNT="three" instead of "3", plus undeclared param).
@@ -68,7 +68,7 @@ func (s *paramValidationSelfcorrectScenario) MarkSubmitSent() {
 func (s *paramValidationSelfcorrectScenario) Metadata() ScenarioMetadata {
 	return ScenarioMetadata{
 		Name:        paramValScenarioName,
-		Description: "Multi-turn param validation self-correction (BR-HAPI-191)",
+		Description: "Multi-turn param validation self-correction (BR-KA-191)",
 	}
 }
 

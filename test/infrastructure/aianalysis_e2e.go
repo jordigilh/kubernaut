@@ -321,7 +321,7 @@ func CreateAIAnalysisClusterHybrid(clusterName, kubeconfigPath string, writer io
 	// Note: test/integration/aianalysis imports test/infrastructure, creating circular dependency
 	// Acceptable trade-off: Small duplication avoids architectural issues
 	// Source of truth: test/integration/aianalysis/test_workflows.go:GetAIAnalysisTestWorkflows()
-	// BR-HAPI-191: SchemaParameters MUST match Mock LLM scenario parameters
+	// BR-KA-191: SchemaParameters MUST match Mock LLM scenario parameters
 	// KA validates LLM response parameters against workflow schema from DataStorage
 	// DD-WORKFLOW-017: SchemaParameters mirror OCI image's /workflow-schema.yaml for documentation.
 	// Actual schema comes from OCI image via pullspec-only registration.

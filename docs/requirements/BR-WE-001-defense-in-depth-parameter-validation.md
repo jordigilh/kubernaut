@@ -12,18 +12,18 @@
 ## ❌ CANCELLATION NOTICE
 
 **Cancelled**: December 1, 2025
-**Reason**: Validation responsibility consolidated to HolmesGPT-API only.
+**Reason**: Validation responsibility consolidated to Kubernaut Agent (KA) only.
 
 **Rationale**:
 1. If validation fails at WE, the entire RCA flow must restart (expensive)
-2. If validation fails at HAPI, LLM can self-correct in the same session (cheap)
-3. Edge cases (HAPI bugs, API bypass) should be addressed at source, not duplicated
+2. If validation fails at KA, LLM can self-correct in the same session (cheap)
+3. Edge cases (KA bugs, API bypass) should be addressed at source, not duplicated
 4. Simplifies architecture - WE doesn't need Data Storage access for schema
 
-**Replacement**: BR-HAPI-191 is now the **sole** parameter validation requirement.
+**Replacement**: BR-KA-191 is now the **sole** parameter validation requirement.
 
 **Updated Documents**:
-- DD-HAPI-002 v1.1: Removed WE validation layer
+- DD-KA-001 (formerly DD-HAPI-002) v1.1: Removed WE validation layer
 - WE CRD Schema: No `ValidateParameters` function needed
 
 ---
@@ -36,11 +36,11 @@
 
 ### **Problem Statement**
 
-While BR-HAPI-191 implements primary parameter validation in HolmesGPT-API's chat session, edge cases may still occur where invalid parameters reach the Workflow Engine:
+While BR-KA-191 implements primary parameter validation in Kubernaut Agent (KA)'s chat session, edge cases may still occur where invalid parameters reach the Workflow Engine:
 
 1. LLM fails to self-correct after 3 attempts
-2. Bug in HolmesGPT-API validation logic
-3. Direct API calls bypassing HolmesGPT-API validation
+2. Bug in Kubernaut Agent (KA) validation logic
+3. Direct API calls bypassing Kubernaut Agent (KA) validation
 4. Schema mismatch between validation and execution
 
 **Defense-in-Depth Principle**: Multiple validation layers ensure invalid parameters never reach Tekton execution.
@@ -55,7 +55,7 @@ While BR-HAPI-191 implements primary parameter validation in HolmesGPT-API's cha
 
 ## 🎯 **Business Objective**
 
-**Workflow Engine SHALL validate workflow parameters before creating Tekton resources, providing a safety net for edge cases not caught by HolmesGPT-API.**
+**Workflow Engine SHALL validate workflow parameters before creating Tekton resources, providing a safety net for edge cases not caught by Kubernaut Agent (KA).**
 
 ### **Success Criteria**
 
@@ -69,12 +69,12 @@ While BR-HAPI-191 implements primary parameter validation in HolmesGPT-API's cha
 
 ## 📊 **Use Cases**
 
-### **Use Case 1: Catch Edge Case from HolmesGPT-API**
+### **Use Case 1: Catch Edge Case from Kubernaut Agent (KA)**
 
-**Scenario**: HolmesGPT-API validation has a bug that misses a type error.
+**Scenario**: Kubernaut Agent (KA) validation has a bug that misses a type error.
 
 ```
-1. HolmesGPT-API validates parameters (bug: doesn't check numeric types)
+1. Kubernaut Agent (KA) validates parameters (bug: doesn't check numeric types)
 2. Parameters include: {"REPLICA_COUNT": "five"}  // Should be integer
 3. AIAnalysis creates WorkflowExecution CRD
 4. Workflow Engine receives request
@@ -86,11 +86,11 @@ While BR-HAPI-191 implements primary parameter validation in HolmesGPT-API's cha
 
 ### **Use Case 2: Direct API Call Bypass**
 
-**Scenario**: Internal tool creates WorkflowExecution directly (bypassing HolmesGPT-API).
+**Scenario**: Internal tool creates WorkflowExecution directly (bypassing Kubernaut Agent (KA)).
 
 ```
 1. Admin tool creates WorkflowExecution CRD directly
-2. Parameters not validated by HolmesGPT-API (bypassed)
+2. Parameters not validated by Kubernaut Agent (KA) (bypassed)
 3. Workflow Engine validates parameters
 4. If invalid → reject before Tekton creation
 5. ✅ Defense-in-depth catches bypass scenario
@@ -98,10 +98,10 @@ While BR-HAPI-191 implements primary parameter validation in HolmesGPT-API's cha
 
 ### **Use Case 3: All Validations Pass**
 
-**Scenario**: Normal flow where HolmesGPT-API already validated.
+**Scenario**: Normal flow where Kubernaut Agent (KA) already validated.
 
 ```
-1. HolmesGPT-API validates parameters ✅
+1. Kubernaut Agent (KA) validates parameters ✅
 2. Workflow Engine re-validates parameters ✅ (redundant but safe)
 3. Tekton PipelineRun created
 4. ✅ Double validation = high confidence
@@ -191,7 +191,7 @@ var parameterValidationFailures = prometheus.NewCounter(prometheus.CounterOpts{
 })
 ```
 
-**Expected**: <5% of requests should fail here (most caught by HolmesGPT-API).
+**Expected**: <5% of requests should fail here (most caught by Kubernaut Agent (KA)).
 
 ---
 
@@ -199,7 +199,7 @@ var parameterValidationFailures = prometheus.NewCounter(prometheus.CounterOpts{
 
 | Metric | Target | Rationale |
 |--------|--------|-----------|
-| WE validation failure rate | <5% | Most errors caught by HolmesGPT-API |
+| WE validation failure rate | <5% | Most errors caught by Kubernaut Agent (KA) |
 | Tekton failures due to parameters | 0% | WE should catch all before Tekton |
 | WE validation latency | <10ms | Should not significantly delay execution |
 
@@ -210,7 +210,7 @@ var parameterValidationFailures = prometheus.NewCounter(prometheus.CounterOpts{
 | Dependency | Service | Status |
 |------------|---------|--------|
 | Workflow definition schema | Data Storage | ✅ Exists |
-| BR-HAPI-191 (primary validation) | HolmesGPT-API | 🟡 In progress |
+| BR-KA-191 (primary validation) | Kubernaut Agent (KA) | 🟡 In progress |
 
 ---
 
@@ -224,7 +224,7 @@ var parameterValidationFailures = prometheus.NewCounter(prometheus.CounterOpts{
 
 | BR ID | Description | Relationship |
 |-------|-------------|--------------|
-| BR-HAPI-191 | Primary Parameter Validation | HolmesGPT-API does primary validation |
+| BR-KA-191 | Primary Parameter Validation | Kubernaut Agent (KA) does primary validation |
 | BR-WE-002 | Tekton Pipeline Creation | WE creates Tekton after validation |
 
 ---
@@ -254,8 +254,8 @@ Feature: Defense-in-Depth Parameter Validation
     When Workflow Engine reconciles
     Then validation fails: "missing required: NAMESPACE"
 
-  Scenario: Redundant validation after HolmesGPT-API
-    Given HolmesGPT-API already validated parameters
+  Scenario: Redundant validation after Kubernaut Agent (KA)
+    Given Kubernaut Agent (KA) already validated parameters
     When Workflow Engine re-validates
     Then validation passes (redundant but safe)
     And execution proceeds normally
@@ -267,7 +267,7 @@ Feature: Defense-in-Depth Parameter Validation
 
 | Phase | Duration | Deliverable |
 |-------|----------|-------------|
-| Design | Complete | DD-HAPI-002 |
+| Design | Complete | DD-KA-001 (formerly DD-HAPI-002) |
 | Validation function | 1 day | ValidateParameters() |
 | Integration in reconciler | 0.5 day | Pre-Tekton validation |
 | Metrics | 0.5 day | Prometheus counter |
@@ -280,5 +280,6 @@ Feature: Defense-in-Depth Parameter Validation
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | 2026-08-01 | Terminology cleanup only ([Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)): `BR-HAPI-191` → `BR-KA-191`, `HolmesGPT-API`/`HAPI` → `Kubernaut Agent (KA)`/`KA`. This requirement remains cancelled/archived; no content changes. |
 | 1.0 | 2025-12-01 | Initial requirement |
 

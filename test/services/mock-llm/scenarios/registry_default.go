@@ -204,7 +204,7 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// deriveSignalName finds no grounded infrastructure signal.
 	r.Register(signalScenario("af_unknown", []string{"unknown"}, oomkilledConfig()))
 
-	// Issue #1170: Multi-turn param validation self-correction (BR-HAPI-191).
+	// Issue #1170: Multi-turn param validation self-correction (BR-KA-191).
 	// Returns bad params on first call, corrected params after validation feedback.
 	r.Register(paramValidationSelfcorrectScenarioNew())
 

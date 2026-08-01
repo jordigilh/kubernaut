@@ -6,7 +6,7 @@
 **Version**: 5.1
 **Date**: 2026-04-23
 **Status**: ✅ Implemented (v5.1)
-**Related BRs**: BR-ORCH-032 (WE Skip Handling), BR-ORCH-001 (Approval Notification), BR-HAPI-197 (needs_human_review), BR-HAPI-200 (resolved/inconclusive), BR-ORCH-037 (Workflow Not Needed), BR-ORCH-042.5 (Notification on Block)
+**Related BRs**: BR-ORCH-032 (WE Skip Handling), BR-ORCH-001 (Approval Notification), BR-KA-197 (needs_human_review), BR-KA-200 (resolved/inconclusive), BR-ORCH-037 (Workflow Not Needed), BR-ORCH-042.5 (Notification on Block)
 **Related DDs**: DD-WE-004 (Exponential Backoff Cooldown), DD-AIANALYSIS-003 (Completion Substates), DD-RO-002 (Centralized Routing)
 **GitHub Issues**: [#550](https://github.com/jordigilh/kubernaut/issues/550), [#803](https://github.com/jordigilh/kubernaut/issues/803), [#805](https://github.com/jordigilh/kubernaut/issues/805), [#806](https://github.com/jordigilh/kubernaut/issues/806), [#807](https://github.com/jordigilh/kubernaut/issues/807), [#808](https://github.com/jordigilh/kubernaut/issues/808), [#809](https://github.com/jordigilh/kubernaut/issues/809), [#810](https://github.com/jordigilh/kubernaut/issues/810)
 
@@ -39,23 +39,23 @@ RemediationOrchestrator MUST create NotificationRequest CRDs when:
 
 | SubReason | Description | Priority | Source |
 |-----------|-------------|----------|--------|
-| `WorkflowNotFound` | LLM hallucinated workflow ID not in catalog | High | BR-HAPI-197 |
-| `ImageMismatch` | Container image doesn't match catalog | High | BR-HAPI-197 |
-| `ParameterValidationFailed` | Parameters don't conform to workflow schema | High | BR-HAPI-197 |
-| `NoMatchingWorkflows` | Catalog search returned no results | Medium | BR-HAPI-197 |
-| `LowConfidence` | Confidence below 70% threshold | Medium | BR-HAPI-197 |
-| `LLMParsingError` | Cannot parse LLM response (after 3 HAPI retries) | High | BR-HAPI-197 |
-| `InvestigationInconclusive` | LLM couldn't determine root cause or state | Medium | BR-HAPI-200 |
+| `WorkflowNotFound` | LLM hallucinated workflow ID not in catalog | High | BR-KA-197 |
+| `ImageMismatch` | Container image doesn't match catalog | High | BR-KA-197 |
+| `ParameterValidationFailed` | Parameters don't conform to workflow schema | High | BR-KA-197 |
+| `NoMatchingWorkflows` | Catalog search returned no results | Medium | BR-KA-197 |
+| `LowConfidence` | Confidence below 70% threshold | Medium | BR-KA-197 |
+| `LLMParsingError` | Cannot parse LLM response (after 3 KA retries) | High | BR-KA-197 |
+| `InvestigationInconclusive` | LLM couldn't determine root cause or state | Medium | BR-KA-200 |
 
 ### Source: AIAnalysis Unrecoverable Infrastructure Failures (v3.0)
 
 | Reason / SubReason | Description | Priority | Source |
 |--------------------|-------------|----------|--------|
-| `APIError` / `MaxRetriesExceeded` | HAPI request failed after 5 retry attempts (timeout, network error, 5xx) | High | BR-ORCH-036 v3.0 |
-| `APIError` / `TransientError` | Transient HAPI error that exceeded retry budget | High | BR-ORCH-036 v3.0 |
-| `APIError` / `PermanentError` | Non-retryable HAPI error (4xx, auth failure, bad request) | High | BR-ORCH-036 v3.0 |
+| `APIError` / `MaxRetriesExceeded` | KA request failed after 5 retry attempts (timeout, network error, 5xx) | High | BR-ORCH-036 v3.0 |
+| `APIError` / `TransientError` | Transient KA error that exceeded retry budget | High | BR-ORCH-036 v3.0 |
+| `APIError` / `PermanentError` | Non-retryable KA error (4xx, auth failure, bad request) | High | BR-ORCH-036 v3.0 |
 
-**Rationale (v3.0)**: Prior to this version, infrastructure failures in AIAnalysis (e.g., HAPI timeout after all retries) silently transitioned the RemediationRequest to `Failed` without creating a NotificationRequest. This left operators unaware that a remediation attempt had failed due to infrastructure issues. The principle is: **any failure without automatic recovery MUST generate an escalation notification**.
+**Rationale (v3.0)**: Prior to this version, infrastructure failures in AIAnalysis (e.g., KA timeout after all retries) silently transitioned the RemediationRequest to `Failed` without creating a NotificationRequest. This left operators unaware that a remediation attempt had failed due to infrastructure issues. The principle is: **any failure without automatic recovery MUST generate an escalation notification**.
 
 ### Source: AIAnalysis Completed with Missing AffectedResource (v4.0)
 
@@ -452,12 +452,12 @@ Scenario: Manual review notification for AIAnalysis InvestigationInconclusive
   And notification body should contain "investigation inconclusive"
 
 # v3.0: Infrastructure Failures
-Scenario: Escalation notification for AIAnalysis HAPI timeout (MaxRetriesExceeded)
+Scenario: Escalation notification for AIAnalysis KA timeout (MaxRetriesExceeded)
   Given AIAnalysis "ai-1" has:
     | phase | Failed |
     | reason | APIError |
     | subReason | MaxRetriesExceeded |
-    | message | Transient error exceeded max retries (5 attempts): HAPI request timeout |
+    | message | Transient error exceeded max retries (5 attempts): KA request timeout |
   When RemediationOrchestrator reconciles "rr-1"
   Then NotificationRequest should be created with:
     | type | manual-review |
@@ -467,12 +467,12 @@ Scenario: Escalation notification for AIAnalysis HAPI timeout (MaxRetriesExceede
   And notification body should contain "MaxRetriesExceeded"
   And RemediationRequest "rr-1" should have requiresManualReview = true
 
-Scenario: Escalation notification for AIAnalysis permanent HAPI error
+Scenario: Escalation notification for AIAnalysis permanent KA error
   Given AIAnalysis "ai-1" has:
     | phase | Failed |
     | reason | APIError |
     | subReason | PermanentError |
-    | message | HolmesGPT-API returned 401 Unauthorized |
+    | message | Kubernaut Agent (KA) returned 401 Unauthorized |
   When RemediationOrchestrator reconciles "rr-1"
   Then NotificationRequest should be created with:
     | type | manual-review |
@@ -636,7 +636,7 @@ spec:
   subject: "⚠️ Manual Review Required: {signalName} - AI Analysis Infrastructure Failure"
   body: |
     AI analysis failed due to infrastructure issues. The remediation pipeline could not
-    complete because the HolmesGPT-API backend was unreachable or returned errors.
+    complete because the Kubernaut Agent (KA) backend was unreachable or returned errors.
 
     **Signal**: {signalName}
     **Severity**: {severity}
@@ -650,10 +650,10 @@ spec:
     **Details**: {message}
 
     **Action Required**:
-    - MaxRetriesExceeded: Check HAPI pod health, LLM backend availability, network connectivity
+    - MaxRetriesExceeded: Check KA pod health, LLM backend availability, network connectivity
     - TransientError: Verify LLM provider (Vertex AI / Anthropic) is operational
-    - PermanentError: Check HAPI configuration, authentication credentials, API keys
-    - Review HAPI logs: kubectl logs -n kubernaut-system -l app=kubernaut-agent --tail=100
+    - PermanentError: Check KA configuration, authentication credentials, API keys
+    - Review KA logs: kubectl logs -n kubernaut-system -l app=kubernaut-agent --tail=100
 ```
 
 ---
@@ -683,13 +683,11 @@ const (
 - [BR-ORCH-001: Approval Notification Creation](./BR-ORCH-001-approval-notification-creation.md)
 - [BR-ORCH-035: Notification Reference Tracking](./BR-ORCH-035-notification-reference-tracking.md)
 - [BR-ORCH-037: Handle AIAnalysis WorkflowNotNeeded](./BR-ORCH-037-workflow-not-needed.md)
-- [BR-HAPI-197: needs_human_review Field](./BR-HAPI-197-needs-human-review-field.md)
-- [BR-HAPI-200: Resolved/Inconclusive Signals](./BR-HAPI-200-resolved-stale-signals.md)
+- [BR-KA-197: needs_human_review Field](./BR-KA-197-needs-human-review-field.md)
+- [BR-KA-200: Resolved/Inconclusive Signals](./BR-KA-200-resolved-stale-signals.md)
 - [DD-WE-004: Exponential Backoff Cooldown](../architecture/decisions/DD-WE-004-exponential-backoff-cooldown.md)
 - [DD-AIANALYSIS-003: Completion Substates](../architecture/decisions/DD-AIANALYSIS-003-completion-substates.md)
 - [NOTICE: AIAnalysis WorkflowResolutionFailed](../handoff/NOTICE_AIANALYSIS_WORKFLOW_RESOLUTION_FAILURE.md)
-- [NOTICE: Investigation Inconclusive BR-HAPI-200](../handoff/NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md)
-
 ---
 
 ## Issue #550: No-Workflow ManualReviewRequired → Completed (v5.0)
@@ -755,8 +753,8 @@ The routing split is at `handleHumanReviewRequired` in `pkg/remediationorchestra
 | 5.1 | 2026-04-23 | **BR-ORCH-036 Gap Remediation (Issues #803–#811)**: Comprehensive notification coverage audit identified 7 gaps. (1) **RoutingEngine/IneffectiveChain** (#803): handleBlocked creates ManualReview NR with `reviewSource=RoutingEngine` for IneffectiveChain blocks. (2) **NeedsHumanReview dispatch** (#805): reconciler wires AA `NeedsHumanReview + no SelectedWorkflow` to AI handler for ManualReview NR. (3) **Dead skip handler removal** (#806): deleted `handler/skip/` dead code (signature mismatch). (4) **WFE PhaseFailed** (#807): WFE handler creates ManualReview NR before `transitionToFailed` for execution failures. (5) **Terminal failure escalation** (#808): centralized Escalation NR in `transitionToFailed` with double-NR guard. (6) **Cooldown expiry escalation** (#809): Escalation NR in `transitionToFailedTerminal` for blocked-then-failed. (7) **Block reason notifications** (#810): All 6 non-IneffectiveChain block reasons create NRs (Escalation for ConsecutiveFailures/UnmanagedResource, StatusUpdate for transient blocks). Cross-cutting: AlreadyExists handling for all NR creation sites, RoutingEngine priority mapping fix (High, not Medium). Added AC-036-60..97, detection logic, Gherkin scenarios, priority mapping entries. |
 | 5.0 | 2026-03-04 | **#550: No-workflow ManualReviewRequired → Completed**: When AI intentionally omits workflow (`NeedsHumanReview=true`, `SelectedWorkflow=nil`), RR transitions to `Completed + ManualReviewRequired` instead of `Failed`. Routing split by `SelectedWorkflow == nil` in `handleHumanReviewRequired`. Reuses 24h cooldown, ManualReview notification, and `NoActionNeededTotal` metric with `reason="manual_review"`. 13 new unit tests + 2 new integration tests. See test plan docs/tests/550/TEST_PLAN.md. |
 | 4.0 | 2026-02-24 | **Defense-in-depth guard**: Added RO guard for AA completed with missing RemediationTarget (nil or empty Kind/Name). Completes three-layer chain (KA → AA → RO) for "cannot identify RCA target" scenario. All layers produce same response: Failed + ManualReviewRequired + NotificationRequest. See DD-KA-006 v2.0. |
-| 3.0 | 2026-02-09 | **Escalation principle**: Any failure without automatic recovery MUST be notified. Added AIAnalysis infrastructure failures (APIError/MaxRetriesExceeded, TransientError, PermanentError) as notification triggers. Previously, these failures silently transitioned RR to Failed without operator notification. Also increased AA controller default HAPI timeout from 60s to 10m to accommodate real LLM response times (temporary; will be replaced by session-based pulling design). |
-| 2.0 | 2025-12-07 | Extended to include all AIAnalysis WorkflowResolutionFailed scenarios (7 SubReasons), added BR-HAPI-200 InvestigationInconclusive |
+| 3.0 | 2026-02-09 | **Escalation principle**: Any failure without automatic recovery MUST be notified. Added AIAnalysis infrastructure failures (APIError/MaxRetriesExceeded, TransientError, PermanentError) as notification triggers. Previously, these failures silently transitioned RR to Failed without operator notification. Also increased AA controller default KA timeout from 60s to 10m to accommodate real LLM response times (temporary; will be replaced by session-based pulling design). |
+| 2.0 | 2025-12-07 | Extended to include all AIAnalysis WorkflowResolutionFailed scenarios (7 SubReasons), added BR-KA-200 InvestigationInconclusive |
 | 1.0 | 2025-12-06 | Initial BR creation for WE failures only |
 
 ---

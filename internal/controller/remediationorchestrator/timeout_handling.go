@@ -248,7 +248,7 @@ func (r *Reconciler) trackTimeoutNotification(ctx context.Context, rr *remediati
 // createEffectivenessAssessmentIfNeeded creates an EA CRD if the eaCreator is wired.
 // ADR-EM-001: EA creation is ALWAYS non-fatal. The terminal phase transition must succeed
 // even if EA creation fails. Errors are logged but not propagated.
-// BR-HAPI-191: Resolves the target from AIAnalysis.RemediationTarget when available,
+// BR-KA-212: Resolves the target from AIAnalysis.RemediationTarget when available,
 // so the EA assesses the resource the workflow actually modified (not the signal Pod).
 // Batch 3: After creating the EA, persists the EffectivenessAssessmentRef on the RR status
 // so that trackEffectivenessStatus can find the EA for condition tracking.

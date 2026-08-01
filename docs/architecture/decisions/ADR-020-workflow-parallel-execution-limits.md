@@ -3,7 +3,7 @@
 **Status**: ✅ **APPROVED**
 **Date**: 2025-10-17
 **Updated**: 2026-04-09 (execution via Tekton TaskRun / PipelineRun per ADR-023/025; limits still apply to parallel work)
-**Related**: ADR-019 (HolmesGPT Retry Strategy), ADR-021 (Dependency Validation), ADR-023 (Tekton), ADR-025 (KubernetesExecutor elimination)
+**Related**: ADR-019 (AIAnalysis Error Classification & Retry Strategy), ADR-021 (Dependency Validation), ADR-023 (Tekton), ADR-025 (KubernetesExecutor elimination)
 **Confidence**: 90%
 
 ---

@@ -207,7 +207,7 @@ func buildToolArguments(toolName string, cfg scenarios.MockScenarioConfig) map[s
 // analysisJSON builds a structured response that KA's parser can fully extract.
 // Top-level fields (investigation_outcome, actionable, severity, confidence) are
 // required by KA's outcome routing; needs_human_review / human_review_reason are
-// parser-derived (BR-HAPI-200) and must NOT appear in LLM responses.
+// parser-derived (BR-KA-200) and must NOT appear in LLM responses.
 //
 // Golden transcript ref: kubernaut-demo-scenarios#296 — response structure mirrors
 // real Claude Sonnet 4 output to ensure KA parser fidelity.

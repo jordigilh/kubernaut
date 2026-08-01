@@ -25,13 +25,13 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
-// BR-HAPI-191: Parameter validation self-correction E2E tests (#1170)
+// BR-KA-191: Parameter validation self-correction E2E tests (#1170)
 // Mock LLM scenario "param_validation_selfcorrect" returns invalid params first,
 // then corrected params after KA sends validation error feedback with schema hints.
 
 var _ = Describe("E2E-KA Parameter Validation Self-Correction (#1170)", Label("e2e", "ka", "param-validation"), func() {
 
-	Context("BR-HAPI-191: Parameter validation with LLM self-correction", func() {
+	Context("BR-KA-191: Parameter validation with LLM self-correction", func() {
 
 		It("E2E-KA-1170-001: Self-correction succeeds after invalid params → corrected params", func() {
 			// ========================================
@@ -41,7 +41,7 @@ var _ = Describe("E2E-KA Parameter Validation Self-Correction (#1170)", Label("e
 			// Business Outcome: When LLM returns invalid parameters (wrong type, undeclared),
 			//   KA validates against workflow schema, sends structured error feedback with
 			//   schema hints, and LLM self-corrects on retry.
-			// BR: BR-HAPI-191
+			// BR: BR-KA-191
 			// Mock Scenario: param_validation_selfcorrect (first=bad, second=good)
 
 			// ========================================

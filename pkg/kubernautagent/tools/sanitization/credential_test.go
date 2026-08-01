@@ -75,7 +75,7 @@ var _ = Describe("Kubernaut Agent G4 Credential Scrubbing — #433", func() {
 		})
 	})
 
-	Describe("UT-KA-433-051: Covers all 17 BR-HAPI-211/DD-005 pattern categories", func() {
+	Describe("UT-KA-433-051: Covers all 17 BR-KA-211/DD-005 pattern categories", func() {
 		DescribeTable("should scrub each credential category",
 			func(input, mustNotContain string) {
 				result, err := stage.Sanitize(ctx, input)

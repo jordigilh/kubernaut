@@ -919,7 +919,7 @@ For V1.0, we'll use a **single combined policy** that incorporates:
 **V1.6 Updates**:
 - All API field names use **snake_case** (per DD-WORKFLOW-001 v1.8)
 - `detected_labels` supports **wildcard matching** (`"*"` = requires SOME value)
-- `custom_labels` auto-appended by HolmesGPT-API (per DD-HAPI-001)
+- `custom_labels` scored by KA's workflow catalog (per DD-KA-002)
 
 Future V2.0+ can support:
 - Multiple policy files per environment

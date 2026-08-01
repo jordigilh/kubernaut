@@ -16,7 +16,7 @@ limitations under the License.
 
 // Package agentclient provides the Kubernaut Agent OpenAPI client wrapper.
 //
-// DD-HAPI-003: Mandatory OpenAPI Client Usage
+// DD-KA-003: Mandatory OpenAPI Client Usage
 // This wrapper provides a business-friendly API around the auto-generated
 // OpenAPI client (oas_client_gen.go).
 //
@@ -45,7 +45,7 @@ type Config struct {
 }
 
 // KubernautAgentClient wraps the auto-generated OpenAPI client with a business-friendly API.
-// DD-HAPI-003: All methods delegate to the generated client (oas_client_gen.go).
+// DD-KA-003: All methods delegate to the generated client (oas_client_gen.go).
 type KubernautAgentClient struct {
 	client *Client // Generated OpenAPI client from oas_client_gen.go
 }
@@ -76,7 +76,7 @@ func defaultTimeout(cfg Config) time.Duration {
 
 // NewKubernautAgentClient creates a new KA client using the generated OpenAPI client.
 //
-// DD-HAPI-003: Uses generated client for compile-time type safety and contract compliance.
+// DD-KA-003: Uses generated client for compile-time type safety and contract compliance.
 // DD-AUTH-006: Uses ServiceAccount authentication by default (production/E2E).
 //
 // For integration tests with custom authentication, use NewAgentClientWithTransport.
@@ -111,7 +111,7 @@ func NewKubernautAgentClientWithTransport(cfg Config, transport http.RoundTrippe
 // Investigate calls the incident analyze endpoint.
 //
 // BR-AI-006: POST /api/v1/incident/analyze
-// DD-HAPI-003: Uses generated OpenAPI client for type safety and contract compliance.
+// DD-KA-003: Uses generated OpenAPI client for type safety and contract compliance.
 //
 // Example:
 //
@@ -202,12 +202,12 @@ type SessionStatusResult struct {
 
 // ========================================
 // ASYNC SESSION METHODS (BR-AA-HAPI-064)
-// DD-HAPI-003: All session methods now use the generated OpenAPI client.
+// DD-KA-003: All session methods now use the generated OpenAPI client.
 // ========================================
 
 // SubmitInvestigation submits an incident investigation request and returns a session ID.
 // BR-AA-HAPI-064.1: POST /api/v1/incident/analyze returns 202 with session_id
-// DD-HAPI-003: Delegates to generated client for OTel tracing and type-safe dispatch.
+// DD-KA-003: Delegates to generated client for OTel tracing and type-safe dispatch.
 func (c *KubernautAgentClient) SubmitInvestigation(ctx context.Context, req *IncidentRequest) (string, error) {
 	res, err := c.client.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
 	if err != nil {

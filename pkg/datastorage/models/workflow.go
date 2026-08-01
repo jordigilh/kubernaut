@@ -437,7 +437,7 @@ type WorkflowSearchResult struct {
 	DetectedLabels DetectedLabels `json:"detectedLabels,omitempty"`
 
 	// ========================================
-	// PARAMETER SCHEMA (BR-HAPI-191)
+	// PARAMETER SCHEMA (BR-KA-191)
 	// ========================================
 	// Parameters contains the workflow parameter schema (JSONB)
 	// Used by KA for parameter validation and by LLM for correct parameter names

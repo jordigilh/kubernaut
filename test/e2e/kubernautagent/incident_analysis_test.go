@@ -33,7 +33,7 @@ import (
 // Incident Analysis E2E Tests
 // Test Plan: docs/development/testing/KA_E2E_TEST_PLAN.md
 // Scenarios: E2E-KA-001 through E2E-KA-008 (8 total)
-// Business Requirements: BR-HAPI-197, BR-HAPI-002, BR-AI-075, BR-HAPI-200
+// Business Requirements: BR-HAPI-197, BR-HAPI-002, BR-AI-075, BR-KA-200
 //
 // Purpose: Validate incident analysis endpoint behavior and correctness
 
@@ -390,7 +390,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 		})
 	})
 
-	Context("BR-HAPI-200: Error handling", func() {
+	Context("BR-KA-200: Error handling", func() {
 
 		It("E2E-KA-007: Invalid request returns error", func() {
 			// ========================================
@@ -399,7 +399,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// Scenario ID: E2E-KA-007
 			// Business Outcome: Invalid requests rejected with clear error messages
 			// Ported from: test_workflow_selection_e2e.py:342 (Python KA, deprecated)
-			// BR: BR-HAPI-200
+			// BR: BR-KA-200
 
 			// ========================================
 			// ARRANGE: Create request with missing required fields

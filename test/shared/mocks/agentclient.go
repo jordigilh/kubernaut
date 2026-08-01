@@ -450,11 +450,11 @@ func (m *MockAgentClient) WithHumanReviewReasonEnum(reason string, warnings []st
 }
 
 // ========================================
-// BR-HAPI-200: Problem Resolved Test Helpers
+// BR-KA-200: Problem Resolved Test Helpers
 // ========================================
 
 // WithProblemResolved configures the mock to return a "problem resolved" response.
-// BR-HAPI-200 Outcome A: needs_human_review=false, selected_workflow=null, confidence >= 0.7
+// BR-KA-200 Outcome A: needs_human_review=false, selected_workflow=null, confidence >= 0.7
 func (m *MockAgentClient) WithProblemResolved(confidence float64, warnings []string, analysis string) *MockAgentClient {
 	m.Response = &agentclient.IncidentResponse{
 		IncidentID: "mock-incident-001",

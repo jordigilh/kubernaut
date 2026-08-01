@@ -211,7 +211,7 @@ WHERE labels->'environment' ? 'production' OR labels->'environment' ? '*'
 - **NEW**: Added complete examples showing all three label types (mandatory + detected + custom)
 - **Documented**: Boolean Normalization Rule - booleans only included when `true`, omitted when `false`
 - **Impact**: Data Storage must update Go struct JSON tags to snake_case and implement DetectedLabels wildcard matching
-- **Cross-reference**: DD-WORKFLOW-002 v3.3, DD-HAPI-001, DD-WORKFLOW-004 v2.2
+- **Cross-reference**: DD-WORKFLOW-002 v3.3, DD-KA-002, DD-WORKFLOW-004 v2.2
 
 ### Version 1.5 (2025-11-30)
 - **Custom Labels**: Subdomain-based extraction design finalized
@@ -1703,7 +1703,7 @@ LIMIT 10;
 
 2. **HolmesGPT API receives signal**
    - Extracts labels from signal (snake_case format)
-   - Auto-appends `custom_labels` to workflow search request (per DD-HAPI-001)
+   - Forwards `custom_labels` for workflow catalog scoring (per DD-KA-002)
    - Calls Data Storage workflow search API
 
 3. **Data Storage filters workflows**
@@ -2000,7 +2000,7 @@ custom_labels     JSONB
 - ✅ **Clarified naming convention**: K8s annotations (kebab-case) vs API fields (snake_case)
 - ✅ **Updated Go struct JSON tags**: From `json:"kubernaut.io/signal-type"` to `json:"signal_type"`
 - ✅ **Updated Business Requirements**: All BRs now reference v1.6
-- ✅ **Cross-reference**: DD-WORKFLOW-002 v3.3, DD-HAPI-001
+- ✅ **Cross-reference**: DD-WORKFLOW-002 v3.3, DD-KA-002
 
 ### **v1.5** (2025-11-30)
 - ✅ **Custom Labels Subdomain Format**: `<subdomain>.kubernaut.io/<key>[:<value>]` → `map[string][]string`
@@ -2045,6 +2045,6 @@ custom_labels     JSONB
 **Status**: ✅ **APPROVED** (95% confidence, action-type primary matching)
 **Authority**: ⭐ **AUTHORITATIVE** - Single source of truth for workflow label schema
 **v2.8**: Severity `"*"` wildcard restored for consistency with environment/priority. `action_type` replaces `signal_type` as primary catalog matching key (v2.6). Workflow registration now requires `action_type` from enforced taxonomy (DD-WORKFLOW-016).
-**Cross-Reference**: DD-WORKFLOW-002 v3.3, DD-HAPI-001, DD-WORKFLOW-016, DD-HAPI-016
+**Cross-Reference**: DD-WORKFLOW-002 v3.3, DD-KA-002, DD-WORKFLOW-016, DD-KA-016
 **Next Review**: After V1.0 implementation validates action-type matching accuracy
 

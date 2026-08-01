@@ -35,12 +35,12 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
-// #1430 / BR-HAPI-200: When the RCA concludes no action is required
+// #1430 / BR-KA-200: When the RCA concludes no action is required
 // (problem_resolved or predictive_no_action), the investigator should skip
 // workflow discovery (Phase 3) entirely. This avoids unnecessary compute and
 // latency for signals that the RCA already determined are resolved or benign.
 
-var _ = Describe("Investigator skip workflow discovery (#1430 / BR-HAPI-200)", func() {
+var _ = Describe("Investigator skip workflow discovery (#1430 / BR-KA-200)", func() {
 
 	var (
 		invLogger    logr.Logger

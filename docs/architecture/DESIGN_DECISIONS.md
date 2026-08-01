@@ -38,7 +38,7 @@
 | ADR-016 | Validation Responsibility Chain and Data Authority Model | ✅ Approved | TBD | [ADR-016-validation-responsibility-chain.md](decisions/ADR-016-validation-responsibility-chain.md) |
 | ADR-017 | NotificationRequest CRD Creator Responsibility | ✅ Approved | TBD | [ADR-017-notification-crd-creator.md](decisions/ADR-017-notification-crd-creator.md) |
 | ADR-018 | Approval Notification Integration in V1.0 | ✅ Approved | TBD | [ADR-018-approval-notification-v1-integration.md](decisions/ADR-018-approval-notification-v1-integration.md) |
-| ADR-019 | HolmesGPT Circuit Breaker & Retry Strategy | ✅ Approved | TBD | [ADR-019-holmesgpt-circuit-breaker-retry-strategy.md](decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
+| ADR-019 | AIAnalysis Error Classification & Retry Strategy (KA Calls) | ✅ Approved | TBD | [ADR-019-aianalysis-error-classification-retry-strategy.md](decisions/ADR-019-aianalysis-error-classification-retry-strategy.md) |
 | ADR-020 | Workflow Parallel Execution Limits & Complexity Approval | ✅ Approved | TBD | [ADR-020-workflow-parallel-execution-limits.md](decisions/ADR-020-workflow-parallel-execution-limits.md) |
 | ADR-021 | Workflow Dependency Cycle Detection & Validation | ✅ Approved | TBD | [ADR-021-workflow-dependency-cycle-detection.md](decisions/ADR-021-workflow-dependency-cycle-detection.md) |
 | ADR-022 | V1 Native Jobs with V2 Tekton Migration Path | ✅ Approved | TBD | [ADR-022-v1-native-jobs-v2-tekton-migration.md](decisions/ADR-022-v1-native-jobs-v2-tekton-migration.md) |
@@ -86,8 +86,8 @@
 | DD-GATEWAY-015 | Storm Detection Logic Removal | ✅ IMPLEMENTED | 2025-12-13 | [DD-GATEWAY-015-storm-detection-removal.md](decisions/DD-GATEWAY-015-storm-detection-removal.md) |
 | DD-GATEWAY-016 | Kubernetes API Circuit Breaker Implementation | ✅ IMPLEMENTED | 2026-01-03 | [DD-GATEWAY-016-k8s-api-circuit-breaker.md](decisions/DD-GATEWAY-016-k8s-api-circuit-breaker.md) |
 | DD-GATEWAY-CLUSTER-SCOPE-SIGNALS | Cluster-Scoped Signal Support (`ClusterScope` pseudo-Kind + opt-in mechanism) | 📋 Proposed | 2026-07-01 | [DD-GATEWAY-CLUSTER-SCOPE-SIGNALS.md](decisions/DD-GATEWAY-CLUSTER-SCOPE-SIGNALS.md) |
-| DD-HAPI-001 | Custom Labels Auto-Append Architecture | ✅ Approved | 2025-11-30 | [DD-HAPI-001-custom-labels-auto-append.md](decisions/DD-HAPI-001-custom-labels-auto-append.md) |
-| DD-HAPI-003 | Mandatory OpenAPI Client Usage | ✅ Approved | 2025-12-29 | [DD-HAPI-003-mandatory-openapi-client-usage.md](decisions/DD-HAPI-003-mandatory-openapi-client-usage.md) |
+| DD-KA-002 | Custom Labels Workflow-Matching Architecture | ✅ Approved | 2025-11-30 | [DD-KA-002-custom-labels-auto-append.md](decisions/DD-KA-002-custom-labels-auto-append.md) |
+| DD-KA-003 | Mandatory OpenAPI Client Usage | ✅ Approved | 2025-12-29 | [DD-KA-003-mandatory-openapi-client-usage.md](decisions/DD-KA-003-mandatory-openapi-client-usage.md) |
 | DD-KA-001 | Workflow Response Validation Architecture (supersedes DD-HAPI-002, now retired; collapses to one validation layer) | ✅ Approved | 2026-07-14 | [DD-KA-001-workflow-response-validation-architecture.md](decisions/DD-KA-001-workflow-response-validation-architecture.md) |
 | DD-EMBEDDING-001 | Embedding Service as MCP Playbook Catalog Server (Python Microservice) | ✅ Approved | 2025-11-14 | [DD-EMBEDDING-001-embedding-service-implementation.md](decisions/DD-EMBEDDING-001-embedding-service-implementation.md) |
 | DD-PLAYBOOK-001 | Mandatory Playbook Label Schema (7 Labels) | ✅ Approved | 2025-11-14 | [DD-PLAYBOOK-001-mandatory-label-schema.md](decisions/DD-PLAYBOOK-001-mandatory-label-schema.md) |

@@ -44,7 +44,7 @@ import (
 // ResponseProcessor handles processing of KA responses
 // BR-AI-008: Capture all response fields including RCA, workflow, and alternatives
 // BR-HAPI-197: Check needs_human_review before proceeding
-// BR-HAPI-200: Handle problem_resolved outcomes
+// BR-KA-200: Handle problem_resolved outcomes
 type ResponseProcessor struct {
 	log         logr.Logger
 	metrics     *metrics.Metrics
@@ -113,7 +113,7 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	return p.finalizeSuccessfulInvestigation(analysis, resp, hasSelectedWorkflow)
 }
 
-// checkAlternateOutcomes evaluates the BR-HAPI-200.6 Outcome A (problem
+// checkAlternateOutcomes evaluates the BR-KA-200.6 Outcome A (problem
 // resolved), #388/#607 Outcome D (not actionable), and BR-AI-050/#29
 // (no-workflow terminal failure) branches of ProcessIncidentResponse, in
 // that precedence order. The returned bool reports whether one of these
@@ -122,8 +122,8 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 // and success paths. Extracted from ProcessIncidentResponse (Wave 6 6c
 // GREEN: gocognit remediation) — pure code motion, no behavior change.
 func (p *ResponseProcessor) checkAlternateOutcomes(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse, hasSelectedWorkflow bool) (ctrl.Result, error, bool) {
-	// BR-HAPI-200.6 Outcome A: Problem confidently resolved, no workflow needed
-	// Detection per BR-HAPI-200.6: needs_human_review=false AND selected_workflow=null AND confidence >= 0.7
+	// BR-KA-200.6 Outcome A: Problem confidently resolved, no workflow needed
+	// Detection per BR-KA-200.6: needs_human_review=false AND selected_workflow=null AND confidence >= 0.7
 	// Defense-in-depth (Layer 2): also verify no warning signals that indicate an active
 	// problem (inconclusive investigation, no matching workflows). This catches edge cases
 	// where the LLM incorrectly overrides needs_human_review=false but KA still appends
@@ -533,7 +533,7 @@ func preservePartialSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *ag
 }
 
 // handleProblemResolvedFromIncident handles problem self-resolved from IncidentResponse
-// BR-HAPI-200: Problem confirmed resolved, no workflow needed
+// BR-KA-200: Problem confirmed resolved, no workflow needed
 //
 //nolint:unparam // ctrl.Result is always the zero value here; signature matches the shared dispatch contract of sibling handleXFromIncident functions (handleNotActionableFromIncident, handleNoWorkflowTerminalFailure), called uniformly as `result, err := p.handleXFromIncident(...)` (Issue #1546 Tier 4)
 func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
@@ -577,7 +577,7 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 	aianalysis.SetWorkflowResolved(analysis, false, aianalysis.ReasonNoWorkflowNeeded, "Problem self-resolved, no workflow needed")
 	aianalysis.SetApprovalRequired(analysis, false, "NotApplicable", "No workflow selected, approval not applicable")
 
-	// BR-HAPI-200: Record analysis completion audit event
+	// BR-KA-200: Record analysis completion audit event
 	// This is a successful completion even though no workflow was selected
 	p.auditClient.RecordAnalysisComplete(ctx, analysis)
 
@@ -861,7 +861,7 @@ func setTotalAnalysisTime(analysis *aianalysisv1.AIAnalysis, now metav1.Time) {
 
 // mapEnumToSubReason maps KA HumanReviewReason enum to CRD SubReason
 // This is the preferred method - direct enum-to-enum mapping (Dec 6, 2025)
-// Updated Dec 7, 2025: Added investigation_inconclusive per BR-HAPI-200
+// Updated Dec 7, 2025: Added investigation_inconclusive per BR-KA-200
 func (p *ResponseProcessor) mapEnumToSubReason(reason string) string {
 	mapping := map[string]string{
 		"workflow_not_found":                              aianalysisv1.SubReasonWorkflowNotFound,
@@ -870,7 +870,7 @@ func (p *ResponseProcessor) mapEnumToSubReason(reason string) string {
 		aianalysisv1.HumanReviewReasonNoMatchingWorkflows: aianalysisv1.SubReasonNoMatchingWorkflows,
 		aianalysisv1.HumanReviewReasonLowConfidence:       aianalysisv1.SubReasonLowConfidence,
 		"llm_parsing_error":                               "LLMParsingError",
-		"investigation_inconclusive":                      "InvestigationInconclusive", // BR-HAPI-200
+		"investigation_inconclusive":                      "InvestigationInconclusive", // BR-KA-200
 		aianalysisv1.HumanReviewReasonRCAIncomplete:       "RcaIncomplete",             // BR-496 v2: root_owner missing from session_state
 		"operator_escalation":                             "OperatorEscalation",        // #1449: KA complete_no_action escalation
 	}
@@ -885,7 +885,7 @@ func (p *ResponseProcessor) mapEnumToSubReason(reason string) string {
 // the absence of a selected workflow is due to an active problem (inconclusive investigation
 // or no matching workflows in the catalog), NOT because the problem self-resolved.
 //
-// This is a defense-in-depth check (Layer 2) for BR-HAPI-200.6. It catches edge cases
+// This is a defense-in-depth check (Layer 2) for BR-KA-200.6. It catches edge cases
 // where the LLM incorrectly sets needs_human_review=false but KA's result_parser
 // still appends diagnostic warnings from investigation_outcome processing.
 //

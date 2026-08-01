@@ -462,7 +462,7 @@ XX-servicename/
 When a service requires domain-specific documentation not covered by common patterns:
 
 1. **Create appropriately named files** that clearly indicate the domain:
-   - AIAnalysis: `REGO_POLICY_EXAMPLES.md`, `ai-holmesgpt-approval.md`
+   - AIAnalysis: `REGO_POLICY_EXAMPLES.md`, `ka-approval.md`
    - WorkflowExecution: `tekton-pipeline-spec.md`, `workflow-parameters.md`
    - Notification: `notification-channels.md`, `template-engine.md`
 
