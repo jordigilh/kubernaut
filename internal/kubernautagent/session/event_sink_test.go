@@ -85,6 +85,62 @@ var _ = Describe("Session ID Context Helpers — BR-AUDIT-070", func() {
 	})
 })
 
+var _ = Describe("LazySink Buffered Replay — #1811", func() {
+
+	Describe("UT-KA-1811-001: Emit buffers events when no channel is attached", func() {
+		It("buffers events emitted before Set() and replays them in order once a channel is attached", func() {
+			ls := &session.LazySink{}
+
+			sent := ls.Emit(session.InvestigationEvent{Type: session.EventTypeReasoningDelta, Turn: 0})
+			Expect(sent).To(BeFalse(), "no channel attached yet — Emit must not report a live send")
+
+			sent = ls.Emit(session.InvestigationEvent{Type: session.EventTypeToolCallStart, Turn: 0})
+			Expect(sent).To(BeFalse())
+
+			ch := make(chan session.InvestigationEvent, 8)
+			ls.Set(ch)
+
+			Expect(ch).To(Receive(HaveField("Type", session.EventTypeReasoningDelta)),
+				"buffered event 1 must be replayed first (order preserved)")
+			Expect(ch).To(Receive(HaveField("Type", session.EventTypeToolCallStart)),
+				"buffered event 2 must be replayed second")
+		})
+
+		It("delivers events emitted after Set() immediately, without needing another Set() call", func() {
+			ls := &session.LazySink{}
+			ch := make(chan session.InvestigationEvent, 8)
+			ls.Set(ch)
+
+			sent := ls.Emit(session.InvestigationEvent{Type: session.EventTypeComplete})
+			Expect(sent).To(BeTrue(), "channel already attached — Emit must report a live send")
+			Expect(ch).To(Receive(HaveField("Type", session.EventTypeComplete)))
+		})
+
+		It("bounds the buffer so an autonomous investigation that is never subscribed to cannot grow unbounded", func() {
+			ls := &session.LazySink{}
+			const overCapacity = 200
+			for i := 0; i < overCapacity; i++ {
+				ls.Emit(session.InvestigationEvent{Type: session.EventTypeTokenDelta, Turn: i})
+			}
+
+			ch := make(chan session.InvestigationEvent, overCapacity)
+			ls.Set(ch)
+			close(ch)
+
+			var replayed int
+			var lastTurn int
+			for evt := range ch {
+				replayed++
+				lastTurn = evt.Turn
+			}
+			Expect(replayed).To(BeNumerically("<", overCapacity),
+				"buffer must be capped — not every emitted event can be retained")
+			Expect(lastTurn).To(Equal(overCapacity-1),
+				"oldest events are evicted first — the most recent event must survive")
+		})
+	})
+})
+
 var _ = Describe("Interactive Upgrade Context Helpers — #1390", func() {
 
 	Describe("UT-KA-1390-005 [SC-24]: InteractiveUpgradeFromContext returns false when no flag in context", func() {

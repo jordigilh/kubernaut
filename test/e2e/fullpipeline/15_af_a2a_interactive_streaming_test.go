@@ -153,19 +153,29 @@ var _ = Describe("AF A2A Interactive Streaming Full Pipeline [E2E-FP-1189-005]",
 		// user waited for the RCA to render"; accepting both avoids coupling this
 		// test to which of the two internal paths KA happened to take.
 		//
-		// TODO(#1795): this assertion is temporarily softened to a warning instead of
-		// a hard failure. AF's dedicated streaming MCP client to KA (StartInvestigation
-		// -> connectInvestigationSession) hits a consistent ~60s TCP dial timeout in
-		// this environment (confirmed independent of host hibernation/clock skew —
-		// reproduces cleanly), so the kubernaut_investigate tool call itself fails
-		// before KA ever runs the investigation, leaving no RCA to render. Once #1795
-		// is fixed, restore this to a hard Expect(...).To(BeNumerically(">", 0), ...).
+		// #1795 (AF->KA streaming MCP dial timeout) is fixed, and #1811 (KA
+		// dropped every event emitted between InteractiveHold's fast RCA
+		// completion and AF's late Subscribe) is fixed too — verified via
+		// sink_nil/dropped counters in CI must-gather logs showing the fix
+		// correctly buffers events for a session that stays alive.
+		//
+		// TODO(#1818): still softened. A *third*, distinct race remains: when
+		// AA's autonomous submit to KA omits Interactive (RequestBuilder never
+		// sets it), and the investigation is fast enough to reach a fully
+		// terminal StatusCompleted before AF's kubernaut_investigate arrives,
+		// KA can no longer reattach to that session (LaunchDeferredInvestigation
+		// rejects non-Pending, FindByRemediationID only matches StatusRunning),
+		// so handleStart falls back to a brand-new, RCA-less placeholder
+		// session and the real RCA is orphaned. #1811's buffering doesn't help
+		// here because nothing ever subscribes to the original session again.
+		// See #1818 for full root-cause evidence and fix options. Restore to a
+		// hard Expect(...).To(BeNumerically(">", 0), ...) once #1818 is fixed.
 		earlyRCAStatuses := fpStatusesBySchema(statuses2, "early_rca")
 		rcaArtifacts := fpArtifactsBySchema(arts2, "investigation_summary")
 		if len(earlyRCAStatuses)+len(rcaArtifacts) == 0 {
 			GinkgoWriter.Printf("  ⚠️  Turn 2 (SSE) — no RCA content rendered (early_rca status or " +
-				"investigation_summary artifact); likely #1795 (AF->KA streaming MCP dial timeout). " +
-				"Softened to a warning — see TODO above.\n")
+				"investigation_summary artifact); likely #1818 (orphaned RCA on fast autonomous " +
+				"completion racing AF's interactive upgrade). Softened to a warning — see TODO above.\n")
 		} else if len(earlyRCAStatuses) > 0 {
 			rcaText := fpStatusText(earlyRCAStatuses[0])
 			Expect(strings.TrimSpace(rcaText)).NotTo(BeEmpty(), "early_rca status must carry non-empty RCA content")
