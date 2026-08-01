@@ -514,14 +514,14 @@ func EnrichmentCacheKey(kind, name, namespace string) string {
 	return kind + "/" + name + "/" + namespace
 }
 
-func (inv *Investigator) resolveEnrichmentCached(ctx context.Context, cache map[string]*enrichment.EnrichmentResult, kind, name, namespace, incidentID string) *enrichment.EnrichmentResult {
+func (inv *Investigator) resolveEnrichmentCached(ctx context.Context, cache map[string]*enrichment.EnrichmentResult, kind, name, namespace, clusterID, incidentID string) *enrichment.EnrichmentResult {
 	key := EnrichmentCacheKey(kind, name, namespace)
 	if cached, ok := cache[key]; ok {
 		inv.logger.Info("enrichment cache hit, reusing cached result",
 			"kind", kind, "name", name, "namespace", namespace)
 		return cached
 	}
-	result := inv.resolveEnrichment(ctx, kind, name, namespace, incidentID)
+	result := inv.resolveEnrichment(ctx, kind, name, namespace, clusterID, incidentID)
 	cache[key] = result
 	return result
 }

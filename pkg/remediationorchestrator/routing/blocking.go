@@ -346,6 +346,11 @@ func (r *RoutingEngine) CheckPostAnalysisConditions(
 	// Issue #214: Ineffective remediation chain detection (LAST -- fail-open)
 	if preRemediationSpecHash != "" {
 		target := parseTargetResource(targetResource)
+		// Issue #1802: scope the DS history query to this RR's cluster (fleet
+		// deployments can have identically-named/namespaced resources across
+		// clusters). Empty ClusterID (release/v1.5, or main without fleet
+		// tracking configured) leaves the query unscoped.
+		target.ClusterID = rr.Spec.ClusterID
 		if chainBlocked := r.CheckIneffectiveRemediationChain(ctx, rr, target, preRemediationSpecHash, actionType); chainBlocked != nil {
 			return chainBlocked, nil
 		}

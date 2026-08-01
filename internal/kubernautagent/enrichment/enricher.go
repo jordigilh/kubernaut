@@ -63,8 +63,10 @@ type K8sClient interface {
 }
 
 // DataStorageClient abstracts DataStorage API access for enrichment.
+// clusterID optionally scopes the query to a single fleet cluster (Issue
+// #1802, main only); pass "" for unscoped (release/v1.5 semantics).
 type DataStorageClient interface {
-	GetRemediationHistory(ctx context.Context, kind, name, namespace, specHash string) (*RemediationHistoryResult, error)
+	GetRemediationHistory(ctx context.Context, kind, name, namespace, clusterID, specHash string) (*RemediationHistoryResult, error)
 }
 
 // RemediationHistoryResult holds the full DS response mapped to domain types.
@@ -283,11 +285,26 @@ func isForbiddenError(err error) bool {
 	return apierrors.IsForbidden(err)
 }
 
+// EnrichRequest groups Enrich's parameters. Introduced per AGENTS.md's
+// 8+-param Options-pattern/config-struct rule (D5, Issue #1802) rather than
+// adding ClusterID as an 8th positional parameter.
+type EnrichRequest struct {
+	Kind       string
+	Name       string
+	Namespace  string
+	APIVersion string // disambiguates multi-group kinds (e.g. Route); "" when unknown (Issue #1040)
+	SpecHash   string // auto-computed via K8sClient.GetSpecHash when empty
+	// ClusterID optionally scopes the DataStorage remediation-history query to
+	// a single fleet cluster (Issue #1802, main only). Empty means unscoped
+	// (release/v1.5 semantics, or main without fleet tracking configured).
+	ClusterID  string
+	IncidentID string
+}
+
 // Enrich resolves enrichment data for the given resource.
 // Implements partial failure: each sub-call is best-effort.
-// If specHash is empty, auto-computes it via K8sClient.GetSpecHash.
-// apiVersion disambiguates multi-group kinds (e.g. Route). Pass "" when unknown. Issue #1040.
-func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, apiVersion, specHash, incidentID string) (*EnrichmentResult, error) {
+func (e *Enricher) Enrich(ctx context.Context, req EnrichRequest) (*EnrichmentResult, error) {
+	kind, name, namespace, apiVersion, specHash, incidentID := req.Kind, req.Name, req.Namespace, req.APIVersion, req.SpecHash, req.IncidentID
 	result := &EnrichmentResult{
 		ResourceKind:      kind,
 		ResourceName:      name,
@@ -309,7 +326,7 @@ func (e *Enricher) Enrich(ctx context.Context, kind, name, namespace, apiVersion
 		return nil, labelErr
 	}
 
-	histResult, histErr := e.ds.GetRemediationHistory(ctx, kind, name, namespace, specHash)
+	histResult, histErr := e.ds.GetRemediationHistory(ctx, kind, name, namespace, req.ClusterID, specHash)
 	if histErr != nil {
 		e.logger.Error(histErr, "enrichment: remediation history fetch failed",
 			"resource", namespace+"/"+name,

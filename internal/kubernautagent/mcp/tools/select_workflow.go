@@ -30,7 +30,7 @@ import (
 
 // EnrichmentRunner abstracts the enrichment call for testability.
 type EnrichmentRunner interface {
-	Enrich(ctx context.Context, kind, name, namespace, apiVersion, specHash, incidentID string) (*enrichment.EnrichmentResult, error)
+	Enrich(ctx context.Context, req enrichment.EnrichRequest) (*enrichment.EnrichmentResult, error)
 }
 
 // WorkflowCatalog abstracts the workflow catalog lookup for testability.
@@ -124,7 +124,14 @@ func WithEnrichmentRunner(runner EnrichmentRunner) SelectWorkflowOption {
 				t.logger.V(1).Info("enrichment skipped: kind not provided in select_workflow input")
 				return nil
 			}
-			result, err := runner.Enrich(ctx, input.Kind, input.Name, input.Namespace, input.APIVersion, input.SpecHash, input.IncidentID)
+			// Issue #1802: SelectWorkflowInput has no ClusterID field (this
+			// interactive MCP tool path is independent of Investigate's
+			// fleet-aware SignalContext) -- enrichment stays unscoped here,
+			// matching this path's pre-existing behavior.
+			result, err := runner.Enrich(ctx, enrichment.EnrichRequest{
+				Kind: input.Kind, Name: input.Name, Namespace: input.Namespace,
+				APIVersion: input.APIVersion, SpecHash: input.SpecHash, IncidentID: input.IncidentID,
+			})
 			if err != nil {
 				if errors.Is(err, enrichment.ErrRBACForbidden) {
 					return ErrCodeForbidden.WithDetail("namespace", input.Namespace)

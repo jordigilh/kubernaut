@@ -88,6 +88,12 @@ type TargetResource struct {
 	Kind      string
 	Name      string
 	Namespace string
+
+	// ClusterID optionally scopes DataStorage remediation-history queries to a
+	// single cluster (Issue #1802, fleet deployments). Sourced from
+	// RemediationRequest.Spec.ClusterID. Empty means unscoped (matches
+	// release/v1.5 semantics, which has no ClusterID concept).
+	ClusterID string
 }
 
 // String returns the formatted target resource string used in logging and WFE matching.

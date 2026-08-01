@@ -132,7 +132,7 @@ func (inv *Investigator) resolveRCAWorkflowDiscoveryEnrichment(ctx context.Conte
 	enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
 	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
 	signalNS = inv.normalizeNamespace(signalKind, signalNS)
-	rawEnrichData = inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.IncidentID)
+	rawEnrichData = inv.resolveEnrichmentCached(ctx, enrichmentCache, signalKind, signalName, signalNS, signal.ClusterID, signal.IncidentID)
 
 	postRCAKind, postRCAName, postRCANS := ResolveEnrichmentTarget(signal, rcaResult)
 	postRCANS = inv.normalizeNamespace(postRCAKind, postRCANS)
@@ -178,7 +178,7 @@ func (inv *Investigator) reEnrichForRCATargetShift(ctx context.Context, p reEnri
 		"signal", signalKind+"/"+signalName,
 		"rca_target", postRCAKind+"/"+postRCAName,
 		"correlation_id", correlationID)
-	reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.IncidentID)
+	reEnriched := inv.resolveEnrichmentCached(ctx, enrichmentCache, postRCAKind, postRCAName, postRCANS, signal.ClusterID, signal.IncidentID)
 
 	if reEnriched != nil && reEnriched.HardFail {
 		inv.logger.Error(reEnriched.OwnerChainError,

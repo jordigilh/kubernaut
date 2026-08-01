@@ -92,7 +92,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "", "inc-001")
+			result, err := e.Enrich(ctx, enrichment.EnrichRequest{Kind: "Pod", Name: "test-pod", Namespace: "production", IncidentID: "inc-001"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -121,7 +121,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "", "inc-002")
+			result, err := e.Enrich(ctx, enrichment.EnrichRequest{Kind: "Pod", Name: "test-pod", Namespace: "production", IncidentID: "inc-002"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -149,7 +149,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "", "inc-003")
+			result, err := e.Enrich(ctx, enrichment.EnrichRequest{Kind: "Pod", Name: "test-pod", Namespace: "production", IncidentID: "inc-003"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -177,7 +177,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			_, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "", "inc-005")
+			_, err := e.Enrich(ctx, enrichment.EnrichRequest{Kind: "Pod", Name: "test-pod", Namespace: "production", IncidentID: "inc-005"})
 			Expect(err).To(HaveOccurred(),
 				"UT-704-E-005: 403 Forbidden must propagate as error (not swallowed)")
 			Expect(errors.Is(err, enrichment.ErrRBACForbidden)).To(BeTrue(),
@@ -196,7 +196,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 			}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
 
-			result, err := e.Enrich(ctx, "Pod", "test-pod", "production", "", "", "inc-004")
+			result, err := e.Enrich(ctx, enrichment.EnrichRequest{Kind: "Pod", Name: "test-pod", Namespace: "production", IncidentID: "inc-004"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -224,7 +224,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			result, err := e.Enrich(ctx, "Certificate", "demo-app-cert", "default", "", "", "inc-006")
+			result, err := e.Enrich(ctx, enrichment.EnrichRequest{Kind: "Certificate", Name: "demo-app-cert", Namespace: "default", IncidentID: "inc-006"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
@@ -246,7 +246,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func(
 					BaseBackoff: 1 * time.Millisecond,
 				})
 
-			result, err := e.Enrich(ctx, "Pod", "unreachable-pod", "default", "", "", "inc-006b")
+			result, err := e.Enrich(ctx, enrichment.EnrichRequest{Kind: "Pod", Name: "unreachable-pod", Namespace: "default", IncidentID: "inc-006b"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 

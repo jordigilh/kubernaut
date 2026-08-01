@@ -1029,6 +1029,10 @@ func (s *Server) handleGetRemediationHistoryContextRequest(args [0]string, argsE
 					Name: "tier2Window",
 					In:   "query",
 				}: params.Tier2Window,
+				{
+					Name: "clusterId",
+					In:   "query",
+				}: params.ClusterId,
 			},
 			Raw: r,
 		}

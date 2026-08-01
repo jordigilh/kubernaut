@@ -86,7 +86,7 @@ type mockEnrichmentRunner struct {
 	err    error
 }
 
-func (m *mockEnrichmentRunner) Enrich(_ context.Context, _, _, _, _, _, _ string) (*enrichment.EnrichmentResult, error) {
+func (m *mockEnrichmentRunner) Enrich(_ context.Context, _ enrichment.EnrichRequest) (*enrichment.EnrichmentResult, error) {
 	return m.result, m.err
 }
 

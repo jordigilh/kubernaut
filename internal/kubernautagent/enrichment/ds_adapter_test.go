@@ -86,7 +86,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "abc123")
+			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "abc123")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.TargetResource).To(Equal("default/Deployment/api-server"))
@@ -126,6 +126,35 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 		})
 	})
 
+	Describe("UT-KA-1802-001: DS adapter maps clusterID to the ogen ClusterId query param (Issue #1802)", func() {
+		It("should set ClusterId when a non-empty clusterID is passed", func() {
+			client := &stubDSClient{
+				response: &ogenclient.RemediationHistoryContext{},
+			}
+			adapter := enrichment.NewDSAdapter(client)
+
+			_, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "app", "prod", "cluster-a", "abc123")
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(client.capturedParams.ClusterId.IsSet()).To(BeTrue(),
+				"a non-empty clusterID must be forwarded as the ogen ClusterId query param")
+			Expect(client.capturedParams.ClusterId.Value).To(Equal("cluster-a"))
+		})
+
+		It("should leave ClusterId unset when clusterID is empty (release/v1.5-compatible unscoped default)", func() {
+			client := &stubDSClient{
+				response: &ogenclient.RemediationHistoryContext{},
+			}
+			adapter := enrichment.NewDSAdapter(client)
+
+			_, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "app", "prod", "", "abc123")
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(client.capturedParams.ClusterId.IsSet()).To(BeFalse(),
+				"an empty clusterID must NOT set the ogen ClusterId query param (unscoped default)")
+		})
+	})
+
 	Describe("UT-KA-433W-014: DS adapter maps cluster-scoped and throughput metric_deltas fields (Issue #193, DD-EM-005 v1.1)", func() {
 		It("should map throughput and Node/PersistentVolume fields into enrichment.MetricDeltas", func() {
 			client := &stubDSClient{
@@ -159,7 +188,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Node", "worker-1", "", "abc123")
+			result, err := adapter.GetRemediationHistory(context.Background(), "Node", "worker-1", "", "", "abc123")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Tier1).To(HaveLen(1))
 			md := result.Tier1[0].MetricDeltas
@@ -196,7 +225,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "abc123")
+			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "abc123")
 			Expect(err).NotTo(HaveOccurred())
 			md := result.Tier1[0].MetricDeltas
 			Expect(md.ThroughputBeforeRps).To(BeNil())
@@ -223,7 +252,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "abc123")
+			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "abc123")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.Tier1).NotTo(BeNil())
@@ -254,7 +283,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 
 			adapter := enrichment.NewDSAdapter(client)
 			Expect(func() {
-				result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "")
+				result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "")
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result.Tier1).To(HaveLen(1))
 				Expect(result.Tier1[0].RemediationUID).To(Equal("wf-123"))
@@ -301,7 +330,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			adapter := enrichment.NewDSAdapter(ogenClient)
-			_, err = adapter.GetRemediationHistory(context.Background(), "StatefulSet", "redis", "staging", "hash789")
+			_, err = adapter.GetRemediationHistory(context.Background(), "StatefulSet", "redis", "staging", "", "hash789")
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(capturedURL).To(ContainSubstring("remediation-history"))
@@ -319,7 +348,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			}
 
 			adapter := enrichment.NewDSAdapter(client)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "")
+			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api-server", "default", "", "")
 			Expect(err).To(HaveOccurred(), "#762: 400 responses must surface as errors")
 			Expect(err.Error()).To(ContainSubstring("bad request"))
 			Expect(result).To(BeNil())
@@ -337,7 +366,7 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			adapter := enrichment.NewDSAdapter(ogenClient)
-			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api", "default", "")
+			result, err := adapter.GetRemediationHistory(context.Background(), "Deployment", "api", "default", "", "")
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("ds adapter"))
 			Expect(result).To(BeNil())
@@ -349,13 +378,15 @@ var _ = Describe("DataStorage Adapter — TP-433-WIR Phase 1a", func() {
 // preconfigured responses. This is a stub (not a mock) — used for unit tests
 // that validate type mapping, not I/O behavior.
 type stubDSClient struct {
-	response ogenclient.GetRemediationHistoryContextRes
-	err      error
+	response       ogenclient.GetRemediationHistoryContextRes
+	err            error
+	capturedParams ogenclient.GetRemediationHistoryContextParams
 }
 
 func (s *stubDSClient) GetRemediationHistoryContext(
 	_ context.Context,
-	_ ogenclient.GetRemediationHistoryContextParams,
+	params ogenclient.GetRemediationHistoryContextParams,
 ) (ogenclient.GetRemediationHistoryContextRes, error) {
+	s.capturedParams = params
 	return s.response, s.err
 }

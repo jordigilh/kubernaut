@@ -60,7 +60,7 @@ type fakeDS struct {
 	capturedSpecHash string
 }
 
-func (f *fakeDS) GetRemediationHistory(_ context.Context, _, _, _, specHash string) (*enrichment.RemediationHistoryResult, error) {
+func (f *fakeDS) GetRemediationHistory(_ context.Context, _, _, _, _, specHash string) (*enrichment.RemediationHistoryResult, error) {
 	f.capturedSpecHash = specHash
 	return f.history, f.err
 }

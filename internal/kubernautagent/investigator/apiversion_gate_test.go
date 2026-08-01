@@ -135,7 +135,7 @@ func (f *gateK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (strin
 // gateDSClient is a minimal fake for enrichment.
 type gateDSClient struct{}
 
-func (f *gateDSClient) GetRemediationHistory(_ context.Context, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
+func (f *gateDSClient) GetRemediationHistory(_ context.Context, _, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
 	return &enrichment.RemediationHistoryResult{}, nil
 }
 

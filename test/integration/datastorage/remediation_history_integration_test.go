@@ -121,6 +121,48 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 	}
 
 	// ============================================================================
+	// Helper: insertROEventWithCluster inserts a remediation.workflow_created
+	// audit event with a top-level cluster_id column value (Issue #1802,
+	// migration 014). Used only by cluster-scoping tests — insertROEvent above
+	// leaves cluster_id NULL, matching unscoped/release-v1.5 semantics.
+	// ============================================================================
+	insertROEventWithCluster := func(
+		correlationID string,
+		target string,
+		clusterID string,
+		preHash string,
+		actionType string,
+		ts time.Time,
+	) {
+		GinkgoHelper()
+		eventData, err := json.Marshal(map[string]interface{}{
+			"target_resource":           target,
+			"pre_remediation_spec_hash": preHash,
+			"action_type":               actionType,
+			"signal_type":               "HighCPULoad",
+			"signal_fingerprint":        "fp-" + testID,
+			"outcome":                   "success",
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = db.ExecContext(testCtx,
+			`INSERT INTO audit_events (
+				event_id, event_date, event_timestamp, event_type, event_version,
+				event_category, event_action, event_outcome, correlation_id,
+				resource_type, resource_id, actor_id, actor_type,
+				retention_days, is_sensitive, event_data, cluster_id
+			) VALUES (
+				$1, $2, $3, 'remediation.workflow_created', '1.0',
+				'remediation', 'create', 'success', $4,
+				'test', 'test', 'test', 'system',
+				90, false, $5, $6
+			)`,
+			uuid.New(), ts.Format("2006-01-02"), ts, correlationID, eventData, clusterID,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to insert cluster-scoped RO audit event")
+	}
+
+	// ============================================================================
 	// Helper: insertEMEvents inserts a full set of EM component events for scoring.
 	// reason: "full", "spec_drift", "partial", etc.
 	// ============================================================================
@@ -211,7 +253,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			insertROEvent(cidOther, targetResource, "sha256:different_hash", "ScaleUp", now.Add(-1*time.Hour))
 
 			// Act: query by spec hash with 3-hour lookback
-			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, matchHash, now.Add(-3*time.Hour), now)
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", matchHash, now.Add(-3*time.Hour), now)
 
 			// Assert
 			Expect(err).ToNot(HaveOccurred())
@@ -258,13 +300,106 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 			insertROEvent(cidNoMatch, targetResource, "sha256:different_hash", "ScaleDown", now.Add(-40*time.Hour))
 
 			// Act: query for matchHash within 72h-24h window (Tier 2)
-			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, matchHash, now.Add(-72*time.Hour), now.Add(-24*time.Hour))
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", matchHash, now.Add(-72*time.Hour), now.Add(-24*time.Hour))
 
 			// Assert
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rows).To(HaveLen(2), "Should return exactly 2 rows matching the spec hash")
 			Expect(rows[0].CorrelationID).To(Equal(cidMatch1))
 			Expect(rows[1].CorrelationID).To(Equal(cidMatch2))
+		})
+	})
+
+	// ============================================================================
+	// 1a. Target-Resource Scoping Tests (Issue #1802)
+	//
+	// Per TESTING_GUIDELINES.md "HTTP Testing in Integration Tests" anti-pattern:
+	// no net/http layer — component coordination proven via direct repository/
+	// adapter calls against real PostgreSQL.
+	// ============================================================================
+
+	Describe("Target-Resource Scoping (Issue #1802)", func() {
+		It("IT-DS-1802-001: cross-namespace same-hash rows are excluded by target-resource scoping against real Postgres", func() {
+			// Reproduces the exact #1802 symptom: two unrelated Deployments in
+			// different namespaces share an identical spec hash (e.g. templated
+			// manifests from the same Helm chart). Querying for ns-a's target
+			// must NOT return ns-b's row, even though both match the hash.
+			now := time.Now().UTC()
+			sharedHash := "sha256:shared_" + testID
+			targetA := fmt.Sprintf("ns-a-%s/Deployment/app", testID)
+			targetB := fmt.Sprintf("ns-b-%s/Deployment/app", testID)
+			cidA := fmt.Sprintf("corr-1802-a-%s", testID)
+			cidB := fmt.Sprintf("corr-1802-b-%s", testID)
+
+			insertROEvent(cidA, targetA, sharedHash, "ScaleUp", now.Add(-2*time.Hour))
+			insertROEvent(cidB, targetB, sharedHash, "ScaleUp", now.Add(-1*time.Hour))
+
+			// Act: query for ns-a's target only
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetA, "", sharedHash, now.Add(-3*time.Hour), now)
+
+			// Assert
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rows).To(HaveLen(1), "must return only ns-a's row, excluding ns-b's cross-namespace same-hash row")
+			Expect(rows[0].CorrelationID).To(Equal(cidA))
+
+			// Cross-check: querying for ns-b's target returns only ns-b's row (symmetric proof)
+			rowsB, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetB, "", sharedHash, now.Add(-3*time.Hour), now)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rowsB).To(HaveLen(1), "must return only ns-b's row")
+			Expect(rowsB[0].CorrelationID).To(Equal(cidB))
+		})
+
+		It("IT-DS-1802-002: cluster-scoped (3-part, leading-slash) target-resource format matches correctly against real Postgres", func() {
+			// UT-DS-1802-002 proves the handler emits "/{kind}/{name}" (unconditional
+			// 3-part with empty namespace segment) for cluster-scoped resources —
+			// matching RO's audit emission format exactly. This proves that literal
+			// string, as stored in a real audit_events row, round-trips correctly
+			// through the JSONB equality predicate (no Postgres/JSON quirk with the
+			// leading-slash empty-namespace segment).
+			now := time.Now().UTC()
+			clusterScopedTarget := fmt.Sprintf("/Node/node-%s", testID) // 3-part canonical, empty namespace
+			hash := "sha256:clusterscoped_" + testID
+			cid := fmt.Sprintf("corr-1802-cluster-%s", testID)
+
+			insertROEvent(cid, clusterScopedTarget, hash, "CordonNode", now.Add(-1*time.Hour))
+
+			rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, clusterScopedTarget, "", hash, now.Add(-3*time.Hour), now)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rows).To(HaveLen(1), "the 3-part canonical format (leading slash for empty namespace) must match the stored row")
+			Expect(rows[0].CorrelationID).To(Equal(cid))
+		})
+
+		It("IT-DS-1802-003: optional clusterId further restricts results to the requesting cluster (main-only fleet scoping)", func() {
+			// Two clusters can have an identically-named/namespaced resource
+			// sharing a spec hash (e.g. GitOps-templated across a fleet). The
+			// same target-resource string alone is insufficient once fleet
+			// deployments are in play — cluster_id must additionally scope.
+			now := time.Now().UTC()
+			sameTarget := fmt.Sprintf("prod-%s/Deployment/app", testID)
+			sameHash := "sha256:fleet_" + testID
+			cidClusterA := fmt.Sprintf("corr-1802-clusterA-%s", testID)
+			cidClusterB := fmt.Sprintf("corr-1802-clusterB-%s", testID)
+
+			insertROEventWithCluster(cidClusterA, sameTarget, "cluster-a", sameHash, "ScaleUp", now.Add(-2*time.Hour))
+			insertROEventWithCluster(cidClusterB, sameTarget, "cluster-b", sameHash, "ScaleUp", now.Add(-1*time.Hour))
+
+			// Act: scope to cluster-a only
+			rowsA, err := rhRepo.QueryROEventsBySpecHash(testCtx, sameTarget, "cluster-a", sameHash, now.Add(-3*time.Hour), now)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rowsA).To(HaveLen(1), "must return only cluster-a's row, excluding cluster-b's same-target same-hash row")
+			Expect(rowsA[0].CorrelationID).To(Equal(cidClusterA))
+
+			// Cross-check: cluster-b scope returns only cluster-b's row
+			rowsB, err := rhRepo.QueryROEventsBySpecHash(testCtx, sameTarget, "cluster-b", sameHash, now.Add(-3*time.Hour), now)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rowsB).To(HaveLen(1))
+			Expect(rowsB[0].CorrelationID).To(Equal(cidClusterB))
+
+			// Backward compatibility: empty clusterID (release/v1.5 semantics) is unscoped — returns both
+			rowsUnscoped, err := rhRepo.QueryROEventsBySpecHash(testCtx, sameTarget, "", sameHash, now.Add(-3*time.Hour), now)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rowsUnscoped).To(HaveLen(2), "empty clusterID must not filter by cluster, matching release/v1.5 behavior")
 		})
 	})
 
@@ -330,10 +465,9 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 		//   4. DetectRegression (hash match analysis)
 		queryAndCorrelate := func(target, specHash string, since time.Time) ([]api.RemediationHistoryEntry, bool) {
 			GinkgoHelper()
-			_ = target // retained for call-site readability; Tier 1 now queries by spec hash
 
-			// Step 1: Query RO events by spec hash (#586)
-			roEvents, err := adapter.QueryROEventsBySpecHash(testCtx, specHash, since, time.Now().UTC())
+			// Step 1: Query RO events by target resource + spec hash (#586, #1802)
+			roEvents, err := adapter.QueryROEventsBySpecHash(testCtx, target, "", specHash, since, time.Now().UTC())
 			Expect(err).ToNot(HaveOccurred())
 
 			// Step 2: Batch query EM events
