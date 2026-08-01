@@ -1,4 +1,4 @@
-# DD-HAPI-019-002: Toolset Implementation Design
+# DD-KA-019-002: Toolset Implementation Design
 
 **Status**: ✅ Approved
 **Decision Date**: 2026-03-04
@@ -8,7 +8,7 @@
 **Applies To**: Kubernaut Agent
 
 **Related Business Requirements**:
-- BR-HAPI-433-002 (Kubernetes Toolset) and BR-HAPI-433-003 (Prometheus Toolset) — retired as standalone docs; migration complete
+- BR-KA-433-002 (formerly BR-HAPI-433-002, Kubernetes Toolset) and BR-KA-433-003 (formerly BR-HAPI-433-003, Prometheus Toolset) — retired as standalone docs; migration complete
 
 ---
 
@@ -44,7 +44,7 @@ Design a toolset implementation that:
 
 ## Decision Drivers
 
-1. **No shell execution**: Core security requirement of BR-HAPI-433
+1. **No shell execution**: Core security requirement of BR-KA-433
 2. **Structured output**: JSON is more reliable for LLM reasoning than kubectl's text tables
 3. **Built-in size control**: client-go's `TailLines` and `LimitBytes` for logs, response size limits for Prometheus
 4. **Sanitization integration**: Tool output flows through the sanitization pipeline before reaching the LLM

@@ -27,7 +27,7 @@ type Stage interface {
 	Sanitize(ctx context.Context, input string) (string, error)
 }
 
-// Pipeline chains sanitization stages in order (G4 → I1 per DD-HAPI-019-003).
+// Pipeline chains sanitization stages in order (G4 → I1 per DD-KA-019-003).
 type Pipeline struct {
 	stages []Stage
 }

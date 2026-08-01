@@ -22,7 +22,7 @@ limitations under the License.
 // pkg/shared/llm/openaicompat, the same client the AI Frontend's launcher
 // wraps (DD-LLM-005). This file only translates between Kubernaut's
 // llm.Message/ChatRequest/ChatResponse and the shared package's neutral
-// types (DD-HAPI-019 Framework Isolation).
+// types (DD-KA-019 Framework Isolation).
 package openai
 
 import (
@@ -136,7 +136,7 @@ func (c *Client) Chat(ctx context.Context, req llm.ChatRequest) (llm.ChatRespons
 // permanent (400/401/403/404-class) StatusCode. Classification happens
 // here, at this package's own translation boundary, rather than in the
 // shared llm package, so the generic retry machinery never needs to
-// import a provider-specific error shape (DD-HAPI-019 Framework
+// import a provider-specific error shape (DD-KA-019 Framework
 // Isolation).
 func classifyErr(err error) error {
 	var apiErr *openaicompat.APIError

@@ -4,7 +4,7 @@
 **Priority**: P2
 **Owner**: KubernautAgent Team
 **Scope**: `pkg/kubernautagent/llm/types.go`, `pkg/kubernautagent/llm/anthropicfamily`, `pkg/kubernautagent/llm/openai`, `pkg/shared/llm/openaicompat`, `pkg/shared/types/llm.go`
-**Related**: [BR-AI-086](../../requirements/BR-AI-086-llm-reasoning-token-support.md), [DD-LLM-004](./DD-LLM-004-langchaingo-removal-generalized-clients.md), [DD-HAPI-019](./DD-HAPI-019-go-rewrite-design), Issue #1578, #1580, #1581, #1601, #1604
+**Related**: [BR-AI-086](../../requirements/BR-AI-086-llm-reasoning-token-support.md), [DD-LLM-004](./DD-LLM-004-langchaingo-removal-generalized-clients.md), [DD-KA-019](./DD-KA-019-go-rewrite-design), Issue #1578, #1580, #1581, #1601, #1604
 
 ---
 
@@ -38,7 +38,7 @@ google.golang.org/adk/model                        # only this one ADK package �
 google.golang.org/genai
 ```
 
-**Result**: the actual incremental cost is a ~89 KB binary size increase and one thin ADK *types* package (`adk/model`, defining `model.LLM`/`model.LLMRequest`/`model.LLMResponse` — not the agent, runner, session, memory, plugin, or A2A-server code AF depends on ADK for). This is a materially different, much smaller finding than "adopts the ADK framework," and does not implicate DD-HAPI-019's business-logic isolation rule either way — that rule concerns `investigator.go`/`tools/`/`result/`, not the adapter/client layer, which is exactly where framework-specific code is expected to live (see DD-HAPI-019-001's own langchaingo-adapter example).
+**Result**: the actual incremental cost is a ~89 KB binary size increase and one thin ADK *types* package (`adk/model`, defining `model.LLM`/`model.LLMRequest`/`model.LLMResponse` — not the agent, runner, session, memory, plugin, or A2A-server code AF depends on ADK for). This is a materially different, much smaller finding than "adopts the ADK framework," and does not implicate DD-KA-019's business-logic isolation rule either way — that rule concerns `investigator.go`/`tools/`/`result/`, not the adapter/client layer, which is exactly where framework-specific code is expected to live (see DD-KA-019-001's own langchaingo-adapter example).
 
 ## Alternatives Considered
 

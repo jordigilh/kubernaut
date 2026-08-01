@@ -4,7 +4,7 @@
 **Priority**: P2
 **Owner**: KubernautAgent Team
 **Scope**: `pkg/kubernautagent/llm/geminifamily` (new), `cmd/kubernautagent/llm_builder.go`
-**Related**: [DD-HAPI-019-001](./DD-HAPI-019-go-rewrite-design/DD-HAPI-019-001-framework-selection.md) (Framework Isolation Pattern), [DD-LLM-004](./DD-LLM-004-langchaingo-removal-generalized-clients.md) (langchaingo removal, shared OpenAI-compatible core), [DD-LLM-005](./DD-LLM-005-model-aware-reasoning-support.md) (reasoning/thinking support), [DD-LLM-007](./DD-LLM-007-af-ka-anthropic-client-divergence.md) (AF/KA Anthropic client divergence), [BR-AI-086](../../requirements/BR-AI-086-llm-reasoning-token-support.md), Issue #1778, #1792, #1793
+**Related**: [DD-KA-019-001](./DD-KA-019-go-rewrite-design/DD-KA-019-001-framework-selection.md) (Framework Isolation Pattern), [DD-LLM-004](./DD-LLM-004-langchaingo-removal-generalized-clients.md) (langchaingo removal, shared OpenAI-compatible core), [DD-LLM-005](./DD-LLM-005-model-aware-reasoning-support.md) (reasoning/thinking support), [DD-LLM-007](./DD-LLM-007-af-ka-anthropic-client-divergence.md) (AF/KA Anthropic client divergence), [BR-AI-086](../../requirements/BR-AI-086-llm-reasoning-token-support.md), Issue #1778, #1792, #1793
 
 ---
 

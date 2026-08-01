@@ -30,7 +30,7 @@ import (
 //
 // Thread Safety: Safe for concurrent use — clones the request before mutation.
 //
-// Authority: Issue #417, DD-HAPI-019-003 (G4: Credential Scrubbing)
+// Authority: Issue #417, DD-KA-019-003 (G4: Credential Scrubbing)
 type AuthHeadersTransport struct {
 	base    http.RoundTripper
 	headers []types.LLMHeaderDef
@@ -44,7 +44,7 @@ func NewAuthHeadersTransport(headers []types.LLMHeaderDef, base http.RoundTrippe
 }
 
 // NewAuthHeadersTransportWithLogger wraps a base transport with structured logging.
-// Header values are redacted in log output per DD-HAPI-019-003 (G4).
+// Header values are redacted in log output per DD-KA-019-003 (G4).
 func NewAuthHeadersTransportWithLogger(headers []types.LLMHeaderDef, base http.RoundTripper, logger logr.Logger) *AuthHeadersTransport {
 	if base == nil {
 		base = http.DefaultTransport

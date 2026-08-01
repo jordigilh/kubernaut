@@ -21,7 +21,7 @@ A separate Alertmanager client already exists in the Effectiveness Monitor servi
 Design the Alertmanager client integration for KA investigation tools that:
 - Returns raw JSON responses for direct LLM consumption
 - Supports the full Alertmanager v2 API query parameters (`active`, `silenced`, `inhibited`, `filter`, `receiver`)
-- Follows established tool registration patterns (DD-HAPI-019-002)
+- Follows established tool registration patterns (DD-KA-019-002)
 - Maintains local/remote tool symmetry with the K8s MCP server
 
 ---
@@ -58,7 +58,7 @@ func (c *Client) doGet(ctx context.Context, apiPath string, params url.Values) (
 - Independent lifecycle — no cross-service coupling
 - Supports all query parameters naturally
 - Clean testability (mock HTTP, not typed interface)
-- Consistent with DD-HAPI-019-002 tool design
+- Consistent with DD-KA-019-002 tool design
 
 **Cons**:
 - New package (~150 lines of client + tools code)
@@ -172,7 +172,7 @@ if cfg.Integrations.Tools.Alertmanager.URL != "" {
 
 ## Related Decisions
 
-- **Builds on**: DD-HAPI-019-002 (Toolset Implementation Design)
+- **Builds on**: DD-KA-019-002 (Toolset Implementation Design)
 - **Supports**: BR-KA-TOOLSET-001 (Node + Alertmanager toolset expansion)
 - **Pattern reference**: `pkg/kubernautagent/tools/prometheus/` (Client + Tools structure)
 

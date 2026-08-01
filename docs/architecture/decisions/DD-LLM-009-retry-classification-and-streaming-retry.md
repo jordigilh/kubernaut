@@ -4,7 +4,7 @@
 **Priority**: P1
 **Owner**: KubernautAgent Team
 **Scope**: `pkg/kubernautagent/llm/chat_helpers.go`, `pkg/kubernautagent/llm/anthropicfamily/client.go`, `pkg/kubernautagent/llm/openai/client.go`, `pkg/shared/llm/openaicompat/client.go`, `internal/kubernautagent/investigator/investigator_loop.go`
-**Related**: [DD-KA-019](./DD-HAPI-019-go-rewrite-design/DD-HAPI-019-go-rewrite-design.md) (Framework Isolation), [DD-LLM-008](./DD-LLM-008-restart-required-llm-identity-lock.md), Issue #1612, Issue #1585
+**Related**: [DD-KA-019](./DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md) (Framework Isolation), [DD-LLM-008](./DD-LLM-008-restart-required-llm-identity-lock.md), Issue #1612, Issue #1585
 
 ---
 

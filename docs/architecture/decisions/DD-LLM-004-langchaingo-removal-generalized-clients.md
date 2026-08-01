@@ -4,7 +4,7 @@
 **Priority**: P2
 **Owner**: KubernautAgent Team
 **Scope**: `pkg/kubernautagent/llm/*`, `pkg/shared/llm/*`, `pkg/apifrontend/launcher/openai/*`, `cmd/kubernautagent/llm_builder.go`
-**Related**: [BR-AI-086](../../requirements/BR-AI-086-llm-reasoning-token-support.md), [DD-LLM-005](./DD-LLM-005-model-aware-reasoning-support.md), [DD-LLM-006](./DD-LLM-006-bedrock-dual-client-routing.md), [DD-HAPI-019](./DD-HAPI-019-go-rewrite-design) (Framework Isolation Pattern), Issue #1580, #1581
+**Related**: [BR-AI-086](../../requirements/BR-AI-086-llm-reasoning-token-support.md), [DD-LLM-005](./DD-LLM-005-model-aware-reasoning-support.md), [DD-LLM-006](./DD-LLM-006-bedrock-dual-client-routing.md), [DD-KA-019](./DD-KA-019-go-rewrite-design) (Framework Isolation Pattern), Issue #1580, #1581
 
 ---
 
@@ -61,7 +61,7 @@ Separately, `pkg/apifrontend/launcher/openai/adapter.go` (AF) already proves a p
 - Refactoring AF's production adapter carries regression risk — mitigated by keeping AF's existing 11-test suite green throughout as the primary regression gate, plus a new minimal-capability fixture (DD-LLM-005) as a second, local-model-oriented regression gate.
 
 ## Related Decisions
-- **Builds on**: DD-HAPI-019 (Framework Isolation Pattern — `llm.Client` must not leak provider-framework types into business logic)
+- **Builds on**: DD-KA-019 (Framework Isolation Pattern — `llm.Client` must not leak provider-framework types into business logic)
 - **Paired with**: DD-LLM-005 (reasoning support is the primary motivator, implemented on top of this generalization)
 - **Enables**: DD-LLM-006 (Bedrock support reuses both resulting clients with zero new protocol code)
 

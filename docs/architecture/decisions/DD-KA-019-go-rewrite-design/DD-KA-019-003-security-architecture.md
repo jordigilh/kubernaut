@@ -1,4 +1,4 @@
-# DD-HAPI-019-003: Prompt Injection Security Architecture
+# DD-KA-019-003: Prompt Injection Security Architecture
 
 **Status**: ✅ Approved
 **Decision Date**: 2026-03-04
@@ -8,7 +8,7 @@
 **Applies To**: Kubernaut Agent
 
 **Related Business Requirements**:
-- BR-HAPI-433-004 (Security Requirements) — retired as a standalone doc; migration complete
+- BR-KA-433-004 (formerly BR-HAPI-433-004, Security Requirements) — retired as a standalone doc; migration complete
 - [BR-KA-211: LLM Input Sanitization](../../../requirements/BR-KA-211-llm-input-sanitization.md)
 
 ---
@@ -220,7 +220,7 @@ Phase transitions are controlled by the investigator loop based on conversation 
 | JSON Schema | LLM response must match `InvestigationResult` schema |
 | Workflow ID allowlist | Only workflow IDs returned by `list_workflows` in the current session are valid |
 | Parameter bounds | Numeric parameters within schema-defined ranges, string lengths bounded |
-| Self-correction | Up to 3 validation attempts. On failure, flag for human review (BR-HAPI-197). |
+| Self-correction | Up to 3 validation attempts. On failure, flag for human review (BR-KA-197). |
 
 #### I7: Behavioral Anomaly Detection
 
@@ -300,7 +300,7 @@ The v1.3 architecture is designed to make CaMeL integration straightforward:
 
 ## References
 
-- BR-HAPI-433-004 (Security Requirements) — retired as a standalone doc; migration complete
+- BR-KA-433-004 (formerly BR-HAPI-433-004, Security Requirements) — retired as a standalone doc; migration complete
 - [BR-KA-211: LLM Input Sanitization](../../../requirements/BR-KA-211-llm-input-sanitization.md)
 - [DD-KA-005: LLM Input Sanitization](../DD-KA-005-llm-input-sanitization.md)
 

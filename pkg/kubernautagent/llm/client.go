@@ -43,7 +43,7 @@ func NewLLMClient(baseURL string, headers []types.LLMHeaderDef) (*http.Client, e
 
 // NewLLMClientWithLogger creates an http.Client with custom authentication headers
 // and structured logging. Header injection events are logged with sensitive values
-// redacted per DD-HAPI-019-003 (G4: Credential Scrubbing).
+// redacted per DD-KA-019-003 (G4: Credential Scrubbing).
 func NewLLMClientWithLogger(baseURL string, headers []types.LLMHeaderDef, logger logr.Logger) (*http.Client, error) {
 	rt := transport.NewAuthHeadersTransportWithLogger(headers, http.DefaultTransport, logger)
 	return &http.Client{Transport: rt, Timeout: llmClientTimeout}, nil

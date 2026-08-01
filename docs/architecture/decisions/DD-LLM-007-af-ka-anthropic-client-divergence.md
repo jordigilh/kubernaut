@@ -4,7 +4,7 @@
 **Priority**: P3 (documentation of existing architecture, no code change)
 **Owner**: KubernautAgent Team
 **Scope**: `pkg/kubernautagent/llm/anthropicfamily`, `pkg/apifrontend/launcher/model.go`
-**Related**: [DD-HAPI-019-001](./DD-HAPI-019-go-rewrite-design/DD-HAPI-019-001-framework-selection.md) (Framework Isolation Pattern), [DD-LLM-004](./DD-LLM-004-langchaingo-removal-generalized-clients.md) (langchaingo removal, shared OpenAI-compatible core), [DD-LLM-005](./DD-LLM-005-model-aware-reasoning-support.md) (reasoning/thinking support), [BR-AI-086](../../requirements/BR-AI-086-llm-reasoning-token-support.md), Issue #1578, #1601
+**Related**: [DD-KA-019-001](./DD-KA-019-go-rewrite-design/DD-KA-019-001-framework-selection.md) (Framework Isolation Pattern), [DD-LLM-004](./DD-LLM-004-langchaingo-removal-generalized-clients.md) (langchaingo removal, shared OpenAI-compatible core), [DD-LLM-005](./DD-LLM-005-model-aware-reasoning-support.md) (reasoning/thinking support), [BR-AI-086](../../requirements/BR-AI-086-llm-reasoning-token-support.md), Issue #1578, #1601
 
 ---
 

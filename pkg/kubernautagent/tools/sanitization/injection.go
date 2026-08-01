@@ -22,7 +22,7 @@ import (
 	"strings"
 )
 
-// InjectionSanitizer strips prompt injection patterns from tool output (I1 per DD-HAPI-019-003).
+// InjectionSanitizer strips prompt injection patterns from tool output (I1 per DD-KA-019-003).
 // Each matching line or segment is removed entirely; surrounding context is preserved.
 type InjectionSanitizer struct {
 	patterns []*regexp.Regexp
@@ -36,7 +36,7 @@ func NewInjectionSanitizer(patterns []*regexp.Regexp) *InjectionSanitizer {
 	return &InjectionSanitizer{patterns: patterns}
 }
 
-// defaultInjectionPatterns are the production I1 patterns per DD-HAPI-019-003,
+// defaultInjectionPatterns are the production I1 patterns per DD-KA-019-003,
 // compiled once at package init to avoid per-call regex compilation overhead.
 //
 // Pattern categories:
@@ -63,7 +63,7 @@ var defaultInjectionPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`#{4,}\s+[A-Z]`),
 }
 
-// DefaultInjectionPatterns returns the production I1 patterns per DD-HAPI-019-003.
+// DefaultInjectionPatterns returns the production I1 patterns per DD-KA-019-003.
 // The returned slice is a copy so callers cannot mutate the package-level patterns.
 func DefaultInjectionPatterns() []*regexp.Regexp {
 	out := make([]*regexp.Regexp, len(defaultInjectionPatterns))

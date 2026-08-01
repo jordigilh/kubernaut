@@ -283,7 +283,7 @@ grep -r "password=\|secret:\|Bearer " audit_events.json
 | Document | Relationship |
 |----------|--------------|
 | [BR-KA-211](../../requirements/BR-KA-211-llm-input-sanitization.md) | Business requirement |
-| [DD-HAPI-019-003](DD-HAPI-019-go-rewrite-design/DD-HAPI-019-003-security-architecture.md) | Go rewrite security architecture (G4/I1 pipeline design authority) |
+| [DD-KA-019-003](DD-KA-019-go-rewrite-design/DD-KA-019-003-security-architecture.md) | Go rewrite security architecture (G4/I1 pipeline design authority) |
 | [DD-KA-003](DD-KA-003-mandatory-openapi-client-usage.md) | Unrelated — OpenAPI client pristine-ness (previously mis-cited alongside this DD in `DD-AUTH-005`, corrected) |
 | `pkg/shared/sanitization/` | Shared Go pattern library (also used by Gateway `BR-GATEWAY-042`, Notification `BR-NOT-055`) |
 | `pkg/kubernautagent/tools/sanitization/` | KA-specific pipeline stages |

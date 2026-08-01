@@ -22,7 +22,7 @@ import "github.com/jordigilh/kubernaut/pkg/shared/types"
 // source (secretKeyRef or filePath). Value-sourced headers are considered
 // non-sensitive since they are placed in plaintext config by the operator.
 //
-// Authority: DD-HAPI-019-003 (G4: Credential Scrubbing)
+// Authority: DD-KA-019-003 (G4: Credential Scrubbing)
 func IsSensitiveSource(def types.LLMHeaderDef) bool {
 	return def.SecretKeyRef != "" || def.FilePath != ""
 }
@@ -30,7 +30,7 @@ func IsSensitiveSource(def types.LLMHeaderDef) bool {
 // RedactHeaderValue returns "[REDACTED]" if sensitive is true, otherwise
 // returns the original value. Used for log output, error messages, and metrics labels.
 //
-// Authority: DD-HAPI-019-003 (G4: Credential Scrubbing)
+// Authority: DD-KA-019-003 (G4: Credential Scrubbing)
 func RedactHeaderValue(value string, sensitive bool) string {
 	if sensitive {
 		return "[REDACTED]"

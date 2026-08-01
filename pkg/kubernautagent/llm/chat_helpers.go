@@ -110,7 +110,7 @@ func RetryWithBackoff[T any](ctx context.Context, maxAttempts int, bo backoff.Co
 // classify their own SDK-specific errors at the translation boundary they
 // already own and call MarkNonRetryable — the generic retry machinery in
 // this file never needs to know about provider-specific error shapes
-// (DD-HAPI-019 Framework Isolation).
+// (DD-KA-019 Framework Isolation).
 type nonRetryableError struct {
 	err error
 }

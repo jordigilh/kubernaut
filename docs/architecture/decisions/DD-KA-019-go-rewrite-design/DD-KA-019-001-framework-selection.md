@@ -1,4 +1,4 @@
-# DD-HAPI-019-001: LLM Framework Selection
+# DD-KA-019-001: LLM Framework Selection
 
 **Status**: ✅ Approved
 **Decision Date**: 2026-03-04
@@ -8,7 +8,7 @@
 **Applies To**: Kubernaut Agent
 
 **Related Business Requirements**:
-- BR-HAPI-433-001 (Framework Evaluation) — retired as a standalone doc set; migration complete
+- BR-KA-433-001 (formerly BR-HAPI-433-001, Framework Evaluation) — retired as a standalone doc set; migration complete
 
 ---
 
@@ -24,7 +24,7 @@
 
 ## Context & Problem
 
-The HAPI Go rewrite (BR-HAPI-433) requires a Go LLM framework to replace HolmesGPT's Python SDK. The framework must provide multi-provider LLM access and tool calling support while remaining lean enough to meet the security motivation (reduced dependency attack surface).
+The KA Go rewrite (BR-KA-433) requires a Go LLM framework to replace HolmesGPT's Python SDK. The framework must provide multi-provider LLM access and tool calling support while remaining lean enough to meet the security motivation (reduced dependency attack surface).
 
 ### Constraints
 

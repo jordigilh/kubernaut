@@ -22,7 +22,7 @@ import (
 )
 
 // Tool is the interface that all Kubernaut Agent tools must implement.
-// Authority: DD-HAPI-019-002 — Toolset Implementation
+// Authority: DD-KA-019-002 — Toolset Implementation
 type Tool interface {
 	Name() string
 	Description() string

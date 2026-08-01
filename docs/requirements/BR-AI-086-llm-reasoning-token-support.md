@@ -8,7 +8,7 @@
 **Date**: 2026-07-06
 
 **Related Design Decisions**:
-- [DD-HAPI-019: Framework Isolation Pattern (Go rewrite design)](../architecture/decisions/DD-HAPI-019-go-rewrite-design)
+- [DD-KA-019: Framework Isolation Pattern (Go rewrite design)](../architecture/decisions/DD-KA-019-go-rewrite-design)
 - [DD-LLM-004: Generalized Anthropic-Family Client and OpenAI-Compatible Client (langchaingo removal)](../architecture/decisions/DD-LLM-004-langchaingo-removal-generalized-clients.md)
 - [DD-LLM-005: Model-Aware Reasoning/Thinking Token Support](../architecture/decisions/DD-LLM-005-model-aware-reasoning-support.md)
 - [DD-LLM-006: AWS Bedrock Provider Support via Dual-Client Routing](../architecture/decisions/DD-LLM-006-bedrock-dual-client-routing.md)
@@ -38,7 +38,7 @@ Add opt-in, model-aware reasoning/thinking token support across every LLM provid
 
 ## Acceptance Criteria
 
-1. `llm.ChatOptions` and `llm.Message` (`pkg/kubernautagent/llm/types.go`) expose provider-agnostic reasoning fields (opaque signature/redaction support, visible text) — business logic in `internal/kubernautagent/investigator/*` remains completely unaware of provider-specific reasoning wire formats (DD-HAPI-019).
+1. `llm.ChatOptions` and `llm.Message` (`pkg/kubernautagent/llm/types.go`) expose provider-agnostic reasoning fields (opaque signature/redaction support, visible text) — business logic in `internal/kubernautagent/investigator/*` remains completely unaware of provider-specific reasoning wire formats (DD-KA-019).
 2. Reasoning defaults to **disabled** (`Enabled: false`) for every provider/model until an explicit operator opt-in, and unsupported/unknown models skip the reasoning parameter rather than erroring.
 3. Where enabled and supported, reasoning content (including any required opaque signature) is correctly round-tripped across:
    - Self-correction retries within a phase (mutated-in-place message history, `internal/kubernautagent/investigator/investigator_workflow_selection.go`)

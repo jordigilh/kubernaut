@@ -33,7 +33,7 @@ type AnomalyConfig struct {
 	ExemptPrefixes      []string `yaml:"exemptPrefixes"`
 }
 
-// DefaultAnomalyConfig returns production defaults per DD-HAPI-019-003.
+// DefaultAnomalyConfig returns production defaults per DD-KA-019-003.
 // MaxToolCallsPerTool raised from 5 to 10 per #860 to accommodate
 // workflow discovery pagination (DD-WORKFLOW-016).
 // ExemptPrefixes includes "todo_" per #770: internal planning tools should
@@ -174,7 +174,7 @@ func (d *AnomalyDetector) TotalExceeded() bool {
 // Reset clears all accumulated counters (total calls, per-tool calls, failure
 // tracker) while preserving config thresholds and suspicious patterns. Called
 // at the start of each Investigate() session (#770) and between phases (RCA →
-// workflow selection) per DD-HAPI-019-003.
+// workflow selection) per DD-KA-019-003.
 func (d *AnomalyDetector) Reset() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
