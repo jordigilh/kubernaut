@@ -576,7 +576,7 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 	// investigator.Config{} without the field set) via the actual
 	// production entry points (Investigate/RunInteractiveTurn), not a
 	// hand-constructed *Investigator struct literal.
-	Describe("IT-KA-FLEET-024 [AU-3, GA Readiness Dim. 12]: an unconfigured FleetOverlayResolver is observable through the production entry points", func() {
+	Describe("IT-KA-FLEET-029 [AU-3, GA Readiness Dim. 12]: an unconfigured FleetOverlayResolver is observable through the production entry points", func() {
 		It("Investigate() emits EventTypeFleetOverlayUnavailable for a fleet-target investigation when FleetOverlayResolver is unset", func() {
 			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
 				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
@@ -608,7 +608,7 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 				RemediationID: "rem-fleet-overlay-unavailable-001",
 			})
 			Expect(err).NotTo(HaveOccurred(),
-				"IT-KA-FLEET-024: an unconfigured fleet resolver must fail open through the real "+
+				"IT-KA-FLEET-029: an unconfigured fleet resolver must fail open through the real "+
 					"Investigate() entry point too, exactly like a resolver error does (IT-KA-FLEET-020)")
 
 			var unavailableEvents []*audit.AuditEvent
@@ -618,7 +618,7 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 				}
 			}
 			Expect(unavailableEvents).To(HaveLen(1),
-				"IT-KA-FLEET-024: Investigate() must record exactly one EventTypeFleetOverlayUnavailable "+
+				"IT-KA-FLEET-029: Investigate() must record exactly one EventTypeFleetOverlayUnavailable "+
 					"audit event when it reaches an unconfigured FleetOverlayResolver, proving the wiring "+
 					"(not just the unit-level decision function) is observable end-to-end")
 			Expect(unavailableEvents[0].EventAction).To(Equal(audit.ActionFleetOverlayUnavailable))
@@ -658,7 +658,7 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 				}
 			}
 			Expect(unavailableEvents).To(HaveLen(1),
-				"IT-KA-FLEET-024: RunInteractiveTurn must record exactly one "+
+				"IT-KA-FLEET-029: RunInteractiveTurn must record exactly one "+
 					"EventTypeFleetOverlayUnavailable audit event for a fleet-target interactive turn "+
 					"reaching an unconfigured FleetOverlayResolver")
 			Expect(unavailableEvents[0].ClusterID).To(Equal("remote-east"))
@@ -695,7 +695,7 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 			Expect(err).NotTo(HaveOccurred())
 			for _, ev := range auditStore.events {
 				Expect(ev.EventType).NotTo(Equal(audit.EventTypeFleetOverlayUnavailable),
-					"IT-KA-FLEET-024: a hub-local investigation (no target cluster) must stay silent "+
+					"IT-KA-FLEET-029: a hub-local investigation (no target cluster) must stay silent "+
 						"even with FleetOverlayResolver unset -- this is the expected, unchanged "+
 						"zero-regression path for the overwhelming majority of (non-fleet) deployments")
 			}
