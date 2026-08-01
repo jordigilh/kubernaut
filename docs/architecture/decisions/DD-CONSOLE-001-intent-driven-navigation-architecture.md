@@ -3,7 +3,7 @@
 **Date**: 2026-04-27  
 **Status**: 📝 Draft  
 **Target Version**: v1.5  
-**Related**: #855, #856, DD-PLAYBOOK-010, #874 (MCP Interactive Flow)
+**Related**: #855, #856, DD-WORKFLOW-010, #874 (MCP Interactive Flow)
 
 ---
 
@@ -506,4 +506,4 @@ When the AI backend is unavailable, the console must remain functional:
 - #855: Enhancement Proposal: Kubernaut Console — Backstage Plugin
 - #856: feat(console): NL-first interaction model with intent-driven navigation
 - #874: v1.5: Agentic Integration — End-to-End MCP Interactive Flow
-- DD-PLAYBOOK-010: MCP Playbook Catalog Integration
+- DD-WORKFLOW-010: MCP Workflow Catalog Integration

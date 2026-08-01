@@ -140,7 +140,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// ========================================
 			// ASSERT
 			// ========================================
-			// BR-HAPI-197 + BR-HAPI-198: KA returns confidence but does NOT enforce thresholds
+			// BR-KA-197 + BR-AI-088: KA returns confidence but does NOT enforce thresholds
 			// AIAnalysis owns the threshold logic (70% in V1.0, configurable in V1.1)
 			Expect(incidentResp.NeedsHumanReview.Value).To(BeFalse(),
 				"KA should NOT set needs_human_review based on confidence thresholds (BR-HAPI-197)")

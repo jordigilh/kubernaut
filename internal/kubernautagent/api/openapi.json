@@ -637,69 +637,6 @@
           }
         }
       }
-    },
-    "/healthz": {
-      "get": {
-        "tags": [
-          "Health"
-        ],
-        "summary": "Health Check",
-        "description": "Liveness probe endpoint. Served on the dedicated health port (:8081), not the API port.\n\nBusiness Requirement: BR-HAPI-126 (Health check endpoint)",
-        "operationId": "health_check_healthz_get",
-        "x-port": 8081,
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/readyz": {
-      "get": {
-        "tags": [
-          "Health"
-        ],
-        "summary": "Readiness Check",
-        "description": "Readiness probe endpoint. Served on the dedicated health port (:8081), not the API port.\n\nBusiness Requirements:\n- BR-HAPI-127 (Readiness check endpoint)\n- BR-HAPI-201 (Graceful shutdown with DD-007 pattern)",
-        "operationId": "readiness_check_readyz_get",
-        "x-port": 8081,
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
-    },
-    "/config": {
-      "get": {
-        "tags": [
-          "Health"
-        ],
-        "summary": "Get Config",
-        "description": "Get service configuration (sanitized). Served on the dedicated health port (:8081), not the API port.\n\nBusiness Requirement: BR-HAPI-128 (Configuration endpoint)",
-        "operationId": "get_config_config_get",
-        "x-port": 8081,
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {

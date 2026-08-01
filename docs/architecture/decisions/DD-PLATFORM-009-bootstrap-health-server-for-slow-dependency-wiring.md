@@ -6,7 +6,7 @@
 **Last Reviewed**: July 28, 2026
 **Related**: DD-PLATFORM-008 (`startupProbe` for fleet-aware services), Issue #54,
 DD-TEST-015 (Fleet E2E "deploy correctly the first time"), `pkg/shared/health`,
-`cmd/fleetmetadatacache/main.go`
+`cmd/fleetmetadatacache/main.go`, Issue #1729 (`cmd/kubernautagent/main.go`)
 
 ---
 
@@ -145,6 +145,22 @@ FMC's window is covered.
   validation) is the proving journey for both fixes -- FMC's and Gateway's
   health ports now answer throughout their dependency-wiring windows
   instead of refusing connections.
+- **Third application (Issue #1729, `cmd/kubernautagent/main.go`)**:
+  `kubernaut-agent`'s `initializeAgent()` builds `registerFleetTools()`'s
+  fleet MCP Gateway connection (same `mcpclient.NewResilient` shape as
+  Gateway/FMC) *before* `startHealthAndMetricsServers()` binds the health
+  port -- previously masked because, before #1729's Helm-wiring fix, KA's
+  fleet client was always a no-op (`gatewayType`/`endpoint` unset -> immediate
+  `nil, nil` return, zero blocking) since Helm never actually rendered
+  `kubernautAgent.fleet`. Once #1729 wires real fleet config through, this
+  same crash-loop shape reproduced in CI (`E2E (fleet)`:
+  "kubernaut-agent not ready after 6m0s"). Fixed identically: `run()`'s
+  `main()` now calls `startBootstrapHealthServer`/`stopBootstrapHealthServer`
+  (mirroring `cmd/gateway/main.go`'s helpers of the same name) around
+  `initializeAgent()`. Validated: `go build ./...` clean; `go test
+  ./pkg/shared/health/... ./cmd/kubernautagent/...` passing; `golangci-lint
+  run ./cmd/kubernautagent/...` clean; the Fleet E2E re-run (PR #1820) is the
+  proving journey.
 
 ## 🔗 Related Decisions
 

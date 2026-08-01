@@ -116,7 +116,7 @@ type PolicyInput struct {
 
 	// #225: Operator-configurable confidence threshold for auto-approval.
 	// When nil, the Rego policy uses its built-in default (0.8).
-	// Stepping stone toward BR-HAPI-198 (V1.1 rule-based thresholds).
+	// Stepping stone toward BR-AI-088 (V1.1 rule-based thresholds).
 	ConfidenceThreshold *float64 `json:"confidence_threshold,omitempty"`
 
 	// Identity carries the acting user's identity for interactive sessions.

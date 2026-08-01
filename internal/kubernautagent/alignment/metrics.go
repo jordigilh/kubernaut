@@ -23,28 +23,28 @@ import (
 
 var (
 	alignmentVerdictTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "kubernaut",
+		Namespace: "aiagent",
 		Subsystem: "alignment",
 		Name:      "verdict_total",
 		Help:      "Total alignment verdicts by result (aligned, suspicious) and mode (enforce, monitor).",
 	}, []string{"result", "mode"})
 
 	alignmentStepTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "kubernaut",
+		Namespace: "aiagent",
 		Subsystem: "alignment",
 		Name:      "step_total",
 		Help:      "Total alignment steps evaluated by outcome (aligned, suspicious, panic).",
 	}, []string{"outcome"})
 
 	alignmentCanaryTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "kubernaut",
+		Namespace: "aiagent",
 		Subsystem: "alignment",
 		Name:      "canary_total",
 		Help:      "Total canary checks by result (pass, fail).",
 	}, []string{"result"})
 
 	alignmentVerdictDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "kubernaut",
+		Namespace: "aiagent",
 		Subsystem: "alignment",
 		Name:      "verdict_duration_seconds",
 		Help:      "Time from canary start to verdict completion in seconds.",
@@ -52,28 +52,28 @@ var (
 	})
 
 	alignmentShadowAuditTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "kubernaut",
+		Namespace: "aiagent",
 		Subsystem: "alignment",
 		Name:      "shadow_audit_total",
 		Help:      "Total shadow LLM audit events emitted by event_type (request, response).",
 	}, []string{"event_type"})
 
 	alignmentCircuitBreakerTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "kubernaut",
+		Namespace: "aiagent",
 		Subsystem: "alignment",
 		Name:      "circuit_breaker_total",
 		Help:      "Total circuit breaker activations by mode (enforce).",
 	}, []string{"mode"})
 
 	alignmentGroundingTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "kubernaut",
+		Namespace: "aiagent",
 		Subsystem: "alignment",
 		Name:      "grounding_total",
 		Help:      "Total grounding reviews by result (grounded, ungrounded, error, timeout, disabled).",
 	}, []string{"result"})
 
 	alignmentGroundingDuration = promauto.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "kubernaut",
+		Namespace: "aiagent",
 		Subsystem: "alignment",
 		Name:      "grounding_duration_seconds",
 		Help:      "Time taken by the full-context grounding review in seconds.",

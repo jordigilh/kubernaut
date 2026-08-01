@@ -30,7 +30,7 @@
 **Historical success rate**: confirmed excluded from scoring (as this document originally intended), but more thoroughly than described below — the "human display only" telemetry fields (`TotalExecutions`, `SuccessfulExecutions`, `ActualSuccessRate`) were deleted from the workflow catalog model entirely, not merely excluded from the confidence formula (see [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md)).
 
 **Approval thresholds — two gates, not one**:
-- **Gate 1 (hard floor, Go, non-configurable in V1.0)**: AIAnalysis rejects workflow resolution before Rego ever runs if `confidence < 0.7` ([BR-KA-197](../../requirements/BR-KA-197-needs-human-review-field.md) AC-4, `pkg/aianalysis/handlers/response_processor.go`). A TODO in the code notes this should become configurable per [BR-KA-198](../../requirements/BR-KA-198-configurable-confidence-thresholds.md) in V1.1.
+- **Gate 1 (hard floor, Go, non-configurable in V1.0)**: AIAnalysis rejects workflow resolution before Rego ever runs if `confidence < 0.7` ([BR-KA-197](../../requirements/BR-KA-197-needs-human-review-field.md) AC-4, `pkg/aianalysis/handlers/response_processor.go`). A TODO in the code notes this should become configurable per [BR-AI-088](../../requirements/BR-AI-088-configurable-confidence-thresholds.md) in V1.1.
 - **Gate 2 (soft, Rego, operator-configurable)**: if Gate 1 passes, AIAnalysis forwards `confidence` to whatever Rego policy the operator deploys via Helm (`aianalysis.policies.content`). The repository's reference/test policy (`pkg/aianalysis/testdata/policies/approval.rego`, referenced by [REGO_POLICY_EXAMPLES.md](../../services/crd-controllers/02-aianalysis/REGO_POLICY_EXAMPLES.md)) defaults `confidence_threshold` to 0.80, overridable via `input.confidence_threshold`.
 - **"Production always requires approval regardless of confidence" is no longer accurate.** In the reference policy, production only forces approval when confidence is below threshold, the target is a sensitive kind (`Node`/`StatefulSet`), the action is infrastructure-provisioning, or the target is missing — a high-confidence, non-sensitive production workflow can auto-approve. This is policy-defined, not hardcoded, so it is technically deployment-specific, but the shipped reference implementation diverges from this document's original "always" claim.
 
@@ -90,7 +90,7 @@ The `rationale`/reasoning explanation is still expected to explain the confidenc
 - **[DD-WORKFLOW-004](DD-WORKFLOW-004-hybrid-weighted-label-scoring.md)**: Hybrid weighted label scoring (the catalog-ranking heuristic, distinct from `Confidence`)
 - **[DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md)**: KA-owned workflow discovery (confirms removal of success-rate telemetry)
 - **[BR-KA-197](../../requirements/BR-KA-197-needs-human-review-field.md)**: Needs-human-review field (AC-4, the 0.7 hard floor)
-- **[BR-KA-198](../../requirements/BR-KA-198-configurable-confidence-thresholds.md)**: Configurable confidence thresholds (V1.1 TODO to make the 0.7 floor configurable)
+- **[BR-AI-088](../../requirements/BR-AI-088-configurable-confidence-thresholds.md)**: Configurable confidence thresholds (V1.1 TODO to make the 0.7 floor configurable; re-scoped from `BR-KA-198` to the AIAnalysis prefix)
 - **[REGO_POLICY_EXAMPLES.md](../../services/crd-controllers/02-aianalysis/REGO_POLICY_EXAMPLES.md)**: Points to `pkg/aianalysis/testdata/policies/approval.rego` as the canonical reference policy
 - **DD-WORKFLOW-001**: Mandatory label schema
 

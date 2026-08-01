@@ -385,6 +385,96 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 		})
 	})
 
+	// Issue #1729 (DD-FLEET-004 tool-transparency gap): toolDefinitionsForPhase
+	// previously only ever *overrode* an existing local-registry tool entry
+	// with the overlay's BridgeTool when both shared the exact same name (see
+	// IT-KA-FLEET-015 above) -- it never added an overlay tool that had no
+	// local-registry namesake at all. kube-mcp-server's own tool naming
+	// convention (resources_get/resources_list/..., see
+	// pkg/fleet/mcpclient/tool_names.go) never collides with KA's local
+	// k8s-tool naming convention (kubectl_get_by_name/kubectl_list/...), so in
+	// practice this meant fleet-only tools were silently never advertised to
+	// the LLM at all -- present in the resolved overlay, invisible in the
+	// schema, permanently unreachable regardless of Helm/gateway wiring.
+	Describe("IT-KA-FLEET-024 [AC-6]: overlay tools with no local-registry namesake are appended to the RCA-phase tool schema", func() {
+		It("includes a fleet-only overlay tool name in the RCA-phase schema for a fleet-target investigation", func() {
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
+				"resources_get": &fakeTool{name: "resources_get", result: `{"source":"remote-cluster-east"}`},
+			}}
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
+				{
+					Message:   llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{{ID: "tc_wf1", Name: "list_available_actions", Arguments: `{}`}},
+				},
+				{
+					Message: llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_submit", Name: "submit_result_no_workflow", Arguments: `{"root_cause_analysis":{"summary":"OOMKilled"},"reasoning":"none"}`},
+					},
+				},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: registry.New(),
+				FleetOverlayResolver: spy,
+			})
+
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api-server-abc", Namespace: "production", ClusterID: "remote-east",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(mockClient.calls).NotTo(BeEmpty())
+			Expect(toolNamesFromCall(mockClient.calls[0])).To(ContainElement("resources_get"),
+				"IT-KA-FLEET-024: a fleet-only overlay tool with no local-registry namesake must still be "+
+					"advertised to the LLM for a fleet-target investigation -- otherwise it is discoverable "+
+					"by executeResolved but permanently uncallable because the LLM never learns it exists")
+		})
+
+		It("never advertises the fleet-only tool name for a hub-local investigation (no overlay resolved)", func() {
+			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{
+				"resources_get": &fakeTool{name: "resources_get", result: `{"source":"remote-cluster-east"}`},
+			}}
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
+				{
+					Message:   llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{{ID: "tc_wf1", Name: "list_available_actions", Arguments: `{}`}},
+				},
+				{
+					Message: llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_submit", Name: "submit_result_no_workflow", Arguments: `{"root_cause_analysis":{"summary":"OOMKilled"},"reasoning":"none"}`},
+					},
+				},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: registry.New(),
+				FleetOverlayResolver: spy,
+			})
+
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api-server-abc", Namespace: "production",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(mockClient.calls).NotTo(BeEmpty())
+			Expect(toolNamesFromCall(mockClient.calls[0])).NotTo(ContainElement("resources_get"),
+				"IT-KA-FLEET-024: a hub-local investigation never resolves an overlay, so no fleet-only "+
+					"tool name may leak into the schema -- zero behavior change for non-fleet deployments")
+		})
+	})
+
 	Describe("IT-KA-FLEET-017 [AC-4/AC-6]: RCA phase never exposes the removed discovery tools", func() {
 		It("never lists list_clusters or list_tools_for_cluster in the RCA phase tool schema, fleet-configured or not", func() {
 			spy := &fleetOverlayResolverSpy{overlay: map[string]tools.Tool{"kubectl_get_by_name": &fakeTool{name: "kubectl_get_by_name", result: "{}"}}}

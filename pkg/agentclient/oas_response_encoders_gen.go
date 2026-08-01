@@ -58,38 +58,6 @@ func encodeCancelSessionAPIV1IncidentSessionSessionIDCancelPostResponse(response
 	}
 }
 
-func encodeGetConfigConfigGetResponse(response jx.Raw, w http.ResponseWriter, span trace.Span) error {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
-
-	e := new(jx.Encoder)
-	if len(response) != 0 {
-		e.Raw(response)
-	}
-	if _, err := e.WriteTo(w); err != nil {
-		return errors.Wrap(err, "write")
-	}
-
-	return nil
-}
-
-func encodeHealthCheckHealthzGetResponse(response jx.Raw, w http.ResponseWriter, span trace.Span) error {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
-
-	e := new(jx.Encoder)
-	if len(response) != 0 {
-		e.Raw(response)
-	}
-	if _, err := e.WriteTo(w); err != nil {
-		return errors.Wrap(err, "write")
-	}
-
-	return nil
-}
-
 func encodeIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostResponse(response IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
 	case *AnalyzeAccepted:
@@ -369,22 +337,6 @@ func encodeIncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetResponse
 	default:
 		return errors.Errorf("unexpected response type: %T", response)
 	}
-}
-
-func encodeReadinessCheckReadyzGetResponse(response jx.Raw, w http.ResponseWriter, span trace.Span) error {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
-
-	e := new(jx.Encoder)
-	if len(response) != 0 {
-		e.Raw(response)
-	}
-	if _, err := e.WriteTo(w); err != nil {
-		return errors.Wrap(err, "write")
-	}
-
-	return nil
 }
 
 func encodeSessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetResponse(response SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGetRes, w http.ResponseWriter, span trace.Span) error {

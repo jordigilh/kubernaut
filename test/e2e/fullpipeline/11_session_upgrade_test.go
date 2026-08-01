@@ -86,13 +86,24 @@ var _ = Describe("E2E-FP-1390-001: Session Upgrade Journey", Label("e2e", "fullp
 		}, timeout, 200*time.Millisecond).Should(BeTrue())
 
 		By("verifying AA upgrades to Interactive=true without cancel")
+		// #1713: this assertion gets its own, much shorter timeout rather
+		// than the package's 10-minute `timeout` (sized for real-LLM calls
+		// elsewhere in this suite). Setting Interactive=true is a fast,
+		// local in-cluster status update (BR-INTERACTIVE-010) with no
+		// external dependency — if it hasn't happened within
+		// interactiveUpgradeTimeout, waiting the full 10 minutes only risks
+		// the outer 20-minute CI job timeout firing first and cancelling the
+		// whole 4-way-parallel suite with no diagnosable Ginkgo failure ever
+		// printed (masking whatever is actually stuck). Failing fast here
+		// instead surfaces an actionable Gomega error.
+		const interactiveUpgradeTimeout = 90 * time.Second
 		var aa aianalysisv1.AIAnalysis
 		Eventually(func(g Gomega) {
 			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, &aa)).To(Succeed())
 			g.Expect(aa.Status.KASession).NotTo(BeNil())
 			g.Expect(aa.Status.KASession.Interactive).To(BeTrue(),
 				"AA must set Interactive=true on upgrade")
-		}, timeout, 1*time.Second).Should(Succeed())
+		}, interactiveUpgradeTimeout, 1*time.Second).Should(Succeed())
 
 		originalSessionID := aa.Status.KASession.ID
 

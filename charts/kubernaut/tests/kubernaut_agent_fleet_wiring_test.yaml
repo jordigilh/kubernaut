@@ -1,0 +1,252 @@
+suite: "KubernautAgent (KA) fleet Helm wiring (issue #1729): KA's Go-side fleet MCP Gateway client (cmd/kubernautagent/toolregistry.go registerFleetTools) was fully wired but had no Helm-exposed kubernautAgent.fleet block at all -- a fleet-tagged investigation always fell back to hub-local tools regardless of global.fleet.enabled. KA mirrors effectivenessmonitor.fleet exactly minus the `namespace` field (KA has no ClusterRegistry informer/watch, unlike AF/SP/EM's Kuadrant path): only oauth2.credentialsSecretRef is per-service overridable; endpoint/gatewayType/oauth2.{enabled,tokenURL,scopes} all come from global.fleet.*. A dedicated single-template suite (mirroring workflowexecution_fleet_wiring_test.yaml), not folded into fleet_config_consolidation_test.yaml, because that suite renders 6 other fleet-integrated service templates in the same pass -- an incomplete global.fleet.oauth2 (the very thing these guard tests need to set up) trips one of THEIR fail() guards first, masking KA's own guard from the failedTemplate assertion."
+templates:
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # ---------------------------------------------------------------------
+  # fleet block presence/absence, gated on global.fleet.enabled
+  # ---------------------------------------------------------------------
+  - it: "KA ConfigMap has no integrations.fleet block when global.fleet.enabled=false (default), zero regression to KA's non-fleet config"
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*gatewayType:"
+
+  - it: "KA renders integrations.fleet.endpoint/gatewayType/oauth2 from global.fleet.* (issue #1729 Helm-wiring parity fix)"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: "kuadrant"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "fleet-creds"
+            scopes: ["openid", "groups"]
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*endpoint: \"http://mcp\\.example\\.com\""
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*gatewayType: \"kuadrant\""
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*tokenURL: \"https://dex\\.example\\.com/token\""
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*credentialsSecretRef: \"fleet-creds\""
+
+  # ---------------------------------------------------------------------
+  # oauth2.tlsCaFile (PR #1820 CI RCA, E2E-FLEET-017 run 30712261367): KA's
+  # OAuth2 token-fetch HTTP client had no CA override and always fell back
+  # to the system trust store, so it could not verify a cluster-local IdP's
+  # cert-manager-issued certificate ("x509: certificate signed by unknown
+  # authority"), leaving the fleet readiness gate permanently NotReady.
+  # ---------------------------------------------------------------------
+  - it: "KA renders fleet oauth2.tlsCaFile from global.fleet.oauth2.tlsCAFile when explicitly set"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: "kuadrant"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "fleet-creds"
+            tlsCAFile: "/etc/custom-ca/ca.crt"
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*tlsCaFile: \"/etc/custom-ca/ca\\.crt\""
+
+  - it: "KA fleet oauth2.tlsCaFile defaults to the inter-service mTLS CA bundle (/etc/tls-ca/ca.crt, already mounted into every KA pod) when global.fleet.oauth2.tlsCAFile is unset"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: "kuadrant"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "fleet-creds"
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*tlsCaFile: \"/etc/tls-ca/ca\\.crt\""
+
+  # ---------------------------------------------------------------------
+  # Fail-closed guards: KA falls back to the shared global.fleet.oauth2
+  # credential, same as GW/RO/AF/EM/SP/FMC (unlike WE's non-fallback-able
+  # write-scoped credential).
+  # ---------------------------------------------------------------------
+  - it: "KA fails at render time when global.fleet.oauth2.enabled=true but tokenURL is missing"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: "kuadrant"
+          oauth2:
+            enabled: true
+            credentialsSecretRef: "fleet-creds"
+    asserts:
+      - failedTemplate:
+          errorMessage: "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true"
+
+  - it: "KA fails at render time when global.fleet.oauth2.enabled=true but credentialsSecretRef is missing anywhere (global or per-service)"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: "kuadrant"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+    asserts:
+      - failedTemplate:
+          errorMessage: "global.fleet.oauth2.credentialsSecretRef (or kubernautAgent.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)"
+
+  - it: "KA fleet oauth2 credentialsSecretRef falls back to global.fleet.oauth2.credentialsSecretRef when kubernautAgent.fleet.oauth2.credentialsSecretRef is unset (unlike WE, KA has no write-scoped credential of its own)"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: "kuadrant"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "shared-fleet-creds"
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*credentialsSecretRef: \"shared-fleet-creds\""
+
+  - it: "KA fleet oauth2 credentialsSecretRef prefers kubernautAgent.fleet.oauth2.credentialsSecretRef over the global default when both are set"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: "kuadrant"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "shared-fleet-creds"
+      kubernautAgent:
+        fleet:
+          oauth2:
+            credentialsSecretRef: "ka-only-fleet-creds"
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*credentialsSecretRef: \"ka-only-fleet-creds\""
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "shared-fleet-creds"
+
+  # ---------------------------------------------------------------------
+  # Secret volume/mount wiring -- matches the path-consistency fix in
+  # toolregistry.go's fleetOAuth2CredentialsBasePath (issue #1729).
+  # ---------------------------------------------------------------------
+  - it: "KA Deployment mounts the fleet OAuth2 credentials Secret at /etc/kubernaut-agent/<credentialsSecretRef> when enabled"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: "kuadrant"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "fleet-creds"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: fleet-oauth2-credentials
+            mountPath: "/etc/kubernaut-agent/fleet-creds"
+            readOnly: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: fleet-oauth2-credentials
+            secret:
+              secretName: fleet-creds
+
+  - it: "KA Deployment has no fleet-oauth2-credentials volume/mount when fleet oauth2 is disabled"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.volumes
+          content:
+            name: fleet-oauth2-credentials
+
+  # ---------------------------------------------------------------------
+  # Schema guards: KA intentionally exposes ONLY oauth2.credentialsSecretRef
+  # per service -- no endpoint/gatewayType override (global-only), no
+  # namespace (no ClusterRegistry/CRD watch, unlike apifrontend/
+  # effectivenessmonitor).
+  # ---------------------------------------------------------------------
+  - it: "the kubernautAgent.fleet.endpoint key is not recognized (schema rejects it -- endpoint is global-only for KA, no per-service override, mirroring effectivenessmonitor.fleet)"
+    set:
+      kubernautAgent:
+        fleet:
+          endpoint: "http://mcp.example.com"
+    asserts:
+      - failedTemplate: {}
+
+  - it: "the kubernautAgent.fleet.namespace key is not recognized (KA has no ClusterRegistry informer/watch, unlike apifrontend/effectivenessmonitor)"
+    set:
+      kubernautAgent:
+        fleet:
+          namespace: "some-namespace"
+    asserts:
+      - failedTemplate: {}

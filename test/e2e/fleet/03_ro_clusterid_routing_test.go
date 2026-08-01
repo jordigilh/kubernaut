@@ -69,7 +69,7 @@ var _ = Describe("E2E-FLEET-004 [AC-6]: RO creates RR with clusterID and routes 
 			var owned *workflowexecutionv1.WorkflowExecution
 			for i := range wfeList.Items {
 				for _, ref := range wfeList.Items[i].OwnerReferences {
-					if ref.Kind == "RemediationRequest" && ref.UID == rr.UID {
+					if ref.Kind == remediationRequestKind && ref.UID == rr.UID {
 						owned = &wfeList.Items[i]
 						break
 					}
