@@ -267,6 +267,9 @@ kubernautAgent:
         llmProfileRef: ""
         maxStepTokens: 500
         timeout: 10s
+    fleet:
+        oauth2:
+            credentialsSecretRef: ""
     interactive:
         enabled: false
         inactivityTimeout: 10m

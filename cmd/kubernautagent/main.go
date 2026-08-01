@@ -38,6 +38,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
+	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
@@ -239,6 +240,39 @@ func initializeAgent(cfg *kaconfig.Config, llmRuntime *kaconfig.LLMRuntimeConfig
 	return swappable, core, stack
 }
 
+// startBootstrapHealthServer binds a minimal health server (always-200
+// /healthz, always-503 /readyz) on addr BEFORE initializeAgent's blocking
+// dependency wiring (registerFleetTools' MCP Gateway connection, which can
+// take up to mcpclient's resilience budget under a slow/converging Gateway)
+// runs. Without this, the health port stays unbound for that entire window,
+// so kubelet's liveness/startup probes see "connection refused" —
+// indistinguishable from a hung process — and kill the pod, repeating
+// indefinitely if the Gateway is consistently slower than the probe budget
+// (DD-PLATFORM-009; the same shape already fixed for cmd/gateway and
+// cmd/fleetmetadatacache).
+func startBootstrapHealthServer(addr string, logger logr.Logger) *http.Server {
+	srv := sharedhealth.NewBootstrapServer(addr)
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error(err, "bootstrap health server failed")
+		}
+	}()
+	return srv
+}
+
+// stopBootstrapHealthServer hands off from the bootstrap health server (see
+// startBootstrapHealthServer) to the real one, bound on the same address
+// inside startHealthAndMetricsServers. Bounded 5s shutdown context, matching
+// cmd/gateway/main.go's and cmd/fleetmetadatacache/main.go's identical
+// hand-off (DD-PLATFORM-009).
+func stopBootstrapHealthServer(srv *http.Server, logger logr.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Error(err, "bootstrap health server shutdown failed")
+	}
+}
+
 func main() {
 	configPath, llmRuntimePath, addr := parseCLIFlags()
 
@@ -254,7 +288,14 @@ func main() {
 
 	logger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
 
+	// DD-PLATFORM-009: bind a bootstrap health server before initializeAgent's
+	// blocking fleet MCP Gateway connection so kubelet's probes see an honest
+	// 503 instead of "connection refused" throughout that window.
+	bootstrapHealth := startBootstrapHealthServer(cfg.Runtime.Server.HealthAddr, logger)
+
 	swappable, core, stack := initializeAgent(cfg, llmRuntime, logger)
+
+	stopBootstrapHealthServer(bootstrapHealth, logger)
 
 	const maxRequestBodySize int64 = 1 << 20 // 1 MiB
 

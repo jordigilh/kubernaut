@@ -95,6 +95,12 @@ import (
 // goconst dedup: test-fixture literals deduplicated below.
 const (
 	trueFixture = "true"
+
+	// remediationRequestKind is the owner-reference/ObjectReference Kind for
+	// RemediationRequest, matched by string (not the typed remediationv1
+	// import) across several fleet E2E tests that walk generic
+	// metav1.OwnerReference/ObjectReference lists.
+	remediationRequestKind = "RemediationRequest"
 )
 
 const (

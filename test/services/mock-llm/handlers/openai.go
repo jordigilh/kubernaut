@@ -64,7 +64,7 @@ func (h *handler) handleOpenAI(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := conversation.NewContext(req.Messages)
-	detCtx := buildDetectionContext(ctx)
+	detCtx := buildDetectionContext(ctx, req.Tools)
 
 	if isPermanentError(detCtx) {
 		writeJSON(w, http.StatusInternalServerError,
@@ -287,7 +287,11 @@ func lastMessageIsToolResult(messages []openai.Message) bool {
 	return messages[len(messages)-1].Role == "tool"
 }
 
-func buildDetectionContext(ctx *conversation.Context) *scenarios.DetectionContext {
+// buildDetectionContext builds the scenario-detection input from the
+// conversation. tools carries the caller's advertised function-tool names
+// (req.Tools, OpenAI handler only) into DetectionContext.AvailableTools --
+// pass nil where no tools schema exists (Ollama handler).
+func buildDetectionContext(ctx *conversation.Context, tools []openai.Tool) *scenarios.DetectionContext {
 	var contentParts, allParts []string
 	var lastUserContent string
 	for _, m := range ctx.Messages {
@@ -306,11 +310,20 @@ func buildDetectionContext(ctx *conversation.Context) *scenarios.DetectionContex
 		strings.Contains(content, "proactive signal") ||
 		(strings.Contains(content, "predicted") && strings.Contains(content, "not yet occurred"))
 
+	var availableTools []string
+	if len(tools) > 0 {
+		availableTools = make([]string, len(tools))
+		for i, t := range tools {
+			availableTools[i] = t.Function.Name
+		}
+	}
+
 	return &scenarios.DetectionContext{
 		Content:         content,
 		AllText:         allText,
 		IsProactive:     isProactive,
 		LastUserContent: lastUserContent,
+		AvailableTools:  availableTools,
 	}
 }
 
