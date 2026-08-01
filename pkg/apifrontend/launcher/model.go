@@ -58,7 +58,28 @@ func NewModelFromConfig(ctx context.Context, cfg config.LLMConfig) (model.LLM, e
 	}
 }
 
+// isVertexAnthropicModel reports whether model names a Claude-family model,
+// the only model family newVertexAIModel can actually construct on this
+// branch. Deliberately kept local rather than imported from
+// pkg/apifrontend/severity.IsAnthropicModel: this is a fail-fast guard
+// only (#1792 v1.5 backport, minimal-risk option), not a step toward
+// sharing detection logic across packages the way main's
+// types.IsAnthropicModel/IsGeminiModel promotion does.
+func isVertexAnthropicModel(model string) bool {
+	return strings.HasPrefix(model, "claude-")
+}
+
+// newVertexAIModel constructs the Vertex AI model client. vertex_ai can
+// host either Claude or Gemini models, but this branch only implements the
+// Claude path (adk-anthropic-go) — unlike main (#1778, #1792), which added
+// a native Vertex-hosted-Gemini client. A non-Claude model name here fails
+// fast with a clear, actionable error instead of silently constructing an
+// Anthropic client that would fail later with a confusing SDK-level error
+// (#1792 v1.5 backport).
 func newVertexAIModel(ctx context.Context, cfg config.LLMConfig) (m model.LLM, err error) {
+	if !isVertexAnthropicModel(cfg.Model) {
+		return nil, fmt.Errorf("vertex_ai: unrecognized model family for model %q (only claude-* models are supported under provider: vertex_ai on this release; use provider: gemini for direct-API Gemini)", cfg.Model)
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("vertex_ai: GCP ADC unavailable — set GOOGLE_APPLICATION_CREDENTIALS or provide credentials: %v", r)
