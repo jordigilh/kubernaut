@@ -267,12 +267,12 @@ Feature plan (AUDIT_TRACE_SEMANTIC_SEARCH_IMPLEMENTATION_PLAN_V1.3.md) MUST incl
 
 **Pattern 2: Extension Plans** (Adding to existing)
 ```
-Service: HolmesGPT API
+Service: Kubernaut Agent (KA)
 ├── IMPLEMENTATION_PLAN_V3.0.md                               ← Full service
 └── IMPLEMENTATION_PLAN_RFC7807_GRACEFUL_SHUTDOWN_V3.1.md    ← Extension (adds features)
 
 Extension plan (IMPLEMENTATION_PLAN_RFC7807_GRACEFUL_SHUTDOWN_V3.1.md) MUST include:
-  **Extends**: [HolmesGPT API V3.0](./IMPLEMENTATION_PLAN_V3.0.md)
+  **Extends**: [Kubernaut Agent V3.0](./IMPLEMENTATION_PLAN_V3.0.md)
   **Scope**: Adds RFC 7807 error handling and graceful shutdown to existing service
 ```
 
@@ -467,7 +467,7 @@ Before starting Day 1, ensure:
 
 ### 📋 **Stateless Service (HTTP API) Maturity Checklist**
 
-**Applies to**: Gateway, DataStorage, HolmesGPT-API
+**Applies to**: Gateway, DataStorage, Kubernaut Agent
 
 #### Core Infrastructure (P0 - Blockers)
 
@@ -582,7 +582,7 @@ For cross-team validations, use the HANDOFF/RESPONSE document pattern:
 Service: Signal Processing
 ├── HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md    ← Sent to AI Analysis team
 ├── HANDOFF_REQUEST_GATEWAY_LABEL_PASSTHROUGH.md ← Sent to Gateway team
-├── RESPONSE_CUSTOM_LABELS_VALIDATION.md        ← From HolmesGPT-API team
+├── RESPONSE_CUSTOM_LABELS_VALIDATION.md        ← From Kubernaut Agent team
 └── RESPONSE_GATEWAY_LABEL_PASSTHROUGH.md       ← From Gateway team
 ```
 
@@ -838,7 +838,7 @@ Does your service WRITE to Kubernetes (create/modify CRDs or resources)?
 - Writes ConfigMaps/Services (but no RBAC needed)
 - Testing with CRDs (no RBAC validation)
 
-**Examples**: Dynamic Toolset Service (V1), HolmesGPT API Service
+**Examples**: Dynamic Toolset Service (V1), Kubernaut Agent Service
 
 **Prerequisites**:
 - [ ] `setup-envtest` installed (`go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest`)
@@ -8266,7 +8266,7 @@ This section provides a comprehensive reference of all ADRs and DDs that should 
 The following document categories are **service-specific** and should NOT be referenced in the generic template:
 - `DD-GATEWAY-*` - Gateway service only
 - `DD-WORKFLOW-*` / `DD-PLAYBOOK-*` - Workflow/Playbook services only
-- `DD-HOLMESGPT-*` - HolmesGPT API only
+- `DD-HOLMESGPT-*` - Kubernaut Agent (KA) only
 - `DD-STORAGE-*` - Data Storage service only
 - `DD-EMBEDDING-*` - Embedding service only
 - `DD-LLM-*` - LLM/AI services only

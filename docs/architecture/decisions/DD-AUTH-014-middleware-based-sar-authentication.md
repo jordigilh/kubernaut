@@ -6,7 +6,7 @@
 **Decision Makers**: Architecture Team  
 **Affected Services**: 
 - **Phase 2 (POC)**: ✅ DataStorage (Complete)
-- **Phase 3**: ✅ HolmesGPT API (Complete)
+- **Phase 3**: ✅ Kubernaut Agent (KA) (Complete)
 - **Phase 4**: ✅ Gateway (Complete - January 2026)
 - **Phase 5**: ✅ AIAnalysis Controller (Complete - January 2026)
 - **Future**: Notification, other REST API services (TBD)
@@ -592,7 +592,7 @@ ctx := context.WithValue(r.Context(), "user", user)
 - Validate approach in DataStorage first (proof-of-concept)
 - Measure API server impact before expanding
 - Evaluate Gateway E2E tests for high-throughput scenarios
-- Then decide: expand to HAPI only, or all services
+- Then decide: expand to KA only, or all services
 
 ### **Phase 1: Core Infrastructure** (1 day)
 
@@ -673,13 +673,13 @@ ctx := context.WithValue(r.Context(), "user", user)
 
 **Decision Options**:
 
-**Option A**: Expand to HAPI only (targeted rollout)
-- Apply to HolmesGPT API (similar traffic patterns to DataStorage)
+**Option A**: Expand to KA only (targeted rollout)
+- Apply to Kubernaut Agent (similar traffic patterns to DataStorage)
 - Keep Gateway/Notification with existing auth (if needed)
 - **Recommended if API server shows stress**
 
 **Option B**: Expand to all REST API services (full rollout)
-- Apply to HAPI, Notification, Gateway
+- Apply to KA, Notification, Gateway
 - Standardize auth across all services
 - **Recommended if POC shows no issues**
 
@@ -688,9 +688,9 @@ ctx := context.WithValue(r.Context(), "user", user)
 - Investigate alternative approaches (e.g., service mesh)
 - **Only if POC fails validation**
 
-### **Phase 3: HolmesGPT API** ✅ **COMPLETE** (2 days)
+### **Phase 3: Kubernaut Agent** ✅ **COMPLETE** (2 days)
 
-**Goal**: Apply proven pattern to HAPI
+**Goal**: Apply proven pattern to KA
 
 **Status**: ✅ Implementation complete (January 2026)
 
@@ -726,7 +726,7 @@ ctx := context.WithValue(r.Context(), "user", user)
 **Performance Considerations**:
 - ✅ Low throughput: <100 signals/min in most deployments
 - ✅ No caching needed: NetworkPolicy reduces unauthorized traffic
-- ✅ Proven pattern: Same as DataStorage/HAPI (validated)
+- ✅ Proven pattern: Same as DataStorage/KA (validated)
 
 **Implementation Tasks**:
 1. 🚧 Create `pkg/gateway/middleware/auth.go`
@@ -777,24 +777,24 @@ ctx := context.WithValue(r.Context(), "user", user)
 
 ### **Functional**
 - ✅ **DataStorage**: Authenticates using TokenReview API (Complete)
-- ✅ **HAPI**: Authenticates using TokenReview API (Complete)
+- ✅ **KA**: Authenticates using TokenReview API (Complete)
 - 🚧 **Gateway**: Authentication in progress (January 2026)
 - ✅ All services authorize using SAR API
 - ✅ User identity captured for audit logging (SOC2 CC8.1 compliance)
 
 ### **Testing**
 - ✅ **DataStorage**: 100% auth middleware coverage (Unit + Integration + E2E)
-- ✅ **HAPI**: Full auth flow validated in integration + E2E
+- ✅ **KA**: Full auth flow validated in integration + E2E
 - 🚧 **Gateway**: Tests pending (envtest + Kind)
 - ✅ Integration tests: Real K8s auth with envtest (not mocks)
 - ✅ E2E tests: Real K8s auth in Kind cluster
 
 ### **Operational**
 - ✅ **DataStorage**: oauth-proxy removed (Single container deployment)
-- ✅ **HAPI**: oauth-proxy removed (Simplified debugging)
+- ✅ **KA**: oauth-proxy removed (Simplified debugging)
 - 🚧 **Gateway**: Network Policies replaced with SAR auth (In progress)
 - ✅ Portable across Kubernetes distributions (OpenShift, vanilla K8s)
-- ✅ Reduced K8s API load: No issues observed with real auth in DS/HAPI
+- ✅ Reduced K8s API load: No issues observed with real auth in DS/KA
 
 ---
 
@@ -949,7 +949,7 @@ func (a *CachedAuthenticator) ValidateToken(ctx context.Context, token string) (
 
 ### **Follow-Up Actions** (After POC)
 
-- **If successful**: Proceed to Phase 4 (HAPI implementation)
+- **If successful**: Proceed to Phase 4 (KA implementation)
 - **If API server stress**: Implement caching optimizations, re-test
 - **If issues**: Evaluate Gateway E2E impact before expanding
 - **Final decision**: Expand to all services OR targeted rollout only

@@ -10,7 +10,7 @@
 ## 🎯 Critical Path Definition
 
 **What We KNOW Works**:
-- ✅ HolmesGPT API works (proven)
+- ✅ Kubernaut Agent (KA) works (proven)
 - ✅ Claude 3.5 Sonnet works (proven)
 - ✅ Kubernetes cluster works (proven)
 
@@ -185,12 +185,12 @@ if __name__ == '__main__':
 
 ---
 
-#### Afternoon (3-4 hours): HolmesGPT API Instrumentation
+#### Afternoon (3-4 hours): Kubernaut Agent Instrumentation
 
-**Goal**: Add comprehensive logging to HolmesGPT API to trap EVENT 2
+**Goal**: Add comprehensive logging to Kubernaut Agent to trap EVENT 2
 
 ```go
-// pkg/holmesgpt/llm/client.go
+// pkg/kubernautagent/llm/client.go
 
 // EVENT 2 TRAP: Log all LLM responses
 func (c *Client) Investigate(ctx context.Context, alert *Alert) (*InvestigationResult, error) {
@@ -281,7 +281,7 @@ func (c *Client) parseInvestigationResponse(content string) (*InvestigationResul
 }
 ```
 
-**Deliverable**: HolmesGPT API with comprehensive EVENT 2 logging
+**Deliverable**: Kubernaut Agent with comprehensive EVENT 2 logging
 
 ---
 
@@ -297,12 +297,12 @@ kubectl create configmap mock-mcp-server-code \
 
 kubectl apply -f deploy/mock-mcp-server/
 
-# 2. Update HolmesGPT API config to use mock MCP
+# 2. Update Kubernaut Agent config to use mock MCP
 kubectl patch configmap kubernaut-agent-config \
   -n kubernaut-system \
   --patch '{"data":{"mcp_url":"http://mock-mcp-server.kubernaut-system.svc.cluster.local:8080"}}'
 
-# 3. Restart HolmesGPT API
+# 3. Restart Kubernaut Agent
 kubectl rollout restart deployment kubernaut-agent -n kubernaut-system
 
 # 4. Deploy test scenario
@@ -339,7 +339,7 @@ curl -X POST http://kubernaut-agent.kubernaut-system.svc.cluster.local:8080/api/
 # Terminal 1: Mock MCP logs (EVENT 1)
 kubectl logs -n kubernaut-system mock-mcp-server-xxx -f
 
-# Terminal 2: HolmesGPT API logs (EVENT 2)
+# Terminal 2: Kubernaut Agent logs (EVENT 2)
 kubectl logs -n kubernaut-system kubernaut-agent-xxx -f
 
 # 3. Analyze results
@@ -567,7 +567,7 @@ Iteration 10: Test 20 scenarios (full suite)
 
 ### Day 1 Deliverables
 - [ ] Mock MCP server with EVENT 1 logging
-- [ ] HolmesGPT API with EVENT 2 logging
+- [ ] Kubernaut Agent with EVENT 2 logging
 - [ ] Deployment manifests
 - [ ] Initial prompt template
 

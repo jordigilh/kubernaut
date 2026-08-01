@@ -21,7 +21,7 @@ This document is retained for historical context but should not be implemented.
 **Status**: ❌ OBSOLETE (Replaced by DD-AUTH-014 middleware approach)
 **Priority**: ~~CRITICAL~~ N/A (SOC2 CC8.1 compliance achieved via middleware)
 **Estimated Effort**: Phase 1: ✅ COMPLETE (2.5 hours) | Phase 2: ~~8-10 hours~~ NOT REQUIRED
-**Related**: DD-AUTH-007, DD-AUTH-004, BR-HAPI-197, BR-SCOPE-001, SOC2 CC8.1, **DD-AUTH-014 (replacement)**
+**Related**: DD-AUTH-007, DD-AUTH-004, BR-KA-197, BR-SCOPE-001, SOC2 CC8.1, **DD-AUTH-014 (replacement)**
 
 ---
 
@@ -48,13 +48,13 @@ This document is retained for historical context but should not be implemented.
 - ✅ OAuth2-proxy pulled from `quay.io` (no custom build needed)
 - ✅ Pass-through mode (`--skip-auth-regex=.*`) - no auth validation yet
 
-**What Phase 1 Doesn't Validate** (deferred to Phase 2 - Post-BR-HAPI-197):
+**What Phase 1 Doesn't Validate** (deferred to Phase 2 - Post-BR-KA-197):
 - ⏳ Real ServiceAccount token validation (pass-through mode only)
 - ⏳ RBAC/SAR enforcement (no token checks yet)
 - ⏳ OAuth failure scenarios (401/403/503)
 - ⏳ Selective endpoint protection (currently all endpoints pass through)
 
-### **Phase 2: Real OAuth Testing** (⏳ DEFERRED - After BR-HAPI-197, Before BR-SCOPE-001)
+### **Phase 2: Real OAuth Testing** (⏳ DEFERRED - After BR-KA-197, Before BR-SCOPE-001)
 **Goal**: Full OAuth2-proxy functionality with ServiceAccount tokens
 **Duration**: 8-10 hours
 **Scope**:
@@ -410,7 +410,7 @@ var _ = Describe("OAuth2-Proxy Authentication (TD-E2E-001)", Label("e2e", "oauth
 - [x] Architecture: Service:8080 → oauth2-proxy:8080 → DataStorage:8081
 - [x] Pass-through mode (`--skip-auth-regex=.*`) validated
 
-**Phase 2 (⏳ DEFERRED - Post-BR-HAPI-197)**:
+**Phase 2 (⏳ DEFERRED - Post-BR-KA-197)**:
 - [ ] ServiceAccounts + RBAC created for each E2E service
 - [ ] E2E clients use real ServiceAccount tokens (not mock headers)
 
@@ -443,7 +443,7 @@ var _ = Describe("OAuth2-Proxy Authentication (TD-E2E-001)", Label("e2e", "oauth
 ### **Why Defer to Technical Debt?**
 1. **Scope**: OAuth2-proxy infrastructure is substantial work (11-16 hours)
 2. **Risk**: Low immediate risk - existing E2E tests use mock auth (validates handler logic)
-3. **Priority**: BR-HAPI-197 E2E tests blocked on other work, not OAuth infrastructure
+3. **Priority**: BR-KA-197 E2E tests blocked on other work, not OAuth infrastructure
 4. **Separation**: OAuth infrastructure deserves focused sprint, not rushed alongside feature work
 
 ### **Temporary Mitigation**
@@ -467,7 +467,7 @@ var _ = Describe("OAuth2-Proxy Authentication (TD-E2E-001)", Label("e2e", "oauth
 3. ✅ Update ALL 9 E2E services with oauth2-proxy sidecar
 4. ✅ Verify compilation and architecture parity
 
-**Phase 2** (⏳ DEFERRED - After BR-HAPI-197, Before BR-SCOPE-001):
+**Phase 2** (⏳ DEFERRED - After BR-KA-197, Before BR-SCOPE-001):
 1. ⏳ Implement real ServiceAccount token validation
 2. ⏳ Add RBAC/SAR enforcement
 3. ⏳ Implement 6+ OAuth failure tests (401/403/503)

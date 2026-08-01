@@ -14,7 +14,7 @@
 REAL COMPONENTS (Essential):
 ✅ Real Kubernetes cluster (test scenarios)
 ✅ Real test artifacts (Pods, Deployments, etc.)
-✅ HolmesGPT API (LLM integration)
+✅ Kubernaut Agent (KA) (LLM integration)
 ✅ Claude 3.5 Sonnet (via Vertex AI)
 
 MOCK COMPONENTS (Expedite Testing):
@@ -156,7 +156,7 @@ Iteration time: 30-60 minutes
 
 **With Mock MCP**:
 ```
-Change prompt → Restart HolmesGPT API → Test → Analyze
+Change prompt → Restart Kubernaut Agent → Test → Analyze
 Iteration time: 2-5 minutes
 ```
 
@@ -199,7 +199,7 @@ Day 5: Final validation (morning)
 **Dependencies Retained** (Essential):
 ```
 ✅ Kubernetes cluster (real alerts)
-✅ HolmesGPT API (LLM integration)
+✅ Kubernaut Agent (LLM integration)
 ✅ Claude 3.5 Sonnet (LLM)
 ✅ Mock MCP server (static playbooks)
 ✅ Test artifacts (Pods, ConfigMaps, etc.)
@@ -501,9 +501,9 @@ spec:
     targetPort: 8080
 ```
 
-**Configuration** (HolmesGPT API):
+**Configuration** (Kubernaut Agent):
 ```yaml
-# Update HolmesGPT API to use mock MCP server
+# Update Kubernaut Agent to use mock MCP server
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -532,7 +532,7 @@ kind create cluster --name kubernaut-llm-test
 # Install kubernaut CRDs
 kubectl apply -f config/crd/
 
-# Install HolmesGPT API
+# Install Kubernaut Agent
 kubectl apply -f deploy/kubernaut-agent/
 
 # Install mock MCP server
@@ -660,7 +660,7 @@ kubectl apply -f test/scenarios/oomkill-cost-management.yaml
 # 2. Wait for alert
 kubectl wait --for=condition=OOMKill pod/memory-hungry-app -n cost-management --timeout=5m
 
-# 3. Create investigation request (manual or via HolmesGPT API)
+# 3. Create investigation request (manual or via Kubernaut Agent)
 curl -X POST http://kubernaut-agent.kubernaut-system.svc.cluster.local:8080/api/v1/investigations \
   -H "Content-Type: application/json" \
   -d '{
@@ -682,10 +682,10 @@ kubectl logs -n kubernaut-system kubernaut-agent-xxx -f
 # - Is reasoning sound?
 
 # 6. Refine prompt if needed
-# Edit prompt template in HolmesGPT API ConfigMap
+# Edit prompt template in Kubernaut Agent ConfigMap
 kubectl edit configmap kubernaut-agent-prompt -n kubernaut-system
 
-# 7. Restart HolmesGPT API
+# 7. Restart Kubernaut Agent
 kubectl rollout restart deployment kubernaut-agent -n kubernaut-system
 
 # 8. Repeat test
@@ -995,7 +995,7 @@ Week 7-8: 93% → 95% (Integration, rushed)
 
 ### Week 5: AIAnalysis Service
 - [ ] AIAnalysis controller (minimal)
-- [ ] HolmesGPT API client
+- [ ] Kubernaut Agent client
 - [ ] CRD reconciliation
 
 ### Week 6: Integration Testing

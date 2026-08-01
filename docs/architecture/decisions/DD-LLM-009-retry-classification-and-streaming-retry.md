@@ -4,7 +4,7 @@
 **Priority**: P1
 **Owner**: KubernautAgent Team
 **Scope**: `pkg/kubernautagent/llm/chat_helpers.go`, `pkg/kubernautagent/llm/anthropicfamily/client.go`, `pkg/kubernautagent/llm/openai/client.go`, `pkg/shared/llm/openaicompat/client.go`, `internal/kubernautagent/investigator/investigator_loop.go`
-**Related**: [DD-HAPI-019](./DD-HAPI-019-go-rewrite-design/DD-HAPI-019-go-rewrite-design.md) (Framework Isolation), [DD-LLM-008](./DD-LLM-008-restart-required-llm-identity-lock.md), Issue #1612, Issue #1585
+**Related**: [DD-KA-019](./DD-HAPI-019-go-rewrite-design/DD-HAPI-019-go-rewrite-design.md) (Framework Isolation), [DD-LLM-008](./DD-LLM-008-restart-required-llm-identity-lock.md), Issue #1612, Issue #1585
 
 ---
 
@@ -26,7 +26,7 @@ Fixing #1612 by adding a second, independent retry loop to the streaming path �
 
 **Alternative 2 (chosen): extract a shared generic `llm.RetryWithBackoff[T any]` helper.** A generic helper (`AttemptResult[T]{Value, Err, SafeToRetry}` contract) used by both `ChatWithParams` and `chatOrStream`. Existing `chat_with_params_test.go` coverage acts as the regression safety net for refactoring `ChatWithParams` onto the shared helper — if the refactor changes behavior, those tests fail. Generics already have production precedent in this codebase (`pkg/cache/redis/cache.go`'s `Cache[T]`), so this isn't introducing a new pattern.
 
-**Alternative 3: push retry into each `llm.Client` implementation (rejected).** Would require every current and future provider adapter to reimplement backoff/retry independently, and violates DD-HAPI-019 Framework Isolation by pushing a business-logic concern (how many times to retry, what counts as retryable) down into the provider-specific translation layer, which should only translate wire formats.
+**Alternative 3: push retry into each `llm.Client` implementation (rejected).** Would require every current and future provider adapter to reimplement backoff/retry independently, and violates DD-KA-019 Framework Isolation by pushing a business-logic concern (how many times to retry, what counts as retryable) down into the provider-specific translation layer, which should only translate wire formats.
 
 `SafeToRetry` is computed per call site as the AND of every concern that matters there:
 - `ChatWithParams`: `SafeToRetry: llm.IsRetryable(err)` — `Chat` is atomic (no partial delivery), so error classification is the only concern.
@@ -34,9 +34,9 @@ Fixing #1612 by adding a second, independent retry loop to the streaming path �
 
 ### Part B — Error classification
 
-**Constraint**: `pkg/kubernautagent/llm` is the framework-isolation boundary that `anthropicfamily`/`openai` depend *on* (DD-HAPI-019). It must never import a provider SDK or provider-specific error shape — that would invert the dependency and force the generic retry machinery to know about every current and future provider's error format.
+**Constraint**: `pkg/kubernautagent/llm` is the framework-isolation boundary that `anthropicfamily`/`openai` depend *on* (DD-KA-019). It must never import a provider SDK or provider-specific error shape — that would invert the dependency and force the generic retry machinery to know about every current and future provider's error format.
 
-**Alternative 1: centralize classification in `chat_helpers.go`, importing `anthropic-sdk-go` and `openaicompat` directly to type-switch on errors (rejected).** Violates DD-HAPI-019 directly.
+**Alternative 1: centralize classification in `chat_helpers.go`, importing `anthropic-sdk-go` and `openaicompat` directly to type-switch on errors (rejected).** Violates DD-KA-019 directly.
 
 **Alternative 2 (chosen): small provider-agnostic primitives in `pkg/kubernautagent/llm`, classification applied by each provider adapter at the boundary it already owns.**
 - `IsNonRetryableHTTPStatus(code int) bool` — a blocklist (400, 401, 403, 404 are non-retryable; everything else, including 429 and 5xx, defaults retryable).

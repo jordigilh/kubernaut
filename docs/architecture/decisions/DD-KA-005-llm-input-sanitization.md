@@ -169,7 +169,7 @@ Notification (`BR-NOT-055`). **KA does not call this fallback path** (see Compon
 `injection.go`)
 
 ```go
-// Pipeline chains sanitization stages in order (G4 -> I1 per DD-HAPI-019-003).
+// Pipeline chains sanitization stages in order (G4 -> I1 per DD-KA-019-003).
 type Stage interface {
     Name() string
     Sanitize(ctx context.Context, input string) (string, error)
@@ -187,7 +187,7 @@ Three stages, each independently configurable:
 2. **`SecretSanitizer` (K8S-SECRET)** — narrowly parses tool output as `map[string]json.RawMessage`
    to redact `data`/`stringData` fields of K8s `Secret`/`SecretList` shapes.
 3. **`InjectionSanitizer` (I1)** — strips prompt-injection phrases (unrelated to credentials; shared
-   pipeline slot per `DD-HAPI-019-003`).
+   pipeline slot per `DD-KA-019-003`).
 
 `CredentialSanitizer.Sanitize` calls the underlying library's plain `Sanitize(input)` — **not**
 `SanitizeWithFallback` — and always returns a `nil` error from the regex path itself.

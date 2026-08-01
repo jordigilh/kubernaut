@@ -24,7 +24,7 @@ This DD covers only KA's client (the actual capability gap). AF's fix (#1792) re
 #### Alternative B — Google ADK's `model/gemini.NewModel` (rejected)
 
 - **Pros**: Zero new dependency (`google.golang.org/adk` is already in `go.mod` for AF); official Google package.
-- **Cons**: Investigated directly — `adk/model/gemini.NewModel` is a thin wrapper over `genai.NewClient`, but it imports ADK's internal `internal/llminternal` package for its streaming aggregator. `internal/llminternal` is not a small, isolated leaf package: it imports ADK's `agent`, `session`, and `tool` packages as part of the same internal module. Importing `adk/model/gemini` therefore transitively compiles ADK's agent/session/tool framework into KA's binary — precisely the framework-coupling risk DD-HAPI-019 (Framework Isolation Pattern) exists to prevent for KA. Confirmed by direct inspection of the ADK v1.5.1 module source (`internal/llminternal/*.go` imports), not assumption.
+- **Cons**: Investigated directly — `adk/model/gemini.NewModel` is a thin wrapper over `genai.NewClient`, but it imports ADK's internal `internal/llminternal` package for its streaming aggregator. `internal/llminternal` is not a small, isolated leaf package: it imports ADK's `agent`, `session`, and `tool` packages as part of the same internal module. Importing `adk/model/gemini` therefore transitively compiles ADK's agent/session/tool framework into KA's binary — precisely the framework-coupling risk DD-KA-019 (Framework Isolation Pattern) exists to prevent for KA. Confirmed by direct inspection of the ADK v1.5.1 module source (`internal/llminternal/*.go` imports), not assumption.
 
 #### Alternative C — `cloudwego/eino-ext`'s `components/model/agenticgemini` (chosen)
 
@@ -37,7 +37,7 @@ This DD covers only KA's client (the actual capability gap). AF's fix (#1792) re
   - Directly serves KA's `llm.Client` interface's own stated purpose: its doc comment (`pkg/kubernautagent/llm/types.go`) already names Eino by example as a framework this interface exists to isolate business logic from — this usage (Eino behind a thin, KA-owned adapter, never leaking `eino/schema` types into `internal/kubernautagent/investigator`) is exactly that pattern.
 - **Cons**:
   - A new third-party dependency (`cloudwego/eino` + `cloudwego/eino-ext/components/model/agenticgemini`) enters `go.mod`, increasing (modestly) the supply-chain surface and go.sum size.
-  - `eino`'s own prior evaluation for Kubernaut ([#507](https://github.com/jordigilh/kubernaut/issues/507)) deferred adopting Eino's *full* graph/multi-agent framework for HAPI's agent loop, citing dependency footprint. That decision is not overridden here: this DD adopts a single leaf model-component package, not the framework #507 evaluated.
+  - `eino`'s own prior evaluation for Kubernaut ([#507](https://github.com/jordigilh/kubernaut/issues/507)) deferred adopting Eino's *full* graph/multi-agent framework for KA's agent loop, citing dependency footprint. That decision is not overridden here: this DD adopts a single leaf model-component package, not the framework #507 evaluated.
   - The `eino/schema.AgenticMessage`/`ContentBlock` mapping (tool calls, `ThoughtSignature`-based reasoning replay) requires careful adapter-layer translation to/from KA's `llm.Message`/`ReasoningBlock` — tracked as an implementation-detail risk, addressed by a RED-phase discovery spike, not an architectural one.
 
 ### Discovery Spike Findings (RED-phase, `agenticgemini` v0.2.2)
@@ -51,7 +51,7 @@ Confirmed by direct source inspection of `agenticgemini`'s `conv.go`/`content_bl
 
 ### Decision
 
-**Alternative C** — adopt `eino-ext/components/model/agenticgemini`, wrapped by a new `pkg/kubernautagent/llm/geminifamily` package implementing KA's own `llm.Client` interface. No `eino` type is ever exposed outside this package; `internal/kubernautagent/investigator/*` remains completely unaware of it, consistent with DD-HAPI-019.
+**Alternative C** — adopt `eino-ext/components/model/agenticgemini`, wrapped by a new `pkg/kubernautagent/llm/geminifamily` package implementing KA's own `llm.Client` interface. No `eino` type is ever exposed outside this package; `internal/kubernautagent/investigator/*` remains completely unaware of it, consistent with DD-KA-019.
 
 **Explicitly out of scope for this decision**: KA's existing `anthropicfamily.Client` (built on `anthropic-sdk-go` directly) is left untouched. `eino-ext` also ships an `agenticclaude` component that could, in principle, later replace `anthropicfamily` — since `eino` would already be a dependency at that point, the marginal adoption cost would be lower than today. But that is a separate, unforced decision: `anthropicfamily` is working, tested code on KA's primary/most-used LLM path, with no driving bug, and reversing it would revise `DD-LLM-007`'s intentional AF/KA-divergence boundary. If pursued, it needs its own CHECKPOINT DD alternatives-and-approval pass. Tracked as a follow-up issue ([#1796](https://github.com/jordigilh/kubernaut/issues/1796)), not bundled here.
 
@@ -60,7 +60,7 @@ Confirmed by direct source inspection of `agenticgemini`'s `conv.go`/`content_bl
 ### Positive
 - KA gains full-parity Gemini support (direct API and Vertex-AI-hosted) without hand-writing and maintaining a new ~700 LOC protocol layer.
 - Reasoning/thinking-token support for Gemini arrives "for free" by reusing the existing `genai.ThinkingConfig`-based effort mapping (DD-LLM-005), satisfying BR-AI-086's model-aware reasoning contract for a new provider with no new mapping logic.
-- KA's framework-isolation guarantee (DD-HAPI-019) is preserved: `eino` is confined to one new leaf package behind `llm.Client`, exactly as `anthropicfamily` and `openaicompat` already are for their respective SDKs.
+- KA's framework-isolation guarantee (DD-KA-019) is preserved: `eino` is confined to one new leaf package behind `llm.Client`, exactly as `anthropicfamily` and `openaicompat` already are for their respective SDKs.
 - Establishes a low-risk precedent: if a future provider surface is needed and eino-ext ships a maintained component for it, the same "thin adapter over an isolated eino-ext leaf module" pattern applies without re-litigating the ADK/framework-coupling question.
 
 ### Negative
@@ -68,7 +68,7 @@ Confirmed by direct source inspection of `agenticgemini`'s `conv.go`/`content_bl
 - `anthropicfamily` (KA) and `adk-anthropic-go` (AF) remain independent Anthropic implementations, per DD-LLM-007 — this DD does not change that, and does not attempt Gemini/Anthropic client unification across AF and KA (AF's Gemini path stays ADK-native; KA's Gemini path is eino-native; the two consumer interfaces, `model.LLM` vs `llm.Client`, are irreconcilably different by design).
 
 ## Related Decisions
-- **Builds on**: DD-HAPI-019-001 (Framework Isolation Pattern), DD-LLM-005 (reasoning/thinking mapping reused here)
+- **Builds on**: DD-KA-019-001 (Framework Isolation Pattern), DD-LLM-005 (reasoning/thinking mapping reused here)
 - **Contrasts with**: the rejected Google ADK alternative (Alternative B above) — the opposite dependency-footprint outcome from the same investigation technique used to accept eino-ext here
 - **Complements**: DD-LLM-007 (which this DD does not revise — KA's Anthropic path is explicitly out of scope)
 - **Referenced by**: #1778 (KA Gemini client), #1792 (AF vertex_ai dispatch fix, independent of this DD), #1793 (Helm chart docs), #1796 (deferred follow-up: evaluate `anthropicfamily` → `agenticclaude` replacement)

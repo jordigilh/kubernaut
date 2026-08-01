@@ -20,7 +20,7 @@ This document consolidates two related business requirements for workflow data h
 1. **BR-ORCH-025**: Pass through workflow data from AIAnalysis to WorkflowExecution (no catalog lookup)
 2. **BR-ORCH-026**: Orchestrate approval workflow when AIAnalysis requires human approval
 
-**Key Design Decision**: RO does NOT perform catalog lookups. HolmesGPT-API resolves `workflow_id → container_image` during MCP search. RO passes through from `AIAnalysis.status.selectedWorkflow`.
+**Key Design Decision**: RO does NOT perform catalog lookups. Kubernaut Agent (KA) resolves `workflow_id → container_image` during MCP search. RO passes through from `AIAnalysis.status.selectedWorkflow`.
 
 ---
 
@@ -37,7 +37,7 @@ RemediationOrchestrator MUST pass through workflow data (including `container_im
 ### Rationale
 
 Per DD-CONTRACT-001 v1.2:
-- HolmesGPT-API resolves `workflow_id → container_image` during MCP search
+- Kubernaut Agent resolves `workflow_id → container_image` during MCP search
 - `AIAnalysis.status.selectedWorkflow` contains the fully resolved workflow reference
 - RO's responsibility is to pass this data through to WorkflowExecution
 - RO should NOT duplicate catalog lookup logic (separation of concerns)
@@ -47,8 +47,8 @@ Per DD-CONTRACT-001 v1.2:
 1. Read `AIAnalysis.status.selectedWorkflow` when phase = "Completed"
 2. Pass through all fields to `WorkflowExecution.spec.workflowRef`:
    - `workflowId` ← `selectedWorkflow.workflowId`
-   - `containerImage` ← `selectedWorkflow.containerImage` (resolved by HolmesGPT-API)
-   - `containerDigest` ← `selectedWorkflow.containerDigest` (resolved by HolmesGPT-API)
+   - `containerImage` ← `selectedWorkflow.containerImage` (resolved by Kubernaut Agent)
+   - `containerDigest` ← `selectedWorkflow.containerDigest` (resolved by Kubernaut Agent)
 3. Pass through `parameters` unchanged (UPPER_SNAKE_CASE keys)
 4. Pass through `confidence` and `rationale` for audit trail
 5. Fail if `selectedWorkflow` is nil or missing required fields

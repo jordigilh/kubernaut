@@ -16,7 +16,7 @@ This DD documents why the answer is **no**, and records that this is a deliberat
 
 ### Why AF and KA differ here in the first place
 
-- **KA has no agent framework by design.** DD-HAPI-019-001 ("Framework Isolation Pattern") chose to keep KA's business logic (`internal/kubernautagent/investigator/*`) behind a Kubernaut-owned `llm.Client` interface specifically so that framework/library churn is absorbed by a thin adapter (~120 LOC) rather than leaking into business logic. This is the same principle that made removing `langchaingo` (DD-LLM-004) a contained refactor instead of a rewrite.
+- **KA has no agent framework by design.** DD-KA-019-001 ("Framework Isolation Pattern") chose to keep KA's business logic (`internal/kubernautagent/investigator/*`) behind a Kubernaut-owned `llm.Client` interface specifically so that framework/library churn is absorbed by a thin adapter (~120 LOC) rather than leaking into business logic. This is the same principle that made removing `langchaingo` (DD-LLM-004) a contained refactor instead of a rewrite.
 - **AF's entire agent loop is built on Google's ADK-Go framework** (`google.golang.org/adk`) — session management, event streaming, and tool execution are all ADK constructs. `adk-anthropic-go` is not a general-purpose Anthropic client; it is a bridge that implements ADK's `model.LLM` interface (`genai.Content`/`genai.Part` types) so that AF's ADK-based loop can address Claude. Using it outside of an ADK-based loop provides no benefit over using `anthropic-sdk-go` directly — it only adds a translation hop.
 
 Both `adk-anthropic-go` and KA's `anthropicfamily` are, underneath, thin layers over the same official `anthropic-sdk-go`. `adk-anthropic-go` does not wrap a materially different or more capable Anthropic implementation; it wraps the identical SDK for ADK-interface compatibility.
@@ -26,7 +26,7 @@ Both `adk-anthropic-go` and KA's `anthropicfamily` are, underneath, thin layers 
 ### Alternative A — KA adopts `adk-anthropic-go` (and, transitively, Google ADK) for its Anthropic/Vertex path (rejected)
 
 - **Pros**: Single Anthropic client implementation shared by AF and KA; one place to fix Anthropic-specific bugs.
-- **Cons**: Requires either (a) KA adopting Google ADK as its full agent framework — reversing DD-HAPI-019's explicit "no framework" decision for an unrelated reason (Anthropic client reuse), a disproportionate architectural cost — or (b) using `adk-anthropic-go`'s model wrapper as a bolted-on dependency outside of ADK, which adds an extra KA-types → `genai.Content`/`Part` → adk-anthropic-go → `anthropic-sdk-go` translation hop in place of KA's current direct KA-types → `anthropic-sdk-go` hop. Either way, dependency footprint and indirection increase with no corresponding capability gain, since both paths bottom out in the same SDK. Directly contradicts the "lean dependency footprint" and "framework isolation" decision drivers from DD-HAPI-019-001.
+- **Cons**: Requires either (a) KA adopting Google ADK as its full agent framework — reversing DD-KA-019's explicit "no framework" decision for an unrelated reason (Anthropic client reuse), a disproportionate architectural cost — or (b) using `adk-anthropic-go`'s model wrapper as a bolted-on dependency outside of ADK, which adds an extra KA-types → `genai.Content`/`Part` → adk-anthropic-go → `anthropic-sdk-go` translation hop in place of KA's current direct KA-types → `anthropic-sdk-go` hop. Either way, dependency footprint and indirection increase with no corresponding capability gain, since both paths bottom out in the same SDK. Directly contradicts the "lean dependency footprint" and "framework isolation" decision drivers from DD-KA-019-001.
 
 ### Alternative B — AF adopts KA's `anthropicfamily.Client` for its Anthropic/Vertex path (rejected)
 
@@ -40,7 +40,7 @@ Both `adk-anthropic-go` and KA's `anthropicfamily` are, underneath, thin layers 
 
 ### Decision
 
-**Alternative C** — no change to the current architecture. AF continues to use `adk-anthropic-go` (because AF is an ADK-based agent); KA continues to use `anthropicfamily.Client` (because KA is deliberately framework-independent per DD-HAPI-019). Reuse is scoped to genuinely framework-independent protocol logic (as already done for `converters.ThinkingConfigToAnthropic`, and as DD-LLM-004 did wholesale for the OpenAI-compatible protocol core, where AF and KA's needs were wire-protocol-identical).
+**Alternative C** — no change to the current architecture. AF continues to use `adk-anthropic-go` (because AF is an ADK-based agent); KA continues to use `anthropicfamily.Client` (because KA is deliberately framework-independent per DD-KA-019). Reuse is scoped to genuinely framework-independent protocol logic (as already done for `converters.ThinkingConfigToAnthropic`, and as DD-LLM-004 did wholesale for the OpenAI-compatible protocol core, where AF and KA's needs were wire-protocol-identical).
 
 This directly answers the "shouldn't we have parity" question raised while scoping E2E coverage for #1601: parity in the sense of "one shared Anthropic client" is not achievable without collapsing one of the two intentionally-different architectural choices (framework-based vs. framework-isolated) that predate and are orthogonal to the reasoning-token work. Parity in the sense of "both surfaces should support reasoning" is a separate, legitimate question — AF's Anthropic/Gemini surface via ADK does not currently read `cfg.Reasoning` at all (unlike AF's OpenAI-compatible surface, which gained it for free via `openaicompat`); if AF-side Claude/Gemini extended-thinking support is wanted, it should be scoped as its own BR against ADK's own thinking-config surface, not as an adoption of KA's client.
 
@@ -48,7 +48,7 @@ This directly answers the "shouldn't we have parity" question raised while scopi
 
 ### Positive
 - No disproportionate architectural cost (ADK adoption by KA, or ADK removal from AF) is incurred to chase client-implementation parity that would not, in practice, reduce risk (both paths already sit on the same upstream SDK).
-- Preserves DD-HAPI-019's framework-isolation guarantee for KA and AF's ADK-native integration (ThinkingPanel routing, session/event semantics) without compromise.
+- Preserves DD-KA-019's framework-isolation guarantee for KA and AF's ADK-native integration (ThinkingPanel routing, session/event semantics) without compromise.
 - Leaves the door open for future, narrowly-scoped reuse of specific `adk-anthropic-go`/`anthropic-sdk-go` protocol-logic pieces (as already done for thinking-tier detection), consistent with CHECKPOINT B.
 
 ### Negative
@@ -58,7 +58,7 @@ This directly answers the "shouldn't we have parity" question raised while scopi
 **Update (#1604)**: the unified `Effort` reasoning-depth knob extended the "gained it for free via `openaicompat`" parity above from reasoning-content capture to the effort/depth-control dial as well — AF's OpenAI-compatible surface (`pkg/apifrontend/launcher/openai`) now carries `WithReasoningEffort`, wired from `cfg.Reasoning.Effort` in `pkg/apifrontend/launcher/model.go`, at parity with KA's equivalent wrapper. This is the same shared `pkg/shared/llm/openaicompat` dialect code on both sides — no new divergence introduced. The Anthropic/Vertex/Gemini gap noted above is unchanged by this update.
 
 ## Related Decisions
-- **Builds on**: DD-HAPI-019-001 (Framework Isolation Pattern — the reason KA's and AF's LLM layers are structured differently in the first place)
+- **Builds on**: DD-KA-019-001 (Framework Isolation Pattern — the reason KA's and AF's LLM layers are structured differently in the first place)
 - **Contrasts with**: DD-LLM-004 (where AF/KA sharing *was* the right call, because the OpenAI-Chat-Completions protocol is wire-identical between them — unlike the Anthropic surface, where AF's consumer is ADK's `model.LLM` interface and KA's is KA's own `llm.Client`)
 - **Referenced by**: #1601 (KA reasoning-request wiring fix), while scoping E2E coverage for that fix; #1604 (unified Effort knob, extended to AF's OpenAI-compatible surface)
 

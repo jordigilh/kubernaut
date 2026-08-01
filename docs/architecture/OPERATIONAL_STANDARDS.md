@@ -47,7 +47,7 @@ const (
     HealthCheckTimeout        = 5 * time.Second
 
     // Service-specific timeouts
-    LLMInvestigationTimeout   = 60 * time.Second  // HolmesGPT investigations
+    LLMInvestigationTimeout   = 60 * time.Second  // Kubernaut Agent investigations
     VectorSearchTimeout       = 15 * time.Second  // Context API vector search
     WebhookDeliveryTimeout    = 10 * time.Second  // Notification webhooks
 )
@@ -138,7 +138,7 @@ func QueryWithTimeout(ctx context.Context, db *sql.DB, query string) (*sql.Rows,
 | **Gateway** | 30s | 5s (Redis) | 10s (Rego) | Fast response critical |
 | **Context API** | 30s | 10s (PG) | 15s (Vector) | Complex queries |
 | **Data Storage** | 30s | 10s (PG) | 30s (LLM embedding) | Write operations |
-| **HolmesGPT API** | 60s | N/A | 60s (LLM) | Long-running investigations |
+| **Kubernaut Agent** | 60s | N/A | 60s (LLM) | Long-running investigations |
 | **Notification** | 30s | N/A | 10s (Webhooks) | Multiple channel attempts |
 | **Dynamic Toolset** | 30s | N/A | 5s (Service health) | Discovery operations |
 
@@ -354,16 +354,16 @@ gateway_crd_created_total{} 300
 contextapi_vector_search_duration_seconds{} histogram
 contextapi_embeddings_cached_total{} 750
 
-// HolmesGPT API
-holmesgpt_investigations_total{
+// Kubernaut Agent
+kubernautagent_investigations_total{
     model="gpt-4",
     status="success"
 } 50
-holmesgpt_llm_tokens_total{
+kubernautagent_llm_tokens_total{
     model="gpt-4",
     type="input"
 } 150000
-holmesgpt_llm_cost_usd_total{} 12.50
+kubernautagent_llm_cost_usd_total{} 12.50
 
 // Notification Service
 notification_sent_total{
@@ -494,7 +494,7 @@ func New(settings Settings, logger *zap.Logger) *gobreaker.CircuitBreaker {
 | **Context API** | Vector DB | 50% | 30s | 5 |
 | **Data Storage** | PostgreSQL | 50% | 30s | 5 |
 | **Data Storage** | LLM API | 30% | 60s | 3 |
-| **HolmesGPT API** | LLM Provider | 20% | 120s | 2 |
+| **Kubernaut Agent** | LLM Provider | 20% | 120s | 2 |
 | **Notification** | Slack API | 50% | 60s | 3 |
 | **Notification** | Teams API | 50% | 60s | 3 |
 
@@ -613,7 +613,7 @@ cache.Set("audit_meta:{id}", metadata, 30*time.Minute)    // Medium-term
 
 ---
 
-#### **HolmesGPT API**
+#### **Kubernaut Agent**
 
 ```go
 // Investigation results (Redis)

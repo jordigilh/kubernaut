@@ -4,8 +4,8 @@
 **Status**: Approved
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: AUTHORITATIVE - This document governs workflow catalog matching strategy
-**Affects**: Data Storage Service, HolmesGPT API, Workflow Catalog, Signal Processing
-**Related**: DD-WORKFLOW-001 (Label Schema), DD-LLM-001 (MCP Search Taxonomy), DD-HAPI-016 (Remediation History Context), DD-017 (Effectiveness Monitor), ADR-054 (Proactive Signal Mode Classification), BR-WORKFLOW-006 (RemediationWorkflow CRD), ADR-058 (Webhook-Driven Registration)
+**Affects**: Data Storage Service, Kubernaut Agent (KA), Workflow Catalog, Signal Processing
+**Related**: DD-WORKFLOW-001 (Label Schema), DD-LLM-001 (MCP Search Taxonomy), DD-KA-016 (Remediation History Context), DD-017 (Effectiveness Monitor), ADR-054 (Proactive Signal Mode Classification), BR-WORKFLOW-006 (RemediationWorkflow CRD), ADR-058 (Webhook-Driven Registration)
 **Version**: 1.4
 
 ---
@@ -270,7 +270,7 @@ The description is the LLM's primary signal for selecting the right action. Desc
 | `when_not_to_use` | No | Action-specific exclusion conditions (e.g., "use RestartPod instead of DeletePod for general restarts"). Only populate when there is a genuinely useful exclusion specific to this action. |
 | `preconditions` | No | Conditions the LLM must verify through RCA investigation that **cannot** be determined by catalog label filtering. |
 
-**Failure-based exclusions are NOT part of the description.** Conditions like "do not use if already applied without success" are handled automatically by HAPI through the remediation history context (DD-HAPI-016). HAPI injects structured history alongside the action list, giving the LLM evidence of past attempts and their outcomes. This separation ensures:
+**Failure-based exclusions are NOT part of the description.** Conditions like "do not use if already applied without success" are handled automatically by KA through the remediation history context (DD-KA-016). KA injects structured history alongside the action list, giving the LLM evidence of past attempts and their outcomes. This separation ensures:
 
 1. Failure-based exclusions apply to **all** action types systematically (not dependent on author quality)
 2. Authors only write action-specific exclusions when they have something genuinely useful to say
@@ -343,7 +343,7 @@ The `list_available_actions` tool renders descriptions as structured bullet poin
 #### Anti-Patterns
 
 - Vague `what`: "Fixes CPU issues" (which CPU issues? how?)
-- Failure-based `when_not_to_use`: "Do not use if already applied without success" (this is handled automatically by remediation history context, DD-HAPI-016)
+- Failure-based `when_not_to_use`: "Do not use if already applied without success" (this is handled automatically by remediation history context, DD-KA-016)
 - Boilerplate `when_not_to_use`: "Do not use when this action is not appropriate" (adds noise, no value)
 - Label-based `preconditions`: "Requires no HPA" (this is a DetectedLabel filter, not a precondition)
 - Overlapping scope: If two action types have similar `when_to_use` fields, the LLM cannot distinguish them
@@ -354,7 +354,7 @@ The `list_available_actions` tool renders descriptions as structured bullet poin
 
 ### Purpose
 
-A new HAPI MCP tool that returns the action types available for the current signal context. This is a **context-aware** query -- it does not return all action types generically. It filters by the SP-determined signal attributes so the LLM only sees actions that have actual backing workflows for this specific signal's environment, component, and severity.
+A new KA MCP tool that returns the action types available for the current signal context. This is a **context-aware** query -- it does not return all action types generically. It filters by the SP-determined signal attributes so the LLM only sees actions that have actual backing workflows for this specific signal's environment, component, and severity.
 
 ### Tool Specification
 
@@ -708,7 +708,7 @@ WHERE action_type = $1
 SELECT
     workflow_id,
     description,          -- Free-form text: per-workflow approach
-    final_score           -- Internal: used by HAPI for sorting, stripped before LLM rendering
+    final_score           -- Internal: used by KA for sorting, stripped before LLM rendering
 FROM remediation_workflow_catalog
 WHERE action_type = $1    -- Selected action type from Step 1
   AND status = 'active'
@@ -724,7 +724,7 @@ ORDER BY final_score DESC, workflow_id ASC  -- Best matches first, deterministic
 LIMIT $7 OFFSET $8;                        -- Default: LIMIT 10 OFFSET 0
 ```
 
-**Note on `final_score`**: HAPI uses `final_score` internally for sorting results, but **strips it from the LLM tool response**. The LLM sees workflow descriptions and workflow IDs -- not scores. This prevents the LLM from over-indexing on numeric scores instead of reasoning about which workflow best fits the root cause.
+**Note on `final_score`**: KA uses `final_score` internally for sorting results, but **strips it from the LLM tool response**. The LLM sees workflow descriptions and workflow IDs -- not scores. This prevents the LLM from over-indexing on numeric scores instead of reasoning about which workflow best fits the root cause.
 
 **Workflow description guidelines**:
 - Describe the **strategy and approach** (conservative, aggressive, adaptive, etc.)
@@ -908,29 +908,29 @@ To:
 ### Sequence
 
 ```
-1. HAPI receives signal context from SP (severity, component, environment)
+1. KA receives signal context from SP (severity, component, environment)
 2. LLM performs RCA investigation (kubectl, metrics, logs, etc.)
 3. IF problem resolved or inconclusive:
    -> Follow existing paths (WorkflowNotNeeded / investigation_inconclusive)
    -> Skip action discovery entirely
 4. IF problem identified and needs remediation:
    a. LLM calls list_available_actions(severity, component, environment, priority, ...)
-      -> HAPI queries DS, returns action types with taxonomy descriptions (clean, static data)
+      -> KA queries DS, returns action types with taxonomy descriptions (clean, static data)
       -> Paginated (default 10 action types per page, cursor-based navigation v1.4)
       -> If response includes hasNext, LLM may call again with page="next" and cursor
    b. LLM selects action_type based on root cause + taxonomy descriptions
       -> MUST select from returned list; if none fit, report no_matching_workflows
    c. LLM calls list_workflows(action_type, severity, component, environment, priority, ...)
-      -> HAPI queries DS, returns all matching workflows for that action type
+      -> KA queries DS, returns all matching workflows for that action type
       -> Paginated (default 10 workflows per page, cursor-based navigation v1.4)
       -> LLM MUST read ALL listed workflows before selecting one
    d. LLM selects workflow_id based on root cause + per-workflow descriptions
       -> MUST select from returned list; if none fit, report no_matching_workflows
    e. LLM calls get_workflow(workflow_id, severity, component, environment, ...)
-      -> HAPI queries DS with security gate filters, returns parameter schema
+      -> KA queries DS with security gate filters, returns parameter schema
       -> Single result (no pagination); returns error if workflow_id doesn't match context
    f. LLM populates parameters based on RCA context and the parameter schema
-5. HAPI validates the LLM's returned workflow by querying DS directly
+5. KA validates the LLM's returned workflow by querying DS directly
    -> Ensures workflow data is current (not stale)
    -> Confirms workflow_id, action_type, and parameter schema match
 ```
@@ -945,7 +945,7 @@ To:
 
 ### LLM Prompt Contract
 
-The HAPI system prompt must instruct the LLM to:
+The KA system prompt must instruct the LLM to:
 
 1. **Perform RCA first**: Investigate the signal thoroughly before considering remediation actions.
 2. **Call `list_available_actions` only when remediation is needed**: After RCA, if the problem is identified and active, discover what action types are available. Do not call this tool if the problem is resolved or the investigation is inconclusive.
@@ -958,9 +958,9 @@ The HAPI system prompt must instruct the LLM to:
    - **Step 2** (`list_workflows`): You MUST review ALL available workflows before selecting. If `has_more` is true, request the next page and continue reviewing until all workflows have been seen. Do not select from an incomplete list.
    - If all pages are exhausted without a suitable match, report `no_matching_workflows`.
 
-### HAPI Validation
+### KA Validation
 
-After the LLM returns its selected workflow and parameters, HAPI validates the selection by querying DS directly. This ensures validation is performed against current data, avoiding stale state if workflows were updated or deactivated during the investigation. The validation checks:
+After the LLM returns its selected workflow and parameters, KA validates the selection by querying DS directly. This ensures validation is performed against current data, avoiding stale state if workflows were updated or deactivated during the investigation. The validation checks:
 
 1. The `workflow_id` exists and is active
 2. The `workflow_id` belongs to a valid `action_type` from the taxonomy
@@ -973,7 +973,7 @@ This is the same validation pattern currently used (DD-WORKFLOW-010), updated to
 
 The `action_type` selected by the LLM in Step 1 (list_available_actions) is propagated through the pipeline:
 
-1. **HAPI response**: Included in `selected_workflow.action_type` (alongside `workflow_id`, `version`, etc.)
+1. **KA response**: Included in `selected_workflow.action_type` (alongside `workflow_id`, `version`, etc.)
 2. **AIAnalysis CRD**: Stored in `status.selectedWorkflow.actionType` (DD-CONTRACT-002)
 3. **RO audit event**: Emitted as `action_type` in the `remediation.workflow_created` event payload (OpenAPI `actionType` on `RemediationOrchestratorAuditPayload`; ADR-EM-001 Section 9.1)
 4. **DS remediation history**: Read from `event_data.action_type` to populate `RemediationHistoryEntry.actionType` in the remediation history API
@@ -989,11 +989,11 @@ When `ListAvailableActions` returns only one action type and `ListWorkflows` ret
 3. Validate that the workflow's description matches the root cause
 4. Report `no_matching_workflows` if the fit is poor
 
-The confidence score (existing mechanism, internal to HAPI) provides an additional quality gate even in single-action scenarios -- HAPI can reject low-confidence matches before they reach workflow execution.
+The confidence score (existing mechanism, internal to KA) provides an additional quality gate even in single-action scenarios -- KA can reject low-confidence matches before they reach workflow execution.
 
 ---
 
-## Integration with DD-HAPI-016 (Remediation History Context)
+## Integration with DD-KA-016 (Remediation History Context)
 
 Action-type indexing aligns naturally with the remediation history context feature:
 
@@ -1036,7 +1036,7 @@ Seeded with V1.0 taxonomy (10 action types). Authoritative source for action typ
 | `GET /api/v1/workflows/actions/{action_type}` | **NEW** | Step 2: List workflows for a specific action type (paginated, default 10) |
 | `GET /api/v1/workflows/{workflow_id}` | **UPDATED** | Step 3: Single-workflow parameter lookup with context filter security gate |
 
-### HAPI Toolset
+### KA Toolset
 
 | Tool | Change | Details |
 |------|--------|---------|
@@ -1060,7 +1060,7 @@ Seeded with V1.0 taxonomy (10 action types). Authoritative source for action typ
 | DD-WORKFLOW-001 v2.5 | **Amendment to v2.6** | `action_type` added as mandatory label, `signalName` becomes optional |
 | DD-LLM-001 | **Amendment** | Query format changes from `<signal_type>` to `<action_type>` |
 | DD-WORKFLOW-002 | **Amendment** | New `list_available_actions` tool added to MCP toolset |
-| DD-HAPI-016 | **Cross-reference** | History context references action types for correlation |
+| DD-KA-016 | **Cross-reference** | History context references action types for correlation |
 | DD-017 v2.0 | **Cross-reference** | EM effectiveness data enriches action-type history |
 
 ---
@@ -1112,11 +1112,11 @@ The initial V1.0 taxonomy covers common Kubernetes remediation patterns. As new 
   - Validation uses the `action_type_taxonomy` table as the runtime authority (not hardcoded values)
   - Unit tests cover all valid action types, rejection of invalid ones, and seed data integrity
 
-#### BR-WORKFLOW-016-002: ListAvailableActions HAPI Tool
+#### BR-WORKFLOW-016-002: ListAvailableActions KA Tool
 
 - **Category**: WORKFLOW
 - **Priority**: P0 (blocking for V1.0 workflow discovery)
-- **Description**: MUST implement `list_available_actions` MCP tool in HAPI that returns context-filtered, paginated action types with taxonomy descriptions from the `action_type_taxonomy` table.
+- **Description**: MUST implement `list_available_actions` MCP tool in KA that returns context-filtered, paginated action types with taxonomy descriptions from the `action_type_taxonomy` table.
 - **Acceptance Criteria**:
   - Tool accepts severity, component, environment, priority, custom_labels, detected_labels parameters
   - Response includes action types with structured taxonomy descriptions and workflow count per action type
@@ -1127,11 +1127,11 @@ The initial V1.0 taxonomy covers common Kubernetes remediation patterns. As new 
   - Parameters are auto-populated from SP signal context
   - Unit and integration tests cover all filter combinations and pagination edge cases
 
-#### BR-WORKFLOW-016-005: ListWorkflows HAPI Tool
+#### BR-WORKFLOW-016-005: ListWorkflows KA Tool
 
 - **Category**: WORKFLOW
 - **Priority**: P0 (blocking for V1.0 workflow selection)
-- **Description**: MUST implement `list_workflows` MCP tool in HAPI that returns context-filtered, paginated workflows for a specific action type.
+- **Description**: MUST implement `list_workflows` MCP tool in KA that returns context-filtered, paginated workflows for a specific action type.
 - **Acceptance Criteria**:
   - Tool accepts action_type (from Step 1 selection), plus severity, component, environment, priority, custom_labels, detected_labels parameters
   - Response includes workflow_id and per-workflow description (free-form text)
@@ -1154,14 +1154,14 @@ The initial V1.0 taxonomy covers common Kubernetes remediation patterns. As new 
   - Returns exactly one workflow with full parameter schema, or error if not found / not allowed
   - Returns 0 results if `workflow_id` exists but doesn't match the signal context (defense in depth)
   - `signalName` is optional metadata on workflow entries, not a filter
-  - HAPI validation confirms workflow by querying DS directly (current data, not cached)
+  - KA validation confirms workflow by querying DS directly (current data, not cached)
   - Unit and integration tests cover valid lookups, invalid workflow_id, and context mismatch scenarios
 
 #### BR-WORKFLOW-016-004: LLM Three-Step Discovery Protocol
 
 - **Category**: WORKFLOW
 - **Priority**: P0 (blocking for V1.0 LLM integration)
-- **Description**: MUST update HAPI prompt templates to instruct the LLM to follow the three-step workflow discovery protocol (RCA -> ListAvailableActions -> ListWorkflows -> GetWorkflow). RCA is performed first; action discovery only happens when remediation is needed.
+- **Description**: MUST update KA prompt templates to instruct the LLM to follow the three-step workflow discovery protocol (RCA -> ListAvailableActions -> ListWorkflows -> GetWorkflow). RCA is performed first; action discovery only happens when remediation is needed.
 - **Acceptance Criteria**:
   - Incident and recovery prompts include three-step protocol instructions
   - LLM is instructed to select action type from Step 1, then review ALL workflows in Step 2 before selecting
@@ -1175,7 +1175,7 @@ The initial V1.0 taxonomy covers common Kubernetes remediation patterns. As new 
 
 - **Builds On**: DD-WORKFLOW-001 (Mandatory Label Schema)
 - **Builds On**: DD-LLM-001 (MCP Search Taxonomy)
-- **Integrates With**: DD-HAPI-016 (Remediation History Context)
+- **Integrates With**: DD-KA-016 (Remediation History Context)
 - **Integrates With**: DD-017 v2.0 (Effectiveness Monitor)
 - **Independent Of**: ADR-054 (Proactive Signal Mode Classification -- continues to function for SP signal mode)
 - **Supersedes**: `signalName` as primary catalog matching key (DD-WORKFLOW-001 v2.5 matching rules)
