@@ -187,8 +187,10 @@ tests:
             replayCache:
               enabled: true
     asserts:
+      # Index shifted 3->4: issue #1795's AF->KA egress rule (networkpolicy.yaml)
+      # was inserted ahead of the Valkey replay-cache rule in the egress list.
       - equal:
-          path: spec.egress[3].ports[0].port
+          path: spec.egress[4].ports[0].port
           value: 6380
 
   - it: "FleetMetadataCache NetworkPolicy egress-to-Valkey rule targets port 6380"
