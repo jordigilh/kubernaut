@@ -121,6 +121,20 @@ const (
 	// only observable record of the degradation (AU-3, GA Readiness
 	// Dimension 12: no silent failures).
 	EventTypeFleetOverlayFailed = "aiagent.fleet.overlay_failed"
+
+	// EventTypeFleetOverlayUnavailable is emitted when a fleet-target
+	// investigation (a non-empty clusterID) reaches prescopeFleetOverlay on
+	// a KA instance with no FleetOverlayResolver configured at all (issue
+	// #1768 follow-up). Distinct from EventTypeFleetOverlayFailed: nothing
+	// errored, fleet mode simply isn't wired on this KA instance --  but
+	// without this event that condition was previously indistinguishable
+	// from a hub-local investigation (clusterID == "", the expected
+	// zero-regression no-op) or, worse, from a regression that stopped
+	// calling prescopeFleetOverlay entirely. This is the only observable
+	// record of "a fleet-scoped investigation silently ran against local/
+	// hub tools instead of its intended target cluster" (AU-3, AC-4, GA
+	// Readiness Dimension 12: no silent failures).
+	EventTypeFleetOverlayUnavailable = "aiagent.fleet.overlay_unavailable"
 )
 
 // ========================================
@@ -167,23 +181,24 @@ const (
 	ActionTruncationDetected    = "truncation_detected"
 	ActionEnriched              = "enriched"
 
-	ActionSessionStarted         = "session_started"
-	ActionSessionCancelled       = "session_cancelled"
-	ActionSessionCompleted       = "session_completed"
-	ActionSessionFailed          = "session_failed"
-	ActionInvestigationCancelled = "investigation_cancelled"
-	ActionSessionObserved        = "session_observed"
-	ActionSessionAccessDenied    = "session_access_denied"
-	ActionSessionSuspended       = "session_suspended"
-	ActionInteractiveStarted     = "interactive_started"
-	ActionInteractiveCompleted   = "interactive_completed"
-	ActionSessionResumed         = "session_resumed"
-	ActionInteractiveK8sCall     = "interactive_k8s_call"
-	ActionAuthFailure            = "auth_failure"
-	ActionAuthDenied             = "auth_denied"
-	ActionRateLimitDenied        = "ratelimit_denied"
-	ActionSecretAccessed         = "secret_accessed"
-	ActionFleetOverlayFailed     = "fleet_overlay_failed"
+	ActionSessionStarted          = "session_started"
+	ActionSessionCancelled        = "session_cancelled"
+	ActionSessionCompleted        = "session_completed"
+	ActionSessionFailed           = "session_failed"
+	ActionInvestigationCancelled  = "investigation_cancelled"
+	ActionSessionObserved         = "session_observed"
+	ActionSessionAccessDenied     = "session_access_denied"
+	ActionSessionSuspended        = "session_suspended"
+	ActionInteractiveStarted      = "interactive_started"
+	ActionInteractiveCompleted    = "interactive_completed"
+	ActionSessionResumed          = "session_resumed"
+	ActionInteractiveK8sCall      = "interactive_k8s_call"
+	ActionAuthFailure             = "auth_failure"
+	ActionAuthDenied              = "auth_denied"
+	ActionRateLimitDenied         = "ratelimit_denied"
+	ActionSecretAccessed          = "secret_accessed"
+	ActionFleetOverlayFailed      = "fleet_overlay_failed"
+	ActionFleetOverlayUnavailable = "fleet_overlay_unavailable"
 
 	// Workflow catalog discovery event actions (Issue #1677, DD-WORKFLOW-019).
 	// Values match DS's pre-existing ActionDiscovery/ActionRetrieve/ActionValidate
@@ -233,6 +248,7 @@ var AllEventTypes = []string{
 	EventTypeRateLimitDenied,
 	EventTypeSecretAccessed,
 	EventTypeFleetOverlayFailed,
+	EventTypeFleetOverlayUnavailable,
 	EventTypeActionsListed,
 	EventTypeWorkflowsListed,
 	EventTypeWorkflowRetrieved,

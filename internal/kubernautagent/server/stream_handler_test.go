@@ -184,4 +184,42 @@ var _ = Describe("SSE Stream Handler — #823 PR7", func() {
 			Expect(sseData).To(ContainSubstring("terminal result"))
 		})
 	})
+
+	Describe("UT-KA-1794-003: terminal SSE complete event uses the bounded RCA subset, not a raw dump", func() {
+		It("should not leak internal-only InvestigationResult fields (e.g. workflow_id) into the reconnect SSE stream", func() {
+			id, err := mgr.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
+				return &katypes.InvestigationResult{
+					RCASummary: "terminal result",
+					Confidence: 0.95,
+					WorkflowID: "wf-should-not-leak",
+				}, nil
+			}, map[string]string{"remediation_id": "rr-1794-terminal"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() session.Status {
+				sess, _ := mgr.GetSession(id)
+				if sess == nil {
+					return session.StatusPending
+				}
+				return sess.Status
+			}, 5*time.Second).Should(Equal(session.StatusCompleted))
+
+			resp, handlerErr := h.SessionStreamAPIV1IncidentSessionSessionIDStreamGet(
+				context.Background(),
+				agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetParams{SessionID: id},
+			)
+			Expect(handlerErr).NotTo(HaveOccurred())
+
+			okResp, ok := resp.(*agentclient.SessionStreamAPIV1IncidentSessionSessionIDStreamGetOK)
+			Expect(ok).To(BeTrue(), "terminal session should return SSE stream with complete event")
+			data, readErr := io.ReadAll(okResp.Data)
+			Expect(readErr).NotTo(HaveOccurred())
+			sseData := string(data)
+			Expect(sseData).To(ContainSubstring("terminal result"),
+				"AF-relevant RCA fields must still be present")
+			Expect(sseData).NotTo(ContainSubstring("wf-should-not-leak"),
+				"SI-10: internal workflow state must not leak into the AF/Console-facing complete event")
+			Expect(sseData).NotTo(ContainSubstring("workflow_id"))
+		})
+	})
 })

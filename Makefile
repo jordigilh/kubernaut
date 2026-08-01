@@ -885,7 +885,7 @@ test-e2e-fullpipeline: ginkgo ensure-coverage-dirs ## Run full pipeline E2E test
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Full Pipeline E2E Tests (Issue #39)"
 	@echo "   All Kubernaut services in a single Kind cluster"
-	@echo "   Event → Gateway → RO → SP → AA → KA → WE(Job) → Notification"
+	@echo "   Event → Gateway → RO → SP → AA → KA → WE(Job) → EM → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@$(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fullpipeline/...
 	@echo "✅ Full Pipeline E2E tests completed!"
@@ -898,7 +898,7 @@ test-e2e-fleet: ginkgo ensure-coverage-dirs ## Run fleet E2E tests (multi-cluste
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@echo "🧪 Fleet E2E Tests (Issue #54)"
 	@echo "   Full pipeline + EAIGW + K8s MCP Server (loopback pattern)"
-	@echo "   Alert → GW → SP(MCP enrich) → RO → WE(MCP dispatch) → EM"
+	@echo "   Alert → GW → SP(MCP enrich) → RO → WE(MCP dispatch) → EM → Notification"
 	@echo "════════════════════════════════════════════════════════════════════════"
 	@FLEET_E2E=true $(GINKGO) -v --race --timeout=50m --procs=$(TEST_PROCS) ./test/e2e/fleet/...
 	@echo "✅ Fleet E2E tests completed!"
@@ -996,7 +996,7 @@ OGEN_VERSION ?= v1.20.1
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.9.0
-GINKGO_VERSION ?= v2.29.0
+GINKGO_VERSION ?= v2.32.0
 CRD_REF_DOCS_VERSION ?= v0.3.0
 
 .PHONY: kustomize

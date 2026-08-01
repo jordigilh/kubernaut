@@ -1014,7 +1014,12 @@ jobs:
             timeout: 25
           - service: fullpipeline
             service_name: "Full Pipeline"
-            timeout: 20
+            # Issue #1802 investigation: baseline suite runtime was already
+            # 15-18min against a 20min budget before E2E-FP-1189-005 (issue
+            # #1189, ~2m46s) was added, leaving too little headroom -- CI
+            # runs were landing at/over 20min and getting hard job-timeout
+            # cancelled (distinct from the #1802 ineffective-chain flake).
+            timeout: 25
           - service: fleet
             service_name: "Fleet Multi-Cluster"
             # 45 (up from 35, PR #1790 round-12 RCA): originally sized around

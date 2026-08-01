@@ -55,8 +55,14 @@ func (m *Manager) recoverPanic(id, correlationID string) {
 }
 
 // emitCompleteEvent sends an EventTypeComplete to the event sink (if active)
-// to signal the SSE consumer that the investigation has finished.
-func (m *Manager) emitCompleteEvent(id string) {
+// to signal the SSE consumer that the investigation has finished. When result
+// is non-nil, its bounded RCA subset (MarshalRCASubset) is attached as the
+// event's Data so a live-streaming consumer (AF's emitEarlyRCA/
+// emitFallbackInvestigationArtifact) can render the RCA immediately, matching
+// what a reconnecting client already gets from terminalSessionSSE (#1794:
+// previously this always sent an empty-Data event, since it fired before
+// Store.Update persisted the result -- a live Console user never saw the RCA).
+func (m *Manager) emitCompleteEvent(id string, result *katypes.InvestigationResult) {
 	m.store.mu.RLock()
 	sess, ok := m.store.sessions[id]
 	var sink *LazySink
@@ -73,7 +79,7 @@ func (m *Manager) emitCompleteEvent(id string) {
 		return
 	}
 	select {
-	case ch <- InvestigationEvent{Type: EventTypeComplete}:
+	case ch <- InvestigationEvent{Type: EventTypeComplete, Data: MarshalRCASubset(result)}:
 	default:
 	}
 }
