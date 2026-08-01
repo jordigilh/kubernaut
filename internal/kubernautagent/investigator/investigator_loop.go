@@ -458,15 +458,13 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 }
 
 // emitToSink sends an InvestigationEvent to the context-carried event sink
-// using non-blocking send semantics. If the sink is nil (no subscriber) or
-// the channel buffer is full, the event is silently dropped. This ensures
-// the investigation loop is never blocked by a slow SSE consumer.
+// using non-blocking send semantics. If the sink is nil (no subscriber yet),
+// the event is buffered for replay on the next Subscribe (#1811) rather than
+// lost; if a channel is attached but its buffer is full, the event is
+// dropped. Either way, the investigation loop is never blocked by a slow or
+// absent SSE consumer.
 func emitToSink(ctx context.Context, eventType string, turn int, phase string, data map[string]interface{}) {
-	sink := session.EventSinkFromContext(ctx)
-	if sink == nil {
-		diagSinkNil.Add(1)
-		return
-	}
+	sinkPresent := session.EventSinkFromContext(ctx) != nil
 	var raw json.RawMessage
 	if data != nil {
 		var err error
@@ -481,9 +479,11 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 		Phase: phase,
 		Data:  raw,
 	}
-	select {
-	case sink <- event:
+	switch {
+	case session.EmitEvent(ctx, event):
 		diagSendOK.Add(1)
+	case !sinkPresent:
+		diagSinkNil.Add(1)
 	default:
 		diagSendDrop.Add(1)
 	}
