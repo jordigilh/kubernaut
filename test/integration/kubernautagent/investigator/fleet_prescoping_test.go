@@ -655,4 +655,140 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 					"the local registry unchanged (zero regression)")
 		})
 	})
+
+	// QE readiness audit follow-up (PR #1799 Finding #2, tracked as #1834): UT-KA-FLEET-028
+	// (fleet_overlay_internal_test.go) proves prescopeFleetOverlay's own
+	// nil-resolver decision in isolation, calling it directly on a
+	// hand-built *Investigator. These IT specs close the remaining wiring
+	// gap: proving the SAME observability holds when a fleet-target
+	// investigation/interactive turn reaches a KA instance with
+	// FleetOverlayResolver simply never configured (the zero value,
+	// investigator.Config{} without the field set) via the actual
+	// production entry points (Investigate/RunInteractiveTurn), not a
+	// hand-constructed *Investigator struct literal.
+	Describe("IT-KA-FLEET-029 [AU-3, GA Readiness Dim. 12]: an unconfigured FleetOverlayResolver is observable through the production entry points", func() {
+		It("Investigate() emits EventTypeFleetOverlayUnavailable for a fleet-target investigation when FleetOverlayResolver is unset", func() {
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
+				{
+					Message:   llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{{ID: "tc_wf1", Name: "list_available_actions", Arguments: `{}`}},
+				},
+				{
+					Message: llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_submit", Name: "submit_result_no_workflow", Arguments: `{"root_cause_analysis":{"summary":"OOMKilled"},"reasoning":"none"}`},
+					},
+				},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			// FleetOverlayResolver deliberately omitted (nil) -- the exact
+			// condition of a KA instance that never had fleet mode wired.
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: registry.New(),
+			})
+
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api-server-abc", Namespace: "production", ClusterID: "remote-east",
+				RemediationID: "rem-fleet-overlay-unavailable-001",
+			})
+			Expect(err).NotTo(HaveOccurred(),
+				"IT-KA-FLEET-029: an unconfigured fleet resolver must fail open through the real "+
+					"Investigate() entry point too, exactly like a resolver error does (IT-KA-FLEET-020)")
+
+			var unavailableEvents []*audit.AuditEvent
+			for _, ev := range auditStore.events {
+				if ev.EventType == audit.EventTypeFleetOverlayUnavailable {
+					unavailableEvents = append(unavailableEvents, ev)
+				}
+			}
+			Expect(unavailableEvents).To(HaveLen(1),
+				"IT-KA-FLEET-029: Investigate() must record exactly one EventTypeFleetOverlayUnavailable "+
+					"audit event when it reaches an unconfigured FleetOverlayResolver, proving the wiring "+
+					"(not just the unit-level decision function) is observable end-to-end")
+			Expect(unavailableEvents[0].EventAction).To(Equal(audit.ActionFleetOverlayUnavailable))
+			Expect(unavailableEvents[0].ClusterID).To(Equal("remote-east"))
+			Expect(unavailableEvents[0].CorrelationID).To(Equal("rem-fleet-overlay-unavailable-001"),
+				"CC8.1: reconstructable by the investigation's own correlation ID, like IT-KA-FLEET-020")
+		})
+
+		It("RunInteractiveTurn emits EventTypeFleetOverlayUnavailable for a fleet-target interactive turn when FleetOverlayResolver is unset", func() {
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: "no root cause identified yet"}},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			// FleetOverlayResolver deliberately omitted (nil), mirroring the
+			// Investigate() case above for the interactive entry point.
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: registry.New(),
+			})
+
+			ctx := katypes.WithSignalContext(context.Background(), katypes.SignalContext{
+				ClusterID: "remote-east", RemediationID: "rem-interactive-fleet-unavailable-001",
+			})
+			_, err := inv.RunInteractiveTurn(ctx, []llm.Message{
+				{Role: "user", Content: "what is wrong with the deployment?"},
+			}, "rem-interactive-fleet-unavailable-001")
+			Expect(err).NotTo(HaveOccurred())
+
+			var unavailableEvents []*audit.AuditEvent
+			for _, ev := range auditStore.events {
+				if ev.EventType == audit.EventTypeFleetOverlayUnavailable {
+					unavailableEvents = append(unavailableEvents, ev)
+				}
+			}
+			Expect(unavailableEvents).To(HaveLen(1),
+				"IT-KA-FLEET-029: RunInteractiveTurn must record exactly one "+
+					"EventTypeFleetOverlayUnavailable audit event for a fleet-target interactive turn "+
+					"reaching an unconfigured FleetOverlayResolver")
+			Expect(unavailableEvents[0].ClusterID).To(Equal("remote-east"))
+			Expect(unavailableEvents[0].CorrelationID).To(Equal("rem-interactive-fleet-unavailable-001"))
+		})
+
+		It("emits nothing for a hub-local investigation even when FleetOverlayResolver is unset (zero-regression no-op)", func() {
+			mockClient := &mockLLMClient{responses: []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{"rca_summary":"OOMKilled","confidence":0.9}`}},
+				{
+					Message:   llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{{ID: "tc_wf1", Name: "list_available_actions", Arguments: `{}`}},
+				},
+				{
+					Message: llm.Message{Role: "assistant", Content: ""},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_submit", Name: "submit_result_no_workflow", Arguments: `{"root_cause_analysis":{"summary":"OOMKilled"},"reasoning":"none"}`},
+					},
+				},
+			}}
+			enricher := enrichment.NewEnricher(&k8sFixtureClient{}, suiteDSAdapter, auditStore, invLogger)
+			builder, _ := prompt.NewBuilder()
+			rp := parser.NewResultParser()
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp, Enricher: enricher,
+				AuditStore: auditStore, Logger: invLogger, MaxTurns: 15,
+				PhaseTools: investigator.DefaultPhaseToolMap(), Registry: registry.New(),
+			})
+
+			_, err := inv.Investigate(context.Background(), katypes.SignalContext{
+				Name: "api-server-abc", Namespace: "production",
+			})
+			Expect(err).NotTo(HaveOccurred())
+			for _, ev := range auditStore.events {
+				Expect(ev.EventType).NotTo(Equal(audit.EventTypeFleetOverlayUnavailable),
+					"IT-KA-FLEET-029: a hub-local investigation (no target cluster) must stay silent "+
+						"even with FleetOverlayResolver unset -- this is the expected, unchanged "+
+						"zero-regression path for the overwhelming majority of (non-fleet) deployments")
+			}
+		})
+	})
 })
