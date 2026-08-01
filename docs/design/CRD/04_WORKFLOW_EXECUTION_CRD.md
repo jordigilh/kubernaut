@@ -1239,7 +1239,7 @@ func (r *WorkflowExecutionController) Reconcile(ctx context.Context, req ctrl.Re
 - ~~[Multi-CRD Reconciliation Architecture](../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)~~ (DEPRECATED)
 - **Requirements**: [Workflow Engine & Orchestration Requirements](../requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md)
 - **Parent CRD**: [AlertRemediation CRD](01_ALERT_REMEDIATION_CRD.md)
-- **Input CRD**: [AIAnalysis CRD](03_AI_ANALYSIS_CRD.md)
+- **Input CRD**: [AIAnalysis CRD Schema](../../services/crd-controllers/02-aianalysis/crd-schema.md)
 - **Next CRD**: ~~KubernetesExecution CRD~~ (removed - ADR-025)
 
 ---
