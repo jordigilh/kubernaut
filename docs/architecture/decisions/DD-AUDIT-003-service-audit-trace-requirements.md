@@ -2,10 +2,19 @@
 
 **Status**: ✅ **APPROVED** (Production Standard)
 **Date**: November 8, 2025
-**Last Reviewed**: July 8, 2026
-**Version**: 2.4
+**Last Reviewed**: July 31, 2026
+**Version**: 2.6
 **Confidence**: 95%
 **Authority Level**: SYSTEM-WIDE - Defines audit requirements for all 14 services
+
+**Recent Changes** (v2.6 - July 31, 2026):
+- **Two-Tier Documentation Model**: Added an explicit [Document Map](#️-document-map-v26) codifying this DD as the policy tier (which services audit, at what priority, why) and per-service `AUDIT_EVENT_CATALOG.md` files as the detail tier (exact event strings, triggers, payloads). Slimmed the remaining 7 services' inline event tables (Gateway, Data Storage, Auth Webhook, Effectiveness Monitor, Signal Processing, Remediation Orchestrator, Notification) down to short summaries + catalog pointers, and fixed API Frontend's previously-duplicated inline catalog section (same drift risk, never cleaned up after the catalog was created).
+- **Drift found during migration**: code-verified audits of all 7 services surfaced material drift from this DD's narrative, now corrected in each catalog — most notably Data Storage (10 of 11 documented events no longer exist; DS emits exactly 1 event today, `datastorage.ratelimit.denied`, after DD-WORKFLOW-018/019 retired the catalog tables and REST surface), Auth Webhook (15 real events vs. 11 documented), Signal Processing (wrong event-name prefix throughout: `signalprocessing.` not `signal-processing.`), and Remediation Orchestrator (`orchestrator.phase.transitioned` renamed to `orchestrator.lifecycle.transitioned`; `orchestrator.approval.expired` doesn't exist as a distinct type; `orchestrator.remediation.manual_review` is orphaned/unwired). See each catalog's "Known Gaps" section for full detail.
+- **Authority**: QE readiness audit follow-up (#1799 cycle), user decision to keep the two-tier model and migrate all remaining services now
+
+**Recent Changes** (v2.5 - July 31, 2026):
+- **KA Event Catalog Handoff**: The [`v1.3 Update: Kubernaut Agent Audit Traces`](#v13-update-kubernaut-agent-audit-traces) section below is now **historical/frozen** at the 15 events it documented as of Issue #823 (v1.9, April 2026). KA has since grown to 37 `aiagent.*`/`workflow.*` event types (alignment, shadow-mode, fleet-federation, secret-access, interactive-mode incl. `aiagent.session.resumed`/`aiagent.interactive.k8s_call`, and workflow-catalog-discovery events) — see [`AUDIT_EVENT_CATALOG.md`](../../services/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) for the current, complete, and actively-maintained list. This DD remains authoritative for the system-wide "which services MUST/SHOULD/NO audit" decision and per-service summary table; it is no longer the source of truth for KA's individual event names.
+- **Authority**: QE readiness audit follow-up (#1799 cycle); AGENTS.md ("New services must declare audit requirements before implementation")
 
 **Recent Changes** (v2.4 - July 8, 2026):
 - **Column Rename**: `audit_events.cluster_name` renamed to `cluster_id` (migration 014). The column was never populated by any shipped release; its actual intent was always the unique cluster identifier, not a non-unique display name. All per-service wiring references, `AuditEventRequest.ClusterID`, and `ReconstructionResponse.ClusterID` updated accordingly.
@@ -119,6 +128,21 @@
 - **Remediation Orchestrator**: Added manual review event
 - **Remediation Orchestrator**: Updated expected volume: 1,000 → 1,200 events/day
 - **Data Storage**: Removed meta-auditing events per DD-AUDIT-002 V2.0.1 (audit writes no longer audited)
+
+---
+
+## 🗺️ **Document Map (v2.6)**
+
+This DD and the per-service `AUDIT_EVENT_CATALOG.md` files form a **two-tier model** — each tier has a distinct, non-overlapping responsibility:
+
+| Tier | Document | Answers | Owned by |
+|------|----------|---------|----------|
+| **Policy** | This DD (DD-AUDIT-003) | *Which* services audit, at what priority (MUST/SHOULD/NO), and why (compliance/business rationale, industry precedent, volume/cost estimates) | Architecture team, reviewed annually |
+| **Detail** | `docs/services/**/security/AUDIT_EVENT_CATALOG.md` (one per audit-emitting service) | *What* events exist today — exact event-type strings, trigger conditions, payload fields, emission call sites, known gaps/drift vs. this DD | Service owners, updated with every audit-event code change |
+
+**Rule of thumb**: if you're asking "should this service audit at all, and at what priority" → read this DD. If you're asking "what does event X actually contain, and where is it emitted" → read that service's catalog. Per-service sections below intentionally keep only a short summary and rationale; they link to the catalog for the current, code-verified event list rather than duplicating it inline. When the two disagree, **the catalog wins** — it is the one regenerated against source code, not narrative prose.
+
+**Current catalogs**: [Gateway](../../services/stateless/gateway-service/security/AUDIT_EVENT_CATALOG.md) · [Data Storage](../../services/stateless/data-storage/security/AUDIT_EVENT_CATALOG.md) · [Auth Webhook](../../services/shared/authentication-webhook/security/AUDIT_EVENT_CATALOG.md) · [Effectiveness Monitor](../../services/stateless/effectiveness-monitor/security/AUDIT_EVENT_CATALOG.md) · [Signal Processing](../../services/crd-controllers/01-signalprocessing/security/AUDIT_EVENT_CATALOG.md) · [Remediation Orchestrator](../../services/crd-controllers/05-remediationorchestrator/security/AUDIT_EVENT_CATALOG.md) · [Notification](../../services/crd-controllers/06-notification/security/AUDIT_EVENT_CATALOG.md) · [Kubernaut Agent](../../services/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) · [API Frontend](../../services/apifrontend/security/AUDIT_EVENT_CATALOG.md)
 
 ---
 
@@ -242,16 +266,7 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 - ✅ **Debugging Value**: Critical for tracing signal flow
 - ✅ **Performance Impact**: High-volume (1000+ signals/day)
 
-**Audit Events**:
-
-| Event Type | Description | Priority |
-|------------|-------------|----------|
-| `gateway.signal.received` | Signal received from external source | P0 |
-| `gateway.signal.deduplicated` | Duplicate signal detected | P0 |
-| `gateway.crd.created` | RemediationRequest CRD created | P0 |
-| `gateway.crd.creation_failed` | CRD creation failed | P0 |
-| `gateway.config.reloaded` | Hot-reloadable config accepted (log level, CA cert) — GAP-11, Issue #1505 | P2 |
-| `gateway.config.rejected` | Hot-reloadable config rejected, previous config kept — GAP-11, Issue #1505 | P2 |
+**Audit Events**: 6 event types covering signal ingestion (`gateway.signal.*`), RemediationRequest CRD lifecycle (`gateway.crd.*`), and hot-reload config (`gateway.config.*`, GAP-11/Issue #1505) — see [AUDIT_EVENT_CATALOG.md](../../services/stateless/gateway-service/security/AUDIT_EVENT_CATALOG.md) for the current, code-verified list, triggers, and payload fields. Note: the actual event is `gateway.crd.failed`, not `gateway.crd.creation_failed`.
 
 **Industry Precedent**: AWS EventBridge, Google Cloud Pub/Sub, Azure Event Grid
 
@@ -405,22 +420,7 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 - ✅ **Debugging Value**: Critical for troubleshooting notification failures
 - ✅ **SLA Tracking**: Notification delivery time monitoring
 
-**Audit Events**:
-
-| Event Type | Description | Priority |
-|------------|-------------|----------|
-| `notification.message.sent` | Notification sent to external channel | P0 |
-| `notification.message.delivered` | Notification delivered successfully | P0 |
-| `notification.message.failed` | Notification delivery failed | P0 |
-| `notification.request.cancelled` | Operator cancels notification (SOC2 CC8.1) | **P0** |
-| `notification.crd.updated` | Notification CRD status updated | P1 |
-
-**SOC2 Compliance Event** (v1.4 - January 2026):
-- **Event**: `notification.request.cancelled`
-- **Purpose**: Captures operator identity when cancelling notifications (SOC2 CC8.1)
-- **Data**: `cancelled_by` (operator identity), `cancellation_reason`, `notification_id`
-- **Compliance**: SOC2 CC8.1 (Attribution requirement)
-- **Authority**: DD-WEBHOOK-001 (NotificationRequest webhook requirement)
+**Audit Events**: 4 event types covering per-channel delivery outcomes and phase-transition markers (`notification.message.*`) — see [AUDIT_EVENT_CATALOG.md](../../services/crd-controllers/06-notification/security/AUDIT_EVENT_CATALOG.md) for the current, code-verified list, triggers, and payload fields. Note: operator cancellation (SOC2 CC8.1 attribution) is emitted as `webhook.notification.cancelled` by **Auth Webhook**, not this service — see the [Auth Webhook catalog](../../services/shared/authentication-webhook/security/AUDIT_EVENT_CATALOG.md).
 
 **Industry Precedent**: PagerDuty audit logs, Slack audit logs, SendGrid event webhooks
 
@@ -439,44 +439,18 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 - ✅ **Debugging Value**: Critical for data integrity troubleshooting
 - ✅ **Performance Monitoring**: Database query performance tracking
 
-**Audit Events**:
-
-| Event Type | Description | Priority |
-|------------|-------------|----------|
-| `datastorage.workflow.created` | Workflow added to catalog (business logic) | P0 |
-| `datastorage.workflow.updated` | Workflow mutable fields updated (including disable, deprecate) | P0 |
-| `datastorage.actiontype.created` | ActionType registered in catalog (new or re-enabled) | **P0** |
-| `datastorage.actiontype.updated` | ActionType description updated | **P0** |
-| `datastorage.actiontype.disabled` | ActionType soft-disabled | **P0** |
-| `datastorage.actiontype.disable_denied` | ActionType disable denied (active workflow dependencies) | **P0** |
-| `datastorage.actiontype.reenabled` | Previously disabled ActionType re-enabled via CREATE | **P0** |
-| `workflow.catalog.actions_listed` | Step 1: Action types returned for signal context (DD-WORKFLOW-014 v3.0) | P0 |
-| `workflow.catalog.workflows_listed` | Step 2: Workflows returned for selected action type (DD-WORKFLOW-014 v3.0) | P0 |
-| `workflow.catalog.workflow_retrieved` | Step 3: Single workflow parameter schema retrieved (DD-WORKFLOW-014 v3.0) | P0 |
-| `workflow.catalog.selection_validated` | Post-selection: HAPI validation re-query result (DD-WORKFLOW-014 v3.0) | P0 |
+**Audit Events**: ⚠️ **Historical/frozen narrative below.** DD-WORKFLOW-018 (dropped the `remediation_workflow_catalog`/`action_type_taxonomy` Postgres tables) and DD-WORKFLOW-019 (Issue #1677, removed the `/api/v1/workflows*` REST surface) retired 10 of the 11 events described below; that responsibility moved to Auth Webhook (CRD admission) and Kubernaut Agent (workflow discovery). Data Storage's production code today emits exactly **one** event: `datastorage.ratelimit.denied` (per-IP rate limiting, BR-STORAGE-1505). See [AUDIT_EVENT_CATALOG.md](../../services/stateless/data-storage/security/AUDIT_EVENT_CATALOG.md) for the current, code-verified reference and the full retirement mapping.
 
 **Note**: Data Storage **NO LONGER** audits meta-operations (audit writes, DLQ fallback) per DD-AUDIT-002 V2.0.1 (December 14, 2025). These were redundant because:
 - **Successful writes**: Event in DB **IS** proof of success
 - **Failed writes**: DLQ already captures failures
 - **Operational visibility**: Maintained via Prometheus metrics (`audit_writes_total{status="success|failure|dlq"}`) and structured logs
 
-**What Data Storage DOES Audit**: Workflow and ActionType catalog operations involve state changes and business decisions:
-- Workflow creation (sets `status="active"`, marks as latest version)
-- Workflow updates (mutable field changes, status transitions, disable/deprecate operations)
-- Workflow discovery (three-step protocol queries per DD-WORKFLOW-014 v3.0, DD-WORKFLOW-016)
-- ActionType registration, update, disable, disable-denied, and re-enable (BR-WORKFLOW-007.4, Issue #300)
-
-**ActionType Catalog Events** (v1.7 - March 2026):
-- **Authority**: BR-WORKFLOW-007.4, DD-ACTIONTYPE-001, Issue #300
-- **Compliance**: SOC2 Type II requires full audit trail for taxonomy lifecycle operations
-- **Implementation**: `pkg/datastorage/audit/actiontype_events.go`
-- **Payload Structure**: All events carry typed payloads (ogen-generated from OpenAPI spec) persisted as JSONB in `audit_events.event_data`
-
 **Industry Precedent**: AWS RDS audit logs, Google Cloud SQL audit logs (audit business operations, not CRUD operations)
 
-**Expected Volume**: 600 events/day, 18 MB/month (+100 events/day for ActionType lifecycle)
+**Expected Volume**: See catalog — the volume estimate below (§ Audit Event Volume Estimates) predates the DD-WORKFLOW-018/019 retirement and is stale for DS specifically.
 
-**Authority**: DD-AUDIT-002 V2.0.1, `pkg/datastorage/audit/workflow_catalog_event.go`, `pkg/datastorage/audit/actiontype_events.go`
+**Authority**: DD-AUDIT-002 V2.0.1, DD-WORKFLOW-018, DD-WORKFLOW-019
 
 ---
 
@@ -491,48 +465,13 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 - ✅ **Safety**: Critical for understanding why operations were admitted or denied
 - ✅ **Cross-Service**: Coordinates with Data Storage for ActionType registration and workflow dependency checks
 
-**Audit Events**:
-
-| Event Type | Description | Category | Priority |
-|------------|-------------|----------|----------|
-| `actiontype.admitted.create` | ActionType CREATE admitted by webhook | `actiontype` | P0 |
-| `actiontype.admitted.update` | ActionType UPDATE admitted by webhook | `actiontype` | P0 |
-| `actiontype.admitted.delete` | ActionType DELETE admitted by webhook (soft-disable) | `actiontype` | P0 |
-| `actiontype.denied.create` | ActionType CREATE denied | `actiontype` | P0 |
-| `actiontype.denied.update` | ActionType UPDATE denied | `actiontype` | P0 |
-| `actiontype.denied.delete` | ActionType DELETE denied (active workflow dependencies) | `actiontype` | P0 |
-| `remediationworkflow.admitted.create` | RemediationWorkflow CREATE admitted by webhook | `workflow` | P0 |
-| `remediationworkflow.admitted.update` | RemediationWorkflow UPDATE admitted by webhook | `workflow` | P0 |
-| `remediationworkflow.admitted.delete` | RemediationWorkflow DELETE admitted by webhook | `workflow` | P0 |
-| `remediationworkflow.admitted.denied` | RemediationWorkflow CREATE/UPDATE denied | `workflow` | P0 |
-| `authwebhook.workflow.registration_failed` | Startup reconciler: RW re-registration failed (graceful degradation) | `workflow` | P0 |
-
-**ActionType Webhook Admission Events** (v1.7 - March 2026):
-- **Authority**: BR-WORKFLOW-007.4, DD-ACTIONTYPE-001, Issue #300
-- **Compliance**: SOC2 Type II requires admission decision audit trail for taxonomy governance
-- **Implementation**: `pkg/authwebhook/actiontype_audit.go`
-- **Payload Structure**: Events carry ActionType spec, user identity, and DS result as typed payloads
-- **Delivery**: Events are batched and written to Data Storage audit API via async buffered store
-
-**RemediationWorkflow Webhook Admission Events** (ADR-058):
-- **Authority**: ADR-058, Issue #300
-- **Compliance**: SOC2 Type II requires admission decision audit trail for workflow governance
-- **Implementation**: `pkg/authwebhook/remediationworkflow_audit.go`
-- **Payload Structure**: Events carry RW name, workflow ID (when available), and DS registration result
-
-**Startup Reconciler Audit Events** (v2.1 - May 2026, Issue #1246):
-- **Authority**: Issue #1246 (graceful degradation for RW re-registration failures)
-- **Compliance**: AU-3 (audit content), SI-11 (error handling observability)
-- **Implementation**: `pkg/authwebhook/startup_reconciler.go`
-- **Actor**: `system:authwebhook-startup` (service account, not user-initiated)
-- **Trigger**: RW registration fails with permanent or deadline-exhausted error during startup sync
-- **Severity**: `high` (operational degradation requiring operator attention)
+**Audit Events**: 15 event types across ActionType admission (`actiontype.*`), RemediationWorkflow admission (`remediationworkflow.*`), startup reconciliation, and 4 additional admission-webhook events (WorkflowExecution block-clear, RemediationRequest timeout edits, RemediationApprovalRequest decisions, NotificationRequest cancellation) — see [AUDIT_EVENT_CATALOG.md](../../services/shared/authentication-webhook/security/AUDIT_EVENT_CATALOG.md) for the current, code-verified list, triggers, and payload fields, including two known gaps (`actiontype.denied.create` is unreachable in production; `webhook.notification.cancelled` has a dormant secondary emission path with a divergent payload).
 
 **Industry Precedent**: Kubernetes Admission Audit Logs, OPA/Gatekeeper decision logs
 
-**Expected Volume**: 200 events/day, 6 MB/month (ActionType + RemediationWorkflow admission + startup reconciliation)
+**Expected Volume**: 200 events/day, 6 MB/month (ActionType + RemediationWorkflow admission + startup reconciliation) — predates the 4 additional event types found in the catalog; stale, needs re-estimation
 
-**Authority**: BR-WORKFLOW-007.4, ADR-058, Issue #1246, `pkg/authwebhook/actiontype_audit.go`, `pkg/authwebhook/remediationworkflow_audit.go`, `pkg/authwebhook/startup_reconciler.go`
+**Authority**: BR-WORKFLOW-007.4, ADR-058, Issue #1246, ADR-059, DD-WEBHOOK-003, ADR-040
 
 ---
 
@@ -547,21 +486,9 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 - ✅ **Debugging Value**: Critical for understanding AI learning
 - ✅ **ML Observability**: Model performance tracking
 
-**Audit Events** (per ADR-EM-001 v1.3, component-level architecture):
+**Audit Events**: 7 implemented, component-level events (per ADR-EM-001 v1.3) covering health/alert/metrics assessment, spec-hash comparison (DD-EM-002), alert-decay detection (Issue #369, BR-EM-012), and assessment scheduling/completion — plus 2 "V1.1 Level 2" events (`effectiveness.learning.triggered`, `effectiveness.crd.updated`) that are aspirational and not implemented anywhere in code. See [AUDIT_EVENT_CATALOG.md](../../services/stateless/effectiveness-monitor/security/AUDIT_EVENT_CATALOG.md) for the current, code-verified list, triggers, and payload fields.
 
-| Event Type | Description | Typed Sub-Objects | Scope | Priority |
-|------------|-------------|-------------------|-------|----------|
-| `effectiveness.health.assessed` | Health component assessment (pod status, readiness, restarts) | `health_checks` (pod_running, readiness_pass, restart_delta, crash_loops, oom_killed, pending_count) | V1.0 (Level 1) | P0 |
-| `effectiveness.alert.assessed` | Alert component assessment (signal resolution) | `alert_resolution` (alert_resolved, active_count, resolution_time_seconds) | V1.0 (Level 1) | P0 |
-| `effectiveness.metrics.assessed` | Metrics component assessment (before/after comparison) | `metric_deltas` (cpu_before/after, memory_before/after, latency_p95_before/after_ms, error_rate_before/after) | V1.0 (Level 1) | P0 |
-| `effectiveness.hash.computed` | Pre/post remediation spec hash comparison (DD-EM-002) | pre_remediation_spec_hash, post_remediation_spec_hash, hash_match | V1.0 (Level 1) | P0 |
-| `effectiveness.assessment.completed` | Lifecycle marker — assessment finished | reason ("full", "partial", "expired", "alert_decay_timeout") | V1.0 (Level 1) | P0 |
-| `effectiveness.alert_decay.detected` | Alert decay detected via multi-probe cross-validation — all non-alert probes positive (health live re-probe > 0, metrics >= 0 or N/A, hash stable) but alert still firing. Health re-probed each pass; decay killed if health drops or metrics negative. (Issue #369, BR-EM-012) | `alert_resolution` (alert_resolved=false, active_count) | V1.0 (Level 1) | P0 |
-| `effectiveness.assessment.scheduled` | Effectiveness assessment scheduled | — | V1.0 (Level 1) | P0 |
-| `effectiveness.learning.triggered` | Learning feedback triggered (HolmesGPT PostExec) | — | V1.1 (Level 2) | P0 |
-| `effectiveness.crd.updated` | Effectiveness CRD updated | — | V1.1 (Level 2) | P1 |
-
-**Note**: EM Level 1 (V1.0) emits **component-level** audit events (per ADR-EM-001 v1.3) rather than a single monolithic event. Each component event carries typed sub-objects in the `EffectivenessAssessmentAuditPayload` (ogen-generated). The weighted effectiveness score is computed on-demand by DS (`GET /api/v1/effectiveness/{correlation_id}`) using `ComputeWeightedScore()` (DD-017 v2.1 formula). All events share a `correlation_id` (RemediationRequest name) as the join key. DD-HAPI-016 uses these events for remediation history context enrichment. Data stored as audit traces only — no new database tables.
+**Note**: EM Level 1 (V1.0) emits **component-level** audit events rather than a single monolithic event. The weighted effectiveness score is computed on-demand by DS (`GET /api/v1/effectiveness/{correlation_id}`) using `ComputeWeightedScore()` (DD-017 v2.1 formula). All events share a `correlation_id` (RemediationRequest name) as the join key. DD-HAPI-016 uses these events for remediation history context enrichment. Data stored as audit traces only — no new database tables.
 
 **Industry Precedent**: MLflow tracking, Weights & Biases audit logs, Kubeflow Pipelines logs
 
@@ -583,14 +510,7 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 - ⚠️ **Not Business-Critical**: Enrichment is supplementary (not core operation)
 - ⚠️ **Low Volume**: Only runs once per signal
 
-**Audit Events**:
-
-| Event Type | Description | Priority |
-|------------|-------------|----------|
-| `signal-processing.enrichment.started` | Signal enrichment started | P1 |
-| `signal-processing.enrichment.completed` | Signal enrichment completed | P1 |
-| `signal-processing.enrichment.failed` | Signal enrichment failed | P1 |
-| `signal-processing.crd.updated` | SignalProcessing CRD updated | P2 |
+**Audit Events**: 6 event types covering signal processing outcome, phase transitions, classification decisions, business classification, enrichment completion, and errors — see [AUDIT_EVENT_CATALOG.md](../../services/crd-controllers/01-signalprocessing/security/AUDIT_EVENT_CATALOG.md) for the current, code-verified list, triggers, and payload fields. Note: the actual prefix is `signalprocessing.` (no hyphen), not `signal-processing.`; there is no distinct "enrichment started/failed" or "crd.updated" event — enrichment failures fold into a generic `signalprocessing.error.occurred`.
 
 **Recommendation**: ✅ Generate audit traces for operational visibility, but P1 priority (not P0).
 
@@ -609,27 +529,13 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 - ⚠️ **Not Business-Critical**: Orchestration is coordination (not core operation)
 - ⚠️ **Low Volume**: Only runs once per remediation
 
-**Audit Events**:
-
-| Event Type | Description | Priority | Outcome |
-|------------|-------------|----------|---------|
-| `orchestrator.lifecycle.started` | Remediation lifecycle started | P1 | success |
-| `orchestrator.phase.transitioned` | Phase transition (Pending → Processing → Analyzing → Executing → Verifying) | P1 | success |
-| `orchestrator.lifecycle.verifying_started` | RR entered Verifying phase; EA assessment in progress (#280) | P1 | pending |
-| `orchestrator.lifecycle.verification_completed` | EA reached terminal phase; RR transitioned Verifying → Completed (#280) | P1 | success |
-| `orchestrator.lifecycle.verification_timed_out` | Verification deadline or safety-net expired; RR → Completed with VerificationTimedOut (#280) | P1 | failure |
-| `orchestrator.lifecycle.completed` | Remediation lifecycle completed (success or failure) | P1 | success/failure |
-| `orchestrator.routing.blocked` | Routing blocked (cooldown, duplicate, resource busy, consecutive failures) | **P1** | **pending** |
-| `orchestrator.approval.requested` | Human approval requested for high-risk remediation | P1 | pending |
-| `orchestrator.approval.approved` | Human approval granted | P1 | success |
-| `orchestrator.approval.rejected` | Human approval rejected | P1 | failure |
-| `orchestrator.approval.expired` | Approval timeout exceeded | P1 | failure |
-| `orchestrator.remediation.manual_review` | Manual review required (non-approval escalation) | P2 | pending |
+**Audit Events**: 15 event types covering lifecycle (created/started/transitioned/completed/EA-created), verification (verifying_started/verification_completed/verification_timed_out), routing-blocked, and approval decisions — see [AUDIT_EVENT_CATALOG.md](../../services/crd-controllers/05-remediationorchestrator/security/AUDIT_EVENT_CATALOG.md) for the current, code-verified list, triggers, and payload fields, including several known gaps: `orchestrator.phase.transitioned` was renamed to `orchestrator.lifecycle.transitioned`; `orchestrator.approval.expired` does not exist as a distinct type (expired decisions reuse `orchestrator.approval.rejected` with `event_action=expired`); `orchestrator.remediation.manual_review` is defined but has zero production callers (orphaned).
 
 **Routing Blocked Event Context** (NEW - Dec 17, 2025):
 - Captures: block reason, workflow ID, target resource, requeue timing, blocked duration
 - Use cases: cooldown enforcement, duplicate detection, resource conflict resolution, consecutive failure tracking
 - ADR-032 compliance: All phase transitions must be audited
+- ⚠️ Per the catalog, the emitted payload today only carries `rr_name`/`namespace` — the richer fields listed above are built by the caller but not yet attached to the outgoing event (payload-mapping gap, not a doc issue)
 
 **Recommendation**: ✅ Generate audit traces for coordination visibility, but P1 priority (not P0).
 
@@ -962,6 +868,17 @@ context_api:
 - **DD-005**: [Observability Standards](./DD-005-OBSERVABILITY-STANDARDS.md) - Alternative observability for non-audited services
 - **DD-007**: [Graceful Shutdown Pattern](./DD-007-kubernetes-aware-graceful-shutdown.md) - Ensures audit flush before shutdown
 
+**Per-Service Event Catalogs** (current source of truth for individual event names/triggers, superseding the per-service narratives above — see [Document Map](#️-document-map-v26)):
+- **Gateway**: [AUDIT_EVENT_CATALOG.md](../../services/stateless/gateway-service/security/AUDIT_EVENT_CATALOG.md) - 6 `gateway.*` events
+- **Data Storage**: [AUDIT_EVENT_CATALOG.md](../../services/stateless/data-storage/security/AUDIT_EVENT_CATALOG.md) - 1 `datastorage.*` event (10 of 11 previously-documented events retired to Auth Webhook/KA)
+- **Auth Webhook**: [AUDIT_EVENT_CATALOG.md](../../services/shared/authentication-webhook/security/AUDIT_EVENT_CATALOG.md) - 15 `actiontype.*`/`remediationworkflow.*`/`webhook.*`/`workflowexecution.*` events
+- **Effectiveness Monitor**: [AUDIT_EVENT_CATALOG.md](../../services/stateless/effectiveness-monitor/security/AUDIT_EVENT_CATALOG.md) - 7 `effectiveness.*` events
+- **Signal Processing**: [AUDIT_EVENT_CATALOG.md](../../services/crd-controllers/01-signalprocessing/security/AUDIT_EVENT_CATALOG.md) - 6 `signalprocessing.*` events
+- **Remediation Orchestrator**: [AUDIT_EVENT_CATALOG.md](../../services/crd-controllers/05-remediationorchestrator/security/AUDIT_EVENT_CATALOG.md) - 15 `orchestrator.*`/`remediation.*` events
+- **Notification**: [AUDIT_EVENT_CATALOG.md](../../services/crd-controllers/06-notification/security/AUDIT_EVENT_CATALOG.md) - 4 `notification.*` events
+- **KA**: [AUDIT_EVENT_CATALOG.md](../../services/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) - all 37 `aiagent.*`/`workflow.*` events
+- **API Frontend**: [AUDIT_EVENT_CATALOG.md](../../services/apifrontend/security/AUDIT_EVENT_CATALOG.md) - all `apifrontend.*`/`a2a.*` events
+
 ---
 
 ## 📝 **Implementation Checklist**
@@ -1059,43 +976,18 @@ The reconstruction pipeline (`pkg/datastorage/reconstruction/`) MUST:
 
 DD-AUDIT-003 v2.0 narrative describes KA as P0 MUST (via the `aiagent` category, v1.3 update). The summary table at Section "Summary Table" correctly lists HolmesGPT API Service as P0 MUST with `aiagent.*` events emitted by KA (per v1.3 clarification). No action needed -- the naming reflects the KA Go rewrite (v1.3).
 
-## API Frontend (AF) Event Catalog (v2.2)
+## API Frontend (AF) Event Catalog
 
-The AF emits 30+ typed audit events under the `apifrontend` event category.
-Events are produced via `pkg/apifrontend/audit.StoreAdapter`, which converts
-AF's internal `audit.Event` to OpenAPI-typed `AuditEventRequest` payloads.
+> **⚠️ Historical/frozen as of v2.2 (June 2026).** This section previously
+> duplicated AF's event catalog inline — the same drift risk this v2.6
+> migration fixed for the other 7 per-service sections. **For the current,
+> complete list of `apifrontend.*`/`a2a.*` event types**, see the
+> authoritative, actively-maintained
+> [`AUDIT_EVENT_CATALOG.md`](../../services/apifrontend/security/AUDIT_EVENT_CATALOG.md).
+> This DD remains authoritative for the system-wide MUST/SHOULD/NO audit
+> decision (see Summary Table above), not for AF's individual event names.
 
-### Event Categories
-
-| Category | Event Types | SOC2/FedRAMP | Notes |
-|----------|------------|-------------|-------|
-| **Auth** | `auth.success`, `auth.failure`, `auth.access_denied` | AU-2, AC-6 | Per-request auth lifecycle |
-| **Sessions** | `session.created`, `session.phase_changed`, `session.deleted`, `session.auto_cancelled`, `session.retention_deleted`, `session.completed` | AU-2, CC8.1 | User investigation sessions |
-| **A2A Tasks** | `a2a.task_started`, `a2a.task_completed`, `a2a.task_failed` | AU-2 | Agent-to-Agent task lifecycle |
-| **Tools** | `tool.executed` | AU-2, AC-6 | MCP/K8s tool execution with RBAC |
-| **MCP** | `mcp.session_init`, `mcp.session_closed`, `mcp.tool_failed` | AU-2 | MCP protocol sessions |
-| **Triage** | `triage.started`, `triage.completed`, `severity_triage.completed`, `severity_triage.failed` | CC8.1 | Signal severity classification |
-| **Remediation** | `rr.created`, `rr.deduplicated` | CC8.1 | RR lifecycle (carries `cluster_id` for fleet) |
-| **KA Delegation** | `ka.delegated`, `ka.result_received` | CC8.1 | KA investigation delegation |
-| **User Decisions** | `user.decision` | CC8.1, AU-3 | Operator workflow accept/reject |
-| **Resilience** | `ratelimit.denied`, `circuitbreaker.trip` | SI-10 | Protective mechanisms |
-| **Config** | `config.reloaded`, `config.rejected` | AU-2 | Hot-reload lifecycle |
-| **JWT** | `jwt.delegation` | AU-2 | Token delegation for service calls |
-| **Preflight** | `preflight.crd_check`, `preflight.rbac_check` | SI-10, AC-6 | Startup diagnostics |
-| **Discovery** | `discovery.agent_card_accessed` | AU-2 | Agent card A2A discovery |
-| **Investigation** | `investigation.timeout` | CC8.1 | Investigation inactivity timeout |
-
-### Fleet Cluster Provenance (v2.2)
-
-Events emitted during RR creation (`rr.created`, `rr.deduplicated`) carry
-`cluster_id` from `CreateRRArgs.ClusterID` via `audit.Event.ClusterID`.
-The `StoreAdapter` copies this to `AuditEventRequest.ClusterID` for
-persistence in the unified audit table, enabling fleet-scoped CC8.1 reconstruction.
-
-### Implementation Files
-
-- `pkg/apifrontend/audit/audit.go` — Event types, `Event` struct, `Emitter` interface
-- `pkg/apifrontend/audit/store_adapter.go` — `StoreAdapter` (bridges to shared audit store)
+Fleet cluster provenance: events emitted during RR creation (`rr.created`, `rr.deduplicated`) carry `cluster_id` from `CreateRRArgs.ClusterID` via `audit.Event.ClusterID`; `StoreAdapter` copies this to `AuditEventRequest.ClusterID` for persistence in the unified audit table, enabling fleet-scoped CC8.1 reconstruction (v2.2, per-Service Requirements table above).
 
 ---
 
@@ -1106,6 +998,17 @@ persistence in the unified audit table, enabling fleet-scoped CC8.1 reconstructi
 ---
 
 ## v1.3 Update: Kubernaut Agent Audit Traces
+
+> **⚠️ Historical/frozen as of v1.9 (Issue #823, April 2026).** This section
+> documents only KA's original 15 events. **For the current, complete list of
+> all 37 KA `aiagent.*`/`workflow.*` event types** (including everything
+> added since: alignment/grounding, shadow-mode, fleet-federation,
+> secret-access, interactive-mode, `aiagent.session.resumed`,
+> `aiagent.interactive.k8s_call`, auth/rate-limit, and workflow-catalog-
+> discovery events), see the authoritative, actively-maintained
+> [`AUDIT_EVENT_CATALOG.md`](../../services/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md).
+> This DD remains authoritative for the system-wide MUST/SHOULD/NO audit
+> decision (see Summary Table above), not for KA's individual event names.
 
 In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433), Kubernaut Agent Go rewrite), documentation and operational context that referred to **HolmesGPT API (HAPI)** as the runtime for `aiagent.*` events should be read as **Kubernaut Agent (KA)** unless the text explicitly describes the legacy Python HAPI service. KA is the **authoritative emitter** for the `aiagent` category in v1.3.
 
