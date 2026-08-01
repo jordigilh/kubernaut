@@ -163,7 +163,7 @@ type PrometheusClient struct {
 | `get_workflow` | DataStorage OpenAPI client `GET /api/v1/workflows/{id}` |
 | `get_resource_context` | client-go owner chain resolution + DataStorage remediation history |
 
-These preserve the DD-HAPI-017 three-step discovery protocol exactly.
+These preserve the DD-KA-017 three-step discovery protocol exactly.
 
 ### Sanitization Integration
 
@@ -271,7 +271,7 @@ type MCPServerConfig struct {
 
 - [#508](https://github.com/jordigilh/kubernaut/issues/508): Kubernetes toolset scope
 - [#509](https://github.com/jordigilh/kubernaut/issues/509): Prometheus toolset scope
-- [DD-HAPI-017](../DD-HAPI-017-three-step-workflow-discovery-integration.md): Three-step workflow discovery
+- [DD-KA-017](../DD-KA-017-three-step-workflow-discovery-integration.md): Three-step workflow discovery
 
 ---
 

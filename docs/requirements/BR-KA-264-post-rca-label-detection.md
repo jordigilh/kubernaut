@@ -42,14 +42,14 @@ Move label detection from the resource_context tool to KA's EnrichmentService (P
 ## Design References
 
 - **ADR-056 v1.7**: Post-RCA Label Computation (updated for EnrichmentService)
-- **DD-HAPI-018**: DetectedLabels Detection Specification (detection contract unchanged)
+- **DD-KA-018**: DetectedLabels Detection Specification (detection contract unchanged)
 - **Issue #529**: RCA Flow Redesign
 
 ---
 
 ## Supersedes
 
-This BR supersedes the label detection behavior described in ADR-056 v1.4-v1.6 (labels in resource_context tool). The detection specification (DD-HAPI-018) and label schema are unchanged; only the execution location moves.
+This BR supersedes the label detection behavior described in ADR-056 v1.4-v1.6 (labels in resource_context tool). The detection specification (DD-KA-018) and label schema are largely unchanged in shape, though the Go implementation adds 4 CNV/KubeVirt categories not present when this BR was written; only the execution location and detection count moved.
 
 ---
 

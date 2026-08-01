@@ -9,14 +9,14 @@
 **Last Updated**: 2026-02-12
 
 **Related Design Decisions**:
-- [DD-HAPI-006: Affected Resource in Root Cause Analysis](../architecture/decisions/DD-HAPI-006-affectedResource-in-rca.md)
+- [DD-KA-006: Remediation Target in Root Cause Analysis](../architecture/decisions/DD-KA-006-remediation-target-in-rca.md)
 - [DD-AIANALYSIS-001: Rego Policy Loading Strategy](../architecture/decisions/DD-AIANALYSIS-001-rego-policy-loading-strategy.md)
 - [DD-CONTRACT-002: Service Integration Contracts](../architecture/decisions/DD-CONTRACT-002-service-integration-contracts.md)
 - [ADR-055: LLM-Driven Context Enrichment](../architecture/decisions/ADR-055-llm-driven-context-enrichment.md)
 
 **Related Business Requirements**:
 - BR-AI-012: Approval Policy Evaluation (referenced - not found, needs creation)
-- BR-HAPI-212: HAPI RCA Target Resource
+- BR-KA-212: KA RCA Target Resource
 - BR-AI-084: AIAnalysis Extract RCA Target
 - BR-SCOPE-010: RO Routing Validation
 
@@ -490,13 +490,13 @@ require_approval if {
 ## 📚 **Related Documents**
 
 ### **Design Decisions**
-- **DD-HAPI-006**: Affected Resource in Root Cause Analysis (defines `affectedResource` contract)
+- **DD-KA-006**: Remediation Target in Root Cause Analysis (defines `remediationTarget` contract)
 - **DD-AIANALYSIS-001**: Rego Policy Loading Strategy (referenced - policy evaluation flow)
 - **DD-CONTRACT-002**: Service Integration Contracts (needs update with policy input schema)
 
 ### **Business Requirements**
 - **BR-AI-012**: Approval Policy Evaluation (referenced - needs creation/update)
-- **BR-HAPI-212**: HAPI RCA Target Resource (upstream - provides `affectedResource`)
+- **BR-KA-212**: KA RCA Target Resource (upstream - provides `remediation_target`, formerly `affected_resource`)
 - **BR-AI-084**: AIAnalysis Extract RCA Target (upstream - populates `Status.RootCauseAnalysis.TargetResource`)
 - **BR-SCOPE-010**: RO Routing Validation (downstream - uses RCA target for scope validation)
 
@@ -546,4 +546,4 @@ require_approval if {
 - **Changes in 1.4**: `#247` follow-up -- decomposed the Go `PolicyInput` struct into `SignalContext`/`Classification`/`KAResponse` sub-structs to keep the top-level field count below the AGENTS.md Go Anti-Pattern Checklist's "God struct" threshold (had reached 15 fields). Go-side organization only: `buildRegoInputMap` still flattens to the same top-level Rego input keys, so this is **not a Rego policy contract change** -- no `.rego` policy file needs updating.
 - **Next Review**: After BR-HAPI-198 V1.1 implementation
 
-**Note on field naming**: This document's earlier FRs (001-005) use the original `affected_resource` naming from when this BR was authored. Per [ADR-055-ADDENDUM-001](../architecture/decisions/remediation-target-rename.md) (#542), this field was subsequently renamed to `remediation_target` end-to-end (Go struct, JSON tag, Rego input key) to avoid LLM misinterpretation. FR-AI-085-006 uses the current `remediation_target` naming; the code examples in FR-AI-085-001 through 005 are retained as historical context and should be read as `remediation_target` in the current implementation.
+**Note on field naming**: This document's earlier FRs (001-005) use the original `affected_resource` naming from when this BR was authored. Per [ADR-055-ADDENDUM-001](../architecture/decisions/ADR-055-ADDENDUM-001-remediation-target-rename.md) (#542), this field was subsequently renamed to `remediation_target` end-to-end (Go struct, JSON tag, Rego input key) to avoid LLM misinterpretation. FR-AI-085-006 uses the current `remediation_target` naming; the code examples in FR-AI-085-001 through 005 are retained as historical context and should be read as `remediation_target` in the current implementation. Likewise, "HAPI" in the historical FRs below refers to what is now Kubernaut Agent (KA) — the field is KA-injected, not LLM-provided verbatim (see DD-KA-006).

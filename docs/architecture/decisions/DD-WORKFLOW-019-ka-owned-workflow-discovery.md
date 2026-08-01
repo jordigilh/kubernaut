@@ -6,7 +6,7 @@
 **Version**: 2.0
 **Authority**: APPROVED — implementation complete
 **Affects**: Data Storage Service (DS), KubernautAgent (KA), APIFrontend (AF), Notification
-**Related**: [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) (Etcd single source of truth — this decision's predecessor and prerequisite), [DD-WORKFLOW-016](./DD-WORKFLOW-016-action-type-workflow-indexing.md) (Three-step discovery protocol, Change 2 of DD-WORKFLOW-018 ports this into DS's in-memory cache — this decision moves that cache/logic again, from DS to KA), [DD-HAPI-017](./DD-HAPI-017-three-step-workflow-discovery-integration.md) (Three-Step Workflow Discovery Integration), [DD-KA-001](./DD-KA-001-workflow-response-validation-architecture.md) (KA's existing schema-fetch/validation responsibility)
+**Related**: [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) (Etcd single source of truth — this decision's predecessor and prerequisite), [DD-WORKFLOW-016](./DD-WORKFLOW-016-action-type-workflow-indexing.md) (Three-step discovery protocol, Change 2 of DD-WORKFLOW-018 ports this into DS's in-memory cache — this decision moves that cache/logic again, from DS to KA), [DD-KA-017](./DD-KA-017-three-step-workflow-discovery-integration.md) (Three-Step Workflow Discovery Integration, formerly DD-HAPI-017), [DD-KA-001](./DD-KA-001-workflow-response-validation-architecture.md) (KA's existing schema-fetch/validation responsibility)
 **Supersedes**: DS as the discovery/scoring/audit-emission owner established by DD-WORKFLOW-018 Change 1-2 (Issue #1661)
 **Business Requirement**: BR-WORKFLOW-007 (ActionType/workflow discovery), BR-AUDIT-023 v2.1 (workflow discovery audit trail — "who generates" amended to KA)
 
@@ -99,7 +99,7 @@ DD-WORKFLOW-018: the informer cache is just Go code watching two CRD types, runn
 RBAC. Concretely:
 
 - The sophisticated three-step discovery protocol (`ListActions` → `ListWorkflowsByActionType` →
-  `GetWorkflowWithContextFilters`/`GetByID`, DD-WORKFLOW-016/DD-HAPI-017) has exactly **one** production consumer:
+  `GetWorkflowWithContextFilters`/`GetByID`, DD-WORKFLOW-016/DD-KA-017) has exactly **one** production consumer:
   KubernautAgent (KA), via `internal/kubernautagent/tools/custom/tools.go`. No other service calls these endpoints in
   production.
 - KA already imports `controller-runtime/pkg/client` (`cmd/kubernautagent/routes.go`) for other K8s API access, so

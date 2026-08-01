@@ -164,19 +164,19 @@ When `needs_human_review` is `true`, operators SHALL have the following options:
 
 ### What This BR Does NOT Cover
 
-1. ~~**LLM Self-Correction Loop**: In-session retry mechanism~~ → Now implemented: DD-HAPI-002 v1.2
+1. ~~**LLM Self-Correction Loop**: In-session retry mechanism~~ → Now implemented: [DD-KA-001](../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md)
 2. **Automatic Retry**: System automatically retrying analysis (requires separate BR)
 3. **Approval Workflow UI**: User interface for manual review (separate product feature)
 
-> **Note (2026-03-04)**: BR-HAPI-212 / BR-496 extends this BR with scenario 7 only: missing `root_owner` (e.g. `get_namespaced_resource_context` / `get_cluster_resource_context` not invoked or `session_state` not populated) when a workflow is selected → `rca_incomplete`. Scenarios 8-9 (`affectedResource` mismatch, unverified target resource) were removed in BR-496 v2. See BR-HAPI-212 for the scenario table.
+> **Note (updated 2026-08-01)**: [BR-KA-212](BR-KA-212-rca-target-resource.md) extends this BR with the `rca_incomplete` scenario: when owner-chain re-enrichment hard-fails after retry exhaustion and a workflow would otherwise be selected, KA sets `needs_human_review=true`, `human_review_reason=rca_incomplete`. See DD-KA-006 and BR-KA-212 for the current (Go, K8s-verified owner-chain) mechanism — the original "root_owner in session_state" description was Python-era and has been superseded.
 
 ---
 
 ## Design Decision Reference
 
-**DD-HAPI-002 v1.2**: Workflow Response Validation Architecture
+**[DD-KA-001](../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md)**: Workflow Response Validation Architecture
 
-This BR implements the business behavior for the `needs_human_review` flag defined in DD-HAPI-002 v1.2.
+This BR implements the business behavior for the `needs_human_review` flag defined in DD-KA-001.
 
 ---
 

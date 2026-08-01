@@ -83,7 +83,7 @@ func (r *Reconciler) CheckManagedResource(ctx context.Context, rr *remediationv1
         return false, fmt.Errorf("failed to get AIAnalysis CRD: %w", err)
     }
 
-    // Determine target resource for scope validation (DD-HAPI-006, BR-HAPI-212)
+    // Determine target resource for scope validation (DD-KA-006, BR-KA-212)
     // Priority: RCA-determined target > Signal source
     var targetNamespace, targetKind, targetAPIVersion, targetName string
 
@@ -101,7 +101,7 @@ func (r *Reconciler) CheckManagedResource(ctx context.Context, rr *remediationv1
         return false, fmt.Errorf("RCA target resource missing - AIAnalysis.Status.RootCauseAnalysis.TargetResource is nil (escalation required)")
     }
 
-    // Resolve GVK from Kind + apiVersion (DD-HAPI-006)
+    // Resolve GVK from Kind + apiVersion (DD-KA-006)
     // If apiVersion is empty, use static mapping for core Kubernetes resources
     gvk, err := r.resolveGVK(targetKind, targetAPIVersion)
     if err != nil {
@@ -410,7 +410,7 @@ With Blocked state (non-terminal):
   Check 8: Scope Validation (NEW)
   ├─ Get RCA target resource
   │   ├─ Has RCA target? (AIAnalysis.Status.RootCauseAnalysis.TargetResource)
-  │   │   ├─ YES → Use RCA-determined target (BR-AI-084, DD-HAPI-006)
+  │   │   ├─ YES → Use RCA-determined target (BR-AI-084, DD-KA-006)
   │   │   └─ NO → ERROR: Escalation required (should not reach this point - HAPI should have set needs_human_review)
    │   │
    │   ├─ Is target resource managed? (re-validate at T60)
@@ -448,8 +448,8 @@ With Blocked state (non-terminal):
 - **BR-SCOPE-001**: Resource Scope Management (parent BR)
 - **BR-SCOPE-002**: Gateway Signal Filtering (first validation layer)
 - **BR-AI-084**: AIAnalysis Extract RCA Target Resource (provides RCA-determined target)
-- **BR-HAPI-212**: HAPI RCA Target Resource (HAPI returns affectedResource)
-- **DD-HAPI-006**: Affected Resource in Root Cause Analysis (design decision)
+- **BR-KA-212**: KA RCA Target Resource (KA returns remediationTarget)
+- **DD-KA-006**: Remediation Target in Root Cause Analysis (design decision)
 - **DD-RO-002-ADDENDUM**: Blocked Phase Semantics (non-terminal state)
 - **Kubernetes API**: Namespace/resource label lookups
 
@@ -478,8 +478,8 @@ With Blocked state (non-terminal):
 | BR-SCOPE-001 | Resource Scope Management | Parent BR (defines opt-in model) |
 | BR-SCOPE-002 | Gateway Signal Filtering | Defense-in-depth Layer 1 (Gateway filters) |
 | BR-AI-084 | AIAnalysis Extract RCA Target | Provides RCA-determined target resource |
-| BR-HAPI-212 | HAPI RCA Target Resource | HAPI returns affectedResource in RCA |
-| DD-HAPI-006 | Affected Resource in RCA | Design decision for RCA target |
+| BR-KA-212 | KA RCA Target Resource | KA returns remediationTarget in RCA |
+| DD-KA-006 | Remediation Target in RCA | Design decision for RCA target |
 | DD-RO-002-ADDENDUM | Blocked Phase Semantics | UnmanagedResource is 6th blocking scenario |
 | BR-ORCH-001 | Remediation Routing | RO routing check #6 |
 

@@ -4,7 +4,9 @@
 **Decision Date**: 2026-02-12
 **Version**: 1.5
 **Confidence**: 92%
-**Applies To**: HolmesGPT API (HAPI), AIAnalysis Controller, SignalProcessing
+**Applies To**: Kubernaut Agent (KA), AIAnalysis Controller, SignalProcessing
+
+> **Note (2026-08-01, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: "HAPI" throughout this document refers to what is now Kubernaut Agent (KA) — the Go-native successor to the retired Python HolmesGPT-API. The `DD-HAPI-017` cross-reference below has been updated to its current `DD-KA-017` equivalent. The rest of this document's body (tool names, `session_state` mechanism, Python-era phase descriptions) has not been fully rewritten against the Go implementation; treat [DD-KA-006](DD-KA-006-remediation-target-in-rca.md), [DD-KA-016](DD-KA-016-remediation-history-context.md), and [DD-KA-017](DD-KA-017-three-step-workflow-discovery-integration.md) as authoritative wherever this document's body conflicts with them.
 
 ---
 
@@ -13,7 +15,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 1.0 | 2026-02-12 | Architecture Team | Initial proposal: move context enrichment (owner chain, spec hash, remediation history) from pre-LLM computation to post-RCA tool-driven flow. |
-| 1.1 | 2026-02-12 | Architecture Team | Address 8 triage gaps: replace `target_in_owner_chain` with `affected_resource` Rego input (§2), preserve `ExtractRootCauseAnalysis` (§3), enforce `affectedResource` as required LLM response field (§4), clarify CRD deprecation (§5), clarify `current_spec_hash` scope (§6), document new `resolve_owner_chain` function + RBAC expansion (§7), update latency estimate (§8). [Deprecated - Issue #180: Recovery flow reference removed] *(§4 "required LLM response field" for target identity superseded by BR-496 v2 / DD-HAPI-006 v1.4: HAPI owns `affectedResource` via `root_owner` injection.)* |
+| 1.1 | 2026-02-12 | Architecture Team | Address 8 triage gaps: replace `target_in_owner_chain` with `remediation_target` Rego input (§2, ADR-055), preserve `ExtractRootCauseAnalysis` (§3), enforce `remediationTarget` as required LLM response field (§4), clarify CRD deprecation (§5), clarify `current_spec_hash` scope (§6), document new owner-chain resolution + RBAC expansion (§7), update latency estimate (§8). [Deprecated - Issue #180: Recovery flow reference removed] *(§4 "required LLM response field" for target identity superseded by BR-496 v2 / DD-KA-006 v2.0: KA owns `remediationTarget` via K8s-verified owner-chain injection, `InjectRemediationTarget`.)* |
 | 1.3 | 2026-02-24 | Architecture Team | **Issue #188 (DD-EM-003)**: Renamed `resolveEffectivenessTarget` to `resolveDualTargets` throughout. The function now returns `*creator.DualTarget{Signal, Remediation}` with explicit dual-target semantics. Updated compatibility table and data quality section. |
 | 1.2 | 2026-02-12 | Architecture Team | Refine tool return contract: `get_resource_context` returns only `root_owner` and `remediation_history` to the LLM. Owner chain traversal and spec hash computation are internal implementation details not exposed in the tool response. Update prompt Phase 3b accordingly. See also ADR-056 for DetectedLabels relocation. |
 | 1.4 | 2026-03-24 | Architecture Team | **Issue #524**: Namespaced tool renamed to `get_namespaced_resource_context`; added `get_cluster_resource_context` for cluster-scoped targets (Node, PV, etc.). Both tools registered in the `resource_context` toolset. `resource_scope` (`namespaced` / `cluster`) stored in `session_state`. Canonical `TARGET_RESOURCE_*` injection is conditional on workflow schema declarations; former validator Step 0 (mandatory canonical declarations) removed. |
@@ -55,10 +57,10 @@ This applies to the **incident flow** (`extensions/incident/llm_integration.py`)
 
 ### Business Requirements Affected
 
-- **BR-HAPI-016**: Remediation history context (enhanced, not broken)
+- **DD-KA-016**: Remediation history context (enhanced, not broken)
 - **BR-AI-023**: Investigation audit trail (unchanged)
 - **Issue #97**: Owner chain / AffectedResource / SpecHash (superseded by this ADR)
-- **DD-HAPI-017**: Three-step workflow discovery (enhanced, tools execute in correct order)
+- **DD-KA-017**: Three-step workflow discovery (enhanced, tools execute in correct order)
 
 ---
 
@@ -80,7 +82,7 @@ Signal -> AIAnalysis Controller passes signal context to HAPI
          4. Queries DataStorage for remediation history (root owner + spec hash)
       -> Returns to LLM: root_owner identity + remediation_history only
          (owner chain and spec hash are internal, not exposed)
-  -> Phase 3 (Workflow): LLM calls 3-step workflow discovery (DD-HAPI-017)
+  -> Phase 3 (Workflow): LLM calls 3-step workflow discovery (DD-KA-017)
       -> list_available_actions(action_type)
       -> list_workflows(action_type, filters)
       -> get_workflow(workflow_id) with parameter mapping
@@ -293,7 +295,7 @@ Both tools are registered on the **`resource_context` toolset** (`ResourceContex
 
 #### Updated Prompt Flow
 
-> **Note (BR-496 v2, DD-HAPI-006 v1.4–v1.5):** Stored remediation target identity is derived by HAPI from `root_owner` (`_inject_target_resource`), not taken as an unconstrained required LLM field. **Issue #524**: Use `get_namespaced_resource_context` vs `get_cluster_resource_context` per target scope; canonical `TARGET_RESOURCE_*` workflow params are injected only when declared in the workflow schema. The numbered steps below reflect the original ADR-055 prompt contract where they still apply.
+> **Note (BR-496 v2, DD-KA-006 v2.0):** Stored remediation target identity is derived by KA from the K8s-verified owner chain (`InjectRemediationTarget`), not taken as an unconstrained required LLM field. `TARGET_RESOURCE_*` workflow params are unconditionally injected and preserved (`kaManagedParams`), regardless of workflow schema declaration. The numbered steps below reflect the original ADR-055 prompt contract where they still apply.
 
 The HAPI system prompt instructs the LLM:
 
@@ -303,7 +305,7 @@ The HAPI system prompt instructs the LLM:
 
 #### Response Validation
 
-> **Note (BR-496 v2, DD-HAPI-006 v1.4–v1.5):** Target resource identity for downstream consumers is injected from `root_owner`. **Issue #524** removed mandatory **Step 0** validation that required every workflow schema to declare `TARGET_RESOURCE_NAME` / `TARGET_RESOURCE_KIND` / `TARGET_RESOURCE_NAMESPACE`; HAPI injects only parameters that exist in the schema. The following still describes the original validator expectation for LLM RCA output shape where `affectedResource` was LLM-supplied.
+> **Note (BR-496 v2, DD-KA-006 v2.0):** Target resource identity for downstream consumers is injected from the K8s-verified owner chain. KA unconditionally injects `TARGET_RESOURCE_NAME` / `TARGET_RESOURCE_KIND` / `TARGET_RESOURCE_NAMESPACE` (and `TARGET_RESOURCE_API_VERSION` when known) as `kaManagedParams`, which are never stripped regardless of workflow schema declaration. The following still describes the original validator expectation for LLM RCA output shape where `affectedResource` was LLM-supplied.
 
 The `WorkflowResponseValidator` (3-attempt self-correction loop) is updated to validate that `affectedResource` is present in the RCA output. If the LLM omits it, the validator returns:
 
@@ -375,7 +377,7 @@ Issue #97 introduced these capabilities:
 5. **Agentic pattern**: Aligns with modern LLM tool-use patterns where the agent drives information gathering based on its analysis.
 6. **Graceful degradation**: If `get_namespaced_resource_context` / `get_cluster_resource_context` fails (K8s API unavailable, RBAC issues), the LLM can still complete RCA and workflow selection without historical context, and it can reason about the failure explicitly.
 7. **Better Rego policies**: `affected_resource` (kind, name, namespace) as Rego input enables granular, per-kind approval rules -- strictly more powerful than the previous boolean `target_in_owner_chain`.
-8. **Enforced data quality** *(superseded for identity — BR-496 v2 / DD-HAPI-006 v1.4: HAPI injects `affectedResource` from `root_owner`)*: `affectedResource` as a required response field with validation was intended to ensure downstream consumers (`resolveDualTargets` (DD-EM-003), WFE creator, audit trail) always have the target resource.
+8. **Enforced data quality** *(superseded for identity — BR-496 v2 / DD-KA-006 v2.0: KA injects `remediationTarget` from the K8s-verified owner chain)*: `affectedResource` as a required response field with validation was intended to ensure downstream consumers (`resolveDualTargets` (DD-EM-003), WFE creator, audit trail) always have the target resource.
 
 ---
 
@@ -384,17 +386,17 @@ Issue #97 introduced these capabilities:
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
 | Additional latency from tool call round-trip | Medium | Low | Session-based async flow handles multi-turn interactions. Tool performs 3 sequential K8s/DS calls (~1-5s total). Spec hash + history fetch can be parallelized once root owner is known. |
-| LLM may not call `get_namespaced_resource_context` / `get_cluster_resource_context` | Low | Medium | System prompt explicitly instructs the 3-phase flow and correct tool for target scope. Validation can check if tool was called. **BR-496 v2 (DD-HAPI-006 v1.4)**: If `selected_workflow` present but `root_owner` missing from `session_state`, HAPI flags `needs_human_review=true` with `human_review_reason=rca_incomplete`. **Issue #524**: Post-selection guard can flag node-scoped `action_type` vs namespaced resource-context mismatch for self-correction. |
+| Owner-chain re-enrichment may hard-fail after retry exhaustion | Low | Medium | KA retries owner-chain resolution before giving up. **BR-496 v2 (DD-KA-006 v2.0)**: If owner-chain re-enrichment hard-fails, KA flags `needs_human_review=true` with `human_review_reason=rca_incomplete` (`internal/kubernautagent/investigator/investigator_discovery.go`). |
 | LLM omits `affectedResource` from RCA | Low | Low | `affectedResource` enforced as required field by response validator (3-attempt self-correction loop). Same pattern as `severity`, `summary`. |
-| LLM identifies wrong target, fetches wrong context | Low | Low | Same risk exists today (pre-computed context may also be for wrong resource). The new flow is strictly better because the LLM can correct itself. **BR-496 v2 (DD-HAPI-006 v1.4)**: Stored target identity follows K8s-verified `root_owner` via HAPI injection, not a mismatch-driven human review path. |
+| LLM identifies wrong target, fetches wrong context | Low | Low | Same risk exists today (pre-computed context may also be for wrong resource). The new flow is strictly better because the LLM can correct itself. **BR-496 v2 (DD-KA-006 v2.0)**: Stored target identity follows the K8s-verified owner chain via KA's `InjectRemediationTarget`, not a mismatch-driven human review path. |
 | Rego policy breakage during migration | Medium | High | Rego input schema update (`target_in_owner_chain` → `affected_resource`) must be atomic. Test with existing E2E approval tests. See BR-AI-085-005 for default-deny safety pattern. |
 
 ---
 
 ## References
 
-- **DD-HAPI-017**: Three-step workflow discovery integration
-- **DD-HAPI-016**: Remediation history context via spec-hash matching
+- **DD-KA-017**: Three-step workflow discovery integration
+- **DD-KA-016**: Remediation history context via spec-hash matching
 - **Issue #97**: Owner chain / AffectedResource / SpecHash (superseded)
 - **DD-WORKFLOW-001 v1.7-1.8**: Owner chain schema and validation
 - **DD-EM-002**: Canonical spec hash computation

@@ -68,9 +68,9 @@
 || DD-GATEWAY-005 | [Redis Cleanup on CRD Deletion](./DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md) | Gateway Service | ✅ Approved | 2025-10-27 | No cleanup needed (TTL-based expiration) |
 || DD-GATEWAY-006 | [Authentication Strategy](./DD-GATEWAY-006-authentication-strategy.md) | Gateway Service | ✅ Approved | 2025-10-27 | Network-level security, no OAuth2 |
 || DD-GATEWAY-007 | [Fallback Namespace Strategy](./DD-GATEWAY-007-fallback-namespace-strategy.md) | Gateway Service | ✅ Approved | 2025-10-31 | kubernaut-system fallback for cluster-scoped signals |
-|| DD-HAPI-016 | [Remediation History Context](./DD-HAPI-016-remediation-history-context.md) | HolmesGPT API | ✅ Approved | 2026-02-05 | HAPI remediation history context enrichment for LLM investigation |
-|| DD-HAPI-017 | [Three-Step Workflow Discovery Integration](./DD-HAPI-017-three-step-workflow-discovery-integration.md) | HolmesGPT API / DS | ✅ Approved | 2026-02-05 | Replace search_workflow_catalog with three-step discovery tools (incident + recovery). Implements DD-WORKFLOW-016 protocol. |
-|| DD-WORKFLOW-016 | [Action-Type Workflow Catalog Indexing](./DD-WORKFLOW-016-action-type-workflow-indexing.md) | Workflow Catalog / HAPI / DS | ✅ Approved | 2026-02-05 | Replace signal_type with action_type as primary catalog matching key (DD-WORKFLOW-001 v2.6) |
+|| DD-KA-016 | [Remediation History Context](./DD-KA-016-remediation-history-context.md) | Kubernaut Agent (KA) | ✅ Approved | 2026-02-05 | KA remediation history context enrichment for LLM investigation |
+|| DD-KA-017 | [Three-Step Workflow Discovery Integration](./DD-KA-017-three-step-workflow-discovery-integration.md) | Kubernaut Agent (KA) | ✅ Approved | 2026-02-05 | Replace search_workflow_catalog with three-step discovery tools (incident + recovery). Implements DD-WORKFLOW-016 protocol; discovery ownership later moved to KA per DD-WORKFLOW-019. |
+|| DD-WORKFLOW-016 | [Action-Type Workflow Catalog Indexing](./DD-WORKFLOW-016-action-type-workflow-indexing.md) | Workflow Catalog / KA / DS | ✅ Approved | 2026-02-05 | Replace signal_type with action_type as primary catalog matching key (DD-WORKFLOW-001 v2.6) |
 || DD-WORKFLOW-017 | [Workflow Lifecycle Component Interactions](./DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) | DS / HAPI / RO / WE | ✅ Approved | 2026-02-05 | End-to-end workflow lifecycle (creation, discovery, execution, disable/enable). Supersedes DD-WORKFLOW-005, DD-WORKFLOW-007. |
 #### **Authentication & Authorization Decisions**
 
