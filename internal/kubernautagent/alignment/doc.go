@@ -69,9 +69,12 @@ limitations under the License.
 //
 // The package registers the following Prometheus metrics:
 //
-//   - kubernaut_alignment_verdict_total (labels: result, mode)
-//   - kubernaut_alignment_step_total (labels: outcome)
-//   - kubernaut_alignment_canary_total (labels: result)
-//   - kubernaut_alignment_verdict_duration_seconds
-//   - kubernaut_alignment_shadow_audit_total (labels: event_type)
+//   - aiagent_alignment_verdict_total (labels: result, mode)
+//   - aiagent_alignment_step_total (labels: outcome)
+//   - aiagent_alignment_canary_total (labels: result)
+//   - aiagent_alignment_verdict_duration_seconds
+//   - aiagent_alignment_shadow_audit_total (labels: event_type)
+//   - aiagent_alignment_circuit_breaker_total (labels: mode)
+//   - aiagent_alignment_grounding_total (labels: result)
+//   - aiagent_alignment_grounding_duration_seconds
 package alignment

@@ -104,7 +104,7 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 
 	// BR-HAPI-197 AC-4 + Issue #28: AIAnalysis applies confidence threshold (V1.0: 70%)
 	// KA returns confidence but does NOT enforce thresholds - AIAnalysis owns this logic
-	const confidenceThreshold = 0.7 // TODO V1.1: Make configurable per BR-HAPI-198
+	const confidenceThreshold = 0.7 // TODO V1.1: Make configurable per BR-AI-088
 
 	if hasSelectedWorkflow && resp.Confidence < confidenceThreshold {
 		return p.handleLowConfidenceFailure(ctx, analysis, resp)

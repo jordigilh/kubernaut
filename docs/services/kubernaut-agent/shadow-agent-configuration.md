@@ -299,11 +299,19 @@ The Remediation Orchestrator renders the alignment verdict prominently in the no
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `kubernaut_alignment_verdict_total` | Counter | `result` (aligned, suspicious), `mode` (enforce, monitor) | Total alignment verdicts emitted |
-| `kubernaut_alignment_step_total` | Counter | `outcome` (aligned, suspicious, panic) | Per-step evaluation outcomes |
-| `kubernaut_alignment_canary_total` | Counter | `result` (pass, fail) | Canary integrity check results |
-| `kubernaut_alignment_verdict_duration_seconds` | Histogram | *(default buckets)* | Time from canary start to verdict completion |
-| `kubernaut_alignment_shadow_audit_total` | Counter | `event_type` (request, response) | Shadow LLM audit events emitted to Data Storage |
+| `aiagent_alignment_verdict_total` | Counter | `result` (aligned, suspicious), `mode` (enforce, monitor) | Total alignment verdicts emitted |
+| `aiagent_alignment_step_total` | Counter | `outcome` (aligned, suspicious, panic) | Per-step evaluation outcomes |
+| `aiagent_alignment_canary_total` | Counter | `result` (pass, fail) | Canary integrity check results |
+| `aiagent_alignment_verdict_duration_seconds` | Histogram | *(default buckets)* | Time from canary start to verdict completion |
+| `aiagent_alignment_shadow_audit_total` | Counter | `event_type` (request, response) | Shadow LLM audit events emitted to Data Storage |
+| `aiagent_alignment_circuit_breaker_total` | Counter | `mode` (enforce) | Total circuit breaker activations (enforce mode cancels the primary investigation) |
+| `aiagent_alignment_grounding_total` | Counter | `result` (grounded, ungrounded, error, timeout, disabled) | Total full-context grounding reviews by outcome |
+| `aiagent_alignment_grounding_duration_seconds` | Histogram | *(default buckets)* | Time taken by the full-context grounding review |
+
+> **Renamed 2026-08-01**: these metrics were previously exposed under a `kubernaut_alignment_*`
+> prefix, inconsistent with the rest of KA's `aiagent_*`-namespaced metrics (DD-005). Also added
+> the 3 metrics introduced by the circuit-breaker (#1076) and grounding-review (#1096) features
+> that were missing from this table.
 
 ### Logs
 
@@ -358,7 +366,7 @@ If investigations take too long with shadow enabled:
 
 1. **Use a dedicated shadow LLM** — Avoids contention on the primary LLM client.
 2. **Reduce `timeout`** — Default 10s per step is conservative. For fast models, 5s is often sufficient.
-3. **Monitor `timed_out` verdicts** — If verdicts frequently time out, the shadow LLM is too slow or overloaded. Check `kubernaut_alignment_verdict_total{result="suspicious"}` and correlate with `kubernaut_alignment_step_total{outcome="panic"}`.
+3. **Monitor `timed_out` verdicts** — If verdicts frequently time out, the shadow LLM is too slow or overloaded. Check `aiagent_alignment_verdict_total{result="suspicious"}` and correlate with `aiagent_alignment_step_total{outcome="panic"}`.
 4. **Reduce `verdictTimeout`** — Default 30s waits for all evaluations. If most complete within 10-15s, lowering this reduces tail latency at the cost of more fail-closed verdicts.
 
 ### Cost Optimization
