@@ -1,7 +1,7 @@
-# BR-HAPI-263: Conversation Continuity Across Investigation Phases
+# BR-KA-263: Conversation Continuity Across Investigation Phases
 
-**Business Requirement ID**: BR-HAPI-263
-**Category**: HolmesGPT API Service (SDK + HAPI)
+**Business Requirement ID**: BR-KA-263
+**Category**: Kubernaut Agent (KA) Service
 **Priority**: P1
 **Target Version**: V1
 **Status**: Approved
@@ -14,7 +14,7 @@
 
 ### Problem Statement
 
-The current self-correction loop restarts the LLM conversation from scratch on each retry. The LLM loses all context from its investigation (tool call results, reasoning chain, RCA analysis) when HAPI detects a validation error and retries. This leads to:
+The current self-correction loop restarts the LLM conversation from scratch on each retry. The LLM loses all context from its investigation (tool call results, reasoning chain, RCA analysis) when KA detects a validation error and retries. This leads to:
 
 1. Wasted tokens re-investigating the same signal
 2. Non-deterministic results across retries (different investigation paths)
@@ -37,9 +37,9 @@ Thread LLM message history across retry attempts within each phase AND across Ph
 3. When `previous_messages` is provided, `investigate_issues` / `prompt_call` resumes from that conversation state instead of creating a fresh `[system, user]` pair
 4. All existing callers that don't pass `previous_messages` continue to work unchanged (backward compatible)
 
-### HAPI Level
+### KA Level
 
-5. Phase 1 retries thread `previous_messages` from the failed attempt (LLM sees its prior reasoning + HAPI's correction feedback)
+5. Phase 1 retries thread `previous_messages` from the failed attempt (LLM sees its prior reasoning + KA's correction feedback)
 6. Phase 3 receives `previous_messages` from Phase 1 (LLM sees the full RCA conversation + enrichment context)
 7. Phase 3 retries thread `previous_messages` from the failed Phase 3 attempt
 

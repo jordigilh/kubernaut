@@ -1,12 +1,10 @@
-# DD-HAPI-016: Remediation History Context Enrichment
+# DD-KA-016: Remediation History Context Enrichment
 
 **Status**: ✅ APPROVED
 **Decision Date**: 2026-02-05
 **Version**: 1.5
 **Confidence**: 95%
-**Applies To**: Kubernaut Agent (KA, formerly "HAPI"/"HolmesGPT API" — see naming note below), Remediation Orchestrator (RO), DataStorage Service (DS)
-
-> **Naming note**: This document still uses "HAPI" in most section headings and body text below for historical continuity with v1.0–v1.4. "HAPI"/"HolmesGPT API" is deprecated terminology; the component is now the Go-native **Kubernaut Agent (KA)** (`internal/kubernautagent/`). A dedicated rename pass across this doc (and the rest of the docs tree) is tracked in [issue #1806](https://github.com/jordigilh/kubernaut/issues/1806) — out of scope for the v1.5 update below, which only adds target-resource/cluster scoping and RO as a consumer.
+**Applies To**: Kubernaut Agent (KA, `internal/kubernautagent/`), Remediation Orchestrator (RO), DataStorage Service (DS)
 
 ---
 
@@ -16,7 +14,7 @@
 |---------|------|--------|---------|
 | 1.0 | 2026-02-05 | Architecture Team | Initial design: two-tier query, three-way hash comparison, full remediation chain, DS business logic endpoint, prompt reasoning framework |
 | 1.1 | 2026-02-14 | Architecture Team | Updated DS internal logic to reflect EM's component-level audit event architecture (per ADR-EM-001 v1.3). DS now uses a two-step query (RO events by target_resource, then EM component events by correlation_id) and reuses exported scoring functions from effectiveness_handler.go. Health/metric/alert data sourced from typed ogen sub-objects (health_checks, metric_deltas, alert_resolution) on EM component events. signalResolved read from alert_resolution.alert_resolved. Coordinated via issue #82. |
-| 1.2 | 2026-02-12 | Architecture Team | DRIFT-DS-1: Corrected sort order to descending (most recent first) per implementation. DRIFT-HAPI-1: Added spec_drift Assessment Reason Handling section documenting INCONCLUSIVE semantics, declining effectiveness exclusion, causal chain detection, and LLM reasoning guidance. |
+| 1.2 | 2026-02-12 | Architecture Team | DRIFT-DS-1: Corrected sort order to descending (most recent first) per implementation. DRIFT-KA-1: Added spec_drift Assessment Reason Handling section documenting INCONCLUSIVE semantics, declining effectiveness exclusion, causal chain detection, and LLM reasoning guidance. |
 | 1.3 | 2026-03-27 | Architecture Team | Remediation history API and examples: `workflowType` renamed to `actionType`; RO audit skeleton field `workflow_type` renamed to `action_type` (Issue #528, v1.2). |
 | 1.4 | 2026-03-28 | Architecture Team | Issue #586: Corrected Tier 1 query key from `target_resource` to `pre_remediation_spec_hash`. Both tiers now query by spec hash to preserve causal chain integrity for LLM reasoning. Removed `QueryROEventsByTarget` dead code. |
 | 1.5 | 2026-07-31 | Architecture Team | **Issue #1802**: v1.4's spec-hash-only query key let two unrelated resources sharing an identical Pod/container spec (e.g., templated Deployments from the same Helm chart/GitOps repo) collide — both RO's ineffective-chain blocking (BR-ORCH-042.5) and KA's history-based prompt enrichment could attribute one target's remediation chain to another. Both Tier 1 and Tier 2 now additionally scope by `target_resource` (exact match on the existing `{namespace}/{kind}/{name}` composite), and — **main branch only** — by optional `cluster_id` for fleet deployments where identically-named/-namespaced/-spec'd resources can exist on different clusters (`release/v1.5` has no `cluster_id` concept; that branch's port is target-resource-only). Added **RO** as a formal consumer of this DD: RO's `RoutingEngine.CheckIneffectiveRemediationChain` calls the same DS endpoint/query path KA's enrichment does, so both now share identical target/cluster scoping semantics. New index: `idx_audit_events_cluster_id` (migration 017, main only). |
@@ -34,7 +32,7 @@ When a signal fires for a target resource that has already been remediated, the 
 
 ### Scope
 
-This DD covers how HAPI acquires and uses remediation history context. It does NOT cover:
+This DD covers how KA acquires and uses remediation history context. It does NOT cover:
 
 - How the EM assesses effectiveness (see DD-017 v2.0)
 - How the EM stores data (see DD-017 v2.0, audit traces)
@@ -43,13 +41,13 @@ This DD covers how HAPI acquires and uses remediation history context. It does N
 ### Business Requirements
 
 - **BR-INS-001**: Assess remediation action effectiveness — this DD enables the LLM to consume those assessments
-- **BR-INS-002**: Correlate action outcomes with environment improvements — DS correlates audit events, HAPI surfaces the correlation
+- **BR-INS-002**: Correlate action outcomes with environment improvements — DS correlates audit events, KA surfaces the correlation
 
 ---
 
 ## Decision
 
-**APPROVED**: HAPI queries a DataStorage business logic endpoint for structured remediation history context before constructing the LLM investigation prompt. The context includes the full remediation chain for the target resource with effectiveness data, enabling the LLM to make informed decisions about whether to try something new, escalate, or re-apply a known remedy with justification.
+**APPROVED**: KA queries a DataStorage business logic endpoint for structured remediation history context before constructing the LLM investigation prompt. The context includes the full remediation chain for the target resource with effectiveness data, enabling the LLM to make informed decisions about whether to try something new, escalate, or re-apply a known remedy with justification.
 
 ---
 
@@ -61,7 +59,7 @@ This DD covers how HAPI acquires and uses remediation history context. It does N
 |-----------|---------------|
 | **EM** (DD-017) | Assesses effectiveness, emits structured audit events |
 | **DS** | Owns data intelligence: queries audit traces, correlates events, performs hash comparison, classifies tiers, returns structured response |
-| **HAPI** | Owns prompt construction: calls one DS endpoint, formats the response into the LLM prompt, adds reasoning guidance |
+| **KA** | Owns prompt construction: calls one DS endpoint, formats the response into the LLM prompt, adds reasoning guidance |
 | **LLM** | Owns investigation and decision-making: uses history context + its own signal investigation to determine the right course of action |
 
 ### 2. Reasoning Framework, Not Investigation Checklists
@@ -96,11 +94,11 @@ No Rego rules, no hardcoded escalation thresholds. The LLM receives the history 
 ### Data Flow
 
 ```
-New Signal → SP → AA Controller → HAPI
+New Signal → SP → AA Controller → KA
                                      │
                                      ▼
                               ┌─────────────┐
-                              │ HAPI reads   │
+                              │ KA reads   │
                               │ current      │
                               │ target .spec │
                               │ → computes   │
@@ -109,7 +107,7 @@ New Signal → SP → AA Controller → HAPI
                                      │
                                      ▼
                               ┌─────────────┐
-                              │ HAPI calls   │
+                              │ KA calls   │
                               │ DS endpoint  │
                               │ with target  │
                               │ + hash       │
@@ -142,7 +140,7 @@ New Signal → SP → AA Controller → HAPI
                                      │
                                      ▼
                               ┌─────────────┐
-                              │ HAPI formats │
+                              │ KA formats │
                               │ prompt with  │
                               │ history +    │
                               │ reasoning    │
@@ -157,7 +155,7 @@ New Signal → SP → AA Controller → HAPI
 
 ### DataStorage Business Logic Endpoint
 
-DS exposes a dedicated endpoint that encapsulates all the complexity of querying, correlating, and classifying remediation history. HAPI calls one endpoint and receives a ready-to-use response.
+DS exposes a dedicated endpoint that encapsulates all the complexity of querying, correlating, and classifying remediation history. KA calls one endpoint and receives a ready-to-use response.
 
 **Request**:
 
@@ -338,7 +336,7 @@ Both tiers additionally scope by the existing `target_resource` composite string
 
 ### Fallthrough Logic
 
-1. HAPI calls DS with target resource + current spec hash
+1. KA calls DS with target resource + current spec hash
 2. DS runs Tier 1 query (by `pre_remediation_spec_hash`, 24h window) → correlates with EM events, detects regression
 3. If regression detected: DS runs Tier 2 query (by `pre_remediation_spec_hash`, 90d window) → builds summary chain
 4. If no matches in either tier → return empty response (fresh investigation, no history context injected into prompt)
@@ -361,7 +359,7 @@ The `preRemediationSpecHash` match is the most powerful signal. It tells the LLM
 
 ## spec_drift Assessment Reason Handling
 
-When the Effectiveness Monitor (EM) completes an assessment with `assessment_reason = "spec_drift"` (DD-EM-002 v1.1), the target resource spec was modified during the assessment window. The effectiveness score is unreliable (DS short-circuits to 0.0). HAPI's prompt builder applies the following semantics:
+When the Effectiveness Monitor (EM) completes an assessment with `assessment_reason = "spec_drift"` (DD-EM-002 v1.1), the target resource spec was modified during the assessment window. The effectiveness score is unreliable (DS short-circuits to 0.0). KA's prompt builder applies the following semantics:
 
 1. **INCONCLUSIVE treatment**: `spec_drift` entries are marked as **INCONCLUSIVE** in the LLM prompt — they are not counted as effective or ineffective. The 0.0 score is suppressed; the LLM must not interpret it as "poor effectiveness."
 
@@ -372,7 +370,7 @@ When the Effectiveness Monitor (EM) completes an assessment with `assessment_rea
    - For each `spec_drift` entry, checks if its `postRemediationSpecHash` appears as another entry's `preRemediationSpecHash`
    - If matched, the spec_drift entry is linked to a follow-up remediation UID for prompt semantic rewriting
 
-4. **LLM reasoning guidance**: When any `spec_drift` entry exists in the prompt, HAPI adds guidance:
+4. **LLM reasoning guidance**: When any `spec_drift` entry exists in the prompt, KA adds guidance:
    > "Some remediation assessments were inconclusive because the target resource spec was modified during the assessment window. Do not treat these as failed remediations. Investigate what modified the spec — it may be the root cause or a contributing factor."
 
    Two prompt variants exist for `spec_drift` entries:
@@ -383,9 +381,9 @@ When the Effectiveness Monitor (EM) completes an assessment with `assessment_rea
 
 ## Prompt Construction
 
-### HAPI Prompt Template
+### KA Prompt Template
 
-HAPI formats the DS response into a prompt section injected before the LLM investigation:
+KA formats the DS response into a prompt section injected before the LLM investigation:
 
 **Tier 1 (recent, detailed)**:
 
@@ -454,13 +452,13 @@ the same remediation again.
 
 ## V1.1 Enhancement Path
 
-When DD-017 Level 2 (AI-Powered Analysis via HolmesGPT PostExec) arrives in V1.1, the EM audit events gain additional fields:
+When DD-017 Level 2 (AI-Powered Analysis via Kubernaut Agent (KA) PostExec) arrives in V1.1, the EM audit events gain additional fields:
 
 - `root_cause_resolved: true/false`
 - `lessons_learned: [...]`
 - `oscillation_detected: true/false`
 
-DS reads these richer fields from the same audit traces. The DS endpoint response gains corresponding fields. HAPI formats them into the prompt:
+DS reads these richer fields from the same audit traces. The DS endpoint response gains corresponding fields. KA formats them into the prompt:
 
 ```
 1. [6h ago] ScaleUp - Effectiveness: 0.4
@@ -470,7 +468,7 @@ DS reads these richer fields from the same audit traces. The DS endpoint respons
    - Oscillation: None detected
 ```
 
-No architectural change to HAPI, DS endpoint contract, or query design. The enhancement is purely additive.
+No architectural change to KA, DS endpoint contract, or query design. The enhancement is purely additive.
 
 ---
 
@@ -481,7 +479,7 @@ No architectural change to HAPI, DS endpoint contract, or query design. The enha
 - LLM makes remediation decisions informed by full history — avoids repeating failures
 - Configuration regression detection catches rollback scenarios that would otherwise start from zero
 - Full remediation chain provides pattern visibility (declining effectiveness, escalation history)
-- Clean separation: DS owns data intelligence, HAPI owns prompt construction, LLM owns decision-making
+- Clean separation: DS owns data intelligence, KA owns prompt construction, LLM owns decision-making
 - Prompt reasoning framework preserves LLM flexibility — no hardcoded investigation paths
 - Two-tier design balances detail (24h) with long-term memory (90 days)
 - V1.1 enhancement path is purely additive — no architectural changes
@@ -516,4 +514,4 @@ No architectural change to HAPI, DS endpoint contract, or query design. The enha
 ---
 
 **Status**: ✅ APPROVED — V1.5
-**Next Review**: When DD-017 Level 2 implementation begins (estimated V1.1, Q2 2026); or when issue #1806 (HAPI → Kubernaut Agent rename) lands, whichever is sooner
+**Next Review**: When DD-017 Level 2 implementation begins (estimated V1.1, Q2 2026); or when issue #1806 (KA → Kubernaut Agent rename) lands, whichever is sooner
