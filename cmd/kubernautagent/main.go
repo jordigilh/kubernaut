@@ -1343,6 +1343,9 @@ func buildMCPHandler(
 	// after an interactive session ends (INT-06, BR-INTERACTIVE-008).
 	reconRunner := mcpadapters.NewReconRunnerAdapter(inv)
 	reconSpawner := mcpkg.NewReconstructionSpawner(reconRunner, recon, logger)
+	// Audit catalog gap follow-up: emits aiagent.session.resumed when KA
+	// reclaims control from an ended interactive session (BR-INTERACTIVE-003 #5).
+	reconSpawner.SetAuditStore(auditStore)
 
 	// GracefulSessionClosedHandler: processes MCP disconnect events with a
 	// configurable grace period before releasing the interactive lease.
@@ -1459,6 +1462,7 @@ func buildMCPHandler(
 		// inactivity timer on completion, so it fires ~InactivityTimeout
 		// later against an already-terminal session.
 		mcptools.WithSelectWorkflowTimeoutTracker(timeoutMgr),
+		mcptools.WithSelectWorkflowAuditStore(auditStore),
 	}
 	if enricher != nil {
 		swOpts = append(swOpts, mcptools.WithEnrichmentRunner(enricher))

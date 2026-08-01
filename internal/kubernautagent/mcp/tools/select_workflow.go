@@ -22,6 +22,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
@@ -68,6 +69,11 @@ type CatalogWorkflow struct {
 // See PROPOSAL-EXT-003 §3.3 and PROPOSAL-EXT-002 §5.2 for the data contract.
 type PreSelectionContext struct {
 	Enrichment *enrichment.EnrichmentResult
+	// SessionID is the active interactive session ID, populated by Handle
+	// before hooks run so hooks needing session-scoped audit attribution
+	// (e.g. enrichment's K8s call audit, #1288 follow-up) don't need a
+	// second sessions.GetDriver lookup.
+	SessionID string
 }
 
 // PreSelectionHook is a single stage in the pre-workflow-selection pipeline.
@@ -117,6 +123,7 @@ func WithEnrichmentRunner(runner EnrichmentRunner) SelectWorkflowOption {
 				return nil
 			}
 			result, err := runner.Enrich(ctx, input.Kind, input.Name, input.Namespace, input.APIVersion, input.SpecHash, input.IncidentID)
+			t.emitInteractiveK8sCall(input, user, pctx.SessionID, err) //nolint:contextcheck // emitInteractiveK8sCall uses audit.StoreBestEffort by design (ADR-038); see its doc comment
 			if err != nil {
 				if errors.Is(err, enrichment.ErrRBACForbidden) {
 					return ErrCodeForbidden.WithDetail("namespace", input.Namespace)
@@ -139,6 +146,54 @@ func WithPreSelectionHook(hook PreSelectionHook) SelectWorkflowOption {
 	}
 }
 
+// WithSelectWorkflowAuditStore enables aiagent.interactive.k8s_call audit
+// emission for the K8s lookups enrichment performs during workflow selection
+// (BR-INTERACTIVE-003 #3, audit catalog gap follow-up). #1288: KA never
+// impersonates the user at the K8s API level -- the call always executes
+// under KA's own SA -- so this event's purpose is audit attribution, not
+// RBAC enforcement.
+func WithSelectWorkflowAuditStore(store audit.AuditStore) SelectWorkflowOption {
+	return func(t *SelectWorkflowTool) {
+		if store != nil {
+			t.auditStore = store
+		}
+	}
+}
+
+// emitInteractiveK8sCall records aiagent.interactive.k8s_call for the K8s
+// lookup enrichment performs on behalf of the acting user during interactive
+// workflow selection. One event summarizes the enrichment call (owner-chain
+// walk + spec-hash fetch) rather than each individual dynamic-client Get,
+// matching EventTypeEnrichmentCompleted's existing per-Enrich()-call
+// granularity. Fire-and-forget (ADR-038): no-op when no store is configured.
+func (t *SelectWorkflowTool) emitInteractiveK8sCall(input SelectWorkflowInput, user mcpinternal.UserInfo, sessionID string, enrichErr error) {
+	if t.auditStore == nil {
+		return
+	}
+	event := audit.NewEvent(audit.EventTypeInteractiveK8sCall, input.RRID,
+		audit.WithSessionID(sessionID),
+		audit.WithActingUser(user.Username),
+	)
+	event.EventAction = audit.ActionInteractiveK8sCall
+	event.Data["resource"] = input.Kind
+	event.Data["verb"] = "get"
+	event.Data["namespace"] = input.Namespace
+	event.Data["resource_name"] = input.Name
+
+	switch {
+	case enrichErr == nil:
+		event.EventOutcome = audit.OutcomeSuccess
+		event.Data["http_status_code"] = 200
+	case errors.Is(enrichErr, enrichment.ErrRBACForbidden):
+		event.EventOutcome = audit.OutcomeFailure
+		event.Data["http_status_code"] = 403
+	default:
+		event.EventOutcome = audit.OutcomeFailure
+		event.Data["http_status_code"] = 500
+	}
+	audit.StoreBestEffort(context.Background(), t.auditStore, event, t.logger)
+}
+
 // SelectWorkflowTool handles the kubernaut_select_workflow MCP tool.
 // BR-INTERACTIVE-005: enables interactive workflow selection.
 // #1012: internalized enrichment via pre-selection pipeline.
@@ -149,6 +204,7 @@ type SelectWorkflowTool struct {
 	mutexProvider     SessionMutexProvider
 	timeoutTracker    TimeoutTracker
 	preSelectionHooks []PreSelectionHook
+	auditStore        audit.AuditStore
 	logger            logr.Logger
 }
 
@@ -267,7 +323,7 @@ func (t *SelectWorkflowTool) Handle(ctx context.Context, input SelectWorkflowInp
 		}
 	}
 
-	pctx := &PreSelectionContext{}
+	pctx := &PreSelectionContext{SessionID: driver.SessionID}
 	for _, hook := range t.preSelectionHooks {
 		if err := hook(ctx, input, user, pctx); err != nil {
 			return SelectWorkflowOutput{}, err

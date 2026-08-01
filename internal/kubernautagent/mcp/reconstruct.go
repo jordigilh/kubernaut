@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	"github.com/go-logr/logr"
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 )
 
 const kaServiceAccount = "system:serviceaccount:kubernaut:kubernaut-agent"
@@ -50,9 +51,10 @@ type ReconstructionContext struct {
 // and spawns a new autonomous investigation via RunReconTurn.
 // SEC-04: uses explicit KA SA identity for reconstructed sessions.
 type ReconstructionSpawner struct {
-	runner ReconRunner
-	recon  ContextReconstructor
-	logger logr.Logger
+	runner     ReconRunner
+	recon      ContextReconstructor
+	logger     logr.Logger
+	auditStore audit.AuditStore
 }
 
 // NewReconstructionSpawner creates a spawner with the given dependencies.
@@ -67,6 +69,15 @@ func NewReconstructionSpawner(runner ReconRunner, recon ContextReconstructor, lo
 // ServiceAccountIdentity returns the KA service account used for reconstructed sessions.
 func (s *ReconstructionSpawner) ServiceAccountIdentity() string {
 	return kaServiceAccount
+}
+
+// SetAuditStore enables aiagent.session.resumed audit emission (BR-INTERACTIVE-003
+// #5, audit catalog gap follow-up). A setter rather than a constructor
+// parameter to avoid a breaking-change ripple across the many pre-existing
+// NewReconstructionSpawner call sites that don't need it (mirrors
+// K8sAdapter.SetLogger's pattern for the same reason).
+func (s *ReconstructionSpawner) SetAuditStore(store audit.AuditStore) {
+	s.auditStore = store
 }
 
 // SpawnReconstruct rebuilds conversation context and invokes RunReconTurn
@@ -95,12 +106,37 @@ func (s *ReconstructionSpawner) SpawnReconstruct(ctx context.Context, entry *Rec
 
 	messages := turnsToReconMessages(turns)
 
+	// Identity transition back to the KA SA happens here, regardless of
+	// whether the reconstructed context was complete (best-effort above) or
+	// of RunReconTurn's own outcome below -- KA has definitively reclaimed
+	// control of the investigation from the interactive session identified
+	// by entry.SessionID (BR-INTERACTIVE-003 #5, mirrors
+	// EventTypeSessionSuspended's counterpart at takeover time).
+	s.emitSessionResumed(entry, len(messages)) //nolint:contextcheck // emitSessionResumed uses audit.StoreBestEffort by design (ADR-038); see its doc comment
+
 	_, err := s.runner.RunReconTurn(ctx, messages, entry.CorrelationID)
 	if err != nil {
 		return fmt.Errorf("reconstruction RunReconTurn: %w", err)
 	}
 
 	return nil
+}
+
+// emitSessionResumed records aiagent.session.resumed for the interactive
+// session that just ended. Fire-and-forget (ADR-038): uses context.Background()
+// so a caller-cancelled ctx never drops the event, and StoreBestEffort
+// swallows store errors after logging.
+func (s *ReconstructionSpawner) emitSessionResumed(entry *ReconstructionContext, reconstructedTurnCount int) {
+	if s.auditStore == nil {
+		return
+	}
+	event := audit.NewEvent(audit.EventTypeSessionResumed, entry.CorrelationID,
+		audit.WithSessionID(entry.SessionID),
+	)
+	event.EventAction = audit.ActionSessionResumed
+	event.EventOutcome = audit.OutcomeSuccess
+	event.Data["reconstructed_turn_count"] = reconstructedTurnCount
+	audit.StoreBestEffort(context.Background(), s.auditStore, event, s.logger)
 }
 
 func turnsToReconMessages(turns []ConversationTurn) []ReconMessage {
