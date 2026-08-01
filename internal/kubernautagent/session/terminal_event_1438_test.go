@@ -51,6 +51,14 @@ var _ = Describe("Terminal event before session release (#1438)", func() {
 			ch, err := mgr.Subscribe(context.Background(), id)
 			Expect(err).NotTo(HaveOccurred())
 
+			// #1811: the InteractiveHold completion's own EventTypeComplete
+			// was emitted before this late Subscribe and is now correctly
+			// replayed (previously silently lost) — drain it first so this
+			// test can assert on the session_ended event specifically.
+			var completeEvt session.InvestigationEvent
+			Eventually(ch, 2*time.Second).Should(Receive(&completeEvt))
+			Expect(completeEvt.Type).To(Equal(session.EventTypeComplete))
+
 			mgr.EmitSessionEndedByRR("rr-1438-001", "inactivity_timeout")
 
 			var evt session.InvestigationEvent
@@ -88,6 +96,13 @@ var _ = Describe("Terminal event before session release (#1438)", func() {
 
 			ch, err := mgr.Subscribe(context.Background(), id)
 			Expect(err).NotTo(HaveOccurred())
+
+			// #1811: drain the InteractiveHold completion's replayed
+			// EventTypeComplete (previously silently lost pre-#1811 fix)
+			// before asserting on the absence of a session_ended event below.
+			var completeEvt session.InvestigationEvent
+			Eventually(ch, 2*time.Second).Should(Receive(&completeEvt))
+			Expect(completeEvt.Type).To(Equal(session.EventTypeComplete))
 
 			err = mgr.CompleteUserDriving(id, &katypes.InvestigationResult{WorkflowID: "wf-done"})
 			Expect(err).NotTo(HaveOccurred())
