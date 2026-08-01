@@ -129,6 +129,16 @@ func (fleetOverlaySuccessResolver) Overlay(_ context.Context, _ string) (map[str
 	return map[string]tools.Tool{"kubectl_get_by_name": &fleetOverlayFakeTool{name: "kubectl_get_by_name"}}, nil
 }
 
+// fleetOverlayEmptyResolver succeeds (no error) but resolves to zero tools,
+// e.g. a target cluster that is fleet-registered but currently publishes no
+// tools -- distinct from both fleetOverlayErrResolver (configured, errors)
+// and a nil resolver (not configured at all).
+type fleetOverlayEmptyResolver struct{}
+
+func (fleetOverlayEmptyResolver) Overlay(_ context.Context, _ string) (map[string]tools.Tool, error) {
+	return map[string]tools.Tool{}, nil
+}
+
 // Issue #1768 follow-up (Gap D E2E scoping discussion): prescopeFleetOverlay
 // previously returned ctx completely unchanged -- no log, no audit event --
 // whenever inv.fleetOverlayResolver was nil, for ANY clusterID (including a
@@ -213,5 +223,47 @@ var _ = Describe("UT-KA-FLEET-028 [AU-3, GA Readiness Dim. 12]: prescopeFleetOve
 		Expect(store.events).To(BeEmpty(), "UT-KA-FLEET-028: a successful resolution needs no degradation event")
 		_, ok := FleetOverlayFromContext(got)
 		Expect(ok).To(BeTrue(), "a successful resolver must still populate the overlay as before")
+		clusterID, ok := audit.ClusterIDFromContext(got)
+		Expect(ok).To(BeTrue(),
+			"UT-KA-FLEET-028: a successful resolution must also attach audit.WithClusterID to the "+
+				"returned context, so every audit event downstream of this call (e.g. "+
+				"alignment.SubmitToolStep's attributionClusterID) carries correct cluster attribution "+
+				"even for callers that invoke Investigate()/RunInteractiveTurn directly, without going "+
+				"through session.Manager's own attachInvestigationContext")
+		Expect(clusterID).To(Equal("remote-cluster"))
+	})
+
+	// QE readiness audit follow-up (PR #1799 Finding #2, tracked as #1834): characterizes a
+	// currently-untested edge case -- a resolver that IS configured, does
+	// NOT error, but resolves to an empty overlay (e.g. the target cluster
+	// is fleet-registered but currently publishes zero tools). This is
+	// deliberately a documentation/characterization test of the EXISTING
+	// behavior, not a behavior change: FleetOverlayFromContext already
+	// treats an empty overlay as "no overlay" (see its own len(overlay)==0
+	// check and UT-KA-FLEET-014's "explicitly empty overlay" case), so this
+	// currently falls through the same path as a hub-local investigation --
+	// no log, no audit event. That is the same class of blind spot the nil-
+	// resolver case above used to have (a fleet-target investigation ending
+	// up with zero remote-cluster tools, indistinguishable from "there was
+	// never a target cluster") and is tracked as a follow-up decision, not
+	// fixed here.
+	It("emits nothing when a real resolver succeeds but returns an empty overlay (tracked follow-up gap, not fixed here)", func() {
+		store := &fleetOverlayRecordingAuditStore{}
+		inv := &Investigator{
+			logger:               logr.Discard(),
+			auditStore:           store,
+			fleetOverlayResolver: fleetOverlayEmptyResolver{},
+		}
+
+		got := inv.prescopeFleetOverlay(context.Background(), "remote-cluster", "corr-empty-1")
+
+		Expect(store.events).To(BeEmpty(),
+			"UT-KA-FLEET-028: current behavior -- a successful-but-empty resolution is indistinguishable "+
+				"from a hub-local investigation, same as EventTypeFleetOverlayUnavailable's nil-resolver "+
+				"case used to be before issue #1768's follow-up. Tracked as a known follow-up gap, not "+
+				"fixed by this test.")
+		_, ok := FleetOverlayFromContext(got)
+		Expect(ok).To(BeFalse(),
+			"an empty overlay must behave like no overlay at all, so callers fall back to the local registry")
 	})
 })

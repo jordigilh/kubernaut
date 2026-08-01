@@ -59,7 +59,7 @@ var _ = Describe("E2E-FLEET-003 [SI-4]: SP remote enrichment via MCP gateway pop
 			Spec: signalprocessingv1.SignalProcessingSpec{
 				RemediationRequestRef: signalprocessingv1.ObjectReference{
 					APIVersion: "kubernaut.ai/v1alpha1",
-					Kind:       "RemediationRequest",
+					Kind:       remediationRequestKind,
 					Name:       "fleet-003-rr-ref",
 					Namespace:  namespace,
 				},

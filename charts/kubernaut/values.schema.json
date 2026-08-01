@@ -2087,6 +2087,16 @@
               }
             }
           }
+        },
+        "fleet": {
+          "type": "object",
+          "description": "Multi-cluster fleet configuration (BR-FLEET-054, ADR-068, issue #1729). Gated by global.fleet.enabled -- when true, KA's investigator additionally advertises the fleet MCP Gateway's remote-cluster tools for fleet-tagged investigations, alongside its local kubectl_* tools. mcpGatewayEndpoint/mcpGatewayType/oauth2.{enabled,tokenURL,scopes} come from global.fleet.* (Issue #1707 follow-up); only oauth2.credentialsSecretRef remains overridable here. No namespace field (unlike apifrontend/effectivenessmonitor): KA has no ClusterRegistry informer/watch.",
+          "additionalProperties": false,
+          "properties": {
+            "oauth2": {
+              "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            }
+          }
         }
       }
     },

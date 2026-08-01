@@ -130,7 +130,7 @@ type AuditEvent struct {
 
 **Emitted from:** `internal/kubernautagent/investigator/fleet_overlay.go` (`emitFleetOverlayFailedAudit`, `emitFleetOverlayUnavailableAudit`, both called from `prescopeFleetOverlay`)
 
-**Test coverage:** UT-KA-FLEET-028 (unit, decision logic in isolation) + IT-KA-FLEET-020 (resolver error, wired) + IT-KA-FLEET-024 (unconfigured resolver, wired) — both entry points (`Investigate()`, `RunInteractiveTurn()`) proven for both degradation events. A third condition — resolver configured, succeeds, but resolves to an **empty** overlay — currently emits neither event (characterized by UT-KA-FLEET-028's "empty overlay on success" case as a tracked follow-up gap, not yet fixed).
+**Test coverage:** UT-KA-FLEET-028 (unit, decision logic in isolation) + IT-KA-FLEET-020 (resolver error, wired) + IT-KA-FLEET-029 (unconfigured resolver, wired) — both entry points (`Investigate()`, `RunInteractiveTurn()`) proven for both degradation events. A third condition — resolver configured, succeeds, but resolves to an **empty** overlay — currently emits neither event (characterized by UT-KA-FLEET-028's "empty overlay on success" case as a tracked follow-up gap, not yet fixed).
 
 ---
 

@@ -21,12 +21,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
@@ -139,12 +141,26 @@ func toolNames(defs []llm.ToolDefinition) []string {
 // instead of the local registry's tool of the same name — the LLM sees one
 // entry per name either way, so the schema is byte-identical to a hub-local
 // investigation's regardless of which cluster backs it (AC-6).
+//
+// Issue #1729: that override-only behavior left a tool-transparency gap for
+// any overlay tool whose name has no local-registry namesake at all — e.g.
+// kube-mcp-server's own naming convention (resources_get/resources_list/...,
+// pkg/fleet/mcpclient/tool_names.go) never collides with KA's local k8s-tool
+// naming convention (kubectl_get_by_name/kubectl_list/...). Such tools were
+// present in the resolved overlay and reachable by executeResolved, but never
+// advertised to the LLM at all, making them permanently uncallable regardless
+// of Helm/gateway wiring. appendNonCollidingOverlayTools below closes that gap
+// for the RCA phase (where the local read/k8s tool set already lives) only —
+// WorkflowDiscovery/Validation schemas are intentionally left untouched, to
+// avoid widening the LLM's action surface for phases that have never exposed
+// read tools of any kind (least privilege, AC-6).
 func (inv *Investigator) toolDefinitionsForPhase(ctx context.Context, phase katypes.Phase) []llm.ToolDefinition {
 	var defs []llm.ToolDefinition
 	if inv.registry != nil {
 		phaseTools := inv.registry.ToolsForPhase(phase, inv.phaseTools)
 		overlay, _ := FleetOverlayFromContext(ctx)
-		defs = make([]llm.ToolDefinition, 0, len(phaseTools)+2)
+		defs = make([]llm.ToolDefinition, 0, len(phaseTools)+len(overlay)+2)
+		seen := make(map[string]struct{}, len(phaseTools))
 		for _, t := range phaseTools {
 			eff := t
 			if ov, found := resolveTool(overlay, t.Name()); found {
@@ -155,6 +171,10 @@ func (inv *Investigator) toolDefinitionsForPhase(ctx context.Context, phase katy
 				Description: eff.Description(),
 				Parameters:  eff.Parameters(),
 			})
+			seen[t.Name()] = struct{}{}
+		}
+		if phase == katypes.PhaseRCA {
+			defs = appendNonCollidingOverlayTools(defs, overlay, seen)
 		}
 	}
 
@@ -176,6 +196,36 @@ func (inv *Investigator) toolDefinitionsForPhase(ctx context.Context, phase katy
 			Name:        SubmitResultToolName,
 			Description: "Submit the final investigation result as structured JSON. Call this tool when your analysis is complete.",
 			Parameters:  submitResultSchemaForPhase(phase),
+		})
+	}
+	return defs
+}
+
+// appendNonCollidingOverlayTools appends the fleet overlay's own tool
+// definitions to defs for every overlay name not already in seen (i.e. every
+// name that was NOT already advertised via a same-named local-registry tool
+// in toolDefinitionsForPhase's override loop). Overlay names are sorted
+// before appending so the resulting schema is deterministic across calls —
+// Go map iteration order is randomized, and a nondeterministic tool schema
+// would be both hard to test and, worse, would give the LLM a
+// non-reproducible view of its own toolset from one turn to the next.
+func appendNonCollidingOverlayTools(defs []llm.ToolDefinition, overlay map[string]tools.Tool, seen map[string]struct{}) []llm.ToolDefinition {
+	if len(overlay) == 0 {
+		return defs
+	}
+	names := make([]string, 0, len(overlay))
+	for name := range overlay {
+		if _, dup := seen[name]; !dup {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		t := overlay[name]
+		defs = append(defs, llm.ToolDefinition{
+			Name:        t.Name(),
+			Description: t.Description(),
+			Parameters:  t.Parameters(),
 		})
 	}
 	return defs

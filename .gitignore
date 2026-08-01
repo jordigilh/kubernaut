@@ -312,6 +312,9 @@ must-gather-*.tar.gz
 .codegraph-colbymchenry/
 .codegraph/
 
+# Serena MCP trial (project config/cache/logs; not yet a team decision)
+.serena/
+
 # MCP server config (local)
 .mcp.json
 /fleetmetadatacache

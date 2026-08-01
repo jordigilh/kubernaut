@@ -92,6 +92,14 @@ type FleetOAuth2 struct {
 	TokenURL             string   `yaml:"tokenURL"`
 	CredentialsSecretRef string   `yaml:"credentialsSecretRef"`
 	Scopes               []string `yaml:"scopes,omitempty"`
+	// TLSCaFile is an optional path to a PEM-encoded CA bundle used to verify
+	// the OAuth2 token endpoint's TLS certificate (e.g. a cluster-local IdP
+	// issued by cert-manager). When empty, the OAuth2 token-fetch HTTP client
+	// falls back to the system CA trust store. PR #1820 CI RCA: without this,
+	// every fleet OAuth2 token request against a cluster-local Keycloak fails
+	// with "x509: certificate signed by unknown authority", leaving the fleet
+	// readiness gate permanently NotReady.
+	TLSCaFile string `yaml:"tlsCaFile,omitempty"`
 }
 
 // LLMRuntimeConfig holds hot-reloadable LLM settings that can change without restart.

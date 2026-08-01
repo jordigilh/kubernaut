@@ -195,6 +195,37 @@ been. No behavioral difference results from this choice.
 The implementation plan (Wiring Manifest with concrete IT test IDs) was
 tracked in Issue #1732 per the project's Pre-Implementation Workflow.
 
+## Amendment (2026-08-01, issue #1729 close-out): tool-transparency gap for non-colliding overlay names
+
+Closing issue #1729 (wiring `kubernautAgent.fleet` through Helm) surfaced a
+gap in the as-built `toolDefinitionsForPhase()`/`executeResolved()` overlay
+resolution above: it only ever **overrides** a local-registry tool entry with
+the overlay's `BridgeTool` when both share the exact same name. It never
+**adds** an overlay tool with no local-registry namesake at all.
+
+In practice this meant fleet-only tools were never advertised to the LLM at
+all: `executeResolved()` could still route to them by name, but the LLM never
+learns a name exists unless `toolDefinitionsForPhase()` puts it in the
+schema. kube-mcp-server's own tool naming convention
+(`resources_get`/`resources_list`/..., `pkg/fleet/mcpclient/tool_names.go`)
+never collides with KA's local k8s-tool naming convention
+(`kubectl_get_by_name`/`kubectl_list`/..., `pkg/kubernautagent/tools/k8s`),
+so this gap was total, not partial — the "cluster-transparent tool exposure"
+this decision is named for never actually reached kube-mcp-server's tools in
+practice, regardless of Helm/gateway wiring.
+
+**Fix**: `toolDefinitionsForPhase()` now appends every overlay tool name not
+already covered by the override loop, for the RCA phase only (where the
+local read/k8s tool set already lives — `WorkflowDiscovery`/`Validation`
+schemas are deliberately left untouched, preserving their existing
+least-privilege scoping, AC-6). Overlay-only names are sorted before
+appending so the resulting schema is deterministic across calls despite Go's
+randomized map iteration order.
+
+| Component | Production Entry Point | Wiring Code Location | IT Test ID |
+|---|---|---|---|
+| Non-colliding overlay tool append | `toolDefinitionsForPhase()` -> `appendNonCollidingOverlayTools()` | `internal/kubernautagent/investigator/investigator_tools.go` | IT-KA-FLEET-024 |
+
 ## Authority
 
 Issue #1729, Issue #1732, ADR-068 (decision #11), BR-INTEGRATION-054,

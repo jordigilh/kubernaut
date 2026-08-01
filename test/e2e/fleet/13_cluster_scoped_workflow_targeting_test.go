@@ -185,7 +185,7 @@ var _ = Describe("E2E-FLEET-1511-001 [AC-4, SC-7]: Cluster-scoped workflow targe
 
 			for i := range aiList.Items {
 				for _, ref := range aiList.Items[i].OwnerReferences {
-					if ref.Kind == "RemediationRequest" && ref.Name == rrName {
+					if ref.Kind == remediationRequestKind && ref.Name == rrName {
 						ai = &aiList.Items[i]
 						break
 					}
