@@ -1,7 +1,7 @@
-# BR-HAPI-198: Operator-Configurable Confidence Thresholds
+# BR-KA-198: Operator-Configurable Confidence Thresholds
 
-**Business Requirement ID**: BR-HAPI-198
-**Category**: HolmesGPT-API / AIAnalysis
+**Business Requirement ID**: BR-KA-198
+**Category**: Kubernaut Agent (KA) / AIAnalysis
 **Priority**: P2
 **Target Version**: V1.1
 **Status**: 📋 PLANNED
@@ -40,7 +40,7 @@ V1.0 implements a **global 70% confidence threshold** for determining when human
 
 ## 🎯 Requirements
 
-### BR-HAPI-198.1: Rule-Based Threshold Configuration
+### BR-KA-198.1: Rule-Based Threshold Configuration
 
 **MUST**: AIAnalysis service SHALL support rule-based confidence threshold configuration.
 
@@ -83,7 +83,7 @@ data:
         description: "Default threshold for unmatched scenarios"
 ```
 
-### BR-HAPI-198.2: Match Criteria
+### BR-KA-198.2: Match Criteria
 
 **MUST**: Rules SHALL support matching on the following criteria from `IncidentRequest`:
 
@@ -96,27 +96,27 @@ data:
 | `business_category` | string[] | `["revenue-critical", "internal"]` |
 | `cluster_name` | string[] | `["prod-us-east", "dev-cluster"]` |
 
-### BR-HAPI-198.3: Rule Evaluation Order
+### BR-KA-198.3: Rule Evaluation Order
 
 **MUST**: Rules SHALL be evaluated in order, and the **first matching rule** SHALL be applied.
 
 **MUST**: A `default` rule with empty `match: {}` SHALL be required as the last rule.
 
-### BR-HAPI-198.4: Threshold Application
+### BR-KA-198.4: Threshold Application
 
-**MUST**: When AIAnalysis receives `IncidentResponse` from HAPI:
+**MUST**: When AIAnalysis receives `IncidentResponse` from KA:
 1. Extract `selected_workflow.confidence` value
 2. Evaluate rules in order to find matching threshold
 3. If `confidence < threshold`, set internal `requiresHumanReview = true`
 
-**Note**: HAPI remains stateless and threshold-agnostic. It returns `confidence` only.
+**Note**: KA remains stateless and threshold-agnostic. It returns `confidence` only.
 
-### BR-HAPI-198.5: Audit Logging
+### BR-KA-198.5: Audit Logging
 
 **SHOULD**: When a threshold rule is applied, AIAnalysis SHOULD log:
 - Rule name that matched
 - Threshold value applied
-- Confidence value from HAPI
+- Confidence value from KA
 - Decision (pass/fail)
 
 ```json
@@ -179,7 +179,7 @@ data:
 
 | Component | Role |
 |-----------|------|
-| **HAPI** | Returns `confidence` (no changes needed) |
+| **KA** | Returns `confidence` (no changes needed) |
 | **AIAnalysis** | Implements rule evaluation and threshold application |
 | **ConfigMap** | Stores operator-defined rules |
 
@@ -282,7 +282,7 @@ confidence_rules:
 
 ## 📎 Related Documents
 
-- [BR-HAPI-197: Human Review Required Flag](./BR-HAPI-197-needs-human-review-field.md)
+- [BR-KA-197: Human Review Required Flag](./BR-KA-197-needs-human-review-field.md)
 - [Q18 Response in AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md)
 - [DD-KA-001: Workflow Response Validation Architecture](../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md) (supersedes the retired DD-HAPI-002)
 

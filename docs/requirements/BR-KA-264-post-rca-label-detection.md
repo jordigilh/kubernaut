@@ -1,7 +1,7 @@
-# BR-HAPI-264: Post-RCA Infrastructure Label Detection via EnrichmentService
+# BR-KA-264: Post-RCA Infrastructure Label Detection via EnrichmentService
 
-**Business Requirement ID**: BR-HAPI-264
-**Category**: HolmesGPT API Service
+**Business Requirement ID**: BR-KA-264
+**Category**: Kubernaut Agent (KA) Service
 **Priority**: P2
 **Target Version**: V1
 **Status**: Approved
@@ -18,13 +18,13 @@ Under the current architecture (ADR-056 v1.6), infrastructure labels (gitOpsMana
 
 With the three-phase architecture (#529), this creates two problems:
 
-1. Labels are detected for the resource the LLM investigated (via the tool), not necessarily the resource HAPI resolves as the root owner in Phase 2. The LLM might investigate a Pod but HAPI resolves to a Deployment -- labels should describe the Deployment.
+1. Labels are detected for the resource the LLM investigated (via the tool), not necessarily the resource KA resolves as the root owner in Phase 2. The LLM might investigate a Pod but KA resolves to a Deployment -- labels should describe the Deployment.
 
-2. `root_owner` and `detected_labels` writes in `session_state` by the resource context tool conflict with HAPI's Phase 2 resolution, which is authoritative.
+2. `root_owner` and `detected_labels` writes in `session_state` by the resource context tool conflict with KA's Phase 2 resolution, which is authoritative.
 
 ### Business Objective
 
-Move label detection from the resource_context tool to HAPI's EnrichmentService (Phase 2). Labels are always detected for the K8s-verified root owner, ensuring they accurately describe the resource that will be remediated.
+Move label detection from the resource_context tool to KA's EnrichmentService (Phase 2). Labels are always detected for the K8s-verified root owner, ensuring they accurately describe the resource that will be remediated.
 
 ---
 
@@ -35,7 +35,7 @@ Move label detection from the resource_context tool to HAPI's EnrichmentService 
 3. Resource context tools no longer write `detected_labels` to `session_state`
 4. Resource context tools no longer write `root_owner` to `session_state`
 5. `inject_detected_labels` works with labels from EnrichmentResult (not session_state)
-6. If label detection fails after retries, HAPI fails hard with `rca_incomplete`
+6. If label detection fails after retries, KA fails hard with `rca_incomplete`
 
 ---
 
