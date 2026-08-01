@@ -17,8 +17,11 @@ graph TB
 
         subgraph "MCP Tools Layer"
             IT[InvestigateTool<br/>start/message/complete/cancel/takeover/status]
-            ET[EnrichTool<br/>K8s resource enrichment]
-            SWT[SelectWorkflowTool<br/>workflow catalog]
+            SWT[SelectWorkflowTool<br/>workflow catalog + enrichment pre-selection hook]
+        end
+
+        subgraph "Enrichment"
+            ENR[enrichment.Enricher<br/>owner-chain walk + spec-hash fetch]
         end
 
         subgraph "Session Management"
@@ -33,10 +36,6 @@ graph TB
             SCH[SessionClosedHandler<br/>release + reconstruct]
             RS[ReconstructionSpawner<br/>autonomous handoff]
         end
-
-        subgraph "Transport"
-            IRT[ImpersonatingRoundTripper<br/>inject Impersonate-User/Group]
-        end
     end
 
     subgraph "Kubernetes API Server"
@@ -44,17 +43,17 @@ graph TB
     end
 
     C -->|"POST /api/v1/mcp<br/>Bearer token"| MW
-    MW -->|"strips Impersonate-* headers<br/>validates token (full UserInfo)"| RL
+    MW -->|"validates token (full UserInfo)"| RL
     RL --> MH
     MH --> IT
-    MH --> ET
     MH --> SWT
 
     IT -->|"Takeover/Release"| LSM
     IT -->|"StartTracking/Reset/Stop"| TM
     IT -->|"Allow(sessionID, msgSize)"| SRL
-    IT -->|"WithImpersonatedUser(ctx)"| IRT
-    ET -->|"WithImpersonatedUser(ctx)"| IRT
+
+    SWT -->|"Enrich(kind,name,ns,...)"| ENR
+    SWT -->|"emitInteractiveK8sCall(acting_user)<br/>audit attribution only"| AUD[AuditStore]
 
     TM -->|"onExpire → Release"| LSM
     TM -->|"warning intervals"| SN
@@ -65,8 +64,18 @@ graph TB
     SCH --> RS
 
     LSM -->|"Create/Delete Lease"| K8S
-    IRT -->|"K8s calls as user"| K8S
+    ENR -->|"GetOwnerChain/GetSpecHash<br/>as KA's own SA (#1287/#1288)"| K8S
 ```
+
+> **Trusted intermediary model (#1287/#1288):** KA never impersonates the
+> acting user at the K8s API level — every K8s call (Lease management,
+> enrichment lookups) executes under KA's own ServiceAccount. `acting_user`
+> travels through the MCP tool input/session context and is recorded on the
+> `aiagent.interactive.k8s_call` audit event purely for SOC2 CC8.1
+> attribution, not for RBAC enforcement. The `ImpersonatingRoundTripper` /
+> `Impersonate-User` header design shown in earlier revisions of this
+> document was removed as dead code (never wired into `cmd/kubernautagent`)
+> once #1287/#1288 landed.
 
 ## Request Flow (action=message)
 
@@ -77,8 +86,7 @@ sequenceDiagram
     participant IT as InvestigateTool
     participant SRL as SessionRateLimiter
     participant TM as TimeoutManager
-    participant IRT as ImpersonatingRoundTripper
-    participant K8S as K8s API Server
+    participant LLM as LLM (via investigator)
 
     Client->>MW: POST /api/v1/mcp (Bearer token)
     MW->>MW: ValidateTokenFull → UserInfo{username, groups}
@@ -91,13 +99,30 @@ sequenceDiagram
     SRL-->>IT: ok
 
     IT->>TM: ResetInactivity(sessionID)
-    IT->>IT: WithImpersonatedUser(ctx, username, groups)
-    IT->>IRT: RunInteractiveTurn → K8s API calls
-    IRT->>K8S: GET /api/v1/pods (Impersonate-User: alice)
-    K8S-->>IRT: 200 OK (RBAC allows)
-    IRT-->>IT: LLM response
+    IT->>LLM: RunInteractiveTurn
+    LLM-->>IT: response (K8s-backed MCP tool calls, if any, run under KA's own SA — see kubernaut_select_workflow flow below)
 
     IT-->>Client: {status: "message_received", response: "..."}
+```
+
+## Enrichment K8s Call Flow (kubernaut_select_workflow, BR-INTERACTIVE-003 #3)
+
+```mermaid
+sequenceDiagram
+    participant Client as MCP Client
+    participant SWT as SelectWorkflowTool
+    participant ENR as enrichment.Enricher
+    participant K8S as K8s API Server (KA's own SA)
+    participant AUD as AuditStore
+
+    Client->>SWT: kubernaut_select_workflow(rr_id, workflow_id, kind, name, namespace)
+    SWT->>SWT: authorizeSelectionDriver (caller == active driver)
+    SWT->>ENR: Enrich(kind, name, namespace, apiVersion, specHash, incidentID)
+    ENR->>K8S: GetOwnerChain / GetSpecHash (KA SA identity, no impersonation)
+    K8S-->>ENR: owner chain + spec hash (or 403/500 on failure)
+    ENR-->>SWT: EnrichmentResult (or error)
+    SWT->>AUD: emitInteractiveK8sCall(acting_user, http_status_code) [fire-and-forget, ADR-038]
+    SWT-->>Client: SelectWorkflowOutput{enrichment, workflow, ...}
 ```
 
 ## Disconnect + Reconstruction Flow
@@ -128,7 +153,15 @@ sequenceDiagram
 | Resource | Scope | Verbs | Purpose |
 |----------|-------|-------|---------|
 | `coordination.k8s.io/leases` | Namespace (Role) | get, create, update, delete | Session ownership tracking |
-| `users`, `groups`, `serviceaccounts` | Cluster (ClusterRole) | impersonate | Execute K8s calls as the user |
+| Investigation targets (pods, deployments, owners, etc.) | Cluster (ClusterRole) | get, list | Enrichment owner-chain walk + spec-hash fetch, executed under KA's own SA |
 
-The Lease RBAC is namespace-scoped (least privilege). Impersonation must be
-cluster-wide because users may investigate resources across namespaces.
+The Lease RBAC is namespace-scoped (least privilege). Enrichment RBAC is
+cluster-scoped because users may investigate resources across namespaces.
+
+**No impersonation RBAC required.** #1287 (trusted intermediary model) and
+#1288 (removal of the impersonate SSAR startup gate and runtime
+`WithImpersonatedUser`/`ImpersonatingRoundTripper` mechanism) mean KA's SA
+never needs the `impersonate` verb on `users`/`groups`/`serviceaccounts`. The
+acting user's identity is carried for audit attribution only
+(`aiagent.interactive.k8s_call`'s `acting_user`/`session_id` fields), never
+used to scope the K8s API call's authorization.

@@ -976,6 +976,16 @@ context_api:
 
 ## v1.3 Update: Kubernaut Agent Audit Traces
 
+> **⚠️ Historical/frozen.** This section documents only KA's original 15
+> events. **For the current, complete list of all 29 KA `aiagent.*` event
+> types** (including everything added since: alignment/grounding,
+> shadow-mode, interactive-mode, `aiagent.session.resumed`,
+> `aiagent.interactive.k8s_call`, and auth/rate-limit events), see the
+> authoritative, actively-maintained
+> [`AUDIT_EVENT_CATALOG.md`](../../services/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md).
+> This DD remains authoritative for the system-wide MUST/SHOULD/NO audit
+> decision (see Summary Table above), not for KA's individual event names.
+
 In v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433), Kubernaut Agent Go rewrite), documentation and operational context that referred to **HolmesGPT API (HAPI)** as the runtime for `aiagent.*` events should be read as **Kubernaut Agent (KA)** unless the text explicitly describes the legacy Python HAPI service. KA is the **authoritative emitter** for the `aiagent` category in v1.3.
 
 **Actor fields (KA)**:

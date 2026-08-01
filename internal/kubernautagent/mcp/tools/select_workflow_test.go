@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
@@ -321,6 +322,179 @@ var _ = Describe("kubernaut_select_workflow tool — #703 BR-INTERACTIVE-005", f
 			}, mcpinternal.UserInfo{Username: "alice"})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("enrich"))
+		})
+	})
+
+	Describe("UT-KA-898-008: EventTypeInteractiveK8sCall emitted for enrichment's K8s lookup (BR-INTERACTIVE-003 #3, audit catalog gap follow-up)", func() {
+		// #1288 note: KA never impersonates the user at the K8s API level --
+		// GetOwnerChain/GetSpecHash always run under KA's own SA. This event's
+		// purpose is audit *attribution* (who asked for what via the acting
+		// user carried in the MCP session), not RBAC impersonation. One event
+		// summarizes the enrichment lookup, matching EventTypeEnrichmentCompleted's
+		// existing per-Enrich()-call granularity rather than per raw K8s Get.
+		It("should emit a success event with acting_user, resource, namespace, resource_name, and http_status_code=200", func() {
+			wfID := "wf-k8scall-success"
+			runner := &mockEnrichmentRunner{result: &enrichment.EnrichmentResult{ResourceKind: "Deployment"}}
+			store := &recordingAuditStore{}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-k8scall-001",
+					CorrelationID:   "rr-k8scall-001",
+					ActingUser:      mcpinternal.UserInfo{Username: "alice@example.com"},
+					RCAResult:       &katypes.InvestigationResult{RCASummary: "test rca"},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(&mockWorkflowCatalog{workflow: &mcptools.CatalogWorkflow{WorkflowID: wfID}}, sessions,
+				mcptools.WithEnrichmentRunner(runner),
+				mcptools.WithSelectWorkflowAuditStore(store),
+			)
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-k8scall-001",
+				WorkflowID: wfID,
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "production",
+			}, mcpinternal.UserInfo{Username: "alice@example.com"})
+			Expect(err).NotTo(HaveOccurred())
+
+			events := store.events
+			Expect(events).To(HaveLen(1))
+			ev := events[0]
+			Expect(ev.EventType).To(Equal(audit.EventTypeInteractiveK8sCall))
+			Expect(ev.CorrelationID).To(Equal("rr-k8scall-001"))
+			Expect(ev.SessionID).To(Equal("sess-k8scall-001"))
+			Expect(ev.ActingUser).To(Equal("alice@example.com"))
+			Expect(ev.EventOutcome).To(Equal(audit.OutcomeSuccess))
+			Expect(ev.Data["resource"]).To(Equal("Deployment"))
+			Expect(ev.Data["verb"]).To(Equal("get"))
+			Expect(ev.Data["namespace"]).To(Equal("production"))
+			Expect(ev.Data["resource_name"]).To(Equal("api-server"))
+			Expect(ev.Data["http_status_code"]).To(Equal(200))
+		})
+
+		It("should emit a failure event with http_status_code=403 for RBAC-forbidden enrichment errors", func() {
+			wfID := "wf-k8scall-forbidden"
+			runner := &mockEnrichmentRunner{err: enrichment.ErrRBACForbidden}
+			store := &recordingAuditStore{}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-k8scall-002",
+					CorrelationID:   "rr-k8scall-002",
+					ActingUser:      mcpinternal.UserInfo{Username: "bob@example.com"},
+					RCAResult:       &katypes.InvestigationResult{RCASummary: "test rca"},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(nil, sessions,
+				mcptools.WithEnrichmentRunner(runner),
+				mcptools.WithSelectWorkflowAuditStore(store),
+			)
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-k8scall-002",
+				WorkflowID: wfID,
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "restricted-ns",
+			}, mcpinternal.UserInfo{Username: "bob@example.com"})
+			Expect(err).To(HaveOccurred())
+
+			events := store.events
+			Expect(events).To(HaveLen(1))
+			Expect(events[0].EventOutcome).To(Equal(audit.OutcomeFailure))
+			Expect(events[0].Data["http_status_code"]).To(Equal(403))
+		})
+
+		It("should emit a failure event with http_status_code=500 for generic enrichment errors", func() {
+			wfID := "wf-k8scall-generic"
+			runner := &mockEnrichmentRunner{err: errors.New("k8s API unreachable")}
+			store := &recordingAuditStore{}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-k8scall-003",
+					CorrelationID:   "rr-k8scall-003",
+					ActingUser:      mcpinternal.UserInfo{Username: "carol@example.com"},
+					RCAResult:       &katypes.InvestigationResult{RCASummary: "test rca"},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(nil, sessions,
+				mcptools.WithEnrichmentRunner(runner),
+				mcptools.WithSelectWorkflowAuditStore(store),
+			)
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-k8scall-003",
+				WorkflowID: wfID,
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "production",
+			}, mcpinternal.UserInfo{Username: "carol@example.com"})
+			Expect(err).To(HaveOccurred())
+
+			events := store.events
+			Expect(events).To(HaveLen(1))
+			Expect(events[0].EventOutcome).To(Equal(audit.OutcomeFailure))
+			Expect(events[0].Data["http_status_code"]).To(Equal(500))
+		})
+
+		It("should not emit an event when no audit store is configured", func() {
+			wfID := "wf-k8scall-noaudit"
+			runner := &mockEnrichmentRunner{result: &enrichment.EnrichmentResult{ResourceKind: "Deployment"}}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-k8scall-004",
+					CorrelationID:   "rr-k8scall-004",
+					ActingUser:      mcpinternal.UserInfo{Username: "dave@example.com"},
+					RCAResult:       &katypes.InvestigationResult{RCASummary: "test rca"},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(&mockWorkflowCatalog{workflow: &mcptools.CatalogWorkflow{WorkflowID: wfID}}, sessions,
+				mcptools.WithEnrichmentRunner(runner),
+			)
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-k8scall-004",
+				WorkflowID: wfID,
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "production",
+			}, mcpinternal.UserInfo{Username: "dave@example.com"})
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("should not emit an event when enrichment is skipped (no kind provided)", func() {
+			wfID := "wf-k8scall-nokind"
+			runner := &mockEnrichmentRunner{result: &enrichment.EnrichmentResult{}}
+			store := &recordingAuditStore{}
+			sessions := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:       "sess-k8scall-005",
+					CorrelationID:   "rr-k8scall-005",
+					ActingUser:      mcpinternal.UserInfo{Username: "erin@example.com"},
+					RCAResult:       &katypes.InvestigationResult{RCASummary: "test rca", RemediationTarget: katypes.RemediationTarget{}},
+					DiscoveryResult: discoveryWithWorkflow(wfID),
+				},
+			}
+
+			tool := mcptools.NewSelectWorkflowTool(&mockWorkflowCatalog{workflow: &mcptools.CatalogWorkflow{WorkflowID: wfID}}, sessions,
+				mcptools.WithEnrichmentRunner(runner),
+				mcptools.WithSelectWorkflowAuditStore(store),
+			)
+			_, err := tool.Handle(context.Background(), mcptools.SelectWorkflowInput{
+				RRID:       "rr-k8scall-005",
+				WorkflowID: wfID,
+			}, mcpinternal.UserInfo{Username: "erin@example.com"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.events).To(BeEmpty())
 		})
 
 		It("should skip enrichment when no runner is configured", func() {

@@ -31,7 +31,6 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-	"github.com/jordigilh/kubernaut/pkg/shared/transport"
 )
 
 // LLMMessage represents a single conversation message for the investigator.
@@ -630,9 +629,6 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 	if t.timeoutTracker != nil {
 		t.timeoutTracker.ResetInactivity(sess.SessionID)
 	}
-
-	// #898-S5: Attach session ID for audit attribution on K8s API calls.
-	ctx = transport.WithAuditSessionID(ctx, sess.SessionID)
 
 	// F9 / #1374: Attach signal context for PhaseRCA tool parity with
 	// the autonomous path. Future tools may read SignalContextFromContext.
