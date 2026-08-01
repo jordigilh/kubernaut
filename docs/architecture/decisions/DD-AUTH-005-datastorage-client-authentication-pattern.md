@@ -27,10 +27,10 @@
 ### **Business Requirements**
 
 1. **SOC2 CC6.1 (Access Controls)**: All DataStorage API calls require authenticated user identification
-2. **OpenAPI Client Usage**: Services MUST use OpenAPI-generated clients (DD-HAPI-003)
+2. **OpenAPI Client Usage**: Services MUST use OpenAPI-generated clients (DD-KA-003)
 3. **Testing Flexibility**: Integration tests mock headers, E2E tests use real tokens
 4. **Production Simplicity**: Services automatically read ServiceAccount tokens from filesystem
-5. **No Generated Code Modifications**: OpenAPI clients remain pristine (DD-HAPI-003, DD-HAPI-005)
+5. **No Generated Code Modifications**: OpenAPI clients remain pristine (DD-KA-003)
 
 ### **Problem Statement**
 
@@ -43,7 +43,7 @@
 **Why This Doesn't Work**:
 - ❌ **Inconsistency**: Each service implements auth differently
 - ❌ **Testing Complexity**: Hard to switch between mock and real auth
-- ❌ **OpenAPI Violation**: Not using generated clients (DD-HAPI-003)
+- ❌ **OpenAPI Violation**: Not using generated clients (DD-KA-003)
 - ❌ **Maintenance Burden**: Auth changes require updating 8 services
 - ❌ **Production Risk**: Easy to forget token injection in new services
 
@@ -75,8 +75,7 @@ func (c *ClientImpl) PlaceLegalHold(ctx context.Context, req PlaceLegalHoldReque
 ```
 
 **Why Rejected**:
-- ❌ **Violates DD-HAPI-003**: Generated clients must remain pristine
-- ❌ **Violates DD-HAPI-005**: Breaks auto-regeneration workflow
+- ❌ **Violates DD-KA-003**: Generated clients must remain pristine, breaks auto-regeneration workflow
 - ❌ **Manual regeneration**: Every OpenAPI spec change requires manual patching
 - ❌ **Testing nightmare**: Cannot switch between mock and real auth
 - ❌ **User mandate**: "Do NOT modify the auto-generated code"
@@ -412,7 +411,7 @@ import (
 //
 // Benefits:
 // - ZERO service code changes (all services use this adapter)
-// - OpenAPI generated client remains pristine (DD-HAPI-003)
+// - OpenAPI generated client remains pristine (DD-KA-003)
 // - Automatic token refresh (5-minute cache in transport)
 // - Environment-aware (production uses ServiceAccount, tests use mock)
 //
@@ -495,7 +494,7 @@ class ServiceAccountAuthSession(Session):
         ds_client = DataStorageClient(base_url="http://localhost:8080", session=session)
 
     Benefits:
-    - OpenAPI generated client remains pristine (DD-HAPI-003, DD-HAPI-005)
+    - OpenAPI generated client remains pristine (DD-KA-003)
     - Automatic token refresh on every request
     - Environment-aware (production uses ServiceAccount, tests use mock)
 
@@ -734,8 +733,8 @@ ds_client = create_datastorage_client("http://datastorage:8080")
    - All services automatically get authentication
 
 2. **OpenAPI Client Compliance** ✅
-   - Generated clients remain pristine (DD-HAPI-003)
-   - Auto-regeneration workflow preserved (DD-HAPI-005)
+   - Generated clients remain pristine (DD-KA-003)
+   - Auto-regeneration workflow preserved (DD-KA-003)
    - No manual patching after spec updates
 
 3. **Environment-Aware Authentication** ✅
@@ -874,7 +873,7 @@ ds_client = create_datastorage_client("http://datastorage:8080")
 ## 🔗 **Related Decisions**
 
 - **Builds On**: [DD-AUTH-004](DD-AUTH-004-openshift-oauth-proxy-legal-hold.md) (OpenShift OAuth-Proxy)
-- **Enforces**: [DD-HAPI-003](DD-HAPI-003-mandatory-openapi-client-usage.md) (Mandatory OpenAPI Client Usage)
+- **Enforces**: [DD-KA-003](DD-KA-003-mandatory-openapi-client-usage.md) (Mandatory OpenAPI Client Usage)
 - **Supports**: SOC2 Gap #8 (Legal Hold), SOC2 CC6.1 (Access Controls)
 - **Authoritative Pattern**: ALL services MUST follow this pattern for DataStorage interactions
 

@@ -37,7 +37,7 @@
 | **[CRD Schema](./crd-schema.md)** | AIAnalysis CRD types, validation, examples | ✅ **Updated (v2.4)** |
 | **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, owner references | ✅ Complete (v2.0) |
 | **[Reconciliation Phases](./reconciliation-phases.md)** | Phase transitions, timeouts, coordination patterns | ✅ Complete (v2.0) |
-| **[AI HolmesGPT & Approval](./ai-holmesgpt-approval.md)** | HolmesGPT integration, Rego policies, approval workflow | ✅ Complete (v2.0) |
+| **[AI Kubernaut Agent & Approval](./ka-approval.md)** | KA integration, Rego policies, approval workflow | ✅ Complete (v3.0) |
 | **[Finalizers & Lifecycle](./finalizers-lifecycle.md)** | Cleanup patterns, CRD lifecycle management | ✅ Complete (v2.0) |
 | **[Testing Strategy](./testing-strategy.md)** | Unit/Integration/E2E tests, mock patterns | ✅ Complete (v2.0) |
 | **[Security Configuration](./security-configuration.md)** | RBAC, network policies, secret handling | ✅ Ports Fixed |
@@ -61,7 +61,7 @@
 ├── 🔧 crd-schema.md                         - CRD type definitions ✅
 ├── ⚙️  controller-implementation.md         - Reconciler logic
 ├── 🔄 reconciliation-phases.md              - Phase details & coordination
-├── 🤖 ai-holmesgpt-approval.md              - AI-specific: HolmesGPT, Rego, approval (SERVICE-SPECIFIC)
+├── 🤖 ka-approval.md                        - AI-specific: Kubernaut Agent, Rego, approval (SERVICE-SPECIFIC)
 ├── 🧹 finalizers-lifecycle.md               - Cleanup & lifecycle management
 ├── 🧪 testing-strategy.md                   - Test patterns (COMMON PATTERN)
 ├── 🔒 security-configuration.md             - Security patterns (COMMON PATTERN)
@@ -188,7 +188,7 @@
 **For New Developers**:
 1. **Understand the Service**: Start with [Overview](./overview.md) (5 min read)
 2. **Review the CRD**: See [CRD Schema](./crd-schema.md) (10 min read)
-3. **Understand AI Integration**: Read [AI HolmesGPT & Approval](./ai-holmesgpt-approval.md)
+3. **Understand AI Integration**: Read [AI Kubernaut Agent & Approval](./ka-approval.md)
 
 **For Implementers**:
 1. **Check BRs**: Start with [BR_MAPPING.md](./BR_MAPPING.md)

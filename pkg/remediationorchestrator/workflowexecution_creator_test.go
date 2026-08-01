@@ -206,9 +206,9 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 		})
 	})
 
-	Describe("resolveTargetResource (BR-HAPI-191)", func() {
+	Describe("resolveTargetResource (BR-KA-212)", func() {
 		// resolveTargetResource is private; tested via Create() which sets WE.Spec.TargetResource.
-		// BR-HAPI-191: Prefer LLM-identified RemediationTarget over RR's TargetResource.
+		// BR-KA-212: Prefer LLM-identified RemediationTarget over RR's TargetResource.
 		It("should use RCA RemediationTarget namespace/kind/name when namespaced (LLM identified Deployment)", func() {
 			// Arrange: AI with RootCauseAnalysis.RemediationTarget (namespaced)
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
@@ -234,7 +234,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(created.Spec.TargetResource).To(Equal("prod/Deployment/my-app"),
-				"BR-HAPI-191: WorkflowExecution must use LLM-identified Deployment for correct patching target")
+				"BR-KA-212: WorkflowExecution must use LLM-identified Deployment for correct patching target")
 		})
 
 		It("should use RCA RemediationTarget kind/name when cluster-scoped (Namespace empty)", func() {
@@ -262,7 +262,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(created.Spec.TargetResource).To(Equal("Node/worker-1"),
-				"BR-HAPI-191: Cluster-scoped resources use kind/name format")
+				"BR-KA-212: Cluster-scoped resources use kind/name format")
 		})
 
 		It("should fall back to RR TargetResource when RemediationTarget Kind or Name is empty", func() {
@@ -290,7 +290,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(created.Spec.TargetResource).To(Equal("default/Pod/test-pod"),
-				"BR-HAPI-191: Fallback to RR TargetResource when RemediationTarget incomplete")
+				"BR-KA-212: Fallback to RR TargetResource when RemediationTarget incomplete")
 		})
 
 		It("should fall back to RR TargetResource when RemediationTarget Name is empty", func() {

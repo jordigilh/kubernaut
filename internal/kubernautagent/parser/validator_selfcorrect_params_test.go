@@ -28,7 +28,7 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
-var _ = Describe("BR-HAPI-191: WorkflowMeta.Parameters population (#1170)", func() {
+var _ = Describe("BR-KA-191: WorkflowMeta.Parameters population (#1170)", func() {
 
 	Context("UT-KA-1170-060: WorkflowMeta.Parameters populated from schema", func() {
 		It("should store parameters in WorkflowMeta when set", func() {
@@ -79,7 +79,7 @@ var _ = Describe("BR-HAPI-191: WorkflowMeta.Parameters population (#1170)", func
 	})
 })
 
-var _ = Describe("BR-HAPI-191: SelfCorrect with Parameter Validation (#1170)", func() {
+var _ = Describe("BR-KA-191: SelfCorrect with Parameter Validation (#1170)", func() {
 
 	var (
 		v *parser.Validator

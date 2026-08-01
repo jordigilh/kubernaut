@@ -1288,7 +1288,7 @@ func (r *WorkflowExecutionReconciler) checkResourceLock(
 | **DD-WORKFLOW-005** | Automated Schema Extraction (workflow registration) |
 | **DD-WORKFLOW-011** | Tekton Pipeline OCI Bundles |
 | **BR-WE-001** | Create PipelineRun from OCI Bundle |
-| **BR-HAPI-191** | Primary Parameter Validation (HolmesGPT-API) |
+| **BR-KA-191** | Primary Parameter Validation (Kubernaut Agent) |
 
 ---
 

@@ -4860,7 +4860,7 @@ components:
         humanReviewReason:
           type: string
           enum: [workflow_not_found, image_mismatch, parameter_validation_failed, no_matching_workflows, low_confidence, llm_parsing_error, investigation_inconclusive, rca_incomplete, alignment_check_failed]
-          description: Structured reason when needsHumanReview=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212, BR-AI-601)
+          description: Structured reason when needsHumanReview=true (BR-KA-197, BR-KA-200, BR-KA-212, BR-AI-601)
         warnings:
           type: array
           items:

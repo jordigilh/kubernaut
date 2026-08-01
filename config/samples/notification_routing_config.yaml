@@ -3,7 +3,7 @@
 # BR-NOT-065: Channel Routing Based on Spec Fields
 # BR-NOT-066: Alertmanager-Compatible Configuration Format
 # DD-WE-004: WorkflowExecution Exponential Backoff Skip Reasons
-# BR-HAPI-200: Investigation Outcome Reporting
+# BR-KA-200: Investigation Outcome Reporting
 #
 # Issue #91: Routing now uses spec fields + metadata instead of labels.
 # Match keys correspond to spec field names (type, severity, phase,
@@ -19,7 +19,6 @@
 #
 # Cross-Team References:
 #   - NOTICE_WE_EXPONENTIAL_BACKOFF_DD_WE_004.md (Q7, Q8)
-#   - NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md
 #   - Spec fields set by RemediationOrchestrator (mandatory per BR-NOT-065)
 
 # Global routing configuration (camelCase format)
@@ -88,9 +87,9 @@ route:
       groupInterval: 30m
 
     # =================================================================
-    # SKIP: Resolved (BR-HAPI-200)
+    # SKIP: Resolved (BR-KA-200)
     # =================================================================
-    # Alert self-resolved during HolmesGPT investigation.
+    # Alert self-resolved during Kubernaut Agent (KA) investigation.
     # No human action required - prevent alert fatigue.
     # Route to silent receiver (no delivery).
     #
@@ -100,9 +99,9 @@ route:
       repeatInterval: 168h  # 1 week (effectively disable repeats)
 
     # =================================================================
-    # OPS: Investigation Inconclusive (BR-HAPI-200)
+    # OPS: Investigation Inconclusive (BR-KA-200)
     # =================================================================
-    # HolmesGPT could not determine root cause.
+    # Kubernaut Agent (KA) could not determine root cause.
     # Human review required to understand the alert.
     # Route to Slack #ops for triage.
     #
@@ -156,12 +155,12 @@ route:
 # Receiver definitions
 receivers:
   # ===================================================================
-  # SILENT: No delivery (BR-HAPI-200 resolved alerts)
+  # SILENT: No delivery (BR-KA-200 resolved alerts)
   # ===================================================================
   - name: silent-noop
 
   # ===================================================================
-  # OPS: Slack for inconclusive investigations (BR-HAPI-200)
+  # OPS: Slack for inconclusive investigations (BR-KA-200)
   # ===================================================================
   - name: slack-ops-inconclusive
     slackConfigs:

@@ -675,7 +675,7 @@ type RemediationRequestStatus struct {
 	// - "VerificationTimedOut": EA assessment did not complete within deadline (#280)
 	// - "Inconclusive": EA completed but alert still firing (alertScore=0) (#722)
 	// - "DryRun": Pipeline stopped after AI analysis; no WFE/EA created (dry-run mode) (#712, #736)
-	// Reference: BR-ORCH-037, BR-HAPI-200, BR-EM-012
+	// Reference: BR-ORCH-037, BR-KA-200, BR-EM-012
 	// +optional
 	// +kubebuilder:validation:Enum=Remediated;NoActionRequired;ManualReviewRequired;VerificationTimedOut;Inconclusive;DryRun
 	Outcome string `json:"outcome,omitempty"`
@@ -776,9 +776,9 @@ type RemediationRequestStatus struct {
 	ExecutionRef *corev1.ObjectReference `json:"executionRef,omitempty"`
 
 	// RemediationTarget identifies the Kubernetes resource the LLM determined should be
-	// remediated. Populated from AIAnalysis.Status.RootCauseAnalysis.AffectedResource.
+	// remediated. Populated from AIAnalysis.Status.RootCauseAnalysis.RemediationTarget.
 	// May differ from Spec.TargetResource (e.g., Deployment vs Pod).
-	// Reference: BR-HAPI-191, Issue #387
+	// Reference: BR-KA-212, Issue #387
 	// +optional
 	RemediationTarget *ResourceIdentifier `json:"remediationTarget,omitempty"`
 

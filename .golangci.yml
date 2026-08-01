@@ -254,7 +254,7 @@ linters:
     # Defense-in-depth on top of `generated: strict`'s "Code generated ...
     # DO NOT EDIT" header sniffing: scoped by filename pattern (not the whole
     # directory) so the hand-written wrapper files living alongside the ogen
-    # output -- pkg/agentclient/client.go (DD-HAPI-003 business-friendly
+    # output -- pkg/agentclient/client.go (DD-KA-003 business-friendly
     # wrapper) and pkg/datastorage/ogen-client/gen.go (go:generate directive)
     # -- stay fully linted. Verified: with this config removed, `dupl`+
     # `unused` alone raise ~140 findings across the two ogen output dirs'

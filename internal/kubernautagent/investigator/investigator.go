@@ -499,7 +499,7 @@ func (inv *Investigator) startDiagSummary(ctx context.Context) func() {
 }
 
 // checkRCAEarlyReturn evaluates the interactive-hold (BR-INTERACTIVE-010 /
-// #1390), human-review-needed, and not-actionable (#1430 / BR-HAPI-200)
+// #1390), human-review-needed, and not-actionable (#1430 / BR-KA-200)
 // short-circuit conditions after RCA completes. Returns done=true when
 // Investigate must return result immediately without running workflow
 // discovery.

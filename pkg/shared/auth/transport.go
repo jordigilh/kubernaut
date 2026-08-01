@@ -37,7 +37,7 @@ import (
 // for DataStorage REST API calls across ALL environments (integration/E2E/production).
 //
 // WHY DD-AUTH-005?
-// - ✅ OpenAPI client compliance: Generated clients remain pristine (DD-HAPI-003)
+// - ✅ OpenAPI client compliance: Generated clients remain pristine (DD-KA-003)
 // - ✅ Environment-aware: Different auth modes for integration/E2E/production
 // - ✅ Zero service changes: All 7 Go services get auth by updating audit adapter once
 // - ✅ Transparent: Services use OpenAPI clients normally, transport handles auth
@@ -69,7 +69,7 @@ import (
 // E2E Tests: Use SAME transport as production (run tests in pods with mounted tokens)
 //
 // Authority: DD-AUTH-005 (Authoritative client authentication pattern)
-// Related: DD-AUTH-004 (OAuth-proxy sidecar), DD-HAPI-003 (OpenAPI client mandatory)
+// Related: DD-AUTH-004 (OAuth-proxy sidecar), DD-KA-003 (OpenAPI client mandatory)
 // ========================================
 
 const (

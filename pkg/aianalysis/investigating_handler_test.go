@@ -210,7 +210,7 @@ var _ = Describe("InvestigatingHandler", func() {
 	Describe("Handle", func() {
 		// BR-AI-007: Process KA response
 		// NOTE: To proceed to Analyzing phase, KA MUST return a SelectedWorkflow
-		// If no workflow is returned with high confidence, it triggers "Resolved" (BR-HAPI-200)
+		// If no workflow is returned with high confidence, it triggers "Resolved" (BR-KA-200)
 		Context("with successful API response including workflow", func() {
 			BeforeEach(func() {
 				mockClient.WithFullResponse(
@@ -409,7 +409,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				// no_matching_workflows removed — now routes to Phase=Completed per #768 (see UT-AA-768-001)
 				Entry("low_confidence → LowConfidence", "low_confidence", "LowConfidence"),
 				Entry("llm_parsing_error → LLMParsingError", "llm_parsing_error", "LLMParsingError"),
-				// BR-HAPI-200: New investigation outcome
+				// BR-KA-200: New investigation outcome
 				Entry("investigation_inconclusive → InvestigationInconclusive", "investigation_inconclusive", "InvestigationInconclusive"),
 			)
 
@@ -623,12 +623,12 @@ var _ = Describe("InvestigatingHandler", func() {
 	})
 
 	// ========================================
-	// BR-HAPI-200 OUTCOME A: PROBLEM SELF-RESOLVED
+	// BR-KA-200 OUTCOME A: PROBLEM SELF-RESOLVED
 	// When needs_human_review=false AND selected_workflow=null AND confidence >= 0.7
 	// This represents incidents that self-healed (e.g., OOMKilled pod restarted)
 	// ========================================
 	Describe("InvestigatingHandler.HandleProblemResolved", func() {
-		// BR-HAPI-200: Core behavior - problem resolved with high confidence
+		// BR-KA-200: Core behavior - problem resolved with high confidence
 		Context("when problem is confidently resolved", func() {
 			BeforeEach(func() {
 				mockClient.WithProblemResolved(
@@ -638,7 +638,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				)
 			})
 
-			// BR-HAPI-200: Business outcome - no workflow execution, mark complete
+			// BR-KA-200: Business outcome - no workflow execution, mark complete
 			It("should complete without workflow execution", func() {
 				analysis := createTestAnalysis()
 
@@ -654,7 +654,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(result.RequeueAfter).To(BeZero(), "Should NOT schedule requeue")
 			})
 
-			// BR-HAPI-200: Message should contain investigation summary
+			// BR-KA-200: Message should contain investigation summary
 			It("should capture investigation summary in message", func() {
 				analysis := createTestAnalysis()
 
@@ -665,7 +665,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.Message).To(ContainSubstring("recovered automatically"))
 			})
 
-			// BR-HAPI-200: Warnings should be preserved
+			// BR-KA-200: Warnings should be preserved
 			It("should preserve warnings for audit trail", func() {
 				analysis := createTestAnalysis()
 
@@ -677,7 +677,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 		})
 
-		// BR-HAPI-200 + #208: RCA with contributing factors → human review (not resolved)
+		// BR-KA-200 + #208: RCA with contributing factors → human review (not resolved)
 		Context("when problem resolved with RCA available", func() {
 			BeforeEach(func() {
 				mockClient.WithProblemResolvedAndRCA(
@@ -845,7 +845,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 		})
 
-		// BR-HAPI-200: Confidence threshold boundary tests
+		// BR-KA-200: Confidence threshold boundary tests
 		DescribeTable("should respect confidence threshold of 0.7",
 			func(confidence float64, shouldBeResolved bool) {
 				if shouldBeResolved {
@@ -892,7 +892,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			Entry("confidence = 0.50 (low confidence) → Failed (BR-AI-050)", 0.50, false),
 		)
 
-		// BR-HAPI-200: Fallback message when analysis is empty
+		// BR-KA-200: Fallback message when analysis is empty
 		Context("when analysis text is empty", func() {
 			It("should use warnings for message when analysis is empty", func() {
 				mockClient.WithProblemResolved(0.92, []string{"Pod recovered"}, "") // Empty analysis
@@ -917,7 +917,7 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 		})
 
-		// BR-HAPI-200: Retry count reset on success
+		// BR-KA-200: Retry count reset on success
 		Context("retry count management", func() {
 			It("should reset retry count on successful resolution", func() {
 				mockClient.WithProblemResolved(0.92, []string{"Resolved"}, "Problem resolved")

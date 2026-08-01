@@ -293,7 +293,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 		})
 	})
 
-	Context("Problem Resolved - BR-HAPI-200 Outcome A", func() {
+	Context("Problem Resolved - BR-KA-200 Outcome A", func() {
 		It("should handle problem resolved scenario (no workflow needed)", func() {
 			// REFACTORED: Now using Mock LLM MOCK_PROBLEM_RESOLVED scenario
 			// Mock LLM returns investigation_outcome="resolved" with no workflow
@@ -318,7 +318,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp).NotTo(BeNil())
 
-			// BR-HAPI-200 Outcome A: Problem resolved, no workflow needed
+			// BR-KA-200 Outcome A: Problem resolved, no workflow needed
 			Expect(resp.NeedsHumanReview.Value).To(BeFalse(),
 				"Problem resolved should not require human review")
 			Expect(resp.SelectedWorkflow.Set).To(BeFalse(),
@@ -398,7 +398,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 		})
 	})
 
-	Context("Investigation Inconclusive - BR-HAPI-200 Outcome B", func() {
+	Context("Investigation Inconclusive - BR-KA-200 Outcome B", func() {
 		It("should handle investigation_inconclusive scenario", func() {
 			// Real KA call - NetworkFailure with unclear pattern may trigger inconclusive
 			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{

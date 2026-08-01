@@ -172,7 +172,7 @@ Every tool execution flows through the sanitization pipeline:
 ```
 Tool.Execute() → raw result
     ↓
-G4: Credential scrubbing (BR-HAPI-211 patterns)
+G4: Credential scrubbing (BR-KA-211 patterns)
     ↓
 I1: Prompt injection stripping (instruction-like patterns in tool output)
     ↓

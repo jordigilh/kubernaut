@@ -491,7 +491,6 @@ func (s *EnrichmentResultsKubernetesContext) init() EnrichmentResultsKubernetesC
 }
 
 // RFC 7807 Problem Details for HTTP APIs
-// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
 // Design Decision: DD-004 - RFC 7807 Problem Details
 // Reference: https://tools.ietf.org/html/rfc7807
 // Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
@@ -590,8 +589,9 @@ func (*HTTPValidationError) incidentSessionResultEndpointAPIV1IncidentSessionSes
 func (*HTTPValidationError) incidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes() {}
 
 // Structured reason for needs_human_review=true.
-// Business Requirements: BR-HAPI-197, BR-HAPI-200, BR-496, BR-AI-601, BR-WORKFLOW-1418
-// Design Decision: DD-HAPI-002 v1.2, DD-HAPI-006 v1.3, DD-AF-007
+// Business Requirements: BR-KA-197, BR-KA-200, BR-496, BR-AI-601, BR-WORKFLOW-1418
+// Design Decision: DD-KA-001 (formerly DD-HAPI-002 v1.2), DD-KA-006 (formerly DD-HAPI-006 v1.3),
+// DD-AF-007
 // AIAnalysis uses this for reliable subReason mapping instead of parsing warnings.
 // Ref: #/components/schemas/HumanReviewReason
 type HumanReviewReason string
@@ -717,7 +717,6 @@ func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostApplicationJSONUnprocessab
 }
 
 // RFC 7807 Problem Details for HTTP APIs
-// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
 // Design Decision: DD-004 - RFC 7807 Problem Details
 // Reference: https://tools.ietf.org/html/rfc7807
 // Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
@@ -797,7 +796,6 @@ func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostBadRequestApplicationProbl
 }
 
 // RFC 7807 Problem Details for HTTP APIs
-// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
 // Design Decision: DD-004 - RFC 7807 Problem Details
 // Reference: https://tools.ietf.org/html/rfc7807
 // Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
@@ -877,7 +875,6 @@ func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostForbiddenApplicationProble
 }
 
 // RFC 7807 Problem Details for HTTP APIs
-// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
 // Design Decision: DD-004 - RFC 7807 Problem Details
 // Reference: https://tools.ietf.org/html/rfc7807
 // Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
@@ -957,7 +954,6 @@ func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostInternalServerErrorApplica
 }
 
 // RFC 7807 Problem Details for HTTP APIs
-// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
 // Design Decision: DD-004 - RFC 7807 Problem Details
 // Reference: https://tools.ietf.org/html/rfc7807
 // Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)
@@ -1037,7 +1033,6 @@ func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnauthorizedApplicationPro
 }
 
 // RFC 7807 Problem Details for HTTP APIs
-// Business Requirement: BR-HAPI-200 - RFC 7807 Error Response Standard
 // Design Decision: DD-004 - RFC 7807 Problem Details
 // Reference: https://tools.ietf.org/html/rfc7807
 // Reference: Gateway Service (pkg/gateway/errors/rfc7807.go)

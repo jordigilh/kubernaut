@@ -234,7 +234,7 @@ func (inv *Investigator) emitValidationEvent(ctx context.Context, attempt, maxAt
 }
 
 // renderCorrectionMessage builds a structured correction message for LLM self-correction.
-// BR-HAPI-191: Uses validation_error.tmpl with schema hints for parameter errors,
+// BR-KA-191: Uses validation_error.tmpl with schema hints for parameter errors,
 // falls back to format error template for other validation failures.
 func (inv *Investigator) renderCorrectionMessage(validationErr error, attempt, maxAttempts int) (string, error) {
 	data := prompt.ValidationErrorData{

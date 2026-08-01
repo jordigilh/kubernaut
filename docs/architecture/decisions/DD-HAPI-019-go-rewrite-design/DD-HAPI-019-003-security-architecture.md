@@ -9,7 +9,7 @@
 
 **Related Business Requirements**:
 - BR-HAPI-433-004 (Security Requirements) — retired as a standalone doc; migration complete
-- [BR-HAPI-211: LLM Input Sanitization](../../../requirements/BR-HAPI-211-llm-input-sanitization.md)
+- [BR-KA-211: LLM Input Sanitization](../../../requirements/BR-KA-211-llm-input-sanitization.md)
 
 ---
 
@@ -17,6 +17,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.2 | 2026-08-01 | Issue #1806 | Updated cross-references: `BR-HAPI-211`→`BR-KA-211`, `DD-HAPI-005`→`DD-KA-005`. Corrected G4 pattern-count claim (17 exact categories → 25 unique/28 total, diverged). Line 30's "Current State" `BR-HAPI-211 (planned)` mention is intentionally left as historical narrative describing the pre-migration Python state. |
 | 1.1 | 2026-03-04 | Architecture Team | Renamed service references from HAPI to Kubernaut Agent, updated all file paths to kubernautagent |
 | 1.0 | 2026-03-04 | Architecture Team | Initial design: layered defense for prompt injection in Kubernaut Agent tool pipeline |
 
@@ -154,9 +155,14 @@ func (s *InjectionSanitizer) Sanitize(toolName string, content string) (string, 
 
 #### G4: Credential Scrubbing
 
-**Implementation**: `pkg/kubernautagent/sanitization/credential.go`
+**Implementation**: `pkg/kubernautagent/tools/sanitization/credential.go`, wrapping the shared
+`pkg/shared/sanitization` library.
 
-Reimplements all 17 BR-HAPI-211 / DD-005 pattern categories in Go. Same regex patterns, same ordering (broad container patterns first, then specific).
+Same ordering principle as the original design (broad container patterns first, then specific), but
+the pattern set has since diverged from the original 17 categories — now 25 uniquely-named rules
+(28 total entries). See [BR-KA-211](../../../requirements/BR-KA-211-llm-input-sanitization.md) and
+[DD-KA-005](../DD-KA-005-llm-input-sanitization.md) for the current rule table and known coverage
+gaps (no standalone JWT/base64-secret rule; tool-error paths not yet sanitized).
 
 #### I3: API Role Separation
 
@@ -295,8 +301,8 @@ The v1.3 architecture is designed to make CaMeL integration straightforward:
 ## References
 
 - BR-HAPI-433-004 (Security Requirements) — retired as a standalone doc; migration complete
-- [BR-HAPI-211: LLM Input Sanitization](../../../requirements/BR-HAPI-211-llm-input-sanitization.md)
-- [DD-HAPI-005: LLM Input Sanitization](../DD-HAPI-005-llm-input-sanitization.md)
+- [BR-KA-211: LLM Input Sanitization](../../../requirements/BR-KA-211-llm-input-sanitization.md)
+- [DD-KA-005: LLM Input Sanitization](../DD-KA-005-llm-input-sanitization.md)
 
 ---
 

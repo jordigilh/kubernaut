@@ -442,10 +442,10 @@ var _ = Describe("Prompt — Tool Call Silence (#1408 Issue 1)", func() {
 
 // =============================================================================
 // Issue #1430: Skip workflow discovery when RCA concludes no action required
-// BR-HAPI-200: Handling non-actionable outcomes
+// BR-KA-200: Handling non-actionable outcomes
 // =============================================================================
 
-var _ = Describe("Prompt #1430 / BR-HAPI-200: No-action exception in Phase 1 CRITICAL block", func() {
+var _ = Describe("Prompt #1430 / BR-KA-200: No-action exception in Phase 1 CRITICAL block", func() {
 	var instruction string
 
 	BeforeEach(func() {

@@ -72,7 +72,7 @@ The Kubernaut Agent (KA) exposes LLM request-level metrics via `InstrumentedClie
 
 ### BR-KA-OBSERVABILITY-001.3: LLM Cost Tracking
 
-**MUST**: KA SHALL expose a cost estimation counter metric per BR-HAPI-195 precedent.
+**MUST**: KA SHALL expose a cost estimation counter metric per [BR-KA-195](BR-KA-195-cost-tracking-metrics.md) precedent.
 
 | Metric | Type | Labels | Business Question |
 |---|---|---|---|
@@ -81,7 +81,7 @@ The Kubernaut Agent (KA) exposes LLM request-level metrics via `InstrumentedClie
 **Acceptance Criteria**:
 - AC-001-3.1: Cost recorded for every LLM call via `chatOrStream` (single instrumentation point)
 - AC-001-3.2: Unknown models default to $0 (safe fallback)
-- AC-001-3.3: Hardcoded pricing map; ConfigMap-driven pricing deferred to BR-HAPI-195 V2.0
+- AC-001-3.3: Hardcoded pricing map; ConfigMap-driven pricing deferred to [BR-KA-195](BR-KA-195-cost-tracking-metrics.md) V2.0
 
 ### BR-KA-OBSERVABILITY-001.4: Rate Limiting Metrics
 
@@ -156,7 +156,7 @@ Total new time series: ~432 base (plus histogram bucket expansion). DD-005 limit
 
 - DD-005: Observability Standards
 - DD-METRICS-001: Controller Metrics Wiring Pattern
-- BR-HAPI-195: LLM Cost Tracking Metrics
+- [BR-KA-195](BR-KA-195-cost-tracking-metrics.md): LLM Cost Tracking Metrics (V2.0 enhancements)
 - BR-ORCH-044: Operational Observability Metrics
 
 ---

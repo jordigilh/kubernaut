@@ -60,7 +60,7 @@ type TestWorkflow struct {
 	Priority        string // Metadata only: "P0", "P1", "P2", "P3" (actual value from fixture)
 	SchemaImage     string // Legacy: retained for fixture directory name mapping
 	ExecutionEngine string // "tekton" or "job" - defaults to "tekton" if empty (BR-WE-014)
-	// SchemaParameters defines workflow input parameters per ADR-043 (BR-HAPI-191)
+	// SchemaParameters defines workflow input parameters per ADR-043 (BR-KA-191)
 	// Used to generate valid workflow-schema.yaml content that DataStorage will parse
 	// and store in the parameters JSONB column for KA validation and MCP tool results
 	SchemaParameters []models.WorkflowParameter

@@ -326,7 +326,7 @@ End of analysis.`
 		})
 	})
 
-	Describe("UT-KA-433-PRS-009: Parser ignores LLM needs_human_review (BR-HAPI-200)", func() {
+	Describe("UT-KA-433-PRS-009: Parser ignores LLM needs_human_review (BR-KA-200)", func() {
 		It("should clear LLM-set HR fields and re-derive from outcome routing", func() {
 			input := `{
 				"rca_summary": "Unclear root cause — multiple potential issues",
@@ -349,7 +349,7 @@ End of analysis.`
 		})
 	})
 
-	// --- BR-HAPI-200: Parser-derived escalation ---
+	// --- BR-KA-200: Parser-derived escalation ---
 
 	Describe("UT-KA-700-PDE-001: inconclusive + RCA + no workflow → no_matching_workflows", func() {
 		It("should derive no_matching_workflows from context signals", func() {
@@ -456,7 +456,7 @@ End of analysis.`
 		})
 	})
 
-	Describe("UT-KA-433-OUT-004: LLM explicit needs_human_review must NOT be preserved (BR-HAPI-200)", func() {
+	Describe("UT-KA-433-OUT-004: LLM explicit needs_human_review must NOT be preserved (BR-KA-200)", func() {
 		It("should ignore LLM-set needs_human_review when workflow is present", func() {
 			input := `{
 				"rca_summary": "Found issue but confidence too low",

@@ -440,7 +440,7 @@ Data Storage executes two-phase search:
     AND labels->>'severity' = 'critical'
     AND labels->>'environment' = 'production'
     AND labels->>'priority' = 'P0'
-    -- Custom labels filtering (DD-HAPI-001: auto-appended by HolmesGPT-API)
+    -- Custom labels filtering (DD-KA-002: scored by KA's workflow catalog)
     AND custom_labels->'constraint' ? 'cost-constrained'
     AND custom_labels->'team' ? 'name=payments'
   ORDER BY embedding <=> $1

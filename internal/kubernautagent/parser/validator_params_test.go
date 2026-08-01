@@ -26,7 +26,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
 )
 
-var _ = Describe("BR-HAPI-191: Parameter Validation Constraints (#1170)", func() {
+var _ = Describe("BR-KA-191: Parameter Validation Constraints (#1170)", func() {
 
 	var (
 		v *parser.Validator
@@ -568,7 +568,7 @@ var _ = Describe("BR-HAPI-191: Parameter Validation Constraints (#1170)", func()
 	})
 })
 
-var _ = Describe("BR-HAPI-191: Schema Hint Formatting (#1170)", func() {
+var _ = Describe("BR-KA-191: Schema Hint Formatting (#1170)", func() {
 
 	// ========================================
 	// GROUP C: Schema Hint Formatting

@@ -217,7 +217,7 @@ spec:
 | **CustomLabels** | ❌ NOT in LLM prompt | ✅ Always (auto-appended to search) |
 | **FailedDetections** | ✅ Mentioned as caveats | ⚠️ Skip filter for affected fields |
 
-> **CustomLabels are NOT visible to LLM** (per DD-HAPI-001): Labels are for filtering, not analysis. Prevents LLM forgetting to include them and reduces prompt size.
+> **CustomLabels are NOT visible to LLM** (per DD-KA-002): Labels are for filtering, not analysis. Prevents LLM forgetting to include them and reduces prompt size.
 
 #### FailedDetections Handling (DD-WORKFLOW-001 v2.1)
 

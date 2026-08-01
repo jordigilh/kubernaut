@@ -124,7 +124,7 @@ type RootCauseAnalysis struct {
     // RemediationTarget identifies the actual resource the LLM/KA determined
     // should be remediated. May differ from the signal source resource.
     // RemediationOrchestrator prefers this over the RR's own TargetResource
-    // when available (BR-HAPI-191).
+    // when available (BR-KA-212).
     // +optional
     RemediationTarget *RemediationTarget `json:"remediationTarget,omitempty"`
 }

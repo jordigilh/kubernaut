@@ -32,7 +32,7 @@ import (
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
-// #1432 / BR-HAPI-200 / E2E-FP-1430-001: Full-pipeline E2E for the no-action journey.
+// #1432 / BR-KA-200 / E2E-FP-1430-001: Full-pipeline E2E for the no-action journey.
 //
 // Pipeline (problem_resolved):
 //
@@ -42,7 +42,7 @@ import (
 // (problem_resolved outcome), the entire pipeline completes without creating
 // a WorkflowExecution. It is the first FP test to use direct Gateway HTTP POST
 // signal injection rather than the event-exporter.
-var _ = Describe("Problem Resolved No WorkflowExecution [#1432 / BR-HAPI-200]", func() {
+var _ = Describe("Problem Resolved No WorkflowExecution [#1432 / BR-KA-200]", func() {
 
 	var (
 		testNamespace string

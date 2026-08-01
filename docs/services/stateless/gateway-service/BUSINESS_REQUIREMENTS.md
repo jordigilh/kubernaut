@@ -924,4 +924,4 @@ roleRef:
 - Length truncation applied per `+kubebuilder:validation:MaxLength` markers
 - `SignalAnnotations` field removed from RR spec and `NormalizedSignal`
 
-**Related Requirements**: BR-GATEWAY-005 (Signal Metadata Extraction), BR-HAPI-213 (Signal Description in Prompt)
+**Related Requirements**: BR-GATEWAY-005 (Signal Metadata Extraction), BR-KA-213 (Signal Description in Prompt)

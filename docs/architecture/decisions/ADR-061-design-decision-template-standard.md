@@ -321,8 +321,7 @@ It("should list available actions before listing workflows", func() {
 
 ### **Example DD Documents (pre-template, good exemplars)**
 - **DD-KA-017**: Three-Step Workflow Discovery Integration (most complete existing DD)
-- **DD-HAPI-015**: Single-Worker Async Architecture (clean options analysis) — pending rename/rewrite, see [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)
-- **DD-HAPI-005**: LLM Input Sanitization (good security DD with architecture diagram) — pending rename/rewrite, see [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)
+- **DD-KA-005**: LLM Input Sanitization (good security DD with architecture diagram)
 
 ---
 

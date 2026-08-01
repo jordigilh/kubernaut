@@ -182,8 +182,8 @@ the CRD-embedding design).
 
 ## Business Requirement
 
-**BR-HAPI-191: Workflow Parameter Validation in Chat Session** -- see
-`docs/requirements/BR-HAPI-191-workflow-parameter-validation.md`. Unaffected by this decision; this document changes
+**BR-KA-191: Workflow Parameter Validation with Self-Correction** -- see
+`docs/requirements/BR-KA-191-workflow-parameter-validation.md`. Unaffected by this decision; this document changes
 *where the number of validation layers is* (one vs. two), not the substance of what KA validates.
 
 ---
