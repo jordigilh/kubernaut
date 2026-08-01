@@ -257,7 +257,7 @@ flowchart LR
 ### **Business Context**
 - **[Business Requirements Overview](../requirements/00_REQUIREMENTS_OVERVIEW.md)** - 1,452 requirements across 11 modules
 - **[AI Context Orchestration](AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md)** - Dynamic context management
-- **[HolmesGPT Integration](HOLMESGPT_REST_API_ARCHITECTURE.md)** - Investigation service details
+- **Kubernaut Agent (KA) Integration** - Investigation service details (`internal/kubernautagent/`, `cmd/kubernautagent/`); consolidated KA architecture doc set pending (tracked in Issue #1806)
 
 ### **Implementation Guides**
 - **[Development Methodology](../../AGENTS.md)** - Pre-Implementation Workflow and TDD

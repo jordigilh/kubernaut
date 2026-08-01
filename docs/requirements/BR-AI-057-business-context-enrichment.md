@@ -265,7 +265,6 @@ business_context_default_used_total{namespace}
 
 ## Related Documents
 
-- [DD-HOLMESGPT-002](../architecture/decisions/DD-HOLMESGPT-002-business-context-integration.md) - HolmesGPT API integration
 - [BR-PLAYBOOK-001](./BR-PLAYBOOK-001-playbook-catalog-integration.md) - Playbook catalog integration
 - [DD-PLAYBOOK-001](../architecture/decisions/DD-PLAYBOOK-001-mandatory-label-schema.md) - Label schema
 

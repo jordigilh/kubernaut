@@ -486,7 +486,7 @@ And AIAnalysis status.needsHumanReview SHALL be false
 | Document | Relationship |
 |----------|-------------|
 | [BR-HAPI-197](BR-HAPI-197-needs-human-review-field.md) | Parent: needs_human_review field |
-| [DD-HAPI-002](../architecture/decisions/DD-HAPI-002-workflow-parameter-validation.md) | Design: Validation architecture |
+| [DD-KA-001](../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md) | Design: Validation architecture (supersedes the retired DD-HAPI-002) |
 | [NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md](../handoff/NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md) | Handoff: Team notification |
 
 ---

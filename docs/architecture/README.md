@@ -92,14 +92,7 @@ These documents detail how Kubernaut's services communicate and integrate to cre
 These documents describe how Kubernaut transforms raw alert data into intelligent remediation actions through AI and machine learning:
 
 #### **🧠 AI Integration**
-9. **[HOLMESGPT_REST_API_ARCHITECTURE.md](HOLMESGPT_REST_API_ARCHITECTURE.md)**
-   - **Purpose**: HolmesGPT integration architecture and API specifications
-   - **Audience**: AI engineers, integration developers
-   - **Key Content**: HolmesGPT-API integration, investigation workflows, AI toolset patterns
-   - **Connects To**: Architecture Overview (AI integration) → Detailed implementation
-   - **Read Time**: 15 minutes
-
-10. **[effectiveness-monitor-sequence-diagrams.md](effectiveness-monitor-sequence-diagrams.md)** ⭐ **NEW**
+9. **[effectiveness-monitor-sequence-diagrams.md](effectiveness-monitor-sequence-diagrams.md)** ⭐ **NEW**
    - **Purpose**: Visual representation of Effectiveness Monitor workflows (hybrid automated + AI)
    - **Audience**: Developers, integration engineers, architects
    - **Key Content**: Automated-only flow (99.3%), AI-enhanced flow (0.7%), decision logic, real examples
@@ -206,7 +199,7 @@ These documents ensure Kubernaut operates reliably and securely in production en
 4. Operations: [Production Monitoring](PRODUCTION_MONITORING.md)
 
 ### **For AI/ML Engineers**
-1. Start: [HolmesGPT REST API](HOLMESGPT_REST_API_ARCHITECTURE.md)
+1. Start: Kubernaut Agent (KA) — `internal/kubernautagent/`, `cmd/kubernautagent/` (consolidated KA architecture doc set pending, tracked in Issue #1806)
 2. Context: [AI Context Orchestration](AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md)
 3. Intelligence: [Intelligence Pattern Discovery](INTELLIGENCE_PATTERN_DISCOVERY_ARCHITECTURE.md)
 4. Toolsets: [Dynamic Toolset Configuration](DYNAMIC_TOOLSET_CONFIGURATION_ARCHITECTURE.md)

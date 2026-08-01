@@ -971,7 +971,6 @@ func (r *AIAnalysisController) Reconcile(ctx context.Context, req ctrl.Request) 
 - **Architecture**: [Kubernaut CRD Architecture](../../architecture/KUBERNAUT_CRD_ARCHITECTURE.md) (Authoritative)
 - ~~[Multi-CRD Reconciliation Architecture](../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)~~ (DEPRECATED)
 - **Requirements**: [AI & Machine Learning Requirements](../requirements/02_AI_MACHINE_LEARNING.md)
-- **HolmesGPT**: [HolmesGPT REST API Wrapper Requirements](../requirements/13_HOLMESGPT_REST_API_WRAPPER.md)
 - **Parent CRD**: [AlertRemediation CRD](01_ALERT_REMEDIATION_CRD.md)
 - **Next CRD**: [WorkflowExecution CRD](04_WORKFLOW_EXECUTION_CRD.md)
 

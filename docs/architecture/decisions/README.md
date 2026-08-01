@@ -31,8 +31,6 @@
 ||---|-------|---------|--------|--------|
 || 007 | [Gateway BR Legacy Mapping](./007-gateway-br-legacy-mapping.md) | Gateway Service | ✅ Accepted | BR standardization for gateway |
 || 008 | [Gateway BR Standardization](./008-gateway-br-standardization.md) | Gateway Service | ✅ Accepted | BR format migration strategy |
-|| 009 | [HolmesGPT BR Legacy Mapping](./009-holmesgpt-br-legacy-mapping.md) | HolmesGPT API | ✅ Accepted | BR mapping for AI service |
-|| 010 | [HolmesGPT BR Migration Plan](./010-holmesgpt-br-migration-plan.md) | HolmesGPT API | ✅ Accepted | BR migration execution plan |
 || 011 | [Remediation Processor BR Migration](./011-remediationprocessor-br-migration.md) | Remediation Processor | ✅ Accepted | BR standardization for processor |
 || 012 | [Kubernetes Executor BR Migration](./012-kubernetesexecutor-br-migration.md) | ~~Kubernetes Executor~~ (DEPRECATED - ADR-025) | ✅ Accepted | BR standardization for executor |
 || 013 | [Remediation Orchestrator BR Migration](./013-remediationorchestrator-br-migration.md) | Remediation Orchestrator | ✅ Accepted | BR standardization for orchestrator |
@@ -70,19 +68,10 @@
 || DD-GATEWAY-005 | [Redis Cleanup on CRD Deletion](./DD-GATEWAY-005-redis-cleanup-on-crd-deletion.md) | Gateway Service | ✅ Approved | 2025-10-27 | No cleanup needed (TTL-based expiration) |
 || DD-GATEWAY-006 | [Authentication Strategy](./DD-GATEWAY-006-authentication-strategy.md) | Gateway Service | ✅ Approved | 2025-10-27 | Network-level security, no OAuth2 |
 || DD-GATEWAY-007 | [Fallback Namespace Strategy](./DD-GATEWAY-007-fallback-namespace-strategy.md) | Gateway Service | ✅ Approved | 2025-10-31 | kubernaut-system fallback for cluster-scoped signals |
-|| DD-HOLMESGPT-005 | [Test Strategy Validation](./DD-HOLMESGPT-005-Test-Strategy-Validation.md) | HolmesGPT API | ✅ Validated | 2025-10-20 | Zero SDK overlap, 211 tests validated |
-|| DD-HOLMESGPT-006 | [Implementation Plan Quality Gate](./DD-HOLMESGPT-006-Implementation-Plan-Quality-Gate.md) | HolmesGPT API | ✅ Pending | [Pending] | Plan quality validation |
-|| DD-HOLMESGPT-007 | [Service Boundaries Clarification](./DD-HOLMESGPT-007-Service-Boundaries-Clarification.md) | HolmesGPT API | ✅ Approved | 2025-10-20 | Clear service boundaries |
-|| DD-HOLMESGPT-008 | [Safety-Aware Investigation](./DD-HOLMESGPT-008-Safety-Aware-Investigation.md) | HolmesGPT API | ✅ Approved | 2025-10-16 | Safety-aware AI investigations |
-|| DD-HOLMESGPT-009 | [Self-Documenting JSON Format](./DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md) | HolmesGPT API / All AI Services | ✅ Approved | 2025-10-16 | 60% token reduction, $5,500/year savings |
-|| DD-HOLMESGPT-009-ADD | [YAML Evaluation Addendum](./DD-HOLMESGPT-009-ADDENDUM-YAML-Evaluation.md) | HolmesGPT API / All AI Services | ✅ JSON Reaffirmed | 2024-10-16 | YAML evaluated: 17.5% token savings insufficient |
 || DD-HAPI-016 | [Remediation History Context](./DD-HAPI-016-remediation-history-context.md) | HolmesGPT API | ✅ Approved | 2026-02-05 | HAPI remediation history context enrichment for LLM investigation |
 || DD-HAPI-017 | [Three-Step Workflow Discovery Integration](./DD-HAPI-017-three-step-workflow-discovery-integration.md) | HolmesGPT API / DS | ✅ Approved | 2026-02-05 | Replace search_workflow_catalog with three-step discovery tools (incident + recovery). Implements DD-WORKFLOW-016 protocol. |
 || DD-WORKFLOW-016 | [Action-Type Workflow Catalog Indexing](./DD-WORKFLOW-016-action-type-workflow-indexing.md) | Workflow Catalog / HAPI / DS | ✅ Approved | 2026-02-05 | Replace signal_type with action_type as primary catalog matching key (DD-WORKFLOW-001 v2.6) |
 || DD-WORKFLOW-017 | [Workflow Lifecycle Component Interactions](./DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) | DS / HAPI / RO / WE | ✅ Approved | 2026-02-05 | End-to-end workflow lifecycle (creation, discovery, execution, disable/enable). Supersedes DD-WORKFLOW-005, DD-WORKFLOW-007. |
-|| DD-HOLMESGPT-013 | [Vendor Local SDK Copy](./DD-HOLMESGPT-013-Vendor-Local-SDK-Copy.md) | HolmesGPT API | ✅ Approved | 2025-10-18 | Stability through vendored SDK |
-|| DD-HOLMESGPT-014 | [MinimalDAL Stateless Architecture](./DD-HOLMESGPT-014-MinimalDAL-Stateless-Architecture.md) | HolmesGPT API | ✅ Approved | 2025-10-20 | Stateless architecture, no Robusta Platform |
-
 #### **Authentication & Authorization Decisions**
 
 || ID | Title | Service/Component | Status | Date | Impact |

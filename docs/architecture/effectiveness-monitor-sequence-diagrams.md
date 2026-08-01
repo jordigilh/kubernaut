@@ -364,7 +364,6 @@ DONE (~3-5s, ~$0.50 LLM cost)
 - **Decision**: [DD-EFFECTIVENESS-001: Hybrid Automated + AI Analysis](decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md)
 - **API Spec**: [Effectiveness Monitor API](../services/stateless/effectiveness-monitor/api-specification.md)
 - **Integration**: [Integration Points](../services/stateless/effectiveness-monitor/integration-points.md)
-- **Format**: [DD-HOLMESGPT-009: Self-Documenting JSON](decisions/DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md)
 
 ---
 

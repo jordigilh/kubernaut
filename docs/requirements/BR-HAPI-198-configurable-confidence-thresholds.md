@@ -284,7 +284,7 @@ confidence_rules:
 
 - [BR-HAPI-197: Human Review Required Flag](./BR-HAPI-197-needs-human-review-field.md)
 - [Q18 Response in AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md)
-- [DD-HAPI-002: Workflow Response Validation](../architecture/decisions/DD-HAPI-002-workflow-parameter-validation.md)
+- [DD-KA-001: Workflow Response Validation Architecture](../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md) (supersedes the retired DD-HAPI-002)
 
 ---
 
