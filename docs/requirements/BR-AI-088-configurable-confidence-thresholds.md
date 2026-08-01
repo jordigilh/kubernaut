@@ -120,6 +120,15 @@ data:
 
 **Note**: KA remains stateless and threshold-agnostic. It returns `confidence` only.
 
+**Not to be confused with [BR-KA-200](./BR-KA-200-resolved-stale-signals.md)'s inconclusive-investigation
+threshold**: BR-KA-200 governs a *different*, earlier gate — the LLM's own self-assessment of
+whether it reached *any* credible conclusion at all (hardcoded `>= 0.7` "resolved" / `< 0.5`
+"inconclusive" bands baked into KA's prompt, `internal/kubernautagent/prompt/templates/phase3_workflow_selection.tmpl`).
+That gate runs *before* a workflow is ever selected and produces `selected_workflow: null` when
+uncertain — there is no `confidence` value for this BR's rules to evaluate in that case. BR-AI-088
+only applies *after* KA has already selected an actionable workflow and reported a confidence
+score for it.
+
 ### BR-AI-088.5: Audit Logging
 
 **SHOULD**: When a threshold rule is applied, AIAnalysis SHOULD log:
@@ -292,6 +301,9 @@ confidence_rules:
 ## 📎 Related Documents
 
 - [BR-KA-197: Human Review Required Flag](./BR-KA-197-needs-human-review-field.md)
+- [BR-KA-200: Handling Inconclusive Investigations](./BR-KA-200-resolved-stale-signals.md) — the
+  *separate*, earlier KA-owned confidence gate (investigation-quality self-assessment, not an
+  approval policy). See the note under BR-AI-088.4 for how the two differ.
 - [Q18 Response in AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md)
 - [DD-KA-001: Workflow Response Validation Architecture](../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md) (supersedes the retired DD-HAPI-002)
 
