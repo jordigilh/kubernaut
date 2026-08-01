@@ -410,7 +410,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 #### E2E-HAPI-017: Recovery Mock Mode Produces Valid Responses
 
-**Business Requirement**: BR-HAPI-212
+**Business Requirement**: BR-KA-212
 
 **Business Outcome**: Mock LLM mode provides OpenAPI-compliant responses for testing
 
@@ -582,7 +582,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 #### E2E-HAPI-023: Recovery Edge Case - Signal Not Reproducible
 
-**Business Requirement**: BR-HAPI-212
+**Business Requirement**: BR-KA-212
 
 **Business Outcome**: When issue self-resolved, system indicates no action needed
 

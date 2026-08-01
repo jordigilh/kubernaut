@@ -16,7 +16,7 @@
 | Your Changes | Tests That Run | Duration |
 |--------------|----------------|----------|
 | **Only Data Storage** | Unit + Data Storage (integration + E2E) | ~10 min |
-| **Only HolmesGPT** | Unit + HolmesGPT integration | ~3 min |
+| **Only Kubernaut Agent (KA)** | Unit + KA integration | ~3 min |
 | **Only Gateway** | Unit + Gateway (integration + E2E) | ~25 min |
 | **Multiple services** | Unit + All affected services | ~30 min |
 
@@ -105,11 +105,14 @@ Triggers:
   - test/e2e/gateway/**
 ```
 
-### **HolmesGPT API**
+### **Kubernaut Agent (KA)**
 ```yaml
 Triggers:
-  - kubernaut-agent/**
-  - test/integration/holmesgpt/**
+  - cmd/kubernautagent/**
+  - internal/kubernautagent/**
+  - pkg/kubernautagent/**
+  - test/integration/kubernautagent/**
+  - test/e2e/kubernautagent/**
 ```
 
 ### **Dynamic Toolset**

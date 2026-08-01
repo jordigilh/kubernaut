@@ -3,7 +3,7 @@
 **Status**: Authoritative Reference
 **Version**: 1.2
 **Date**: 2026-02-07
-**Cross-references**: [DD-HAPI-006](../decisions/DD-HAPI-006-affectedResource-in-rca.md), [BR-SCOPE-001](../../requirements/BR-SCOPE-001-resource-scope-management.md), [BR-SCOPE-010](../../requirements/BR-SCOPE-010-ro-routing-validation.md)
+**Cross-references**: [DD-KA-006](../decisions/DD-KA-006-remediation-target-in-rca.md), [BR-SCOPE-001](../../requirements/BR-SCOPE-001-resource-scope-management.md), [BR-SCOPE-010](../../requirements/BR-SCOPE-010-ro-routing-validation.md)
 **Audience**: Internal (feeds into user-facing documentation)
 
 ---
@@ -21,7 +21,7 @@ Remediating the signal target (the symptom) instead of the RCA target (the cause
 - **Ineffective**: Restarting a Pod that will crash again because its Deployment specifies insufficient memory
 - **Dangerous**: Draining a Node when only one workload is misbehaving, causing unnecessary disruption to all co-located workloads
 
-Kubernaut's architecture addresses this by having HAPI derive remediation target identity from the Kubernetes-verified `root_owner` (via `_inject_target_resource`), surfaced as `affectedResource` in the RCA response and in `AIAnalysis.Status.RootCauseAnalysis.TargetResource` for the RemediationOrchestrator's scope validation and workflow execution (see [DD-HAPI-006](../decisions/DD-HAPI-006-affectedResource-in-rca.md)).
+Kubernaut's architecture addresses this by having Kubernaut Agent (KA) derive remediation target identity from the Kubernetes-verified owner chain (`InjectRemediationTarget`), surfaced as `remediationTarget` in the RCA response and in `AIAnalysis.Status.RootCauseAnalysis.RemediationTarget` for the RemediationOrchestrator's scope validation and workflow execution (see [DD-KA-006](../decisions/DD-KA-006-remediation-target-in-rca.md)).
 
 ---
 
@@ -155,13 +155,13 @@ Ingress/api-gateway  ← Signal target (latency alert)
 
 ### Escalation: when the RCA target cannot be determined
 
-BR-496 v2 ([DD-HAPI-006 v1.4](../decisions/DD-HAPI-006-affectedResource-in-rca.md)): HAPI derives `affectedResource` from the K8s-verified `root_owner` returned by `get_namespaced_resource_context` or `get_cluster_resource_context` (the `resource_context` toolset) using `_inject_target_resource`. Kubernaut does **not** use the signal target as the stored remediation identity. If `root_owner` is missing when a workflow is selected and verified context is required, HAPI sets `needs_human_review=true` with `human_review_reason=rca_incomplete` and creates a NotificationRequest for human investigation.
+BR-496 v2 ([DD-KA-006 v2.0](../decisions/DD-KA-006-remediation-target-in-rca.md)): KA derives `remediationTarget` from the K8s-verified owner chain resolved during enrichment (`InjectRemediationTarget`). Kubernaut does **not** use the signal target as the stored remediation identity. If owner-chain re-enrichment hard-fails after retry exhaustion, KA sets `needs_human_review=true` with `human_review_reason=rca_incomplete` and creates a NotificationRequest for human investigation.
 
 **Rationale**: Remediating the symptom resource or proceeding without a confirmed `root_owner` risks:
 - Masking the real problem (allowing it to recur or worsen)
 - Disrupting the wrong workload (if the signal target is a shared resource like a Node)
 - Creating a false sense of resolution in the audit trail
-- Applying incorrect `remediation_history` context (scoped to `root_owner`, not the HAPI-derived target from root_owner)
+- Applying incorrect `remediation_history` context (scoped to the wrong resource instead of the KA-derived remediation target)
 
 ### Scope validation
 
@@ -175,4 +175,5 @@ The RemediationOrchestrator validates the RCA target against the `kubernaut.ai/m
 |---------|------|---------|
 | 1.0 | 2026-02-07 | Initial version with 5 production scenarios |
 | 1.1 | 2026-03-04 | BR-496: Added mismatch escalation (affectedResource ≠ root_owner). Updated cross-ref to DD-HAPI-006 v1.3. |
+| 1.3 | 2026-08-01 | [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806): Rewritten against the Go KA implementation. Field renamed `affectedResource` → `remediationTarget`; cross-ref updated to DD-KA-006 v2.0. |
 | 1.2 | 2026-03-24 | Issue #524: `get_resource_context` renamed/split to `get_namespaced_resource_context` / `get_cluster_resource_context` in escalation narrative. |

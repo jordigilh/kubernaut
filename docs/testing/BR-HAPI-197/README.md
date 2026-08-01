@@ -67,11 +67,11 @@ This directory contains all test plans related to **BR-HAPI-197** (Human Review 
 
 ### **Business Requirements**
 - [BR-HAPI-197](../../requirements/BR-HAPI-197-needs-human-review-field.md) - Human Review Required Flag
-- [BR-HAPI-212](../../requirements/BR-HAPI-212-rca-target-resource.md) - RCA Target Resource (extends BR-HAPI-197)
+- [BR-KA-212](../../requirements/BR-KA-212-rca-target-resource.md) - RCA Target Resource (extends BR-HAPI-197, now BR-KA-197)
 
 ### **Design Decisions**
 - [DD-CONTRACT-002](../../architecture/decisions/DD-CONTRACT-002-service-integration-contracts.md) - Service Integration Contracts
-- [DD-HAPI-006](../../architecture/decisions/DD-HAPI-006-affectedResource-in-rca.md) - affectedResource in RCA
+- [DD-KA-006](../../architecture/decisions/DD-KA-006-remediation-target-in-rca.md) - remediationTarget in RCA
 
 ### **Implementation Plans**
 - [BR-HAPI-197-COMPLETION-PLAN-JAN20-2026.md](../../handoff/BR-HAPI-197-COMPLETION-PLAN-JAN20-2026.md) - Complete implementation plan

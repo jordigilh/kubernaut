@@ -34,7 +34,7 @@ Include detected infrastructure labels in the enrichment context provided to the
 ## Design References
 
 - **ADR-056 v1.3**: Labels surfaced as read-only cluster_context
-- **DD-HAPI-017**: Three-Step Workflow Discovery Integration
+- **DD-KA-017**: Three-Step Workflow Discovery Integration
 - **Issue #529**: RCA Flow Redesign
 
 ---

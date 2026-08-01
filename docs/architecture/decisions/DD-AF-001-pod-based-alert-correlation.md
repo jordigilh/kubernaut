@@ -290,4 +290,4 @@ All findings from the GA readiness audit have been addressed. No tech debt defer
 - **Issue**: [#1336](https://github.com/jordigilh/kubernaut/issues/1336)
 - **PR**: [#1328](https://github.com/jordigilh/kubernaut/pull/1328)
 - **Branch**: `feat/af-severity-pod-correlation`
-- **Related**: DD-HAPI-017 (Three-Step Workflow Discovery), ADR-019 (Circuit Breaker Strategy)
+- **Related**: DD-KA-017 (Three-Step Workflow Discovery), ADR-019 (Circuit Breaker Strategy)

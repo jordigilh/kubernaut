@@ -14,7 +14,9 @@
 
 ### Problem Statement
 
-Under the current architecture (DD-HAPI-006 v1.5), the LLM never provides `affectedResource`. Instead, the resource context tool resolves the root owner and KA injects it. This means the LLM's RCA output has no explicit declaration of which resource it identified as the root cause. The target identity depends entirely on which resource the LLM happened to call the resource context tool for.
+Under the pre-Go-rewrite architecture (DD-HAPI-006 v1.5, historical), the LLM never provided `affectedResource`. Instead, the resource context tool resolved the root owner and the service injected it. This means the LLM's RCA output had no explicit declaration of which resource it identified as the root cause. The target identity depended entirely on which resource the LLM happened to call the resource context tool for.
+
+> **Current state (Go KA, see [DD-KA-006](../architecture/decisions/DD-KA-006-remediation-target-in-rca.md))**: `InjectRemediationTarget` reconciles whatever target the LLM proposes against the K8s-verified owner chain resolved during enrichment — the LLM's proposal is never blindly trusted, but it also is not required to go through an explicit declare-then-validate round-trip. This BR's acceptance criteria describe the design intent that motivated the current reconciliation logic; treat the Go implementation notes in DD-KA-006 as authoritative if the two diverge.
 
 Additionally, the LLM may name a child resource (e.g., Pod) as the affected resource when the remediation should target the root owner (e.g., Deployment). Applying a remediation to an ephemeral Pod is ineffective.
 
@@ -42,7 +44,7 @@ Require the LLM to explicitly declare `affectedResource` in its RCA output. KA v
 
 ## Design References
 
-- **DD-HAPI-006 v1.6**: Affected Resource in RCA (updated for LLM-provided + KA-resolved)
+- **DD-KA-006 v2.0**: Remediation Target in RCA (LLM-proposed + KA-reconciled)
 - **ADR-055 v1.5**: Context Enrichment (EnrichmentService)
 - **Issue #529**: RCA Flow Redesign
 
@@ -50,7 +52,7 @@ Require the LLM to explicitly declare `affectedResource` in its RCA output. KA v
 
 ## Supersedes
 
-This BR partially supersedes DD-HAPI-006 v1.5's "KA owns target resource identity -- the LLM never provides affectedResource" principle. The new approach is hybrid: the LLM provides, KA verifies and resolves.
+This BR partially supersedes DD-HAPI-006 v1.5's (historical) "KA owns target resource identity -- the LLM never provides affectedResource" principle. The current approach is hybrid: the LLM proposes, KA verifies and resolves — see [DD-KA-006](../architecture/decisions/DD-KA-006-remediation-target-in-rca.md) for the current Go implementation.
 
 ---
 

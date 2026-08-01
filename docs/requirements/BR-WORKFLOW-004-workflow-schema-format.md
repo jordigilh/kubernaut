@@ -183,7 +183,7 @@ The description uses the same structured format as `action_type_taxonomy.descrip
 
 ### `spec.labels` Fields (Mandatory Matching Criteria)
 
-These fields are used by the three-step discovery protocol (DD-HAPI-017) to filter workflows for a given incident context. They are stored in the `labels` JSONB column of `remediation_workflow_catalog`.
+These fields are used by the three-step discovery protocol (DD-KA-017) to filter workflows for a given incident context. They are stored in the `labels` JSONB column of `remediation_workflow_catalog`.
 
 | Field | Type | Required | Valid Values | Description |
 |-------|------|----------|--------------|-------------|
