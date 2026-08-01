@@ -8,7 +8,7 @@
 **Applies To**: Kubernaut Agent
 
 **Related Business Requirements**:
-- [BR-HAPI-433-004: Security Requirements](../../../requirements/BR-HAPI-433-go-language-migration/BR-HAPI-433-004-security-requirements.md)
+- BR-HAPI-433-004 (Security Requirements) — retired as a standalone doc; migration complete
 - [BR-HAPI-211: LLM Input Sanitization](../../../requirements/BR-HAPI-211-llm-input-sanitization.md)
 
 ---
@@ -294,7 +294,7 @@ The v1.3 architecture is designed to make CaMeL integration straightforward:
 
 ## References
 
-- [BR-HAPI-433-004: Security Requirements](../../../requirements/BR-HAPI-433-go-language-migration/BR-HAPI-433-004-security-requirements.md)
+- BR-HAPI-433-004 (Security Requirements) — retired as a standalone doc; migration complete
 - [BR-HAPI-211: LLM Input Sanitization](../../../requirements/BR-HAPI-211-llm-input-sanitization.md)
 - [DD-HAPI-005: LLM Input Sanitization](../DD-HAPI-005-llm-input-sanitization.md)
 

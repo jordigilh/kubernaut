@@ -17,11 +17,6 @@
 > **UPDATE (2025-11-11)**: Signal Processing no longer queries Context API for historical recovery data. Remediation Orchestrator embeds current failure data from WorkflowExecution CRD in `spec.failureData`.
 > **See**: [DD-001](../../../architecture/decisions/DD-001-recovery-context-enrichment.md), [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md)
 
-> **📋 Design Decision: DD-HOLMESGPT-009 - Ultra-Compact JSON Format**
-> **Impact on Signal Processing**: Enriched context prepared by this service is consumed by AIAnalysis Controller, which formats it as self-documenting JSON for HolmesGPT API calls
-> **Status**: ✅ Approved Design | **Benefit**: 60% token reduction in downstream AI analysis
-> **See**: [DD-HOLMESGPT-009](../../../architecture/decisions/DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md)
-
 > **📋 Design Decision: DD-CATEGORIZATION-001 - Categorization Consolidation**
 > **Impact**: All categorization (environment classification + priority assignment) consolidated in Signal Processing
 > **Rationale**: Richer Kubernetes context available after enrichment enables more accurate categorization

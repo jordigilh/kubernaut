@@ -216,7 +216,7 @@ var parameterValidationFailures = prometheus.NewCounter(prometheus.CounterOpts{
 
 ## 📐 **Design Decision**
 
-**Reference**: [DD-HAPI-002: Workflow Parameter Validation Architecture](../../architecture/decisions/DD-HAPI-002-workflow-parameter-validation.md)
+**Reference**: [DD-KA-001: Workflow Response Validation Architecture](../../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md) (supersedes the retired DD-HAPI-002)
 
 ---
 

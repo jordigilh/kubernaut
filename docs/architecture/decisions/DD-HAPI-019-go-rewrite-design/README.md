@@ -37,7 +37,7 @@ DD-HAPI-019-go-rewrite-design/
 
 ## Related Business Requirements
 
-- **[BR-HAPI-433: Go Language Migration](../../../requirements/BR-HAPI-433-go-language-migration/)** — Business requirements this DD implements
+- BR-HAPI-433 (Go Language Migration) — the business requirements this DD implemented; retired as a standalone doc set since the migration is complete and superseded by the Kubernaut Agent (KA) architecture this DD describes.
 
 ## Related GitHub Issues
 

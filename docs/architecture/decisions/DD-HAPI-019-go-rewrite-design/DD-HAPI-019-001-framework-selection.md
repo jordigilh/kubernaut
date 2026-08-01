@@ -8,7 +8,7 @@
 **Applies To**: Kubernaut Agent
 
 **Related Business Requirements**:
-- [BR-HAPI-433-001: Framework Evaluation](../../../requirements/BR-HAPI-433-go-language-migration/BR-HAPI-433-001-framework-evaluation.md)
+- BR-HAPI-433-001 (Framework Evaluation) — retired as a standalone doc set; migration complete
 
 ---
 

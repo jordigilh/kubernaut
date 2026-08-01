@@ -8,7 +8,7 @@
 **Applies To**: Kubernaut Agent
 
 **Related Business Requirements**:
-- [BR-HAPI-433: Go Language Migration](../../../requirements/BR-HAPI-433-go-language-migration/BR-HAPI-433-go-language-migration.md)
+- BR-HAPI-433 (Go Language Migration) — retired as a standalone doc set; migration complete, superseded by this DD and the current KA implementation.
 
 **Related Design Decisions**:
 - [DD-HAPI-019-001: Framework Selection](DD-HAPI-019-001-framework-selection.md)
@@ -331,7 +331,7 @@ func storeAuditBestEffort(ctx context.Context, store audit.AuditStore, event *ap
 
 ## References
 
-- [BR-HAPI-433: Go Language Migration](../../../requirements/BR-HAPI-433-go-language-migration/)
+- BR-HAPI-433 (Go Language Migration) — retired as a standalone doc set; migration complete
 - [DD-HAPI-017: Three-Step Workflow Discovery](../DD-HAPI-017-three-step-workflow-discovery-integration.md)
 - [DD-HAPI-005: LLM Input Sanitization](../DD-HAPI-005-llm-input-sanitization.md)
 - [ADR-061: DD Template Standard](../ADR-061-design-decision-template-standard.md)

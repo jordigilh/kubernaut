@@ -5,7 +5,7 @@
 **Deciders**: Architecture Team, KubernautAgent Team, Workflow Execution Team
 **Version**: 1.1
 **Related**: [DD-WORKFLOW-018](./DD-WORKFLOW-018-etcd-single-source-of-truth.md) (Etcd Single Source of Truth, Change 9), DD-WE-006 (Schema Declared Dependencies), Issue #241, Issue #243, Issue #529, Issue #1661, Issue #1711
-**Supersedes**: [DD-HAPI-002](./DD-HAPI-002-workflow-parameter-validation.md) (Workflow Response Validation Architecture) — in full
+**Supersedes**: DD-HAPI-002 (Workflow Response Validation Architecture) — in full; that document has been retired
 
 ---
 

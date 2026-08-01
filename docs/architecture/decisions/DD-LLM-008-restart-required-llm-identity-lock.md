@@ -4,7 +4,7 @@
 **Priority**: P1
 **Owner**: KubernautAgent Team
 **Scope**: `cmd/kubernautagent/llm_builder.go`, `cmd/kubernautagent/bootstrap.go`, `cmd/kubernautagent/main.go`, `cmd/apifrontend/main.go`, `internal/kubernautagent/config/config_types.go`
-**Related**: [DD-LLM-005](./DD-LLM-005-model-aware-reasoning-support.md), [DD-LLM-007](./DD-LLM-007-af-ka-anthropic-client-divergence.md), [BR-HAPI-199](../../requirements/BR-HAPI-199-configmap-hot-reload.md) (superseded, see below), Issue #1599, #1578, #1580
+**Related**: [DD-LLM-005](./DD-LLM-005-model-aware-reasoning-support.md), [DD-LLM-007](./DD-LLM-007-af-ka-anthropic-client-divergence.md), Issue #1599, #1578, #1580
 
 ---
 

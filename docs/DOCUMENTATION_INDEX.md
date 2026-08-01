@@ -23,7 +23,6 @@ This index provides comprehensive navigation across all Kubernaut documentation 
 | **[10_AI_CONTEXT_ORCHESTRATION](requirements/10_AI_CONTEXT_ORCHESTRATION.md)** | 180 | Dynamic Context, Performance | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) |
 | **[11_SECURITY_ACCESS_CONTROL](requirements/11_SECURITY_ACCESS_CONTROL.md)** | 85 | RBAC, Authentication | Security sections in all architectures |
 | **[12_API_SERVER_SERVICES](requirements/12_API_SERVER_SERVICES.md)** | 92 | REST APIs, Service Integration | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) |
-| **[13_HOLMESGPT_REST_API_WRAPPER](requirements/13_HOLMESGPT_REST_API_WRAPPER.md)** | 118 | HolmesGPT Integration | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) |
 | **[13_INFRASTRUCTURE_PLATFORM](requirements/13_INFRASTRUCTURE_PLATFORM.md)** | 95 | Platform Services | [Storage & Data Management](architecture/STORAGE_DATA_MANAGEMENT_ARCHITECTURE.md) |
 | **[14_ENHANCED_HEALTH_MONITORING](requirements/14_ENHANCED_HEALTH_MONITORING.md)** | 65 | Advanced Health Checks | Health sections in all architectures |
 
@@ -34,7 +33,7 @@ This index provides comprehensive navigation across all Kubernaut documentation 
 ### Comprehensive Architecture Documents
 | Architecture | Business Requirements Coverage | Key Features | Related Requirements |
 |-------------|-------------------------------|--------------|---------------------|
-| **[AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md)** | 180 Requirements (BR-CONTEXT-001 to BR-CONTEXT-043) | Dynamic Context Discovery, Intelligent Caching, Performance Optimization | [10_AI_CONTEXT_ORCHESTRATION](requirements/10_AI_CONTEXT_ORCHESTRATION.md), [13_HOLMESGPT_REST_API_WRAPPER](requirements/13_HOLMESGPT_REST_API_WRAPPER.md) |
+| **[AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md)** | 180 Requirements (BR-CONTEXT-001 to BR-CONTEXT-043) | Dynamic Context Discovery, Intelligent Caching, Performance Optimization | [10_AI_CONTEXT_ORCHESTRATION](requirements/10_AI_CONTEXT_ORCHESTRATION.md) |
 | **[Intelligence & Pattern Discovery](architecture/INTELLIGENCE_PATTERN_DISCOVERY_ARCHITECTURE.md)** | 150 Requirements (BR-INTELLIGENCE-001 to BR-INTELLIGENCE-150) | Pattern Recognition, Anomaly Detection, ML Analytics | [02_AI_MACHINE_LEARNING](requirements/02_AI_MACHINE_LEARNING.md), [07_INTELLIGENCE_PATTERN_DISCOVERY](requirements/07_INTELLIGENCE_PATTERN_DISCOVERY.md) |
 | **[Workflow Engine & Orchestration](architecture/WORKFLOW_ENGINE_ORCHESTRATION_ARCHITECTURE.md)** | 165 Requirements (BR-REMEDIATION-001 to BR-AUTOMATION-030) | Adaptive Orchestration, Step Execution, State Management | [04_WORKFLOW_ENGINE_ORCHESTRATION](requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md), [03_PLATFORM_KUBERNETES_OPERATIONS](requirements/03_PLATFORM_KUBERNETES_OPERATIONS.md) |
 | **[Storage & Data Management](architecture/STORAGE_DATA_MANAGEMENT_ARCHITECTURE.md)** | 135 Requirements (BR-STORAGE-001 to BR-PERSISTENCE-015) | Multi-modal Storage, Vector DB, Intelligent Caching | [05_STORAGE_DATA_MANAGEMENT](requirements/05_STORAGE_DATA_MANAGEMENT.md), [13_INFRASTRUCTURE_PLATFORM](requirements/13_INFRASTRUCTURE_PLATFORM.md) |
@@ -53,7 +52,6 @@ This index provides comprehensive navigation across all Kubernaut documentation 
 |-------|------------|---------------------|---------------------|
 | **[TESTING_FRAMEWORK.md](TESTING_FRAMEWORK.md)** | Testing Strategy | All Architectures | Quality requirements across all modules |
 | **[development/project guidelines.md](development/project%20guidelines.md)** | Development Standards | All Architectures | Development process requirements |
-| **[development/HOLMESGPT_DEPLOYMENT.md](development/HOLMESGPT_DEPLOYMENT.md)** | HolmesGPT Integration | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) | [13_HOLMESGPT_REST_API_WRAPPER](requirements/13_HOLMESGPT_REST_API_WRAPPER.md) |
 | **[development/LLM_CONTEXT_ENRICHMENT_GUIDE.md](development/LLM_CONTEXT_ENRICHMENT_GUIDE.md)** | Context Enhancement | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) | [10_AI_CONTEXT_ORCHESTRATION](requirements/10_AI_CONTEXT_ORCHESTRATION.md) |
 
 ### Testing Documentation

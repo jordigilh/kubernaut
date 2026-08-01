@@ -259,7 +259,7 @@ And "warnings" SHALL be empty or contain only informational messages
 
 ## Related Documents
 
-- [DD-HAPI-002 v1.2: Workflow Response Validation Architecture](../architecture/decisions/DD-HAPI-002-workflow-parameter-validation.md)
+- [DD-KA-001: Workflow Response Validation Architecture](../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md) (supersedes the retired DD-HAPI-002)
 - [NOTICE_NEEDS_HUMAN_REVIEW_FIELD.md](../handoff/NOTICE_NEEDS_HUMAN_REVIEW_FIELD.md)
 - [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md)
 

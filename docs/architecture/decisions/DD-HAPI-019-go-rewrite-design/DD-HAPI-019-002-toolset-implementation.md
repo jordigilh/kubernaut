@@ -8,8 +8,7 @@
 **Applies To**: Kubernaut Agent
 
 **Related Business Requirements**:
-- [BR-HAPI-433-002: Kubernetes Toolset](../../../requirements/BR-HAPI-433-go-language-migration/BR-HAPI-433-002-kubernetes-toolset.md)
-- [BR-HAPI-433-003: Prometheus Toolset](../../../requirements/BR-HAPI-433-go-language-migration/BR-HAPI-433-003-prometheus-toolset.md)
+- BR-HAPI-433-002 (Kubernetes Toolset) and BR-HAPI-433-003 (Prometheus Toolset) — retired as standalone docs; migration complete
 
 ---
 

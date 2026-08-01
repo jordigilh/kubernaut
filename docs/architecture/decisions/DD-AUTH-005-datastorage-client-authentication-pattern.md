@@ -875,7 +875,6 @@ ds_client = create_datastorage_client("http://datastorage:8080")
 
 - **Builds On**: [DD-AUTH-004](DD-AUTH-004-openshift-oauth-proxy-legal-hold.md) (OpenShift OAuth-Proxy)
 - **Enforces**: [DD-HAPI-003](DD-HAPI-003-mandatory-openapi-client-usage.md) (Mandatory OpenAPI Client Usage)
-- **Enforces**: [DD-HAPI-005](DD-HAPI-005-python-openapi-client-regeneration.md) (Python OpenAPI Client Auto-Regeneration)
 - **Supports**: SOC2 Gap #8 (Legal Hold), SOC2 CC6.1 (Access Controls)
 - **Authoritative Pattern**: ALL services MUST follow this pattern for DataStorage interactions
 
