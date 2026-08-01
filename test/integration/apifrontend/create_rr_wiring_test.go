@@ -2,6 +2,7 @@ package apifrontend_test
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"github.com/go-logr/logr"
@@ -171,7 +172,18 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		noopLLM := severity.NewNoopLLMTriager(logr.Discard())
 		cfg := severity.DefaultConfig()
-		triager := severity.NewTriager(&noopPromClientIT{}, noopLLM, cfg, logr.Discard())
+		// #1839: Tier 3 (pure-LLM, zero-evidence) fallback was removed, so
+		// this must supply a real firing alert to reach a resolvable
+		// severity through the production pipeline -- an ungrounded call
+		// now correctly fails closed (see IT-AF-1839-001 below).
+		promClient := &podCorrelationPromClient{
+			alerts: []prom.Alert{
+				{State: "firing", Labels: map[string]string{
+					"alertname": "HighErrorRate", "namespace": defaultFixture, "kind": "Deployment", "name": "web-w04", "severity": "critical",
+				}},
+			},
+		}
+		triager := severity.NewTriager(promClient, noopLLM, cfg, logr.Discard())
 
 		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: triager}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
@@ -181,11 +193,36 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		}, "it-user")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
-		Expect(result.Severity).NotTo(BeEmpty())
+		Expect(result.Severity).To(Equal("critical"), "severity must come from the real firing alert via the production Triager wiring")
 
 		DeferCleanup(func() {
 			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
+	})
+
+	It("IT-AF-1839-001: HandleCreateRR fails closed via envtest when no alert or rule correlates to the resource", func() {
+		ctx := context.Background()
+		noopLLM := severity.NewNoopLLMTriager(logr.Discard())
+		cfg := severity.DefaultConfig()
+		triager := severity.NewTriager(&noopPromClientIT{}, noopLLM, cfg, logr.Discard())
+
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: triager}, &tools.CreateRRArgs{
+			Namespace:   defaultFixture,
+			Kind:        "Deployment",
+			Name:        "web-1839-nogrounding",
+			Description: "no alert or rule exists for this resource",
+		}, "it-user")
+		Expect(errors.Is(err, severity.ErrSeverityUndetermined)).To(BeTrue(),
+			"#1839: production wiring must propagate ErrSeverityUndetermined, not fabricate a severity")
+		Expect(result.RRID).To(BeEmpty())
+
+		list, listErr := dynamicClient.Resource(rrGVR).Namespace(defaultFixture).List(ctx, metav1.ListOptions{})
+		Expect(listErr).NotTo(HaveOccurred())
+		for _, item := range list.Items {
+			name, _, _ := unstructured.NestedString(item.Object, "spec", "targetResource", "name")
+			Expect(name).NotTo(Equal("web-1839-nogrounding"),
+				"no RemediationRequest should be created in envtest when severity cannot be grounded")
+		}
 	})
 
 	It("IT-AF-1292-W01: envtest creates RR in controllerNS with targetResource in workloadNS (BR-PLATFORM-057)", func() {
