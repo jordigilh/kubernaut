@@ -277,13 +277,13 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 ---
 
-#### BR-MOCK-012: Three-Step Discovery Mode (DD-HAPI-017)
+#### BR-MOCK-012: Three-Step Discovery Mode (DD-KA-017)
 
 **Description**: The Mock LLM service MUST support the three-step workflow discovery protocol: `list_available_actions` → `list_workflows` → `get_workflow`.
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: Implements the DD-HAPI-017 protocol. Kubernaut Agent registers these three tools and expects the LLM to call them in sequence.
+**Rationale**: Implements the DD-KA-017 protocol. Kubernaut Agent registers these three tools and expects the LLM to call them in sequence.
 
 **Acceptance Criteria**:
 - [ ] First turn: returns `list_available_actions` tool call
@@ -294,7 +294,7 @@ The **Mock LLM Service** is a test infrastructure service that simulates an LLM 
 
 **Implementation Status**: 📋 Planned
 
-**Related Issues**: #560, DD-HAPI-017
+**Related Issues**: #560, DD-KA-017
 
 ---
 

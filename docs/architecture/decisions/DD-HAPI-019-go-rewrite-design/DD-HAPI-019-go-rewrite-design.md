@@ -314,7 +314,7 @@ func storeAuditBestEffort(ctx context.Context, store audit.AuditStore, event *ap
 | BR-HAPI-433 | ✅ | Core architecture for Go rewrite |
 | BR-HAPI-211 | ✅ | Credential scrubbing in `pkg/kubernautagent/sanitization/credential.go` |
 | BR-HAPI-197 | ✅ | Human review flag preserved in `internal/kubernautagent/result/validator.go` |
-| DD-HAPI-017 | ✅ | Three-step workflow discovery preserved in `pkg/kubernautagent/tools/workflow/` |
+| DD-KA-017 | ✅ | Three-step workflow discovery preserved in `pkg/kubernautagent/tools/workflow/` |
 
 ---
 
@@ -332,7 +332,7 @@ func storeAuditBestEffort(ctx context.Context, store audit.AuditStore, event *ap
 ## References
 
 - BR-HAPI-433 (Go Language Migration) — retired as a standalone doc set; migration complete
-- [DD-HAPI-017: Three-Step Workflow Discovery](../DD-HAPI-017-three-step-workflow-discovery-integration.md)
+- [DD-KA-017: Three-Step Workflow Discovery](../DD-KA-017-three-step-workflow-discovery-integration.md)
 - [DD-HAPI-005: LLM Input Sanitization](../DD-HAPI-005-llm-input-sanitization.md)
 - [ADR-061: DD Template Standard](../ADR-061-design-decision-template-standard.md)
 

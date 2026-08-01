@@ -1,8 +1,8 @@
-# BR-HAPI-197: Human Review Required Flag
+# BR-KA-197: Human Review Required Flag
 
-**ID**: BR-HAPI-197
+**ID**: BR-KA-197
 **Title**: Human Review Required Flag for AI Reliability Issues
-**Category**: HAPI (HolmesGPT-API)
+**Category**: Kubernaut Agent (KA)
 **Priority**: 🔴 HIGH
 **Version**: V1.0
 **Status**: ✅ APPROVED
@@ -14,7 +14,7 @@
 
 ### Problem Statement
 
-When HolmesGPT-API analyzes an incident, there are scenarios where the AI cannot produce a reliable result:
+When Kubernaut Agent (KA) analyzes an incident, there are scenarios where the AI cannot produce a reliable result:
 
 1. **Workflow validation failures**: LLM selects a workflow that doesn't exist or has invalid parameters
 2. **No suitable workflows**: Search returns no matching workflows for the incident type
@@ -36,9 +36,9 @@ In these cases, **automatic remediation should NOT proceed**. A human operator m
 
 ## Requirements
 
-### BR-HAPI-197.1: Field Definition
+### BR-KA-197.1: Field Definition
 
-**MUST**: HolmesGPT-API SHALL provide a `needs_human_review` boolean field in the `IncidentResponse` schema.
+**MUST**: Kubernaut Agent (KA) SHALL provide a `needs_human_review` boolean field in the `IncidentResponse` schema.
 
 ```json
 {
@@ -49,7 +49,7 @@ In these cases, **automatic remediation should NOT proceed**. A human operator m
 }
 ```
 
-### BR-HAPI-197.2: Field Semantics
+### BR-KA-197.2: Field Semantics
 
 **MUST**: The `needs_human_review` field SHALL be `true` when ANY of the following conditions occur:
 
@@ -62,7 +62,7 @@ In these cases, **automatic remediation should NOT proceed**. A human operator m
 | **Low Confidence** | Overall confidence is below threshold (threshold owned by AIAnalysis) |
 | **LLM Parsing Error** | Cannot extract structured data from LLM response |
 
-### BR-HAPI-197.3: Warning Correlation
+### BR-KA-197.3: Warning Correlation
 
 **MUST**: When `needs_human_review` is `true`, the `warnings` field SHALL contain at least one message explaining why human review is required.
 
@@ -77,13 +77,13 @@ In these cases, **automatic remediation should NOT proceed**. A human operator m
 }
 ```
 
-### BR-HAPI-197.4: Workflow Preservation
+### BR-KA-197.4: Workflow Preservation
 
 **SHOULD**: When `needs_human_review` is `true` due to validation failures, the `selected_workflow` field SHOULD still contain the LLM's recommendation for operator context.
 
 **Rationale**: Operators may want to see what the AI attempted to recommend, even if it was invalid.
 
-### BR-HAPI-197.5: Validation Errors
+### BR-KA-197.5: Validation Errors
 
 **SHOULD**: When workflow validation fails, the `selected_workflow` object SHOULD contain a `validation_errors` array with specific error messages.
 
@@ -105,13 +105,13 @@ In these cases, **automatic remediation should NOT proceed**. A human operator m
 
 ## Consumer Behavior Requirements
 
-### BR-HAPI-197.6: AIAnalysis MUST NOT Create WorkflowExecution
+### BR-KA-197.6: AIAnalysis MUST NOT Create WorkflowExecution
 
 **MUST**: When `needs_human_review` is `true`, the AIAnalysis controller MUST NOT create a WorkflowExecution CRD.
 
 **Rationale**: Automatic execution of unreliable AI recommendations could cause harm to the cluster or workloads.
 
-### BR-HAPI-197.7: AIAnalysis Phase Transition
+### BR-KA-197.7: AIAnalysis Phase Transition
 
 **SHOULD**: When `needs_human_review` is `true`, the AIAnalysis controller SHOULD transition to a `ManualReviewRequired` phase (or equivalent).
 
@@ -123,7 +123,7 @@ status:
   message: "Workflow validation failed: workflow 'restart-pod-v1' not found in catalog"
 ```
 
-### BR-HAPI-197.8: Audit Trail
+### BR-KA-197.8: Audit Trail
 
 **MUST**: When `needs_human_review` is `true`, the consuming service MUST log the event for audit purposes.
 
@@ -133,7 +133,7 @@ status:
 - `reason` (from warnings)
 - `timestamp`
 
-### BR-HAPI-197.9: Metrics Emission
+### BR-KA-197.9: Metrics Emission
 
 **SHOULD**: Consuming services SHOULD emit metrics when `needs_human_review` is `true`.
 
@@ -147,7 +147,7 @@ kubernaut_aianalysis_human_review_required_total{
 
 ## Operator Actions
 
-### BR-HAPI-197.10: Manual Review Options
+### BR-KA-197.10: Manual Review Options
 
 When `needs_human_review` is `true`, operators SHALL have the following options:
 
@@ -164,19 +164,19 @@ When `needs_human_review` is `true`, operators SHALL have the following options:
 
 ### What This BR Does NOT Cover
 
-1. ~~**LLM Self-Correction Loop**: In-session retry mechanism~~ → Now implemented: DD-HAPI-002 v1.2
+1. ~~**LLM Self-Correction Loop**: In-session retry mechanism~~ → Now implemented: [DD-KA-001](../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md)
 2. **Automatic Retry**: System automatically retrying analysis (requires separate BR)
 3. **Approval Workflow UI**: User interface for manual review (separate product feature)
 
-> **Note (2026-03-04)**: BR-HAPI-212 / BR-496 extends this BR with scenario 7 only: missing `root_owner` (e.g. `get_namespaced_resource_context` / `get_cluster_resource_context` not invoked or `session_state` not populated) when a workflow is selected → `rca_incomplete`. Scenarios 8-9 (`affectedResource` mismatch, unverified target resource) were removed in BR-496 v2. See BR-HAPI-212 for the scenario table.
+> **Note (updated 2026-08-01)**: [BR-KA-212](BR-KA-212-rca-target-resource.md) extends this BR with the `rca_incomplete` scenario: when owner-chain re-enrichment hard-fails after retry exhaustion and a workflow would otherwise be selected, KA sets `needs_human_review=true`, `human_review_reason=rca_incomplete`. See DD-KA-006 and BR-KA-212 for the current (Go, K8s-verified owner-chain) mechanism — the original "root_owner in session_state" description was Python-era and has been superseded.
 
 ---
 
 ## Design Decision Reference
 
-**DD-HAPI-002 v1.2**: Workflow Response Validation Architecture
+**[DD-KA-001](../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md)**: Workflow Response Validation Architecture
 
-This BR implements the business behavior for the `needs_human_review` flag defined in DD-HAPI-002 v1.2.
+This BR implements the business behavior for the `needs_human_review` flag defined in DD-KA-001.
 
 ---
 
@@ -185,7 +185,7 @@ This BR implements the business behavior for the `needs_human_review` flag defin
 ### AC-1: Field Present in API Response
 
 ```gherkin
-Given an IncidentRequest is submitted to HolmesGPT-API
+Given an IncidentRequest is submitted to Kubernaut Agent (KA)
 When the API returns an IncidentResponse
 Then the response SHALL contain a "needs_human_review" boolean field
 ```
@@ -219,7 +219,7 @@ Then the "selected_workflow.confidence" field SHALL contain the AI confidence sc
 And the consuming service (AIAnalysis) SHALL apply its configured threshold
 ```
 
-**Note**: HAPI returns `confidence` but does NOT enforce thresholds. AIAnalysis owns the threshold logic (V1.0: global 70% default, V1.1: operator-configurable).
+**Note**: KA returns `confidence` but does NOT enforce thresholds. AIAnalysis owns the threshold logic (V1.0: global 70% default, V1.1: operator-configurable).
 
 ### AC-5: False When Validation Passes
 
@@ -231,7 +231,7 @@ Then "needs_human_review" SHALL be false
 And "warnings" SHALL be empty or contain only informational messages
 ```
 
-**Note**: `needs_human_review` is only set by HAPI for validation failures, not confidence thresholds.
+**Note**: `needs_human_review` is only set by KA for validation failures, not confidence thresholds.
 
 ---
 
@@ -239,7 +239,7 @@ And "warnings" SHALL be empty or contain only informational messages
 
 | Test Category | Test Count | Coverage |
 |---------------|------------|----------|
-| Unit Tests (HolmesGPT-API) | 21 | Validation logic |
+| Unit Tests (Kubernaut Agent (KA)) | 21 | Validation logic |
 | Integration Tests | TBD | End-to-end flow |
 | E2E Tests | TBD | Full system behavior |
 
@@ -249,8 +249,8 @@ And "warnings" SHALL be empty or contain only informational messages
 
 | Component | Status | Notes |
 |-----------|--------|-------|
-| HolmesGPT-API Model | ✅ Complete | `IncidentResponse.needs_human_review` |
-| HolmesGPT-API Logic | ✅ Complete | Set based on validation/confidence |
+| Kubernaut Agent (KA) Model | ✅ Complete | `IncidentResponse.needs_human_review` |
+| Kubernaut Agent (KA) Logic | ✅ Complete | Set based on validation/confidence |
 | OpenAPI Spec | ✅ Complete | 17 schemas |
 | AIAnalysis Handler | ⏳ Pending | Requires AIAnalysis team |
 | Metrics | ⏳ Pending | Requires AIAnalysis team |

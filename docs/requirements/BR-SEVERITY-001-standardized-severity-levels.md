@@ -15,8 +15,8 @@
 **Related Business Requirements**:
 - **BR-SP-105**: Severity Determination via Rego Policy
 - **BR-GATEWAY-111**: Gateway Signal Pass-Through Architecture
-- **BR-HAPI-197**: Human Review Required Flag
-- **BR-HAPI-212**: RCA Target Resource in Root Cause Analysis
+- **BR-KA-197**: Human Review Required Flag
+- **BR-KA-212**: RCA Target Resource in Root Cause Analysis
 
 ---
 

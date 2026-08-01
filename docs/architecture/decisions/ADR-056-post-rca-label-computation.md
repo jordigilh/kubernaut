@@ -4,7 +4,9 @@
 **Decision Date**: 2026-02-12
 **Version**: 1.7
 **Confidence**: 96%
-**Applies To**: SignalProcessing, HolmesGPT API (HAPI), AIAnalysis Controller, Data Storage
+**Applies To**: SignalProcessing, Kubernaut Agent (KA), AIAnalysis Controller, Data Storage
+
+> **Note (2026-08-01, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: Cross-references to DD-HAPI-017/018 below have been updated to their current DD-KA-017/018 equivalents. The remaining body text (change history, "session_state" mechanism, Python file paths) still describes the pre-Go-rewrite implementation and has not yet been fully rewritten against `internal/kubernautagent/enrichment/label_detector.go` — treat DD-KA-018 as authoritative for current detection behavior, and DD-KA-017 for the current tool/label-injection mechanism, wherever this document's body conflicts with them.
 
 ---
 
@@ -255,7 +257,7 @@ SignalProcessing                  AIAnalysis              HAPI
 
 1. **Additional K8s API calls at RCA time**: Label detection requires API calls (PDB lookup, HPA lookup, NetworkPolicy list, annotation inspection) during HAPI tool execution. Estimated ~5-8 additional API calls per investigation. Mitigated by K8s client caching.
 
-2. **Label detection logic duplication**: SP has Go label detection in `pkg/signalprocessing/detection/labels.go`. HAPI will need Python equivalents. **Mitigated by DD-HAPI-018**: a cross-language detection specification extracted from the SP reference implementation, including conformance test vectors that both implementations must pass.
+2. **Label detection logic duplication**: SP's original Go label detection (`pkg/signalprocessing/detection/labels.go`) was removed per this ADR; KA's `internal/kubernautagent/enrichment/label_detector.go` is now the sole implementation. **Mitigated by [DD-KA-018](DD-KA-018-detected-labels-detection-specification.md)**: the authoritative detection specification, kept in sync with the Go implementation.
 
 3. **Increased HAPI RBAC surface**: HAPI's ServiceAccount needs additional RBAC permissions for PDB, HPA, and NetworkPolicy resources.
 
@@ -298,8 +300,8 @@ After the LLM identifies the root cause, trigger a second SP enrichment pass for
 ## Related Decisions
 
 - **[ADR-055](ADR-055-llm-driven-context-enrichment.md)**: LLM-Driven Context Enrichment (Post-RCA) -- prerequisite; established the `resource_context` toolset and post-RCA pattern (`get_namespaced_resource_context` / `get_cluster_resource_context` per Issue #524)
-- **[DD-HAPI-018 v1.1](DD-HAPI-018-detected-labels-detection-specification.md)**: DetectedLabels Detection Specification -- cross-language contract for the 7 detection characteristics, including conformance test vectors. Ensures SP (Go) and HAPI (Python) implementations produce identical results. v1.1 adds `cluster_context` consumer guidance.
-- **[DD-HAPI-017 v1.4](DD-HAPI-017-three-step-workflow-discovery-integration.md)**: Three-Step Workflow Discovery Integration -- v1.2 adds tool-level flow enforcement requiring a resource-context tool call before workflow discovery, and removes `detected_labels` from LLM-facing tool parameters. v1.3 adds `cluster_context` to `list_available_actions` response (BR-HAPI-017-007). v1.4 adds one-shot reassessment via `detected_infrastructure` in the resource-context tool response (BR-HAPI-017-008).
+- **[DD-KA-018 v2.0](DD-KA-018-detected-labels-detection-specification.md)**: DetectedLabels Detection Specification -- authoritative detection contract, now covering 12 characteristics (the original 7-9, plus 4 CNV/KubeVirt additions). Historically a cross-language SP/HAPI contract; KA (Go) is now the sole implementation.
+- **[DD-KA-017 v2.0](DD-KA-017-three-step-workflow-discovery-integration.md)**: Three-Step Workflow Discovery Integration -- the LLM-facing tool contract (`list_available_actions`/`list_workflows`/`get_workflow`) built on top of KA's own workflow catalog (see DD-WORKFLOW-019 for the DS→KA ownership move).
 - **DD-WORKFLOW-001 v1.7/v2.1/v2.2**: DetectedLabels schema and validation framework
 - **DD-CONTRACT-002**: Enrichment results schema -- will be updated to remove propagated fields
 - **BR-SP-101**: DetectedLabels auto-detection -- scope narrows to SP-internal
@@ -316,8 +318,8 @@ After the LLM identifies the root cause, trigger a second SP enrichment pass for
 
 | Risk | v1.1 | v1.2 | Mitigation |
 |------|------|------|------------|
-| Label detection parity between SP (Go) and HAPI (Python) | 5% | ~2% | DD-HAPI-018 provides a formal cross-language specification with 16 conformance test vectors |
-| Session state management for internal label injection | 5% | ~2% | DD-HAPI-017 v1.2 defines tool-level flow enforcement with self-correction (not graceful degradation). Shared dict mechanism confirmed viable with Holmes SDK architecture. |
+| Label detection parity between SP (Go) and KA (Go) | 5% | ~1% | Both implementations are Go; DD-KA-018 remains the formal specification. Cross-language parity risk no longer applies now that HAPI's Python implementation has been fully retired. |
+| Label injection into workflow discovery | 5% | ~1% | KA propagates detected labels via `SignalContext.DetectedLabelsJSON` (request-context value, not a shared mutable dict) — see DD-KA-017. |
 
 **Residual gap (4%)**:
 - Python K8s client behavioral differences (~2%): Label selector matching, error types, and timeout behavior differ between Go's controller-runtime and Python's `kubernetes` client. Mitigated by conformance test vectors.

@@ -5,6 +5,8 @@
 **Date**: 2025-12-01
 **Confidence**: 98%
 
+> **Note (2026-08-01, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: The `BR-HAPI-*` IDs and human-review contract language in "Contract 2" have been corrected to `BR-KA-*` / `remediationTarget` to match [DD-KA-006](DD-KA-006-remediation-target-in-rca.md). **"Contract 3: HolmesGPT-API → Data Storage (MCP Workflow Search)" below has NOT been rewritten** — it still describes HolmesGPT-API calling Data Storage's MCP endpoint for workflow search during RCA. Per [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md), workflow discovery ownership moved from Data Storage to KA's in-process catalog (`internal/kubernautagent/workflowcatalog`); KA no longer calls Data Storage's MCP search endpoint for this purpose. Treat DD-WORKFLOW-019 as authoritative for the current workflow-discovery data flow; Contract 3 here is retained for historical context pending a full rewrite.
+
 ---
 
 ## Purpose
@@ -132,18 +134,18 @@ status:
   # REQUIRED: Phase for workflow control
   phase: string  # Pending, Investigating, Analyzing, Completed, Failed
 
-  # REQUIRED: Human review flag (from HAPI - BR-HAPI-197, BR-HAPI-212)
-  # Set by HAPI when AI cannot produce reliable result
+  # REQUIRED: Human review flag (from KA - BR-KA-197, BR-KA-212)
+  # Set by KA when AI cannot produce reliable result
   needsHumanReview: bool           # true = AI can't answer (RCA incomplete)
   humanReviewReason: string        # Why review needed (when needsHumanReview=true)
 
   # REQUIRED (when phase=Completed): Selected workflow
-  # NOTE: containerImage resolved by HolmesGPT-API during MCP search (DD-CONTRACT-001 v1.2)
+  # NOTE: containerImage resolved by KA during workflow catalog lookup (DD-WORKFLOW-019)
   selectedWorkflow:
     workflowId: string       # Catalog lookup key (e.g., "oomkill-increase-memory")
     version: string          # Workflow version (e.g., "1.0.0")
-    containerImage: string   # OCI bundle (resolved by HolmesGPT-API)
-    containerDigest: string  # For audit trail (resolved by HolmesGPT-API)
+    containerImage: string   # OCI bundle (resolved by KA)
+    containerDigest: string  # For audit trail (resolved by KA)
     confidence: float64      # 0.0-1.0
     parameters:              # map[string]string - UPPER_SNAKE_CASE keys
       NAMESPACE: string
@@ -163,9 +165,9 @@ status:
     evidenceCollected: []string
     alternativesConsidered: []AlternativeWorkflow
 
-  # REQUIRED (when phase=Completed): RCA-determined target resource (BR-HAPI-212, DD-HAPI-006)
+  # REQUIRED (when phase=Completed): RCA-determined target resource (BR-KA-212, DD-KA-006)
   rootCauseAnalysis:
-    targetResource:
+    remediationTarget:
       kind: string           # e.g., "Deployment"
       apiVersion: string     # e.g., "apps/v1" (optional - static mapping fallback for core resources)
       name: string           # e.g., "payment-api"
@@ -177,28 +179,28 @@ status:
 | Field | Type | Required | RO Expects |
 |-------|------|----------|------------|
 | `status.phase` | string | ✅ | One of: Pending, Investigating, Analyzing, Completed, Failed |
-| `status.needsHumanReview` | bool | ✅ | HAPI decision: AI can't answer (BR-HAPI-197, BR-HAPI-212) |
+| `status.needsHumanReview` | bool | ✅ | KA decision: AI can't answer (BR-KA-197, BR-KA-212) |
 | `status.humanReviewReason` | string | ✅ (when needsHumanReview=true) | Why review needed (e.g., "rca_incomplete", "workflow_not_found") |
 | `status.selectedWorkflow.workflowId` | string | ✅ (when Completed) | Valid workflow identifier |
 | `status.selectedWorkflow.version` | string | ✅ (when Completed) | Semantic version |
-| `status.selectedWorkflow.containerImage` | string | ✅ (when Completed) | OCI bundle reference (from HolmesGPT-API) |
-| `status.selectedWorkflow.containerDigest` | string | ✅ (when Completed) | Image digest (from HolmesGPT-API) |
+| `status.selectedWorkflow.containerImage` | string | ✅ (when Completed) | OCI bundle reference (from KA's workflow catalog) |
+| `status.selectedWorkflow.containerDigest` | string | ✅ (when Completed) | Image digest (from KA's workflow catalog) |
 | `status.selectedWorkflow.confidence` | float64 | ✅ (when Completed) | 0.0 to 1.0 |
 | `status.selectedWorkflow.parameters` | map[string]string | ✅ (when Completed) | UPPER_SNAKE_CASE keys |
 | `status.selectedWorkflow.actionType` | string | ✅ (when Completed) | DD-WORKFLOW-016 taxonomy (e.g., "ScaleReplicas") |
 | `status.approvalRequired` | bool | ✅ | Rego decision: Policy requires approval for high-risk remediation |
-| `status.rootCauseAnalysis.targetResource` | object | ✅ (when Completed) | RCA-determined target (BR-HAPI-212, DD-HAPI-006) |
+| `status.rootCauseAnalysis.remediationTarget` | object | ✅ (when Completed) | RCA-determined target (BR-KA-212, DD-KA-006) |
 
 ### RO Decision Logic (Updated for Two-Flag Architecture)
 
-**CRITICAL DISTINCTION** (BR-HAPI-197, BR-HAPI-212):
-- **`needsHumanReview`** (HAPI decision) = AI **can't** answer → NotificationRequest
+**CRITICAL DISTINCTION** (BR-KA-197, BR-KA-212):
+- **`needsHumanReview`** (KA decision) = AI **can't** answer → NotificationRequest
 - **`approvalRequired`** (Rego decision) = AI **has** answer, policy requires approval → RemediationApprovalRequest
 
 ```go
 // pkg/remediationorchestrator/reconciler.go
 func (r *Reconciler) handleAIAnalysisCompleted(ctx context.Context, aiAnalysis *v1alpha1.AIAnalysis) error {
-    // 1. Check if HAPI couldn't produce reliable result (BR-HAPI-197, BR-HAPI-212)
+    // 1. Check if KA couldn't produce reliable result (BR-KA-197, BR-KA-212)
     if aiAnalysis.Status.NeedsHumanReview {
         // Create NotificationRequest (manual investigation needed)
         // AI can't answer: incomplete RCA, workflow validation failed, etc.

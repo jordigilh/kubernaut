@@ -1,7 +1,7 @@
-# BR-HAPI-265: Infrastructure Labels in Workflow Discovery Context
+# BR-KA-265: Infrastructure Labels in Workflow Discovery Context
 
-**Business Requirement ID**: BR-HAPI-265
-**Category**: HolmesGPT API Service
+**Business Requirement ID**: BR-KA-265
+**Category**: Kubernaut Agent (KA) Service
 **Priority**: P2
 **Target Version**: V1
 **Status**: Approved
@@ -25,7 +25,7 @@ Include detected infrastructure labels in the enrichment context provided to the
 ## Acceptance Criteria
 
 1. The enrichment prompt (Phase 3) includes detected labels in a structured, human-readable format
-2. Labels are included in the HAPI response via `inject_detected_labels` for downstream consumers (AIAnalysis Rego policies, audit)
+2. Labels are included in the KA response via `inject_detected_labels` for downstream consumers (AIAnalysis Rego policies, audit)
 3. `failedDetections` are stripped from labels before including in the enrichment prompt (consistent with existing behavior)
 4. The LLM does not manage or pass labels as parameters -- they are read-only context
 
@@ -34,7 +34,7 @@ Include detected infrastructure labels in the enrichment context provided to the
 ## Design References
 
 - **ADR-056 v1.3**: Labels surfaced as read-only cluster_context
-- **DD-HAPI-017**: Three-Step Workflow Discovery Integration
+- **DD-KA-017**: Three-Step Workflow Discovery Integration
 - **Issue #529**: RCA Flow Redesign
 
 ---

@@ -594,7 +594,7 @@ volumeMounts:
 > SP still captures raw K8s metadata (annotations, labels) via K8sEnricher into `KubernetesContext`,
 > but this is used only for business classification and custom labels — not for DetectedLabels.
 >
-> **Authoritative specification**: DD-HAPI-018 v1.3
+> **Authoritative specification**: DD-KA-018 v2.0
 > **Authoritative implementation**: `kubernaut-agent/src/detection/labels.py`
 
 **Original Description** *(retained for traceability)*: The SignalProcessing controller MUST auto-detect 8 cluster characteristics from K8s resources.

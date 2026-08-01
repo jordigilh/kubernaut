@@ -160,7 +160,7 @@ All DD documents MUST include these sections in this order:
 
 | Category Code | Domain | Example |
 |---|---|---|
-| **HAPI** | HolmesGPT-API / AI Investigation Service | DD-HAPI-017 |
+| **KA** | Kubernaut Agent / AI Investigation Service (formerly HAPI) | DD-KA-017 |
 | **GATEWAY** | Gateway Service (signal ingestion) | DD-GATEWAY-011 |
 | **WE** | Workflow Engine | DD-WE-006 |
 | **RO** | Remediation Orchestrator | DD-RO-001 |
@@ -194,7 +194,7 @@ All DD documents MUST include these sections in this order:
 **Number Format**: Zero-padded 3 digits within each category (001, 002, ..., 999)
 
 **File naming**: `DD-{CATEGORY}-{NUMBER}-{title-slug}.md`
-Example: `DD-HAPI-017-three-step-workflow-discovery-integration.md`
+Example: `DD-KA-017-three-step-workflow-discovery-integration.md`
 
 ---
 
@@ -294,9 +294,9 @@ When a DD reveals that the chosen approach requires architectural changes (new A
 The Validation Strategy section in the DD informs the test plan. Test scenarios SHOULD reference the DD they validate:
 
 ```go
-// DD-HAPI-017: Three-step workflow discovery
+// DD-KA-017: Three-step workflow discovery
 It("should list available actions before listing workflows", func() {
-    // Validates DD-HAPI-017 enforcement flow
+    // Validates DD-KA-017 enforcement flow
 })
 ```
 
@@ -320,9 +320,9 @@ It("should list available actions before listing workflows", func() {
 - **ADR-037**: Business Requirement Template Standard (sibling standard for BRs)
 
 ### **Example DD Documents (pre-template, good exemplars)**
-- **DD-HAPI-017**: Three-Step Workflow Discovery Integration (most complete existing DD)
-- **DD-HAPI-015**: Single-Worker Async Architecture (clean options analysis)
-- **DD-HAPI-005**: LLM Input Sanitization (good security DD with architecture diagram)
+- **DD-KA-017**: Three-Step Workflow Discovery Integration (most complete existing DD)
+- **DD-HAPI-015**: Single-Worker Async Architecture (clean options analysis) — pending rename/rewrite, see [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)
+- **DD-HAPI-005**: LLM Input Sanitization (good security DD with architecture diagram) — pending rename/rewrite, see [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)
 
 ---
 
