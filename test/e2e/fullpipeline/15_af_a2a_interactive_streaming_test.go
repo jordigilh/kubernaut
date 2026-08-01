@@ -153,20 +153,17 @@ var _ = Describe("AF A2A Interactive Streaming Full Pipeline [E2E-FP-1189-005]",
 		// user waited for the RCA to render"; accepting both avoids coupling this
 		// test to which of the two internal paths KA happened to take.
 		//
-		// TODO(#1795): this assertion is temporarily softened to a warning instead of
-		// a hard failure. AF's dedicated streaming MCP client to KA (StartInvestigation
-		// -> connectInvestigationSession) hits a consistent ~60s TCP dial timeout in
-		// this environment (confirmed independent of host hibernation/clock skew —
-		// reproduces cleanly), so the kubernaut_investigate tool call itself fails
-		// before KA ever runs the investigation, leaving no RCA to render. Once #1795
-		// is fixed, restore this to a hard Expect(...).To(BeNumerically(">", 0), ...).
+		// #1795 (AF->KA streaming MCP dial timeout) is fixed; the remaining
+		// root cause of a blank turn 2 was #1811 (LazySink dropped every
+		// event emitted between InteractiveHold's fast RCA completion and
+		// AF's late Subscribe). With #1811's buffered-replay fix in place,
+		// this must be a hard requirement — see docs/testing/1811/TEST_PLAN.md.
 		earlyRCAStatuses := fpStatusesBySchema(statuses2, "early_rca")
 		rcaArtifacts := fpArtifactsBySchema(arts2, "investigation_summary")
-		if len(earlyRCAStatuses)+len(rcaArtifacts) == 0 {
-			GinkgoWriter.Printf("  ⚠️  Turn 2 (SSE) — no RCA content rendered (early_rca status or " +
-				"investigation_summary artifact); likely #1795 (AF->KA streaming MCP dial timeout). " +
-				"Softened to a warning — see TODO above.\n")
-		} else if len(earlyRCAStatuses) > 0 {
+		Expect(len(earlyRCAStatuses)+len(rcaArtifacts)).To(BeNumerically(">", 0),
+			"AU-3/SI-4: turn 2 must render RCA content (early_rca status or investigation_summary "+
+				"artifact) to the user — see #1811 (late-subscribe event replay)")
+		if len(earlyRCAStatuses) > 0 {
 			rcaText := fpStatusText(earlyRCAStatuses[0])
 			Expect(strings.TrimSpace(rcaText)).NotTo(BeEmpty(), "early_rca status must carry non-empty RCA content")
 			GinkgoWriter.Printf("  Turn 2 (SSE) — RCA displayed (early_rca): %s\n", rcaText)

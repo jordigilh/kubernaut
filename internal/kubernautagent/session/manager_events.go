@@ -74,14 +74,10 @@ func (m *Manager) emitCompleteEvent(id string, result *katypes.InvestigationResu
 	if sink == nil {
 		return
 	}
-	ch := sink.Get()
-	if ch == nil {
-		return
-	}
-	select {
-	case ch <- InvestigationEvent{Type: EventTypeComplete, Data: MarshalRCASubset(result)}:
-	default:
-	}
+	// #1811: route through Emit (not Get()+manual send) so this terminal
+	// event is buffered and replayed if no one has subscribed yet — e.g. an
+	// InteractiveHold completion that races ahead of AF's kubernaut_investigate.
+	sink.Emit(InvestigationEvent{Type: EventTypeComplete, Data: MarshalRCASubset(result)})
 }
 
 // EmitSessionEndedByRR emits a terminal InvestigationEvent with the given
@@ -116,17 +112,20 @@ func (m *Manager) emitTerminalEvent(id, reason string) {
 			"session_id", id, "reason", reason)
 		return
 	}
-	ch := sink.Get()
-	if ch == nil {
-		m.logger.V(1).Info("emitTerminalEvent: sink channel is nil",
-			"session_id", id, "reason", reason)
-		return
-	}
-	select {
-	case ch <- InvestigationEvent{Type: EventTypeSessionEnded, Phase: reason}:
-	default:
-		m.logger.Info("terminal event dropped: channel full",
-			"session_id", id, "reason", reason)
+	// #1811: route through Emit so a not-yet-subscribed observer still gets
+	// this terminal event replayed once it does Subscribe, instead of it
+	// being silently and permanently lost. hadChannel distinguishes
+	// "buffered for later replay" (no active subscriber yet) from the
+	// pre-existing "channel full" drop case for accurate SI-4 logging.
+	hadChannel := sink.Get() != nil
+	if sent := sink.Emit(InvestigationEvent{Type: EventTypeSessionEnded, Phase: reason}); !sent {
+		if hadChannel {
+			m.logger.Info("terminal event dropped: channel full",
+				"session_id", id, "reason", reason)
+		} else {
+			m.logger.V(1).Info("terminal event buffered for replay: no active subscriber yet",
+				"session_id", id, "reason", reason)
+		}
 	}
 }
 
