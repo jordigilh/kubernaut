@@ -45,7 +45,17 @@ func defaultInstruction() string {
 // BuildInstruction constructs the full agent instruction by appending deployment
 // context (namespace, CRD types) to the immutable embedded prompt. The core prompt
 // is never modified — this function only appends (SC-7 boundary protection).
-func BuildInstruction(namespace string) string {
+//
+// alertToolsEnabled reflects whether list_alerts/get_alert_details/
+// kubernaut_investigate_alert are actually registered in the tool list (gated
+// on cfg.PromClient != nil — see agentpkg.buildToolList). When false, the
+// appended guidance omits those tools from the observation permission list and
+// explicitly tells the model alert querying is unavailable, rather than
+// silently advertising tools it cannot call. This closes the gap where the
+// model, told alert tools exist but unable to invoke them, would fall back to
+// guessing an invalid kubectl_list kind (e.g. "Alert") and leak the raw,
+// failed tool-call arguments back to the user (#1658).
+func BuildInstruction(namespace string, alertToolsEnabled bool) string {
 	if namespace == "" {
 		namespace = "default"
 	}
@@ -62,15 +72,27 @@ func BuildInstruction(namespace string) string {
 	sb.WriteString("SignalProcessing, EffectivenessAssessment, WorkflowExecution, ActionType, NotificationRequest\n")
 	sb.WriteString("\n## Tool Usage Rules\n")
 	sb.WriteString("- For investigation and remediation, always use kubernaut MCP tools (kubernaut_investigate, ")
-	sb.WriteString("kubernaut_investigate_alert, kubernaut_remediate, kubernaut_discover_workflows, ")
+	if alertToolsEnabled {
+		sb.WriteString("kubernaut_investigate_alert, ")
+	}
+	sb.WriteString("kubernaut_remediate, kubernaut_discover_workflows, ")
 	sb.WriteString("kubernaut_select_workflow, kubernaut_watch). ")
 	sb.WriteString("NEVER use kubectl tools directly for investigation or remediation actions.\n")
-	sb.WriteString("- kubectl_get, kubectl_list, kubectl_list_events, list_alerts, and get_alert_details are permitted ONLY for observation (reading cluster state).\n")
-	sb.WriteString("- list_alerts and get_alert_details query Prometheus/Thanos for currently firing or pending alerts. ")
-	sb.WriteString("Use them for preflight investigation context before delegating to kubernaut_investigate or kubernaut_investigate_alert.\n")
-	sb.WriteString("- kubernaut_investigate_alert: use when you know the specific Prometheus alert name to investigate. ")
-	sb.WriteString("Provide alert_name, api_version, kind, name, and namespace (optional for cluster-scoped). ")
-	sb.WriteString("The backend validates the alert exists.\n")
+	if alertToolsEnabled {
+		sb.WriteString("- kubectl_get, kubectl_list, kubectl_list_events, list_alerts, and get_alert_details are permitted ONLY for observation (reading cluster state).\n")
+		sb.WriteString("- list_alerts and get_alert_details query Prometheus/Thanos for currently firing or pending alerts. ")
+		sb.WriteString("Use them for preflight investigation context before delegating to kubernaut_investigate or kubernaut_investigate_alert.\n")
+		sb.WriteString("- kubernaut_investigate_alert: use when you know the specific Prometheus alert name to investigate. ")
+		sb.WriteString("Provide alert_name, api_version, kind, name, and namespace (optional for cluster-scoped). ")
+		sb.WriteString("The backend validates the alert exists.\n")
+	} else {
+		sb.WriteString("- kubectl_get, kubectl_list, and kubectl_list_events are permitted ONLY for observation (reading cluster state).\n")
+		sb.WriteString("- Alert querying tools (list_alerts, get_alert_details, kubernaut_investigate_alert) are NOT available in this deployment ")
+		sb.WriteString("(Prometheus/Thanos integration is disabled). Alerts are not a Kubernetes resource — ")
+		sb.WriteString(`never call kubectl_get/kubectl_list with kind="Alert" or any similar guess. `)
+		sb.WriteString("If the user asks to list, show, or investigate alerts, explain that alert querying is not configured ")
+		sb.WriteString("for this deployment; if they name a specific resource, offer kubernaut_investigate against it instead.\n")
+	}
 	sb.WriteString("- kubernaut_investigate: use when investigating by resource identity (api_version, kind, name, namespace). ")
 	sb.WriteString("The backend determines the relevant alert via triage.\n")
 	sb.WriteString("- When calling kubernaut_remediate, provide: api_version, namespace, kind, name, description. ")
@@ -136,8 +158,11 @@ func roleGuidance(groups []string) string {
 // constructs the agent instruction per-request. It appends role-aware behavioral
 // guidance based on the authenticated user's JWT groups (AC-6). The base prompt
 // (from BuildInstruction) is always included; role guidance is additive only.
-func NewInstructionProvider(namespace string) llmagent.InstructionProvider {
-	base := BuildInstruction(namespace)
+//
+// alertToolsEnabled is forwarded to BuildInstruction (#1658) — see its doc
+// comment for why this must match the actual tool-registration gate.
+func NewInstructionProvider(namespace string, alertToolsEnabled bool) llmagent.InstructionProvider {
+	base := BuildInstruction(namespace, alertToolsEnabled)
 	return func(ctx agent.ReadonlyContext) (string, error) {
 		if ctx == nil {
 			return base, nil

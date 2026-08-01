@@ -111,6 +111,18 @@ var _ = Describe("kubectl_list", func() {
 		Expect(err).To(MatchError(ContainSubstring("invalid input")))
 	})
 
+	It("UT-AF-1658-020: unknown Kind (e.g. a guessed non-K8s kind like Alert) with nil mapper returns invalid-input error", func() {
+		scheme := runtime.NewScheme()
+		client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubectlGVRs)
+
+		_, err := tools.HandleKubectlList(context.Background(), &tools.DynamicResourceReader{Client: client}, nil, tools.KubectlListArgs{
+			Kind:      "Alert",
+			Namespace: "prod",
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err).To(MatchError(ContainSubstring("invalid input")))
+	})
+
 	It("UT-AF-1230-016: nil client returns ErrK8sUnavailable", func() {
 		_, err := tools.HandleKubectlList(context.Background(), nil, nil, tools.KubectlListArgs{
 			Kind:      "Service",
