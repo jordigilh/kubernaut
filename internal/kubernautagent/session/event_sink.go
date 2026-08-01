@@ -26,19 +26,46 @@ type eventSinkKey struct{}
 type sessionIDKey struct{}
 type actingUserKey struct{}
 
+// lazySinkBufferCap bounds the number of events LazySink buffers before a
+// channel is attached. Matches eventChannelBuffer (manager.go) so a full
+// replay never overflows the newly-activated channel (#1811).
+const lazySinkBufferCap = 64
+
 // LazySink holds a channel reference that can be set after the context is
 // created. This allows Subscribe to attach the event sink lazily while the
 // investigation goroutine's context is already in flight.
+//
+// #1811: before a channel is attached, Emit buffers events (bounded,
+// oldest-evicted) instead of silently dropping them. Set replays the
+// buffer to the newly-activated channel so a late Subscribe (e.g. AF's
+// kubernaut_investigate racing an autonomous investigation's fast
+// InteractiveHold completion) still delivers everything emitted so far.
 type LazySink struct {
-	mu sync.RWMutex
-	ch chan<- InvestigationEvent
+	mu     sync.RWMutex
+	ch     chan<- InvestigationEvent
+	buffer []InvestigationEvent
 }
 
-// Set assigns the channel. Safe for concurrent use.
+// Set assigns the channel and replays any buffered events (oldest-first,
+// non-blocking) accumulated while no channel was attached. Safe for
+// concurrent use.
 func (ls *LazySink) Set(ch chan<- InvestigationEvent) {
 	ls.mu.Lock()
+	defer ls.mu.Unlock()
 	ls.ch = ch
-	ls.mu.Unlock()
+	if ch == nil || len(ls.buffer) == 0 {
+		return
+	}
+	for _, evt := range ls.buffer {
+		select {
+		case ch <- evt:
+		default:
+			// Newly-created channel is already full (unexpected given it's
+			// sized to eventChannelBuffer >= lazySinkBufferCap) — stop
+			// replay rather than block session activation.
+		}
+	}
+	ls.buffer = nil
 }
 
 // Get returns the channel, or nil if not yet set.
@@ -46,6 +73,29 @@ func (ls *LazySink) Get() chan<- InvestigationEvent {
 	ls.mu.RLock()
 	defer ls.mu.RUnlock()
 	return ls.ch
+}
+
+// Emit sends event to the active channel (non-blocking), or buffers it
+// (bounded, oldest-evicted) if no channel is attached yet. Returns true if
+// the event was sent to an active channel, false if buffered or dropped
+// (channel full). Callers that need to distinguish "buffered for later
+// replay" from "dropped, channel full" should check Get() != nil first.
+func (ls *LazySink) Emit(event InvestigationEvent) bool {
+	ls.mu.Lock()
+	defer ls.mu.Unlock()
+	if ls.ch == nil {
+		ls.buffer = append(ls.buffer, event)
+		if len(ls.buffer) > lazySinkBufferCap {
+			ls.buffer = ls.buffer[len(ls.buffer)-lazySinkBufferCap:]
+		}
+		return false
+	}
+	select {
+	case ls.ch <- event:
+		return true
+	default:
+		return false
+	}
 }
 
 // WithLazySink returns a derived context carrying a LazySink.
@@ -71,6 +121,18 @@ func EventSinkFromContext(ctx context.Context) chan<- InvestigationEvent {
 		return nil
 	}
 	return ls.Get()
+}
+
+// EmitEvent sends event through the LazySink attached to ctx (if any),
+// buffering it for later replay if no channel is attached yet (#1811).
+// Returns false if there is no LazySink on ctx, if the event was buffered,
+// or if the active channel's buffer is full.
+func EmitEvent(ctx context.Context, event InvestigationEvent) bool {
+	ls, ok := ctx.Value(eventSinkKey{}).(*LazySink)
+	if !ok || ls == nil {
+		return false
+	}
+	return ls.Emit(event)
 }
 
 // WithSessionID returns a derived context carrying the session ID so that
