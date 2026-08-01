@@ -79,7 +79,7 @@ type RegoConfig struct {
 	// When set, passed as input.confidence_threshold to the Rego policy, overriding the
 	// policy's built-in default (0.8). Must be in range (0.0, 1.0].
 	// nil means "use the Rego policy's built-in default".
-	// Stepping stone toward BR-HAPI-198 (V1.1 rule-based thresholds).
+	// Stepping stone toward BR-AI-088 (V1.1 rule-based thresholds).
 	ConfidenceThreshold *float64 `yaml:"confidenceThreshold,omitempty"`
 }
 

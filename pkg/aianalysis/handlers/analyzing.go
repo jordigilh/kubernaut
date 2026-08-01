@@ -67,7 +67,7 @@ func NewAnalyzingHandler(evaluator RegoEvaluatorInterface, log logr.Logger, m *m
 
 // WithConfidenceThreshold sets the operator-configurable confidence threshold (#225).
 // When set, this value is passed as input.confidence_threshold to the Rego policy,
-// overriding the policy's built-in default. Stepping stone toward BR-HAPI-198.
+// overriding the policy's built-in default. Stepping stone toward BR-AI-088.
 func (h *AnalyzingHandler) WithConfidenceThreshold(threshold *float64) *AnalyzingHandler {
 	h.confidenceThreshold = threshold
 	return h
