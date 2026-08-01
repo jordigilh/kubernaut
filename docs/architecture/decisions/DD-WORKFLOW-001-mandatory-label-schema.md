@@ -6,7 +6,7 @@
 **Status**: ✅ **APPROVED** (V2.7 - Action-Type Primary Matching)
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: ⭐ **AUTHORITATIVE** - This document is the single source of truth for workflow label schema
-**Affects**: Data Storage Service V1.0, Workflow Catalog, Signal Processing, HolmesGPT API
+**Affects**: Data Storage Service V1.0, Workflow Catalog, Signal Processing, Kubernaut Agent (KA)
 **Related**: DD-LLM-001 (MCP Search Taxonomy), DD-STORAGE-008 (Workflow Catalog Schema), ADR-041 (LLM Prompt Contract), DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-004 v1.6 (Multi-Environment Queries), DD-WORKFLOW-016 (Action-Type Workflow Indexing)
 **Version**: 2.7
 
@@ -375,7 +375,7 @@ Operators define their own subdomains. Kubernaut does NOT validate subdomain nam
 | `region` | Geographic | `zone=us-east-1` |
 | `compliance` | Regulatory | `pci`, `hipaa` |
 
-**Key Principle**: Kubernaut is a **conduit, not a transformer**. Custom labels flow unchanged from Rego → SignalProcessing → HolmesGPT-API → Data Storage.
+**Key Principle**: Kubernaut is a **conduit, not a transformer**. Custom labels flow unchanged from Rego → SignalProcessing → Kubernaut Agent (KA) → Data Storage.
 
 #### **Validation Limits (V1.9)**
 
@@ -391,7 +391,7 @@ SignalProcessing enforces validation limits on CustomLabels output:
 | Allowed value chars | UTF-8 printable | Prompt safety, no control characters |
 | Reserved key prefixes | `kubernaut.ai/`, `system/` | Prevent collision with system labels |
 
-**Total max size**: 10 keys × 5 values × 100 chars ≈ **5KB** (well within HolmesGPT-API's 64k token limit)
+**Total max size**: 10 keys × 5 values × 100 chars ≈ **5KB** (well within Kubernaut Agent (KA)'s 64k token limit)
 
 **Validation Behavior**:
 - Keys exceeding limits → **truncated** with warning log
@@ -854,7 +854,7 @@ WHERE signal.detected_labels->>'gitOpsTool' IS NOT NULL
                                       │
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
-│                            HOLMESGPT-API                                         │
+│                               KUBERNAUT AGENT (KA)                               │
 │  - Receives incident with DetectedLabels from SignalProcessing                   │
 │  - Passes DetectedLabels as FILTERS to workflow catalog search                   │
 │  - LLM also sees DetectedLabels for context understanding                        │
@@ -888,7 +888,7 @@ WHERE signal.detected_labels->>'gitOpsTool' IS NOT NULL
 1. **SignalProcessing AUTO-POPULATES** incident DetectedLabels from live K8s ✅ IMPLEMENTED (V1.0)
 2. **Workflow authors MANUALLY DEFINE** workflow catalog detected_labels at creation time
 3. **Data Storage does NOT auto-populate** workflow detected_labels - they are workflow metadata
-4. **HolmesGPT-API passes incident DetectedLabels** as filters to Data Storage search
+4. **Kubernaut Agent (KA) passes incident DetectedLabels** as filters to Data Storage search
 5. **Matching logic** is in Data Storage: incident labels match workflow metadata
 
 #### **Common Misconception**
@@ -900,7 +900,7 @@ WHERE signal.detected_labels->>'gitOpsTool' IS NOT NULL
 | Service | Populates | Consumes |
 |---------|-----------|----------|
 | SignalProcessing | Incident DetectedLabels (auto-detect from K8s) | — |
-| HolmesGPT-API | — | Incident DetectedLabels (from SP), passes to DS as filters |
+| Kubernaut Agent (KA) | — | Incident DetectedLabels (from SP), passes to DS as filters |
 | Data Storage | — | Incident DetectedLabels (as filters), Workflow detected_labels (as metadata) |
 | Workflow Author | Workflow detected_labels (manual, at creation) | — |
 
@@ -944,7 +944,7 @@ SignalProcessing traverses K8s `ownerReferences` to build the ownership chain.
 ```go
 // OwnerChainEntry represents a single entry in the K8s ownership chain
 // SignalProcessing traverses ownerReferences to build this chain
-// HolmesGPT-API uses for DetectedLabels validation
+// Kubernaut Agent (KA) uses for DetectedLabels validation
 type OwnerChainEntry struct {
     // Namespace of the owner resource
     // Empty for cluster-scoped resources (e.g., Node)
@@ -962,7 +962,7 @@ type OwnerChainEntry struct {
 }
 ```
 
-**⚠️ IMPORTANT**: Do NOT include `apiVersion` or `uid` - they are NOT used by HolmesGPT-API validation.
+**⚠️ IMPORTANT**: Do NOT include `apiVersion` or `uid` - they are NOT used by Kubernaut Agent (KA) validation.
 
 ##### **Example**
 
@@ -1701,7 +1701,7 @@ LIMIT 10;
    - Output: Signal with 5 mandatory labels (`signal_type`, `severity`, `component`, `environment`, `priority`)
    - Output: Optional custom labels (customer-defined via Rego, stored in `custom_labels`)
 
-2. **HolmesGPT API receives signal**
+2. **Kubernaut Agent (KA) receives signal**
    - Extracts labels from signal (snake_case format)
    - Forwards `custom_labels` for workflow catalog scoring (per DD-KA-002)
    - Calls Data Storage workflow search API
@@ -1712,7 +1712,7 @@ LIMIT 10;
    - **Step 3**: Semantic search on pre-filtered subset (similarity-based)
    - **Step 4**: Return top-k matching workflows
 
-4. **HolmesGPT API selects playbook**
+4. **Kubernaut Agent (KA) selects playbook**
    - LLM reviews top-k playbooks
    - Selects best match based on signal context
    - Creates RemediationRequest CRD
@@ -1889,7 +1889,7 @@ custom_labels     JSONB
   - Group B labels derived via Rego policies (customizable by user)
   - Labels match DD-WORKFLOW-001 v1.6 authoritative values (snake_case API fields)
   - Labels are stored in RemediationRequest CRD spec
-  - Labels are passed to HolmesGPT API for workflow matching
+  - Labels are passed to Kubernaut Agent (KA) for workflow matching
   - Custom labels (if any) are stored in `custom_labels` JSONB for optional matching
 
 #### **BR-SIGNAL-PROCESSING-002: Custom Label Derivation (risk_tolerance, business_category, etc.)**

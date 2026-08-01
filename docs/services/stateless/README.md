@@ -14,9 +14,9 @@
 1. **[Gateway Service](./gateway-service/)** - Signal ingestion and triage (Design B: adapter endpoints)
 2. **[Context API](./context-api/)** - Historical intelligence and pattern matching (read-only)
 3. **[Data Storage](./data-storage/)** - Audit trail persistence and embeddings (write-only)
-4. **[HolmesGPT API](./kubernaut-agent/)** - AI investigation engine (Python SDK wrapper)
+4. **[Kubernaut Agent (KA)](./kubernaut-agent/)** - AI investigation engine (Python SDK wrapper)
 5. **~~[Notification Service](./notification-service/)~~** - ⚠️ DEPRECATED (migrated to CRD Controller, see [06-notification](../crd-controllers/06-notification/))
-6. **[Dynamic Toolset](./dynamic-toolset/)** - HolmesGPT toolset configuration management
+6. **[Dynamic Toolset](./dynamic-toolset/)** - Kubernaut Agent toolset configuration management
 
 ---
 
@@ -40,7 +40,7 @@
 | **Gateway** | Signal ingestion | 8080 | ⏸️ Design | ✅ 100% |
 | **Context API** | Historical queries (read) | 8080 | ⏸️ Design | ✅ 100% |
 | **Data Storage** | Audit persistence (write) | 8080 | ⏸️ Design | ✅ 100% |
-| **HolmesGPT API** | AI investigation | 8080 | ⏸️ Design | ✅ 100% |
+| **Kubernaut Agent** | AI investigation | 8080 | ⏸️ Design | ✅ 100% |
 | **Notification** | Escalation delivery | 8080 | ⏸️ Design | ✅ 100% |
 | **Dynamic Toolset** | Toolset config | 8080 | ⏸️ Design | ✅ 100% |
 
@@ -66,7 +66,7 @@
 - **Storage**: Dual-write (PostgreSQL + Vector DB)
 - **Clients**: All CRD controllers write audit data here
 
-### **HolmesGPT API** (AI Engine)
+### **Kubernaut Agent** (AI Engine)
 - **Wraps**: HolmesGPT Python SDK in REST API
 - **Provides**: AI-powered root cause analysis
 - **Toolsets**: Kubernetes, Prometheus, Grafana
@@ -80,7 +80,7 @@
 
 ### **Dynamic Toolset** (Configuration)
 - **Discovers**: Available Kubernetes resources
-- **Generates**: HolmesGPT toolset configurations
+- **Generates**: Kubernaut Agent toolset configurations
 - **Updates**: ConfigMaps dynamically
 - **Validates**: Toolset compatibility
 
@@ -182,7 +182,7 @@ stateless/
 | **Gateway** | < 200ms | 100 req/s | 2-4 replicas |
 | **Context API** | < 200ms | 50 req/s | 2-4 replicas |
 | **Data Storage** | < 250ms | 50 req/s | 2-3 replicas |
-| **HolmesGPT API** | < 5s | 10 req/s | 2-3 replicas |
+| **Kubernaut Agent** | < 5s | 10 req/s | 2-3 replicas |
 | **Notification** | < 1s | 20 req/s | 2-3 replicas |
 | **Dynamic Toolset** | < 300ms | 5 req/s | 1-2 replicas |
 

@@ -53,7 +53,7 @@ const gcpAuthScope = "https://www.googleapis.com/auth/cloud-platform"
 // rather than kubernautagent's anthropicfamily.Client: AF's launcher is
 // entirely ADK-based (session/event/tool semantics all speak ADK's
 // model.LLM contract), while anthropicfamily implements KA's own,
-// deliberately framework-independent llm.Client interface (DD-HAPI-019-001).
+// deliberately framework-independent llm.Client interface (DD-KA-019-001).
 // This is an intentional architectural boundary, not an inconsistency to
 // converge — see DD-LLM-007. Note the Anthropic/Vertex cases below still
 // don't thread cfg.Reasoning: AF has no reasoning/thinking-token support on

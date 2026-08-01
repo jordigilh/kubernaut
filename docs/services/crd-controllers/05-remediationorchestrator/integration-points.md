@@ -179,7 +179,7 @@ func (r *RemediationRequestReconciler) createAIAnalysis(
                         Environment:      alertProcessing.Status.EnrichedSignal.Environment,
                         BusinessPriority: alertProcessing.Status.EnrichedSignal.BusinessPriority,
 
-                        // Resource targeting for HolmesGPT toolsets (NOT logs/metrics)
+                        // Resource targeting for Kubernaut Agent toolsets (NOT logs/metrics)
                         Namespace:    alertProcessing.Status.EnrichedSignal.Namespace,
                         ResourceKind: alertProcessing.Status.EnrichedSignal.ResourceKind,
                         ResourceName: alertProcessing.Status.EnrichedSignal.ResourceName,
@@ -203,7 +203,7 @@ func (r *RemediationRequestReconciler) createAIAnalysis(
                 },
                 // HolmesGPTConfig is populated by AIAnalysis controller from system defaults
                 // Remediation Coordinator only provides business data (targeting info, enriched context)
-                // See AIAnalysis service spec for HolmesGPT configuration management
+                // See AIAnalysis service spec for Kubernaut Agent configuration management
             },
         }
 
@@ -241,7 +241,7 @@ func (r *RemediationRequestReconciler) createWorkflowExecution(
         return nil
     }
 
-    // Get selected workflow from AIAnalysis (resolved by HolmesGPT-API)
+    // Get selected workflow from AIAnalysis (resolved by Kubernaut Agent)
     selectedWorkflow := aiAnalysis.Status.SelectedWorkflow
 
     workflowExecution := &workflowexecutionv1.WorkflowExecution{
@@ -262,11 +262,11 @@ func (r *RemediationRequestReconciler) createWorkflowExecution(
 
             // WorkflowRef: Pass-through from AIAnalysis.status.selectedWorkflow
             // DD-CONTRACT-001: RO does NOT perform catalog lookups
-            // HolmesGPT-API resolves workflow_id to container_image
+            // Kubernaut Agent resolves workflow_id to container_image
             WorkflowRef: workflowexecutionv1.WorkflowRef{
                 WorkflowID:      selectedWorkflow.WorkflowID,
-                ContainerImage:  selectedWorkflow.ContainerImage,   // From HolmesGPT-API
-                ContainerDigest: selectedWorkflow.ContainerDigest,  // From HolmesGPT-API
+                ContainerImage:  selectedWorkflow.ContainerImage,   // From Kubernaut Agent
+                ContainerDigest: selectedWorkflow.ContainerDigest,  // From Kubernaut Agent
             },
 
             // Parameters: Pass-through from AIAnalysis
@@ -682,7 +682,7 @@ type ServiceCRDStatus struct {
 
 **Downstream Services** (CRDs created and watched by RemediationRequest):
 - **RemediationProcessing Controller** - Enrichment & classification service
-- **AIAnalysis Controller** - HolmesGPT investigation service
+- **AIAnalysis Controller** - Kubernaut Agent investigation service
 - **WorkflowExecution Controller** - Multi-step orchestration service
 - **KubernetesExecution Controller** (DEPRECATED - ADR-025) - Infrastructure operations service
 

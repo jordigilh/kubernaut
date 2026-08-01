@@ -1,4 +1,4 @@
-# DD-HAPI-019: Go Rewrite Design
+# DD-KA-019: Go Rewrite Design
 
 **Status**: ✅ Approved
 **Decision Date**: 2026-03-04
@@ -8,12 +8,12 @@
 **Applies To**: Kubernaut Agent
 
 **Related Business Requirements**:
-- BR-HAPI-433 (Go Language Migration) — retired as a standalone doc set; migration complete, superseded by this DD and the current KA implementation.
+- BR-KA-433 (formerly BR-HAPI-433, Go Language Migration) — retired as a standalone doc set; migration complete, superseded by this DD and the current KA implementation.
 
 **Related Design Decisions**:
-- [DD-HAPI-019-001: Framework Selection](DD-HAPI-019-001-framework-selection.md)
-- [DD-HAPI-019-002: Toolset Implementation](DD-HAPI-019-002-toolset-implementation.md)
-- [DD-HAPI-019-003: Security Architecture](DD-HAPI-019-003-security-architecture.md)
+- [DD-KA-019-001: Framework Selection](DD-KA-019-001-framework-selection.md)
+- [DD-KA-019-002: Toolset Implementation](DD-KA-019-002-toolset-implementation.md)
+- [DD-KA-019-003: Security Architecture](DD-KA-019-003-security-architecture.md)
 
 ---
 
@@ -65,7 +65,7 @@ HAPI is a Python service wrapping the HolmesGPT SDK. The architecture couples HA
 
 ### Problem Statement
 
-Design a Go architecture for HAPI that:
+Design a Go architecture for Kubernaut Agent that:
 - Gives Kubernaut full control over the agentic loop, tool execution, and LLM providers
 - Isolates framework-specific code so the LLM framework can be swapped
 - Eliminates shell execution entirely
@@ -311,7 +311,7 @@ func storeAuditBestEffort(ctx context.Context, store audit.AuditStore, event *ap
 
 | Requirement | Status | Notes |
 |---|---|---|
-| BR-HAPI-433 | ✅ | Core architecture for Go rewrite |
+| BR-KA-433 | ✅ | Core architecture for Go rewrite |
 | BR-KA-211 | ✅ | Credential scrubbing in `pkg/kubernautagent/tools/sanitization/credential.go` |
 | BR-KA-197 | ✅ | Human review flag preserved in `internal/kubernautagent/result/validator.go` |
 | DD-KA-017 | ✅ | Three-step workflow discovery preserved in `pkg/kubernautagent/tools/workflow/` |
@@ -331,7 +331,7 @@ func storeAuditBestEffort(ctx context.Context, store audit.AuditStore, event *ap
 
 ## References
 
-- BR-HAPI-433 (Go Language Migration) — retired as a standalone doc set; migration complete
+- BR-KA-433 (formerly BR-HAPI-433, Go Language Migration) — retired as a standalone doc set; migration complete
 - [DD-KA-017: Three-Step Workflow Discovery](../DD-KA-017-three-step-workflow-discovery-integration.md)
 - [DD-KA-005: LLM Input Sanitization](../DD-KA-005-llm-input-sanitization.md)
 - [ADR-061: DD Template Standard](../ADR-061-design-decision-template-standard.md)

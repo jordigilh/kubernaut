@@ -74,7 +74,7 @@ graph TB
 
     subgraph "Support Services"
         Notification[Notification Controller<br/>CRD: NotificationRequest 🆕]
-        HolmesGPT[HolmesGPT API<br/>Port 8080/9090]
+        HolmesGPT[Kubernaut Agent (KA)<br/>Port 8080/9090]
         Context[Context API<br/>Port 8080/9090]
         DataStorage[Data Storage<br/>Port 8080/9090]
     end
@@ -240,7 +240,7 @@ graph TD
 
     Phase2 --> DataStorage[Data Storage Service]
     Phase2 --> ContextAPI[Context API Service]
-    Phase2 --> HolmesGPT[HolmesGPT API]
+    Phase2 --> HolmesGPT[Kubernaut Agent]
     Phase2 --> Notification[Notification Service]
 
     DataStorage --> Phase3[Phase 3: CRD Definitions]
@@ -287,7 +287,7 @@ graph TD
 | **1** | 3 | Vector DB | Infrastructure | None | Data Storage, Context API |
 | **2** | 4 | Data Storage | HTTP | PostgreSQL, Vector DB | All CRD controllers |
 | **2** | 5 | Context API | HTTP | PostgreSQL, Vector DB | Remediation Processor, AI Analysis |
-| **2** | 6 | HolmesGPT API | HTTP | None (self-contained) | AI Analysis |
+| **2** | 6 | Kubernaut Agent | HTTP | None (self-contained) | AI Analysis |
 | **2** | 7 | Notification Controller | CRD Controller | NotificationRequest CRD | All CRD controllers |
 | **3** | 8 | CRD Definitions | K8s CRDs | None | All controllers |
 | **4** | 9 | Remediation Orchestrator | CRD Controller | CRDs | Child controllers |
@@ -318,7 +318,7 @@ graph TD
 
 #### Support Services (4)
 - **Notification Controller** - CRD-based multi-channel delivery with zero data loss (CRD, migrated 2025-10-12)
-- **HolmesGPT API** - AI investigation
+- **Kubernaut Agent** - AI investigation
 - **Context API** - Historical intelligence
 - **Data Storage** - Persistence layer
 
@@ -343,7 +343,7 @@ graph TD
 
 6. Gateway Service
 7. Notification Service
-8. HolmesGPT API
+8. Kubernaut Agent
 9. Context API (pending spec)
 10. Data Storage (pending spec)
 11. Infrastructure Monitoring (pending spec - V2)
@@ -450,7 +450,7 @@ graph TB
     subgraph "Kubernaut Services"
         GW[Gateway Service]
         NS[Notification Service]
-        HG[HolmesGPT API]
+        HG[Kubernaut Agent]
         WE[Workflow Execution]
     end
 
@@ -512,9 +512,9 @@ graph TB
 | **Notification** | SMTP Server | SMTP | Email notifications | Optional |
 | **Notification** | PagerDuty API | HTTPS | Incident creation | Optional |
 | **Notification** | Webhook endpoint | HTTP/HTTPS | Custom notifications | Optional |
-| **HolmesGPT API** | OpenAI API | HTTPS | LLM inference | Optional (one required) |
-| **HolmesGPT API** | Anthropic Claude | HTTPS | LLM inference | Optional (one required) |
-| **HolmesGPT API** | Local LLM | HTTP | LLM inference | Optional (one required) |
+| **Kubernaut Agent** | OpenAI API | HTTPS | LLM inference | Optional (one required) |
+| **Kubernaut Agent** | Anthropic Claude | HTTPS | LLM inference | Optional (one required) |
+| **Kubernaut Agent** | Local LLM | HTTP | LLM inference | Optional (one required) |
 | **Workflow Execution** | Kubernetes API | K8s API | Tekton PipelineRun / TaskRun, CRD operations | Yes |
 | **All CRD Controllers** | Kubernetes API | K8s API | CRD operations | Yes |
 
@@ -618,7 +618,7 @@ graph TB
 | From Service | To Service | Endpoint | Method | Purpose |
 |-------------|-----------|----------|--------|---------|
 | Remediation Processor | Context API | `/api/v1/context` | GET | Environment enrichment |
-| AI Analysis | HolmesGPT API | `/api/v1/investigate` | POST | Root cause investigation |
+| AI Analysis | Kubernaut Agent | `/api/v1/investigate` | POST | Root cause investigation |
 | AI Analysis | Context API | `/api/v1/context/historical` | GET | Historical patterns |
 | Workflow Execution | Context API | `/api/v1/context/success-rates` | GET | Success rate data |
 | Remediation Processor | Data Storage | `/api/v1/audit/remediation` | POST | Audit trail |
@@ -697,7 +697,7 @@ graph TD
 8. PostgreSQL - Audit
 
 **P2 - Feature Loss** (Nice to have):
-9. HolmesGPT API - AI investigation
+9. Kubernaut Agent - AI investigation
 10. Context API - Historical intelligence
 11. Data Storage - Audit persistence
 12. Notification Service - Escalations
@@ -716,9 +716,9 @@ graph TD
 | **AI Analysis** | HolmesGPT, Data Storage | Remediation Orchestrator | P1 (High) |
 | **Workflow Execution** | K8s API (Tekton), Data Storage, Context API | Remediation Orchestrator | P1 (High) |
 | **Notification** | External channels | All controllers | P2 (Medium) |
-| **HolmesGPT API** | External LLM | AI Analysis | P2 (Medium) |
+| **Kubernaut Agent** | External LLM | AI Analysis | P2 (Medium) |
 | **Data Storage** | PostgreSQL, Vector DB | All controllers | P2 (Medium) |
-| **Dynamic Toolset** | HolmesGPT API | HolmesGPT API | P2 (Medium) |
+| **Dynamic Toolset** | Kubernaut Agent | Kubernaut Agent | P2 (Medium) |
 
 ---
 

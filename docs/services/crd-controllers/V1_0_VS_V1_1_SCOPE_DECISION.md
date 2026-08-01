@@ -84,7 +84,7 @@
 - ⏳ Auto-correction of cycles (hypothesis: 60-70% success rate)
 - ⏳ Manual approval fallback if correction fails
 
-**Confidence**: **75%** ⏳ (requires HolmesGPT API validation)
+**Confidence**: **75%** ⏳ (requires Kubernaut Agent (KA) validation)
 
 **Why Deferred**: See "Deferral Rationale" section below
 
@@ -94,8 +94,8 @@
 
 ### **Why Postpone AI-Driven Cycle Correction to V1.1?**
 
-#### **1. HolmesGPT API Dependency Unknown** 🔴 **HIGH RISK**
-- **Unknown**: Does HolmesGPT API support correction mode?
+#### **1. Kubernaut Agent Dependency Unknown** 🔴 **HIGH RISK**
+- **Unknown**: Does Kubernaut Agent support correction mode?
 - **Requires**: New `AnalyzeWithCorrection` endpoint
 - **External dependency**: Not under Kubernaut control
 - **Risk**: Could delay V1.0 release by 2-4 weeks if API needs changes
@@ -148,8 +148,8 @@
 - Architectural risk mitigations proven effective
 - MTTR targets met (5 min average, 91% reduction)
 
-### **2. HolmesGPT API Support Confirmed** ✅
-- HolmesGPT API extended with correction mode
+### **2. Kubernaut Agent Support Confirmed** ✅
+- Kubernaut Agent extended with correction mode
 - `AnalyzeWithCorrection` endpoint implemented
 - Feedback format validated (LLM understands cycle descriptions)
 
@@ -244,7 +244,7 @@ Risk: Medium (unvalidated LLM behavior)
 
 **Timeline**: Post-V1.0 (TBD)
 
-1. ⏳ **HolmesGPT API Validation** (1-2 weeks)
+1. ⏳ **Kubernaut Agent Validation** (1-2 weeks)
    - Extend API with correction mode
    - Implement `AnalyzeWithCorrection` endpoint
    - Test feedback format understanding
@@ -311,7 +311,7 @@ Risk: Medium (unvalidated LLM behavior)
 - [x] No external dependencies
 
 ### **V1.1 Deferral** ✅
-- [x] External dependency identified (HolmesGPT API)
+- [x] External dependency identified (Kubernaut Agent)
 - [x] Hypothesis untested (60-70% success rate)
 - [x] V1.0 priority clear (foundation first)
 - [x] Validation path defined (API + success rate + performance)
@@ -334,10 +334,10 @@ Risk: Medium (unvalidated LLM behavior)
 - ⏳ AIAnalysis v1.2: AI-driven cycle correction
 - ⏳ 4 BRs (BR-AI-071 to BR-AI-074)
 - ⏳ +3 days implementation (after validation)
-- ⏳ 75% confidence (needs HolmesGPT API validation)
+- ⏳ 75% confidence (needs Kubernaut Agent validation)
 
 **Decision Rationale**:
-1. **HolmesGPT API support unknown** - High risk for V1.0
+1. **Kubernaut Agent support unknown** - High risk for V1.0
 2. **Success rate hypothesis untested** - Needs empirical data
 3. **V1.0 foundation priority** - Build proven features first
 4. **Q4 2025 timeline** - Avoid scope creep
@@ -345,7 +345,7 @@ Risk: Medium (unvalidated LLM behavior)
 **Next Steps**:
 1. ✅ **Begin V1.0 implementation** - AIAnalysis v1.1 + WorkflowExecution v1.2
 2. ⏳ **Ship V1.0** - Test and validate in production
-3. ⏳ **Validate HolmesGPT API** - Confirm correction mode feasibility
+3. ⏳ **Validate Kubernaut Agent** - Confirm correction mode feasibility
 4. ⏳ **Measure success rate** - 100 synthetic cycles
 5. ⏳ **Implement V1.1** - If validation passes
 

@@ -7,7 +7,7 @@
 **Status**: Approved
 
 **Related Design Decisions**:
-- [DD-HAPI-019: Framework Isolation Pattern (Go rewrite design)](../architecture/decisions/DD-HAPI-019-go-rewrite-design)
+- [DD-KA-019: Framework Isolation Pattern (Go rewrite design)](../architecture/decisions/DD-KA-019-go-rewrite-design)
 - [DD-LLM-004: Generalized Anthropic-Family Client and OpenAI-Compatible Client (langchaingo removal)](../architecture/decisions/DD-LLM-004-langchaingo-removal-generalized-clients.md)
 - [DD-LLM-005: Model-Aware Reasoning/Thinking Token Support](../architecture/decisions/DD-LLM-005-model-aware-reasoning-support.md)
 - [DD-LLM-007: AF and KA Intentionally Do Not Share an Anthropic Client](../architecture/decisions/DD-LLM-007-af-ka-anthropic-client-divergence.md)
@@ -30,7 +30,7 @@ API Frontend (AF) already has a correct, working Gemini client (`google.golang.o
 
 ### Business Objective
 
-Give KA full-parity Gemini support — both the direct Gemini Developer API (`provider: gemini`) and Vertex-AI-hosted Gemini (`provider: vertex_ai` with a Gemini model) — including model-aware reasoning/thinking-token support (BR-AI-086), without regressing KA's existing Anthropic (`anthropicfamily`) or OpenAI-compatible (`openaicompat`) provider surfaces, and without compromising KA's framework-isolation guarantee (DD-HAPI-019).
+Give KA full-parity Gemini support — both the direct Gemini Developer API (`provider: gemini`) and Vertex-AI-hosted Gemini (`provider: vertex_ai` with a Gemini model) — including model-aware reasoning/thinking-token support (BR-AI-086), without regressing KA's existing Anthropic (`anthropicfamily`) or OpenAI-compatible (`openaicompat`) provider surfaces, and without compromising KA's framework-isolation guarantee (DD-KA-019).
 
 ---
 
@@ -38,7 +38,7 @@ Give KA full-parity Gemini support — both the direct Gemini Developer API (`pr
 
 1. `buildLLMClientFromConfig` (`cmd/kubernautagent/llm_builder.go`) constructs a working Gemini-capable `llm.Client` for `provider: gemini` (direct API key auth).
 2. `buildLLMClientFromConfig`'s `vertex_ai` case branches on model family: Anthropic-family models (`claude-*`) continue to route to `anthropicfamily.New` (zero regression); all other models route to the new Gemini client configured for the Vertex AI backend.
-3. The new Gemini client implements KA's `llm.Client` interface (`Chat`, `StreamChat`, `Close`) and is never exposed to `internal/kubernautagent/investigator/*` business logic in any provider-specific form (DD-HAPI-019).
+3. The new Gemini client implements KA's `llm.Client` interface (`Chat`, `StreamChat`, `Close`) and is never exposed to `internal/kubernautagent/investigator/*` business logic in any provider-specific form (DD-KA-019).
 4. Tool-call requests/responses round-trip correctly through the new client (`llm.ToolDefinition`/`llm.ToolCall`), matching the existing behavior contract proven for `anthropicfamily` and `openaicompat`.
 5. Where enabled (`cfg.Reasoning`), the new client requests and captures Gemini's reasoning/thinking output into `llm.ReasoningBlock`, reusing the shared `Effort` → `genai.ThinkingConfig` mapping (BR-AI-086 AC1, AC8; DD-LLM-005), including correct handling of Gemini's opaque thought-signature replay semantics across turns.
 6. No regression to KA's existing Anthropic or OpenAI-compatible provider paths, hot-reload (`llm.SwappableClient`), or per-phase LLM overrides.

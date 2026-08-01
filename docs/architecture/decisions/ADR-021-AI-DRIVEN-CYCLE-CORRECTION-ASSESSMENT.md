@@ -214,16 +214,16 @@ func (r *AIAnalysisReconciler) requestCorrectedWorkflow(
 - ✅ Similar to existing HolmesGPT call pattern
 
 **Cons**:
-- ⚠️ Requires HolmesGPT API support for "correction mode"
+- ⚠️ Requires Kubernaut Agent (KA) API support for "correction mode"
 - ⚠️ Feedback message quality critical for success
 - ⚠️ No guarantee HolmesGPT will generate valid workflow
 
 ---
 
-### **HolmesGPT API Support**: 🔴 **Unknown** (40% confidence)
+### **Kubernaut Agent (KA) API Support**: 🔴 **Unknown** (40% confidence)
 
 **Questions**:
-1. **Does HolmesGPT API support correction requests?**
+1. **Does Kubernaut Agent (KA) API support correction requests?**
    - Current API: `AnalyzeAlert(ctx, alertData)`
    - Needed API: `AnalyzeWithCorrection(ctx, alertData, previousAnalysis, feedback)`
 
@@ -282,12 +282,12 @@ func (r *AIAnalysisReconciler) requestCorrectedWorkflow(
 | Factor | Weight | Score | Weighted |
 |---|---|---|---|
 | **Implementation Complexity** | 25% | 60% | 15% |
-| **HolmesGPT API Support** | 30% | 40% | 12% |
+| **Kubernaut Agent (KA) API Support** | 30% | 40% | 12% |
 | **Latency Impact** | 20% | 65% | 13% |
 | **Success Rate** | 25% | 50% | 12.5% |
 | **Total** | 100% | | **52.5%** |
 
-**Adjusted Confidence**: **75%** (optimistic, assuming HolmesGPT API can be extended)
+**Adjusted Confidence**: **75%** (optimistic, assuming Kubernaut Agent (KA) API can be extended)
 
 ---
 
@@ -298,7 +298,7 @@ func (r *AIAnalysisReconciler) requestCorrectedWorkflow(
 **When**: V1.1 (after V1.0 stable)
 
 **Prerequisites**:
-1. ✅ **Validate HolmesGPT API extensibility**: Confirm correction mode can be added
+1. ✅ **Validate Kubernaut Agent (KA) API extensibility**: Confirm correction mode can be added
 2. ✅ **Test with synthetic cycles**: Measure success rate on known cycles
 3. ✅ **Define feedback format**: Standardize how to communicate cycles to LLM
 
@@ -325,7 +325,7 @@ func (r *AIAnalysisReconciler) requestCorrectedWorkflow(
 - Confidence: **75%** (needs validation)
 
 **Rationale**:
-1. ✅ **V1.0 delivered faster**: No dependency on HolmesGPT API changes
+1. ✅ **V1.0 delivered faster**: No dependency on Kubernaut Agent (KA) API changes
 2. ✅ **Validates architecture**: Cycle detection works, feedback format tested
 3. ✅ **V1.1 has clear value**: 52+ min MTTR improvement per cycle
 4. ✅ **Lower risk**: V1.0 stable before adding AI correction
@@ -334,9 +334,9 @@ func (r *AIAnalysisReconciler) requestCorrectedWorkflow(
 
 ## Implementation Plan (V1.1)
 
-### **Phase 1: HolmesGPT API Validation** (1-2 weeks)
+### **Phase 1: Kubernaut Agent (KA) API Validation** (1-2 weeks)
 
-1. **Extend HolmesGPT API**: Add `AnalyzeWithCorrection` endpoint
+1. **Extend Kubernaut Agent (KA) API**: Add `AnalyzeWithCorrection` endpoint
 2. **Test correction success rate**: 100 synthetic cycles, measure auto-correction rate
 3. **Benchmark latency**: Measure correction latency (target <60s per retry)
 
@@ -384,7 +384,7 @@ func (r *AIAnalysisReconciler) requestCorrectedWorkflow(
 
 | Risk | Probability | Impact | Mitigation |
 |---|---|---|---|
-| **HolmesGPT API changes required** | High (70%) | Medium | Start with V1.0 fail-fast, add V1.1 after API ready |
+| **Kubernaut Agent (KA) API changes required** | High (70%) | Medium | Start with V1.0 fail-fast, add V1.1 after API ready |
 | **Low correction success rate** | Medium (40%) | Medium | Tune feedback format, adjust max retries |
 | **Latency regression** | Low (20%) | Low | Max 3 retries limits impact to 180s worst case |
 | **Feedback format ineffective** | Medium (30%) | Medium | Iterate on feedback format based on data |
@@ -406,14 +406,14 @@ func (r *AIAnalysisReconciler) requestCorrectedWorkflow(
 
 **AI-Driven Cycle Correction is promising** (75% confidence) but requires validation:
 
-1. ✅ **Recommended for V1.1**: Validate HolmesGPT API extensibility first
+1. ✅ **Recommended for V1.1**: Validate Kubernaut Agent (KA) API extensibility first
 2. ✅ **Start with V1.0 fail-fast**: Proven pattern, lower risk
 3. ✅ **High potential value**: 52+ min MTTR improvement per cycle
 4. ⚠️ **Key unknown**: HolmesGPT correction success rate (needs testing)
 
 **Next Steps**:
 1. **V1.0**: Implement ADR-021 original (fail-fast with manual approval)
-2. **Post-V1.0**: Validate HolmesGPT API capabilities for correction mode
+2. **Post-V1.0**: Validate Kubernaut Agent (KA) API capabilities for correction mode
 3. **V1.1**: Implement AI-driven correction if validation successful
 
 ---

@@ -13,15 +13,15 @@ The **Dynamic Toolset Service** was originally designed as part of the V1.x Holm
 
 ### Key Challenge
 
-During V1.x development, the **HolmesGPT-API service architecture** is undergoing significant strategic evaluation, including:
+During V1.x development, the **Kubernaut Agent (KA) service architecture** is undergoing significant strategic evaluation, including:
 
-1. **Current Redundancy**: HolmesGPT-API service **already contains built-in logic** to identify **Prometheus** in the cluster. Since V1.x only requires Prometheus integration, a separate Dynamic Toolset Service is **redundant at this point**.
+1. **Current Redundancy**: Kubernaut Agent service **already contains built-in logic** to identify **Prometheus** in the cluster. Since V1.x only requires Prometheus integration, a separate Dynamic Toolset Service is **redundant at this point**.
 
 2. **Future Relevance**: When V2.0 expands HolmesGPT integration to **identify other observability services** (Grafana, Jaeger, Elasticsearch, custom services), the Dynamic Toolset Service will **become relevant again** as a centralized service discovery component.
 
-3. **V1.x Scope**: V1.x focuses on **Prometheus-only** observability integration, which HolmesGPT-API already handles. Expanding to multi-service discovery is a **V2.0 feature**.
+3. **V1.x Scope**: V1.x focuses on **Prometheus-only** observability integration, which Kubernaut Agent already handles. Expanding to multi-service discovery is a **V2.0 feature**.
 
-4. **Architectural Evolution**: Deferring Dynamic Toolset to V2.0 allows the service to be designed **cohesively** with expanded HolmesGPT-API capabilities based on V1.x operational learnings.
+4. **Architectural Evolution**: Deferring Dynamic Toolset to V2.0 allows the service to be designed **cohesively** with expanded Kubernaut Agent capabilities based on V1.x operational learnings.
 
 ### Business Requirements Context
 
@@ -33,7 +33,7 @@ During V1.x development, the **HolmesGPT-API service architecture** is undergoin
 - **BR-HOLMES-023**: Toolset configuration templates
 - **BR-HOLMES-025**: Runtime toolset management API
 
-**Status**: These requirements are **deferred to V2.0** pending HolmesGPT-API architecture decisions.
+**Status**: These requirements are **deferred to V2.0** pending Kubernaut Agent architecture decisions.
 
 ---
 
@@ -51,7 +51,7 @@ During V1.x development, the **HolmesGPT-API service architecture** is undergoin
 
 **Cons**:
 - ❌ Adds significant architectural complexity to V1.x
-- ❌ Depends on unfinalized HolmesGPT-API architecture
+- ❌ Depends on unfinalized Kubernaut Agent architecture
 - ❌ May require rework if HolmesGPT integration strategy changes
 - ❌ Increases V1.x scope and delays release
 - ❌ Manual toolset configuration is viable alternative for V1.x
@@ -62,11 +62,11 @@ During V1.x development, the **HolmesGPT-API service architecture** is undergoin
 
 ### Alternative 2: Defer Dynamic Toolset to V2.0 (APPROVED)
 
-**Approach**: Defer Dynamic Toolset Service implementation to V2.0, revisit when HolmesGPT-API architecture is finalized
+**Approach**: Defer Dynamic Toolset Service implementation to V2.0, revisit when Kubernaut Agent architecture is finalized
 
 **Pros**:
 - ✅ Reduces V1.x scope and complexity
-- ✅ Allows HolmesGPT-API architecture to mature first
+- ✅ Allows Kubernaut Agent architecture to mature first
 - ✅ Enables informed design decisions based on V1.x operational experience
 - ✅ Preserves existing implementation code for future use
 - ✅ Removes CI/CD test burden for unused service
@@ -90,7 +90,7 @@ During V1.x development, the **HolmesGPT-API service architecture** is undergoin
 - ✅ No service discovery overhead
 
 **Cons**:
-- ❌ Still depends on unfinalized HolmesGPT-API architecture
+- ❌ Still depends on unfinalized Kubernaut Agent architecture
 - ❌ Adds V1.x implementation work without strategic value
 - ❌ May conflict with V2.0 dynamic approach
 
@@ -104,7 +104,7 @@ During V1.x development, the **HolmesGPT-API service architecture** is undergoin
 
 ### Rationale
 
-1. **Current Redundancy with Prometheus**: HolmesGPT-API service **already has built-in logic to identify Prometheus** in Kubernetes clusters. Since V1.x only requires **Prometheus integration** for AI-driven investigations, a separate Dynamic Toolset Service would duplicate this functionality without adding value. This is the **primary technical reason** for V1.x deferral.
+1. **Current Redundancy with Prometheus**: Kubernaut Agent service **already has built-in logic to identify Prometheus** in Kubernetes clusters. Since V1.x only requires **Prometheus integration** for AI-driven investigations, a separate Dynamic Toolset Service would duplicate this functionality without adding value. This is the **primary technical reason** for V1.x deferral.
 
 2. **Future Multi-Service Discovery Value**: When V2.0 expands to **identifying multiple observability services** (Grafana, Jaeger, Elasticsearch, custom services), the Dynamic Toolset Service will **become relevant** as a centralized, sophisticated service discovery component that manages complex multi-service toolset configurations.
 
@@ -118,9 +118,9 @@ During V1.x development, the **HolmesGPT-API service architecture** is undergoin
 
 **"Defer sophisticated multi-service discovery until V2.0 expands beyond Prometheus."**
 
-The Dynamic Toolset Service was designed to provide automatic discovery of **multiple observability services** (Prometheus, Grafana, Jaeger, Elasticsearch, custom services) and generate HolmesGPT toolset configurations. However, V1.x only requires **Prometheus integration**, which HolmesGPT-API already handles with built-in service discovery logic. This makes Dynamic Toolset **redundant at this point**.
+The Dynamic Toolset Service was designed to provide automatic discovery of **multiple observability services** (Prometheus, Grafana, Jaeger, Elasticsearch, custom services) and generate HolmesGPT toolset configurations. However, V1.x only requires **Prometheus integration**, which Kubernaut Agent already handles with built-in service discovery logic. This makes Dynamic Toolset **redundant at this point**.
 
-When V2.0 expands HolmesGPT-API to identify and integrate with **other observability services**, the Dynamic Toolset Service will **come back into the picture** as a valuable centralized component for managing complex multi-service discovery and toolset configuration. The service is deferred, not abandoned.
+When V2.0 expands Kubernaut Agent to identify and integrate with **other observability services**, the Dynamic Toolset Service will **come back into the picture** as a valuable centralized component for managing complex multi-service discovery and toolset configuration. The service is deferred, not abandoned.
 
 ---
 
@@ -142,7 +142,7 @@ When V2.0 expands HolmesGPT-API to identify and integrate with **other observabi
 **Documentation Updates**:
 - ✅ **Update service status**: Mark as "V2.0 Roadmap Feature" in all documentation
 - ✅ **Link to DD-016**: Reference this design decision in service overview
-- ✅ **Create V2.0 roadmap entry**: Document Dynamic Toolset + HolmesGPT-API as V2.0 features
+- ✅ **Create V2.0 roadmap entry**: Document Dynamic Toolset + Kubernaut Agent as V2.0 features
 
 **Business Requirements Status**:
 - ✅ **Mark BR-HOLMES-016 through BR-HOLMES-030 as V2.0**: Update business requirement documents to reflect V2.0 timeline
@@ -151,24 +151,24 @@ When V2.0 expands HolmesGPT-API to identify and integrate with **other observabi
 ### V2.0 Actions (Future)
 
 **When to Revisit** (V2.0 Triggers):
-1. **Multi-Service Observability Expansion**: When V2.0 roadmap includes expanding HolmesGPT-API beyond Prometheus to identify **Grafana, Jaeger, Elasticsearch, or custom observability services**
-2. **HolmesGPT-API Service Discovery Complexity**: When built-in Prometheus discovery logic in HolmesGPT-API becomes insufficient for managing **multiple service types**
+1. **Multi-Service Observability Expansion**: When V2.0 roadmap includes expanding Kubernaut Agent beyond Prometheus to identify **Grafana, Jaeger, Elasticsearch, or custom observability services**
+2. **Kubernaut Agent Service Discovery Complexity**: When built-in Prometheus discovery logic in Kubernaut Agent becomes insufficient for managing **multiple service types**
 3. **V1.x Production Validation Complete**: After core remediation workflow proves stable and V1.x operational experience informs multi-service observability requirements
 
 **V2.0 Implementation Approach**:
 1. **Expand Observability Scope**: Define which observability services V2.0 will support (Grafana, Jaeger, Elasticsearch, etc.)
-2. **Evaluate Service Discovery Architecture**: Determine if centralized Dynamic Toolset Service provides value over distributed discovery in HolmesGPT-API
+2. **Evaluate Service Discovery Architecture**: Determine if centralized Dynamic Toolset Service provides value over distributed discovery in Kubernaut Agent
 3. **Review Dynamic Toolset Code**: Assess preserved V1.x code for V2.0 multi-service applicability
-4. **Design Integrated Solution**: Cohesive architecture for HolmesGPT-API + Dynamic Toolset multi-service discovery
+4. **Design Integrated Solution**: Cohesive architecture for Kubernaut Agent + Dynamic Toolset multi-service discovery
 5. **Implement E2E Tests**: Validate against production-informed multi-service requirements
 6. **Add to CI/CD Pipeline**: Include in V2.0 continuous integration strategy
 
 **V2.0 Success Criteria**:
 - ✅ V2.0 scope includes **multi-service observability discovery** (beyond Prometheus)
-- ✅ Dynamic Toolset provides measurable value over extending HolmesGPT-API's built-in discovery
+- ✅ Dynamic Toolset provides measurable value over extending Kubernaut Agent's built-in discovery
 - ✅ Centralized service discovery reduces complexity vs. distributed approach
 - ✅ User demand for automatic multi-service discovery validated through V1.x feedback
-- ✅ Integration with HolmesGPT-API is clean and maintainable
+- ✅ Integration with Kubernaut Agent is clean and maintainable
 
 ---
 
@@ -179,7 +179,7 @@ When V2.0 expands HolmesGPT-API to identify and integrate with **other observabi
 - ✅ **V1.x Scope Reduction**: Reduces V1.x complexity and focuses on core remediation capabilities
 - ✅ **Code Preservation**: All Dynamic Toolset implementation work is preserved for V2.0
 - ✅ **CI/CD Optimization**: Removes 10+ minutes of E2E test execution from CI/CD pipeline
-- ✅ **Architectural Flexibility**: Allows HolmesGPT-API architecture to mature before committing to service discovery integration
+- ✅ **Architectural Flexibility**: Allows Kubernaut Agent architecture to mature before committing to service discovery integration
 - ✅ **Informed V2.0 Design**: V1.x operational experience will inform better V2.0 architecture decisions
 - ✅ **V1.x Release Focus**: Team can focus on core features without distraction from peripheral capabilities
 
@@ -210,7 +210,7 @@ When V2.0 expands HolmesGPT-API to identify and integrate with **other observabi
 ### Confidence Assessment Progression
 
 - **Initial assessment**: 85% confidence (strategic scope management)
-- **After HolmesGPT-API architecture review**: 90% confidence (architectural dependency confirmed)
+- **After Kubernaut Agent architecture review**: 90% confidence (architectural dependency confirmed)
 - **After V1.x feature prioritization**: 95% confidence (focus on core capabilities validated)
 
 ### Key Validation Points
@@ -219,13 +219,13 @@ When V2.0 expands HolmesGPT-API to identify and integrate with **other observabi
 - ✅ **Manual Configuration Viability**: Static YAML toolset configuration is acceptable for V1.x controlled deployments
 - ✅ **Code Preservation Confirmed**: All Dynamic Toolset code, tests, and documentation preserved with minimal maintenance burden
 - ✅ **CI/CD Impact**: Removing 10+ minute E2E tests improves PR velocity and reduces infrastructure costs
-- ✅ **V2.0 Roadmap Fit**: Dynamic Toolset + HolmesGPT-API integration is logical V2.0 feature set based on V1.x production learnings
+- ✅ **V2.0 Roadmap Fit**: Dynamic Toolset + Kubernaut Agent integration is logical V2.0 feature set based on V1.x production learnings
 
 ---
 
 ## Related Decisions
 
-- **Builds On**: HolmesGPT-API architecture evaluation (in progress)
+- **Builds On**: Kubernaut Agent architecture evaluation (in progress)
 - **Supports**: V1.x feature scope prioritization
 - **Defers**: BR-HOLMES-016, BR-HOLMES-017, BR-HOLMES-020, BR-HOLMES-022, BR-HOLMES-023, BR-HOLMES-025
 - **Related**: V2.0 roadmap planning and feature prioritization
@@ -236,7 +236,7 @@ When V2.0 expands HolmesGPT-API to identify and integrate with **other observabi
 
 ### When to Revisit
 
-- **MANDATORY**: When V2.0 roadmap includes expanding HolmesGPT-API beyond Prometheus to **multi-service observability** (Grafana, Jaeger, Elasticsearch, custom services)
+- **MANDATORY**: When V2.0 roadmap includes expanding Kubernaut Agent beyond Prometheus to **multi-service observability** (Grafana, Jaeger, Elasticsearch, custom services)
 - **MANDATORY**: Before V2.0 planning begins (estimated Q3 2025) to assess multi-service discovery requirements
 - **OPTIONAL**: If V1.x users report critical need for automatic multi-service discovery (user feedback loop)
 - **OPTIONAL**: If HolmesGPT SDK significantly changes multi-service toolset configuration approach
@@ -259,7 +259,7 @@ When V2.0 expands HolmesGPT-API to identify and integrate with **other observabi
 
 ---
 
-**Status**: ⏸️ **Deferred to V2.0** - Code preserved, CI/CD excluded, revisit when HolmesGPT-API architecture is finalized
+**Status**: ⏸️ **Deferred to V2.0** - Code preserved, CI/CD excluded, revisit when Kubernaut Agent architecture is finalized
 
-**Next Review**: Before V2.0 planning (Q3 2025) or when HolmesGPT-API architecture is finalized
+**Next Review**: Before V2.0 planning (Q3 2025) or when Kubernaut Agent architecture is finalized
 

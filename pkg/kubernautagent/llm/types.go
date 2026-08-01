@@ -23,7 +23,7 @@ import (
 
 // Client abstracts the LLM provider behind a Kubernaut-owned interface.
 // Business logic never imports the underlying framework (LangChainGo, Eino, etc.).
-// Authority: DD-HAPI-019 — Framework Isolation Pattern
+// Authority: DD-KA-019 — Framework Isolation Pattern
 //
 // Close releases resources held by the client (gRPC connections, HTTP idle
 // pools). Callers must call Close when the client is no longer needed.
@@ -90,7 +90,7 @@ type Message struct {
 // ReasoningBlock captures a provider's reasoning/thinking output for a single
 // assistant message, kept provider-agnostic so business logic in
 // internal/kubernautagent/investigator/* never sees provider-specific wire
-// formats (DD-HAPI-019). Nil means no reasoning was requested or returned.
+// formats (DD-KA-019). Nil means no reasoning was requested or returned.
 // Authority: BR-AI-086 AC1.
 type ReasoningBlock struct {
 	// Text is the visible reasoning content (Anthropic thinking, DeepSeek
@@ -140,7 +140,7 @@ type ChatOptions struct {
 // chat call. Nil (or Enabled: false) means no reasoning is requested — the
 // safe default for every provider/model (BR-AI-086 AC2). Resolved once at
 // LLM-client-construction time from operator config, never threaded
-// per-call from business logic (DD-HAPI-019).
+// per-call from business logic (DD-KA-019).
 type ReasoningRequest struct {
 	Enabled      bool `json:"enabled,omitempty"`
 	BudgetTokens int  `json:"budget_tokens,omitempty"`

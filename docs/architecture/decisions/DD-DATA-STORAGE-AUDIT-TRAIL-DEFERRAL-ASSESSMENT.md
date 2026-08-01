@@ -101,7 +101,7 @@ Week 3:   Embedding Service + Start AIAnalysis
 NEW:
 Week 1:   Data Storage (7-8 days)
 Week 2:   Embedding Service (2-3 days) + Start AIAnalysis (2-3 days)
-Week 3:   AIAnalysis + HolmesGPT API (full week)
+Week 3:   AIAnalysis + Kubernaut Agent (full week)
 ```
 
 **Benefit**: Start LLM testing **3-4 days earlier**.
@@ -121,7 +121,7 @@ Phase 1 (Deferred): Audit Trail Implementation
 
 Phase 2 (Production): Enable Audit Trail
 ├─ AIAnalysis Controller writes audit events
-├─ HolmesGPT API writes investigation audit
+├─ Kubernaut Agent writes investigation audit
 ├─ Data Storage persists audit events
 └─ Compliance reporting enabled
 ```
@@ -286,12 +286,12 @@ func TestPlaybookSemanticSearch(t *testing.T) {
 **Day 3-4: Start AIAnalysis Controller**
 ```go
 // Minimal AIAnalysis controller
-// HolmesGPT API client
+// Kubernaut Agent client
 ```
 
 **Day 5: Integration Testing**
 ```
-// End-to-end: AIAnalysis → HolmesGPT → Embedding → Data Storage
+// End-to-end: AIAnalysis → Kubernaut Agent → Embedding → Data Storage
 ```
 
 ---
@@ -535,7 +535,7 @@ Week 7-8: 92% → 93% (Integration, rushed)
 ### Week 2: Embedding Service + Start AIAnalysis
 - [ ] Embedding Service MCP server
 - [ ] AIAnalysis controller (minimal)
-- [ ] HolmesGPT API client
+- [ ] Kubernaut Agent client
 - [ ] End-to-end integration test
 
 ### Week 3-6: LLM Testing and Refinement

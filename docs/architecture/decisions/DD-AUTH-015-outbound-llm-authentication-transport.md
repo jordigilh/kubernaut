@@ -45,7 +45,7 @@
 1. **Enterprise Gateway Authentication**: Production LLM endpoints sit behind API gateways (Azure APIM, Kong, Apigee, AWS API Gateway) or SSO-fronted proxies that require authentication headers.
 2. **IdP Integration**: Enterprises use Keycloak, Azure AD, Okta, or other OAuth2 providers for machine-to-machine authentication. KA must acquire JWTs via the client credentials grant without human interaction.
 3. **Provider Agnosticism**: The authentication mechanism must work with any LLM provider supported by LangChainGo — it operates at the HTTP transport layer, below the provider-specific SDK.
-4. **Credential Safety**: API keys, JWTs, and client secrets must never appear in logs, metrics, error messages, or LLM-bound prompt content (DD-HAPI-019-003, G4).
+4. **Credential Safety**: API keys, JWTs, and client secrets must never appear in logs, metrics, error messages, or LLM-bound prompt content (DD-KA-019-003, G4).
 5. **Zero Overhead When Disabled**: Deployments without enterprise gateways must not incur any authentication overhead.
 
 ### Problem Statement
@@ -234,7 +234,7 @@ This enables scenarios like:
 | Custom header `secretKeyRef` | K8s Secret (LLM credentials) | Env var or mounted file |
 | Custom header `filePath` | Pod filesystem | Sidecar-written file, re-read per request |
 
-### Credential Scrubbing (DD-HAPI-019-003, G4)
+### Credential Scrubbing (DD-KA-019-003, G4)
 
 - OAuth2 `client_secret` never appears in config YAML or logs — projected from Secret as env var
 - Custom header values from `secretKeyRef` and `filePath` sources are redacted as `[REDACTED]` in structured logs
@@ -445,7 +445,7 @@ Operators upgrading from v1.0 to v1.1:
 |----------|-------------|
 | [DD-AUTH-005](./DD-AUTH-005-datastorage-client-authentication-pattern.md) | Established the `http.RoundTripper` transport injection pattern — this DD extends it to outbound LLM calls |
 | [DD-AUTH-014](./DD-AUTH-014-middleware-based-sar-authentication.md) | Inbound SAR/TokenReview middleware for KA's own HTTP server (orthogonal) |
-| [DD-HAPI-019-003](./DD-HAPI-019-go-rewrite-design/DD-HAPI-019-003-security-architecture.md) | Prompt injection security + credential scrubbing (G4) |
+| [DD-KA-019-003](./DD-KA-019-go-rewrite-design/DD-KA-019-003-security-architecture.md) | Prompt injection security + credential scrubbing (G4) |
 | [TP-417 v1.2](../../tests/417/TEST_PLAN.md) | Test plan with 35 tests covering both authentication modes |
 | Issue #417 | Feature issue: custom authentication headers for LLM proxy endpoints |
 | RFC 6749 s4.4 | OAuth2 client credentials grant specification |

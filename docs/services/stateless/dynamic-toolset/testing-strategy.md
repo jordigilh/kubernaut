@@ -571,7 +571,7 @@ var _ = Describe("Service Health Validation", func() {
 Dynamic Toolset Service is a critical component in Kubernaut's **microservices architecture**, requiring extensive integration testing for:
 - **Kubernetes service discovery**: Real cluster service listing and watching
 - **ConfigMap reconciliation**: Controller reconciliation with real ConfigMap operations
-- **Cross-service integration**: HolmesGPT API polling ConfigMap changes
+- **Cross-service integration**: Kubernaut Agent (KA) polling ConfigMap changes
 - **Leader election**: Multi-replica coordination in real cluster
 
 **Per project spec** (`.cursor/rules/03-testing-strategy.mdc` line 72):
@@ -720,7 +720,7 @@ var _ = Describe("ConfigMap Reconciliation Integration", func() {
     It("should create ConfigMap if not exists", func() {
         req := reconcile.Request{
             NamespacedName: types.NamespacedName{
-                Name:      "holmesgpt-toolset",
+                Name:      "kubernaut-toolset-config",
                 Namespace: "kubernaut-system",
             },
         }
@@ -741,7 +741,7 @@ var _ = Describe("ConfigMap Reconciliation Integration", func() {
         // Create initial ConfigMap
         configMap := &corev1.ConfigMap{
             ObjectMeta: metav1.ObjectMeta{
-                Name:      "holmesgpt-toolset",
+                Name:      "kubernaut-toolset-config",
                 Namespace: "kubernaut-system",
             },
             Data: map[string]string{
@@ -754,7 +754,7 @@ var _ = Describe("ConfigMap Reconciliation Integration", func() {
         Expect(k8sClient.Delete(context.Background(), configMap)).To(Succeed())
 
         // Trigger reconciliation
-        req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "holmesgpt-toolset", Namespace: "kubernaut-system"}}
+        req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "kubernaut-toolset-config", Namespace: "kubernaut-system"}}
         _, err := reconciler.Reconcile(context.Background(), req)
 
         Expect(err).ToNot(HaveOccurred())
@@ -769,7 +769,7 @@ var _ = Describe("ConfigMap Reconciliation Integration", func() {
         // Create ConfigMap with manual overrides
         configMapWithOverrides := &corev1.ConfigMap{
             ObjectMeta: metav1.ObjectMeta{
-                Name:      "holmesgpt-toolset",
+                Name:      "kubernaut-toolset-config",
                 Namespace: "kubernaut-system",
             },
             Data: map[string]string{
@@ -786,7 +786,7 @@ overrides:
         Expect(k8sClient.Create(context.Background(), configMapWithOverrides)).To(Succeed())
 
         // Trigger reconciliation
-        req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "holmesgpt-toolset", Namespace: "kubernaut-system"}}
+        req := reconcile.Request{NamespacedName: types.NamespacedName{Name: "kubernaut-toolset-config", Namespace: "kubernaut-system"}}
         _, err := reconciler.Reconcile(context.Background(), req)
 
         Expect(err).ToNot(HaveOccurred())
@@ -818,8 +818,8 @@ import (
 )
 
 var _ = Describe("Cross-Service Integration", func() {
-    It("should provide toolset discovery endpoint for HolmesGPT API", func() {
-        // Simulate HolmesGPT API calling Dynamic Toolset Service
+    It("should provide toolset discovery endpoint for Kubernaut Agent", func() {
+        // Simulate Kubernaut Agent calling Dynamic Toolset Service
         headers := map[string]string{
             "Authorization": "Bearer <VALID_TOKEN>",
         }
@@ -902,17 +902,17 @@ var _ = Describe("E2E: Complete Service Discovery and Toolset Generation", func(
         Expect(toolset.Tools[0].Type).To(Equal("prometheus"))
 
         By("writing toolset to ConfigMap")
-        err = configMapWriter.WriteToolset(context.Background(), "kubernaut-system", "holmesgpt-toolset", toolset)
+        err = configMapWriter.WriteToolset(context.Background(), "kubernaut-system", "kubernaut-toolset-config", toolset)
         Expect(err).ToNot(HaveOccurred())
 
         By("verifying ConfigMap was created")
         configMap := &corev1.ConfigMap{}
-        err = k8sClient.Get(context.Background(), types.NamespacedName{Name: "holmesgpt-toolset", Namespace: "kubernaut-system"}, configMap)
+        err = k8sClient.Get(context.Background(), types.NamespacedName{Name: "kubernaut-toolset-config", Namespace: "kubernaut-system"}, configMap)
         Expect(err).ToNot(HaveOccurred())
         Expect(configMap.Data).To(HaveKey("toolset.yaml"))
 
-        By("verifying HolmesGPT API can read toolset")
-        response, err := holmesGPTClient.LoadToolsetFromConfigMap()
+        By("verifying Kubernaut Agent can read toolset")
+        response, err := kubernautAgentClient.LoadToolsetFromConfigMap()
         Expect(err).ToNot(HaveOccurred())
         Expect(response.Tools).To(HaveLen(1))
     })
@@ -1014,7 +1014,7 @@ flowchart TD
     Question3 -->|No| Integration
 
     Unit --> Validate1[✅ Use Unit Test]
-    Integration --> Validate2{Complete service<br/>discovery + ConfigMap<br/>+ HolmesGPT read<br/>pipeline?}
+    Integration --> Validate2{Complete service<br/>discovery + ConfigMap<br/>+ Kubernaut Agent read<br/>pipeline?}
 
     Validate2 -->|Yes| E2E[E2E Test]
     Validate2 -->|No| Validate3[✅ Use Integration Test]
@@ -1061,14 +1061,14 @@ flowchart TD
 
 ### Move to E2E Level WHEN
 
-- ✅ Testing **complete service discovery pipeline** (K8s services → discovery → health check → ConfigMap → HolmesGPT)
-- ✅ Validating **end-to-end toolset lifecycle** (all services + real K8s + ConfigMap + HolmesGPT read)
+- ✅ Testing **complete service discovery pipeline** (K8s services → discovery → health check → ConfigMap → Kubernaut Agent)
+- ✅ Validating **end-to-end toolset lifecycle** (all services + real K8s + ConfigMap + Kubernaut Agent read)
 - ✅ Lower-level tests **cannot reproduce full integration** (discovery + validation + persistence + consumption)
 
 **Dynamic Toolset E2E Test Examples**:
-- Complete service discovery flow (K8s service deployed → Dynamic Toolset discovers → HolmesGPT loads)
+- Complete service discovery flow (K8s service deployed → Dynamic Toolset discovers → Kubernaut Agent loads)
 - Multi-service discovery orchestration (Prometheus + Grafana + Jaeger discovered simultaneously)
-- End-to-end toolset lifecycle (service added → discovered → ConfigMap created → HolmesGPT reads → service used)
+- End-to-end toolset lifecycle (service added → discovered → ConfigMap created → Kubernaut Agent reads → service used)
 
 ---
 
@@ -1451,7 +1451,7 @@ var _ = Describe("Integration: ConfigMap Reconciliation", func() {
 // ✅ GOOD: Each level tests distinct aspect
 // Unit test: Service label filtering correctness
 // Integration test: Service label filtering + ConfigMap reconciliation
-// E2E test: Service filtering + ConfigMap + HolmesGPT consumption
+// E2E test: Service filtering + ConfigMap + Kubernaut Agent consumption
 // Each level adds unique discovery value
 ```
 

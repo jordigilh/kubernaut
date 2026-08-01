@@ -169,7 +169,7 @@ Notification (`BR-NOT-055`). **KA does not call this fallback path** (see Compon
 `injection.go`)
 
 ```go
-// Pipeline chains sanitization stages in order (G4 -> I1 per DD-HAPI-019-003).
+// Pipeline chains sanitization stages in order (G4 -> I1 per DD-KA-019-003).
 type Stage interface {
     Name() string
     Sanitize(ctx context.Context, input string) (string, error)
@@ -187,7 +187,7 @@ Three stages, each independently configurable:
 2. **`SecretSanitizer` (K8S-SECRET)** — narrowly parses tool output as `map[string]json.RawMessage`
    to redact `data`/`stringData` fields of K8s `Secret`/`SecretList` shapes.
 3. **`InjectionSanitizer` (I1)** — strips prompt-injection phrases (unrelated to credentials; shared
-   pipeline slot per `DD-HAPI-019-003`).
+   pipeline slot per `DD-KA-019-003`).
 
 `CredentialSanitizer.Sanitize` calls the underlying library's plain `Sanitize(input)` — **not**
 `SanitizeWithFallback` — and always returns a `nil` error from the regex path itself.
@@ -283,7 +283,7 @@ grep -r "password=\|secret:\|Bearer " audit_events.json
 | Document | Relationship |
 |----------|--------------|
 | [BR-KA-211](../../requirements/BR-KA-211-llm-input-sanitization.md) | Business requirement |
-| [DD-HAPI-019-003](DD-HAPI-019-go-rewrite-design/DD-HAPI-019-003-security-architecture.md) | Go rewrite security architecture (G4/I1 pipeline design authority) |
+| [DD-KA-019-003](DD-KA-019-go-rewrite-design/DD-KA-019-003-security-architecture.md) | Go rewrite security architecture (G4/I1 pipeline design authority) |
 | [DD-KA-003](DD-KA-003-mandatory-openapi-client-usage.md) | Unrelated — OpenAPI client pristine-ness (previously mis-cited alongside this DD in `DD-AUTH-005`, corrected) |
 | `pkg/shared/sanitization/` | Shared Go pattern library (also used by Gateway `BR-GATEWAY-042`, Notification `BR-NOT-055`) |
 | `pkg/kubernautagent/tools/sanitization/` | KA-specific pipeline stages |

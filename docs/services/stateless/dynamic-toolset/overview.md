@@ -24,10 +24,10 @@
 
 ### Core Purpose
 
-Dynamic Toolset Service is the **intelligent service discovery** engine for HolmesGPT investigations. It provides:
+Dynamic Toolset Service is the **intelligent service discovery** engine for Kubernaut Agent (KA) investigations. It provides:
 
 1. **Automatic service discovery** in Kubernetes cluster
-2. **Toolset configuration generation** for HolmesGPT SDK
+2. **Toolset configuration generation** for Kubernaut Agent SDK
 3. **ConfigMap reconciliation** to prevent drift and deletion
 4. **Health validation** for discovered services
 5. **Manual override support** for admin-configured toolsets
@@ -35,14 +35,14 @@ Dynamic Toolset Service is the **intelligent service discovery** engine for Holm
 ### Why Dynamic Toolset Service Exists
 
 **Problem**: Without Dynamic Toolset Service, operators would need to:
-- **Manually configure** every toolset in HolmesGPT
+- **Manually configure** every toolset in Kubernaut Agent
 - **Update configuration** every time a service is added/removed
 - **Track service endpoints** across namespace changes
 - **Validate service health** before investigations
 
 **Solution**: Dynamic Toolset Service provides **automatic discovery** that:
 - ✅ Discovers Prometheus, Grafana, Jaeger, Elasticsearch automatically
-- ✅ Generates HolmesGPT toolset configurations dynamically
+- ✅ Generates Kubernaut Agent toolset configurations dynamically
 - ✅ Validates service health before including in toolsets
 - ✅ Reconciles ConfigMap to prevent accidental deletion or drift
 - ✅ Preserves manual overrides in `overrides` section
@@ -56,7 +56,7 @@ Dynamic Toolset Service is the **intelligent service discovery** engine for Holm
 - **Type**: Hybrid (HTTP API + Kubernetes Controller)
 - **Deployment**: Kubernetes Deployment with 1-2 replicas (leader election)
 - **State Management**: ConfigMap-based (no database)
-- **Integration Pattern**: Service Watch → Discovery → ConfigMap Write → HolmesGPT API polls
+- **Integration Pattern**: Service Watch → Discovery → ConfigMap Write → Kubernaut Agent polls
 
 ### Component Architecture
 
@@ -109,7 +109,7 @@ Dynamic Toolset Service is the **intelligent service discovery** engine for Holm
                                                   │ Volume mount
                                                   ▼
                                          ┌─────────────────┐
-                                         │HolmesGPT API    │
+                                         │Kubernaut Agent  │
                                          │(file polling)   │
                                          └─────────────────┘
 ```
@@ -123,7 +123,7 @@ sequenceDiagram
     participant K8s as Kubernetes API
     participant DTS as Dynamic Toolset Service
     participant CM as ConfigMap
-    participant HG as HolmesGPT API
+    participant HG as Kubernaut Agent
 
     loop Every 5 minutes (discovery)
         DTS->>K8s: List Services with annotations
@@ -242,7 +242,7 @@ func (d *Detector) HealthCheck(ctx context.Context, endpoint string) error {
 ### 3. Toolset Configuration Generation
 
 **Input**: Validated services
-**Processing**: Generate HolmesGPT toolset YAML
+**Processing**: Generate Kubernaut Agent toolset YAML
 **Output**: ConfigMap data
 
 **Example Output**:
@@ -388,12 +388,12 @@ data:
 
 ---
 
-### Decision 2: File-Based ConfigMap Polling (HolmesGPT API)
+### Decision 2: File-Based ConfigMap Polling (Kubernaut Agent)
 
-**Decision**: HolmesGPT API polls **mounted ConfigMap file** instead of Kubernetes API watch
+**Decision**: Kubernaut Agent polls **mounted ConfigMap file** instead of Kubernetes API watch
 
 **Rationale**:
-- **Simpler**: No Kubernetes client library in HolmesGPT API
+- **Simpler**: No Kubernetes client library in Kubernaut Agent
 - **No RBAC**: No ConfigMap read permissions needed
 - **Efficient**: File system notifications (inotify) trigger reload
 - **Acceptable Latency**: 60-120 seconds total latency for toolset changes
@@ -404,7 +404,7 @@ data:
 - ✅ **File-Based**: Simple, efficient, standard Kubernetes pattern
 
 **Implications**:
-- ✅ HolmesGPT API requires no Kubernetes API access
+- ✅ Kubernaut Agent requires no Kubernetes API access
 - ✅ ConfigMap changes reflect in 60-120 seconds (kubelet sync + file poll)
 - ✅ Standard Kubernetes volume mount pattern
 
@@ -416,7 +416,7 @@ data:
 
 **Rationale**:
 - **Simplicity**: ConfigMap is built-in, no CRD installation
-- **Volume Mount**: Direct volume mount to HolmesGPT API pod
+- **Volume Mount**: Direct volume mount to Kubernaut Agent pod
 - **Admin Editable**: Admins can manually edit ConfigMap with `kubectl edit`
 - **Reconciliation**: Protects against accidental deletion
 
@@ -526,7 +526,7 @@ graph TB
 
         DTS[Dynamic Toolset Service]
         CM[ConfigMap<br/>kubernaut-toolset-config]
-        HG[HolmesGPT API]
+        HG[Kubernaut Agent]
 
         K8S[Kubernetes API]
     end
@@ -542,7 +542,7 @@ graph TB
     DTS -->|Write/Reconcile| CM
     DTS -->|Watch| CM
 
-    %% HolmesGPT Integration
+    %% Kubernaut Agent Integration
     CM -->|Volume Mount| HG
     HG -->|Poll File| CM
 
@@ -659,7 +659,7 @@ kubectl auth can-i list services \
 
 **Impact**:
 - No services added to ConfigMap
-- HolmesGPT has no toolsets available
+- Kubernaut Agent has no toolsets available
 - Investigations cannot proceed
 
 **Recovery**:
@@ -696,7 +696,7 @@ kubectl set env deployment/dynamic-toolset \
 
 **Impact**:
 - Some toolsets available, others missing
-- HolmesGPT investigations have limited capabilities
+- Kubernaut Agent investigations have limited capabilities
 
 **Diagnosis**:
 ```bash
@@ -726,7 +726,7 @@ kubectl annotate svc grafana -n monitoring \
 ```
 
 **Impact**:
-- HolmesGPT loses all toolset configuration
+- Kubernaut Agent loses all toolset configuration
 - Investigations stop working
 
 **Automatic Recovery**:
@@ -951,7 +951,7 @@ metadata:
 │  │ generates: ConfigMap A     │  │
 │  └────────────────────────────┘  │
 │  ┌────────────────────────────┐  │
-│  │ HolmesGPT API reads       │  │
+│  │ Kubernaut Agent reads     │  │
 │  │ ConfigMap A               │  │
 │  └────────────────────────────┘  │
 └──────────────────────────────────┘
@@ -964,7 +964,7 @@ metadata:
 │  │ generates: ConfigMap B     │  │
 │  └────────────────────────────┘  │
 │  ┌────────────────────────────┐  │
-│  │ HolmesGPT API reads       │  │
+│  │ Kubernaut Agent reads     │  │
 │  │ ConfigMap B               │  │
 │  └────────────────────────────┘  │
 └──────────────────────────────────┘
@@ -974,7 +974,7 @@ metadata:
 1. Deploy service in each cluster independently
 2. Each service discovers its own cluster's services
 3. Each ConfigMap is cluster-specific
-4. HolmesGPT API in each cluster reads local ConfigMap
+4. Kubernaut Agent in each cluster reads local ConfigMap
 
 **Benefits**:
 - ✅ Cluster isolation (failure in one doesn't affect others)
@@ -984,7 +984,7 @@ metadata:
 
 **Limitations**:
 - No global service discovery
-- Each cluster's HolmesGPT only knows about local services
+- Each cluster's Kubernaut Agent only knows about local services
 - Manual aggregation required for cross-cluster investigations
 
 **V2 Consideration**: Federated discovery with centralized ConfigMap aggregation
@@ -1086,7 +1086,7 @@ resources:
 
 ### Architecture References
 - [Dynamic Toolset Configuration Architecture](../../../../architecture/DYNAMIC_TOOLSET_CONFIGURATION_ARCHITECTURE.md) - Complete architecture
-- [HolmesGPT API Overview](../kubernaut-agent/overview.md) - Consumer of toolsets
+- [Kubernaut Agent Overview](../kubernaut-agent/overview.md) - Consumer of toolsets
 - [Service Dependency Map](../../../../architecture/SERVICE_DEPENDENCY_MAP.md)
 
 ---

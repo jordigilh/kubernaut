@@ -152,7 +152,7 @@ func buildGeminiNativeClient(cfg types.LLMConfig) (llm.Client, error) {
 
 // geminiReasoningOptions maps the operator's ai.llm.reasoning config into a
 // geminifamily.WithReasoning construction option, mirroring
-// anthropicReasoningOptions (DD-HAPI-019, llm.ReasoningRequest doc
+// anthropicReasoningOptions (DD-KA-019, llm.ReasoningRequest doc
 // contract).
 func geminiReasoningOptions(cfg types.LLMConfig) []geminifamily.Option {
 	if cfg.Reasoning == nil || !cfg.Reasoning.Enabled {
@@ -192,7 +192,7 @@ func buildAnthropicNativeClient(cfg types.LLMConfig) (llm.Client, error) {
 // anthropicReasoningOptions maps the operator's ai.llm.reasoning config into
 // an anthropicfamily.WithReasoning construction option, resolved once here
 // rather than threaded per-call from investigator business logic
-// (DD-HAPI-019, llm.ReasoningRequest doc contract).
+// (DD-KA-019, llm.ReasoningRequest doc contract).
 //
 // #1578 wiring-gap fix: before this, cfg.Reasoning.Enabled/BudgetTokens were
 // parsed and validated but never read anywhere in this file (only
@@ -258,7 +258,7 @@ func buildOpenAICompatClient(cfg types.LLMConfig) (llm.Client, error) {
 // openaiReasoningOptions maps the operator's ai.llm.reasoning.effort config
 // into a kaopenai.WithReasoning construction option (#1604), resolved once
 // here rather than threaded per-call from investigator business logic
-// (DD-HAPI-019), mirroring anthropicReasoningOptions above. Unlike that
+// (DD-KA-019), mirroring anthropicReasoningOptions above. Unlike that
 // function, BudgetTokens is not passed through: it has no
 // OpenAI-Chat-Completions wire equivalent.
 func openaiReasoningOptions(cfg types.LLMConfig) []kaopenai.Option {

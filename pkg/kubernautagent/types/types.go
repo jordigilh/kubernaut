@@ -23,7 +23,7 @@ import (
 )
 
 // Phase represents a stage in the investigation flow.
-// Per DD-HAPI-019-002: RCA uses K8s+Prom tools, Discovery uses workflow tools,
+// Per DD-KA-019-002: RCA uses K8s+Prom tools, Discovery uses workflow tools,
 // Validation uses no tools (I4 per-phase tool scoping).
 type Phase string
 

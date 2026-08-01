@@ -11,7 +11,7 @@
 - ~~[DD-EFFECTIVENESS-003](DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md)~~ — Watch strategy (**fully superseded** by EA CRD trigger in v1.1; EM watches EA CRDs, not RR CRDs)
 - [DD-EM-002 v1.1](DD-EM-002-canonical-spec-hash.md) — Canonical spec hashing and Spec Drift Guard
 - [DD-CRD-002-EA](DD-CRD-002-effectivenessassessment-conditions.md) — Kubernetes Conditions for EffectivenessAssessment CRD
-- [DD-HAPI-016](DD-HAPI-016-remediation-history-context.md) — Remediation history context enrichment (depends on EM data)
+- [DD-KA-016](DD-KA-016-remediation-history-context.md) — Remediation history context enrichment (depends on EM data)
 - [DD-WORKFLOW-017](DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) — Workflow lifecycle component interactions (Phase 2: Discovery is where EM effectiveness data feeds back into LLM decisions)
 - [DD-EVENT-001](../../services/crd-controllers/DD-EVENT-001-controller-event-registry.md) — Controller Kubernetes Event Registry
 - DD-AUDIT-CORRELATION-002 — Correlation ID convention (`RR.Name`)
@@ -46,25 +46,25 @@
 
 Kubernaut's remediation pipeline flows through eight services — from signal ingestion through AI analysis to workflow execution and notification. After a remediation completes, **no service currently assesses whether it actually improved the situation**. Operators have no automated way to know if a remediation resolved the triggering alert, improved resource health, or inadvertently caused side effects.
 
-More critically, this gap breaks the **remediation feedback loop**. During Phase 2 of the workflow lifecycle ([DD-WORKFLOW-017](DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md)), HAPI enriches the LLM prompt with historical remediation context for the target resource ([DD-HAPI-016](DD-HAPI-016-remediation-history-context.md)) — previous RRs, what workflows were executed, and their outcomes. Without the EM, the "outcome" field is empty. The LLM has no way to know whether a previously applied workflow was effective, meaning it may recommend the same ineffective remediation repeatedly.
+More critically, this gap breaks the **remediation feedback loop**. During Phase 2 of the workflow lifecycle ([DD-WORKFLOW-017](DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md)), KA enriches the LLM prompt with historical remediation context for the target resource ([DD-KA-016](DD-KA-016-remediation-history-context.md)) — previous RRs, what workflows were executed, and their outcomes. Without the EM, the "outcome" field is empty. The LLM has no way to know whether a previously applied workflow was effective, meaning it may recommend the same ineffective remediation repeatedly.
 
 The Effectiveness Monitor (EM) fills this gap as the **final service in the remediation chain**, closing the feedback loop:
 
 ```
-Signal → SP → RO → AA → HAPI/LLM → WFE → Notification
+Signal → SP → RO → AA → KA/LLM → WFE → Notification
                                 ↑                    ↓
                                 │              EM Assessment
                                 │                    ↓
-                                └── DS (effectiveness data) ──→ HAPI prompt enrichment
+                                └── DS (effectiveness data) ──→ KA prompt enrichment
                                     (remediation history with outcomes)
 ```
 
-The EM watches for completed remediations, waits for the system to stabilize, then performs deterministic automated checks (health, metrics, alert resolution, spec hash comparison) to produce an effectiveness score. This score is stored as an audit event in DataStorage, where it becomes available to HAPI when building remediation history context for the same target resource.
+The EM watches for completed remediations, waits for the system to stabilize, then performs deterministic automated checks (health, metrics, alert resolution, spec hash comparison) to produce an effectiveness score. This score is stored as an audit event in DataStorage, where it becomes available to KA when building remediation history context for the same target resource.
 
 ### Scope
 
 - **In scope**: Level 1 automated assessment (V1.0) — deterministic health checks, metric comparison, scoring, audit emission
-- **Out of scope**: Level 2 AI-powered analysis (V1.1 — HolmesGPT PostExec), DD-HAPI-016 remediation history endpoint implementation (separate work item, joint effort with the Workflow Team per DD-WORKFLOW-017)
+- **Out of scope**: Level 2 AI-powered analysis (V1.1 — HolmesGPT PostExec), DD-KA-016 remediation history endpoint implementation (separate work item, joint effort with the Workflow Team per DD-WORKFLOW-017)
 
 ### Design Principles
 
@@ -72,7 +72,7 @@ The EM watches for completed remediations, waits for the system to stabilize, th
 2. **RO-managed lifecycle**: The Remediation Orchestrator creates the `EffectivenessAssessment` CRD — the same pattern used for AIAnalysis, WorkflowExecution, and NotificationRequest. The RO is the single lifecycle owner for all remediation sub-resources. The EA spec contains only `stabilizationWindow` (the desired wait time before assessment); the RO sets this when creating the EA. As with the other CRDs, the spec is **immutable after creation** via CEL validation (`self == oldSelf`), enforced by the Kubernetes API server. This prevents tampering — any attempt to modify the EA spec after creation is rejected by the API server, guaranteeing the EM always operates on the original spec set by the RO.
 3. **Deterministic outcomes**: No graceful degradation for Prometheus or AlertManager. If configured as enabled but unreachable, EM fails to start (DD-017 v2.1).
 4. **Idempotent assessment**: The EA CRD spec is immutable (CEL: `self == oldSelf`), and the EA status tracks assessment progress. Duplicate EM reconciles check `status.phase` and `status.components` before proceeding. DS deduplicates component audit events by correlation ID + event type.
-5. **EM collects, DS scores**: The EM is a **data collector** — it performs checks and emits individual component audit events (`effectiveness.health.assessed`, `effectiveness.alert.assessed`, `effectiveness.metrics.assessed`, `effectiveness.hash.computed`). Each component event carries both a human-readable `details` string (for logs/debugging) and a **typed sub-object** (`health_checks`, `metric_deltas`, `alert_resolution`) with structured assessment data that downstream consumers (DS, HAPI) can extract without string parsing. **DS computes the weighted effectiveness score on demand** when queried, using whatever component events exist for a given correlation ID. This separation allows the scoring formula to evolve without re-emitting events, and the typed sub-objects allow consumers to populate structured response fields (e.g., DD-HAPI-016 `RemediationHealthChecks`, `RemediationMetricDeltas`) directly from the ogen-typed payload.
+5. **EM collects, DS scores**: The EM is a **data collector** — it performs checks and emits individual component audit events (`effectiveness.health.assessed`, `effectiveness.alert.assessed`, `effectiveness.metrics.assessed`, `effectiveness.hash.computed`). Each component event carries both a human-readable `details` string (for logs/debugging) and a **typed sub-object** (`health_checks`, `metric_deltas`, `alert_resolution`) with structured assessment data that downstream consumers (DS, KA) can extract without string parsing. **DS computes the weighted effectiveness score on demand** when queried, using whatever component events exist for a given correlation ID. This separation allows the scoring formula to evolve without re-emitting events, and the typed sub-objects allow consumers to populate structured response fields (e.g., DD-KA-016 `RemediationHealthChecks`, `RemediationMetricDeltas`) directly from the ogen-typed payload.
 6. **Assessment validity window**: Component data is only meaningful within a bounded time after remediation. If the EM cannot assess a component within the `validityWindow` (default 30m), it marks the EA as expired rather than collecting misleading data that may reflect system drift or subsequent remediations.
 7. **Derived timing in status**: The EM computes all timing-derived fields (`validityDeadline`, `prometheusCheckAfter`, `alertManagerCheckAfter`) on first reconciliation and persists them in EA status. This follows K8s spec/status convention (RO sets spec, EM computes status), avoids redundant recomputation, prevents StabilizationWindow > ValidityDeadline misconfiguration, and provides operator observability.
 8. **SOC2 chain of custody**: Every hop in the remediation chain emits an audit event capturing what it decided/applied, enabling end-to-end traceability.
@@ -150,7 +150,7 @@ sequenceDiagram
     participant SP as SignalProcessing
     participant RO as RemediationOrchestrator
     participant AA as AIAnalysis
-    participant HAPI as HolmesGPT API
+    participant KA as Kubernaut Agent (KA)
     participant WFE as WorkflowExecution
     participant NOT as Notification
     participant EA as EffectivenessAssessment CRD
@@ -175,11 +175,11 @@ sequenceDiagram
     RO->>DS: audit: orchestrator.lifecycle.created
     RO->>AA: Create AIAnalysis CRD
 
-    Note over AA,HAPI: Phase 4 — AI Investigation
-    AA->>HAPI: Submit investigation (async session)
-    HAPI->>HAPI: LLM analysis + workflow selection + validation
-    HAPI->>DS: audit: aiagent.response.complete
-    AA->>HAPI: Poll session / get result
+    Note over AA,KA: Phase 4 — AI Investigation
+    AA->>KA: Submit investigation (async session)
+    KA->>KA: LLM analysis + workflow selection + validation
+    KA->>DS: audit: aiagent.response.complete
+    AA->>KA: Poll session / get result
     AA->>DS: audit: aianalysis.analysis.completed
 
     Note over RO,WFE: Phase 5 — Execution
@@ -636,7 +636,7 @@ flowchart LR
 
 ### Parameter Traceability
 
-The AA controller performs type normalization (`map[string]interface{}` to `map[string]string` via JSON marshaling) when extracting parameters from the HAPI response. This means:
+The AA controller performs type normalization (`map[string]interface{}` to `map[string]string` via JSON marshaling) when extracting parameters from the KA response. This means:
 
 | Event | Parameter Format | Example | Role |
 |-------|-----------------|---------|------|
@@ -682,7 +682,7 @@ gantt
 
     section Next Remediation
     Cooldown Expires                    :milestone, expire, 300, 300
-    HAPI Queries DS for Score           :crit, query, 301, 1800
+    KA Queries DS for Score           :crit, query, 301, 1800
 ```
 
 ### Critical Invariant
@@ -697,7 +697,7 @@ T+0-5m:   RO cooldown active → new RRs for same target BLOCKED
 T+5m:     EM stabilization elapsed → health, alert, hash assessed immediately
            → component events emitted to DS (health, alert, hash)
 T+5m:     Cooldown expires → if signal fires again, new RR is allowed
-T+5m+:    HAPI queries DS → DS computes partial score from available components
+T+5m+:    KA queries DS → DS computes partial score from available components
 T+5m-30m: EM waits for Prometheus metrics (requeues on scrapeInterval)
            → effectiveness.metrics.assessed emitted when data arrives
            → DS recomputes score with all four components on next query
@@ -712,7 +712,7 @@ T+30m:    Validity window expires — if EM hasn't started, EA marked as expired
 2. **Validity ≥ Stabilization + longest scrape interval**: The validity window (default 30m) must accommodate the Prometheus scrape interval. For a 15m scrape interval: 5m stabilization + 15m wait + buffer = 30m.
 3. **Validity is an upper bound, not a target**: Most assessments complete within 5-10m. The 30m window only matters when Prometheus is slow or the EM pod was disrupted.
 
-> **Design choice**: Component events arrive incrementally. DS computes the score from whatever is available at query time — early queries get a partial score (health + alert), later queries get the full score (health + alert + metrics). This means HAPI may see different scores at different times for the same remediation, which is correct behavior: the score improves in accuracy as more data arrives.
+> **Design choice**: Component events arrive incrementally. DS computes the score from whatever is available at query time — early queries get a partial score (health + alert), later queries get the full score (health + alert + metrics). This means KA may see different scores at different times for the same remediation, which is correct behavior: the score improves in accuracy as more data arrives.
 
 ---
 
@@ -1120,8 +1120,8 @@ Events WRITTEN by EM (consumed by DS for scoring):
 - **Async metrics with incremental scoring**: EM does not block on slow Prometheus scrapes. Health and alert data are available immediately; metrics follow asynchronously. DS computes progressively more accurate scores as component events arrive.
 - **Evolvable scoring**: The scoring formula lives in DS, not EM. Formula changes (weights, new components) don't require re-emitting events or redeploying EM.
 - **Minimal coupling**: EM connects to DS (already deployed), K8s API (always available), and optionally Prometheus/AlertManager. No new infrastructure required.
-- **DD-HAPI-016 enablement**: Once EM is operational, DS has the data needed for the remediation history context endpoint.
-- **Closes the remediation feedback loop**: The LLM can now learn from past outcomes. When DD-WORKFLOW-017 Phase 2 (Discovery) runs for a repeat signal on the same target, HAPI can include "workflow X was applied with score 0.3 — try a different approach" in the prompt context. This prevents the LLM from recommending the same ineffective remediation repeatedly.
+- **DD-KA-016 enablement**: Once EM is operational, DS has the data needed for the remediation history context endpoint.
+- **Closes the remediation feedback loop**: The LLM can now learn from past outcomes. When DD-WORKFLOW-017 Phase 2 (Discovery) runs for a repeat signal on the same target, KA can include "workflow X was applied with score 0.3 — try a different approach" in the prompt context. This prevents the LLM from recommending the same ineffective remediation repeatedly.
 - **Validity window prevents stale data**: The 30m validity window guarantees assessment data is fresh and reflects this remediation, not subsequent system drift.
 
 ### Negative
@@ -1171,7 +1171,7 @@ The following items were specified in this ADR and tracked across batches. Items
 | `EventReasonEffectivenessAssessmentCreated` never emitted | RO | Constant in `reasons.go` but `Recorder.Event` never called; EA creation not observable via `kubectl describe` | **FIXED (Batch 2)**: `EventRecorder` added to EA creator |
 | `no_execution` reconciliation path not implemented | EM | EAs for failed-before-execution RRs produce misleading scores | **FIXED (Batch 2)**: Guard added before Step 7 component checks |
 | StabilizationWindow default 30s vs ADR 5m | RO | Config drift from specification | **FIXED (Batch 2)**: Default changed to `5 * time.Minute` |
-| `workflow_type` missing from `remediation.workflow_created` payload | RO | DS remediation history has empty `workflowType` | **FIXED (Batch 2)**: `action_type` flows end-to-end HAPI→AA→RO |
+| `workflow_type` missing from `remediation.workflow_created` payload | RO | DS remediation history has empty `workflowType` | **FIXED (Batch 2)**: `action_type` flows end-to-end KA→AA→RO |
 
 ---
 
@@ -1198,7 +1198,7 @@ Before approving this ADR for TDD implementation:
 - [ ] All sequence diagrams accurately reflect the current service interactions
 - [ ] The EA CRD lifecycle is complete: Sync (Pending → Stabilizing → Assessing → Completed/Failed), Async (Pending → WaitingForPropagation → Stabilizing → Assessing → Completed/Failed), Skip-stabilization (Pending → Assessing when StabilizationWindow == 0)
 - [ ] The RO-creates-EA pattern is consistent with AA/WFE/NR patterns
-- [ ] The audit event data models contain all fields needed by DD-HAPI-016
+- [ ] The audit event data models contain all fields needed by DD-KA-016
 - [ ] The scoring formula and weight redistribution logic is correct (V1.0: 3 scored components, no side-effects)
 - [ ] DS on-demand score computation is well-defined (base weights, redistribution)
 - [ ] The timing invariant (stabilization <= cooldown) is correctly documented

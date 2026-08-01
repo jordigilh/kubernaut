@@ -21,7 +21,7 @@ limitations under the License.
 // reimplementing Gemini's request/response/tool/reasoning protocol
 // in-house or depending on Google ADK's model/gemini (rejected in
 // DD-LLM-010 for transitively coupling KA to ADK's agent/session/tool
-// framework, violating DD-HAPI-019's Framework Isolation Pattern).
+// framework, violating DD-KA-019's Framework Isolation Pattern).
 //
 // No eino type is ever exposed outside this package — Chat/StreamChat
 // translate to/from KA's own llm.ChatRequest/ChatResponse/Message types at
@@ -106,7 +106,7 @@ func WithHTTPOptions(opts genai.HTTPOptions) Option {
 
 // WithReasoning resolves the operator's reasoning/thinking configuration
 // ONCE at client-construction time, per llm.ReasoningRequest's documented
-// contract (DD-HAPI-019). Mirrors anthropicfamily.WithReasoning.
+// contract (DD-KA-019). Mirrors anthropicfamily.WithReasoning.
 func WithReasoning(r llm.ReasoningRequest) Option {
 	return func(o *clientOpts) { o.defaultReasoning = &r }
 }

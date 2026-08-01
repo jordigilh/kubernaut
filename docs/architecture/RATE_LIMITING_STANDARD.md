@@ -25,20 +25,20 @@
 | **Gateway** | 100 req/s per source | 1000 req/s | 150 | High ingestion volume |
 | **Context API** | 50 req/s per client | 1000 req/s | 75 | Read-heavy queries |
 | **Data Storage** | 20 writes/s per client | 500 writes/s | 30 | Write operations expensive |
-| **HolmesGPT API** | **5 investigations/min** | 10 investigations/min | N/A | **LLM cost protection** |
+| **Kubernaut Agent** | **5 investigations/min** | 10 investigations/min | N/A | **LLM cost protection** |
 | **Notification** | 10 req/s per client | 100 req/s | 15 | External API limits |
 | **Dynamic Toolset** | 10 req/s per client | 100 req/s | 15 | Low traffic service |
 
 ---
 
-## 🔴 **Critical: HolmesGPT API Rate Limiting**
+## 🔴 **Critical: Kubernaut Agent Rate Limiting**
 
 ### **Problem Identified**
-HolmesGPT API has **NO rate limiting** specified → Risk of **LLM cost explosion**
+Kubernaut Agent (KA) has **NO rate limiting** specified → Risk of **LLM cost explosion**
 
 ### **Solution**
 ```go
-// pkg/holmesgpt/middleware/rate_limit.go
+// pkg/kubernautagent/middleware/rate_limit.go
 package middleware
 
 import (
@@ -151,8 +151,8 @@ func (rl *InvestigationRateLimiter) Limit(next http.Handler) http.Handler {
 
 **Critical Metrics**:
 ```
-holmesgpt_rate_limit_exceeded_total{client="ai-analysis-sa"} 5
-holmesgpt_llm_cost_usd_total{client="ai-analysis-sa"} 12.50
+kubernautagent_rate_limit_exceeded_total{client="ai-analysis-sa"} 5
+kubernautagent_llm_cost_usd_total{client="ai-analysis-sa"} 12.50
 ```
 
 ---
@@ -348,7 +348,7 @@ datastorage_write_rate_limit_exceeded_total{client="workflow-execution-sa"} 3
 
 ---
 
-### **4. HolmesGPT API Service** (CRITICAL)
+### **4. Kubernaut Agent Service** (CRITICAL)
 
 **Strategy**: Investigation-specific rate limiting
 
@@ -367,8 +367,8 @@ investigationLimiter := NewInvestigationRateLimiter(logger)
 
 **Metrics**:
 ```
-holmesgpt_rate_limit_exceeded_total{client="ai-analysis-sa"} 12
-holmesgpt_llm_cost_prevented_usd{client="ai-analysis-sa"} 15.00
+kubernautagent_rate_limit_exceeded_total{client="ai-analysis-sa"} 12
+kubernautagent_llm_cost_prevented_usd{client="ai-analysis-sa"} 15.00
 ```
 
 ---
@@ -446,14 +446,14 @@ globalLimiter := NewGlobalRateLimiter(100, 150)
     summary: "High rate limit exceeded rate for {{ $labels.service }}"
     description: "Client {{ $labels.client }} is exceeding rate limits frequently"
 
-- alert: HolmesGPTCostRisk
-  expr: rate(holmesgpt_llm_cost_usd_total[1h]) > 50
+- alert: KubernautAgentCostRisk
+  expr: rate(kubernautagent_llm_cost_usd_total[1h]) > 50
   for: 10m
   labels:
     severity: critical
     priority: P0
   annotations:
-    summary: "HolmesGPT LLM cost exceeding $50/hour"
+    summary: "Kubernaut Agent LLM cost exceeding $50/hour"
     description: "Potential cost explosion detected"
 ```
 

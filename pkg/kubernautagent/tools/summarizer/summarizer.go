@@ -27,7 +27,7 @@ import (
 )
 
 // Summarizer uses a secondary LLM call to shorten tool output that exceeds
-// a configurable threshold. Per DD-HAPI-019-002: llm_summarize transformer.
+// a configurable threshold. Per DD-KA-019-002: llm_summarize transformer.
 type Summarizer struct {
 	llmClient    llm.Client
 	threshold    int

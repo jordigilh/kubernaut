@@ -11,7 +11,7 @@
 
 This service is **DEFERRED to V2.0** per Design Decision [DD-016](../../../architecture/decisions/DD-016-dynamic-toolset-v2-deferral.md).
 
-**Rationale**: V1.x only requires Prometheus integration, which HolmesGPT-API already handles with built-in service discovery logic. Dynamic Toolset Service will **become relevant in V2.0** when expanding HolmesGPT-API to identify multiple observability services (Grafana, Jaeger, Elasticsearch, custom services).
+**Rationale**: V1.x only requires Prometheus integration, which Kubernaut Agent (KA) already handles with built-in service discovery logic. Dynamic Toolset Service will **become relevant in V2.0** when expanding Kubernaut Agent to identify multiple observability services (Grafana, Jaeger, Elasticsearch, custom services).
 
 **Status**:
 - ✅ Code and tests **PRESERVED** in repository for V2.0
@@ -29,13 +29,13 @@ This service is **DEFERRED to V2.0** per Design Decision [DD-016](../../../archi
 
 ## 🎯 Executive Summary
 
-The **Dynamic Toolset Service** was designed to automatically discover Kubernetes services (Prometheus, Grafana, Jaeger, Elasticsearch, custom) and generate HolmesGPT-compatible toolset ConfigMaps.
+The **Dynamic Toolset Service** was designed to automatically discover Kubernetes services (Prometheus, Grafana, Jaeger, Elasticsearch, custom) and generate Kubernaut Agent-compatible toolset ConfigMaps.
 
 **V2.0 Deferral Summary**:
 - 🚫 **DEFERRED TO V2.0** per [DD-016](../../../architecture/decisions/DD-016-dynamic-toolset-v2-deferral.md)
 - ✅ **Code PRESERVED** - All implementation, tests, and documentation remain in repository
 - ❌ **NOT DEPLOYED** - Excluded from V1.x releases and CI/CD pipelines
-- ⏳ **V2.0 TARGET** - Will return when HolmesGPT-API expands to multi-service observability
+- ⏳ **V2.0 TARGET** - Will return when Kubernaut Agent expands to multi-service observability
 
 **Implementation Status** (Preserved for V2.0):
 - ✅ **245/245 tests passing** (100%) - 194 unit + 38 integration + 13 E2E tests
@@ -45,9 +45,9 @@ The **Dynamic Toolset Service** was designed to automatically discover Kubernete
 - ✅ **8/8 business requirements** (100% coverage)
 
 **Why Deferred**:
-- **V1.x Scope**: Prometheus-only observability (HolmesGPT-API already handles Prometheus discovery)
+- **V1.x Scope**: Prometheus-only observability (Kubernaut Agent already handles Prometheus discovery)
 - **V2.0 Value**: Multi-service observability (Grafana, Jaeger, Elasticsearch, custom services)
-- **Current Redundancy**: HolmesGPT-API's built-in Prometheus discovery makes this service redundant for V1.x
+- **Current Redundancy**: Kubernaut Agent's built-in Prometheus discovery makes this service redundant for V1.x
 
 ---
 
@@ -76,11 +76,11 @@ The **Dynamic Toolset Service** was designed to automatically discover Kubernete
 
 ## 🎯 What It Does
 
-**Automatically discover and configure HolmesGPT toolsets.**
+**Automatically discover and configure Kubernaut Agent toolsets.**
 
 **Dynamic configuration** that provides:
 - Automatic Kubernetes resource discovery
-- HolmesGPT toolset generation
+- Kubernaut Agent toolset generation
 - ConfigMap-based hot-reload
 - Toolset validation and compatibility checks
 
@@ -122,15 +122,15 @@ kubectl get configmap kubernaut-toolset-config -n kubernaut-system -o yaml
 - **Custom Services** - Annotation-based detection (`kubernaut.io/toolset=enabled`)
 
 **Discovery Method**: Scans Kubernetes Services (not Deployments/Pods) in configured namespaces
-**Output**: HolmesGPT-compatible toolset JSON in ConfigMap `kubernaut-toolset-config`
+**Output**: Kubernaut Agent-compatible toolset JSON in ConfigMap `kubernaut-toolset-config`
 
 ---
 
 ## 🎯 Key Features
 
 - ✅ Automatic resource discovery
-- ✅ ConfigMap generation for HolmesGPT
-- ✅ Hot-reload support (HolmesGPT watches ConfigMaps)
+- ✅ ConfigMap generation for Kubernaut Agent
+- ✅ Hot-reload support (Kubernaut Agent watches ConfigMaps)
 - ✅ Toolset validation
 - ✅ RBAC-aware discovery (only shows accessible resources)
 
@@ -139,12 +139,12 @@ kubectl get configmap kubernaut-toolset-config -n kubernaut-system -o yaml
 ## 🔗 Integration Points
 
 **Clients**:
-1. **HolmesGPT API** - Reads generated toolset ConfigMaps for dynamic tool discovery
+1. **Kubernaut Agent** - Reads generated toolset ConfigMaps for dynamic tool discovery
 
 **Generates**:
 - **ConfigMap Name**: `kubernaut-toolset-config`
 - **Namespace**: `kubernaut-system` (configurable)
-- **Format**: JSON toolset configuration compatible with HolmesGPT
+- **Format**: JSON toolset configuration compatible with Kubernaut Agent
 - **Update Frequency**: Every 5 minutes (production) or 10 seconds (E2E tests)
 
 ---
@@ -294,11 +294,11 @@ kubectl port-forward -n kubernaut-system svc/dynamic-toolset 9090:9090
 curl http://localhost:9090/metrics | grep toolset_services_discovered_total
 ```
 
-**2. Verify HolmesGPT can read the toolsets**:
+**2. Verify Kubernaut Agent can read the toolsets**:
 ```bash
-# HolmesGPT automatically reads the ConfigMap
-# Check HolmesGPT logs for toolset loading confirmation
-kubectl logs -n kubernaut-system -l app=holmesgpt | grep "toolset"
+# Kubernaut Agent automatically reads the ConfigMap
+# Check Kubernaut Agent logs for toolset loading confirmation
+kubectl logs -n kubernaut-system -l app=kubernaut-agent | grep "toolset"
 ```
 
 ---
@@ -330,7 +330,7 @@ kubectl get configmap kubernaut-toolset-config -n kubernaut-system -o jsonpath='
 
 ### Workflow 2: View Generated Toolsets
 
-**Use Case**: Inspect HolmesGPT toolset configuration generated from discovered services
+**Use Case**: Inspect Kubernaut Agent toolset configuration generated from discovered services
 
 ```bash
 # View full ConfigMap
