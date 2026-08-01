@@ -96,6 +96,84 @@ var _ = Describe("AnthropicTriager", func() {
 		_, err := triager.TriageWithRules(context.Background(), nil, severity.TriageInput{Description: "Something"})
 		Expect(err).To(HaveOccurred())
 	})
+
+	It("UT-AF-1404-006: rejects a nil SDK response instead of guessing", func() {
+		mock := &mockAnthropicMessager{resp: nil, err: nil}
+		triager := severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{
+			Messager: mock,
+			Model:    "claude-sonnet-4-6",
+		})
+
+		_, err := triager.TriageWithRules(context.Background(), nil, severity.TriageInput{Description: "Something"})
+		Expect(err).To(MatchError(ContainSubstring("nil response")))
+	})
+
+	It("UT-AF-1404-007: rejects a response with only non-text content blocks", func() {
+		mock := &mockAnthropicMessager{resp: &anthropic.Message{
+			Content: []anthropic.ContentBlockUnion{{Type: "tool_use"}},
+		}}
+		triager := severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{
+			Messager: mock,
+			Model:    "claude-sonnet-4-6",
+		})
+
+		_, err := triager.TriageWithRules(context.Background(), nil, severity.TriageInput{Description: "Something"})
+		Expect(err).To(MatchError(ContainSubstring("empty response")))
+	})
+
+	Describe("NewAnthropicTriager construction defaults", func() {
+		It("UT-AF-1404-008: panics when neither Client nor Messager is provided", func() {
+			Expect(func() {
+				severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{})
+			}).To(Panic())
+		})
+
+		It("UT-AF-1404-009: defaults Model when unset", func() {
+			mock := &mockAnthropicMessager{resp: makeAnthropicResponse("warning")}
+			triager := severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{Messager: mock})
+
+			result, err := triager.TriageWithRules(context.Background(), nil, severity.TriageInput{Description: "no model set"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Severity).To(Equal("warning"))
+		})
+
+		It("UT-AF-1404-013: wraps a bare Client in sdkMessager when Messager is unset", func() {
+			client, err := severity.NewAnthropicDirectClient("sk-test-not-a-real-key")
+			Expect(err).NotTo(HaveOccurred())
+
+			// Construction-only: no network call happens until TriageWithRules
+			// actually invokes the wrapped client, which this test does not do.
+			Expect(func() {
+				severity.NewAnthropicTriager(severity.AnthropicTriagerConfig{Client: client})
+			}).NotTo(Panic())
+		})
+	})
+
+	Describe("NewAnthropicDirectClient", func() {
+		It("UT-AF-1404-010: rejects an empty API key", func() {
+			_, err := severity.NewAnthropicDirectClient("")
+			Expect(err).To(MatchError(ContainSubstring("apiKey is required")))
+		})
+
+		It("UT-AF-1404-011: constructs a client for a non-empty API key (no network call at construction)", func() {
+			client, err := severity.NewAnthropicDirectClient("sk-test-not-a-real-key")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client).NotTo(BeNil())
+		})
+	})
+
+	Describe("NewAnthropicVertexClient", func() {
+		It("UT-AF-1404-012: rejects an empty project before touching GCP ADC", func() {
+			_, err := severity.NewAnthropicVertexClient(context.Background(), "", "us-central1")
+			Expect(err).To(MatchError(ContainSubstring("vertexProject is required")))
+		})
+
+		It("UT-AF-1404-014: defaults location to us-central1 and constructs a client (ADC token resolution is lazy, not performed at construction)", func() {
+			client, err := severity.NewAnthropicVertexClient(context.Background(), "test-project", "")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(client).NotTo(BeNil())
+		})
+	})
 })
 
 // BR-AI-1404 / BR-AI-087: model family detection for factory routing moved

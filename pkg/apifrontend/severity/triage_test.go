@@ -660,6 +660,210 @@ var _ = Describe("Triage Orchestrator", func() {
 		})
 	})
 
+	Describe("Cluster-scoped pending alert correlation", func() {
+		It("UT-AF-1369-010: cluster-scoped pending alert returns cluster_pending_alert source", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "ClusterWidePending", "severity": "warning"}, State: "pending"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Source).To(Equal(severity.SourceClusterPendingAlert))
+			Expect(result.AlertName).To(Equal("ClusterWidePending"))
+		})
+	})
+
+	Describe("Resource-key overlap mismatch (labelsOverlap)", func() {
+		It("UT-AF-1369-011: alert with an overlapping key but a different value is not a resource match", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					// Shares the "kind" key with defaultInput.Labels but the value
+					// differs ("StatefulSet" vs "Deployment"), so labelsOverlap's
+					// key-overlap path must reject this as a resource-level match.
+					// It still correlates at the namespace level via "namespace".
+					{Labels: map[string]string{"alertname": "WrongKind", "namespace": "prod", "kind": "StatefulSet", "name": "web-api", "severity": "critical"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Source).To(Equal(severity.SourceNSFiringAlert), "mismatched-value overlap must not count as a resource-level match")
+			Expect(result.AlertName).To(Equal("WrongKind"))
+		})
+	})
+
+	Describe("Tier 1.5 rule parsing and matching edge cases", func() {
+		It("UT-AF-T-026b: pending rule with unparseable PromQL is skipped, not fatal", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{},
+				ruleGroups: []prom.RuleGroup{
+					{
+						Name: "test",
+						Rules: []prom.Rule{
+							{Name: "Unparseable", Query: `up{{{`, State: "pending", Labels: map[string]string{"severity": "critical"}},
+						},
+					},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined), "unparseable rule must be skipped, not surfaced as a hard error")
+		})
+
+		It("UT-AF-T-026c: pending rule whose matchers don't match the resource is skipped", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{},
+				ruleGroups: []prom.RuleGroup{
+					{
+						Name: "test",
+						Rules: []prom.Rule{
+							{Name: "OtherNamespace", Query: `up{namespace="other"}`, State: "pending", Labels: map[string]string{"severity": "critical"}},
+						},
+					},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined), "a rule matching a different resource must not correlate")
+		})
+	})
+
+	Describe("Tier 2 rule state and matching edge cases", func() {
+		It("UT-AF-T-028b: a rule in an unexpected state (neither pending nor inactive) is skipped by Tier 2", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{},
+				ruleGroups: []prom.RuleGroup{
+					{
+						Name: "test",
+						Rules: []prom.Rule{
+							// "firing" rules are Alertmanager's concern, not this rule-state
+							// classifier's -- Tier 2 only acts on "inactive" rules.
+							{Name: "AlreadyFiring", Query: `up{namespace="prod"}`, State: "firing", Labels: map[string]string{"severity": "critical"}},
+						},
+					},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined))
+		})
+
+		It("UT-AF-T-028c: an inactive rule with unparseable PromQL is skipped, not fatal", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{},
+				ruleGroups: []prom.RuleGroup{
+					{
+						Name: "test",
+						Rules: []prom.Rule{
+							{Name: "Unparseable", Query: `up{{{`, State: "inactive", Labels: map[string]string{"severity": "critical"}},
+						},
+					},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined))
+		})
+
+		It("UT-AF-T-028d: an inactive rule whose matchers don't match the resource is skipped", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{},
+				ruleGroups: []prom.RuleGroup{
+					{
+						Name: "test",
+						Rules: []prom.Rule{
+							{Name: "OtherNamespace", Query: `up{namespace="other"}`, State: "inactive", Labels: map[string]string{"severity": "critical"}},
+						},
+					},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined))
+		})
+
+		It("UT-AF-T-028e: Tier 2 instant query failure is recorded as matched-but-not-found, falls through to Tier 2.5", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{},
+				ruleGroups: []prom.RuleGroup{
+					{
+						Name: "test",
+						Rules: []prom.Rule{
+							{Name: "QueryFails", Query: `up{namespace="prod"}`, State: "inactive", Labels: map[string]string{"severity": "critical"}},
+						},
+					},
+				},
+				queryErr: errors.New("prometheus query timeout"),
+			}
+			mockLLM := &mockLLM{ruleResult: severity.TriageResult{Severity: "high", Source: severity.SourceLLMRuleInform}}
+			triager := severity.NewTriager(mockProm, mockLLM, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred(), "an instant-query failure must degrade to a tier miss, not a fatal pipeline error")
+			Expect(result.Source).To(Equal(severity.SourceLLMRuleInform), "the failed rule is still recorded as matched, so Tier 2.5 runs with it as context")
+			Expect(mockLLM.rulesCalled).To(BeTrue())
+		})
+
+		It("UT-AF-T-028f: Tier 2 stops evaluating further rules once MaxRulesEvaluated matched rules are recorded", func() {
+			rules := []prom.Rule{
+				{Name: "First", Query: `up{namespace="prod"}`, State: "inactive", Labels: map[string]string{"severity": "critical"}},
+				{Name: "Second", Query: `up{namespace="prod"}`, State: "inactive", Labels: map[string]string{"severity": "critical"}},
+			}
+			queryCount := 0
+			mockProm := &mockPromClient{
+				alerts:      []prom.Alert{},
+				ruleGroups:  []prom.RuleGroup{{Name: "test", Rules: rules}},
+				queryResult: &prom.QueryResult{Samples: []prom.Sample{}},
+				queryHook:   func() { queryCount++ },
+			}
+			cfg := defaultCfg
+			cfg.MaxRulesEvaluated = 1
+			triager := severity.NewTriager(mockProm, &mockLLM{}, cfg, logr.Discard())
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(queryCount).To(Equal(1), "the second matching rule must never be queried once MaxRulesEvaluated=1 is reached")
+		})
+	})
+
+	Describe("Rules cache reuse across calls", func() {
+		It("UT-AF-T-039b: a second Triage call within the cache TTL does not re-fetch rules", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{},
+				ruleGroups: []prom.RuleGroup{
+					{
+						Name: "test",
+						Rules: []prom.Rule{
+							{Name: "PendingRule", Query: `up{namespace="prod"}`, State: "pending", Labels: map[string]string{"severity": "high"}},
+						},
+					},
+				},
+			}
+			cfg := defaultCfg
+			cfg.CacheTTLSeconds = 30
+			triager := severity.NewTriager(mockProm, &mockLLM{}, cfg, logr.Discard())
+
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			_, err = triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(mockProm.rulesCallCount).To(Equal(1), "the second call must be served from the RulesCache, not re-fetched")
+		})
+	})
+
+	Describe("Context cancellation at pipeline entry", func() {
+		It("UT-AF-T-045b: a context canceled before the pipeline starts fails fast without querying Prometheus", func() {
+			mockProm := &mockPromClient{}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			_, err := triager.Triage(ctx, defaultInput)
+			Expect(err).To(MatchError(context.Canceled))
+		})
+	})
+
 	Describe("Concurrency", func() {
 		It("UT-AF-T-084: 10 goroutines calling Triage concurrently under -race", func() {
 			mockProm := &mockPromClient{
@@ -695,14 +899,15 @@ var _ = Describe("Triage Orchestrator", func() {
 // --- Test mocks ---
 
 type mockPromClient struct {
-	alerts      []prom.Alert
-	alertsErr   error
-	alertsHook  func()
-	ruleGroups  []prom.RuleGroup
-	rulesErr    error
-	queryResult *prom.QueryResult
-	queryErr    error
-	queryHook   func()
+	alerts         []prom.Alert
+	alertsErr      error
+	alertsHook     func()
+	ruleGroups     []prom.RuleGroup
+	rulesErr       error
+	rulesCallCount int
+	queryResult    *prom.QueryResult
+	queryErr       error
+	queryHook      func()
 }
 
 func (m *mockPromClient) GetAlerts(ctx context.Context) ([]prom.Alert, error) {
@@ -716,6 +921,7 @@ func (m *mockPromClient) GetAlerts(ctx context.Context) ([]prom.Alert, error) {
 }
 
 func (m *mockPromClient) GetRules(_ context.Context) ([]prom.RuleGroup, error) {
+	m.rulesCallCount++
 	return m.ruleGroups, m.rulesErr
 }
 

@@ -61,6 +61,11 @@ var _ = Describe("RulesCache", func() {
 		wg.Wait()
 	})
 
+	It("UT-AF-T-042b: Len on a freshly constructed cache is 0", func() {
+		cache := severity.NewRulesCache(5)
+		Expect(cache.Len()).To(Equal(0))
+	})
+
 	It("UT-AF-T-042: 50 set/get cycles do not grow unbounded", func() {
 		cache := severity.NewRulesCache(5)
 		for i := 0; i < 50; i++ {

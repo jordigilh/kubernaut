@@ -43,6 +43,13 @@ var _ = Describe("OpenAICompatibleTriager", func() {
 				severity.NewOpenAICompatibleTriager(severity.OpenAICompatibleTriagerConfig{})
 			}).To(Panic())
 		})
+
+		It("UT-AF-1618-005: uses a bare Client directly when ChatClient is unset (construction-only, no network call)", func() {
+			client := openaicompat.New("gpt-oss-120b", "https://example.invalid/v1", "")
+			Expect(func() {
+				severity.NewOpenAICompatibleTriager(severity.OpenAICompatibleTriagerConfig{Client: client})
+			}).NotTo(Panic())
+		})
 	})
 
 	Describe("UT-AF-1618-002: classify() (via TriageWithRules)", func() {
