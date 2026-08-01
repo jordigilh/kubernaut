@@ -9,7 +9,6 @@
 | Specification | Services Affected | Status | Description |
 |---------------|------------------|--------|-------------|
 | [Notification Payload Schema](./notification-payload-schema.md) | All CRD Controllers, Notification Service | ✅ Authoritative | Unified escalation notification payload format |
-| [BR Mapping Matrix](./br-mapping-matrix.md) | All Services | ✅ Authoritative | Business requirement mapping across services |
 
 ---
 
@@ -39,20 +38,6 @@ Defines the unified notification payload structure used by all CRD controllers w
 
 **Provider**:
 - Notification Service (`POST /api/v1/notify/escalation`)
-
----
-
-### **BR Mapping Matrix**
-**File**: `br-mapping-matrix.md`
-**Status**: ✅ Authoritative Reference
-
-Comprehensive mapping of business requirements (BR-XXX-XXX format) across all services, showing which services implement which business requirements.
-
-**Use Cases**:
-- Verify BR coverage across services
-- Track business requirement implementation
-- Identify gaps in BR implementation
-- Facilitate BR-driven development
 
 ---
 

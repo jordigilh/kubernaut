@@ -218,7 +218,7 @@
 ## 📞 Support & Documentation
 
 - **Architecture Overview**: [docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../../../architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
-- **CRD Design Spec**: [docs/design/CRD/03_AI_ANALYSIS_CRD.md](../../design/CRD/03_AI_ANALYSIS_CRD.md)
+- **CRD Design Spec**: [crd-schema.md](./crd-schema.md)
 - **Port Allocation**: [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) (AUTHORITATIVE for ports)
 - **Testing Guidelines**: [TESTING_GUIDELINES.md](../../../development/business-requirements/TESTING_GUIDELINES.md) (BR vs Unit test decisions)
 - **Testing Strategy Rule**: [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)
