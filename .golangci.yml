@@ -4,7 +4,12 @@
 version: "2"
 
 run:
-  timeout: 5m
+  # Bumped from 5m: as of 2026-08, `golangci-lint run` against the full
+  # cmd/... pkg/... internal/... test/... tree routinely completes right at
+  # or just over the old 5m ceiling (observed 304s/"0 issues" immediately
+  # followed by a timeout failure on PRs #1821 and #1824's CI, previously
+  # misdiagnosed as a transient CI infra flake). Matches `main`'s value.
+  timeout: 10m
   tests: true
 
 linters:
