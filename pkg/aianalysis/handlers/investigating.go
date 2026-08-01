@@ -588,10 +588,16 @@ func (h *InvestigatingHandler) finalizeSessionSubmit(ctx context.Context, analys
 			fmt.Sprintf("KA investigation session created (ID: %s, generation: %d)", sessionID, analysis.Status.KASession.Generation))
 	}
 
+	// #1713: include interactive so a future Interactive-flag race recurrence
+	// is diagnosable directly from controller logs (this is the point where
+	// the in-memory Status.KASession.Interactive value set by
+	// applyInteractiveDetection is known, ahead of the reconciler's
+	// subsequent Status().Update() persisting it).
 	h.log.Info("KA session created",
 		"sessionID", sessionID,
 		"generation", analysis.Status.KASession.Generation,
 		"isRegeneration", isRegeneration,
+		"interactive", analysis.Status.KASession.Interactive,
 	)
 }
 
