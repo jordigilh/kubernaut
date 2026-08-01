@@ -126,7 +126,7 @@ var _ = Describe("DS Due Diligence: F1 — EM Subquery Timestamp Constraint", La
 		tier2Since := now.Add(-90 * 24 * time.Hour)
 		tier2Until := now.Add(-24 * time.Hour)
 
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, postHash, tier2Since, tier2Until)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, postHash, tier2Since, tier2Until)
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(1),

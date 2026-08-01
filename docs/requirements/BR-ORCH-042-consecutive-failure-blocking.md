@@ -4,8 +4,8 @@
 **Title**: Consecutive Failure Blocking with Automatic Cooldown
 **Category**: ORCH (Remediation Orchestrator)
 **Priority**: 🔴 P0 (V1.0)
-**Version**: 1.6
-**Date**: May 11, 2026
+**Version**: 1.7
+**Date**: July 31, 2026
 **Status**: 🚧 IN PROGRESS
 **Related**: DD-GATEWAY-011, BR-GATEWAY-184 (superseded), BR-GATEWAY-185 (field selectors)
 
@@ -328,6 +328,8 @@ func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remedia
 
 **Pre-remediation hash**: `CapturePreRemediationHash` is called BEFORE routing. If `hashErr != nil`, the RR transitions to `Failed` (terminal). If `preHash == ""` with no error, hash-based checks are skipped but the RR proceeds.
 
+**Target-resource and cluster scoping (Issue #1802)**: All three detection layers operate on a DataStorage remediation-history query (`GetRemediationHistory`/`QueryROEventsBySpecHash`) that MUST be scoped by **target resource** (namespace/kind/name) in addition to spec hash — matching purely on spec-hash equality is insufficient, because two unrelated resources (e.g., templated `Deployment`s from the same Helm chart or GitOps repo) commonly share an identical Pod spec and therefore an identical hash. Without target-resource scoping, an unrelated target's remediation chain incorrectly counts toward this target's threshold, producing a false-positive block. On `main`, the query is additionally scoped by `cluster_id` (optional filter, defaulting to unscoped when absent) since fleet deployments can have identically-named/namespaced resources across clusters; `release/v1.5` has no `cluster_id` concept on `RemediationRequest` and scopes by target resource only.
+
 **Acceptance Criteria**:
 
 | ID | Criterion | Test |
@@ -341,6 +343,7 @@ func (g *Gateway) findActiveRR(ctx context.Context, fingerprint string) *remedia
 | AC-042-5-7 | Stale entries outside window ignored | UT-RO-214-007 |
 | AC-042-5-8 | DS query failures fail-open | DS fail-open test |
 | AC-042-5-9 | CapturePreRemediationHash hashErr terminal | UT-RO-214-010 |
+| AC-042-5-10 | A same-hash entry belonging to a *different* target resource does not count toward this target's chain (Issue #1802) | IT-RO-1802-001, E2E-RO-1802-001 |
 
 ---
 
@@ -534,4 +537,5 @@ routing:
 | 1.4 | 2026-03-03 | Externalized routing config to YAML ConfigMap (ADR-030). Marked HAPI prompt engineering as implemented. Fixed latent zero-value bug for Issue #214 fields. |
 | 1.5 | 2026-03-04 | Added BR-ORCH-042.7: Forward hash chain detection (Issue #525). Five-condition Layer 1b with ActionType matching, EA failure check, 1h window, threshold=2. New config fields: `forwardChainThreshold`, `forwardChainWindow`. |
 | 1.6 | 2026-05-11 | Updated BR-ORCH-042.6: Inconclusive exception (Issue #1091). `Completed+Inconclusive` treated as functional failure for backoff and chain-counting. RO sets `NextAllowedExecution` on Inconclusive completion. `CheckConsecutiveFailures` counts Inconclusive as failure instead of chain-breaker. 3 consecutive Inconclusive outcomes trigger blocking. |
+| 1.7 | 2026-07-31 | Backport of Issue #1802 (target-resource-only subset; `release/v1.5` has no `cluster_id` concept): BR-ORCH-042.5's DataStorage remediation-history query matched purely on spec-hash equality with no target-resource scoping, causing unrelated same-spec-hash targets (e.g., templated `Deployment`s) to be treated as the same remediation chain. Added AC-042-5-10 (target-resource scoping). Documented the scoping requirement explicitly in the detection algorithm description so the BR text matches enforced behavior. |
 

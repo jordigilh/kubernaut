@@ -118,13 +118,15 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 		return
 	}
 
-	// Build target resource string: "{namespace}/{kind}/{name}" or "{kind}/{name}" for cluster-scoped (#762)
-	var targetResource string
-	if targetNamespace != "" {
-		targetResource = fmt.Sprintf("%s/%s/%s", targetNamespace, targetKind, targetName)
-	} else {
-		targetResource = fmt.Sprintf("%s/%s", targetKind, targetName)
-	}
+	// Build target resource string: unconditional "{namespace}/{kind}/{name}"
+	// (Issue #1802). This MUST match the exact format RO's audit emission
+	// writes to event_data->>'target_resource' (emitWorkflowCreatedAudit,
+	// internal/controller/remediationorchestrator/reconciler.go), which
+	// always uses this 3-part form — cluster-scoped resources produce a
+	// leading "/" (empty namespace segment). Now that QueryROEventsBySpecHash
+	// filters on target_resource equality, a mismatched format here would
+	// silently exclude all history for cluster-scoped resources.
+	targetResource := fmt.Sprintf("%s/%s/%s", targetNamespace, targetKind, targetName)
 	now := time.Now()
 	ctx := r.Context()
 
@@ -135,8 +137,10 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 		"tier2_window", tier2Window.String())
 
 	// Step 3: Query Tier 1 RO events by spec hash (DD-HAPI-016 v1.4, Issue #586)
+	// Issue #1802: scoped by target_resource (empty on this branch -- release/v1.5
+	// has no cluster_id concept) to avoid cross-resource false positives.
 	tier1Since := now.Add(-tier1Window)
-	roEvents, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, currentSpecHash, tier1Since, now)
+	roEvents, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, targetResource, currentSpecHash, tier1Since, now)
 	if err != nil {
 		h.logger.Error(err, "Failed to query Tier 1 RO events",
 			"spec_hash", currentSpecHash, "since", tier1Since, "until", now)
@@ -173,9 +177,10 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 
 	// Step 7: Always query Tier 2 by spec hash (GAP-DS-1: Tier 2 runs regardless of Tier 1 results)
 	// Regression can be detected from Tier 2 alone when Tier 1 is empty but historical events exist.
+	// Issue #1802: scoped by target_resource, same rationale as Tier 1 above.
 	var tier2Summaries []api.RemediationHistorySummary
 	tier2Since := now.Add(-tier2Window)
-	tier2RO, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, currentSpecHash, tier2Since, tier1Since)
+	tier2RO, err := h.remediationHistoryRepo.QueryROEventsBySpecHash(ctx, targetResource, currentSpecHash, tier2Since, tier1Since)
 	if err != nil {
 		// Non-fatal: Tier 2 is supplementary context. Log and continue with empty Tier 2.
 		h.logger.Error(err, "Failed to query Tier 2 events (non-fatal, continuing with empty Tier 2)",
