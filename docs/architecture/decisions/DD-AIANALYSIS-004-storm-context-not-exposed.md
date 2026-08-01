@@ -4,7 +4,7 @@
 **Status**: ✅ APPROVED
 **Deciders**: Gateway Team, AIAnalysis Team, Architecture Team
 **Confidence**: 95%
-**Related**: DD-HAPI-001, DD-HOLMESGPT-009, DD-GATEWAY-011, DD-GATEWAY-012
+**Related**: DD-KA-002, DD-HOLMESGPT-009, DD-GATEWAY-011, DD-GATEWAY-012
 
 ---
 
@@ -34,7 +34,7 @@ type IncidentRequest struct {
 ### Key Requirements
 
 - **BR-GATEWAY-008**: Storm detection must track resource persistence
-- **DD-HAPI-001**: Minimal context principle (labels for filtering, not LLM input)
+- **DD-KA-002**: Minimal context principle (labels for filtering, not LLM input)
 - **DD-HOLMESGPT-009**: Token optimization (60% reduction achieved)
 - **Architectural**: RO is a router, not a decision maker (cannot use storm for routing)
 
@@ -177,7 +177,7 @@ T=5:00  WorkflowExecution fails (pod still crashing)
 **Cons**:
 - ❌ Invisible during initial investigations (90% of cases)
 - ❌ Only visible during recovery (~5-10% of cases)
-- ❌ Conflicts with DD-HAPI-001 minimal context principle
+- ❌ Conflicts with DD-KA-002 minimal context principle
 - ❌ Works against DD-HOLMESGPT-009 token optimization
 - ❌ `occurrence_count` already provides the same signal
 
@@ -194,7 +194,7 @@ T=5:00  WorkflowExecution fails (pod still crashing)
 **Pros**:
 - ✅ Already implemented in HAPI contract
 - ✅ Simpler contract (fewer fields)
-- ✅ Consistent with DD-HAPI-001 (minimal context)
+- ✅ Consistent with DD-KA-002 (minimal context)
 - ✅ Maintains DD-HOLMESGPT-009 token efficiency
 - ✅ LLM can infer persistence from count alone
 
@@ -259,12 +259,12 @@ occurrence_count=20 → Highly persistent (definitely not transient)
    - Simpler contract, same information
 
 4. **Simplicity**: Fewer fields = simpler contract
-   - Consistent with DD-HAPI-001 (minimal context principle)
+   - Consistent with DD-KA-002 (minimal context principle)
    - Aligns with DD-HOLMESGPT-009 (token optimization)
    - Reduces API surface area
 
 5. **Architectural consistency**: Aligns with existing patterns
-   - Custom labels not exposed to LLM (DD-HAPI-001)
+   - Custom labels not exposed to LLM (DD-KA-002)
    - Labels for filtering, not analysis
    - Storm flag is just a threshold indicator
 
@@ -319,7 +319,7 @@ func (h *RecoveryHandler) buildRequest(analysis *aianalysisv1.AIAnalysis) *gener
 ### Positive
 
 - ✅ **Simpler API contract**: Fewer optional fields to maintain
-- ✅ **Consistent architecture**: Aligns with DD-HAPI-001 minimal context principle
+- ✅ **Consistent architecture**: Aligns with DD-KA-002 minimal context principle
 - ✅ **Token efficiency**: Maintains DD-HOLMESGPT-009 optimization goals
 - ✅ **Same information**: `occurrence_count` conveys persistence signal
 - ✅ **No code changes needed**: Current implementation already correct
@@ -339,7 +339,7 @@ func (h *RecoveryHandler) buildRequest(analysis *aianalysisv1.AIAnalysis) *gener
 
 ## Related Decisions
 
-- **DD-HAPI-001**: Custom Labels Auto-Append Architecture (minimal context principle)
+- **DD-KA-002**: Custom Labels Auto-Append Architecture (minimal context principle)
 - **DD-HOLMESGPT-009**: Ultra-Compact JSON Format (token optimization)
 - **DD-GATEWAY-011**: Shared Status Ownership (storm state in RR CRD status)
 - **DD-GATEWAY-012**: Redis-free Storm Detection (status-based tracking)

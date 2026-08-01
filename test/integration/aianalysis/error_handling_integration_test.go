@@ -261,10 +261,10 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 
 	// ========================================
 	// Scenario 3: Problem Resolved Path (No Workflow Needed)
-	// Business Requirement: BR-HAPI-200 (Problem self-resolved)
+	// Business Requirement: BR-KA-200 (Problem self-resolved)
 	// Coverage Target: handleProblemResolvedFromIncident() (response_processor.go:401) - currently 0.0%
 	// ========================================
-	Context("Problem resolved path - BR-HAPI-200", func() {
+	Context("Problem resolved path - BR-KA-200", func() {
 		It("should handle problem_resolved from KA (no workflow needed)", func() {
 			// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 			// Given: AIAnalysis with signal that triggers problem_resolved response
@@ -333,7 +333,7 @@ var _ = Describe("AIAnalysis Error Handling Integration", func() {
 			var finalAnalysis aianalysisv1.AIAnalysis
 			Expect(k8sClient.Get(testCtx, client.ObjectKeyFromObject(analysis), &finalAnalysis)).To(Succeed())
 
-			// Verify status fields (BR-HAPI-200 Outcome A)
+			// Verify status fields (BR-KA-200 Outcome A)
 			Expect(finalAnalysis.Status.Phase).To(Equal(aianalysisv1.PhaseCompleted),
 				"Phase should be Completed")
 			Expect(finalAnalysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowNotNeeded),

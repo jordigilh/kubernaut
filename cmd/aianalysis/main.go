@@ -197,7 +197,7 @@ type aiAnalysisClients struct {
 }
 
 // wireAIAnalysisClients constructs the Kubernaut Agent client (BR-AI-007,
-// DD-HAPI-003), the Rego evaluator with startup policy validation (BR-AI-012,
+// DD-KA-003), the Rego evaluator with startup policy validation (BR-AI-012,
 // DD-AIANALYSIS-001/002, ADR-050), and the buffered audit store/client
 // (DD-AUDIT-003, ADR-030). Exits the process on any failure, matching
 // main()'s original fail-fast behavior. Rego hot-reloader and audit store

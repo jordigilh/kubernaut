@@ -404,9 +404,9 @@ var _ = Describe("Kubernaut Agent Result Parser — #433", func() {
 			Expect(props).To(HaveKey("severity"))
 			Expect(props).To(HaveKey("actionable"))
 			Expect(props).NotTo(HaveKey("needs_human_review"),
-				"needs_human_review is parser-derived, not exposed to LLM (BR-HAPI-200)")
+				"needs_human_review is parser-derived, not exposed to LLM (BR-KA-200)")
 			Expect(props).NotTo(HaveKey("human_review_reason"),
-				"human_review_reason is parser-derived, not exposed to LLM (BR-HAPI-200)")
+				"human_review_reason is parser-derived, not exposed to LLM (BR-KA-200)")
 			Expect(props).To(HaveKey("detected_labels"))
 		})
 	})

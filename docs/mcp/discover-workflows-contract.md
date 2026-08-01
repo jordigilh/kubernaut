@@ -137,5 +137,5 @@ When `select_workflow` builds the final `InvestigationResult`:
 ## Related Documents
 
 - [BR-INTERACTIVE.md](../requirements/BR-INTERACTIVE.md) — Business requirements for interactive mode
-- [ADR-045](../architecture/decisions/ADR-045-aianalysis-holmesgpt-api-contract.md) — AIAnalysis HolmesGPT API contract
+- [ADR-045](../architecture/decisions/ADR-045-aianalysis-ka-service-contract.md) — AIAnalysis ↔ Kubernaut Agent (KA) service contract
 - [#1170](https://github.com/jordigilh/kubernaut/issues/1170) — Parameter validation regression from HAPI migration

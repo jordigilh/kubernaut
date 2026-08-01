@@ -159,7 +159,7 @@ var _ = Describe("Response Builders", func() {
 			Expect(text).To(ContainSubstring(`"actionable": false`))
 		})
 
-		It("UT-MOCK-030-003: response builder must NOT emit needs_human_review even when config has it (BR-HAPI-200)", func() {
+		It("UT-MOCK-030-003: response builder must NOT emit needs_human_review even when config has it (BR-KA-200)", func() {
 			reviewCfg := scenarios.MockScenarioConfig{
 				ScenarioName:         "no_workflow_found",
 				Severity:             "critical",

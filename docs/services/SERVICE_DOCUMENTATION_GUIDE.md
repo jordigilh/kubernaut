@@ -68,7 +68,7 @@
 - Approval workflows (auto vs. manual)
 
 **Special Files**:
-- `ai-holmesgpt-approval.md` - AI provider and approval patterns
+- `ka-approval.md` - AI provider and approval patterns
 - `reconciliation-phases.md` - Multi-phase state machine
 
 ---

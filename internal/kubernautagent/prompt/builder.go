@@ -137,7 +137,7 @@ type Phase1Data struct {
 }
 
 // ValidationErrorData maps to fields expected by validation_error.tmpl.
-// BR-HAPI-191: Structured feedback for LLM self-correction.
+// BR-KA-191: Structured feedback for LLM self-correction.
 type ValidationErrorData struct {
 	IsFormatFailure bool
 	AttemptDisplay  int
@@ -175,7 +175,7 @@ func NewBuilder() (*Builder, error) {
 }
 
 // RenderValidationError renders the self-correction feedback message.
-// BR-HAPI-191: Structured error feedback with schema hints for LLM.
+// BR-KA-191: Structured error feedback with schema hints for LLM.
 func (b *Builder) RenderValidationError(data ValidationErrorData) (string, error) {
 	var buf strings.Builder
 	if err := b.validationErrorTmpl.Execute(&buf, data); err != nil {

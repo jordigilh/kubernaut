@@ -248,7 +248,7 @@ func (v *Validator) Validate(result *katypes.InvestigationResult) error {
 
 // ValidateParameters checks parameters against the workflow schema.
 // Mutates params in-place: strips undeclared parameters (except KA-managed).
-// BR-HAPI-191: 8 constraint checks + undeclared stripping.
+// BR-KA-191: 8 constraint checks + undeclared stripping.
 func (v *Validator) ValidateParameters(params map[string]interface{}, schema []models.WorkflowParameter) *ParameterValidationResult {
 	return v.validateParameters(params, schema, nil)
 }
@@ -258,7 +258,7 @@ func (v *Validator) validateParameters(params map[string]interface{}, schema []m
 
 	stripUndeclaredParameters(params, schema, result)
 
-	// Validate each declared parameter (BR-HAPI-191: 8 constraint checks).
+	// Validate each declared parameter (BR-KA-191: 8 constraint checks).
 	for _, p := range schema {
 		if kaManagedParams[p.Name] {
 			continue

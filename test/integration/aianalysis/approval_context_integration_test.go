@@ -34,7 +34,7 @@ import (
 // Approval Context Integration Tests
 // Test Plan: MockLLM Test Extension Triage - Phase 1 (Feb 4, 2026)
 // Scenarios: IT-AA-085, IT-AA-086, IT-AA-088
-// Business Requirements: BR-AI-076, BR-HAPI-200, BR-AI-028, BR-AI-029
+// Business Requirements: BR-AI-076, BR-KA-200, BR-AI-028, BR-AI-029
 //
 // Purpose: Validate KA-AA integration for approval context population,
 // human review reason propagation, and Rego policy evaluation with real MockLLM responses.
@@ -183,7 +183,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 		})
 	})
 
-	Context("BR-HAPI-200, BR-AI-028: Human Review Reason Code Mapping", func() {
+	Context("BR-KA-200, BR-AI-028: Human Review Reason Code Mapping", func() {
 		It("IT-AA-086: Maps KA human_review_reason to AA approval status", func() {
 			// ========================================
 			// TEST PLAN MAPPING
@@ -192,7 +192,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 			// Gap ID: GAP-002
 			// Business Outcome: KA human_review_reason correctly triggers AA approval routing
 			// Confidence: 93%
-			// BR: BR-HAPI-200 (Structured Human Review Reasons), BR-AI-028 (Auto-Approve or Flag)
+			// BR: BR-KA-200 (Structured Human Review Reasons), BR-AI-028 (Auto-Approve or Flag)
 			// MockLLM Scenarios: no_workflow_found, max_retries_exhausted
 
 			testCases := []struct {

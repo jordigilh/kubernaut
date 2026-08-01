@@ -256,11 +256,11 @@ Update only the target service when changes are:
 - Service-specific reconciliation logic
 - Unique architectural patterns
 
-### **Example: Update AI Analysis HolmesGPT Integration**
+### **Example: Update AI Analysis Kubernaut Agent Integration**
 
 ```bash
 # Only update AI Analysis service
-vi 02-aianalysis/ai-holmesgpt-approval.md
+vi 02-aianalysis/ka-approval.md
 
 # No need to copy to other services (unique file)
 ```
@@ -306,7 +306,7 @@ Every service MUST have:
 Services MAY have additional unique files:
 
 - **02-aianalysis/**:
-  - `ai-holmesgpt-approval.md` - HolmesGPT & Rego policies
+  - `ka-approval.md` - Kubernaut Agent & Rego policies
 
 - **05-remediationorchestrator/**:
   - `data-handling-architecture.md` - Targeting Data Pattern
@@ -318,7 +318,7 @@ Services MAY have additional unique files:
 ### **Rules**
 
 1. **Lowercase with hyphens**: `controller-implementation.md` (not `Controller_Implementation.md`)
-2. **Descriptive names**: `ai-holmesgpt-approval.md` (not `ai-stuff.md`)
+2. **Descriptive names**: `ka-approval.md` (not `ai-stuff.md`)
 3. **No abbreviations**: `reconciliation-phases.md` (not `recon-phases.md`)
 4. **Consistent suffixes**: Always `.md` for markdown
 

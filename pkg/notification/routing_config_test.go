@@ -571,7 +571,7 @@ receivers:
 	})
 
 	// =============================================================================
-	// BR-HAPI-200: Investigation Outcome Routing Tests
+	// BR-KA-200: Investigation Outcome Routing Tests
 	// Purpose: Verify investigation-outcome based routing for KA results
 	// Cross-Team: KA→NOT (2025-12-07)
 	// =============================================================================
@@ -874,7 +874,7 @@ receivers:
 		})
 	})
 
-	Describe("Investigation-Outcome Attribute Routing (BR-HAPI-200)", func() {
+	Describe("Investigation-Outcome Attribute Routing (BR-KA-200)", func() {
 
 		Context("Attribute Constants Verification", func() {
 
@@ -884,7 +884,7 @@ receivers:
 			})
 
 			// Test 2: Verify investigation outcome value constants
-			It("should define all BR-HAPI-200 investigation outcome values", func() {
+			It("should define all BR-KA-200 investigation outcome values", func() {
 				Expect(routing.InvestigationOutcomeResolved).To(Equal("resolved"))
 				Expect(routing.InvestigationOutcomeInconclusive).To(Equal("inconclusive"))
 				Expect(routing.InvestigationOutcomeWorkflowSelected).To(Equal("workflow_selected"))

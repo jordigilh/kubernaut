@@ -29,7 +29,7 @@ kubernaut_remediationorchestrator_<metric_name>_{total|seconds|...}
 | `kubernaut_remediationorchestrator_reconcile_duration_seconds` | Histogram | namespace, phase | Reconciliation duration | Standard |
 | `kubernaut_remediationorchestrator_phase_transitions_total` | Counter | from_phase, to_phase, namespace | Phase transitions | Standard |
 
-### No-Action Metrics (BR-ORCH-037, BR-HAPI-200)
+### No-Action Metrics (BR-ORCH-037, BR-KA-200)
 
 | Metric | Type | Labels | Description | BR Reference |
 |--------|------|--------|-------------|--------------|

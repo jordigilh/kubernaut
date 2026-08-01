@@ -6,7 +6,7 @@
 > | v1.5 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.8 (snake_case API fields, DetectedLabels wildcard support) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.1, [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.4 | 2025-11-30 | Updated to DD-WORKFLOW-001 v1.4 (5 mandatory labels, risk_tolerance customer-derived) | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0, [DD-WORKFLOW-001 v1.4](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
 > | v1.3 | 2025-11-30 | Added DetectedLabels (V1.0) and CustomLabels (V1.0) for workflow filtering | [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v2.0 |
-> | v1.2 | 2025-11-28 | Performance targets updated (<5s), graceful shutdown, parallel testing, retry strategy | [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md), [DD-TEST-002](../../../architecture/decisions/DD-TEST-002-parallel-test-execution-standard.md), [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md) |
+> | v1.2 | 2025-11-28 | Performance targets updated (<5s), graceful shutdown, parallel testing, retry strategy | [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md), [DD-TEST-002](../../../architecture/decisions/DD-TEST-002-parallel-test-execution-standard.md), [ADR-019](../../../architecture/decisions/ADR-019-aianalysis-error-classification-retry-strategy.md) |
 > | v1.1 | 2025-11-27 | Service rename: RemediationProcessing → SignalProcessing | [DD-SIGNAL-PROCESSING-001](../../../architecture/decisions/DD-SIGNAL-PROCESSING-001-service-rename.md) |
 > | v1.1 | 2025-11-27 | Context API deprecated: Recovery context embedded by Remediation Orchestrator | [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) |
 > | v1.1 | 2025-11-27 | Categorization consolidated in Signal Processing | [DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) |
@@ -86,7 +86,7 @@ While Signal Processing doesn't directly call HolmesGPT, its enrichment quality 
 - **All categorization consolidated** in Signal Processing ([DD-CATEGORIZATION-001](../../../architecture/decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md))
 - **Audit writes via Data Storage Service REST API** ([ADR-032](../../../architecture/decisions/ADR-032-data-access-layer-isolation.md))
 - **Graceful shutdown** following [DD-007](../../../architecture/decisions/DD-007-kubernetes-aware-graceful-shutdown.md)
-- **K8s requeue for retry** (no circuit breaker needed for internal deps - see [ADR-019](../../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md))
+- **K8s requeue for retry** (no circuit breaker needed for internal deps - see [ADR-019](../../../architecture/decisions/ADR-019-aianalysis-error-classification-retry-strategy.md))
 
 ---
 

@@ -510,7 +510,7 @@ THEN: Implement circuit breaker per Phase 2 guidance (8-12h)
 - **BR-GATEWAY-110**: Load Shedding - Deferred with similar rationale
 - **DD-GATEWAY-011**: Shared Status Ownership - Fail-open design for Redis
 - **DD-INFRASTRUCTURE-001**: Redis HA - Prevents Redis cascading failures
-- **ADR-019**: HolmesGPT Circuit Breaker - Example of circuit breaker in Kubernaut
+- **ADR-019**: AIAnalysis Error Classification & Retry Strategy - retry-with-backoff for the AIAnalysis→KA call path (no circuit breaker implemented; see the Circuit Breaker Applicability Matrix in that ADR)
 
 ---
 

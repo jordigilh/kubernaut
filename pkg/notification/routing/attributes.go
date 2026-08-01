@@ -125,7 +125,7 @@ const (
 )
 
 // InvestigationOutcomeValues are the KA investigation outcome routing values.
-// See: BR-HAPI-200 (Investigation Outcome Reporting)
+// See: BR-KA-200 (Investigation Outcome Reporting)
 const (
 	InvestigationOutcomeResolved         = "resolved"
 	InvestigationOutcomeInconclusive     = "inconclusive"

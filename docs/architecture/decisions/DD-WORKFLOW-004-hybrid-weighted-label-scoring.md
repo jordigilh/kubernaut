@@ -6,7 +6,7 @@
 **Status**: ✅ **APPROVED** (V1.6 IMPLEMENTED)
 **Confidence**: 95%
 **Purpose**: Define the hybrid weighted scoring strategy for workflow catalog semantic search that combines strict filtering for mandatory labels with semantic similarity ranking.
-**Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v2.4 (Mandatory Label Schema + Multi-Environment), DD-HAPI-001 (Custom Labels Auto-Append)
+**Related**: DD-WORKFLOW-012 (Workflow Immutability), DD-WORKFLOW-001 v2.4 (Mandatory Label Schema + Multi-Environment), DD-KA-002 (Custom Labels Workflow-Matching)
 **Version**: 1.7 (CURRENT), 2.2 (SPECIFICATION)
 
 ---
@@ -111,7 +111,7 @@ WHERE labels->>'environment' = ANY(ARRAY['staging', 'production'])
 - ✅ **Updated SQL Queries**: Use structured column references, not `labels->>'signal-type'`
 - ✅ **DetectedLabels Wildcard Support**: String fields (`gitOpsTool`, `podSecurityLevel`, `serviceMesh`) support `"*"`
 - ✅ **Matching Semantics**: `"*"` = "requires SOME value", *(absent)* = "no requirement"
-- ✅ **Cross-reference**: DD-WORKFLOW-001 v1.8, DD-HAPI-001
+- ✅ **Cross-reference**: DD-WORKFLOW-001 v1.8, DD-KA-002
 
 **Breaking Changes**:
 - All examples updated to snake_case field names
@@ -691,7 +691,7 @@ custom_labels["team"] = [input.namespace.labels["team"]] {
 1. AIAnalysis receives `RemediationProcessing` CRD with detected labels
 2. LLM performs RCA → determines `signal_type` and `severity`
 3. AIAnalysis combines LLM-determined labels + detected labels
-4. Calls Data Storage workflow search with ALL labels (custom_labels auto-appended per DD-HAPI-001)
+4. Calls the workflow catalog with ALL labels (custom_labels scoring per DD-KA-002)
 
 **Implementation**: `kubernaut-agent/src/extensions/recovery.py`
 
@@ -707,7 +707,7 @@ def search_workflows(context, rca_findings):
     }
 
     # Custom labels (from Signal Processing enrichment_results)
-    # Auto-appended to workflow search per DD-HAPI-001
+    # Scored during workflow catalog matching per DD-KA-002
     custom_labels = context.get("enrichment_results", {}).get("customLabels", {})
 
     # Combine for semantic query

@@ -45,7 +45,7 @@ type TestWorkflow struct {
 	Component        []string
 	Environment      string
 	Priority         string
-	SchemaParameters []models.WorkflowParameter // BR-HAPI-191: Must match Mock LLM parameters
+	SchemaParameters []models.WorkflowParameter // BR-KA-191: Must match Mock LLM parameters
 }
 
 // GetAIAnalysisTestWorkflows returns the workflows that Mock LLM expects
@@ -58,7 +58,7 @@ type TestWorkflow struct {
 //   - Workflows created for BOTH staging and production environments
 //     (tests use staging by default, but some use production)
 func GetAIAnalysisTestWorkflows() []TestWorkflow {
-	// BR-HAPI-191: SchemaParameters MUST match Mock LLM scenario parameters
+	// BR-KA-191: SchemaParameters MUST match Mock LLM scenario parameters
 	// Mock LLM scenarios defined in test/services/mock-llm/scenarios/
 	// KA validates LLM response parameters against workflow schema from DataStorage
 	// If parameters don't match, KA returns parameter_validation_failed BEFORE confidence check

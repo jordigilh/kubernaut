@@ -163,11 +163,20 @@ The existing `SignalAnnotations map[string]string` on `RemediationRequestSpec` a
 
 **Mitigations (defense-in-depth)**:
 
-1. **Structural isolation in prompt** (`prompt_builder.py`): Annotation content is wrapped in clearly delimited DATA tags with an explicit instruction that the content is factual context, NOT instructions.
-2. **Content sanitization** (`annotation_sanitizer.py`): Strip markdown heading syntax, triple-backtick blocks, and common injection patterns. Truncate values exceeding length limits.
+1. **Structural isolation in prompt**: Annotation content is intended to be wrapped in clearly
+   delimited context with an explicit instruction that the content is factual data, NOT
+   instructions. *(Not independently verified against KA's Go prompt builder as part of the
+   [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806) terminology sweep — flagged
+   for follow-up verification.)*
+2. **Injection-pattern sanitization**: KA's `internal/kubernautagent/prompt/builder.go`
+   (`sanitizeField`) strips known prompt-injection phrases (e.g. "ignore previous instructions")
+   from rendered prompt fields before submission to the LLM. Markdown-heading/backtick stripping
+   from the original Python design was not confirmed as carried forward — treat as unverified.
 3. **Field allowlist**: Only named fields (Summary, Description, RunbookURL, DashboardURL) appear in the prompt. `Extra` map is excluded.
 4. **CRD admission validation**: `+kubebuilder:validation:MaxLength` markers on Summary (256) and Description (1024) prevent payload-based DoS at the Kubernetes API level.
-5. **Existing credential redaction**: `sanitize_for_llm` (BR-HAPI-211) handles credential patterns in the full prompt output.
+5. **Existing credential redaction**: KA's tool-output sanitization pipeline (BR-KA-211, see
+   [DD-KA-005](DD-KA-005-llm-input-sanitization.md)) handles credential patterns in tool output;
+   note it is scoped to tool output, not the initial prompt fields covered by this document.
 
 ---
 
@@ -185,11 +194,11 @@ flowchart LR
         RR --> RO["RO.buildSignalContext()"]
         RO --> AA["AIAnalysis.Spec.SignalContext"]
         AA --> RB["RequestBuilder"]
-        RB --> HAPI["HAPI IncidentRequest"]
+        RB --> KA["KA Investigation Request"]
     end
-    subgraph hapi [HAPI]
-        HAPI --> PB["prompt_builder.py"]
-        PB --> Sanitize["annotation_sanitizer"]
+    subgraph ka [Kubernaut Agent]
+        KA --> PB["prompt/builder.go"]
+        PB --> Sanitize["sanitizeField (injection patterns)"]
         Sanitize --> Prompt["LLM Prompt"]
     end
 ```
@@ -202,8 +211,8 @@ flowchart LR
 - [DD-GATEWAY-002](DD-GATEWAY-002-opentelemetry-adapter.md): OpenTelemetry adapter (PLANNING)
 - [DD-GATEWAY-NON-K8S-SIGNALS](DD-GATEWAY-NON-K8S-SIGNALS.md): Non-Kubernetes signal support (PROPOSED)
 - [BR-GATEWAY-185](../../services/stateless/gateway-service/BUSINESS_REQUIREMENTS.md): Normalized Signal Description Capture
-- [BR-HAPI-213](../../services/stateless/kubernaut-agent/BUSINESS_REQUIREMENTS.md): Signal Description in Investigation Prompt
-- [BR-HAPI-211](../../services/stateless/kubernaut-agent/BUSINESS_REQUIREMENTS.md): LLM Input Sanitization
+- BR-KA-213: Signal Description in Investigation Prompt (no standalone doc yet; tracked for the KA service doc set consolidation, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806) PR4)
+- [BR-KA-211](../../requirements/BR-KA-211-llm-input-sanitization.md): LLM Input Sanitization
 
 ---
 

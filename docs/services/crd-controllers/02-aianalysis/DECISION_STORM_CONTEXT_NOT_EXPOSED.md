@@ -15,7 +15,7 @@
 - Storm context is invisible during initial investigations (timing issue)
 - Only visible during recovery investigations (~5% of cases)
 - `occurrence_count` already provides the same persistence signal
-- Conflicts with DD-HAPI-001 minimal context principle
+- Conflicts with DD-KA-002 minimal context principle
 
 **Alternative**: Use `occurrence_count` field (already implemented) to convey persistence information to the LLM.
 
@@ -208,7 +208,7 @@ type IncidentRequest struct {
 1. ❌ **Timing**: Storm context is invisible during initial investigations (90% of cases)
 2. ❌ **Routing**: RO cannot use storm for routing decisions (not a decision maker)
 3. ✅ **Alternative exists**: `occurrence_count` already provides persistence signal
-4. ✅ **Simplicity**: Fewer fields = simpler contract, consistent with DD-HAPI-001
+4. ✅ **Simplicity**: Fewer fields = simpler contract, consistent with DD-KA-002
 5. ✅ **Architectural consistency**: Aligns with minimal context principle
 
 ---
@@ -256,7 +256,7 @@ func (h *RecoveryHandler) buildRequest(analysis *aianalysisv1.AIAnalysis) *gener
 
 ## 🔄 Related Decisions
 
-### DD-HAPI-001: Minimal Context Principle
+### DD-KA-002: Minimal Context Principle
 
 Custom labels are **not** visible to the LLM (used for filtering only):
 > "CustomLabels are NOT in LLM prompt. Prevents LLM forgetting to include them and reduces prompt size."
@@ -293,7 +293,7 @@ HolmesGPT-API achieved 60% token reduction (~730 → ~180 tokens):
 - **HAPI API Contract**: `pkg/aianalysis/client/holmesgpt.go`
 - **AIAnalysis Integration**: `docs/services/crd-controllers/02-aianalysis/integration-points.md`
 - **Gateway Storm Detection**: `docs/services/stateless/gateway-service/overview.md`
-- **DD-HAPI-001**: Custom labels not exposed to LLM
+- **DD-KA-002**: Custom labels not exposed to LLM
 - **DD-HOLMESGPT-009**: Token optimization strategy
 - **DD-GATEWAY-011**: Shared status ownership (storm state in RR CRD)
 

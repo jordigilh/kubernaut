@@ -18333,7 +18333,7 @@ type IncidentResponseData struct {
 	Timestamp time.Time `json:"timestamp"`
 	// True when AI could not produce reliable result.
 	NeedsHumanReview OptBool `json:"needsHumanReview"`
-	// Structured reason when needsHumanReview=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212, BR-AI-601).
+	// Structured reason when needsHumanReview=true (BR-KA-197, BR-KA-200, BR-KA-212, BR-AI-601).
 	HumanReviewReason OptIncidentResponseDataHumanReviewReason `json:"humanReviewReason"`
 	// Non-fatal warnings (e.g., OwnerChain validation issues).
 	Warnings []string `json:"warnings"`
@@ -18490,7 +18490,7 @@ func (s *IncidentResponseDataAlternativeWorkflowsItem) SetConfidence(val OptFloa
 	s.Confidence = val
 }
 
-// Structured reason when needsHumanReview=true (BR-HAPI-197, BR-HAPI-200, BR-HAPI-212, BR-AI-601).
+// Structured reason when needsHumanReview=true (BR-KA-197, BR-KA-200, BR-KA-212, BR-AI-601).
 type IncidentResponseDataHumanReviewReason string
 
 const (

@@ -6,7 +6,7 @@
 **Version**: 1.0
 **Date**: 2025-12-07
 **Status**: 🚧 Planned
-**Related BRs**: BR-ORCH-036 (Manual Review), BR-HAPI-200 (Resolved/Inconclusive Signals)
+**Related BRs**: BR-ORCH-036 (Manual Review), BR-KA-200 (Resolved/Inconclusive Signals)
 **Related DDs**: DD-AIANALYSIS-003 (Completion Substates)
 
 ---
@@ -21,7 +21,7 @@ RemediationOrchestrator MUST handle the scenario where AIAnalysis determines tha
 
 ## Context
 
-BR-HAPI-200 introduces a new investigation outcome where the LLM confidently determines the problem no longer exists:
+BR-KA-200 introduces a new investigation outcome where the LLM confidently determines the problem no longer exists:
 
 ```json
 {
@@ -321,17 +321,15 @@ If multiple signals for the same resource all self-resolve:
 ## Related Documents
 
 - [BR-ORCH-036: Manual Review Notification](./BR-ORCH-036-manual-review-notification.md)
-- [BR-HAPI-200: Resolved/Inconclusive Signals](./BR-HAPI-200-resolved-stale-signals.md)
+- [BR-KA-200: Resolved/Inconclusive Signals](./BR-KA-200-resolved-stale-signals.md)
 - [DD-AIANALYSIS-003: Completion Substates](../architecture/decisions/DD-AIANALYSIS-003-completion-substates.md)
-- [NOTICE: Investigation Inconclusive BR-HAPI-200](../handoff/NOTICE_INVESTIGATION_INCONCLUSIVE_BR_HAPI_200.md)
-
 ---
 
 ## Changelog
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2025-12-07 | Initial BR creation based on BR-HAPI-200 |
+| 1.0 | 2025-12-07 | Initial BR creation based on BR-KA-200 |
 | 1.1 | 2026-03-02 | Issue #388: Added `NotActionable` as recognized subReason alongside `ProblemResolved`. Both result in `Outcome=NoActionRequired`. Updated metrics label and detection logic. |
 
 ---
