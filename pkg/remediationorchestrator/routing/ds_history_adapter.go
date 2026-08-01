@@ -102,6 +102,10 @@ func (a *DSHistoryAdapter) GetRemediationHistory(
 			Set:   true,
 		},
 	}
+	// Issue #1802 (main only): thread fleet-scoping clusterId when present.
+	if target.ClusterID != "" {
+		params.ClusterId = ogenclient.OptString{Value: target.ClusterID, Set: true}
+	}
 
 	res, err := a.client.GetRemediationHistoryContext(ctx, params)
 	if err != nil {

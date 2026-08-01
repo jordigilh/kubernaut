@@ -190,7 +190,7 @@ var _ = Describe("Kubernaut Agent Enrichment — #433", func() {
 	Describe("UT-KA-433-133: DataStorageClient accepts kind and specHash parameters", func() {
 		It("should compile with kind, name, namespace, specHash parameters", func() {
 			var client enrichment.DataStorageClient = &fakeDS{}
-			result, err := client.GetRemediationHistory(context.TODO(), "Deployment", "api-server", "production", "abc123hash")
+			result, err := client.GetRemediationHistory(context.TODO(), "Deployment", "api-server", "production", "", "abc123hash")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 		})
@@ -231,7 +231,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 				history: &enrichment.RemediationHistoryResult{},
 			}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
-			result, err := e.Enrich(context.Background(), "Pod", "api-server-abc-xyz", "production", "", "", "")
+			result, err := e.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Pod", Name: "api-server-abc-xyz", Namespace: "production"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil(), "Enrich should return a result")
 			Expect(result.OwnerChain).To(HaveLen(3))
@@ -253,7 +253,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 				},
 			}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
-			result, err := e.Enrich(context.Background(), "Pod", "api-server-abc", "production", "", "", "")
+			result, err := e.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Pod", Name: "api-server-abc", Namespace: "production"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.RemediationHistory).NotTo(BeNil())
@@ -273,7 +273,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 				},
 			}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
-			result, err := e.Enrich(context.Background(), "Pod", "api-server-abc", "production", "", "", "")
+			result, err := e.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Pod", Name: "api-server-abc", Namespace: "production"})
 			Expect(err).NotTo(HaveOccurred(), "partial failure should not return error")
 			Expect(result).NotTo(BeNil())
 			Expect(result.OwnerChain).To(BeEmpty(), "owner chain should be empty on failure")
@@ -292,7 +292,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 				history: &enrichment.RemediationHistoryResult{},
 			}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
-			_, err := e.Enrich(context.Background(), "Deployment", "api-server", "default", "", "", "")
+			_, err := e.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Deployment", Name: "api-server", Namespace: "default"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ds.capturedSpecHash).To(Equal("sha256:auto-computed-hash"),
 				"enricher should auto-compute specHash when empty and forward to DS")
@@ -307,7 +307,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 				history: &enrichment.RemediationHistoryResult{},
 			}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
-			_, err := e.Enrich(context.Background(), "Deployment", "api-server", "default", "", "sha256:caller-provided", "")
+			_, err := e.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Deployment", Name: "api-server", Namespace: "default", SpecHash: "sha256:caller-provided"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(ds.capturedSpecHash).To(Equal("sha256:caller-provided"),
 				"enricher should not override caller-provided specHash")
@@ -322,7 +322,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 				history: &enrichment.RemediationHistoryResult{},
 			}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
-			result, err := e.Enrich(context.Background(), "Deployment", "api-server", "default", "", "", "")
+			result, err := e.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Deployment", Name: "api-server", Namespace: "default"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(ds.capturedSpecHash).To(BeEmpty(),
@@ -335,7 +335,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 			k8s := &fakeK8sClient{ownerChain: []enrichment.OwnerChainEntry{}}
 			ds := &fakeDataStorageClient{history: &enrichment.RemediationHistoryResult{}}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
-			result, err := e.Enrich(context.Background(), "Deployment", "worker", "demo-crashloop", "", "", "inc-1")
+			result, err := e.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Deployment", Name: "worker", Namespace: "demo-crashloop", IncidentID: "inc-1"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.ResourceKind).To(Equal("Deployment"),
@@ -359,7 +359,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 				},
 			}}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
-			_, err := e.Enrich(context.Background(), "Pod", "api-server-abc", "production", "", "", "test-incident-001")
+			_, err := e.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Pod", Name: "api-server-abc", Namespace: "production", IncidentID: "test-incident-001"})
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(auditStore.events).To(HaveLen(1))
@@ -381,7 +381,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 			k8s := &fakeK8sClient{err: errors.New("K8s down")}
 			ds := &fakeDataStorageClient{err: errors.New("DS down")}
 			e := enrichment.NewEnricher(k8s, ds, auditStore, logger)
-			_, err := e.Enrich(context.Background(), "Pod", "api-server-abc", "production", "", "", "test-incident-002")
+			_, err := e.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Pod", Name: "api-server-abc", Namespace: "production", IncidentID: "test-incident-002"})
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(auditStore.events).To(HaveLen(1))
@@ -405,7 +405,7 @@ var _ = Describe("Kubernaut Agent Enricher Coordination — #433 (reclassified f
 // fakeDS satisfies the updated DataStorageClient interface for compile-time verification.
 type fakeDS struct{}
 
-func (f *fakeDS) GetRemediationHistory(_ context.Context, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
+func (f *fakeDS) GetRemediationHistory(_ context.Context, _, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
 	return &enrichment.RemediationHistoryResult{}, nil
 }
 
@@ -453,7 +453,7 @@ type fakeDataStorageClient struct {
 	capturedSpecHash string
 }
 
-func (f *fakeDataStorageClient) GetRemediationHistory(_ context.Context, _, _, _, specHash string) (*enrichment.RemediationHistoryResult, error) {
+func (f *fakeDataStorageClient) GetRemediationHistory(_ context.Context, _, _, _, _, specHash string) (*enrichment.RemediationHistoryResult, error) {
 	f.capturedSpecHash = specHash
 	return f.history, f.err
 }

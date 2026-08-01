@@ -94,7 +94,7 @@ func (nopK8sClient) GetSpecHash(_ context.Context, _, _, _, _ string) (string, e
 // nopDSClient satisfies enrichment.DataStorageClient with no-op responses.
 type nopDSClient struct{}
 
-func (nopDSClient) GetRemediationHistory(_ context.Context, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
+func (nopDSClient) GetRemediationHistory(_ context.Context, _, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
 	return &enrichment.RemediationHistoryResult{}, nil
 }
 

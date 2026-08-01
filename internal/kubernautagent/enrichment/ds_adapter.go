@@ -47,12 +47,17 @@ func NewDSAdapter(client HistoryContextClient) *DSAdapter {
 
 // GetRemediationHistory queries DataStorage for remediation history and maps
 // ogen-generated types to enrichment domain types.
-func (a *DSAdapter) GetRemediationHistory(ctx context.Context, kind, name, namespace, specHash string) (*RemediationHistoryResult, error) {
+// clusterID optionally scopes the query to a single fleet cluster (Issue
+// #1802, main only); pass "" for unscoped (release/v1.5 semantics).
+func (a *DSAdapter) GetRemediationHistory(ctx context.Context, kind, name, namespace, clusterID, specHash string) (*RemediationHistoryResult, error) {
 	params := ogenclient.GetRemediationHistoryContextParams{
 		TargetKind:      kind,
 		TargetName:      name,
 		TargetNamespace: namespace,
 		CurrentSpecHash: specHash,
+	}
+	if clusterID != "" {
+		params.ClusterId = ogenclient.OptString{Value: clusterID, Set: true}
 	}
 
 	res, err := a.client.GetRemediationHistoryContext(ctx, params)

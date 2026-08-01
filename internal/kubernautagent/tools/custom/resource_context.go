@@ -84,7 +84,11 @@ type remediationHistoryQuery struct {
 }
 
 func fetchRemediationHistory(ctx context.Context, logger logr.Logger, ds enrichment.DataStorageClient, q remediationHistoryQuery) *enrichment.RemediationHistoryResult {
-	result, err := ds.GetRemediationHistory(ctx, q.Kind, q.Name, q.Namespace, q.SpecHash)
+	// Issue #1802: these MCP tools parse args directly from the incoming JSON-RPC
+	// call with no fleet SignalContext available (unlike Investigate's path), so
+	// the query stays unscoped ("") here -- matching this path's pre-existing
+	// behavior, not a regression.
+	result, err := ds.GetRemediationHistory(ctx, q.Kind, q.Name, q.Namespace, "", q.SpecHash)
 	if err != nil {
 		logger.Info(q.ToolName+": remediation history fetch failed",
 			"kind", q.Kind, "name", q.Name, "namespace", q.Namespace, "error", err)

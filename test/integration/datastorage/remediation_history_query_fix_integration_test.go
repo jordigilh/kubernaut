@@ -151,7 +151,7 @@ var _ = Describe("Issue #616: QueryROEventsBySpecHash Post-Hash Matching", Label
 		insertEMHashEvent(cid, preHash, postHash, now.Add(-1*time.Hour))
 
 		// Query with currentSpecHash=postHash: should find the RO event via post-hash subquery
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, postHash, now.Add(-3*time.Hour), now)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", postHash, now.Add(-3*time.Hour), now)
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(1), "Should return 1 RO event found via post-hash EM correlation")
@@ -168,7 +168,7 @@ var _ = Describe("Issue #616: QueryROEventsBySpecHash Post-Hash Matching", Label
 		insertROEvent(cid, targetResource, preHash, "RestartPod", now.Add(-2*time.Hour))
 
 		// Query with currentSpecHash=preHash: should find via pre-hash match
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, preHash, now.Add(-3*time.Hour), now)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", preHash, now.Add(-3*time.Hour), now)
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(1), "Should return 1 RO event matching pre-hash")
@@ -192,7 +192,7 @@ var _ = Describe("Issue #616: QueryROEventsBySpecHash Post-Hash Matching", Label
 		insertEMHashEvent(cidPost, otherHash, targetHash, now.Add(-1*time.Hour))
 
 		// Query with currentSpecHash=targetHash: should find both RO events
-		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetHash, now.Add(-4*time.Hour), now)
+		rows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", targetHash, now.Add(-4*time.Hour), now)
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(rows).To(HaveLen(2), "Should return 2 RO events: one from pre-hash, one from post-hash path")
@@ -214,7 +214,7 @@ var _ = Describe("Issue #616: QueryROEventsBySpecHash Post-Hash Matching", Label
 		insertFullEMEvents(cid, preHash, postHash, now.Add(-1*time.Hour))
 
 		// Query RO events by post-hash
-		roRows, err := rhRepo.QueryROEventsBySpecHash(testCtx, postHash, now.Add(-3*time.Hour), now)
+		roRows, err := rhRepo.QueryROEventsBySpecHash(testCtx, targetResource, "", postHash, now.Add(-3*time.Hour), now)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(roRows).ToNot(BeEmpty(), "Should find RO events via post-hash")
 

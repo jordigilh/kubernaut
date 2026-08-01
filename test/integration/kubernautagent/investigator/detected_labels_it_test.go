@@ -428,7 +428,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 			}
 			enricher := enrichment.NewEnricher(k8sClient, suiteDSAdapter, auditStore, invLogger).WithLabelDetector(ld)
 
-			result, err := enricher.Enrich(context.Background(), "Pod", "web-app-xyz", "constrained", "", "", "inc-1")
+			result, err := enricher.Enrich(context.Background(), enrichment.EnrichRequest{Kind: "Pod", Name: "web-app-xyz", Namespace: "constrained", IncidentID: "inc-1"})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.DetectedLabels).NotTo(BeNil())

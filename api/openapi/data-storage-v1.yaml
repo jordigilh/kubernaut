@@ -1182,6 +1182,18 @@ paths:
             type: string
             default: "2160h"
           example: "2160h"
+        - name: clusterId
+          in: query
+          required: false
+          description: |
+            Optional fleet-scoping filter (Issue #1802). When present, restricts
+            results to remediation history recorded on the named cluster, in
+            addition to the existing target-resource scope. Omit for unscoped
+            (all-clusters) matching, which is the only supported behavior on
+            deployments without multi-cluster fleet tracking.
+          schema:
+            type: string
+          example: "cluster-us-east-1"
       responses:
         '200':
           description: |

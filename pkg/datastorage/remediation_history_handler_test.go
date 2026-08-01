@@ -37,13 +37,13 @@ import (
 // mockRemediationHistoryQuerier implements server.RemediationHistoryQuerier for testing.
 // Each method delegates to a configurable function field, allowing per-test behavior.
 type mockRemediationHistoryQuerier struct {
-	queryROEventsBySpecHashFn  func(ctx context.Context, specHash string, since, until time.Time) ([]repository.RawAuditRow, error)
+	queryROEventsBySpecHashFn  func(ctx context.Context, targetResource, clusterID, specHash string, since, until time.Time) ([]repository.RawAuditRow, error)
 	queryEffectivenessEventsFn func(ctx context.Context, correlationIDs []string) (map[string][]*server.EffectivenessEvent, error)
 }
 
-func (m *mockRemediationHistoryQuerier) QueryROEventsBySpecHash(ctx context.Context, specHash string, since, until time.Time) ([]repository.RawAuditRow, error) {
+func (m *mockRemediationHistoryQuerier) QueryROEventsBySpecHash(ctx context.Context, targetResource, clusterID, specHash string, since, until time.Time) ([]repository.RawAuditRow, error) {
 	if m.queryROEventsBySpecHashFn != nil {
-		return m.queryROEventsBySpecHashFn(ctx, specHash, since, until)
+		return m.queryROEventsBySpecHashFn(ctx, targetResource, clusterID, specHash, since, until)
 	}
 	return nil, nil
 }
@@ -124,12 +124,42 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 	})
 
 	// ========================================
+	// Target-Resource Format Unification (Issue #1802)
+	// ========================================
+	// RO's audit emission (emitWorkflowCreatedAudit) always writes
+	// target_resource as the unconditional 3-part "{namespace}/{kind}/{name}"
+	// (empty namespace produces a leading "/"). Now that QueryROEventsBySpecHash
+	// filters on this column (Issue #1802 target-resource scoping), the
+	// handler's parsed target-resource string MUST match that exact format —
+	// otherwise cluster-scoped resources would silently never match any
+	// stored history, defeating the new filter.
+	Describe("Target-Resource Format Unification (Issue #1802)", func() {
+		It("UT-DS-1802-002: should emit the canonical 3-part format for cluster-scoped (namespace-less) resources", func() {
+			var capturedTargetResource string
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, targetResource, _, _ string, _, _ time.Time) ([]repository.RawAuditRow, error) {
+				capturedTargetResource = targetResource
+				return nil, nil
+			}
+
+			req := httptest.NewRequest("GET",
+				"/api/v1/remediation-history/context?targetKind=Node&targetName=node-1&currentSpecHash=sha256:abc",
+				nil)
+			handler.HandleGetRemediationHistoryContext(rec, req)
+
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(capturedTargetResource).To(Equal("/Node/node-1"),
+				"cluster-scoped target-resource string must match the 3-part canonical format "+
+					"written by RO's audit emission (emitWorkflowCreatedAudit), not a bare 2-part 'Kind/Name'")
+		})
+	})
+
+	// ========================================
 	// Successful Responses
 	// ========================================
 	Describe("Successful Responses", func() {
 
 		It("UT-RH-HANDLER-005: should return 200 with empty chains when no RO events", func() {
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
 				Expect(specHash).To(Equal("sha256:abc123"))
 				return nil, nil
 			}
@@ -153,7 +183,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 		It("UT-RH-HANDLER-006: should return 200 with populated tier1 chain when RO+EM data exists", func() {
 			fixedTime := time.Date(2026, 2, 12, 10, 0, 0, 0, time.UTC)
 
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
 				Expect(specHash).To(Equal("sha256:abc123"))
 				return []repository.RawAuditRow{
 					{
@@ -245,7 +275,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 			fixedTime := time.Date(2026, 2, 12, 10, 0, 0, 0, time.UTC)
 			specHashCallCount := 0
 
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
 				Expect(specHash).To(Equal("sha256:abc123"))
 				specHashCallCount++
 				if specHashCallCount == 1 {
@@ -300,7 +330,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 			specHashCallCount := 0
 			tier2FixedTime := time.Date(2026, 1, 2, 10, 0, 0, 0, time.UTC)
 
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, specHash string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
 				Expect(specHash).To(Equal("sha256:abc123"))
 				specHashCallCount++
 				if specHashCallCount == 1 {
@@ -366,7 +396,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 		It("UT-RH-HANDLER-008: should use default 24h tier1 and 2160h tier2 windows when omitted", func() {
 			var capturedSince time.Time
 
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, _ string, since time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, _ string, since time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
 				if capturedSince.IsZero() {
 					capturedSince = since // capture from the first (Tier 1) call
 				}
@@ -389,7 +419,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 	Describe("Error Handling", func() {
 
 		It("UT-RH-HANDLER-009: should return 500 when repository returns error", func() {
-			mock.queryROEventsBySpecHashFn = func(_ context.Context, _ string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
+			mock.queryROEventsBySpecHashFn = func(_ context.Context, _, _, _ string, _ time.Time, _ time.Time) ([]repository.RawAuditRow, error) {
 				return nil, fmt.Errorf("database connection lost")
 			}
 

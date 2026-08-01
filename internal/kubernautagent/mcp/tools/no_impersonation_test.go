@@ -108,7 +108,7 @@ type contextCapturingEnrichmentRunner struct {
 	captureCtx func(context.Context)
 }
 
-func (r *contextCapturingEnrichmentRunner) Enrich(ctx context.Context, _, _, _, _, _, _ string) (*enrichment.EnrichmentResult, error) {
+func (r *contextCapturingEnrichmentRunner) Enrich(ctx context.Context, _ enrichment.EnrichRequest) (*enrichment.EnrichmentResult, error) {
 	r.captureCtx(ctx)
 	return &enrichment.EnrichmentResult{}, nil
 }

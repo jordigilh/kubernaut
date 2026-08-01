@@ -109,6 +109,40 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 		)
 	}
 
+	// insertROEventWithCluster inserts a remediation.workflow_created audit
+	// event with a top-level cluster_id column value (Issue #1802, migration
+	// 014). insertAuditEvent/insertROEvent above leave cluster_id NULL,
+	// matching unscoped/release-v1.5 semantics -- this variant is used only by
+	// the fleet cluster-scoping test below.
+	insertROEventWithCluster := func(correlationID, target, clusterID, preHash, actionType string, ts time.Time) {
+		GinkgoHelper()
+		eventData, err := json.Marshal(map[string]interface{}{
+			"target_resource":           target,
+			"pre_remediation_spec_hash": preHash,
+			"action_type":               actionType,
+			"signal_type":               "HighCPULoad",
+			"signal_fingerprint":        "fp-" + testID,
+			"outcome":                   "success",
+		})
+		Expect(err).ToNot(HaveOccurred())
+
+		_, err = seedDB.ExecContext(testCtx,
+			`INSERT INTO audit_events (
+				event_id, event_date, event_timestamp, event_type, event_version,
+				event_category, event_action, event_outcome, correlation_id,
+				resource_type, resource_id, actor_id, actor_type,
+				retention_days, is_sensitive, event_data, cluster_id
+			) VALUES (
+				$1, $2, $3, 'remediation.workflow_created', '1.0',
+				'remediation', 'create', 'success', $4,
+				'test', 'test', 'test', 'system',
+				90, false, $5, $6
+			)`,
+			uuid.New(), ts.Format("2006-01-02"), ts, correlationID, eventData, clusterID,
+		)
+		Expect(err).ToNot(HaveOccurred(), "Failed to insert cluster-scoped RO audit event")
+	}
+
 	insertEMEvents := func(correlationID, reason string, score float64, preHash, postHash string, ts time.Time) {
 		GinkgoHelper()
 		insertAuditEvent("effectiveness.health.assessed", "effectiveness", correlationID,
@@ -150,7 +184,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			insertEMEvents(corrID2, "Full", 0.90, "sha256:pre1", "sha256:post2", now.Add(30*time.Minute))
 
 			By("Calling enricher with real infrastructure")
-			result, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "", "sha256:pre1", "incident-enr001-"+testID)
+			result, err := enricher.Enrich(testCtx, enrichment.EnrichRequest{Kind: "Pod", Name: "web-pod-1", Namespace: "it-enrichment", SpecHash: "sha256:pre1", IncidentID: "incident-enr001-"+testID})
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Asserting owner chain from real K8s (envtest)")
@@ -188,6 +222,42 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 	})
 
 	// ============================================================================
+	// IT-KA-1802-001: Fleet cluster-scoped remediation history isolation (Issue #1802)
+	// ============================================================================
+	Describe("IT-KA-1802-001: fleet cluster_id scoping isolates remediation history across clusters (Issue #1802, main only)", Label("integration", "issue-1802"), func() {
+		It("should not surface cluster-a's history when enriching for cluster-b's identically-named/-spec'd resource", func() {
+			target := itEnrichmentPodWebPod1
+			sharedHash := "sha256:1802-" + testID
+			corrA := fmt.Sprintf("ka1802-a-%s", testID)
+			now := time.Now().Add(-1 * time.Hour)
+
+			By("Seeding cluster-a's remediation history for the shared target + spec hash")
+			insertROEventWithCluster(corrA, target, "cluster-a-"+testID, sharedHash, "IncreaseMemory", now)
+
+			By("Enriching for cluster-b, targeting the identically-named/-namespaced/-spec'd resource")
+			resultB, err := enricher.Enrich(testCtx, enrichment.EnrichRequest{
+				Kind: "Pod", Name: "web-pod-1", Namespace: "it-enrichment",
+				SpecHash: sharedHash, ClusterID: "cluster-b-" + testID, IncidentID: "incident-1802b-" + testID,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resultB.RemediationHistory).ToNot(BeNil())
+			Expect(resultB.RemediationHistory.Tier1).To(BeEmpty(),
+				"Issue #1802: cluster-b's investigation must NOT be enriched with cluster-a's remediation "+
+					"history for an identically-named/-spec'd resource -- cluster_id must scope the DS query")
+
+			By("Sanity: cluster-a's own investigation DOES see its own history")
+			resultA, err := enricher.Enrich(testCtx, enrichment.EnrichRequest{
+				Kind: "Pod", Name: "web-pod-1", Namespace: "it-enrichment",
+				SpecHash: sharedHash, ClusterID: "cluster-a-" + testID, IncidentID: "incident-1802a-" + testID,
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resultA.RemediationHistory.Tier1).To(HaveLen(1),
+				"cluster-a's own matching ClusterID history must still be surfaced")
+			Expect(resultA.RemediationHistory.Tier1[0].RemediationUID).To(Equal(corrA))
+		})
+	})
+
+	// ============================================================================
 	// IT-KA-433-ENR-002: specHash auto-computation from real K8s
 	// ============================================================================
 	Describe("IT-KA-433-ENR-002: specHash auto-computation from real K8s", func() {
@@ -195,7 +265,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			incidentID := "incident-enr002-" + testID
 
 			By("Calling enricher with empty specHash for known K8s resource")
-			result, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "", "", incidentID)
+			result, err := enricher.Enrich(testCtx, enrichment.EnrichRequest{Kind: "Pod", Name: "web-pod-1", Namespace: "it-enrichment", IncidentID: incidentID})
 			Expect(err).ToNot(HaveOccurred(),
 				"enricher should handle specHash auto-computation gracefully")
 
@@ -244,7 +314,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			insertEMEvents(corrID, "Full", 0.88, "sha256:pre3", "sha256:post3", now)
 
 			By("Calling enricher (triggers audit event)")
-			_, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "", "sha256:pre3", incidentID)
+			_, err := enricher.Enrich(testCtx, enrichment.EnrichRequest{Kind: "Pod", Name: "web-pod-1", Namespace: "it-enrichment", SpecHash: "sha256:pre3", IncidentID: incidentID})
 			Expect(err).ToNot(HaveOccurred())
 
 			By("Querying audit_events table for enrichment.completed event")
@@ -283,7 +353,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 				logr.Discard())
 
 			By("Calling broken enricher")
-			result, err := brokenEnricher.Enrich(testCtx, "Pod", "broken-pod-"+testID, "it-enrichment", "", "", incidentID)
+			result, err := brokenEnricher.Enrich(testCtx, enrichment.EnrichRequest{Kind: "Pod", Name: "broken-pod-"+testID, Namespace: "it-enrichment", IncidentID: incidentID})
 			Expect(err).ToNot(HaveOccurred(), "enricher handles failure gracefully")
 			Expect(result.OwnerChain).To(BeEmpty(), "K8s failed so owner chain should be empty")
 			Expect(result.RemediationHistory).To(BeNil(), "DS failed so history should be nil")
@@ -332,7 +402,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 				logr.Discard())
 
 			By("Calling enricher")
-			result, err := partialEnricher.Enrich(testCtx, "StatefulSet", "redis-"+testID, "it-enrichment", "", "sha256:pre5", incidentID)
+			result, err := partialEnricher.Enrich(testCtx, enrichment.EnrichRequest{Kind: "StatefulSet", Name: "redis-"+testID, Namespace: "it-enrichment", SpecHash: "sha256:pre5", IncidentID: incidentID})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.OwnerChain).To(BeEmpty(), "K8s failed so owner chain should be empty")
 			Expect(result.RemediationHistory.Tier1).To(HaveLen(1), "DS succeeded so history should have 1 Tier1 entry")
@@ -366,7 +436,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			ghostName := "ghost-" + testID
 
 			By("Calling enricher for a target with no seeded data")
-			result, err := enricher.Enrich(testCtx, "Deployment", ghostName, "it-enrichment", "", "sha256:none", incidentID)
+			result, err := enricher.Enrich(testCtx, enrichment.EnrichRequest{Kind: "Deployment", Name: ghostName, Namespace: "it-enrichment", SpecHash: "sha256:none", IncidentID: incidentID})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RemediationHistory.Tier1).To(BeEmpty(), "no seeded data means empty Tier1 history")
 
@@ -403,7 +473,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 				logr.Discard())
 
 			By("Calling enricher")
-			result, err := partialEnricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "", "sha256:test7", incidentID)
+			result, err := partialEnricher.Enrich(testCtx, enrichment.EnrichRequest{Kind: "Pod", Name: "web-pod-1", Namespace: "it-enrichment", SpecHash: "sha256:test7", IncidentID: incidentID})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.OwnerChain).To(HaveLen(2),
 				"K8s succeeded so owner chain should be populated")
@@ -510,7 +580,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 				now.Add(5*time.Minute))
 
 			By("Calling enricher")
-			result, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "", "sha256:pre8", "incident-enr008-"+testID)
+			result, err := enricher.Enrich(testCtx, enrichment.EnrichRequest{Kind: "Pod", Name: "web-pod-1", Namespace: "it-enrichment", SpecHash: "sha256:pre8", IncidentID: "incident-enr008-"+testID})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.RemediationHistory.Tier1).To(HaveLen(1))
 
@@ -571,7 +641,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			insertEMEvents(corrID, "Full", 0.90, "sha256:old9", "sha256:current9", now)
 
 			By("Calling enricher with currentSpecHash=sha256:old9 (matches preHash → regression)")
-			result1, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "", "sha256:old9", "incident-enr009a-"+testID)
+			result1, err := enricher.Enrich(testCtx, enrichment.EnrichRequest{Kind: "Pod", Name: "web-pod-1", Namespace: "it-enrichment", SpecHash: "sha256:old9", IncidentID: "incident-enr009a-"+testID})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result1.RemediationHistory.Tier1).To(HaveLen(1))
 			Expect(result1.RemediationHistory.RegressionDetected).To(BeTrue(),
@@ -579,7 +649,7 @@ var _ = Describe("Kubernaut Agent Enrichment — Real DS + Real K8s (#433)", Lab
 			Expect(result1.RemediationHistory.Tier1[0].HashMatch).To(Equal("preRemediation"))
 
 			By("Calling enricher with currentSpecHash=sha256:novel (matches nothing → no results, no regression)")
-			result2, err := enricher.Enrich(testCtx, "Pod", "web-pod-1", "it-enrichment", "", "sha256:novel", "incident-enr009b-"+testID)
+			result2, err := enricher.Enrich(testCtx, enrichment.EnrichRequest{Kind: "Pod", Name: "web-pod-1", Namespace: "it-enrichment", SpecHash: "sha256:novel", IncidentID: "incident-enr009b-"+testID})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result2.RemediationHistory.Tier1).To(BeEmpty(),
 				"no RO events match sha256:novel as preHash")
@@ -607,6 +677,6 @@ type errorDSClient struct {
 	err error
 }
 
-func (e *errorDSClient) GetRemediationHistory(_ context.Context, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
+func (e *errorDSClient) GetRemediationHistory(_ context.Context, _, _, _, _, _ string) (*enrichment.RemediationHistoryResult, error) {
 	return nil, e.err
 }
