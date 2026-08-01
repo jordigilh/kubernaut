@@ -1,11 +1,20 @@
-# BR-KA-198: Operator-Configurable Confidence Thresholds
+# BR-AI-088: Operator-Configurable Confidence Thresholds
 
-**Business Requirement ID**: BR-KA-198
-**Category**: Kubernaut Agent (KA) / AIAnalysis
+**Business Requirement ID**: BR-AI-088
+**Category**: AI (AIAnalysis)
 **Priority**: P2
 **Target Version**: V1.1
 **Status**: 📋 PLANNED
 **Date**: December 6, 2025
+
+**Last Updated**: 2026-08-01 — Renamed from `BR-KA-198` and re-categorized under the `BR-AI-*`
+prefix ([Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806) follow-up). The
+mechanical Tier B1 rename (`BR-HAPI-198` → `BR-KA-198`) was ID-only and preserved the original
+(mis-scoped) `HAPI`/`KA` service prefix, but this requirement's content has always assigned
+rule-based threshold evaluation to **AIAnalysis**, not Kubernaut Agent — KA only returns
+`confidence` and is explicitly threshold-agnostic (see BR-AI-088.4 below). Re-categorized to match
+the service that actually owns this logic, consistent with how `BR-AI-084`–`BR-AI-087` are already
+scoped.
 
 ---
 
@@ -40,7 +49,7 @@ V1.0 implements a **global 70% confidence threshold** for determining when human
 
 ## 🎯 Requirements
 
-### BR-KA-198.1: Rule-Based Threshold Configuration
+### BR-AI-088.1: Rule-Based Threshold Configuration
 
 **MUST**: AIAnalysis service SHALL support rule-based confidence threshold configuration.
 
@@ -83,7 +92,7 @@ data:
         description: "Default threshold for unmatched scenarios"
 ```
 
-### BR-KA-198.2: Match Criteria
+### BR-AI-088.2: Match Criteria
 
 **MUST**: Rules SHALL support matching on the following criteria from `IncidentRequest`:
 
@@ -96,13 +105,13 @@ data:
 | `business_category` | string[] | `["revenue-critical", "internal"]` |
 | `cluster_name` | string[] | `["prod-us-east", "dev-cluster"]` |
 
-### BR-KA-198.3: Rule Evaluation Order
+### BR-AI-088.3: Rule Evaluation Order
 
 **MUST**: Rules SHALL be evaluated in order, and the **first matching rule** SHALL be applied.
 
 **MUST**: A `default` rule with empty `match: {}` SHALL be required as the last rule.
 
-### BR-KA-198.4: Threshold Application
+### BR-AI-088.4: Threshold Application
 
 **MUST**: When AIAnalysis receives `IncidentResponse` from KA:
 1. Extract `selected_workflow.confidence` value
@@ -111,7 +120,7 @@ data:
 
 **Note**: KA remains stateless and threshold-agnostic. It returns `confidence` only.
 
-### BR-KA-198.5: Audit Logging
+### BR-AI-088.5: Audit Logging
 
 **SHOULD**: When a threshold rule is applied, AIAnalysis SHOULD log:
 - Rule name that matched
@@ -294,5 +303,6 @@ confidence_rules:
 |---------|------|---------|
 | 1.0 | 2025-12-06 | Initial business requirement for V1.1 |
 | 1.1 | 2026-02-28 | Updated V1.0 compatibility: threshold now configurable via `input.confidence_threshold` (#225). Fixed 70% → 80% discrepancy (actual V1.0 default is 80% per BR-AI-003). |
+| 1.2 | 2026-08-01 | Renamed `BR-KA-198` → `BR-AI-088`; re-categorized from Kubernaut Agent to AIAnalysis (the service that actually owns this logic). No functional changes. |
 
 
