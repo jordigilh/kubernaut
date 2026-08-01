@@ -82,7 +82,7 @@ var _ = Describe("Verdict Enum Alignment — #1077", func() {
 		})
 	})
 
-	Describe("UT-SA-1077-003: kubernaut_alignment_verdict_total{result=\"aligned\"} increments on clean verdict", func() {
+	Describe("UT-SA-1077-003: aiagent_alignment_verdict_total{result=\"aligned\"} increments on clean verdict", func() {
 		It("should increment verdict counter with result=\"aligned\" label when verdict is clean", func() {
 			store := &mockAuditStore{}
 			innerRes := &katypes.InvestigationResult{
