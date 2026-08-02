@@ -18,12 +18,14 @@ package tools_test
 
 import (
 	"context"
+	"errors"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
@@ -32,7 +34,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 		It("UT-AF-1332-001: creates RR with valid namespace/kind/name and returns rr_id", func() {
 			tc := newTypedFakeClient()
 
-			result, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.RemediateArgs{
+			result, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: defaultTestTriager()}, &tools.RemediateArgs{
 				Namespace:   "prod",
 				Kind:        "Deployment",
 				Name:        "web",
@@ -50,13 +52,13 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 		It("UT-AF-1332-002: deduplication returns already_exists for same fingerprint", func() {
 			tc := newTypedFakeClient()
 
-			result1, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.RemediateArgs{
+			result1, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: defaultTestTriager()}, &tools.RemediateArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "first", APIVersion: "apps/v1",
 			}, "user-a")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result1.AlreadyExists).To(BeFalse())
 
-			result2, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.RemediateArgs{
+			result2, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: defaultTestTriager()}, &tools.RemediateArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "second", APIVersion: "apps/v1",
 			}, "user-b")
 			Expect(err).NotTo(HaveOccurred())
@@ -66,7 +68,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 
 		It("UT-AF-1332-003: accepts empty namespace for cluster-scoped resources (#1372)", func() {
 			tc := newTypedFakeClient()
-			result, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.RemediateArgs{
+			result, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: defaultTestTriager()}, &tools.RemediateArgs{
 				Namespace: "", Kind: "Node", Name: "worker-1", APIVersion: "v1",
 			}, "user")
 			Expect(err).NotTo(HaveOccurred())
@@ -75,7 +77,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 
 		It("UT-AF-1332-004: rejects empty kind", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.RemediateArgs{
+			_, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: defaultTestTriager()}, &tools.RemediateArgs{
 				Namespace: "prod", Kind: "", Name: "web", APIVersion: "apps/v1",
 			}, "user")
 			Expect(err).To(HaveOccurred())
@@ -84,7 +86,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 
 		It("UT-AF-1332-005: rejects empty name", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.RemediateArgs{
+			_, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: defaultTestTriager()}, &tools.RemediateArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "", APIVersion: "apps/v1",
 			}, "user")
 			Expect(err).To(HaveOccurred())
@@ -98,25 +100,26 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 			Expect(err).To(MatchError(tools.ErrK8sUnavailable))
 		})
 
-		It("UT-AF-1332-007: severity defaults to medium when no triager provided", func() {
+		It("UT-AF-1332-007 / UT-AF-1839-011: nil Triager (severityTriage.enabled=false) fails closed instead of fabricating a severity", func() {
 			tc := newTypedFakeClient()
 
 			result, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.RemediateArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web-sev", APIVersion: "apps/v1",
 			}, "user")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("warning"))
+			Expect(errors.Is(err, severity.ErrSeverityUndetermined)).To(BeTrue(),
+				"#1839/DD-AF-010: a nil Triager must fail closed like 'no evidence found', not silently default to warning")
+			Expect(result.RRID).To(BeEmpty())
 		})
 
 		It("UT-AF-1332-008: existing rr_id path looks up RR status (fixes status.phase bug)", func() {
 			tc := newTypedFakeClient()
 
-			createResult, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.RemediateArgs{
+			createResult, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: defaultTestTriager()}, &tools.RemediateArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "existing-target", APIVersion: "apps/v1",
 			}, "user")
 			Expect(err).NotTo(HaveOccurred())
 
-			lookupResult, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.RemediateArgs{
+			lookupResult, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: defaultTestTriager()}, &tools.RemediateArgs{
 				RRID: createResult.RRID,
 			}, "user")
 			Expect(err).NotTo(HaveOccurred())
@@ -137,7 +140,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 	Describe("APIVersion support (#1372)", func() {
 		It("UT-AF-1372-070: remediate with api_version populated -> RR has apiVersion set", func() {
 			tc := newTypedFakeClient()
-			result, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.RemediateArgs{
+			result, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: defaultTestTriager()}, &tools.RemediateArgs{
 				Namespace:  "prod",
 				Kind:       "Deployment",
 				Name:       "web-apiver",
@@ -149,7 +152,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 
 		It("UT-AF-1372-071: remediate with empty api_version rejects", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.RemediateArgs{
+			_, err := tools.HandleRemediate(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: defaultTestTriager()}, &tools.RemediateArgs{
 				Namespace:  "prod",
 				Kind:       "Deployment",
 				Name:       "web",
@@ -166,7 +169,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 			q := &bridgeQueue{}
 			ctx := launcher.WithEventBridge(context.Background(), q, a2a.NewTaskID(), "ctx-1423-020", nil)
 
-			result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system"}, &tools.RemediateArgs{
+			result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: tc, ControllerNS: "kubernaut-system", Triager: defaultTestTriager()}, &tools.RemediateArgs{
 				Namespace:  "prod",
 				Kind:       "Deployment",
 				Name:       "web-enriched",
@@ -214,6 +217,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 				Client:       tc,
 				ControllerNS: "kubernaut-system",
 				Auditor:      rec,
+				Triager:      defaultTestTriager(),
 			}, &tools.RemediateArgs{
 				Namespace:  "prod",
 				Kind:       "Deployment",

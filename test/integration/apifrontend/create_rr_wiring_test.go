@@ -34,6 +34,44 @@ func (n *noopPromClientIT) InstantQuery(_ context.Context, _ string) (*prom.Quer
 	return &prom.QueryResult{}, nil
 }
 
+// alwaysFiringPromClientIT returns a single cluster-scoped firing alert (no
+// namespace/kind/name labels), so it label-matches any target resource. See
+// the tools_test package's alwaysFiringPromClient for the full rationale.
+//
+// #1839/DD-AF-010: a nil Triager now fails closed. IT tests that don't care
+// about the specific severity value but need HandleCreateRR to succeed use
+// this fixture via defaultTestTriagerIT().
+type alwaysFiringPromClientIT struct{}
+
+func (a *alwaysFiringPromClientIT) GetAlerts(_ context.Context) ([]prom.Alert, error) {
+	return []prom.Alert{{State: "firing", Labels: map[string]string{"alertname": "TestDefaultAlert", "severity": "warning"}}}, nil
+}
+func (a *alwaysFiringPromClientIT) GetRules(_ context.Context) ([]prom.RuleGroup, error) {
+	return nil, nil
+}
+func (a *alwaysFiringPromClientIT) InstantQuery(_ context.Context, _ string) (*prom.QueryResult, error) {
+	return &prom.QueryResult{}, nil
+}
+
+func defaultTestTriagerIT() *severity.Triager {
+	return severity.NewTriager(&alwaysFiringPromClientIT{}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+}
+
+// unnamedAlertTestTriagerIT resolves a severity from a resource-matching
+// firing alert with no "alertname" label, so signalNameFromTriage() falls
+// through to "" -- for IT tests proving the signalName K8s-events/"unknown"
+// fallback still triggers even though severity triage itself succeeds.
+func unnamedAlertTestTriagerIT(namespace, kind, name string) *severity.Triager {
+	mockProm := &podCorrelationPromClient{
+		alerts: []prom.Alert{
+			{State: "firing", Labels: map[string]string{
+				"namespace": namespace, "kind": kind, "name": name, "severity": "warning",
+			}},
+		},
+	}
+	return severity.NewTriager(mockProm, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+}
+
 var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
 	eventsGVR := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
@@ -52,7 +90,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			_ = k8sClient.Delete(ctx, nsObj)
 		})
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: defaultTestTriagerIT()}, &tools.CreateRRArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-w01",
@@ -79,7 +117,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	It("IT-AF-1282-W02: created RR has signalSource=a2a-agent in envtest", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w02",
@@ -101,7 +139,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	It("IT-AF-1282-W03: signalName falls back to unknown in envtest", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: unnamedAlertTestTriagerIT(defaultFixture, "Deployment", "web-w03")}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w03",
@@ -114,7 +152,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 
 		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
 		Expect(signalName).To(Equal("unknown"),
-			"with no triager and no events, fallback should be unknown")
+			"with an unnamed triage result and no events, fallback should be unknown")
 
 		DeferCleanup(func() {
 			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result.RRID, metav1.DeleteOptions{})
@@ -149,7 +187,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			_ = dynamicClient.Resource(eventsGVR).Namespace(defaultFixture).Delete(ctx, "oom-event-w03b", metav1.DeleteOptions{})
 		})
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: unnamedAlertTestTriagerIT(defaultFixture, "Deployment", "web-w03b")}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w03b",
@@ -242,7 +280,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			_ = k8sClient.Delete(ctx, workloadNSObj)
 		})
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: controllerNS}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: controllerNS, Triager: defaultTestTriagerIT()}, &tools.CreateRRArgs{
 			Namespace:   workloadNS,
 			Kind:        "Deployment",
 			Name:        "web-1292-w01",
@@ -298,7 +336,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	It("IT-FLEET-004: HandleCreateRR with ClusterID produces RR with cluster fields in envtest (BR-INTEGRATION-065)", func() {
 		ctx := context.Background()
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-fleet-004-" + uuid.New().String()[:6],
@@ -327,7 +365,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		baseName := "web-fleet-005-" + uuid.New().String()[:6]
 
-		result1, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture}, &tools.CreateRRArgs{
+		result1, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        baseName,
@@ -337,7 +375,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result1.AlreadyExists).To(BeFalse())
 
-		result2, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture}, &tools.CreateRRArgs{
+		result2, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Triager: defaultTestTriagerIT()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        baseName,
@@ -360,7 +398,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		auditRecorder.Reset()
 
-		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Auditor: auditRecorder}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: defaultFixture, Auditor: auditRecorder, Triager: defaultTestTriagerIT()}, &tools.CreateRRArgs{
 			Namespace:   defaultFixture,
 			Kind:        "Deployment",
 			Name:        "web-w06",
