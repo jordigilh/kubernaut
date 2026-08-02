@@ -1,8 +1,27 @@
 # Getting Started with Kubernaut E2E Testing
 
-**Status**: Feature Complete (Testing Phase)
+**Status**: 🔄 SUPERSEDED — see notice below
 **Current Phase**: Unit, Integration, and E2E Test Implementation
-**Deployment Model**: Hybrid Architecture (Recommended)
+**Deployment Model**: Hybrid Architecture (historical proposal, never adopted)
+
+---
+
+## ⚠️ **SUPERSEDED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**
+
+This document (and the rest of `docs/development/e2e-testing/`) describes a January 2025 proposal for
+a **remote bare-metal hybrid architecture** (dedicated RHEL host, e.g. `helios08`, reached over SSH,
+with a standalone "HolmesGPT REST API" container on `localhost:8090`). None of the `make` targets
+referenced below (`configure-e2e-remote`, `deploy-cluster-remote-only`, `setup-local-hybrid`,
+`test-e2e-hybrid`, `status-hybrid`, `validate-hybrid-topology`, `cleanup-hybrid`) exist in the
+repository's `Makefile` — this deployment model was never adopted.
+
+**What actually ships today**: per-service E2E suites in `test/e2e/<service>/` (Ginkgo, against a local
+Kind cluster), run via `make test-e2e-<service>` (e.g. `make test-e2e-kubernautagent`,
+`make test-e2e-fullpipeline`, `make test-e2e-fleet`) — see the root `Makefile` (`test-e2e-%` target)
+and `docs/development/testing/KA_E2E_TEST_PLAN.md` for the Kubernaut Agent (KA) suite specifically.
+There is no separate "HolmesGPT REST API" service; KA is a single Go binary/container.
+
+Kept below for historical reference only; do not follow these instructions.
 
 ---
 

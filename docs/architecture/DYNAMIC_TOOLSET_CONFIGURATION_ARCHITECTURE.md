@@ -2,9 +2,19 @@
 
 **Document Version**: 2.0
 **Date**: January 2025
-**Status**: Architecture Design Specification - **APPROVED**
+**Status**: 🗄️ **SUPERSEDED** — see note below
 **Module**: Dynamic Toolset Configuration (`pkg/ai/holmesgpt/`, `pkg/platform/k8s/`, `pkg/api/context/`)
 **Update**: File-based ConfigMap polling with reconciliation
+
+> **SUPERSEDED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: The
+> Dynamic Toolset Service designed in detail below was **deferred to V2.0 and never built** —
+> see [DD-016](decisions/DD-016-dynamic-toolset-v2-deferral.md) (authoritative deferral decision,
+> 2025-11-21). None of the Go paths (`pkg/ai/holmesgpt/dynamic_toolset_manager.go`) or Python paths
+> (`docker/kubernaut-agent/src/services/toolset_config_service.py`) referenced below exist in the
+> codebase; `HolmesGPT-API`/`kubernaut-agent` was subsequently rewritten in Go as **Kubernaut Agent
+> (KA)**, which instead ships with built-in Prometheus-only toolset logic (no separate discovery
+> service, no ConfigMap reconciliation loop). This document is retained for historical/design-reference
+> context only — do not use it to understand the current toolset configuration mechanism.
 
 ---
 
