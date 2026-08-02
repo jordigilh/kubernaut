@@ -137,9 +137,10 @@ func sessionServiceForAgent(d *handlerDeps) *session.CRDSessionService {
 
 // buildRootAgentConfig assembles the AgentConfig passed to agentpkg.NewRootAgent.
 func buildRootAgentConfig(d *handlerDeps, llmModel model.LLM, sessionSvcForAgent *session.CRDSessionService) agentpkg.AgentConfig {
+	alertToolsEnabled := d.Backends.PromClient != nil
 	return agentpkg.AgentConfig{
-		Instruction:           agentpkg.BuildInstruction(d.Cfg.Session.Namespace),
-		InstructionProvider:   agentpkg.NewInstructionProvider(d.Cfg.Session.Namespace),
+		Instruction:           agentpkg.BuildInstruction(d.Cfg.Session.Namespace, alertToolsEnabled),
+		InstructionProvider:   agentpkg.NewInstructionProvider(d.Cfg.Session.Namespace, alertToolsEnabled),
 		LLMModel:              llmModel,
 		Namespace:             d.Cfg.Session.Namespace,
 		K8sClient:             d.Backends.K8sClient(),

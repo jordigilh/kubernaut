@@ -305,7 +305,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	})
 
 	It("IT-AF-1292-W02: prompt includes workload namespace instruction and rejects old single-NS wording (BR-PLATFORM-057, CM-6)", func() {
-		instruction := agentpkg.BuildInstruction("kubernaut-system")
+		instruction := agentpkg.BuildInstruction("kubernaut-system", true)
 
 		Expect(instruction).To(ContainSubstring("provide: api_version, namespace, kind, name, description"),
 			"prompt must list namespace as an LLM-provided field for kubernaut_remediate")
@@ -325,7 +325,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		resolvedNS = agentpkg.ResolveNamespace("", nsFile)
 		Expect(resolvedNS).To(Equal("it-namespace"))
 
-		instruction := agentpkg.BuildInstruction(resolvedNS)
+		instruction := agentpkg.BuildInstruction(resolvedNS, true)
 		Expect(instruction).To(ContainSubstring("## Tool Usage Rules"))
 		Expect(instruction).To(ContainSubstring("kubernaut MCP tools"))
 		Expect(instruction).To(ContainSubstring("NEVER use kubectl"))
