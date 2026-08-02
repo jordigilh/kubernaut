@@ -66,7 +66,7 @@ during preflight, so a second reasoning field isn't added to a struct with zero 
 
 ### 2.2 Cross-References
 
-- [Configuration Reference §6.1/§7.1](../../services/kubernaut-agent/configuration-reference.md)
+- [Configuration Reference §6.1/§7.1](../../services/stateless/kubernaut-agent/configuration-reference.md)
 - Existing sibling test files: `internal/kubernautagent/config/config_1470_test.go`, `cmd/kubernautagent/llm_builder_effort_1604_test.go`, `cmd/kubernautagent/reload_callback_1470_test.go`
 
 ---

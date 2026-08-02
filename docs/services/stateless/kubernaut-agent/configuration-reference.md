@@ -21,7 +21,7 @@ Configuration is split into two files plus optional CLI overrides:
 
 > **LLM identity (`model`, and `phaseModels.<phase>.provider`/`.model`) requires a
 > process restart to change** — [#1599](https://github.com/jordigilh/kubernaut/issues/1599) /
-> [DD-LLM-008](../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md).
+> [DD-LLM-008](../../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md).
 > A hot-reload attempt that changes identity is rejected in full (the whole
 > candidate reload, including any otherwise-safe tuning changes in the same
 > payload) and the previous configuration keeps running. See §6 for the full
@@ -226,7 +226,7 @@ Top-level YAML (not nested under `runtime`/`ai` in file). Mapped by `LLMRuntimeC
 | `phaseModels` | map of `LLMOverrideConfig`, keyed by phase name | `nil` | See §6.1 | Per-phase LLM overrides (#1470). Identity fields (`provider`, `model`) within an override are subject to the same restart-required rule as base `model` — see §6.1. |
 
 **`model` is immutable after process start** ([#1599](https://github.com/jordigilh/kubernaut/issues/1599) /
-[DD-LLM-008](../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md)):
+[DD-LLM-008](../../../architecture/decisions/DD-LLM-008-restart-required-llm-identity-lock.md)):
 `ai.llm.provider` (static config) combined with runtime `model` form the LLM's
 "identity". A hot-reload attempt where the new `model` differs from the model
 the process booted with is rejected in full — the reload callback returns an

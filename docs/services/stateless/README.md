@@ -14,7 +14,7 @@
 1. **[Gateway Service](./gateway-service/)** - Signal ingestion and triage (Design B: adapter endpoints)
 2. **[Context API](./context-api/)** - Historical intelligence and pattern matching (read-only)
 3. **[Data Storage](./data-storage/)** - Audit trail persistence and embeddings (write-only)
-4. **[Kubernaut Agent (KA)](./kubernaut-agent/)** - AI investigation engine (Python SDK wrapper)
+4. **[Kubernaut Agent (KA)](./kubernaut-agent/)** - AI investigation engine (native Go implementation, formerly a Python/HolmesGPT SDK wrapper)
 5. **~~[Notification Service](./notification-service/)~~** - ⚠️ DEPRECATED (migrated to CRD Controller, see [06-notification](../crd-controllers/06-notification/))
 6. **[Dynamic Toolset](./dynamic-toolset/)** - Kubernaut Agent toolset configuration management
 
@@ -67,10 +67,10 @@
 - **Clients**: All CRD controllers write audit data here
 
 ### **Kubernaut Agent** (AI Engine)
-- **Wraps**: HolmesGPT Python SDK in REST API
-- **Provides**: AI-powered root cause analysis
-- **Toolsets**: Kubernetes, Prometheus, Grafana
-- **Multi-Provider**: OpenAI, Claude, local LLMs
+- **Implementation**: Native Go service (rewritten from the original Python/HolmesGPT SDK design — see [DD-KA-019](../../architecture/decisions/DD-KA-019-go-rewrite-design/))
+- **Provides**: AI-powered root cause analysis via an async, session-based API (submit, then poll for status/result)
+- **Toolsets**: Kubernetes, Prometheus, Alertmanager (Grafana is not implemented)
+- **Multi-Provider**: VertexAI, Anthropic, Gemini, OpenAI, Azure OpenAI, Ollama, vLLM, LlamaStack, Mistral, HuggingFace TGI, DeepSeek
 
 ### **Notification Service** (Output)
 - ⚠️ **DEPRECATED**: Service migrated to CRD Controller (2025-10-12)
@@ -125,11 +125,20 @@ stateless/
 │   ├── README.md                      ✅ NEW
 │   ├── overview.md
 │   └── api-specification.md
-├── kubernaut-agent/                     ✅ 3 documents
-│   ├── README.md                      ✅ NEW
+├── kubernaut-agent/                     ✅ 13 documents
+│   ├── README.md
 │   ├── overview.md
+│   ├── BUSINESS_REQUIREMENTS.md
+│   ├── BR_MAPPING.md
 │   ├── api-specification.md
-│   └── ORIGINAL_MONOLITHIC.md
+│   ├── integration-points.md
+│   ├── observability-logging.md
+│   ├── testing-strategy.md
+│   ├── metrics-slos.md
+│   ├── security-configuration.md
+│   ├── configuration-reference.md
+│   ├── shadow-agent-configuration.md
+│   └── security/AUDIT_EVENT_CATALOG.md
 ├── notification-service/              ✅ Directory + subdirs
 │   ├── README.md                      ✅ NEW
 │   ├── triage/                        (2 files)
