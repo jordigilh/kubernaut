@@ -220,7 +220,7 @@ func (s *Server) registerAuditRoutes(r chi.Router, writeAuthMiddleware, mutateAu
 	s.logger.V(1).Info("Registering GET /api/v1/effectiveness/{correlation_id} handler")
 	r.Get("/effectiveness/{correlation_id}", s.handleGetEffectivenessScore)
 
-	// BR-HAPI-016: Remediation history context for LLM prompt enrichment (DD-HAPI-016 v1.1)
+	// BR-KA-016: Remediation history context for LLM prompt enrichment (DD-KA-016 v1.1)
 	s.logger.V(1).Info("Registering GET /api/v1/remediation-history/context handler")
 	r.Get("/remediation-history/context", s.handler.HandleGetRemediationHistoryContext)
 }

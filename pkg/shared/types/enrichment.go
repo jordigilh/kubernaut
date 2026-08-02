@@ -184,7 +184,7 @@ type DetectedLabels struct {
 	ServiceMesh string `json:"serviceMesh,omitempty"`
 
 	// ========================================
-	// RESOURCE CONSTRAINTS (#366, DD-HAPI-018 v1.4)
+	// RESOURCE CONSTRAINTS (#366, DD-KA-018 v1.4)
 	// ========================================
 	// True if any ResourceQuota exists in namespace
 	ResourceQuotaConstrained bool `json:"resourceQuotaConstrained"`

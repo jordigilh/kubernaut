@@ -512,12 +512,12 @@ var _ = Describe("InvestigatingHandler", func() {
 			})
 
 			// ========================================
-			// DD-HAPI-002 v1.4: ValidationAttemptsHistory Support
+			// DD-KA-001 v1.4: ValidationAttemptsHistory Support
 			// KA retries up to 3 times with LLM self-correction
 			// validation_attempts_history provides audit trail
 			// ========================================
 
-			// DD-HAPI-002 v1.4: Store validation attempts history for audit
+			// DD-KA-001 v1.4: Store validation attempts history for audit
 			It("should store validation attempts history for audit/debugging", func() {
 				mockClient.WithHumanReviewAndHistory(
 					"parameter_validation_failed",
@@ -545,7 +545,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.ValidationAttemptsHistory[2].Errors).To(ContainElement("Missing parameter: namespace"))
 			})
 
-			// DD-HAPI-002 v1.4: Build detailed message from validation attempts
+			// DD-KA-001 v1.4: Build detailed message from validation attempts
 			It("should build operator-friendly message from validation attempts history", func() {
 				mockClient.WithHumanReviewAndHistory(
 					"llm_parsing_error",
@@ -568,7 +568,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.Message).To(ContainSubstring("Schema validation failed"))
 			})
 
-			// DD-HAPI-002 v1.4: Parse timestamps correctly
+			// DD-KA-001 v1.4: Parse timestamps correctly
 			It("should parse validation attempt timestamps", func() {
 				mockClient.WithHumanReviewAndHistory(
 					"workflow_not_found",
@@ -586,7 +586,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.ValidationAttemptsHistory[0].Timestamp.IsZero()).To(BeFalse(), "Timestamp should be parsed")
 			})
 
-			// DD-HAPI-002 v1.4: Handle empty validation history (backward compatibility)
+			// DD-KA-001 v1.4: Handle empty validation history (backward compatibility)
 			It("should fallback to warnings when validation history is empty", func() {
 				mockClient.WithHumanReviewReasonEnum("low_confidence", []string{"Confidence too low"})
 				analysis := createTestAnalysis()
@@ -600,7 +600,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.Warnings).To(ContainElement("Confidence too low"), "Warnings should be stored separately")
 			})
 
-			// DD-HAPI-002 v1.4: Handle malformed timestamp gracefully
+			// DD-KA-001 v1.4: Handle malformed timestamp gracefully
 			// Business Value: System doesn't crash on bad KA data, provides fallback
 			It("should fallback to current time when timestamp is malformed", func() {
 				mockClient.WithHumanReviewAndHistory(

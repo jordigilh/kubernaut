@@ -16,7 +16,7 @@ limitations under the License.
 
 // Issue #616: RO observability tests for CheckIneffectiveRemediationChain.
 //
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
 // TP-616-v1.1: Validates dsClient nil logging and post-query entry count logging.
 package routing_test
 

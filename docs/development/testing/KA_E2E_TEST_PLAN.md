@@ -8,7 +8,7 @@
 
 **Authority**:
 - DD-TEST-006: Test Plan Policy
-- BR-HAPI-002, BR-HAPI-197, BR-HAPI-250, BR-AUDIT-005, BR-AI-075/080/081, BR-STORAGE-013
+- BR-KA-002, BR-KA-197, BR-KA-250, BR-AUDIT-005, BR-AI-075/080/081, BR-STORAGE-013
 - BR-AI-084: Proactive Signal Mode Prompt Strategy, ADR-054: Proactive Signal Mode Classification
 
 ---
@@ -142,7 +142,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 #### E2E-HAPI-004: Normal Incident Analysis Succeeds (Happy Path)
 
-**Business Requirement**: BR-HAPI-002
+**Business Requirement**: BR-KA-002
 
 **Business Outcome**: Standard signal types produce confident workflow recommendations
 
@@ -203,7 +203,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 #### E2E-HAPI-006: Incident with Enrichment Results Processing
 
-**Business Requirement**: DD-HAPI-001 (Custom Labels Auto-Append)
+**Business Requirement**: DD-KA-002 (Custom Labels Auto-Append)
 
 **Business Outcome**: EnrichmentResults (detectedLabels, customLabels) influence workflow selection
 
@@ -380,7 +380,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 #### E2E-HAPI-016: Recovery Uses Detected Labels for Workflow Selection
 
-**Business Requirement**: DD-HAPI-001
+**Business Requirement**: DD-KA-002
 
 **Business Outcome**: Cluster context (detectedLabels) influences recovery workflow selection
 
@@ -672,7 +672,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 #### E2E-HAPI-026: Normal Recovery Analysis Succeeds
 
-**Business Requirement**: BR-HAPI-002
+**Business Requirement**: BR-KA-002
 
 **Business Outcome**: Standard recovery scenarios produce confident recommendations
 
@@ -891,7 +891,7 @@ for _, event := range events {
 
 #### E2E-HAPI-047: Validation Attempt Event Persisted
 
-**Business Requirement**: DD-HAPI-002 v1.2
+**Business Requirement**: DD-KA-001 (formerly DD-HAPI-002) v1.2
 
 **Business Outcome**: Workflow validation attempts audited for quality analysis
 
@@ -1061,7 +1061,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 #### E2E-HAPI-032: Empty Results Handling
 
-**Business Requirement**: BR-HAPI-250
+**Business Requirement**: BR-KA-250
 
 **Business Outcome**: No matching workflows returns empty array (not error)
 
@@ -1113,7 +1113,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 #### E2E-HAPI-034: Top-K Limiting
 
-**Business Requirement**: BR-HAPI-250
+**Business Requirement**: BR-KA-250
 
 **Business Outcome**: Tool respects result count limit (prevents LLM context overflow)
 
@@ -1223,7 +1223,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 #### E2E-HAPI-038: AI Handles No Matching Workflows Gracefully
 
-**Business Requirement**: BR-HAPI-250
+**Business Requirement**: BR-KA-250
 
 **Business Outcome**: AI handles "no automated solution" scenario without errors
 
@@ -1249,7 +1249,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 #### E2E-HAPI-039: AI Can Refine Search with Keywords
 
-**Business Requirement**: BR-HAPI-250
+**Business Requirement**: BR-KA-250
 
 **Business Outcome**: AI can perform broad search then refine with specific terms
 

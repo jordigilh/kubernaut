@@ -48,7 +48,7 @@ type DetectedLabels = sharedtypes.DetectedLabels
 
 // QuotaResourceUsage holds the hard limit and current usage for a single
 // resource key inside a ResourceQuota. Matches HAPI v1.2.1's
-// _summarize_quotas output (DD-HAPI-018 Detection 8).
+// _summarize_quotas output (DD-KA-018 Detection 8).
 type QuotaResourceUsage struct {
 	Hard string `json:"hard"`
 	Used string `json:"used"`

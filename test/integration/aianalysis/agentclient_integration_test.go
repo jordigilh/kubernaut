@@ -428,7 +428,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 		})
 	})
 
-	Context("Validation History - DD-HAPI-002", func() {
+	Context("Validation History - DD-KA-001", func() {
 		It("should return validation attempts history when present", func() {
 			// Real KA call - validation history populated by KA's retry logic
 			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{

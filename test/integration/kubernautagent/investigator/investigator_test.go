@@ -728,7 +728,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 	})
 
 	Describe("IT-KA-847-D-001: sameKindValidationGate rejects retry that lost remediation_target", func() {
-		It("should keep original target when retry response drops remediation_target (DD-HAPI-847)", func() {
+		It("should keep original target when retry response drops remediation_target (DD-KA-847)", func() {
 			// Signal is a Node, RCA also names Node → same-kind gate fires.
 			// Retry response (fallback) has no remediation_target.
 			// Approach D defensive check must preserve the original Node target.

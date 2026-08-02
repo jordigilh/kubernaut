@@ -103,7 +103,7 @@ The gap was anticipated but never resolved:
 - **BR-SP-101**: DetectedLabels auto-detection (8 characteristics) -- scope changes from pipeline-wide to SP-internal
 - **BR-SP-103**: FailedDetections tracking -- stays within SP
 - **BR-HAPI-194**: Honor `failedDetections` in workflow filtering -- moves to HAPI-computed labels
-- **BR-HAPI-250/252**: DetectedLabels integration with Data Storage -- labels now computed by HAPI
+- **BR-KA-250/252**: DetectedLabels integration with Data Storage -- labels now computed by HAPI
 - **DD-WORKFLOW-001 v1.7/v2.1/v2.2**: DetectedLabels schema and validation -- architectural relocation
 
 ---
@@ -306,7 +306,7 @@ After the LLM identifies the root cause, trigger a second SP enrichment pass for
 - **DD-CONTRACT-002**: Enrichment results schema -- will be updated to remove propagated fields
 - **BR-SP-101**: DetectedLabels auto-detection -- scope narrows to SP-internal
 - **BR-HAPI-194**: Honor failedDetections -- relocates to HAPI-computed labels
-- **BR-HAPI-250/252**: DetectedLabels in workflow search -- source changes from SP to HAPI
+- **BR-KA-250/252**: DetectedLabels in workflow search -- source changes from SP to HAPI
 - **Issue #102**: Implementation tracking issue
 - **Issue #132**: GitOps causality evidence chain and CRD safety guardrails -- identified during Phase 1 implementation
 

@@ -984,7 +984,6 @@ echo "Final replicas: ${FINAL_REPLICAS}"
 
 ### Related Documents
 
-- [DD-PLAYBOOK-008-version-roadmap.md](DD-PLAYBOOK-008-version-roadmap.md) - Feature roadmap
 - [DD-PLAYBOOK-009-catalog-storage.md](DD-PLAYBOOK-009-catalog-storage.md) - Storage backend
 - [KUBERNAUT_ARCHITECTURE_OVERVIEW.md](../KUBERNAUT_ARCHITECTURE_OVERVIEW.md) - System architecture
 

@@ -48,7 +48,7 @@ const oldClientCloseTimeout = 5 * time.Second
 // investigation to pin values for the duration.
 //
 // Temperature is a pointer so "not configured" (nil) can be distinguished
-// from "explicitly configured as 0" (BR-HAPI-199, #1749). Some models
+// from "explicitly configured as 0" (BR-KA-266, #1749). Some models
 // (e.g. claude-opus-4-8) reject the temperature parameter outright with a
 // 400 if it is present at all, so it must be omitted from the wire request
 // rather than defaulted to a numeric value when the operator never set it.

@@ -180,7 +180,7 @@ func (s *Server) handleCancelSessionAPIV1IncidentSessionSessionIDCancelPostReque
 // handleIncidentAnalyzeEndpointAPIV1IncidentAnalyzePostRequest handles incident_analyze_endpoint_api_v1_incident_analyze_post operation.
 //
 // Submit incident analysis request (async session-based pattern).
-// Business Requirement: BR-HAPI-002 (Incident analysis endpoint)
+// Business Requirement: BR-KA-002 (Incident analysis endpoint)
 // Business Requirement: BR-AA-HAPI-064.1 (Async submit returns session ID)
 // Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
 // Called by: AIAnalysis Controller via SubmitInvestigation()

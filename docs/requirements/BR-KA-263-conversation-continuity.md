@@ -47,7 +47,7 @@ Thread LLM message history across retry attempts within each phase AND across Ph
 
 ## Design References
 
-- **DD-HAPI-002 v1.4**: Workflow Response Validation (three-phase loop structure)
+- **DD-KA-001 (formerly DD-HAPI-002) v1.4**: Workflow Response Validation (three-phase loop structure)
 - **Issue #529**: RCA Flow Redesign
 
 ---

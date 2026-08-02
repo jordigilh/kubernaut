@@ -451,7 +451,7 @@ func newSecretAccessObserver(auditStore audit.AuditStore, logger logr.Logger) fu
 // removes the boot-time blocking fetch that caused #665 (CrashLoopBackOff
 // when the catalog was not yet seeded).
 //
-// Per DD-HAPI-002 (v1.1+), KA is the sole workflow validator. The catalog
+// Per DD-KA-001 (v1.1+), KA is the sole workflow validator. The catalog
 // is fetched per-request so KA always validates against the current catalog
 // without needing a restart when workflows are added/removed.
 //
@@ -479,7 +479,7 @@ func (f *workflowCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Va
 	defer cancel()
 
 	// limit=-1: unfiltered, unbounded -- KA validates LLM-selected workflows
-	// against the FULL current catalog (DD-HAPI-002), not a paginated subset.
+	// against the FULL current catalog (DD-KA-001), not a paginated subset.
 	workflows, _, err := f.catalog.List(fetchCtx, nil, -1, 0)
 	if err != nil {
 		return nil, fmt.Errorf("workflow catalog list failed: %w", err)
@@ -505,7 +505,7 @@ func (f *workflowCatalogFetcher) FetchValidator(ctx context.Context) (*parser.Va
 		validator.SetWorkflowMeta(w.WorkflowID, buildWorkflowMeta(w, schemaParser, f.logger))
 	}
 
-	f.logger.Info("workflow catalog fetched (DD-HAPI-002: per-request validation)",
+	f.logger.Info("workflow catalog fetched (DD-KA-001: per-request validation)",
 		"allowed_workflows", len(ids))
 	return validator, nil
 }

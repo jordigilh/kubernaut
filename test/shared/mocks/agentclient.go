@@ -546,7 +546,7 @@ func (m *MockAgentClient) WithHumanReviewRequiredWithPartialResponse(
 }
 
 // WithHumanReviewAndHistory configures a complete needs_human_review=true response
-// with reason enum and validation attempts history (DD-HAPI-002 v1.4 compliant).
+// with reason enum and validation attempts history (DD-KA-001 v1.4 compliant).
 func (m *MockAgentClient) WithHumanReviewAndHistory(
 	reason string,
 	warnings []string,

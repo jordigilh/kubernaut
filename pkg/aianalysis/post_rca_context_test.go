@@ -28,8 +28,8 @@ import (
 )
 
 // Cycle 3.1: PostRCAContext CRD type API contract tests
-// Authority: ADR-056, DD-HAPI-018
-// Business Requirement: BR-HAPI-102
+// Authority: ADR-056, DD-KA-018
+// Business Requirement: BR-KA-102
 var _ = Describe("PostRCAContext CRD Type [ADR-056]", func() {
 
 	Context("UT-AA-056-001: PostRCAContext JSON serialization", func() {

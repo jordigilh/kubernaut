@@ -417,10 +417,10 @@ func (*CancelSessionResponse) cancelSessionAPIV1IncidentSessionSessionIDCancelPo
 // Enrichment results from SignalProcessing.
 // Contains Kubernetes context, custom labels, and business classification
 // used for workflow filtering and LLM context.
-// ADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.
-// ADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.
-// Design Decision: DD-HAPI-001
-// Custom Labels (DD-HAPI-001):
+// ADR-056: detectedLabels removed -- now computed by KA post-RCA via LabelDetector.
+// ADR-055: ownerChain removed -- resolved by KA via get_resource_context tool.
+// Design Decision: DD-KA-002
+// Custom Labels (DD-KA-002):
 // - Format: map[string][]string (subdomain → list of values)
 // - Keys are subdomains (e.g., "constraint", "team")
 // - Values are lists of strings (boolean keys or "key=value" pairs)
@@ -431,7 +431,7 @@ type EnrichmentResults struct {
 	// Kubernetes resource context.
 	KubernetesContext OptNilEnrichmentResultsKubernetesContext `json:"kubernetesContext"`
 	// Custom labels from SignalProcessing (subdomain → values). Auto-appended to workflow search per
-	// DD-HAPI-001.
+	// DD-KA-002.
 	CustomLabels OptNilEnrichmentResultsCustomLabels `json:"customLabels"`
 	// Business classification from SP categorization (BR-SP-002). Used for workflow filtering and Rego
 	// approval policies.
@@ -1113,13 +1113,13 @@ func (*IncidentAnalyzeEndpointAPIV1IncidentAnalyzePostUnprocessableEntityApplica
 
 // Request model for initial incident analysis endpoint
 // Business Requirements:
-// - BR-HAPI-002: Incident analysis request schema
+// - BR-KA-002: Incident analysis request schema
 // - BR-AUDIT-001: Unified audit trail (remediation_id)
 // - BR-INTERACTIVE-010: Interactive investigation via IS CRD signal
 // Design Decision: DD-WORKFLOW-002 v2.2
 // - remediation_id is MANDATORY for audit trail correlation
 // - remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching
-// Design Decision: DD-HAPI-001
+// Design Decision: DD-KA-002
 // - enrichment_results contains DetectedLabels for workflow filtering.
 // Ref: #/components/schemas/IncidentRequest
 type IncidentRequest struct {
@@ -1490,8 +1490,8 @@ func (s *IncidentRequestSignalLabels) init() IncidentRequestSignalLabels {
 }
 
 // Response model for incident analysis endpoint
-// Business Requirement: BR-HAPI-002 (Incident analysis response schema)
-// Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
+// Business Requirement: BR-KA-002 (Incident analysis response schema)
+// Design Decision: DD-KA-001 v1.2 (Workflow Response Validation)
 // Design Decision: ADR-045 v1.2 (Alternative Workflows for Audit)
 // Design Decision: ADR-055 (LLM-Driven Context Enrichment)
 // Fields added per AIAnalysis team requests:
@@ -3118,8 +3118,8 @@ func (s *SignalMode) UnmarshalText(data []byte) error {
 }
 
 // Record of a single validation attempt during LLM self-correction.
-// Business Requirement: BR-HAPI-197 (needs_human_review field)
-// Design Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)
+// Business Requirement: BR-KA-197 (needs_human_review field)
+// Design Decision: DD-KA-001 v1.2 (Workflow Response Validation)
 // Used for:
 // 1. Operator notification - natural language description of why validation failed
 // 2. Audit trail - complete history of all validation attempts

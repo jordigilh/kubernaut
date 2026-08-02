@@ -33,7 +33,7 @@ import (
 // Incident Analysis E2E Tests
 // Test Plan: docs/development/testing/KA_E2E_TEST_PLAN.md
 // Scenarios: E2E-KA-001 through E2E-KA-008 (8 total)
-// Business Requirements: BR-HAPI-197, BR-HAPI-002, BR-AI-075, BR-KA-200
+// Business Requirements: BR-HAPI-197, BR-KA-002, BR-AI-075, BR-KA-200
 //
 // Purpose: Validate incident analysis endpoint behavior and correctness
 
@@ -226,7 +226,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 		})
 	})
 
-	Context("BR-HAPI-002: Happy path scenarios", func() {
+	Context("BR-KA-002: Happy path scenarios", func() {
 
 		It("E2E-KA-004: Normal incident analysis succeeds", func() {
 			// ========================================
@@ -235,7 +235,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// Scenario ID: E2E-KA-004
 			// Business Outcome: Standard signal types produce confident workflow recommendations
 			// Ported from: test_mock_llm_edge_cases_e2e.py:332 (Python KA, deprecated)
-			// BR: BR-HAPI-002
+			// BR: BR-KA-002
 
 			// ========================================
 			// ARRANGE
@@ -346,7 +346,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// Scenario ID: E2E-KA-006
 			// Business Outcome: EnrichmentResults (detectedLabels, customLabels) influence workflow selection
 			// Ported from: test_workflow_selection_e2e.py:246 (Python KA, deprecated)
-			// BR: DD-HAPI-001 (Custom Labels Auto-Append)
+			// BR: DD-KA-002 (Custom Labels Auto-Append)
 
 			// ========================================
 			// ARRANGE

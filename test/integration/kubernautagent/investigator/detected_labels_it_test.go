@@ -272,7 +272,7 @@ var _ = Describe("KA-KA Integration Parity — Detected Labels (TP-433-PARITY)",
 	})
 
 	// ═══════════════════════════════════════════════════════════════
-	// Issue #776: DD-HAPI-018 Parity Integration Tests
+	// Issue #776: DD-KA-018 Parity Integration Tests
 	// ═══════════════════════════════════════════════════════════════
 
 	Describe("IT-KA-776-001: tracking-id on deployment produces gitOpsManaged in investigation result", func() {

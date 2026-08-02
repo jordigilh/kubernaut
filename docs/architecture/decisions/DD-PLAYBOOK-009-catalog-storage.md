@@ -3,7 +3,7 @@
 **Date**: 2025-11-15  
 **Status**: Confirmed  
 **Version**: v1.1  
-**Related**: DD-PLAYBOOK-007, DD-PLAYBOOK-008
+**Related**: DD-PLAYBOOK-007, DD-PLAYBOOK-008 (retired, Issue #1806)
 
 ---
 
