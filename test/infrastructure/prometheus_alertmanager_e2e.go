@@ -255,11 +255,19 @@ spec:
             # every 10s, plus concurrent AF severity-triage API calls). With
             # Tier 3 removed, GetAlerts/GetRules genuinely timing out at the
             # 10s client deadline (Resilience.Prometheus.RequestTimeout) now
-            # fails RR creation outright instead of being masked. Raising the
-            # limit lets automaxprocs grant >1 core so Prometheus can keep up
-            # with concurrent scrape+eval+API load under this suite's scale.
-            memory: "512Mi"
-            cpu: "1500m"
+            # fails RR creation outright instead of being masked.
+            #
+            # A first attempt raised this to 1500m, but automaxprocs
+            # (go.uber.org/automaxprocs) uses math.Floor on the CPU quota by
+            # design (v1.2.0+, to bias against throttling over
+            # utilization) -- floor(1.5)=1, so GOMAXPROCS stayed pinned at 1
+            # ("determined from CPU quota" in Prometheus's own log) and the
+            # timeouts recurred identically. 3000m floors to a genuine 3,
+            # giving real multi-core parallelism on this 4-vCPU GH-hosted
+            # runner (headroom to spare: it's a ceiling, not a reservation,
+            # and the request stays low).
+            memory: "768Mi"
+            cpu: "3000m"
       volumes:
       - name: config
         configMap:
