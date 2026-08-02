@@ -163,6 +163,34 @@ data:
         annotations:
           summary: "Container memory exceeds limit"
           description: "Pod {{ $labels.pod }} using {{ $value | humanizePercentage }} of memory limit"
+  af-severity-grounding.yml: |
+    # #1839: AF's severity-triage pipeline (pkg/apifrontend/severity) correlates
+    # a kubernaut_remediate target via namespace/kind/name labels (see
+    # resolveCreateRRSeverity's TriageInput.Labels), not via the real cAdvisor
+    # "pod" label the MemoryExceedsLimit rule above uses -- so that rule can
+    # never ground severity for AF-tool-driven RR creation, regardless of its
+    # namespace scope. Every fullpipeline test that calls kubernaut_remediate
+    # against the shared memory-eater Deployment fixture (fleet cluster_id,
+    # interactive/autonomous/streaming, cross-namespace placement -- none of
+    # which are testing severity triage itself) needs a real, always-present
+    # rule correlating on namespace/kind/name so Tier 2 finds a match and, since
+    # this synthetic metric is never actually emitted, falls through to Tier
+    # 2.5 (LLM classification informed by real rule context) rather than the
+    # removed Tier 3 (LLM classification from zero evidence) or a hard failure.
+    # Matches every fullpipeline namespace (all use the "fp-" prefix) so new
+    # AF-tool-driven tests are covered automatically without needing their own
+    # bespoke alert/metric injection.
+    groups:
+    - name: af-severity-grounding.rules
+      interval: 10s
+      rules:
+      - alert: MemoryEaterResourcePressure
+        expr: memory_eater_grounding_signal{namespace=~"fp-.*", kind="Deployment", name="memory-eater"} > 0
+        for: 0s
+        labels:
+          severity: high
+        annotations:
+          summary: "memory-eater Deployment resource pressure (AF severity-triage grounding fixture)"
 ---
 apiVersion: apps/v1
 kind: Deployment
