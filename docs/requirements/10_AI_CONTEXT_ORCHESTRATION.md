@@ -2,8 +2,17 @@
 
 **Document Version**: 1.0
 **Date**: January 2025
-**Status**: Business Requirements Specification
+**Status**: 🗄️ **SUPERSEDED** — see note below
 **Module**: AI Context Orchestration (`pkg/ai/holmesgpt/`, `pkg/api/context/`)
+
+> **SUPERSEDED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This Jan
+> 2025 spec describes a standalone **Context API service** (`pkg/api/context/`) and a Python
+> **HolmesGPT** with pluggable toolsets, providing "historical intelligence" as a distinct service from
+> real-time investigation. That standalone service was deprecated and removed; its capabilities were
+> absorbed into Data Storage, and HolmesGPT-API was rewritten in Go as **Kubernaut Agent (KA)**. See
+> [DD-CONTEXT-006](../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) for the
+> authoritative deprecation decision. This document is retained for historical context only — the
+> `BR-CONTEXT-*` requirements below do not describe a live, separately-deployed service.
 
 ---
 

@@ -4,6 +4,15 @@
 **Assessment Type**: Architecture Confidence Review
 **Scope**: Complete LLM investigation workflow
 **Reviewer**: AI Architecture Assistant
+**Status**: 🗄️ **SUPERSEDED** — see note below
+
+> **SUPERSEDED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This Nov
+> 2025 assessment reviews a Python `HolmesGPT API` calling a standalone **Embedding Service MCP**, neither
+> of which was built as described. `HolmesGPT-API` was rewritten in Go as **Kubernaut Agent (KA)**; the
+> separate Embedding Service MCP component was never built; and workflow catalog resolution moved to KA's
+> own in-process discovery protocol (see [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md),
+> authoritative and implemented). This document is retained for historical context only — its confidence
+> scores and risk assessments do not describe the shipped system.
 
 ---
 
