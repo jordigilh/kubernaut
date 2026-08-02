@@ -545,7 +545,7 @@ GET  /api/v1/query/aggregations         # Custom aggregations (any service)
 ### **Internal Documentation**
 - [Data Storage Service Overview](../services/stateless/data-storage/overview.md)
 - [Context API Overview](../services/stateless/context-api/overview.md)
-- [Effectiveness Monitor Overview](../services/stateless/effectiveness-monitor/overview.md)
+- [Effectiveness Monitor Overview](../../services/crd-controllers/07-effectivenessmonitor/overview.md)
 
 ---
 

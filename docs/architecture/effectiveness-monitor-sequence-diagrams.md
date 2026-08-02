@@ -360,10 +360,10 @@ DONE (~3-5s, ~$0.50 LLM cost)
 
 ## References
 
-- **Architecture**: [Effectiveness Monitor Overview](../services/stateless/effectiveness-monitor/overview.md)
+- **Architecture**: [Effectiveness Monitor Overview](../services/crd-controllers/07-effectivenessmonitor/overview.md)
 - **Decision**: [DD-EFFECTIVENESS-001: Hybrid Automated + AI Analysis](decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md)
-- **API Spec**: [Effectiveness Monitor API](../services/stateless/effectiveness-monitor/api-specification.md)
-- **Integration**: [Integration Points](../services/stateless/effectiveness-monitor/integration-points.md)
+- **API Spec**: [Effectiveness Monitor API](../services/crd-controllers/07-effectivenessmonitor/api-specification.md)
+- **Integration**: [Integration Points](../services/crd-controllers/07-effectivenessmonitor/integration-points.md)
 
 ---
 

@@ -1169,7 +1169,7 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
 
 **Port**: 8080 (API/health), 9090 (metrics)
 
-**Source**: [docs/services/stateless/effectiveness-monitor/overview.md](../services/stateless/effectiveness-monitor/overview.md)
+**Source**: [docs/services/crd-controllers/07-effectivenessmonitor/overview.md](../services/crd-controllers/07-effectivenessmonitor/overview.md)
 
 ---
 
