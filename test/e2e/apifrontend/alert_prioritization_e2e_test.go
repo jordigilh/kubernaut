@@ -57,8 +57,10 @@ var _ = Describe("Alert Prioritization E2E — #1412", Ordered, Label("e2e", "al
 		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 
+		// #1839: HighCPU's target lives in "sev-tier1-ns", not "default" --
+		// see apifrontend_prometheus_e2e.go's SeverityTriageAlertRulesYAML doc.
 		Expect(kinfra.AFInjectOTLPMetrics(ctx, promURL, "e2e_cpu_usage_percent", 95, map[string]string{
-			"namespace": "default", "kind": "Deployment", "name": "test-firing-target",
+			"namespace": "sev-tier1-ns", "kind": "Deployment", "name": "test-firing-target",
 		})).To(Succeed(), "CPU metric re-injection for alert prioritization")
 
 		Eventually(func() error {
@@ -80,7 +82,7 @@ var _ = Describe("Alert Prioritization E2E — #1412", Ordered, Label("e2e", "al
 	It("E2E-AF-1412-001: list_alerts returns prioritized result with critical as Selected over warning and info", func() {
 		callBody := buildJSONRPC("e2e-1412-001", "tools/call", map[string]interface{}{
 			"name":      "kubernaut_list_alerts",
-			"arguments": map[string]interface{}{"namespace": "default"},
+			"arguments": map[string]interface{}{"namespace": "sev-tier1-ns"},
 		})
 		raw, code, err := mcpPOST(sreToken, mcpSessionID, callBody)
 		Expect(err).NotTo(HaveOccurred())
@@ -116,12 +118,12 @@ var _ = Describe("Alert Prioritization E2E — #1412", Ordered, Label("e2e", "al
 	})
 
 	It("E2E-AF-1412-002: tied critical alerts both appear in response (Selected + Tied)", func() {
-		// This test requires 2+ critical alerts firing in the default namespace.
+		// This test requires 2+ critical alerts firing in the sev-tier1-ns namespace.
 		// The E2E infrastructure fires a single HighCPU critical alert, so Tied will be empty.
 		// Validates structural correctness: tool returns valid response with Selected populated.
 		callBody := buildJSONRPC("e2e-1412-002", "tools/call", map[string]interface{}{
 			"name":      "kubernaut_list_alerts",
-			"arguments": map[string]interface{}{"namespace": "default"},
+			"arguments": map[string]interface{}{"namespace": "sev-tier1-ns"},
 		})
 		raw, code, err := mcpPOST(sreToken, mcpSessionID, callBody)
 		Expect(err).NotTo(HaveOccurred())
