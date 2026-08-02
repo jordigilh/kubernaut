@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -158,29 +159,77 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		// alone) has been removed. A resource with no Prometheus alert or
 		// rule coverage at all must now fail RR creation instead of
 		// fabricating a severity.
+		//
+		// Uses the SSE streaming endpoint (message/stream), not the
+		// non-streaming message/send used by a2aCreateRRAndWait above: AF's
+		// launcher runs in adka2a.OutputArtifactPerEvent mode
+		// (pkg/apifrontend/launcher/launcher.go), and kubernaut_remediate's
+		// tool-error explanation is surfaced as an intermediate
+		// metadata.type=reasoning TaskStatusUpdateEvent
+		// (part_converter.go's toolErrorPart + EventBridge.EmitReasoning).
+		// Only a streaming client observes that intermediate event — a
+		// non-streaming message/send caller only receives the final
+		// persisted Task snapshot, whose terminal Status.Message is nil for
+		// a TaskStateCompleted task (the ADK framework's
+		// eventProcessor.makeFinalStatusUpdate only attaches a message when
+		// the LLM call itself errors, not for tool-call errors that the LLM
+		// successfully turns a plain STOP response after seeing).
+		id := fmt.Sprintf("g12-sev-norules-%d", time.Now().UnixNano())
 		prompt := fmt.Sprintf("Create a remediation request for deployment %s in %s namespace", "test-norules-target", "no-rules-ns")
-		taskID := fmt.Sprintf("g12-sev-%s-%d", "test-norules-target", time.Now().UnixNano())
-		resp, err := a2aInvoke(httpClient, baseURL, authToken, a2aTasksSendWithContext(
-			taskID, "sev-ctx-"+taskID, prompt))
+
+		streamCtx, streamCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer streamCancel()
+		req, err := http.NewRequestWithContext(streamCtx, http.MethodPost, baseURL+"/a2a/invoke",
+			strings.NewReader(a2aMessageStream(id, prompt)))
+		Expect(err).NotTo(HaveOccurred())
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Authorization", "Bearer "+authToken)
+
+		resp, err := httpClient.Do(req)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
-		rpc, err := parseRPCResponse(resp)
-		Expect(err).NotTo(HaveOccurred())
 
-		var outcomeMsg string
-		switch {
-		case rpc.Error != nil:
-			outcomeMsg = rpc.Error.Message
-		case rpc.Result != nil:
-			task, taskErr := extractTaskFromResult(rpc.Result)
-			Expect(taskErr).NotTo(HaveOccurred())
-			if task.Status.Message != nil {
-				outcomeMsg = string(task.Status.Message)
+		var outcomeMsg strings.Builder
+		sc := bufio.NewScanner(resp.Body)
+		sc.Buffer(make([]byte, 64*1024), 1024*1024)
+		for sc.Scan() {
+			line := strings.TrimRight(sc.Text(), "\r")
+			if !strings.HasPrefix(strings.TrimSpace(line), "data:") {
+				continue
+			}
+			data := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
+			if data == "" {
+				continue
+			}
+			var evt map[string]any
+			if jsonErr := json.Unmarshal([]byte(data), &evt); jsonErr != nil {
+				continue
+			}
+			result, _ := evt["result"].(map[string]any)
+			if result == nil {
+				continue
+			}
+			status, _ := result["status"].(map[string]any)
+			if status == nil {
+				continue
+			}
+			msg, _ := status["message"].(map[string]any)
+			if msg == nil {
+				continue
+			}
+			parts, _ := msg["parts"].([]any)
+			for _, p := range parts {
+				part, _ := p.(map[string]any)
+				if text, ok := part["text"].(string); ok {
+					outcomeMsg.WriteString(text)
+				}
 			}
 		}
-		Expect(outcomeMsg).To(ContainSubstring("severity"),
-			"agent must explain that severity could not be determined, whether the task is marked failed or completed-with-explanation")
+
+		Expect(outcomeMsg.String()).To(ContainSubstring("severity"),
+			"agent must explain (via a reasoning event or a terminal task message) that severity could not be determined")
 
 		// No RemediationRequest should be fabricated for this target.
 		Consistently(func(g Gomega) {

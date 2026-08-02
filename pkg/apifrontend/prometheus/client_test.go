@@ -87,8 +87,8 @@ var _ = Describe("Prometheus Client", func() {
 					{
 						Name: "test-group",
 						Rules: []promRule{
-							{Alert: "HighCPU", Expr: "cpu_usage > 0.9", State: "pending", Labels: map[string]string{"severity": "critical"}},
-							{Alert: "HighMem", Expr: "mem_usage > 0.8", State: "inactive", Labels: map[string]string{"severity": "high"}},
+							{Name: "HighCPU", Query: "cpu_usage > 0.9", State: "pending", Labels: map[string]string{"severity": "critical"}},
+							{Name: "HighMem", Query: "mem_usage > 0.8", State: "inactive", Labels: map[string]string{"severity": "high"}},
 						},
 					},
 				})
@@ -104,6 +104,14 @@ var _ = Describe("Prometheus Client", func() {
 			Expect(groups[0].Rules).To(HaveLen(2))
 			Expect(groups[0].Rules[0].State).To(Equal("pending"))
 			Expect(groups[0].Rules[1].State).To(Equal("inactive"))
+			// #1839 RCA: Name/Query must survive the round-trip from Prometheus's
+			// real "name"/"query" JSON fields -- a prior "alert"/"expr" mismatch in
+			// apiRule left these permanently empty in production, silently
+			// breaking Tier 1.5/Tier 2 PromQL label-matcher correlation.
+			Expect(groups[0].Rules[0].Name).To(Equal("HighCPU"))
+			Expect(groups[0].Rules[0].Query).To(Equal("cpu_usage > 0.9"))
+			Expect(groups[0].Rules[1].Name).To(Equal("HighMem"))
+			Expect(groups[0].Rules[1].Query).To(Equal("mem_usage > 0.8"))
 		})
 
 		It("UT-AF-T-006: handles malformed JSON response", func() {
@@ -260,9 +268,16 @@ func promAlertsResponse(alerts []promAlert) []byte {
 	return b
 }
 
+// promRule mirrors the real Prometheus /api/v1/rules field names ("name",
+// "query" -- see web/api/v1/api.go's AlertingRule/RecordingRule types), not
+// "alert"/"expr". A prior version of this fixture used "alert"/"expr",
+// matching production's now-fixed apiRule mismatch byte-for-byte -- the
+// round-trip "worked" against itself while silently never exercising the
+// real field names, which is why UT-AF-T-005 never caught Rule.Query being
+// permanently empty in production (#1839 RCA).
 type promRule struct {
-	Alert  string            `json:"alert"`
-	Expr   string            `json:"expr"`
+	Name   string            `json:"name"`
+	Query  string            `json:"query"`
 	State  string            `json:"state"`
 	Labels map[string]string `json:"labels"`
 }
