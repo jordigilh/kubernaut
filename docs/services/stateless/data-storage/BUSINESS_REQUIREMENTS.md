@@ -9,6 +9,22 @@
 
 ## 📝 **Changelog**
 
+### **v1.6** (2026-08-02)
+- **RETIRED**: Category 10 - Workflow Catalog CRUD API (BR-STORAGE-038 to BR-STORAGE-042)
+  - The entire `/api/v1/workflows*` REST surface documented below no longer exists in Data Storage.
+    Confirmed by two deliberate removal commits, not an oversight:
+    - `1ceb9fbf3` (Issue #1661 Phase B): removed the workflow **mutation** REST surface
+      (create/update/disable) — `AuthWebhook` now owns the `RemediationWorkflow` CRD lifecycle
+      directly (DD-WORKFLOW-018).
+    - `3e8b5fbb3` (Issue #1677 Phase 2g): removed the workflow **discovery** REST surface
+      (get/search/list) — Kubernaut Agent's informer-backed catalog now owns it entirely
+      (DD-WORKFLOW-019); DS's `workflowcache` package was deleted outright.
+  - All 5 BRs below marked `❌ Retired` (kept as historical record per [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806));
+    excluded from the Coverage Analysis rollups.
+  - Also corrected the stale `HolmesGPT-API`/`HAPI` cross-service integration note under
+    BR-STORAGE-039 (superseded reference to a `validate_workflow_exists` "tool" — Kubernaut Agent
+    has no LLM tool-calling framework by design, [DD-KA-019](../../../architecture/decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md)).
+
 ### **v1.5** (March 4, 2026)
 - **UPDATED**: BR-STORAGE-038 (Workflow Catalog Create API)
   - `POST /api/v1/workflows` is now an **internal API** consumed exclusively by the AuthWebhook
@@ -75,9 +91,10 @@
 ## 📊 **Summary Statistics**
 
 - **Total BRs**: 45 Data Storage BRs
-  - **Active BRs (V1.0)**: 41 (91%)
+  - **Active BRs (V1.0)**: 36 (80%)
   - **Planned BRs (V1.1)**: 3 (7%)
   - **Reserved BRs**: 1 (2%) - BR-029 reserved for future use
+  - **Retired BRs**: 5 (11%) - BR-STORAGE-038 to 042 (Workflow Catalog CRUD API, retired 2026-08-02; see Category 10 note)
 - **Deprecated BRs**: 0 (0%)
 - **V2 Deferred BRs**: 0 (0%)
 
@@ -730,11 +747,18 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ---
 
-### **Category 10: Workflow Catalog CRUD API (BR-STORAGE-038 to BR-STORAGE-042)**
+### **Category 10: Workflow Catalog CRUD API (BR-STORAGE-038 to BR-STORAGE-042)** — ❌ RETIRED
 
-#### **BR-STORAGE-038: Workflow Catalog Create API (Internal)**
+> **❌ RETIRED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: The entire
+> `/api/v1/workflows*` REST surface described in this category no longer exists in Data Storage. Removed by
+> `1ceb9fbf3` (mutations, Issue #1661 Phase B — `AuthWebhook` now owns the `RemediationWorkflow` CRD lifecycle
+> directly per DD-WORKFLOW-018) and `3e8b5fbb3` (discovery, Issue #1677 Phase 2g — Kubernaut Agent's
+> informer-backed catalog now owns discovery entirely per DD-WORKFLOW-019). Kept below as a historical
+> record of a retired API; excluded from this document's Coverage Analysis rollups.
+
+#### **BR-STORAGE-038: Workflow Catalog Create API (Internal)** — ❌ Retired
 - **Priority**: P0
-- **Status**: ✅ Active
+- **Status**: ❌ Retired (see category note above)
 - **Description**: Provide **internal** REST API endpoint for creating remediation workflows (`POST /api/v1/workflows`) with inline content validation. This endpoint is consumed exclusively by the AuthWebhook (AW) -- it is NOT a user-facing management endpoint. User-facing registration is via RemediationWorkflow CRD (BR-WORKFLOW-006).
 - **Business Value**: Enable CRD-based workflow registration bridged through the AuthWebhook for the DS catalog
 - **Request Payload**: `{content: string (JSON-serialized CRD spec), source: "crd", registeredBy: string}`
@@ -747,15 +771,15 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Related BRs**: BR-WORKFLOW-001 (workflow registry), BR-WORKFLOW-006 (CRD spec), ADR-058 (webhook architecture)
 - **Design Decisions**: DD-WORKFLOW-002 v3.0 (UUID primary key), DD-WORKFLOW-012 (workflow immutability)
 
-#### **BR-STORAGE-039: Workflow Catalog Retrieval API**
+#### **BR-STORAGE-039: Workflow Catalog Retrieval API** — ❌ Retired
 - **Priority**: P0
-- **Status**: ✅ Active
+- **Status**: ❌ Retired (see category note above)
 - **Description**: Provide REST API endpoint for retrieving a single workflow by UUID (`GET /api/v1/workflows/{workflow_id}`) returning the complete workflow object including spec, parameters, and detected labels
-- **Business Value**: Enable external services (Kubernaut Agent, AIAnalysis) to validate workflow existence and retrieve full workflow spec for parameter/image validation
-- **Use Cases** (⚠️ **STALE terminology flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here** — same `validate_workflow_parameters`-as-MCP-tool staleness as `02-aianalysis/reconciliation-phases.md`):
-  - **KA Workflow Validation**: Kubernaut Agent validates `workflow_id` exists before returning to AIAnalysis (DD-KA-001, formerly DD-HAPI-002)
-  - **Parameter Schema Retrieval**: KA retrieves `spec.parameters[]` to validate LLM-generated parameters
-  - **Image Pullspec Validation**: KA retrieves `spec.container_image` for OCI format validation
+- **Business Value (historical)**: Enable external services (Kubernaut Agent, AIAnalysis) to validate workflow existence and retrieve full workflow spec for parameter/image validation
+- **Use Cases (historical — this endpoint no longer exists)**:
+  - **KA Workflow Validation**: Kubernaut Agent validated `workflow_id` exists before returning to AIAnalysis (DD-KA-001, formerly DD-HAPI-002) — now done via KA's own informer-backed catalog cache, not a DS REST call
+  - **Parameter Schema Retrieval**: KA retrieved `spec.parameters[]` to validate LLM-generated parameters — now sourced from KA's in-process catalog (`internal/kubernautagent/parser/validator.go`), see [BR-KA-191](../../../requirements/BR-KA-191-workflow-parameter-validation.md)
+  - **Image Pullspec Validation**: KA retrieved `spec.container_image` for OCI format validation
   - **Workflow Existence Check**: 200 OK = exists, 404 = not found
 - **Response Fields**:
   - `workflow_id`: UUID primary key
@@ -772,13 +796,13 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Implementation**: `pkg/datastorage/server/workflow_handlers.go:HandleGetWorkflowByID`
 - **Related BRs**: BR-WORKFLOW-001 (workflow registry), BR-STORAGE-024 (RFC 7807 for 404)
 - **Design Decisions**: DD-WORKFLOW-002 v3.0 (UUID primary key)
-- **Cross-Service Integration**:
-  - **HolmesGPT-API**: Uses this endpoint for `validate_workflow_exists` tool (Q17 in AIANALYSIS_TO_HOLMESGPT_API_TEAM.md)
-  - **AIAnalysis**: May use for defense-in-depth validation
+- **Cross-Service Integration (historical)**:
+  - **Kubernaut Agent** (formerly described as "HolmesGPT-API"): historically used this endpoint for workflow-existence validation; KA has no LLM tool-calling framework (there was never a literal `validate_workflow_exists` tool the LLM invoked — see [BR-KA-191](../../../requirements/BR-KA-191-workflow-parameter-validation.md))
+  - **AIAnalysis**: performs no separate re-validation pass — KA is the sole validation authority ([DD-KA-001](../../../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md))
 
-#### **BR-STORAGE-040: Workflow Catalog Search API**
+#### **BR-STORAGE-040: Workflow Catalog Search API** — ❌ Retired
 - **Priority**: P0
-- **Status**: ✅ Active
+- **Status**: ❌ Retired (see category note above)
 - **Version**: 2.0 (Multi-environment workflow capability - January 28, 2026)
 - **Description**: Provide REST API endpoint for semantic search of workflows (`POST /api/v1/workflows/search`) with hybrid weighted scoring and multi-environment workflow support
 - **Multi-Environment Workflow Support (v2.0)**:
@@ -802,9 +826,9 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Related BRs**: BR-STORAGE-012 (embedding generation), BR-STORAGE-013 (query performance)
 - **Design Decisions**: DD-WORKFLOW-004 v2.0 (hybrid scoring + multi-environment), DD-WORKFLOW-001 v2.5 (multi-environment schema)
 
-#### **BR-STORAGE-041: Workflow Catalog Update API**
+#### **BR-STORAGE-041: Workflow Catalog Update API** — ❌ Retired
 - **Priority**: P1
-- **Status**: ✅ Active
+- **Status**: ❌ Retired (see category note above)
 - **Description**: Provide REST API endpoint for updating mutable workflow fields (`PATCH /api/v1/workflows/{workflow_id}`) - only status and metrics are mutable per DD-WORKFLOW-012
 - **Business Value**: Enable workflow status updates without creating new versions
 - **Test Coverage**:
@@ -814,9 +838,9 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Related BRs**: BR-WORKFLOW-001 (workflow registry)
 - **Design Decisions**: DD-WORKFLOW-012 (workflow immutability - only status/metrics mutable)
 
-#### **BR-STORAGE-042: Workflow Catalog Disable API**
+#### **BR-STORAGE-042: Workflow Catalog Disable API** — ❌ Retired
 - **Priority**: P1
-- **Status**: ✅ Active
+- **Status**: ❌ Retired (see category note above)
 - **Description**: Provide REST API endpoint for disabling workflows (`PATCH /api/v1/workflows/{workflow_id}/disable`) - soft delete with audit trail
 - **Business Value**: Enable workflow deprecation without data loss
 - **Test Coverage**:
@@ -860,7 +884,7 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ### **Unit Test Coverage** (85%+ of Active BRs)
 
-**Covered BRs** (35 BRs):
+**Covered BRs** (28 BRs; excludes the 5 retired Category 10 BRs — see changelog v1.6):
 - Category 1 (Audit): BR-STORAGE-002, 003, 004
 - Category 2 (Query): BR-STORAGE-005, 006, 007, 008
 - Category 3 (Observability): BR-STORAGE-010, 018, 019
@@ -870,7 +894,6 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - Category 6 (Dual-Write): BR-STORAGE-014, 015, 016
 - Category 8 (REST API): BR-STORAGE-021, 022, 023, 024, 027, 028
 - Category 9 (Aggregation): BR-STORAGE-031
-- Category 10 (Workflow CRUD): BR-STORAGE-038, 039, 040, 041, 042
 
 **Not Covered by Unit Tests** (integration-only):
 - BR-STORAGE-001, 009, 017, 020, 030, 032, 033, 034
@@ -879,19 +902,18 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ### **Integration Test Coverage** (30%+ of Active BRs)
 
-**Covered BRs** (14 BRs):
-- BR-STORAGE-001, 004, 008, 017, 020, 028, 030, 031, 032, 033, 034, 038, 039, 040
+**Covered BRs** (11 BRs; excludes the retired `BR-STORAGE-038/039/040` — see changelog v1.6):
+- BR-STORAGE-001, 004, 008, 017, 020, 028, 030, 031, 032, 033, 034
 
-**Rationale**: Integration tests validate real database operations, HTTP API endpoints, graceful shutdown, and workflow catalog behavior.
+**Rationale**: Integration tests validate real database operations, HTTP API endpoints, and graceful shutdown.
 
 ### **E2E Test Coverage** (Critical Paths)
 
-**Covered BRs** (7 BRs):
+**Covered BRs** (2 BRs; excludes the retired `BR-STORAGE-038-042` — see changelog v1.6):
 - BR-STORAGE-008 (embedding service)
 - BR-STORAGE-012 (workflow search)
-- BR-STORAGE-038-042 (workflow CRUD lifecycle)
 
-**Rationale**: E2E tests cover critical user journeys for workflow catalog operations.
+**Rationale**: E2E tests cover critical user journeys for the workflow-search/embedding path that remains in Data Storage.
 
 ---
 
@@ -968,14 +990,13 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ### **Defense-in-Depth Coverage**
 
-**BRs with 2x+ Coverage** (Unit + Integration or Integration + E2E): 10+ BRs
+**BRs with 2x+ Coverage** (Unit + Integration or Integration + E2E): 5+ BRs
 - BR-STORAGE-004 (idempotent schema): Unit + Integration
 - BR-STORAGE-008 (embedding generation): Unit + Integration + E2E
 - BR-STORAGE-028 (graceful shutdown): Unit + Integration
 - BR-STORAGE-031 (success rate): Unit + Integration
-- BR-STORAGE-038-042 (workflow CRUD): Unit + Integration + E2E
 
-**Rationale**: Critical production readiness features and workflow catalog operations have multi-tier test coverage.
+**Rationale**: Critical production readiness features have multi-tier test coverage.
 
 ---
 
@@ -983,24 +1004,26 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 | Priority | Count | Percentage | Description |
 |----------|-------|------------|-------------|
-| **P0** | 25 | 56% | Core functionality, security, production readiness |
-| **P1** | 15 | 33% | Observability, aggregation, performance |
+| **P0** | 22 | 49% | Core functionality, security, production readiness |
+| **P1** | 13 | 29% | Observability, aggregation, performance |
 | **P2** | 1 | 2% | Data integrity enhancements (V1.1 planned) |
 | **N/A** | 1 | 2% | Reserved (BR-029) |
 | **Planned** | 3 | 7% | V1.1 BRs (BR-035, 036, 037) |
+| **Retired** | 5 | 11% | BR-STORAGE-038 to 042 (Workflow Catalog CRUD API, retired 2026-08-02) |
 | **Total** | 45 | 100% | |
 
 **Notes**:
 - V1.1 BRs (BR-STORAGE-035, 036, 037) are planned enhancements and not yet implemented
 - BR-STORAGE-009 (embedding cache) is deferred to V1.1
 - BR-STORAGE-029 is reserved for future use
+- BR-STORAGE-038 to 042 (3 P0 + 2 P1) are retired — see changelog v1.6 and Category 10
 
 ---
 
 ## ✅ **Confidence Assessment**
 
 **Documentation Accuracy**: 100%
-**Test Coverage Completeness**: 100% (all 41 active V1.0 BRs have test coverage)
+**Test Coverage Completeness**: 100% (all 36 active V1.0 BRs have test coverage)
 **Implementation Verification**: 100%
 
 **BR Numbering Gap Resolution** (v1.4):
