@@ -353,6 +353,14 @@
       "description": "Global settings applied across all components",
       "additionalProperties": false,
       "properties": {
+        "additionalClusterRoleBindings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to ALL THREE of Gateway, EffectivenessMonitor, and Kubernaut Agent's ServiceAccounts -- the common case, since all three inspect the same owner-chain/target resources at different pipeline stages and usually need identical ecosystem visibility (e.g. OLM Subscription, ArgoCD Application). Merged with each service's own additionalClusterRoleBindings (deduplicated). Use the per-service field instead of this one when you deliberately want asymmetric access -- e.g. withholding an ecosystem grant from kubernautAgent, the highest-risk, LLM-driven component (BR-PLATFORM-005)."
+        },
         "image": {
           "type": "object",
           "additionalProperties": false,
@@ -762,6 +770,14 @@
           "type": "integer",
           "default": 1,
           "minimum": 0
+        },
+        "additionalClusterRoleBindings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to the Gateway ServiceAccount, for ecosystem resource kinds not already covered by the built-in view ClusterRole binding (e.g. OLM Subscription, ArgoCD Application)."
         },
         "config": {
           "type": "object",
@@ -1830,6 +1846,14 @@
           "default": 1,
           "minimum": 0
         },
+        "additionalClusterRoleBindings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to the EffectivenessMonitor ServiceAccount, for ecosystem resource kinds not already covered by the built-in view ClusterRole binding (#545)."
+        },
         "config": {
           "type": "object",
           "additionalProperties": false,
@@ -1913,6 +1937,14 @@
           "type": "integer",
           "default": 1,
           "minimum": 0
+        },
+        "additionalClusterRoleBindings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to the Kubernaut Agent ServiceAccount, generalizing kubernaut-operator's equivalent KA-only mechanism to the Helm chart, for resource kinds not already covered by its investigator ClusterRole."
         },
         "logging": {
           "$ref": "#/definitions/serviceLogging"

@@ -1,4 +1,11 @@
 global:
+  # -- Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind
+  # to ALL THREE of gateway/effectivenessmonitor/kubernautAgent's ServiceAccounts
+  # -- the common case, since all three inspect the same owner-chain/target
+  # resources at different pipeline stages. Use the per-service
+  # additionalClusterRoleBindings field instead when you want asymmetric access
+  # (e.g. withholding a grant from kubernautAgent, BR-PLATFORM-005).
+  additionalClusterRoleBindings: []
   # -- Container image registry/namespace/pullPolicy for all Kubernaut-published
   # services (DD-PLATFORM-006 DA14: non-zero schema defaults quay.io/kubernaut-ai/
   # "/"/IfNotPresent -- omit entirely to use them, override only what you need).
@@ -139,6 +146,12 @@ tls: {}
 #     cors:
 #       allowedOrigins: ["https://console.example.com"]  # if a browser client needs Gateway directly
 gateway:
+  # -- Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind
+  # to the Gateway ServiceAccount, for ecosystem resource kinds not already
+  # covered by the built-in `view` ClusterRole binding (e.g. OLM Subscription,
+  # ArgoCD Application). The operator creates and owns the referenced
+  # ClusterRole; Kubernaut only binds it.
+  additionalClusterRoleBindings: []
   config:
     middleware: {}
   resources:
@@ -388,6 +401,10 @@ notification:
 # stabilizationWindow,validityWindow} all have non-zero schema defaults --
 # omitted here, override only what you need.
 effectivenessmonitor:
+  # -- Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind
+  # to the EffectivenessMonitor ServiceAccount, for ecosystem resource kinds
+  # not already covered by the built-in `view` ClusterRole binding (#545).
+  additionalClusterRoleBindings: []
   # -- Multi-cluster fleet configuration (BR-FLEET-054, ADR-068).
   # Gated by global.fleet.enabled (Issue #1707) -- when true and
   # global.fleet.mcpGatewayEndpoint is set, EM reads the remediation's target
@@ -413,6 +430,11 @@ effectivenessmonitor:
 # alignmentCheck.{timeout,maxStepTokens} all have non-zero schema defaults --
 # omitted here, override only what you need.
 kubernautAgent:
+  # -- Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind
+  # to the Kubernaut Agent ServiceAccount, for resource kinds not already
+  # covered by its investigator ClusterRole. Generalizes kubernaut-operator's
+  # equivalent KA-only mechanism to the Helm chart.
+  additionalClusterRoleBindings: []
   # -- MCP interactive mode (#703): human-in-the-loop investigation sessions.
   # When enabled, KA exposes a Streamable HTTP MCP endpoint at POST /api/v1/mcp
   # and provisions Lease RBAC. (#1288: impersonate ClusterRole removed).
