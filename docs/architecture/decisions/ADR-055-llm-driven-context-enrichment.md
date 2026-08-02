@@ -1,12 +1,10 @@
-# ADR-055: LLM-Driven Context Enrichment (Post-RCA)
+# ADR-055: Post-RCA Context Enrichment (Target-Scoped, Not Signal-Scoped)
 
 **Status**: ACCEPTED
 **Decision Date**: 2026-02-12
-**Version**: 1.5
-**Confidence**: 92%
+**Version**: 2.0 (Go rewrite)
+**Confidence**: 90%
 **Applies To**: Kubernaut Agent (KA), AIAnalysis Controller, SignalProcessing
-
-> **Note (2026-08-01, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: "HAPI" throughout this document refers to what is now Kubernaut Agent (KA) — the Go-native successor to the retired Python HolmesGPT-API. The `DD-HAPI-017` cross-reference below has been updated to its current `DD-KA-017` equivalent. The rest of this document's body (tool names, `session_state` mechanism, Python-era phase descriptions) has not been fully rewritten against the Go implementation; treat [DD-KA-006](DD-KA-006-remediation-target-in-rca.md), [DD-KA-016](DD-KA-016-remediation-history-context.md), and [DD-KA-017](DD-KA-017-three-step-workflow-discovery-integration.md) as authoritative wherever this document's body conflicts with them.
 
 ---
 
@@ -14,26 +12,22 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.0 | 2026-02-12 | Architecture Team | Initial proposal: move context enrichment (owner chain, spec hash, remediation history) from pre-LLM computation to post-RCA tool-driven flow. |
-| 1.1 | 2026-02-12 | Architecture Team | Address 8 triage gaps: replace `target_in_owner_chain` with `remediation_target` Rego input (§2, ADR-055), preserve `ExtractRootCauseAnalysis` (§3), enforce `remediationTarget` as required LLM response field (§4), clarify CRD deprecation (§5), clarify `current_spec_hash` scope (§6), document new owner-chain resolution + RBAC expansion (§7), update latency estimate (§8). [Deprecated - Issue #180: Recovery flow reference removed] *(§4 "required LLM response field" for target identity superseded by BR-496 v2 / DD-KA-006 v2.0: KA owns `remediationTarget` via K8s-verified owner-chain injection, `InjectRemediationTarget`.)* |
-| 1.3 | 2026-02-24 | Architecture Team | **Issue #188 (DD-EM-003)**: Renamed `resolveEffectivenessTarget` to `resolveDualTargets` throughout. The function now returns `*creator.DualTarget{Signal, Remediation}` with explicit dual-target semantics. Updated compatibility table and data quality section. |
-| 1.2 | 2026-02-12 | Architecture Team | Refine tool return contract: `get_resource_context` returns only `root_owner` and `remediation_history` to the LLM. Owner chain traversal and spec hash computation are internal implementation details not exposed in the tool response. Update prompt Phase 3b accordingly. See also ADR-056 for DetectedLabels relocation. |
-| 1.4 | 2026-03-24 | Architecture Team | **Issue #524**: Namespaced tool renamed to `get_namespaced_resource_context`; added `get_cluster_resource_context` for cluster-scoped targets (Node, PV, etc.). Both tools registered in the `resource_context` toolset. `resource_scope` (`namespaced` / `cluster`) stored in `session_state`. Canonical `TARGET_RESOURCE_*` injection is conditional on workflow schema declarations; former validator Step 0 (mandatory canonical declarations) removed. |
-| 1.5 | 2026-03-25 | Architecture Team | **Issue #529**: Three-phase RCA architecture. Context enrichment moves from LLM-driven tool call to HAPI-driven `EnrichmentService` (Phase 2). LLM provides `affectedResource` in Phase 1; HAPI resolves owner chain, detects labels, and fetches history for the resolved root owner. Enrichment context sent to LLM in Phase 3 for informed workflow selection. Resource context tools no longer write `root_owner` or `detected_labels` to `session_state`; `EnrichmentService` is the sole authoritative source. BR-HAPI-262 (history verification enforcement) dropped — HAPI always provides verified history. BR-HAPI-260 (dedicated history tool) dropped — existing resource context tools already return history; EnrichmentService provides authoritative history in Phase 2. Resource context tools remain available as optional Phase 1 informational tools (label detection still returns `detected_infrastructure` to LLM but no longer writes to `session_state`). See BR-HAPI-261, BR-HAPI-264. |
+| 1.0–1.5 | 2026-02-12 to 2026-03-25 | Architecture Team | Historical evolution under the Python-era implementation: proposed moving context enrichment from pre-LLM computation to an LLM-driven tool call (`get_namespaced_resource_context` / `get_cluster_resource_context`), then to a `HAPI`-internal `EnrichmentService` (Issue #529). Superseded by v2.0 below; see git history for the original entries. |
+| 2.0 | 2026-08-02 | — | Rewritten against the Go KA implementation as part of [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806). **Key correction**: the decision this ADR records — compute owner-chain/spec-hash/history context for the RCA-identified target, not the pre-RCA signal source — is unchanged and confirmed implemented. But the *mechanism* is not what v1.0–v1.4 decided: KA does not wait for the LLM to call a resource-context tool. `Investigator.resolveEnrichment` (`internal/kubernautagent/investigator/investigator.go`) runs automatically once the RCA target is resolved (`ResolveEnrichmentTarget`), calling `enrichment.Enricher.Enrich` (`internal/kubernautagent/enrichment/enricher.go`) unconditionally, for every investigation. The `get_namespaced_resource_context`/`get_cluster_resource_context` LLM tools (`internal/kubernautagent/tools/custom/resource_context.go`) still exist and remain registered, but are not the primary or sole trigger — enrichment happens whether or not the LLM calls them. Replaced the Python "Changes Required" migration-plan tables (file paths under `kubernaut-agent/src/...py`, already executed and merged long ago) with a pointer to the current Go implementation and to [DD-KA-016](DD-KA-016-remediation-history-context.md)/[DD-KA-017](DD-KA-017-three-step-workflow-discovery-integration.md), which are authoritative for current mechanics. Corrected the Rego input field name from the originally-proposed `affected_resource` to the actual implemented `remediation_target` (`pkg/aianalysis/rego/evaluator.go`). Renamed `HAPI` → Kubernaut Agent (KA) throughout. |
 
 ---
 
 ## Context & Problem
 
-### Current Architecture (Pre-Computation Model)
+### Original Architecture (Pre-Computation Model, Retired)
 
-The current pipeline pre-collects context **before** the LLM performs Root Cause Analysis (RCA):
+Before this decision, the pipeline pre-collected context **before** the LLM performed Root Cause Analysis (RCA), computed from the **signal source** resource:
 
 ```
-Signal -> SP enriches with OwnerChain
-  -> RO copies OwnerChain to AIAnalysis.Spec.EnrichmentResults
-  -> AIAnalysis Controller passes OwnerChain to HAPI request (Issue #97)
-  -> HAPI pre-computes BEFORE LLM invocation:
+Signal -> SignalProcessing enriches with OwnerChain (of the signal source)
+  -> RemediationOrchestrator copies OwnerChain to AIAnalysis.Spec.EnrichmentResults
+  -> AIAnalysis Controller passes OwnerChain to KA's predecessor
+  -> Pre-computes BEFORE LLM invocation:
       1. resolve_root_owner(owner_chain) -> root owner
       2. compute_spec_hash(root_owner) -> SHA-256 hash
       3. fetch_remediation_history(root_owner, spec_hash) -> history context
@@ -41,343 +35,76 @@ Signal -> SP enriches with OwnerChain
   -> LLM selects workflow based on pre-computed context
 ```
 
-This applies to the **incident flow** (`extensions/incident/llm_integration.py`). [Deprecated - Issue #180: Recovery flow reference removed]
+### Problems That Motivated the Change (still the reason this decision holds)
 
-### Problems
-
-1. **Wrong resource context**: The owner chain and spec hash are computed from the **signal source** (e.g., the crashing Pod), not the **actual root cause target** (e.g., a misconfigured ConfigMap, an HPA with wrong thresholds, or a Deployment with missing resource limits). The LLM may identify a completely different resource as the root cause.
-
-2. **Context pollution**: The LLM receives remediation history for the signal source resource, which may be irrelevant to the actual root cause. This consumes context window and can bias the LLM's reasoning.
-
-3. **Wasted computation**: If the owner chain resolution or spec hash computation fails (e.g., the `ImportError: No module named 'utils.canonical_hash'` observed in CI), the data is empty anyway. The LLM proceeds without it, proving the pre-computation is not essential for RCA.
-
-4. **Owner chain only for Pods**: SignalProcessing only computes owner chains for Pod signals. Deployment, StatefulSet, DaemonSet, Node, and Service signals have empty owner chains, making the entire propagation path a no-op for most signal types.
-
-5. **Unnecessary data propagation**: The owner chain traverses three CRD boundaries (SP -> RO -> AIAnalysis -> HAPI) purely to enable a pre-computation that targets the wrong resource.
+1. **Wrong resource context**: The owner chain and spec hash were computed from the **signal source** (e.g., the crashing Pod), not the **actual root cause target** (e.g., a misconfigured ConfigMap, an HPA with wrong thresholds, or a Deployment with missing resource limits). The LLM may identify a completely different resource as the root cause.
+2. **Context pollution**: Pre-computed history for the signal source resource may be irrelevant to the actual root cause, consuming context window and biasing the LLM's reasoning.
+3. **Wasted computation**: If the pre-computed owner chain or spec hash was empty or wrong, the LLM proceeded without it anyway — the pre-computation was not essential for RCA to begin with.
+4. **Owner chain only for Pods**: SignalProcessing only computed owner chains for Pod signals; Deployment, StatefulSet, DaemonSet, Node, and Service signals had empty owner chains.
+5. **Unnecessary data propagation**: The owner chain traversed three CRD boundaries (SP → RO → AIAnalysis → KA's predecessor) purely to enable a pre-computation that targeted the wrong resource.
 
 ### Business Requirements Affected
 
-- **DD-KA-016**: Remediation history context (enhanced, not broken)
+- **DD-KA-016**: Remediation history context (enhanced, not broken, by this decision)
 - **BR-AI-023**: Investigation audit trail (unchanged)
-- **Issue #97**: Owner chain / AffectedResource / SpecHash (superseded by this ADR)
-- **DD-KA-017**: Three-step workflow discovery (enhanced, tools execute in correct order)
+- **DD-KA-017**: Three-step workflow discovery (enhanced — label/history context now scoped to the correct target)
 
 ---
 
 ## Decision
 
-### Move to LLM-Driven, Post-RCA Context Enrichment
+**Compute owner-chain, spec-hash, and remediation-history context for the RCA-identified target, not the pre-RCA signal source — automatically, once KA resolves that target.**
 
-Replace the pre-computation model with a three-phase, tool-driven flow where the LLM controls when and for which resource context is collected:
+### Current Implementation (Go KA)
 
 ```
-Signal -> AIAnalysis Controller passes signal context to HAPI
-  -> HAPI invokes LLM with signal context only (no pre-computed enrichment)
-  -> Phase 1 (RCA): LLM analyzes signal, identifies root cause and affected resource
-  -> Phase 2 (Context): LLM calls get_namespaced_resource_context or get_cluster_resource_context (from the resource_context toolset) for the RCA target
-      -> Tool internally:
-         1. Traverses K8s ownerReferences for identified target
-         2. Identifies root managing resource (e.g., Pod -> Deployment)
-         3. Computes spec hash for root owner
-         4. Queries DataStorage for remediation history (root owner + spec hash)
-      -> Returns to LLM: root_owner identity + remediation_history only
-         (owner chain and spec hash are internal, not exposed)
-  -> Phase 3 (Workflow): LLM calls 3-step workflow discovery (DD-KA-017)
-      -> list_available_actions(action_type)
-      -> list_workflows(action_type, filters)
-      -> get_workflow(workflow_id) with parameter mapping
-  -> LLM returns complete result: RCA + affected resource + workflow recommendation
+Signal -> AIAnalysis Controller passes signal context to KA
+  -> KA invokes LLM with signal context only (no pre-computed enrichment)
+  -> Phase 1 (RCA): LLM analyzes the signal and returns a structured result
+     including a remediation target (kind/name/namespace), parsed by
+     internal/kubernautagent/parser
+  -> KA resolves the enrichment target: ResolveEnrichmentTarget prefers the
+     LLM's RCA-identified target, falling back to the signal resource only
+     if the LLM didn't provide one (internal/kubernautagent/investigator/investigator.go)
+  -> KA automatically enriches for that target (no LLM tool call required):
+     Investigator.resolveEnrichment -> enrichment.Enricher.Enrich
+       1. Traverses K8s ownerReferences for the resolved target
+       2. Identifies the root managing resource (e.g., Pod -> Deployment)
+       3. Computes the spec hash for the root owner (DD-EM-002)
+       4. Queries DataStorage for target-scoped remediation history (DD-KA-016)
+       5. Detects 12 infrastructure characteristics for the root owner (DD-KA-018)
+  -> Phase 2 (Workflow): LLM uses the three-step workflow discovery protocol
+     (DD-KA-017), informed by the enrichment result rendered into the prompt
+  -> KA returns the complete result: RCA + remediation target + workflow
+     recommendation
 ```
 
-This flow applies to the incident path.
+This is KA's single, unified investigation flow (there is no separate incident/recovery split in Go KA).
+
+**A secondary path also exists**: `get_namespaced_resource_context` / `get_cluster_resource_context` are still registered as LLM-callable tools (used by the interactive MCP mode's `select_workflow` pre-selection hook, and available to the autonomous flow's LLM). Calling them re-runs the same `Enricher.Enrich` logic for a target the LLM specifies. They are not a prerequisite for enrichment — the automatic path above always runs regardless of whether the LLM calls them.
 
 ### Key Design Principles
 
-1. **The LLM identifies the target resource, not pre-computation**. The `affectedResource` in the result is a required, first-class RCA output, not derived from a pre-computed owner chain.
+1. **The LLM identifies the target resource, not pre-computation.** The RCA-time remediation target is a first-class output of RCA, not derived from a pre-computed owner chain of the signal source.
 
-2. **`affectedResource` is a required field in the LLM response contract**. The response validator (3-attempt self-correction loop) rejects responses that omit it, the same way it enforces `severity`, `summary`, and `selected_workflow`. If the LLM omits `affectedResource`, the validator returns an error and the LLM retries with the signal context (which includes the target resource) as fallback.
+2. **Target identity is K8s-verified, not blindly trusted from the LLM.** Per [DD-KA-006](DD-KA-006-remediation-target-in-rca.md) v2.0, KA injects `TARGET_RESOURCE_*` workflow parameters from a K8s-verified owner chain (`InjectRemediationTarget`) as `kaManagedParams`, which are never stripped regardless of workflow schema declaration. This superseded the original v1.0–v1.4 design of a strictly-required, unconstrained LLM response field enforced by a hard validator failure — the LLM's stated target is a strong input, but KA's own K8s lookups are the final authority for what gets injected into the workflow.
 
-3. **Context is fetched for the right resource at the right time**. The spec hash and remediation history describe the resource that will actually be remediated.
+3. **Context is fetched for the right resource at the right time.** The spec hash and remediation history describe the resource that will actually be remediated, computed automatically once that resource is known — not the signal source, and not gated on an explicit LLM request.
 
-4. **Tool-driven, not pipeline-driven**. The LLM requests what it needs through tool calls. If the RCA determines no context enrichment is needed (e.g., the root cause is a misconfiguration that doesn't need history), it can skip the tool call entirely.
+4. **Automatic, not solely tool-driven.** Enrichment runs unconditionally for every investigation once the RCA target is resolved. This is a deliberate correction from the original v1.0–v1.4 decision (LLM must call a resource-context tool to trigger enrichment): making it automatic guarantees every investigation has correct target-scoped context, rather than depending on the LLM choosing to call a tool. The LLM-callable tools remain available as a secondary path (e.g., for the interactive MCP mode, or mid-investigation re-scoping).
 
-5. **`affected_resource` replaces `target_in_owner_chain` in Rego policy input**. Instead of a boolean about chain membership, the Rego evaluator exposes the LLM-identified target resource (kind, name, namespace) as structured input. This enables granular, per-kind approval policies (e.g., "require approval for Node remediations in production") rather than the opaque `not target_validated` gate.
-
----
-
-## Changes Required
-
-### Phase 1: Revert Issue #97 Pre-Computation Path
-
-#### HAPI (Python) -- Incident Flow
-
-| File | Change | Rationale |
-|------|--------|-----------|
-| `kubernaut-agent/src/extensions/incident/llm_integration.py` | Remove pre-LLM root owner resolution, spec hash computation, remediation history fetch via root owner, and Phase C `affectedResource` population (~lines 227-278, 593-608) | Pre-computation targets wrong resource |
-| `kubernaut-agent/src/extensions/incident/result_parser.py` | Remove `target_in_owner_chain` from `parse_and_validate_investigation_result`. Remove `is_target_in_owner_chain()` function. | Replaced by `affected_resource` Rego input |
-| `kubernaut-agent/src/clients/k8s_client.py` | Remove `resolve_root_owner()` function. Keep `compute_spec_hash()` (reused by new tool). | `resolve_root_owner` was a trivial list[-1]; new tool traverses K8s API instead |
-| `kubernaut-agent/tests/unit/test_k8s_client_owner_resolution.py` | Remove tests for `resolve_root_owner()` | Function removed |
-
-#### AIAnalysis Controller (Go)
-
-| File | Change | Rationale |
-|------|--------|-----------|
-| `pkg/aianalysis/handlers/request_builder.go` (lines 296-306) | Remove OwnerChain -> HAPI request mapping | OwnerChain no longer passed to HAPI |
-| `pkg/aianalysis/handlers/response_processor.go` | **No changes**. `ExtractRootCauseAnalysis` stays as-is -- it correctly extracts `affectedResource` from the LLM's RCA JSON response. The centralization (dedup of 5 handler methods) is valuable. | Only the Python-side Phase C fallback is removed; the Go-side extraction of whatever the LLM returns is correct |
-| `api/aianalysis/v1alpha1/aianalysis_types.go` | Remove `TargetInOwnerChain *bool` from AIAnalysis status. Add deprecation comment to `EnrichmentResults.OwnerChain` field: `// Deprecated: ADR-055 - no longer populated for HAPI. Scheduled for removal in v2 API.` | `target_in_owner_chain` concept removed; CRD OwnerChain field removal deferred to v2 |
-
-#### Rego Policy and Evaluator
-
-| File | Change | Rationale |
-|------|--------|-----------|
-| `pkg/aianalysis/rego/evaluator.go` | Remove `TargetInOwnerChain bool` from `RegoInput`. Add `AffectedResource` struct (Kind, Name, Namespace) to `RegoInput`. Populate from `analysis.Status.RootCauseAnalysis.AffectedResource`. | Replaces boolean with structured data |
-| `pkg/aianalysis/handlers/analyzing.go` | Remove `TargetInOwnerChain` mapping (~lines 353-356). Add `AffectedResource` mapping from `analysis.Status.RootCauseAnalysis.AffectedResource`. | Feeds new Rego input |
-| `config/rego/aianalysis/approval.rego` | Replace `target_validated` / `not target_validated` rules with `affected_resource`-based rules. See example below. | Enables granular per-kind policies |
-
-**New Rego policy pattern:**
-
-```rego
-# Old (removed):
-# target_validated if { input.target_in_owner_chain == true }
-# require_approval if { is_production; not target_validated }
-
-# New: Granular affected_resource policies
-# Operators can write kind-specific rules
-
-# Node remediations in production always require approval
-require_approval if {
-    is_production
-    input.affected_resource.kind == "Node"
-}
-
-# StatefulSet remediations in production require approval
-require_approval if {
-    is_production
-    input.affected_resource.kind == "StatefulSet"
-}
-
-# Risk factor: production + sensitive resource kinds
-risk_factors contains {"score": 80, "reason": "Production environment with sensitive resource kind - requires manual approval"} if {
-    is_production
-    input.affected_resource.kind == "Node"
-}
-
-risk_factors contains {"score": 60, "reason": "Production environment with stateful resource - requires manual approval"} if {
-    is_production
-    input.affected_resource.kind == "StatefulSet"
-}
-```
-
-#### RemediationOrchestrator (Go)
-
-| File | Change | Rationale |
-|------|--------|-----------|
-| `pkg/remediationorchestrator/creator/aianalysis.go` | `buildEnrichmentResults()` can stop copying `OwnerChain` to AIAnalysis spec | No downstream consumer needs it for HAPI |
-
-#### SignalProcessing (Go)
-
-| File | Change | Rationale |
-|------|--------|-----------|
-| No changes | SP owner chain enrichment stays -- it serves SP's own purposes (label detection, HPA detection, Rego evaluation) | Owner chain computation in SP is not affected |
-
-### Phase 2: Add HAPI Resource Context Tools (`resource_context` Toolset)
-
-#### Tools: `get_namespaced_resource_context` and `get_cluster_resource_context`
-
-```python
-class GetNamespacedResourceContextTool:
-    """Fetch remediation context for a namespace-scoped RCA target.
-
-    Internally traverses K8s ownerReferences, computes spec hash,
-    and queries remediation history. Returns only the root owner
-    identity and history -- chain traversal and hash are internal.
-    Stores resource_scope='namespaced' in session_state.
-
-    Returns to LLM:
-    - root_owner: The root managing resource (kind, name, namespace)
-    - remediation_history: Past remediation attempts for that resource
-    """
-
-    def execute(self, kind: str, name: str, namespace: str) -> ResourceContext:
-        # 1. (Internal) Traverse K8s ownerReferences to find root owner
-        owner_chain = k8s_client.resolve_owner_chain(kind, name, namespace)
-
-        # 2. (Internal) Determine root owner (last in chain, or resource itself)
-        root_owner = owner_chain[-1] if owner_chain else {
-            "kind": kind, "name": name, "namespace": namespace
-        }
-
-        # 3. (Internal) Compute spec hash of root owner
-        spec_hash = k8s_client.compute_spec_hash(
-            root_owner["kind"], root_owner["name"], namespace
-        )
-
-        # 4. (Internal) Fetch remediation history for root owner + spec hash
-        history = remediation_history_client.fetch(root_owner, spec_hash)
-
-        # Return only what the LLM needs
-        return ResourceContext(
-            root_owner=root_owner,
-            remediation_history=history,
-        )
-```
-
-`get_cluster_resource_context` is the sibling tool for **cluster-scoped** RCA targets (e.g. Node, PersistentVolume): it resolves context without a namespace, sets `resource_scope='cluster'` in `session_state`, and follows the same internal pattern (spec hash + remediation history for the resolved target).
-
-#### New Function: `resolve_owner_chain`
-
-This is a **new function** in `k8s_client.py`, not a refactor of `resolve_root_owner()`. It traverses K8s `ownerReferences` from scratch:
-
-```python
-async def resolve_owner_chain(
-    self, kind: str, name: str, namespace: str, max_depth: int = 5
-) -> List[Dict[str, str]]:
-    """Traverse K8s ownerReferences to build the ownership chain.
-
-    Starting from the given resource, follows metadata.ownerReferences
-    (controller: true) upward until no more owners are found or max_depth
-    is reached.
-
-    Returns list of owner entries (excluding the source resource).
-    Example for a Pod owned by a Deployment:
-        [{"kind": "ReplicaSet", "name": "api-7d8f9c6b5", "namespace": "prod"},
-         {"kind": "Deployment", "name": "api", "namespace": "prod"}]
-    """
-    chain = []
-    current_kind, current_name = kind, name
-    for _ in range(max_depth):
-        resource = await self._get_resource(current_kind, current_name, namespace)
-        if resource is None:
-            break
-        owner_refs = resource.get("metadata", {}).get("ownerReferences", [])
-        controller_owner = next(
-            (ref for ref in owner_refs if ref.get("controller") is True), None
-        )
-        if controller_owner is None:
-            break
-        entry = {
-            "kind": controller_owner["kind"],
-            "name": controller_owner["name"],
-            "namespace": namespace,
-        }
-        chain.append(entry)
-        current_kind = controller_owner["kind"]
-        current_name = controller_owner["name"]
-    return chain
-```
-
-#### RBAC Expansion
-
-The resource context tools need to read `ownerReferences` on resources during chain traversal AND read `.spec` for hash computation (plus cluster-scoped `get` where applicable for `get_cluster_resource_context`). The RBAC manifest must be expanded:
-
-```yaml
-# deploy/kubernaut-agent/03-rbac.yaml
-rules:
-  # Existing: read events
-  - apiGroups: [""]
-    resources: ["events"]
-    verbs: ["get", "list"]
-
-  # ADR-055: Read ownerReferences for chain traversal + read spec for hash
-  - apiGroups: [""]
-    resources: ["pods"]
-    verbs: ["get"]
-  - apiGroups: ["apps"]
-    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
-    verbs: ["get"]
-```
-
-Note: `replicasets` added (needed for Pod -> ReplicaSet traversal). `pods` added (needed for starting traversal from a Pod resource to read its `ownerReferences`).
-
-#### Tool Registration
-
-Both tools are registered on the **`resource_context` toolset** (`ResourceContextToolset` in `kubernaut-agent/src/toolsets/resource_context.py`), which is attached in the incident flow alongside the existing DD-HAPI-017 workflow discovery tools. The LLM sees `get_namespaced_resource_context` and `get_cluster_resource_context` as distinct tool names and must choose the one that matches the RCA target’s scope (Issue #524).
-
-#### Updated Prompt Flow
-
-> **Note (BR-496 v2, DD-KA-006 v2.0):** Stored remediation target identity is derived by KA from the K8s-verified owner chain (`InjectRemediationTarget`), not taken as an unconstrained required LLM field. `TARGET_RESOURCE_*` workflow params are unconditionally injected and preserved (`kaManagedParams`), regardless of workflow schema declaration. The numbered steps below reflect the original ADR-055 prompt contract where they still apply.
-
-The HAPI system prompt instructs the LLM:
-
-1. **First**: Analyze the signal context and perform root cause analysis. Identify the root cause and the affected resource. The `affectedResource` field is **required** in your response.
-2. **Then**: Call `get_namespaced_resource_context` (namespace-scoped target) or `get_cluster_resource_context` (cluster-scoped target) with the appropriate arguments. The tool returns: (a) `root_owner` -- the root managing resource (e.g., a Pod's Deployment); use this as your `affectedResource`; (b) `remediation_history` -- past remediations for that resource. Owner chain traversal and spec hash computation are internal to the tool.
-3. **Finally**: Use the three-step workflow discovery (DD-HAPI-017) to select the appropriate remediation workflow, informed by the remediation history.
-
-#### Response Validation
-
-> **Note (BR-496 v2, DD-KA-006 v2.0):** Target resource identity for downstream consumers is injected from the K8s-verified owner chain. KA unconditionally injects `TARGET_RESOURCE_NAME` / `TARGET_RESOURCE_KIND` / `TARGET_RESOURCE_NAMESPACE` (and `TARGET_RESOURCE_API_VERSION` when known) as `kaManagedParams`, which are never stripped regardless of workflow schema declaration. The following still describes the original validator expectation for LLM RCA output shape where `affectedResource` was LLM-supplied.
-
-The `WorkflowResponseValidator` (3-attempt self-correction loop) is updated to validate that `affectedResource` is present in the RCA output. If the LLM omits it, the validator returns:
-
-```
-"missing required field: root_cause_analysis.affectedResource (kind, name required; namespace required for namespace-scoped resources, omit for cluster-scoped)"
-```
-
-The LLM retries with the signal context (which includes the target resource kind/name) available to produce the field. This is the same validation pattern used for `severity`, `summary`, and `selected_workflow`.
-
-### Phase 3: Clean Up Result Structure
-
-#### Remove from HAPI Request
-
-| Field | Action |
-|-------|--------|
-| `enrichment_results.ownerChain` | Remove from request schema -- HAPI resolves it via tool |
-| `enrichment_results.currentSpecHash` | Remove -- computed by tool for correct resource |
-
-#### Keep in HAPI Response
-
-| Field | Source | Notes |
-|-------|--------|-------|
-| `affected_resource` | LLM RCA output (Phase 1) | Required field, enforced by response validator |
-| `root_cause_analysis` | LLM RCA output (Phase 1) | Unchanged |
-| `recommended_workflow` | LLM workflow selection (Phase 3) | Based on correct context |
-
-#### `current_spec_hash` Scope
-
-The `current_spec_hash` computed by the resource context tools (`get_namespaced_resource_context` / `get_cluster_resource_context`) is used **within the HAPI session only** -- for the remediation history lookup (DataStorage query). It is NOT surfaced in the HAPI response.
-
-The Go-side `CapturePreRemediationHash` in the RO reconciler independently computes the spec hash from the K8s API at workflow execution time. This is correct: the RO captures the hash at the moment of remediation, not from a potentially stale HAPI response. No changes needed to the RO hash computation.
-
-#### Remove `target_in_owner_chain`
-
-Removed from:
-- HAPI response (`result_parser.py` -- incident parse function)
-- `is_target_in_owner_chain()` function in `result_parser.py`
-- AIAnalysis CRD status (`TargetInOwnerChain *bool`)
-- Rego evaluator input (`RegoInput` struct)
-- Rego approval policy (`target_validated` rules)
-- Analyzing handler (`TargetInOwnerChain` mapping)
-
-Replaced by: `affected_resource` (kind, name, namespace) as Rego input for granular policy rules.
-
----
-
-## Impact on Issue #97
-
-Issue #97 introduced these capabilities:
-
-| Capability | Issue #97 Implementation | ADR-055 Impact |
-|------------|--------------------------|----------------|
-| **Owner chain propagation** (SP -> AIAnalysis -> HAPI) | `request_builder.go` maps OwnerChain to HAPI request | **SUPERSEDED**: Remove mapping. HAPI resolves owner chain via tool call for the correct resource. |
-| **Spec hash computation** | `k8s_client.py` computes hash pre-LLM from signal source's root owner | **SUPERSEDED**: `compute_spec_hash()` preserved, invoked by tool for the RCA-identified target. |
-| **`affectedResource` population** | Derived from pre-computed root owner in `llm_integration.py` Phase C | **SUPERSEDED**: LLM identifies affected resource directly during RCA. Enforced as required field via response validator. |
-| **`ExtractRootCauseAnalysis` centralization** | `response_processor.go` helper deduplicating 5 handler methods | **RETAINED**: Centralization is valuable. The Go-side extraction of `affectedResource` from the RCA JSON is correct regardless of how the LLM populates it. |
-| **`resolveDualTargets`** | `reconciler.go` uses `AffectedResource` for EA targeting (DD-EM-003) | **RETAINED + RENAMED**: Renamed from `resolveEffectivenessTarget` in Issue #188. Now returns `*creator.DualTarget{Signal, Remediation}` with explicit dual-target semantics. The `AffectedResource` field is populated by the LLM directly rather than by HAPI's Phase C fallback. |
-| **RBAC for apps/v1** | `03-rbac.yaml` grants read access for spec hash | **RETAINED + EXPANDED**: Still needed for the resource context tools. Expanded to include `replicasets` and `pods` for owner chain traversal (and cluster-scoped reads as required for `get_cluster_resource_context`). |
-| **`target_in_owner_chain` validation** | `result_parser.py` checks RCA target against pre-computed chain | **REPLACED**: Removed. `affected_resource` exposed as structured Rego input for granular per-kind approval policies. |
+5. **`remediation_target` is structured Rego policy input.** Instead of a boolean about owner-chain membership, the Rego evaluator (`pkg/aianalysis/rego/evaluator.go`) exposes the RCA-identified/K8s-verified target resource (kind, name, namespace) as `remediation_target` — enabling granular, per-kind approval policies (e.g., "require approval for Node remediations in production"). The field name is `remediation_target`, not the originally-proposed `affected_resource` — it was renamed during implementation to align with DD-KA-006's `remediationTarget` terminology.
 
 ---
 
 ## Advantages
 
-1. **Accuracy**: Context is collected for the resource the LLM actually identified as the root cause, not the signal source.
-2. **Efficiency**: No wasted computation when owner chain is empty (non-Pod signals) or when the LLM identifies a different target.
-3. **Simpler data flow**: Eliminates the SP -> RO -> AIAnalysis -> HAPI propagation of owner chain data across three service boundaries.
+1. **Accuracy**: Context is collected for the resource actually identified as the root cause, not the signal source.
+2. **Efficiency**: No wasted computation when the owner chain is empty (non-Pod signals) or when the LLM identifies a different target.
+3. **Simpler data flow**: Eliminates the SP → RO → AIAnalysis → KA propagation of owner chain data across three service boundaries.
 4. **Cleaner LLM context**: RCA reasoning is not biased by pre-loaded remediation history for potentially the wrong resource.
-5. **Agentic pattern**: Aligns with modern LLM tool-use patterns where the agent drives information gathering based on its analysis.
-6. **Graceful degradation**: If `get_namespaced_resource_context` / `get_cluster_resource_context` fails (K8s API unavailable, RBAC issues), the LLM can still complete RCA and workflow selection without historical context, and it can reason about the failure explicitly.
-7. **Better Rego policies**: `affected_resource` (kind, name, namespace) as Rego input enables granular, per-kind approval rules -- strictly more powerful than the previous boolean `target_in_owner_chain`.
-8. **Enforced data quality** *(superseded for identity — BR-496 v2 / DD-KA-006 v2.0: KA injects `remediationTarget` from the K8s-verified owner chain)*: `affectedResource` as a required response field with validation was intended to ensure downstream consumers (`resolveDualTargets` (DD-EM-003), WFE creator, audit trail) always have the target resource.
+5. **Guaranteed correctness over agentic optionality**: Making enrichment automatic (rather than purely LLM-tool-driven) removes the risk of an investigation completing without target-scoped context because the LLM didn't think to ask for it.
+6. **Better Rego policies**: `remediation_target` (kind, name, namespace) as Rego input enables granular, per-kind approval rules — strictly more powerful than a boolean owner-chain-membership flag.
 
 ---
 
@@ -385,19 +112,19 @@ Issue #97 introduced these capabilities:
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| Additional latency from tool call round-trip | Medium | Low | Session-based async flow handles multi-turn interactions. Tool performs 3 sequential K8s/DS calls (~1-5s total). Spec hash + history fetch can be parallelized once root owner is known. |
-| Owner-chain re-enrichment may hard-fail after retry exhaustion | Low | Medium | KA retries owner-chain resolution before giving up. **BR-496 v2 (DD-KA-006 v2.0)**: If owner-chain re-enrichment hard-fails, KA flags `needs_human_review=true` with `human_review_reason=rca_incomplete` (`internal/kubernautagent/investigator/investigator_discovery.go`). |
-| LLM omits `affectedResource` from RCA | Low | Low | `affectedResource` enforced as required field by response validator (3-attempt self-correction loop). Same pattern as `severity`, `summary`. |
-| LLM identifies wrong target, fetches wrong context | Low | Low | Same risk exists today (pre-computed context may also be for wrong resource). The new flow is strictly better because the LLM can correct itself. **BR-496 v2 (DD-KA-006 v2.0)**: Stored target identity follows the K8s-verified owner chain via KA's `InjectRemediationTarget`, not a mismatch-driven human review path. |
-| Rego policy breakage during migration | Medium | High | Rego input schema update (`target_in_owner_chain` → `affected_resource`) must be atomic. Test with existing E2E approval tests. See BR-AI-085-005 for default-deny safety pattern. |
+| Additional latency from automatic enrichment on every investigation | Low | Low | `Enricher.Enrich` performs a small number of sequential K8s/DataStorage calls; K8s client caching and DD-KA-016's indexed queries keep this bounded. |
+| Owner-chain re-enrichment fails (RBAC, timeout, API unavailable) | Low | Medium | KA retries owner-chain resolution before giving up. Per BR-496 v2 / DD-KA-006 v2.0, if it hard-fails, KA sets `needs_human_review=true` with `human_review_reason=rca_incomplete` (`internal/kubernautagent/investigator/investigator_discovery.go`). |
+| LLM identifies the wrong target, so KA enriches the wrong resource | Low | Low | Same risk existed under the pre-computation model. KA's automatic enrichment is strictly better because it targets the LLM's RCA output rather than a fixed pre-RCA guess, and target identity is ultimately K8s-verified (DD-KA-006) before being injected into workflow parameters. |
+| Rego policy input schema drift | Low | Medium | `remediation_target` is a stable, tested field on `RegoInput` (`pkg/aianalysis/rego/evaluator.go`); covered by existing approval-policy tests. |
 
 ---
 
-## References
+## Related Decisions
 
-- **DD-KA-017**: Three-step workflow discovery integration
-- **DD-KA-016**: Remediation history context via spec-hash matching
-- **Issue #97**: Owner chain / AffectedResource / SpecHash (superseded)
-- **DD-WORKFLOW-001 v1.7-1.8**: Owner chain schema and validation
-- **DD-EM-002**: Canonical spec hash computation
-- **BR-AI-085**: Rego Policy Input Schema for Approval Decisions (includes default-deny safety pattern)
+- **[DD-KA-006](DD-KA-006-remediation-target-in-rca.md)**: Remediation target identity — K8s-verified owner-chain injection, the current authority for how target identity flows into workflow execution.
+- **[DD-KA-016](DD-KA-016-remediation-history-context.md)**: Remediation history context via target-scoped, spec-hash-matched queries — the current authority for the history-fetch mechanics referenced above.
+- **[DD-KA-017](DD-KA-017-three-step-workflow-discovery-integration.md)**: Three-step workflow discovery — the current authority for how enrichment results (labels, history) reach the LLM during workflow selection.
+- **[DD-KA-018](DD-KA-018-detected-labels-detection-specification.md)**: DetectedLabels detection specification — the current authority for the 12 infrastructure characteristics computed during enrichment.
+- **[ADR-056](ADR-056-post-rca-label-computation.md)**: Post-RCA label computation — extends this decision's target-scoping principle to DetectedLabels.
+- **[DD-EM-002](DD-EM-002-canonical-spec-hash.md)**: Canonical spec hash computation.
+- **BR-AI-085**: Rego Policy Input Schema for Approval Decisions (includes default-deny safety pattern).
