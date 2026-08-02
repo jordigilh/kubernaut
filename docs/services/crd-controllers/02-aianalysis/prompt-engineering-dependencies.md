@@ -1,11 +1,11 @@
-# HolmesGPT Prompt Engineering Guidelines for Dependency Specification
+# Kubernaut Agent (KA) Prompt Engineering Guidelines for Dependency Specification
 
 > ⚠️ **V2.0+ DEFERRED**: This document describes dependency validation features (BR-AI-051-053) that are **out of V1.0 scope**.
 > V1.0 uses predefined workflows from catalog (DD-WORKFLOW-002) - no runtime dependency validation needed.
 > This document is retained for future reference. See [BR_MAPPING.md](./BR_MAPPING.md) v1.3 for V1.0 scope.
 
 **Date**: October 16, 2025 (Updated)
-**Purpose**: Guidelines for structuring HolmesGPT prompts to generate remediation recommendations with step dependencies
+**Purpose**: Guidelines for structuring Kubernaut Agent (KA) prompts to generate remediation recommendations with step dependencies
 **Business Requirements**: ~~BR-LLM-035, BR-LLM-036, BR-LLM-037, BR-HOLMES-031, BR-HOLMES-032, BR-HOLMES-033~~ *(Legacy - invalid BR categories)*
 **Format**: Self-Documenting JSON (DD-HOLMESGPT-009)
 **V1.0 Status**: ❌ **DEFERRED** - See BR_MAPPING.md for V1.0 scope
@@ -14,7 +14,7 @@
 
 ## 🎯 **OVERVIEW**
 
-This document provides comprehensive guidelines for engineering HolmesGPT prompts to include dependency specification in remediation recommendations, enabling the WorkflowExecution Controller to optimize execution through parallel step execution.
+This document provides comprehensive guidelines for engineering Kubernaut Agent (KA) prompts to include dependency specification in remediation recommendations, enabling the WorkflowExecution Controller to optimize execution through parallel step execution.
 
 **UPDATE (October 16, 2025)**: All prompts now use **Self-Documenting JSON format** as defined in `DD-HOLMESGPT-009-Ultra-Compact-JSON-Format.md`. This achieves **60% token reduction** while maintaining **98% parsing accuracy**.
 
@@ -35,7 +35,7 @@ This document provides comprehensive guidelines for engineering HolmesGPT prompt
 
 ```python
 SYSTEM_PROMPT = """
-You are HolmesGPT, Kubernetes troubleshooting expert.
+You are Kubernaut Agent (KA), Kubernetes troubleshooting expert.
 
 INPUT: Ultra-compact JSON (see legend).
 OUTPUT: Recommendations with dependencies for parallel execution optimization.
@@ -68,7 +68,7 @@ Legend: i=id, p=priority, e=env, s=service, sf=safety, dt=downtime, a=approval, 
 **Legacy Verbose Format** (Deprecated):
 ```python
 SYSTEM_PROMPT = """
-You are HolmesGPT, an expert Kubernetes troubleshooting assistant.
+You are Kubernaut Agent (KA), an expert Kubernetes troubleshooting assistant.
 
 When generating remediation recommendations, you MUST include dependency information
 to enable efficient workflow execution.

@@ -48,12 +48,25 @@ Following Kubernaut's defense-in-depth testing strategy:
 
 **Testing Strategy**: Use fake K8s client for compile-time API safety. Mock ONLY KA HTTP API. Use REAL business logic (Rego policy engine, approval workflow).
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: Package
+> and mock naming in the Ginkgo example below (and the "Integration Tests" section further down) have been
+> corrected to current terms (`pkg/agentclient`, `mockAgentClient`), but the example still depicts a purely
+> synchronous `mockAgentClient.On("Investigate", ...)` call as the only KA interaction. The current
+> `AgentClientInterface` (`pkg/aianalysis/handlers/interfaces.go`) is async/session-based:
+> `SubmitInvestigation` → `PollSession` (polled across reconciles, up to `DefaultMaxInvestigationDuration` =
+> 25 minutes wall-clock, not a 60s per-call timeout) → `GetSessionResult`. The legacy synchronous
+> `Investigate()` method still exists but is being deprecated. The example's `InvestigationTimeout: 60 *
+> time.Second` spec field also does not exist on `AIAnalysisSpec` (the real, currently-unused field is
+> `Spec.TimeoutConfig.InvestigatingTimeout`; actual session lifetime enforcement is the wall-clock
+> `DefaultMaxInvestigationDuration` constant, not a CRD spec field). Rewriting the example to exercise the
+> async flow and correct field usage is out of scope for this terminology-only sweep.
+
 **Test Files (Day 6 Complete)**:
 
 > **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: this table
 > predates the async agent-client rewrite — `holmesgpt_client_test.go` and `audit_client_test.go` no longer exist;
 > the current files are `pkg/aianalysis/agentclient_test.go` (+ `agentclient_session_test.go`,
-> `agentclient_tls_test.go`) and `pkg/aianalysis/audit_test.go`. `pkg/aianalysis/` now has 38 test files, not 8.
+> `agentclient_tls_test.go`) and `pkg/aianalysis/audit_test.go`. `pkg/aianalysis/` now has 41 test files, not 8.
 > Out of scope for this terminology-only sweep — needs a content rewrite against the current test suite.
 
 | File | Focus | Tests |
@@ -91,7 +104,7 @@ import (
     aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1"
     approvalv1 "github.com/jordigilh/kubernaut/api/approval/v1"
     "github.com/jordigilh/kubernaut/internal/controller"
-    "github.com/jordigilh/kubernaut/pkg/ai/holmesgpt"
+    "github.com/jordigilh/kubernaut/pkg/agentclient"
     "github.com/jordigilh/kubernaut/pkg/ai/rego"
     "github.com/jordigilh/kubernaut/pkg/testutil"
     "github.com/jordigilh/kubernaut/pkg/testutil/mocks"
@@ -108,7 +121,7 @@ var _ = Describe("AIAnalysis Controller", func() {
     var (
         fakeK8sClient       client.Client
         scheme              *runtime.Scheme
-        mockHolmesGPT       *mocks.MockHolmesGPT
+        mockAgentClient     *mocks.MockAgentClient
         regoEngine          *rego.Engine      // REAL business logic
         reconciler          *controller.AIAnalysisReconciler
         ctx                 context.Context
@@ -123,8 +136,8 @@ var _ = Describe("AIAnalysis Controller", func() {
             WithStatusSubresource(&aianalysisv1.AIAnalysis{}).
             Build()
 
-        // Mock ONLY external HolmesGPT API
-        mockHolmesGPT = mocks.NewMockHolmesGPT()
+        // Mock ONLY external Kubernaut Agent (KA) API
+        mockAgentClient = mocks.NewMockAgentClient()
 
         // Use REAL Rego policy engine
         regoEngine = rego.NewEngine(testutil.LoadTestRegoPolicy())
@@ -132,13 +145,13 @@ var _ = Describe("AIAnalysis Controller", func() {
         reconciler = &controller.AIAnalysisReconciler{
             Client:       fakeK8sClient,
             Scheme:       scheme,
-            HolmesGPT:    mockHolmesGPT,
+            AgentClient:  mockAgentClient,
             RegoEngine:   regoEngine,  // Real business logic
         }
     })
 
     // Unit test: validates implementation correctness
-    Context("HolmesGPT Investigation Phase", func() {
+    Context("Kubernaut Agent (KA) Investigation Phase (legacy sync path)", func() {
         It("should investigate alert and generate recommendations with confidence scores", func() {
             // Setup test AIAnalysis CRD
             aia := &aianalysisv1.AIAnalysis{
@@ -162,11 +175,11 @@ var _ = Describe("AIAnalysis Controller", func() {
 
             Expect(fakeK8sClient.Create(ctx, aia)).To(Succeed())
 
-            // Mock HolmesGPT response with deterministic AI recommendations
-            mockHolmesGPT.On("Investigate", ctx, aia.Spec.TargetingData.Alert).Return(
-                &holmesgpt.InvestigationResult{
+            // Mock KA response with deterministic AI recommendations
+            mockAgentClient.On("Investigate", ctx, aia.Spec.TargetingData.Alert).Return(
+                &agentclient.IncidentResponse{
                     RootCause: "Memory leak in webapp container due to unclosed database connections",
-                    Recommendations: []holmesgpt.Recommendation{
+                    Recommendations: []agentclient.Recommendation{
                         {
                             Action:      "restart-pod",
                             Rationale:   "Immediate relief by restarting leaking pod",
@@ -186,7 +199,7 @@ var _ = Describe("AIAnalysis Controller", func() {
                             Priority:    3,
                         },
                     },
-                    ContextUsed: &holmesgpt.ContextMetadata{
+                    ContextUsed: &agentclient.ContextMetadata{
                         // NOTE: TokensUsed removed from AIAnalysis - KA owns LLM cost observability
                         ProcessingTime:    "3.2s",
                         ModelVersion:      "gpt-4o-2024-05-13",
@@ -242,14 +255,14 @@ var _ = Describe("AIAnalysis Controller", func() {
     })
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // V1.1 DEFERRED TESTS: AIApprovalRequest CRD
+    // V1.1 DEFERRED TESTS: RemediationApprovalRequest CRD
     // ═══════════════════════════════════════════════════════════════════════════
     // The following test scenarios are OUT OF V1.0 SCOPE per BR_MAPPING.md v1.3:
-    //   - BR-AI-040: AIApprovalRequest CRD Creation for Manual Approval
-    //   - BR-AI-050: AIApprovalRequest Watch for Approval Decision
+    //   - BR-AI-040: RemediationApprovalRequest CRD Creation for Manual Approval
+    //   - BR-AI-050: RemediationApprovalRequest Watch for Approval Decision
     //
     // V1.0 Approach: Approval signaling to RO via status.approvalRequired flag
-    // V1.1 Scope: Will implement dedicated AIApprovalRequest CRD workflow
+    // V1.1 Scope: Will implement dedicated RemediationApprovalRequest CRD workflow
     //
     // Reference: docs/services/crd-controllers/02-aianalysis/BR_MAPPING.md
     // ═══════════════════════════════════════════════════════════════════════════
@@ -267,7 +280,7 @@ var _ = Describe("AIAnalysis Controller", func() {
 **Current Status**: 34/43 tests passing (audit tests blocked by Data Storage batch endpoint)
 
 **Focus Areas**:
-- MockHolmesGPTClient for deterministic responses (per KA team guidance Dec 9, 2025)
+- Mock KA client (`mockAgentClient`) for deterministic responses (per KA team guidance Dec 9, 2025)
 - CRD lifecycle with running controller (envtest)
 - Rego policy evaluation with mock evaluator
 - Metrics registration via registry inspection (DD-TEST-001)
@@ -277,10 +290,13 @@ var _ = Describe("AIAnalysis Controller", func() {
 | File | Tests | Focus |
 |------|-------|-------|
 | `reconciliation_test.go` | 4 | 4-phase flow, approval scenarios |
-| `holmesgpt_integration_test.go` | 12 | MockHolmesGPTClient scenarios |
+| `agentclient_integration_test.go` | 13 | Async KA session flow (submit/poll/result) scenarios |
 | `rego_integration_test.go` | 2 | Policy evaluation |
 | `metrics_integration_test.go` | 7 | Registry inspection |
 | `audit_integration_test.go` | 9 | Audit events (blocked) |
+
+> **Note**: `holmesgpt_integration_test.go` does not exist in the current codebase — corrected to
+> `agentclient_integration_test.go` above (verified against `test/integration/aianalysis/`, 2026-08).
 
 ---
 
@@ -363,7 +379,7 @@ flowchart TD
 
 ### Move to Integration Level WHEN
 
-- ✅ Scenario requires **CRD watch-based coordination** (AIAnalysis → AIApprovalRequest creation)
+- ✅ Scenario requires **CRD watch-based coordination** (AIAnalysis → RemediationApprovalRequest creation)
 - ✅ Validating **real KA API behavior** (actual AI service integration)
 - ✅ Unit test would require **excessive mocking** (>50 lines of approval workflow mocks)
 - ✅ Integration test is **simpler to understand** and maintain
@@ -378,7 +394,7 @@ flowchart TD
   - Validate all contexts available: monitoring + business + recovery (if recovery attempt)
   - Confirm fresh contexts for recovery attempts (not stale from initial attempt)
   - Test prompt enrichment with all available contexts
-- Child CRD creation (AIAnalysis → AIApprovalRequest)
+- Child CRD creation (AIAnalysis → RemediationApprovalRequest)
 - Approval workflow coordination across multiple CRDs
 - Status watch patterns and phase transitions in real cluster
 
@@ -446,7 +462,7 @@ It("should auto-approve high-confidence recommendations", func() {
 **AIAnalysis Example**:
 ```go
 // ❌ FRAGILE: Breaks if we change internal AI call sequence
-Expect(reconciler.holmesGPTCallCount).To(Equal(2))
+Expect(reconciler.agentClientCallCount).To(Equal(2))
 
 // ✅ STABLE: Tests AI business behavior, not implementation
 Expect(aia.Status.Phase).To(Equal("completed"))
@@ -725,13 +741,13 @@ var _ = Describe("Complex Approval Scenario", func() {
 ```go
 // ✅ GOOD: Integration test with real approval workflow
 var _ = Describe("BR-INTEGRATION-AI-020: Approval Workflow", func() {
-    It("should create and track AIApprovalRequest CRD", func() {
+    It("should create and track RemediationApprovalRequest CRD", func() {
         // 15 lines with real K8s API - much clearer
-        Expect(k8sClient.Create(ctx, aiApprovalRequest)).To(Succeed())
+        Expect(k8sClient.Create(ctx, approvalRequest)).To(Succeed())
 
         Eventually(func() string {
-            k8sClient.Get(ctx, approvalKey, aiApprovalRequest)
-            return aiApprovalRequest.Status.State
+            k8sClient.Get(ctx, approvalKey, approvalRequest)
+            return approvalRequest.Status.State
         }).Should(Equal("approved"))
     })
 })

@@ -30,8 +30,6 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Kube
 
 #### BR-AI-001: Contextual Analysis of Kubernetes Alerts
 
-> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: The `pkg/aianalysis/client/holmesgpt.go` and `test/integration/aianalysis/holmesgpt_integration_test.go` file citations below no longer match the codebase (the KA client now lives under `pkg/agentclient/`, and the integration test is `test/integration/aianalysis/agentclient_integration_test.go`).
-
 **Description**: AIAnalysis MUST provide contextual analysis of Kubernetes alerts and system state using KA integration.
 
 **Priority**: P0 (CRITICAL)
@@ -50,13 +48,14 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Kube
 - ✅ Root cause analysis captured with evidence chain
 
 **Test Coverage**:
-- Unit: `test/unit/aianalysis/handlers/investigating_handler_test.go`
-- Integration: `test/integration/aianalysis/holmesgpt_integration_test.go`
+- Unit: `pkg/aianalysis/investigating_handler_test.go`
+- Integration: `test/integration/aianalysis/agentclient_integration_test.go`
 - E2E: Full investigation flow with real KA
 
 **Implementation Files**:
 - `pkg/aianalysis/handlers/investigating.go:316-384`
-- `pkg/aianalysis/client/holmesgpt.go:179-216`
+- `pkg/aianalysis/handlers/interfaces.go` (`AgentClientInterface`)
+- `pkg/agentclient/client.go` (ogen-generated KA client)
 
 **Related ADRs**: ADR-045 (AIAnalysis ↔ Kubernaut Agent Contract)
 
@@ -416,7 +415,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Kube
 
 **Implementation Files**:
 - `pkg/aianalysis/handlers/investigating.go` (recovery request building)
-- `pkg/aianalysis/client/holmesgpt.go` (API client)
+- `pkg/agentclient/client.go` (KA API client)
 
 **Related ADRs**: ADR-045 (AIAnalysis ↔ Kubernaut Agent Contract)
 
@@ -515,7 +514,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Kube
 - **Coverage**: Real infrastructure integration (PostgreSQL, Redis, Data Storage API)
 - **Test Files**:
   - `test/integration/aianalysis/audit_integration_test.go` (20 tests)
-  - `test/integration/aianalysis/holmesgpt_integration_test.go` (18 tests)
+  - `test/integration/aianalysis/agentclient_integration_test.go` (13 tests)
   - `test/integration/aianalysis/rego_integration_test.go` (15 tests)
 
 ### E2E Tests
@@ -542,7 +541,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Kube
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 2.1 | 2026-02-08 | **NEW BR-AI-084**: Proactive Signal Mode Prompt Strategy. HAPI adapts investigation prompt for proactive vs. reactive signals. [Issue #55](https://github.com/jordigilh/kubernaut/issues/55). |
+| 2.1 | 2026-02-08 | **NEW BR-AI-084**: Proactive Signal Mode Prompt Strategy. Kubernaut Agent (KA) adapts investigation prompt for proactive vs. reactive signals. [Issue #55](https://github.com/jordigilh/kubernaut/issues/55). |
 | 2.0 | 2025-12-20 | **V1.0 COMPLETE**: Added comprehensive BR mapping for all implemented requirements (BR-AI-001 to BR-AI-083). Updated test coverage summary with actual results (178 unit + 53 integration tests passing). |
 | 1.0 | 2025-11-28 | Initial BR document with workflow selection contract requirements |
 

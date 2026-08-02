@@ -44,6 +44,7 @@ import (
     "fmt"
 
     aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+    "github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 
     "github.com/go-logr/logr"
     "k8s.io/apimachinery/pkg/runtime"
@@ -60,7 +61,7 @@ type AIAnalysisReconciler struct {
     Scheme            *runtime.Scheme
     Log               logr.Logger
     Recorder          record.EventRecorder
-    HolmesGPTClient   HolmesGPTClient
+    AgentClient       handlers.AgentClientInterface
     StorageClient     StorageClient
 }
 
@@ -151,7 +152,7 @@ func (r *AIAnalysisReconciler) cleanupAIAnalysis(
     )
 
     // V1.0: AIAnalysis does NOT create child CRDs
-    // - AIApprovalRequest is V1.1+ (not in V1.0)
+    // - RemediationApprovalRequest is V1.1+ (not in V1.0)
     // - WorkflowExecution is created by RO, not AIAnalysis
 
     // 1. Record final audit to database (best-effort)
@@ -199,7 +200,7 @@ func (r *AIAnalysisReconciler) recordFinalAudit(
 - ❌ **No child CRD cleanup**: AIAnalysis doesn't create child CRDs in V1.0
 
 **V1.1+ Additions** (Future):
-- AIApprovalRequest CRD cleanup (when approval orchestration via CRD is implemented)
+- RemediationApprovalRequest CRD cleanup (when approval orchestration via CRD is implemented)
 
 ---
 
@@ -243,9 +244,9 @@ var _ = Describe("AIAnalysis Finalizer", func() {
             Build()
 
         reconciler = &aianalysis.AIAnalysisReconciler{
-            Client:          k8sClient,
-            HolmesGPTClient: &mockHolmesGPTClient{},
-            StorageClient:   &mockStorageClient{},
+            Client:        k8sClient,
+            AgentClient:   &mockAgentClient{},
+            StorageClient: &mockStorageClient{},
         }
     })
 
@@ -431,6 +432,7 @@ import (
     "time"
 
     aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+    "github.com/jordigilh/kubernaut/pkg/agentclient"
 
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -448,7 +450,7 @@ func (r *AIAnalysisReconciler) updateStatusInvestigating(
 func (r *AIAnalysisReconciler) updateStatusReady(
     ctx context.Context,
     analysis *aianalysisv1alpha1.AIAnalysis,
-    result *HolmesGPTResult,
+    result *agentclient.IncidentResponse,
     approvalRequired bool,
 ) error {
     analysis.Status.Phase = aianalysisv1alpha1.PhaseReady
@@ -507,7 +509,7 @@ Kubernetes deletes AIAnalysis CRD
 
 **V1.1+ Cascade Pattern** (Two-Layer for AIAnalysis):
 - **Layer 1**: RemediationRequest → AIAnalysis
-- **Layer 2**: AIAnalysis → AIApprovalRequest (when implemented)
+- **Layer 2**: AIAnalysis → RemediationApprovalRequest (when implemented)
 
 **Retention**:
 - **AIAnalysis**: No independent retention (deleted with parent)
@@ -583,6 +585,17 @@ kubectl get events --field-selector involvedObject.name=<name>
 
 ### Lifecycle Monitoring
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**:
+> Most metric names in this monitoring section (`aianalysis_created_total`, `aianalysis_active_total`,
+> `aianalysis_deleted_total`, `aianalysis_approval_required_total`, `aianalysis_phase_start_timestamp`,
+> `aianalysis_lifecycle_duration_seconds`) are illustrative and do not correspond to metrics actually
+> instrumented today. The real, current metric set (`pkg/aianalysis/metrics/metrics.go`) is exactly:
+> `aianalysis_rego_evaluations_total`, `aianalysis_approval_decisions_total`,
+> `aianalysis_confidence_score_distribution`, and `aianalysis_failures_total` (labels `reason`/`sub_reason`).
+> The retired `aianalysis_holmesgpt_failures_total` references below have been corrected to
+> `aianalysis_failures_total`; rewriting the rest of this dashboard/alerting spec against the real metric
+> set is out of scope for this terminology-only sweep.
+
 **Prometheus Metrics**:
 
 ```promql
@@ -601,8 +614,8 @@ rate(aianalysis_deleted_total[5m])
 # V1.0: Approval signaling rate
 rate(aianalysis_approval_required_total[5m])
 
-# Kubernaut Agent (KA) investigation failures
-rate(aianalysis_holmesgpt_failures_total[5m])
+# Kubernaut Agent (KA) investigation failures (reason="APIError")
+sum(rate(aianalysis_failures_total{reason="APIError"}[5m]))
 ```
 
 **Grafana Dashboard**:
@@ -646,13 +659,13 @@ groups:
       description: "AIAnalysis {{ $labels.name }} has been investigating for over 5 minutes"
 
   - alert: AIAnalysisHighFailureRate
-    expr: rate(aianalysis_holmesgpt_failures_total[5m]) > 0.1
+    expr: sum(rate(aianalysis_failures_total{reason="APIError",sub_reason="AgentAPICallFailed"}[5m])) > 0.1
     for: 5m
     labels:
       severity: critical
     annotations:
       summary: "High KA investigation failure rate"
-      description: "KA investigation failing for >10% of requests"
+      description: "KA investigation failing for >10% of requests (reason=APIError, sub_reason=AgentAPICallFailed)"
 
   - alert: AIAnalysisHighApprovalRate
     expr: |

@@ -2,7 +2,14 @@
 
 ---
 
-> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This document's code-reuse plan describes a `pkg/ai/*` package tree (`pkg/ai/holmesgpt/`, `pkg/ai/analysis/`, `pkg/ai/llm/`, `pkg/ai/insights/`, `pkg/ai/context/`) and a `cmd/aianalysis/main.go` entry point that do not exist in the current codebase; AIAnalysis was implemented independently of this migration plan.
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This
+> document's code-reuse plan describes a `pkg/ai/*` package tree (`pkg/ai/holmesgpt/`, `pkg/ai/analysis/`,
+> `pkg/ai/llm/`, `pkg/ai/insights/`, `pkg/ai/context/`) that does not exist in the current codebase.
+> `cmd/aianalysis/main.go` **does** exist today, but as an independently-developed entry point (wiring
+> `pkg/agentclient`, `pkg/aianalysis/handlers`, `internal/controller/aianalysis`, etc.) — it does not resemble
+> the illustrative example below, and this migration/reuse plan itself was never followed; AIAnalysis was
+> implemented independently of it. The plan is retained here for historical reference only, not as a
+> pending/in-progress task.
 
 ---
 
@@ -132,14 +139,19 @@
 
 **Deliverable**: Complete reconciliation logic
 
-### No Main Application Migration
+### No Main Application Migration (Historical Plan — Superseded)
 
-**Verification**: `cmd/ai-analysis-service/` does **NOT** exist ✅
+> **⚠️ Superseded**: This section documented a then-pending action. `cmd/aianalysis/main.go` has since been
+> created — independently of this plan — and looks nothing like the illustrative example below (real KA
+> integration goes through `pkg/agentclient` + `pkg/aianalysis/handlers`, not `pkg/ai/analysis`). Retained
+> for historical reference only.
 
-**Action**: Create new binary entry point
+**Verification (at time of writing)**: `cmd/ai-analysis-service/` does **NOT** exist ✅
+
+**Action (at time of writing)**: Create new binary entry point
 
 ```go
-// cmd/aianalysis/main.go
+// cmd/aianalysis/main.go (illustrative only — does not reflect the real file)
 package main
 
 import (

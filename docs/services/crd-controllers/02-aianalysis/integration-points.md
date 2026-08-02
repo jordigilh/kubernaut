@@ -1,24 +1,34 @@
 # AI Analysis Service - Integration Points
 
-**Version**: v2.2
-**Last Updated**: 2025-12-02
-**Status**: ✅ V1.0 Scope Defined
+**Version**: v3.0 (Kubernaut Agent async session API)
+**Last Updated**: August 2026
+**Status**: ✅ Implemented and in production (V1.0)
+
+> **Rewritten** ([#1806](https://github.com/jordigilh/kubernaut/issues/1806)): the previous version
+> of this document (v2.2, dated December 2025) described a synchronous `POST /api/v1/incident/analyze`
+> call to "HolmesGPT-API" on port 8080 with a flat JSON body, a `pkg/clients/holmesgpt/` Go client,
+> and an internal `search_workflow_catalog` toolkit call to Data Storage — none of which reflect the
+> current implementation. Kubernaut Agent (KA) is a native Go service (`internal/kubernautagent/`)
+> with an **asynchronous, session-based** API; there is no Python HolmesGPT code left in this repo.
+> See [What Changed](#what-changed-since-the-december-2025-version) at the end of this document.
 
 ---
 
-## Changelog
+## Table of Contents
 
-| Version | Date | Changes | Reference |
-|---------|------|---------|-----------|
-| **v2.2** | 2025-12-02 | **SCHEMA UPDATE**: Added `failedDetections` to DetectedLabels data flow; HolmesGPT-API passes to Data Storage for filter skipping | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
-| v2.1 | 2025-12-02 | **CRITICAL FIXES**: Port 8090→8080; Endpoints corrected; MCP removed (toolkit-based); Request/response schemas updated; Added `target_in_owner_chain` and `warnings` | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
-| v2.0 | 2025-11-30 | **REGENERATED**: Fixed RemediationProcessing→SignalProcessing; Added DetectedLabels/CustomLabels/OwnerChain flow; Updated HolmesGPT-API integration; Removed legacy enrichment patterns | DD-WORKFLOW-001 v1.8 |
-| v1.1 | 2025-10-16 | Added structured action format | DD-CONTRACT-002 |
-| v1.0 | 2025-10-15 | Initial specification | - |
+1. [Integration Architecture](#integration-architecture)
+2. [Upstream Integration: SignalProcessing → AIAnalysis](#upstream-integration-signalprocessing-aianalysis-via-ro)
+3. [Kubernaut Agent Integration](#kubernaut-agent-integration)
+4. [Downstream Integration: AIAnalysis → Remediation Orchestrator](#downstream-integration)
+5. [Rego Policy Integration](#rego-policy-integration)
+6. [Service Dependencies](#service-dependencies)
+7. [Kubernetes Integration](#kubernetes-integration)
+8. [What Changed Since the December 2025 Version](#what-changed-since-the-december-2025-version)
+9. [Related Documents](#related-documents)
 
 ---
 
-## Integration Architecture (V1.0)
+## Integration Architecture
 
 ### Data Flow Overview
 
@@ -34,354 +44,275 @@ graph LR
         CTRL[AIAnalysis Controller]
     end
 
-    subgraph "External Services"
-        HAPI[HolmesGPT-API<br/>Port 8080]
-        DS[Data Storage<br/>Port 8085]
+    subgraph "External Service"
+        KA["Kubernaut Agent (KA)<br/>:8443, async session API"]
     end
 
     subgraph "Downstream"
         WE[WorkflowExecution]
+        ARQ[RemediationApprovalRequest]
         NOT[Notification Service]
     end
 
-    SP -->|"EnrichmentResults<br/>(DetectedLabels (ADR-056: removed, now computed by HAPI post-RCA), CustomLabels, OwnerChain (ADR-055: removed))"| RO
+    SP -->|"EnrichmentResults<br/>(KubernetesContext, BusinessClassification)"| RO
     RO -->|"Creates AIAnalysis<br/>with copied enrichment"| AIA
-    CTRL -->|"POST /api/v1/incident/analyze"| HAPI
-    HAPI -->|"Internal toolkit:<br/>search_workflow_catalog"| DS
-    DS -->|"workflowId + containerImage"| HAPI
-    HAPI -->|"IncidentResponse"| CTRL
+    CTRL -->|"1. POST /api/v1/incident/analyze<br/>(202 Accepted + session_id)"| KA
+    CTRL -->|"2. GET .../session/{id}<br/>(poll every 15s)"| KA
+    CTRL -->|"3. GET .../session/{id}/result"| KA
+    KA -->|"IncidentResponse"| CTRL
     CTRL -->|"Update status"| AIA
     AIA -->|"phase=Completed"| RO
-    RO -->|"If approved"| WE
-    RO -->|"If approvalRequired"| NOT
+    RO -->|"approvalRequired=false"| WE
+    RO -->|"approvalRequired=true"| ARQ
+    RO -->|"approvalRequired=true"| NOT
 ```
 
-> **⚠️ IMPORTANT CORRECTION (Dec 2025)**: HolmesGPT-API does **NOT** expose an MCP server. The MCP workflow catalog approach was replaced with a **toolkit-based architecture** where HolmesGPT-API uses internal tools to query Data Storage directly. AIAnalysis calls HolmesGPT-API via REST endpoints.
+KA does not expose a workflow-catalog MCP server or a "toolkit" that AIAnalysis calls into —
+AIAnalysis's only contract with KA is the incident-analysis session API described below. Any
+Data Storage workflow-catalog lookups happen inside KA's own process, which AIAnalysis has no
+visibility into and does not call directly.
 
 ---
 
-## Upstream Integration
+## Upstream Integration: SignalProcessing → AIAnalysis (via RO)
 
-### SignalProcessing → AIAnalysis (via RO)
-
-**Pattern**: Self-contained CRD - all data copied to AIAnalysis.spec at creation
+**Pattern**: Self-contained CRD (DD-CONTRACT-002) — all data copied into `AIAnalysis.spec` at
+creation time by RemediationOrchestrator. AIAnalysis never reads `SignalProcessing` directly
+during reconciliation.
 
 **Source**: `SignalProcessing.status.enrichmentResults`
-**Target**: `AIAnalysis.spec.enrichmentResults`
+**Target**: `AIAnalysis.spec.analysisRequest.signalContext.enrichmentResults`
 
 #### Data Copied
 
 ```yaml
 # AIAnalysis.spec (created by RO from SignalProcessing)
 spec:
-  # Signal identification
-  signalContext:
-    signalType: "alert"
-    fingerprint: "abc123"
-    severity: "critical"
-    namespace: "production"
-    resourceKind: "Deployment"
-    resourceName: "payment-api"
+  analysisRequest:
+    signalContext:
+      fingerprint: "sha256:abc123"
+      severity: critical
+      signalName: OOMKilled          # NOTE: field is signalName, not signalType
+      environment: production
+      businessPriority: P0
+      targetResource:
+        kind: Deployment
+        name: payment-api
+        namespace: production
 
-  # Enrichment data (copied from SignalProcessing.status)
-  enrichmentResults:
-    kubernetesContext:
-      namespace: "production"
-      podDetails:
-        name: "payment-api-7d8f9c6b5-x2j4k"
-        phase: "Running"
-        containerStatuses:
-          - name: "api"
-            ready: true
-            restartCount: 5
-      deploymentDetails:
-        name: "payment-api"
-        replicas: 3
-        availableReplicas: 2
-
-    # Auto-detected labels (DD-WORKFLOW-001 v2.1) (ADR-056: removed from EnrichmentResults, now computed by HAPI post-RCA)
-    detectedLabels:
-      # Detection failures (DD-WORKFLOW-001 v2.1)
-      # If a field is listed here, its value is unreliable (RBAC, timeout, etc.)
-      # If empty/nil, all detections succeeded
-      failedDetections: []  # or: ["pdbProtected"] if PDB query failed
-
-      gitOpsTool: "argocd"
-      pdbProtected: true
-      statefulWorkload: false
-      hpaEnabled: true
-      resourceQuotaConstrained: false
-
-    # Customer-defined labels (from SignalProcessing Rego)
-    customLabels:
-      constraint:
-        - "cost-constrained"
-        - "stateful-safe"
-      team:
-        - "name=payments"
-      region:
-        - "name=us-west-2"
-
-    # K8s ownership chain (DD-WORKFLOW-001 v1.7) (ADR-055: removed from EnrichmentResults)
-    ownerChain:
-      - namespace: "production"
-        kind: "ReplicaSet"
-        name: "payment-api-7d8f9c6b5"
-      - namespace: "production"
-        kind: "Deployment"
-        name: "payment-api"
-
-    # NOTE: EnrichmentQuality REMOVED (Dec 2025)
-    # SignalProcessing uses boolean `degradedMode` flag instead
-    # RO checks phase completion, not quality scores
+      # Enrichment data (copied from SignalProcessing.status), pkg/shared/types/enrichment.go
+      enrichmentResults:
+        kubernetesContext:
+          namespace:
+            name: production
+          workload:
+            kind: Deployment
+            name: payment-api
+            labels:
+              app: payment-api
+          # K8s ownership chain (DD-WORKFLOW-001 v1.8) — lives ON kubernetesContext, not
+          # as a top-level EnrichmentResults field
+          ownerChain:
+          - namespace: production
+            kind: ReplicaSet
+            name: payment-api-7d8f9c6b5
+          - namespace: production
+            kind: Deployment
+            name: payment-api
+          # Customer-defined labels from SignalProcessing Rego — also on kubernetesContext,
+          # not top-level
+          customLabels:
+            constraint:
+            - cost-constrained
+            team:
+            - name=payments
+        businessClassification:
+          businessUnit: payments
+          criticality: Critical
+          slaRequirement: Gold
 ```
+
+> **No `detectedLabels` in this payload.** Per ADR-056, `DetectedLabels` is no longer supplied
+> as *input* enrichment — KA computes it itself during RCA (via its `get_namespaced_resource_context`/
+> `get_cluster_resource_context` tools) and returns it in the incident response, where AIAnalysis
+> stores it as an *output* on `AIAnalysis.status.postRCAContext.detectedLabels`. See
+> [CRD Schema](./crd-schema.md#detectedlabels-13-fields-status-only-see-postrcacontext).
 
 #### Why Self-Contained CRD?
 
 | Benefit | Explanation |
 |---------|-------------|
 | **No API calls during reconciliation** | All data in spec, no external reads |
-| **Resilient to upstream deletion** | Works even if SignalProcessing deleted |
-| **Clear audit trail** | Enrichment data immutably recorded |
+| **Resilient to upstream deletion** | Works even if SignalProcessing is deleted |
+| **Clear audit trail** | Enrichment data immutably recorded (ADR-001 spec immutability) |
 | **Decoupled architecture** | AIAnalysis doesn't depend on SignalProcessing availability |
 
 ---
 
-## HolmesGPT-API Integration
+## Kubernaut Agent Integration
 
-### Endpoints (V1.0)
+### Client
+
+AIAnalysis calls Kubernaut Agent through a generated OpenAPI client, not a hand-written HTTP client:
+
+```go
+// pkg/agentclient — ogen-generated from internal/kubernautagent/api/openapi.json.
+// NOT pkg/clients/holmesgpt/ (that package does not exist in this repository).
+import "github.com/jordigilh/kubernaut/pkg/agentclient"
+```
+
+`pkg/aianalysis/handlers.AgentClientInterface` (`pkg/aianalysis/handlers/interfaces.go`) is the
+interface the controller programs against:
+
+```go
+type AgentClientInterface interface {
+    // Legacy synchronous method (being deprecated) — internally does submit→poll→result
+    Investigate(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error)
+
+    // Async session methods (BR-AA-HAPI-064) — what the controller actually uses
+    SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error)
+    PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error)
+    GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error)
+
+    // BR-INTERACTIVE-010
+    CancelSession(ctx context.Context, sessionID string) error
+}
+```
+
+### Endpoints (async session API, BR-AA-HAPI-064)
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `https://kubernaut-agent:8443/api/v1/incident/analyze` | POST | Initial incident investigation |
-| ~~`https://kubernaut-agent:8443/api/v1/recovery/analyze`~~ | ~~POST~~ | ~~Recovery attempt analysis~~ **DEPRECATED v1.0**: Alert re-fires through Gateway with prior EA context replace dedicated recovery. See BR-AA-HAPI-064.9. |
-| `https://kubernaut-agent:8443/health` | GET | Health check for circuit breaker |
+| `https://kubernaut-agent:8443/api/v1/incident/analyze` | POST | Submit an investigation; returns `202 Accepted` with a `session_id` (never a synchronous result) |
+| `https://kubernaut-agent:8443/api/v1/incident/session/{session_id}` | GET | Poll session status: `pending` \| `investigating` \| `user_driving` \| `completed` \| `failed` |
+| `https://kubernaut-agent:8443/api/v1/incident/session/{session_id}/result` | GET | Retrieve the `IncidentResponse` once status is `completed` (`409` if not yet done) |
+| `https://kubernaut-agent:8443/api/v1/incident/session/{session_id}/cancel` | POST | Cancel a running session (BR-INTERACTIVE-010) |
+| `https://kubernaut-agent:8443/health` | GET | Health check |
 
-### Investigation Request (V1.0)
+There is no `POST /api/v1/recovery/analyze` endpoint and no separate "recovery" request shape —
+per BR-AA-HAPI-064.9, an ineffective remediation re-fires as a new signal through the Gateway
+instead of triggering a dedicated recovery call.
 
-**Endpoint**: `POST https://kubernaut-agent:8443/api/v1/incident/analyze`
+### Async Submit → Poll → Result Flow
 
-> **IMPORTANT**: HolmesGPT-API uses a **flat structure** - NOT nested `signalContext`.
->
-> **DECISION**: Storm context (`is_storm`, `storm_signal_count`) is **NOT exposed** to the LLM. Use `occurrence_count` instead to convey persistence information. See [DD-AIANALYSIS-004](../../../architecture/decisions/DD-AIANALYSIS-004-storm-context-not-exposed.md) for rationale.
+This is **not** a single synchronous HTTP call with a short timeout. The controller submits an
+investigation, gets a session ID back immediately, and polls on subsequent reconciles until the
+session reaches a terminal state:
 
-#### Request Structure (Corrected Dec 2025)
+```mermaid
+sequenceDiagram
+    participant CTRL as AIAnalysis Controller
+    participant KA as Kubernaut Agent
 
-```json
-{
-  "incident_id": "alert-12345",
-  "remediation_id": "req-2025-12-02-abc123",
-  "signal_type": "OOMKilled",
-  "severity": "critical",
-  "signal_source": "prometheus",
-  "resource_namespace": "default",
-  "resource_kind": "Deployment",
-  "resource_name": "nginx",
-  "error_message": "Container exceeded memory limit",
-  "environment": "production",
-  "priority": "P0",
-  "cluster_name": "prod-us-west-2",
-  "enrichment_results": {
-    "detectedLabels": {  // ADR-056: removed from EnrichmentResults, now computed by HAPI post-RCA
-      "failedDetections": [],  // DD-WORKFLOW-001 v2.1: or ["pdbProtected"] if query failed
-      "gitOpsManaged": true,
-      "gitOpsTool": "argocd",
-      "pdbProtected": true,
-      "serviceMesh": "istio"
-    },
-    "ownerChain": [  // ADR-055: removed from EnrichmentResults
-      {"namespace": "default", "kind": "ReplicaSet", "name": "nginx-7d8f9c6b5"},
-      {"namespace": "default", "kind": "Deployment", "name": "nginx"}
-    ],
-    "customLabels": {
-      "constraint": ["cost-constrained"],
-      "team": ["name=payments"]
-    }
-  }
+    CTRL->>KA: POST /api/v1/incident/analyze
+    KA-->>CTRL: 202 Accepted {session_id}
+    CTRL->>CTRL: status.investigationSession = {id, generation: 0}
+
+    loop Every 15s (DefaultSessionPollInterval), requeued reconciles
+        CTRL->>KA: GET /api/v1/incident/session/{id}
+        KA-->>CTRL: {status: "investigating" | "user_driving" | "completed" | "failed"}
+    end
+
+    alt status == completed
+        CTRL->>KA: GET /api/v1/incident/session/{id}/result
+        KA-->>CTRL: IncidentResponse
+    else status == failed
+        CTRL->>CTRL: Mark AIAnalysis Failed
+    else poll returns 404 (KA restarted, session lost)
+        CTRL->>CTRL: Regenerate session (generation++), re-submit (up to MaxSessionRegenerations=5)
+    end
+```
+
+| Constant | Value | Source | Meaning |
+|---|---|---|---|
+| `DefaultSessionPollInterval` | 15s | `pkg/aianalysis/handlers/constants.go` | Fixed poll cadence — polling is not error recovery, KA is healthy and just not done yet |
+| `DefaultMaxInvestigationDuration` | **25 minutes** | `pkg/aianalysis/handlers/constants.go` | Wall-clock cap on the *entire session* (checked via `checkInvestigationTimeout`), not a per-HTTP-call timeout. Exceeding it transitions the analysis to `Failed`/`TransientError` (#1078) |
+| `MaxSessionRegenerations` | 5 | same | Cap on session regenerations after a 404 (KA pod restart) before giving up with `SessionRegenerationExceeded` |
+| `MaxConsecutiveGetResultErrors` | 3 | same | Consecutive `409` responses from the result endpoint before the session is regenerated (#1390, breaks a stuck polling loop) |
+
+> **Interactive/MCP takeover**: a human operator can take over an in-progress session (`status:
+> "user_driving"`, DD-INTERACTIVE-002). `handleSessionPollUserDriving` still enforces the same
+> `DefaultMaxInvestigationDuration` cap — user-driving does **not** bypass the timeout (AA-CRIT-1).
+> AIAnalysis surfaces the driving user via `status.interactiveSession` for `kubectl` visibility.
+
+### Request: `IncidentRequest`
+
+Built by `pkg/aianalysis/handlers.RequestBuilder.BuildIncidentRequest` from the CRD spec:
+
+```go
+req := &agentclient.IncidentRequest{
+    IncidentID:        analysis.Name,                     // CR name
+    RemediationID:     correlationID,                     // RemediationRequestRef.Name (preferred) or Spec.RemediationID
+    SignalName:        spec.SignalName,                   // NOT "signal_type"
+    Severity:          agentclient.Severity(spec.Severity),
+    SignalSource:      "kubernaut",
+    ResourceNamespace: spec.TargetResource.Namespace,
+    ResourceKind:      spec.TargetResource.Kind,
+    ResourceName:      spec.TargetResource.Name,
+    Environment:       spec.Environment,
+    Priority:          spec.BusinessPriority,
+    RiskTolerance:     /* from customLabels["risk_tolerance"], default "medium" */,
+    BusinessCategory:  /* from customLabels["business_category"], default "standard" */,
+    ClusterName:       /* Spec.ClusterID (fleet) or customLabels["cluster_name"], default "default" */,
+    // Optional: EnrichmentResults, SignalMode (BR-AI-084), SignalAnnotations (#462), Cluster (BR-FLEET-003)
 }
 ```
 
-**Key Request Corrections**:
-| Field | Old Schema | Correct Schema |
-|-------|------------|----------------|
-| Structure | Nested `signalContext` | Flat fields |
-| `remediation_id` | Optional | **MANDATORY** (audit correlation) |
-| DetectedLabels | Wrong fields | Use `pkg/shared/types/enrichment.go` (ADR-056: removed from EnrichmentResults) |
-| `failedDetections` | Not present | **Added (DD-WORKFLOW-001 v2.1)** - list of fields where detection failed |
+Field names on the wire follow the OpenAPI spec's `snake_case` JSON tags (`incident_id`,
+`remediation_id`, `signal_name`, `resource_namespace`, etc.) — the Go struct fields above are the
+generated client's `CamelCase` equivalents. There is no nested `signal_context` object; these are
+top-level fields on `IncidentRequest`, matching the OpenAPI-generated shape (this part of the old
+"flat structure" documentation was correct, only the field list was stale).
 
-#### Label Usage by HolmesGPT-API
+> Storm context (`is_storm`, `storm_signal_count`) is intentionally **not** exposed to the LLM —
+> see [DD-AIANALYSIS-004](../../../architecture/decisions/DD-AIANALYSIS-004-storm-context-not-exposed.md).
 
-| Label Type | LLM Prompt | Workflow Filtering |
-|------------|------------|-------------------|
-| **DetectedLabels** (ADR-056: removed from EnrichmentResults) | ✅ Always included | ✅ Only if OwnerChain validates (`target_in_owner_chain=true`) |
-| **CustomLabels** | ❌ NOT in LLM prompt | ✅ Always (auto-appended to search) |
-| **FailedDetections** | ✅ Mentioned as caveats | ⚠️ Skip filter for affected fields |
+### Response: `IncidentResponse`
 
-> **CustomLabels are NOT visible to LLM** (per DD-KA-002): Labels are for filtering, not analysis. Prevents LLM forgetting to include them and reduces prompt size.
+Processed by `pkg/aianalysis/handlers.ResponseProcessor.ProcessIncidentResponse`. Fields the
+processor reads and where they land on the CRD:
 
-#### FailedDetections Handling (DD-WORKFLOW-001 v2.1)
+| KA response field | AIAnalysis status field | Notes |
+|---|---|---|
+| `confidence` | (used for threshold check + `RecordConfidenceScore` metric) | 0.7 confidence threshold is enforced by **AIAnalysis**, not KA (BR-HAPI-197 AC-4) |
+| `needs_human_review` | `status.needsHumanReview` | Checked **first**, before any other classification logic |
+| `human_review_reason` | `status.humanReviewReason` → mapped to `status.subReason` | |
+| `is_actionable` / warning `"Alert not actionable"` | `status.actionability = "NotActionable"` | #388, #607 |
+| `root_cause_analysis` (incl. `remediationTarget`) | `status.rootCause`, `status.rootCauseAnalysis` (incl. `status.rootCauseAnalysis.remediationTarget`) | KA emits the field as `remediationTarget` (camelCase) in JSON — not `affected_resource`/`target_in_owner_chain` |
+| `selected_workflow` (`workflow_id`, `execution_bundle`, `execution_bundle_digest`, ...) | `status.selectedWorkflow` (embeds `sharedtypes.WorkflowSnapshot`) | Field is `execution_bundle`, not `container_image` |
+| `alternative_workflows[]` | `status.alternativeWorkflows` | Informational only, never auto-executed |
+| `detected_labels` | `status.postRCAContext.detectedLabels` (+ `setAt` timestamp) | ADR-056: computed by KA post-RCA, immutable once set |
+| `alignment_verdict` | `status.alignmentVerdict` | BR-AI-601 shadow-agent verdict; when `circuit_breaker_activated=true`, RCA/workflow fields may be incomplete |
+| `warnings[]` | `status.warnings` | Non-fatal; also inspected for outcome-classification signals (e.g. `"Problem self-resolved"`) |
+| `validation_attempts_history[]` | `status.validationAttemptsHistory` | DD-KA-001 v1.4: up to 3 LLM self-correction attempts |
+| `incident_id` | `status.investigationId` | For correlating with KA's own `kubernaut_agent_llm_token_usage_total` metric |
 
-When a detection query fails (RBAC, timeout, etc.), the field is added to `failedDetections`:
+There is no `requiresApproval` field in the response — AIAnalysis determines approval itself via
+Rego (see [Rego Policy Integration](#rego-policy-integration)), and no `recommendations[]` array —
+use `selected_workflow`/`alternative_workflows` instead.
 
-| Scenario | Field Value | `failedDetections` | Workflow Filtering Behavior |
-|----------|-------------|-------------------|----------------------------|
-| PDB exists | `pdbProtected=true` | `[]` | ✅ Filter by `pdb_protected=true` |
-| No PDB | `pdbProtected=false` | `[]` | ✅ Filter by `pdb_protected=false` |
-| Query failed | `pdbProtected=false` | `["pdbProtected"]` | ⚠️ Skip `pdb_protected` filter entirely |
+### Error Handling and Retry (`pkg/aianalysis/handlers/error_classifier.go`)
 
-**Data Storage SQL Pattern**:
-```sql
--- If pdbProtected in failedDetections, skip the filter (treat as "no preference")
-WHERE (
-    'pdbProtected' = ANY($failedDetections)  -- Skip filter
-    OR pdb_protected = $pdbProtected         -- Apply filter
-)
-```
+`ErrorClassifier.ClassifyError` maps KA call failures to a classification with a retry decision,
+distinct from a fixed "3 attempts, 1s/2s/4s" table:
 
-**Key Distinction**: "Resource doesn't exist" ≠ detection failure. A successful detection that finds no PDB returns `pdbProtected=false` with empty `failedDetections`.
+| HTTP status / condition | `ErrorType` | Retryable | Notes |
+|---|---|---|---|
+| `401` | `Authentication` | No | Alerts |
+| `403` | `Authorization` | No | Alerts |
+| `404` on poll | `SessionLost` (not `Configuration`) | Triggers session regeneration, not a standard retry | BR-AA-HAPI-064.5 |
+| `404` elsewhere | `Configuration` | No | Alerts |
+| `422` / `400` | `Permanent` | No | Alerts |
+| `429` | `RateLimit` | Yes | 2× base delay, no alert |
+| `500`/`502`/`503`/`504` | `Transient` | Yes | No alert |
+| Timeout / `context.DeadlineExceeded` | `Timeout` | Yes | No alert |
+| DNS / network error | `Network` | Yes | Alerts on DNS failure |
+| `context.Canceled` | `Permanent` | No | No alert (caller-initiated) |
 
-#### OwnerChain Validation (DD-WORKFLOW-001 v1.7) (ADR-055: OwnerChain removed from EnrichmentResults)
-
-HolmesGPT-API validates DetectedLabels applicability when RCA identifies a different resource than the signal source:
-
-```python
-def validate_target_in_owner_chain(rca_resource, owner_chain):
-    """
-    DetectedLabels describe the ORIGINAL signal's resource.
-    If RCA identifies a DIFFERENT resource, validate relationship.
-
-    Returns:
-        - True: RCA resource found in OwnerChain → DetectedLabels apply
-        - False: RCA resource NOT in chain → DetectedLabels may not apply
-    """
-    if not owner_chain:
-        return False  # No chain = orphan resource
-
-    for entry in owner_chain:
-        if (entry.namespace == rca_resource.namespace and
-            entry.kind == rca_resource.kind and
-            entry.name == rca_resource.name):
-            return True
-
-    return False
-```
-
-### Response Structure (Corrected Dec 2025)
-
-```json
-{
-  "incident_id": "alert-12345",
-  "analysis": "Natural language analysis from LLM...",
-  "root_cause_analysis": {
-    "summary": "Container exceeded memory limit due to memory leak",
-    "severity": "critical",
-    "contributing_factors": ["Memory leak", "Insufficient limits"]
-  },
-  "selected_workflow": {
-    "workflow_id": "wf-memory-increase-001",
-    "containerImage": "ghcr.io/kubernaut/workflows/memory-increase:v2.1.0",
-    "containerDigest": "sha256:abc123def456...",
-    "confidence": 0.90,
-    "rationale": "Selected based on 90% semantic similarity for OOMKilled signal",
-    "parameters": {
-      "TARGET_NAMESPACE": "default",
-      "TARGET_DEPLOYMENT": "nginx",
-      "MEMORY_INCREASE_PERCENT": "50"
-    }
-  },
-  "target_in_owner_chain": true,
-  "warnings": [],
-  "confidence": 0.90,
-  "timestamp": "2025-12-02T10:30:00Z"
-}
-```
-
-**Key Response Corrections**:
-| Field | Old Schema | Correct Schema |
-|-------|------------|----------------|
-| `recommendations[]` | Array of recommendations | ❌ **REMOVED** - Use `selected_workflow` |
-| `requiresApproval` | In response | ❌ **REMOVED** - AIAnalysis determines via Rego |
-| `containerImage` | Missing | ✅ **REQUIRED** - Immutable workflow reference |
-| `target_in_owner_chain` | Missing | ✅ **ADDED** - OwnerChain validation result |
-| `warnings[]` | Missing | ✅ **ADDED** - Non-fatal warnings |
-
-### Response Fields for AIAnalysis Status
-
-| HAPI Field | AIAnalysis Status Field | Purpose |
-|------------|-------------------------|---------|
-| `selected_workflow` | `status.selectedWorkflow` | Workflow to execute |
-| `selected_workflow.confidence` | `status.selectedWorkflow.confidence` | Rego policy input |
-| `target_in_owner_chain` | `status.targetInOwnerChain` | Rego policy input, audit trail |
-| `warnings[]` | `status.warnings` | K8s events, metrics, operator notifications |
-
-### Error Handling
-
-| Error | Retry | Backoff | Action |
-|-------|-------|---------|--------|
-| HolmesGPT-API unavailable | 3 attempts | Exponential (1s, 2s, 4s) | Mark as Failed |
-| Timeout (30s recommended) | 3 attempts | Exponential | Mark as Failed |
-| 4xx errors (400, 404, 422) | No | - | Mark as Failed (validation error) |
-| 5xx errors (500, 502, 503, 504) | 3 attempts | Exponential | Mark as Failed if exhausted |
-
-**Health Endpoint** (`GET /health`):
-```json
-{
-  "status": "healthy",
-  "llm_connected": true,
-  "data_storage_connected": true,
-  "version": "v3.2.0"
-}
-```
-
-**Error Format**: RFC 7807 (`application/problem+json`)
-
----
-
-## Data Storage Integration
-
-### Workflow Catalog Search (Internal Toolkit)
-
-**Note**: AIAnalysis does **NOT** call Data Storage directly. HolmesGPT-API handles this via internal toolkit (NOT MCP).
-
-> **Architecture Clarification (Dec 2025)**: HolmesGPT-API uses a **toolkit-based architecture** where internal tools query Data Storage directly. There is no exposed MCP server.
-
-#### Internal Tool: `search_workflow_catalog`
-
-HolmesGPT-API internally calls Data Storage to search the workflow catalog. The tool:
-1. Receives signal context from the investigation request
-2. Queries Data Storage for matching workflows
-3. Ranks workflows by semantic similarity and constraint matching
-4. Returns the best match as `selected_workflow`
-
-**Workflow Matching Criteria**:
-| Criterion | Weight | Source |
-|-----------|--------|--------|
-| Signal type match | High | `signal_type` in request |
-| DetectedLabels constraints (ADR-056: removed from EnrichmentResults) | Medium | Only if `target_in_owner_chain=true` |
-| CustomLabels constraints | Medium | Always applied |
-| Historical success rate | Low | Data Storage aggregation |
-
-#### Example Workflow Catalog Entry
-
-```json
-{
-  "workflow_id": "wf-memory-increase-v2",
-  "container_image": "ghcr.io/kubernaut/workflows/memory-increase:v2.1.0",
-  "container_digest": "sha256:abc123...",
-  "title": "Memory Increase Workflow",
-  "description": "Safely increases memory limits for OOM pods",
-  "applicable_signals": ["OOMKilled", "MemoryPressure"],
-  "constraints": {
-    "requires": ["gitOpsManaged:true"],
-    "excludes": ["stateful:true"]
-  },
-  "parameters": {
-    "TARGET_NAMESPACE": {"required": true},
-    "TARGET_DEPLOYMENT": {"required": true},
-    "MEMORY_INCREASE_PERCENT": {"required": true, "default": "25"}
-  }
-}
-```
+Backoff uses `pkg/shared/backoff` (DD-SHARED-001): base period 1s, multiplier 2.0, ±10% jitter,
+capped at 5 minutes, up to `MaxRetries = 5` attempts (`pkg/aianalysis/handlers/constants.go` —
+note this constant's own comment additionally documents an 8-minute (`480s`) cap used elsewhere
+in the retry path, distinct from the classifier's 5-minute cap).
 
 ---
 
@@ -389,34 +320,26 @@ HolmesGPT-API internally calls Data Storage to search the workflow catalog. The 
 
 ### AIAnalysis → Remediation Orchestrator
 
-**Pattern**: CRD status watch
-
-**Watch Trigger**: `AIAnalysis.status.phase == "Completed"`
+**Pattern**: CRD status watch. **Watch Trigger**: `AIAnalysis.status.phase == "Completed"`.
 
 #### Status Fields for RO
 
 ```yaml
 status:
   phase: "Completed"
-  completionTime: "2025-11-30T10:00:45Z"
-
-  # Primary output - workflow to execute
   selectedWorkflow:
     workflowId: "wf-memory-increase-v2"
-    containerImage: "ghcr.io/kubernaut/workflows/memory-increase:v2.1.0"
-    parameters:
-      targetDeployment: "payment-api"
-      memoryIncrease: "512Mi"
-      namespace: "production"
+    executionBundle: "quay.io/kubernaut/workflow-oomkill:v1.0.0"   # NOT containerImage
     confidence: 0.87
-    reasoning: "Historical success rate 92% for similar OOM scenarios"
+    parameters:
+      NAMESPACE: production
+      DEPLOYMENT_NAME: payment-api
+    rationale: "Historical success rate 92% for similar OOM scenarios"
 
-  # Approval decision
   approvalRequired: true
   approvalReason: "Production environment requires manual approval"
-
-  # Operator context
-  investigationSummary: "OOMKilled due to memory leak in payment processing"
+  approvalContext:
+    investigationSummary: "OOMKilled due to memory leak in payment processing"
 ```
 
 ### RO Actions Based on Status
@@ -424,52 +347,7 @@ status:
 | `approvalRequired` | RO Action |
 |--------------------|-----------|
 | `false` | Create `WorkflowExecution` CRD immediately |
-| `true` | Create notification via Notification Service, wait for approval |
-
----
-
-## Recovery Flow Integration [Deprecated - Issue #180]
-
-**Status**: Recovery flow (DD-RECOVERY-002) removed. See Issue #180.
-
-### RO Creates Recovery AIAnalysis (Deprecated)
-
-When a `WorkflowExecution` fails, RO creates a new `AIAnalysis` with recovery context:
-
-```yaml
-apiVersion: kubernaut.ai/v1alpha1
-kind: AIAnalysis
-metadata:
-  name: "remediation-123-analysis-2"
-spec:
-  isRecoveryAttempt: true
-  recoveryAttemptNumber: 2
-
-  # Original enrichment data (reused, not re-enriched)
-  enrichmentResults:
-    # ... same as original ...
-
-  # Previous execution history (ALL attempts)
-  previousExecutions:
-    - workflowId: "wf-oom-restart-v1"
-      containerImage: "ghcr.io/kubernaut/workflows/oom-restart:v1.2.0"
-      failureReason: "Pod evicted during restart - node pressure"
-      failurePhase: "execution"
-      kubernetesReason: "Evicted"
-      attemptNumber: 1
-      executedAt: "2025-11-30T10:15:00Z"
-```
-
-### HolmesGPT-API Recovery Analysis
-
-> **DEPRECATED for v1.0** (BR-AA-HAPI-064.9): Recovery investigations are deprecated. When a remediation is ineffective, the alert re-fires through the Gateway and existing AI analysis results (from the prior Effectiveness Assessment) are included in the HAPI prompt context. The RO routing engine prevents endless cycles.
-
-~~**Endpoint**: `POST /api/v1/recovery/analyze`~~
-
-HolmesGPT-API (deprecated flow):
-1. Analyzes previous failure patterns
-2. Avoids recommending same workflow if non-transient failure
-3. May escalate to `notify_only` if options exhausted
+| `true` | Create a `RemediationApprovalRequest` (ADR-040) + notification via Notification Service; wait for operator decision |
 
 ---
 
@@ -477,109 +355,57 @@ HolmesGPT-API (deprecated flow):
 
 ### Policy Loading
 
-**ConfigMap**: `ai-approval-policies` in `kubernaut-system`
-
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: ai-approval-policies
-  namespace: kubernaut-system
-data:
-  approval.rego: |
-    package aianalysis.approval
-
-    default decision = "MANUAL_APPROVAL_REQUIRED"
-
-    # #225: Configurable confidence threshold — operators override via input.confidence_threshold
-    default confidence_threshold = 0.8
-
-    confidence_threshold = input.confidence_threshold {
-        input.confidence_threshold
-    }
-
-    # Auto-approve high confidence in non-production
-    decision = "AUTO_APPROVE" {
-        input.confidence >= confidence_threshold
-        input.environment != "production"
-        input.target_in_owner_chain == true
-    }
-
-    # Require approval when labels may not match target
-    decision = "MANUAL_APPROVAL_REQUIRED" {
-        input.target_in_owner_chain == false
-    }
-
-    # Require approval if warnings present in production
-    decision = "MANUAL_APPROVAL_REQUIRED" {
-        input.environment == "production"
-        count(input.warnings) > 0
-    }
-```
-
-### Policy Input Schema (V1.0 - Updated Dec 2025)
-
-```go
-type ApprovalPolicyInput struct {
-    // ========================================
-    // INVESTIGATION RESULT
-    // ========================================
-    // Workflow confidence from HolmesGPT-API (0.0-1.0)
-    Confidence float64 `json:"confidence"`
-    // Selected action type (e.g., "scale", "restart", "patch")
-    ActionType string  `json:"action_type"`
-
-    // ========================================
-    // SIGNAL CONTEXT
-    // ========================================
-    // Environment (free-text, e.g., "production", "staging", "qa-eu")
-    Environment string `json:"environment"`
-    // Severity level
-    Severity    string `json:"severity"`
-
-    // ========================================
-    // LABELS (for advanced policies)
-    // ========================================
-    DetectedLabels *DetectedLabels       `json:"detected_labels,omitempty"`  // ADR-056: removed from EnrichmentResults
-    CustomLabels   map[string][]string   `json:"custom_labels,omitempty"`
-
-    // ========================================
-    // HAPI RESPONSE METADATA (Dec 2025)
-    // ========================================
-    // Whether RCA-identified target was found in OwnerChain
-    // If false, DetectedLabels may not apply to the actual affected resource
-    TargetInOwnerChain bool     `json:"target_in_owner_chain"`
-    // Non-fatal warnings from investigation (e.g., low confidence, OwnerChain issues)
-    Warnings           []string `json:"warnings,omitempty"`
-
-    // ========================================
-    // RECOVERY CONTEXT
-    // ========================================
-    IsRecoveryAttempt     bool `json:"is_recovery_attempt"`
-    RecoveryAttemptNumber int  `json:"recovery_attempt_number"`
-}
-```
-
-### Example Rego Rules Using New Fields
+**ConfigMap**: `aianalysis-policies` in the release namespace, mounted at
+`/etc/aianalysis/policies/approval.rego` (`charts/kubernaut/templates/aianalysis/aianalysis.yaml`).
+Loaded with hot-reload (`pkg/shared/hotreload`) and cached as a compiled query (ADR-050) — not
+re-read/recompiled per evaluation.
 
 ```rego
-# Require approval in production when labels might not match
-require_approval {
+package aianalysis.approval
+
+default confidence_threshold = 0.8
+
+confidence_threshold = input.confidence_threshold {
+    input.confidence_threshold
+}
+
+decision = "AUTO_APPROVE" {
+    input.confidence >= confidence_threshold
+    input.environment != "production"
+}
+
+decision = "MANUAL_APPROVAL_REQUIRED" {
     input.environment == "production"
-    not input.target_in_owner_chain
-}
-
-# Require approval if there are warnings + risky action
-require_approval {
     count(input.warnings) > 0
-    input.action_type == "delete"
-}
-
-# Track as metric but don't block
-label_scope_warning {
-    not input.target_in_owner_chain
 }
 ```
+
+### Policy Input Schema (`pkg/aianalysis/rego/evaluator.go`, `PolicyInput`)
+
+```go
+type PolicyInput struct {
+    SignalContext  SignalContextInput      `json:"signal_context"`  // signal_type, severity, environment, business_priority
+    TargetResource TargetResourceInput     `json:"target_resource"` // kind, name, namespace
+    Classification ClassificationInput     `json:"classification"`  // detected_labels, custom_labels, business_classification
+    KAResponse     KAResponseInput         `json:"ka_response"`     // confidence, warnings, failed_detections
+
+    // ADR-055: LLM-identified remediation target, replaces the old target_in_owner_chain boolean
+    RemediationTarget   *RemediationTargetInput `json:"remediation_target,omitempty"`
+    ConfidenceThreshold *float64                `json:"confidence_threshold,omitempty"` // #225
+    Identity            *IdentityInput          `json:"identity,omitempty"`              // #774 interactive sessions
+    ActionType           string                 `json:"action_type"`                     // #247, catalog-authoritative
+}
+
+type RemediationTargetInput struct {
+    Kind      string `json:"kind"`
+    Name      string `json:"name"`
+    Namespace string `json:"namespace"`
+}
+```
+
+> **`target_in_owner_chain` no longer exists as a Rego input field.** ADR-055 replaced it with the
+> structured `remediation_target` object above, enabling per-kind approval policies (e.g. "always
+> require approval when `remediation_target.kind == 'Node'`") instead of a single boolean.
 
 ---
 
@@ -589,32 +415,36 @@ label_scope_warning {
 
 | Service | Port | Purpose | Critical |
 |---------|------|---------|----------|
-| HolmesGPT-API | 8080 | AI investigation, workflow selection | ✅ Yes |
-| Data Storage | 8085 | Workflow catalog (via HAPI internal toolkit) | ✅ Yes (indirect) |
+| Kubernaut Agent (KA) | 8443 (HTTPS) | AI investigation, workflow selection | ✅ Yes |
+| Data Storage | 8080 (HTTP, in-cluster) | Audit event persistence (BR-AUDIT-005) — write-only, buffered/async | ✅ Yes (P0, `cmd/aianalysis/main.go` fails fast if unreachable at startup) |
 
-### Optional Services
-
-| Service | Port | Purpose |
-|---------|------|---------|
-| Notification | 8080 | Approval notifications (RO calls this) |
+AIAnalysis **does** call Data Storage directly, but only to emit audit events — it holds the
+`aianalysis-controller-datastorage-access` RoleBinding to the shared `data-storage-client`
+ClusterRole, and `cmd/aianalysis/main.go` wires an OpenAPI-generated Data Storage client
+(`sharedaudit.NewOpenAPIClientAdapter`) into a buffered async audit store (`sharedaudit.NewBufferedStore`,
+DD-AUDIT-003/ADR-030). There is no synchronous read path: AIAnalysis never queries Data Storage for
+workflow-catalog lookups or anything else — the DataStorage workflow catalog is queried entirely
+inside KA's own process, not by AIAnalysis. See
+[Security Configuration](./security-configuration.md#authentication-to-kubernaut-agent-and-data-storage-dd-auth-014-dd-auth-005)
+for the authentication pattern.
 
 ### Go Client
 
-AIAnalysis uses a generated Go client for HolmesGPT-API:
-
 ```go
-// Generated with ogen from OpenAPI 3.1.0 spec
-import "github.com/jordigilh/kubernaut/pkg/clients/holmesgpt"
+// pkg/agentclient — ogen-generated from internal/kubernautagent/api/openapi.json
+import "github.com/jordigilh/kubernaut/pkg/agentclient"
 ```
 
-**Client Location**: `pkg/clients/holmesgpt/` (18 files, ~12,600 lines)
-**Generation**: `ogen -package holmesgpt -target pkg/clients/holmesgpt kubernaut-agent/api/openapi.json`
+Regenerate with the project's standard ogen invocation against
+`internal/kubernautagent/api/openapi.json` (see that file's own generation header for the exact
+command — it is KA's own spec, not a separately versioned `kubernaut-agent/api/openapi.json`).
 
 ---
 
 ## Kubernetes Integration
 
-### RBAC Requirements
+### RBAC (from `internal/controller/aianalysis/aianalysis_controller.go` kubebuilder markers and
+`charts/kubernaut/templates/aianalysis/aianalysis.yaml`)
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -622,33 +452,39 @@ kind: ClusterRole
 metadata:
   name: aianalysis-controller
 rules:
-  # AIAnalysis CRD management
-  - apiGroups: ["aianalysis.kubernaut.io"]
+  - apiGroups: ["kubernaut.ai"]
     resources: ["aianalyses"]
     verbs: ["get", "list", "watch", "update", "patch"]
-  - apiGroups: ["aianalysis.kubernaut.io"]
+  - apiGroups: ["kubernaut.ai"]
     resources: ["aianalyses/status"]
     verbs: ["get", "update", "patch"]
-
-  # ConfigMap for Rego policies
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list", "watch"]
-
-  # Events for operational visibility
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["investigationsessions", "investigationsessions/status"]
+    verbs: ["get", "list", "watch", "update", "patch"]
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ```
 
-### Network Policies
+Two more RoleBindings on the same ServiceAccount grant client access to KA and Data Storage
+respectively — `aianalysis-controller-kubernaut-agent-access` (→ `kubernaut-agent-client`
+ClusterRole) and `aianalysis-controller-datastorage-access` (→ `data-storage-client` ClusterRole).
+Both use a synthetic-resource SAR pattern (DD-AUTH-014), not real Kubernetes API calls. The Rego
+policy ConfigMap is projected as a volume mount, not read via the Kubernetes API at runtime, so it
+needs no separate `configmaps` RBAC rule. See
+[Security Configuration](./security-configuration.md) for the full ServiceAccount/RBAC/auth
+picture, including how AIAnalysis authenticates *to* KA and Data Storage.
+
+### Network Policy
 
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: aianalysis-controller
-  namespace: kubernaut-system
 spec:
   podSelector:
     matchLabels:
@@ -656,13 +492,20 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # HolmesGPT-API
+    # Kubernaut Agent
     - to:
         - podSelector:
             matchLabels:
               app: kubernaut-agent
       ports:
-        - port: 8090
+        - port: 8443
+    # Data Storage (audit event writes, BR-AUDIT-005)
+    - to:
+        - podSelector:
+            matchLabels:
+              app: datastorage
+      ports:
+        - port: 8080
     # Kubernetes API
     - to:
         - namespaceSelector: {}
@@ -672,12 +515,37 @@ spec:
 
 ---
 
+## What Changed Since the December 2025 Version
+
+| Previous claim | Current reality |
+|---|---|
+| `pkg/clients/holmesgpt/` Go client, 18 files | `pkg/agentclient/`, ogen-generated from `internal/kubernautagent/api/openapi.json` |
+| "HolmesGPT-API", port 8080/8090 | "Kubernaut Agent (KA)", port 8443 (HTTPS) |
+| Single synchronous `POST /api/v1/incident/analyze` returning the full result, 30s timeout, 3 retries | Async: `POST` returns `202 Accepted` + `session_id`; poll `GET .../session/{id}` every 15s; fetch `GET .../session/{id}/result`. Wall-clock cap is 25 minutes (`DefaultMaxInvestigationDuration`), not a per-call timeout |
+| "Toolkit-based architecture", internal `search_workflow_catalog` tool call to Data Storage | Not part of AIAnalysis's contract — that specific catalog-lookup call is internal to KA's own process, not made by AIAnalysis. (AIAnalysis *does* call Data Storage directly, but only to write audit events, DD-AUDIT-003 — see [Service Dependencies](#service-dependencies)) |
+| `target_in_owner_chain` boolean in response/Rego input | `remediationTarget`/`remediation_target` structured object (ADR-055) |
+| `detectedLabels`/`ownerChain`/`customLabels` as top-level `enrichment_results` fields sent *to* KA | `detectedLabels` is KA's **output**, not input (ADR-056); `ownerChain`/`customLabels` live on `enrichmentResults.kubernetesContext`, not top-level |
+| `containerImage`/`containerDigest` on `selected_workflow` | `execution_bundle`/`execution_bundle_digest` |
+| `AIApprovalRequest` CRD, mentioned as not-yet-implemented | Real CRD is `RemediationApprovalRequest` (ADR-040), implemented and used by RemediationOrchestrator today — AIAnalysis itself never touches it |
+| Recovery flow (`isRecoveryAttempt`, `previousExecutions`) as a still-relevant deprecated feature | Fully removed from the spec (Issue #180); ineffective remediations re-fire through Gateway instead |
+
+---
+
 ## Related Documents
 
 | Document | Purpose |
 |----------|---------|
 | [Overview](./overview.md) | Service architecture |
 | [CRD Schema](./crd-schema.md) | Type definitions |
-| [DD-WORKFLOW-001](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | Label schema (authoritative) |
-| [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) | Recovery flow design |
-| [HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md](./HANDOFF_REQUEST_HOLMESGPT_API_RECOVERY_PROMPT.md) | HolmesGPT-API team handoff |
+| [Security Configuration](./security-configuration.md) | RBAC, KA authentication, secret handling |
+| [DD-WORKFLOW-001](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | Label schema history |
+| [ADR-056](../../../architecture/decisions/ADR-056-post-rca-label-computation.md) | DetectedLabels computed post-RCA |
+| [ADR-055](../../../architecture/decisions/ADR-055-llm-driven-context-enrichment.md) | RemediationTarget replacing target_in_owner_chain |
+| [ADR-040](../../../architecture/decisions/ADR-040-remediation-approval-request-architecture.md) | RemediationApprovalRequest design |
+| [DD-AIANALYSIS-004](../../../architecture/decisions/DD-AIANALYSIS-004-storm-context-not-exposed.md) | Storm context not exposed to LLM |
+
+---
+
+**Document Maintainer**: Kubernaut Documentation Team
+**Last Updated**: August 2026
+**Integration Status**: Implemented and in production (V1.0)

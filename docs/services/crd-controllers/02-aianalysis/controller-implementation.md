@@ -1,8 +1,8 @@
 # AI Analysis Service - Controller Implementation
 
-**Version**: v2.0
-**Last Updated**: 2025-11-30
-**Status**: ✅ V1.0 Scope Defined
+**Version**: v3.0
+**Last Updated**: 2026-08-02
+**Status**: ✅ Corrected for [#1806](https://github.com/jordigilh/kubernaut/issues/1806)
 
 ---
 
@@ -10,98 +10,133 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
+| v3.0 | 2026-08-02 | **#1806 CORRECTION**: Full rewrite, superseding the v2.0 STALE banner. Fixed the package structure to match the real code (`internal/controller/aianalysis/` for the reconciler, `pkg/aianalysis/handlers/` for phase logic, `pkg/agentclient` for the KA client — not `pkg/ai/holmesgpt` / `internal/controller/aianalysis/holmesgpt`, which do not exist); replaced the fictional `HolmesGPTClient holmesgpt.Client` reconciler field and single synchronous `Investigate()` call with the real async submit/poll/result session flow (`AgentClientInterface.SubmitInvestigation`/`PollSession`/`GetSessionResult`, BR-AA-HAPI-064); replaced the 60s/5s hardcoded phase timeouts with the real `DefaultSessionPollInterval` (15s) and `DefaultMaxInvestigationDuration` (25m) wall-clock cap; corrected `AIApprovalRequest` references to `RemediationApprovalRequest` | #1806, BR-AA-HAPI-064 |
 | v2.0 | 2025-11-30 | **REGENERATED**: Fixed SignalProcessing naming; Removed legacy phases (recommending→analyzing); Removed HolmesGPTConfig/InvestigationScope; Added DetectedLabels/CustomLabels/OwnerChain; V1.0 4-phase flow | DD-WORKFLOW-001 v1.8, DD-RECOVERY-002 |
 | v1.1 | 2025-10-16 | Added self-documenting JSON format | DD-HOLMESGPT-009 |
 | v1.0 | 2025-10-15 | Initial specification | - |
 
 ---
 
-## Package Structure (V1.0)
-
-> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This document's package structure, reconciler field names (e.g. `HolmesGPTClient`), and `pkg/ai/holmesgpt` / `internal/controller/aianalysis/holmesgpt` paths do not match the current codebase (the real `AIAnalysisReconciler` in `internal/controller/aianalysis/aianalysis_controller.go` has no `HolmesGPTClient` field, and `pkg/ai/holmesgpt` does not exist). Only prose terminology has been updated below; the code/package structure is not corrected here.
+## Package Structure
 
 ```
 internal/controller/aianalysis/
-├── aianalysis_controller.go     # AIAnalysisReconciler (Kubebuilder controller)
-├── phases/
-│   ├── pending.go               # Validation and setup
-│   ├── investigating.go         # Kubernaut Agent (KA) call (BR-AI-001, BR-AI-011)
-│   ├── analyzing.go             # Rego policy evaluation (BR-AI-028)
-│   └── completed.go             # Terminal state
-├── rego/
-│   └── evaluator.go             # Rego policy evaluation
-└── holmesgpt/
-    └── client.go                # KA HTTP client
+├── aianalysis_controller.go     # AIAnalysisReconciler (Kubebuilder controller), phase dispatch, predicates
+├── phase_handlers.go            # reconcilePending / reconcileInvestigating / reconcileAnalyzing
+├── deletion_handler.go          # Finalizer cleanup on deletion
+├── metrics_recorder.go          # recordPhaseMetrics (confidence + failure metrics)
+└── suite_test.go
 
-pkg/ai/holmesgpt/
-├── client.go                    # KA client interface
-├── types.go                     # Request/response types
-└── validation.go                # Workflow validation (BR-AI-023)
+pkg/aianalysis/
+├── handler.go                   # Phase constants (PhasePending, PhaseInvestigating, ...)
+├── conditions.go                # Status condition helpers, Outcome* constants
+├── metrics/metrics.go           # Prometheus metrics (DD-METRICS-001)
+├── audit/audit.go               # AuditClient (DD-AUDIT-003)
+├── status/                      # status.Manager — atomic status updates (DD-PERF-001)
+├── rego/evaluator.go            # Rego policy evaluation (BR-AI-011)
+└── handlers/
+    ├── interfaces.go            # AgentClientInterface, AuditClientInterface, RegoEvaluatorInterface
+    ├── constants.go             # Retry/backoff + session constants (BR-AA-HAPI-064)
+    ├── investigating.go         # InvestigatingHandler: async submit/poll/result session flow
+    ├── analyzing.go             # AnalyzingHandler: Rego policy evaluation
+    ├── request_builder.go       # Builds agentclient.IncidentRequest from AIAnalysis spec
+    ├── response_processor.go    # Processes agentclient.IncidentResponse into AIAnalysis status
+    ├── error_classifier.go      # Classifies KA errors as transient/permanent for retry
+    └── is_checker.go            # InvestigationSessionChecker (BR-INTERACTIVE-010)
+
+pkg/agentclient/                 # ogen-generated OpenAPI client for Kubernaut Agent (KA)
+├── client.go                    # KubernautAgentClient: Investigate/SubmitInvestigation/PollSession/
+│                                 # GetSessionResult/CancelSession (wraps the generated oas_*.go files)
+└── oas_*.go                     # Generated request/response types, schemas, routing
 
 cmd/aianalysis/
-└── main.go                      # Binary entry point
+└── main.go                      # Binary entry point; wires InvestigatingHandler/AnalyzingHandler
 
-test/unit/controller/aianalysis/      # Unit tests (70%+)
-test/integration/controller/aianalysis/ # Integration tests (<20%)
-test/e2e/controller/aianalysis/       # E2E tests (<10%)
+test/unit/aianalysis/            # Unit tests (70%+)
+test/integration/aianalysis/     # Integration tests (~20%)
+test/e2e/aianalysis/             # E2E tests (~10%)
 ```
 
 ---
 
-## Core Types (V1.0)
+## Core Types
 
-### Investigation Request
+### Incident Request/Response (Kubernaut Agent contract)
+
+The KA contract types are **generated** (ogen, from `internal/kubernautagent/api/openapi.json`) and live in `pkg/agentclient`, not hand-written in a `pkg/ai/holmesgpt` package.
 
 ```go
-// pkg/ai/holmesgpt/types.go
-package holmesgpt
+// pkg/agentclient (generated + client.go)
+package agentclient
 
-// InvestigationRequest - sent to Kubernaut Agent (KA)
-// V1.0: No HolmesGPTConfig, no InvestigationScope (removed)
-type InvestigationRequest struct {
-    // Signal context
-    SignalContext SignalContextInput `json:"signalContext"`
-
-    // Kubernetes context from enrichment
-    KubernetesContext *KubernetesContext `json:"kubernetesContext,omitempty"`
-
-    // Labels for workflow filtering (DD-WORKFLOW-001 v1.8)
-    DetectedLabels *DetectedLabels       `json:"detectedLabels,omitempty"`  // ADR-056: removed from EnrichmentResults
-    CustomLabels   map[string][]string   `json:"customLabels,omitempty"`
-
-    // Owner chain for DetectedLabels validation (DD-WORKFLOW-001 v1.7)
-    OwnerChain []OwnerChainEntry `json:"ownerChain,omitempty"`  // ADR-055: removed from EnrichmentResults
-
-    // Recovery context (if applicable)
-    IsRecoveryAttempt  bool                `json:"isRecoveryAttempt,omitempty"`
-    PreviousExecutions []PreviousExecution `json:"previousExecutions,omitempty"`
+// IncidentRequest is submitted to Kubernaut Agent (KA) via SubmitInvestigation.
+// BR-AI-080: Includes remediationId for audit correlation only (not used for RCA/matching).
+type IncidentRequest struct {
+    IncidentID        string   `json:"incident_id"`
+    RemediationID     string   `json:"remediation_id"`
+    SignalName        string   `json:"signal_name"`
+    Severity          Severity `json:"severity"`
+    SignalSource      string   `json:"signal_source"`
+    ResourceNamespace string   `json:"resource_namespace"`
+    ResourceKind      string   `json:"resource_kind"`
+    ResourceName      string   `json:"resource_name"`
+    ErrorMessage      string   `json:"error_message"`
+    // Interactive: OptBool — set true when an InvestigationSession CRD exists
+    // for the RemediationRequest (BR-INTERACTIVE-010)
+    Interactive OptBool `json:"interactive,omitempty"`
+    // ... additional fields (business classification, K8s context, etc.)
 }
 
-// InvestigationResponse - from KA
-type InvestigationResponse struct {
-    InvestigationID string `json:"investigationId"`
-    Status          string `json:"status"`
-
-    // Workflow recommendation (from MCP catalog search)
-    WorkflowRecommendation *WorkflowRecommendation `json:"workflowRecommendation"`
-
-    // Investigation summary (for operator context)
-    InvestigationSummary string `json:"investigationSummary"`
-    RootCauseAnalysis    string `json:"rootCauseAnalysis"`
+// IncidentResponse is the terminal investigation result, fetched via GetSessionResult
+// once the session's status reaches "completed".
+type IncidentResponse struct {
+    IncidentID        string                             `json:"incident_id"`
+    Analysis          string                             `json:"analysis"`
+    RootCauseAnalysis IncidentResponseRootCauseAnalysis   `json:"root_cause_analysis"`
+    SelectedWorkflow  OptNilIncidentResponseSelectedWorkflow `json:"selected_workflow"`
+    Confidence        float64                            `json:"confidence"`
+    NeedsHumanReview  OptBool                            `json:"needs_human_review"`
+    // ... warnings, human_review_reason, timestamp, etc.
 }
 
-type WorkflowRecommendation struct {
-    WorkflowID     string            `json:"workflowId"`     // UUID from catalog
-    ContainerImage string            `json:"containerImage"` // OCI reference (BR-AI-075)
-    Parameters     map[string]string `json:"parameters"`
-    Confidence     float64           `json:"confidence"`     // 0.0-1.0
-    Reasoning      string            `json:"reasoning"`
+// SessionStatusResult is returned by PollSession while an investigation is in flight.
+type SessionStatusResult struct {
+    SessionID string `json:"session_id,omitempty"`
+    // Status: "pending" | "investigating" | "user_driving" | "completed" | "failed" | "cancelled"
+    Status   string `json:"status"`
+    Error    string `json:"error,omitempty"`
+    Progress string `json:"progress,omitempty"`
+    // ActingUser/ActingUserGroups populated when Status == "user_driving" (DD-INTERACTIVE-002)
+    ActingUser       string   `json:"acting_user,omitempty"`
+    ActingUserGroups []string `json:"acting_user_groups,omitempty"`
+}
+```
+
+### Agent Client Interface
+
+```go
+// pkg/aianalysis/handlers/interfaces.go
+package handlers
+
+// AgentClientInterface defines the contract for calling Kubernaut Agent (KA).
+// BR-AI-007: KA integration for investigation
+type AgentClientInterface interface {
+    // Legacy synchronous method (being deprecated)
+    Investigate(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error)
+
+    // Async session methods (BR-AA-HAPI-064) — the real, current flow
+    SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error)
+    PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error)
+    GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error)
+
+    // BR-INTERACTIVE-010: Cancel a running KA session
+    CancelSession(ctx context.Context, sessionID string) error
 }
 ```
 
 ---
 
-## Reconciler Implementation (V1.0)
+## Reconciler Implementation
 
 ### AIAnalysisReconciler
 
@@ -110,79 +145,89 @@ type WorkflowRecommendation struct {
 package aianalysis
 
 import (
-    "context"
-    "fmt"
-    "time"
+    "sync/atomic"
 
+    "k8s.io/client-go/tools/record"
     ctrl "sigs.k8s.io/controller-runtime"
     "sigs.k8s.io/controller-runtime/pkg/client"
-    "sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
     aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-    "github.com/jordigilh/kubernaut/pkg/ai/holmesgpt"
+    "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
+    "github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
+    "github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
+    "github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 )
 
-const (
-    aiAnalysisFinalizer      = "kubernaut.ai/cleanup"
-    defaultInvestigateTimeout = 60 * time.Second
-    defaultAnalyzeTimeout     = 5 * time.Second
-)
+const FinalizerName = "kubernaut.ai/finalizer"
 
-// AIAnalysisReconciler reconciles AIAnalysis objects
+// AIAnalysisReconciler reconciles an AIAnalysis object
+// BR-AI-001: CRD Lifecycle Management
+// DD-AUDIT-003: P0 priority for audit traces
 type AIAnalysisReconciler struct {
     client.Client
     Scheme   *runtime.Scheme
     Recorder record.EventRecorder
+    Log      logr.Logger
 
-    // Kubernaut Agent (KA) client
-    HolmesGPTClient holmesgpt.Client
+    // DD-METRICS-001: Dependency-injected metrics (not global vars)
+    Metrics *metrics.Metrics
 
-    // Rego policy evaluator
-    RegoEvaluator *rego.Evaluator
+    // DD-PERF-001: Atomic status updates (reduces K8s API calls, avoids races)
+    StatusManager *status.Manager
+
+    // Phase handlers, wired via dependency injection in cmd/aianalysis/main.go.
+    // InvestigatingHandler uses atomic.Pointer so integration tests can swap
+    // a mock handler while the controller manager is running.
+    InvestigatingHandler atomic.Pointer[handlers.InvestigatingHandler]
+    AnalyzingHandler     *handlers.AnalyzingHandler
+
+    // AuditClient for DD-AUDIT-003 audit trail recording
+    AuditClient *audit.AuditClient
+
+    // ISPhaseUpdater cascades terminal-state transitions to the InvestigationSession CRD
+    ISPhaseUpdater handlers.ISPhaseUpdater
 }
 
-// +kubebuilder:rbac:groups=aianalysis.kubernaut.io,resources=aianalyses,verbs=get;list;watch;update;patch
-// +kubebuilder:rbac:groups=aianalysis.kubernaut.io,resources=aianalyses/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=aianalysis.kubernaut.io,resources=aianalyses/finalizers,verbs=update
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
-
+// Reconcile implements the reconciliation loop for AIAnalysis
+// BR-AI-001: Phase state machine: Pending → Investigating → Analyzing → Completed/Failed
 func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    log := ctrl.LoggerFrom(ctx)
-
-    // Fetch AIAnalysis CRD
-    var aiAnalysis aianalysisv1.AIAnalysis
-    if err := r.Get(ctx, req.NamespacedName, &aiAnalysis); err != nil {
+    analysis := &aianalysisv1.AIAnalysis{}
+    if err := r.Get(ctx, req.NamespacedName, analysis); err != nil {
         return ctrl.Result{}, client.IgnoreNotFound(err)
     }
 
-    // Handle deletion
-    if !aiAnalysis.DeletionTimestamp.IsZero() {
-        return r.handleDeletion(ctx, &aiAnalysis)
+    if !analysis.DeletionTimestamp.IsZero() {
+        return r.handleDeletion(ctx, analysis)
     }
 
-    // Add finalizer if not present
-    if !controllerutil.ContainsFinalizer(&aiAnalysis, aiAnalysisFinalizer) {
-        controllerutil.AddFinalizer(&aiAnalysis, aiAnalysisFinalizer)
-        if err := r.Update(ctx, &aiAnalysis); err != nil {
-            return ctrl.Result{}, err
-        }
+    if requeueResult, added, err := r.ensureFinalizer(ctx, analysis, r.Log); added {
+        return requeueResult, err
     }
 
-    // Route to phase handler
-    switch aiAnalysis.Status.Phase {
-    case "", "Pending":
-        return r.handlePendingPhase(ctx, &aiAnalysis)
-    case "Investigating":
-        return r.handleInvestigatingPhase(ctx, &aiAnalysis)
-    case "Analyzing":
-        return r.handleAnalyzingPhase(ctx, &aiAnalysis)
-    case "Completed":
-        return ctrl.Result{}, nil // Terminal state
-    case "Failed":
-        return ctrl.Result{}, nil // Terminal state
+    currentPhase := analysis.Status.Phase
+    if currentPhase == "" {
+        return r.initializePendingPhase(ctx, analysis, r.Log)
+    }
+
+    result, err := r.dispatchPhase(ctx, analysis, currentPhase, r.Log)
+    r.recordPhaseMetrics(ctx, currentPhase, analysis, err)
+    return result, err
+}
+
+// dispatchPhase routes to the phase-specific reconcile function.
+func (r *AIAnalysisReconciler) dispatchPhase(ctx context.Context, analysis *aianalysisv1.AIAnalysis, currentPhase string, log logr.Logger) (ctrl.Result, error) {
+    switch currentPhase {
+    case PhasePending:
+        return r.reconcilePending(ctx, analysis)
+    case PhaseInvestigating:
+        return r.reconcileInvestigating(ctx, analysis)
+    case PhaseAnalyzing:
+        return r.reconcileAnalyzing(ctx, analysis)
+    case PhaseCompleted, PhaseFailed:
+        return ctrl.Result{}, nil // Terminal states
     default:
-        log.Error(nil, "Unknown phase", "phase", aiAnalysis.Status.Phase)
+        analysis.Status.Phase = PhaseFailed
+        analysis.Status.Reason = "UnknownPhase"
         return ctrl.Result{}, nil
     }
 }
@@ -190,240 +235,144 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 ---
 
-## Phase Handlers (V1.0)
+## Phase Handlers
 
 ### Pending Phase
 
 ```go
-func (r *AIAnalysisReconciler) handlePendingPhase(
-    ctx context.Context,
-    aiAnalysis *aianalysisv1.AIAnalysis,
-) (ctrl.Result, error) {
-    log := ctrl.LoggerFrom(ctx)
+// internal/controller/aianalysis/phase_handlers.go
+func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+    now := metav1.Now()
+    analysis.Status.StartedAt = &now
+    analysis.Status.Phase = PhaseInvestigating
+    analysis.Status.Message = "AIAnalysis created, starting investigation"
 
-    // Validate spec
-    if aiAnalysis.Spec.EnrichmentResults == nil {
-        return r.failWithReason(ctx, aiAnalysis, "EnrichmentResults is required")
-    }
-
-    // Initialize status
-    aiAnalysis.Status.Phase = "Investigating"
-    aiAnalysis.Status.StartTime = &metav1.Time{Time: time.Now()}
-
-    if err := r.Status().Update(ctx, aiAnalysis); err != nil {
+    if err := r.Status().Update(ctx, analysis); err != nil {
         return ctrl.Result{}, err
     }
-
-    r.Recorder.Event(aiAnalysis, corev1.EventTypeNormal, "PhaseTransition", "Transitioned to Investigating")
-    log.Info("Phase transition", "from", "Pending", "to", "Investigating")
-
-    return ctrl.Result{Requeue: true}, nil
+    r.AuditClient.RecordPhaseTransition(ctx, analysis, "Pending", PhaseInvestigating)
+    return ctrl.Result{RequeueAfter: 100 * time.Millisecond}, nil
 }
 ```
 
-### Investigating Phase
+### Investigating Phase — Async Submit/Poll/Result (BR-AA-HAPI-064)
+
+Unlike a single synchronous HTTP call, the Investigating phase is a **non-blocking session state machine** driven by `InvestigatingHandler.Handle` (`pkg/aianalysis/handlers/investigating.go`). Each reconcile either submits, polls, or fetches the result — it never blocks the reconcile loop waiting on Kubernaut Agent (KA):
 
 ```go
-func (r *AIAnalysisReconciler) handleInvestigatingPhase(
-    ctx context.Context,
-    aiAnalysis *aianalysisv1.AIAnalysis,
-) (ctrl.Result, error) {
-    log := ctrl.LoggerFrom(ctx)
+// pkg/aianalysis/handlers/investigating.go (condensed)
+func (h *InvestigatingHandler) handleSessionBased(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+    session := analysis.Status.KASession
 
-    // Check timeout
-    if r.isPhaseTimedOut(aiAnalysis, defaultInvestigateTimeout) {
-        return r.failWithReason(ctx, aiAnalysis, "Investigation timeout exceeded (60s)")
+    // SUBMIT: no session yet, or session ID cleared after a 404 (session lost)
+    if session == nil || session.ID == "" {
+        return h.handleSessionSubmit(ctx, analysis)
     }
 
-    // Build investigation request (V1.0 structure)
-    req := r.buildInvestigationRequest(aiAnalysis)
-
-    // Call Kubernaut Agent (KA)
-    resp, err := r.HolmesGPTClient.Investigate(ctx, req)
-    if err != nil {
-        log.Error(err, "KA call failed")
-        // Retry with requeue
-        return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-    }
-
-    // Validate workflow recommendation exists
-    if resp.WorkflowRecommendation == nil {
-        return r.failWithReason(ctx, aiAnalysis, "No workflow recommendation received")
-    }
-
-    // Store investigation result
-    aiAnalysis.Status.InvestigationSummary = resp.InvestigationSummary
-    aiAnalysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-        WorkflowID:     resp.WorkflowRecommendation.WorkflowID,
-        ContainerImage: resp.WorkflowRecommendation.ContainerImage,
-        Parameters:     resp.WorkflowRecommendation.Parameters,
-        Confidence:     resp.WorkflowRecommendation.Confidence,
-        Reasoning:      resp.WorkflowRecommendation.Reasoning,
-    }
-
-    // Transition to Analyzing
-    aiAnalysis.Status.Phase = "Analyzing"
-    if err := r.Status().Update(ctx, aiAnalysis); err != nil {
-        return ctrl.Result{}, err
-    }
-
-    r.Recorder.Event(aiAnalysis, corev1.EventTypeNormal, "InvestigationComplete",
-        fmt.Sprintf("Workflow recommended: %s (confidence: %.2f)",
-            resp.WorkflowRecommendation.WorkflowID,
-            resp.WorkflowRecommendation.Confidence))
-
-    return ctrl.Result{Requeue: true}, nil
+    // POLL: session exists with an active ID
+    return h.handleSessionPoll(ctx, analysis)
 }
 
-func (r *AIAnalysisReconciler) buildInvestigationRequest(
-    aiAnalysis *aianalysisv1.AIAnalysis,
-) *holmesgpt.InvestigationRequest {
-    req := &holmesgpt.InvestigationRequest{
-        SignalContext: aiAnalysis.Spec.SignalContext,
+func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+    req := h.builder.BuildIncidentRequest(analysis)
+    sessionID, err := h.kaClient.SubmitInvestigation(ctx, req) // POST /api/v1/incident/analyze -> 202 + session_id
+    if err != nil {
+        return h.handleError(ctx, analysis, err)
+    }
+    updateKASessionStatus(analysis, sessionID, /* interactive */ false)
+    // Requeue for the first poll at the configured interval (default 15s)
+    return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
+}
+
+func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+    session := analysis.Status.KASession
+    status, err := h.kaClient.PollSession(ctx, session.ID) // GET /api/v1/incident/session/{id}
+    if err != nil {
+        return h.handleSessionPollError(ctx, analysis, err) // 404 -> session regeneration (BR-AA-HAPI-064.5)
     }
 
-    // Add enrichment data
-    if aiAnalysis.Spec.EnrichmentResults != nil {
-        req.KubernetesContext = aiAnalysis.Spec.EnrichmentResults.KubernetesContext
-        req.DetectedLabels = aiAnalysis.Spec.EnrichmentResults.DetectedLabels  // ADR-056: removed from EnrichmentResults
-        req.CustomLabels = aiAnalysis.Spec.EnrichmentResults.CustomLabels
-        req.OwnerChain = aiAnalysis.Spec.EnrichmentResults.OwnerChain  // ADR-055: removed from EnrichmentResults
+    switch status.Status {
+    case "pending", "investigating":
+        return h.handleSessionPollPending(ctx, analysis, status) // requeue after pollInterval
+    case "user_driving":
+        return h.handleSessionPollUserDriving(ctx, analysis, status) // DD-INTERACTIVE-002 takeover; still enforces the 25m cap
+    case "completed":
+        return h.handleSessionPollCompleted(ctx, analysis) // fetches result, delegates to ResponseProcessor
+    case "failed":
+        return h.handleSessionPollFailed(ctx, analysis, status) // -> PhaseFailed
+    case "cancelled":
+        return h.handleSessionPollCancelled(ctx, analysis)
+    default:
+        return h.handleSessionPollPending(ctx, analysis, status)
     }
-
-    // Add recovery context (if applicable)
-    if aiAnalysis.Spec.IsRecoveryAttempt {
-        req.IsRecoveryAttempt = true
-        req.PreviousExecutions = aiAnalysis.Spec.PreviousExecutions
-    }
-
-    return req
 }
 ```
+
+**Wall-clock timeout** (`pkg/aianalysis/handlers/constants.go`): every poll checks `checkInvestigationTimeout`, which fails the analysis with `Reason=TransientError` if `time.Since(session.CreatedAt) > DefaultMaxInvestigationDuration` (**25 minutes**). This is a cap on the *entire session* (including any time spent in `user_driving` interactive mode) — it is not a per-HTTP-call timeout.
+
+```go
+// pkg/aianalysis/handlers/constants.go
+const (
+    DefaultSessionPollInterval      = 15 * time.Second // constant poll cadence, not backoff
+    DefaultMaxInvestigationDuration = 25 * time.Minute  // wall-clock cap on the whole session
+)
+```
+
+Once `PollSession` reports `"completed"`, the handler calls `GetSessionResult` (`GET /api/v1/incident/session/{id}/result`) to fetch the `IncidentResponse` and delegates to `ResponseProcessor.ProcessIncidentResponse`, which populates `status.rootCauseAnalysis`, `status.selectedWorkflow`, and transitions to `Analyzing`.
 
 ### Analyzing Phase
 
 ```go
-func (r *AIAnalysisReconciler) handleAnalyzingPhase(
-    ctx context.Context,
-    aiAnalysis *aianalysisv1.AIAnalysis,
-) (ctrl.Result, error) {
-    log := ctrl.LoggerFrom(ctx)
-
-    // Check timeout
-    if r.isPhaseTimedOut(aiAnalysis, defaultAnalyzeTimeout) {
-        return r.failWithReason(ctx, aiAnalysis, "Analysis timeout exceeded (5s)")
-    }
-
-    // Validate workflow exists in catalog (BR-AI-023 - hallucination detection)
-    if err := r.validateWorkflowExists(ctx, aiAnalysis.Status.SelectedWorkflow); err != nil {
-        return r.failWithReason(ctx, aiAnalysis,
-            fmt.Sprintf("Workflow validation failed: %v", err))
-    }
-
-    // Evaluate Rego approval policy
-    decision, err := r.evaluateApprovalPolicy(ctx, aiAnalysis)
-    if err != nil {
-        log.Error(err, "Rego policy evaluation failed")
-        return ctrl.Result{RequeueAfter: 2 * time.Second}, nil
-    }
-
-    // Set approval decision (V1.0: RO handles notification)
-    aiAnalysis.Status.ApprovalRequired = (decision == "MANUAL_APPROVAL_REQUIRED")
-    if aiAnalysis.Status.ApprovalRequired {
-        aiAnalysis.Status.ApprovalReason = r.buildApprovalReason(aiAnalysis)
-    }
-
-    // Transition to Completed
-    aiAnalysis.Status.Phase = "Completed"
-    aiAnalysis.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-
-    if err := r.Status().Update(ctx, aiAnalysis); err != nil {
-        return ctrl.Result{}, err
-    }
-
-    r.Recorder.Event(aiAnalysis, corev1.EventTypeNormal, "AnalysisComplete",
-        fmt.Sprintf("Analysis complete. Approval required: %v", aiAnalysis.Status.ApprovalRequired))
-
-    return ctrl.Result{}, nil
-}
-
-func (r *AIAnalysisReconciler) evaluateApprovalPolicy(
-    ctx context.Context,
-    aiAnalysis *aianalysisv1.AIAnalysis,
-) (string, error) {
-    // Build policy input
-    input := rego.ApprovalPolicyInput{
-        Confidence:  aiAnalysis.Status.SelectedWorkflow.Confidence,
-        Environment: aiAnalysis.Spec.SignalContext.Environment,
-        Severity:    aiAnalysis.Spec.SignalContext.Severity,
-        ActionType:  "workflow_execution", // Generic for V1.0
-
-        // Labels for advanced policy decisions
-        DetectedLabels: aiAnalysis.Spec.EnrichmentResults.DetectedLabels,  // ADR-056: removed from EnrichmentResults
-        CustomLabels:   aiAnalysis.Spec.EnrichmentResults.CustomLabels,
-
-        // Recovery context
-        IsRecoveryAttempt:     aiAnalysis.Spec.IsRecoveryAttempt,
-        RecoveryAttemptNumber: aiAnalysis.Spec.RecoveryAttemptNumber,
-    }
-
-    return r.RegoEvaluator.Evaluate(ctx, input)
+// internal/controller/aianalysis/phase_handlers.go
+func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+    return r.AnalyzingHandler.Handle(ctx, analysis)
 }
 ```
+
+```go
+// pkg/aianalysis/handlers/analyzing.go (condensed)
+func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+    input := h.buildPolicyInput(analysis) // rego.PolicyInput: signal_context, target_resource,
+                                           // classification, ka_response, remediation_target, action_type
+    result, err := h.regoEvaluator.Evaluate(ctx, input)
+    if err != nil {
+        // BR-AI-014: graceful degradation — defaults to manual approval, never blocks
+        h.metrics.RecordRegoEvaluation("error", true)
+        analysis.Status.Phase = aianalysis.PhaseFailed
+        return ctrl.Result{}, nil
+    }
+
+    outcome := aianalysis.OutcomeAutoApproved
+    if result.ApprovalRequired {
+        outcome = aianalysis.OutcomeRequiresApproval
+    }
+    h.metrics.RecordRegoEvaluation(outcome, result.Degraded)
+    h.metrics.RecordApprovalDecision(outcome, getEnvironment(analysis))
+
+    analysis.Status.ApprovalRequired = result.ApprovalRequired
+    analysis.Status.ApprovalReason = result.Reason
+    analysis.Status.Phase = aianalysis.PhaseCompleted
+    now := metav1.Now()
+    analysis.Status.CompletedAt = &now
+    return ctrl.Result{}, nil
+}
+```
+
+The Rego policy input (`pkg/aianalysis/rego/evaluator.go`) carries a `RemediationTarget *RemediationTargetInput` field (JSON key `remediation_target`) — sourced from `AIAnalysis.status.rootCauseAnalysis.remediationTarget` — **not** an `affected_resource` field.
 
 ---
 
 ## Utility Methods
 
-### Timeout Check
-
-```go
-func (r *AIAnalysisReconciler) isPhaseTimedOut(
-    aiAnalysis *aianalysisv1.AIAnalysis,
-    timeout time.Duration,
-) bool {
-    if aiAnalysis.Status.StartTime == nil {
-        return false
-    }
-    return time.Since(aiAnalysis.Status.StartTime.Time) > timeout
-}
-```
-
-### Failure Handler
-
-```go
-func (r *AIAnalysisReconciler) failWithReason(
-    ctx context.Context,
-    aiAnalysis *aianalysisv1.AIAnalysis,
-    reason string,
-) (ctrl.Result, error) {
-    aiAnalysis.Status.Phase = "Failed"
-    aiAnalysis.Status.FailureReason = &reason
-    aiAnalysis.Status.CompletionTime = &metav1.Time{Time: time.Now()}
-
-    if err := r.Status().Update(ctx, aiAnalysis); err != nil {
-        return ctrl.Result{}, err
-    }
-
-    r.Recorder.Event(aiAnalysis, corev1.EventTypeWarning, "AnalysisFailed", reason)
-    return ctrl.Result{}, nil
-}
-```
-
 ### Deletion Handler
 
 ```go
-func (r *AIAnalysisReconciler) handleDeletion(
-    ctx context.Context,
-    aiAnalysis *aianalysisv1.AIAnalysis,
-) (ctrl.Result, error) {
-    if controllerutil.ContainsFinalizer(aiAnalysis, aiAnalysisFinalizer) {
-        // Perform cleanup (if any external resources)
-        // V1.0: No external cleanup needed
-
-        // Remove finalizer
-        controllerutil.RemoveFinalizer(aiAnalysis, aiAnalysisFinalizer)
-        if err := r.Update(ctx, aiAnalysis); err != nil {
+// internal/controller/aianalysis/deletion_handler.go
+func (r *AIAnalysisReconciler) handleDeletion(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+    if controllerutil.ContainsFinalizer(analysis, FinalizerName) {
+        // V1.0: no external cleanup needed (KA sessions expire server-side)
+        controllerutil.RemoveFinalizer(analysis, FinalizerName)
+        if err := r.Update(ctx, analysis); err != nil {
             return ctrl.Result{}, err
         }
     }
@@ -436,27 +385,40 @@ func (r *AIAnalysisReconciler) handleDeletion(
 ## SetupWithManager
 
 ```go
+// internal/controller/aianalysis/aianalysis_controller.go
+//
+// DD-CONTROLLER-001: a custom update predicate filters out status-only writes
+// (e.g. PollCount/LastPolled during polling) so they don't trigger extra
+// reconciles, letting RequeueAfter backoff intervals control poll timing.
+// The controller also watches InvestigationSession CRDs to detect
+// takeover/deletion (BR-INTERACTIVE-010).
 func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
+    if err := r.ValidateDependencies(); err != nil {
+        return fmt.Errorf("aianalysis controller has nil dependencies: %w", err)
+    }
     return ctrl.NewControllerManagedBy(mgr).
         For(&aianalysisv1.AIAnalysis{}).
+        WatchesRawSource(source.Kind(mgr.GetCache(), &isv1alpha1.InvestigationSession{},
+            handler.TypedEnqueueRequestsFromMapFunc(r.mapISToAIAnalysis),
+            ISEventPredicate(),
+        )).
+        WithEventFilter(aiAnalysisUpdatePredicate()).
         Complete(r)
 }
 ```
 
 ---
 
-## Key Design Decisions (V1.0)
+## Key Design Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| **4-Phase Flow** | Pending → Investigating → Analyzing → Completed | Simplified from 5-phase; "Approving" moved to RO |
-| **No "Recommending" Phase** | Merged into Analyzing | Kubernaut Agent (KA) returns workflow recommendation directly |
-| **No HolmesGPTConfig** | Removed | V1.0 uses a single KA provider |
-| **No InvestigationScope** | Removed | KA decides investigation scope dynamically |
-| **DetectedLabels + CustomLabels** | Added to request | DD-WORKFLOW-001 v1.8 for workflow filtering (ADR-056: DetectedLabels removed from EnrichmentResults) |
-| **OwnerChain** | Added to request | DD-WORKFLOW-001 v1.7 for label validation (ADR-055: removed from EnrichmentResults) |
-| **PreviousExecutions as slice** | Added | Tracks ALL recovery attempts (not just last) |
-| **approvalRequired flag** | V1.0 signaling | RO orchestrates notification (no AIApprovalRequest CRD) |
+| **4-Phase Flow** | Pending → Investigating → Analyzing → Completed | "Approving" phase moved to RO (creates `RemediationApprovalRequest`) |
+| **Async Session Model** | Submit/poll/result, not a blocking synchronous call | Non-blocking reconciles; investigations can take minutes without holding a goroutine or HTTP connection open (BR-AA-HAPI-064) |
+| **25-Minute Wall-Clock Cap** | `DefaultMaxInvestigationDuration`, checked every poll | Bounds resource consumption from a stuck/slow KA session, including interactive takeover (#1078) |
+| **Session Regeneration** | On 404 from `PollSession`/`GetSessionResult`, clear session ID and resubmit (capped at 5 regenerations) | Recovers from KA restarts without failing the whole investigation (BR-AA-HAPI-064.5/.6) |
+| **No HolmesGPTConfig / InvestigationScope** | Removed | V1.0 uses a single Kubernaut Agent (KA) provider; KA decides investigation scope dynamically |
+| **approvalRequired flag** | V1.0 signaling; RO creates `RemediationApprovalRequest` | No approval orchestration logic inside AIAnalysis itself |
 
 ---
 
@@ -467,4 +429,3 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 | [Reconciliation Phases](./reconciliation-phases.md) | Phase details |
 | [Integration Points](./integration-points.md) | Service integration |
 | [CRD Schema](./crd-schema.md) | Type definitions |
-| [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) | Recovery flow |

@@ -1,8 +1,8 @@
 # Metrics & SLOs
 
-**Version**: v2.0
-**Status**: ✅ Complete - V1.0 Aligned
-**Last Updated**: 2025-11-30
+**Version**: v3.0
+**Status**: ✅ Corrected for [#1806](https://github.com/jordigilh/kubernaut/issues/1806) (HAPI → Kubernaut Agent rename/rewrite)
+**Last Updated**: 2026-08-02
 
 ---
 
@@ -10,8 +10,22 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
-| v2.0 | 2025-11-30 | **V1.0 ALIGNMENT**: Updated approval metrics to signaling pattern (no AIApprovalRequest CRD); Added DetectedLabels/CustomLabels metrics; Updated phase names |
+| v3.0 | 2026-08-02 | **#1806 CORRECTION**: Full rewrite. Rebuilt the metrics table, dashboard, alerts, and queries around the 4 metrics that actually exist in [`pkg/aianalysis/metrics/metrics.go`](../../../../pkg/aianalysis/metrics/metrics.go) (`aianalysis_rego_evaluations_total`, `aianalysis_approval_decisions_total`, `aianalysis_confidence_score_distribution`, `aianalysis_failures_total`). Removed all `aianalysis_holmesgpt_*`, `aianalysis_investigation_*`, and `aianalysis_workflow_*` metrics — none of these exist in code (client-side KA call metrics were intentionally removed; see Scope Note below). Replaced the 60-second-sync-call latency SLOs with SLOs grounded in the real async submit/poll/result session model (25-minute wall-clock cap, BR-AA-HAPI-064) |
+| v2.0 | 2025-11-30 | V1.0 ALIGNMENT: Updated approval metrics to signaling pattern (no AIApprovalRequest CRD); Added DetectedLabels/CustomLabels metrics; Updated phase names |
 | v1.0 | 2025-10-15 | Initial specification |
+
+---
+
+## ⚠️ Scope Note: This Service Does Not Export Latency Metrics
+
+AIAnalysis's own Prometheus metrics are **decision/outcome-oriented, not latency-oriented**. Per the `METRIC SELECTION CRITERIA (v1.13)` comment at the top of `pkg/aianalysis/metrics/metrics.go`:
+
+- Only business-value metrics are exported (policy outcomes, approval decisions, AI confidence, failure taxonomy).
+- Operational/debugging metrics (phase-transition timings, latency breakdowns) were **removed**.
+- **Client-side Kubernaut Agent (KA) call metrics were removed** — KA tracks its own server-side metrics (e.g. `kubernaut_agent_llm_token_usage_total`). AIAnalysis does not export `aianalysis_holmesgpt_requests_total`, `aianalysis_holmesgpt_request_duration_seconds`, or any similar family — they do not exist.
+- There is no `aianalysis_investigation_duration_seconds` metric either.
+
+If you need per-investigation timing, use `AIAnalysis.status.investigationTime` (a CRD status field populated once per completed investigation, not a Prometheus time series) or correlate via `status.investigationId` / `status.investigationSession` against Kubernaut Agent's own metrics.
 
 ---
 
@@ -21,31 +35,33 @@
 
 | SLI | Measurement | Target | Business Impact |
 |-----|-------------|--------|----------------|
-| **Investigation Success Rate** | `successful_investigations / total_investigations` | ≥95% | HolmesGPT analysis reliability |
-| **Investigation Latency (P95)** | `histogram_quantile(0.95, aianalysis_investigation_duration_seconds)` | <30s | Fast root cause identification |
-| **HolmesGPT-API Availability** | `holmesgpt_requests_success / holmesgpt_requests_total` | ≥99% | AI service dependency |
-| **Auto-Approval Rate** | `approval_not_required_total / total_analyses` | 40-60% | Rego policy effectiveness |
-| **Recommendation Confidence (Avg)** | `avg(aianalysis_workflow_confidence)` | ≥0.80 | High-quality workflow selection |
+| **Rego Policy Reliability** | `1 - (rego_evaluations{degraded="true"} / rego_evaluations_total)` | ≥99% | Policy engine availability (BR-AI-014 graceful degradation) |
+| **Auto-Approval Rate** | `approval_decisions{decision="auto_approved"} / approval_decisions_total` | 40-60% | Rego policy effectiveness (BR-AI-059) |
+| **AI Confidence (Avg)** | `avg(aianalysis_confidence_score_distribution)` | ≥0.80 | High-quality workflow selection (BR-AI-OBSERVABILITY-004) |
+| **Failure Rate** | `sum(rate(aianalysis_failures_total[1h]))` | Trend-monitored (no fleet-wide fixed target — depends on cluster alert volume) | Overall investigation health (BR-HAPI-197) |
+| **TransientError Share** | `failures{reason="TransientError"} / failures_total` | Trend-monitored | Async KA session health — covers both retry-exhaustion and the 25-minute session timeout cap (#1078, BR-AA-HAPI-064) |
+
+> **Note on denominators**: There is no "total investigations started" counter (client-side KA call counters were deliberately removed — see Scope Note). `aianalysis_confidence_score_distribution`'s sample count and `aianalysis_failures_total`'s sum are the closest available proxies for "successful" vs. "failed" investigation volume respectively (see `recordPhaseMetrics` in `internal/controller/aianalysis/metrics_recorder.go`), so ratio SLIs above use each metric family's own total as the denominator rather than a global count.
 
 ### Service Level Objectives (SLOs)
 
 ```yaml
 slos:
-  - name: "AIAnalysis Investigation Success Rate"
-    sli: "successful_investigations / total_investigations"
-    target: 0.95  # 95%
+  - name: "AIAnalysis Rego Policy Reliability"
+    sli: "1 - (sum(rate(aianalysis_rego_evaluations_total{degraded=\"true\"}[1h])) / sum(rate(aianalysis_rego_evaluations_total[1h])))"
+    target: 0.99  # 99% non-degraded evaluations
     window: "30d"
     burn_rate_fast: 14.4  # 1h window
     burn_rate_slow: 6     # 6h window
 
-  - name: "AIAnalysis P95 Investigation Latency"
-    sli: "histogram_quantile(0.95, aianalysis_investigation_duration_seconds)"
-    target: 30  # 30 seconds
+  - name: "AIAnalysis Auto-Approval Rate"
+    sli: "sum(rate(aianalysis_approval_decisions_total{decision=\"auto_approved\"}[1h])) / sum(rate(aianalysis_approval_decisions_total[1h]))"
+    target_band: [0.40, 0.60]  # Operational band, not a pass/fail SLO
     window: "30d"
 
-  - name: "HolmesGPT-API Availability"
-    sli: "holmesgpt_requests_success / holmesgpt_requests_total"
-    target: 0.99  # 99%
+  - name: "AIAnalysis Average Confidence"
+    sli: "avg(aianalysis_confidence_score_distribution)"
+    target: 0.80  # avg >= 80%
     window: "30d"
 ```
 
@@ -53,123 +69,63 @@ slos:
 
 ## Service-Specific Metrics
 
-### AI/ML Metrics
+**Source of truth**: [`pkg/aianalysis/metrics/metrics.go`](../../../../pkg/aianalysis/metrics/metrics.go) — these are the **only 4** metrics this service exports. Do not add speculative metrics here without updating that file first (DD-METRICS-001: dependency-injected metrics pattern).
 
 ```go
 package metrics
 
 import (
     "github.com/prometheus/client_golang/prometheus"
-    "github.com/prometheus/client_golang/prometheus/promauto"
 )
 
 var (
-    // HolmesGPT-API request metrics
-    holmesgptRequestsTotal = promauto.NewCounterVec(
+    // RegoEvaluationsTotal tracks Rego policy evaluation outcomes (BR-AI-030)
+    RegoEvaluationsTotal = prometheus.NewCounterVec(
         prometheus.CounterOpts{
-            Name: "aianalysis_holmesgpt_requests_total",
-            Help: "Total number of requests to HolmesGPT-API",
-        },
-        []string{"status", "endpoint"},  // status: success|error, endpoint: investigate|recovery
-    )
-
-    holmesgptRequestDuration = promauto.NewHistogramVec(
-        prometheus.HistogramOpts{
-            Name:    "aianalysis_holmesgpt_request_duration_seconds",
-            Help:    "HolmesGPT-API request duration in seconds",
-            Buckets: prometheus.ExponentialBuckets(0.5, 2, 8),  // 0.5s to 128s
-        },
-        []string{"endpoint"},
-    )
-
-    // Investigation metrics
-    investigationTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "aianalysis_investigation_total",
-            Help: "Total number of AI investigations",
-        },
-        []string{"status"},  // status: success|error
-    )
-
-    investigationDuration = promauto.NewHistogram(
-        prometheus.HistogramOpts{
-            Name:    "aianalysis_investigation_duration_seconds",
-            Help:    "AI investigation duration in seconds",
-            Buckets: prometheus.ExponentialBuckets(1, 2, 10),  // 1s to 1024s
-        },
-    )
-
-    // Workflow selection metrics
-    workflowConfidence = promauto.NewHistogram(
-        prometheus.HistogramOpts{
-            Name:    "aianalysis_workflow_confidence",
-            Help:    "Selected workflow confidence score (0-1)",
-            Buckets: prometheus.LinearBuckets(0.5, 0.1, 6),  // 0.5 to 1.0
-        },
-    )
-
-    workflowSelectionTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "aianalysis_workflow_selection_total",
-            Help: "Total number of workflow selections",
-        },
-        []string{"confidence_tier"},  // high (>0.9) | medium (0.7-0.9) | low (<0.7)
-    )
-
-    // V1.0: Approval signaling metrics (not AIApprovalRequest CRD)
-    approvalSignalingTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "aianalysis_approval_signaling_total",
-            Help: "Total number of approval decisions (V1.0: signaling, not CRD)",
-        },
-        []string{"approval_required"},  // true | false
-    )
-
-    // Rego policy metrics
-    regoPolicyEvaluationDuration = promauto.NewHistogram(
-        prometheus.HistogramOpts{
-            Name:    "aianalysis_rego_policy_evaluation_duration_seconds",
-            Help:    "Rego approval policy evaluation duration in seconds",
-            Buckets: prometheus.ExponentialBuckets(0.001, 2, 10),  // 1ms to 1s
-        },
-    )
-
-    regoPolicyEvaluationTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "aianalysis_rego_policy_evaluation_total",
+            Name: "aianalysis_rego_evaluations_total",
             Help: "Total number of Rego policy evaluations",
         },
-        []string{"result"},  // auto_approve | manual_approval_required | error
+        []string{"outcome", "degraded"}, // outcome: auto_approved|requires_approval|error
     )
 
-    // DetectedLabels metrics (V1.0)
-    detectedLabelsTotal = promauto.NewCounterVec(
+    // ApprovalDecisionsTotal tracks approval vs. auto-execute decisions (BR-AI-059)
+    ApprovalDecisionsTotal = prometheus.NewCounterVec(
         prometheus.CounterOpts{
-            Name: "aianalysis_detected_labels_total",
-            Help: "Count of detected labels used in analysis",
+            Name: "aianalysis_approval_decisions_total",
+            Help: "Total number of approval decisions",
         },
-        []string{"label_type"},  // gitops_managed | pdb_protected | stateful | etc.
+        []string{"decision", "environment"}, // decision: auto_approved|requires_approval
     )
 
-    // CustomLabels metrics (V1.0)
-    customLabelsTotal = promauto.NewCounterVec(
-        prometheus.CounterOpts{
-            Name: "aianalysis_custom_labels_total",
-            Help: "Count of custom labels (Rego-extracted) used in analysis",
+    // ConfidenceScoreDistribution tracks AI confidence score distribution (BR-AI-OBSERVABILITY-004)
+    ConfidenceScoreDistribution = prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "aianalysis_confidence_score_distribution",
+            Help:    "Distribution of AI confidence scores",
+            Buckets: []float64{0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0},
         },
-        []string{"subdomain"},  // constraint | team | region | etc.
+        []string{"signal_type"}, // e.g. OOMKilled, CrashLoopBackOff, NodeNotReady
     )
 
-    // Recovery metrics
-    recoveryAnalysisTotal = promauto.NewCounterVec(
+    // FailuresTotal tracks AIAnalysis failures by reason and sub-reason (BR-HAPI-197)
+    FailuresTotal = prometheus.NewCounterVec(
         prometheus.CounterOpts{
-            Name: "aianalysis_recovery_analysis_total",
-            Help: "Total number of recovery analyses (isRecoveryAttempt=true)",
+            Name: "aianalysis_failures_total",
+            Help: "Total number of AIAnalysis failures",
         },
-        []string{"attempt_number", "status"},  // attempt: 1|2|3, status: success|error
+        []string{"reason", "sub_reason"},
     )
 )
 ```
+
+**Recording call sites** (for building accurate dashboards/alerts):
+
+| Metric | Recorded when | Call site |
+|--------|---------------|-----------|
+| `aianalysis_rego_evaluations_total` | Every Rego policy evaluation during the Analyzing phase | `pkg/aianalysis/handlers/analyzing.go` |
+| `aianalysis_approval_decisions_total` | Every approval decision during the Analyzing phase | `pkg/aianalysis/handlers/analyzing.go` |
+| `aianalysis_confidence_score_distribution` | Once per `Completed` analysis that has a `selectedWorkflow` | `internal/controller/aianalysis/metrics_recorder.go` (`recordPhaseMetrics`) |
+| `aianalysis_failures_total` | Once per reconcile where `status.phase == Failed` | `internal/controller/aianalysis/metrics_recorder.go` (`recordPhaseMetrics`) |
 
 ---
 
@@ -180,73 +136,60 @@ var (
 ```json
 {
   "dashboard": {
-    "title": "AIAnalysis Controller - V1.0 Observability",
-    "uid": "aianalysis-controller-v1",
-    "tags": ["kubernaut", "aianalysis", "ai-ml", "controller", "v1.0"],
+    "title": "AIAnalysis Controller - Observability",
+    "uid": "aianalysis-controller",
+    "tags": ["kubernaut", "aianalysis", "ai-ml", "controller"],
     "panels": [
       {
         "id": 1,
-        "title": "Investigation Success Rate (SLI)",
+        "title": "Rego Evaluation Degraded Rate (SLI)",
         "type": "graph",
         "targets": [
           {
-            "expr": "sum(rate(aianalysis_investigation_total{status='success'}[5m])) / sum(rate(aianalysis_investigation_total[5m]))",
-            "legendFormat": "Success Rate"
+            "expr": "sum(rate(aianalysis_rego_evaluations_total{degraded='true'}[5m])) / sum(rate(aianalysis_rego_evaluations_total[5m]))",
+            "legendFormat": "Degraded Rate"
           }
         ],
-        "thresholds": [{"value": 0.95, "colorMode": "critical", "op": "lt"}]
+        "thresholds": [{"value": 0.01, "colorMode": "warning", "op": "gt"}]
       },
       {
         "id": 2,
-        "title": "HolmesGPT-API Latency (P50, P95, P99)",
+        "title": "Approval Decisions (Auto vs. Manual)",
         "type": "graph",
         "targets": [
-          {"expr": "histogram_quantile(0.50, rate(aianalysis_holmesgpt_request_duration_seconds_bucket[5m]))", "legendFormat": "P50"},
-          {"expr": "histogram_quantile(0.95, rate(aianalysis_holmesgpt_request_duration_seconds_bucket[5m]))", "legendFormat": "P95 (SLI)"},
-          {"expr": "histogram_quantile(0.99, rate(aianalysis_holmesgpt_request_duration_seconds_bucket[5m]))", "legendFormat": "P99"}
-        ],
-        "thresholds": [{"value": 30, "colorMode": "critical", "op": "gt"}]
+          {"expr": "sum(rate(aianalysis_approval_decisions_total{decision='auto_approved'}[5m])) / sum(rate(aianalysis_approval_decisions_total[5m]))", "legendFormat": "Auto-Approved %"}
+        ]
       },
       {
         "id": 3,
-        "title": "Workflow Confidence Distribution",
+        "title": "Confidence Score Distribution",
         "type": "heatmap",
         "targets": [
-          {"expr": "sum(rate(aianalysis_workflow_confidence_bucket[5m])) by (le)"}
+          {"expr": "sum(rate(aianalysis_confidence_score_distribution_bucket[5m])) by (le)"}
         ]
       },
       {
         "id": 4,
-        "title": "Approval Signaling (V1.0)",
+        "title": "Average Confidence by Signal Type",
         "type": "graph",
         "targets": [
-          {"expr": "sum(rate(aianalysis_approval_signaling_total{approval_required='false'}[5m])) / sum(rate(aianalysis_approval_signaling_total[5m]))", "legendFormat": "Auto-Approved %"}
+          {"expr": "sum(rate(aianalysis_confidence_score_distribution_sum[5m])) by (signal_type) / sum(rate(aianalysis_confidence_score_distribution_count[5m])) by (signal_type)", "legendFormat": "{{signal_type}}"}
         ]
       },
       {
         "id": 5,
-        "title": "Rego Policy Evaluation Performance",
+        "title": "Failures by Reason",
         "type": "graph",
         "targets": [
-          {"expr": "histogram_quantile(0.95, rate(aianalysis_rego_policy_evaluation_duration_seconds_bucket[5m]))", "legendFormat": "P95"}
-        ],
-        "thresholds": [{"value": 2, "colorMode": "warning", "op": "gt"}]
-      },
-      {
-        "id": 6,
-        "title": "DetectedLabels Usage",
-        "type": "piechart",
-        "targets": [
-          {"expr": "sum by (label_type) (aianalysis_detected_labels_total)"}
+          {"expr": "sum(rate(aianalysis_failures_total[5m])) by (reason)", "legendFormat": "{{reason}}"}
         ]
       },
       {
-        "id": 7,
-        "title": "Recovery Analysis Attempts",
-        "type": "graph",
+        "id": 6,
+        "title": "Failures by Sub-Reason (Top 10)",
+        "type": "table",
         "targets": [
-          {"expr": "sum(rate(aianalysis_recovery_analysis_total{status='success'}[5m])) by (attempt_number)", "legendFormat": "Success (Attempt {{attempt_number}})"},
-          {"expr": "sum(rate(aianalysis_recovery_analysis_total{status='error'}[5m])) by (attempt_number)", "legendFormat": "Error (Attempt {{attempt_number}})"}
+          {"expr": "topk(10, sum(rate(aianalysis_failures_total[1h])) by (reason, sub_reason))"}
         ]
       }
     ]
@@ -263,85 +206,67 @@ groups:
 - name: aianalysis-slos
   interval: 30s
   rules:
-  # SLO: Investigation Success Rate
-  - alert: AIAnalysisInvestigationSLOBreach
+  # SLO: Rego Policy Evaluation Reliability
+  - alert: AIAnalysisRegoDegradedRateHigh
     expr: |
       (
-        sum(rate(aianalysis_investigation_total{status="success"}[1h])) /
-        sum(rate(aianalysis_investigation_total[1h]))
-      ) < 0.95
-    for: 5m
+        sum(rate(aianalysis_rego_evaluations_total{degraded="true"}[1h])) /
+        sum(rate(aianalysis_rego_evaluations_total[1h]))
+      ) > 0.01
+    for: 15m
     labels:
-      severity: critical
-      slo: investigation_success_rate
+      severity: warning
+      slo: rego_policy_reliability
     annotations:
-      summary: "AIAnalysis investigation success rate below SLO"
-      description: "Investigation success rate is {{ $value | humanizePercentage }}, below 95% SLO"
+      summary: "AIAnalysis Rego policy evaluations degrading above SLO"
+      description: "{{ $value | humanizePercentage }} of Rego evaluations are falling back to degraded/manual-approval defaults (BR-AI-014), above the 1% SLO"
 
-  # SLO: HolmesGPT-API Availability
-  - alert: HolmesGPTAPIAvailabilitySLOBreach
+  # Operational: Low Average Confidence
+  - alert: AIAnalysisLowConfidence
     expr: |
-      (
-        sum(rate(aianalysis_holmesgpt_requests_total{status="success"}[1h])) /
-        sum(rate(aianalysis_holmesgpt_requests_total[1h]))
-      ) < 0.99
-    for: 5m
-    labels:
-      severity: critical
-      slo: holmesgpt_availability
-    annotations:
-      summary: "HolmesGPT-API availability below SLO"
-      description: "HolmesGPT-API availability is {{ $value | humanizePercentage }}, below 99% SLO"
-
-  # Operational: Low Workflow Confidence
-  - alert: AIAnalysisLowWorkflowConfidence
-    expr: |
-      avg(aianalysis_workflow_confidence) < 0.80
+      avg(aianalysis_confidence_score_distribution) < 0.80
     for: 10m
     labels:
       severity: warning
     annotations:
       summary: "AI workflow selections have low average confidence"
-      description: "Average workflow confidence is {{ $value }}, below 0.80 threshold"
+      description: "Average confidence score is {{ $value }}, below the 0.80 threshold"
 
-  # Operational: High Manual Approval Rate (V1.0)
+  # Operational: High Manual Approval Rate
   - alert: AIAnalysisHighManualApprovalRate
     expr: |
       (
-        sum(rate(aianalysis_approval_signaling_total{approval_required="true"}[1h])) /
-        sum(rate(aianalysis_approval_signaling_total[1h]))
+        sum(rate(aianalysis_approval_decisions_total{decision="requires_approval"}[1h])) /
+        sum(rate(aianalysis_approval_decisions_total[1h]))
       ) > 0.60
     for: 15m
     labels:
       severity: warning
     annotations:
-      summary: "High manual approval rate detected (V1.0)"
-      description: "{{ $value | humanizePercentage }} of analyses require manual approval (threshold: 60%)"
+      summary: "High manual approval rate detected"
+      description: "{{ $value | humanizePercentage }} of analyses require manual approval (expected operational band: 40-60%)"
 
-  # Rego Policy: Slow Evaluation
-  - alert: AIAnalysisSlowRegoPolicyEvaluation
+  # Failure taxonomy: Elevated overall failure rate
+  - alert: AIAnalysisElevatedFailureRate
     expr: |
-      histogram_quantile(0.95, rate(aianalysis_rego_policy_evaluation_duration_seconds_bucket[5m])) > 2
-    for: 5m
+      sum(rate(aianalysis_failures_total[1h])) > 5
+    for: 15m
     labels:
       severity: warning
     annotations:
-      summary: "Rego policy evaluation taking >2s (P95)"
-      description: "Rego policy evaluation P95 is {{ $value }}s, exceeding 2s target"
+      summary: "AIAnalysis failure rate elevated"
+      description: "{{ $value }} failures/hour across all reasons — inspect `sum by (reason, sub_reason) (aianalysis_failures_total)` for the dominant cause"
 
-  # Recovery: High Failure Rate
-  - alert: AIAnalysisRecoveryHighFailureRate
+  # Async session health: Transient/timeout failures (#1078, BR-AA-HAPI-064)
+  - alert: AIAnalysisTransientFailuresElevated
     expr: |
-      (
-        sum(rate(aianalysis_recovery_analysis_total{status="error"}[1h])) /
-        sum(rate(aianalysis_recovery_analysis_total[1h]))
-      ) > 0.30
-    for: 10m
+      sum(rate(aianalysis_failures_total{reason="TransientError"}[1h])) > 2
+    for: 15m
     labels:
       severity: warning
     annotations:
-      summary: "High recovery analysis failure rate"
-      description: "{{ $value | humanizePercentage }} of recovery analyses failing (threshold: 30%)"
+      summary: "Elevated TransientError failures (KA session issues or 25-minute timeout cap)"
+      description: "{{ $value }} TransientError failures/hour — check Kubernaut Agent (KA) availability and whether investigations are hitting the DefaultMaxInvestigationDuration (25m) wall-clock cap"
 ```
 
 ---
@@ -351,39 +276,33 @@ groups:
 ### AI/ML-Specific Queries
 
 ```promql
-# 1. HolmesGPT-API Request Success Rate
-sum(rate(aianalysis_holmesgpt_requests_total{status="success"}[5m])) /
-sum(rate(aianalysis_holmesgpt_requests_total[5m]))
+# 1. Rego Policy Evaluation Degraded Rate
+sum(rate(aianalysis_rego_evaluations_total{degraded="true"}[5m])) /
+sum(rate(aianalysis_rego_evaluations_total[5m]))
 
-# 2. Average Workflow Confidence
-avg(aianalysis_workflow_confidence)
+# 2. Average AI Confidence Score
+avg(aianalysis_confidence_score_distribution)
 
-# 3. Auto-Approval Rate (V1.0 Signaling)
-sum(rate(aianalysis_approval_signaling_total{approval_required="false"}[5m])) /
-sum(rate(aianalysis_approval_signaling_total[5m]))
+# 3. Auto-Approval Rate
+sum(rate(aianalysis_approval_decisions_total{decision="auto_approved"}[5m])) /
+sum(rate(aianalysis_approval_decisions_total[5m]))
 
-# 4. HolmesGPT-API P95 Latency
-histogram_quantile(0.95,
-  rate(aianalysis_holmesgpt_request_duration_seconds_bucket[5m])
-)
+# 4. Approval Decisions by Environment
+sum by (environment) (rate(aianalysis_approval_decisions_total[5m]))
 
-# 5. Rego Policy Evaluation Performance
-histogram_quantile(0.95,
-  rate(aianalysis_rego_policy_evaluation_duration_seconds_bucket[5m])
-)
+# 5. Confidence Score P50/P95 by Signal Type
+histogram_quantile(0.50, sum(rate(aianalysis_confidence_score_distribution_bucket[5m])) by (le, signal_type))
+histogram_quantile(0.95, sum(rate(aianalysis_confidence_score_distribution_bucket[5m])) by (le, signal_type))
 
-# 6. Workflow Selection by Confidence Tier
-sum by (confidence_tier) (rate(aianalysis_workflow_selection_total[5m]))
+# 6. Failure Rate by Reason
+sum by (reason) (rate(aianalysis_failures_total[5m]))
 
-# 7. DetectedLabels Usage Distribution
-sum by (label_type) (aianalysis_detected_labels_total)
+# 7. Failure Rate by Reason + SubReason (drill-down)
+sum by (reason, sub_reason) (rate(aianalysis_failures_total[5m]))
 
-# 8. CustomLabels Usage by Subdomain
-sum by (subdomain) (aianalysis_custom_labels_total)
-
-# 9. Recovery Analysis Success Rate by Attempt
-sum(rate(aianalysis_recovery_analysis_total{status="success"}[5m])) by (attempt_number) /
-sum(rate(aianalysis_recovery_analysis_total[5m])) by (attempt_number)
+# 8. TransientError Share of All Failures (async session/timeout health signal)
+sum(rate(aianalysis_failures_total{reason="TransientError"}[1h])) /
+sum(rate(aianalysis_failures_total[1h]))
 ```
 
 ---
@@ -391,5 +310,6 @@ sum(rate(aianalysis_recovery_analysis_total[5m])) by (attempt_number)
 ## References
 
 - [Observability & Logging](./observability-logging.md) - Logging patterns
-- [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) - DetectedLabels/CustomLabels
-- [REGO_POLICY_EXAMPLES.md](./REGO_POLICY_EXAMPLES.md) - Approval policy schema
+- [pkg/aianalysis/metrics/metrics.go](../../../../pkg/aianalysis/metrics/metrics.go) - Authoritative metric definitions (source of truth)
+- [pkg/aianalysis/handlers/constants.go](../../../../pkg/aianalysis/handlers/constants.go) - `DefaultMaxInvestigationDuration` (25-minute session cap), retry/backoff constants
+- [REGO_POLICY_EXAMPLES.md](./REGO_POLICY_EXAMPLES.md) - Approval policy input schema
