@@ -945,9 +945,14 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 
 	activeCtxRegistry := launcher.NewActiveContextRegistry(launcher.DefaultRegistryTTL, launcher.DefaultRegistryIdleTimeout)
 
+	// #1658: alertToolsEnabled must mirror the same cfg.PromClient != nil gate
+	// NewRootAgent uses to decide whether to register list_alerts/get_alert_details/
+	// kubernaut_investigate_alert, so the prompt never advertises tools that
+	// aren't actually callable.
+	alertToolsEnabled := deps.PromClient != nil
 	rootAgent, _, err := agentpkg.NewRootAgent(agentpkg.AgentConfig{
-		Instruction:           agentpkg.BuildInstruction(cfg.Session.Namespace),
-		InstructionProvider:   agentpkg.NewInstructionProvider(cfg.Session.Namespace),
+		Instruction:           agentpkg.BuildInstruction(cfg.Session.Namespace, alertToolsEnabled),
+		InstructionProvider:   agentpkg.NewInstructionProvider(cfg.Session.Namespace, alertToolsEnabled),
 		LLMModel:              llmModel,
 		Namespace:             cfg.Session.Namespace,
 		K8sClient:             deps.K8sClient(),
