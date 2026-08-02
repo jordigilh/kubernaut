@@ -7,7 +7,7 @@ identity lock, [#1604](https://github.com/jordigilh/kubernaut/issues/1604)
 reasoning-effort knob) — none of that exists at this tag. If you're running
 `main`/1.6.0+, this doc's *architecture* section doesn't apply to you (though
 the vLLM server-side recommendations still do); check
-[`configuration-reference.md`](../../../services/kubernaut-agent/configuration-reference.md)
+[`configuration-reference.md`](../../../services/stateless/kubernaut-agent/configuration-reference.md)
 instead.
 
 This doc is for operators/contributors who want to point a locally-running
@@ -672,7 +672,7 @@ treating its BFCL/τ²-bench numbers as directly comparable.
 
 ## Related documents
 
-- [`docs/services/kubernaut-agent/configuration-reference.md`](../../../services/kubernaut-agent/configuration-reference.md) — authoritative KA config reference (1.6.0/`main`)
+- [`docs/services/stateless/kubernaut-agent/configuration-reference.md`](../../../services/stateless/kubernaut-agent/configuration-reference.md) — authoritative KA config reference (1.6.0/`main`)
 - [`docs/services/apifrontend/configuration-reference.md`](../../../services/apifrontend/configuration-reference.md) — authoritative AF config reference (1.6.0/`main`)
 - [DD-LLM-004](../../../architecture/decisions/DD-LLM-004-langchaingo-removal-generalized-clients.md) — why `langchaingo` was removed in 1.6.0
 - [DD-LLM-005](../../../architecture/decisions/DD-LLM-005-model-aware-reasoning-support.md) — model-aware reasoning support design (BR-AI-086)
