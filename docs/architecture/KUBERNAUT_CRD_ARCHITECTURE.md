@@ -234,7 +234,7 @@ Kubernaut is an AI-powered Kubernetes remediation platform built on a **microser
 
 **Business Requirements**: **BR-EM-\*** — corrected from v1.3.0, which used the (now-superseded) `BR-INS-*` prefix for this service. Verified examples: BR-EM-001 (pod filtering/health stats), BR-EM-002 (alert resolution scoring), BR-EM-004 (spec-hash drift), BR-EM-009 (derived timing computation), BR-EM-010 (async hash deferral), BR-EM-012 (alert decay detection)
 
-**Source**: [docs/services/crd-controllers/07-effectivenessmonitor/overview.md](../services/crd-controllers/07-effectivenessmonitor/overview.md) — **note the path**: this service's docs moved from `docs/services/stateless/effectiveness-monitor/` to `docs/services/crd-controllers/07-effectivenessmonitor/` because it is a CRD controller, not a stateless service. The old `stateless/effectiveness-monitor/overview.md` file may still exist as a stale leftover; always link the `crd-controllers/07-effectivenessmonitor/` path going forward.
+**Source**: [docs/services/crd-controllers/07-effectivenessmonitor/overview.md](../services/crd-controllers/07-effectivenessmonitor/overview.md) — this service's docs moved from `docs/services/stateless/effectiveness-monitor/` to `docs/services/crd-controllers/07-effectivenessmonitor/` because it is a CRD controller, not a stateless service; the old `stateless/effectiveness-monitor/` directory has been deleted.
 
 ---
 
@@ -1288,7 +1288,7 @@ This section preserves a historical record of services/components this document 
   - [03-workflowexecution/overview.md](../services/crd-controllers/03-workflowexecution/overview.md)
   - [05-remediationorchestrator/overview.md](../services/crd-controllers/05-remediationorchestrator/overview.md)
   - [06-notification/overview.md](../services/crd-controllers/06-notification/overview.md)
-  - [07-effectivenessmonitor/overview.md](../services/crd-controllers/07-effectivenessmonitor/overview.md) — moved here from `stateless/effectiveness-monitor/`; always link this path
+  - [07-effectivenessmonitor/overview.md](../services/crd-controllers/07-effectivenessmonitor/overview.md) — moved here from `stateless/effectiveness-monitor/` (now deleted)
 - [Stateless Services](../services/stateless/)
   - [gateway-service/overview.md](../services/stateless/gateway-service/overview.md)
   - [data-storage/overview.md](../services/stateless/data-storage/overview.md)
