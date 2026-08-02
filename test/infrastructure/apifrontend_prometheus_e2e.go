@@ -218,6 +218,25 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 //   - AFInvestigateGrounding: for:0s + vector(1) (never stale) -> tier 1, grounds
 //     the mock-LLM's dedicated "af-investigate-e2e/Pod/af-investigate-target"
 //     investigate fixture (see below)
+//   - UserSeverityHintGrounding: for:0s + vector(1) (never stale) -> tier 1,
+//     grounds severity_triage_test.go's TC-E2E-SEV-06 "user hint does not
+//     bypass triage" fixture (dedicated namespace="sev-userhint-ns",
+//     kind=Deployment, name="test-user-severity-bypass")
+//
+// #1839 follow-up (no fixtures in "default"): HighCPU and HighMemory used to
+// target namespace="default" (unlike DiskPressure/NetworkLatency, which
+// already used dedicated sev-tier2-ns/no-data-ns namespaces). "default" is
+// the one namespace every test can use without any setup, which is exactly
+// why it kept attracting *unintentional* consumers: severity_triage_test.go's
+// TC-E2E-SEV-06 ("test-user-severity-bypass") had no rule of its own and was
+// silently passing only because it shared namespace="default" with HighCPU,
+// riding Tier 1's namespace-level fallback (bestAlertMatch in
+// severity/triage.go) -- the same hidden-coupling failure mode diagnosed
+// below for the (now-fixed) AF investigate fixture. HighCPU/HighMemory were
+// moved to their own dedicated namespaces (sev-tier1-ns/sev-tier15-ns) --
+// matching the sev-tier2-ns/no-data-ns convention -- specifically so
+// "default" no longer groups multiple fixtures together and cannot silently
+// backstop a future test that forgets to configure its own grounding.
 //
 // PromQL expressions include label selectors for namespace/kind/name because the
 // triage pipeline's Tier 1.5 and Tier 2 use ExtractLabelMatchers(query)
@@ -262,7 +281,7 @@ groups:
     interval: 5s
     rules:
       - alert: HighCPU
-        expr: e2e_cpu_usage_percent{namespace="default",kind="Deployment",name="test-firing-target"} > 90
+        expr: e2e_cpu_usage_percent{namespace="sev-tier1-ns",kind="Deployment",name="test-firing-target"} > 90
         for: 0s
         labels:
           severity: critical
@@ -270,7 +289,7 @@ groups:
         annotations:
           summary: "CPU usage is critically high"
       - alert: HighMemory
-        expr: e2e_memory_usage_percent{namespace="default",kind="Deployment",name="test-pending-target"} > 85
+        expr: e2e_memory_usage_percent{namespace="sev-tier15-ns",kind="Deployment",name="test-pending-target"} > 85
         for: 1h
         labels:
           severity: high
@@ -304,4 +323,15 @@ groups:
           name: af-investigate-target
         annotations:
           summary: "Synthetic grounding alert for AF investigate E2E fixture (dedicated namespace/name, #1839)"
+      - alert: UserSeverityHintGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          namespace: sev-userhint-ns
+          kind: Deployment
+          name: test-user-severity-bypass
+        annotations:
+          summary: "Synthetic grounding alert for TC-E2E-SEV-06 (dedicated namespace/name, #1839)"
 `
