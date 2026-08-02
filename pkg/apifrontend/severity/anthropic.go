@@ -1,7 +1,9 @@
 package severity
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -9,9 +11,23 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/vertex"
 	"github.com/go-logr/logr"
+	"golang.org/x/oauth2/google"
 
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 )
+
+const vertexAICloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
+
+// anthropicVertexAllowedCredentialTypes lists the GCP credential types
+// NewAnthropicVertexClient accepts from an explicitly-supplied
+// credentialsJSON. external_account and similar types are rejected to
+// prevent loading credentials with attacker-controlled token endpoints,
+// mirroring the same allow-list already enforced for Kubernaut Agent's
+// equivalent Vertex path.
+var anthropicVertexAllowedCredentialTypes = map[google.CredentialsType]bool{
+	google.ServiceAccount: true,
+	google.AuthorizedUser: true,
+}
 
 // Messager abstracts the Anthropic Messages.New call for testability.
 type Messager interface {
@@ -126,8 +142,18 @@ func IsAnthropicModel(model string) bool {
 }
 
 // NewAnthropicVertexClient creates an Anthropic SDK client configured for
-// Claude on Vertex AI using Google Cloud ADC (Application Default Credentials).
-func NewAnthropicVertexClient(ctx context.Context, project, location string) (client *anthropic.Client, err error) {
+// Claude on Vertex AI. When credentialsJSON is non-empty, it resolves
+// explicit Google credentials from those bytes (kubernaut#1731) instead of
+// relying on ambient Application Default Credentials (ADC) — letting AF's
+// severityTriage profile authenticate independently of its own agent.llm
+// profile when both resolve to vertex_ai. Falls back to
+// vertex.WithGoogleAuth (ambient ADC) unchanged when credentialsJSON is
+// empty, preserving today's behavior — kubernaut-operator's
+// vertexADCCredentialsSecretErr guard (blocking two different
+// credentialsSecretName values for vertex_ai-vs-vertex_ai) remains
+// necessary until the operator also renders a per-profile apiKeyFile for
+// vertex_ai, independently of this fix.
+func NewAnthropicVertexClient(ctx context.Context, project, location, credentialsJSON string) (client *anthropic.Client, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("GCP ADC unavailable for Anthropic Vertex client: %v", r)
@@ -139,10 +165,50 @@ func NewAnthropicVertexClient(ctx context.Context, project, location string) (cl
 	if location == "" {
 		location = "us-central1"
 	}
-	vertexOpt := vertex.WithGoogleAuth(ctx, location, project,
-		"https://www.googleapis.com/auth/cloud-platform")
+	vertexOpt, err := resolveAnthropicVertexAuth(ctx, []byte(credentialsJSON), location, project)
+	if err != nil {
+		return nil, err
+	}
 	c := anthropic.NewClient(vertexOpt)
 	return &c, nil
+}
+
+// resolveAnthropicVertexAuth resolves the Anthropic SDK's Vertex AI request
+// option from explicit credential bytes when present, falling back to
+// ambient ADC (vertex.WithGoogleAuth) when empty. vertex.WithGoogleAuth is
+// itself a thin wrapper around vertex.WithCredentials that always resolves
+// ambient ADC; this mirrors the same explicit-bytes-first technique already
+// proven for Kubernaut Agent's equivalent Vertex path (kubernaut#1728).
+func resolveAnthropicVertexAuth(ctx context.Context, credentialsJSON []byte, location, project string) (option.RequestOption, error) {
+	trimmed := bytes.TrimSpace(credentialsJSON)
+	if len(trimmed) == 0 {
+		return vertex.WithGoogleAuth(ctx, location, project, vertexAICloudPlatformScope), nil
+	}
+	credType, err := anthropicVertexCredentialType(trimmed)
+	if err != nil {
+		return nil, err
+	}
+	creds, err := google.CredentialsFromJSONWithType(ctx, trimmed, credType, vertexAICloudPlatformScope)
+	if err != nil {
+		return nil, fmt.Errorf("vertex_ai: invalid credentials JSON: %w", err)
+	}
+	return vertex.WithCredentials(ctx, location, project, creds), nil
+}
+
+// anthropicVertexCredentialType parses the "type" field from the credential
+// JSON and rejects anything outside anthropicVertexAllowedCredentialTypes.
+func anthropicVertexCredentialType(jsonData []byte) (google.CredentialsType, error) {
+	var f struct {
+		Type string `json:"type"`
+	}
+	if err := json.Unmarshal(jsonData, &f); err != nil {
+		return "", fmt.Errorf("vertex_ai: invalid credentials JSON: %w", err)
+	}
+	ct := google.CredentialsType(f.Type)
+	if !anthropicVertexAllowedCredentialTypes[ct] {
+		return "", fmt.Errorf("vertex_ai: unsupported credential type %q; only service_account and authorized_user are accepted", f.Type)
+	}
+	return ct, nil
 }
 
 // NewAnthropicDirectClient creates an Anthropic SDK client configured for

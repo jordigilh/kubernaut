@@ -2,6 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/json"
+	"encoding/pem"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1715,5 +1720,120 @@ func TestNewLLMTriagerFromConfig_RejectsUnsupportedProvider(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unsupported") {
 		t.Errorf("expected 'unsupported' in error, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// kubernaut#1731: newLLMTriagerFromConfig must thread a resolved vertex_ai
+// profile's own APIKey (raw credentials.json bytes, resolved generically by
+// pkg/apifrontend/config's resolveLLMKey for every provider) into both
+// Vertex AI construction paths, rather than relying solely on ambient ADC
+// shared process-wide across AF's agent.llm and severityTriage.llm
+// profiles. Proven here through the real production dispatch point
+// (newLLMTriagerFromConfig), not just the leaf constructors, per
+// CHECKPOINT W wiring verification.
+// ---------------------------------------------------------------------------
+
+// generateFakeServiceAccountJSONForVertexTest builds a GCP service account
+// credential blob with a real RSA-2048 key so credential parsing can accept
+// it without any live network call or dependency on the host's real
+// ambient ADC state. Mirrors the identically-named helper already proven in
+// pkg/apifrontend/launcher/model_1801_test.go and
+// pkg/apifrontend/severity/anthropic_vertex_credentials_test.go.
+func generateFakeServiceAccountJSONForVertexTest(t *testing.T) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate RSA key for test credentials: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(key),
+	})
+	creds := map[string]string{
+		"type":           "service_account",
+		"project_id":     "test-project",
+		"private_key_id": "key123",
+		"private_key":    string(keyPEM), // notsecret — generated at runtime via rsa.GenerateKey
+		"client_email":   "test@test-project.iam.gserviceaccount.com",
+		"client_id":      "123456789",
+		"auth_uri":       "https://accounts.google.com/o/oauth2/auth",
+		"token_uri":      "https://oauth2.googleapis.com/token",
+	}
+	b, err := json.Marshal(creds)
+	if err != nil {
+		t.Fatalf("marshal fake credentials: %v", err)
+	}
+	return string(b)
+}
+
+// withoutAmbientADC blocks both GOOGLE_APPLICATION_CREDENTIALS and the
+// well-known ~/.config/gcloud/application_default_credentials.json file
+// (which google.FindDefaultCredentials/credentials.DetectDefault fall back
+// to via $HOME) for the duration of the test. Without also overriding
+// $HOME, a developer machine with real gcloud ADC configured would make
+// "constructs from explicit profile credentials alone" assertions pass for
+// the wrong reason (real ambient ADC, not the fake bytes under test).
+func withoutAmbientADC(t *testing.T) {
+	t.Helper()
+	origADC, hadOrigADC := os.LookupEnv("GOOGLE_APPLICATION_CREDENTIALS")
+	if err := os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS"); err != nil {
+		t.Fatalf("unset GOOGLE_APPLICATION_CREDENTIALS: %v", err)
+	}
+	origHome, hadOrigHome := os.LookupEnv("HOME")
+	if err := os.Setenv("HOME", t.TempDir()); err != nil {
+		t.Fatalf("override HOME: %v", err)
+	}
+	t.Cleanup(func() {
+		if hadOrigADC {
+			_ = os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", origADC)
+		} else {
+			_ = os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
+		}
+		if hadOrigHome {
+			_ = os.Setenv("HOME", origHome)
+		} else {
+			_ = os.Unsetenv("HOME")
+		}
+	})
+}
+
+func TestNewLLMTriagerFromConfig_VertexAnthropic_UsesProfileOwnCredentials(t *testing.T) {
+	withoutAmbientADC(t)
+	logger := logr.Discard()
+	cfg := config.LLMConfig{
+		Provider:       config.LLMProviderVertexAI,
+		Model:          "claude-sonnet-4-6",
+		VertexProject:  "test-project",
+		VertexLocation: "us-central1",
+		APIKey:         generateFakeServiceAccountJSONForVertexTest(t),
+	}
+
+	triager, err := newLLMTriagerFromConfig(context.Background(), cfg, logger)
+	if err != nil {
+		t.Fatalf("IT-AF-1731-001: expected no error constructing from explicit profile credentials, got: %v", err)
+	}
+	if triager == nil {
+		t.Fatal("IT-AF-1731-001: expected a non-nil AnthropicTriager")
+	}
+}
+
+func TestNewLLMTriagerFromConfig_VertexGenAI_UsesProfileOwnCredentials(t *testing.T) {
+	withoutAmbientADC(t)
+	logger := logr.Discard()
+	cfg := config.LLMConfig{
+		Provider:       config.LLMProviderVertexAI,
+		Model:          "gemini-2.0-flash",
+		VertexProject:  "test-project",
+		VertexLocation: "us-central1",
+		APIKey:         generateFakeServiceAccountJSONForVertexTest(t),
+	}
+
+	triager, err := newLLMTriagerFromConfig(context.Background(), cfg, logger)
+	if err != nil {
+		t.Fatalf("IT-AF-1731-002: expected no error constructing from explicit profile credentials, got: %v", err)
+	}
+	if triager == nil {
+		t.Fatal("IT-AF-1731-002: expected a non-nil GenAITriager")
 	}
 }
