@@ -1,10 +1,18 @@
 # DD-AUTH-011: Granular RBAC & SAR Verb Mapping for DataStorage
 
 **Date**: January 26, 2026
-**Status**: ✅ **APPROVED** - AUTHORITATIVE
+**Status**: ⚠️ **SUPERSEDED by [DD-AUTH-014](../DD-AUTH-014-middleware-based-sar-authentication.md)** (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806))
 **Authority**: Supersedes DD-AUTH-009 (wildcard verbs), DD-AUTH-010 (E2E authentication)
 **Priority**: CRITICAL (RBAC security)
 **Related**: DD-AUTH-004 (OAuth-proxy design), DD-AUTH-009 (OAuth2-proxy migration)
+
+> **⚠️ SUPERSEDED**: DD-AUTH-014's own rollout checklist ("Phase 6: Documentation & Rollout") called for
+> this document to be marked superseded — that step was never completed until now. The `ose-oauth-proxy`
+> sidecar this document's RBAC/SAR verb mapping was designed for has been **removed**; DataStorage now
+> authenticates/authorizes via an in-process Go middleware calling the TokenReview/SubjectAccessReview
+> APIs directly (`deploy/data-storage/deployment.yaml`: "No oauth-proxy sidecar - auth handled in
+> DataStorage middleware"). The granular-verb-per-operation *principle* below still holds under
+> DD-AUTH-014 — only the sidecar-specific SAR configuration mechanics are obsolete.
 
 ---
 

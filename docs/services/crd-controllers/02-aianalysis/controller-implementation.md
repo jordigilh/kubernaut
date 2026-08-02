@@ -18,21 +18,23 @@
 
 ## Package Structure (V1.0)
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This document's package structure, reconciler field names (e.g. `HolmesGPTClient`), and `pkg/ai/holmesgpt` / `internal/controller/aianalysis/holmesgpt` paths do not match the current codebase (the real `AIAnalysisReconciler` in `internal/controller/aianalysis/aianalysis_controller.go` has no `HolmesGPTClient` field, and `pkg/ai/holmesgpt` does not exist). Only prose terminology has been updated below; the code/package structure is not corrected here.
+
 ```
 internal/controller/aianalysis/
 ├── aianalysis_controller.go     # AIAnalysisReconciler (Kubebuilder controller)
 ├── phases/
 │   ├── pending.go               # Validation and setup
-│   ├── investigating.go         # HolmesGPT-API call (BR-AI-001, BR-AI-011)
+│   ├── investigating.go         # Kubernaut Agent (KA) call (BR-AI-001, BR-AI-011)
 │   ├── analyzing.go             # Rego policy evaluation (BR-AI-028)
 │   └── completed.go             # Terminal state
 ├── rego/
 │   └── evaluator.go             # Rego policy evaluation
 └── holmesgpt/
-    └── client.go                # HolmesGPT-API HTTP client
+    └── client.go                # KA HTTP client
 
 pkg/ai/holmesgpt/
-├── client.go                    # HolmesGPT-API client interface
+├── client.go                    # KA client interface
 ├── types.go                     # Request/response types
 └── validation.go                # Workflow validation (BR-AI-023)
 
@@ -54,7 +56,7 @@ test/e2e/controller/aianalysis/       # E2E tests (<10%)
 // pkg/ai/holmesgpt/types.go
 package holmesgpt
 
-// InvestigationRequest - sent to HolmesGPT-API
+// InvestigationRequest - sent to Kubernaut Agent (KA)
 // V1.0: No HolmesGPTConfig, no InvestigationScope (removed)
 type InvestigationRequest struct {
     // Signal context
@@ -75,7 +77,7 @@ type InvestigationRequest struct {
     PreviousExecutions []PreviousExecution `json:"previousExecutions,omitempty"`
 }
 
-// InvestigationResponse - from HolmesGPT-API
+// InvestigationResponse - from KA
 type InvestigationResponse struct {
     InvestigationID string `json:"investigationId"`
     Status          string `json:"status"`
@@ -132,7 +134,7 @@ type AIAnalysisReconciler struct {
     Scheme   *runtime.Scheme
     Recorder record.EventRecorder
 
-    // HolmesGPT-API client
+    // Kubernaut Agent (KA) client
     HolmesGPTClient holmesgpt.Client
 
     // Rego policy evaluator
@@ -236,10 +238,10 @@ func (r *AIAnalysisReconciler) handleInvestigatingPhase(
     // Build investigation request (V1.0 structure)
     req := r.buildInvestigationRequest(aiAnalysis)
 
-    // Call HolmesGPT-API
+    // Call Kubernaut Agent (KA)
     resp, err := r.HolmesGPTClient.Investigate(ctx, req)
     if err != nil {
-        log.Error(err, "HolmesGPT-API call failed")
+        log.Error(err, "KA call failed")
         // Retry with requeue
         return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
     }
@@ -448,9 +450,9 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | **4-Phase Flow** | Pending → Investigating → Analyzing → Completed | Simplified from 5-phase; "Approving" moved to RO |
-| **No "Recommending" Phase** | Merged into Analyzing | HolmesGPT-API returns workflow recommendation directly |
-| **No HolmesGPTConfig** | Removed | V1.0 uses single HolmesGPT-API provider |
-| **No InvestigationScope** | Removed | HolmesGPT decides investigation scope dynamically |
+| **No "Recommending" Phase** | Merged into Analyzing | Kubernaut Agent (KA) returns workflow recommendation directly |
+| **No HolmesGPTConfig** | Removed | V1.0 uses a single KA provider |
+| **No InvestigationScope** | Removed | KA decides investigation scope dynamically |
 | **DetectedLabels + CustomLabels** | Added to request | DD-WORKFLOW-001 v1.8 for workflow filtering (ADR-056: DetectedLabels removed from EnrichmentResults) |
 | **OwnerChain** | Added to request | DD-WORKFLOW-001 v1.7 for label validation (ADR-055: removed from EnrichmentResults) |
 | **PreviousExecutions as slice** | Added | Tracks ALL recovery attempts (not just last) |

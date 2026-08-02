@@ -92,23 +92,25 @@ expected_actions: [drain_node, cordon_node, migrate_workload]
 
 ---
 
-### **3. HolmesGPT Investigation Pipeline Under Load**
+### **3. Kubernaut Agent (KA) Investigation Pipeline Under Load**
 **Priority**: 🔴 Critical | **Business Requirements**: BR-AI-011, BR-AI-012, BR-AI-013
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This use case's integration chain includes "Context API" as a live component, but Context API has since been deprecated (DD-CONTEXT-006).
+
 #### **Scenario Description**
-Complex alert storm overwhelms monitoring → HolmesGPT conducts deep investigation → Context API enriches analysis → AI correlates evidence and provides root cause
+Complex alert storm overwhelms monitoring → KA conducts deep investigation → Context API enriches analysis → AI correlates evidence and provides root cause
 
 #### **Technical Implementation**
 ```yaml
 load_scenario: 50_concurrent_alerts_varied_complexity
-integration_chain: Kubernaut → HolmesGPT → Context_API → oss-gpt:20b
+integration_chain: Kubernaut → KA → Context_API → oss-gpt:20b
 investigation_types: [root_cause_analysis, evidence_correlation, time_series_analysis]
 expected_outcomes: [intelligent_investigation, evidence_based_recommendations]
 ```
 
 #### **Test Flow**
 1. **Alert Storm Generation**: 50+ alerts across multiple namespaces and resource types
-2. **HolmesGPT Dispatch**: Intelligent triage and investigation assignment
+2. **KA Dispatch**: Intelligent triage and investigation assignment
 3. **Context Enrichment**: Dynamic context gathering via Context API
 4. **Evidence Correlation**: Cross-reference logs, metrics, and historical patterns
 5. **Root Cause Identification**: AI-powered analysis with supporting evidence

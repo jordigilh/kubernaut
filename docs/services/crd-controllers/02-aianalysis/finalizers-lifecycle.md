@@ -361,9 +361,9 @@ RO creates AIAnalysis CRD
     ↓ (with owner reference to RemediationRequest)
 AIAnalysis Controller reconciles (this controller)
     ↓
-AIAnalysis calls HolmesGPT-API for investigation
+AIAnalysis calls Kubernaut Agent (KA) for investigation
     ↓
-HolmesGPT-API returns: RCA + Workflow Selection
+KA returns: RCA + Workflow Selection
     ↓
 AIAnalysis evaluates Rego approval policies
     ↓
@@ -546,7 +546,7 @@ func (r *AIAnalysisReconciler) emitLifecycleEvents(
     r.Recorder.Event(analysis, "Normal", "PhaseTransition",
         fmt.Sprintf("Phase: %s → %s", oldPhase, analysis.Status.Phase))
 
-    // HolmesGPT investigation events
+    // Kubernaut Agent (KA) investigation events
     if analysis.Status.Phase == aianalysisv1alpha1.PhaseReady {
         r.Recorder.Event(analysis, "Normal", "InvestigationComplete",
             fmt.Sprintf("Selected workflow: %s (confidence: %.2f)",
@@ -601,7 +601,7 @@ rate(aianalysis_deleted_total[5m])
 # V1.0: Approval signaling rate
 rate(aianalysis_approval_required_total[5m])
 
-# HolmesGPT investigation failures
+# Kubernaut Agent (KA) investigation failures
 rate(aianalysis_holmesgpt_failures_total[5m])
 ```
 
@@ -651,8 +651,8 @@ groups:
     labels:
       severity: critical
     annotations:
-      summary: "High HolmesGPT investigation failure rate"
-      description: "HolmesGPT investigation failing for >10% of requests"
+      summary: "High KA investigation failure rate"
+      description: "KA investigation failing for >10% of requests"
 
   - alert: AIAnalysisHighApprovalRate
     expr: |

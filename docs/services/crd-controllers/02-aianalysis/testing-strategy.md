@@ -9,8 +9,8 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
-| **v2.4** | 2026-02-05 | **BR-AI-084 Proactive Signal Mode**: Added test scenarios for RO SignalMode copy (UT-RO-106-001/002), AA request builder (UT-AA-084-001/002), HAPI prompt builder (UT-HAPI-084-001/002/003), and integration tests (IT-RO-084-001, IT-HAPI-084-001) |
-| **v2.3** | 2025-12-09 | **TESTING_GUIDELINES Compliance Fixes**: Fixed integration coverage target (20% → >50%); Removed BR- prefixes from unit test examples; Updated E2E path to `test/e2e/aianalysis/`; Added integration test file table; Updated HolmesGPT focus to MockHolmesGPTClient per HAPI team |
+| **v2.4** | 2026-02-05 | **BR-AI-084 Proactive Signal Mode**: Added test scenarios for RO SignalMode copy (UT-RO-106-001/002), AA request builder (UT-AA-084-001/002), KA prompt builder (UT-KA-084-001/002/003), and integration tests (IT-RO-084-001, IT-KA-084-001) |
+| **v2.3** | 2025-12-09 | **TESTING_GUIDELINES Compliance Fixes**: Fixed integration coverage target (20% → >50%); Removed BR- prefixes from unit test examples; Updated E2E path to `test/e2e/aianalysis/`; Added integration test file table; Updated HolmesGPT focus to MockHolmesGPTClient per KA team |
 | **v2.2** | 2025-12-06 | **Day 6 Implementation Alignment**: Updated unit test coverage (70% → 87.6% achieved); Added edge case test patterns for ERROR_HANDLING_PHILOSOPHY.md; Updated test file list; Added confidence level classification tests |
 | v2.1 | 2025-12-04 | **TESTING_GUIDELINES Alignment**: Added Quality Gates, Success Metrics; Removed V1.1 deferred code (BR-AI-040, BR-AI-050); Fixed BR range references |
 | v2.0 | 2025-11-30 | Added TESTING_GUIDELINES.md reference; Updated port allocation per DD-TEST-001 |
@@ -33,10 +33,10 @@ Following Kubernaut's defense-in-depth testing strategy:
 | Test Type | Target Coverage | Focus | Confidence |
 |-----------|----------------|-------|------------|
 | **Unit Tests** | 70%+ | Controller logic, AI analysis phases, Rego policies | 85-90% |
-| **Integration Tests** | >50% | CRD interactions, HolmesGPT API integration, approval workflows | 80-85% |
+| **Integration Tests** | >50% | CRD interactions, KA API integration, approval workflows | 80-85% |
 | **E2E Tests** | 10-15% | Complete investigation flow, real cluster scenarios | 90-95% |
 
-**Rationale**: CRD controllers require high integration test coverage (>50%) to validate Kubernetes API interactions, CRD lifecycle management, HolmesGPT API integration, and watch-based coordination patterns that cannot be adequately tested in unit tests alone.
+**Rationale**: CRD controllers require high integration test coverage (>50%) to validate Kubernetes API interactions, CRD lifecycle management, KA API integration, and watch-based coordination patterns that cannot be adequately tested in unit tests alone.
 
 ### Unit Tests (Primary Coverage Layer)
 
@@ -46,13 +46,20 @@ Following Kubernaut's defense-in-depth testing strategy:
 **Execution**: `make test-unit-aianalysis`
 **Test Count**: 149 tests (8 test files)
 
-**Testing Strategy**: Use fake K8s client for compile-time API safety. Mock ONLY HolmesGPT HTTP API. Use REAL business logic (Rego policy engine, approval workflow).
+**Testing Strategy**: Use fake K8s client for compile-time API safety. Mock ONLY KA HTTP API. Use REAL business logic (Rego policy engine, approval workflow).
 
 **Test Files (Day 6 Complete)**:
+
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: this table
+> predates the async agent-client rewrite — `holmesgpt_client_test.go` and `audit_client_test.go` no longer exist;
+> the current files are `pkg/aianalysis/agentclient_test.go` (+ `agentclient_session_test.go`,
+> `agentclient_tls_test.go`) and `pkg/aianalysis/audit_test.go`. `pkg/aianalysis/` now has 38 test files, not 8.
+> Out of scope for this terminology-only sweep — needs a content rewrite against the current test suite.
+
 | File | Focus | Tests |
 |------|-------|-------|
 | `controller_test.go` | CRD lifecycle, phase transitions | ~15 |
-| `investigating_handler_test.go` | HAPI integration, human review, retry | ~45 |
+| `investigating_handler_test.go` | KA integration, human review, retry | ~45 |
 | `analyzing_handler_test.go` | Rego evaluation, approval context | ~35 |
 | `rego_evaluator_test.go` | Policy evaluation, graceful degradation | ~15 |
 | `holmesgpt_client_test.go` | HTTP client, error handling | ~10 |
@@ -65,7 +72,7 @@ Following Kubernaut's defense-in-depth testing strategy:
 |----------|----------|----------------|
 | Error Types | 100% | Operators distinguish transient vs permanent failures |
 | Confidence Levels | 100% | Quick assessment of AI confidence (high/medium/low) |
-| Human Review Mapping | 100% | All 6 HAPI enum values + 11 warning fallbacks |
+| Human Review Mapping | 100% | All 6 KA enum values + 11 warning fallbacks |
 | Retry Mechanism | 89% | Graceful handling of malformed annotations |
 | Validation History | 100% | Timestamp parsing with graceful fallback |
 
@@ -180,7 +187,7 @@ var _ = Describe("AIAnalysis Controller", func() {
                         },
                     },
                     ContextUsed: &holmesgpt.ContextMetadata{
-                        // NOTE: TokensUsed removed from AIAnalysis - HAPI owns LLM cost observability
+                        // NOTE: TokensUsed removed from AIAnalysis - KA owns LLM cost observability
                         ProcessingTime:    "3.2s",
                         ModelVersion:      "gpt-4o-2024-05-13",
                     },
@@ -260,7 +267,7 @@ var _ = Describe("AIAnalysis Controller", func() {
 **Current Status**: 34/43 tests passing (audit tests blocked by Data Storage batch endpoint)
 
 **Focus Areas**:
-- MockHolmesGPTClient for deterministic responses (per HAPI team guidance Dec 9, 2025)
+- MockHolmesGPTClient for deterministic responses (per KA team guidance Dec 9, 2025)
 - CRD lifecycle with running controller (envtest)
 - Rego policy evaluation with mock evaluator
 - Metrics registration via registry inspection (DD-TEST-001)
@@ -294,7 +301,7 @@ var _ = Describe("AIAnalysis Controller", func() {
 ### Service-Specific Test Validation
 
 **AI/ML Testing Challenges**:
-- ✅ **Non-Deterministic AI**: Mock HolmesGPT with deterministic responses
+- ✅ **Non-Deterministic AI**: Mock KA with deterministic responses
 - ✅ **Rego Policy Complexity**: Use real Rego engine with comprehensive test policies
 - ✅ **Approval Workflow States**: Table-driven tests for state transitions
 - ✅ **Confidence Thresholds**: Boundary testing (0.79, 0.80, 0.81)
@@ -302,7 +309,7 @@ var _ = Describe("AIAnalysis Controller", func() {
 **Unique Metrics to Validate**:
 - Average recommendation confidence
 - Auto-approval rate (target: 40-60%)
-- HolmesGPT API latency (P95 <60s)
+- KA API latency (P95 <60s)
 
 ---
 
@@ -340,7 +347,7 @@ flowchart TD
 
 ### Test at Unit Level WHEN
 
-- ✅ Scenario can be tested with **simple HolmesGPT mock** (deterministic AI responses)
+- ✅ Scenario can be tested with **simple KA mock** (deterministic AI responses)
 - ✅ Focus is on **AI business logic** (Rego policy evaluation, confidence scoring, approval decisions)
 - ✅ Setup is **straightforward** (< 20 lines of mock configuration)
 - ✅ Test remains **readable and maintainable** with mocking
@@ -349,7 +356,7 @@ flowchart TD
 - Rego policy evaluation (auto-approval vs manual-approval logic)
 - Confidence score calculation and threshold enforcement
 - Approval workflow state machine transitions
-- HolmesGPT response parsing and validation
+- KA response parsing and validation
 - Recommendation filtering and ranking
 
 ---
@@ -357,14 +364,14 @@ flowchart TD
 ### Move to Integration Level WHEN
 
 - ✅ Scenario requires **CRD watch-based coordination** (AIAnalysis → AIApprovalRequest creation)
-- ✅ Validating **real HolmesGPT API behavior** (actual AI service integration)
+- ✅ Validating **real KA API behavior** (actual AI service integration)
 - ✅ Unit test would require **excessive mocking** (>50 lines of approval workflow mocks)
 - ✅ Integration test is **simpler to understand** and maintain
 - ✅ Testing **real Rego policy engine** with complex policy files
 
 **AIAnalysis Integration Test Examples**:
 - Complete CRD reconciliation loop with real K8s API
-- HolmesGPT API integration with real AI service (dev environment)
+- KA API integration with real AI service (dev environment)
 - **EnrichmentData consumption from RemediationProcessing (DD-001: Alternative 2 - BR-WF-RECOVERY-011)**:
   - 📋 **Design Decision**: [DD-001](../../../architecture/DESIGN_DECISIONS.md#dd-001-recovery-context-enrichment-alternative-2) - AIAnalysis reads from spec only
   - Verify AIAnalysis reads enrichment from `spec.enrichmentData` (NO API calls)
@@ -380,14 +387,14 @@ flowchart TD
 ### Move to E2E Level WHEN
 
 - ✅ Testing **complete investigation-to-workflow journey** (Alert → AIAnalysis → WorkflowExecution)
-- ✅ Validating **AI-driven remediation** with real HolmesGPT recommendations
+- ✅ Validating **AI-driven remediation** with real KA recommendations
 - ✅ Lower-level tests **cannot reproduce AI behavior** (e.g., multi-turn AI conversations)
 
 **AIAnalysis E2E Test Examples**:
 - Complete AI investigation pipeline (end-to-end)
 - AI-recommended workflow execution validation
 - Manual approval escalation flows
-- Production-like HolmesGPT failure scenarios (timeout → fallback → recovery)
+- Production-like KA failure scenarios (timeout → fallback → recovery)
 
 ---
 
@@ -487,7 +494,7 @@ Expect(aia.Status.Recommendations).To(HaveLen(3))
 | **Recommendation Confidence** | 0.0-0.79, 0.80-0.89, 0.90-1.0 | Test distinct approval behaviors, not all decimals |
 | **Action Types** | restart, scale, update, migrate | Test policy logic for each type |
 | **Approval Decisions** | auto-approve, manual-approve, reject | Test Rego policy outcomes |
-| **Investigation Depth** | quick, standard, deep | Test different HolmesGPT analysis levels |
+| **Investigation Depth** | quick, standard, deep | Test different KA analysis levels |
 
 **Total Possible Combinations**: 10 × 4 × 3 × 3 = 360 combinations
 **Distinct Business Behaviors**: 31 behaviors (per BR_MAPPING.md v1.3)
@@ -587,7 +594,7 @@ Ask these 4 questions:
    - ❌ NO: Testing confidence 0.95 vs 0.96 (same policy outcome)
 
 2. **Does this AI scenario actually occur in production?**
-   - ✅ YES: HolmesGPT recommends restart-pod with 0.85 confidence
+   - ✅ YES: KA recommends restart-pod with 0.85 confidence
    - ❌ NO: Testing confidence value 0.73948572 (unrealistic precision)
 
 3. **Would this test catch a Rego policy bug the other tests wouldn't?**
@@ -596,7 +603,7 @@ Ask these 4 questions:
 
 4. **Is this testing AI policy behavior or implementation variation?**
    - ✅ AI Policy: Confidence threshold enforcement affects approval decision
-   - ❌ Implementation: Internal HolmesGPT API retry count
+   - ❌ Implementation: Internal KA API retry count
 
 **If answer is "NO" to all 4 questions** → Skip the test, it adds maintenance cost without AI value
 
@@ -736,11 +743,11 @@ var _ = Describe("BR-INTEGRATION-AI-020: Approval Workflow", func() {
 
 ### ❌ WRONG TEST LEVEL (Forbidden)
 
-**Problem**: Testing HolmesGPT API behavior in unit tests
+**Problem**: Testing KA API behavior in unit tests
 
 ```go
-// ❌ BAD: Testing real HolmesGPT API in unit test
-It("should handle HolmesGPT API timeouts", func() {
+// ❌ BAD: Testing real KA API in unit test
+It("should handle KA API timeouts", func() {
     // Complex mocking of HTTP timeouts, retries, backoff
     // Real API behavior - belongs in integration test
 })
@@ -749,9 +756,9 @@ It("should handle HolmesGPT API timeouts", func() {
 **Solution**: Use integration test for real API behavior
 
 ```go
-// ✅ GOOD: Integration test for HolmesGPT API
-It("should handle HolmesGPT API timeouts gracefully", func() {
-    // Test with real HolmesGPT API - validates actual timeout behavior
+// ✅ GOOD: Integration test for KA API
+It("should handle KA API timeouts gracefully", func() {
+    // Test with real KA API - validates actual timeout behavior
 })
 ```
 
@@ -794,7 +801,7 @@ It("should handle HolmesGPT API timeouts gracefully", func() {
 ### Unit Tests Must:
 - [ ] **Focus on implementation correctness** (Rego policy logic, confidence scoring)
 - [ ] **Execute quickly** (<10ms per test average)
-- [ ] **Have minimal external dependencies** (mock HolmesGPT API only)
+- [ ] **Have minimal external dependencies** (mock KA API only)
 - [ ] **Test edge cases and error conditions** (timeout, malformed response, low confidence)
 - [ ] **Provide clear developer feedback** (specific assertion messages)
 - [ ] **Maintain high code coverage** (70%+ for core AI logic)
@@ -825,9 +832,9 @@ It("should handle HolmesGPT API timeouts gracefully", func() {
 |--------|--------|----------|---------|
 | **Rego Policy Coverage** | 100% of rules | ✅ 100% | All approval decision paths tested |
 | **Confidence Threshold Tests** | 3 boundary tests | ✅ 9 tests | 0.6, 0.79, 0.80, 0.90, 0.95 boundaries |
-| **HolmesGPT Mock Realism** | Production-like responses | ✅ | Token counts, latency simulation |
+| **KA Mock Realism** | Production-like responses | ✅ | Token counts, latency simulation |
 | **FailedDetections Validation** | All 7 valid fields | ✅ | `gitOpsManaged`, `pdbProtected`, etc. |
-| **Human Review Enum Mapping** | All 6 values | ✅ 100% | BR-HAPI-197 enum-to-enum mapping |
+| **Human Review Enum Mapping** | All 6 values | ✅ 100% | BR-KA-197 enum-to-enum mapping |
 | **Error Type Coverage** | All 3 types | ✅ 100% | TransientError, PermanentError, ValidationError |
 
 ### Edge Case Test Patterns (Day 6)
@@ -908,22 +915,27 @@ It("should handle malformed retry count annotation (treats as 0)", func() {
 | UT-AA-084-001 | BuildIncidentRequest passes signalMode = reactive | ✅ Passed |
 | UT-AA-084-002 | BuildIncidentRequest passes signalMode = proactive | ✅ Passed |
 
-### HAPI Unit Tests (Python)
+### KA Unit Tests (Python, pre-Go-rewrite)
 
 **Test File**: `kubernaut-agent/tests/test_prompt_builder.py` (new or extend)
 
+> **Note**: IDs below use `-KA-084-NNN` rather than reusing the `KA_E2E_TEST_PLAN.md`
+> legacy-range IDs (`E2E-KA-L001`..`L057`) to avoid numeric collision — this table's
+> numbering is keyed to `BR-AI-084` like its `UT-AA-084-*`/`IT-RO-084-*` siblings above,
+> not to that other document's small sequential counter.
+
 | Test ID | Scenario | Status |
 |---------|----------|--------|
-| UT-HAPI-084-001 | Prompt contains reactive RCA directive when signal_mode = reactive | ✅ Passed |
-| UT-HAPI-084-002 | Prompt contains proactive prevention directive when signal_mode = proactive | ✅ Passed |
-| UT-HAPI-084-003 | Default to reactive when signal_mode is absent | ✅ Passed |
+| UT-KA-084-001 | Prompt contains reactive RCA directive when signal_mode = reactive | ✅ Passed |
+| UT-KA-084-002 | Prompt contains proactive prevention directive when signal_mode = proactive | ✅ Passed |
+| UT-KA-084-003 | Default to reactive when signal_mode is absent | ✅ Passed |
 
 ### Integration Tests
 
 | Test ID | Scenario | Status |
 |---------|----------|--------|
 | IT-RO-084-001 | RO copies SignalMode from SP to AA spec (full CRD lifecycle) | ✅ Passed |
-| IT-HAPI-084-001 | Mock LLM detects proactive mode and returns prevention-focused response | ✅ Passed |
+| IT-KA-084-001 | Mock LLM detects proactive mode and returns prevention-focused response | ✅ Passed |
 
 ### E2E Tests
 
@@ -934,8 +946,8 @@ It("should handle malformed retry count annotation (treats as 0)", func() {
 | E2E-RO-106-001 | RO propagates signalMode=proactive from SP status to AA spec | `test/e2e/remediationorchestrator/proactive_signal_mode_e2e_test.go` | ✅ Passed |
 | E2E-AA-084-001 | AA processes proactive signal mode through to Mock LLM | `test/e2e/aianalysis/07_proactive_signal_mode_test.go` | ✅ Passed |
 | E2E-AA-084-002 | AA processes reactive signal mode (standard flow) | `test/e2e/aianalysis/07_proactive_signal_mode_test.go` | ✅ Passed |
-| E2E-HAPI-055 | HAPI returns proactive-aware analysis for signal_mode=proactive | `test/e2e/kubernaut-agent/proactive_signal_mode_test.go` | ✅ Passed |
-| E2E-HAPI-056 | HAPI returns standard RCA for signal_mode=reactive | `test/e2e/kubernaut-agent/proactive_signal_mode_test.go` | ✅ Passed |
-| E2E-HAPI-057 | HAPI defaults to reactive when signal_mode is absent | `test/e2e/kubernaut-agent/proactive_signal_mode_test.go` | ✅ Passed |
+| E2E-KA-084-001 | KA returns proactive-aware analysis for signal_mode=proactive | `test/e2e/kubernaut-agent/proactive_signal_mode_test.go` | ✅ Passed |
+| E2E-KA-084-002 | KA returns standard RCA for signal_mode=reactive | `test/e2e/kubernaut-agent/proactive_signal_mode_test.go` | ✅ Passed |
+| E2E-KA-084-003 | KA defaults to reactive when signal_mode is absent | `test/e2e/kubernaut-agent/proactive_signal_mode_test.go` | ✅ Passed |
 
 ---

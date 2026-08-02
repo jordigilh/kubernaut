@@ -9,7 +9,7 @@
 
 ## Context & Problem
 
-The **Dynamic Toolset Service** was originally designed as part of the V1.x HolmesGPT integration architecture to provide automatic service discovery and toolset configuration generation. This service enables HolmesGPT investigations to leverage all available observability tools (Prometheus, Grafana, Jaeger, Elasticsearch, etc.) dynamically based on what's actually deployed in the Kubernetes cluster.
+The **Dynamic Toolset Service** was originally designed as part of the V1.x Kubernaut Agent (KA) integration architecture to provide automatic service discovery and toolset configuration generation. This service enables KA investigations to leverage all available observability tools (Prometheus, Grafana, Jaeger, Elasticsearch, etc.) dynamically based on what's actually deployed in the Kubernetes cluster.
 
 ### Key Challenge
 
@@ -17,7 +17,7 @@ During V1.x development, the **Kubernaut Agent (KA) service architecture** is un
 
 1. **Current Redundancy**: Kubernaut Agent service **already contains built-in logic** to identify **Prometheus** in the cluster. Since V1.x only requires Prometheus integration, a separate Dynamic Toolset Service is **redundant at this point**.
 
-2. **Future Relevance**: When V2.0 expands HolmesGPT integration to **identify other observability services** (Grafana, Jaeger, Elasticsearch, custom services), the Dynamic Toolset Service will **become relevant again** as a centralized service discovery component.
+2. **Future Relevance**: When V2.0 expands KA integration to **identify other observability services** (Grafana, Jaeger, Elasticsearch, custom services), the Dynamic Toolset Service will **become relevant again** as a centralized service discovery component.
 
 3. **V1.x Scope**: V1.x focuses on **Prometheus-only** observability integration, which Kubernaut Agent already handles. Expanding to multi-service discovery is a **V2.0 feature**.
 
@@ -44,15 +44,15 @@ During V1.x development, the **Kubernaut Agent (KA) service architecture** is un
 **Approach**: Complete Dynamic Toolset Service implementation and include in V1.0 release
 
 **Pros**:
-- ✅ Provides automatic service discovery for HolmesGPT
+- ✅ Provides automatic service discovery for Kubernaut Agent (KA)
 - ✅ Eliminates manual toolset configuration burden
 - ✅ Enables real-time adaptation to cluster changes
-- ✅ Improves HolmesGPT investigation quality with comprehensive toolsets
+- ✅ Improves KA investigation quality with comprehensive toolsets
 
 **Cons**:
 - ❌ Adds significant architectural complexity to V1.x
 - ❌ Depends on unfinalized Kubernaut Agent architecture
-- ❌ May require rework if HolmesGPT integration strategy changes
+- ❌ May require rework if KA integration strategy changes
 - ❌ Increases V1.x scope and delays release
 - ❌ Manual toolset configuration is viable alternative for V1.x
 
@@ -73,7 +73,7 @@ During V1.x development, the **Kubernaut Agent (KA) service architecture** is un
 - ✅ Focuses V1.x on core remediation automation capabilities
 
 **Cons**:
-- ⚠️ V1.x requires manual toolset configuration for HolmesGPT (acceptable trade-off)
+- ⚠️ V1.x requires manual toolset configuration for Kubernaut Agent (KA) (acceptable trade-off)
 - ⚠️ Dynamic service discovery deferred until V2.0
 
 **Confidence**: 95% (approved - strategic scope management decision)
@@ -94,7 +94,7 @@ During V1.x development, the **Kubernaut Agent (KA) service architecture** is un
 - ❌ Adds V1.x implementation work without strategic value
 - ❌ May conflict with V2.0 dynamic approach
 
-**Confidence**: 30% (not pursued - defer entire HolmesGPT toolset integration to V2.0)
+**Confidence**: 30% (not pursued - defer entire Kubernaut Agent (KA) toolset integration to V2.0)
 
 ---
 
@@ -118,7 +118,7 @@ During V1.x development, the **Kubernaut Agent (KA) service architecture** is un
 
 **"Defer sophisticated multi-service discovery until V2.0 expands beyond Prometheus."**
 
-The Dynamic Toolset Service was designed to provide automatic discovery of **multiple observability services** (Prometheus, Grafana, Jaeger, Elasticsearch, custom services) and generate HolmesGPT toolset configurations. However, V1.x only requires **Prometheus integration**, which Kubernaut Agent already handles with built-in service discovery logic. This makes Dynamic Toolset **redundant at this point**.
+The Dynamic Toolset Service was designed to provide automatic discovery of **multiple observability services** (Prometheus, Grafana, Jaeger, Elasticsearch, custom services) and generate Kubernaut Agent (KA) toolset configurations. However, V1.x only requires **Prometheus integration**, which Kubernaut Agent already handles with built-in service discovery logic. This makes Dynamic Toolset **redundant at this point**.
 
 When V2.0 expands Kubernaut Agent to identify and integrate with **other observability services**, the Dynamic Toolset Service will **come back into the picture** as a valuable centralized component for managing complex multi-service discovery and toolset configuration. The service is deferred, not abandoned.
 
@@ -185,7 +185,7 @@ When V2.0 expands Kubernaut Agent to identify and integrate with **other observa
 
 ### Negative
 
-- ⚠️ **V1.x Manual Configuration**: Operators must manually configure HolmesGPT toolsets in V1.x
+- ⚠️ **V1.x Manual Configuration**: Operators must manually configure Kubernaut Agent (KA) toolsets in V1.x
   - **Mitigation**: Document clear YAML configuration patterns and provide example ConfigMaps
   - **Impact**: Acceptable for V1.x controlled deployments and early adopters
 
@@ -247,7 +247,7 @@ When V2.0 expands Kubernaut Agent to identify and integrate with **other observa
 - **Metric 2**: V1.x Prometheus-only integration feedback collected - **Target**: >10 production deployments with multi-service observability demand validated
 - **Metric 3**: Dynamic Toolset code refresh effort - **Target**: <2 weeks to align with V2.0 multi-service architecture
 - **Metric 4**: Multi-service discovery value validated - **Target**: >50% reduction in multi-service toolset configuration complexity vs. distributed approach
-- **Metric 5**: HolmesGPT investigation quality improvement - **Target**: Measurable improvement with multi-service observability data vs. Prometheus-only
+- **Metric 5**: Kubernaut Agent (KA) investigation quality improvement - **Target**: Measurable improvement with multi-service observability data vs. Prometheus-only
 
 ---
 

@@ -12,7 +12,7 @@
 
 Kubernaut is a Kubernetes-native alert remediation system that must:
 1. **Process alerts** from Prometheus AlertManager
-2. **Analyze root causes** using AI (HolmesGPT)
+2. **Analyze root causes** using AI (Kubernaut Agent (KA))
 3. **Generate workflows** with multi-step remediation plans
 4. **Execute actions** safely on Kubernetes resources
 5. **Orchestrate** the entire remediation lifecycle
@@ -88,7 +88,7 @@ Separate Kubernetes controllers, each managing its own Custom Resource Definitio
    - Routes to AI Analysis
 
 2. AI Analysis        → AIAnalysis CRD
-   - Investigates root cause (HolmesGPT)
+   - Investigates root cause (Kubernaut Agent (KA))
    - Recommends remediation actions
    - Evaluates approval policies (Rego)
 
@@ -274,7 +274,7 @@ graph TB
 
 #### **1. Fault Isolation**
 ```
-Example: AI Analysis service crashes due to HolmesGPT timeout
+Example: AI Analysis service crashes due to Kubernaut Agent (KA) timeout
 
 Without Fault Isolation (Monolithic):
   ❌ Entire controller crashes
@@ -296,7 +296,7 @@ With Fault Isolation (CRD Microservices):
 Workload Characteristics:
 
 Remediation Processor:      Low CPU,  High I/O  (HTTP calls to Context Service)
-AI Analysis:          High CPU, Low I/O   (HolmesGPT inference)
+AI Analysis:          High CPU, Low I/O   (Kubernaut Agent (KA) inference)
 Workflow Execution:   Low CPU,  Low I/O   (orchestration logic)
 Kubernetes Executor:  Low CPU,  High I/O  (K8s API calls)
 
@@ -314,7 +314,7 @@ Resource Efficiency: 40% reduction vs. scaling all-in-one controller
 Team Structure:
 
 Developer 1: Remediation Processor + Context Service integration
-Developer 2: AI Analysis + HolmesGPT integration + Rego policies
+Developer 2: AI Analysis + Kubernaut Agent (KA) integration + Rego policies
 Developer 3: Workflow Execution + step orchestration
 Developer 4: Kubernetes Executor + action catalog
 Developer 5: Remediation Orchestrator + end-to-end orchestration
@@ -415,8 +415,8 @@ Per-CRD Immutability Decisions:
   - Protection: Consistent context passed to AIAnalysis
   - Status: ✅ RESOLVED (2026-01-19)
 
-- ✅ **AIAnalysis**: Spec immutability prevents RCA target or HAPI response tampering
-  - Protection: AI recommendations cannot be changed post-HAPI validation
+- ✅ **AIAnalysis**: Spec immutability prevents RCA target or Kubernaut Agent (KA) response tampering
+  - Protection: AI recommendations cannot be changed post-KA validation
   - Protection: Workflow selection integrity
   - Status: ✅ RESOLVED (2026-01-19)
 

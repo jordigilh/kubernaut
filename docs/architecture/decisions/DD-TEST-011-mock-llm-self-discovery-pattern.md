@@ -417,7 +417,7 @@ if __name__ == "__main__":
 ```
 
 ```yaml
-# test/infrastructure/holmesgpt_api.go - Mock LLM Deployment
+# test/infrastructure/kubernautagent.go - Mock LLM Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -617,7 +617,7 @@ if __name__ == "__main__":
 
 ### Phase 3: Mock LLM Deployment Manifest
 
-**File**: `test/infrastructure/holmesgpt_api.go` - `deployMockLLMInNamespace()`
+**File**: `test/infrastructure/kubernautagent.go` - `deployMockLLMInNamespace()`
 
 **Add ConfigMap volume mount**:
 ```yaml
@@ -767,7 +767,7 @@ Kubernetes Readiness Detection:
 11. Test BeforeSuite: Detects Mock LLM Ready → Suite continues
     ↓
 Test Execution:
-12. HAPI calls Mock LLM: POST http://mock-llm:8080/v1/chat/completions
+12. Kubernaut Agent (KA) calls Mock LLM: POST http://mock-llm:8080/v1/chat/completions
 13. Mock LLM returns: workflow_id="uuid1" (loaded from ConfigMap)
 14. Tests validate: Expected UUID matches actual DataStorage UUID ✅
 ```
@@ -876,16 +876,16 @@ Test Execution:
 - ✅ `WriteMockLLMConfigFile()` helper validation
 - ✅ DataStorage workflow seeding and UUID capture
 - ✅ Mock LLM container startup with config file
-- ✅ HAPI integration with Mock LLM (file-based UUIDs)
+- ✅ Kubernaut Agent (KA) integration with Mock LLM (file-based UUIDs)
 - ✅ AIAnalysis controller reconciliation
 - ✅ Audit trail validation
 - ✅ Metrics collection
 
 **Critical Fixes Applied**:
-1. **HAPI Dockerfile.e2e**: Added missing `pip install ./src/clients/datastorage`
-   - **Issue**: ImportError preventing HAPI container from starting
+1. **KA Dockerfile.e2e**: Added missing `pip install ./src/clients/datastorage`
+   - **Issue**: ImportError preventing KA container from starting
    - **Fix**: Explicit pip install in Dockerfile (line 38)
-   - **Result**: HAPI imports datastorage client successfully ✅
+   - **Result**: KA imports datastorage client successfully ✅
 
 2. **Integration Test Config Path**: Changed from `/tmp` to test directory
    - **Issue**: macOS clearing `/tmp` between test steps
@@ -904,7 +904,7 @@ Test Execution:
 - ✅ ConfigMap creation with workflow UUIDs
 - ✅ Mock LLM ConfigMap volume mount (Kubernetes-native delivery)
 - ✅ Mock LLM reading ConfigMap-delivered YAML file
-- ✅ HAPI calling Mock LLM with correct UUIDs
+- ✅ KA calling Mock LLM with correct UUIDs
 - ✅ AIAnalysis E2E workflows (OOMKilled, CrashLoopBackOff, NodeNotReady)
 - ✅ Audit trail E2E validation
 - ✅ Error handling and edge cases
@@ -944,7 +944,7 @@ Test Execution:
 
 **Evidence**:
 - 100% test pass rate across all 3 testing tiers
-- All critical bugs fixed (HAPI ImportError, config path)
+- All critical bugs fixed (KA ImportError, config path)
 - Comprehensive documentation (DD-TEST-011 + README)
 - Unit test coverage for configuration loading
 - Validated in real Kubernetes cluster (Kind)
@@ -1011,7 +1011,7 @@ Test Execution:
 - [x] **Python Unit Tests**: 11/11 tests passing ✅
 - [x] **Integration Tests**: 57/57 tests passing ✅ (file mounting validated)
 - [x] **E2E Tests**: 36/36 tests passing ✅ (ConfigMap delivery validated)
-- [x] **Critical Fixes**: HAPI Dockerfile.e2e fix (pip install datastorage client)
+- [x] **Critical Fixes**: Kubernaut Agent (KA) Dockerfile.e2e fix (pip install datastorage client)
 - [x] **Critical Fixes**: Integration test config path fix (/tmp → test directory)
 - [x] **Git Cleanup**: Added `.gitignore` for pytest artifacts
 - [x] **Code Quality**: All code builds without errors

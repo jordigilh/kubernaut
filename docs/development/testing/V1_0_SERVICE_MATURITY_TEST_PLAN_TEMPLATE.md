@@ -46,18 +46,18 @@ This template provides a standardized approach for testing all V1.0 maturity fea
   - `EM` - Effectiveness Monitor
   - `WF` - Workflow (generic)
 
-- **BR_NUMBER**: Business requirement number (e.g., `197` from BR-HAPI-197)
+- **BR_NUMBER**: Business requirement number (e.g., `197` from BR-KA-197)
 
 - **SEQUENCE**: Zero-padded 3-digit sequence (e.g., `001`, `002`, `010`)
 
-**Examples** (from BR-HAPI-197):
+**Examples** (from BR-KA-197):
 - `UT-AA-197-001` - Unit test for AI Analysis service, BR 197, scenario 1
 - `IT-RO-197-001` - Integration test for Remediation Orchestrator, BR 197, scenario 1
 - `E2E-RO-197-002` - End-to-end test for Remediation Orchestrator, BR 197, scenario 2
 
 **Usage in Test Descriptions**:
 ```go
-Describe("UT-AA-197-001: Extract needs_human_review from HAPI response", func() {
+Describe("UT-AA-197-001: Extract needs_human_review from KA response", func() {
     It("should correctly parse needs_human_review field", func() {
         // Test implementation maps to UT-AA-197-001 in test plan
     })

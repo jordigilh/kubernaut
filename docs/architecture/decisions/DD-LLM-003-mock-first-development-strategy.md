@@ -26,7 +26,7 @@
 3. 33 GB model size creates memory-bound workload
 4. Cannot afford multi-hour waits for each code change
 
-**Business Impact**: Holmesgpt-api development blocked by LLM response times.
+**Business Impact**: Kubernaut Agent (KA) development blocked by LLM response times.
 
 ## Decision
 
@@ -61,6 +61,7 @@ Use mock LLM responses during development, validate with real LLM only for final
 ## Business Requirements
 
 ### BR-HAPI-251: Mock-First Development Velocity
+_(no renamed KA-prefixed doc exists; `BR-KA-251` is already used by an unrelated GitOps-detection requirement, so this ID is left as-is)_
 **Requirement**: Development MUST NOT be blocked by LLM infrastructure performance.
 
 **Acceptance Criteria**:
@@ -71,6 +72,7 @@ Use mock LLM responses during development, validate with real LLM only for final
 **Priority**: P0 (Critical)
 
 ### BR-HAPI-252: Production LLM Validation Gate
+_(no renamed KA-prefixed doc exists for this ID)_
 **Requirement**: All features MUST be validated with real LLM before production.
 
 **Acceptance Criteria**:
@@ -81,6 +83,7 @@ Use mock LLM responses during development, validate with real LLM only for final
 **Priority**: P0 (Critical)
 
 ### BR-HAPI-253: LLM Provider Decision Deferral
+_(no renamed KA-prefixed doc exists for this ID)_
 **Requirement**: Production LLM decision deferred until validation complete.
 
 **Acceptance Criteria**:

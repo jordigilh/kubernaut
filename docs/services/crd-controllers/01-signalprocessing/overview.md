@@ -25,7 +25,7 @@
 
 > **📋 Design Decision: Label Detection Architecture (v1.4)**
 > **Impact**: Signal Processing now populates DetectedLabels (V1.0) and CustomLabels (V1.0)
-> **Purpose**: Provide structured labels for workflow filtering via HolmesGPT-API
+> **Purpose**: Provide structured labels for workflow filtering via Kubernaut Agent (KA)
 > **Label Taxonomy**: 5 mandatory labels (DD-WORKFLOW-001 v1.8) + Customer-Derived Labels (Rego) + DetectedLabels
 > **See**: [HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md](HANDOFF_REQUEST_REGO_LABEL_EXTRACTION.md) v3.0, [DD-WORKFLOW-004 v2.1](../../../architecture/decisions/DD-WORKFLOW-004-hybrid-weighted-label-scoring.md)
 
@@ -53,7 +53,7 @@
 - **CustomLabels (V1.0)**: Extract user-defined labels via Rego policies (team, region, etc.)
 - Basic signal validation
 - **Targeting data ONLY** (namespace, resource kind/name, Kubernetes context ~8KB)
-- **NO log/metric storage in CRD** (HolmesGPT fetches via toolsets dynamically)
+- **NO log/metric storage in CRD** (KA fetches via toolsets dynamically)
 
 **Context API DEPRECATED** ([DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md)):
 - Signal Processing NO LONGER queries Context API for recovery context
@@ -66,15 +66,15 @@
 - Predictive environment classification using ML
 - Cross-cluster context enrichment
 
-**Note**: Logs/metrics/traces are NEVER stored in CRDs. HolmesGPT fetches these dynamically using toolsets (`kubernetes`, `prometheus`, `grafana`).
+**Note**: Logs/metrics/traces are NEVER stored in CRDs. KA fetches these dynamically using toolsets (`kubernetes`, `prometheus`, `grafana`).
 
-**Downstream Format Impact (DD-HOLMESGPT-009)**: The enriched context prepared by Signal Processing is consumed by AIAnalysis Controller, which converts it to **self-documenting JSON format** for HolmesGPT API calls. This achieves:
+**Downstream Format Impact (DD-HOLMESGPT-009)**: The enriched context prepared by Signal Processing is consumed by AIAnalysis Controller, which converts it to **self-documenting JSON format** for KA API calls. This achieves:
 - ✅ **60% token reduction** (~730 → ~180 tokens per investigation)
 - ✅ **$1,980/year cost savings** in LLM API costs
 - ✅ **150ms latency improvement** per AI analysis
 - ✅ **98% parsing accuracy maintained**
 
-While Signal Processing doesn't directly call HolmesGPT, its enrichment quality directly impacts downstream token efficiency.
+While Signal Processing doesn't directly call KA, its enrichment quality directly impacts downstream token efficiency.
 
 **Key Architectural Decisions**:
 - CRD-based state management (not HTTP polling)
@@ -439,7 +439,7 @@ func (r *SignalProcessingReconciler) Reconcile(ctx, req) (ctrl.Result, error) {
 
 **Implemented Structure**: `{cmd,pkg,internal}/signalprocessing/`
 
-Following Go idioms and codebase patterns (`testutil`, `holmesgpt`), the Signal Processing service uses a descriptive package name:
+Following Go idioms and codebase patterns (`testutil`, `agentclient`), the Signal Processing service uses a descriptive package name:
 
 ```
 cmd/signalprocessing/     → Main application entry point

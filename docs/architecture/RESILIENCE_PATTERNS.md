@@ -4,6 +4,8 @@
 
 This document describes the comprehensive resilience patterns and failure handling mechanisms implemented in the Kubernaut system to ensure high availability, graceful degradation, and robust error recovery.
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This document describes an in-process fallback chain (a single `AIServiceIntegrator` with an in-process circuit breaker calling a "Direct LLM Analysis" and "Rule-based Fallback") that does not reflect the current CRD-based microservices architecture, where AIAnalysis is a separate controller with Kubernaut Agent (KA) as the sole V1.0 AI provider (no in-process multi-provider LLM fallback chain).
+
 ## Business Requirements Addressed
 
 - **BR-RELIABILITY-001**: 99%+ system uptime requirement
@@ -32,7 +34,7 @@ This document describes the comprehensive resilience patterns and failure handli
 │                                                                 │
 │  Level 1: Service-Level Fallbacks                              │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│  │ HolmesGPT       │─▶│ Direct LLM      │─▶│ Rule-based      │ │
+│  │ KA              │─▶│ Direct LLM      │─▶│ Rule-based      │ │
 │  │ Investigation   │  │ Analysis        │  │ Fallback        │ │
 │  │ (Primary)       │  │ (Secondary)     │  │ (Tertiary)      │ │
 │  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
@@ -65,7 +67,7 @@ This document describes the comprehensive resilience patterns and failure handli
 
 ## Service-Level Failure Patterns
 
-### 1. HolmesGPT Service Failures
+### 1. Kubernaut Agent (KA) Service Failures
 
 **Failure Scenarios:**
 - API endpoint unavailable (network/deployment issues)
@@ -75,7 +77,7 @@ This document describes the comprehensive resilience patterns and failure handli
 
 **Fallback Flow:**
 ```ascii
-HolmesGPT Request Failed
+KA Request Failed
           │
           ▼
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
@@ -93,17 +95,17 @@ HolmesGPT Request Failed
 
 **Implementation:**
 ```go
-// Circuit breaker pattern for HolmesGPT
+// Circuit breaker pattern for KA
 func (ai *AIServiceIntegrator) investigateWithHolmesGPT(ctx context.Context, alert types.Alert) (*InvestigationResult, error) {
     if ai.holmesGPTCircuitBreaker.ShouldBlock() {
-        ai.log.Warn("HolmesGPT circuit breaker is open, falling back to LLM")
+        ai.log.Warn("KA circuit breaker is open, falling back to LLM")
         return ai.investigateWithLLM(ctx, alert)
     }
 
     result, err := ai.holmesGPTClient.Investigate(ctx, &request)
     if err != nil {
         ai.holmesGPTCircuitBreaker.RecordFailure()
-        ai.log.WithError(err).Error("HolmesGPT investigation failed, falling back to LLM")
+        ai.log.WithError(err).Error("KA investigation failed, falling back to LLM")
         return ai.investigateWithLLM(ctx, alert)
     }
 

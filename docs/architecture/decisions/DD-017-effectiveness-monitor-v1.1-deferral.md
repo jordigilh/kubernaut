@@ -63,7 +63,7 @@ Both were valid constraints at the time of the decision.
 
 2. **Level 1 has no data dependency**: Health checks, metric comparisons, and effectiveness scoring work from Day 1. They don't need historical data to accumulate.
 
-3. **Level 2 still benefits from deferral**: AI-powered analysis (HolmesGPT PostExec) requires historical patterns. By V1.1 (~8 weeks post V1.0), Level 1 will have generated sufficient assessment data for Level 2 to provide high-confidence pattern analysis.
+3. **Level 2 still benefits from deferral**: AI-powered analysis (Kubernaut Agent (KA) PostExec) requires historical patterns. By V1.1 (~8 weeks post V1.0), Level 1 will have generated sufficient assessment data for Level 2 to provide high-confidence pattern analysis.
 
 4. **Cooldown alignment**: The EM stabilization window (5 min) aligns with the RO's `RecentlyRemediatedCooldown` (5 min), guaranteeing effectiveness data is available before a new remediation can start for the same target. This is a natural integration point.
 
@@ -179,7 +179,7 @@ T+5m-10m: EM waits for Prometheus metrics (if scrape pending, up to maxWaitForMe
 T+≤10m:   EM finalizes → audit event emitted, EA phase=Completed
 T+≤10m:   RO detects EA completion → updates RR Condition: EffectivenessAssessed=True
 T+5m:     Cooldown expires → if signal fires again, new RR allowed through
-T+5m+:    HAPI queries DS → health/alert effectiveness data IS AVAILABLE
+T+5m+:    KA queries DS → health/alert effectiveness data IS AVAILABLE
 ```
 
 These two values are coupled. If either changes, the other must be reviewed. This constraint must be documented in operational runbooks.
@@ -407,7 +407,7 @@ The existing mutating webhook for `TimeoutConfig` operator attribution (`LastMod
 
 Level 2 remains deferred to V1.1 as originally planned in DD-017 v1.0:
 
-- **HolmesGPT PostExec endpoint** (`/api/v1/postexec/analyze`): Root cause validation, oscillation detection, lesson extraction
+- **KA PostExec endpoint** (`/api/v1/postexec/analyze`): Root cause validation, oscillation detection, lesson extraction
 - **Decision logic**: When to trigger AI analysis (P0 failures, new action types, suspected oscillations, periodic batch)
 - **Pattern learning**: Historical comparison, context-aware effectiveness
 - **Batch processing**: Cost-efficient daily/weekly aggregation
@@ -425,7 +425,7 @@ When Level 2 arrives, it enriches the audit events with:
 - `lessons_learned: [...]` — extracted insights for future investigations
 - `oscillation_detected: true/false` — did the fix cause a different problem?
 
-DS reads these richer fields from the same audit traces. HAPI receives richer context through the same endpoint. No architectural change required.
+DS reads these richer fields from the same audit traces. KA receives richer context through the same endpoint. No architectural change required.
 
 ---
 
@@ -435,7 +435,7 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 
 - V1.0 captures post-remediation state (dual spec hash) — critical for DD-KA-016
 - Deterministic effectiveness scoring from Day 1 — no data dependency
-- HAPI receives pre-computed effectiveness data, reducing LLM investigation burden for past remediations
+- KA receives pre-computed effectiveness data, reducing LLM investigation burden for past remediations
 - Cooldown-EM alignment guarantees data availability before next remediation
 - Audit-trace storage avoids new tables and leverages existing infrastructure
 - CEL immutability protects terminal status fields without webhook overhead

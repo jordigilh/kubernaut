@@ -80,7 +80,7 @@ All services MUST use unique container image tags for integration and E2E tests 
 
 **Mandatory Tag Format**: `{service}-{user}-{git-hash}-{timestamp}`
 
-**Affected Services**: Gateway, Notification, SignalProcessing, RemediationOrchestrator, WorkflowExecution, AIAnalysis, DataStorage, HAPI
+**Affected Services**: Gateway, Notification, SignalProcessing, RemediationOrchestrator, WorkflowExecution, AIAnalysis, DataStorage, Kubernaut Agent (KA)
 
 ---
 
@@ -189,7 +189,7 @@ func GenerateInfraImageName(infrastructure, consumer string) string {
     return fmt.Sprintf("localhost/%s:%s", infrastructure, tag)
 }
 
-// Usage in HAPI E2E setup:
+// Usage in Kubernaut Agent (KA) E2E setup:
 dataStorageImage := GenerateInfraImageName("datastorage", "kubernaut-agent")
 // Result: "localhost/datastorage:kubernaut-agent-1884d074"
 
@@ -211,7 +211,7 @@ spec:
 Different services may require different NodePorts for their E2E infrastructure:
 
 ```go
-// HAPI E2E: NodePort 30098
+// KA E2E: NodePort 30098
 deployDataStorageServiceInNamespaceWithNodePort(ctx, ns, kube, image, 30098, w)
 
 // AIAnalysis E2E: NodePort 30081 (default)
@@ -228,7 +228,7 @@ deployDataStorageServiceInNamespace(ctx, ns, kube, image, w)
 - **Service is unique**: Each service has its own codebase and build
 
 **Affected Infrastructure**:
-- ✅ **datastorage**: Used by HAPI, Gateway, SignalProcessing, WorkflowExecution, Notification, RemediationOrchestrator E2E
+- ✅ **datastorage**: Used by KA, Gateway, SignalProcessing, WorkflowExecution, Notification, RemediationOrchestrator E2E
 - ⚠️ **postgresql**: Currently uses static tags (future enhancement)
 - ⚠️ **redis**: Currently uses static tags (future enhancement)
 
@@ -473,7 +473,7 @@ Create `scripts/cleanup-test-images.sh` in repository root:
 
 set -e
 
-SERVICES=("gateway" "notification" "signalprocessing" "remediationorchestrator" "workflowexecution" "aianalysis" "datastorage" "hapi")
+SERVICES=("gateway" "notification" "signalprocessing" "remediationorchestrator" "workflowexecution" "aianalysis" "datastorage" "kubernautagent")
 
 echo "=== Cleaning up old test images ==="
 
@@ -659,7 +659,7 @@ All services MUST add cleanup for BOTH test tiers:
 5. ⏳ **Notification** - Integration: datastorage/redis, E2E: notification service image
 6. ⏳ **SignalProcessing** - Integration: datastorage/redis, E2E: signalprocessing service image
 7. ⏳ **RemediationOrchestrator** - Integration: datastorage, E2E: remediationorchestrator service image
-8. ⏳ **HAPI** - Integration: datastorage/redis, E2E: hapi service image
+8. ⏳ **KA** - Integration: datastorage/redis, E2E: KA service image
 
 **Verification Commands**:
 
@@ -746,7 +746,7 @@ Each service team MUST complete:
 5. ✅ WorkflowExecution (`cmd/workflowexecution/`)
 6. ✅ AIAnalysis (`cmd/aianalysis/`)
 7. ✅ DataStorage (`cmd/datastorage/`)
-8. ✅ HAPI (`cmd/hapi/`)
+8. ✅ Kubernaut Agent (KA) (`cmd/kubernautagent/`)
 
 ### **Phase 3: CI/CD Integration** (Week 2)
 
@@ -1030,23 +1030,23 @@ Some services build images BEFORE creating the Kind cluster (optimization). Thes
 
 ### **Overview**
 
-Integration tests using containerized infrastructure (PostgreSQL, Redis, DataStorage, HAPI) require correct container networking configuration to enable communication between services. Incorrect networking configuration causes HTTP 500 errors and connection failures.
+Integration tests using containerized infrastructure (PostgreSQL, Redis, DataStorage, Kubernaut Agent (KA)) require correct container networking configuration to enable communication between services. Incorrect networking configuration causes HTTP 500 errors and connection failures.
 
 **Discovered**: January 8, 2026 during AIAnalysis integration test debugging
-**Root Cause**: HAPI unable to reach DataStorage due to incorrect networking configuration
+**Root Cause**: KA unable to reach DataStorage due to incorrect networking configuration
 **Impact**: All integration tests using container-to-container communication
 
 ---
 
 ### 📋 **Problem Statement**
 
-**Symptom**: HTTP 500 errors from HolmesGPT-API (HAPI) during integration tests
+**Symptom**: HTTP 500 errors from KA during integration tests
 ```
-HolmesGPT-API error (HTTP 500): HolmesGPT-API returned HTTP 500:
+KA error (HTTP 500): KA returned HTTP 500:
 decode response: unexpected status code: 500
 ```
 
-**Root Cause**: HAPI configured with incorrect DataStorage URL
+**Root Cause**: KA configured with incorrect DataStorage URL
 ```go
 // ❌ INCORRECT CONFIGURATION
 Env: map[string]string{
@@ -1067,10 +1067,10 @@ Env: map[string]string{
 
 | Communication Type | Source | Target | URL Pattern | Example |
 |-------------------|--------|--------|-------------|---------|
-| **Container → Container** | HAPI container | DataStorage container | `http://{container_name}:{internal_port}` | `http://aianalysis_datastorage_test:8080` ✅ |
+| **Container → Container** | KA container | DataStorage container | `http://{container_name}:{internal_port}` | `http://aianalysis_datastorage_test:8080` ✅ |
 | **Container → Host** | Any container | Host service | `http://host.containers.internal:{host_port}` | `http://host.containers.internal:18095` ✅ |
 | **Host → Container** | Test code | Container service | `http://localhost:{host_port}` | `http://localhost:18095` ✅ |
-| **Container → Container (WRONG)** | HAPI container | DataStorage container | `http://host.containers.internal:{port}` | `http://host.containers.internal:18095` ❌ |
+| **Container → Container (WRONG)** | KA container | DataStorage container | `http://host.containers.internal:{port}` | `http://host.containers.internal:18095` ❌ |
 
 ---
 
@@ -1104,7 +1104,7 @@ Env: map[string]string{
 │ Host Machine (macOS/Linux)                      │
 │                                                 │
 │  Port 18095 → DataStorage Container (port 8080)│
-│  Port 18120 → HAPI Container (port 8080)       │
+│  Port 18120 → KA Container (port 8080)         │
 │                                                 │
 │  ┌─────────────────────────────────────────┐  │
 │  │ aianalysis_test_network (podman)        │  │
@@ -1183,7 +1183,7 @@ Env: map[string]string{
 
 #### **Step 1: Verify Container DNS Resolution**
 ```bash
-# From inside HAPI container, resolve DataStorage container name
+# From inside KA container, resolve DataStorage container name
 podman exec aianalysis_hapi_test nslookup aianalysis_datastorage_test
 
 # Expected output:
@@ -1195,7 +1195,7 @@ podman exec aianalysis_hapi_test nslookup aianalysis_datastorage_test
 
 #### **Step 2: Test Container-to-Container Connectivity**
 ```bash
-# From inside HAPI container, test DataStorage health endpoint
+# From inside KA container, test DataStorage health endpoint
 podman exec aianalysis_hapi_test curl -v http://aianalysis_datastorage_test:8080/health
 
 # Expected: HTTP 200 with {"status":"healthy",...}
@@ -1250,7 +1250,7 @@ Env: map[string]string{
 - ✅ Service A in container needs to reach Service B in container
 - ✅ Both services on same podman network
 - ✅ Integration tests with multiple containerized services
-- ✅ Example: HAPI → DataStorage, Service → PostgreSQL
+- ✅ Example: KA → DataStorage, Service → PostgreSQL
 
 **Format**: `http://{container_name}:{internal_port}`
 
@@ -1393,13 +1393,13 @@ podman exec {container_name} env | grep URL
 
 ```bash
 # Check current test images
-docker images | grep -E "gateway|notification|signalprocessing|remediationorchestrator|workflowexecution|aianalysis|datastorage|hapi"
+docker images | grep -E "gateway|notification|signalprocessing|remediationorchestrator|workflowexecution|aianalysis|datastorage|kubernautagent"
 
 # Check disk usage
 df -h /var/lib/docker
 
 # Count test images by service
-for service in gateway notification signalprocessing remediationorchestrator workflowexecution aianalysis datastorage hapi; do
+for service in gateway notification signalprocessing remediationorchestrator workflowexecution aianalysis datastorage kubernautagent; do
     count=$(docker images | grep "^$service" | wc -l)
     echo "$service: $count images"
 done
@@ -1430,7 +1430,7 @@ docker images --format "{{.Repository}}:{{.Tag}} {{.CreatedAt}}" | \
 - [ ] WorkflowExecution: Pending
 - [ ] AIAnalysis: Pending
 - [ ] DataStorage: Pending
-- [ ] HAPI: Pending
+- [ ] Kubernaut Agent (KA): Pending
 
 ---
 

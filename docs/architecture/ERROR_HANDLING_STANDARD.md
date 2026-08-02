@@ -771,7 +771,7 @@ Go 1.13 introduced error wrapping with `%w` verb. Always use `%w` to preserve er
 func (s *AIAnalysisService) analyzeAlert(ctx context.Context, alert *Alert) error {
     result, err := s.holmesClient.Analyze(ctx, alert)
     if err != nil {
-        return fmt.Errorf("HolmesGPT analysis failed: %w", err)
+        return fmt.Errorf("KA analysis failed: %w", err)
     }
 
     if err := s.storeResult(ctx, result); err != nil {
@@ -1224,7 +1224,7 @@ func (s *AIAnalysisService) callHolmesGPT(ctx context.Context, req *AnalysisRequ
         if err != nil {
             // Classify error to determine if retryable
             if isNetworkError(err) {
-                return errors.NewUpstreamError("ai-analysis", "holmesgpt", err)
+                return errors.NewUpstreamError("ai-analysis", "ka", err)
             }
             return err // Non-retryable
         }
@@ -1232,7 +1232,7 @@ func (s *AIAnalysisService) callHolmesGPT(ctx context.Context, req *AnalysisRequ
     })
 
     if err != nil {
-        return nil, fmt.Errorf("HolmesGPT analysis failed: %w", err)
+        return nil, fmt.Errorf("KA analysis failed: %w", err)
     }
 
     return resp, nil
@@ -1270,7 +1270,7 @@ func (s *DataStorageService) storeWithBudget(ctx context.Context, data *Data) er
 ### When to Use Circuit Breakers
 
 Use circuit breakers for:
-- ✅ External service calls (HolmesGPT, Prometheus)
+- ✅ External service calls (KA, Prometheus)
 - ✅ Inter-service HTTP calls
 - ✅ Database connections
 - ❌ CRD operations (use native Kubernetes backoff)
@@ -1598,22 +1598,22 @@ func (mcb *MetricsCircuitBreaker) Call(fn func() error) error {
 
 ```go
 // Example: Using circuit breaker with upstream service
-type HolmesGPTClient struct {
+type KubernautAgentClient struct {
     breaker *circuitbreaker.MetricsCircuitBreaker
     client  *http.Client
 }
 
-func NewHolmesGPTClient() *HolmesGPTClient {
+func NewKubernautAgentClient() *KubernautAgentClient {
     config := circuitbreaker.Configurations["holmesgpt-external"]
-    breaker := circuitbreaker.NewMetricsCircuitBreaker(config, "ai-analysis", "holmesgpt")
+    breaker := circuitbreaker.NewMetricsCircuitBreaker(config, "ai-analysis", "ka")
 
-    return &HolmesGPTClient{
+    return &KubernautAgentClient{
         breaker: breaker,
         client:  &http.Client{Timeout: 120 * time.Second},
     }
 }
 
-func (c *HolmesGPTClient) Analyze(ctx context.Context, req *AnalysisRequest) (*AnalysisResponse, error) {
+func (c *KubernautAgentClient) Analyze(ctx context.Context, req *AnalysisRequest) (*AnalysisResponse, error) {
     var resp *AnalysisResponse
 
     err := c.breaker.Call(func() error {
@@ -1624,7 +1624,7 @@ func (c *HolmesGPTClient) Analyze(ctx context.Context, req *AnalysisRequest) (*A
 
     if err != nil {
         if err == circuitbreaker.ErrCircuitOpen {
-            return nil, errors.NewUpstreamError("ai-analysis", "holmesgpt", err).
+            return nil, errors.NewUpstreamError("ai-analysis", "ka", err).
                 WithContext("circuit_breaker", "open")
         }
         return nil, err
