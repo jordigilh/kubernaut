@@ -243,11 +243,23 @@ spec:
           mountPath: /etc/prometheus/rules
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
             memory: "256Mi"
-            cpu: "500m"
+            cpu: "200m"
+          limits:
+            # #1839 RCA: 500m (-> GOMAXPROCS=1 per automaxprocs) was
+            # sufficient while the removed Tier 3 pure-LLM fallback silently
+            # absorbed every Prometheus timeout in fullpipeline's much larger,
+            # longer-running E2E suite (many sequential memory-eater
+            # Deployments across many namespaces, all scraped every 10s by
+            # the cluster-wide kubelet-cadvisor job, plus rule evaluation
+            # every 10s, plus concurrent AF severity-triage API calls). With
+            # Tier 3 removed, GetAlerts/GetRules genuinely timing out at the
+            # 10s client deadline (Resilience.Prometheus.RequestTimeout) now
+            # fails RR creation outright instead of being masked. Raising the
+            # limit lets automaxprocs grant >1 core so Prometheus can keep up
+            # with concurrent scrape+eval+API load under this suite's scale.
+            memory: "512Mi"
+            cpu: "1500m"
       volumes:
       - name: config
         configMap:
