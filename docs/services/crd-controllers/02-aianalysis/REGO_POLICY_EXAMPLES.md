@@ -954,4 +954,4 @@ data:
 | [integration-points.md](./integration-points.md) | Rego policy input schema from Kubernaut Agent (KA) |
 | [crd-schema.md](./crd-schema.md) | AIAnalysis status fields populated from Rego |
 | [DD-WORKFLOW-001](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | Label schema (snake_case convention) |
-| [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) | `target_in_owner_chain` and `warnings` source |
+| `AIANALYSIS_TO_HOLMESGPT_API_TEAM.md` (docs/handoff/, deleted in the repo-wide non-authoritative docs purge) | `target_in_owner_chain` and `warnings` source (superseded — see [DD-KA-006](../../../architecture/decisions/DD-KA-006-remediation-target-in-rca.md) for the current `remediationTarget` mechanism) |

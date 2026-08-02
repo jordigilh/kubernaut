@@ -62,7 +62,7 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 **Reference Documents** (do NOT define BRs):
 - `docs/architecture/decisions/DD-CONTRACT-002-service-integration-contracts.md` - Integration contracts
-- `docs/architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md` - Recovery flow
+- `DD-RECOVERY-002` - Recovery flow design (archived/deleted, Issue #180 recovery-flow deprecation; no longer on disk)
 - `docs/architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md` - Workflow catalog
 
 ---

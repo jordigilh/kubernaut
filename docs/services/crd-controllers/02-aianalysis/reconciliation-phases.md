@@ -11,7 +11,7 @@
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
 | **v2.3** | 2026-08-02 | **#1806 CORRECTION**: Fixed the remaining stale sections not covered by the prior validation-focused pass (#1847): Phase 2 (Investigating) rewritten from a single 60s synchronous HolmesGPT-API call to the real async submit/poll/result session flow against Kubernaut Agent (KA) with a 25-minute wall-clock cap (BR-AA-HAPI-064); corrected the Phase Overview table/diagram, Phase Timeout Configuration section, Rego policy input/output examples (`require_approval`/`reason`, not `AUTO_APPROVE`/`MANUAL_APPROVAL_REQUIRED`), Recovery Attempts section (`isRecoveryAttempt`/`previousExecutions` do not exist on the current CRD spec), and the Metrics section (the referenced `kubernaut_aianalysis_phase_duration_seconds` metric does not exist; see `metrics-slos.md` for the real 4 metrics) | #1806, BR-AA-HAPI-064 |
-| **v2.2** | 2025-12-09 | **V1.0 COMPLIANCE AUDIT**: (1) Timeout should be `spec.TimeoutConfig` not annotation (pending RO clarification); (2) Recovery attempts must use `/api/v1/recovery/analyze` endpoint (pending HAPI confirmation); (3) Recovery fields must be passed to HAPI | [NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md](../../../handoff/NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md), [REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md](../../../handoff/REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md) |
+| **v2.2** | 2025-12-09 | **V1.0 COMPLIANCE AUDIT**: (1) Timeout should be `spec.TimeoutConfig` not annotation (pending RO clarification); (2) Recovery attempts must use `/api/v1/recovery/analyze` endpoint (pending HAPI confirmation); (3) Recovery fields must be passed to HAPI | `NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md`, `REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md` (both docs/handoff/, deleted in the repo-wide non-authoritative docs purge) |
 | v2.1 | 2025-12-06 | **BR-HAPI-197**: Added `SubReason` field for granular failure tracking; Removed `Recommending` from Phase enum; Added failure taxonomy | BR-HAPI-197, DD-HAPI-002 v1.2 |
 | v2.0 | 2025-11-30 | **REGENERATED**: Removed "Approving" phase (V1.0); Removed BR-AI-051-053 (dependency validation); Simplified to 4-phase flow; Added DetectedLabels/CustomLabels handling | DD-RECOVERY-002, BR_MAPPING v1.2 |
 | v1.1 | 2025-10-20 | Added approval context population | ADR-018 |
@@ -396,11 +396,11 @@ status:
 > **⚠️ Correction (#1806)**: This section previously described `spec.isRecoveryAttempt`,
 > `spec.recoveryAttemptNumber`, and `spec.previousExecutions` fields. As of the current
 > `AIAnalysisSpec` (`api/aianalysis/v1alpha1/aianalysis_types.go`), **none of these fields
-> exist** — there is no recovery-attempt input contract on the CRD spec today. Recovery/retry
-> flow design is tracked separately in
-> [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md);
-> if/when a recovery-attempt input contract ships, it should be documented here against the
-> real spec fields rather than the illustrative example below.
+> exist** — there is no recovery-attempt input contract on the CRD spec today. The recovery/retry
+> flow design (`DD-RECOVERY-002`) was archived/deleted when the recovery flow itself was
+> deprecated (Issue #180) — recovery now flows through Gateway re-fire (BR-AA-HAPI-064.9), not a
+> dedicated AIAnalysis spec field. If/when a recovery-attempt input contract ships, it should be
+> documented here against the real spec fields rather than the illustrative example below.
 
 ---
 
@@ -490,4 +490,4 @@ RemediationOrchestrator creates WorkflowExecution (if approved)
 | [Overview](./overview.md) | Service architecture |
 | [Controller Implementation](./controller-implementation.md) | Reconciler logic |
 | [Rego Policy Examples](./REGO_POLICY_EXAMPLES.md) | Approval policy patterns |
-| [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) | Recovery flow design |
+| `DD-RECOVERY-002` | Recovery flow design (archived/deleted, Issue #180 recovery-flow deprecation; no longer on disk) |

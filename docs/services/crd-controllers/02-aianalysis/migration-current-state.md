@@ -19,7 +19,7 @@
 
 **Why Deprecated**: AI analysis should work on ALL signal types (Prometheus alerts, Kubernetes events, AWS CloudWatch alarms), not just alerts.
 
-**Migration Decision**: [ADR-015: Alert to Signal Naming Migration](../../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md)
+**Migration Decision**: [ADR-015: Alert to Signal Naming Migration](../../../architecture/decisions/ADR-015-alert-to-signal-naming-migration.md)
 
 **Current Naming Standard**: `AlertContext` → **`SignalContext`**
 
