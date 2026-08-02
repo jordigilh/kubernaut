@@ -245,6 +245,80 @@ func fleetClusterIDScenarioYAML(fleetNS string) string {
 `, fleetNS)
 }
 
+// combinedRemediateInvestigateScenarioYAML returns a keyword scenario for
+// issue #1853 mode 2 (Interactive, single combined message): a single A2A
+// message containing both "create a remediation" and "investigate" intent
+// triggers kubernaut_remediate followed by kubernaut_investigate (using the
+// server-generated rr_id, resolved via $from_tool), stopping at RCA --
+// mirroring the original #1853 bug report exactly (the LLM auto-proceeds
+// from remediate straight into investigate without a second user turn).
+// Returns "" if ns is empty (namespace isolation not configured for this key).
+func combinedRemediateInvestigateScenarioYAML(ns string) string {
+	if ns == "" {
+		return ""
+	}
+	return fmt.Sprintf(`      - name: "af_remediate_investigate_combined_1853"
+        keywords: ["create and investigate remediation"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_remediate"
+          arguments:
+            namespace: "%s"
+            kind: "Deployment"
+            name: "memory-eater"
+            api_version: "apps/v1"
+            description: "FP E2E combined remediate+investigate request (#1853)"
+        next_tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+`, ns)
+}
+
+// fullInteractiveRemediationScenarioYAML returns a keyword scenario for issue
+// #1853 mode 3 ("Full Interactive Remediation" / autonomous-interactive, per
+// pkg/apifrontend/agent/prompt.txt): a single combined "investigate and fix"
+// message triggers kubernaut_investigate directly from namespace/kind/name
+// (InvestigateMCPArgs supports creating a new RR+IS without a prior
+// kubernaut_remediate call), then auto-chains discover_workflows ->
+// select_workflow (highest-confidence workflow, no pause for manual
+// selection) -> watch, all within the same conversation turn -- exercising
+// the #1853 N-deep NextToolCall chaining fix end to end. selectWorkflowID
+// must be the real seeded catalog UUID (see afSelectWorkflowID /
+// resolveWorkflowUUID above): $from_tool cannot reach discover_workflows'
+// nested recommended.workflow_id field, so the LLM "reads" the recommended
+// workflow the same way afSelectWorkflowID already does for the manual-select
+// scenario below. Returns "" if ns is empty.
+func fullInteractiveRemediationScenarioYAML(ns, selectWorkflowID string) string {
+	if ns == "" {
+		return ""
+	}
+	return fmt.Sprintf(`      - name: "af_full_interactive_remediation_1853"
+        keywords: ["investigate and fix remediation"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            namespace: "%s"
+            kind: "Deployment"
+            name: "memory-eater"
+            api_version: "apps/v1"
+        next_tool_call:
+          name: "kubernaut_discover_workflows"
+          arguments:
+            rr_id: "$from_tool:kubernaut_investigate:rr_id"
+          next_tool_call:
+            name: "kubernaut_select_workflow"
+            arguments:
+              rr_id: "$from_tool:kubernaut_investigate:rr_id"
+              workflow_id: "%s"
+            next_tool_call:
+              name: "kubernaut_watch"
+              arguments:
+                name: "$from_tool:kubernaut_investigate:rr_id"
+`, ns, selectWorkflowID)
+}
+
 // resolveWorkflowUUID looks up the real catalog UUID seeded for a workflow
 // fixture (keyed "<workflowName>:<environment>" in workflowUUIDs, per
 // SeedWorkflowsViaKubectlApply/SeedWorkflowsViaDirectCRDCreationFromKubeconfig)
@@ -371,7 +445,15 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 	// invalid_workflow (silently, unless the caller strictly asserts on
 	// tool-call success) -- root cause of the E2E-FP-1189-005 Turn 5 stall.
 	afSelectWorkflowID := resolveWorkflowUUID(workflowUUIDs, "oomkill-increase-memory-v1")
-	afKeywordYAML := "keyword_scenarios:\n" + remediateScenarios + `      - name: "af_investigate"
+	// #1853 mode 2/3 scenarios are registered before af_investigate below:
+	// both keywords contain the substring "investigate", and mock-llm's
+	// registry breaks confidence ties (all keyword_scenarios score 1.0) by
+	// registration order, so these must come first to win over the bare
+	// "investigate" keyword.
+	afKeywordYAML := "keyword_scenarios:\n" + remediateScenarios +
+		combinedRemediateInvestigateScenarioYAML(afRemediateNS["combined-investigate"]) +
+		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afSelectWorkflowID) +
+		`      - name: "af_investigate"
         keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
         repeat_tool_call: true
@@ -379,6 +461,11 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           name: "kubernaut_investigate"
           arguments:
             rr_id: "$from_tool:kubernaut_remediate:rr_id"
+          fallback_arguments:
+            namespace: "kubernaut-system"
+            kind: "Deployment"
+            name: "memory-eater"
+            api_version: "apps/v1"
       - name: "af_discover_workflows"
         keywords: ["discover available workflows", "discover workflows"]
         match_last_only: true

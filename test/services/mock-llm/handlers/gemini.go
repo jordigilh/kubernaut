@@ -170,24 +170,26 @@ func (h *handler) handleGeminiToolResponse(
 	// fall through to text response instead of re-emitting the tool call.
 	repeatAllowed := cfg.RepeatToolCall && !response.LastContentIsFunctionResponse(contents)
 
-	// NextToolCall: when the initial tool has been called (FunctionResponse
-	// present) and a chained next_tool_call is configured, emit it. This
-	// simulates the LLM auto-proceeding to a second tool in the same session.
-	//
-	// Guard against infinite NextToolCall loops (#1409): fire at most once —
-	// stop once NextToolCall's own target tool has already responded anywhere
-	// in history. Without this, the ADK reasoning loop keeps calling back
-	// after NextToolCall's FunctionResponse is appended, and this handler
-	// would re-fire the same NextToolCall forever (see HasFunctionResponseNamed
-	// doc for the confirmed failure mode).
-	nextToolAlreadyFired := cfg.NextToolCall != nil && response.HasFunctionResponseNamed(contents, cfg.NextToolCall.Name)
-	if hasFunctionResults && cfg.NextToolCall != nil && !nextToolAlreadyFired {
-		h.trackToolCall(cfg.NextToolCall.Name)
-		writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(cfg.NextToolCall.Name, scenarios.MockScenarioConfig{
-			ToolCallName: cfg.NextToolCall.Name,
-			ToolCallArgs: cfg.NextToolCall.Arguments,
-		}))
-		return
+	// NextToolCall chain: once N tool/function responses exist, fire the Nth
+	// chained call (1-indexed), resolving any $from_tool templates in its
+	// arguments against the conversation so far. Generalizes the original
+	// single-NextToolCall behavior to arbitrary depth (issue #1853), e.g.
+	// investigate -> discover_workflows -> select_workflow -> watch, while
+	// preserving the #1409 "fire at most once per link" guard: once
+	// priorResponseCount exceeds the chain length, nextChainCallByCount
+	// returns nil and this falls through to the normal DAG/text path.
+	if chain := flattenToolCallChain(cfg.NextToolCall); len(chain) > 0 {
+		if next := nextChainCallByCount(chain, response.CountFunctionResponses(contents)); next != nil {
+			args := resolveTemplateArgsMap(next.Arguments, next.FallbackArguments, func(toolName, field string) string {
+				return response.ExtractFieldFromFunctionResponse(contents, toolName, field)
+			})
+			h.trackToolCall(next.Name)
+			writeJSON(w, http.StatusOK, response.BuildGeminiToolCallResponse(next.Name, scenarios.MockScenarioConfig{
+				ToolCallName: next.Name,
+				ToolCallArgs: args,
+			}))
+			return
+		}
 	}
 
 	if len(cfg.MultiToolCalls) > 0 && (!hasFunctionResults || repeatAllowed) {
@@ -262,24 +264,9 @@ func firstDeclaredTool(tools []response.GeminiToolDecl) string {
 // The map is cloned before mutation to avoid data races and state leaks
 // across concurrent requests sharing the same scenario singleton.
 func resolveGeminiTemplateArgs(contents []response.GeminiContent, cfg *scenarios.MockScenarioConfig) {
-	if len(cfg.ToolCallArgs) == 0 {
-		return
-	}
-	cfg.ToolCallArgs = cloneAnyMap(cfg.ToolCallArgs)
-	for k, v := range cfg.ToolCallArgs {
-		sv, ok := v.(string)
-		if !ok || !strings.HasPrefix(sv, templatePrefix) {
-			continue
-		}
-		parts := strings.SplitN(sv[len(templatePrefix):], ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		toolName, field := parts[0], parts[1]
-		if resolved := response.ExtractFieldFromFunctionResponse(contents, toolName, field); resolved != "" {
-			cfg.ToolCallArgs[k] = resolved
-		}
-	}
+	cfg.ToolCallArgs = resolveTemplateArgsMap(cfg.ToolCallArgs, cfg.FallbackArguments, func(toolName, field string) string {
+		return response.ExtractFieldFromFunctionResponse(contents, toolName, field)
+	})
 }
 
 func cloneAnyMap(m map[string]interface{}) map[string]interface{} {

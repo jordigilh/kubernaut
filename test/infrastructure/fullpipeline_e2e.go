@@ -442,6 +442,18 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		// full RO->SP->AA->KA->WE pipeline run to completion (see session notes,
 		// issue #1189).
 		"interactive-streaming": fmt.Sprintf("fp-ints-%s", uuid.New().String()[:8]),
+		// combined-investigate: dedicated namespace for E2E-FP-1853-001
+		// (issue #1853 mode 2 — Interactive, single combined message):
+		// "create and investigate remediation" triggers kubernaut_remediate
+		// chained into kubernaut_investigate within one turn, stopping at RCA.
+		"combined-investigate": fmt.Sprintf("fp-comb-%s", uuid.New().String()[:8]),
+		// full-interactive: dedicated namespace for E2E-FP-1853-002 (issue
+		// #1853 mode 3 — "Full Interactive Remediation" / autonomous-interactive
+		// per pkg/apifrontend/agent/prompt.txt): "investigate and fix
+		// remediation" triggers kubernaut_investigate chained all the way
+		// through discover_workflows -> select_workflow -> watch with no
+		// pause for manual workflow selection.
+		"full-interactive": fmt.Sprintf("fp-full-%s", uuid.New().String()[:8]),
 	}
 	_, _ = fmt.Fprintln(writer, "  📌 AF remediate namespaces:")
 	for key, ns := range afRemediateNS {
