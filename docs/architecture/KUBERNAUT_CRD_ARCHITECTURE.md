@@ -850,6 +850,8 @@ sequenceDiagram
 
 **Note**: This is a *separate* code path from the Gateway-driven autonomous flow above. apifrontend both creates `RemediationRequest`s directly and calls Kubernaut Agent directly — it does not go through the AIAnalysis controller for its own interactive investigations. Once a `RemediationRequest` exists (from either entry point), it is coordinated identically by RemediationOrchestrator.
 
+> **Note**: An older "Service Feature Breakdown" section previously duplicated this information using stale content (HolmesGPT-API as a standalone Python service, Context API, Dynamic Toolset as active dependencies, `RemediationExecution`/`AIApprovalRequest` CRD names, and a uniform "8080 (API/health)" port claim for every service). It was removed in the Issue #1806 rewrite — the [CRD Controllers](#crd-controllers) and [Stateless & Hybrid Services](#stateless--hybrid-services) sections above are the single, current source of truth for per-service features, CRD names, and ports.
+
 ---
 
 ## Reconciliation Patterns

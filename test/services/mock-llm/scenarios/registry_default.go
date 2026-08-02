@@ -57,6 +57,22 @@ func applyOverride(cs *configScenario, ov config.ScenarioOverride) {
 	}
 }
 
+// convertToolCallChain recursively converts a YAML-parsed ToolCallOverride
+// chain (config.ToolCallOverride.NextToolCall) into the scenario-internal
+// MultiToolCallEntry linked-list representation, preserving arbitrary chain
+// depth (issue #1853).
+func convertToolCallChain(tc *config.ToolCallOverride) *MultiToolCallEntry {
+	if tc == nil {
+		return nil
+	}
+	return &MultiToolCallEntry{
+		Name:              tc.Name,
+		Arguments:         tc.Arguments,
+		NextToolCall:      convertToolCallChain(tc.NextToolCall),
+		FallbackArguments: tc.FallbackArguments,
+	}
+}
+
 // applyAlternativeOverrides replaces deterministic UUIDs in a scenario's
 // Alternatives with the real DataStorage UUIDs from the overrides map.
 func applyAlternativeOverrides(cs *configScenario, overrides map[string]config.ScenarioOverride) {
@@ -127,19 +143,15 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 		// ADK agent conversations.
 		for _, ks := range overrides.KeywordScenarios {
 			cfg := MockScenarioConfig{
-				ScenarioName:   ks.Name,
-				ToolCallName:   ks.ToolCall.Name,
-				ToolCallArgs:   ks.ToolCall.Arguments,
-				ForceText:      BoolPtr(false),
-				RepeatToolCall: ks.RepeatToolCall,
-				ThoughtText:    ks.ThoughtText,
+				ScenarioName:      ks.Name,
+				ToolCallName:      ks.ToolCall.Name,
+				ToolCallArgs:      ks.ToolCall.Arguments,
+				FallbackArguments: ks.ToolCall.FallbackArguments,
+				ForceText:         BoolPtr(false),
+				RepeatToolCall:    ks.RepeatToolCall,
+				ThoughtText:       ks.ThoughtText,
 			}
-			if ks.NextToolCall != nil {
-				cfg.NextToolCall = &MultiToolCallEntry{
-					Name:      ks.NextToolCall.Name,
-					Arguments: ks.NextToolCall.Arguments,
-				}
-			}
+			cfg.NextToolCall = convertToolCallChain(ks.NextToolCall)
 			if ks.MatchLastOnly {
 				r.Register(lastUserKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))
 			} else {

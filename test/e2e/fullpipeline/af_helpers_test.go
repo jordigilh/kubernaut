@@ -457,10 +457,12 @@ func fpWaitForRR(nameSubstring string, timeout time.Duration) string {
 }
 
 // fpWaitForRRWithTargetNS polls for a RemediationRequest whose targetResource.name
-// contains nameSubstring AND whose spec.targetResource.namespace equals targetNS.
+// contains "memory-eater" AND whose spec.targetResource.namespace equals targetNS.
 // This avoids picking up RRs from parallel tests that share the same name pattern
-// but target different namespaces.
-func fpWaitForRRWithTargetNS(nameSubstring, targetNS string, timeout time.Duration) string {
+// but target different namespaces. Every FP suite caller targets the shared
+// "memory-eater" fixture Deployment, so the name is fixed rather than parameterized.
+func fpWaitForRRWithTargetNS(targetNS string, timeout time.Duration) string {
+	const nameSubstring = "memory-eater"
 	var rrName string
 	Eventually(func() bool {
 		rrList := &remediationv1.RemediationRequestList{}

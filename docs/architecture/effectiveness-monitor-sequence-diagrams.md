@@ -1,210 +1,185 @@
 # Effectiveness Monitor - Sequence Diagrams
 
-**Date**: October 16, 2025
-**Purpose**: Visual representation of Effectiveness Monitor workflows
-**Service**: Effectiveness Monitor (Hybrid Automated + AI Analysis)
-**Reference**: [DD-EFFECTIVENESS-001](decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md)
+**Version**: v2.0
+**Last Updated**: 2026-08-02
+**Purpose**: Visual representation of Effectiveness Monitor (EM) workflows
+**Service**: Effectiveness Monitor — a Kubernetes CRD controller (V1.0 Level 1, implemented) with a genuinely planned, **not yet built** V1.1 Level 2 AI-analysis extension
+**Reference**: [DD-EFFECTIVENESS-001](decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md) (original hybrid-approach rationale and Level 2 trigger taxonomy — proposal, not spec), [DD-017](decisions/DD-017-effectiveness-monitor-v1.1-deferral.md) (current, authoritative V1.0/V1.1 scoping), [ADR-EM-001](decisions/ADR-EM-001-effectiveness-monitor-service-integration.md) (authoritative V1.0 integration architecture)
+
+---
+
+## 📋 Changelog
+
+| Version | Date | Changes | Reference |
+|---------|------|---------|-----------|
+| v2.0 | 2026-08-02 | **#1806 CORRECTION**: Replaced the fictional "stateless HTTP service" diagrams (`EffectivenessMonitor Controller` → `EffectivenessMonitor Service` via `POST /internal/assess`, `RR` annotations, port 8080) with the real V1.0 CRD-watch flow (RO creates `EffectivenessAssessment` CRD → EM controller-runtime watch → 4 deterministic scorers → typed audit events to DataStorage → DataStorage computes weighted score on demand → RO watches EA completion). Relabeled the AI-analysis flow as "⚠️ PLANNED V1.1 — NOT YET IMPLEMENTED" and rebuilt it on top of the real EA/EM foundation instead of the fictional service-to-service call chain. Renamed "HolmesGPT API" to "(planned) Kubernaut Agent (KA) PostExec endpoint" throughout. Corrected the "Watch Strategy" note (EM watches the EA CRD, not `RemediationRequest` — `DD-EFFECTIVENESS-003` is superseded per DD-017 v2.2). Removed the "Context API Service" integration point (deprecated Nov 2025, `DD-CONTEXT-006`). Fixed the 3 references at the bottom of this document to resolve to the post-move `docs/services/crd-controllers/07-effectivenessmonitor/` paths (one — the `api-specification.md` → `crd-schema.md` rename — had already been partially corrected in a prior pass on this branch). | [#1806](https://github.com/jordigilh/kubernaut/issues/1806), [ADR-EM-001](decisions/ADR-EM-001-effectiveness-monitor-service-integration.md) |
+| v1.0 | 2025-10-16 | ⚠️ **STALE (superseded by v2.0)** — Original diagrams described a fictional stateless HTTP architecture with a live selective-AI-analysis endpoint; never built as such. | — |
 
 ---
 
 ## Overview
 
-The Effectiveness Monitor uses a **hybrid approach** with two distinct flows:
+The Effectiveness Monitor has **one implemented flow and one planned, unbuilt flow**:
 
-1. **Automated Assessment Only** (99.3% of cases) - Fast, computational analysis
-2. **Automated + AI Analysis** (0.7% of cases) - Comprehensive AI-powered insights
+1. **V1.0 Level 1 — Deterministic Automated Assessment** (✅ implemented, 100% of assessments) — a Kubernetes CRD controller reconciling `EffectivenessAssessment` (EA) CRDs, running 4 independent, deterministic component scorers. Zero AI/LLM calls.
+2. **V1.1 Level 2 — AI-Powered Analysis** (⚠️ **PLANNED, NOT YET IMPLEMENTED** — a design proposal, see [DD-017](decisions/DD-017-effectiveness-monitor-v1.1-deferral.md)) — selectively triggered AI analysis via a **(planned)** Kubernaut Agent (KA) PostExec endpoint, for high-value cases (P0 failures, first-time action types, suspected oscillations, periodic batch analysis).
 
-This document provides detailed sequence diagrams for both scenarios with real-world examples.
+This document provides sequence diagrams for both: Flow 1 reflects the real, shipped V1.0 architecture; Flow 2 is a **forward-looking design proposal** for V1.1, clearly marked as such, preserved because the decision-trigger taxonomy and illustrative reasoning behind it retain genuine planning value (see [DD-EFFECTIVENESS-001](decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md)).
+
+EM has **zero AI/LLM dependency in V1.0** — confirmed via repo-wide grep: no HolmesGPT, HAPI, or Kubernaut Agent (KA) client reference anywhere in `pkg/effectivenessmonitor/` or `internal/controller/effectivenessmonitor/`.
 
 ---
 
-## Flow 1: Automated Assessment Only (Routine Success)
+## Flow 1: V1.0 Level 1 — Deterministic Automated Assessment (✅ Implemented, 100% of Assessments)
 
 ### Scenario
 - **Alert**: High memory usage (OOMKilled)
 - **Action**: Scale deployment from 3 to 5 replicas
-- **Result**: SUCCESS (memory stabilized)
-- **Priority**: P2 (medium)
-- **AI Decision**: SKIP (routine success, no anomalies)
+- **Result**: SUCCESS (memory stabilized, alert resolved)
+- **AI involvement**: None — every check below is deterministic and rule-based
 
 ### Sequence Diagram
 
 ```mermaid
 sequenceDiagram
-    participant K8s as Kubernetes API
+    participant RO as RemediationOrchestrator
     participant RR as RemediationRequest CRD
-    participant EMC as EffectivenessMonitor<br/>Controller
-    participant EMS as EffectivenessMonitor<br/>Service
-    participant DS as Data Storage<br/>(PostgreSQL)
-    participant IM as Infrastructure<br/>Monitoring
+    participant EA as EffectivenessAssessment CRD
+    participant EM as Effectiveness Monitor<br/>(controller-runtime watch)
+    participant K8s as Kubernetes API
+    participant Prom as Prometheus
+    participant AM as AlertManager
+    participant DS as DataStorage
 
-    Note over K8s,IM: Example: Scale deployment 3→5 replicas for OOMKilled alert
+    Note over RO,DS: Example: Scale deployment 3→5 replicas for OOMKilled alert
 
-    %% Step 1: Remediation completes
-    K8s->>RR: Update status.overallPhase = "completed"
-    RR->>RR: Set success = true<br/>completionTime = 2025-10-16T10:30:00Z
+    %% Step 1: RR reaches terminal/verifying phase
+    RO->>RR: RemediationRequest reaches Verifying (workflow completed)
+    RO->>RR: Set Condition EffectivenessAssessed=False
+    RO->>EA: Create EffectivenessAssessment CRD<br/>(ownerRef → RR, correlationID = RR.Name)
 
-    %% Step 2: Controller detects
-    EMC->>RR: Watch event (overallPhase="completed")
-    EMC->>EMC: Wait 5 minutes<br/>(stabilization period)
+    Note over EM,EA: Step 2: EM controller-runtime watch detects new EA CRD
+    EM-->>EA: Watch event (generation change on creation)
+    EM->>EM: Compute derived timing:<br/>validityDeadline, prometheusCheckAfter, alertManagerCheckAfter
+    EM->>EA: Update status: validityDeadline, prometheusCheckAfter, alertManagerCheckAfter
+    EM->>DS: audit: effectiveness.assessment.scheduled
 
-    Note over EMC: Watches RemediationRequest (user-facing API)<br/>Future-proof against workflow implementation changes
+    Note over EM: Step 3: Guard — stabilization window (default 5m)
+    alt stabilization not yet elapsed
+        EM-->>EM: RequeueAfter(remaining stabilization time)
+    end
 
-    EMC->>DS: Check if already processed<br/>(idempotency: RemediationRequest.UID)
-    DS-->>EMC: Not processed
+    Note over EM,K8s: Step 4 — Health check (immediate, deterministic decision tree)
+    EM->>K8s: GET target resource (pod status, readiness, restarts)
+    K8s-->>EM: Resource status
+    EM->>EA: Update status: healthAssessed=true, healthScore=1.0
+    EM->>DS: audit: effectiveness.health.assessed
 
-    %% Step 3: Trigger assessment
-    EMC->>EMS: POST /internal/assess<br/>{<br/>  "workflow_execution_uid": "abc-123",<br/>  "trace_id": "trace-xyz",<br/>  "action_type": "scale_deployment"<br/>}
+    Note over EM,K8s: Step 5 — Post-remediation spec hash (SHA-256)
+    EM->>K8s: GET target resource .spec (uncached)
+    K8s-->>EM: Current .spec
+    EM->>EA: Update status: hashComputed=true, postRemediationSpecHash
+    EM->>DS: audit: effectiveness.hash.computed
 
-    %% Step 4: Automated assessment
-    EMS->>DS: Get pre-execution metrics<br/>(t - 10min)
-    DS-->>EMS: {"memory_usage": "95%", "pod_count": 3}
+    Note over EM,AM: Step 6 — Alert resolution check
+    EM->>AM: GET active alerts filtered by signal name
+    AM-->>EM: No active alerts (resolved)
+    EM->>EA: Update status: alertAssessed=true, alertScore=1.0
+    EM->>DS: audit: effectiveness.alert.assessed
 
-    EMS->>IM: Get post-execution metrics<br/>(current)
-    IM-->>EMS: {"memory_usage": "62%", "pod_count": 5}
+    Note over EM,Prom: Step 7 — Metric comparison (may require requeue if scrape pending)
+    EM->>Prom: Query CPU, memory, latency p95, error rate (pre vs. post)
+    Prom-->>EM: Metric deltas
+    EM->>EA: Update status: metricsAssessed=true, metricsScore=1.0
+    EM->>DS: audit: effectiveness.metrics.assessed
 
-    EMS->>EMS: Calculate automated assessment:<br/>- Basic score: 0.85<br/>- Health checks: PASS<br/>- Metric improvements: memory -33%<br/>- Anomalies: []
+    Note over EM,DS: Step 8 — Finalize (lifecycle marker, no score computed by EM)
+    EM->>EA: Update status: phase=Completed, assessmentReason=Full
+    EM->>DS: audit: effectiveness.assessment.completed
+    EM->>K8s: Event(Normal, EffectivenessAssessed) on EA
 
-    %% Step 5: Decision point
-    EMS->>EMS: shouldCallAI()?<br/>- P2 priority + SUCCESS<br/>- No anomalies<br/>- Not new action type<br/>→ FALSE (routine success)
+    Note over DS: DataStorage computes the weighted score on demand:<br/>health×0.40 + alert×0.35 + metrics×0.25<br/>(consumed later by Kubernaut Agent (KA) via remediation history context, DD-KA-016)
 
-    Note over EMS: AI call skipped - routine success<br/>Automated assessment sufficient
-
-    %% Step 6: Store results
-    EMS->>DS: Store assessment:<br/>{<br/>  "effectiveness_score": 0.85,<br/>  "confidence": 0.75,<br/>  "analysis_type": "automated",<br/>  "metrics": {...}<br/>}
-    DS-->>EMS: Stored (assessment_id: assess-456)
-
-    %% Step 7: Update status
-    EMS->>RR: Update annotation:<br/>"effectiveness.kubernaut.io/score": "0.85"<br/>"effectiveness.kubernaut.io/confidence": "0.75"
-    RR-->>EMS: Updated
-
-    EMS-->>EMC: 200 OK<br/>{<br/>  "assessment_id": "assess-456",<br/>  "effectiveness_score": 0.85,<br/>  "analysis_used": "automated_only"<br/>}
-
-    Note over K8s,IM: Total time: ~150ms<br/>Cost: Negligible (computational only)
+    Note over RO,EA: Step 9 — RO detects EA completion
+    RO-->>EA: Watch detects EA phase=Completed
+    RO->>RO: Transition RR Verifying → Completed
+    RO->>RR: Update Condition: EffectivenessAssessed=True
 ```
 
-### Key Points - Automated Only
+> This is a condensed illustrative walkthrough. For the fully detailed, authoritative sequence diagrams (including alert-decay cross-validation, async hash deferral, spec-drift short-circuit, and failed/timed-out paths), see [ADR-EM-001](decisions/ADR-EM-001-effectiveness-monitor-service-integration.md) §§3–5.
+
+### Key Points - V1.0 Level 1 (Implemented)
 
 | Aspect | Value |
 |--------|-------|
-| **Trigger** | Routine success, no anomalies, non-P0 priority |
-| **Duration** | ~150ms (fast) |
-| **Cost** | Negligible (computational only) |
-| **Frequency** | 3.65M/year (99.3% of all assessments) |
-| **Confidence** | 70-80% (automated formulas) |
-| **Components** | Controller, Service, Data Storage, Infra Monitoring |
+| **Trigger** | RO creates an `EffectivenessAssessment` CRD for every terminal/verifying `RemediationRequest` (100% of remediations — no sampling) |
+| **Duration** | Dominated by the configured stabilization window (default 5m) plus (if needed) waiting for the next Prometheus scrape — not computation time |
+| **Cost** | Negligible — 4 deterministic checks (K8s API, AlertManager, Prometheus reads, SHA-256 hash); zero LLM/AI cost |
+| **AI/LLM involvement** | None |
+| **Components** | RO, `EffectivenessAssessment` CRD, EM controller (4 independent scorers: health, alert, metrics, hash), Kubernetes API, Prometheus, AlertManager, DataStorage |
+| **Scoring** | EM never computes the final score — DataStorage computes it on demand from the component audit events |
 
 ---
 
-## Flow 2: Automated + AI Analysis (P0 Failure)
+## Flow 2: ⚠️ PLANNED V1.1 — NOT YET IMPLEMENTED — AI-Powered PostExec Analysis (Design Proposal)
+
+> **⚠️ PLANNED V1.1 — NOT YET IMPLEMENTED.** Everything in this section describes a design proposal for a future Level 2 extension. **No component below exists in the codebase today.** Confirmed via repo-wide grep: zero HolmesGPT/Kubernaut Agent (KA) client references anywhere in `pkg/effectivenessmonitor/` or `internal/controller/effectivenessmonitor/`; the `POST /api/v1/postexec/analyze` endpoint does not exist in Kubernaut Agent's `openapi.json` or anywhere else in the repo. This flow is retained because the decision-trigger taxonomy and cost/benefit reasoning behind it have genuine forward-looking design value for V1.1 planning. Authority: [DD-017](decisions/DD-017-effectiveness-monitor-v1.1-deferral.md) §"V1.1 Scope: Level 2" (current, authoritative scoping) and [DD-EFFECTIVENESS-001](decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md) (original proposal — decision triggers, alternatives considered).
 
 ### Scenario
 - **Alert**: Critical API outage (P0)
 - **Action**: Rollback deployment to previous version
 - **Result**: FAILURE (API still down)
-- **Priority**: P0 (critical)
-- **AI Decision**: CALL AI (P0 failure requires deep analysis)
+- **AI decision (hypothetical)**: Trigger Level 2 analysis (P0 failure requires deep analysis)
 
-### Sequence Diagram
+### Sequence Diagram (Hypothetical — Level 2 Not Built)
+
+This diagram picks up where Flow 1's real V1.0 lifecycle ends (`effectiveness.assessment.completed`), and shows how a future Level 2 could integrate **without a new architecture** — per DD-017 §"V1.1 Integration with DD-KA-016", Level 2 would enrich the *same* audit events with additional fields, not introduce a separate service call chain like the original (now-corrected) proposal assumed.
 
 ```mermaid
 sequenceDiagram
-    participant K8s as Kubernetes API
-    participant RR as RemediationRequest CRD
-    participant EMC as EffectivenessMonitor<br/>Controller
-    participant EMS as EffectivenessMonitor<br/>Service
-    participant HG as HolmesGPT API<br/>(AI Analysis)
-    participant LLM as LLM Provider<br/>(GPT-4)
-    participant DS as Data Storage<br/>(PostgreSQL)
-    participant IM as Infrastructure<br/>Monitoring
+    participant EM as Effectiveness Monitor<br/>(real, V1.0)
+    participant DS as DataStorage<br/>(real, V1.0)
+    participant KA as "(Planned) Kubernaut Agent (KA)<br/>PostExec Endpoint — NOT BUILT"
+    participant LLM as LLM Provider<br/>(KA-configured, model-agnostic)
 
-    Note over K8s,LLM: Example: P0 API outage - rollback FAILED
+    Note over EM,DS: Real V1.0: EM completes Level 1 assessment<br/>(see Flow 1) — audit: effectiveness.assessment.completed
 
-    %% Step 1: Remediation completes with failure
-    K8s->>RR: Update status.overallPhase = "failed"
-    RR->>RR: Set success = false<br/>priority = "P0"<br/>failureReason = "API still unreachable"
+    Note over EM: ⚠️ HYPOTHETICAL — Level 2 trigger decision (not implemented)
+    EM->>EM: shouldCallAI()? (proposed decision logic, DD-EFFECTIVENESS-001)<br/>✅ P0 priority + FAILURE<br/>✅ No metric improvement detected<br/>→ TRUE (AI analysis would be triggered)
 
-    %% Step 2: Controller detects
-    EMC->>RR: Watch event (overallPhase="failed", priority="P0")
-    EMC->>EMC: Wait 5 minutes<br/>(stabilization period)
+    Note over EM,KA: ⚠️ HYPOTHETICAL — POST (planned) /api/v1/postexec/analyze
+    EM->>KA: Investigation context (correlation_id, action, pre/post state, execution_success=false)
+    KA->>LLM: Analyze with full remediation context
+    LLM-->>KA: Root cause + recommendations
+    KA-->>EM: root_cause_resolved=false, lessons_learned=[...], oscillation_detected=false
 
-    Note over EMC: Watches RemediationRequest (user-facing API)<br/>Future-proof against workflow implementation changes
+    Note over EM,DS: ⚠️ HYPOTHETICAL — enrich the SAME audit trail (no new sink)
+    EM->>DS: audit: effectiveness.assessment.completed enriched with<br/>root_cause_resolved, lessons_learned, oscillation_detected<br/>(per DD-017 — no architectural change from V1.0 needed)
 
-    EMC->>DS: Check if already processed
-    DS-->>EMC: Not processed
-
-    %% Step 3: Trigger assessment
-    EMC->>EMS: POST /internal/assess<br/>{<br/>  "workflow_execution_uid": "def-456",<br/>  "trace_id": "trace-p0-abc",<br/>  "action_type": "rollback_deployment",<br/>  "priority": "P0"<br/>}
-
-    %% Step 4: Automated assessment
-    EMS->>DS: Get pre-execution metrics
-    DS-->>EMS: {"api_latency": "timeout", "error_rate": "100%"}
-
-    EMS->>IM: Get post-execution metrics
-    IM-->>EMS: {"api_latency": "timeout", "error_rate": "100%"}
-
-    EMS->>EMS: Calculate automated assessment:<br/>- Basic score: 0.15 (low)<br/>- Health checks: FAIL<br/>- No improvement detected<br/>- Anomalies: ["no_metric_improvement"]
-
-    %% Step 5: Decision point - YES AI
-    EMS->>EMS: shouldCallAI()?<br/>✅ P0 priority + FAILURE<br/>✅ Anomalies detected<br/>→ TRUE (AI analysis required)
-
-    Note over EMS: AI call triggered - P0 failure needs deep analysis
-
-    %% Step 6: Build AI context (Self-Documenting JSON)
-    EMS->>EMS: Build investigation context<br/>(DD-HOLMESGPT-009 format)
-
-    Note over EMS: Self-documenting JSON:<br/>~290 tokens, 0 legend overhead
-
-    %% Step 7: Call HolmesGPT API
-    EMS->>HG: POST /api/v1/postexec/analyze<br/>{<br/>  "investigation_id": "p0-rollback-def456",<br/>  "priority": "P0",<br/>  "environment": "production",<br/>  "action": {<br/>    "type": "rollback_deployment",<br/>    "target": "api-service",<br/>    "namespace": "production"<br/>  },<br/>  "pre_execution_state": {<br/>    "api_latency": "timeout",<br/>    "error_rate": 100,<br/>    "pod_status": "CrashLoopBackOff"<br/>  },<br/>  "post_execution_state": {<br/>    "api_latency": "timeout",<br/>    "error_rate": 100,<br/>    "pod_status": "CrashLoopBackOff"<br/>  },<br/>  "execution_success": false,<br/>  "task": "Analyze why rollback failed..."<br/>}
-
-    Note over HG: Self-documenting keys:<br/>No legend needed
-
-    %% Step 8: HolmesGPT processes
-    HG->>HG: Parse self-documenting JSON<br/>(100% accuracy)
-    HG->>LLM: Analyze with full context
-    LLM-->>HG: AI insights
-
-    %% Step 9: AI analysis response
-    HG-->>EMS: 200 OK<br/>{<br/>  "analysis_id": "ai-analysis-789",<br/>  "root_cause": "database_connection_lost",<br/>  "recommendations": [<br/>    {<br/>      "id": "rec-001",<br/>      "action": "check_database_connectivity",<br/>      "probability": 0.92,<br/>      "rationale": "Rollback version also depends on DB..."<br/>    }<br/>  ],<br/>  "effectiveness_assessment": {<br/>    "action_addressed_symptom": true,<br/>    "action_addressed_root_cause": false,<br/>    "likely_outcome": "problem_masked_not_solved"<br/>  },<br/>  "confidence": 0.88<br/>}
-
-    %% Step 10: Combine results
-    EMS->>EMS: Combine automated + AI:<br/>- Automated score: 0.15<br/>- AI insights: root cause DB issue<br/>- Final score: 0.20<br/>- High confidence: 0.88 (AI-backed)
-
-    %% Step 11: Store combined results
-    EMS->>DS: Store assessment:<br/>{<br/>  "effectiveness_score": 0.20,<br/>  "confidence": 0.88,<br/>  "analysis_type": "automated_plus_ai",<br/>  "ai_analysis_id": "ai-analysis-789",<br/>  "root_cause": "database_connection_lost",<br/>  "lessons": [...]<br/>}
-    DS-->>EMS: Stored (assessment_id: assess-p0-123)
-
-    %% Step 12: Update status
-    EMS->>RR: Update annotations:<br/>"effectiveness.kubernaut.io/score": "0.20"<br/>"effectiveness.kubernaut.io/root-cause": "database_connection_lost"<br/>"effectiveness.kubernaut.io/ai-analyzed": "true"
-    RR-->>EMS: Updated
-
-    EMS-->>EMC: 200 OK<br/>{<br/>  "assessment_id": "assess-p0-123",<br/>  "effectiveness_score": 0.20,<br/>  "analysis_used": "automated_plus_ai",<br/>  "ai_confidence": 0.88<br/>}
-
-    Note over K8s,LLM: Total time: ~3-5s<br/>Cost: ~$0.50 (LLM API)<br/>Value: 88% confidence root cause identified
+    Note over DS: DataStorage would read these richer fields<br/>from the same audit traces already used for the V1.0 score
 ```
 
-### Key Points - Automated + AI
+### Key Points - ⚠️ Planned V1.1 Level 2 (Not Implemented)
 
 | Aspect | Value |
 |--------|-------|
-| **Trigger** | P0 failure, anomalies, new action type, oscillation |
-| **Duration** | ~3-5s (AI processing) |
-| **Cost** | ~$0.50 per analysis (LLM API) |
-| **Frequency** | 25.5K/year (0.7% of all assessments) |
-| **Confidence** | 85-95% (AI-backed insights) |
-| **Components** | +HolmesGPT API, +LLM Provider |
-| **Format** | Self-Documenting JSON (DD-HOLMESGPT-009) |
+| **Trigger (proposed)** | P0 failure, anomalies, new action type, suspected oscillation — see the Decision Matrix section below |
+| **Duration (illustrative estimate)** | ~3-5s (AI processing) — no real measurement exists |
+| **Cost (illustrative estimate)** | ~$0.50 per analysis (LLM API) — no real measurement exists |
+| **Status** | ⚠️ **Design proposal only** — no code, no endpoint, no integration exists |
+| **Planned integration point** | (Planned) Kubernaut Agent (KA) PostExec endpoint, per [DD-017](decisions/DD-017-effectiveness-monitor-v1.1-deferral.md) |
 
 ---
 
-## Decision Matrix
+## Decision Matrix (⚠️ Proposed V1.1 Design — Not Implemented)
 
-### When is AI Called?
+> The trigger logic below (`shouldCallAI()`) is a **design sketch from the original Oct 2025 proposal** ([DD-EFFECTIVENESS-001](decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md)). It does not exist as code anywhere in the repository. It is preserved here as the most reusable part of that proposal for future V1.1 planning.
+
+### When Would AI Be Called? (Proposed)
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                  shouldCallAI() Decision Logic                       │
+│         ⚠️ PROPOSED shouldCallAI() Decision Logic (NOT BUILT)       │
 └─────────────────────────────────────────────────────────────────────┘
 
 IF (Priority == "P0" AND Success == false)
@@ -223,112 +198,107 @@ ELSE
    → ❌ SKIP AI (Routine success, automated sufficient)
 ```
 
-### Annual Volume Breakdown
+### Annual Volume Breakdown (Illustrative — Oct 2025 Estimates, Not Measured)
 
-| Scenario | Volume/Year | AI Called? | Analysis Type |
+| Scenario | Volume/Year (illustrative) | AI Called? (proposed) | Analysis Type |
 |----------|-------------|------------|---------------|
-| **P0 Failures** | 18,250 | ✅ YES | Automated + AI |
-| **New Action Types** | 3,650 | ✅ YES | Automated + AI |
-| **Anomalies Detected** | 1,825 | ✅ YES | Automated + AI |
-| **Oscillations** | 1,825 | ✅ YES | Automated + AI |
-| **Routine Successes** | 3,650,000 | ❌ NO | Automated Only |
-| **TOTAL** | **3,675,550** | **25.5K (0.7%)** | Hybrid |
+| **P0 Failures** | 18,250 | ✅ YES | Level 1 + Level 2 (proposed) |
+| **New Action Types** | 3,650 | ✅ YES | Level 1 + Level 2 (proposed) |
+| **Anomalies Detected** | 1,825 | ✅ YES | Level 1 + Level 2 (proposed) |
+| **Oscillations** | 1,825 | ✅ YES | Level 1 + Level 2 (proposed) |
+| **Routine Successes** | 3,650,000 | ❌ NO | Level 1 only (real, V1.0) |
+| **TOTAL** | **3,675,550** | **25.5K (0.7%), illustrative** | Hybrid (proposed) |
 
 ---
 
 ## Data Flow Comparison
 
-### Watch Strategy Note
-**Design Decision**: [DD-EFFECTIVENESS-003](../decisions/DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md)
+### Watch Strategy Note (Corrected)
 
-The Effectiveness Monitor watches **RemediationRequest** CRD instead of WorkflowExecution:
-- **Trigger**: `RR.status.overallPhase IN ("completed", "failed", "timeout")`
-- **Aggregation**: RR aggregates child CRD statuses (RemediationProcessing, AIAnalysis, WorkflowExecution)
-- **Future-Proof**: Decoupled from workflow implementation changes
-- **Multi-Workflow**: Handles future scenarios with multiple workflows per remediation
+**Design authority**: [DD-017](decisions/DD-017-effectiveness-monitor-v1.1-deferral.md) v2.2 — **not** [DD-EFFECTIVENESS-003](decisions/DD-EFFECTIVENESS-003-RemediationRequest-Watch-Strategy.md), which is **superseded**.
 
-All required data is available in `RR.status.workflowExecutionStatus` (summary). Detailed WE info can be fetched if needed (rare).
+The Effectiveness Monitor does **not** watch `RemediationRequest` (RR) or `WorkflowExecution` directly. Per DD-017 v2.2: "the EM no longer watches RR CRDs directly. Instead, the **RO creates an `EffectivenessAssessment` CRD** when the RR reaches a terminal phase (Completed, Failed, TimedOut) ... The EM watches EA CRDs." This provides restart recovery via `EA.status.components`, `kubectl` observability, and consistent lifecycle ownership by the RO — see [ADR-EM-001](decisions/ADR-EM-001-effectiveness-monitor-service-integration.md) §3.
 
-### Automated Only Flow
+`DD-EFFECTIVENESS-003`'s original rationale (decouple from workflow implementation details) is preserved by this newer pattern — RR/WorkflowExecution changes still can't break EM, since EM is triggered by an entirely separate CRD (EA) with an immutable spec.
+
+### V1.0 Level 1 Flow (✅ Real, Implemented)
 ```
-RemediationRequest CRD (status.overallPhase = "completed")
+RemediationRequest reaches Verifying/Completed/Failed/TimedOut
     ↓
-Controller (5-min delay)
+RemediationOrchestrator creates EffectivenessAssessment (EA) CRD (ownerRef → RR)
     ↓
-Service: Automated Assessment
-    ├─ Get pre-execution metrics (Data Storage)
-    ├─ Get post-execution metrics (Infra Monitoring)
-    ├─ Calculate basic score
-    └─ shouldCallAI() → FALSE
+EM controller-runtime watch detects new EA CRD
     ↓
-Store automated results (Data Storage)
+EM computes derived timing (validityDeadline, prometheusCheckAfter, alertManagerCheckAfter)
+    → audit: effectiveness.assessment.scheduled
     ↓
-Update RR annotations
+Wait for stabilization window (default 5m)
     ↓
-DONE (~150ms, negligible cost)
+Run 4 independent deterministic scorers:
+    ├─ Health (Kubernetes API)       → audit: effectiveness.health.assessed
+    ├─ Hash (Kubernetes API, SHA-256) → audit: effectiveness.hash.computed
+    ├─ Alert (AlertManager)          → audit: effectiveness.alert.assessed
+    │    (or effectiveness.alert_decay.detected if decay suspected)
+    └─ Metrics (Prometheus)          → audit: effectiveness.metrics.assessed
+    ↓
+All components assessed (or validity window forces completion)
+    → audit: effectiveness.assessment.completed (lifecycle marker, no score)
+    → K8s Event(Normal, EffectivenessAssessed) on EA
+    ↓
+DataStorage computes weighted score on demand (health×0.40 + alert×0.35 + metrics×0.25)
+    ↓
+RemediationOrchestrator watches EA completion → RR Condition EffectivenessAssessed=True
+    ↓
+DONE (no LLM cost; duration dominated by stabilization window, not computation)
 ```
 
-### Automated + AI Flow
+### ⚠️ Planned V1.1 Level 2 Flow (Design Proposal — Not Implemented)
 ```
-RemediationRequest CRD (status.overallPhase = "failed", priority = "P0")
+Real V1.0 Level 1 completes (effectiveness.assessment.completed already emitted)
     ↓
-Controller (5-min delay)
+⚠️ PROPOSED: shouldCallAI() decision (P0 failure? new action type? anomaly? oscillation?)
+    ↓ (if YES, hypothetically)
+⚠️ PROPOSED: Call (planned) Kubernaut Agent (KA) PostExec endpoint
+    ├─ correlation_id, action details, pre/post state, execution_success
     ↓
-Service: Automated Assessment
-    ├─ Get pre-execution metrics (Data Storage)
-    ├─ Get post-execution metrics (Infra Monitoring)
-    ├─ Calculate basic score
-    ├─ Detect anomalies
-    └─ shouldCallAI() → TRUE (P0 failure)
+⚠️ PROPOSED: Kubernaut Agent (KA) → LLM Provider
+    ├─ Root cause validation
+    ├─ Oscillation detection
+    └─ Pattern learning / lesson extraction
     ↓
-Build Self-Documenting JSON Context (DD-HOLMESGPT-009)
-    ├─ investigation_id, priority, environment
-    ├─ action details, pre/post state
-    └─ task directive (~290 tokens, 0 legend)
+⚠️ PROPOSED: Enrich the SAME DataStorage audit trail with AI-derived fields
+    (root_cause_resolved, lessons_learned, oscillation_detected)
+    — per DD-017: no separate sink, no architectural change from V1.0 needed
+    — NOTE: the original 2025 proposal routed "lessons learned" to a "Context API"
+      service; that service was deprecated Nov 2025 (DD-CONTEXT-006) and is not
+      part of any current or planned data flow
     ↓
-Call HolmesGPT API POST /api/v1/postexec/analyze
-    ↓
-HolmesGPT → LLM Provider (GPT-4)
-    ├─ Parse natural language JSON
-    ├─ Analyze root cause
-    └─ Generate recommendations
-    ↓
-Receive AI Analysis
-    ├─ Root cause identification
-    ├─ Effectiveness assessment
-    └─ Confidence: 85-95%
-    ↓
-Combine automated + AI results
-    ↓
-Store combined results (Data Storage)
-    ↓
-Update CRD with AI insights
-    ↓
-DONE (~3-5s, ~$0.50 LLM cost)
+NOT BUILT — illustrative only
 ```
 
 ---
 
-## Cost/Benefit Analysis
+## Cost/Benefit Analysis (⚠️ Illustrative — Oct 2025 Estimates, Level 2 Never Built)
 
-### Hybrid Approach Economics
+> None of the figures below have been incurred or measured — Level 2 does not exist. Preserved as the original economic reasoning behind the two-level split, which [DD-017](decisions/DD-017-effectiveness-monitor-v1.1-deferral.md) v2.6 still treats as the current directional decision.
 
-| Metric | Automated Only | Automated + AI | Hybrid (0.7% AI) |
+### Hybrid Approach Economics (Illustrative)
+
+| Metric | Level 1 Only (real, V1.0) | + Level 2 (proposed) | Hybrid (0.7% AI, proposed) |
 |--------|----------------|----------------|------------------|
 | **Volume/Year** | 3,650,000 | 25,550 | 3,675,550 |
-| **Avg Duration** | 150ms | 3-5s | ~155ms avg |
-| **Cost/Assessment** | $0.0001 | $0.50 | ~$0.0035 avg |
-| **Annual Cost** | $365 | $12,775 | **$13,140** |
-| **Confidence** | 70-80% | 85-95% | ~80% weighted |
-| **Effectiveness** | 70% | 90% | **85-90%** |
+| **Avg Duration** | Dominated by stabilization window (5m), not compute | 3-5s (illustrative) | N/A — illustrative |
+| **Cost/Assessment** | Negligible | $0.50 (illustrative) | ~$0.0035 avg (illustrative) |
+| **Annual Cost** | ~$0 (no LLM calls) | $12,775 (illustrative) | **$13,140 (illustrative)** |
+| **Confidence** | N/A (deterministic, not probabilistic) | 85-95% (illustrative) | ~80% weighted (illustrative) |
 
-**ROI Calculation**:
-- **Additional Cost**: $12,775/year (AI calls)
-- **Value Gained**: 15-20% effectiveness improvement
-- **Prevented Incidents**: ~140 critical failures/year avoided
-- **Incident Cost**: ~$1,000/incident (average)
-- **Value**: $140,000/year
-- **ROI**: **11x return on investment**
+**Illustrative ROI Calculation** (Oct 2025 estimate, not validated):
+- **Additional Cost**: $12,775/year (AI calls, illustrative)
+- **Value Gained**: 15-20% effectiveness improvement (illustrative)
+- **Prevented Incidents**: ~140 critical failures/year avoided (illustrative)
+- **Incident Cost**: ~$1,000/incident average (illustrative)
+- **Value**: $140,000/year (illustrative)
+- **ROI**: **11x return on investment (illustrative)**
 
 ---
 
@@ -336,45 +306,46 @@ DONE (~3-5s, ~$0.50 LLM cost)
 
 ### Services Calling Effectiveness Monitor
 
-1. **Context API Service** - Retrieves effectiveness assessments
-2. **Internal Controller** - Triggers post-execution assessments
+**None.** EM has zero HTTP business API surface (no port 8080, no REST endpoint for requesting or retrieving an assessment). The only trigger is the controller-runtime watch on the `EffectivenessAssessment` CRD. The only network listeners are Prometheus metrics (port 9090, `/metrics`) and health/readiness probes (port 8081, `/healthz`, `/readyz`).
 
-### Services Called by Effectiveness Monitor
+### Services Called by Effectiveness Monitor (V1.0, Real)
 
-1. **Data Storage (PostgreSQL)** - Critical
-   - Pre/post-execution metrics
-   - Historical effectiveness data
-   - Assessment results storage
+1. **Kubernetes API** — Required
+   - Pod/health status for the target resource
+   - Current `.spec` for pre/post-remediation hash comparison
 
-2. **Infrastructure Monitoring (Prometheus)** - Graceful degradation
-   - Current metrics (CPU, memory, latency)
-   - Pod health status
-   - Anomaly thresholds
+2. **DataStorage** — Required
+   - Writes: 7 typed component audit events per assessment
+   - Reads: `remediation.workflow_created` fallback query and pre-hash lookup
 
-3. **HolmesGPT API** - Selective (0.7% of cases)
-   - POST /api/v1/postexec/analyze
-   - Self-documenting JSON format (DD-HOLMESGPT-009)
-   - Async, non-blocking
+3. **Prometheus** — Optional (config toggle `external.prometheusEnabled`)
+   - Pre/post metric comparison (CPU, memory, latency p95, error rate)
+
+4. **AlertManager** — Optional (config toggle `external.alertManagerEnabled`)
+   - Alert resolution check, including multi-probe alert-decay detection (BR-EM-012)
+
+### ⚠️ Planned V1.1 Addition (Not Implemented)
+
+5. **(Planned) Kubernaut Agent (KA) PostExec endpoint** — selectively, for high-value cases per the Decision Matrix section above. Does not exist today. See [DD-017](decisions/DD-017-effectiveness-monitor-v1.1-deferral.md).
 
 ---
 
 ## References
 
-- **Architecture**: [Effectiveness Monitor Overview](../services/stateless/effectiveness-monitor/overview.md)
-- **Decision**: [DD-EFFECTIVENESS-001: Hybrid Automated + AI Analysis](decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md)
-- **API Spec**: [Effectiveness Monitor API](../services/stateless/effectiveness-monitor/api-specification.md)
-- **Integration**: [Integration Points](../services/stateless/effectiveness-monitor/integration-points.md)
+- **Architecture**: [Effectiveness Monitor Overview](../services/crd-controllers/07-effectivenessmonitor/overview.md)
+- **Authoritative Integration Architecture**: [ADR-EM-001](decisions/ADR-EM-001-effectiveness-monitor-service-integration.md) — the real V1.0 sequence diagrams, scoring formula, and SOC2 chain of custody
+- **V1.0/V1.1 Scoping Decision**: [DD-017](decisions/DD-017-effectiveness-monitor-v1.1-deferral.md) — current, authoritative Level 1 (V1.0) / Level 2 (V1.1) boundary
+- **Original Hybrid-Approach Proposal**: [DD-EFFECTIVENESS-001: Hybrid Automated + AI Analysis](decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md) — decision-trigger taxonomy and alternatives-considered analysis (still-valid V1.1 design input); Level 1 architecture superseded, Level 2 not built
+- **CRD Schema**: [Effectiveness Monitor CRD Schema](../services/crd-controllers/07-effectivenessmonitor/crd-schema.md) (renamed from `api-specification.md` — EM has no REST API, see [#1806](https://github.com/jordigilh/kubernaut/issues/1806))
+- **Integration**: [Integration Points](../services/crd-controllers/07-effectivenessmonitor/integration-points.md)
 
 ---
 
 ## Summary
 
-The Effectiveness Monitor's hybrid approach provides:
+The Effectiveness Monitor's architecture, as it actually exists and is planned:
 
-✅ **Cost-Efficient**: 99.3% automated (fast, cheap)
-✅ **High-Value AI**: 0.7% AI analysis (selective, targeted)
-✅ **Excellent ROI**: 11x return on investment
-✅ **High Confidence**: 85-95% with AI backing
-✅ **Scalable**: Handles 3.65M assessments/year
-✅ **Self-Documenting**: Zero legend overhead (DD-HOLMESGPT-009)
-
+✅ **V1.0 Level 1 (implemented, real)**: 100% deterministic, CRD-watch driven, zero AI/LLM dependency, zero HTTP business API
+✅ **DataStorage-computed scoring**: EM emits raw per-component audit events; DataStorage computes the weighted score on demand
+⚠️ **V1.1 Level 2 (planned, not implemented)**: selective AI analysis via a (planned) Kubernaut Agent (KA) PostExec endpoint, gated on decision triggers proposed in [DD-EFFECTIVENESS-001](decisions/DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md) and scoped in [DD-017](decisions/DD-017-effectiveness-monitor-v1.1-deferral.md)
+⚠️ **No live cost, latency, or ROI figures exist for Level 2** — all such figures in this document are illustrative Oct 2025 estimates, not current or measured
