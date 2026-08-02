@@ -31,7 +31,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		Expect(err).NotTo(HaveOccurred(), "SRE DEX token")
 		Expect(authToken).NotTo(BeEmpty())
 
-		for _, nsName := range []string{"sev-tier2-ns", "no-data-ns", "no-rules-ns"} {
+		for _, nsName := range []string{"sev-tier1-ns", "sev-tier15-ns", "sev-tier2-ns", "no-data-ns", "no-rules-ns", "sev-userhint-ns"} {
 			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
 			err = k8sClient.Create(context.Background(), ns)
 			if err != nil && !apierrors.IsAlreadyExists(err) {
@@ -97,7 +97,7 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		}
 		ctx := context.Background()
 		Expect(injectMetricForTier2(ctx, promURL, "e2e_cpu_usage_percent", 95, map[string]string{
-			"namespace": "default", "kind": "Deployment", "name": "test-firing-target",
+			"namespace": "sev-tier1-ns", "kind": "Deployment", "name": "test-firing-target",
 		})).To(Succeed(), "CPU metric re-injection must succeed for Tier 1")
 
 		Eventually(func() error {
@@ -105,15 +105,15 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		}, 60*time.Second, 2*time.Second).Should(Succeed(),
 			"HighCPU alert must be firing before RR creation")
 
-		a2aCreateRRAndWait("default", "test-firing-target", "")
-		rr := findRRByTarget("default", "test-firing-target")
+		a2aCreateRRAndWait("sev-tier1-ns", "test-firing-target", "")
+		rr := findRRByTarget("sev-tier1-ns", "test-firing-target")
 		Expect(rr.Spec.Severity).To(Equal("critical"), "spec.severity")
 		Expect(rr.Spec.SignalLabels).To(HaveKeyWithValue("severity_source", "firing_alert"))
 	})
 
 	It("TC-E2E-SEV-02: Tier 1.5 — Pending alert", func() {
-		a2aCreateRRAndWait("default", "test-pending-target", "")
-		rr := findRRByTarget("default", "test-pending-target")
+		a2aCreateRRAndWait("sev-tier15-ns", "test-pending-target", "")
+		rr := findRRByTarget("sev-tier15-ns", "test-pending-target")
 		Expect(rr.Spec.Severity).NotTo(BeEmpty(), "severity must be set by triage pipeline")
 		src := rr.Spec.SignalLabels["severity_source"]
 		Expect(src).To(BeElementOf(
@@ -238,8 +238,16 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 	})
 
 	It("TC-E2E-SEV-06: User severity hint does not bypass triage pipeline", func() {
-		a2aCreateRRAndWait("default", "test-user-severity-bypass", " with severity low")
-		rr := findRRByTarget("default", "test-user-severity-bypass")
+		// #1839: dedicated namespace/rule (UserSeverityHintGrounding in
+		// apifrontend_prometheus_e2e.go), not "default". This fixture used
+		// to have no rule of its own and silently passed only by riding
+		// HighCPU's namespace-level fallback via their shared "default"
+		// namespace -- the same hidden cross-test coupling diagnosed for
+		// the AF investigate fixture (#1865). A dedicated namespace+rule
+		// makes this test's grounding self-contained and immune to any
+		// other fixture's alert state.
+		a2aCreateRRAndWait("sev-userhint-ns", "test-user-severity-bypass", " with severity low")
+		rr := findRRByTarget("sev-userhint-ns", "test-user-severity-bypass")
 		Expect(rr.Spec.Severity).NotTo(BeEmpty(), "severity must be set by triage pipeline")
 		Expect(rr.Spec.SignalLabels).To(HaveKey("severity_source"),
 			"triage pipeline must set severity_source even when user supplies a hint")
