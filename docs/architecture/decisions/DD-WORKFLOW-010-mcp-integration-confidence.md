@@ -1,9 +1,20 @@
 # DD-WORKFLOW-010: MCP Workflow Catalog Integration in HolmesGPT API - Confidence Assessment
 
-**Date**: 2025-11-15  
-**Status**: ✅ Approved  
-**Target Version**: v1.0 (MVP)  
+**Date**: 2025-11-15
+**Status**: 🗄️ **SUPERSEDED** — see note below
+**Target Version**: v1.0 (MVP)
 **Related**: DD-WORKFLOW-008, DD-WORKFLOW-009, DD-EMBEDDING-001, DD-STORAGE-008
+
+> **SUPERSEDED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This
+> Nov 2025 proposal describes a **Python** `kubernaut-agent`, a temporary Mock MCP Server, a semantic
+> `/api/v1/playbooks/search` REST endpoint on Data Storage, and a planned separate Embedding Service —
+> none of which reflect the shipped architecture. `kubernaut-agent`/HolmesGPT-API was rewritten in Go as
+> **Kubernaut Agent (KA)**; the Mock MCP Server and the standalone Embedding Service were never built;
+> and workflow catalog search moved to KA's own **in-process** discovery protocol against
+> `RemediationWorkflow`/`ActionType` CRDs, not any Data Storage REST/MCP endpoint (which was retired as
+> dead code). See [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md) for the authoritative,
+> implemented design. This document is retained for historical context only — do not use it to understand
+> the current architecture.
 
 ---
 
