@@ -31,6 +31,7 @@ present in another service's test suite (a real, cross-service dependency, not a
 | BR-KA-263 | *(none found — see note below)* | *(none found)* | *(none found)* |
 | BR-KA-264 | *(none found by literal BR-ID; see [DD-KA-018 evidence](#dd-ka-018-cross-reference-for-br-ka-264265) below)* | *(none found)* | *(none found)* |
 | BR-KA-265 | *(none found by literal BR-ID; see [DD-KA-018 evidence](#dd-ka-018-cross-reference-for-br-ka-264265) below)* | *(none found)* | *(none found)* |
+| BR-KA-266 | `cmd/kubernautagent/llm_builder_1749_test.go`, `pkg/kubernautagent/llm/chat_with_params_test.go` | *(none found)* | *(none found)* |
 | BR-KA-OBSERVABILITY-001 | `internal/kubernautagent/metrics/metrics_test.go`, `internal/kubernautagent/server/http_metrics_test.go`, `internal/kubernautagent/audit/emitter_test.go` | `test/integration/kubernautagent/server/wiring_test.go` | `test/e2e/kubernautagent/observability_e2e_test.go` |
 | BR-KA-OBSERVABILITY-002 | *(none found by literal BR-ID)* | *(none found)* | *(none found)* |
 | BR-AUDIT-011 | *(none found by literal BR-ID)* | *(none found)* | *(none found)* |

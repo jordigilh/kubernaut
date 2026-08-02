@@ -12,8 +12,8 @@
 | Document | Purpose | Lines |
 |---|---|---|
 | **[Overview](./overview.md)** | Purpose, architecture, key design decisions, system context diagram | 169 |
-| **[Business Requirements](./BUSINESS_REQUIREMENTS.md)** | Catalog of KA's `BR-KA-*` requirement documents | 59 |
-| **[BR Mapping](./BR_MAPPING.md)** | BR-to-test-file traceability | 73 |
+| **[Business Requirements](./BUSINESS_REQUIREMENTS.md)** | Catalog of KA's `BR-KA-*` requirement documents | 60 |
+| **[BR Mapping](./BR_MAPPING.md)** | BR-to-test-file traceability | 74 |
 | **[API Specification](./api-specification.md)** | REST API contract (async session-based pattern) | 151 |
 | **[Integration Points](./integration-points.md)** | Upstream caller (AIAnalysis) and downstream dependencies | 94 |
 | **[Observability & Logging](./observability-logging.md)** | Structured logging, correlation ID propagation | 67 |
@@ -24,7 +24,7 @@
 | **[Shadow Agent Configuration](./shadow-agent-configuration.md)** | Prompt-injection guardrail operational guide | 398 |
 | **[Audit Event Catalog](./security/AUDIT_EVENT_CATALOG.md)** | All emitted audit events with NIST/SOC2 control mapping | 192 |
 
-**Total**: ~2,096 lines across 12 documents.
+**Total**: ~2,098 lines across 12 documents.
 
 ---
 

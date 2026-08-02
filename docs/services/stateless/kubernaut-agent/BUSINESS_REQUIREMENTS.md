@@ -31,6 +31,7 @@ BR-to-test-file traceability).
 | [BR-KA-263](../../../requirements/BR-KA-263-conversation-continuity.md) | Conversation Continuity Across Investigation Phases | ✅ Approved | Preserves LLM conversation/session context across the RCA, workflow-discovery, and validation phases. |
 | [BR-KA-264](../../../requirements/BR-KA-264-post-rca-label-detection.md) | Post-RCA Infrastructure Label Detection via EnrichmentService | ✅ Approved | Detects 12 infrastructure characteristics of the root-owner resource after RCA completes (see [DD-KA-018](../../../architecture/decisions/DD-KA-018-detected-labels-detection-specification.md)). |
 | [BR-KA-265](../../../requirements/BR-KA-265-labels-in-workflow-discovery.md) | Infrastructure Labels in Workflow Discovery Context | ✅ Approved | Detected infrastructure labels are threaded into workflow-catalog discovery/filtering. |
+| [BR-KA-266](../../../requirements/BR-KA-266-llm-parameter-unset-vs-explicit-zero.md) | LLM Runtime Parameter "Unset" vs "Explicit Zero" Semantics | ✅ Approved (implemented) | Hot-reloadable LLM parameters (e.g. `temperature`) preserve the distinction between "not configured" (`nil`) and "explicitly configured as zero" through config merge and onto the wire request — required for providers that reject an explicit `temperature` field. |
 | [BR-KA-OBSERVABILITY-001](../../../requirements/BR-KA-OBSERVABILITY-001-agent-prometheus-metrics.md) | Kubernaut Agent Prometheus Metrics | ✅ Approved | Baseline Prometheus metrics surface (`aiagent_*` namespace) — see [metrics-slos.md](./metrics-slos.md). |
 | [BR-KA-OBSERVABILITY-002](../../../requirements/BR-KA-OBSERVABILITY-002-verification-step-events.md) | Verification Step Events for Console Activity Log | ✅ Approved | Emits verification-step events consumable by the operator-facing console activity log. |
 | [BR-AUDIT-011](../../../requirements/BR-AUDIT-011-kubernautagent-secret-read-audit.md) | KubernautAgent Secret Read Audit (Detective Control) | ✅ Implemented | Every Kubernetes Secret Get/List by KA's tools emits a dedicated `aiagent.secret.accessed` audit event (detective control, RBAC intentionally not narrowed — see [security-configuration.md](./security-configuration.md)). |
@@ -46,8 +47,8 @@ document, as of this writing.
 
 | Metric | Value |
 |---|---|
-| Total BR documents | 14 |
-| Approved / Implemented | 13 |
+| Total BR documents | 15 |
+| Approved / Implemented | 14 |
 | Pending (deferred to V2.0) | 1 (BR-KA-195) |
 
 ---
