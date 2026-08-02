@@ -3,7 +3,7 @@
 **Version**: v1.0
 **Last Updated**: 2026-05-10
 **Status**: Production Ready
-**Related**: [Shadow Agent Configuration Guide](../../services/kubernaut-agent/shadow-agent-configuration.md) | [ADR-KA-001](../../architecture/decisions/ADR-KA-001-shadow-agent-alignment-check.md)
+**Related**: [Shadow Agent Configuration Guide](../../services/stateless/kubernaut-agent/shadow-agent-configuration.md) | [ADR-KA-001](../../architecture/decisions/ADR-KA-001-shadow-agent-alignment-check.md)
 **FedRAMP Controls**: AU-2 (Audit Events), AU-3 (Audit Content), IR-6 (Incident Reporting), SI-4 (System Monitoring)
 
 ---

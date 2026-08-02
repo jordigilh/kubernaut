@@ -29,7 +29,7 @@ Kubernaut v1.4 ("Operator Overrides and Platform Hardening") introduces 15+ feat
 |----------|--------|-------|
 | Production code | `internal/kubernautagent/alignment/` (6 files), `cmd/kubernautagent/main.go` wiring | Complete |
 | ADR | `ADR-KA-001-shadow-agent-alignment-check.md` | **NEW** (created this session) |
-| Config guide | `docs/services/kubernaut-agent/shadow-agent-configuration.md` | **NEW** (created this session) |
+| Config guide | `docs/services/stateless/kubernaut-agent/shadow-agent-configuration.md` | **NEW** (created this session) |
 | Test plan | `docs/tests/601/TEST_PLAN_v2.md` (882 lines) | Complete |
 | Unit tests | `test/unit/kubernautagent/alignment/alignment_test.go`, `payload_test.go`, `suite_test.go` | Complete |
 | Integration tests | Covered via alignment wiring in KA investigator IT | Indirect |
