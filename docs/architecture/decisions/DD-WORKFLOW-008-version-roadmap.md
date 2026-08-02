@@ -210,7 +210,7 @@
    - Label metadata
    - Registration-time validation
 
-5. **LLM Integration** (HolmesGPT API - existing)
+5. **LLM Integration** (Kubernaut Agent (KA) - existing)
    - Reads schema from catalog via Data Storage API
    - Populates parameters from RCA
    - Passes to Tekton as environment variables

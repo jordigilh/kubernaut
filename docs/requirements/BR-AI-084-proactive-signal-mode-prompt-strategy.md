@@ -3,9 +3,9 @@
 **Document Version**: 1.0
 **Date**: February 8, 2026
 **Status**: ✅ APPROVED
-**Category**: HolmesGPT Integration
+**Category**: Kubernaut Agent (KA) Integration
 **Priority**: P1 (High)
-**Service**: AIAnalysis + HolmesGPT API
+**Service**: AIAnalysis + KA
 **GitHub Issue**: [#55](https://github.com/jordigilh/kubernaut/issues/55)
 **Related**: BR-SP-106, DD-WORKFLOW-001, ADR-045
 
@@ -17,7 +17,7 @@
 
 When Signal Processing classifies a signal as `proactive` (BR-SP-106), the downstream AI investigation must adapt its strategy. A reactive signal requires root cause analysis ("what happened and why?"), while a proactive signal requires environment evaluation ("is this prediction valid and should we act preemptively?").
 
-Without this distinction, HolmesGPT would perform RCA on an incident that hasn't occurred, producing irrelevant or misleading results (e.g., "no error logs found" — because nothing has failed yet).
+Without this distinction, KA would perform RCA on an incident that hasn't occurred, producing irrelevant or misleading results (e.g., "no error logs found" — because nothing has failed yet).
 
 ### Business Value
 
@@ -47,17 +47,17 @@ SignalName: sp.Status.SignalName,  // Normalized name from SP status (BR-SP-106)
 SignalMode: sp.Status.SignalMode,  // NEW: Copy signal mode from SP status
 ```
 
-### R2: Request Builder Passes SignalMode to HAPI
+### R2: Request Builder Passes SignalMode to KA
 
-The AA request builder (`pkg/aianalysis/handlers/request_builder.go`) MUST include `signalMode` in the `IncidentRequest` sent to HAPI.
+The AA request builder (`pkg/aianalysis/handlers/request_builder.go`) MUST include `signalMode` in the `IncidentRequest` sent to KA.
 
-### R3: HAPI OpenAPI Spec Update
+### R3: KA OpenAPI Spec Update
 
-The HAPI OpenAPI spec MUST include `signal_mode` as a field in the `IncidentRequest` schema. Both Go and Python clients MUST be regenerated.
+The KA OpenAPI spec MUST include `signal_mode` as a field in the `IncidentRequest` schema. Both Go and Python clients MUST be regenerated.
 
-### R4: HAPI Prompt Strategy
+### R4: KA Prompt Strategy
 
-HAPI MUST switch its investigation prompt based on the `signal_mode` value. The current prompt (`kubernaut-agent/src/extensions/incident/prompt_builder.py`) uses a 5-phase investigation workflow. The proactive variant must adapt the relevant phases:
+KA MUST switch its investigation prompt based on the `signal_mode` value. The current prompt (`kubernaut-agent/src/extensions/incident/prompt_builder.py`) uses a 5-phase investigation workflow. The proactive variant must adapt the relevant phases:
 
 | Phase | Reactive (current) | Proactive (new) |
 |---|---|---|
@@ -93,7 +93,7 @@ Audit events for AI analysis MUST include the `signalMode` value, enabling the E
 ```
 RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
   → AA request builder includes signalMode in IncidentRequest
-    → HAPI reads signal_mode, switches prompt strategy
+    → KA reads signal_mode, switches prompt strategy
         → LLM receives normalized signal_name (e.g., "OOMKilled") + mode context
         → Agent searches workflow catalog for "OOMKilled" (standard search, no special logic)
           → Prompt directs: RCA (reactive) or predict & prevent (proactive)
@@ -107,11 +107,11 @@ RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
 - [ ] `SignalMode` field in `SignalContextInput` (`api/aianalysis/v1alpha1/aianalysis_types.go`)
 - [ ] RO copies `SignalMode` from SP status to AA spec (`pkg/remediationorchestrator/creator/aianalysis.go`, `buildSignalContext()`)
 - [ ] RO `SignalName` source changed from `rr.Spec.SignalName` to `sp.Status.SignalName` (normalized)
-- [ ] AA request builder passes `signalMode` to HAPI (`pkg/aianalysis/handlers/request_builder.go`)
-- [ ] HAPI OpenAPI spec includes `signal_mode` in `IncidentRequest`
+- [ ] AA request builder passes `signalMode` to KA (`pkg/aianalysis/handlers/request_builder.go`)
+- [ ] KA OpenAPI spec includes `signal_mode` in `IncidentRequest`
 - [ ] Go client regenerated (`make generate-holmesgpt-client`)
 - [ ] Python client regenerated
-- [ ] HAPI prompt switches based on `signal_mode`
+- [ ] KA prompt switches based on `signal_mode`
 - [ ] Proactive mode allows "no action" as valid LLM outcome
 - [ ] Audit events include `signalMode`
 - [ ] `make generate` regenerates deepcopy successfully
@@ -120,15 +120,17 @@ RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
 
 ## Implementation Points
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: The "Go client regen" row's path (`pkg/holmesgpt/client/oas_schemas_gen.go`) and make target (`make generate-holmesgpt-client`) no longer match the codebase — the generated OpenAPI client now lives under `pkg/agentclient/`.
+
 | Component | File(s) | Change |
 |---|---|---|
 | AA CRD spec | `api/aianalysis/v1alpha1/aianalysis_types.go` | Add `SignalMode` to `SignalContextInput` |
 | RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Change `SignalName` source from `rr.Spec` → `sp.Status` + copy `SignalMode` in `buildSignalContext()` |
 | AA request builder | `pkg/aianalysis/handlers/request_builder.go` | Pass `SignalMode` in `BuildIncidentRequest()` |
-| HAPI OpenAPI | `kubernaut-agent/api/openapi.json` | Add `signal_mode` to `IncidentRequest` schema |
-| HAPI Python model | `kubernaut-agent/src/models/incident_models.py` | Add `signal_mode: Optional[str]` to `IncidentRequest` class |
-| HAPI prompt builder | `kubernaut-agent/src/extensions/incident/prompt_builder.py` | Conditional prompt strategy in `create_incident_investigation_prompt()` (Phases 1-2, 5) |
-| HAPI LLM integration | `kubernaut-agent/src/extensions/incident/llm_integration.py` | Pass `signal_mode` to prompt builder in `analyze_incident()` |
+| KA OpenAPI | `kubernaut-agent/api/openapi.json` | Add `signal_mode` to `IncidentRequest` schema |
+| KA Python model | `kubernaut-agent/src/models/incident_models.py` | Add `signal_mode: Optional[str]` to `IncidentRequest` class |
+| KA prompt builder | `kubernaut-agent/src/extensions/incident/prompt_builder.py` | Conditional prompt strategy in `create_incident_investigation_prompt()` (Phases 1-2, 5) |
+| KA LLM integration | `kubernaut-agent/src/extensions/incident/llm_integration.py` | Pass `signal_mode` to prompt builder in `analyze_incident()` |
 | Go client regen | `pkg/holmesgpt/client/oas_schemas_gen.go` | `make generate-holmesgpt-client` |
 | Mock LLM | `test/services/mock-llm/src/server.py` | Add proactive scenario variants + detection logic (see Test Plan) |
 | Deepcopy | `api/aianalysis/v1alpha1/zz_generated.deepcopy.go` | `make generate` |
@@ -139,16 +141,16 @@ RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
 
 ### Unit Tests
 - AA request builder passes `signalMode` correctly for both values
-- HAPI prompt content differs for `reactive` vs. `proactive`
+- KA prompt content differs for `reactive` vs. `proactive`
 - "No action" outcome accepted in proactive mode
 
 ### Integration Tests
 - RO copies `signalMode` from SP to AA spec
-- HAPI mock LLM validates prompt contains correct investigation directive
+- KA mock LLM validates prompt contains correct investigation directive
 - Proactive mode with mock LLM returns valid "no action" response
 
 ### E2E Tests
-- Full pipeline: proactive alert → SP → RO → AA → HAPI → workflow selection (or "no action")
+- Full pipeline: proactive alert → SP → RO → AA → KA → workflow selection (or "no action")
 
 > **Note — Mock LLM Enhancement Required**: The Mock LLM (`test/services/mock-llm/src/server.py`) needs a small enhancement to support proactive signal testing:
 > 1. **New proactive scenario variants**: Add proactive variants for existing scenarios (e.g., `oomkilled_proactive`) in the `MOCK_SCENARIOS` dict. These use the same `workflow_id` (same catalog entry, since SP normalizes the signal type) but return `root_cause` text reflecting prediction/prevention rather than reactive RCA.
@@ -180,5 +182,5 @@ This is a **future enhancement** — v1.0 uses the same approval thresholds rega
 
 - [BR-SP-106: Proactive Signal Mode Classification](BR-SP-106-proactive-signal-mode-classification.md)
 - [Issue #55: Proactive remediation pipeline](https://github.com/jordigilh/kubernaut/issues/55)
-- [ADR-045: AIAnalysis ↔ HolmesGPT API Contract](../architecture/decisions/ADR-045-aianalysis-kubernaut-agent-contract.md)
+- [ADR-045: AIAnalysis ↔ Kubernaut Agent Contract](../architecture/decisions/ADR-045-aianalysis-kubernaut-agent-contract.md)
 - [AA Business Requirements](../services/crd-controllers/02-aianalysis/BUSINESS_REQUIREMENTS.md)

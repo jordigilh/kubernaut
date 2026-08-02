@@ -19,7 +19,7 @@ Storm detection in Gateway tracks resource-specific persistence (same resource f
 - `status.stormAggregation.aggregatedCount`: Total occurrences
 - `status.stormAggregation.stormType`: "rate" (currently only one type)
 
-**HAPI API Contract** (already supports these as optional fields):
+**Kubernaut Agent (KA) API Contract** (already supports these as optional fields):
 ```go
 type IncidentRequest struct {
     // ...
@@ -29,7 +29,7 @@ type IncidentRequest struct {
 }
 ```
 
-**Question**: Should AIAnalysis populate `IsStorm` and `StormSignalCount` when calling HAPI?
+**Question**: Should AIAnalysis populate `IsStorm` and `StormSignalCount` when calling KA?
 
 ### Key Requirements
 
@@ -71,7 +71,7 @@ T=0:05  RO creates SignalProcessing CRD
 T=0:30  SignalProcessing completes enrichment
         → RO creates AIAnalysis CRD
         → AIAnalysis reads RR: occurrenceCount=1 ❌ NO STORM
-        → AIAnalysis calls HAPI with occurrenceCount=1
+        → AIAnalysis calls Kubernaut Agent (KA) with occurrenceCount=1
 
 T=1:00  Alert 2 arrives (while AIAnalysis is investigating)
         → Gateway updates RR: occurrenceCount=2
@@ -79,9 +79,9 @@ T=1:00  Alert 2 arrives (while AIAnalysis is investigating)
 
 T=2:30  Alert 5 arrives ← STORM THRESHOLD REACHED
         → Gateway updates RR: occurrenceCount=5, isStorm=true
-        → BUT: AIAnalysis already completed, HAPI never sees this
+        → BUT: AIAnalysis already completed, KA never sees this
 
-T=3:00  HAPI completes investigation with occurrenceCount=1 context
+T=3:00  KA completes investigation with occurrenceCount=1 context
 
 Result: Storm context accumulates AFTER initial investigation
 ```
@@ -122,7 +122,7 @@ Even for "obvious" storms (CrashLoopBackOff):
   - Dependency unavailable? → Wait/scale dependency
 
 Same alert, different root causes → different workflows
-Only AIAnalysis/HAPI can determine the right action
+Only AIAnalysis/KA can determine the right action
 ```
 
 **Key Finding**: RO cannot make remediation decisions, so storm flag cannot influence routing.
@@ -137,7 +137,7 @@ Only AIAnalysis/HAPI can determine the right action
 T=5:00  WorkflowExecution fails (pod still crashing)
         → RO creates NEW AIAnalysis for recovery
         → AIAnalysis reads RR with occurrenceCount=20, isStorm=true ✅
-        → HAPI receives storm context in recovery request
+        → KA receives storm context in recovery request
 ```
 
 **Recovery Investigation Frequency**: ~5-10% of cases (most workflows succeed on first attempt)
@@ -167,7 +167,7 @@ T=5:00  WorkflowExecution fails (pod still crashing)
 
 ### Alternative 1: Expose Storm Flags to LLM
 
-**Approach**: Populate `IsStorm` and `StormSignalCount` in all HAPI requests.
+**Approach**: Populate `IsStorm` and `StormSignalCount` in all Kubernaut Agent (KA) requests.
 
 **Pros**:
 - ✅ Provides explicit persistence signal
@@ -192,7 +192,7 @@ T=5:00  WorkflowExecution fails (pod still crashing)
 **Approach**: Rely on `occurrence_count` field (already implemented) to convey persistence.
 
 **Pros**:
-- ✅ Already implemented in HAPI contract
+- ✅ Already implemented in KA contract
 - ✅ Simpler contract (fewer fields)
 - ✅ Consistent with DD-KA-002 (minimal context)
 - ✅ Maintains DD-HOLMESGPT-009 token efficiency
@@ -246,7 +246,7 @@ occurrence_count=20 → Highly persistent (definitely not transient)
 1. **Timing**: Storm context is invisible during initial investigations (90% of cases)
    - Initial investigation happens at occurrenceCount=1
    - Storm threshold (5+) reached AFTER AIAnalysis completes
-   - HAPI never sees storm context for initial investigation
+   - Kubernaut Agent (KA) never sees storm context for initial investigation
 
 2. **Routing**: RO cannot use storm for routing decisions (not a decision maker)
    - RO needs workflow selection from AIAnalysis
@@ -332,7 +332,7 @@ func (h *RecoveryHandler) buildRequest(analysis *aianalysisv1.AIAnalysis) *gener
 
 ### Neutral
 
-- 🔄 **HAPI API contract unchanged**: Optional fields remain for backward compatibility
+- 🔄 **Kubernaut Agent (KA) API contract unchanged**: Optional fields remain for backward compatibility
 - 🔄 **Future flexibility**: Can add storm flags later if business value increases
 
 ---
@@ -363,7 +363,9 @@ After determining that storm context has minimal value for LLM RCA (3-6%), the a
 
 ## References
 
-- **HAPI API Contract**: `pkg/aianalysis/client/holmesgpt.go`
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: `pkg/aianalysis/client/holmesgpt.go` does not exist in the current codebase.
+
+- **Kubernaut Agent (KA) API Contract**: `pkg/aianalysis/client/holmesgpt.go`
 - **AIAnalysis Integration**: `docs/services/crd-controllers/02-aianalysis/integration-points.md`
 - **Gateway Storm Detection**: `docs/services/stateless/gateway-service/overview.md`
 - **Storm Detection Brainstorm**: (internal development reference, removed in v1.0)

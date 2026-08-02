@@ -1,18 +1,18 @@
-# BR-AA-HAPI-064: Session-Based Pull Design for AA-HAPI Communication
+# BR-AA-HAPI-064: Session-Based Pull Design for AA-KA Communication
 
 **Status**: APPROVED
 **Version**: 1.1
 **Created**: 2026-02-09
 **Category**: AI
 **Priority**: P1 - High
-**Services Affected**: AIAnalysis Controller, HolmesGPT-API (HAPI)
+**Services Affected**: AIAnalysis Controller, Kubernaut Agent (KA)
 **GitHub Issue**: #64
 
 ---
 
 ## Context
 
-The current architecture has the AA controller make a blocking HTTP call to HAPI's `/api/v1/incident/analyze` endpoint and wait for the full LLM investigation to complete. With real LLM providers (Vertex AI, Anthropic), this takes 2-3 minutes per investigation, creating:
+The current architecture has the AA controller make a blocking HTTP call to KA's `/api/v1/incident/analyze` endpoint and wait for the full LLM investigation to complete. With real LLM providers (Vertex AI, Anthropic), this takes 2-3 minutes per investigation, creating:
 
 - Timeout fragility: HTTP client timeout hardcoded to 10 minutes (BR-ORCH-036 v3.0 workaround)
 - Retry inefficiency: timeout kills the entire LLM investigation, must restart from scratch
@@ -24,13 +24,13 @@ The current architecture has the AA controller make a blocking HTTP call to HAPI
 ## Requirements
 
 ### BR-AA-HAPI-064.1: Async Submit Endpoint
-HAPI MUST accept investigation requests and return a session identifier immediately (HTTP 202 Accepted) without waiting for LLM completion.
+KA MUST accept investigation requests and return a session identifier immediately (HTTP 202 Accepted) without waiting for LLM completion.
 
 ### BR-AA-HAPI-064.2: Session Status Polling
-HAPI MUST provide an endpoint to check investigation session status (pending, investigating, completed, failed).
+KA MUST provide an endpoint to check investigation session status (pending, investigating, completed, failed).
 
 ### BR-AA-HAPI-064.3: Session Result Retrieval
-HAPI MUST provide an endpoint to retrieve the completed investigation result by session ID.
+KA MUST provide an endpoint to retrieve the completed investigation result by session ID.
 
 ### BR-AA-HAPI-064.4: AA Controller Session Tracking (InvestigationSession)
 The AA controller MUST store session state in the AIAnalysis CRD status using an `InvestigationSession` sub-structure:
@@ -44,8 +44,8 @@ type InvestigationSession struct {
 }
 ```
 
-### BR-AA-HAPI-064.5: Session Regeneration on HAPI Restart
-When a poll returns 404 (session not found, typically due to HAPI restart), the AA controller MUST:
+### BR-AA-HAPI-064.5: Session Regeneration on KA Restart
+When a poll returns 404 (session not found, typically due to KA restart), the AA controller MUST:
 1. Increment `InvestigationSession.Generation`
 2. Clear `InvestigationSession.ID`
 3. Resubmit the investigation request to get a new session
@@ -71,7 +71,7 @@ The AA controller MUST use controller-runtime `RequeueAfter` for polling, not bl
 ### BR-AA-HAPI-064.9: Recovery Flow Support
 ~~The same async pattern MUST apply to recovery investigations (`/api/v1/recovery/analyze`).~~
 
-**DEPRECATED for v1.0**: Recovery investigations are deprecated. Instead, when a remediation is ineffective, the alert re-fires through the Gateway and the existing AI analysis results (from the prior Effectiveness Assessment) are included in the HAPI prompt context. The RO routing engine has logic to prevent this from becoming an endless cycle. Recovery flow may be revisited in future versions.
+**DEPRECATED for v1.0**: Recovery investigations are deprecated. Instead, when a remediation is ineffective, the alert re-fires through the Gateway and the existing AI analysis results (from the prior Effectiveness Assessment) are included in the KA prompt context. The RO routing engine has logic to prevent this from becoming an endless cycle. Recovery flow may be revisited in future versions.
 
 ### BR-AA-HAPI-064.10: Timeout Removal
 Once the async design is validated, the 10-minute hardcoded timeout workaround in `cmd/aianalysis/main.go` MUST be removed. All HTTP calls become short-lived (~30s timeout).
@@ -80,7 +80,7 @@ Once the async design is validated, the 10-minute hardcoded timeout workaround i
 
 ## Acceptance Criteria
 
-- [ ] HAPI exposes async session endpoints (submit, poll, result) for incident analysis (recovery deprecated for v1.0)
+- [ ] KA exposes async session endpoints (submit, poll, result) for incident analysis (recovery deprecated for v1.0)
 - [ ] AA controller stores InvestigationSession in CRD status
 - [ ] AA controller polls with constant requeue interval (not blocking)
 - [ ] Stale session detection and regeneration works (Generation counter increments)

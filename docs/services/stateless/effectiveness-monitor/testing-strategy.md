@@ -913,9 +913,9 @@ var _ = Describe("AI Decision Logic", func() {
 | **Data Storage Integration** | Level 1 (V1.0) | PostgreSQL + pgvector | 6 tests | Action history retrieval, effectiveness data persistence |
 | **Infrastructure Monitoring** | Level 1 (V1.0) | Prometheus metrics | 5 tests | Metrics correlation, side effect detection |
 | **Cross-Service Integration** | Level 1 (V1.0) | Context API, Data Storage | 4 tests | Assessment request flow, trend storage |
-| **HolmesGPT API Client Integration** | Level 2 (V1.1) | HolmesGPT API service | 5 tests | Post-execution analysis, authentication, error handling |
+| **Kubernaut Agent (KA) Client Integration** | Level 2 (V1.1) | KA service | 5 tests | Post-execution analysis, authentication, error handling |
 
-### **1. HolmesGPT Client Integration Tests — Level 2 (V1.1)**
+### **1. Kubernaut Agent (KA) Client Integration Tests — Level 2 (V1.1)**
 
 ```go
 // test/integration/effectiveness/holmesgpt_client_test.go
@@ -934,7 +934,7 @@ import (
     "github.com/jordigilh/kubernaut/pkg/monitor"
 )
 
-var _ = Describe("HolmesGPT Client Integration (DD-EFFECTIVENESS-001)", func() {
+var _ = Describe("Kubernaut Agent (KA) Client Integration (DD-EFFECTIVENESS-001)", func() {
     var (
         ctx          context.Context
         client       *monitor.HolmesGPTClient
@@ -946,7 +946,7 @@ var _ = Describe("HolmesGPT Client Integration (DD-EFFECTIVENESS-001)", func() {
         ctx = context.Background()
         callsReceived = 0
 
-        // Mock HolmesGPT API server
+        // Mock KA API server
         mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
             callsReceived++
 

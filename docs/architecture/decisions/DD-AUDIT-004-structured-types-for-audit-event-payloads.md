@@ -40,7 +40,7 @@ eventDataBytes, err := json.Marshal(eventData)
 | BR ID | Description | Payload Type Mapping |
 |-------|-------------|---------------------|
 | **BR-AI-001** | AI Analysis CRD lifecycle management | `AnalysisCompletePayload`, `PhaseTransitionPayload` |
-| **BR-AI-006** | HolmesGPT-API integration tracking | `HolmesGPTCallPayload` |
+| **BR-AI-006** | Kubernaut Agent (KA) integration tracking | `HolmesGPTCallPayload` |
 | **BR-AI-009** | Error tracking and diagnosis | `ErrorPayload` |
 | **BR-AI-011** | Data quality approval decisions | `ApprovalDecisionPayload` |
 | **BR-AI-030** | Rego policy evaluation tracking | `RegoEvaluationPayload` |
@@ -158,9 +158,11 @@ type PhaseTransitionPayload struct {
 
 ### Type 3: HolmesGPTCallPayload
 
-**Purpose**: Structured payload for HolmesGPT-API call events
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: The real generated type is `AIAnalysisAIAgentCallPayload` (`pkg/datastorage/ogen-client`), not `HolmesGPTCallPayload`, and its field is `HTTPStatusCode`, not `StatusCode` as shown below.
 
-**Business Requirement**: BR-AI-006 (HolmesGPT-API integration tracking)
+**Purpose**: Structured payload for Kubernaut Agent (KA) call events
+
+**Business Requirement**: BR-AI-006 (KA integration tracking)
 
 **Specification**:
 ```go

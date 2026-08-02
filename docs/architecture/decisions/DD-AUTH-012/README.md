@@ -53,7 +53,7 @@ OpenShift `ose-oauth-proxy` supports `--openshift-sar` flag, enabling Kubernetes
 
 ### Services Covered
 - **DataStorage Service**: REST API with `ose-oauth-proxy` sidecar (`verb:"create"`)
-- **HolmesGPT API**: REST API with `ose-oauth-proxy` sidecar (`verb:"get"`)
+- **Kubernaut Agent (KA)**: REST API with `ose-oauth-proxy` sidecar (`verb:"get"`)
 
 ### Key Differences: oauth2-proxy vs ose-oauth-proxy
 
@@ -110,7 +110,7 @@ args:
 | **ClusterRole** | ✅ Deployed | `deploy/data-storage/client-rbac-v2.yaml` |
 | **E2E Tests** | 🚧 In Progress | `test/e2e/datastorage/23_sar_access_control_test.go` |
 
-### HolmesGPT API ✅ COMPLETE
+### Kubernaut Agent (KA) ✅ COMPLETE
 | Component | Status | Configuration |
 |---|---|---|
 | **OAuth-Proxy Sidecar** | ✅ Deployed | `deploy/kubernaut-agent/06-deployment.yaml` |
@@ -131,7 +131,7 @@ args:
 
 ### Related DDs
 - **[DD-AUTH-009: OAuth2-Proxy Workflow Attribution](../DD-AUTH-009-oauth2-proxy-workflow-attribution-implementation.md)** - X-Auth-Request-User header injection for audit tracking
-- **[DD-AUTH-006: HAPI OAuth-Proxy Configuration](../DD-AUTH-006-kubernaut-agent-oauth-proxy-config.md)** - HolmesGPT API sidecar config
+- **[DD-AUTH-006: Kubernaut Agent (KA) OAuth-Proxy Configuration](../DD-AUTH-006-kubernaut-agent-oauth-proxy-config.md)** - KA sidecar config
 - **[DD-AUTH-005: DataStorage Client Authentication](../DD-AUTH-005-datastorage-client-authentication-pattern.md)** - ServiceAccount authentication pattern
 
 ### Related ADRs
@@ -147,9 +147,9 @@ args:
 - **BR-DATA-STORAGE-050**: User attribution for SOC2 compliance
 - **BR-SOC2-CC8.1**: Track user identity for workflow catalog operations
 
-### HolmesGPT API
-- **BR-HAPI-197**: RESTful API for incident analysis with RBAC
-- **BR-HAPI-198**: RESTful API for recovery analysis with RBAC
+### Kubernaut Agent (KA)
+- **BR-KA-197**: RESTful API for incident analysis with RBAC
+- **BR-HAPI-198** (no renamed KA-prefixed doc exists): RESTful API for recovery analysis with RBAC
 
 ---
 
@@ -266,7 +266,7 @@ roleRef:
 - 🚧 Test 4: Workflow API without role → 403 Forbidden (workflow types pending)
 - 🚧 Test 5: Invalid token → 401 Unauthorized (pending)
 
-**HolmesGPT API**:
+**Kubernaut Agent (KA)**:
 - 🚧 Test 1: ServiceAccount with `kubernaut-agent-client` role → 200 OK
 - 🚧 Test 2: ServiceAccount without role → 403 Forbidden
 - 🚧 Test 3: Invalid token → 401 Unauthorized
@@ -303,7 +303,7 @@ This design decision is the **canonical reference** for the technical choice to 
 
 **Referenced By**:
 - DataStorage deployment (`deploy/data-storage/deployment.yaml`)
-- HolmesGPT API deployment (`deploy/kubernaut-agent/06-deployment.yaml`)
+- Kubernaut Agent (KA) deployment (`deploy/kubernaut-agent/06-deployment.yaml`)
 - DD-AUTH-011 (Granular RBAC strategy)
 - DD-AUTH-013 (HTTP Status Codes)
 
@@ -314,7 +314,7 @@ This design decision is the **canonical reference** for the technical choice to 
 ### Pending Tasks
 1. 🚧 Complete DataStorage E2E tests (workflow types fix)
 2. 🚧 Add 401 Unauthorized test scenarios
-3. 🚧 Create HolmesGPT API E2E auth validation tests
+3. 🚧 Create Kubernaut Agent (KA) E2E auth validation tests
 4. 🚧 Add NetworkPolicy examples to DD-AUTH-012
 5. 🚧 Create production troubleshooting guide for SAR failures
 

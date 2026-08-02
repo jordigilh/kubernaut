@@ -199,8 +199,8 @@ spec:
 ```
 1. Workflow author writes schema with execution.serviceAccountName (optional)
 2. DS parser extracts serviceAccountName; DS stores in service_account_name column
-3. HAPI selects workflow → DS response includes serviceAccountName
-4. HAPI validator extracts service_account_name → injects into selected_workflow
+3. KA selects workflow → DS response includes serviceAccountName
+4. KA validator extracts service_account_name → injects into selected_workflow
 5. AA response processor maps service_account_name → SelectedWorkflow.ServiceAccountName
 6. RO creator propagates ServiceAccountName → WFE.Spec.ServiceAccountName (top-level, engine-agnostic)
 7. WE executor reads Spec.ServiceAccountName:
@@ -278,8 +278,8 @@ type ExecutionConfig struct {
 | DS parser | DataStorage | `ExtractServiceAccountName()` extraction function |
 | DS DB | DataStorage | `service_account_name TEXT` column in catalog |
 | DS API/OAS | DataStorage | `serviceAccountName` field in REST response |
-| HAPI validator | HAPI | Extract `service_account_name` from DS response |
-| HAPI result parser | HAPI | Inject `service_account_name` into `selected_workflow` |
+| KA validator | KA | Extract `service_account_name` from DS response |
+| KA result parser | KA | Inject `service_account_name` into `selected_workflow` |
 | AA response processor | AIAnalysis | Map to `SelectedWorkflow.ServiceAccountName` |
 | RO creator | RemediationOrchestrator | Propagate SA to `WFE.Spec.ExecutionConfig.ServiceAccountName` |
 | WFE CRD | WorkflowExecution | No change (field already exists) |

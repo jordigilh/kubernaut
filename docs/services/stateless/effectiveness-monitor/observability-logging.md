@@ -446,14 +446,14 @@ logger.Info("AI decision evaluation",
 
 ```go
 // Log AI API call start
-logger.Info("Calling HolmesGPT API for post-execution analysis",
+logger.Info("Calling Kubernaut Agent (KA) API for post-execution analysis",
     zap.String("workflow_id", workflow.ID),
     zap.String("endpoint", "/api/v1/postexec/analyze"),
     zap.String("execution_id", execID),
 )
 
 // Log AI API call success
-logger.Info("HolmesGPT API call successful",
+logger.Info("KA API call successful",
     zap.String("workflow_id", workflow.ID),
     zap.Duration("duration", duration),
     zap.Float64("effectiveness_score", response.EffectivenessScore),
@@ -463,7 +463,7 @@ logger.Info("HolmesGPT API call successful",
 )
 
 // Log AI API call failure
-logger.Error("HolmesGPT API call failed",
+logger.Error("KA API call failed",
     zap.String("workflow_id", workflow.ID),
     zap.Duration("duration", duration),
     zap.Error(err),
@@ -478,7 +478,7 @@ logger.Error("HolmesGPT API call failed",
 {
   "level": "info",
   "timestamp": "2025-10-06T10:15:45Z",
-  "message": "HolmesGPT API call successful",
+  "message": "KA API call successful",
   "workflow_id": "wf-abc123",
   "duration": "2.3s",
   "effectiveness_score": 0.85,
@@ -491,7 +491,7 @@ logger.Error("HolmesGPT API call failed",
 {
   "level": "error",
   "timestamp": "2025-10-06T10:16:00Z",
-  "message": "HolmesGPT API call failed",
+  "message": "KA API call failed",
   "workflow_id": "wf-jkl012",
   "duration": "30s",
   "error": "context deadline exceeded",

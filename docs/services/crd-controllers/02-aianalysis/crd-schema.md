@@ -38,9 +38,9 @@
 
 | Feature | V1.0 Status | Notes |
 |---------|-------------|-------|
-| **LLM Provider** | HolmesGPT-API only | No `LLMProvider`, `LLMModel`, `Temperature` fields |
+| **LLM Provider** | Kubernaut Agent (KA) only | No `LLMProvider`, `LLMModel`, `Temperature` fields |
 | **Approval Flow** | `approvalRequired=true` → RO notifies | No `AIApprovalRequest` CRD (V1.1) |
-| **Investigation Scope** | HolmesGPT decides | No `investigationScope` field |
+| **Investigation Scope** | KA decides | No `investigationScope` field |
 | **Business Context** | Via CustomLabels (Rego) | No hardcoded `businessContext` struct |
 | **Historical Context** | Operators only | Not for LLM input |
 
@@ -87,7 +87,7 @@ type AIAnalysis struct {
 ```go
 // AIAnalysisSpec defines the desired state of AIAnalysis.
 // Design Decision: DD-CONTRACT-002 (self-contained CRD pattern)
-// V1.0: HolmesGPT-API only (no LLM config fields)
+// V1.0: KA only (no LLM config fields)
 // Recovery: [Deprecated - Issue #180] DD-RECOVERY-002 (direct recovery flow)
 type AIAnalysisSpec struct {
     // ========================================
@@ -215,12 +215,12 @@ type EnrichmentResults struct {
 
     // Auto-detected cluster characteristics - NO CONFIG NEEDED
     // SignalProcessing detects these from K8s resources automatically
-    // Used by HolmesGPT-API for: workflow filtering + LLM context
-    // ADR-056: removed from EnrichmentResults, now computed by HAPI post-RCA
+    // Used by KA for: workflow filtering + LLM context
+    // ADR-056: removed from EnrichmentResults, now computed by KA post-RCA
     DetectedLabels *DetectedLabels `json:"detectedLabels,omitempty"`
 
     // OwnerChain: K8s ownership traversal from signal source resource
-    // DD-WORKFLOW-001 v1.8: Used by HolmesGPT-API for 100% safe DetectedLabels validation
+    // DD-WORKFLOW-001 v1.8: Used by KA for 100% safe DetectedLabels validation
     // ADR-055: removed from EnrichmentResults
     // SignalProcessing traverses metadata.ownerReferences to build this chain
     // Example: Pod → ReplicaSet → Deployment
@@ -244,14 +244,14 @@ type EnrichmentResults struct {
 > - SignalProcessing uses a boolean `status.degradedMode` flag (not a float score)
 > - `DegradedMode = true` when **K8s API is unavailable** → falls back to signal labels
 > - RO checks `SignalProcessing.status.phase == "completed"`, not quality
-> - AIAnalysis uses `TargetInOwnerChain` from HolmesGPT-API for Rego approval policies
+> - AIAnalysis uses `TargetInOwnerChain` from Kubernaut Agent (KA) for Rego approval policies
 
 ### DetectedLabels (8 Fields)
 
 ```go
 // DetectedLabels contains auto-detected cluster characteristics
 // SignalProcessing populates these automatically from K8s resources
-// HolmesGPT-API uses for:
+// KA uses for:
 //   - Workflow filtering (deterministic SQL WHERE)
 //   - LLM context (natural language in prompt)
 // DD-WORKFLOW-001 v2.2: Detection failure handling with FailedDetections
@@ -311,7 +311,7 @@ type DetectedLabels struct {
 ```go
 // OwnerChainEntry represents a single entry in the K8s ownership chain
 // SignalProcessing traverses ownerReferences to build this chain
-// HolmesGPT-API uses for DetectedLabels validation
+// KA uses for DetectedLabels validation
 type OwnerChainEntry struct {
     // Namespace of the owner (empty for cluster-scoped like Node)
     Namespace string `json:"namespace,omitempty"`
@@ -411,18 +411,18 @@ type AIAnalysisStatus struct {
 
     // Investigation details
     InvestigationID   string `json:"investigationId,omitempty"`
-    // NOTE: TokensUsed REMOVED (v2.7) - HAPI owns LLM cost observability
-    // Use InvestigationID to correlate with HAPI's holmesgpt_llm_token_usage_total metric
+    // NOTE: TokensUsed REMOVED (v2.7) - KA owns LLM cost observability
+    // Use InvestigationID to correlate with KA's holmesgpt_llm_token_usage_total metric
     InvestigationTime int64  `json:"investigationTime,omitempty"`
 
     // ========================================
-    // HAPI RESPONSE METADATA (Dec 2025)
+    // KA RESPONSE METADATA (Dec 2025)
     // ========================================
     // Whether the RCA-identified target resource was found in OwnerChain
     // If false, DetectedLabels may be from different scope than affected resource
     // Used for: Rego policy input, audit trail, operator notifications, metrics
     TargetInOwnerChain *bool    `json:"targetInOwnerChain,omitempty"`
-    // Non-fatal warnings from HolmesGPT-API (e.g., OwnerChain validation, low confidence)
+    // Non-fatal warnings from KA (e.g., OwnerChain validation, low confidence)
     Warnings           []string `json:"warnings,omitempty"`
 
     // Recovery status (DD-RECOVERY-002)
@@ -443,7 +443,7 @@ type SelectedWorkflow struct {
     WorkflowID string `json:"workflowId"`
     // Workflow version
     Version string `json:"version"`
-    // Container image (OCI bundle) - resolved by HolmesGPT-API
+    // Container image (OCI bundle) - resolved by KA
     ContainerImage string `json:"containerImage"`
     // Container digest for audit trail
     ContainerDigest string `json:"containerDigest,omitempty"`
@@ -462,11 +462,11 @@ type SelectedWorkflow struct {
 // AlternativeWorkflow contains alternative workflows considered but not selected.
 // INFORMATIONAL ONLY - NOT for automatic execution.
 // Helps operators understand AI reasoning during approval decisions.
-// Per HolmesGPT-API team (Dec 5, 2025): Alternatives are for CONTEXT, not EXECUTION.
+// Per KA team (Dec 5, 2025): Alternatives are for CONTEXT, not EXECUTION.
 type AlternativeWorkflow struct {
     // Workflow identifier (catalog lookup key)
     WorkflowID string `json:"workflowId"`
-    // Container image (OCI bundle) - resolved by HolmesGPT-API
+    // Container image (OCI bundle) - resolved by KA
     ContainerImage string `json:"containerImage,omitempty"`
     // Confidence score (0.0-1.0) - shows why it wasn't selected
     Confidence float64 `json:"confidence"`
@@ -475,7 +475,7 @@ type AlternativeWorkflow struct {
 }
 ```
 
-> **Key Principle** (per HolmesGPT-API team):
+> **Key Principle** (per Kubernaut Agent (KA) team):
 > - ✅ `SelectedWorkflow` is executed by RemediationOrchestrator
 > - ✅ `AlternativeWorkflows` help operators make informed approval decisions
 > - ❌ Alternatives are NOT automatically executed as fallbacks
@@ -589,7 +589,7 @@ spec:
 status:
   phase: Completed
   rootCause: "Memory limit exceeded due to traffic spike"
-  targetInOwnerChain: true              # From HolmesGPT-API response
+  targetInOwnerChain: true              # From KA response
   warnings: []                          # No warnings
   selectedWorkflow:
     workflowId: oomkill-increase-memory

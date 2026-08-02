@@ -2,6 +2,10 @@
 
 ---
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This document's code-reuse plan describes a `pkg/ai/*` package tree (`pkg/ai/holmesgpt/`, `pkg/ai/analysis/`, `pkg/ai/llm/`, `pkg/ai/insights/`, `pkg/ai/context/`) and a `cmd/aianalysis/main.go` entry point that do not exist in the current codebase; AIAnalysis was implemented independently of this migration plan.
+
+---
+
 ## ⚠️ NAMING DEPRECATION NOTICE
 
 **ALERT PREFIX DEPRECATED**: This document contains type definitions using **"Alert" prefix** (e.g., `AlertContext`), which is **DEPRECATED** and being migrated to **"Signal" prefix** to reflect multi-signal architecture.
@@ -20,10 +24,10 @@
 
 **Total Reusable Code**: ~23,468 lines in `pkg/ai/`
 
-#### HolmesGPT Integration (`pkg/ai/holmesgpt/` - 7,956 lines) ✅ HIGH REUSE
+#### Kubernaut Agent (KA) Integration (`pkg/ai/holmesgpt/` - 7,956 lines) ✅ HIGH REUSE
 
 **Files**:
-- `client.go` (2,184 lines) - HolmesGPT API client
+- `client.go` (2,184 lines) - KA API client
 - `ai_orchestration_coordinator.go` (1,460 lines) - Investigation orchestration
 - `dynamic_toolset_manager.go` (727 lines) - Toolset management
 - `toolset_deployment_client.go` (558 lines) - Toolset deployment
@@ -34,9 +38,9 @@
 - `toolset_template_engine.go` (298 lines) - Template engine
 
 **Reuse Strategy**: ✅ **WRAP & INTEGRATE**
-- Wrap existing HolmesGPT client in `pkg/ai/analysis/integration/holmesgpt.go`
+- Wrap existing KA client in `pkg/ai/analysis/integration/holmesgpt.go`
 - Reuse investigation orchestration logic in investigation phase
-- Leverage toolset management for dynamic HolmesGPT capabilities
+- Leverage toolset management for dynamic KA capabilities
 
 #### LLM Client (`pkg/ai/llm/` - 2,967 lines) ✅ MEDIUM REUSE
 
@@ -47,7 +51,7 @@
 - `context_optimizer.go` (73 lines) - Context optimization
 
 **Reuse Strategy**: ✅ **ADAPT FOR V2**
-- V1: HolmesGPT only, minimal LLM client usage
+- V1: Kubernaut Agent (KA) only, minimal LLM client usage
 - V2: Multi-provider support will leverage this infrastructure
 - Current: May use for response validation and quality checks
 
@@ -77,13 +81,13 @@
 
 | Component | Existing Code | Action | Effort | Business Value |
 |-----------|--------------|--------|--------|---------------|
-| **HolmesGPT Client** | `pkg/ai/holmesgpt/client.go` | WRAP | Low | High - Investigation core |
+| **Kubernaut Agent (KA) Client** | `pkg/ai/holmesgpt/client.go` | WRAP | Low | High - Investigation core |
 | **Investigation Orchestration** | `pkg/ai/holmesgpt/ai_orchestration_coordinator.go` | REFACTOR | Medium | High - Phase logic |
 | **Toolset Management** | `pkg/ai/holmesgpt/dynamic_toolset_manager.go` | INTEGRATE | Low | High - Dynamic capabilities |
 | **Context Caching** | `pkg/ai/holmesgpt/cached_context_manager.go` | REUSE | Low | Medium - Performance |
 | **Confidence Scoring** | `pkg/ai/insights/assessor.go` | EXTRACT | Medium | High - Recommendation ranking |
 | **Response Validation** | `pkg/ai/llm/client.go` | ADAPT | Medium | High - Quality assurance |
-| **LLM Multi-Provider** | `pkg/ai/llm/providers.go` | V2 FUTURE | N/A | Low (V1 HolmesGPT only) |
+| **LLM Multi-Provider** | `pkg/ai/llm/providers.go` | V2 FUTURE | N/A | Low (V1 KA only) |
 
 ### Recommended Migration Strategy
 
@@ -114,7 +118,7 @@
 **Effort**: 1 day
 
 1. Implement `pkg/ai/analysis/phases/investigating.go`
-   - Use HolmesGPT integration layer
+   - Use Kubernaut Agent (KA) integration layer
    - Extract root cause hypotheses (BR-AI-012)
 2. Implement `pkg/ai/analysis/phases/analyzing.go`
    - Contextual analysis (BR-AI-001)
@@ -204,7 +208,7 @@ This CRD specification was **built with type safety from the start**—no refact
 | Type | Previous (Anti-Pattern) | Current (Type-Safe) | Benefit |
 |------|------------------------|---------------------|---------|
 | **AlertContext** | N/A (new service) | Structured type with 10+ fields | Compile-time safety, clear data contract |
-| **InvestigationScope** | N/A (new service) | Structured type with resource scope | HolmesGPT targeting precision |
+| **InvestigationScope** | N/A (new service) | Structured type with resource scope | Kubernaut Agent (KA) targeting precision |
 | **AnalysisRequest** | N/A (new service) | Structured type | Type-safe AI investigation request |
 | **AnalysisResult** | N/A (new service) | Structured type with recommendations | Type-safe AI response handling |
 | **RecommendationList** | N/A (new service) | Structured slice of Recommendation types | No `map[string]interface{}` in recommendations |
@@ -212,7 +216,7 @@ This CRD specification was **built with type safety from the start**—no refact
 **Design Principle**: AIAnalysis service was designed after Remediation Processor type safety remediation, incorporating lessons learned.
 
 **Key Type-Safe Components**:
-- ✅ All HolmesGPT request/response types are structured
+- ✅ All KA request/response types are structured
 - ✅ Recommendation workflow types are fully structured
 - ✅ No `map[string]interface{}` usage anywhere in CRD spec or status
 - ✅ OpenAPI v3 validation enforces all types at API server level
@@ -226,7 +230,7 @@ type AlertContext struct {
     Environment      string `json:"environment"`
     BusinessPriority string `json:"businessPriority"`
 
-    // Resource targeting for HolmesGPT (NOT logs/metrics)
+    // Resource targeting for Kubernaut Agent (KA) (NOT logs/metrics)
     Namespace    string `json:"namespace"`
     ResourceKind string `json:"resourceKind"`
     ResourceName string `json:"resourceName"`

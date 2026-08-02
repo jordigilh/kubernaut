@@ -14,7 +14,7 @@
 **Updated**: November 27, 2025
 **Downstream Impact**: Ultra-Compact JSON (DD-HOLMESGPT-009)
 
-**Note**: Signal Processing prepares enriched context that is consumed by AIAnalysis Controller and formatted as **self-documenting JSON** for HolmesGPT API calls. While this service doesn't directly interact with HolmesGPT, its enrichment quality enables 60% token reduction in downstream AI analysis.
+**Note**: Signal Processing prepares enriched context that is consumed by AIAnalysis Controller and formatted as **self-documenting JSON** for Kubernaut Agent (KA) calls. While this service doesn't directly interact with KA, its enrichment quality enables 60% token reduction in downstream AI analysis.
 
 ### 1. Upstream Integration: RemediationRequest Controller
 
@@ -149,7 +149,7 @@ func (r *RemediationRequestReconciler) reconcileAIAnalysis(
                         BusinessCriticality: signalProcessing.Status.EnvironmentClassification.BusinessCriticality,
                         Priority:            signalProcessing.Status.Categorization.Priority,
 
-                        // Resource targeting for HolmesGPT (NOT logs/metrics - toolsets fetch those)
+                        // Resource targeting for KA (NOT logs/metrics - toolsets fetch those)
                         Namespace:    signalProcessing.Spec.Signal.Namespace,
                         ResourceKind: signalProcessing.Status.EnrichmentResults.KubernetesContext.ResourceKind,
                         ResourceName: signalProcessing.Status.EnrichmentResults.KubernetesContext.ResourceName,
@@ -165,11 +165,11 @@ func (r *RemediationRequestReconciler) reconcileAIAnalysis(
                         // ========================================
 
                         // Owner chain for DetectedLabels validation (**ADR-055: removed**)
-                        // HolmesGPT-API validates RCA resource is in this chain
+                        // KA validates RCA resource is in this chain
                         // If not in chain → DetectedLabels excluded from workflow filtering
                         OwnerChain: signalProcessing.Status.EnrichmentResults.OwnerChain,
 
-                        // Auto-detected cluster characteristics (V1.0) (**ADR-056: removed, now computed by HAPI post-RCA**)
+                        // Auto-detected cluster characteristics (V1.0) (**ADR-056: removed, now computed by KA post-RCA**)
                         // Dual-use: Always in LLM prompt, conditionally in workflow filter
                         DetectedLabels: signalProcessing.Status.EnrichmentResults.DetectedLabels,
 

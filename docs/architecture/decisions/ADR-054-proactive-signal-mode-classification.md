@@ -23,7 +23,7 @@ Two problems block proactive signal support today:
 
 This ADR implements two Business Requirements:
 - **BR-SP-106**: Proactive Signal Mode Classification (Signal Processing)
-- **BR-AI-084**: Proactive Signal Mode Prompt Strategy (AIAnalysis + HAPI)
+- **BR-AI-084**: Proactive Signal Mode Prompt Strategy (AIAnalysis + Kubernaut Agent (KA))
 
 ### Constraints
 
@@ -70,7 +70,7 @@ proactive_signal_mappings:
 **Rationale**:
 - **Normalization enables catalog reuse**: The agent searches for `OOMKilled` workflows that already exist — no need to create proactive-specific workflow entries. The `signalMode` field tells the agent the context is proactive.
 - **Source-agnostic workflow catalog**: Normalization decouples the workflow catalog from signal source naming conventions. The catalog only deals with base signal types (`OOMKilled`, `DiskPressure`, etc.) regardless of whether the signal came from Prometheus `predict_linear()`, a reactive Prometheus alert, a Kubernetes event, or any future signal source (AWS CloudWatch, Azure Monitor, etc.). Source-specific naming is an SP concern, not a catalog concern.
-- **Clean separation**: SP handles signal type normalization (its responsibility), the prompt handles investigation strategy (HAPI's responsibility). The LLM never needs to know about `PredictedOOMKill` as a signal type.
+- **Clean separation**: SP handles signal type normalization (its responsibility), the prompt handles investigation strategy (Kubernaut Agent (KA)'s responsibility). The LLM never needs to know about `PredictedOOMKill` as a signal type.
 - **Config-driven**: Operators can add new proactive signal type mappings without code changes
 - **Hot-reloadable**: Follows BR-SP-072 pattern (fsnotify-based ConfigMap reload)
 - **Safe default**: Unmapped signal types default to `reactive`, no workflow disruption
@@ -94,8 +94,8 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
           copies sp.Status.SignalType → aa.Spec.SignalContext.SignalType (normalized)
           (same pattern as severity, environment, priority)
         → AI Analysis
-            passes signalMode + signalName (normalized) to HAPI in IncidentRequest
-          → HolmesGPT API
+            passes signalMode + signalName (normalized) to KA in IncidentRequest
+          → KA
               1. Agent receives signal_name = "OOMKilled" (searches catalog normally)
               2. Agent receives signal_mode = "proactive" (switches prompt strategy)
               3. Prompt: "This is a predicted incident — investigate how to prevent it"
@@ -108,9 +108,9 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
 
 ---
 
-### 3. HAPI Prompt Strategy
+### 3. KA Prompt Strategy
 
-**Chosen**: HAPI switches its investigation prompt based on `signal_mode`, with two distinct directives. Because SP normalizes the signal type, the agent always searches the workflow catalog with the base type — no special search logic needed.
+**Chosen**: KA switches its investigation prompt based on `signal_mode`, with two distinct directives. Because SP normalizes the signal type, the agent always searches the workflow catalog with the base type — no special search logic needed.
 
 **Reactive** (default — incident has occurred):
 > Perform root cause analysis. The incident has occurred. Investigate logs, events, and resource state to determine the root cause and recommend remediation.
@@ -128,9 +128,9 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
 
 ---
 
-### 4. Single HAPI Endpoint (No Separate Proactive Endpoint)
+### 4. Single KA Endpoint (No Separate Proactive Endpoint)
 
-**Chosen**: Reuse the existing HAPI investigation endpoint (`IncidentRequest`), adding `signal_mode` as a field. No new REST endpoint for proactive investigations.
+**Chosen**: Reuse the existing KA investigation endpoint (`IncidentRequest`), adding `signal_mode` as a field. No new REST endpoint for proactive investigations.
 
 **Rationale**:
 - **Identical pipeline**: The investigation infrastructure is the same — same agent, same tools, same workflow catalog search, same response structure (analysis + workflow recommendation or "no action"). The only difference is the prompt preamble.
@@ -175,9 +175,9 @@ Gateway performs the proactive pattern detection before creating the SP CRD.
 - Gateway would need to maintain signal pattern config (wrong layer)
 - SP already has the enrichment pipeline infrastructure (hot-reload, Rego engine, etc.)
 
-### Alternative C: HAPI Infers Proactive Mode from Signal Type Name
+### Alternative C: Kubernaut Agent (KA) Infers Proactive Mode from Signal Type Name
 
-HAPI checks if the signal type starts with "Predicted" and adjusts its prompt, without an explicit `signalMode` field from the pipeline.
+KA checks if the signal type starts with "Predicted" and adjusts its prompt, without an explicit `signalMode` field from the pipeline.
 
 **Rejected because**:
 - Fragile string-based convention in the LLM layer — no guarantee the LLM will reliably parse the prefix
@@ -185,7 +185,7 @@ HAPI checks if the signal type starts with "Predicted" and adjusts its prompt, w
 - Doesn't generalize to non-"Predicted" naming patterns
 - Violates separation of concerns (classification is SP's job, not the LLM's)
 
-### Alternative D: Separate HAPI REST Endpoint for Proactive Investigations
+### Alternative D: Separate KA REST Endpoint for Proactive Investigations
 
 Expose a new `/api/v1/proactive-investigation` endpoint alongside the existing investigation endpoint.
 
@@ -204,7 +204,7 @@ Expose a new `/api/v1/proactive-investigation` endpoint alongside the existing i
 
 1. **Immediate value with zero code changes**: Prometheus `predict_linear()` alerting rules generate proactive signals today. Even without the pipeline enhancement, these alerts flow through Kubernaut and trigger standard remediation.
 2. **Source-agnostic workflow catalog**: Normalization at the SP layer decouples the workflow catalog from signal source naming conventions. Workflows are defined once per base signal type and work for any source — Prometheus proactive alerts, reactive alerts, Kubernetes events, or future integrations (CloudWatch, Azure Monitor, PagerDuty). Adding a new signal source never requires new workflow catalog entries.
-3. **Incremental enhancement**: The pipeline changes (SP → RO → AA → HAPI) follow existing patterns, minimizing implementation risk.
+3. **Incremental enhancement**: The pipeline changes (SP → RO → AA → KA) follow existing patterns, minimizing implementation risk.
 4. **Enterprise ROI proof**: Proactive vs. reactive tracking in audit events enables the Effectiveness Monitor to answer "How often did predictions prevent incidents?"
 5. **Extensible**: New proactive signal type mappings added via config, not code.
 
@@ -228,8 +228,8 @@ Expose a new `/api/v1/proactive-investigation` endpoint alongside the existing i
 
 | Phase | Days | Details |
 |---|---|---|
-| Production code | 2-3 | SP CRD + enrichment, RO copy, AA builder, HAPI OpenAPI + prompt |
-| Testing | 3-4 | Unit (SP, RO, AA, HAPI), integration, E2E full pipeline |
+| Production code | 2-3 | SP CRD + enrichment, RO copy, AA builder, KA OpenAPI + prompt |
+| Testing | 3-4 | Unit (SP, RO, AA, KA), integration, E2E full pipeline |
 | Config + docs | 0.5 | Mapping config, Prometheus rule examples |
 | Buffer | 0.5 | Prompt iteration |
 
@@ -247,8 +247,8 @@ Expose a new `/api/v1/proactive-investigation` endpoint alongside the existing i
 | AA CRD | `api/aianalysis/v1alpha1/aianalysis_types.go` | Add `SignalMode` to `SignalContextInput` |
 | RO creator | `pkg/remediationorchestrator/creator/aianalysis.go` | Change `SignalName` source to `sp.Status` + copy `SignalMode` in `buildSignalContext()` |
 | AA builder | `pkg/aianalysis/handlers/request_builder.go` | Pass `SignalMode` in `BuildIncidentRequest()` |
-| HAPI OpenAPI | `kubernaut-agent/api/openapi.json` | Add `signal_mode` to `IncidentRequest` |
-| HAPI prompt | `kubernaut-agent/src/extensions/incident/prompt_builder.py` | Conditional prompt strategy (Phases 1-2, 5) |
+| KA OpenAPI | `kubernaut-agent/api/openapi.json` | Add `signal_mode` to `IncidentRequest` |
+| KA prompt | `kubernaut-agent/src/extensions/incident/prompt_builder.py` | Conditional prompt strategy (Phases 1-2, 5) |
 | Mock LLM | `test/services/mock-llm/src/server.py` | Proactive scenario variants + detection logic |
 | Deepcopy | `zz_generated.deepcopy.go` | `make generate` |
 
@@ -268,7 +268,7 @@ Expose a new `/api/v1/proactive-investigation` endpoint alongside the existing i
 - [BR-AI-084: Proactive Signal Mode Prompt Strategy](../../requirements/BR-AI-084-proactive-signal-mode-prompt-strategy.md)
 - [Issue #55: Proactive remediation pipeline](https://github.com/jordigilh/kubernaut/issues/55)
 - [DD-WORKFLOW-001: Mandatory Label Schema](DD-WORKFLOW-001-mandatory-label-schema.md)
-- [ADR-045: AIAnalysis ↔ HolmesGPT API Contract](ADR-045-aianalysis-kubernaut-agent-contract.md)
+- [ADR-045: AIAnalysis ↔ Kubernaut Agent Contract](ADR-045-aianalysis-kubernaut-agent-contract.md)
 
 ---
 

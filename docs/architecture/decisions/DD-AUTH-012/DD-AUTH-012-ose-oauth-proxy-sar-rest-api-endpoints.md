@@ -4,7 +4,7 @@
 **Status**: ✅ **IMPLEMENTED**
 **Version**: 1.0
 **Authority**: AUTHORITATIVE - Technical Architecture Decision
-**Related**: DD-AUTH-009 (oauth-proxy migration), DD-AUTH-011 (Granular RBAC), DD-AUTH-004 (DataStorage auth), DD-AUTH-006 (HAPI auth)
+**Related**: DD-AUTH-009 (oauth-proxy migration), DD-AUTH-011 (Granular RBAC), DD-AUTH-004 (DataStorage auth), DD-AUTH-006 (Kubernaut Agent (KA) auth)
 
 ---
 
@@ -25,7 +25,7 @@
 Kubernetes RBAC natively protects:
 - ✅ **CRD controllers**: K8s API enforces RBAC on CRD operations (CREATE, GET, UPDATE, DELETE)
 - ✅ **K8s resources**: Pods, Services, ConfigMaps all protected by K8s RBAC
-- ❌ **REST API endpoints**: HTTP endpoints on stateless services (DataStorage, HAPI) are **NOT** protected by K8s RBAC
+- ❌ **REST API endpoints**: HTTP endpoints on stateless services (DataStorage, Kubernaut Agent (KA)) are **NOT** protected by K8s RBAC
 
 **Gap**: DataStorage `/api/v1/workflows/*` endpoints are REST APIs, not K8s resources. Without SAR, **any authenticated user can access any endpoint** regardless of RBAC permissions.
 
@@ -119,7 +119,7 @@ containers:
 
 ---
 
-### **HolmesGPT API** (Production)
+### **Kubernaut Agent (KA)** (Production)
 
 **Production**: `deploy/kubernaut-agent/06-deployment.yaml`
 
@@ -130,12 +130,12 @@ containers:
     args:
       - --provider=openshift
       - --openshift-service-account=kubernaut-agent
-      # DD-AUTH-006: SAR with verb:"get" (HAPI protects its own endpoints)
+      # DD-AUTH-006: SAR with verb:"get" (KA protects its own endpoints)
       - --openshift-sar={"namespace":"kubernaut-system","resource":"services","resourceName":"kubernaut-agent","verb":"get"}
       - --set-xauthrequest=true  # For LLM cost tracking
 ```
 
-**Note**: HAPI uses `verb:"get"` because it's protecting **its own REST API endpoints** (not DataStorage). Only Gateway should access HAPI.
+**Note**: KA uses `verb:"get"` because it's protecting **its own REST API endpoints** (not DataStorage). Only Gateway should access KA.
 
 ---
 
@@ -290,9 +290,9 @@ func (h *WorkflowHandler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Re
 
 **Updated**: Production deployments to use `ose-oauth-proxy`
 - DataStorage: `deploy/data-storage/deployment.yaml` (updated today)
-- HolmesGPT API: `deploy/kubernaut-agent/06-deployment.yaml` (already using ose-oauth-proxy)
+- Kubernaut Agent (KA): `deploy/kubernaut-agent/06-deployment.yaml` (already using ose-oauth-proxy)
 
-**Authority**: DD-AUTH-004 (DataStorage), DD-AUTH-006 (HAPI), DD-AUTH-012 (this document)
+**Authority**: DD-AUTH-004 (DataStorage), DD-AUTH-006 (KA), DD-AUTH-012 (this document)
 
 ---
 
@@ -360,10 +360,10 @@ kubectl exec -n kubernaut-system header-logger -- cat /tmp/headers.log | grep X-
 ## 🎯 **SUCCESS CRITERIA**
 
 - [x] DataStorage deployment uses `ose-oauth-proxy` with SAR enforcement
-- [x] HAPI deployment uses `ose-oauth-proxy` with SAR enforcement
+- [x] Kubernaut Agent (KA) deployment uses `ose-oauth-proxy` with SAR enforcement
 - [x] E2E tests use custom `ose-oauth-proxy` image (multi-arch)
 - [x] SAR enforces `verb:"create"` for DataStorage (DD-AUTH-011)
-- [x] SAR enforces `verb:"get"` for HAPI (DD-AUTH-006)
+- [x] SAR enforces `verb:"get"` for KA (DD-AUTH-006)
 - [x] `X-Auth-Request-User` header injected consistently
 - [x] Workflow catalog audit events capture user attribution
 - [x] No `oauth2-proxy` references in production deployments
@@ -374,7 +374,7 @@ kubectl exec -n kubernaut-system header-logger -- cat /tmp/headers.log | grep X-
 
 ### **Internal Documents**
 - **DD-AUTH-004**: DataStorage OAuth-Proxy Architecture (Legal Hold)
-- **DD-AUTH-006**: HolmesGPT API OAuth-Proxy Integration
+- **DD-AUTH-006**: Kubernaut Agent (KA) OAuth-Proxy Integration
 - **DD-AUTH-009**: OpenShift OAuth-Proxy Migration (v2.0 - ose-oauth-proxy)
 - **DD-AUTH-010**: E2E Real Authentication Mandate
 - **DD-AUTH-011**: Granular RBAC & SAR Verb Mapping
@@ -394,12 +394,12 @@ kubectl exec -n kubernaut-system header-logger -- cat /tmp/headers.log | grep X-
 | **DD-AUTH-009** | Superseded by this document | Documented oauth2-proxy → ose-oauth-proxy migration |
 | **DD-AUTH-011** | Implements RBAC verbs | Defines SAR verb mappings (`verb:"create"`) |
 | **DD-AUTH-004** | DataStorage implementation | First service to use ose-oauth-proxy |
-| **DD-AUTH-006** | HAPI implementation | Second service to use ose-oauth-proxy |
+| **DD-AUTH-006** | Kubernaut Agent (KA) implementation | Second service to use ose-oauth-proxy |
 | **ADR-036** | High-level strategy | Defines network-level security approach |
 
 ---
 
 **Document Version**: 1.0  
 **Last Updated**: January 26, 2026  
-**Status**: ✅ IMPLEMENTED - DataStorage and HAPI deployments updated  
+**Status**: ✅ IMPLEMENTED - DataStorage and Kubernaut Agent (KA) deployments updated  
 **Next Review**: After V1.0 release (February 2026)

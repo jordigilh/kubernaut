@@ -12,7 +12,7 @@
 ## Context
 
 **Business Requirement BR-AI-002** (Priority P1) specifies:
-> "AIAnalysis MUST support multiple analysis types (diagnostic, predictive, prescriptive) through HolmesGPT-API."
+> "AIAnalysis MUST support multiple analysis types (diagnostic, predictive, prescriptive) through Kubernaut Agent (KA)."
 
 ### Current Implementation Status (v1.x)
 
@@ -21,15 +21,15 @@
 Despite the CRD including an `AnalysisTypes []string` field, the feature has never been implemented:
 
 1. **Controller**: Never reads the `AnalysisTypes` field
-2. **HAPI**: No support for multiple analysis types in API contract
+2. **KA**: No support for multiple analysis types in API contract
 3. **OpenAPI**: No `analysisTypes` field in request/response schemas
-4. **Tests**: Incorrectly assume multiple types trigger multiple HAPI calls
+4. **Tests**: Incorrectly assume multiple types trigger multiple KA calls
 
 ### Discovery Timeline
 
 **January 11, 2026**: Comprehensive triage during multi-controller migration revealed:
 - Field exists in CRD schema but is completely unused
-- Tests fail expecting 2 HAPI calls with `["investigation", "workflow-selection"]` but controller makes 1
+- Tests fail expecting 2 KA calls with `["investigation", "workflow-selection"]` but controller makes 1
 - No production code depends on this feature
 - Feature gap was identified in December 2025 analysis as "medium priority, unused"
 
@@ -44,10 +44,10 @@ Despite the CRD including an `AnalysisTypes []string` field, the feature has nev
 ### Rationale
 
 1. **No Production Usage**: Feature never implemented, no user dependencies
-2. **Design Ambiguity**: Original BR intent (HAPI-driven) conflicts with CRD schema (controller-driven)
+2. **Design Ambiguity**: Original BR intent (KA-driven) conflicts with CRD schema (controller-driven)
 3. **Migration Priority**: Multi-controller migration provides higher immediate value
-4. **Unclear Requirements**: "diagnostic/predictive/prescriptive" categories don't match current HAPI endpoints
-5. **Significant Scope**: Implementation requires 2-4 days across controller + HAPI + 400+ tests
+4. **Unclear Requirements**: "diagnostic/predictive/prescriptive" categories don't match current KA endpoints
+5. **Significant Scope**: Implementation requires 2-4 days across controller + KA + 400+ tests
 
 ---
 
@@ -63,11 +63,11 @@ spec:
 ```
 
 **Controller Behavior**:
-- Makes **exactly 1 HAPI call** per reconciliation
+- Makes **exactly 1 KA call** per reconciliation
 - Ignores additional values in `AnalysisTypes` array
 - Returns single analysis result
 
-**HAPI Endpoints**:
+**KA Endpoints**:
 | Endpoint | Purpose | Analysis Type |
 |---|---|---|
 | `/api/v1/incident/analyze` | Initial RCA + workflow selection | Investigation |
@@ -123,7 +123,7 @@ Expect(eventTypeCounts[aiaudit.EventTypeHolmesGPTCall]).To(Equal(1))  // ✅ Pas
 ### Design Options for v2.0
 
 #### Option 1: Controller-Driven Multiple Calls
-**Model**: Loop through `AnalysisTypes`, make multiple HAPI calls
+**Model**: Loop through `AnalysisTypes`, make multiple KA calls
 ```go
 for _, analysisType := range analysis.Spec.AnalysisRequest.AnalysisTypes {
     // Call HAPI with type-specific request
@@ -133,17 +133,17 @@ for _, analysisType := range analysis.Spec.AnalysisRequest.AnalysisTypes {
 ```
 
 **Pros**: Aligns with current CRD schema
-**Cons**: Requires HAPI refactoring, unclear business value
+**Cons**: Requires KA refactoring, unclear business value
 
-#### Option 2: HAPI-Driven Categorization (Original Intent)
-**Model**: HAPI determines analysis type, returns in response
+#### Option 2: KA-Driven Categorization (Original Intent)
+**Model**: KA determines analysis type, returns in response
 ```yaml
 status:
   analysisType: diagnostic  # or predictive, prescriptive
 ```
 
 **Pros**: Matches original BR-AI-002 intent, simpler controller
-**Cons**: Requires new HAPI logic, may not match real use cases
+**Cons**: Requires new KA logic, may not match real use cases
 
 #### Option 3: Remove Feature Entirely
 **Model**: Delete `analysisTypes` field, bump CRD version
@@ -163,12 +163,12 @@ spec:
 2. What real-world scenario requires multiple analysis types?
 3. Should analysis type be:
    - User-specified (controller-driven)?
-   - AI-determined (HAPI-driven)?
+   - AI-determined (KA-driven)?
    - Endpoint-implicit (remove field)?
 
 **Technical Requirements**:
 - OpenAPI contract update
-- HAPI endpoint changes or new logic
+- KA endpoint changes or new logic
 - Controller loop implementation (if Option 1)
 - Status field additions
 - Migration guide for v1.x → v2.0
@@ -260,7 +260,7 @@ pending business requirement validation.
 
 All AIAnalysis integration tests MUST:
 - ✅ Use single value in `AnalysisTypes` array
-- ✅ Expect exactly 1 HolmesGPT API call per reconciliation
+- ✅ Expect exactly 1 KA call per reconciliation
 - ✅ Pass with `--fail-fast` flag enabled
 - ✅ Complete in <3 minutes (multi-controller parallel execution)
 

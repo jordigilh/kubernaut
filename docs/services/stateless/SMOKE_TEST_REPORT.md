@@ -3,7 +3,7 @@
 **Date**: 2025-10-21
 **Namespace**: `kubernaut-system`
 **Test Environment**: OpenShift 4.x
-**Services Tested**: Context API, Data Storage, PostgreSQL, Redis, HolmesGPT API
+**Services Tested**: Context API, Data Storage, PostgreSQL, Redis, Kubernaut Agent (KA)
 
 ---
 
@@ -31,7 +31,7 @@
 | 5 | Context API | Health Endpoint | ✅ PASS | /health returns 200 |
 | 6 | Context API | Metrics Endpoint | ✅ PASS | /metrics accessible |
 | 7 | Data Storage | Service Status | ✅ PASS | Logs show correct config |
-| 8 | HolmesGPT API | Health Check | ✅ PASS | Returns service details |
+| 8 | Kubernaut Agent (KA) | Health Check | ✅ PASS | Returns service details |
 | 11 | PostgreSQL | Extensions Check | ✅ PASS | pgvector 0.8.1, uuid-ossp 1.1 |
 | 12 | Redis | Database Config | ✅ PASS | 16 databases configured |
 | 13 | Redis | Cache Operations | ✅ PASS | Redis accessible (empty cache) |
@@ -197,7 +197,7 @@ PONG
 
 ---
 
-### Test 8: HolmesGPT API Health ✅
+### Test 8: Kubernaut Agent (KA) Health ✅
 
 ```json
 {
@@ -217,7 +217,7 @@ PONG
 }
 ```
 
-**Result**: HolmesGPT API fully functional with all endpoints.
+**Result**: KA fully functional with all endpoints.
 
 ---
 
@@ -298,7 +298,7 @@ LOG_LEVEL=info
 | **Status** | ✅ PONG responsive |
 | **Cache Keys** | 0 (fresh deployment) |
 
-### HolmesGPT API
+### Kubernaut Agent (KA)
 
 | Metric | Value |
 |--------|-------|
@@ -366,7 +366,7 @@ All platform services in `kubernaut-system`:
 - Data Storage Service ✅
 - PostgreSQL ✅
 - Redis ✅
-- HolmesGPT API ✅
+- Kubernaut Agent (KA) ✅
 
 ### ⚠️  Database Schema Ownership
 
