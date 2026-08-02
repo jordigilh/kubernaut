@@ -168,7 +168,7 @@ All DD documents MUST include these sections in this order:
 | **EM** | Effectiveness Monitor | DD-EM-002 |
 | **AUDIT** | Audit Trail | DD-AUDIT-003 |
 | **WORKFLOW** | Workflow/Playbook Schema & Lifecycle | DD-WORKFLOW-004 |
-| **PLAYBOOK** | Playbook Catalog | DD-PLAYBOOK-003 |
+| **PLAYBOOK** | Playbook Catalog | DD-PLAYBOOK-011 |
 | **CONTRACT** | Cross-Service Integration Contracts | DD-CONTRACT-002 |
 | **CRD** | CRD Design & API Groups | DD-CRD-001 |
 | **WEBHOOK** | Admission Webhooks | DD-WEBHOOK-001 |

@@ -24,7 +24,7 @@
 | **Documentation** | `docs/services/stateless/dynamic-toolset/` | Historical reference, V2.0 planning |
 | **Deployment Manifests** | `deploy/dynamic-toolset/` | Reference architecture for V2.0 |
 | **Design Decisions** | `docs/architecture/decisions/DD-016-*.md` | Authoritative deferral rationale |
-| **Business Requirements** | `docs/services/stateless/dynamic-toolset/BUSINESS_REQUIREMENTS.md` | V2.0 scope planning |
+| **Business Requirements** | `docs/services/stateless/dynamic-toolset/v2-business-requirements.md` | V2.0 scope planning |
 
 ---
 
@@ -124,7 +124,7 @@ The Dynamic Toolset Service was designed to provide automatic service discovery 
 
 | Document | Purpose | Location |
 |----------|---------|----------|
-| **Business Requirements** | V2.0 scope definition | `BUSINESS_REQUIREMENTS.md` |
+| **Business Requirements** | V2.0 scope definition | `v2-business-requirements.md` |
 | **API Specification** | REST endpoint design | `api-specification.md` |
 | **Service Discovery Patterns** | Detector architecture | `service-discovery.md` |
 | **Implementation Plan** | Historical reference | `implementation/IMPLEMENTATION_PLAN_ENHANCED.md` |
