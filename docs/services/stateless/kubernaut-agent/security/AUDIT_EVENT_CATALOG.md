@@ -4,7 +4,7 @@ Authoritative reference for all structured audit events emitted by the `kubernau
 
 **Source of truth:** `internal/kubernautagent/audit/emitter.go` (`EventType*`/`Action*` constants, `AllEventTypes`)
 **Payload mapping:** `internal/kubernautagent/audit/ds_payloads.go` (`eventTypeToPayloadBuilder` in `ds_store.go`)
-**Predecessor doc:** [DD-AUDIT-003](../../../architecture/decisions/DD-AUDIT-003-service-audit-trace-requirements.md) §"v1.3 Update: Kubernaut Agent Audit Traces" documents KA's original 7 `aiagent.*` events (v1.3) plus the 5 session-lifecycle events added in v1.9 (Issue #823) — this catalog supersedes that narrative as the complete, current reference; DD-AUDIT-003 is not updated for the alignment/shadow/fleet/secret/interactive events added since.
+**Predecessor doc:** [DD-AUDIT-003](../../../../architecture/decisions/DD-AUDIT-003-service-audit-trace-requirements.md) §"v1.3 Update: Kubernaut Agent Audit Traces" documents KA's original 7 `aiagent.*` events (v1.3) plus the 5 session-lifecycle events added in v1.9 (Issue #823) — this catalog supersedes that narrative as the complete, current reference; DD-AUDIT-003 is not updated for the alignment/shadow/fleet/secret/interactive events added since.
 
 **Schema:** All events are built as an `audit.AuditEvent` (`internal/kubernautagent/audit/emitter.go`) and normalized to a `pkg/audit.AuditStore`-compatible record before being forwarded to Data Storage:
 

@@ -52,7 +52,7 @@ import (
 // scoping is needed -- each spec's asserted counts are scoped to its own
 // unique action type by construction.
 //
-// Business Requirements: BR-HAPI-017-001, BR-WORKFLOW-001, BR-WORKFLOW-004,
+// Business Requirements: BR-KA-017-001, BR-WORKFLOW-001, BR-WORKFLOW-004,
 // BR-WORKFLOW-016, BR-FLEET-003.
 var _ = Describe("IT-KA-1677 Workflow Catalog discovery edge cases (wildcards, cluster, case-insensitivity)", Label("integration", "kubernautagent", "workflow-catalog"), func() {
 

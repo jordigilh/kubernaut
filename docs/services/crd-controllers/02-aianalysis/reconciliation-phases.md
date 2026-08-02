@@ -218,18 +218,27 @@ if response.NeedsHumanReview {
 
 4. **Validate Workflow Response** (Defense-in-Depth)
 
-   > ⚠️ **Note**: Per DD-HAPI-002 v1.1, primary validation happens in **HolmesGPT-API**
-   > where the LLM can self-correct. AIAnalysis validation is defense-in-depth only.
+   > **Note**: Per [DD-KA-001](../../../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md)
+   > (formerly `DD-HAPI-002`) v1.1, primary validation happens in **Kubernaut Agent (KA)**, which is the sole
+   > validation authority — AIAnalysis performs no separate re-validation pass. KA has **no LLM tool-calling
+   > framework by design** ([DD-KA-019](../../../architecture/decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md));
+   > there is no `validate_workflow_parameters` tool the LLM invokes. Instead, KA's Go orchestration code
+   > (`internal/kubernautagent/parser/validator.go`) validates the LLM's *returned* workflow selection
+   > programmatically immediately after each response, and on failure re-prompts the LLM with a rendered
+   > error (`validation_error.tmpl`) as the next conversation turn — up to 3 total attempts before setting
+   > `needs_human_review: true`. See [BR-KA-191](../../../requirements/BR-KA-191-workflow-parameter-validation.md)
+   > for the full validate-then-reprompt design and acceptance criteria.
 
-   | Validation | Primary | AIAnalysis (Defense) |
+   | Validation | Performed by | AIAnalysis re-check? |
    |------------|---------|---------------------|
-   | `workflowId` exists in catalog | ✅ **HAPI** (LLM self-corrects) | 🟡 Optional |
-   | `containerImage` valid OCI format | ✅ **Data Storage** (registration) | 🟡 Optional |
-   | Parameters conform to schema | ✅ **HAPI** (`validate_workflow_parameters`) | ❌ Not recommended |
+   | `workflowId` exists in catalog (hallucination detection) | ✅ **KA** (`validator.Validate`, self-corrects via re-prompt) | ❌ None (KA is sole authority) |
+   | Required fields, types, enums, numeric bounds, regex patterns, `dependsOn` | ✅ **KA** (`validator.Validate`, self-corrects via re-prompt) | ❌ None (KA is sole authority) |
+   | Undeclared/hallucinated parameters | ✅ **KA** (silently stripped, recorded for LLM feedback — not a hard failure) | ❌ None |
+   | `schemaImage` (OCI image reference) resolution | Data Storage, at workflow registration time (separate from per-investigation validation) | N/A — registration-time, not investigation-time |
 
-   **Rationale** (DD-HAPI-002):
-   - If validation fails at HAPI → LLM can self-correct in same session (good UX)
-   - If validation fails at AIAnalysis → Must restart entire RCA (poor UX)
+   **Rationale** ([DD-KA-001](../../../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md)):
+   - If validation fails at KA → LLM can self-correct in the same investigation session (good UX)
+   - Historical alternative (re-validating at AIAnalysis or the Workflow Engine) would force a full RCA restart on every validation failure (poor UX) — this was the original `BR-WE-001` design, since retired in favor of KA being the sole validator
 
 ### Transition Criteria
 

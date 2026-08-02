@@ -91,7 +91,6 @@
 | DD-KA-001 | Workflow Response Validation Architecture (supersedes DD-HAPI-002, now retired; collapses to one validation layer) | ✅ Approved | 2026-07-14 | [DD-KA-001-workflow-response-validation-architecture.md](decisions/DD-KA-001-workflow-response-validation-architecture.md) |
 | DD-EMBEDDING-001 | Embedding Service as MCP Playbook Catalog Server (Python Microservice) | ✅ Approved | 2025-11-14 | [DD-EMBEDDING-001-embedding-service-implementation.md](decisions/DD-EMBEDDING-001-embedding-service-implementation.md) |
 | DD-PLAYBOOK-001 | Mandatory Playbook Label Schema (7 Labels) | ✅ Approved | 2025-11-14 | [DD-PLAYBOOK-001-mandatory-label-schema.md](decisions/DD-PLAYBOOK-001-mandatory-label-schema.md) |
-| DD-PLAYBOOK-002 | MCP Playbook Catalog Architecture | ✅ Approved | 2025-11-14 | [DD-PLAYBOOK-002-MCP-PLAYBOOK-CATALOG-ARCHITECTURE.md](decisions/DD-PLAYBOOK-002-MCP-PLAYBOOK-CATALOG-ARCHITECTURE.md) |
 | DD-INFRA-001 | ConfigMap Hot-Reload Pattern (Shared Infrastructure) | ✅ Approved | 2025-12-06 | [DD-INFRA-001-configmap-hotreload-pattern.md](decisions/DD-INFRA-001-configmap-hotreload-pattern.md) |
 | DD-EM-005 | Cluster-Scoped Metrics and Alert Assessment (Node, PersistentVolume) | ✅ Approved | 2026-07-07 | [DD-EM-005-cluster-scoped-metrics-alert-assessment.md](decisions/DD-EM-005-cluster-scoped-metrics-alert-assessment.md) |
 | DD-WE-001 | Resource Locking Safety (Prevent Parallel Workflows) | ✅ Approved | 2025-12-01 | [DD-WE-001-resource-locking-safety.md](decisions/DD-WE-001-resource-locking-safety.md) |

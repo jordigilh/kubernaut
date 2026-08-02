@@ -53,11 +53,22 @@ var _ = Describe("Live complete event carries RCA data — #1794", func() {
 
 	Describe("UT-KA-1794-001: live complete event Data is populated from a non-nil result", func() {
 		It("should attach the bounded RCA subset to the live EventTypeComplete event", func() {
+			// ready/proceed gate (same idiom as manager_upgrade_test.go's
+			// UT-KA-1390-008/026/027): without it, this instant, no-I/O closure
+			// can race Store.Update(StatusCompleted) ahead of the Subscribe call
+			// below, which — with no eventChan attached yet — makes Subscribe
+			// return ErrSessionTerminal (manager_query.go) instead of the live
+			// channel this test means to exercise. Observed as a real,
+			// non-hypothetical flake in CI (run 30727355643, job 91441733492).
+			ready := make(chan struct{})
+			proceed := make(chan struct{})
 			investigationDone := make(chan struct{})
 
 			pendingID, err := mgr.StartInteractiveSession(context.Background(),
 				func(_ context.Context) (*katypes.InvestigationResult, error) {
 					defer close(investigationDone)
+					close(ready)
+					<-proceed
 					return &katypes.InvestigationResult{
 						Severity:   "critical",
 						Confidence: 0.92,
@@ -70,9 +81,11 @@ var _ = Describe("Live complete event carries RCA data — #1794", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(mgr.LaunchDeferredInvestigation(pendingID)).To(Succeed())
+			<-ready
 
 			eventCh, subErr := mgr.Subscribe(context.Background(), pendingID)
 			Expect(subErr).NotTo(HaveOccurred())
+			close(proceed)
 
 			Eventually(investigationDone, 5*time.Second).Should(BeClosed())
 
@@ -108,11 +121,17 @@ var _ = Describe("Live complete event carries RCA data — #1794", func() {
 
 	Describe("UT-KA-1794-002: live complete event has empty Data when investigation returns nil result", func() {
 		It("should not populate Data for a nil result (e.g. a failed investigation)", func() {
+			// Same ready/proceed gate as UT-KA-1794-001 above — this closure is
+			// equally instant and would otherwise race Subscribe below.
+			ready := make(chan struct{})
+			proceed := make(chan struct{})
 			investigationDone := make(chan struct{})
 
 			pendingID, err := mgr.StartInteractiveSession(context.Background(),
 				func(_ context.Context) (*katypes.InvestigationResult, error) {
 					defer close(investigationDone)
+					close(ready)
+					<-proceed
 					return nil, nil
 				},
 				map[string]string{"remediation_id": "rr-1794-002"},
@@ -120,9 +139,11 @@ var _ = Describe("Live complete event carries RCA data — #1794", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(mgr.LaunchDeferredInvestigation(pendingID)).To(Succeed())
+			<-ready
 
 			eventCh, subErr := mgr.Subscribe(context.Background(), pendingID)
 			Expect(subErr).NotTo(HaveOccurred())
+			close(proceed)
 
 			Eventually(investigationDone, 5*time.Second).Should(BeClosed())
 

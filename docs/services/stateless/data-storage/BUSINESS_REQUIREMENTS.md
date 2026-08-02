@@ -9,6 +9,33 @@
 
 ## 📝 **Changelog**
 
+### **v1.6** (2026-08-02)
+- **RETIRED**: Category 10 - Workflow Catalog CRUD API (BR-STORAGE-038 to BR-STORAGE-042)
+  - The entire `/api/v1/workflows*` REST surface documented below no longer exists in Data Storage.
+    Confirmed by two deliberate removal commits, not an oversight:
+    - `1ceb9fbf3` (Issue #1661 Phase B): removed the workflow **mutation** REST surface
+      (create/update/disable) — `AuthWebhook` now owns the `RemediationWorkflow` CRD lifecycle
+      directly (DD-WORKFLOW-018).
+    - `3e8b5fbb3` (Issue #1677 Phase 2g): removed the workflow **discovery** REST surface
+      (get/search/list) — Kubernaut Agent's informer-backed catalog now owns it entirely
+      (DD-WORKFLOW-019); DS's `workflowcache` package was deleted outright.
+  - Also corrected the stale `HolmesGPT-API`/`HAPI` cross-service integration note under
+    BR-STORAGE-039 (superseded reference to a `validate_workflow_exists` "tool" — Kubernaut Agent
+    has no LLM tool-calling framework by design, [DD-KA-019](../../../architecture/decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md)).
+- **RETIRED**: Category 5 - Embedding & Vector Operations (BR-STORAGE-012, 013), Category 6 -
+  Dual-Write Operations (BR-STORAGE-014 to 016), plus BR-STORAGE-002 (Category 1) and BR-STORAGE-008
+  (Category 2) — all describe pgvector-based semantic search and PostgreSQL/Redis-Vector-DB
+  dual-write functionality removed by two deliberate commits:
+  - `33c2053a3` ("Remove pgvector/dual-write dead code", 2026-01-04): deleted `pkg/datastorage/dualwrite/`
+    and its dedicated unit tests/metrics.
+  - `eb5185b73` ("...Embedding service cleanup", landed 2025-12-11 per commit metadata): deleted
+    `pkg/datastorage/embedding/` as part of the V1.0 move to label-only workflow search.
+  - Corrected `BR-STORAGE-003`'s description (removed a stale pgvector-version-check claim; the
+    validator now only checks PostgreSQL ≥16) and flagged its test-coverage citation as unverified.
+- **Total retired this version**: 12 BRs (`002`, `008`, `012`-`016`, `038`-`042`); all marked
+  `❌ Retired` (kept as historical record per [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806));
+  excluded from the Coverage Analysis rollups, Priority Distribution, and Summary Statistics.
+
 ### **v1.5** (March 4, 2026)
 - **UPDATED**: BR-STORAGE-038 (Workflow Catalog Create API)
   - `POST /api/v1/workflows` is now an **internal API** consumed exclusively by the AuthWebhook
@@ -75,29 +102,33 @@
 ## 📊 **Summary Statistics**
 
 - **Total BRs**: 45 Data Storage BRs
-  - **Active BRs (V1.0)**: 41 (91%)
+  - **Active BRs (V1.0)**: 28 (62%)
   - **Planned BRs (V1.1)**: 3 (7%)
   - **Reserved BRs**: 1 (2%) - BR-029 reserved for future use
-- **Deprecated BRs**: 0 (0%)
+  - **Retired BRs**: 12 (27%) - BR-STORAGE-002, 008, 012-016 (pgvector/embedding/dual-write removal), 038-042 (Workflow Catalog CRUD API); all retired 2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)
+- **Deprecated BRs**: 1 (2%) - BR-STORAGE-009 (marked ⚠️ DEPRECATED pre-existing, 2026-03)
 - **V2 Deferred BRs**: 0 (0%)
 
 ### **BR Numbering Summary**
 
 | Category | BR Range | Count | Status |
 |----------|----------|-------|--------|
-| Audit Persistence | 001-004 | 4 | ✅ Active |
-| Query API | 005-008 | 4 | ✅ Active |
-| Observability | 009, 010, 018, 019 | 4 | ✅ Active (009 deferred V1.1) |
+| Audit Persistence | 001, 003, 004 | 3 | ✅ Active |
+| Audit Persistence (dual-write errors) | 002 | 1 | ❌ Retired |
+| Query API | 005, 006, 007 | 3 | ✅ Active |
+| Query API (embedding) | 008 | 1 | ❌ Retired |
+| Observability | 010, 018, 019 | 3 | ✅ Active |
+| Observability (cache tracking) | 009 | 1 | ⚠️ Deprecated |
 | Security | 011, 025, 026 | 3 | ✅ Active |
 | Self-Auditing | 180-182 | 3 | ✅ Active |
-| Embedding & Vector | 012, 013 | 2 | ✅ Active |
-| Dual-Write | 014-016 | 3 | ✅ Active |
+| Embedding & Vector | 012, 013 | 2 | ❌ Retired |
+| Dual-Write | 014-016 | 3 | ❌ Retired |
 | Error Handling | 017 | 1 | ✅ Active |
 | REST API | 020-028 | 9 | ✅ Active |
 | Reserved | 029 | 1 | 🔒 Reserved |
 | Aggregation API | 030-034 | 5 | ✅ Active |
 | V1.1 Enhancements | 035-037 | 3 | 📋 Planned |
-| Workflow CRUD | 038-042 | 5 | ✅ Active |
+| Workflow CRUD | 038-042 | 5 | ❌ Retired |
 | **Total** | - | **45** | - |
 
 ### **Test Coverage by Tier**
@@ -150,27 +181,20 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Implementation**: `pkg/datastorage/repository/notification_audit_repository.go`
 - **ADR References**: ADR-032 (exclusive database access)
 
-#### **BR-STORAGE-002: Typed Error Handling for Dual-Write**
+#### **BR-STORAGE-002: Typed Error Handling for Dual-Write** — ❌ Retired
 - **Priority**: P1
-- **Status**: ✅ Active
-- **Description**: Provide typed errors for dual-write operations (PostgreSQL failure, Vector DB failure, validation failure, context canceled) to enable precise error handling and recovery
-- **Business Value**: Enable intelligent error handling and retry strategies based on failure type
-- **Test Coverage**:
-  - Unit: `test/unit/datastorage/errors_dualwrite_test.go:18`
-  - Unit: `test/unit/datastorage/dualwrite_test.go:186`
-- **Implementation**: `pkg/datastorage/dualwrite/errors.go`
-- **Related BRs**: BR-STORAGE-014 (atomic dual-write), BR-STORAGE-015 (graceful degradation)
+- **Status**: ❌ Retired (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)) — see Category 5/6 note below; `pkg/datastorage/dualwrite/` package (including `errors.go`) was deleted wholesale by `33c2053a3` ("Remove pgvector/dual-write dead code", 2026-01-04)
+- **Description (historical)**: Provided typed errors for dual-write operations (PostgreSQL failure, Vector DB failure, validation failure, context canceled) to enable precise error handling and recovery
+- **Business Value (historical)**: Enable intelligent error handling and retry strategies based on failure type
+- **Related BRs**: BR-STORAGE-014 (atomic dual-write, also retired)
 
 #### **BR-STORAGE-003: Database Version Validation**
 - **Priority**: P0
-- **Status**: ✅ Active
-- **Description**: Validate PostgreSQL and pgvector versions at startup to ensure compatibility (PostgreSQL ≥14, pgvector ≥0.5.0)
-- **Business Value**: Prevent runtime failures due to incompatible database versions
-- **Test Coverage**:
-  - Unit: `test/unit/datastorage/validator_schema_test.go:42` (supported versions)
-  - Unit: `test/unit/datastorage/validator_schema_test.go:85` (unsupported PostgreSQL)
-  - Unit: `test/unit/datastorage/validator_schema_test.go:117` (unsupported pgvector)
-- **Implementation**: `pkg/datastorage/schema/validator.go`
+- **Status**: ✅ Active (⚠️ description corrected 2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806) — pgvector was deprecated/removed, see Category 5/6 note; this BR now covers PostgreSQL-only validation)
+- **Description**: Validate PostgreSQL version at startup to ensure compatibility (PostgreSQL ≥16 per `MinPostgreSQLMajorVersion`, `pkg/datastorage/schema/validator.go`). The pgvector version check described in earlier versions of this document no longer applies — pgvector support was removed (see Category 5/6 note below)
+- **Business Value**: Prevent runtime failures due to an incompatible PostgreSQL version
+- **Test Coverage**: Not found under `test/unit/datastorage/` or co-located with `pkg/datastorage/schema/` as of this review — likely a coverage gap, not just a stale citation; the previously-cited `validator_schema_test.go` no longer exists
+- **Implementation**: `pkg/datastorage/schema/validator.go` (`VersionValidator.ValidatePostgreSQLVersion`)
 - **ADR References**: ADR-032 (database layer responsibility)
 
 #### **BR-STORAGE-004: Idempotent Schema Initialization**
@@ -220,18 +244,12 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Implementation**: `pkg/datastorage/metrics/metrics.go`
 - **Related BRs**: BR-STORAGE-019 (Prometheus metrics)
 
-#### **BR-STORAGE-008: Embedding Generation**
+#### **BR-STORAGE-008: Embedding Generation** — ❌ Retired
 - **Priority**: P0
-- **Status**: ✅ Active
-- **Description**: Generate 384-dimensional embeddings using sentence-transformers model for semantic search capabilities
-- **Business Value**: Enable semantic similarity search for workflow catalog queries
-- **Test Coverage**:
-  - Unit: `test/unit/datastorage/embedding_test.go`
-  - Unit: `test/unit/datastorage/embedding_client_test.go`
-  - Integration: `test/integration/datastorage/workflow_catalog_test.go`
-- **Implementation**: `pkg/datastorage/embedding/pipeline.go`, `pkg/datastorage/dualwrite/coordinator.go`
-- **Related BRs**: BR-STORAGE-012 (workflow catalog embedding), BR-STORAGE-009 (cache tracking)
-- **ADR References**: DD-STORAGE-004 (Embedding Caching Strategy), DD-STORAGE-005 (pgvector String Format)
+- **Status**: ❌ Retired (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)) — same pgvector/embedding removal as Category 5/6 below; both cited implementation files (`pkg/datastorage/embedding/pipeline.go`, `pkg/datastorage/dualwrite/coordinator.go`) are deleted
+- **Description (historical)**: Generate 384-dimensional embeddings using sentence-transformers model for semantic similarity search capabilities
+- **Business Value (historical)**: Enable semantic similarity search for workflow catalog queries — superseded by label-based filtering in Kubernaut Agent's in-process catalog
+- **Related BRs**: BR-STORAGE-012 (workflow catalog embedding, also retired), BR-STORAGE-009 (cache tracking, already separately marked ⚠️ DEPRECATED below)
 
 ---
 
@@ -375,72 +393,60 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ---
 
-### **Category 5: Embedding & Vector Operations (BR-STORAGE-012, BR-STORAGE-013)**
+### **Category 5: Embedding & Vector Operations (BR-STORAGE-012, BR-STORAGE-013)** — ❌ RETIRED
+### **Category 6: Dual-Write Operations (BR-STORAGE-014 to BR-STORAGE-016)** — ❌ RETIRED
 
-#### **BR-STORAGE-012: Workflow Catalog Embedding Generation**
+> **❌ RETIRED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: Both categories
+> describe pgvector-based semantic search and PostgreSQL/Redis-Vector-DB dual-write functionality that no
+> longer exists in Data Storage. Confirmed by two deliberate removal commits:
+> - `33c2053a3` ("Remove pgvector/dual-write dead code", 2026-01-04): deleted `pkg/datastorage/dualwrite/`
+>   (coordinator, interfaces, errors) and its dedicated unit tests. Also removed the `DualWriteSuccess`/
+>   `DualWriteFailure` metrics and pgvector integration-test infrastructure.
+> - `eb5185b73` ("complete WorkflowExecution Phase Manager..., Embedding service cleanup", 2025-12-11 per
+>   its own subject line but landed as part of a later consolidated commit): deleted `pkg/datastorage/embedding/`
+>   (pipeline, client, service, redis_cache, interfaces) as part of the V1.0 move to label-only workflow
+>   search (see `internal/kubernautagent/workflowcatalog` for the label-based replacement, and
+>   [BR-KA-265](../../../requirements/BR-KA-265-labels-in-workflow-discovery.md)).
+>
+> `BR-STORAGE-002` (Category 1, typed dual-write errors) is also retired for the same reason — see its entry
+> above. All 6 BRs (`002`, `012`–`016`) kept below as historical record; excluded from this document's
+> Coverage Analysis rollups and Priority Distribution counts.
+
+#### **BR-STORAGE-012: Workflow Catalog Embedding Generation** — ❌ Retired
 - **Priority**: P0
-- **Status**: ✅ Active (v1.1 - Corrected Scope)
-- **Description**: Generate 384-dimensional embeddings from workflow catalog content for semantic search (using sentence-transformers/all-MiniLM-L6-v2 model)
-- **Business Value**: Enable semantic workflow discovery for incident remediation (DD-CONTEXT-005 "Filter Before LLM" pattern)
-- **Terminology**: Per DD-NAMING-001, using "Remediation Workflow" (not "Remediation Playbook")
-- **Scope Change (v1.1)**:
-  - ❌ **OLD**: Generate embeddings from audit text (INCORRECT - deferred to V2.0 RAR)
-  - ✅ **NEW**: Generate embeddings from workflow catalog (CORRECT - V1.0 requirement)
-- **Use Case**: HolmesGPT API queries Data Storage to find workflows semantically similar to incident description
-- **Test Coverage**:
-  - Unit: `test/unit/datastorage/embedding_test.go:69` (embedding generation)
-  - Unit: `test/unit/datastorage/query_test.go:236` (semantic search moved to integration)
-- **Implementation**: `pkg/datastorage/embedding/pipeline.go`
-- **Related BRs**: BR-STORAGE-009 (cache tracking), BR-STORAGE-014 (dual-write)
-- **ADR References**: DD-CONTEXT-005 (Minimal LLM Response Schema)
+- **Status**: ❌ Retired (see category note above)
+- **Description (historical)**: Generate 384-dimensional embeddings from workflow catalog content for semantic search (using sentence-transformers/all-MiniLM-L6-v2 model)
+- **Business Value (historical)**: Enable semantic workflow discovery for incident remediation (DD-CONTEXT-005 "Filter Before LLM" pattern)
+- **Use Case (historical)**: Kubernaut Agent (formerly described as "HolmesGPT API") queried Data Storage to find workflows semantically similar to incident description — replaced by label-based filtering within KA's own in-process catalog, not a DS semantic-search call
+- **Related BRs**: BR-STORAGE-009 (cache tracking), BR-STORAGE-014 (dual-write, also retired)
 
-#### **BR-STORAGE-013: Query Performance Metrics**
+#### **BR-STORAGE-013: Query Performance Metrics** — ❌ Retired
 - **Priority**: P1
-- **Status**: ✅ Active
-- **Description**: Track query performance metrics for semantic search and vector operations
-- **Business Value**: Enable performance monitoring and optimization of vector operations
-- **Test Coverage**:
-  - Unit: `test/unit/datastorage/metrics_test.go:179`
-- **Implementation**: `pkg/datastorage/metrics/metrics.go`
-- **Related BRs**: BR-STORAGE-007 (query performance), BR-STORAGE-012 (embedding generation)
+- **Status**: ❌ Retired (see category note above)
+- **Description (historical)**: Track query performance metrics for semantic search and vector operations
+- **Business Value (historical)**: Enable performance monitoring and optimization of vector operations
+- **Related BRs**: BR-STORAGE-007 (query performance), BR-STORAGE-012 (embedding generation, also retired)
 
----
-
-### **Category 6: Dual-Write Operations (BR-STORAGE-014 to BR-STORAGE-016)**
-
-#### **BR-STORAGE-014: Atomic Dual-Write Operations**
+#### **BR-STORAGE-014: Atomic Dual-Write Operations** — ❌ Retired
 - **Priority**: P0
-- **Status**: ✅ Active
-- **Description**: Perform atomic writes to both PostgreSQL and Redis Vector DB in a single transaction with rollback on failure
-- **Business Value**: Ensure data consistency between relational and vector databases
-- **Test Coverage**:
-  - Unit: `test/unit/datastorage/dualwrite_test.go:152` (atomic operations)
-  - Unit: `test/unit/datastorage/metrics_test.go:338` (failure tracking)
-- **Implementation**: `pkg/datastorage/dualwrite/coordinator.go`
-- **Related BRs**: BR-STORAGE-002 (typed errors), BR-STORAGE-015 (graceful degradation)
+- **Status**: ❌ Retired (see category note above)
+- **Description (historical)**: Perform atomic writes to both PostgreSQL and Redis Vector DB in a single transaction with rollback on failure
+- **Business Value (historical)**: Ensure data consistency between relational and vector databases
+- **Related BRs**: BR-STORAGE-002 (typed errors, also retired), BR-STORAGE-015 (graceful degradation, also retired)
 
-#### **BR-STORAGE-015: Graceful Degradation**
+#### **BR-STORAGE-015: Graceful Degradation** — ❌ Retired
 - **Priority**: P0
-- **Status**: ✅ Active
-- **Description**: Continue operation with PostgreSQL-only writes if Vector DB is unavailable, with metrics tracking degraded mode
-- **Business Value**: Maintain core audit persistence functionality during Vector DB outages
-- **Test Coverage**:
-  - Unit: `test/unit/datastorage/dualwrite_test.go:407` (degradation scenarios)
-  - Unit: `test/unit/datastorage/metrics_test.go:114` (degradation tracking)
-- **Implementation**: `pkg/datastorage/dualwrite/coordinator.go`
-- **Related BRs**: BR-STORAGE-014 (atomic dual-write)
+- **Status**: ❌ Retired (see category note above)
+- **Description (historical)**: Continue operation with PostgreSQL-only writes if Vector DB is unavailable, with metrics tracking degraded mode
+- **Business Value (historical)**: Maintain core audit persistence functionality during Vector DB outages
+- **Related BRs**: BR-STORAGE-014 (atomic dual-write, also retired)
 
-#### **BR-STORAGE-016: Context Propagation**
+#### **BR-STORAGE-016: Context Propagation** — ❌ Retired
 - **Priority**: P0
-- **Status**: ✅ Active
-- **Description**: Propagate context through all dual-write operations for cancellation, timeouts, and tracing
-- **Business Value**: Enable request cancellation and prevent resource leaks from abandoned operations
-- **Test Coverage**:
-  - Unit: `test/unit/datastorage/dualwrite_context_test.go:159` (context propagation)
-  - Unit: `test/unit/datastorage/dualwrite_context_test.go:215` (cancelled context)
-  - Unit: `test/unit/datastorage/dualwrite_context_test.go:224` (expired deadline)
-- **Implementation**: `pkg/datastorage/dualwrite/coordinator.go`
-- **Related BRs**: BR-STORAGE-014 (atomic dual-write)
+- **Status**: ❌ Retired (see category note above)
+- **Description (historical)**: Propagate context through all dual-write operations for cancellation, timeouts, and tracing
+- **Business Value (historical)**: Enable request cancellation and prevent resource leaks from abandoned operations
+- **Related BRs**: BR-STORAGE-014 (atomic dual-write, also retired)
 
 ---
 
@@ -730,11 +736,18 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ---
 
-### **Category 10: Workflow Catalog CRUD API (BR-STORAGE-038 to BR-STORAGE-042)**
+### **Category 10: Workflow Catalog CRUD API (BR-STORAGE-038 to BR-STORAGE-042)** — ❌ RETIRED
 
-#### **BR-STORAGE-038: Workflow Catalog Create API (Internal)**
+> **❌ RETIRED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: The entire
+> `/api/v1/workflows*` REST surface described in this category no longer exists in Data Storage. Removed by
+> `1ceb9fbf3` (mutations, Issue #1661 Phase B — `AuthWebhook` now owns the `RemediationWorkflow` CRD lifecycle
+> directly per DD-WORKFLOW-018) and `3e8b5fbb3` (discovery, Issue #1677 Phase 2g — Kubernaut Agent's
+> informer-backed catalog now owns discovery entirely per DD-WORKFLOW-019). Kept below as a historical
+> record of a retired API; excluded from this document's Coverage Analysis rollups.
+
+#### **BR-STORAGE-038: Workflow Catalog Create API (Internal)** — ❌ Retired
 - **Priority**: P0
-- **Status**: ✅ Active
+- **Status**: ❌ Retired (see category note above)
 - **Description**: Provide **internal** REST API endpoint for creating remediation workflows (`POST /api/v1/workflows`) with inline content validation. This endpoint is consumed exclusively by the AuthWebhook (AW) -- it is NOT a user-facing management endpoint. User-facing registration is via RemediationWorkflow CRD (BR-WORKFLOW-006).
 - **Business Value**: Enable CRD-based workflow registration bridged through the AuthWebhook for the DS catalog
 - **Request Payload**: `{content: string (JSON-serialized CRD spec), source: "crd", registeredBy: string}`
@@ -747,15 +760,15 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Related BRs**: BR-WORKFLOW-001 (workflow registry), BR-WORKFLOW-006 (CRD spec), ADR-058 (webhook architecture)
 - **Design Decisions**: DD-WORKFLOW-002 v3.0 (UUID primary key), DD-WORKFLOW-012 (workflow immutability)
 
-#### **BR-STORAGE-039: Workflow Catalog Retrieval API**
+#### **BR-STORAGE-039: Workflow Catalog Retrieval API** — ❌ Retired
 - **Priority**: P0
-- **Status**: ✅ Active
+- **Status**: ❌ Retired (see category note above)
 - **Description**: Provide REST API endpoint for retrieving a single workflow by UUID (`GET /api/v1/workflows/{workflow_id}`) returning the complete workflow object including spec, parameters, and detected labels
-- **Business Value**: Enable external services (HolmesGPT-API, AIAnalysis) to validate workflow existence and retrieve full workflow spec for parameter/image validation
-- **Use Cases**:
-  - **HAPI Workflow Validation**: HolmesGPT-API validates `workflow_id` exists before returning to AIAnalysis (DD-HAPI-002)
-  - **Parameter Schema Retrieval**: HAPI retrieves `spec.parameters[]` to validate LLM-generated parameters
-  - **Image Pullspec Validation**: HAPI retrieves `spec.container_image` for OCI format validation
+- **Business Value (historical)**: Enable external services (Kubernaut Agent, AIAnalysis) to validate workflow existence and retrieve full workflow spec for parameter/image validation
+- **Use Cases (historical — this endpoint no longer exists)**:
+  - **KA Workflow Validation**: Kubernaut Agent validated `workflow_id` exists before returning to AIAnalysis (DD-KA-001, formerly DD-HAPI-002) — now done via KA's own informer-backed catalog cache, not a DS REST call
+  - **Parameter Schema Retrieval**: KA retrieved `spec.parameters[]` to validate LLM-generated parameters — now sourced from KA's in-process catalog (`internal/kubernautagent/parser/validator.go`), see [BR-KA-191](../../../requirements/BR-KA-191-workflow-parameter-validation.md)
+  - **Image Pullspec Validation**: KA retrieved `spec.container_image` for OCI format validation
   - **Workflow Existence Check**: 200 OK = exists, 404 = not found
 - **Response Fields**:
   - `workflow_id`: UUID primary key
@@ -772,13 +785,13 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Implementation**: `pkg/datastorage/server/workflow_handlers.go:HandleGetWorkflowByID`
 - **Related BRs**: BR-WORKFLOW-001 (workflow registry), BR-STORAGE-024 (RFC 7807 for 404)
 - **Design Decisions**: DD-WORKFLOW-002 v3.0 (UUID primary key)
-- **Cross-Service Integration**:
-  - **HolmesGPT-API**: Uses this endpoint for `validate_workflow_exists` tool (Q17 in AIANALYSIS_TO_HOLMESGPT_API_TEAM.md)
-  - **AIAnalysis**: May use for defense-in-depth validation
+- **Cross-Service Integration (historical)**:
+  - **Kubernaut Agent** (formerly described as "HolmesGPT-API"): historically used this endpoint for workflow-existence validation; KA has no LLM tool-calling framework (there was never a literal `validate_workflow_exists` tool the LLM invoked — see [BR-KA-191](../../../requirements/BR-KA-191-workflow-parameter-validation.md))
+  - **AIAnalysis**: performs no separate re-validation pass — KA is the sole validation authority ([DD-KA-001](../../../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md))
 
-#### **BR-STORAGE-040: Workflow Catalog Search API**
+#### **BR-STORAGE-040: Workflow Catalog Search API** — ❌ Retired
 - **Priority**: P0
-- **Status**: ✅ Active
+- **Status**: ❌ Retired (see category note above)
 - **Version**: 2.0 (Multi-environment workflow capability - January 28, 2026)
 - **Description**: Provide REST API endpoint for semantic search of workflows (`POST /api/v1/workflows/search`) with hybrid weighted scoring and multi-environment workflow support
 - **Multi-Environment Workflow Support (v2.0)**:
@@ -802,9 +815,9 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Related BRs**: BR-STORAGE-012 (embedding generation), BR-STORAGE-013 (query performance)
 - **Design Decisions**: DD-WORKFLOW-004 v2.0 (hybrid scoring + multi-environment), DD-WORKFLOW-001 v2.5 (multi-environment schema)
 
-#### **BR-STORAGE-041: Workflow Catalog Update API**
+#### **BR-STORAGE-041: Workflow Catalog Update API** — ❌ Retired
 - **Priority**: P1
-- **Status**: ✅ Active
+- **Status**: ❌ Retired (see category note above)
 - **Description**: Provide REST API endpoint for updating mutable workflow fields (`PATCH /api/v1/workflows/{workflow_id}`) - only status and metrics are mutable per DD-WORKFLOW-012
 - **Business Value**: Enable workflow status updates without creating new versions
 - **Test Coverage**:
@@ -814,9 +827,9 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Related BRs**: BR-WORKFLOW-001 (workflow registry)
 - **Design Decisions**: DD-WORKFLOW-012 (workflow immutability - only status/metrics mutable)
 
-#### **BR-STORAGE-042: Workflow Catalog Disable API**
+#### **BR-STORAGE-042: Workflow Catalog Disable API** — ❌ Retired
 - **Priority**: P1
-- **Status**: ✅ Active
+- **Status**: ❌ Retired (see category note above)
 - **Description**: Provide REST API endpoint for disabling workflows (`PATCH /api/v1/workflows/{workflow_id}/disable`) - soft delete with audit trail
 - **Business Value**: Enable workflow deprecation without data loss
 - **Test Coverage**:
@@ -860,38 +873,32 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ### **Unit Test Coverage** (85%+ of Active BRs)
 
-**Covered BRs** (35 BRs):
-- Category 1 (Audit): BR-STORAGE-002, 003, 004
-- Category 2 (Query): BR-STORAGE-005, 006, 007, 008
+**Covered BRs** (21 BRs; excludes the 12 retired BRs — `002`, `008`, `012`–`016`, `038`–`042` — see changelog v1.6):
+- Category 1 (Audit): BR-STORAGE-003, 004
+- Category 2 (Query): BR-STORAGE-005, 006, 007
 - Category 3 (Observability): BR-STORAGE-010, 018, 019
 - Category 4 (Security): BR-STORAGE-011, 025, 026
 - Category 4.5 (Self-Audit): BR-STORAGE-180, 181, 182
-- Category 5 (Embedding): BR-STORAGE-012, 013
-- Category 6 (Dual-Write): BR-STORAGE-014, 015, 016
 - Category 8 (REST API): BR-STORAGE-021, 022, 023, 024, 027, 028
 - Category 9 (Aggregation): BR-STORAGE-031
-- Category 10 (Workflow CRUD): BR-STORAGE-038, 039, 040, 041, 042
 
 **Not Covered by Unit Tests** (integration-only):
-- BR-STORAGE-001, 009, 017, 020, 030, 032, 033, 034
+- BR-STORAGE-001, 009 (⚠️ deprecated), 017, 020, 030, 032, 033, 034
 
 **Rationale**: These BRs require real database integration (PostgreSQL + Redis) and are covered by integration tests.
 
 ### **Integration Test Coverage** (30%+ of Active BRs)
 
-**Covered BRs** (14 BRs):
-- BR-STORAGE-001, 004, 008, 017, 020, 028, 030, 031, 032, 033, 034, 038, 039, 040
+**Covered BRs** (10 BRs; excludes the retired `BR-STORAGE-008`, `038`–`040` — see changelog v1.6):
+- BR-STORAGE-001, 004, 017, 020, 028, 030, 031, 032, 033, 034
 
-**Rationale**: Integration tests validate real database operations, HTTP API endpoints, graceful shutdown, and workflow catalog behavior.
+**Rationale**: Integration tests validate real database operations, HTTP API endpoints, and graceful shutdown.
 
 ### **E2E Test Coverage** (Critical Paths)
 
-**Covered BRs** (7 BRs):
-- BR-STORAGE-008 (embedding service)
-- BR-STORAGE-012 (workflow search)
-- BR-STORAGE-038-042 (workflow CRUD lifecycle)
+**Covered BRs** (0 BRs; both previously-cited BRs (`008` embedding, `012` workflow search) are retired — see changelog v1.6. No E2E-covered BR remains in this document as of 2026-08-02; flagged as a coverage gap, not silently dropped)
 
-**Rationale**: E2E tests cover critical user journeys for workflow catalog operations.
+**Rationale**: The workflow-search/embedding path this section previously described no longer exists in Data Storage; no replacement E2E coverage has been identified for this document's remaining active BRs.
 
 ---
 
@@ -968,14 +975,13 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 ### **Defense-in-Depth Coverage**
 
-**BRs with 2x+ Coverage** (Unit + Integration or Integration + E2E): 10+ BRs
+**BRs with 2x+ Coverage** (Unit + Integration or Integration + E2E): 5+ BRs
 - BR-STORAGE-004 (idempotent schema): Unit + Integration
 - BR-STORAGE-008 (embedding generation): Unit + Integration + E2E
 - BR-STORAGE-028 (graceful shutdown): Unit + Integration
 - BR-STORAGE-031 (success rate): Unit + Integration
-- BR-STORAGE-038-042 (workflow CRUD): Unit + Integration + E2E
 
-**Rationale**: Critical production readiness features and workflow catalog operations have multi-tier test coverage.
+**Rationale**: Critical production readiness features have multi-tier test coverage.
 
 ---
 
@@ -983,25 +989,27 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 
 | Priority | Count | Percentage | Description |
 |----------|-------|------------|-------------|
-| **P0** | 25 | 56% | Core functionality, security, production readiness |
-| **P1** | 15 | 33% | Observability, aggregation, performance |
+| **P0** | 17 | 38% | Core functionality, security, production readiness |
+| **P1** | 10 | 22% | Observability, aggregation, performance |
 | **P2** | 1 | 2% | Data integrity enhancements (V1.1 planned) |
-| **N/A** | 1 | 2% | Reserved (BR-029) |
+| **N/A** | 2 | 4% | Reserved (BR-029); Deprecated (BR-STORAGE-009) |
 | **Planned** | 3 | 7% | V1.1 BRs (BR-035, 036, 037) |
+| **Retired** | 12 | 27% | BR-STORAGE-002, 008, 012-016, 038-042 (retired 2026-08-02) |
 | **Total** | 45 | 100% | |
 
 **Notes**:
 - V1.1 BRs (BR-STORAGE-035, 036, 037) are planned enhancements and not yet implemented
-- BR-STORAGE-009 (embedding cache) is deferred to V1.1
+- BR-STORAGE-009 (embedding cache) is deprecated (own priority already reclassified `~~P1~~ N/A` in its entry)
 - BR-STORAGE-029 is reserved for future use
+- Retired (8 P0 + 4 P1 = 12 total): BR-STORAGE-002 (P1), 008 (P0), 012 (P0), 013 (P1), 014-016 (P0), 038-040 (P0), 041-042 (P1) — see changelog v1.6, Category 5/6, and Category 10
 
 ---
 
 ## ✅ **Confidence Assessment**
 
-**Documentation Accuracy**: 100%
-**Test Coverage Completeness**: 100% (all 41 active V1.0 BRs have test coverage)
-**Implementation Verification**: 100%
+**Documentation Accuracy**: 100% (as of the 2026-08-02 retirement pass — see changelog v1.6)
+**Test Coverage Completeness**: ⚠️ Not fully verified for all 28 active V1.0 BRs — this pass found `BR-STORAGE-003`'s cited unit test file no longer exists (flagged in its entry, not yet re-verified/re-tested) and E2E coverage for this document is now 0 BRs (previously-cited BRs were retired). Both are coverage gaps surfaced by this review, not silently dropped.
+**Implementation Verification**: 100% for the BRs marked Active in this pass (verified against current source, not just prior claims)
 
 **BR Numbering Gap Resolution** (v1.4):
 - ✅ BR-STORAGE-004: Documented as "Idempotent Schema Initialization"

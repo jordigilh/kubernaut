@@ -22,7 +22,7 @@ limitations under the License.
 // ComputeHashMatch. The actual bug is in QueryROEventsBySpecHash (SQL layer),
 // tested by integration tests IT-DS-616-*.
 //
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
 // TP-616-v1.1: Test Plan for Issue #616.
 package datastorage_test
 

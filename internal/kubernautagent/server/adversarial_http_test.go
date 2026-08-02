@@ -433,6 +433,37 @@ var _ = Describe("TP-433-ADV P6: HTTP Contract — GAP-004/015/016/018", func() 
 		})
 	})
 
+	Describe("BR-FLEET-054: MapIncidentRequestToSignal maps cluster_name into SignalContext.ClusterID", func() {
+		It("UT-KA-FLEET054-001: should map cluster_name into ClusterID so prescopeFleetOverlay can resolve the fleet tool overlay", func() {
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "fleet054-test",
+				SignalName:        "ka-tool-e2e-test",
+				Severity:          agentclient.SeverityHigh,
+				ResourceNamespace: "kubernaut-system",
+				ResourceKind:      "Deployment",
+				ResourceName:      "ka-tool-e2e-target",
+				ErrorMessage:      "",
+				Environment:       "production",
+				Priority:          "high",
+				RiskTolerance:     "medium",
+				BusinessCategory:  "test",
+				ClusterName:       "remote-cluster",
+				SignalSource:      "kubernetes",
+			}
+
+			signal := server.MapIncidentRequestToSignal(req)
+
+			// AC-4/AC-6: Investigate()/RunInteractiveTurn call
+			// prescopeFleetOverlay(ctx, signal.ClusterID, ...) -- not ClusterName --
+			// to resolve the per-investigation fleet tool overlay
+			// (internal/kubernautagent/investigator/fleet_overlay.go). If this stays
+			// empty, every autonomous fleet-target investigation silently
+			// investigates against the local/hub cluster's tools instead.
+			Expect(signal.ClusterID).To(Equal("remote-cluster"))
+			Expect(signal.ClusterName).To(Equal("remote-cluster"))
+		})
+	})
+
 	Describe("UT-KA-743: MapIncidentRequestToSignal dedup timing fields (#743)", func() {
 		It("UT-KA-743-005: maps deduplication_window_minutes, first_seen, last_seen from request", func() {
 			req := &agentclient.IncidentRequest{

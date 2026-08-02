@@ -191,7 +191,7 @@ func (d *LabelDetector) resolveMapping(kind string) (*meta.RESTMapping, error) {
 }
 
 // fetchNamespace retrieves the Namespace object for namespace-level label/annotation
-// checks per DD-HAPI-018. Returns nil on any error (best-effort, no failedDetections).
+// checks per DD-KA-018. Returns nil on any error (best-effort, no failedDetections).
 func (d *LabelDetector) fetchNamespace(ctx context.Context, namespace string) *unstructured.Unstructured {
 	obj, err := d.dynClient.Resource(namespaceGVR).Get(ctx, namespace, metav1.GetOptions{})
 	if err != nil {
@@ -248,7 +248,7 @@ func extractPodTemplateAnnotations(obj *unstructured.Unstructured) map[string]st
 	return extractStringMap(raw)
 }
 
-// detectGitOps implements the DD-HAPI-018 Detection 1 ten-priority cascade plus
+// detectGitOps implements the DD-KA-018 Detection 1 ten-priority cascade plus
 // three legacy fallback keys for backward compatibility. First match wins.
 func detectGitOps(rootObj *unstructured.Unstructured, podTemplateAnnotations map[string]string, nsObj *unstructured.Unstructured, result *DetectedLabels) {
 	podTemplateLabels := extractPodTemplateLabels(rootObj)
@@ -267,7 +267,7 @@ func detectGitOps(rootObj *unstructured.Unstructured, podTemplateAnnotations map
 		tool   string
 	}
 
-	// DD-HAPI-018 priorities 1-10 then legacy 11-13
+	// DD-KA-018 priorities 1-10 then legacy 11-13
 	checks := []gitOpsCheck{
 		{podTemplateAnnotations, "argocd.argoproj.io/tracking-id", "argocd"}, // P1
 		{podTemplateLabels, "argocd.argoproj.io/instance", "argocd"},         // P2
@@ -280,7 +280,7 @@ func detectGitOps(rootObj *unstructured.Unstructured, podTemplateAnnotations map
 		{nsAnnotations, "fluxcd.io/sync-gc-mark", "flux"},                    // P8
 		{nsAnnotations, "argocd.argoproj.io/managed", "argocd"},              // P9
 		{nsAnnotations, "fluxcd.io/sync-status", "flux"},                     // P10
-		// Legacy fallbacks (backward compatibility, not in DD-HAPI-018)
+		// Legacy fallbacks (backward compatibility, not in DD-KA-018)
 		{rootAnnotations, "argocd.argoproj.io/managed-by", "argocd"},  // L11
 		{rootAnnotations, "fluxcd.io/sync-checksum", "flux"},          // L12
 		{rootAnnotations, "kustomize.toolkit.fluxcd.io/name", "flux"}, // L13
@@ -313,7 +313,7 @@ func detectHelm(obj *unstructured.Unstructured, result *DetectedLabels) {
 }
 
 // detectStateful iterates the full owner chain looking for any StatefulSet entry,
-// per DD-HAPI-018 Detection 4 and HAPI v1.2.1 _detect_stateful.
+// per DD-KA-018 Detection 4 and HAPI v1.2.1 _detect_stateful.
 func detectStateful(ownerChain []OwnerChainEntry, result *DetectedLabels) {
 	for _, entry := range ownerChain {
 		if entry.Kind == "StatefulSet" {
@@ -323,10 +323,10 @@ func detectStateful(ownerChain []OwnerChainEntry, result *DetectedLabels) {
 	}
 }
 
-// detectServiceMesh checks pod template annotations first (DD-HAPI-018 spec keys),
+// detectServiceMesh checks pod template annotations first (DD-KA-018 spec keys),
 // then falls back to root owner intent annotations (legacy backward compat).
 func detectServiceMesh(rootObj *unstructured.Unstructured, podTemplateAnnotations map[string]string, result *DetectedLabels) {
-	// DD-HAPI-018 Detection 7: pod template status annotations (any value)
+	// DD-KA-018 Detection 7: pod template status annotations (any value)
 	if podTemplateAnnotations != nil {
 		if _, ok := podTemplateAnnotations["sidecar.istio.io/status"]; ok {
 			result.ServiceMesh = "istio"
@@ -352,7 +352,7 @@ func detectServiceMesh(rootObj *unstructured.Unstructured, podTemplateAnnotation
 	}
 }
 
-// detectHPA matches HPA scaleTargetRef against the full owner chain, per DD-HAPI-018
+// detectHPA matches HPA scaleTargetRef against the full owner chain, per DD-KA-018
 // Detection 3 and HAPI v1.2.1 _detect_hpa (target_names set).
 func (d *LabelDetector) detectHPA(ctx context.Context, ownerChain []OwnerChainEntry, rootNS string, result *DetectedLabels, failed *[]string) {
 	if rootNS == "" {
@@ -471,7 +471,7 @@ func (d *LabelDetector) detectNetworkPolicy(ctx context.Context, namespace strin
 }
 
 // detectResourceQuota checks for ResourceQuota presence and builds a typed
-// quota summary per DD-HAPI-018 Detection 8 and HAPI v1.2.1 _summarize_quotas.
+// quota summary per DD-KA-018 Detection 8 and HAPI v1.2.1 _summarize_quotas.
 func (d *LabelDetector) detectResourceQuota(ctx context.Context, namespace string, result *DetectedLabels, failed *[]string) map[string]QuotaResourceUsage {
 	if namespace == "" {
 		*failed = append(*failed, "resourceQuotaConstrained")

@@ -1992,7 +1992,7 @@ custom_labels     JSONB
 - ✅ **NEW**: Enforced action type taxonomy (DD-WORKFLOW-016)
 - ✅ **NEW**: `ListAvailableActions` context-aware HAPI tool
 - ✅ **NEW**: LLM two-step workflow discovery protocol
-- ✅ **Cross-reference**: DD-WORKFLOW-016, DD-HAPI-016
+- ✅ **Cross-reference**: DD-WORKFLOW-016, DD-KA-016
 
 ### **v1.6** (2025-11-30)
 - ✅ **BREAKING**: Standardized all API/database field names to **snake_case**

@@ -431,7 +431,7 @@ go tool cover -func=coverage.out
 - **HIGH**: ADR-045 `AlternativeWorkflow` has no `parameters` — needs clarification that MCP DTO diverges
 - **HIGH**: BR-INTERACTIVE does not define `discover_workflows` behavior or per-workflow parameters
 - **HIGH**: User guide (`docs/user-guide/interactive-mode.md`) has no MCP tool list or discovery section
-- **MEDIUM**: Phase 3 prompt not documented under `docs/services/kubernaut-agent/`
+- **MEDIUM**: Phase 3 prompt not documented under `docs/services/stateless/kubernaut-agent/`
 - **Action**: Create minimal MCP contract doc; update BR-INTERACTIVE; add ADR note
 
 ### Observability Readiness

@@ -35,7 +35,7 @@ import (
 // Audit Pipeline E2E Tests
 // Test Plan: docs/development/testing/KA_E2E_TEST_PLAN.md
 // Scenarios: E2E-KA-045 through E2E-KA-048 (4 total)
-// Business Requirements: BR-AUDIT-005, DD-HAPI-002 v1.2
+// Business Requirements: BR-AUDIT-005, DD-KA-001 v1.2
 //
 // Purpose: Validate audit event persistence to DataStorage for compliance and debugging
 
@@ -234,7 +234,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			// Scenario ID: E2E-KA-047
 			// Business Outcome: Workflow validation attempts audited for quality analysis
 			// Ported from: test_audit_pipeline_e2e.py:492
-			// BR: DD-HAPI-002 v1.2
+			// BR: DD-KA-001 v1.2
 
 			// ========================================
 			// ARRANGE

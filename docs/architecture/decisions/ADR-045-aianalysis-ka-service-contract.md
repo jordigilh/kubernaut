@@ -82,7 +82,7 @@ mTLS" as originally specified).
 (`pkg/aianalysis/handlers/investigating.go`), which submits then polls at
 `h.sessionPollInterval` until `completed`/`failed`.
 
-**Business/Design authority**: `BR-HAPI-002` (analyze endpoint), `BR-AA-HAPI-064.1`/`.3` (async
+**Business/Design authority**: `BR-KA-002` (analyze endpoint), `BR-AA-HAPI-064.1`/`.3` (async
 submit/result), `DD-AUTH-006` (user attribution for LLM cost tracking) — cited directly in the
 OpenAPI spec's endpoint descriptions.
 

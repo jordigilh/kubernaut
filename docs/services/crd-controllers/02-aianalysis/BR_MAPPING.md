@@ -129,18 +129,24 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 **Context**: With predefined workflows (DD-WORKFLOW-002), "hallucination detection" means:
 
-| Validation Type | Description | Primary Validator | AIAnalysis Role |
+| Validation Type | Description | Performed by | AIAnalysis Role |
 |-----------------|-------------|-------------------|-----------------|
-| **Workflow ID Validation** | Ensure `workflowId` exists in catalog | ✅ **HAPI** | 🟡 Defense-in-depth |
-| **Schema Validation** | Ensure response matches expected JSON schema | ✅ **HAPI** | 🟡 Defense-in-depth |
-| **Parameter Validation** | Ensure parameters are valid for selected workflow | ✅ **HAPI** (`validate_workflow_parameters`) | ❌ Not recommended |
-| **ContainerImage Format** | Ensure `containerImage` is valid OCI reference | ✅ **Data Storage** (registration) | 🟡 Optional |
+| **Workflow ID Validation** | Ensure `workflowId` exists in catalog | ✅ **KA** (`validator.Validate`, self-corrects via re-prompt) | ❌ None (KA is sole authority) |
+| **Schema Validation** | Ensure response matches expected JSON schema | ✅ **KA** (`validator.Validate`, self-corrects via re-prompt) | ❌ None (KA is sole authority) |
+| **Parameter Validation** | Required fields, types, enums, numeric bounds, regex, `dependsOn` | ✅ **KA** (`internal/kubernautagent/parser/validator.go`) | ❌ None (KA is sole authority) |
+| **Undeclared Parameters** | LLM-hallucinated params not in schema | ✅ **KA** (silently stripped, not a hard failure) | ❌ None |
+| **`schemaImage` Resolution** | OCI image reference for the workflow's schema | Data Storage, at registration time (separate from per-investigation validation) | N/A — registration-time |
 | ~~Circular DAG Detection~~ | ~~Detect cycles in dynamically-generated workflows~~ | ❌ N/A | - |
 | ~~Invalid Action Detection~~ | ~~Detect non-existent workflow steps~~ | ❌ N/A | - |
 
-> ⚠️ **DD-HAPI-002 v1.1 Alignment**: Primary validation happens in **HolmesGPT-API**
-> where the LLM can self-correct if validation fails. AIAnalysis is late-stage
-> (after LLM session ends) and cannot trigger LLM self-correction.
+> **[DD-KA-001](../../../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md)**
+> (formerly `DD-HAPI-002`) v1.1 Alignment: KA is the **sole validation authority** — there is no
+> `validate_workflow_parameters` MCP tool the LLM invokes (KA has no LLM tool-calling framework by
+> design, [DD-KA-019](../../../architecture/decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md)).
+> Validation is Go orchestration code that runs automatically on every LLM workflow-selection
+> response; on failure, KA re-prompts the LLM (up to 3 attempts) rather than returning to
+> AIAnalysis. AIAnalysis performs no separate re-validation pass — see
+> [BR-KA-191](../../../requirements/BR-KA-191-workflow-parameter-validation.md) for the full design.
 
 **Reference**: DD-WORKFLOW-002 v3.3 - LLM selects from catalog, does not generate workflows.
 
@@ -222,7 +228,7 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 |-------|--------|--------------|-------|
 | **BR-HAPI-001** | HolmesGPT-API | Investigation results | `/api/v1/investigate` response |
 | **BR-HAPI-RECOVERY-001** | HolmesGPT-API | Recovery analysis | `/api/v1/recovery/analyze` response |
-| **BR-HAPI-250** | HolmesGPT-API | Workflow catalog search | MCP tool with `containerImage` |
+| **BR-KA-250** | HolmesGPT-API | Workflow catalog search | MCP tool with `containerImage` |
 | **BR-HAPI-251** | HolmesGPT-API | Container resolution | Resolves `workflowId` → `containerImage` |
 | **BR-HAPI-252** | HolmesGPT-API | Label passthrough | DetectedLabels + CustomLabels to MCP |
 

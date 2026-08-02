@@ -50,7 +50,7 @@ This test plan validates the fixes for two bugs that together break the remediat
 
 - [Testing Strategy](../../../.cursor/rules/03-testing-strategy.mdc)
 - [Testing Guidelines](../../development/business-requirements/TESTING_GUIDELINES.md)
-- [DD-HAPI-016 Test Plan](../../testing/DD-HAPI-016/TEST_PLAN.md) (existing feature tests)
+- [DD-KA-016 Test Plan](../../testing/DD-KA-016/TEST_PLAN.md) (existing feature tests)
 
 ---
 

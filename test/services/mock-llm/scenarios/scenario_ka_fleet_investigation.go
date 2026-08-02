@@ -43,6 +43,23 @@ const kaToolE2ETargetNamespace = "kubernaut-system"
 // on -- so the scenario itself must be environment-agnostic too.
 const kaToolE2EKeyword = "ka-tool-e2e-test"
 
+// kaToolE2EConfidence is set higher than YAML keyword scenarios (1.0, see
+// scenarios.DefaultRegistryFull) for the same reason replayConfidence is
+// (replay.go): CI RCA for run 30723525089 (job 91432164701, E2E-FLEET-017)
+// proved KA's real RCA-phase prompt --
+// fmt.Sprintf("Investigate: %s %s in %s — %s", ...),
+// internal/kubernautagent/investigator/investigator_rca.go -- always
+// contains the bare substring "investigate", which the Fleet E2E suite's
+// shared "af_investigate" keyword scenario (test/infrastructure/shared_e2e.go)
+// also matches on via match_last_only, at confidence 1.0. Registry.Detect
+// picks the strictly-highest-confidence match, so at the previous 0.95 this
+// scenario was silently hijacked on every turn-0 RCA call: af_investigate
+// scripted a "kubernaut_investigate" tool call that doesn't exist in KA's
+// RCA tool registry ("tool not found: kubernaut_investigate"), which
+// cascaded into investigator_rca.go's submit-only parse retry before this
+// scenario's real kubectl_get_by_name/resources_get tool call ever ran.
+const kaToolE2EConfidence = 1.1
+
 // kaToolE2EFleetToolName/LocalToolName are the two candidate tool names this
 // scenario may call, matching pkg/fleet/mcpclient's kube-mcp-server naming
 // (fleet, reached via the real MCP overlay once DD-FLEET-004's
@@ -150,7 +167,7 @@ func (s *kaToolCallE2EScenario) DAG() *conversation.DAG { return nil }
 func (s *kaToolCallE2EScenario) Match(ctx *DetectionContext) (bool, float64) {
 	combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
 	if strings.Contains(combined, kaToolE2EKeyword) {
-		return true, 0.95
+		return true, kaToolE2EConfidence
 	}
 	return false, 0
 }

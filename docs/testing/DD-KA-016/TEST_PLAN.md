@@ -1,11 +1,11 @@
-# DD-HAPI-016 Test Plan: Remediation History Context
+# DD-KA-016 Test Plan: Remediation History Context
 
 **Version**: 1.2.0
 **Created**: 2026-02-14
 **Updated**: 2026-02-14
 **Status**: Active
-**BR**: BR-HAPI-016 (Remediation History Context for LLM Prompt Enrichment)
-**DD**: DD-HAPI-016 v1.1 (Two-step query with EM scoring), DD-EM-002 v1.1 (spec_drift)
+**BR**: BR-KA-016 (Remediation History Context for LLM Prompt Enrichment)
+**DD**: DD-KA-016 v1.1 (Two-step query with EM scoring), DD-EM-002 v1.1 (spec_drift)
 
 ---
 
@@ -26,7 +26,7 @@ integration and E2E tiers to reach >=80% per-tier coverage.
   not the same mock patterns as unit tests
 
 **Reference Documents**:
-- [DD-HAPI-016 v1.1](../../architecture/decisions/DD-HAPI-016-remediation-history-context.md)
+- [DD-KA-016 v1.1](../../architecture/decisions/DD-KA-016-remediation-history-context.md)
 - [V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE](../../development/testing/V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md)
 - [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUIDELINES.md)
 
@@ -184,7 +184,7 @@ integration and E2E tiers to reach >=80% per-tier coverage.
 
 ## References
 
-- [DD-HAPI-016 v1.1](../../architecture/decisions/DD-HAPI-016-remediation-history-context.md)
+- [DD-KA-016 v1.1](../../architecture/decisions/DD-KA-016-remediation-history-context.md)
 - [DD-EM-002 v1.1](../../architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md)
 - [DD-TEST-006](../../architecture/decisions/DD-TEST-006-test-plan-policy.md)
 - [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUIDELINES.md)

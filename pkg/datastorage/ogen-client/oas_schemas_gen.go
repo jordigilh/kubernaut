@@ -26058,7 +26058,7 @@ func (s *RemediationHealthChecks) SetPendingCount(val OptInt) {
 
 // Structured remediation history context for LLM prompt enrichment.
 // Contains two tiers of remediation chain data for a target resource.
-// Authority: DD-HAPI-016.
+// Authority: DD-KA-016.
 // Ref: #/components/schemas/RemediationHistoryContext
 type RemediationHistoryContext struct {
 	// Target resource identifier in format "{namespace}/{kind}/{name}".
