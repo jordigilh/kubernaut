@@ -97,6 +97,8 @@ type AuditEvent struct {
 | Event Type | Constant | NIST/SOC2 Control | Trigger | Detail Fields (`Data`) |
 |-----------|----------|-------------|---------|---------------|
 | `aiagent.session.started` | `EventTypeSessionStarted` | AU-2, CC8.1 | `session.Manager.StartInvestigation` transitions a new session to `StatusRunning` | `session_id` (via `SessionID` field) |
+
+**Reconstruction note (Issue #1818):** a session created by `handleStart`'s interactive-fallback path (`reattachOrCreateFallback`/`createFallbackSession` in `internal/kubernautagent/mcp/tools/investigate_start.go` and `investigate_autonomous.go`, entered when no `StatusRunning` autonomous session exists for the RR) carries a `mode` tag in the session's `Metadata` — `interactive_fallback` (genuine placeholder, no prior investigation) or `interactive_reattached` (seeded with the real RCA `InvestigationResult` copied from an autonomous investigation that completed and raced ahead of the interactive request). The `mode` tag is not itself a field on the `aiagent.session.started` event's `Data`; reconstructing which case occurred for a given `correlation_id` requires resolving the event's `session_id` against the session store (`Manager.GetSession`) to inspect `Metadata["mode"]` and `Result`. Before this fix, every fallback session was unconditionally `interactive_fallback` with a hardcoded placeholder `RCASummary`, silently discarding real RCA content the autonomous investigation had already produced — a BR-AUDIT-005/CC8.1 reconstruction gap (querying by `correlation_id` alone would surface a real, completed investigation session alongside a disconnected placeholder session, not one coherent narrative). Covered by UT-KA-1818-001..004 (unit) and IT-KA-1818-001/002 (integration, including an explicit audit-reconstruction-by-`correlation_id` proof) in `internal/kubernautagent/mcp/tools/`.
 | `aiagent.session.cancelled` | `EventTypeSessionCancelled` | AU-2, CC8.1 | An interactive session is explicitly cancelled by the operator (`terminateSession`) | `session_id`, `reason` |
 | `aiagent.session.completed` | `EventTypeSessionCompleted` | AU-2, CC8.1 | Session reaches a terminal `StatusCompleted` state | `session_id`, `total_duration_ms` |
 | `aiagent.session.failed` | `EventTypeSessionFailed` | AU-2, CC8.1 | Session reaches a terminal `StatusFailed` state (investigation error, LLM exhaustion, etc.) | `session_id`, `error` |
@@ -189,4 +191,4 @@ Payloads are normalized to Data Storage's OpenAPI discriminated-union schema (`p
 
 ---
 
-*Last updated: 2026-07-31 | QE readiness audit follow-up on #1799/#1794/#1768 | Covers all 37 event types in `AllEventTypes` as of this date*
+*Last updated: 2026-08-01 | Issue #1818 reattach-on-race fix | Covers all 37 event types in `AllEventTypes` as of this date*

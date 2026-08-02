@@ -162,16 +162,19 @@ func (t *InvestigateTool) startInteractiveSession(ctx context.Context, input Inv
 
 // upgradeOrCreateInteractiveSession upgrades the running autonomous session
 // for this RR in-place (Jump In), or — when no autonomous session exists, or
-// the existing one is terminal — creates a fresh interactive session so the
-// user is never left with a lease but no investigation to drive (#1440
-// SC-24). Returns the resulting investigation session ID.
+// the existing one is terminal — reattaches to (or creates) a fresh
+// interactive session so the user is never left with a lease but no
+// investigation to drive (#1440 SC-24). Returns the resulting investigation
+// session ID.
 func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) string {
 	autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
 	if !found {
-		// No session exists for this RR — create fresh interactive session so
-		// the user is never left with a lease but no investigation.
-		if freshID := t.createFallbackSession(ctx, input.RRID, user); freshID != "" {
-			return freshID
+		// No Running session exists for this RR — reattach to an existing
+		// user_driving session or a completed session's real RCA, or create
+		// a genuine placeholder, so the user is never left with a lease but
+		// no investigation.
+		if reattachedID := t.reattachOrCreateFallback(ctx, input.RRID, user); reattachedID != "" {
+			return reattachedID
 		}
 		if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
 			t.logger.Error(forceErr, "start: force-transition to user-driving (no running session found)",
@@ -194,12 +197,39 @@ func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context,
 		t.logger.Error(forceErr, "start: force-transition to user-driving failed (session terminal)",
 			"rr_id", input.RRID, "auto_session_id", autoSessionID)
 	}
-	// #1440 SC-24: Terminal session — create fresh interactive session so the
-	// user always has an investigation to drive.
-	if freshID := t.createFallbackSession(ctx, input.RRID, user); freshID != "" {
-		return freshID
+	// #1440 SC-24 / #1818: Terminal session — reattach to the real RCA (or a
+	// genuine placeholder) so the user always has an investigation to drive.
+	if reattachedID := t.reattachOrCreateFallback(ctx, input.RRID, user); reattachedID != "" {
+		return reattachedID
 	}
 	return autoSessionID
+}
+
+// reattachOrCreateFallback resolves the investigation session the user
+// should be attached to when no viable Running autonomous session exists
+// for rrID, in order of preference (#1818):
+//  1. An already-user_driving session for this rrID — e.g. left over from a
+//     prior action=start/takeover whose MCP lease was since released — is
+//     reused directly rather than creating a duplicate placeholder.
+//  2. A fresh interactive session seeded with the real RCA from the most
+//     recently completed autonomous investigation for this rrID. Previously
+//     createFallbackSession always seeded a hardcoded placeholder here,
+//     orphaning any real RCA the autonomous investigation had already
+//     produced before the interactive request raced past it.
+//  3. A genuine placeholder session when neither of the above exists.
+//
+// httpCompleter is used (with a nil check) rather than extending
+// AutonomousSessionQuerier: FindUserDrivingByRemediationID already lives on
+// that narrower interface, and enrichLiveEventContext follows the same
+// pattern for the same reason (investigate_discovery.go).
+func (t *InvestigateTool) reattachOrCreateFallback(ctx context.Context, rrID string, user mcpinternal.UserInfo) string {
+	if t.httpCompleter != nil {
+		if existingID, found := t.httpCompleter.FindUserDrivingByRemediationID(rrID); found {
+			return existingID
+		}
+	}
+	seedResult, _ := t.autoMgr.GetLatestRCAResultByRemediationID(rrID)
+	return t.createFallbackSession(ctx, rrID, user, seedResult)
 }
 
 // transitionAutonomousToUserDriving transitions the running autonomous
