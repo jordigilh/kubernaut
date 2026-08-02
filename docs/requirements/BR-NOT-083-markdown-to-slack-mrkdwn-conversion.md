@@ -15,7 +15,7 @@
 
 The Notification Service MUST convert standard Markdown syntax in notification body content to Slack's `mrkdwn` syntax before delivering messages via the Slack channel, ensuring notification bodies render correctly with proper formatting (bold, links, headers, strikethrough, code blocks).
 
-**Business Value**: Prevents broken formatting in Slack notifications by automatically translating standard Markdown (produced by upstream services like AIAnalysis, RemediationOrchestrator, and HolmesGPT) into Slack's native `mrkdwn` syntax, improving notification readability and reducing operator confusion when reviewing remediation outcomes.
+**Business Value**: Prevents broken formatting in Slack notifications by automatically translating standard Markdown (produced by upstream services like AIAnalysis, RemediationOrchestrator, and Kubernaut Agent (KA)) into Slack's native `mrkdwn` syntax, improving notification readability and reducing operator confusion when reviewing remediation outcomes.
 
 ---
 
@@ -52,7 +52,7 @@ The Notification Service MUST automatically convert the following Markdown const
 Upstream services generate notification bodies using standard Markdown:
 - **AIAnalysis**: RCA summaries with headers, bold labels, and links to dashboards
 - **RemediationOrchestrator**: Status updates with structured formatting
-- **HolmesGPT**: Investigation results with code blocks and linked resources
+- **KA**: Investigation results with code blocks and linked resources
 
 The `SlackDeliveryService` passes the body directly to Slack Block Kit with `Type: slack.MarkdownType`, but Slack does not interpret standard Markdown -- it uses its own `mrkdwn` syntax. This causes:
 - Bold text (`**text**`) appearing as literal asterisks
@@ -177,7 +177,7 @@ func MarkdownToMrkdwn(input string) string
 Upstream services that generate `NotificationRequest.Spec.Body` content:
 - **AIAnalysis Controller**: RCA summaries
 - **RemediationOrchestrator Controller**: Status updates, approval requests
-- **HolmesGPT API**: Investigation results
+- **KA**: Investigation results
 
 No changes required to upstream services -- they continue to produce standard Markdown.
 

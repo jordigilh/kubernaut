@@ -132,9 +132,9 @@ T=2s: RO picks up both RRs (different pods):
 Result: 2 WFEs for same node ❌
 ```
 
-#### **Scenario 2: Rapid-Fire Alerts from HolmesGPT**
+#### **Scenario 2: Rapid-Fire Alerts from Kubernaut Agent (KA)**
 ```
-T=0s: HolmesGPT detects issue in pod "frontend-7f8b9"
+T=0s: KA detects issue in pod "frontend-7f8b9"
   → Fires 3 related alerts (crash loop + OOM + readiness)
 
 T=1s: Gateway creates 3 RRs (different fingerprints, same target pod)

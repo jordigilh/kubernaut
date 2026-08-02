@@ -94,7 +94,7 @@ This document captures the detailed analysis of proposed additional fields for t
 **Why REJECTED**:
 
 **Fatal Flaw #1**: Prompt dependency
-- Risk level is only useful if HolmesGPT API prompt explains it
+- Risk level is only useful if Kubernaut Agent (KA) prompt explains it
 - Without prompt instructions, LLM sees `"risk_level": "high"` with no context
 - Adds token cost for information LLM may not understand
 

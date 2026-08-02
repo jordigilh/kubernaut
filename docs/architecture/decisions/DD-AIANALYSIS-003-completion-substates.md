@@ -4,7 +4,7 @@
 **Status**: 📋 **PROPOSED** - Awaiting Review
 **Deciders**: AIAnalysis Team, RemediationOrchestrator Team, Platform Team
 **Version**: 1.0
-**Related BR**: BR-HAPI-197, BR-ORCH-001, BR-ORCH-036
+**Related BR**: BR-KA-197, BR-ORCH-001, BR-ORCH-036
 
 ---
 
@@ -206,7 +206,7 @@ The fundamental question is: **"Did AI produce a usable workflow recommendation?
 3. Update documentation
 
 ```go
-// InvestigatingHandler - when HAPI returns needs_human_review=true
+// InvestigatingHandler - when KA returns needs_human_review=true
 status.Phase = aianalysis.PhaseFailed
 status.Reason = "WorkflowResolutionFailed"           // Old (deprecated)
 status.OutcomeReason = "WorkflowResolutionFailed"    // New
@@ -304,7 +304,7 @@ return c.CreateWorkflowExecution(ctx, rr, ai)
 
 | Document | Relationship |
 |----------|--------------|
-| [BR-HAPI-197](../../requirements/BR-HAPI-197-needs-human-review-field.md) | Triggered this design discussion |
+| [BR-KA-197](../../requirements/BR-KA-197-needs-human-review-field.md) | Triggered this design discussion |
 | [NOTICE_AIANALYSIS_WORKFLOW_RESOLUTION_FAILURE.md](../../handoff/NOTICE_AIANALYSIS_WORKFLOW_RESOLUTION_FAILURE.md) | Current RO coordination |
 | [reconciliation-phases.md](../../services/crd-controllers/02-aianalysis/reconciliation-phases.md) | AIAnalysis phase definitions |
 

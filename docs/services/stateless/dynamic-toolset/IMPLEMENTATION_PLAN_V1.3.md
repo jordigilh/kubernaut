@@ -259,7 +259,7 @@ test/integration/toolset/                 # Integration tests (>50% coverage)
 
 test/e2e/toolset/                         # E2E tests (<10% coverage)
   ├── suite_test.go
-  └── holmesgpt_integration_test.go       # Verify HolmesGPT API picks up toolsets
+  └── kubernaut_agent_integration_test.go  # Verify Kubernaut Agent (KA) picks up toolsets
 ```
 
 ---

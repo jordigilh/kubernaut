@@ -586,9 +586,9 @@ volumeMounts:
 
 **Priority**: P0 (Critical)
 **Category**: Label Detection
-**Status**: **RELOCATED to HAPI per ADR-056** — See BR-HAPI-253 through BR-HAPI-256
+**Status**: **RELOCATED to Kubernaut Agent (KA) per ADR-056** — See BR-HAPI-253 through BR-HAPI-256 (no renamed KA-prefixed doc exists)
 
-> **ADR-056 Relocation Note**: DetectedLabels computation was moved from SP to HAPI post-RCA.
+> **ADR-056 Relocation Note**: DetectedLabels computation was moved from SP to KA post-RCA.
 > Detection MUST run against the **RCA target resource** (identified by the LLM), not the signal source,
 > because the signal and root cause may be different resources with different infrastructure characteristics.
 > SP still captures raw K8s metadata (annotations, labels) via K8sEnricher into `KubernetesContext`,

@@ -686,7 +686,7 @@ Iteration 10: Test 20 scenarios (full suite)
 
 **This is the smartest way to validate the critical path!** 🎯
 
-**Key Insight**: We're not testing if HolmesGPT works (we know it does). We're testing if **our specific prompt and MCP design** works. This requires real testing, not assumptions.
+**Key Insight**: We're not testing if KA works (we know it does). We're testing if **our specific prompt and MCP design** works. This requires real testing, not assumptions.
 
 ---
 

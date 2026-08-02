@@ -9,7 +9,7 @@
 
 **Known Issues**:
 - ❌ Wrong CRD names (uses "alert" prefix, should be "remediation")
-- ❌ Missing critical services (HolmesGPT-API, Dynamic Toolset)
+- ❌ Missing critical services (Kubernaut Agent (KA), Dynamic Toolset)
 - ❌ Incorrect API groups (uses `kubernaut.io`, should be service-specific)
 - ❌ Obsolete execution architecture (references deleted KubernetesExecution CRD)
 - ❌ Wrong service names (Context Service vs Context API, etc.)
@@ -1106,7 +1106,7 @@ sequenceDiagram
     AR->>+AI: Creates AIAnalysis CRD
 
     Note over AI: Has CRD - Reconciles
-    AI->>CTX: Query HolmesGPT context
+    AI->>CTX: Query KA context
     CTX-->>AI: Return context data
     AI->>AI: Updates status to "completed"
     AI->>K8S: Status update triggers watch
@@ -1156,7 +1156,7 @@ Watch Mechanism Efficiency:
 Alert Processing Performance:
   - Total Processing Time: <5s for critical alerts
   - Triage Decision Time: <1s (environment classification + priority)
-  - AI Analysis Time: <30s (HolmesGPT investigation)
+  - AI Analysis Time: <30s (KA investigation)
   - Workflow Execution: <5m (depending on complexity)
   - Kubernetes Operations: <2m (safety checks + execution)
 

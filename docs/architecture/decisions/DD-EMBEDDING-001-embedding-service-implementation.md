@@ -3,8 +3,8 @@
 **Date**: November 14, 2025
 **Status**: ✅ **APPROVED** (Python Microservice + MCP Server)
 **Decision Maker**: Kubernaut Architecture Team
-**Authority**: BR-STORAGE-012 (Playbook Semantic Search), DD-PLAYBOOK-002 (LLM-First Workflow)
-**Affects**: Data Storage Service V1.0, HolmesGPT API, Playbook Semantic Search
+**Authority**: BR-STORAGE-012 (Playbook Semantic Search), DD-PLAYBOOK-002 (LLM-First Workflow) — *note: both retired/deleted; kept here for historical traceability, not currently authoritative*
+**Affects**: Data Storage Service V1.0, Kubernaut Agent (KA), Playbook Semantic Search
 **Version**: 2.0 (MCP Integration)
 
 ---
@@ -48,7 +48,7 @@ The Kubernaut LLM-first architecture (DD-PLAYBOOK-002) requires an **MCP (Model 
 Choose the implementation strategy for the embedding service that:
 - Acts as MCP server for LLM integration
 - Generates embeddings for semantic search
-- Bridges LLM (HolmesGPT API) and Data Storage Service
+- Bridges LLM (KA) and Data Storage Service
 - Fits Kubernaut's microservices architecture
 
 ---

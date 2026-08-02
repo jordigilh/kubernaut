@@ -302,7 +302,7 @@ Status:
     Type:     AIAnalysisComplete
     Status:   False
     Reason:   InProgress
-    Message:  Waiting for HolmesGPT investigation to complete
+    Message:  Waiting for Kubernaut Agent (KA) investigation to complete
 
 # Total time: 2-3 minutes per incident
 ```

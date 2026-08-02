@@ -313,7 +313,7 @@ if query == (rego.PreparedEvalQuery{}) {
 - **DD-INFRA-001**: ConfigMap Hot-Reload Pattern (FileWatcher implementation)
 
 ### Sibling Decisions (Other Services)
-- **DD-HAPI-004**: ConfigMap Hot-Reload (HolmesGPT-API Python implementation)
+- **DD-HAPI-004**: ConfigMap Hot-Reload (HolmesGPT-API Python implementation) — historical reference; no renamed DD-KA-prefixed equivalent exists
 - **Implicit**: SignalProcessing Rego hot-reload (reference implementation)
 
 ### Child Decisions

@@ -99,7 +99,7 @@ This index provides comprehensive navigation across all Kubernaut documentation 
 
 ## 📚 **Specialized Documentation**
 
-### HolmesGPT Integration
+### Kubernaut Agent (KA) Integration
 | Document | Purpose | Architecture Link |
 |----------|---------|------------------|
 | **[services/stateless/kubernaut-agent/toolset/DYNAMIC_TOOLSET_CONFIGURATION.md](services/stateless/kubernaut-agent/toolset/DYNAMIC_TOOLSET_CONFIGURATION.md)** | Toolset Management | [AI Context Orchestration](architecture/AI_CONTEXT_ORCHESTRATION_ARCHITECTURE.md) |

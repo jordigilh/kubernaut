@@ -15,7 +15,7 @@
 
 A `RemediationRequest` orchestrates multiple child CRDs (SignalProcessing, AIAnalysis, RemediationApprovalRequest, WorkflowExecution) through the RemediationOrchestrator. Each phase can potentially hang indefinitely due to:
 
-1. **AIAnalysis**: HolmesGPT API timeout, LLM hang
+1. **AIAnalysis**: Kubernaut Agent (KA) timeout, LLM hang
 2. **Approval**: Operator never responds
 3. **WorkflowExecution**: Tekton pipeline stuck
 4. **External dependencies**: Data Storage API, Notification service
@@ -55,7 +55,7 @@ timeouts:
   global: 1h              # Max time for entire remediation
   phases:
     signalProcessing: 5m  # Signal enrichment and classification
-    aiAnalysis: 10m       # HolmesGPT investigation
+    aiAnalysis: 10m       # KA investigation
     approval: 15m         # Operator approval (per ADR-040)
     workflowExecution: 30m # Tekton pipeline execution
 ```

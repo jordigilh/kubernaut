@@ -644,10 +644,10 @@ The Integration Layer provides comprehensive connectivity and communication capa
 ### 15.1 Single-Provider AI Coordination Intelligence
 
 #### **BR-AI-COORD-V1-001: Single-Provider AI Coordination Intelligence**
-**Business Requirement**: The system MUST provide intelligent AI coordination for single-provider scenarios (HolmesGPT-API) with graceful degradation and fallback mechanisms.
+**Business Requirement**: The system MUST provide intelligent AI coordination for single-provider scenarios (Kubernaut Agent (KA)) with graceful degradation and fallback mechanisms.
 
 **Functional Requirements**:
-1. **Provider Health Monitoring** - MUST continuously monitor HolmesGPT-API health and availability
+1. **Provider Health Monitoring** - MUST continuously monitor KA health and availability
 2. **Intelligent Fallback** - MUST implement rule-based fallback when AI provider is unavailable
 3. **Confidence Threshold Management** - MUST apply configurable confidence thresholds for AI recommendations
 4. **Response Quality Validation** - MUST validate AI response quality and reject invalid responses

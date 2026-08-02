@@ -164,7 +164,7 @@ spec:
 | `spec.actionType` | string | Yes | Action type from the taxonomy (PascalCase, e.g., `RestartPod`, `ScaleReplicas`). Must match a valid entry in `action_type_taxonomy`. |
 | `spec.labels` | object | Yes | Mandatory matching/filtering criteria for workflow discovery |
 | `spec.customLabels` | map[string]string | No | Operator-defined key-value labels for additional filtering |
-| `spec.detectedLabels` | object | No | Author-declared infrastructure requirements (DD-WORKFLOW-001 v2.0). Matched against incident DetectedLabels from HAPI during workflow discovery. |
+| `spec.detectedLabels` | object | No | Author-declared infrastructure requirements (DD-WORKFLOW-001 v2.0). Matched against incident DetectedLabels from Kubernaut Agent (KA) during workflow discovery. |
 | `spec.execution` | object | No | Execution engine configuration |
 | `spec.dependencies` | object | No | Infrastructure dependencies (Secrets, ConfigMaps) required by the workflow. Validated at registration and execution time. See DD-WE-006. |
 | `spec.parameters` | array | Yes | Workflow input parameters (at least one required) |
@@ -256,7 +256,7 @@ dependencies:
 
 ### `spec.detectedLabels` Fields (Infrastructure Requirements)
 
-Author-declared infrastructure characteristics this workflow requires. Matched against incident DetectedLabels from HAPI LabelDetector during workflow discovery (DD-WORKFLOW-001 v2.0).
+Author-declared infrastructure characteristics this workflow requires. Matched against incident DetectedLabels from KA LabelDetector during workflow discovery (DD-WORKFLOW-001 v2.0).
 
 All fields are optional. Absence of a field means "no requirement" for that characteristic.
 

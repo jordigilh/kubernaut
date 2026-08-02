@@ -162,6 +162,34 @@ var _ = Describe("RequestBuilder", func() {
 		})
 	})
 
+	Describe("BR-FLEET-054: ClusterID propagation to KA's cluster_name field", func() {
+		It("UT-AA-FLEET054-001: should source cluster_name from Spec.ClusterID when set (fleet target)", func() {
+			// Arrange: RO propagated a remote ClusterID onto AIAnalysis.Spec (BR-FLEET-054)
+			analysis := helpers.NewAIAnalysis("ai-fleet-target", "default")
+			analysis.Spec.ClusterID = "remote-cluster"
+
+			// Act
+			req := builder.BuildIncidentRequest(analysis)
+
+			// Assert: KA's fleet tool-overlay routing (prescopeFleetOverlay) keys off
+			// this value via MapIncidentRequestToSignal -- if it stays "default" here,
+			// every autonomous fleet-target investigation silently falls back to
+			// KA's local/hub cluster tools instead of the target's remote cluster.
+			Expect(req.ClusterName).To(Equal("remote-cluster"))
+		})
+
+		It("UT-AA-FLEET054-002: should fall back to the cluster_name custom label when Spec.ClusterID is empty (hub-local)", func() {
+			// Arrange: hub-local signal, no ClusterID on Spec, no custom label either
+			analysis := helpers.NewAIAnalysis("ai-hub-local", "default")
+
+			// Act
+			req := builder.BuildIncidentRequest(analysis)
+
+			// Assert: unchanged pre-BR-FLEET-054 default behavior for non-fleet signals
+			Expect(req.ClusterName).To(Equal("default"))
+		})
+	})
+
 	Describe("#462: SignalAnnotations forwarding to HAPI IncidentRequest", func() {
 		It("UT-AA-462-001: should populate signal_annotations when present on AIAnalysis", func() {
 			analysis := helpers.NewAIAnalysis("ai-annot-test", "default")
