@@ -405,7 +405,18 @@ func MapIncidentRequestToSignal(req *agentclient.IncidentRequest) katypes.Signal
 		IncidentID:       req.IncidentID,
 		ResourceKind:     req.ResourceKind,
 		ResourceName:     req.ResourceName,
+		// BR-FLEET-054: cluster_name carries the raw cluster identifier
+		// (openapi.json IncidentRequest.cluster_name doc comment), propagated
+		// from RemediationRequest.Spec.ClusterID via AIAnalysis.Spec.ClusterID
+		// (pkg/remediationorchestrator/creator/aianalysis.go) and
+		// pkg/aianalysis/handlers/request_builder.go's clusterNameFor. Map it
+		// into BOTH ClusterName (display/audit) and ClusterID (the field
+		// prescopeFleetOverlay actually reads to resolve the per-investigation
+		// fleet tool overlay, internal/kubernautagent/investigator/fleet_overlay.go)
+		// so autonomous fleet-target investigations route to the correct
+		// remote cluster's tools instead of silently falling back to local/hub.
 		ClusterName:      req.ClusterName,
+		ClusterID:        req.ClusterName,
 		Environment:      req.Environment,
 		Priority:         req.Priority,
 		RiskTolerance:    req.RiskTolerance,

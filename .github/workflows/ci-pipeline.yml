@@ -786,7 +786,16 @@ jobs:
             timeout: 20
           - service: datastorage
             service_name: "Data Storage"
-            timeout: 10
+            # CI RCA (run 30723525089, job 91432164540): job hit the 10min cap and
+            # was cancelled mid-suite ("operation was canceled" right after a
+            # passing DLQ spec, not a test failure) -- go.mod cache miss made
+            # `go install setup-envtest` + `go mod download` alone take ~4m23s
+            # before SynchronizedBeforeSuite even started, leaving too little
+            # headroom for the full Ginkgo suite. +5min matches the margin
+            # already given to the other envtest+Podman integration suites in
+            # this same matrix (aianalysis/effectivenessmonitor/workflowexecution
+            # /apifrontend all run at 15) rather than datastorage's outlier 10.
+            timeout: 15
           - service: effectivenessmonitor
             service_name: "Effectiveness Monitor"
             timeout: 15
