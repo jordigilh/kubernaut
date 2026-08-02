@@ -61,10 +61,9 @@ The **Dynamic Toolset Service** was designed to automatically discover Kubernete
 
 ### Core Documentation
 1. **[Operations Runbook](./OPERATIONS_RUNBOOK.md)** - Production operations and troubleshooting guide
-2. **[BR Coverage Matrix](./BR_COVERAGE_MATRIX.md)** - Business requirement traceability (8 BRs, 100% coverage)
-3. **[Production Readiness Assessment](./PRODUCTION_READINESS_ASSESSMENT.md)** - Deployment readiness evaluation
-4. **[Implementation Plan](./implementation/IMPLEMENTATION_PLAN_ENHANCED.md)** - 12-day implementation timeline
-5. **[Testing Strategy](./implementation/testing/TESTING_STRATEGY.md)** - Comprehensive test approach
+2. **[Production Readiness Assessment](./PRODUCTION_READINESS_ASSESSMENT.md)** - Deployment readiness evaluation
+3. **[Implementation Plan](./implementation/IMPLEMENTATION_PLAN_ENHANCED.md)** - 12-day implementation timeline
+4. **[Testing Strategy](./implementation/testing/TESTING_STRATEGY.md)** - Comprehensive test approach
 
 ### Design Decisions
 - **[DD-TOOLSET-001](./implementation/design/01-detector-interface-design.md)** - Detector interface design
@@ -1220,10 +1219,9 @@ kubectl logs -f -n kubernaut-system -l app=dynamic-toolset | grep "method="
 
 ### Core Documentation
 1. **[Implementation Plan](./implementation/IMPLEMENTATION_PLAN_ENHANCED.md)** - 12-day implementation timeline
-2. **[BR Coverage Matrix](./BR_COVERAGE_MATRIX.md)** - Business requirement traceability (8/8 BRs, 232 tests)
-3. **[Testing Strategy](./implementation/testing/TESTING_STRATEGY.md)** - Comprehensive test approach (100% pass rate)
-4. **[Production Readiness](./implementation/PRODUCTION_READINESS_REPORT.md)** - 101/109 points (92.7%)
-5. **[Handoff Summary](./implementation/00-HANDOFF-SUMMARY.md)** - Complete implementation summary
+2. **[Testing Strategy](./implementation/testing/TESTING_STRATEGY.md)** - Comprehensive test approach (100% pass rate)
+3. **[Production Readiness](./implementation/PRODUCTION_READINESS_REPORT.md)** - 101/109 points (92.7%)
+4. **[Handoff Summary](./implementation/00-HANDOFF-SUMMARY.md)** - Complete implementation summary
 
 ### Design Decisions
 - **[DD-TOOLSET-001](./implementation/design/01-detector-interface-design.md)** - Detector interface design
