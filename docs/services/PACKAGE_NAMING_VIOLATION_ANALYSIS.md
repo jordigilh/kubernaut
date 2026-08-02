@@ -37,7 +37,7 @@ import (
 | **Toolset** | 13 files | ⚠️ NO PLAN FOUND | Fix code only |
 | **Data Storage** | 6 files | ❌ NO (plan uses `datastorage_test`) | Fix plan + code |
 | **Context API** | 13 files | ✅ YES (plan uses `contextapi`) | Fix actual code |
-| **AI/HolmesGPT** | 17 files | ⚠️ NOT CHECKED | Check plan + fix code |
+| **AI/KA** | 17 files | ⚠️ NOT CHECKED | Check plan + fix code |
 | **Workflow Engine** | 27 files | ⚠️ NOT CHECKED | Check plan + fix code |
 | **Remediation** | 8 files | ⚠️ NOT CHECKED | Check plan + fix code |
 | **Webhook** | 6 files | ⚠️ NOT CHECKED | Check plan + fix code |
@@ -232,7 +232,7 @@ test/unit/contextapi/vector_test.go           → package contextapi ✅ CORRECT
 ### 6. Other Services (Need Analysis)
 
 **Services Requiring Analysis**:
-- AI/HolmesGPT (17 files with violations)
+- AI/KA (17 files with violations)
 - Workflow Engine (27 files with violations)
 - Remediation Controllers (8 files with violations)
 - Webhook (6 files with violations)

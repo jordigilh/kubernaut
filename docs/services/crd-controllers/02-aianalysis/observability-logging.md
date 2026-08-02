@@ -1,12 +1,12 @@
 ## Observability & Logging
 
-**Note**: For complete structured logging, distributed tracing, log correlation, and debug configuration patterns, refer to the Security & Observability sections in 01-alert-processor.md. AI Analysis follows the same patterns with AI-specific adaptations for HolmesGPT integration and approval workflow tracking.
+**Note**: For complete structured logging, distributed tracing, log correlation, and debug configuration patterns, refer to the Security & Observability sections in 01-alert-processor.md. AI Analysis follows the same patterns with AI-specific adaptations for Kubernaut Agent (KA) integration and approval workflow tracking.
 
 **AI Analysis Specific Logging Examples**:
 
 ```go
-// HolmesGPT investigation logging (sanitized)
-log.V(1).Info("HolmesGPT investigation completed",
+// KA investigation logging (sanitized)
+log.V(1).Info("KA investigation completed",
     "duration", time.Since(start),
     "confidenceScore", investigation.ConfidenceScore,
     "recommendationCount", len(investigation.Recommendations),

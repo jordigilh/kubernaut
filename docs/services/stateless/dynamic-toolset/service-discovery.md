@@ -8,7 +8,7 @@
 
 ## Overview
 
-The Service Discovery engine is the core component of the Dynamic Toolset Service. It automatically discovers monitoring and observability services in a Kubernetes cluster and makes them available for HolmesGPT investigations.
+The Service Discovery engine is the core component of the Dynamic Toolset Service. It automatically discovers monitoring and observability services in a Kubernetes cluster and makes them available for Kubernaut Agent (KA) investigations.
 
 ---
 

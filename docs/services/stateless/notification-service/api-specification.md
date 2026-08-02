@@ -62,7 +62,7 @@
       "summary": "Chronic memory insufficiency",
       "confidence": 0.88,
       "detailedAnalysis": "Pattern Analysis: 3 OOMs in 1h indicates sustained memory pressure...",
-      "methodology": "HolmesGPT + Pattern Analysis"
+      "methodology": "Kubernaut Agent (KA) + Pattern Analysis"
     },
     "analysisJustification": {
       "whyThisRootCause": "Repeated OOMs with linear memory growth pattern indicates insufficient allocation...",

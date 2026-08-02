@@ -826,7 +826,7 @@ For schemas of CRDs created by Central Controller:
 
 ### Purpose
 
-Performs AI-powered root cause analysis using LLM providers (HolmesGPT, OpenAI, Anthropic). Analyzes signal context and generates remediation recommendations.
+Performs AI-powered root cause analysis using LLM providers (Kubernaut Agent (KA), OpenAI, Anthropic). Analyzes signal context and generates remediation recommendations.
 
 ---
 
@@ -878,7 +878,7 @@ type AIAnalysisSpec struct {
 
 **Phase Transitions** (per reconciliation-phases.md v2.0):
 1. `Pending` → Initial state
-2. `Investigating` → HolmesGPT-API call in progress
+2. `Investigating` → KA call in progress
 3. `Analyzing` → Rego policy evaluation
 4. `Completed` → Analysis finished, results available
 5. `Failed` → Analysis failed (with reason)

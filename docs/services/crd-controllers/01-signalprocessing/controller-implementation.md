@@ -103,7 +103,7 @@ type RegoInput struct {
 }
 
 // OwnerChainEntry represents a single entry in K8s ownership chain
-// Used by HolmesGPT-API for DetectedLabels validation
+// Used by Kubernaut Agent (KA) for DetectedLabels validation
 // See: DD-WORKFLOW-001 v1.8
 type OwnerChainEntry struct {
     Namespace string `json:"namespace,omitempty"` // Empty for cluster-scoped (e.g., Node)
@@ -434,7 +434,7 @@ func (r *SignalProcessingReconciler) reconcileEnriching(ctx context.Context, sp 
     // ========================================
     // OWNER CHAIN (DD-WORKFLOW-001 v1.8)
     // Traverse K8s ownerReferences for DetectedLabels validation
-    // HolmesGPT-API uses this to validate RCA resource relationship
+    // KA uses this to validate RCA resource relationship
     // ========================================
 
     ownerChain, err := r.buildOwnerChain(ctx, sp.Status.EnrichmentResults.KubernetesContext)

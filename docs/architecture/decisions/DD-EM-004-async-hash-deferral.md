@@ -28,7 +28,7 @@ In both cases, the EM captures `pre-hash == post-hash` because the external cont
 An incorrect `pre == post` hash comparison means:
 - The EM reports "no spec change" when the remediation actually changed the resource
 - The effectiveness score for the hash component is misleading
-- The HAPI remediation history context receives incorrect drift data
+- The Kubernaut Agent (KA) remediation history context receives incorrect drift data
 - The DataStorage effectiveness query returns stale results
 
 ---

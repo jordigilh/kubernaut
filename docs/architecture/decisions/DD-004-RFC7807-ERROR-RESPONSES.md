@@ -41,7 +41,7 @@ This design decision establishes **RFC 7807 (Problem Details for HTTP APIs)** as
 
 **Key Principle**: All HTTP error responses (4xx, 5xx) MUST use RFC 7807 Problem Details format. Success responses (2xx) use service-specific formats.
 
-**Scope**: All Kubernaut services that expose HTTP APIs (Gateway, HolmesGPT API, DataStorage, etc.).
+**Scope**: All Kubernaut services that expose HTTP APIs (Gateway, Kubernaut Agent (KA), DataStorage, etc.).
 
 ---
 
@@ -63,7 +63,7 @@ This design decision establishes **RFC 7807 (Problem Details for HTTP APIs)** as
 
 ### **Challenge**
 
-Kubernaut consists of multiple microservices (Gateway, HolmesGPT API, DataStorage, etc.) that expose HTTP APIs. Without a standardized error format:
+Kubernaut consists of multiple microservices (Gateway, KA, DataStorage, etc.) that expose HTTP APIs. Without a standardized error format:
 
 1. ⚠️ **Inconsistent Errors**: Each service uses different error formats
 2. ⚠️ **Poor Client Experience**: Clients must parse multiple error formats

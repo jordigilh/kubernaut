@@ -128,7 +128,7 @@ metadata:
 | **Gateway** | `kubernaut-system` | Core API gateway |
 | **Context API** | `kubernaut-system` | Historical incident context |
 | **Data Storage** | `kubernaut-system` | Audit trail persistence |
-| **HolmesGPT API** | `kubernaut-system` | AI analysis service |
+| **Kubernaut Agent (KA)** | `kubernaut-system` | AI analysis service |
 | **Dynamic Toolset** | `kubernaut-system` | Tool configuration service |
 | **Notification** | `kubernaut-system` | RBAC-isolated via namespace-scoped Role (#229) |
 | **RemediationOrchestrator** | `kubernaut-system` | CRD controller |

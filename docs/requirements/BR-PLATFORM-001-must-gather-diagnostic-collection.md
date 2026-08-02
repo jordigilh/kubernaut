@@ -84,7 +84,7 @@ This capability follows established Kubernetes ecosystem best practices:
 - SignalProcessing (`signalprocessing-*` pods)
 - Notification Service (`notification-*` pods)
 - DataStorage Service (`datastorage-*` pods)
-- HolmesGPT API (`kubernaut-agent-*` pods)
+- Kubernaut Agent (KA) (`kubernaut-agent-*` pods)
 - Any operator/controller pods
 
 **Log Collection Requirements**:
@@ -122,7 +122,7 @@ This capability follows established Kubernetes ecosystem best practices:
 **ConfigMaps**:
 - **Service Configurations**: All Kubernaut service ConfigMaps
 - **Feature Flags**: Feature toggle configurations
-- **HolmesGPT Configuration**: Endpoint URL, version compatibility matrix, timeout settings
+- **KA Configuration**: Endpoint URL, version compatibility matrix, timeout settings
 - **Full Content**: Capture complete ConfigMap data
 
 **Secrets** (Sanitized):

@@ -184,7 +184,7 @@ Use the checklist in [SERVICE_IMPLEMENTATION_PLAN_TEMPLATE.md](./SERVICE_IMPLEME
 |---------|---------|--------|----------|----------|-------|
 | Gateway | ✅ | ✅ | ✅ | ✅ | ✅ |
 | DataStorage | ✅ | ✅ | ✅ | ✅ | ✅ |
-| HolmesGPT-API | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Kubernaut Agent (KA) | ✅ | ✅ | ✅ | ✅ | ✅ |
 
 **Legend**: ✅ Complete | 🔄 In Progress | ❌ Missing
 

@@ -1,7 +1,7 @@
 # Kubernaut Agent — Security Configuration
 
 > **Authoritative reference** for the RBAC, network, and secret posture of the
-> Kubernaut Agent (KA / HolmesGPT API wrapper).
+> Kubernaut Agent (KA).
 >
 > Related: ADR-055, ADR-056, DD-AUTH-011, DD-AUTH-012, DD-AUTH-014
 
@@ -193,7 +193,7 @@ volumes:
 **Secret handling rules:**
 - LLM API keys are NEVER logged, stored in CRD status, or emitted in events
 - Only connection status (success/failure) is logged
-- HolmesGPT responses are sanitized before storage (regex-based secret pattern removal)
+- KA responses are sanitized before storage (regex-based secret pattern removal)
 - OAuth2 credentials (when enabled) sourced from Secret via `valueFrom.secretKeyRef`
 
 ---

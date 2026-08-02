@@ -62,7 +62,7 @@ Support Services:
 ├── Intelligence (8086)         🔴 V2 (not in V1)
 ├── Effectiveness Monitor (8080) ✅ DOCUMENTED
 ├── Notifications (8089)        ✅ Documented
-├── HolmesGPT API (8090)       ✅ Documented
+├── Kubernaut Agent (KA) (8090) ✅ Documented
 └── Context API (8091)          ✅ Documented
 ```
 

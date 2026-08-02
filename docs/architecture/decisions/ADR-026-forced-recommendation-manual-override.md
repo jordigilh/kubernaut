@@ -141,7 +141,7 @@ When an operator **rejects** an AI-generated remediation recommendation (medium 
 #### **Reason 4: V1 Success Metrics First** 📈
 
 **V1 Metrics to Establish**:
-- AI recommendation accuracy (71-86% baseline from HolmesGPT benchmarks)
+- AI recommendation accuracy (71-86% baseline from Kubernaut Agent (KA) benchmarks)
 - Approval vs auto-execute ratio
 - MTTR improvement (target: 60 min → 5 min)
 - Operator satisfaction with AI recommendations

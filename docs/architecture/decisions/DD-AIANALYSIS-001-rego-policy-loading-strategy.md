@@ -450,7 +450,7 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 ```go
 func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis *v1alpha1.AIAnalysis) (ctrl.Result, error) {
-    // ... get HolmesGPT recommendation ...
+    // ... get Kubernaut Agent (KA) recommendation ...
 
     // Build approval input from enriched context
     input := ApprovalInput{

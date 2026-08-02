@@ -26,7 +26,7 @@
 - ✅ **No caching**: Low throughput (<100 signals/min) + NetworkPolicies reduce risk
 
 **Migration Path**:
-- Deploy Gateway with SAR middleware (same pattern as DataStorage/HAPI)
+- Deploy Gateway with SAR middleware (same pattern as DataStorage/KA)
 - Configure webhooks with Bearer tokens (AlertManager `http_config.authorization`)
 - Create RBAC: ClusterRole `gateway-signal-sender` with `create remediationrequests` permission
 

@@ -115,7 +115,7 @@ Tier 2: <service>/crd-schema.md (Implementation Detail)
 
 #### **Services**:
 1. **01-signalprocessing/** - Alert ingestion, enrichment, routing
-2. **02-aianalysis/** - HolmesGPT investigation orchestration
+2. **02-aianalysis/** - Kubernaut Agent (KA) investigation orchestration
 3. **03-workflowexecution/** - Workflow orchestration and step execution (Tekton TaskRun-based execution per ADR-025)
 4. **05-remediationorchestrator/** - Central CRD orchestration
 
@@ -136,11 +136,11 @@ Each stateless service has 8 standardized documents:
 
 #### **Services**:
 1. **gateway-service/** - Multi-signal ingestion, deduplication, CRD creation
-2. **kubernaut-agent/** - HolmesGPT REST API wrapper
+2. **kubernaut-agent/** - KA REST API wrapper
 3. **notification-service/** - Multi-channel notifications (Slack, PagerDuty, email)
 4. **context-api/** - Historical context serving
 5. **data-storage/** - Unified storage interface
-6. **dynamic-toolset/** - HolmesGPT toolset management
+6. **dynamic-toolset/** - KA toolset management
 7. **effectiveness-monitor/** - Remediation effectiveness tracking
 
 ---
