@@ -40,7 +40,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, ...) {
 **Scope**: All configuration types across all services:
 - **Rego Policies**: SignalProcessing, AIAnalysis, WorkflowExecution
 - **YAML ConfigMaps**: Gateway (rate limits), WorkflowExecution (playbooks)
-- **JSON Settings**: HolmesGPT-API (LLM configurations)
+- **YAML Settings**: Kubernaut Agent (LLM configurations)
 - **Environment Variables**: All services (ports, timeouts, feature flags)
 - **Certificate Files**: Data Storage (TLS certificates)
 
@@ -301,7 +301,7 @@ All services MUST meet these requirements:
 ### ⚠️ Partial Compliance
 | Service | Config Type | Startup Validation | Hot-Reload | Caching | Notes |
 |---|---|---|---|---|---|
-| **HolmesGPT-API** | YAML (LLM config) | ✅ | ✅ | ❌ | Python FileWatcher (DD-HAPI-004) |
+| **Kubernaut Agent (KA)** | YAML (LLM config) | ✅ | ✅ | ❌ | Go `FileWatcher` on `kubernaut-agent-llm-runtime` ConfigMap (`internal/kubernautagent/config/config_types.go`) |
 
 ### ❌ Non-Compliant Services (V1.0 Fix Required)
 | Service | Config Type | Startup Validation | Hot-Reload | Caching | Gap |
@@ -457,7 +457,7 @@ func main() {
 **Existing Services**:
 - SignalProcessing: Already compliant (no changes needed)
 - AIAnalysis: Requires V1.0 fix (DD-AIANALYSIS-002)
-- HolmesGPT-API: Python implementation compliant (DD-HAPI-004)
+- Kubernaut Agent (KA): Go implementation compliant (`internal/kubernautagent/config/config_types.go` `FileWatcher`; formerly a Python implementation cited as "DD-HAPI-004", which was never formalized as an actual design-decision doc)
 
 ### Risk Assessment
 | Risk | Likelihood | Impact | Mitigation |
@@ -481,7 +481,9 @@ func main() {
 
 ### Child Decisions (Service-Specific)
 - **DD-AIANALYSIS-002**: Rego Policy Startup Validation (AIAnalysis implementation)
-- **DD-HAPI-004**: ConfigMap Hot-Reload (HolmesGPT-API Python implementation)
+- ~~**DD-HAPI-004**~~: ConfigMap Hot-Reload — cited here as the design authority for KA's (formerly
+  HolmesGPT-API's) hot-reload, but no such doc was ever formalized; the live implementation is
+  `internal/kubernautagent/config/config_types.go`'s `FileWatcher` on the `kubernaut-agent-llm-runtime` ConfigMap
 - **DD-SP-XXX**: (Implicit - SignalProcessing already compliant)
 
 ### Related Decisions
@@ -528,10 +530,10 @@ go test ./pkg/service -bench BenchmarkEvaluate
 - **Library**: `pkg/shared/hotreload/file_watcher.go`
 - **Main Entry**: `cmd/signalprocessing/main.go:240-252`
 
-### Python Service (YAML Config)
-- **Reference**: `kubernaut-agent/src/config/hot_reload.py`
-- **Library**: `watchdog` (Python equivalent of fsnotify)
-- **Design**: DD-HAPI-004
+### Kubernaut Agent (KA, Go) Service (YAML Config)
+- **Reference**: `internal/kubernautagent/config/config_types.go` (`LLMRuntimeConfig`, `FileWatcher`)
+- **Note**: formerly a Python service using the `watchdog` library (`kubernaut-agent/src/config/hot_reload.py`,
+  now removed); rewritten in Go as part of the HolmesGPT-API → Kubernaut Agent migration
 
 ### Test Examples
 - **Unit Tests**: `pkg/signalprocessing/rego/engine_test.go`

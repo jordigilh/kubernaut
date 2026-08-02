@@ -1,15 +1,21 @@
 # DD-WORKFLOW-003: Parameterized Remediation Actions
 
 **Status**: Approved  
-**Version**: 2.3  
+**Version**: 2.4  
 **Created**: 2025-11-15  
-**Updated**: 2026-03-04  
+**Updated**: 2026-08-02  
 **Target Release**: v1.1  
 **Related**: BR-WORKFLOW-001, DD-WORKFLOW-001, BR-496
 
 ---
 
 ## Changelog
+
+### Version 2.4 (2026-08-02)
+**Changes** ([Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)):
+- ✅ Renamed HAPI → Kubernaut Agent (KA) throughout (mechanical rename, same feature, verified live against `internal/kubernautagent/parser/validator.go`)
+- ✅ Corrected the "Current Tekton Pipeline Execution Model" diagram: real service names (SignalProcessing/AIAnalysis/RemediationOrchestrator/WorkflowExecution controllers), KA's in-process workflow discovery (DD-WORKFLOW-019, not MCP catalog search), and the 3 execution engines (Tekton/Job/Ansible, ADR-024/044) instead of Tekton-only
+- ✅ Marked the Nov 2025 "Implementation Roadmap" phase list historical
 
 ### Version 2.3 (2026-03-04)
 **Changes**:
@@ -210,21 +216,23 @@ The LLM selects a specific remediation workflow and populates its required param
 }
 ```
 
-### HAPI-Managed Canonical Parameters (BR-496 v2)
+### KA-Managed Canonical Parameters (BR-496 v2)
 
-Three parameters are **HAPI-managed** — their values are injected by HAPI from the K8s-verified `root_owner`, not provided by the LLM:
+Three parameters are **KA-managed** — their values are injected by Kubernaut Agent (KA, formerly
+HolmesGPT-API/HAPI) from the K8s-verified `root_owner`, not provided by the LLM:
 
 - **`TARGET_RESOURCE_NAME`**: Name of the root managing resource (e.g., "payment-api")
 - **`TARGET_RESOURCE_KIND`**: Kind of the root managing resource (e.g., "Deployment")
 - **`TARGET_RESOURCE_NAMESPACE`**: Namespace of the root managing resource (omitted for cluster-scoped resources)
 
-**Workflow Schema Contract**: All workflow schemas **MUST** declare these three parameters. The `WorkflowResponseValidator` Step 0 rejects schemas that omit them.
+**Workflow Schema Contract**: All workflow schemas **MUST** declare these three parameters. KA's
+schema validator (`internal/kubernautagent/parser/validator.go`) rejects schemas that omit them.
 
-**Schema Stripping**: When `get_workflow` returns the workflow schema to the LLM, these three parameters are stripped from the response. This prevents the LLM from seeing or populating values that HAPI will overwrite.
+**Schema Stripping**: When `get_workflow` returns the workflow schema to the LLM, these three parameters are stripped from the response. This prevents the LLM from seeing or populating values that KA will overwrite.
 
-**Operational Parameters**: All other parameters (e.g., `MEMORY_LIMIT_NEW`, `SCALE_TARGET_REPLICAS`) remain LLM-provided. HAPI does not manage or validate these — the LLM populates them based on its investigation.
+**Operational Parameters**: All other parameters (e.g., `MEMORY_LIMIT_NEW`, `SCALE_TARGET_REPLICAS`) remain LLM-provided. KA does not manage or validate these — the LLM populates them based on its investigation.
 
-**Example — Combined HAPI-managed + LLM-provided parameters**:
+**Example — Combined KA-managed + LLM-provided parameters**:
 ```json
 {
   "parameters": {
@@ -236,7 +244,7 @@ Three parameters are **HAPI-managed** — their values are injected by HAPI from
 }
 ```
 
-In this example, the first three are injected by HAPI; `MEMORY_LIMIT_NEW` is provided by the LLM.
+In this example, the first three are injected by KA; `MEMORY_LIMIT_NEW` is provided by the LLM.
 
 ---
 
@@ -246,9 +254,9 @@ In this example, the first three are injected by HAPI; `MEMORY_LIMIT_NEW` is pro
 ┌─────────────────────────────────────────────────────────────┐
 │                    AI Analysis Service                       │
 │  1. Receives incident                                        │
-│  2. Calls HolmesGPT API for RCA                             │
+│  2. Calls Kubernaut Agent (KA) for RCA                       │
 │  3. LLM performs RCA (NO workflow pre-fetch to avoid contamination)
-│  4. LLM calls MCP tools to search playbooks AFTER RCA
+│  4. LLM calls KA's in-process discovery tools to search workflows AFTER RCA (DD-WORKFLOW-019)
 └───────────────────────┬─────────────────────────────────────┘
                         │
                         │ Creates PipelineRun with parameters
@@ -320,7 +328,12 @@ In this example, the first three are injected by HAPI; `MEMORY_LIMIT_NEW` is pro
 **Implementation Note**: Rollback parameters will be included in the LLM's JSON response as an optional field within each strategy.
 ---
 
-## Implementation Roadmap (Revised)
+## Implementation Roadmap (Revised) (Historical — v1.1 rollout plan, completed)
+
+> The phases below describe the original Nov 2025 rollout plan, including now-superseded components
+> (Mock MCP Server, "HolmesGPT API" naming). Retained for historical context; see the [KA-Managed
+> Canonical Parameters](#ka-managed-canonical-parameters-br-496-v2) section above for the current,
+> shipped mechanism.
 
 ### Phase 1 (v1.1) - Parameter Schema + LLM Integration
 **Duration**: 2-3 weeks
@@ -471,7 +484,6 @@ This is **superior** to building a custom execution engine because:
 Based on the authoritative [Kubernaut Architecture Overview](../../KUBERNAUT_ARCHITECTURE_OVERVIEW.md):
 
 ```
-```
 ┌─────────────────┐
 │ Signal Source   │  Prometheus, K8s Events
 │ (Alert/Event)   │
@@ -484,35 +496,36 @@ Based on the authoritative [Kubernaut Architecture Overview](../../KUBERNAUT_ARC
          │
          ▼
 ┌─────────────────┐
-│   Processor     │  Signal lifecycle + environment classification
+│ SignalProcessing│  Signal lifecycle + environment classification
+│  Controller     │
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│  AI Analysis    │  HolmesGPT-Only integration
-│     Engine      │
+│  AIAnalysis     │  Async submit/poll/result session with KA
+│  Controller     │
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│  HolmesGPT-API  │  Investigation & RCA
-│                 │  • Calls MCP workflow catalog search
-│                 │  • Returns recommendations with parameters
+│ Kubernaut Agent │  Investigation & RCA
+│      (KA)       │  • In-process workflow discovery (DD-WORKFLOW-019, no MCP call)
+│                 │  • Returns selectedWorkflow with parameters
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ Remediation     │  Orchestration & coordination
-│ Execution Engine│  • Parses LLM recommendations
-│ (CRD Controller)│  • Validates workflow parameters
-│                 │  • Creates Tekton PipelineRuns
+│ Remediation-    │  Orchestration & coordination
+│ Orchestrator    │  • Reads AIAnalysis.status.selectedWorkflow
+│ (RO Controller) │  • Passes through executionBundle/parameters (no re-validation)
+│                 │  • Creates WorkflowExecution CRD
 └────────┬────────┘
          │
          ▼
 ┌─────────────────┐
-│ Tekton Pipelines│  Kubernetes-native execution
-│  (PipelineRun)  │  • Runs workflow container images
-│                 │  • Injects parameters as env vars
+│ WorkflowExecution│ Dispatches by executionEngine
+│   Controller    │  • Tekton PipelineRun / batchv1.Job / AWX (ADR-024, ADR-044)
+│                 │  • Injects parameters as env vars/params
 └────────┬────────┘
          │
          ▼
@@ -524,10 +537,10 @@ Based on the authoritative [Kubernaut Architecture Overview](../../KUBERNAUT_ARC
 ```
 
 **Key Architectural Principles:**
-- **Investigation vs Execution Separation**: HolmesGPT investigates (NO execution), Tekton executes
-- **Remediation Execution Engine Coordination**: Parses recommendations, validates actions, coordinates execution
-- **Tekton PipelineRuns**: Kubernetes-native execution of workflow containers
-- **Parameter Flow**: LLM → Remediation Execution Engine → Tekton PipelineRun → Container Environment
+- **Investigation vs Execution Separation**: KA investigates (NO execution), the execution engine (Tekton/Job/Ansible) executes
+- **RO Pass-Through**: RO does not re-validate or re-resolve — it passes through KA's already-resolved `selectedWorkflow` (DD-CONTRACT-001)
+- **Multiple Execution Engines**: WorkflowExecution dispatches to Tekton, native `batchv1.Job`, or Ansible/AWX per `executionEngine` (ADR-024, ADR-044) — not Tekton-only
+- **Parameter Flow**: LLM → KA → AIAnalysis.status → RO (pass-through) → WorkflowExecution.spec → execution engine → Container Environment
 
 
 ### Workflow Design Pattern: Single Remediation Per Playbook
@@ -1010,7 +1023,7 @@ echo "Final replicas: ${FINAL_REPLICAS}"
 ### Success Metrics
 
 **Business Value**:
-- 40% reduction in validation complexity (Remediation Execution Engine + HolmesGPT-API)
+- 40% reduction in validation complexity (WorkflowExecution Controller + Kubernaut Agent (KA))
 - 25% reduction in LLM prompt tokens (simpler parameter schemas)
 - 60% improvement in audit trail granularity (Data Storage Service)
 - 30% reduction in container testing burden

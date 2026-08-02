@@ -49,7 +49,7 @@ func deployDataStorage(clusterName, kubeconfigPath string, writer io.Writer) err
     deployManifest()
 }
 
-func deployHolmesGPTAPI(...) {
+func DeployKubernautAgentOnly(...) {
     buildImage()  // ← Waits for previous build
     loadToKind()
     deployManifest()
@@ -153,10 +153,10 @@ go func() {
     buildResults <- imageBuildResult{"datastorage", "kubernaut-datastorage:latest", err}
 }()
 
-// Build HolmesGPT-API image (parallel)
+// Build Kubernaut Agent (KA) image (parallel)
 go func() {
-    err := buildImageOnly("HolmesGPT-API", "localhost/kubernaut-kubernaut-agent:latest",
-        "kubernaut-agent/Dockerfile", projectRoot, writer)
+    err := buildImageOnly("Kubernaut Agent", "localhost/kubernaut-kubernaut-agent:latest",
+        "docker/kubernautagent.Dockerfile", projectRoot, writer)
     buildResults <- imageBuildResult{"kubernaut-agent", "kubernaut-kubernaut-agent:latest", err}
 }()
 
@@ -192,9 +192,9 @@ if err := deployDataStorageOnly(clusterName, kubeconfigPath, builtImages["datast
     return fmt.Errorf("failed to deploy Data Storage: %w", err)
 }
 
-fmt.Fprintln(writer, "🤖 Deploying HolmesGPT-API...")
-if err := deployHolmesGPTAPIOnly(clusterName, kubeconfigPath, builtImages["kubernaut-agent"], writer); err != nil {
-    return fmt.Errorf("failed to deploy HolmesGPT-API: %w", err)
+fmt.Fprintln(writer, "🤖 Deploying Kubernaut Agent...")
+if err := DeployKubernautAgentOnly(ctx, clusterName, kubeconfigPath, namespace, builtImages["kubernaut-agent"], enableJWT, writer); err != nil {
+    return fmt.Errorf("failed to deploy Kubernaut Agent: %w", err)
 }
 
 fmt.Fprintln(writer, "🧠 Deploying AIAnalysis controller...")
