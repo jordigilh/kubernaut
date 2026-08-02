@@ -1,9 +1,24 @@
 # DD-CONTRACT-001: AIAnalysis ↔ WorkflowExecution Contract Alignment
 
-**Status**: ✅ Approved
-**Version**: 1.2
-**Date**: 2025-11-28
-**Confidence**: 98%
+**Status**: ✅ Approved (core contract shape); ⚠️ **catalog-resolution mechanism corrected in v2.0**
+**Version**: 2.0
+**Date**: 2025-11-28 (v1.2); 2026-08-02 (v2.0 correction, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))
+**Confidence**: 95%
+
+> **v2.0 correction note**: This v1.2 document (Nov 2025) predates the current implementation and got one
+> load-bearing detail wrong: it describes **"HolmesGPT-API"** resolving `workflow_id → containerImage` via a
+> **Data Storage MCP search** during RCA. Neither exists today. The service is **Kubernaut Agent (KA)**, a
+> native-Go rewrite, and KA owns workflow discovery **in-process** against `RemediationWorkflow`/`ActionType`
+> CRDs (informer-backed cache, no HTTP/MCP call to Data Storage for this) — see
+> [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md) (authoritative, "Implemented" as of July
+> 2026). The CRD field named `containerImage`/`containerDigest` below was also generalized and renamed to
+> `executionBundle`/`executionBundleDigest` (Issue #1661 Change 11-12) once WorkflowExecution grew three
+> execution engines (Tekton, native `batchv1.Job`, Ansible/AWX) instead of only Tekton. The remaining sections
+> — the overall CRD contract shape, the RO pass-through principle, and the approval-orchestration flow — remain
+> directionally correct and are corrected in place below rather than rewritten from scratch. For the
+> `approvalRequired` vs. `needsHumanReview` two-flag decision logic (added after this document's v1.x), see
+> [DD-CONTRACT-002](DD-CONTRACT-002-service-integration-contracts.md#contract-2-aianalysis--ro-status-output),
+> which is kept as the single authority for that split to avoid duplicating it here.
 
 ---
 
@@ -53,139 +68,101 @@ Align all CRD schemas with ADR-041 and ADR-043.
 
 ### 1. AIAnalysis CRD Status
 
-**Updated Schema**:
-```go
-// pkg/api/aianalysis/v1alpha1/types.go
-package v1alpha1
+**Real schema** (`api/aianalysis/v1alpha1/aianalysis_types.go`, API group `kubernaut.ai/v1alpha1` —
+corrected from v1.2's `pkg/api/aianalysis/v1alpha1/types.go` / `kubernaut.io`; simplified/illustrative, see
+source for the complete field list):
 
-import (
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
+```go
+// api/aianalysis/v1alpha1/aianalysis_types.go
+package v1alpha1
 
 // AIAnalysisStatus defines the observed state of AIAnalysis
 type AIAnalysisStatus struct {
-    // Phase tracks current analysis stage
-    // NOTE: AIAnalysis does NOT have "Approving" phase - it completes with approvalRequired=true
-    // RemediationOrchestrator handles the approval orchestration (ADR-040)
-    // +kubebuilder:validation:Enum=Pending;Investigating;Analyzing;Completed;Failed
+    // Phase tracks current analysis stage (no "Approving"/"Recommending" phase -
+    // simplified 4-phase flow; RO handles approval orchestration, ADR-040)
     Phase string `json:"phase"`
 
-    // PhaseTransitions records timestamps for each phase
-    PhaseTransitions map[string]metav1.Time `json:"phaseTransitions,omitempty"`
+    // RootCauseAnalysis contains RCA findings, including the LLM-determined
+    // RemediationTarget (BR-KA-212) -- may differ from the signal's source resource
+    RootCauseAnalysis *RootCauseAnalysis `json:"rootCauseAnalysis,omitempty"`
 
-    // InvestigationResult contains HolmesGPT investigation findings
-    InvestigationResult *InvestigationResult `json:"investigationResult,omitempty"`
-
-    // SelectedWorkflow contains the LLM-selected workflow (per ADR-041)
-    // Populated after successful investigation and analysis
+    // SelectedWorkflow contains the AI-selected workflow (DD-CONTRACT-002)
+    // Immutable once SelectedAt is populated (Issue #1661, DD-WORKFLOW-018)
     SelectedWorkflow *SelectedWorkflow `json:"selectedWorkflow,omitempty"`
 
-    // AlternativeWorkflows contains backup options (per ADR-041)
+    // AlternativeWorkflows are informational only (context for approval decisions),
+    // never used for automatic execution
     AlternativeWorkflows []AlternativeWorkflow `json:"alternativeWorkflows,omitempty"`
 
-    // ApprovalRequired indicates if manual approval is needed
-    // Triggers RemediationOrchestrator to create RemediationApprovalRequest (ADR-040)
-    ApprovalRequired bool `json:"approvalRequired,omitempty"`
+    // ApprovalRequired: Rego policy decision -- AI HAS an answer, policy requires approval
+    ApprovalRequired bool `json:"approvalRequired"`
 
-    // ApprovalReason explains why approval is required
-    ApprovalReason string `json:"approvalReason,omitempty"`
+    // NeedsHumanReview: KA decision -- AI CAN'T answer (rca_incomplete,
+    // no_matching_workflows, low_confidence). See DD-CONTRACT-002 for the
+    // full two-flag decision logic.
+    NeedsHumanReview bool `json:"needsHumanReview"`
 
     // WorkflowExecutionRef references the created WorkflowExecution CRD
     WorkflowExecutionRef *ObjectReference `json:"workflowExecutionRef,omitempty"`
-
-    // Conditions provide detailed status information
-    Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// SelectedWorkflow represents the LLM's workflow selection (per ADR-041)
-// NOTE: containerImage and containerDigest are resolved by HolmesGPT-API during MCP search
-// RO passes these through to WorkflowExecution (no separate catalog lookup needed)
+// RootCauseAnalysis contains detailed RCA results
+type RootCauseAnalysis struct {
+    Summary             string             `json:"summary"`
+    SignalType          string             `json:"signalType"`
+    ContributingFactors []string           `json:"contributingFactors,omitempty"`
+    // RemediationTarget: the resource the LLM determined should actually be
+    // remediated (BR-KA-212) -- e.g. signal came from a Pod, target is its Deployment
+    RemediationTarget   *RemediationTarget `json:"remediationTarget,omitempty"`
+}
+
+// SelectedWorkflow contains the AI-selected workflow for execution (DD-CONTRACT-002)
 type SelectedWorkflow struct {
-    // WorkflowID is the catalog lookup key
-    // +kubebuilder:validation:Required
-    WorkflowID string `json:"workflowId"`
+    // WorkflowSnapshot is the catalog-resolved execution snapshot, inline-embedded
+    // so its field list can never drift from WorkflowExecution.Spec.WorkflowRef,
+    // which embeds the identical type (Issue #1661 Change 12, DD-WORKFLOW-018).
+    // Fields: WorkflowID, WorkflowName, ActionType, Version, ExecutionBundle
+    // (OCI bundle ref -- renamed from "containerImage" once WorkflowExecution grew
+    // 3 execution engines: Tekton/Job/Ansible), ExecutionBundleDigest, ExecutionEngine,
+    // EngineConfig, ServiceAccountName, Dependencies, Resources, DeclaredParameterNames.
+    sharedtypes.WorkflowSnapshot `json:",inline"`
 
-    // Version of the selected workflow
-    Version string `json:"version,omitempty"`
-
-    // ContainerImage is the OCI bundle reference (resolved by HolmesGPT-API from catalog)
-    // +kubebuilder:validation:Required
-    ContainerImage string `json:"containerImage"`
-
-    // ContainerDigest for audit trail and reproducibility (resolved by HolmesGPT-API)
-    ContainerDigest string `json:"containerDigest,omitempty"`
-
-    // Confidence score from MCP search (0.0-1.0)
-    // +kubebuilder:validation:Minimum=0
-    // +kubebuilder:validation:Maximum=1
-    Confidence float64 `json:"confidence"`
-
-    // Parameters populated by LLM based on RCA (per DD-WORKFLOW-003)
-    // Keys are UPPER_SNAKE_CASE per Tekton convention
-    Parameters map[string]string `json:"parameters"`
-
-    // Rationale explains why this workflow was selected
-    Rationale string `json:"rationale"`
-}
-
-// AlternativeWorkflow represents backup workflow options
-type AlternativeWorkflow struct {
-    WorkflowID string  `json:"workflowId"`
-    Version    string  `json:"version,omitempty"`
-    Confidence float64 `json:"confidence"`
-    Rationale  string  `json:"rationale,omitempty"`
+    Confidence float64           `json:"confidence"`
+    // Parameters: UPPER_SNAKE_CASE keys per DD-WORKFLOW-003
+    Parameters map[string]string `json:"parameters,omitempty"`
+    Rationale  string            `json:"rationale"`
 }
 ```
 
 ### 2. WorkflowExecution CRD Spec
 
-**Updated Schema**:
-```go
-// pkg/api/workflowexecution/v1alpha1/types.go
-package v1alpha1
+**Real schema** (`api/workflowexecution/v1alpha1/workflowexecution_types.go`):
 
-import (
-    corev1 "k8s.io/api/core/v1"
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-)
+```go
+// api/workflowexecution/v1alpha1/workflowexecution_types.go
+package v1alpha1
 
 // WorkflowExecutionSpec defines the desired state of WorkflowExecution
 type WorkflowExecutionSpec struct {
-    // RemediationRequestRef references the parent RemediationRequest CRD
     RemediationRequestRef corev1.ObjectReference `json:"remediationRequestRef"`
 
-    // WorkflowRef contains the workflow catalog reference
-    // Resolved from AIAnalysis.Status.SelectedWorkflow
+    // WorkflowRef: catalog-resolved reference, copied verbatim from
+    // AIAnalysis.Status.SelectedWorkflow by RemediationOrchestrator (PASS THROUGH,
+    // no re-fetch from DataStorage/KA catalog -- Issue #1661 Change 11d/11e)
     WorkflowRef WorkflowRef `json:"workflowRef"`
 
-    // Parameters from LLM selection (per DD-WORKFLOW-003)
-    // Keys are UPPER_SNAKE_CASE for Tekton PipelineRun params
     Parameters map[string]string `json:"parameters"`
-
-    // Confidence score from LLM (for audit trail)
-    Confidence float64 `json:"confidence"`
-
-    // Rationale from LLM (for audit trail)
-    Rationale string `json:"rationale,omitempty"`
-
-    // ExecutionStrategy specifies how to execute the workflow
-    ExecutionStrategy ExecutionStrategy `json:"executionStrategy"`
+    Confidence float64           `json:"confidence"`
+    Rationale  string            `json:"rationale,omitempty"`
 }
 
-// WorkflowRef contains catalog-resolved workflow reference
+// WorkflowRef is nothing but an inline embed of the same sharedtypes.WorkflowSnapshot
+// type embedded in AIAnalysis.Status.SelectedWorkflow -- sharing one Go/CRD-schema type
+// between both CRDs makes it structurally impossible for their field lists to drift
+// (Issue #1661 Change 12). There is no separate "ContainerImage"/"ContainerDigest" pair
+// here; ExecutionBundle/ExecutionBundleDigest live on the embedded WorkflowSnapshot.
 type WorkflowRef struct {
-    // WorkflowID is the catalog lookup key
-    WorkflowID string `json:"workflowId"`
-
-    // Version of the workflow
-    Version string `json:"version"`
-
-    // ContainerImage resolved from workflow catalog (Data Storage API)
-    // OCI bundle reference for Tekton PipelineRun
-    ContainerImage string `json:"containerImage"`
-
-    // ContainerDigest for audit trail and reproducibility
-    ContainerDigest string `json:"containerDigest,omitempty"`
+    sharedtypes.WorkflowSnapshot `json:",inline"`
 }
 ```
 
@@ -196,41 +173,46 @@ type WorkflowRef struct {
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         COMPLETE DATA FLOW                               │
-│                  (HolmesGPT-API resolves containerImage)                 │
+│    (KA resolves ExecutionBundle via its own in-process workflow         │
+│     discovery -- DD-WORKFLOW-019 -- NOT a Data Storage MCP search)      │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
 │  ┌──────────────────────┐                                               │
 │  │  AIAnalysis CRD      │                                               │
-│  │  spec.analysisReq    │──────► HolmesGPT-API                          │
+│  │  (async submit)      │──────► Kubernaut Agent (KA)                   │
 │  └──────────────────────┘              │                                │
 │                                        │                                │
 │                          ┌─────────────┴─────────────┐                  │
 │                          │                           │                  │
 │                          ▼                           ▼                  │
 │               ┌─────────────────────┐    ┌─────────────────────┐        │
-│               │ Data Storage API    │    │ LLM Provider        │        │
-│               │ (MCP Workflow Search)│    │ (Workflow Selection)│        │
-│               │ Returns:            │    │ Returns:            │        │
-│               │ - workflow_id       │    │ - workflow_id       │        │
-│               │ - container_image   │    │ - parameters        │        │
-│               │ - container_digest  │    │ - confidence        │        │
+│               │ KA in-process       │    │ LLM Provider        │        │
+│               │ workflowcatalog     │    │ (Workflow Selection)│        │
+│               │ (informer cache on  │    │ Returns:            │        │
+│               │  RemediationWorkflow│    │ - workflow_id       │        │
+│               │  /ActionType CRDs)  │    │ - parameters        │        │
+│               │ Returns:            │    │ - confidence        │        │
+│               │ - workflowId        │    │                     │        │
+│               │ - executionBundle   │    │                     │        │
 │               └──────────┬──────────┘    └──────────┬──────────┘        │
 │                          │                           │                  │
 │                          └─────────────┬─────────────┘                  │
 │                                        │                                │
-│                          HolmesGPT-API combines both                    │
+│                                KA combines both                         │
 │                                        ▼                                │
 │  ┌──────────────────────────────────────────────────────────────┐       │
-│  │  AIAnalysis.Status.SelectedWorkflow                          │       │
-│  │  ├── workflowId: "oomkill-increase-memory"                   │       │
+│  │  AIAnalysis.Status.SelectedWorkflow (WorkflowSnapshot-embed) │       │
+│  │  ├── workflowId: "<DS-assigned UUID>"                        │       │
+│  │  ├── workflowName: "oomkill-increase-memory"                 │       │
 │  │  ├── version: "1.0.0"                                        │       │
-│  │  ├── containerImage: "quay.io/kubernaut/oomkill:v1.0.0"     │  ◄── RESOLVED BY HolmesGPT-API
-│  │  ├── containerDigest: "sha256:abc123..."                     │  ◄── RESOLVED BY HolmesGPT-API
+│  │  ├── executionBundle: "quay.io/kubernaut/oomkill:v1.0.0"    │  ◄── RESOLVED BY KA (in-process)
+│  │  ├── executionBundleDigest: "sha256:abc123..."               │  ◄── RESOLVED BY KA (in-process)
+│  │  ├── executionEngine: "tekton"                               │       │
 │  │  ├── confidence: 0.95                                        │       │
 │  │  ├── parameters:                                             │       │
 │  │  │     NAMESPACE: "production"                               │       │
 │  │  │     DEPLOYMENT_NAME: "payment-service"                    │       │
-│  │  └── rationale: "MCP search matched OOMKilled signal..."     │       │
+│  │  └── rationale: "Discovery protocol matched OOMKilled..."    │       │
 │  └────────────────────────┬─────────────────────────────────────┘       │
 │                           │                                             │
 │                           │ RemediationOrchestrator watches             │
@@ -238,22 +220,19 @@ type WorkflowRef struct {
 │                           ▼                                             │
 │  ┌──────────────────────────────────────────────────────────────┐       │
 │  │  WorkflowExecution.Spec (RO passes through from AIAnalysis)  │       │
-│  │  ├── workflowRef:                                            │       │
-│  │  │     workflowId: "oomkill-increase-memory"                 │       │
-│  │  │     version: "1.0.0"                                      │       │
-│  │  │     containerImage: "quay.io/kubernaut/oomkill:v1.0.0"   │  ◄── PASS THROUGH
-│  │  │     containerDigest: "sha256:abc123..."                   │  ◄── PASS THROUGH
+│  │  ├── workflowRef: (identical WorkflowSnapshot fields)        │  ◄── PASS THROUGH
 │  │  ├── parameters:                                             │       │
 │  │  │     NAMESPACE: "production"                               │       │
 │  │  │     DEPLOYMENT_NAME: "payment-service"                    │       │
 │  │  ├── confidence: 0.95                                        │       │
-│  │  └── rationale: "MCP search matched..."                      │       │
+│  │  └── rationale: "Discovery protocol matched..."              │       │
 │  └────────────────────────┬─────────────────────────────────────┘       │
 │                           │                                             │
 │                           │ WorkflowExecution Controller                │
 │                           ▼                                             │
 │  ┌──────────────────────────────────────────────────────────────┐       │
-│  │  Tekton PipelineRun                                          │       │
+│  │  Tekton PipelineRun (or batchv1.Job / AWX Job, per          │       │
+│  │  executionEngine -- ADR-024, ADR-044)                        │       │
 │  │  ├── pipelineRef:                                            │       │
 │  │  │     resolver: bundles                                     │       │
 │  │  │     params:                                               │       │
@@ -269,82 +248,65 @@ type WorkflowRef struct {
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
+**Note**: KA's workflow discovery is a 3-step in-process protocol (`ListActions` →
+`ListWorkflowsByActionType` → `GetWorkflowWithContextFilters`/`GetByID`, DD-WORKFLOW-016/DD-KA-017)
+against its own informer-backed cache of `RemediationWorkflow`/`ActionType` CRDs — there is no MCP
+tool call or HTTP request to Data Storage for this. Data Storage's `/api/v1/workflows*` REST surface
+was retired as dead code once KA became the sole consumer (DD-WORKFLOW-019 v2.0, Phase 2g).
+
 ---
 
 ## Service Responsibilities
 
 | Service | Responsibility |
 |---------|----------------|
-| **AIAnalysis Controller** | Calls HolmesGPT-API, stores `SelectedWorkflow` (including containerImage) in status |
-| **HolmesGPT-API** | Queries catalog for MCP search, calls LLM, **resolves workflow_id → containerImage** |
+| **AIAnalysis Controller** | Submits investigation to KA (async submit/poll/result), stores `SelectedWorkflow` (including `executionBundle`) in status |
+| **Kubernaut Agent (KA)** | Runs in-process workflow discovery against its own `RemediationWorkflow`/`ActionType` CRD cache, calls LLM, **resolves workflowId → executionBundle** (DD-WORKFLOW-019) |
 | **RemediationOrchestrator** | Watches AIAnalysis, orchestrates approval flow, **passes through** to WorkflowExecution |
 | **Notification Controller** | Delivers approval notifications via Alertmanager routing (DD-NOTIFICATION-001) |
 | **RemediationApprovalRequest Controller** | Manages approval lifecycle, timeout expiration (ADR-040) |
-| **Data Storage Service** | Provides `/api/v1/workflows/search` for MCP (queried by HolmesGPT-API) |
-| **WorkflowExecution Controller** | Uses `WorkflowRef.ContainerImage` to create Tekton PipelineRun |
+| **Data Storage / AuthWebhook** | Own the `RemediationWorkflow`/`ActionType` CRD catalog data (etcd-backed); **do not** serve a search/MCP endpoint for it — retired (DD-WORKFLOW-019 v2.0 Phase 2g) |
+| **WorkflowExecution Controller** | Uses `WorkflowRef.ExecutionBundle` to create the PipelineRun/Job/AWX run per `ExecutionEngine` |
 
-### Key Design Decision (Approved 2025-11-28)
+### Key Design Decision (Approved 2025-11-28; mechanism corrected 2026-08-02)
 
-**HolmesGPT-API resolves `workflow_id → containerImage`** during MCP search. RO does NOT call the catalog - it passes through the resolved values from AIAnalysis.status.
+**KA resolves `workflowId → executionBundle`** via its own in-process discovery cache. RO does NOT call the catalog — it passes through the resolved values from AIAnalysis.status.
 
 **Rationale**:
-1. HolmesGPT-API already queries catalog for MCP search - it has the data
-2. Immutable workflows mean containerImage never changes for a given workflow_id+version
-3. Simpler RO - no catalog client needed
+1. KA already runs the discovery protocol during investigation — it has the data
+2. Immutable workflows mean `executionBundle` never changes for a given `workflowId`+version
+3. Simpler RO — no catalog client needed
 4. Industry alignment (Temporal, Step Functions resolve at definition time)
 
 ---
 
 ## RO Pass-Through Logic
 
-**RemediationOrchestrator** passes through the resolved workflow from AIAnalysis (no catalog lookup):
+**RemediationOrchestrator** passes through the resolved workflow from AIAnalysis (no catalog lookup) —
+see `pkg/remediationorchestrator/creator/workflowexecution.go` (`WorkflowExecutionCreator`) for the real
+implementation. Simplified illustration of the pass-through:
 
 ```go
-// pkg/remediationorchestrator/reconciler.go
-package remediationorchestrator
+// pkg/remediationorchestrator/creator/workflowexecution.go (illustrative excerpt)
+func (c *WorkflowExecutionCreator) buildSpec(
+    aiAnalysis *aianalysisv1.AIAnalysis,
+) workflowexecutionv1.WorkflowExecutionSpec {
+    sw := aiAnalysis.Status.SelectedWorkflow // *SelectedWorkflow, embeds sharedtypes.WorkflowSnapshot
 
-import (
-    "context"
-
-    kubernautv1alpha1 "github.com/jordigilh/kubernaut/api/v1alpha1"
-    ctrl "sigs.k8s.io/controller-runtime"
-)
-
-func (r *Reconciler) createWorkflowExecution(
-    ctx context.Context,
-    aiAnalysis *kubernautv1alpha1.AIAnalysis,
-    remediationRequest *kubernautv1alpha1.RemediationRequest,
-) error {
-    // Pass through - no catalog lookup needed
-    // HolmesGPT-API already resolved containerImage during MCP search
-    wfe := &kubernautv1alpha1.WorkflowExecution{
-        ObjectMeta: ctrl.ObjectMeta{
-            Name:      fmt.Sprintf("workflow-%s", remediationRequest.Name),
-            Namespace: remediationRequest.Namespace,
-            OwnerReferences: []metav1.OwnerReference{
-                *metav1.NewControllerRef(remediationRequest, kubernautv1alpha1.GroupVersion.WithKind("RemediationRequest")),
-            },
+    return workflowexecutionv1.WorkflowExecutionSpec{
+        WorkflowRef: workflowexecutionv1.WorkflowRef{
+            WorkflowSnapshot: sw.WorkflowSnapshot, // PASS THROUGH -- identical embedded type, no re-fetch
         },
-        Spec: kubernautv1alpha1.WorkflowExecutionSpec{
-            RemediationRequestRef: corev1.ObjectReference{
-                Name:      remediationRequest.Name,
-                Namespace: remediationRequest.Namespace,
-            },
-            WorkflowRef: kubernautv1alpha1.WorkflowRef{
-                WorkflowID:      aiAnalysis.Status.SelectedWorkflow.WorkflowID,
-                Version:         aiAnalysis.Status.SelectedWorkflow.Version,
-                ContainerImage:  aiAnalysis.Status.SelectedWorkflow.ContainerImage,  // PASS THROUGH
-                ContainerDigest: aiAnalysis.Status.SelectedWorkflow.ContainerDigest, // PASS THROUGH
-            },
-            Parameters: aiAnalysis.Status.SelectedWorkflow.Parameters, // PASS THROUGH
-            Confidence: aiAnalysis.Status.SelectedWorkflow.Confidence,
-            Rationale:  aiAnalysis.Status.SelectedWorkflow.Rationale,
-        },
+        Parameters: sw.Parameters, // PASS THROUGH
+        Confidence: sw.Confidence,
+        Rationale:  sw.Rationale,
     }
-
-    return r.Create(ctx, wfe)
 }
 ```
+
+`validateSelectedWorkflow` (same file) enforces BR-ORCH-025's precondition: a missing/invalid
+`selectedWorkflow` marks the `RemediationRequest` `Failed` rather than creating an incomplete
+`WorkflowExecution`.
 
 ---
 
@@ -352,32 +314,29 @@ func (r *Reconciler) createWorkflowExecution(
 
 ### Key Principle: AIAnalysis Completes, RO Orchestrates
 
-**AIAnalysis does NOT stay in "Approving" phase.** It completes its analysis and signals approval is needed via `approvalRequired: true`. The RemediationOrchestrator is responsible for orchestrating the approval workflow.
+**AIAnalysis does NOT stay in "Approving" phase.** It completes its analysis (4-phase flow, no
+"Approving"/"Recommending" phase) and signals one of two independent flags — see
+[DD-CONTRACT-002](DD-CONTRACT-002-service-integration-contracts.md#contract-2-aianalysis--ro-status-output)
+for the authoritative two-flag (`approvalRequired` vs. `needsHumanReview`) decision logic. The
+RemediationOrchestrator is responsible for orchestrating whichever flow those flags trigger.
 
-### AIAnalysis Completion (Low Confidence)
-
-When `AIAnalysis.Status.SelectedWorkflow.Confidence < 0.80`:
+### AIAnalysis Completion (Approval Required Example)
 
 ```yaml
-# AIAnalysis.Status after low-confidence selection
+# AIAnalysis.Status after a selection that clears KA's own workflow-confidence
+# floor but trips AIAnalysis's Rego approval-threshold policy (BR-AI-088, default 80%)
 # NOTE: phase = "Completed", NOT "Approving"
 status:
   phase: Completed              # ← AIAnalysis is DONE with its work
   selectedWorkflow:
-    workflowId: "oomkill-increase-memory"
-    confidence: 0.65            # Below 80% threshold
+    workflowId: "<DS-assigned UUID>"
+    workflowName: "oomkill-increase-memory"
+    confidence: 0.72            # Below the Rego policy's approval threshold
     parameters:
       NAMESPACE: "production"
-  approvalRequired: true        # ← Signal for RO to orchestrate approval
-  approvalReason: "Confidence 65% below 80% threshold"
-  approvalContext:              # ← Rich context for operator decision
-    investigationSummary: "Memory leak detected..."
-    evidenceCollected:
-      - "OOMKilled events in last 24h"
-      - "Memory growth 50MB/hour"
-    alternativesConsidered:
-      - workflowId: "oomkill-restart-pods"
-        confidence: 0.45
+  approvalRequired: true        # ← Rego decision: AI HAS an answer, policy requires approval
+  needsHumanReview: false       # ← KA decision: AI COULD answer (contrast with DD-CONTRACT-002)
+  whyApprovalRequired: "confidence 0.72 below Rego policy threshold 0.80"
 ```
 
 ### RemediationOrchestrator Approval Flow
@@ -436,32 +395,34 @@ When RO detects `AIAnalysis.Status.approvalRequired == true`:
 
 | Document | Relationship |
 |----------|--------------|
+| **DD-WORKFLOW-019** | KA-owned workflow discovery (authoritative for *who* resolves `workflowId → executionBundle` and *how* — corrects this document's v1.2 "HolmesGPT-API + Data Storage MCP search" claim) |
+| **DD-CONTRACT-002** | Service Integration Contracts (authoritative for the `approvalRequired`/`needsHumanReview` two-flag decision logic) |
 | **ADR-041** | LLM Response Contract (authoritative for `selected_workflow` format) |
 | **ADR-043** | Workflow Schema Definition (authoritative for catalog schema) |
 | **ADR-040** | RemediationApprovalRequest Architecture (approval lifecycle) |
 | **ADR-017** | NotificationRequest Creator (RO creates notifications) |
 | **ADR-018** | Approval Notification Integration (rich approval context) |
+| **ADR-024**, **ADR-044** | WorkflowExecution's 3 execution engines (Tekton/Job/Ansible) and engine delegation |
 | **DD-NOTIFICATION-001** | Alertmanager Routing Reuse (notification channel routing) |
 | **DD-TIMEOUT-001** | Global Remediation Timeout (approval timeout: 15m default) |
 | **DD-WORKFLOW-003** | Parameterized Actions (UPPER_SNAKE_CASE parameters) |
-| **DD-WORKFLOW-005** | Automated Schema Extraction (V1.0/V1.1 registration) |
-| **BR-AI-075** | Workflow Selection Output Format |
-| **BR-AI-076** | Approval Context for Low Confidence |
+| **DD-WORKFLOW-018** | Etcd single source of truth; introduces the shared `WorkflowSnapshot` type this document now describes |
 | **BR-ORCH-025** | Catalog Lookup Before WorkflowExecution |
-| **BR-ORCH-026** | Approval Orchestration |
+| **BR-KA-212** | RCA-determined `RemediationTarget` |
 
 ---
 
-## Migration Impact
+## Migration Impact (Historical — v1.0, completed)
+
+The table below documents the original v1.0 migration (Nov 2025); it is retained for historical
+context and is **not** an open work item. All rows completed long before this v2.0 correction pass.
 
 | File | Change Required |
 |------|-----------------|
-| `api/aianalysis/v1alpha1/types.go` | Replace `Recommendations` with `SelectedWorkflow` |
-| `api/workflowexecution/v1alpha1/types.go` | Add `WorkflowRef`, simplify `WorkflowDefinition` |
+| `api/aianalysis/v1alpha1/aianalysis_types.go` | Replace `Recommendations` with `SelectedWorkflow` |
+| `api/workflowexecution/v1alpha1/workflowexecution_types.go` | Add `WorkflowRef`, simplify `WorkflowDefinition` |
 | `docs/services/crd-controllers/02-aianalysis/crd-schema.md` | Update examples |
 | `docs/services/crd-controllers/03-workflowexecution/crd-schema.md` | Update examples |
-| AIAnalysis implementation plan | Update to use new schema |
-| WorkflowExecution implementation plan | Update to use `WorkflowRef` |
 
 ---
 
@@ -469,11 +430,10 @@ When RO detects `AIAnalysis.Status.approvalRequired == true`:
 
 | Aspect | Confidence | Rationale |
 |--------|------------|-----------|
-| **ADR-041 alignment** | 98% | LLM contract tested and working |
-| **Catalog integration** | 95% | DD-WORKFLOW-005 + ADR-043 define clear schema |
-| **Approval integration** | 99% | ADR-040 already approved and well-designed |
-| **Parameter format** | 95% | DD-WORKFLOW-003 defines UPPER_SNAKE_CASE |
-| **Overall** | 95% | Strong foundation, clear contracts |
+| **CRD contract shape (WorkflowSnapshot embed)** | 95% | Verified directly against current Go source (`api/aianalysis/v1alpha1`, `api/workflowexecution/v1alpha1`, `pkg/shared/types/workflow_snapshot.go`) |
+| **Catalog-resolution mechanism (KA in-process, DD-WORKFLOW-019)** | 98% | DD-WORKFLOW-019 v2.0 status is "Implemented"; retirement of DS's `/api/v1/workflows*` confirmed by an E2E test (`04_workflow_endpoints_retired_test.go`) |
+| **Approval integration** | 90% | Two-flag split (`approvalRequired`/`needsHumanReview`) confirmed in source; precise Rego threshold values not re-verified in this pass — see DD-CONTRACT-002 |
+| **Overall** | 95% | Core contract shape and catalog-resolution ownership corrected against source; some illustrative Go snippets simplified for readability rather than reproduced verbatim |
 
 ---
 
@@ -481,6 +441,7 @@ When RO detects `AIAnalysis.Status.approvalRequired == true`:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2.0 | 2026-08-02 | **Correction** ([Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)): Renamed HolmesGPT-API → Kubernaut Agent (KA) throughout. Corrected catalog-resolution mechanism: KA resolves `workflowId → executionBundle` via its own in-process discovery cache (DD-WORKFLOW-019), not a Data Storage MCP search — that endpoint was retired as dead code. Fixed API group `kubernaut.io` → `kubernaut.ai`. Replaced `ContainerImage`/`ContainerDigest` field names with the real `ExecutionBundle`/`ExecutionBundleDigest` (generalized for 3 execution engines: Tekton/Job/Ansible). Corrected `SelectedWorkflow`/`WorkflowRef` Go samples to reflect the real shared `sharedtypes.WorkflowSnapshot` embed. Pointed to DD-CONTRACT-002 for the up-to-date `approvalRequired`/`needsHumanReview` two-flag logic rather than duplicating a now-superseded single-flag description. Marked the v1.0 migration table historical. |
 | 1.2 | 2025-11-28 | **BREAKING**: HolmesGPT-API now resolves `workflow_id → containerImage` during MCP search. Added `containerImage` and `containerDigest` to `SelectedWorkflow`. RO no longer calls catalog - passes through from AIAnalysis. Updated data flow diagram. Removed catalog client code. |
 | 1.1 | 2025-11-28 | **Approval flow clarification**: AIAnalysis completes with `approvalRequired: true`, RO orchestrates approval (creates NotificationRequest + RemediationApprovalRequest). Removed "Approving" phase from AIAnalysis. Added approval flow diagram and service responsibilities. |
 | 1.0 | 2025-11-28 | Initial DD: AIAnalysis ↔ WorkflowExecution contract alignment |
