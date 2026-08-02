@@ -558,7 +558,7 @@ Span: RemediationRequest.Reconcile (10.5s)
   ├─ Span: RemediationRequest.OrchestrateAIAnalysis (5.2s)
   │   └─ Span: AIAnalysis.Reconcile (5.2s) [child service]
   │       ├─ Span: AIAnalysis.InvestigateAlert (4.5s)
-  │       │   └─ Span: HolmesGPT-API.Investigate (4.3s)
+  │       │   └─ Span: KubernautAgent.Investigate (4.3s)
   │       └─ Span: AIAnalysis.ApproveRecommendation (700ms)
   │           └─ Span: RegoEngine.EvaluatePolicy (650ms)
   └─ Span: RemediationRequest.OrchestrateWorkflowExecution (4.8s)

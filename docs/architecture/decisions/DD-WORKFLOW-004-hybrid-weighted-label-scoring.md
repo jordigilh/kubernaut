@@ -39,7 +39,7 @@
   - Example: `["production"]` (workflow only for production)
 - ✅ **Search Model**: Filters use `environment: string` (reverted from v1.6's `[]string`)
   - Signal Processing sends: `"production"` (single value)
-  - HAPI passes through: `"production"` (single value)
+  - Kubernaut Agent (KA) passes through: `"production"` (single value)
 - ✅ **SQL Pattern**: `labels->'environment' ? $N OR labels->'environment' ? '*'`
   - PostgreSQL JSONB `?` operator checks if array contains value
   - Wildcard check ensures `["*"]` workflows match all searches
@@ -685,7 +685,7 @@ custom_labels["team"] = [input.namespace.labels["team"]] {
 
 ### 2. AIAnalysis Service (Label Pass-Through)
 
-**Responsibility**: Pass detected labels from Signal Processing to HolmesGPT API for workflow search.
+**Responsibility**: Pass detected labels from Signal Processing to KA for workflow search.
 
 **Flow**:
 1. AIAnalysis receives `RemediationProcessing` CRD with detected labels

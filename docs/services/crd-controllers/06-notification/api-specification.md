@@ -70,7 +70,7 @@
       "summary": "Chronic memory insufficiency",
       "confidence": 0.88,
       "detailedAnalysis": "Pattern Analysis: 3 OOMs in 1h indicates sustained memory pressure...",
-      "methodology": "HolmesGPT + Pattern Analysis"
+      "methodology": "Kubernaut Agent (KA) + Pattern Analysis"
     },
     "analysisJustification": {
       "whyThisRootCause": "Repeated OOMs with linear memory growth pattern indicates insufficient allocation...",
@@ -606,7 +606,7 @@ Routing uses spec fields, `spec.context` (via `FlattenToMap`), and `spec.extensi
 | `spec.reviewSource` | `review-source` | Manual review source | `WorkflowResolutionFailed`, `ExhaustedRetries`, etc. | Route by review trigger |
 | `spec.remediationRequestRef` | (correlation) | Parent remediation link | ObjectReference | ownerRef/spec ref sufficient |
 | `spec.extensions["skip-reason"]` | `skip-reason` | WFE skip reason routing | `PreviousExecutionFailed`, `ExhaustedRetries`, `ResourceBusy`, `RecentlyRemediated` | Route execution failures to PagerDuty |
-| `spec.extensions["investigation-outcome"]` | `investigation-outcome` | HolmesGPT outcome (BR-KA-200) | `resolved`, `inconclusive`, `workflow_selected` | Route inconclusive to ops for review |
+| `spec.extensions["investigation-outcome"]` | `investigation-outcome` | KA outcome (BR-KA-200) | `resolved`, `inconclusive`, `workflow_selected` | Route inconclusive to ops for review |
 
 **Removed** (Issue #91): `kubernaut.ai/component` (ownerRef sufficient), `kubernaut.ai/remediation-request` (use `spec.remediationRequestRef`).
 
@@ -659,7 +659,7 @@ receivers:
 
 ### **Investigation-Outcome Routing (BR-KA-200)**
 
-The `spec.extensions["investigation-outcome"]` attribute enables routing based on HolmesGPT investigation results:
+The `spec.extensions["investigation-outcome"]` attribute enables routing based on KA investigation results:
 
 | Investigation Outcome | Scenario | Recommended Routing | Rationale |
 |-----------------------|----------|---------------------|-----------|

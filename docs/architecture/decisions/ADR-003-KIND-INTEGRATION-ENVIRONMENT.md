@@ -36,7 +36,7 @@ The kubernaut project requires a robust integration testing environment that clo
 2. **Application Services**:
    - Kubernaut webhook service
    - AI service components
-   - HolmesGPT integration
+   - Kubernaut Agent (KA) integration
 
 3. **Supporting Infrastructure**:
    - Vector database (PostgreSQL-based)
@@ -155,8 +155,8 @@ deploy/integration/
 │   ├── ai-service.yaml        # AI service deployment
 │   └── rbac.yaml              # RBAC configuration
 └── holmesgpt/
-    ├── deployment.yaml         # HolmesGPT integration
-    └── service.yaml           # HolmesGPT service
+    ├── deployment.yaml         # KA integration
+    └── service.yaml           # KA service
 ```
 
 ## Consequences

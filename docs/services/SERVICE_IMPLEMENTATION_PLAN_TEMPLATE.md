@@ -5739,7 +5739,7 @@ Kubernaut implements a **defense-in-depth testing strategy** with **90% overall 
 
 | Component Type | Unit Tests | Integration | E2E | Justification |
 |----------------|------------|-------------|-----|---------------|
-| **External AI APIs** (HolmesGPT, OpenAI) | MOCK | MOCK (CI) | REAL | External service |
+| **External AI APIs** (Kubernaut Agent (KA), OpenAI) | MOCK | MOCK (CI) | REAL | External service |
 | **Kubernetes API** | **FAKE CLIENT** ⚠️ | REAL (envtest) | REAL | See K8s mandate below |
 | **Database** | MOCK | REAL | REAL | External infrastructure |
 | **Business Logic Components** | **REAL** | REAL | REAL | Core business value |
@@ -6713,7 +6713,7 @@ Kubernaut's CRD controllers are **tightly coupled** in a single remediation work
 | CRD | API Group | Purpose |
 |-----|-----------|---------|
 | SignalProcessing | `signalprocessing.kubernaut.ai/v1alpha1` | Context enrichment, classification |
-| AIAnalysis | `kubernaut.ai/v1alpha1` | HolmesGPT RCA + workflow selection |
+| AIAnalysis | `kubernaut.ai/v1alpha1` | Kubernaut Agent (KA) RCA + workflow selection |
 | WorkflowExecution | `kubernaut.ai/v1alpha1` | Ansible/K8s workflow execution |
 | RemediationRequest | `remediation.kubernaut.ai/v1alpha1` | User-facing remediation entry point |
 

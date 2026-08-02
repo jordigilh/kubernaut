@@ -175,7 +175,7 @@ The user has correctly identified the three architectural options:
 │  - CRD Controllers   │
 │  - Context API       │
 │  - Effectiveness Mon │
-│  - HolmesGPT API     │
+│  - KA                │
 └──────────┬───────────┘
            │ HTTP (ALL operations: read + write)
            ↓

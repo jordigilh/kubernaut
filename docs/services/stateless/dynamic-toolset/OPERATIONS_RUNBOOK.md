@@ -11,7 +11,7 @@
 ## 📋 Quick Reference
 
 ### Service Overview
-- **Purpose**: Automatically discovers observability services and generates HolmesGPT-compatible toolset configurations
+- **Purpose**: Automatically discovers observability services and generates Kubernaut Agent (KA)-compatible toolset configurations
 - **Namespace**: `kubernaut-system`
 - **Deployment**: `kubernaut-dynamic-toolsets`
 - **Port**: 8080 (HTTP), 9090 (Metrics)
@@ -235,7 +235,7 @@ kubectl rollout restart deployment/kubernaut-dynamic-toolsets -n kubernaut-syste
 **Symptoms**:
 - ConfigMap contains services that no longer exist
 - Recently deployed services not appearing in ConfigMap
-- HolmesGPT using outdated toolset information
+- KA using outdated toolset information
 
 **Diagnosis**:
 ```bash

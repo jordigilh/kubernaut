@@ -89,7 +89,7 @@ func (r *Reconciler) CheckManagedResource(ctx context.Context, rr *remediationv1
 
     if aiAnalysis.Status.RootCauseAnalysis != nil && aiAnalysis.Status.RootCauseAnalysis.TargetResource != nil {
         // Use RCA-determined target
-        // This is the resource HolmesGPT identified as the root cause
+        // This is the resource Kubernaut Agent (KA) identified as the root cause
         targetResource := aiAnalysis.Status.RootCauseAnalysis.TargetResource
         targetNamespace = targetResource.Namespace
         targetKind = targetResource.Kind
@@ -398,7 +398,7 @@ With Blocked state (non-terminal):
 
   Check 6: Human Review Escalation (NEW)
   ├─ Get AIAnalysis CRD
-  │   ├─ NeedsHumanReview = true? (HAPI decision: RCA incomplete)
+  │   ├─ NeedsHumanReview = true? (KA decision: RCA incomplete)
   │   │   ├─ YES → Create NotificationRequest (NO remediation plan)
   │   │   └─ NO → Continue to Check 7
 
@@ -411,7 +411,7 @@ With Blocked state (non-terminal):
   ├─ Get RCA target resource
   │   ├─ Has RCA target? (AIAnalysis.Status.RootCauseAnalysis.TargetResource)
   │   │   ├─ YES → Use RCA-determined target (BR-AI-084, DD-KA-006)
-  │   │   └─ NO → ERROR: Escalation required (should not reach this point - HAPI should have set needs_human_review)
+  │   │   └─ NO → ERROR: Escalation required (should not reach this point - KA should have set needs_human_review)
    │   │
    │   ├─ Is target resource managed? (re-validate at T60)
    │   │   ├─ Resource label: kubernaut.ai/managed=true → MANAGED

@@ -519,8 +519,8 @@ type AIAnalysisStatus struct {
     RequiresApproval  bool     `json:"requiresApproval"`            // Manual approval needed
 
     // Investigation details
-    InvestigationID   string `json:"investigationId,omitempty"`   // HolmesGPT investigation ID
-    // NOTE: TokensUsed REMOVED - HAPI owns LLM cost observability (use InvestigationID to correlate)
+    InvestigationID   string `json:"investigationId,omitempty"`   // Kubernaut Agent (KA) investigation ID
+    // NOTE: TokensUsed REMOVED - KA owns LLM cost observability (use InvestigationID to correlate)
     InvestigationTime int64  `json:"investigationTime,omitempty"` // Duration in seconds
 
     // Conditions

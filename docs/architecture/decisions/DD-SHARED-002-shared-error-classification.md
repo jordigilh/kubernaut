@@ -32,7 +32,7 @@ Multiple Kubernaut services implement error classification independently, leadin
 
 ### Scope
 This decision applies to ALL Kubernaut services that make external calls or handle transient errors:
-- ✅ **AIAnalysis (AA)**: HolmesGPT-API calls (HTTP errors)
+- ✅ **AIAnalysis (AA)**: Kubernaut Agent (KA) calls (HTTP errors)
 - ✅ **SignalProcessing (SP)**: K8s API operations
 - ✅ **Notification (NT)**: Slack webhook calls (HTTP errors)
 - 🔜 **RemediationOrchestrator (RO)**: Cross-service orchestration
@@ -331,7 +331,7 @@ if errors.IsRetryableHTTPStatus(statusCode) {
 4. **Type-safe when possible**: Uses client-go types for K8s, falls back to string parsing
 
 **When to Use**:
-- ✅ **External API calls**: HolmesGPT, Slack, any HTTP service
+- ✅ **External API calls**: KA, Slack, any HTTP service
 - ✅ **K8s API operations**: CRD create/update/delete
 - ✅ **Retry logic**: Determining if error is transient
 - ✅ **Metrics/observability**: Categorizing errors for monitoring

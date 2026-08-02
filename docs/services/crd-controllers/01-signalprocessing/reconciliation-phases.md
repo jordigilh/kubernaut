@@ -87,7 +87,7 @@ if signalDataValid {
 - Traverse: Pod → ReplicaSet → Deployment (or StatefulSet/DaemonSet)
 - Use first `controller: true` ownerReference at each level
 - Populate `status.enrichmentResults.ownerChain[]`
-- **Purpose**: HolmesGPT-API uses for DetectedLabels validation
+- **Purpose**: Kubernaut Agent (KA) uses for DetectedLabels validation
   - If RCA identifies resource NOT in owner chain → DetectedLabels excluded from filtering
   - 100% safe default: EXCLUDE if relationship cannot be proven
 
@@ -161,7 +161,7 @@ status:
       signalFrequency: 2.5
 
     # OwnerChain (DD-WORKFLOW-001 v1.8) - K8s ownership traversal
-    # Used by HolmesGPT-API to validate DetectedLabels applicability
+    # Used by KA to validate DetectedLabels applicability
     ownerChain:
     - namespace: "production"
       kind: "Pod"

@@ -77,7 +77,7 @@ status:
         prosCons: "Pros: No disruption. Cons: OOM risk in 4 hours"
       - approach: "Immediate restart without memory increase"
         prosCons: "Pros: Fast. Cons: Doesn't fix root cause, will recur"
-    whyApprovalRequired: "Historical pattern requires validation (71-86% HolmesGPT accuracy on generic K8s)"
+    whyApprovalRequired: "Historical pattern requires validation (71-86% Kubernaut Agent (KA) accuracy on generic K8s)"
 ```
 
 **Rationale**: Provides sufficient context for informed approval decisions without overwhelming operators

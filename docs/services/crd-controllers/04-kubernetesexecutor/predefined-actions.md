@@ -8,7 +8,7 @@
 
 ## Overview
 
-This document describes the 27 canonical predefined actions that can be executed by the Kubernetes Executor service. These actions are the **only** actions that can be referenced in structured action formats from HolmesGPT API responses.
+This document describes the 27 canonical predefined actions that can be executed by the Kubernetes Executor service. These actions are the **only** actions that can be referenced in structured action formats from Kubernaut Agent (KA) responses.
 
 **IMPORTANT**: This list MUST match:
 - `pkg/shared/types/common.go` - ValidActions map
@@ -300,7 +300,7 @@ See [Precondition/Postcondition Framework](../standards/precondition-postconditi
 - **Canonical List**: `docs/design/CANONICAL_ACTION_TYPES.md`
 - **Executor Implementation**: `pkg/platform/executor/executor.go`
 - **Type Validation**: `pkg/shared/types/common.go`
-- **HolmesGPT API Spec**: `docs/services/stateless/kubernaut-agent/api-specification.md`
+- **KA Spec**: `docs/services/stateless/kubernaut-agent/api-specification.md`
 - **AI Analysis Spec**: `docs/services/crd-controllers/02-aianalysis/integration-points.md`
 - **Workflow Spec**: `docs/services/crd-controllers/03-workflowexecution/integration-points.md`
 - **Validation Framework**: `docs/services/crd-controllers/standards/precondition-postcondition-framework.md` **(NEW)**

@@ -484,7 +484,7 @@ labels = {
 
 ### 2. AIAnalysis Service (Label Pass-Through)
 
-**Responsibility**: Pass detected labels from Signal Processing to HolmesGPT API for workflow search.
+**Responsibility**: Pass detected labels from Signal Processing to Kubernaut Agent (KA) for workflow search.
 
 **Flow**:
 1. AIAnalysis receives `RemediationProcessing` CRD with detected labels

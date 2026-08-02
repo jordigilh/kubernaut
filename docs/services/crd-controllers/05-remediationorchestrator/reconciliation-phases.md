@@ -195,7 +195,7 @@ if aiAnalysis.Status.Phase == "completed" {
 }
 ```
 
-**Timeout**: 10 minutes (default for AI Analysis phase - HolmesGPT investigation can be long-running)
+**Timeout**: 10 minutes (default for AI Analysis phase - Kubernaut Agent (KA) investigation can be long-running)
 
 **Watch Pattern**:
 ```go

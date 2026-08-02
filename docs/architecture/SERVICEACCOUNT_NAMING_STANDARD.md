@@ -22,7 +22,7 @@
 | **Gateway** | `gateway` | `kubernaut-system` | ✅ Standard |
 | **Context API** | `context-api` | `kubernaut-system` | ✅ Standard |
 | **Data Storage** | `data-storage` | `kubernaut-system` | ✅ Standard |
-| **HolmesGPT API** | `kubernaut-agent` | `kubernaut-system` | ✅ Standard |
+| **Kubernaut Agent (KA)** | `kubernaut-agent` | `kubernaut-system` | ✅ Standard |
 | **Notification** | `notification` | `kubernaut-system` | ⚠️ **UPDATED** (was `notification-service`) |
 | **Dynamic Toolset** | `dynamic-toolset` | `kubernaut-system` | ✅ Standard |
 

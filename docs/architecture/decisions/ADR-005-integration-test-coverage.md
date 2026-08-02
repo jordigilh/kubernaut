@@ -13,7 +13,7 @@
 Kubernaut uses a microservices architecture with 11 independent services (5 CRD controllers + 6 HTTP services) that must work together to execute end-to-end remediation workflows. Each service:
 
 1. **Communicates Cross-Service** - Services interact via CRD status updates, HTTP APIs, and shared databases
-2. **Has External Dependencies** - PostgreSQL, Redis, Vector DB, HolmesGPT, Kubernetes API
+2. **Has External Dependencies** - PostgreSQL, Redis, Vector DB, Kubernaut Agent (KA), Kubernetes API
 3. **Requires Orchestration** - Central Controller orchestrates child services
 4. **Must Handle Failures** - Network timeouts, service crashes, database failures
 5. **Supports Complex Workflows** - Multi-step remediations spanning multiple services

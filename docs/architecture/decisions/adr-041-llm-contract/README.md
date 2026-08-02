@@ -1,6 +1,6 @@
 # ADR-041: LLM Prompt and Response Contract
 
-This directory contains the authoritative documentation for the LLM prompt structure and response format used by the HolmesGPT API for Root Cause Analysis (RCA) and workflow selection.
+This directory contains the authoritative documentation for the LLM prompt structure and response format used by Kubernaut Agent (KA) for Root Cause Analysis (RCA) and workflow selection.
 
 ## 📁 Document Index
 
@@ -8,7 +8,7 @@ This directory contains the authoritative documentation for the LLM prompt struc
 - **[ADR-041-llm-prompt-response-contract.md](./ADR-041-llm-prompt-response-contract.md)** (v2.7)
   - Main contract document defining prompt structure and response format
   - Establishes design principles (single workflow per incident, observable facts only)
-  - Defines the contract between HolmesGPT API, LLM Provider, and downstream services
+  - Defines the contract between KA, LLM Provider, and downstream services
 
 ### Supporting Decisions
 - **[DD-LLM-001-mcp-search-taxonomy.md](./DD-LLM-001-mcp-search-taxonomy.md)** (v1.0)
@@ -105,7 +105,7 @@ The LLM searches for workflows using:
 - ✅ ADR-041 prompt structure defined
 - ✅ DD-LLM-001 taxonomy defined
 - ✅ DD-WORKFLOW-001 label schema updated
-- 🔄 HolmesGPT API implementation (in progress)
+- 🔄 KA implementation (in progress)
 - ⏳ Unit tests for prompt generation (pending)
 - ⏳ Integration tests with real LLM (pending)
 

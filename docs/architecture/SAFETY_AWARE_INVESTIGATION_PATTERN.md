@@ -20,9 +20,9 @@
 ```
 1. RemediationProcessor enriches context
    ↓ (includes safety information)
-2. AIAnalysis Controller calls HolmesGPT API
+2. AIAnalysis Controller calls Kubernaut Agent (KA)
    ↓ POST /api/v1/investigate
-3. HolmesGPT API receives enriched context
+3. KA receives enriched context
    ↓ (safety info in prompt)
 4. LLM analyzes WITH safety awareness
    ↓ (considers risks in recommendations)
