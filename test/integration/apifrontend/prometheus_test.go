@@ -67,8 +67,14 @@ var _ = Describe("Prometheus Client Integration (prometheus/)", func() {
 								"file": "test.yaml",
 								"rules": []map[string]any{
 									{
-										"alert":    "TestRule",
-										"expr":     "up == 0",
+										// #1839 RCA: Prometheus's real /api/v1/rules response uses
+										// "name"/"query" (web/api/v1/api.go AlertingRule/RecordingRule),
+										// not "alert"/"expr" -- this fixture previously used the same
+										// wrong field names as the (now-fixed) production apiRule
+										// struct, so the round-trip "passed" without ever exercising
+										// the real API shape.
+										"name":     "TestRule",
+										"query":    "up == 0",
 										"duration": 60.0,
 										"state":    "firing",
 										"type":     "alerting",
@@ -89,6 +95,7 @@ var _ = Describe("Prometheus Client Integration (prometheus/)", func() {
 			Expect(groups[0].Name).To(Equal("test-group"))
 			Expect(groups[0].Rules).To(HaveLen(1))
 			Expect(groups[0].Rules[0].Name).To(Equal("TestRule"))
+			Expect(groups[0].Rules[0].Query).To(Equal("up == 0"))
 		})
 	})
 
