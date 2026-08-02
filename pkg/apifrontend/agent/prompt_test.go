@@ -46,6 +46,12 @@ var _ = Describe("System Prompt", func() {
 		}
 	})
 
+	// Issue #1658 (BR-AI-023): any tool failure must be translated into a
+	// natural-language explanation, never surfaced as raw tool-call args/JSON.
+	It("UT-AF-1658-010: prompt mandates natural-language explanation on any tool error, never raw args", func() {
+		Expect(instruction).To(ContainSubstring("NEVER surface raw tool-call arguments"))
+	})
+
 	It("UT-AF-131-005: prompt includes tool inventory summary", func() {
 		Expect(instruction).To(ContainSubstring("kubernaut_list_remediations"))
 		Expect(instruction).To(ContainSubstring("kubernaut_get_remediation"))
@@ -92,64 +98,103 @@ var _ = Describe("System Prompt", func() {
 
 	Describe("BuildInstruction (#1275)", func() {
 		It("UT-AF-1275-010: output contains core embedded prompt (SC-7 immutability)", func() {
-			result := agentpkg.BuildInstruction("kubernaut-system")
+			result := agentpkg.BuildInstruction("kubernaut-system", true)
 			Expect(result).To(ContainSubstring("You are the Kubernaut API Frontend agent"))
 			Expect(result).To(ContainSubstring("Security Boundaries"))
 		})
 
 		It("UT-AF-1275-011: output contains deployment namespace (CM-6)", func() {
-			result := agentpkg.BuildInstruction("kubernaut-system")
+			result := agentpkg.BuildInstruction("kubernaut-system", true)
 			Expect(result).To(ContainSubstring("kubernaut-system"))
 			Expect(result).To(ContainSubstring("Deployment Context"))
 		})
 
 		It("UT-AF-1275-012: empty namespace falls back to default (SI-10)", func() {
-			result := agentpkg.BuildInstruction("")
+			result := agentpkg.BuildInstruction("", true)
 			Expect(result).To(ContainSubstring("default"))
 			Expect(result).NotTo(ContainSubstring("``"))
 		})
 
 		It("UT-AF-1275-013: output contains kubernaut.ai CRD types (CM-6)", func() {
-			result := agentpkg.BuildInstruction("kubernaut-system")
+			result := agentpkg.BuildInstruction("kubernaut-system", true)
 			Expect(result).To(ContainSubstring("RemediationRequest"))
 			Expect(result).To(ContainSubstring("InvestigationSession"))
 			Expect(result).To(ContainSubstring("WorkflowExecution"))
 		})
 
 		It("UT-AF-1275-014: intent group 'investigate' contains expected tools", func() {
-			result := agentpkg.BuildInstruction("ns")
+			result := agentpkg.BuildInstruction("ns", true)
 			Expect(result).To(ContainSubstring("kubernaut_investigate"))
 		})
 
 		It("UT-AF-1275-015: intent group 'observe' contains kubectl tools", func() {
-			result := agentpkg.BuildInstruction("ns")
+			result := agentpkg.BuildInstruction("ns", true)
 			Expect(result).To(ContainSubstring("kubectl_get"))
 			Expect(result).To(ContainSubstring("kubectl_list"))
 		})
 
 		It("UT-AF-1275-016: intent group 'fix' references 4-phase journey", func() {
-			result := agentpkg.BuildInstruction("ns")
+			result := agentpkg.BuildInstruction("ns", true)
 			Expect(result).To(ContainSubstring("kubernaut_discover_workflows"))
 			Expect(result).To(ContainSubstring("kubernaut_select_workflow"))
 			Expect(result).To(ContainSubstring("kubernaut_watch"))
 		})
 
 		It("UT-AF-1275-017: intent group 'approve' contains approval tools", func() {
-			result := agentpkg.BuildInstruction("ns")
+			result := agentpkg.BuildInstruction("ns", true)
 			Expect(result).To(ContainSubstring("kubernaut_approve"))
 			Expect(result).To(ContainSubstring("kubernaut_list_approval_requests"))
 		})
 
 		It("UT-AF-1275-018: intent group 'audit' contains history tools", func() {
-			result := agentpkg.BuildInstruction("ns")
+			result := agentpkg.BuildInstruction("ns", true)
 			Expect(result).To(ContainSubstring("kubernaut_get_audit_trail"))
 			Expect(result).To(ContainSubstring("kubernaut_get_remediation_history"))
 		})
 
 		It("UT-AF-1275-019: intent group 'interactive' contains session tools", func() {
-			result := agentpkg.BuildInstruction("ns")
+			result := agentpkg.BuildInstruction("ns", true)
 			Expect(result).To(ContainSubstring("kubernaut_investigate"))
 			Expect(result).To(ContainSubstring("kubernaut_reconnect"))
+		})
+	})
+
+	// Issue #1658 (BR-AI-023, BR-AI-024): the prompt must not advertise alert
+	// tools that aren't actually registered (cfg.PromClient == nil), or the
+	// model falls back to guessing an invalid kubectl_list kind and leaks the
+	// raw, failed tool-call arguments back to the user.
+	Describe("BuildInstruction alert tool gating (#1658)", func() {
+		It("UT-AF-1658-001: alertToolsEnabled=true advertises alert tools for observation", func() {
+			result := agentpkg.BuildInstruction("ns", true)
+			Expect(result).To(ContainSubstring("list_alerts"))
+			Expect(result).To(ContainSubstring("get_alert_details"))
+			Expect(result).To(ContainSubstring("kubernaut_investigate_alert"))
+		})
+
+		It("UT-AF-1658-002: alertToolsEnabled=false omits alert tools from the observation permission list", func() {
+			result := agentpkg.BuildInstruction("ns", false)
+			Expect(result).NotTo(ContainSubstring("kubectl_get, kubectl_list, kubectl_list_events, list_alerts, and get_alert_details are permitted"))
+			Expect(result).NotTo(ContainSubstring("list_alerts and get_alert_details query Prometheus/Thanos"))
+		})
+
+		It("UT-AF-1658-003: alertToolsEnabled=false explicitly states alert querying is unavailable", func() {
+			result := agentpkg.BuildInstruction("ns", false)
+			Expect(result).To(ContainSubstring("NOT available in this deployment"))
+			Expect(result).To(ContainSubstring("Alerts are not a Kubernetes resource"))
+		})
+
+		It("UT-AF-1658-004: alertToolsEnabled=false instructs the model not to guess a kubectl kind for alerts", func() {
+			result := agentpkg.BuildInstruction("ns", false)
+			Expect(result).To(SatisfyAny(
+				ContainSubstring("never call kubectl_get/kubectl_list with kind=\"Alert\""),
+				ContainSubstring(`never call kubectl_get/kubectl_list with kind="Alert"`),
+			))
+		})
+
+		It("UT-AF-1658-005: alertToolsEnabled=false still contains the immutable core prompt (SC-7)", func() {
+			result := agentpkg.BuildInstruction("ns", false)
+			Expect(result).To(ContainSubstring("You are the Kubernaut API Frontend agent"))
+			Expect(result).To(ContainSubstring("Security Boundaries"))
 		})
 	})
 
@@ -198,13 +243,13 @@ var _ = Describe("System Prompt", func() {
 
 	Describe("Prompt hardening (#1282 F-PROMPT)", func() {
 		It("UT-AF-1282-PROMPT-001: prompt mandates kubernaut MCP tools for investigation", func() {
-			result := agentpkg.BuildInstruction("kubernaut-system")
+			result := agentpkg.BuildInstruction("kubernaut-system", true)
 			Expect(result).To(ContainSubstring("kubernaut MCP tools"))
 			Expect(result).To(ContainSubstring("NEVER use kubectl"))
 		})
 
 		It("UT-AF-1282-PROMPT-002: prompt documents all AF auto-resolved fields", func() {
-			result := agentpkg.BuildInstruction("kubernaut-system")
+			result := agentpkg.BuildInstruction("kubernaut-system", true)
 			Expect(result).To(ContainSubstring("provide: api_version, namespace, kind, name, description"))
 			Expect(result).To(ContainSubstring("workload namespace where the target resource lives"))
 			Expect(result).To(ContainSubstring("severity: via the Prometheus severity triage pipeline"))
@@ -215,7 +260,7 @@ var _ = Describe("System Prompt", func() {
 
 	Describe("InstructionProvider (#1276)", func() {
 		It("UT-AF-1276-001: preserves core prompt immutability (SC-7)", func() {
-			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			provider := agentpkg.NewInstructionProvider("kubernaut-system", true)
 			result, err := provider(nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(ContainSubstring("You are the Kubernaut API Frontend agent"))
@@ -223,7 +268,7 @@ var _ = Describe("System Prompt", func() {
 		})
 
 		It("UT-AF-1276-008: nil identity returns base instruction only (SC-7)", func() {
-			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			provider := agentpkg.NewInstructionProvider("kubernaut-system", true)
 			result, err := provider(nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(ContainSubstring("Your Role Context"))
@@ -231,7 +276,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1276-009: empty groups returns base instruction only", func() {
 			ctx := agentpkg.MockReadonlyContext(context.Background(), "alice", []string{})
-			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			provider := agentpkg.NewInstructionProvider("kubernaut-system", true)
 			result, err := provider(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(ContainSubstring("Your Role Context"))
@@ -239,7 +284,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1276-002: SRE group adds full-access guidance (AC-6)", func() {
 			ctx := agentpkg.MockReadonlyContext(context.Background(), "alice", []string{"sre"})
-			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			provider := agentpkg.NewInstructionProvider("kubernaut-system", true)
 			result, err := provider(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(ContainSubstring("Your Role Context"))
@@ -248,7 +293,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1276-003: viewer group adds read-only guidance (AC-6)", func() {
 			ctx := agentpkg.MockReadonlyContext(context.Background(), "bob", []string{"observability"})
-			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			provider := agentpkg.NewInstructionProvider("kubernaut-system", true)
 			result, err := provider(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(ContainSubstring("read-only"))
@@ -256,7 +301,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1276-004: approver group adds approval guidance (AC-6)", func() {
 			ctx := agentpkg.MockReadonlyContext(context.Background(), "carol", []string{"remediation-approver"})
-			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			provider := agentpkg.NewInstructionProvider("kubernaut-system", true)
 			result, err := provider(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(ContainSubstring("approval"))
@@ -264,7 +309,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1276-005: CICD group adds automation guidance (AC-6)", func() {
 			ctx := agentpkg.MockReadonlyContext(context.Background(), "bot", []string{"cicd"})
-			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			provider := agentpkg.NewInstructionProvider("kubernaut-system", true)
 			result, err := provider(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(ContainSubstring("automation"))
@@ -272,7 +317,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1276-006: audit group adds compliance guidance (AC-6)", func() {
 			ctx := agentpkg.MockReadonlyContext(context.Background(), "auditor", []string{"l3-audit"})
-			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			provider := agentpkg.NewInstructionProvider("kubernaut-system", true)
 			result, err := provider(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(ContainSubstring("compliance"))
@@ -280,7 +325,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1276-007: multi-role user gets additive guidance (AC-6)", func() {
 			ctx := agentpkg.MockReadonlyContext(context.Background(), "multi", []string{"sre", "remediation-approver"})
-			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			provider := agentpkg.NewInstructionProvider("kubernaut-system", true)
 			result, err := provider(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).To(ContainSubstring("full operational access"))
@@ -289,7 +334,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1276-010: unknown groups produce no extra guidance (SC-7)", func() {
 			ctx := agentpkg.MockReadonlyContext(context.Background(), "unknown", []string{"custom-team", "random"})
-			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			provider := agentpkg.NewInstructionProvider("kubernaut-system", true)
 			result, err := provider(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(ContainSubstring("Your Role Context"))
@@ -297,7 +342,7 @@ var _ = Describe("System Prompt", func() {
 
 		It("UT-AF-1276-011: raw group names not leaked into prompt (SC-7)", func() {
 			ctx := agentpkg.MockReadonlyContext(context.Background(), "alice", []string{"sre", "l3-audit"})
-			provider := agentpkg.NewInstructionProvider("kubernaut-system")
+			provider := agentpkg.NewInstructionProvider("kubernaut-system", true)
 			result, err := provider(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(ContainSubstring("\"sre\""))
@@ -332,7 +377,7 @@ var _ = Describe("Prompt — Intent-Based Tool Redesign (#1332)", func() {
 	})
 
 	It("UT-AF-1332-038: BuildInstruction references kubernaut_remediate without deprecated af_ names", func() {
-		built := agentpkg.BuildInstruction("kubernaut-system")
+		built := agentpkg.BuildInstruction("kubernaut-system", true)
 		Expect(built).To(ContainSubstring("kubernaut_remediate"))
 		Expect(built).NotTo(ContainSubstring("af_create_rr"))
 		Expect(built).NotTo(ContainSubstring("af_check_existing_rr"))
