@@ -13,7 +13,7 @@
 **E2E tests MUST use production-equivalent authentication mechanisms. Mock authentication is ONLY permitted for external dependencies (LLM providers). Internal Kubernetes authentication MUST use real ServiceAccount tokens and RBAC enforcement.**
 
 **Scope**:
-- All E2E test suites (DataStorage, HolmesGPT API, AIAnalysis, etc.)
+- All E2E test suites (DataStorage, Kubernaut Agent (KA), AIAnalysis, etc.)
 - OAuth2-proxy sidecar configuration
 - ServiceAccount token handling
 - RBAC enforcement via SubjectAccessReview (SAR)

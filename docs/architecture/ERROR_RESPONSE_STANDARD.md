@@ -238,7 +238,7 @@ func WriteValidationError(w http.ResponseWriter, r *http.Request, field string, 
 | Code | HTTP Status | Message | Details |
 |------|-------------|---------|---------|
 | `RATE_LIMIT_EXCEEDED` | 429 | Rate limit exceeded | `{"limit": 100, "window": "60s", "client": "ai-analysis-sa"}` |
-| `INVESTIGATION_LIMIT_EXCEEDED` | 429 | Investigation rate limit exceeded (HolmesGPT) | `{"limit": "5/min", "client": "ai-analysis-sa"}` |
+| `INVESTIGATION_LIMIT_EXCEEDED` | 429 | Investigation rate limit exceeded (Kubernaut Agent (KA)) | `{"limit": "5/min", "client": "ai-analysis-sa"}` |
 
 **Example**:
 ```json
@@ -327,7 +327,7 @@ func WriteValidationError(w http.ResponseWriter, r *http.Request, field string, 
 
 ---
 
-### **HolmesGPT API Service**
+### **KA Service**
 
 | Code | HTTP Status | Description |
 |------|-------------|-------------|

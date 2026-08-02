@@ -57,9 +57,9 @@ This documentation suite provides a comprehensive approach for implementing end-
    - **Scenario**: Node failure cascade → AI pattern recognition → Workload migration
    - **Success Criteria**: Zero data loss, <5min migration time
 
-3. **[HolmesGPT Investigation Pipeline Under Load](#use-case-3)**
+3. **[Kubernaut Agent (KA) Investigation Pipeline Under Load](#use-case-3)**
    - **Business Requirements**: BR-AI-011, BR-AI-012, BR-AI-013
-   - **Scenario**: Alert storm → HolmesGPT investigation → Context enrichment → Resolution
+   - **Scenario**: Alert storm → KA investigation → Context enrichment → Resolution
    - **Success Criteria**: 80% accurate root cause identification, <2min per investigation
 
 8. **[Prometheus Alertmanager Integration Storm](#use-case-8)**

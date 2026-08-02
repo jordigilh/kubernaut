@@ -303,7 +303,7 @@ func (p *Processor) ProcessAlert(alert types.Alert) error {
 │      │                           │                     │        │
 │      ▼                           ▼                     ▼        │
 │ ┌─────────────────┐     ┌─────────────────┐     ┌─────────────┐ │
-│ │ Context         │     │ HolmesGPT       │     │ Action      │ │
+│ │ Context         │     │ KA              │     │ Action      │ │
 │ │ Enrichment      │     │ Investigation   │     │ Executor    │ │
 │ │ (Span: context) │     │ (Span: holmes)  │     │ (Span: exec)│ │
 │ └─────────────────┘     └─────────────────┘     └─────────────┘ │
@@ -396,7 +396,7 @@ func (h *WebhookHandler) HandleAlert(w http.ResponseWriter, r *http.Request) {
 │                                                                 │
 │ Application Logs                                                │
 │ ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐ │
-│ │ Context API     │  │ HolmesGPT API   │  │ Webhook         │ │
+│ │ Context API     │  │ KA              │  │ Webhook         │ │
 │ │ Logs            │  │ Logs            │  │ Handler Logs    │ │
 │ └─────────────────┘  └─────────────────┘  └─────────────────┘ │
 │          │                    │                    │           │
@@ -585,7 +585,7 @@ receivers:
 │          ▼                                                      │ │
 │ AI Investigation (Point 3)                                      │
 │ ┌─────────────────┐     Metrics: Inference time, Quality      │ │
-│ │ HolmesGPT/LLM   │     Targets: <5s, >85% confidence        │ │
+│ │ KA/LLM          │     Targets: <5s, >85% confidence        │ │
 │ │ Analysis        │                                            │ │
 │ └─────────────────┘                                            │ │
 │          │                                                      │

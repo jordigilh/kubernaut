@@ -435,7 +435,7 @@ checkers := []health.Checker{
 
 ---
 
-### **HolmesGPT API Service**
+### **Kubernaut Agent (KA) Service**
 
 **Dependencies**:
 - ✅ LLM Provider (OpenAI, Claude, etc.)

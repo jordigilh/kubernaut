@@ -69,7 +69,7 @@ type E2ETestSuite struct {
     SLAMonitor      *validation.ServiceLevelMonitor
 
     // Integration Components
-    HolmesGPTClient *holmesgpt.IntegrationClient
+    KAClient *kubernautagent.IntegrationClient
     ContextAPIClient *contextapi.TestClient
 }
 

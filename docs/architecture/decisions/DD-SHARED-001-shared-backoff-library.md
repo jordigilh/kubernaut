@@ -371,7 +371,7 @@ duration := backoff.CalculateWithoutJitter(failures)  // For test assertions
 
 **When to Use**:
 - ❌ **NOT for user-facing operations**: Use fixed delays or immediate retry
-- ✅ **External API calls**: Slack, HolmesGPT, LLM APIs (respect rate limits)
+- ✅ **External API calls**: Slack, Kubernaut Agent (KA), LLM APIs (respect rate limits)
 - ✅ **Transient failures**: Network errors, temporary service unavailability
 - ✅ **Resource contention**: Database locks, rate limiting
 
@@ -407,7 +407,7 @@ duration := backoff.CalculateWithoutJitter(failures)  // For test assertions
 - [ ] **RemediationOrchestrator (RO)**: FYI - Available for future BR implementations
 - [ ] **AIAnalysis (AA)**: FYI - Available for future BR implementations
 - [ ] **DataStorage (DS)**: FYI - No action required (database client handles retry)
-- [ ] **HAPI**: FYI - No action required (no retry logic)
+- [ ] **KA**: FYI - No action required (no retry logic)
 - [ ] **Gateway**: FYI - No action required (no retry logic)
 
 **Message**:

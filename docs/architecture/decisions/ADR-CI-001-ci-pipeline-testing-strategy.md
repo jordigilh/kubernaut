@@ -135,7 +135,7 @@ redis:
 
 **Reason**:
 - Go services depend on embedded OpenAPI specs (`openapi_spec_data.yaml`)
-- `ogen` tool generates HolmesGPT-API client from OpenAPI specs
+- `ogen` tool generates Kubernaut Agent (KA) client from OpenAPI specs
 - Without generation: `openapi_spec_data.yaml: no matching files found`
 
 **Implementation**:
@@ -198,7 +198,7 @@ redis:
 - [x] Create `integration-tests` matrix job with 8 services
 - [x] Add `make generate` to each matrix job
 - [x] Remove individual integration jobs (consolidated into matrix)
-- [x] Fix container networking in 3 config files (WE, NT, HAPI)
+- [x] Fix container networking in 3 config files (WE, NT, KA)
 - [x] Remove path filtering (always-run strategy)
 - [x] Document rationale in workflow comments
 
@@ -265,7 +265,7 @@ redis:
 ### **Container Networking Patterns**
 | Pattern | Services | Network Strategy | Config Example |
 |---------|----------|------------------|----------------|
-| **Port Mapping** | Gateway, SignalProcessing, WE, NT, HAPI | `host.containers.internal` | `host: host.containers.internal` |
+| **Port Mapping** | Gateway, SignalProcessing, WE, NT, KA | `host.containers.internal` | `host: host.containers.internal` |
 | **Custom Network** | AIAnalysis, RemediationOrchestrator | Podman network | `host: postgres` (DNS) |
 | **Static IPs** | RemediationOrchestrator | Podman network + IPs | `host: 10.88.0.20` |
 

@@ -20,7 +20,7 @@ Kubernaut uses a **dual-namespace architecture** to separate concerns between HT
 1. Gateway Service (Port 8080)
 2. Context API (Port 8082)
 3. Data Storage (Port 8080)
-4. HolmesGPT API (Port 8080)
+4. Kubernaut Agent (KA) (Port 8080)
 5. Dynamic Toolset (Port 8083)
 6. Effectiveness Monitor (Port 8080)
 7. Notification Service (Port 8088)
@@ -82,7 +82,7 @@ Kubernaut uses a **dual-namespace architecture** to separate concerns between HT
 - Controllers call stateless HTTP APIs:
   - Context API for historical intelligence
   - Data Storage for audit trail persistence
-  - HolmesGPT API for AI analysis
+  - KA for AI analysis
   - Notification Service for escalation alerts
 
 ### **Authentication**
@@ -310,7 +310,7 @@ If unification is required:
 - [ ] Deploy Gateway Service in `kubernaut-system`
 - [ ] Deploy Context API in `kubernaut-system`
 - [ ] Deploy Data Storage in `kubernaut-system`
-- [ ] Deploy HolmesGPT API in `kubernaut-system`
+- [ ] Deploy KA in `kubernaut-system`
 - [ ] Deploy Dynamic Toolset in `kubernaut-system`
 - [ ] Deploy Effectiveness Monitor in `kubernaut-system`
 - [ ] Deploy Notification Service in `kubernaut-system`

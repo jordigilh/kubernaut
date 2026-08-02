@@ -4,7 +4,7 @@
 **Date**: 2026-02-24
 **Status**: PARTIALLY SUPERSEDED (see notice below)
 **Author**: WorkflowExecution Team
-**Reviewers**: Platform Team, HAPI Team
+**Reviewers**: Platform Team, Kubernaut Agent (KA) Team
 
 ---
 
@@ -353,7 +353,7 @@ Dependencies are validated at two points for defense in depth:
 
 ### On-Demand DS Query (No CRD Propagation)
 
-Dependencies are NOT propagated through the CRD chain (HAPI -> RO -> WFE). Rationale:
+Dependencies are NOT propagated through the CRD chain (KA -> RO -> WFE). Rationale:
 
 1. **Workflows are immutable** (DD-WORKFLOW-012): Once registered, the schema (including
    dependencies) cannot change. Only lifecycle state changes (enable/disable/deprecate).

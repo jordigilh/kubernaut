@@ -71,7 +71,7 @@ Stateless  CRD Controller
 - ✅ Industry best practices tables
 
 **Use For**:
-- New stateless services (Gateway, Data Storage, HolmesGPT API)
+- New stateless services (Gateway, Data Storage, Kubernaut Agent (KA))
 - New CRD controllers (SignalProcessing, AIAnalysis, WorkflowExecution)
 - Services requiring 11-12+ days of implementation
 

@@ -18,7 +18,7 @@ This document outlines the comprehensive testing tools and automation framework 
 - **Minimize Maintenance Overhead**: Self-healing test infrastructure
 - **Enable Continuous Validation**: 24/7 automated testing and monitoring
 - **Support Chaos Engineering**: Controlled failure injection and recovery validation
-- **Container-Native Integration**: Seamless integration with HolmesGPT REST API container
+- **Container-Native Integration**: Seamless integration with Kubernaut Agent (KA) REST API container
 
 ---
 
@@ -47,7 +47,7 @@ type E2ETestSuite struct {
     SLAMonitor      *ServiceLevelMonitor
 
     // Integration Components
-    HolmesGPTClient *holmesgpt.RESTAPIClient  // HTTP client for container API
+    KAClient *kubernautagent.RESTAPIClient  // HTTP client for container API
     ContextAPIClient *contextapi.TestClient
 
     // Test Management

@@ -247,7 +247,7 @@ kubectl rollout restart statefulset/postgresql -n kubernaut-system
 
 ---
 
-### **HolmesGPT API Service**
+### **Kubernaut Agent (KA) Service**
 
 #### **Issue: LLM Rate Limit Exceeded**
 

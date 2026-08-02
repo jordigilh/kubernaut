@@ -44,7 +44,7 @@
 
 - Replaces `signalName` (formerly `signal_type`) as primary workflow matching key with `action_type`
 - Defines enforced action type taxonomy (V1.0 initial set)
-- Introduces `ListAvailableActions` and `ListWorkflows` context-aware HAPI tools
+- Introduces `ListAvailableActions` and `ListWorkflows` context-aware KA tools
 - Defines LLM three-step workflow discovery protocol (list actions -> list workflows -> get parameters)
 - Aligns with DD-KA-016 remediation history context (action-based history)
 

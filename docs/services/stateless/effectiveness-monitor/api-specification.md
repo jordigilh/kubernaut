@@ -349,7 +349,7 @@ func (s *EffectivenessMonitorService) shouldCallAI(
 - ❌ Routine successes handled efficiently with automation (no AI cost)
 
 **Return Value**:
-- `true`: AI analysis warranted → Call HolmesGPT API `/api/v1/postexec/analyze`
+- `true`: AI analysis warranted → Call Kubernaut Agent (KA) `/api/v1/postexec/analyze`
 - `false`: Automated assessment sufficient → Store basic metrics only
 
 ---

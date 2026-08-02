@@ -369,7 +369,7 @@ It("should capture enrichment duration at top-level for performance tracking", f
 
 ```go
 // ❌ INCOMPLETE: Only checks payload, misses top-level field (database bug could go undetected)
-payload := event.EventData.AIAnalysisHolmesGPTCallPayload
+payload := event.EventData.AIAnalysisKACallPayload
 Expect(payload.DurationMs).To(BeNumerically(">", 0)) // event.DurationMs NOT validated!
 ```
 

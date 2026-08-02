@@ -382,7 +382,7 @@ spec:
 
 ---
 
-### **4. HolmesGPT API Service**
+### **4. Kubernaut Agent (KA) Service**
 
 ```yaml
 # deploy/kubernaut-agent-deployment.yaml
@@ -522,7 +522,7 @@ spec:
 | **Gateway** | 200m | 1000m | 256Mi | 1Gi | 3 |
 | **Context API** | 150m | 500m | 256Mi | 512Mi | 2 |
 | **Data Storage** | 150m | 500m | 256Mi | 512Mi | 2 |
-| **HolmesGPT API** | 100m | 500m | 128Mi | 512Mi | 2 |
+| **KA** | 100m | 500m | 128Mi | 512Mi | 2 |
 | **Notification** | 100m | 300m | 128Mi | 256Mi | 2 |
 | **Dynamic Toolset** | 100m | 200m | 128Mi | 256Mi | 2 |
 
@@ -594,7 +594,7 @@ roleRef:
 2. Dynamic Toolset Service
 3. Data Storage Service
 4. Context API Service
-5. HolmesGPT API Service
+5. KA Service
 6. Gateway Service
 7. Notification Service
 

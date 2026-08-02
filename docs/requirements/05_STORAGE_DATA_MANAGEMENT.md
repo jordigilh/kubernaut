@@ -72,7 +72,7 @@ The Storage & Data Management layer provides comprehensive data persistence, ret
 **Note**: All vector database requirements (BR-VDB-001 to BR-VDB-030) are deferred to Version 2 pending:
 - Business value assessment of vector similarity search capabilities
 - Technical evaluation of external vector database providers (Pinecone, Weaviate)
-- Cost-benefit analysis of embedding services vs. current HolmesGPT capabilities
+- Cost-benefit analysis of embedding services vs. current Kubernaut Agent (KA) capabilities
 - Integration complexity assessment with existing PostgreSQL infrastructure
 
 ---
