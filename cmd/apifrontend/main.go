@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -37,6 +38,7 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"cloud.google.com/go/auth/credentials"
 	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
@@ -786,11 +788,27 @@ func newLLMTriagerFromConfig(ctx context.Context, llmCfg config.LLMConfig, logge
 	}
 }
 
+// newGenAITriagerForVertex resolves Google credentials from the profile's
+// own APIKey bytes when present (kubernaut#1731) rather than leaving
+// genai.NewClient to its own ambient-ADC auto-detect, so severityTriage's
+// vertex_ai profile can authenticate independently of AF's agent.llm
+// profile. credentials.DetectDefault falls back to ambient ADC unchanged
+// when CredentialsJSON is empty, preserving today's behavior — mirrors the
+// technique AF's own agent.llm Gemini-on-Vertex path already uses
+// (pkg/apifrontend/launcher.newVertexGeminiModel, kubernaut#1801).
 func newGenAITriagerForVertex(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
+	cred, err := credentials.DetectDefault(&credentials.DetectOptions{
+		CredentialsJSON: bytes.TrimSpace([]byte(llmCfg.APIKey)),
+		Scopes:          []string{"https://www.googleapis.com/auth/cloud-platform"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vertex_ai GenAI credentials: %w", err)
+	}
 	clientCfg := &genai.ClientConfig{
-		Project:  llmCfg.VertexProject,
-		Location: llmCfg.VertexLocation,
-		Backend:  genai.BackendVertexAI,
+		Project:     llmCfg.VertexProject,
+		Location:    llmCfg.VertexLocation,
+		Backend:     genai.BackendVertexAI,
+		Credentials: cred,
 	}
 	if llmCfg.Endpoint != "" {
 		clientCfg.HTTPOptions = genai.HTTPOptions{BaseURL: llmCfg.Endpoint}
@@ -825,8 +843,14 @@ func newGenAITriagerForGemini(ctx context.Context, llmCfg config.LLMConfig, logg
 	}), nil
 }
 
+// newAnthropicTriagerForVertex threads llmCfg.APIKey (raw credentials.json
+// content, resolved generically for every provider by
+// pkg/apifrontend/config's resolveLLMKey) into NewAnthropicVertexClient so
+// severityTriage's vertex_ai profile can authenticate independently of AF's
+// agent.llm profile (kubernaut#1731). Falls back to ambient ADC unchanged
+// when APIKey is empty.
 func newAnthropicTriagerForVertex(ctx context.Context, llmCfg config.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
-	client, err := severity.NewAnthropicVertexClient(ctx, llmCfg.VertexProject, llmCfg.VertexLocation)
+	client, err := severity.NewAnthropicVertexClient(ctx, llmCfg.VertexProject, llmCfg.VertexLocation, llmCfg.APIKey)
 	if err != nil {
 		return nil, fmt.Errorf("vertex_ai Anthropic client: %w", err)
 	}
