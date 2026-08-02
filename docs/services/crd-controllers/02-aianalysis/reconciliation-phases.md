@@ -12,7 +12,7 @@
 |---------|------|---------|-----------|
 | **v2.3** | 2026-08-02 | **#1806 CORRECTION**: Fixed the remaining stale sections not covered by the prior validation-focused pass (#1847): Phase 2 (Investigating) rewritten from a single 60s synchronous HolmesGPT-API call to the real async submit/poll/result session flow against Kubernaut Agent (KA) with a 25-minute wall-clock cap (BR-AA-HAPI-064); corrected the Phase Overview table/diagram, Phase Timeout Configuration section, Rego policy input/output examples (`require_approval`/`reason`, not `AUTO_APPROVE`/`MANUAL_APPROVAL_REQUIRED`), Recovery Attempts section (`isRecoveryAttempt`/`previousExecutions` do not exist on the current CRD spec), and the Metrics section (the referenced `kubernaut_aianalysis_phase_duration_seconds` metric does not exist; see `metrics-slos.md` for the real 4 metrics) | #1806, BR-AA-HAPI-064 |
 | **v2.2** | 2025-12-09 | **V1.0 COMPLIANCE AUDIT**: (1) Timeout should be `spec.TimeoutConfig` not annotation (pending RO clarification); (2) Recovery attempts must use `/api/v1/recovery/analyze` endpoint (pending HAPI confirmation); (3) Recovery fields must be passed to HAPI | `NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md`, `REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md` (both docs/handoff/, deleted in the repo-wide non-authoritative docs purge) |
-| v2.1 | 2025-12-06 | **BR-HAPI-197**: Added `SubReason` field for granular failure tracking; Removed `Recommending` from Phase enum; Added failure taxonomy | BR-HAPI-197, DD-HAPI-002 v1.2 |
+| v2.1 | 2025-12-06 | **BR-KA-197**: Added `SubReason` field for granular failure tracking; Removed `Recommending` from Phase enum; Added failure taxonomy | BR-KA-197, DD-HAPI-002 v1.2 |
 | v2.0 | 2025-11-30 | **REGENERATED**: Removed "Approving" phase (V1.0); Removed BR-AI-051-053 (dependency validation); Simplified to 4-phase flow; Added DetectedLabels/CustomLabels handling | DD-RECOVERY-002, BR_MAPPING v1.2 |
 | v1.1 | 2025-10-20 | Added approval context population | ADR-018 |
 | v1.0 | 2025-10-15 | Initial specification | - |
@@ -148,7 +148,7 @@ If `PollSession` returns `404` (KA restarted and lost session state), the handle
 | 25-minute wall-clock cap exceeded | Mark as `Failed` | No |
 | Invalid/malformed KA response | Mark as `Failed` | No |
 
-### BR-HAPI-197: Human Review Required Handling
+### BR-KA-197: Human Review Required Handling
 
 When the Kubernaut Agent (KA) result indicates `needs_human_review=true` (or equivalent warnings), the controller MUST:
 
@@ -342,7 +342,7 @@ status:
 
 **Timeout**: None (terminal)
 
-### Failure Reason Taxonomy (BR-HAPI-197)
+### Failure Reason Taxonomy (BR-KA-197)
 
 AIAnalysis uses a structured taxonomy with `reason` (umbrella category) and `subReason` (specific cause).
 For the complete set of valid `reason` values see `AIAnalysisReason` in `api/aianalysis/v1alpha1/aianalysis_types.go`.

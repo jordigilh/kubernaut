@@ -123,7 +123,7 @@ must-gather-{service}-{timestamp}.tar.gz
 - PostgreSQL container logs
 - Redis container logs
 - DataStorage API logs
-- Mock LLM logs (HAPI only)
+- Mock LLM logs (Kubernaut Agent (KA) only)
 - Test execution output
 
 ### E2E Test Artifacts
@@ -251,7 +251,7 @@ git push origin feature-branch
 - **Must-Gather Implementation**: `test/infrastructure/must_gather.go`
 - **Integration Test Infrastructure**: `test/infrastructure/shared_integration_utils.go`
 - **E2E Test Cleanup**: `test/infrastructure/cluster_cleanup.go`
-- **HAPI Integration Triage**: `docs/triage/HAPI_MOCK_LLM_PORT_MISMATCH_JAN_22_2026.md`
+- ~~**HAPI Integration Triage**: `docs/triage/HAPI_MOCK_LLM_PORT_MISMATCH_JAN_22_2026.md`~~ — dead link removed (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806)); `docs/triage/` no longer exists in the repo
 
 ---
 

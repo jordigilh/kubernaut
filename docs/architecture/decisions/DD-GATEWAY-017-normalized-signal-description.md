@@ -15,7 +15,7 @@ Gateway adapters extract human-readable context from signal sources (alert descr
 
 Additionally, the unstructured `map[string]string` format is adapter-specific: Prometheus uses `annotations.description`, K8s Events use `event.message`, and future adapters (OpenTelemetry, Datadog, PagerDuty) use different field names. There is no adapter-agnostic contract for downstream consumers.
 
-**Business Need**: BR-GATEWAY-185 (Normalized Signal Description Capture), BR-HAPI-213 (Signal Description in Investigation Prompt)
+**Business Need**: BR-GATEWAY-185 (Normalized Signal Description Capture), BR-HAPI-213 (Signal Description in Investigation Prompt — historical ID, never formalized as a `docs/requirements/` doc; no renamed `BR-KA-`/`BR-AI-`-prefixed equivalent exists)
 
 ### Key Requirements
 

@@ -154,7 +154,7 @@ deploy/integration/
 │   ├── webhook-service.yaml   # Webhook service deployment
 │   ├── ai-service.yaml        # AI service deployment
 │   └── rbac.yaml              # RBAC configuration
-└── holmesgpt/
+└── kubernaut-agent/
     ├── deployment.yaml         # KA integration
     └── service.yaml           # KA service
 ```

@@ -43,7 +43,7 @@ Test Suite Startup (Simplified):
 2. Deploy Mock LLM (no ConfigMap, no config file)
    - Mock LLM starts → computes UUIDs from shared function
    - /health returns 200 immediately
-3. Deploy HAPI → LLM_ENDPOINT=http://mock-llm:8080
+3. Deploy Kubernaut Agent (KA) → LLM_ENDPOINT=http://mock-llm:8080
 4. Tests run — UUIDs match between DataStorage and Mock LLM ✅
 ```
 
@@ -53,7 +53,7 @@ The Go rewrite (#531) introduces several architectural improvements beyond UUID 
 
 1. **DAG-based conversation engine** (#560): Replaces hardcoded if/else routing with a declarative state machine
 2. **Scenario registry** (#564): Self-registering scenarios, one file per scenario
-3. **Shared OpenAI types** (#562): Compile-time contract enforcement between Mock LLM and HAPI
+3. **Shared OpenAI types** (#562): Compile-time contract enforcement between Mock LLM and Kubernaut Agent (KA)
 4. **HTTP verification API** (#563): Behavioral test assertions from Go tests
 5. **Fault injection** (#565): Configurable failure modes for resilience testing
 6. **Declarative YAML scenarios** (#566): Non-developers can author scenarios

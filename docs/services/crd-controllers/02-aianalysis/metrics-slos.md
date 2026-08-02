@@ -38,7 +38,7 @@ If you need per-investigation timing, use `AIAnalysis.status.investigationTime` 
 | **Rego Policy Reliability** | `1 - (rego_evaluations{degraded="true"} / rego_evaluations_total)` | ≥99% | Policy engine availability (BR-AI-014 graceful degradation) |
 | **Auto-Approval Rate** | `approval_decisions{decision="auto_approved"} / approval_decisions_total` | 40-60% | Rego policy effectiveness (BR-AI-059) |
 | **AI Confidence (Avg)** | `avg(aianalysis_confidence_score_distribution)` | ≥0.80 | High-quality workflow selection (BR-AI-OBSERVABILITY-004) |
-| **Failure Rate** | `sum(rate(aianalysis_failures_total[1h]))` | Trend-monitored (no fleet-wide fixed target — depends on cluster alert volume) | Overall investigation health (BR-HAPI-197) |
+| **Failure Rate** | `sum(rate(aianalysis_failures_total[1h]))` | Trend-monitored (no fleet-wide fixed target — depends on cluster alert volume) | Overall investigation health (BR-KA-197) |
 | **TransientError Share** | `failures{reason="TransientError"} / failures_total` | Trend-monitored | Async KA session health — covers both retry-exhaustion and the 25-minute session timeout cap (#1078, BR-AA-HAPI-064) |
 
 > **Note on denominators**: There is no "total investigations started" counter (client-side KA call counters were deliberately removed — see Scope Note). `aianalysis_confidence_score_distribution`'s sample count and `aianalysis_failures_total`'s sum are the closest available proxies for "successful" vs. "failed" investigation volume respectively (see `recordPhaseMetrics` in `internal/controller/aianalysis/metrics_recorder.go`), so ratio SLIs above use each metric family's own total as the denominator rather than a global count.
@@ -107,7 +107,7 @@ var (
         []string{"signal_type"}, // e.g. OOMKilled, CrashLoopBackOff, NodeNotReady
     )
 
-    // FailuresTotal tracks AIAnalysis failures by reason and sub-reason (BR-HAPI-197)
+    // FailuresTotal tracks AIAnalysis failures by reason and sub-reason (BR-KA-197)
     FailuresTotal = prometheus.NewCounterVec(
         prometheus.CounterOpts{
             Name: "aianalysis_failures_total",

@@ -194,7 +194,7 @@ type EnrichmentResults struct {
     // OWNER CHAIN (DD-WORKFLOW-001 v1.8)
     // ========================================
     // K8s ownership traversal from original signal resource
-    // Used by HolmesGPT-API to validate DetectedLabels applicability
+    // Used by Kubernaut Agent (KA) to validate DetectedLabels applicability
     // Example: Pod → ReplicaSet → Deployment
     // If RCA identifies a resource NOT in this chain, DetectedLabels are excluded from filtering
     // Traversal: Use first `controller: true` ownerReference, inherit namespace
@@ -229,7 +229,7 @@ type EnrichmentResults struct {
 
 // OwnerChainEntry represents a single entry in the K8s ownership chain
 // Used for DetectedLabels validation per DD-WORKFLOW-001 v1.8
-// HolmesGPT-API uses resources_match(a, b) which compares namespace + kind + name
+// Kubernaut Agent (KA) uses resources_match(a, b) which compares namespace + kind + name
 type OwnerChainEntry struct {
     // Namespace of the owner resource
     // Empty for cluster-scoped resources (e.g., Node)
@@ -248,7 +248,7 @@ type OwnerChainEntry struct {
 
 // DetectedLabels contains auto-detected cluster characteristics (V1.0)
 // SignalProcessing populates these automatically from K8s resources
-// HolmesGPT-API uses for (DD-WORKFLOW-001 v1.8 dual-use):
+// Kubernaut Agent (KA) uses for (DD-WORKFLOW-001 v1.8 dual-use):
 //   - LLM Prompt Context: ALWAYS included (helps LLM understand environment)
 //   - Workflow Filtering: CONDITIONAL (only when owner chain validates relationship)
 // Default: EXCLUDE from filtering if relationship cannot be proven (100% safe)

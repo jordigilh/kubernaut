@@ -201,7 +201,7 @@ For environments without internet access (air-gapped, on-prem, classified networ
 - **Ollama** (`provider: "ollama"`): Run any GGUF model locally. Set `endpoint` to the Ollama server URL.
 - **OpenAI-compatible** (`provider: "openai"`): Many on-prem inference servers (vLLM, LocalAI, TGI) expose an OpenAI-compatible API. Set `endpoint` to the server URL.
 
-The LangChainGo `local` provider (subprocess execution) is **not supported** — it violates BR-HAPI-433 security requirements (no shell execution, no subprocess calls).
+The LangChainGo `local` provider (subprocess execution) is **not supported** — it violates the no-shell-execution/no-subprocess-calls security posture established by the Kubernaut Agent (KA) Go rewrite ([Issue #433](https://github.com/jordigilh/kubernaut/issues/433); no formal `BR-HAPI-433`/`BR-KA-433` requirement doc exists under `docs/requirements/` — this reference is corrected [#1806](https://github.com/jordigilh/kubernaut/issues/1806)).
 
 ---
 

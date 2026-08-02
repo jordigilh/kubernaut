@@ -190,8 +190,8 @@ The Security & Access Control layer provides comprehensive authentication, autho
 
 The following audit requirements extend the base audit capabilities for workflow catalog operations:
 
-- **BR-AUDIT-021**: MUST propagate `remediation_id` from HolmesGPT API to Data Storage Service
-- **BR-AUDIT-022**: HolmesGPT API MUST NOT generate audit events (Data Storage responsibility)
+- **BR-AUDIT-021**: MUST propagate `remediation_id` (v2.1+: internal to Kubernaut Agent (KA), which owns discovery and holds `remediationId` as the audit event's `correlationId` directly)
+- **BR-AUDIT-022**: No ad hoc audit generation outside the designated owner (v2.1+: Kubernaut Agent (KA) is the sole authorized generator of `workflow.catalog.*` events, see `BR-AUDIT-021-030-WORKFLOW-SELECTION-AUDIT-TRAIL.md` §9)
 - **BR-AUDIT-023**: Data Storage Service MUST generate audit event for every workflow search
 - **BR-AUDIT-024**: Audit MUST be asynchronous and non-blocking (ADR-038 pattern)
 - **BR-AUDIT-025**: MUST capture complete query metadata in audit events
