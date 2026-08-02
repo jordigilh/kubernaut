@@ -1,6 +1,7 @@
 package e2e_test
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -148,11 +149,92 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 			"expected Tier 2.5 or Tier 3 source, got: %s", src)
 	})
 
-	It("TC-E2E-SEV-05: Tier 3 — No rules", func() {
-		a2aCreateRRAndWait("no-rules-ns", "test-norules-target", "")
-		rr := findRRByTarget("no-rules-ns", "test-norules-target")
-		src := rr.Spec.SignalLabels["severity_source"]
-		Expect(src).To(Equal("llm_triage"), "Tier 3: no rules => pure LLM triage")
+	It("TC-E2E-SEV-05: no grounding evidence at all fails closed (#1839, Tier 3 removed)", func() {
+		// #1839/DD-AF-010: the ungrounded pure-LLM Tier 3 fallback (invoking the
+		// LLM to invent a severity from namespace/kind/name alone, with zero
+		// confirming evidence) has been removed. A resource with no Prometheus
+		// alert or rule coverage at all must now fail RR creation instead of
+		// fabricating a severity.
+		//
+		// Uses the SSE streaming endpoint (message/stream), not the
+		// non-streaming message/send used by a2aCreateRRAndWait above: AF's
+		// launcher runs in adka2a.OutputArtifactPerEvent mode
+		// (pkg/apifrontend/launcher/launcher.go), and kubernaut_remediate's
+		// tool-error explanation is surfaced as an intermediate
+		// metadata.type=reasoning TaskStatusUpdateEvent. Only a streaming
+		// client observes that intermediate event -- a non-streaming
+		// message/send caller only receives the final persisted Task
+		// snapshot, whose terminal Status.Message is nil for a
+		// TaskStateCompleted task (the ADK framework only attaches a message
+		// there for a hard LLM-level error, not a tool error the LLM goes on
+		// to answer normally to).
+		id := fmt.Sprintf("g12-sev-norules-%d", time.Now().UnixNano())
+		prompt := fmt.Sprintf("Create a remediation request for deployment %s in %s namespace", "test-norules-target", "no-rules-ns")
+
+		streamCtx, streamCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer streamCancel()
+		req, err := http.NewRequestWithContext(streamCtx, http.MethodPost, baseURL+"/a2a/invoke",
+			strings.NewReader(a2aMessageStream(id, prompt)))
+		Expect(err).NotTo(HaveOccurred())
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Authorization", "Bearer "+authToken)
+
+		resp, err := httpClient.Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+		var outcomeMsg strings.Builder
+		sc := bufio.NewScanner(resp.Body)
+		sc.Buffer(make([]byte, 64*1024), 1024*1024)
+		for sc.Scan() {
+			line := strings.TrimRight(sc.Text(), "\r")
+			if !strings.HasPrefix(strings.TrimSpace(line), "data:") {
+				continue
+			}
+			data := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
+			if data == "" {
+				continue
+			}
+			var evt map[string]any
+			if jsonErr := json.Unmarshal([]byte(data), &evt); jsonErr != nil {
+				continue
+			}
+			result, _ := evt["result"].(map[string]any)
+			if result == nil {
+				continue
+			}
+			status, _ := result["status"].(map[string]any)
+			if status == nil {
+				continue
+			}
+			msg, _ := status["message"].(map[string]any)
+			if msg == nil {
+				continue
+			}
+			parts, _ := msg["parts"].([]any)
+			for _, p := range parts {
+				part, _ := p.(map[string]any)
+				if text, ok := part["text"].(string); ok {
+					outcomeMsg.WriteString(text)
+				}
+			}
+		}
+
+		Expect(outcomeMsg.String()).To(ContainSubstring("severity"),
+			"agent must explain (via a reasoning event or a terminal task message) that severity could not be determined")
+
+		// No RemediationRequest should be fabricated for this target.
+		Consistently(func(g Gomega) {
+			list := &remediationv1alpha1.RemediationRequestList{}
+			g.Expect(k8sClient.List(context.Background(), list, client.InNamespace(e2eNamespace))).To(Succeed())
+			for i := range list.Items {
+				rr := &list.Items[i]
+				g.Expect(rr.Spec.TargetResource.Name).NotTo(Equal("test-norules-target"),
+					"no RR should be created when severity cannot be grounded (#1839)")
+			}
+		}, 10*time.Second, 2*time.Second).Should(Succeed())
 	})
 
 	It("TC-E2E-SEV-06: User severity hint does not bypass triage pipeline", func() {
