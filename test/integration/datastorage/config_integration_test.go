@@ -21,6 +21,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -32,6 +33,43 @@ import (
 const (
 	passwordTestRedisPassword = "password: test-redis-password"
 )
+
+// configTestBinaryOnce/Path/Err cache the datastorage binary build across all
+// 5 It() specs in "Main Application Config Loading" (per Ginkgo parallel
+// process). CI RCA for run 30723525089 (job 91432164540, Integration
+// (datastorage), 10min timeout cancellation): every spec previously ran its
+// own `go build ./cmd/datastorage` from BeforeEach, so a cold module/build
+// cache (go: downloading ...) meant up to `TEST_PROCS` (=nproc, 4 on
+// ubuntu-latest) concurrent full binary compiles -- each wanting ~4 cores
+// per a local `go build -a` measurement (37s wall/153 CPU-seconds) --
+// oversubscribing the runner's 4 vCPUs. That starved co-scheduled,
+// otherwise-trivial specs in OTHER files (e.g. context_propagation_test.go's
+// IT-DS-042-002, a single already-cancelled-context QueryContext call with
+// no I/O of its own) to the exact same ~224s stall observed in the CI log,
+// confirming resource contention rather than 4 independently slow tests.
+// The binary is immutable across specs (same source, no per-test flags), so
+// building it once per process is safe and removes the redundant compiles.
+var (
+	configTestBinaryOnce sync.Once
+	configTestBinaryPath string
+	configTestBinaryErr  error
+)
+
+func buildConfigTestBinary() (string, error) {
+	configTestBinaryOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "config-integration-binary-*")
+		if err != nil {
+			configTestBinaryErr = fmt.Errorf("failed to create temp dir for datastorage binary: %w", err)
+			return
+		}
+		configTestBinaryPath = filepath.Join(dir, "datastorage")
+		buildCmd := exec.Command("go", "build", "-o", configTestBinaryPath, "../../../cmd/datastorage")
+		if output, err := buildCmd.CombinedOutput(); err != nil {
+			configTestBinaryErr = fmt.Errorf("failed to build datastorage binary: %s: %w", output, err)
+		}
+	})
+	return configTestBinaryPath, configTestBinaryErr
+}
 
 var _ = Describe("Config Integration Tests (ADR-030)", func() {
 	var (
@@ -51,13 +89,8 @@ var _ = Describe("Config Integration Tests (ADR-030)", func() {
 		dbSecretsPath = filepath.Join(tempDir, "db-secrets.yaml")
 		redisSecretsPath = filepath.Join(tempDir, "redis-secrets.yaml")
 
-		// Build the data storage binary
-		binaryPath = filepath.Join(tempDir, "datastorage")
-		buildCmd := exec.Command("go", "build", "-o", binaryPath, "../../../cmd/datastorage")
-		output, err := buildCmd.CombinedOutput()
-		if err != nil {
-			Fail("Failed to build datastorage binary: " + string(output))
-		}
+		binaryPath, err = buildConfigTestBinary()
+		Expect(err).ToNot(HaveOccurred())
 	})
 
 	AfterEach(func() {
