@@ -66,7 +66,7 @@ Support Services:
 └── Context API (8091)          ✅ Documented
 ```
 
-**Documentation Location**: Should be in `docs/services/stateless/effectiveness-monitor/`
+**Documentation Location**: Should be in `docs/services/crd-controllers/07-effectivenessmonitor/`
 
 **Why NOT in existing services?**
 - **NOT in Context API**: Context API provides historical queries and success rates, but does NOT perform detailed effectiveness assessment
@@ -190,14 +190,14 @@ Response: { "success_rate": 0.87, "total_executions": 150 }
    - ⏸️ Metrics endpoint (`/metrics` on port 9090)
 
 3. **Documentation**:
-   - ⏸️ `docs/services/stateless/effectiveness-monitor/overview.md`
-   - ⏸️ `docs/services/stateless/effectiveness-monitor/api-specification.md`
-   - ⏸️ `docs/services/stateless/effectiveness-monitor/security-configuration.md`
-   - ⏸️ `docs/services/stateless/effectiveness-monitor/testing-strategy.md`
-   - ⏸️ `docs/services/stateless/effectiveness-monitor/implementation-checklist.md`
-   - ⏸️ `docs/services/stateless/effectiveness-monitor/integration-points.md`
-   - ⏸️ `docs/services/stateless/effectiveness-monitor/observability-logging.md`
-   - ⏸️ `docs/services/stateless/effectiveness-monitor/README.md`
+   - ⏸️ `docs/services/crd-controllers/07-effectivenessmonitor/overview.md`
+   - ⏸️ `docs/services/crd-controllers/07-effectivenessmonitor/crd-schema.md` (renamed from `api-specification.md`, [#1806](https://github.com/jordigilh/kubernaut/issues/1806))
+   - ⏸️ `docs/services/crd-controllers/07-effectivenessmonitor/security-configuration.md`
+   - ⏸️ `docs/services/crd-controllers/07-effectivenessmonitor/testing-strategy.md`
+   - ⏸️ `docs/services/crd-controllers/07-effectivenessmonitor/implementation-checklist.md`
+   - ⏸️ `docs/services/crd-controllers/07-effectivenessmonitor/integration-points.md`
+   - ⏸️ `docs/services/crd-controllers/07-effectivenessmonitor/observability-logging.md`
+   - ⏸️ `docs/services/crd-controllers/07-effectivenessmonitor/README.md`
 
 4. **Deployment**:
    - ⏸️ Kubernetes manifests (`deploy/effectiveness-monitor-service.yaml`)
@@ -290,7 +290,7 @@ graph LR
 ### **Next Steps**
 
 1. **Create Service Documentation** (2-3 hours):
-   - Directory: `docs/services/stateless/effectiveness-monitor/`
+   - Directory: `docs/services/crd-controllers/07-effectivenessmonitor/`
    - Files: 8 standard files (overview, api-spec, security, testing, etc.)
 
 2. **Create HTTP API Wrapper** (1-2 weeks):

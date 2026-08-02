@@ -413,7 +413,7 @@ if r.needsDetailedWorkflowInfo(rr) {
 - **Detailed Assessment**: [EFFECTIVENESS-MONITOR-CRD-WATCH-ASSESSMENT.md](../EFFECTIVENESS-MONITOR-CRD-WATCH-ASSESSMENT.md)
 - **CRD Schemas**: [CRD_SCHEMAS.md](../CRD_SCHEMAS.md)
 - **Owner Reference Architecture**: [005-owner-reference-architecture.md](./005-owner-reference-architecture.md)
-- **Effectiveness Monitor Overview**: [effectiveness-monitor/overview.md](../../services/stateless/effectiveness-monitor/overview.md)
+- **Effectiveness Monitor Overview**: [effectiveness-monitor/overview.md](../../services/crd-controllers/07-effectivenessmonitor/overview.md)
 - **Multi-CRD Reconciliation**: [MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](../MULTI_CRD_RECONCILIATION_ARCHITECTURE.md)
 
 ---

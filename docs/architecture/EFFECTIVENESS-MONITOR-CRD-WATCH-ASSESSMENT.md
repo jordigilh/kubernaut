@@ -542,7 +542,7 @@ func (r *EffectivenessMonitorReconciler) Reconcile(ctx context.Context, req ctrl
 
 - **CRD Schemas**: `docs/architecture/CRD_SCHEMAS.md`
 - **Owner Reference Architecture**: `docs/architecture/decisions/005-owner-reference-architecture.md`
-- **Effectiveness Monitor Overview**: `docs/services/stateless/effectiveness-monitor/overview.md`
+- **Effectiveness Monitor Overview**: `docs/services/crd-controllers/07-effectivenessmonitor/overview.md`
 - **Multi-CRD Reconciliation**: `docs/architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md`
 - **Sequence Diagrams**: `docs/architecture/effectiveness-monitor-sequence-diagrams.md`
 

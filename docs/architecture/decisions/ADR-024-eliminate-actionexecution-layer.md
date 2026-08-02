@@ -390,7 +390,7 @@ func (r *WorkflowExecutionReconciler) createPipelineRun(
 ## Related Decisions
 
 - **[ADR-023: Tekton from V1](ADR-023-tekton-from-v1.md)** - Updated to remove ActionExecution layer
-- **[Effectiveness Monitor Specification](../../services/stateless/effectiveness-monitor/overview.md)** - Watches RemediationRequest, queries DB
+- **[Effectiveness Monitor Specification](../../services/crd-controllers/07-effectivenessmonitor/overview.md)** - Watches RemediationRequest, queries DB
 
 ---
 
