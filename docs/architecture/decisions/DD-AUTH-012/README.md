@@ -1,6 +1,6 @@
 # DD-AUTH-012: ose-oauth-proxy for SAR-Based REST API Authorization - Document Index
 
-**Status**: ✅ AUTHORITATIVE  
+**Status**: ⚠️ SUPERSEDED by [DD-AUTH-014](../DD-AUTH-014-middleware-based-sar-authentication.md) (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), see note in the core DD document)
 **Last Updated**: January 26, 2026  
 **Category**: Authentication & Authorization
 
@@ -308,13 +308,16 @@ roleRef:
 
 ## Authority
 
-**Status**: ✅ **AUTHORITATIVE**
+**Status**: ⚠️ **SUPERSEDED by [DD-AUTH-014](../DD-AUTH-014-middleware-based-sar-authentication.md)**
 
-This design decision is the **canonical reference** for the technical choice to use OpenShift `ose-oauth-proxy` instead of CNCF `oauth2-proxy` for REST API authorization in Kubernaut services.
+This design decision was the canonical reference for the (now-removed) `ose-oauth-proxy` sidecar approach.
+DD-AUTH-014 replaced it with an in-process Go middleware performing the same TokenReview/SAR checks
+without a sidecar. Retained for historical context on why `oauth2-proxy` was rejected.
 
 **Supersedes**: No previous authoritative document existed for oauth-proxy selection.
+**Superseded by**: [DD-AUTH-014](../DD-AUTH-014-middleware-based-sar-authentication.md) (sidecar removed; see supersession note in the core DD document)
 
-**Referenced By**:
+**Referenced By** *(deployment references below are now stale — neither deployment has the sidecar anymore)*:
 - DataStorage deployment (`deploy/data-storage/deployment.yaml`)
 - Kubernaut Agent (KA) deployment (`deploy/kubernaut-agent/06-deployment.yaml`)
 - DD-AUTH-011 (Granular RBAC strategy)

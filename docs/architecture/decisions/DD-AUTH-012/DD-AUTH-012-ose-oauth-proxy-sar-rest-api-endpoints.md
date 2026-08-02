@@ -1,10 +1,21 @@
 # DD-AUTH-012: ose-oauth-proxy for SAR-Based REST API Authorization
 
 **Date**: January 26, 2026
-**Status**: ✅ **IMPLEMENTED**
+**Status**: ⚠️ **SUPERSEDED by [DD-AUTH-014](../DD-AUTH-014-middleware-based-sar-authentication.md)** (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806))
 **Version**: 1.0
-**Authority**: AUTHORITATIVE - Technical Architecture Decision
-**Related**: DD-AUTH-009 (oauth-proxy migration), DD-AUTH-011 (Granular RBAC), DD-AUTH-004 (DataStorage auth), DD-AUTH-006 (Kubernaut Agent (KA) auth)
+**Authority**: Historical — see supersession note below
+**Related**: DD-AUTH-009 (oauth-proxy migration), DD-AUTH-011 (Granular RBAC, also superseded), DD-AUTH-004 (DataStorage auth), DD-AUTH-006 (Kubernaut Agent (KA) auth)
+
+> **⚠️ SUPERSEDED**: DD-AUTH-014's own "Phase 6: Documentation & Rollout" checklist explicitly called for
+> this document to be marked superseded — that step was never completed until now. The `ose-oauth-proxy`
+> sidecar this entire document is about has been **removed** from both DataStorage and KA deployments.
+> Both services now authenticate/authorize via an **in-process Go middleware** that calls the
+> TokenReview/SubjectAccessReview APIs directly — no sidecar container, no `--openshift-sar` flag.
+> Confirmed in `deploy/data-storage/deployment.yaml`: *"DD-AUTH-014: Middleware-Based
+> Authentication/Authorization — No oauth-proxy sidecar - auth handled in DataStorage middleware. Flow:
+> Client → DataStorage:8081 (direct)"*. Read this document only for historical context on why
+> `oauth2-proxy` was rejected (still relevant background); treat all sidecar-specific configuration,
+> deployment YAML, and validation commands below as obsolete.
 
 ---
 
