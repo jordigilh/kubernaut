@@ -2,6 +2,7 @@ package apifrontend_test
 
 import (
 	"context"
+	"errors"
 	"os"
 
 	"github.com/go-logr/logr"
@@ -33,6 +34,44 @@ func (n *noopPromClientIT) InstantQuery(_ context.Context, _ string) (*prom.Quer
 	return &prom.QueryResult{}, nil
 }
 
+// alwaysFiringPromClientIT returns a single cluster-scoped firing alert (no
+// namespace/kind/name labels), so it label-matches any target resource. See
+// the tools_test package's alwaysFiringPromClient for the full rationale.
+//
+// #1839/DD-AF-010: a nil Triager now fails closed. IT tests that don't care
+// about the specific severity value but need HandleCreateRR to succeed use
+// this fixture via defaultTestTriagerIT().
+type alwaysFiringPromClientIT struct{}
+
+func (a *alwaysFiringPromClientIT) GetAlerts(_ context.Context) ([]prom.Alert, error) {
+	return []prom.Alert{{State: "firing", Labels: map[string]string{"alertname": "TestDefaultAlert", "severity": "warning"}}}, nil
+}
+func (a *alwaysFiringPromClientIT) GetRules(_ context.Context) ([]prom.RuleGroup, error) {
+	return nil, nil
+}
+func (a *alwaysFiringPromClientIT) InstantQuery(_ context.Context, _ string) (*prom.QueryResult, error) {
+	return &prom.QueryResult{}, nil
+}
+
+func defaultTestTriagerIT() *severity.Triager {
+	return severity.NewTriager(&alwaysFiringPromClientIT{}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+}
+
+// unnamedAlertTestTriagerIT resolves a severity from a resource-matching
+// firing alert with no "alertname" label, so signalNameFromTriage() falls
+// through to "" -- for IT tests proving the signalName K8s-events/"unknown"
+// fallback still triggers even though severity triage itself succeeds.
+func unnamedAlertTestTriagerIT(namespace, kind, name string) *severity.Triager {
+	mockProm := &podCorrelationPromClient{
+		alerts: []prom.Alert{
+			{State: "firing", Labels: map[string]string{
+				"namespace": namespace, "kind": kind, "name": name, "severity": "warning",
+			}},
+		},
+	}
+	return severity.NewTriager(mockProm, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+}
+
 var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 	rrGVR := schema.GroupVersionResource{Group: "kubernaut.ai", Version: "v1alpha1", Resource: "remediationrequests"}
 	eventsGVR := schema.GroupVersionResource{Group: "", Version: "v1", Resource: "events"}
@@ -56,7 +95,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-w01",
 			Description: "IT wiring test",
-		}, "it-user", nil, nil)
+		}, "it-user", defaultTestTriagerIT(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 		Expect(result.AlreadyExists).To(BeFalse())
@@ -83,7 +122,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-w02",
 			Description: "signal source check",
-		}, "it-user", nil, nil)
+		}, "it-user", defaultTestTriagerIT(), nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
@@ -105,7 +144,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-w03",
 			Description: "signal name check",
-		}, "it-user", nil, nil)
+		}, "it-user", unnamedAlertTestTriagerIT("default", "Deployment", "web-w03"), nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
@@ -113,7 +152,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 
 		signalName, _, _ := unstructured.NestedString(created.Object, "spec", "signalName")
 		Expect(signalName).To(Equal("unknown"),
-			"with no triager and no events, fallback should be unknown")
+			"with an unnamed triage result and no events, fallback should be unknown")
 
 		DeferCleanup(func() {
 			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
@@ -153,7 +192,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-w03b",
 			Description: "OOM event in envtest",
-		}, "it-user", nil, nil)
+		}, "it-user", unnamedAlertTestTriagerIT("default", "Deployment", "web-w03b"), nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
@@ -171,7 +210,18 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		ctx := context.Background()
 		noopLLM := severity.NewNoopLLMTriager(logr.Discard())
 		cfg := severity.DefaultConfig()
-		triager := severity.NewTriager(&noopPromClientIT{}, noopLLM, cfg, logr.Discard())
+		// #1839: Tier 3 (pure-LLM, zero-evidence) fallback was removed, so
+		// this must supply a real firing alert to reach a resolvable
+		// severity through the production pipeline -- an ungrounded call
+		// now correctly fails closed (see IT-AF-1839-001 below).
+		promClient := &podCorrelationPromClient{
+			alerts: []prom.Alert{
+				{State: "firing", Labels: map[string]string{
+					"alertname": "HighErrorRate", "namespace": "default", "kind": "Deployment", "name": "web-w04", "severity": "critical",
+				}},
+			},
+		}
+		triager := severity.NewTriager(promClient, noopLLM, cfg, logr.Discard())
 
 		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
 			Namespace:   "default",
@@ -181,11 +231,36 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		}, "it-user", triager, nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
-		Expect(result.Severity).NotTo(BeEmpty())
+		Expect(result.Severity).To(Equal("critical"), "severity must come from the real firing alert via the production Triager wiring")
 
 		DeferCleanup(func() {
 			_ = dynamicClient.Resource(rrGVR).Namespace("default").Delete(ctx, result.RRID, metav1.DeleteOptions{})
 		})
+	})
+
+	It("IT-AF-1839-001: HandleCreateRR fails closed via envtest when no alert or rule correlates to the resource", func() {
+		ctx := context.Background()
+		noopLLM := severity.NewNoopLLMTriager(logr.Discard())
+		cfg := severity.DefaultConfig()
+		triager := severity.NewTriager(&noopPromClientIT{}, noopLLM, cfg, logr.Discard())
+
+		result, err := tools.HandleCreateRR(ctx, k8sClient, dynamicClient, "default", &tools.CreateRRArgs{
+			Namespace:   "default",
+			Kind:        "Deployment",
+			Name:        "web-1839-nogrounding",
+			Description: "no alert or rule exists for this resource",
+		}, "it-user", triager, nil)
+		Expect(errors.Is(err, severity.ErrSeverityUndetermined)).To(BeTrue(),
+			"#1839: production wiring must propagate ErrSeverityUndetermined, not fabricate a severity")
+		Expect(result.RRID).To(BeEmpty())
+
+		list, listErr := dynamicClient.Resource(rrGVR).Namespace("default").List(ctx, metav1.ListOptions{})
+		Expect(listErr).NotTo(HaveOccurred())
+		for _, item := range list.Items {
+			name, _, _ := unstructured.NestedString(item.Object, "spec", "targetResource", "name")
+			Expect(name).NotTo(Equal("web-1839-nogrounding"),
+				"no RemediationRequest should be created in envtest when severity cannot be grounded")
+		}
 	})
 
 	It("IT-AF-1292-W01: envtest creates RR in controllerNS with targetResource in workloadNS (BR-PLATFORM-057)", func() {
@@ -210,7 +285,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-1292-w01",
 			Description: "ADR-057 namespace split IT",
-		}, "it-user", nil, nil)
+		}, "it-user", defaultTestTriagerIT(), nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 
@@ -267,7 +342,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-w06",
 			Description: "audit IT",
-		}, "audit-user", nil, auditRecorder)
+		}, "audit-user", defaultTestTriagerIT(), auditRecorder)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.AlreadyExists).To(BeFalse())
 

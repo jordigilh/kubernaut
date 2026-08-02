@@ -36,7 +36,7 @@ func TestAnthropicTriager_ClassifyHappyPath(t *testing.T) {
 		Model:    "claude-sonnet-4-6",
 	})
 
-	result, err := triager.TriagePure(context.Background(), TriageInput{Description: "HighCPU pod restart loop"})
+	result, err := triager.TriageWithRules(context.Background(), nil, TriageInput{Description: "HighCPU pod restart loop"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestAnthropicTriager_ClassifyErrorPath(t *testing.T) {
 		Model:    "claude-sonnet-4-6",
 	})
 
-	_, err := triager.TriagePure(context.Background(), TriageInput{Description: "HighCPU"})
+	_, err := triager.TriageWithRules(context.Background(), nil, TriageInput{Description: "HighCPU"})
 	if err == nil {
 		t.Fatal("expected error from failed Anthropic call")
 	}
@@ -73,7 +73,7 @@ func TestAnthropicTriager_AmbiguousResponse(t *testing.T) {
 		Model:    "claude-sonnet-4-6",
 	})
 
-	result, err := triager.TriagePure(context.Background(), TriageInput{Description: "Some alert"})
+	result, err := triager.TriageWithRules(context.Background(), nil, TriageInput{Description: "Some alert"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestAnthropicTriager_EmptyResponse(t *testing.T) {
 		Model:    "claude-sonnet-4-6",
 	})
 
-	_, err := triager.TriagePure(context.Background(), TriageInput{Description: "Something"})
+	_, err := triager.TriageWithRules(context.Background(), nil, TriageInput{Description: "Something"})
 	if err == nil {
 		t.Fatal("expected error for empty response")
 	}

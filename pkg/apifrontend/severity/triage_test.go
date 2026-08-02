@@ -181,9 +181,9 @@ var _ = Describe("Triage Orchestrator", func() {
 				Labels:      map[string]string{"kind": "Deployment", "name": "web-api"},
 			}
 			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
-			result, err := triager.Triage(context.Background(), emptyNSInput)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Source).NotTo(Equal(severity.SourceNSFiringAlert), "should not match namespace-scoped when targetNamespace is empty")
+			_, err := triager.Triage(context.Background(), emptyNSInput)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined),
+				"should not match namespace-scoped when targetNamespace is empty, and #1839 fails closed rather than falling back to an ungrounded LLM guess")
 		})
 
 		It("UT-AF-1369-008: pending namespace-scoped alert returns ns_pending_alert source", func() {
@@ -325,7 +325,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			}
 			cfg := defaultCfg
 			cfg.MaxQueriesPerCall = 10
-			triager := severity.NewTriager(mockProm, &mockLLM{pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage}}, cfg, logr.Discard())
+			triager := severity.NewTriager(mockProm, &mockLLM{}, cfg, logr.Discard())
 			_, err := triager.Triage(context.Background(), defaultInput)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queryCount).To(BeNumerically("<=", 10))
@@ -358,36 +358,19 @@ var _ = Describe("Triage Orchestrator", func() {
 		})
 	})
 
-	Describe("Tier 3: Pure LLM Fallback", func() {
-		It("UT-AF-T-031: no matching rules skips 2.5, falls through to Tier 3", func() {
+	Describe("No Grounded Signal — Fail Closed (#1839)", func() {
+		It("UT-AF-1839-001: no matching rules skips 2.5, fails closed with ErrSeverityUndetermined (no LLM invoked)", func() {
 			mockProm := &mockPromClient{
 				alerts:     []prom.Alert{},
 				ruleGroups: []prom.RuleGroup{},
 			}
-			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
-			}
+			mockLLM := &mockLLM{}
 			triager := severity.NewTriager(mockProm, mockLLM, defaultCfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), defaultInput)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Source).To(Equal(severity.SourceLLMTriage))
-			Expect(mockLLM.pureCalled).To(BeTrue())
-			Expect(mockLLM.rulesCalled).To(BeFalse())
-		})
-
-		It("UT-AF-T-032: pure LLM returns severity and source=llm_triage", func() {
-			mockProm := &mockPromClient{
-				alerts:     []prom.Alert{},
-				ruleGroups: []prom.RuleGroup{},
-			}
-			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "info", Source: severity.SourceLLMTriage},
-			}
-			triager := severity.NewTriager(mockProm, mockLLM, defaultCfg, logr.Discard())
-			result, err := triager.Triage(context.Background(), defaultInput)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("info"))
-			Expect(result.Source).To(Equal(severity.SourceLLMTriage))
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined))
+			Expect(result.Severity).To(BeEmpty())
+			Expect(mockLLM.rulesCalled).To(BeFalse(),
+				"#1839: removed Tier 3 must never invoke the LLM with zero grounding evidence")
 		})
 	})
 
@@ -414,18 +397,15 @@ var _ = Describe("Triage Orchestrator", func() {
 			Expect(result.Source).To(Equal(severity.SourceLLMRuleInform))
 		})
 
-		It("UT-AF-T-034: all tiers miss → Tier 3", func() {
+		It("UT-AF-1839-002: all tiers miss → fails closed, no RemediationRequest severity is fabricated", func() {
 			mockProm := &mockPromClient{
 				alerts:     []prom.Alert{},
 				ruleGroups: []prom.RuleGroup{},
 			}
-			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
-			}
-			triager := severity.NewTriager(mockProm, mockLLM, defaultCfg, logr.Discard())
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), defaultInput)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Source).To(Equal(severity.SourceLLMTriage))
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined))
+			Expect(result.Severity).To(BeEmpty())
 		})
 	})
 
@@ -475,27 +455,20 @@ var _ = Describe("Triage Orchestrator", func() {
 			Expect(result.Source).To(Equal(severity.SourcePendingAlert))
 		})
 
-		It("UT-AF-T-038: Prometheus error at all tiers falls to Tier 3 LLM", func() {
+		It("UT-AF-T-038: Prometheus error at all tiers fails closed (#1839, no ungrounded LLM fallback)", func() {
 			mockProm := &mockPromClient{
 				alertsErr: errors.New("connection refused"),
 				rulesErr:  errors.New("connection refused"),
 			}
-			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
-			}
-			triager := severity.NewTriager(mockProm, mockLLM, defaultCfg, logr.Discard())
-			result, err := triager.Triage(context.Background(), defaultInput)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Source).To(Equal(severity.SourceLLMTriage))
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined))
 		})
 	})
 
 	Describe("Edge Cases", func() {
-		It("UT-AF-T-043: empty resource labels skips Prometheus, goes to Tier 3", func() {
+		It("UT-AF-T-043: empty resource labels skips Prometheus, fails closed (#1839)", func() {
 			mockProm := &mockPromClient{}
-			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
-			}
 			input := severity.TriageInput{
 				Namespace:   "prod",
 				Kind:        "Deployment",
@@ -503,10 +476,9 @@ var _ = Describe("Triage Orchestrator", func() {
 				Description: "issue",
 				Labels:      map[string]string{},
 			}
-			triager := severity.NewTriager(mockProm, mockLLM, defaultCfg, logr.Discard())
-			result, err := triager.Triage(context.Background(), input)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Source).To(Equal(severity.SourceLLMTriage))
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			_, err := triager.Triage(context.Background(), input)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined))
 		})
 
 		It("UT-AF-T-044: > 100 rules bounded to MaxRulesEvaluated", func() {
@@ -529,7 +501,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			cfg := defaultCfg
 			cfg.MaxRulesEvaluated = 100
 			cfg.MaxQueriesPerCall = 100
-			triager := severity.NewTriager(mockProm, &mockLLM{pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage}}, cfg, logr.Discard())
+			triager := severity.NewTriager(mockProm, &mockLLM{}, cfg, logr.Discard())
 			_, err := triager.Triage(context.Background(), defaultInput)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(queryCount).To(BeNumerically("<=", 100))
@@ -565,29 +537,45 @@ var _ = Describe("Triage Orchestrator", func() {
 			}).To(Panic())
 		})
 
-		It("UT-AF-T-048: Tier 3 LLM error propagates instead of defaulting", func() {
+		It("UT-AF-T-048: Tier 2.5 LLM error falls through to fail-closed rather than defaulting (#1839)", func() {
 			mockProm := &mockPromClient{
-				alerts:     []prom.Alert{},
-				ruleGroups: []prom.RuleGroup{},
+				alerts: []prom.Alert{},
+				ruleGroups: []prom.RuleGroup{
+					{
+						Name: "test",
+						Rules: []prom.Rule{
+							{Name: "NoDataRule", Query: `rate(requests{namespace="prod"}[5m])`, State: "inactive", Labels: map[string]string{"severity": "high"}},
+						},
+					},
+				},
+				queryResult: &prom.QueryResult{Samples: []prom.Sample{}},
 			}
 			llm := &mockLLM{
-				pureErr: errors.New("LLM unavailable"),
+				ruleErr: errors.New("LLM unavailable"),
 			}
 			triager := severity.NewTriager(mockProm, llm, defaultCfg, logr.Discard())
 			_, err := triager.Triage(context.Background(), defaultInput)
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("tier 3 LLM triage failed"))
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined),
+				"a Tier 2.5 LLM error is a tier miss (not fatal on its own), but with Tier 3 removed there is nothing left to fall back to")
 		})
 	})
 
 	Describe("Confidence Threshold", func() {
-		It("UT-AF-T-051: LLM confidence below threshold downgrades to warning (Tier 3)", func() {
+		It("UT-AF-T-051: LLM confidence below threshold downgrades to warning (Tier 2.5)", func() {
 			mockProm := &mockPromClient{
-				alerts:     []prom.Alert{},
-				ruleGroups: []prom.RuleGroup{},
+				alerts: []prom.Alert{},
+				ruleGroups: []prom.RuleGroup{
+					{
+						Name: "test",
+						Rules: []prom.Rule{
+							{Name: "InactiveRule", Query: `up{namespace="prod"}`, State: "inactive", Labels: map[string]string{"severity": "high"}},
+						},
+					},
+				},
+				queryResult: &prom.QueryResult{Samples: []prom.Sample{}},
 			}
 			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "critical", Source: severity.SourceLLMTriage, Confidence: 0.4},
+				ruleResult: severity.TriageResult{Severity: "critical", Source: severity.SourceLLMRuleInform, Confidence: 0.4},
 			}
 			cfg := defaultCfg
 			cfg.LLMConfidence = 0.7
@@ -595,16 +583,24 @@ var _ = Describe("Triage Orchestrator", func() {
 			result, err := triager.Triage(context.Background(), defaultInput)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Severity).To(Equal("warning"))
-			Expect(result.Source).To(Equal(severity.SourceLLMTriage))
+			Expect(result.Source).To(Equal(severity.SourceLLMRuleInform))
 		})
 
-		It("UT-AF-T-051b: LLM confidence above threshold keeps original severity", func() {
+		It("UT-AF-T-051b: LLM confidence above threshold keeps original severity (Tier 2.5)", func() {
 			mockProm := &mockPromClient{
-				alerts:     []prom.Alert{},
-				ruleGroups: []prom.RuleGroup{},
+				alerts: []prom.Alert{},
+				ruleGroups: []prom.RuleGroup{
+					{
+						Name: "test",
+						Rules: []prom.Rule{
+							{Name: "InactiveRule", Query: `up{namespace="prod"}`, State: "inactive", Labels: map[string]string{"severity": "high"}},
+						},
+					},
+				},
+				queryResult: &prom.QueryResult{Samples: []prom.Sample{}},
 			}
 			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "critical", Source: severity.SourceLLMTriage, Confidence: 0.9},
+				ruleResult: severity.TriageResult{Severity: "critical", Source: severity.SourceLLMRuleInform, Confidence: 0.9},
 			}
 			cfg := defaultCfg
 			cfg.LLMConfidence = 0.7
@@ -639,13 +635,21 @@ var _ = Describe("Triage Orchestrator", func() {
 			Expect(result.Source).To(Equal(severity.SourceLLMRuleInform))
 		})
 
-		It("UT-AF-T-051d: zero confidence skips threshold check (backward compat)", func() {
+		It("UT-AF-T-051d: zero confidence skips threshold check (backward compat, Tier 2.5)", func() {
 			mockProm := &mockPromClient{
-				alerts:     []prom.Alert{},
-				ruleGroups: []prom.RuleGroup{},
+				alerts: []prom.Alert{},
+				ruleGroups: []prom.RuleGroup{
+					{
+						Name: "test",
+						Rules: []prom.Rule{
+							{Name: "InactiveRule", Query: `up{namespace="prod"}`, State: "inactive", Labels: map[string]string{"severity": "high"}},
+						},
+					},
+				},
+				queryResult: &prom.QueryResult{Samples: []prom.Sample{}},
 			}
 			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "high", Source: severity.SourceLLMTriage, Confidence: 0},
+				ruleResult: severity.TriageResult{Severity: "high", Source: severity.SourceLLMRuleInform, Confidence: 0},
 			}
 			cfg := defaultCfg
 			cfg.LLMConfidence = 0.7
@@ -730,9 +734,6 @@ type mockLLM struct {
 	ruleResult  severity.TriageResult
 	ruleErr     error
 	rulesCalled bool
-	pureResult  severity.TriageResult
-	pureErr     error
-	pureCalled  bool
 }
 
 func (m *mockLLM) TriageWithRules(_ context.Context, _ []prom.Rule, _ severity.TriageInput) (severity.TriageResult, error) {
@@ -740,11 +741,4 @@ func (m *mockLLM) TriageWithRules(_ context.Context, _ []prom.Rule, _ severity.T
 	defer m.mu.Unlock()
 	m.rulesCalled = true
 	return m.ruleResult, m.ruleErr
-}
-
-func (m *mockLLM) TriagePure(_ context.Context, _ severity.TriageInput) (severity.TriageResult, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.pureCalled = true
-	return m.pureResult, m.pureErr
 }

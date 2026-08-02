@@ -151,7 +151,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					Kind:       "Deployment",
 					Name:       "web-app",
 				},
-				nil, nil, nil, true, nil, "", nil, nil,
+				nil, nil, nil, true, nil, "", nil, defaultTestTriager(),
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-int-001"))

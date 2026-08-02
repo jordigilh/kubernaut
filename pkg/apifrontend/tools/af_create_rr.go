@@ -96,8 +96,15 @@ func checkExistingRRByFingerprint(ctx context.Context, client crclient.Client, c
 // controllerNS is where the RR CRD is placed (metadata.namespace) — injected at
 // wiring time from AF's deployment context (ADR-057).
 // args.Namespace is the workload namespace where the target resource lives — provided
-// by the LLM. Severity is resolved via the triage pipeline when a triager is
-// available, otherwise defaults to "warning".
+// by the LLM. Severity is resolved via the triage pipeline.
+//
+// #1839/DD-AF-010: a nil triager (severityTriage.enabled=false, i.e. no
+// Prometheus wired) fails closed with ErrSeverityUndetermined -- the same
+// error used when a configured Triager finds no correlating evidence. A
+// silent hardcoded "warning" default here would be the exact "fabrication"
+// DD-AF-010 already rejected as Alternative B when removing Tier 3 -- an
+// ungrounded severity is ungrounded whether it comes from an LLM guess or a
+// constant.
 func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynamic.Interface, controllerNS string, args *CreateRRArgs, username string, triager *severity.Triager, auditor audit.Emitter) (CreateRRResult, error) {
 	if client == nil {
 		return CreateRRResult{}, ErrK8sUnavailable
@@ -130,25 +137,31 @@ func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynam
 		args.Description = args.Description[:maxDescriptionLen]
 	}
 
-	resolvedSeverity := "warning"
-	var triageResult *severity.TriageResult
-	if triager != nil {
-		input := severity.TriageInput{
-			Namespace:   args.Namespace,
-			Kind:        args.Kind,
-			Name:        args.Name,
-			Description: args.Description,
-			Labels:      map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
-		}
-		result, err := triager.Triage(ctx, input)
-		if err != nil {
-			return CreateRRResult{}, fmt.Errorf("severity triage failed: %w", err)
-		}
-		if result.Severity != "" {
-			resolvedSeverity = result.Severity
-			triageResult = &result
-		}
+	// #1839/DD-AF-010: severity must come from grounded evidence (a real
+	// Prometheus alert or rule) or the request fails closed. A missing
+	// Triager (severityTriage disabled) or an empty result with no error
+	// (e.g. Config.Enabled=false) used to silently default to "warning" --
+	// the exact ungrounded fabrication DD-AF-010 rejected when removing the
+	// pipeline's own Tier 3 pure-LLM fallback.
+	if triager == nil {
+		return CreateRRResult{}, fmt.Errorf("severity triage not configured: %w", severity.ErrSeverityUndetermined)
 	}
+	input := severity.TriageInput{
+		Namespace:   args.Namespace,
+		Kind:        args.Kind,
+		Name:        args.Name,
+		Description: args.Description,
+		Labels:      map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
+	}
+	triageOutcome, err := triager.Triage(ctx, input)
+	if err != nil {
+		return CreateRRResult{}, fmt.Errorf("severity triage failed: %w", err)
+	}
+	if triageOutcome.Severity == "" {
+		return CreateRRResult{}, fmt.Errorf("severity triage returned no result: %w", severity.ErrSeverityUndetermined)
+	}
+	resolvedSeverity := triageOutcome.Severity
+	triageResult := &triageOutcome
 
 	signalName := args.SignalNameOverride
 	if signalName == "" {

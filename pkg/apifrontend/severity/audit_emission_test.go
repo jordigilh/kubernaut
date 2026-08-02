@@ -92,7 +92,6 @@ var _ = Describe("Audit event emission – severity triage (PR2 wiring)", func()
 		}
 		failingLLM := &mockLLM{
 			ruleErr: context.DeadlineExceeded,
-			pureErr: context.DeadlineExceeded,
 		}
 
 		triager := severity.NewTriager(failingProm, failingLLM, cfg, logr.Discard(), severity.WithAuditor(spy))

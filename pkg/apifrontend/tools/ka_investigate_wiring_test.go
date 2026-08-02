@@ -268,10 +268,6 @@ func (n *noopLLMForWiring) TriageWithRules(_ context.Context, _ []prom.Rule, _ s
 	return severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage}, nil
 }
 
-func (n *noopLLMForWiring) TriagePure(_ context.Context, _ severity.TriageInput) (severity.TriageResult, error) {
-	return severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage}, nil
-}
-
 type auditSpy struct {
 	events []*audit.Event
 }

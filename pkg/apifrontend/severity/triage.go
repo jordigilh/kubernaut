@@ -2,7 +2,7 @@ package severity
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
 	"github.com/go-logr/logr"
 
@@ -10,10 +10,24 @@ import (
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 )
 
+// ErrSeverityUndetermined is returned when no real Prometheus alert or rule
+// correlates to the investigated resource (Tier 1/1.5/2/2.5 all miss).
+//
+// #1839: this used to fall through to a "Tier 3" pure-LLM classification
+// that asked the model to invent a severity from namespace/kind/name/
+// description alone -- zero confirming evidence. That value fed directly
+// into RemediationRequest.Spec.Severity (with SignalType "alert" hardcoded
+// regardless of tier, making it indistinguishable from a real
+// Alertmanager-sourced signal) and drove KA's workflow-catalog severity
+// filter. An LLM has no grounds to reconstruct alert semantics that only
+// exist in real, user-authored Prometheus rules, so a wrong guess could
+// steer remediation toward the wrong workflow. Failing closed instead of
+// guessing is the fix; see DD-AF-010.
+var ErrSeverityUndetermined = errors.New("cannot determine severity: no active alert or prometheus rule correlates to this resource")
+
 // LLMTriager defines the interface for LLM-based severity classification.
 type LLMTriager interface {
 	TriageWithRules(ctx context.Context, rules []prom.Rule, input TriageInput) (TriageResult, error)
-	TriagePure(ctx context.Context, input TriageInput) (TriageResult, error)
 }
 
 // Config holds configuration for the triage pipeline.
@@ -62,10 +76,11 @@ func WithPodResolver(r PodResolver) TriagerOption {
 }
 
 // NewTriager creates a new Triager instance.
-// Panics if llm is nil — the pipeline requires an LLM fallback to guarantee a result.
+// Panics if llm is nil — Tier 2.5 requires an LLM to interpret a correlated
+// but not-currently-true Prometheus rule.
 func NewTriager(promClient prom.Client, llm LLMTriager, cfg Config, logger logr.Logger, opts ...TriagerOption) *Triager {
 	if llm == nil {
-		panic("NewTriager: LLMTriager must not be nil — the triage pipeline requires an LLM fallback")
+		panic("NewTriager: LLMTriager must not be nil — Tier 2.5 requires an LLM to interpret rule context")
 	}
 	if logger.GetSink() == nil {
 		logger = logr.Discard()
@@ -83,8 +98,10 @@ func NewTriager(promClient prom.Client, llm LLMTriager, cfg Config, logger logr.
 	return t
 }
 
-// Triage runs the severity triage pipeline: Tier 1 -> 1.5 -> 2 -> 2.5/3.
-// Returns a zero TriageResult if triage is disabled.
+// Triage runs the severity triage pipeline: Tier 1 -> 1.5 -> 2 -> 2.5.
+// Returns a zero TriageResult if triage is disabled. Returns
+// ErrSeverityUndetermined if no real alert or rule correlates to the
+// resource (#1839 -- no ungrounded LLM fallback).
 func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, error) {
 	if !t.config.Enabled {
 		return TriageResult{}, nil
@@ -179,8 +196,10 @@ func (t *Triager) triagePipeline(ctx context.Context, input TriageInput) (Triage
 		}
 	}
 
-	// Tier 3: Pure LLM fallback
-	return t.runTier3(ctx, input)
+	// #1839: no real alert or rule correlates to this resource -- fail
+	// closed rather than asking the LLM to invent a severity from zero
+	// evidence (removed Tier 3; see ErrSeverityUndetermined).
+	return TriageResult{}, ErrSeverityUndetermined
 }
 
 func (t *Triager) runTier1(ctx context.Context, input TriageInput) (TriageResult, bool) {
@@ -371,20 +390,6 @@ func (t *Triager) runTier25(ctx context.Context, input TriageInput, matchedRules
 		result.Severity = "warning"
 	}
 	return result, true
-}
-
-func (t *Triager) runTier3(ctx context.Context, input TriageInput) (TriageResult, error) {
-	result, err := t.llm.TriagePure(ctx, input)
-	if err != nil {
-		return TriageResult{}, fmt.Errorf("tier 3 LLM triage failed: %w", err)
-	}
-	result.Source = SourceLLMTriage
-	if result.Confidence > 0 && result.Confidence < t.config.LLMConfidence {
-		t.logger.Info("LLM confidence below threshold, defaulting to warning",
-			"tier", "3", "confidence", result.Confidence, "threshold", t.config.LLMConfidence)
-		result.Severity = "warning"
-	}
-	return result, nil
 }
 
 func (t *Triager) fetchRules(ctx context.Context) ([]prom.RuleGroup, error) {

@@ -73,13 +73,6 @@ func (a *AnthropicTriager) TriageWithRules(ctx context.Context, rules []prom.Rul
 	prompt := BuildTriagePrompt(input, rules)
 	return a.classify(ctx, prompt)
 }
-
-// TriagePure classifies severity using Anthropic LLM without rule context.
-func (a *AnthropicTriager) TriagePure(ctx context.Context, input TriageInput) (TriageResult, error) {
-	prompt := BuildTriagePrompt(input, nil)
-	return a.classify(ctx, prompt)
-}
-
 func (a *AnthropicTriager) classify(ctx context.Context, prompt string) (TriageResult, error) {
 	params := anthropic.MessageNewParams{
 		Model:     anthropic.Model(a.model),
