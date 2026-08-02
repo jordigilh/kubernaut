@@ -56,6 +56,10 @@ apifrontend:
             userRequestsPerSec: 100
         rbac:
             sarCacheTTL: 30s
+        resilience:
+            prometheus:
+                connectTimeout: 5s
+                requestTimeout: 10s
         server:
             healthPort: 8081
             httpPort: 8443
@@ -352,6 +356,9 @@ networkPolicies:
         alertManagerPort: 9093
         namespace: ""
         prometheusPort: 9090
+    prometheus:
+        cidr: 0.0.0.0/0
+        port: 9090
 notification:
     logging:
         level: INFO

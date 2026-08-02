@@ -69,6 +69,16 @@ spec:
     planning/reasoning -- yet the NetworkPolicy never allowed this egress,
     silently dropping every LLM call once auth got past the OIDC 401 fix. */}}
     {{- include "kubernaut.np.llmEgress" . | nindent 4 }}
+    {{- /* Issue #1839 gap found: apifrontend.config.severityTriage's direct
+    Prometheus calls (GetAlerts/GetRules/InstantQuery) never had a matching
+    egress rule -- see kubernaut.np.prometheusEgress's doc comment for the
+    full RCA. Gated on the same condition that renders the severityTriage
+    config block itself (monitoring.prometheus.enabled), since a Prometheus
+    egress rule is meaningless when severity triage has no Prometheus URL to
+    call in the first place. */}}
+    {{- if include "kubernaut.monitoring.prometheus.enabled" . }}
+    {{- include "kubernaut.np.prometheusEgress" . | nindent 4 }}
+    {{- end }}
     {{- if $v.config.auth.replayCache.enabled }}
     # GAP-08 (#1505): JWT replay-cache egress to Valkey.
     # DD-PLATFORM-006 DA8: Valkey is TLS-only on 6380.

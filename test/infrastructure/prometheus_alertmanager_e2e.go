@@ -163,6 +163,34 @@ data:
         annotations:
           summary: "Container memory exceeds limit"
           description: "Pod {{ $labels.pod }} using {{ $value | humanizePercentage }} of memory limit"
+  af-severity-grounding.yml: |
+    # #1839: AF's severity-triage pipeline (pkg/apifrontend/severity) correlates
+    # a kubernaut_remediate target via namespace/kind/name labels (see
+    # resolveCreateRRSeverity's TriageInput.Labels), not via the real cAdvisor
+    # "pod" label the MemoryExceedsLimit rule above uses -- so that rule can
+    # never ground severity for AF-tool-driven RR creation, regardless of its
+    # namespace scope. Every fullpipeline test that calls kubernaut_remediate
+    # against the shared memory-eater Deployment fixture (fleet cluster_id,
+    # interactive/autonomous/streaming, cross-namespace placement -- none of
+    # which are testing severity triage itself) needs a real, always-present
+    # rule correlating on namespace/kind/name so Tier 2 finds a match and, since
+    # this synthetic metric is never actually emitted, falls through to Tier
+    # 2.5 (LLM classification informed by real rule context) rather than the
+    # removed Tier 3 (LLM classification from zero evidence) or a hard failure.
+    # Matches every fullpipeline namespace (all use the "fp-" prefix) so new
+    # AF-tool-driven tests are covered automatically without needing their own
+    # bespoke alert/metric injection.
+    groups:
+    - name: af-severity-grounding.rules
+      interval: 10s
+      rules:
+      - alert: MemoryEaterResourcePressure
+        expr: memory_eater_grounding_signal{namespace=~"fp-.*", kind="Deployment", name="memory-eater"} > 0
+        for: 0s
+        labels:
+          severity: high
+        annotations:
+          summary: "memory-eater Deployment resource pressure (AF severity-triage grounding fixture)"
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -215,11 +243,31 @@ spec:
           mountPath: /etc/prometheus/rules
         resources:
           requests:
-            memory: "128Mi"
-            cpu: "100m"
-          limits:
             memory: "256Mi"
-            cpu: "500m"
+            cpu: "200m"
+          limits:
+            # #1839 RCA: 500m (-> GOMAXPROCS=1 per automaxprocs) was
+            # sufficient while the removed Tier 3 pure-LLM fallback silently
+            # absorbed every Prometheus timeout in fullpipeline's much larger,
+            # longer-running E2E suite (many sequential memory-eater
+            # Deployments across many namespaces, all scraped every 10s by
+            # the cluster-wide kubelet-cadvisor job, plus rule evaluation
+            # every 10s, plus concurrent AF severity-triage API calls). With
+            # Tier 3 removed, GetAlerts/GetRules genuinely timing out at the
+            # 10s client deadline (Resilience.Prometheus.RequestTimeout) now
+            # fails RR creation outright instead of being masked.
+            #
+            # A first attempt raised this to 1500m, but automaxprocs
+            # (go.uber.org/automaxprocs) uses math.Floor on the CPU quota by
+            # design (v1.2.0+, to bias against throttling over
+            # utilization) -- floor(1.5)=1, so GOMAXPROCS stayed pinned at 1
+            # ("determined from CPU quota" in Prometheus's own log) and the
+            # timeouts recurred identically. 3000m floors to a genuine 3,
+            # giving real multi-core parallelism on this 4-vCPU GH-hosted
+            # runner (headroom to spare: it's a ceiling, not a reservation,
+            # and the request stays low).
+            memory: "768Mi"
+            cpu: "3000m"
       volumes:
       - name: config
         configMap:

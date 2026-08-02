@@ -35,8 +35,8 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
-	sharedK8s "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	sharedK8s "github.com/jordigilh/kubernaut/pkg/shared/k8s"
 )
 
 var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/C03)", func() {
@@ -259,7 +259,6 @@ var _ = Describe("mcpClient nil guard (WIRE-W04)", func() {
 	})
 })
 
-
 type mockPromClientForWiring struct {
 	alerts []prom.Alert
 }
@@ -279,10 +278,6 @@ func (m *mockPromClientForWiring) InstantQuery(_ context.Context, _ string) (*pr
 type noopLLMForWiring struct{}
 
 func (n *noopLLMForWiring) TriageWithRules(_ context.Context, _ []prom.Rule, _ severity.TriageInput) (severity.TriageResult, error) {
-	return severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage}, nil
-}
-
-func (n *noopLLMForWiring) TriagePure(_ context.Context, _ severity.TriageInput) (severity.TriageResult, error) {
 	return severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage}, nil
 }
 

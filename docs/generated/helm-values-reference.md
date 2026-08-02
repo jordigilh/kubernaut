@@ -58,6 +58,8 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.rateLimit.userRequestsPerSec` | integer |  | `100` | No |
 | `config.rbac.personas` | map[string]object | Map of persona name to list of allowed tool names for SAR-based authorization | `` | No |
 | `config.rbac.sarCacheTTL` | string | TTL for SubjectAccessReview cache entries | `"30s"` | No |
+| `config.resilience.prometheus.connectTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"5s"` | No |
+| `config.resilience.prometheus.requestTimeout` | string | Raise this if Prometheus is known to be slower than usual in a given environment (e.g. a resource-constrained or heavily-loaded test cluster) -- #1839 found E2E fullpipeline's Prometheus timing out at the 10s default under that suite's scrape+eval+API load. | `"10s"` | No |
 | `config.server.healthPort` | integer |  | `8081` | No |
 | `config.server.httpPort` | integer |  | `8443` | No |
 | `config.server.metricsPort` | integer |  | `9090` | No |
@@ -431,6 +433,8 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `monitoring.alertManagerPort` | integer | AlertManager port to allow in the NetworkPolicy egress rule | `9093` | No |
 | `monitoring.namespace` | string | Namespace where Prometheus scrapes from | `""` | No |
 | `monitoring.prometheusPort` | integer | Prometheus port to allow in the NetworkPolicy egress rule | `9090` | No |
+| `prometheus.cidr` | string |  | `"0.0.0.0/0"` | No |
+| `prometheus.port` | integer |  | `9090` | No |
 
 ## notification
 

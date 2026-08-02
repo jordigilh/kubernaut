@@ -43,9 +43,16 @@ var _ = Describe("OpenAICompatibleTriager", func() {
 				severity.NewOpenAICompatibleTriager(severity.OpenAICompatibleTriagerConfig{})
 			}).To(Panic())
 		})
+
+		It("UT-AF-1618-005: uses a bare Client directly when ChatClient is unset (construction-only, no network call)", func() {
+			client := openaicompat.New("gpt-oss-120b", "https://example.invalid/v1", "")
+			Expect(func() {
+				severity.NewOpenAICompatibleTriager(severity.OpenAICompatibleTriagerConfig{Client: client})
+			}).NotTo(Panic())
+		})
 	})
 
-	Describe("UT-AF-1618-002: TriagePure", func() {
+	Describe("UT-AF-1618-002: classify() (via TriageWithRules)", func() {
 		It("sends the triage prompt as a single user message tagged with the configured model", func() {
 			fake := &fakeChatClient{
 				resp: &openaicompat.Response{Message: openaicompat.Message{Content: "critical"}},
@@ -55,7 +62,7 @@ var _ = Describe("OpenAICompatibleTriager", func() {
 				Model:      "openai/gpt-oss-120b",
 			})
 
-			result, err := triager.TriagePure(context.Background(), defaultInput)
+			result, err := triager.TriageWithRules(context.Background(), nil, defaultInput)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Severity).To(Equal("critical"))
@@ -92,7 +99,7 @@ var _ = Describe("OpenAICompatibleTriager", func() {
 				Model:      "openai/gpt-oss-120b",
 			})
 
-			_, err := triager.TriagePure(context.Background(), defaultInput)
+			_, err := triager.TriageWithRules(context.Background(), nil, defaultInput)
 
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("connection refused"))
@@ -105,7 +112,7 @@ var _ = Describe("OpenAICompatibleTriager", func() {
 				Model:      "openai/gpt-oss-120b",
 			})
 
-			_, err := triager.TriagePure(context.Background(), defaultInput)
+			_, err := triager.TriageWithRules(context.Background(), nil, defaultInput)
 
 			Expect(err).To(HaveOccurred())
 		})
@@ -117,7 +124,7 @@ var _ = Describe("OpenAICompatibleTriager", func() {
 				Model:      "openai/gpt-oss-120b",
 			})
 
-			_, err := triager.TriagePure(context.Background(), defaultInput)
+			_, err := triager.TriageWithRules(context.Background(), nil, defaultInput)
 
 			Expect(err).To(HaveOccurred())
 		})
@@ -129,7 +136,7 @@ var _ = Describe("OpenAICompatibleTriager", func() {
 				Model:      "openai/gpt-oss-120b",
 			})
 
-			result, err := triager.TriagePure(context.Background(), defaultInput)
+			result, err := triager.TriageWithRules(context.Background(), nil, defaultInput)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Severity).To(Equal("warning")) // NormalizeSeverity default

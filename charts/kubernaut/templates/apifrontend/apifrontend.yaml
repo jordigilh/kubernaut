@@ -126,6 +126,10 @@ severityTriage:
   {{- else }}
   llm: {}
   {{- end }}
+resilience:
+  prometheus:
+    connectTimeout: {{ $v.config.resilience.prometheus.connectTimeout | quote }}
+    requestTimeout: {{ $v.config.resilience.prometheus.requestTimeout | quote }}
 auth:
   {{- with .Values.apifrontend.config.auth.issuerURL }}
   issuerURL: {{ . | quote }}

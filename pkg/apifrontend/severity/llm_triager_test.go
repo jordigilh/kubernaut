@@ -28,7 +28,7 @@ func TestGenAITriager_ClassifyHappyPath(t *testing.T) {
 	}
 	triager := NewGenAITriager(GenAITriagerConfig{Generator: gen, Model: "test-model"})
 
-	result, err := triager.TriagePure(context.Background(), TriageInput{Description: "HighCPU"})
+	result, err := triager.TriageWithRules(context.Background(), nil, TriageInput{Description: "HighCPU"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestGenAITriager_ClassifyErrorPath(t *testing.T) {
 	gen := &mockGenerator{err: errors.New("network timeout")}
 	triager := NewGenAITriager(GenAITriagerConfig{Generator: gen, Model: "test-model"})
 
-	_, err := triager.TriagePure(context.Background(), TriageInput{Description: "HighCPU"})
+	_, err := triager.TriageWithRules(context.Background(), nil, TriageInput{Description: "HighCPU"})
 	if err == nil {
 		t.Fatal("expected error from failed LLM call")
 	}
@@ -56,7 +56,7 @@ func TestGenAITriager_ClassifyNilResponse(t *testing.T) {
 	gen := &mockGenerator{resp: nil}
 	triager := NewGenAITriager(GenAITriagerConfig{Generator: gen, Model: "test-model"})
 
-	_, err := triager.TriagePure(context.Background(), TriageInput{Description: "HighCPU"})
+	_, err := triager.TriageWithRules(context.Background(), nil, TriageInput{Description: "HighCPU"})
 	if err == nil {
 		t.Fatal("expected error for nil response")
 	}
@@ -73,7 +73,7 @@ func TestGenAITriager_ClassifyEmptyResponse(t *testing.T) {
 	}
 	triager := NewGenAITriager(GenAITriagerConfig{Generator: gen, Model: "test-model"})
 
-	_, err := triager.TriagePure(context.Background(), TriageInput{Description: "HighCPU"})
+	_, err := triager.TriageWithRules(context.Background(), nil, TriageInput{Description: "HighCPU"})
 	if err == nil {
 		t.Fatal("expected error for empty response")
 	}
@@ -90,7 +90,7 @@ func TestGenAITriager_ClassifyMalformedText(t *testing.T) {
 	}
 	triager := NewGenAITriager(GenAITriagerConfig{Generator: gen, Model: "test-model"})
 
-	result, err := triager.TriagePure(context.Background(), TriageInput{Description: "HighCPU"})
+	result, err := triager.TriageWithRules(context.Background(), nil, TriageInput{Description: "HighCPU"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
