@@ -313,7 +313,7 @@ func (s *Server) wrapWithMiddleware(handler http.Handler) http.Handler {
 - ✅ **Minimal dependencies** where possible
 - ✅ **Consistent patterns** within service types
 - ✅ **Industry-standard** approach (chi is widely used for Go REST APIs)
-- ✅ **Matches Python pattern** (HolmesGPT uses FastAPI for REST)
+- ✅ **Matched the historical Python pattern** (the pre-rewrite HolmesGPT API used FastAPI for REST; retired in v1.3, see Validation Results below)
 
 ### Negative
 
@@ -350,7 +350,7 @@ func (s *Server) wrapWithMiddleware(handler http.Handler) http.Handler {
 
 - **ADR-031**: OpenAPI Specification Standard (REST APIs use OpenAPI)
 - **ADR-036**: Authentication Strategy (network policies, not router-level auth)
-- **DD-HOLMESGPT-012**: Minimal Internal Service Architecture (REST API design)
+- ~~**DD-HOLMESGPT-012**~~: Minimal Internal Service Architecture (REST API design) — cited here but never formalized as an actual design-decision doc; no `DD-KA-`-prefixed equivalent exists
 
 ---
 
@@ -399,6 +399,6 @@ What language is the service?
 ## References
 
 - [chi GitHub](https://github.com/go-chi/chi) - 18k+ stars, active maintenance
-- [FastAPI](https://fastapi.tiangolo.com/) - Python equivalent (used by HolmesGPT API)
+- [FastAPI](https://fastapi.tiangolo.com/) - Python equivalent (used by the pre-rewrite HolmesGPT API, retired in v1.3)
 - [Go http.ServeMux](https://pkg.go.dev/net/http#ServeMux) - Standard library router
 

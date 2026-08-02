@@ -1,14 +1,22 @@
 # Kubernaut Service Dependency Map
 
-**Version**: 1.2
-**Last Updated**: November 13, 2025
-**Status**: ✅ Authoritative Reference
-**Scope**: 10 Kubernaut V1 Services
+**Version**: 1.3
+**Last Updated**: August 2, 2026
+**Status**: ⚠️ Partially Verified — HolmesGPT/HAPI naming corrected to Kubernaut Agent (KA); see v1.3 note
+**Scope**: 10 Kubernaut V1 Services (likely stale — the repo now ships 14+ services, e.g. authwebhook, apifrontend, fleetmetadatacache are not listed here)
+
+> **Note (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: Renamed
+> "HolmesGPT"/"HAPI" to "Kubernaut Agent (KA)" throughout. While doing so, found the KA node's
+> "Port 8080/9090" label doesn't match the real ports (`charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml`:
+> 8443 API, 8081 health, 9090 metrics) — removed the specific claim rather than leave it wrong.
+> Did not attempt a full port/service-count audit of the rest of this diagram (out of scope for
+> this rename pass); treat other services' ports and the "10 services" scope claim with caution.
 
 ## 📋 Version History
 
 | Version | Date | Changes | Author |
 |---------|------|---------|--------|
+| 1.3 | Aug 2, 2026 | Renamed HolmesGPT/HAPI → Kubernaut Agent (KA); corrected KA's wrong port label (see note above) | AI Assistant |
 | 1.2 | Nov 13, 2025 | **Context API Deprecation**: Added deprecation notice. Context API deprecated in favor of Data Storage Service (DD-CONTEXT-006). Updated service count from 11 to 10. All Context API functionality now provided by Data Storage Service. | AI Assistant |
 | 1.1 | Oct 31, 2025 | Updated service dependency diagram: Kubernetes Executor → Tekton Pipelines (per ADR-023, ADR-025) | AI Assistant |
 | 1.0 | Oct 6, 2025 | Initial version | - |
@@ -74,7 +82,7 @@ graph TB
 
     subgraph "Support Services"
         Notification[Notification Controller<br/>CRD: NotificationRequest 🆕]
-        HolmesGPT[Kubernaut Agent (KA)<br/>Port 8080/9090]
+        HolmesGPT[Kubernaut Agent (KA)]
         Context[Context API<br/>Port 8080/9090]
         DataStorage[Data Storage<br/>Port 8080/9090]
     end
@@ -163,7 +171,7 @@ graph LR
     subgraph "HTTP Services"
         GW[Gateway]
         NS[Notification]
-        HG[HolmesGPT]
+        HG[Kubernaut Agent (KA)]
         CA[Context API]
         DS[Data Storage]
     end
@@ -292,7 +300,7 @@ graph TD
 | **3** | 8 | CRD Definitions | K8s CRDs | None | All controllers |
 | **4** | 9 | Remediation Orchestrator | CRD Controller | CRDs | Child controllers |
 | **5** | 10 | Remediation Processor | CRD Controller | Context API, Data Storage | None (parallel) |
-| **5** | 11 | AI Analysis | CRD Controller | HolmesGPT, Context API, Data Storage | None (parallel) |
+| **5** | 11 | AI Analysis | CRD Controller | Kubernaut Agent (KA), Context API, Data Storage | None (parallel) |
 | **5** | 12 | Workflow Execution | CRD Controller | Context API, Data Storage, Kubernetes API (Tekton) | None (parallel) |
 | **6** | 13 | Gateway | HTTP | Redis, Remediation Orchestrator | None (entry point) |
 
@@ -363,7 +371,7 @@ sequenceDiagram
     participant RP as Remediation<br/>Processor
     participant CA as Context API
     participant AI as AI Analysis
-    participant HG as HolmesGPT
+    participant HG as KubernautAgent
     participant WE as Workflow<br/>Execution
     participant TEK as Tekton<br/>Pipelines
     participant K8 as Kubernetes API
@@ -663,7 +671,7 @@ graph TD
     Redis[Redis Failure] --> P1E[P1: Duplicate alerts]
     PostgreSQL[PostgreSQL Failure] --> P1F[P1: No audit trail]
 
-    HG[HolmesGPT Failure] --> P2A[P2: Manual investigation]
+    HG[Kubernaut Agent (KA) Failure] --> P2A[P2: Manual investigation]
     CA[Context API Failure] --> P2B[P2: No historical context]
     DS[Data Storage Failure] --> P2C[P2: No audit writes]
     NS[Notification Failure] --> P2D[P2: No escalations]
@@ -713,7 +721,7 @@ graph TD
 | **Gateway** | Redis, Remediation Orchestrator | External sources | P0 (Critical) |
 | **Remediation Orchestrator** | K8s API | Gateway, All child controllers | P0 (Critical) |
 | **Remediation Processor** | Data Storage | Remediation Orchestrator | P1 (High) |
-| **AI Analysis** | HolmesGPT, Data Storage | Remediation Orchestrator | P1 (High) |
+| **AI Analysis** | Kubernaut Agent (KA), Data Storage | Remediation Orchestrator | P1 (High) |
 | **Workflow Execution** | K8s API (Tekton), Data Storage, Context API | Remediation Orchestrator | P1 (High) |
 | **Notification** | External channels | All controllers | P2 (Medium) |
 | **Kubernaut Agent** | External LLM | AI Analysis | P2 (Medium) |

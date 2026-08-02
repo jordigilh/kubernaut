@@ -5,7 +5,7 @@
 **Status**: Approved
 **Decision Maker**: Kubernaut Architecture Team
 **Authority**: AUTHORITATIVE - This document governs the end-to-end workflow lifecycle and component interactions
-**Affects**: Data Storage Service, AuthWebhook Service, HolmesGPT API, Remediation Orchestrator, Signal Processing, Workflow Execution
+**Affects**: Data Storage Service, AuthWebhook Service, Kubernaut Agent (KA), Remediation Orchestrator, Signal Processing, Workflow Execution
 **Related**: DD-WORKFLOW-016 (Action-Type Indexing), DD-WORKFLOW-012 (Immutability Constraints), DD-STORAGE-008 (Catalog Schema), DD-WORKFLOW-001 v2.6 (Label Schema), DD-AUDIT-003 (Audit Trace), ADR-058 (Webhook-Driven Registration), BR-WORKFLOW-006 (RemediationWorkflow CRD), DD-WEBHOOK-001 (Webhook Matrix), DD-004 (RFC 7807 Error Responses)
 **Supersedes**: DD-WORKFLOW-005 (Schema Extraction), DD-WORKFLOW-007 (Manual Registration)
 **Version**: 1.4
@@ -138,7 +138,7 @@ Each phase specifies the components involved, the API calls between them, the va
 |-----------|-------------|---------------------------|
 | **Data Storage** | DS | Workflow catalog CRUD, schema validation from inline content (internal API), audit traces |
 | **AuthWebhook** | AW | Intercepts RemediationWorkflow CRD CREATE/DELETE; bridges to DS internal API; SOC2 user attribution; audit events (ADR-058) |
-| **HolmesGPT API** | HAPI | LLM tool orchestration, three-step discovery, post-selection validation |
+| **Kubernaut Agent (KA)** | KA | LLM tool orchestration, three-step discovery, post-selection validation |
 | **Signal Processing** | SP | Signal enrichment, context labels |
 | **Remediation Orchestrator** | RO | End-to-end remediation lifecycle management. Creates and watches CRDs sequentially (SP -> AIAnalysis -> WorkflowExecution -> Notification). Makes all routing decisions. |
 | **Workflow Execution** | WE | Pure executor (no routing logic). Reconciles WorkflowExecution CRDs, resolves execution engine from DS catalog at runtime (Issue #518), creates and monitors execution primitives (Tekton PipelineRun, Kubernetes Job, or Ansible AWX job). |
@@ -313,46 +313,46 @@ When a signal is detected that requires remediation, the LLM discovers available
 ```mermaid
 sequenceDiagram
     participant SP as SignalProcessing
-    participant HAPI as HolmesGPT_API
+    participant KA as KubernautAgent
     participant LLM as LLM
     participant DS as DataStorage
 
-    SP->>HAPI: Signal context (severity, component, environment, priority, custom_labels, detected_labels)
-    HAPI->>HAPI: Render prompt with signal context
+    SP->>KA: Signal context (severity, component, environment, priority, custom_labels, detected_labels)
+    KA->>KA: Render prompt with signal context
 
-    Note over HAPI,LLM: RCA Investigation Phase
-    HAPI->>LLM: Prompt with signal + investigation tools
+    Note over KA,LLM: RCA Investigation Phase
+    KA->>LLM: Prompt with signal + investigation tools
     LLM->>LLM: RCA investigation (kubectl, metrics, logs)
 
     alt Problem resolved or inconclusive
-        LLM-->>HAPI: WorkflowNotNeeded / investigation_inconclusive
+        LLM-->>KA: WorkflowNotNeeded / investigation_inconclusive
     else Problem identified, needs remediation
         Note over LLM,DS: Step 1 — Action Type Discovery
-        LLM->>HAPI: list_available_actions(severity, component, environment, priority, ...)
-        HAPI->>DS: GET /api/v1/workflows/actions?severity=...&component=...
-        DS-->>HAPI: Action types with taxonomy descriptions + workflow counts
-        HAPI-->>LLM: Rendered action types (clean taxonomy data)
+        LLM->>KA: list_available_actions(severity, component, environment, priority, ...)
+        KA->>DS: GET /api/v1/workflows/actions?severity=...&component=...
+        DS-->>KA: Action types with taxonomy descriptions + workflow counts
+        KA-->>LLM: Rendered action types (clean taxonomy data)
 
         Note over LLM: LLM selects action_type based on RCA + descriptions
         LLM->>LLM: Select action_type
 
         Note over LLM,DS: Step 2 — Workflow Selection
-        LLM->>HAPI: list_workflows(action_type, severity, component, environment, priority, ...)
-        HAPI->>DS: GET /api/v1/workflows/actions/{action_type}?severity=...&component=...
-        DS-->>HAPI: Workflows with descriptions (sorted by final_score, stripped before LLM)
-        HAPI-->>LLM: Rendered workflows (all for selected action type)
+        LLM->>KA: list_workflows(action_type, severity, component, environment, priority, ...)
+        KA->>DS: GET /api/v1/workflows/actions/{action_type}?severity=...&component=...
+        DS-->>KA: Workflows with descriptions (sorted by final_score, stripped before LLM)
+        KA-->>LLM: Rendered workflows (all for selected action type)
 
         Note over LLM: LLM reads ALL workflows, selects best fit
         LLM->>LLM: Select workflow_id
 
         Note over LLM,DS: Step 3 — Parameter Lookup
-        LLM->>HAPI: get_workflow(workflow_id, severity, component, environment, ...)
-        HAPI->>DS: GET /api/v1/workflows/{workflow_id}?severity=...&component=...
-        DS-->>HAPI: Full parameter schema (security gate applied)
-        HAPI-->>LLM: Rendered parameter schema
+        LLM->>KA: get_workflow(workflow_id, severity, component, environment, ...)
+        KA->>DS: GET /api/v1/workflows/{workflow_id}?severity=...&component=...
+        DS-->>KA: Full parameter schema (security gate applied)
+        KA-->>LLM: Rendered parameter schema
 
         LLM->>LLM: Populate parameters from RCA context
-        LLM-->>HAPI: Selected workflow_id + populated parameters
+        LLM-->>KA: Selected workflow_id + populated parameters
     end
 ```
 
@@ -374,31 +374,31 @@ All three DS endpoints apply the **same context filters**: severity, component, 
 
 Steps 1 and 2 support pagination (default 10 items per page). Step 3 returns a single workflow or an error. For Step 1 (action type selection), the LLM may select from the first page if a clear match exists, requesting additional pages only if needed. For Step 2 (workflow selection), the LLM **must review ALL available workflows** before making a decision -- if `has_more` is true, the LLM must request subsequent pages until all workflows have been reviewed. This prevents premature selection of a less effective workflow.
 
-### HAPI Post-Selection Validation
+### KA Post-Selection Validation
 
-After the LLM returns its selected `workflow_id` and populated parameters, HAPI validates the selection by querying DS directly:
+After the LLM returns its selected `workflow_id` and populated parameters, KA validates the selection by querying DS directly:
 
 ```mermaid
 sequenceDiagram
-    participant HAPI as HolmesGPT_API
+    participant KA as KubernautAgent
     participant DS as DataStorage
 
-    HAPI->>DS: GET /api/v1/workflows/{workflow_id}?severity=...&component=...
-    DS-->>HAPI: Workflow with parameter schema
+    KA->>DS: GET /api/v1/workflows/{workflow_id}?severity=...&component=...
+    DS-->>KA: Workflow with parameter schema
 
-    HAPI->>HAPI: Validate workflow_id exists and is active
-    HAPI->>HAPI: Validate action_type is in taxonomy
-    HAPI->>HAPI: Validate parameter types + mandatory/optional flags
-    HAPI->>HAPI: Validate all required parameters provided
+    KA->>KA: Validate workflow_id exists and is active
+    KA->>KA: Validate action_type is in taxonomy
+    KA->>KA: Validate parameter types + mandatory/optional flags
+    KA->>KA: Validate all required parameters provided
 
     alt Validation passes
-        HAPI->>HAPI: Proceed to execution
+        KA->>KA: Proceed to execution
     else Validation fails
-        HAPI->>HAPI: Reject LLM response, trigger error handling
+        KA->>KA: Reject LLM response, trigger error handling
     end
 ```
 
-This validation uses **current data** from DS (not cached), ensuring the workflow has not been disabled or modified since the LLM's discovery queries. See DD-WORKFLOW-016 HAPI Validation section.
+This validation uses **current data** from DS (not cached), ensuring the workflow has not been disabled or modified since the LLM's discovery queries. See DD-WORKFLOW-016 KA Validation section.
 
 ### Audit Traces
 
@@ -409,9 +409,9 @@ Discovery generates audit traces at the DS data layer for each step:
 | `workflow.catalog.actions_listed` | DS | Action types returned for signal context (Step 1) | DD-WORKFLOW-014 v3.0 |
 | `workflow.catalog.workflows_listed` | DS | Workflows returned for selected action type (Step 2) | DD-WORKFLOW-014 v3.0 |
 | `workflow.catalog.workflow_retrieved` | DS | Single workflow parameter schema retrieved (Step 3) | DD-WORKFLOW-014 v3.0 |
-| `workflow.catalog.selection_validated` | DS | HAPI post-selection validation re-query result | DD-WORKFLOW-014 v3.0 |
+| `workflow.catalog.selection_validated` | DS | KA post-selection validation re-query result | DD-WORKFLOW-014 v3.0 |
 
-**Note**: HAPI does **not** emit audit events. All discovery audit events are generated by DS at the data layer (per DD-AUDIT-001 and DD-WORKFLOW-014 v3.0).
+**Note**: KA does **not** emit audit events. All discovery audit events are generated by DS at the data layer (per DD-AUDIT-001 and DD-WORKFLOW-014 v3.0).
 
 ---
 
@@ -419,19 +419,19 @@ Discovery generates audit traces at the DS data layer for each step:
 
 ### Overview
 
-After HAPI validates the LLM's selection, the AIAnalysis CR status is updated with the selected workflow and parameters. The Remediation Orchestrator (RO) -- which owns the end-to-end remediation lifecycle -- detects this status change and creates a WorkflowExecution CRD, copying the full execution snapshot (`executionEngine`, `serviceAccountName`, `actionType`, `resources`, plus the identifying `workflowId`/`version`/`executionBundle`) verbatim from `AIAnalysis.Status.SelectedWorkflow` into `WorkflowExecution.Spec.WorkflowRef` (Issue #1661 Changes 8 and 11f -- superseding the Issue #518 design below the fold). The Workflow Execution (WE) controller -- a pure executor with no routing logic and zero live calls to DS -- reconciles the CRD purely from its own spec and creates the appropriate execution primitive (Tekton PipelineRun, Kubernetes Job, or Ansible AWX job).
+After KA validates the LLM's selection, the AIAnalysis CR status is updated with the selected workflow and parameters. The Remediation Orchestrator (RO) -- which owns the end-to-end remediation lifecycle -- detects this status change and creates a WorkflowExecution CRD, copying the full execution snapshot (`executionEngine`, `serviceAccountName`, `actionType`, `resources`, plus the identifying `workflowId`/`version`/`executionBundle`) verbatim from `AIAnalysis.Status.SelectedWorkflow` into `WorkflowExecution.Spec.WorkflowRef` (Issue #1661 Changes 8 and 11f -- superseding the Issue #518 design below the fold). The Workflow Execution (WE) controller -- a pure executor with no routing logic and zero live calls to DS -- reconciles the CRD purely from its own spec and creates the appropriate execution primitive (Tekton PipelineRun, Kubernetes Job, or Ansible AWX job).
 
 ### Component Flow
 
 ```mermaid
 sequenceDiagram
-    participant HAPI as HolmesGPT_API
+    participant KA as KubernautAgent
     participant RO as RemediationOrchestrator
     participant WE as WorkflowExecution
     participant K8s as Kubernetes
 
-    HAPI->>RO: AIAnalysis CR status updated with SelectedWorkflow snapshot
-    Note right of HAPI: RO watches AIAnalysis status changes.<br/>Snapshot includes workflowId, version, executionBundle,<br/>executionEngine, serviceAccountName, actionType, resources.
+    KA->>RO: AIAnalysis CR status updated with SelectedWorkflow snapshot
+    Note right of KA: RO watches AIAnalysis status changes.<br/>Snapshot includes workflowId, version, executionBundle,<br/>executionEngine, serviceAccountName, actionType, resources.
 
     RO->>RO: Check cooldown period (no duplicate execution)
     RO->>RO: Routing decisions (blocking, resource busy, etc.)
@@ -463,7 +463,7 @@ The WorkflowExecution CRD's `Spec.WorkflowRef` carries the immutable, CRD-embedd
 
 | `WorkflowRef` Field | Source | Description |
 |-------|--------|-------------|
-| `workflowId` | LLM selection (validated by HAPI) | ID of the workflow to execute |
+| `workflowId` | LLM selection (validated by KA) | ID of the workflow to execute |
 | `version` | `AIAnalysis.Status.SelectedWorkflow` | Workflow catalog version |
 | `executionBundle` | `AIAnalysis.Status.SelectedWorkflow` | OCI bundle reference (digest-pinned) |
 | `executionEngine` | `AIAnalysis.Status.SelectedWorkflow` | `"tekton"`, `"job"`, or `"ansible"` |
@@ -475,7 +475,7 @@ Other WFE spec fields outside `WorkflowRef`:
 
 | Field | Source | Description |
 |-------|--------|-------------|
-| `parameters` | LLM-populated (validated by HAPI) | Workflow parameters as key-value pairs |
+| `parameters` | LLM-populated (validated by KA) | Workflow parameters as key-value pairs |
 | `targetResource` | Signal context | Kubernetes resource to remediate |
 | `signalFingerprint` | SP | Unique identifier for the triggering signal |
 
@@ -826,12 +826,12 @@ flowchart TD
     end
 
     subgraph discovery [Phase 2: Discovery]
-        B1[SP sends signal context to HAPI] --> B2[LLM performs RCA]
+        B1[SP sends signal context to KA] --> B2[LLM performs RCA]
         B2 -->|Needs remediation| B3["Step 1: list_available_actions"]
         B3 --> B4["Step 2: list_workflows"]
         B4 --> B5["Step 3: get_workflow"]
         B5 --> B6[LLM populates parameters]
-        B6 --> B7[HAPI validates selection]
+        B6 --> B7[KA validates selection]
     end
 
     subgraph execution [Phase 3: Execution]
