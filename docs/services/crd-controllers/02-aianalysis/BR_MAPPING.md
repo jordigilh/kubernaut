@@ -132,15 +132,18 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 | Validation Type | Description | Primary Validator | AIAnalysis Role |
 |-----------------|-------------|-------------------|-----------------|
 | **Workflow ID Validation** | Ensure `workflowId` exists in catalog | ✅ **HAPI** | 🟡 Defense-in-depth |
-| **Schema Validation** | Ensure response matches expected JSON schema | ✅ **HAPI** | 🟡 Defense-in-depth |
-| **Parameter Validation** | Ensure parameters are valid for selected workflow | ✅ **HAPI** (`validate_workflow_parameters`) | ❌ Not recommended |
+| **Schema Validation** | Ensure response matches expected JSON schema | ✅ **KA** | 🟡 Defense-in-depth |
+| **Parameter Validation** | Ensure parameters are valid for selected workflow | ✅ **KA** (`validate_workflow_parameters`) | ❌ Not recommended |
 | **ContainerImage Format** | Ensure `containerImage` is valid OCI reference | ✅ **Data Storage** (registration) | 🟡 Optional |
 | ~~Circular DAG Detection~~ | ~~Detect cycles in dynamically-generated workflows~~ | ❌ N/A | - |
 | ~~Invalid Action Detection~~ | ~~Detect non-existent workflow steps~~ | ❌ N/A | - |
 
-> ⚠️ **DD-HAPI-002 v1.1 Alignment**: Primary validation happens in **HolmesGPT-API**
+> ⚠️ **DD-KA-001 (formerly DD-HAPI-002) v1.1 Alignment**: Primary validation happens in **Kubernaut Agent (KA)**
 > where the LLM can self-correct if validation fails. AIAnalysis is late-stage
 > (after LLM session ends) and cannot trigger LLM self-correction.
+>
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: same
+> `validate_workflow_parameters`-as-MCP-tool staleness as `reconciliation-phases.md` — see the note there.
 
 **Reference**: DD-WORKFLOW-002 v3.3 - LLM selects from catalog, does not generate workflows.
 
@@ -222,7 +225,7 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 |-------|--------|--------------|-------|
 | **BR-HAPI-001** | HolmesGPT-API | Investigation results | `/api/v1/investigate` response |
 | **BR-HAPI-RECOVERY-001** | HolmesGPT-API | Recovery analysis | `/api/v1/recovery/analyze` response |
-| **BR-HAPI-250** | HolmesGPT-API | Workflow catalog search | MCP tool with `containerImage` |
+| **BR-KA-250** | HolmesGPT-API | Workflow catalog search | MCP tool with `containerImage` |
 | **BR-HAPI-251** | HolmesGPT-API | Container resolution | Resolves `workflowId` → `containerImage` |
 | **BR-HAPI-252** | HolmesGPT-API | Label passthrough | DetectedLabels + CustomLabels to MCP |
 

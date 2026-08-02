@@ -488,7 +488,7 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 
 **Audit Events**: 7 implemented, component-level events (per ADR-EM-001 v1.3) covering health/alert/metrics assessment, spec-hash comparison (DD-EM-002), alert-decay detection (Issue #369, BR-EM-012), and assessment scheduling/completion — plus 2 "V1.1 Level 2" events (`effectiveness.learning.triggered`, `effectiveness.crd.updated`) that are aspirational and not implemented anywhere in code. See [AUDIT_EVENT_CATALOG.md](../../services/stateless/effectiveness-monitor/security/AUDIT_EVENT_CATALOG.md) for the current, code-verified list, triggers, and payload fields.
 
-**Note**: EM Level 1 (V1.0) emits **component-level** audit events rather than a single monolithic event. The weighted effectiveness score is computed on-demand by DS (`GET /api/v1/effectiveness/{correlation_id}`) using `ComputeWeightedScore()` (DD-017 v2.1 formula). All events share a `correlation_id` (RemediationRequest name) as the join key. DD-HAPI-016 uses these events for remediation history context enrichment. Data stored as audit traces only — no new database tables.
+**Note**: EM Level 1 (V1.0) emits **component-level** audit events rather than a single monolithic event. The weighted effectiveness score is computed on-demand by DS (`GET /api/v1/effectiveness/{correlation_id}`) using `ComputeWeightedScore()` (DD-017 v2.1 formula). All events share a `correlation_id` (RemediationRequest name) as the join key. DD-KA-016 uses these events for remediation history context enrichment. Data stored as audit traces only — no new database tables.
 
 **Industry Precedent**: MLflow tracking, Weights & Biases audit logs, Kubeflow Pipelines logs
 

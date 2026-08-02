@@ -325,7 +325,7 @@ When a resource has no ConfigMap references (or all references are skipped due t
 - **ADR-EM-001** (v1.4): Effectiveness Monitor integration architecture, hash comparison in assessment Step 4
 - **DD-017** (v2.4): Dual spec hash capture, Level 1 automated assessment scope
 - **BR-EM-004**: Spec hash comparison to detect configuration drift
-- **DD-HAPI-016**: Remediation history context (uses hash comparison for relevance filtering)
+- **DD-KA-016**: Remediation history context (uses hash comparison for relevance filtering)
 
 ---
 

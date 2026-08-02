@@ -16,15 +16,15 @@ limitations under the License.
 
 // Pure correlation functions for remediation history context.
 //
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.1: Two-step query pattern with EM scoring infrastructure.
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
+// DD-KA-016 v1.1: Two-step query pattern with EM scoring infrastructure.
 //
 // These functions operate on data structures only (no I/O). They live in
 // package server to access EM's exported types (EffectivenessComponents,
 // ComputeWeightedScore, BuildEffectivenessResponse).
 //
 // Architecture:
-//   - ComputeHashMatch: three-way hash comparison (DD-HAPI-016 v1.1)
+//   - ComputeHashMatch: three-way hash comparison (DD-KA-016 v1.1)
 //   - CorrelateTier1Chain: detailed entries joining RO + EM events (Tier 1)
 //   - BuildTier2Summaries: summary entries for wider time window (Tier 2)
 //   - DetectRegression: checks for preRemediation hash match (regression signal)
@@ -42,7 +42,7 @@ import (
 // HASH COMPARISON
 // ============================================================================
 
-// ComputeHashMatch performs the three-way hash comparison defined in DD-HAPI-016 v1.1.
+// ComputeHashMatch performs the three-way hash comparison defined in DD-KA-016 v1.1.
 // Compares the current resource spec hash against both pre and post remediation hashes.
 //
 // Priority: preRemediation (regression) > postRemediation > none.
@@ -87,7 +87,7 @@ func toSummaryHashMatch(hm api.RemediationHistoryEntryHashMatch) api.OptRemediat
 // mapHealthChecks extracts the health_checks typed sub-object from an EM
 // effectiveness.health.assessed event's data.
 //
-// DD-HAPI-016 v1.1: health_checks sub-object provides pod_running, readiness_pass,
+// DD-KA-016 v1.1: health_checks sub-object provides pod_running, readiness_pass,
 // restart_delta, crash_loops, oom_killed, pending_count. Fields that are absent
 // in the event data remain unset (Opt types with Set=false), supporting
 // partially populated assessments as the EM team enhances their assessors.
@@ -122,7 +122,7 @@ func mapHealthChecks(eventData map[string]interface{}) api.OptRemediationHealthC
 // mapMetricDeltas extracts the metric_deltas typed sub-object from an EM
 // effectiveness.metrics.assessed event's data.
 //
-// DD-HAPI-016 v1.1: metric_deltas provides before/after pairs for CPU, memory,
+// DD-KA-016 v1.1: metric_deltas provides before/after pairs for CPU, memory,
 // latency p95, error rate, and throughput. DD-EM-005 v1.1 (Issue #193) adds
 // cluster-scoped Node/PersistentVolume fields, populated only when the source
 // EffectivenessAssessment targets a Node or PersistentVolume; all fields are
@@ -217,7 +217,7 @@ func populateClusterScopedAndThroughputDeltas(md *api.RemediationMetricDeltas, m
 // mapAlertResolution extracts signalResolved from the alert_resolution typed
 // sub-object on an EM effectiveness.alert.assessed event.
 //
-// DD-HAPI-016 v1.1: signalResolved is read directly from
+// DD-KA-016 v1.1: signalResolved is read directly from
 // alert_resolution.alert_resolved (typed boolean). Returns unset if the
 // alert was not assessed or alert_resolution is absent.
 func mapAlertResolution(eventData map[string]interface{}) api.OptNilBool {
@@ -290,7 +290,7 @@ func correlateEMEvents(correlationID string, emEvts []*EffectivenessEvent) emCor
 // CorrelateTier1Chain joins RO events with EM component events to produce
 // detailed RemediationHistoryEntry records for Tier 1.
 //
-// DD-HAPI-016 v1.1 Steps 1-3:
+// DD-KA-016 v1.1 Steps 1-3:
 //  1. RO events provide the remediation chain skeleton (correlation_id, preHash, outcome, etc.)
 //  2. EM events provide effectiveness scoring and typed sub-objects (health_checks, metric_deltas, alert_resolution)
 //  3. Correlation by correlation_id, score computed via ComputeWeightedScore (DD-017 v2.1)
@@ -427,7 +427,7 @@ func computeEntryHashMatch(currentSpecHash, preHash, postHash string) api.Remedi
 // BuildTier2Summaries creates summary-level entries for Tier 2 (wider time window).
 // Summaries have fewer fields than Tier 1: no healthChecks, metricDeltas, or sideEffects.
 //
-// DD-HAPI-016 v1.1 Step 4: historical hash lookup for regression detection.
+// DD-KA-016 v1.1 Step 4: historical hash lookup for regression detection.
 //
 // Returns summaries sorted by completedAt ascending per OpenAPI spec (oldest first).
 func BuildTier2Summaries(
@@ -508,7 +508,7 @@ func buildTier2Summary(ro repository.RawAuditRow, emEvents map[string][]*Effecti
 // DetectRegression checks whether any Tier 1 entry has a hashMatch of preRemediation,
 // indicating the current resource spec has reverted to a pre-remediation state.
 //
-// DD-HAPI-016 v1.1: regression = currentSpecHash matches a previous preRemediationSpecHash.
+// DD-KA-016 v1.1: regression = currentSpecHash matches a previous preRemediationSpecHash.
 func DetectRegression(entries []api.RemediationHistoryEntry) bool {
 	for _, entry := range entries {
 		if entry.HashMatch.Set && entry.HashMatch.Value == api.RemediationHistoryEntryHashMatchPreRemediation {

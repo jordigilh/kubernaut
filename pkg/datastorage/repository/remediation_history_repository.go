@@ -16,8 +16,8 @@ limitations under the License.
 
 // Package repository provides data access for the DataStorage service.
 //
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
+// DD-KA-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
 package repository
 
 import (
@@ -52,7 +52,7 @@ type EffectivenessEventRow struct {
 }
 
 // RemediationHistoryRepository provides queries for remediation history context.
-// DD-HAPI-016 v1.4, Issue #616: Both tiers query RO events by spec hash, matching
+// DD-KA-016 v1.4, Issue #616: Both tiers query RO events by spec hash, matching
 // BOTH pre_remediation_spec_hash (direct) and post_remediation_spec_hash (via EM correlation).
 //  1. Query RO events by spec hash (Tier 1: 24h window, Tier 2: 90d window)
 //  2. Batch query EM component events by correlation_id
@@ -90,7 +90,7 @@ func scanRawRows(rows *sql.Rows) ([]RawAuditRow, error) {
 // QueryEffectivenessEventsBatch queries EM component events for a batch of
 // correlation IDs. Returns events grouped by correlation_id.
 //
-// DD-HAPI-016 v1.1 Step 2: Query Tier 1 — EM component events.
+// DD-KA-016 v1.1 Step 2: Query Tier 1 — EM component events.
 // Same query pattern as queryEffectivenessEvents in effectiveness_handler.go
 // but batched across multiple correlation IDs.
 //
@@ -189,8 +189,8 @@ func (r *RemediationHistoryRepository) QueryEffectivenessEventsBatch(
 //   - idx_audit_events_post_remediation_spec_hash (migration 004)
 //   - idx_audit_events_cluster_id (migration 017, main only)
 //
-// DD-HAPI-016 v1.4: Both tiers query by spec hash (#586).
-// DD-HAPI-016 v1.5: Both tiers additionally scope by target_resource (+ cluster_id on main) (#1802).
+// DD-KA-016 v1.4: Both tiers query by spec hash (#586).
+// DD-KA-016 v1.5: Both tiers additionally scope by target_resource (+ cluster_id on main) (#1802).
 //
 // PERF-H2 Monitoring: Run EXPLAIN ANALYZE periodically in production to verify
 // idx_audit_events_pre_remediation_spec_hash and idx_audit_events_post_remediation_spec_hash

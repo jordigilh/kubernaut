@@ -93,7 +93,7 @@ tags:
     description: |
       Remediation history context for LLM prompt enrichment.
       Aggregates RO and EM audit events into structured remediation chains.
-      Authority: DD-HAPI-016.
+      Authority: DD-KA-016.
 
 paths:
   /api/v1/audit/events:
@@ -1113,9 +1113,9 @@ paths:
       description: |
         Returns structured remediation history context for LLM prompt enrichment.
 
-        **Business Requirements**: BR-HAPI-016 (Remediation history context)
+        **Business Requirements**: BR-KA-016 (Remediation history context)
 
-        **Design Document**: DD-HAPI-016
+        **Design Document**: DD-KA-016
 
         **Behavior**:
         Aggregates `remediation.workflow_created` (RO) and `effectiveness.assessment.completed` (EM)
@@ -3904,7 +3904,7 @@ components:
             Only present for effectiveness.hash.computed events.
           example: false
 
-        # Typed sub-objects (v2.5, DD-017 v2.5, coordinated with DD-HAPI-016 v1.1)
+        # Typed sub-objects (v2.5, DD-017 v2.5, coordinated with DD-KA-016 v1.1)
         # Each component event carries its typed sub-object alongside the human-readable details string.
 
         health_checks:
@@ -5495,14 +5495,14 @@ components:
           enum: ['success', 'malformed_response', 'missing_field']
           description: Whether the shadow evaluation extracted a usable verdict from this response. 'success' means a valid suspicious/clean determination was made. 'malformed_response' means the response triggered a fail-closed path (duplicate key attack, etc). 'missing_field' means the required 'suspicious' field was absent.
 
-    # ─── Remediation History Context (DD-HAPI-016) ───
+    # ─── Remediation History Context (DD-KA-016) ───
 
     RemediationHistoryContext:
       type: object
       description: |
         Structured remediation history context for LLM prompt enrichment.
         Contains two tiers of remediation chain data for a target resource.
-        Authority: DD-HAPI-016.
+        Authority: DD-KA-016.
       required:
         - targetResource
         - currentSpecHash

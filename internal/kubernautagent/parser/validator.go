@@ -475,7 +475,7 @@ func toFloat64(val interface{}) (float64, bool) {
 // SelfCorrect runs a validation-correction loop up to maxAttempts times.
 // Returns the corrected result with ValidationAttemptsHistory populated.
 // If exhausted, sets HumanReviewNeeded + HumanReviewReason and clears WorkflowID
-// per DD-HAPI-002 v1.2 (invalid workflows must not propagate to execution).
+// per DD-KA-001 v1.2 (invalid workflows must not propagate to execution).
 //
 // The loop performs exactly maxAttempts validation checks. For each failed check
 // except the last, it invokes correctionFn to request a new LLM response.

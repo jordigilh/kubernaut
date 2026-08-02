@@ -33,7 +33,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
-var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
+var _ = Describe("DD-KA-018 Parity — Issue #776", func() {
 
 	var ctx context.Context
 
@@ -42,7 +42,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 	})
 
 	// ═══════════════════════════════════════════════════════════════
-	// GitOps Detection (DD-HAPI-018 Detection 1)
+	// GitOps Detection (DD-KA-018 Detection 1)
 	// ═══════════════════════════════════════════════════════════════
 
 	Describe("UT-KA-776-001: ArgoCD v3 tracking-id on root owner", func() {
@@ -414,7 +414,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 	})
 
 	// ═══════════════════════════════════════════════════════════════
-	// Service Mesh Detection (DD-HAPI-018 Detection 7)
+	// Service Mesh Detection (DD-KA-018 Detection 7)
 	// ═══════════════════════════════════════════════════════════════
 
 	Describe("UT-KA-776-012: Istio sidecar.istio.io/status on pod template", func() {
@@ -538,7 +538,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 	})
 
 	// ═══════════════════════════════════════════════════════════════
-	// HPA Detection (DD-HAPI-018 Detection 3)
+	// HPA Detection (DD-KA-018 Detection 3)
 	// ═══════════════════════════════════════════════════════════════
 
 	Describe("UT-KA-776-016: HPA targets root owner (existing behavior)", func() {
@@ -652,7 +652,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 	})
 
 	// ═══════════════════════════════════════════════════════════════
-	// Stateful Detection (DD-HAPI-018 Detection 4)
+	// Stateful Detection (DD-KA-018 Detection 4)
 	// ═══════════════════════════════════════════════════════════════
 
 	Describe("UT-KA-776-019: Owner chain [Pod, StatefulSet] -> stateful=true", func() {
@@ -707,7 +707,7 @@ var _ = Describe("DD-HAPI-018 Parity — Issue #776", func() {
 	})
 
 	// ═══════════════════════════════════════════════════════════════
-	// ResourceQuota Detection (DD-HAPI-018 Detection 8)
+	// ResourceQuota Detection (DD-KA-018 Detection 8)
 	// ═══════════════════════════════════════════════════════════════
 
 	Describe("UT-KA-776-021: Single ResourceQuota with hard/used summary", func() {

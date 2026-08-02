@@ -473,7 +473,7 @@ type AIAnalysisStatus struct {
 	// Non-fatal warnings from KA (e.g., low confidence)
 	Warnings []string `json:"warnings,omitempty"`
 	// ValidationAttemptsHistory contains complete history of all KA validation attempts
-	// Per DD-HAPI-002 v1.4: KA retries up to 3 times with LLM self-correction
+	// Per DD-KA-001 v1.4: KA retries up to 3 times with LLM self-correction
 	// This field provides audit trail for operator notifications and debugging
 	// +optional
 	ValidationAttemptsHistory []ValidationAttempt `json:"validationAttemptsHistory,omitempty"`
@@ -703,7 +703,7 @@ type AlternativeWorkflow struct {
 }
 
 // ValidationAttempt contains details of a single KA validation attempt
-// Per DD-HAPI-002 v1.4: KA retries up to 3 times with LLM self-correction
+// Per DD-KA-001 v1.4: KA retries up to 3 times with LLM self-correction
 // Each attempt feeds validation errors back to the LLM for correction
 type ValidationAttempt struct {
 	// Attempt number (1, 2, or 3)

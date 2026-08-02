@@ -88,7 +88,7 @@ func (s *Summarizer) MaybeSummarize(ctx context.Context, toolName string, result
 	// client/model with the rest of the agent, so it cannot assume the
 	// configured model supports the parameter at all (e.g. claude-opus-4-8
 	// rejects it outright with a 400) — omitting it entirely is safe for
-	// every provider, and summarization has no BR-HAPI-199-style
+	// every provider, and summarization has no BR-KA-266-style
 	// determinism requirement that would justify forcing 0.
 	resp, err := s.llmClient.Chat(ctx, llm.ChatRequest{
 		Messages: []llm.Message{

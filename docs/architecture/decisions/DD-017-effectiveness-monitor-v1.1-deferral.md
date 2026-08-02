@@ -11,7 +11,7 @@
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
 | 2.6 | 2026-02-14 | Architecture Team | **Post-implementation audit**: Phase B metrics (memory, latency p95, error rate) were implemented during V1.0 — updated Phase A/B sections to reflect this. Health scoring documented as decision-tree algorithm (matches implementation). Throughput queries remain unimplemented. See ADR-EM-001 v1.7 for full gap inventory. |
-| 2.5 | 2026-02-14 | Architecture Team | **Typed audit sub-objects**: Added `health_checks`, `metric_deltas`, `alert_resolution` typed sub-objects to `EffectivenessAssessmentAuditPayload` in OpenAPI spec. EM component assessors now emit structured data alongside the human-readable `details` string. Health assessor enhanced with CrashLoopBackOff and OOMKilled detection. Metrics assessor expansion (memory, latency p95, error rate PromQL queries) deferred to Phase B. Coordinated with HAPI team (DD-HAPI-016 v1.1) via issue #82. |
+| 2.5 | 2026-02-14 | Architecture Team | **Typed audit sub-objects**: Added `health_checks`, `metric_deltas`, `alert_resolution` typed sub-objects to `EffectivenessAssessmentAuditPayload` in OpenAPI spec. EM component assessors now emit structured data alongside the human-readable `details` string. Health assessor enhanced with CrashLoopBackOff and OOMKilled detection. Metrics assessor expansion (memory, latency p95, error rate PromQL queries) deferred to Phase B. Coordinated with HAPI team (DD-KA-016 v1.1) via issue #82. |
 | 2.4 | 2026-02-13 | Architecture Team | EA spec simplification: EAConfig only has StabilizationWindow; ScoringThreshold, PrometheusEnabled, AlertManagerEnabled removed from EA spec (EM operational config only). EM always emits Normal EffectivenessAssessed; RemediationIneffective removed. DS computes weighted score on demand from component audit events. |
 | 2.3 | 2026-02-12 | Architecture Team | EA CRD ValidityDeadline moved from spec to status (computed by EM on first reconciliation). Added PrometheusCheckAfter and AlertManagerCheckAfter status fields. New `effectiveness.assessment.scheduled` audit event. See ADR-EM-001 v1.3. |
 | 2.2 | 2026-02-09 | Architecture Team | RO-created EffectivenessAssessment CRD pattern (ADR-EM-001 v1.1). EM watches EA CRDs, not RR CRDs. K8s Condition `EffectivenessAssessed` on RR. Async metrics evaluation. Side-effect detection deferred to post-V1.0. Updated scoring formula (3 components). See ADR-EM-001 for full integration architecture. |
@@ -35,11 +35,11 @@ Both were valid constraints at the time of the decision.
 ### What Changed (v2.0, February 2026)
 
 1. **Timeline constraint has lapsed**: V1.0 was delivered. The end-of-2025 deadline is no longer a constraint.
-2. **Remediation feedback loop identified as critical gap**: During DD-HAPI-016 design work, we identified that without post-remediation state capture, the system cannot:
+2. **Remediation feedback loop identified as critical gap**: During DD-KA-016 design work, we identified that without post-remediation state capture, the system cannot:
    - Detect configuration regressions (target resource reverted to a previously problematic state)
    - Inform the LLM about past remediation effectiveness for the same target
    - Prevent the LLM from recommending the same ineffective remediation repeatedly
-3. **The spec hash alone justifies V1.0 inclusion**: The dual spec hash (pre/post remediation) is the minimum critical data point for the HAPI remediation history context feature (DD-HAPI-016). Without it, the history context has no way to determine whether past remediations are relevant to the current signal.
+3. **The spec hash alone justifies V1.0 inclusion**: The dual spec hash (pre/post remediation) is the minimum critical data point for the KA remediation history context feature (DD-KA-016). Without it, the history context has no way to determine whether past remediations are relevant to the current signal.
 4. **Level 1 provides Day-1 value**: Unlike Level 2 (which needs 8+ weeks of data), Level 1 automated assessment (health checks, metric comparison, effectiveness scoring) provides useful output from the first remediation.
 
 ### Business Requirements
@@ -59,7 +59,7 @@ Both were valid constraints at the time of the decision.
 
 ### Rationale
 
-1. **Spec hash capture is a V1.0 dependency**: DD-HAPI-016 (Remediation History Context) requires pre/post remediation spec hashes to function. Without them, HAPI cannot determine whether past remediations are relevant or detect configuration regressions.
+1. **Spec hash capture is a V1.0 dependency**: DD-KA-016 (Remediation History Context) requires pre/post remediation spec hashes to function. Without them, KA cannot determine whether past remediations are relevant or detect configuration regressions.
 
 2. **Level 1 has no data dependency**: Health checks, metric comparisons, and effectiveness scoring work from Day 1. They don't need historical data to accumulate.
 
@@ -85,7 +85,7 @@ The EM captures two hashes per remediation, enabling configuration regression de
 
 - **Post-remediation hash**: SHA-256 of the target resource's `.spec` AFTER the workflow completes and the stabilization window passes. Captured by the **EM service**. Emitted as part of the `effectiveness.assessment.completed` audit event.
 
-The hash comparison logic (three-way matching) is documented in DD-HAPI-016.
+The hash comparison logic (three-way matching) is documented in DD-KA-016.
 
 #### 2. Health Checks (K8s API)
 
@@ -418,7 +418,7 @@ Level 2 remains deferred to V1.1 as originally planned in DD-017 v1.0:
 2. 8+ weeks of Level 1 assessment data accumulated
 3. Sufficient historical patterns for Level 2 to provide high-confidence analysis (80%+)
 
-### V1.1 Integration with DD-HAPI-016
+### V1.1 Integration with DD-KA-016
 
 When Level 2 arrives, it enriches the audit events with:
 - `root_cause_resolved: true/false` — did the remediation fix the actual cause or just mask it?
@@ -433,7 +433,7 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 
 ### Positive
 
-- V1.0 captures post-remediation state (dual spec hash) — critical for DD-HAPI-016
+- V1.0 captures post-remediation state (dual spec hash) — critical for DD-KA-016
 - Deterministic effectiveness scoring from Day 1 — no data dependency
 - HAPI receives pre-computed effectiveness data, reducing LLM investigation burden for past remediations
 - Cooldown-EM alignment guarantees data availability before next remediation
@@ -453,7 +453,7 @@ DS reads these richer fields from the same audit traces. HAPI receives richer co
 
 ## Related Decisions
 
-- **DD-HAPI-016**: Remediation History Context Enrichment (depends on this DD for effectiveness data)
+- **DD-KA-016**: Remediation History Context Enrichment (depends on this DD for effectiveness data)
 - **DD-EFFECTIVENESS-001**: Hybrid Automated + AI Analysis approach (Level 1 architecture, Level 2 triggers)
 - **DD-EFFECTIVENESS-002**: Restart Recovery Idempotency (DB-backed idempotency — **SUPERSEDED by v2.1**: EM uses audit-event dedup via DS instead of direct DB tables)
 - **DD-017 v1.0**: Original full deferral (superseded by this v2.0)

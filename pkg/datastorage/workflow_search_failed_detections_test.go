@@ -135,7 +135,7 @@ var _ = Describe("BR-STORAGE-020: FailedDetections Support", func() {
 					FailedDetections: validFields,
 				}
 
-				// ASSERT: All valid fields are accepted (9 fields per DD-HAPI-018 v1.4)
+				// ASSERT: All valid fields are accepted (9 fields per DD-KA-018 v1.4)
 				// podSecurityLevel removed in v2.2; resourceQuotaConstrained added in #366
 				Expect(dl.FailedDetections).To(HaveLen(9))
 				for _, field := range validFields {

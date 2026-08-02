@@ -17,13 +17,13 @@ limitations under the License.
 // E2E tests for GET /api/v1/remediation-history/context endpoint.
 //
 // Business Requirements:
-//   - BR-HAPI-016: Remediation history context for LLM prompt enrichment
+//   - BR-KA-016: Remediation history context for LLM prompt enrichment
 //
 // Design Decisions:
-//   - DD-HAPI-016 v1.1: Two-step query pattern
+//   - DD-KA-016 v1.1: Two-step query pattern
 //   - DD-EM-002 v1.1: spec_drift assessment reason
 //
-// Test Plan: docs/testing/DD-HAPI-016/TEST_PLAN.md (E2E-DS-016-001 through E2E-DS-016-004)
+// Test Plan: docs/testing/DD-KA-016/TEST_PLAN.md (E2E-DS-016-001 through E2E-DS-016-004)
 //
 // Infrastructure: Kind cluster with DS deployed, PostgreSQL at NodePort 25433.
 // Pattern: Same as 12_audit_write_api_test.go — direct DB inserts + HTTP API queries.
@@ -49,7 +49,7 @@ const (
 	dsnHost = "host=localhost port=25433 user=slm_user password=test_password dbname=action_history sslmode=disable"
 )
 
-var _ = Describe("BR-HAPI-016: Remediation History API E2E Tests (DD-HAPI-016 v1.1)", Label("e2e", "remediation-history"), func() {
+var _ = Describe("BR-KA-016: Remediation History API E2E Tests (DD-KA-016 v1.1)", Label("e2e", "remediation-history"), func() {
 	var (
 		testDB          *sql.DB
 		testID          string

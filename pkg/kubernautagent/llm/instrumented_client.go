@@ -49,7 +49,7 @@ var (
 )
 
 // InstrumentedClient wraps an llm.Client and records Prometheus metrics
-// per BR-HAPI-011/301: business logic wrapper (NOT HTTP middleware).
+// per BR-KA-011/301: business logic wrapper (NOT HTTP middleware).
 type InstrumentedClient struct {
 	inner Client
 }

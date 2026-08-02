@@ -386,7 +386,7 @@ Instead of modifying the consecutive failure counter, the system uses DataStorag
 **Implementation status**:
 - ✅ `CheckIneffectiveRemediationChain` in `blocking.go` (Issue #214, BR-ORCH-042.5)
 - ✅ HAPI `resource_context` tools (`get_namespaced_resource_context` / `get_cluster_resource_context`) provide remediation history to the LLM
-- ✅ HAPI prompt engineering leverages history context (`remediation_history_prompt.py`, BR-HAPI-016, DD-HAPI-016 v1.1)
+- ✅ HAPI prompt engineering leverages history context (`remediation_history_prompt.py`, BR-KA-016, DD-KA-016 v1.1)
 - ✅ Inconclusive backoff and chain-counting (Issue #1091, BR-ORCH-042.6)
 
 **Why not Option A/B?**

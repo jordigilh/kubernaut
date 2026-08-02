@@ -238,7 +238,7 @@ func buildAuditWriteDependencies(db *sql.DB, redisClient *redis.Client, deps Ser
 	}, nil
 }
 
-// workflowCatalogDeps groups the DD-WE-006/BR-HAPI-016 dependencies
+// workflowCatalogDeps groups the DD-WE-006/BR-KA-016 dependencies
 // constructed by buildWorkflowCatalogDependencies.
 //
 // Issue #1661 Phase C: actionTypeRepo (*actiontype.Repository) was removed --
@@ -255,7 +255,7 @@ type workflowCatalogDeps struct {
 }
 
 // buildWorkflowCatalogDependencies constructs the OCI schema extractor
-// (DD-WE-006) and remediation history querier (DD-HAPI-016 v1.1).
+// (DD-WE-006) and remediation history querier (DD-KA-016 v1.1).
 //
 // V1.0: Embedding service removed (label-only search); see
 // CONFIDENCE_ASSESSMENT_REMOVE_EMBEDDINGS.md (92% confidence).

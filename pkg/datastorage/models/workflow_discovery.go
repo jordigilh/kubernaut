@@ -25,7 +25,7 @@ import (
 // ========================================
 // Authority: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
 // Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
-// Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// Business Requirement: BR-KA-017-001 (Three-Step Tool Implementation)
 // ========================================
 
 // ActionTypeDescription is an alias for the shared StructuredDescription type.
@@ -48,7 +48,7 @@ type ActionTypeEntry struct {
 // Global aggregate metrics are misleading for per-incident workflow selection — the conditions
 // under which they were collected (different signals, targets, environments) are not applicable
 // to the current case. The LLM should rely on contextual remediation history via spec-hash
-// matching (DD-HAPI-016) and the StructuredDescription for workflow comparison.
+// matching (DD-KA-016) and the StructuredDescription for workflow comparison.
 // These fields remain on the full RemediationWorkflow model for operator dashboards.
 type WorkflowDiscoveryEntry struct {
 	WorkflowID         string                `json:"workflowId"`

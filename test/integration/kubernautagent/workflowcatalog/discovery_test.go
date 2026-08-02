@@ -44,7 +44,7 @@ import (
 // production package); these specs exist to prove the wiring between
 // Catalog and Cache (Pyramid Invariant: "IT proves wiring").
 //
-// Business Requirements: BR-WORKFLOW-006, BR-WORKFLOW-007, BR-HAPI-017-001,
+// Business Requirements: BR-WORKFLOW-006, BR-WORKFLOW-007, BR-KA-017-001,
 // BR-STORAGE-012.
 var _ = Describe("IT-KA-1677-DISC Workflow Catalog discovery (Catalog wrapping Cache)", Label("integration", "kubernautagent", "workflow-catalog"), func() {
 

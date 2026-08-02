@@ -27,7 +27,7 @@ import (
 
 // mergeLLMConfig's Temperature handling — #1749: the previous
 // `if rt.Temperature != 0` check conflated "not configured" with
-// "explicitly configured as 0", violating BR-HAPI-199 and forcing a
+// "explicitly configured as 0", violating BR-KA-266 and forcing a
 // numeric temperature onto models (e.g. claude-opus-4-8) that reject the
 // parameter outright with a 400. Temperature is now a *float64 all the
 // way through, so mergeLLMConfig copies the pointer directly instead of
@@ -46,7 +46,7 @@ var _ = Describe("mergeLLMConfig — temperature pointer semantics (#1749)", fun
 		})
 	})
 
-	Describe("UT-KA-1749-008 (BR-HAPI-199): preserves an explicit temperature of 0", func() {
+	Describe("UT-KA-1749-008 (BR-KA-266): preserves an explicit temperature of 0", func() {
 		It("should set merged.Temperature to 0 when LLMRuntimeConfig.Temperature is an explicit pointer to 0.0", func() {
 			merged := mergeLLMConfig(types.LLMConfig{Provider: "openai"}, &kaconfig.LLMRuntimeConfig{
 				Model:       "gpt-4o",
@@ -54,7 +54,7 @@ var _ = Describe("mergeLLMConfig — temperature pointer semantics (#1749)", fun
 			})
 
 			Expect(merged.Temperature).NotTo(BeNil(),
-				"an explicit temperature of 0 must survive the merge — BR-HAPI-199 requires "+
+				"an explicit temperature of 0 must survive the merge — BR-KA-266 requires "+
 					"deterministic output to be an explicit configuration, not confused with 'unset'")
 			Expect(*merged.Temperature).To(Equal(0.0))
 		})

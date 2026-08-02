@@ -46,7 +46,7 @@
 - Defines enforced action type taxonomy (V1.0 initial set)
 - Introduces `ListAvailableActions` and `ListWorkflows` context-aware HAPI tools
 - Defines LLM three-step workflow discovery protocol (list actions -> list workflows -> get parameters)
-- Aligns with DD-HAPI-016 remediation history context (action-based history)
+- Aligns with DD-KA-016 remediation history context (action-based history)
 
 ---
 
