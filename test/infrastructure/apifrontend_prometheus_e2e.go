@@ -215,10 +215,29 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 //   - HighMemory: for:1h -> stays pending when metric present (tier 1.5)
 //   - DiskPressure: for:0s + metric injected -> inactive then evaluates live data (tier 2)
 //   - NetworkLatency: query matches no-data-ns target but no metric exists -> inactive no data (tier 2.5)
+//   - AFInvestigateGrounding: for:0s + vector(1) (never stale) -> tier 1, grounds
+//     the mock-LLM's "default/Pod/nginx" investigate fixture (see below)
 //
 // PromQL expressions include label selectors for namespace/kind/name because the
 // triage pipeline's Tier 1.5 and Tier 2 use ExtractLabelMatchers(query)
 // + MatchesResource to correlate rules with the target resource.
+//
+// #1839 RCA: deploy/apifrontend/overlays/e2e/mock-llm.yaml's "af_investigate"/
+// "af_progressive_investigate"/"af_investigate_resume" scenarios all target a
+// fixed namespace="default",kind="Pod",name="nginx" via kubernaut_investigate,
+// which (like kubernaut_remediate) now runs through the fail-closed severity
+// triage pipeline. Before Tier 3 was removed, an ungrounded call like this
+// silently fell back to the pure-LLM tier and always "succeeded". Without a
+// resource-specific rule, these calls degraded to Triager's namespace-level
+// correlation fallback (any firing alert sharing namespace="default", e.g.
+// HighCPU) — which is timing-dependent: HighCPU's injected OTLP metric goes
+// Prometheus-stale (default 5m) if not re-injected, so tests running late in
+// a parallel E2E suite intermittently lost that accidental grounding and
+// failed with ErrSeverityUndetermined (see progressive_flow_e2e_test.go
+// E2E-AF-1408-001). vector(1) has no underlying series to go stale, so this
+// rule fires deterministically for the whole suite lifetime and grounds the
+// resource directly (Tier 1, resource-exact match) instead of leaning on an
+// unrelated fixture's namespace-level spillover.
 const SeverityTriageAlertRulesYAML = `
 groups:
   - name: e2e-severity-triage
@@ -256,4 +275,15 @@ groups:
           source: prometheus
         annotations:
           summary: "Network latency is high"
+      - alert: AFInvestigateGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          namespace: default
+          kind: Pod
+          name: nginx
+        annotations:
+          summary: "Synthetic grounding alert for AF investigate E2E fixture (default/Pod/nginx, #1839)"
 `
