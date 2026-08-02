@@ -36,6 +36,20 @@ type MockAlternativeWorkflow struct {
 type MultiToolCallEntry struct {
 	Name      string                 `yaml:"name"`
 	Arguments map[string]interface{} `yaml:"arguments,omitempty"`
+
+	// NextToolCall chains an additional tool call after this entry's own
+	// FunctionResponse/tool result arrives, making a linked list of
+	// arbitrary depth. This lifts the historical 2-tool-call cap (issue
+	// #1853): scenarios like investigate -> discover_workflows ->
+	// select_workflow -> watch can now be scripted as a single chain
+	// instead of requiring N independent keyword-triggered turns.
+	NextToolCall *MultiToolCallEntry
+
+	// FallbackArguments replaces Arguments in its entirety when a
+	// "$from_tool:<tool>:<field>" placeholder in Arguments cannot be
+	// resolved. See config.ToolCallOverride.FallbackArguments (issue #1853)
+	// for the full rationale.
+	FallbackArguments map[string]interface{}
 }
 
 // MockScenarioConfig holds the static configuration for a mock scenario.
@@ -83,6 +97,10 @@ type MockScenarioConfig struct {
 	ToolCallName string
 	// ToolCallArgs provides the arguments for the custom tool call.
 	ToolCallArgs map[string]interface{}
+	// FallbackArguments replaces ToolCallArgs in its entirety when a
+	// "$from_tool:<tool>:<field>" placeholder in ToolCallArgs cannot be
+	// resolved (issue #1853). See config.ToolCallOverride.FallbackArguments.
+	FallbackArguments map[string]interface{}
 
 	// MultiToolCalls, when non-empty, causes the handler to return all
 	// listed tool calls in a single assistant message on the first request.

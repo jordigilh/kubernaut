@@ -181,6 +181,22 @@ func HasFunctionResponse(contents []GeminiContent) bool {
 	return false
 }
 
+// CountFunctionResponses returns the total number of FunctionResponse parts
+// across all contents. Used to position a caller within a NextToolCall chain
+// (issue #1853): the Nth response received means the Nth chain link is due
+// to fire next, generalizing the historical single-NextToolCall firing rule.
+func CountFunctionResponses(contents []GeminiContent) int {
+	count := 0
+	for _, c := range contents {
+		for _, p := range c.Parts {
+			if p.FunctionResponse != nil {
+				count++
+			}
+		}
+	}
+	return count
+}
+
 // LastContentIsFunctionResponse returns true if the final content entry in the
 // conversation is a FunctionResponse. This indicates the ADK just executed a
 // tool in the current iteration; the mock-LLM should stop repeating tool calls

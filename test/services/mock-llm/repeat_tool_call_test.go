@@ -1090,3 +1090,391 @@ keyword_scenarios:
 		})
 	})
 })
+
+var _ = Describe("NextToolCall N-deep chaining and template resolution (issue #1853)", func() {
+
+	Describe("UT-ML-1853-001: nested next_tool_call YAML parsing", func() {
+		It("should parse a 3-level chain (tool_call -> next_tool_call -> next_tool_call.next_tool_call)", func() {
+			yamlContent := `
+keyword_scenarios:
+  - name: "af_combined_1853"
+    keywords: ["combined chain 1853"]
+    match_last_only: true
+    tool_call:
+      name: "kubernaut_remediate"
+      arguments:
+        namespace: "default"
+    next_tool_call:
+      name: "kubernaut_investigate"
+      arguments:
+        rr_id: "$from_tool:kubernaut_remediate:rr_id"
+      next_tool_call:
+        name: "kubernaut_discover_workflows"
+        arguments:
+          rr_id: "$from_tool:kubernaut_remediate:rr_id"
+`
+			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
+			Expect(os.WriteFile(tmpFile, []byte(yamlContent), 0644)).To(Succeed())
+
+			overrides, err := config.LoadYAMLOverrides(tmpFile)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(overrides.KeywordScenarios).To(HaveLen(1))
+			ks := overrides.KeywordScenarios[0]
+			Expect(ks.NextToolCall).NotTo(BeNil())
+			Expect(ks.NextToolCall.Name).To(Equal("kubernaut_investigate"))
+			Expect(ks.NextToolCall.NextToolCall).NotTo(BeNil(), "3rd chain link must parse")
+			Expect(ks.NextToolCall.NextToolCall.Name).To(Equal("kubernaut_discover_workflows"))
+		})
+	})
+
+	Describe("UT-ML-1853-002: Gemini fires the 2nd chain link with $from_tool resolved against an earlier (not just immediately-prior) response", func() {
+		It("should fire kubernaut_discover_workflows with rr_id resolved from kubernaut_remediate, two responses back", func() {
+			overrides := &config.Overrides{
+				Scenarios: map[string]config.ScenarioOverride{},
+				KeywordScenarios: []config.KeywordScenarioOverride{
+					{
+						Name:          "af_combined_1853",
+						Keywords:      []string{"combined chain 1853"},
+						MatchLastOnly: true,
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_remediate", Arguments: map[string]interface{}{"namespace": "default"}},
+						NextToolCall: &config.ToolCallOverride{
+							Name:      "kubernaut_investigate",
+							Arguments: map[string]interface{}{"rr_id": "$from_tool:kubernaut_remediate:rr_id"},
+							NextToolCall: &config.ToolCallOverride{
+								Name:      "kubernaut_discover_workflows",
+								Arguments: map[string]interface{}{"rr_id": "$from_tool:kubernaut_remediate:rr_id"},
+							},
+						},
+					},
+				},
+			}
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+			router := handlers.NewRouter(registry, false, "")
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			reqBody := response.GeminiRequest{
+				Contents: []response.GeminiContent{
+					{Role: "user", Parts: []response.GeminiPart{{Text: "combined chain 1853"}}},
+					{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_remediate", Args: map[string]interface{}{"namespace": "default"}}}}},
+					{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_remediate", Response: map[string]interface{}{"rr_id": "rr-real-001"}}}}},
+					{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_investigate", Args: map[string]interface{}{"rr_id": "rr-real-001"}}}}},
+					{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_investigate", Response: map[string]interface{}{"summary": "OOM detected"}}}}},
+				},
+				Tools: []response.GeminiToolDecl{
+					{FunctionDeclarations: []response.GeminiFunctionDecl{
+						{Name: "kubernaut_remediate"},
+						{Name: "kubernaut_investigate"},
+						{Name: "kubernaut_discover_workflows"},
+					}},
+				},
+			}
+
+			body, err := json.Marshal(reqBody)
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := http.Post(ts.URL+"/v1beta/models/gemini-1.5-pro:generateContent", "application/json", bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var gemResp response.GeminiResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&gemResp)).To(Succeed())
+			Expect(gemResp.Candidates).To(HaveLen(1))
+
+			parts := gemResp.Candidates[0].Content.Parts
+			Expect(parts).To(HaveLen(1))
+			Expect(parts[0].FunctionCall).NotTo(BeNil(), "should fire the 2nd chain link")
+			Expect(parts[0].FunctionCall.Name).To(Equal("kubernaut_discover_workflows"),
+				"3-deep chain must reach its 2nd NextToolCall link, not stop after the 1st")
+			Expect(parts[0].FunctionCall.Args).To(HaveKeyWithValue("rr_id", "rr-real-001"),
+				"$from_tool must resolve against kubernaut_remediate's response even though it is 2 responses back, not just the immediately-prior one")
+		})
+	})
+
+	Describe("UT-ML-1853-003: OpenAI fires the 2nd chain link with $from_tool resolved against an earlier response", func() {
+		It("should fire kubernaut_discover_workflows with rr_id resolved from kubernaut_remediate, two tool results back", func() {
+			content := func(s string) *string { return &s }
+			overrides := &config.Overrides{
+				Scenarios: map[string]config.ScenarioOverride{},
+				KeywordScenarios: []config.KeywordScenarioOverride{
+					{
+						Name:          "af_combined_1853_openai",
+						Keywords:      []string{"combined chain 1853 openai"},
+						MatchLastOnly: true,
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_remediate", Arguments: map[string]interface{}{"namespace": "default"}},
+						NextToolCall: &config.ToolCallOverride{
+							Name:      "kubernaut_investigate",
+							Arguments: map[string]interface{}{"rr_id": "$from_tool:kubernaut_remediate:rr_id"},
+							NextToolCall: &config.ToolCallOverride{
+								Name:      "kubernaut_discover_workflows",
+								Arguments: map[string]interface{}{"rr_id": "$from_tool:kubernaut_remediate:rr_id"},
+							},
+						},
+					},
+				},
+			}
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+			router := handlers.NewRouter(registry, false, "")
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			reqBody := openai.ChatCompletionRequest{
+				Model: "gpt-4",
+				Messages: []openai.Message{
+					{Role: "user", Content: content("combined chain 1853 openai")},
+					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_1", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_remediate", Arguments: `{"namespace":"default"}`}}}},
+					{Role: "tool", Content: content(`{"rr_id":"rr-real-002"}`)},
+					{Role: "assistant", ToolCalls: []openai.ToolCall{{ID: "call_2", Type: "function", Function: openai.FunctionCall{Name: "kubernaut_investigate", Arguments: `{"rr_id":"rr-real-002"}`}}}},
+					{Role: "tool", Content: content(`{"summary":"OOM detected"}`)},
+				},
+				Tools: []openai.Tool{
+					{Type: "function", Function: openai.ToolDefinition{Name: "kubernaut_remediate"}},
+					{Type: "function", Function: openai.ToolDefinition{Name: "kubernaut_investigate"}},
+					{Type: "function", Function: openai.ToolDefinition{Name: "kubernaut_discover_workflows"}},
+				},
+			}
+
+			body, err := json.Marshal(reqBody)
+			Expect(err).NotTo(HaveOccurred())
+
+			resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var oaiResp openai.ChatCompletionResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&oaiResp)).To(Succeed())
+			Expect(oaiResp.Choices).To(HaveLen(1))
+			Expect(oaiResp.Choices[0].Message.ToolCalls).To(HaveLen(1),
+				"should fire the 2nd chain link")
+			Expect(oaiResp.Choices[0].Message.ToolCalls[0].Function.Name).To(Equal("kubernaut_discover_workflows"),
+				"3-deep chain must reach its 2nd NextToolCall link, not stop after the 1st")
+			Expect(oaiResp.Choices[0].Message.ToolCalls[0].Function.Arguments).To(ContainSubstring("rr-real-002"),
+				"$from_tool must resolve against kubernaut_remediate's tool result even though it is 2 tool results back")
+		})
+	})
+
+	Describe("UT-ML-1853-004: no cross-request state leak when resolving chain-link arguments", func() {
+		It("should resolve each request's $from_tool independently without mutating the shared scenario config", func() {
+			overrides := &config.Overrides{
+				Scenarios: map[string]config.ScenarioOverride{},
+				KeywordScenarios: []config.KeywordScenarioOverride{
+					{
+						Name:          "af_combined_1853_leak_check",
+						Keywords:      []string{"combined chain 1853 leak check"},
+						MatchLastOnly: true,
+						ToolCall:      config.ToolCallOverride{Name: "kubernaut_remediate", Arguments: map[string]interface{}{"namespace": "default"}},
+						NextToolCall: &config.ToolCallOverride{
+							Name:      "kubernaut_investigate",
+							Arguments: map[string]interface{}{"rr_id": "$from_tool:kubernaut_remediate:rr_id"},
+						},
+					},
+				},
+			}
+			// One registry/router shared across both requests, mirroring how a
+			// real mock-llm server reuses the same scenario singleton for every
+			// matching request.
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+			router := handlers.NewRouter(registry, false, "")
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			fire := func(rrID string) string {
+				reqBody := response.GeminiRequest{
+					Contents: []response.GeminiContent{
+						{Role: "user", Parts: []response.GeminiPart{{Text: "combined chain 1853 leak check"}}},
+						{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_remediate", Args: map[string]interface{}{"namespace": "default"}}}}},
+						{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_remediate", Response: map[string]interface{}{"rr_id": rrID}}}}},
+					},
+					Tools: []response.GeminiToolDecl{
+						{FunctionDeclarations: []response.GeminiFunctionDecl{
+							{Name: "kubernaut_remediate"},
+							{Name: "kubernaut_investigate"},
+						}},
+					},
+				}
+				body, err := json.Marshal(reqBody)
+				Expect(err).NotTo(HaveOccurred())
+				resp, err := http.Post(ts.URL+"/v1beta/models/gemini-1.5-pro:generateContent", "application/json", bytes.NewReader(body))
+				Expect(err).NotTo(HaveOccurred())
+				defer resp.Body.Close()
+				var gemResp response.GeminiResponse
+				Expect(json.NewDecoder(resp.Body).Decode(&gemResp)).To(Succeed())
+				parts := gemResp.Candidates[0].Content.Parts
+				Expect(parts).To(HaveLen(1))
+				Expect(parts[0].FunctionCall).NotTo(BeNil())
+				val, _ := parts[0].FunctionCall.Args["rr_id"].(string)
+				return val
+			}
+
+			Expect(fire("rr-AAA")).To(Equal("rr-AAA"), "first request resolves its own rr_id")
+			Expect(fire("rr-BBB")).To(Equal("rr-BBB"),
+				"second request must resolve its OWN rr_id, not a value leaked from the first request's resolution mutating the shared NextToolCall.Arguments map")
+			// Re-run the first value again to prove the second call didn't
+			// leave the shared config permanently pinned to "rr-BBB" either.
+			Expect(fire("rr-AAA")).To(Equal("rr-AAA"), "third request resolves independently again")
+		})
+	})
+
+	Describe("UT-ML-1853-005: fallback_arguments YAML parsing", func() {
+		It("should parse fallback_arguments as a sibling of arguments under tool_call", func() {
+			yamlContent := `
+keyword_scenarios:
+  - name: "af_investigate"
+    keywords: ["investigate"]
+    match_last_only: true
+    tool_call:
+      name: "kubernaut_investigate"
+      arguments:
+        rr_id: "$from_tool:kubernaut_remediate:rr_id"
+      fallback_arguments:
+        namespace: "kubernaut-system"
+        kind: "Deployment"
+        name: "memory-eater"
+`
+			tmpFile := filepath.Join(GinkgoT().TempDir(), "overrides.yaml")
+			Expect(os.WriteFile(tmpFile, []byte(yamlContent), 0644)).To(Succeed())
+
+			overrides, err := config.LoadYAMLOverrides(tmpFile)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(overrides.KeywordScenarios).To(HaveLen(1))
+			fb := overrides.KeywordScenarios[0].ToolCall.FallbackArguments
+			Expect(fb).To(HaveKeyWithValue("namespace", "kubernaut-system"))
+			Expect(fb).To(HaveKeyWithValue("kind", "Deployment"))
+			Expect(fb).To(HaveKeyWithValue("name", "memory-eater"))
+		})
+	})
+
+	Describe("UT-ML-1853-006: fallback_arguments used when $from_tool has no prior call to resolve against", func() {
+		// Reproduces the live #1853 finding on the shared fullpipeline-e2e
+		// cluster: a session that calls "investigate" WITHOUT a prior
+		// "kubernaut_remediate" call in the same conversation must not send
+		// the literal unresolved "$from_tool:kubernaut_remediate:rr_id"
+		// string as a real argument value (AF rejects it as an invalid
+		// resource name) -- it must fall back to creating a new RR from
+		// namespace/kind/name instead, mirroring kubernaut_investigate's
+		// real mutually-exclusive rr_id-vs-resource-identity argument
+		// contract (pkg/apifrontend/tools/ka_investigate_mcp.go).
+		overrides := &config.Overrides{
+			Scenarios: map[string]config.ScenarioOverride{},
+			KeywordScenarios: []config.KeywordScenarioOverride{
+				{
+					Name:           "af_investigate_fallback_check",
+					Keywords:       []string{"investigate fallback check"},
+					MatchLastOnly:  true,
+					RepeatToolCall: true, // mirrors the real af_investigate scenario's repeat_tool_call: true
+					ToolCall: config.ToolCallOverride{
+						Name:      "kubernaut_investigate",
+						Arguments: map[string]interface{}{"rr_id": "$from_tool:kubernaut_remediate:rr_id"},
+						FallbackArguments: map[string]interface{}{
+							"namespace": "kubernaut-system",
+							"kind":      "Deployment",
+							"name":      "memory-eater",
+						},
+					},
+				},
+			},
+		}
+
+		It("Gemini: falls back to namespace/kind/name when no prior kubernaut_remediate exists in the conversation", func() {
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+			router := handlers.NewRouter(registry, false, "")
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			reqBody := response.GeminiRequest{
+				Contents: []response.GeminiContent{
+					{Role: "user", Parts: []response.GeminiPart{{Text: "investigate fallback check"}}},
+				},
+				Tools: []response.GeminiToolDecl{
+					{FunctionDeclarations: []response.GeminiFunctionDecl{{Name: "kubernaut_investigate"}}},
+				},
+			}
+			body, err := json.Marshal(reqBody)
+			Expect(err).NotTo(HaveOccurred())
+			resp, err := http.Post(ts.URL+"/v1beta/models/gemini-1.5-pro:generateContent", "application/json", bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			var gemResp response.GeminiResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&gemResp)).To(Succeed())
+			parts := gemResp.Candidates[0].Content.Parts
+			Expect(parts).To(HaveLen(1))
+			Expect(parts[0].FunctionCall).NotTo(BeNil())
+			args := parts[0].FunctionCall.Args
+			Expect(args).NotTo(HaveKey("rr_id"), "the broken half-resolved rr_id must not be sent at all")
+			Expect(args).To(HaveKeyWithValue("namespace", "kubernaut-system"))
+			Expect(args).To(HaveKeyWithValue("name", "memory-eater"))
+		})
+
+		It("OpenAI: falls back to namespace/kind/name when no prior kubernaut_remediate exists in the conversation", func() {
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+			router := handlers.NewRouter(registry, false, "")
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			userMsg := "investigate fallback check"
+			reqBody := openai.ChatCompletionRequest{
+				Model:    "gpt-4",
+				Messages: []openai.Message{{Role: "user", Content: &userMsg}},
+				Tools: []openai.Tool{
+					{Type: "function", Function: openai.ToolDefinition{Name: "kubernaut_investigate"}},
+				},
+			}
+			body, err := json.Marshal(reqBody)
+			Expect(err).NotTo(HaveOccurred())
+			resp, err := http.Post(ts.URL+"/v1/chat/completions", "application/json", bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			var oaiResp openai.ChatCompletionResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&oaiResp)).To(Succeed())
+			Expect(oaiResp.Choices[0].Message.ToolCalls).To(HaveLen(1))
+			argsJSON := oaiResp.Choices[0].Message.ToolCalls[0].Function.Arguments
+			Expect(argsJSON).NotTo(ContainSubstring("from_tool"), "the broken half-resolved rr_id must not be sent at all")
+			Expect(argsJSON).To(ContainSubstring("kubernaut-system"))
+			Expect(argsJSON).To(ContainSubstring("memory-eater"))
+		})
+
+		It("does NOT use the fallback when a prior kubernaut_remediate call resolves rr_id normally (no regression to existing multi-turn flows)", func() {
+			registry := scenarios.DefaultRegistryWithOverrides(overrides)
+			router := handlers.NewRouter(registry, false, "")
+			ts := httptest.NewServer(router)
+			defer ts.Close()
+
+			reqBody := response.GeminiRequest{
+				Contents: []response.GeminiContent{
+					// Turn 1: remediate, then its result. Turn 2: a fresh user
+					// message triggers investigate -- mirrors the real
+					// multi-turn shape (E2E-FP-1189-003 Turn 1 -> Turn 2),
+					// where the FunctionResponse is NOT the last content by
+					// the time "investigate" fires (LastContentIsFunctionResponse
+					// gates RepeatToolCall re-firing to avoid infinite loops).
+					{Role: "user", Parts: []response.GeminiPart{{Text: "create a remediation"}}},
+					{Role: "model", Parts: []response.GeminiPart{{FunctionCall: &response.GeminiFunctionCall{Name: "kubernaut_remediate", Args: map[string]interface{}{}}}}},
+					{Role: "user", Parts: []response.GeminiPart{{FunctionResponse: &response.GeminiFunctionResp{Name: "kubernaut_remediate", Response: map[string]interface{}{"rr_id": "rr-real-999"}}}}},
+					{Role: "user", Parts: []response.GeminiPart{{Text: "investigate fallback check"}}},
+				},
+				Tools: []response.GeminiToolDecl{
+					{FunctionDeclarations: []response.GeminiFunctionDecl{
+						{Name: "kubernaut_remediate"},
+						{Name: "kubernaut_investigate"},
+					}},
+				},
+			}
+			body, err := json.Marshal(reqBody)
+			Expect(err).NotTo(HaveOccurred())
+			resp, err := http.Post(ts.URL+"/v1beta/models/gemini-1.5-pro:generateContent", "application/json", bytes.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			var gemResp response.GeminiResponse
+			Expect(json.NewDecoder(resp.Body).Decode(&gemResp)).To(Succeed())
+			parts := gemResp.Candidates[0].Content.Parts
+			Expect(parts).To(HaveLen(1))
+			Expect(parts[0].FunctionCall).NotTo(BeNil())
+			args := parts[0].FunctionCall.Args
+			Expect(args).To(HaveKeyWithValue("rr_id", "rr-real-999"),
+				"when rr_id resolves successfully, the fallback must NOT override it")
+			Expect(args).NotTo(HaveKey("namespace"), "fallback args must not leak in when resolution succeeded")
+		})
+	})
+})
