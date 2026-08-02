@@ -275,7 +275,7 @@ spec:
 **4. Existing Remediation Pipeline Executes**:
 ```
 RemediationRequest → RemediationOrchestrator → RemediationProcessing
-  → AIAnalysis (HolmesGPT investigates with trace context)
+  → AIAnalysis (Kubernaut Agent (KA) investigates with trace context)
   → WorkflowExecution (creates Tekton pipeline)
   → Kubernetes applies remediation (e.g., scale deployment)
 ```

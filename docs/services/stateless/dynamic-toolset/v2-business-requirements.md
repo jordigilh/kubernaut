@@ -382,7 +382,7 @@ Automatically create and update ConfigMaps in Kubernetes cluster based on discov
 #### Business Value
 - **Automation**: No manual ConfigMap management
 - **Consistency**: ConfigMaps always reflect current services
-- **HolmesGPT Integration**: Seamless toolset updates
+- **Kubernaut Agent (KA) Integration**: Seamless toolset updates
 
 #### Acceptance Criteria
 
@@ -446,7 +446,7 @@ type ConfigMapReconciler interface {
 
 ### V1.1 (Post-V1 Deployment)
 2. **BR-TOOLSET-042**: ConfigMap Reconciliation Loop (8 hours)
-   - Critical for HolmesGPT integration
+   - Critical for KA integration
    - Completes V1 automation story
    - Leverages existing ConfigMap builder
 

@@ -8,7 +8,7 @@
 > architecture.
 >
 > **Authoritative source**: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md` (v2.0)
-> **V1.1 scope**: Level 2 AI-Powered Analysis (HolmesGPT PostExec)
+> **V1.1 scope**: Level 2 AI-Powered Analysis (Kubernaut Agent (KA) PostExec)
 
 **Business Requirement ID**: BR-EFFECTIVENESS-003
 **Category**: Effectiveness Monitor Service

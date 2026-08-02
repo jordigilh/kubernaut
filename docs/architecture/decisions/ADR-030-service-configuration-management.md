@@ -1103,9 +1103,9 @@ func checkRequiredDependencies(cfg *config.Config) error {
 |---------|----------------------|------------------|
 | **Gateway** | Redis | Yes |
 | **Data Storage** | PostgreSQL | Yes |
-| **HolmesGPT-API** | LLM Provider, Data Storage | Yes |
+| **Kubernaut Agent (KA)** | LLM Provider, Data Storage | Yes |
 | **WorkflowExecution** | Tekton Pipelines | Yes |
-| **AIAnalysis** | HolmesGPT-API | Yes |
+| **AIAnalysis** | KA | Yes |
 | **RemediationOrchestrator** | None | No (uses defaults) |
 | **SignalProcessing** | None | No (uses defaults) |
 | **Notification** | None (channels optional) | No (uses defaults) |

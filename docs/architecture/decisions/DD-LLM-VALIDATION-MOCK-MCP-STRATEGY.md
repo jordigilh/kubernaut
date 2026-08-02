@@ -999,7 +999,7 @@ Week 7-8: 93% → 95% (Integration, rushed)
 - [ ] CRD reconciliation
 
 ### Week 6: Integration Testing
-- [ ] End-to-end: AIAnalysis → HolmesGPT → Embedding → Data Storage
+- [ ] End-to-end: AIAnalysis → KA → Embedding → Data Storage
 - [ ] Replace mock MCP with real Embedding Service
 - [ ] Revalidate prompt with real semantic search
 

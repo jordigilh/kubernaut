@@ -512,7 +512,7 @@ spec:
           ## Automated Remediation
 
           **Trigger**: OOMKilled alert (payment-service, production)
-          **Analysis**: HolmesGPT investigation ID 12345
+          **Analysis**: Kubernaut Agent (KA) investigation ID 12345
           **Confidence**: 87%
 
           ## Changes

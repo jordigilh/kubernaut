@@ -390,7 +390,7 @@ metadata:
 ```
 
 **Responsibilities**:
-- Process AI analysis using HolmesGPT
+- Process AI analysis using Kubernaut Agent (KA)
 - Generate remediation recommendations
 - Update status.phase to "completed"
 - **RemediationRequest watches status** and creates WorkflowExecution when ready

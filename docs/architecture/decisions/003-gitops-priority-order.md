@@ -253,7 +253,7 @@ notification:
       - GC pressure is elevated but GC remains effective
     confidence: 0.88
     confidenceExplanation: "High confidence based on clear pattern (3+ OOMs) and supporting metrics"
-    methodology: "HolmesGPT + Pattern Analysis + Historical Correlation"
+    methodology: "Kubernaut Agent (KA) + Pattern Analysis + Historical Correlation"
     supportingEvidence:
       - logSnippet: "OOMKilled: Memory cgroup out of memory: Killed process 1234"
       - metricsQuery: "container_memory_usage_bytes{pod='webapp-5f9c7d8b6-xyz12'}"

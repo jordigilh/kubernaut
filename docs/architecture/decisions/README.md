@@ -57,9 +57,9 @@
 ||---|-------|-------------------|--------|------|--------|
 || DD-CONTEXT-001 | [Cache Stampede Prevention](./DD-CONTEXT-001-cache-stampede-prevention.md) | Context API | ✅ Approved | 2025-10-20 | 90% DB query reduction, single-flight deduplication |
 || DD-CONTEXT-002 | [Cache Size Limit Configuration](./DD-CONTEXT-002-cache-size-limit-configuration.md) | Context API | ✅ Approved | 2025-10-20 | OOM prevention, configurable limits |
-|| DD-CONTEXT-003 | [Context Enrichment Placement](./DD-CONTEXT-003-Context-Enrichment-Placement.md) | Context API / HolmesGPT API | ✅ Approved | 2025-10-22 | LLM-driven tool call pattern, 36% token cost reduction |
+|| DD-CONTEXT-003 | [Context Enrichment Placement](./DD-CONTEXT-003-Context-Enrichment-Placement.md) | Context API / KA | ✅ Approved | 2025-10-22 | LLM-driven tool call pattern, 36% token cost reduction |
 || DD-CONTEXT-004 | [BR-AI-002 Ownership](./DD-CONTEXT-004-BR-AI-002-Ownership.md) | AIAnalysis / Context API | ✅ Approved | 2025-10-22 | Keep BR-AI-002 in AIAnalysis (revised scope) |
-|| DD-016 | [Dynamic Toolset V2.0 Deferral](./DD-016-dynamic-toolset-v2-deferral.md) | Dynamic Toolset | ✅ Approved | 2025-11-21 | Deferred to V2.0 (redundant with HolmesGPT-API Prometheus discovery) |
+|| DD-016 | [Dynamic Toolset V2.0 Deferral](./DD-016-dynamic-toolset-v2-deferral.md) | Dynamic Toolset | ✅ Approved | 2025-11-21 | Deferred to V2.0 (redundant with KA Prometheus discovery) |
 || DD-017 | [Effectiveness Monitor V1.1 Deferral](./DD-017-effectiveness-monitor-v1.1-deferral.md) | Effectiveness Monitor | ✅ Approved | 2025-12-01 | Level 1 in V1.0, Level 2 in V1.1 (DD-017 v2.0 partial reinstatement) |
 || DD-EFFECTIVENESS-001 | [Hybrid Automated + AI Analysis](./DD-EFFECTIVENESS-001-Hybrid-Automated-AI-Analysis.md) | Effectiveness Monitor | ✅ Level 1 V1.0 / Level 2 V1.1 | 2025-10-16 | 85-90% effectiveness, 11x ROI (DD-017) |
 || DD-EFFECTIVENESS-002 | [Restart Recovery Idempotency](./DD-EFFECTIVENESS-002-Restart-Recovery-Idempotency.md) | Effectiveness Monitor | ✅ V1.0 (applies to Level 1) | 2025-10-16 | Idempotent restart recovery (DD-017) |
@@ -71,7 +71,7 @@
 || DD-KA-016 | [Remediation History Context](./DD-KA-016-remediation-history-context.md) | Kubernaut Agent (KA) | ✅ Approved | 2026-02-05 | KA remediation history context enrichment for LLM investigation |
 || DD-KA-017 | [Three-Step Workflow Discovery Integration](./DD-KA-017-three-step-workflow-discovery-integration.md) | Kubernaut Agent (KA) | ✅ Approved | 2026-02-05 | Replace search_workflow_catalog with three-step discovery tools (incident + recovery). Implements DD-WORKFLOW-016 protocol; discovery ownership later moved to KA per DD-WORKFLOW-019. |
 || DD-WORKFLOW-016 | [Action-Type Workflow Catalog Indexing](./DD-WORKFLOW-016-action-type-workflow-indexing.md) | Workflow Catalog / KA / DS | ✅ Approved | 2026-02-05 | Replace signal_type with action_type as primary catalog matching key (DD-WORKFLOW-001 v2.6) |
-|| DD-WORKFLOW-017 | [Workflow Lifecycle Component Interactions](./DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) | DS / HAPI / RO / WE | ✅ Approved | 2026-02-05 | End-to-end workflow lifecycle (creation, discovery, execution, disable/enable). Supersedes DD-WORKFLOW-005, DD-WORKFLOW-007. |
+|| DD-WORKFLOW-017 | [Workflow Lifecycle Component Interactions](./DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) | DS / KA / RO / WE | ✅ Approved | 2026-02-05 | End-to-end workflow lifecycle (creation, discovery, execution, disable/enable). Supersedes DD-WORKFLOW-005, DD-WORKFLOW-007. |
 #### **Authentication & Authorization Decisions**
 
 || ID | Title | Service/Component | Status | Date | Impact |

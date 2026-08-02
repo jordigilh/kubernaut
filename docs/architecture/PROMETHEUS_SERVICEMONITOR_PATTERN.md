@@ -425,7 +425,7 @@ spec:
 
 ---
 
-#### 8. HolmesGPT API
+#### 8. Kubernaut Agent (KA)
 
 ```yaml
 apiVersion: monitoring.coreos.com/v1
@@ -1027,7 +1027,7 @@ up{namespace="kubernaut-system"} == 0
 | 5 | ~~Kubernetes Executor~~ (DEPRECATED - ADR-025) | ✅ | ✅ | 9090 | TokenReviewer |
 | 6 | Gateway Service | ✅ | ✅ | 9090 | TokenReviewer |
 | 7 | Notification Service | ✅ | ✅ | 9090 | TokenReviewer |
-| 8 | HolmesGPT API | ✅ | ✅ | 9090 | TokenReviewer |
+| 8 | KA | ✅ | ✅ | 9090 | TokenReviewer |
 
 ---
 

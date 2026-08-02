@@ -202,7 +202,7 @@ AI Learning Opportunity: Consider auto-approval for pod restarts in non-prod
 --- OPTIMIZATION RECOMMENDATIONS ---
 1. HIGH PRIORITY: Enable auto-approval for low-risk pod restarts in staging (save 2m45s)
 2. MEDIUM PRIORITY: Investigate memory leak in application code (permanent fix)
-3. LOW PRIORITY: Improve HolmesGPT confidence scoring (current: 75%, target: 85%+)
+3. LOW PRIORITY: Improve Kubernaut Agent (KA) confidence scoring (current: 75%, target: 85%+)
 
 --- TREND ANALYSIS ---
 Similar Remediations (Last 30 Days): 15 occurrences

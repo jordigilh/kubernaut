@@ -33,7 +33,7 @@ RemediationOrchestrator MUST enforce a global timeout (default: 1 hour) for the 
 ### Rationale
 
 Stuck remediations can occur due to:
-- Hung HolmesGPT investigations
+- Hung Kubernaut Agent (KA) investigations
 - Unresponsive approvers (beyond approval timeout)
 - Stuck Tekton pipelines
 - Network partitions
@@ -110,7 +110,7 @@ Default phase timeouts:
 | Phase | Default Timeout | Rationale |
 |-------|-----------------|-----------|
 | SignalProcessing | 5 minutes | Quick enrichment |
-| AIAnalysis | 10 minutes | HolmesGPT investigation |
+| AIAnalysis | 10 minutes | KA investigation |
 | Approval | 15 minutes | Per ADR-040 |
 | WorkflowExecution | 30 minutes | Tekton pipeline execution |
 

@@ -3,7 +3,7 @@
 **Date**: January 26, 2026
 **Status**: ✅ **APPROVED** - Authoritative
 **Authority**: Supersedes inline secret generation approaches
-**Related**: DD-AUTH-007 (OAuth2-Proxy Migration), DD-AUTH-004 (DataStorage OAuth), DD-AUTH-006 (HAPI OAuth)
+**Related**: DD-AUTH-007 (OAuth2-Proxy Migration), DD-AUTH-004 (DataStorage OAuth), DD-AUTH-006 (Kubernaut Agent (KA) OAuth)
 
 ---
 
@@ -251,7 +251,7 @@ secretGenerator:
     options:
       disableNameSuffixHash: true  # Stable name for Helm reference
 
-  # HolmesGPT API OAuth2-Proxy Cookie Secret
+  # KA OAuth2-Proxy Cookie Secret
   - name: kubernaut-agent-oauth-proxy-secret
     literals:
       - cookie-secret=$(openssl rand -base64 32)
@@ -519,7 +519,7 @@ kubectl exec -n kubernaut-system deployment/data-storage-service \
 
 - **DD-AUTH-007**: OAuth2-Proxy Migration (origin-oauth-proxy → oauth2-proxy)
 - **DD-AUTH-004**: DataStorage OAuth-Proxy Legal Hold
-- **DD-AUTH-006**: HAPI OAuth-Proxy Integration
+- **DD-AUTH-006**: KA OAuth-Proxy Integration
 - **Kubernetes kubectl v1.35.0**: Embeds Kustomize v5.7.1 (verified via upstream)
 - **Kustomize helmCharts**: Requires `--enable-helm` flag (NOT available in kubectl)
 - **OAuth2-Proxy Documentation**: https://oauth2-proxy.github.io/oauth2-proxy/docs/

@@ -17,7 +17,7 @@ This design decision establishes **mandatory observability standards** for all K
 
 **Key Principle**: All services MUST follow consistent observability patterns to enable unified monitoring, debugging, and operational excellence.
 
-**Scope**: All Kubernaut services (Gateway, Context API, HolmesGPT API, Controllers, etc.).
+**Scope**: All Kubernaut services (Gateway, Context API, Kubernaut Agent (KA), Controllers, etc.).
 
 ---
 
@@ -1330,7 +1330,7 @@ func (s *Server) handleContextQuery(w http.ResponseWriter, r *http.Request) {
 | Service | Status | Priority | Target Date |
 |---------|--------|----------|-------------|
 | **Context API** | 🔄 Planned | P0 | Before production |
-| **HolmesGPT API** | 🔄 Planned | P0 | Before production |
+| **KA** | 🔄 Planned | P0 | Before production |
 | **Effectiveness Monitor** | 🔄 Planned | P1 | Before production |
 | **CRD Controllers** | 🔄 Planned | P2 | Before production |
 

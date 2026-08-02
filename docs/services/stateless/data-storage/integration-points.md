@@ -75,7 +75,7 @@ Data Storage Service acts as the **REST API Gateway for Database Access** in Pha
 
 ## Downstream Services (Readers - Phase 1)
 
-### **1. HolmesGPT API Service (Active Integration)**
+### **1. Kubernaut Agent (KA) Service (Active Integration)**
 
 **Purpose**: Query workflow catalog for semantic search during incident investigation
 
@@ -87,7 +87,7 @@ Data Storage Service acts as the **REST API Gateway for Database Access** in Pha
 #### **Read Flow**
 
 ```go
-// In HolmesGPT API Service (active)
+// In KA Service (active)
 import (
     "encoding/json"
     "fmt"
