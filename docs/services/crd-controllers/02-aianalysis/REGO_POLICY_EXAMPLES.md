@@ -32,7 +32,7 @@ All policies in this document use OPA v1 syntax (required for `github.com/open-p
 |---------|------|---------|
 | **1.5** | 2025-12-05 | Added OPA v1 syntax header; All policies verified to use `if` keyword and `:=` operator |
 | **1.4** | 2025-12-02 | Added `failed_detections` to input schema per DD-WORKFLOW-001 v2.1; Added detection failure handling policies; Key distinction: "Resource doesn't exist" ≠ detection failure |
-| 1.3 | 2025-12-02 | Added `target_in_owner_chain` and `warnings` to input schema (from HolmesGPT-API); Added data quality rules for label accuracy |
+| 1.3 | 2025-12-02 | Added `target_in_owner_chain` and `warnings` to input schema (from Kubernaut Agent (KA)); Added data quality rules for label accuracy |
 | 1.2 | 2025-11-30 | Aligned with DD-WORKFLOW-001 v1.8: snake_case for all API fields; Updated input schema to use `git_ops_managed`, `pdb_protected`, etc. |
 | 1.1 | 2025-11-30 | Added `DetectedLabels` and `CustomLabels` to input schema; Added GitOps/constraint-aware policies |
 | 1.0 | 2025-11-29 | Initial draft with sample policies |
@@ -50,7 +50,7 @@ All policies in this document use OPA v1 syntax (required for `github.com/open-p
 type ApprovalPolicyInput struct {
     // From AIAnalysis.status.selectedWorkflow
     Action     string  `json:"action"`     // e.g., "restart-pod", "scale-deployment"
-    Confidence float64 `json:"confidence"` // 0.0-1.0 from HolmesGPT
+    Confidence float64 `json:"confidence"` // 0.0-1.0 from Kubernaut Agent (KA)
 
     // From SignalProcessing context (5 mandatory labels)
     Environment      string `json:"environment"`       // production, staging, dev
@@ -80,7 +80,7 @@ type ApprovalPolicyInput struct {
 
     // ========================================
     // DATA QUALITY INDICATORS (Dec 2025)
-    // From HolmesGPT-API response
+    // From KA response
     // ========================================
 
     // Whether RCA-identified target resource was found in OwnerChain
@@ -88,7 +88,7 @@ type ApprovalPolicyInput struct {
     // Use for stricter approval policies when label accuracy is uncertain
     TargetInOwnerChain bool `json:"target_in_owner_chain"`
 
-    // Warnings from HolmesGPT-API (e.g., "Low confidence selection", "OwnerChain mismatch")
+    // Warnings from KA (e.g., "Low confidence selection", "OwnerChain mismatch")
     Warnings []string `json:"warnings"`
 }
 
@@ -426,7 +426,7 @@ is_always_require_approval if {
 
 # ========================================
 # DATA QUALITY RULES (Dec 2025)
-# Based on target_in_owner_chain from HolmesGPT-API
+# Based on target_in_owner_chain from Kubernaut Agent (KA)
 # ========================================
 
 # If RCA target is NOT in OwnerChain, DetectedLabels may not be accurate
@@ -951,7 +951,7 @@ data:
 
 | Document | Purpose |
 |----------|---------|
-| [integration-points.md](./integration-points.md) | Rego policy input schema from HolmesGPT-API |
+| [integration-points.md](./integration-points.md) | Rego policy input schema from Kubernaut Agent (KA) |
 | [crd-schema.md](./crd-schema.md) | AIAnalysis status fields populated from Rego |
 | [DD-WORKFLOW-001](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) | Label schema (snake_case convention) |
 | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) | `target_in_owner_chain` and `warnings` source |

@@ -54,21 +54,21 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 #### 2.1.3 Investigation Provider
 - **BR-AI-011**: MUST conduct intelligent alert investigation using historical patterns
   - **Enhanced**: Use alert tracking ID to correlate with historical investigation patterns
-  - **Enhanced**: Include tracking ID in HolmesGPT-API investigation requests (v1)
+  - **Enhanced**: Include tracking ID in Kubernaut Agent (KA) investigation requests (v1)
   - **Enhanced**: Maintain investigation results linked to alert tracking for pattern learning
   - **Enhanced**: Support investigation quality metrics per alert tracking correlation
-  - **v1**: HolmesGPT-API integration (primary implementation)
+  - **v1**: KA integration (primary implementation)
   - **v2**: Multi-provider support with LLM fallback mechanisms
 - **BR-AI-012**: MUST identify root cause candidates with supporting evidence
-  - **v1**: HolmesGPT-API investigation capabilities
+  - **v1**: KA investigation capabilities
   - **v2**: Enhanced with direct LLM integration fallback
 - **BR-AI-013**: MUST correlate alerts across time windows and resource boundaries
-  - **v1**: HolmesGPT-API correlation features
+  - **v1**: KA correlation features
   - **v2**: Multi-provider correlation with intelligent routing
 - **BR-AI-014**: MUST generate investigation reports with actionable insights
-  - **v1**: HolmesGPT-API structured investigation results
+  - **v1**: KA structured investigation results
 - **BR-AI-015**: MUST support custom investigation scopes and time windows
-  - **v1**: HolmesGPT-API custom toolset configurations
+  - **v1**: KA custom toolset configurations
 
 ### 2.2 Service Health & Monitoring
 - **BR-AI-016**: MUST provide real-time health status for all AI services
@@ -82,7 +82,7 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 - **BR-AI-022**: MUST implement confidence thresholds for automated decision making
 - **BR-AI-023**: MUST detect and handle AI hallucinations or invalid responses
 - **BR-AI-024**: MUST provide fallback mechanisms when AI services are unavailable
-  - **v1**: Graceful degradation with error handling (HolmesGPT-API unavailable)
+  - **v1**: Graceful degradation with error handling (Kubernaut Agent (KA) unavailable)
   - **v2**: Direct LLM integration fallback with context enrichment
 - **BR-AI-025**: MUST maintain response quality metrics and improvement tracking
 - **BR-AI-051**: MUST validate AI responses for dependency completeness and correctness
@@ -90,7 +90,7 @@ The AI & Machine Learning components provide intelligent decision-making capabil
   - **Completeness**: No missing dependency references (all referenced IDs exist in recommendations list)
   - **Correctness**: Dependency IDs MUST be unique and correctly formatted
   - **Error Handling**: Reject response with clear error if dependencies reference non-existent recommendations
-  - **v1**: AIAnalysis service validates HolmesGPT response dependencies
+  - **v1**: AIAnalysis service validates Kubernaut Agent (KA) response dependencies
 - **BR-AI-052**: MUST detect circular dependencies in AI recommendation graphs
   - **Detection Algorithm**: Implement topological sort or cycle detection algorithm
   - **Validation Timing**: Perform circular dependency detection before WorkflowExecution CRD creation
@@ -163,7 +163,7 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 - **BR-AI-075**: MUST produce structured workflow selection output per ADR-041 LLM contract
   - **Output Fields**: `workflowId` (UUID from catalog), `containerImage` (OCI reference), `parameters` (map)
   - **Catalog Integration**: Selected workflow MUST exist in Data Storage workflow catalog
-  - **Container Resolution**: HolmesGPT-API resolves `workflowId` → `containerImage` during MCP search
+  - **Container Resolution**: Kubernaut Agent (KA) resolves `workflowId` → `containerImage` during MCP search
   - **Parameter Validation**: Parameters MUST conform to workflow's parameter schema
   - **Reference**: DD-CONTRACT-001 v1.2, DD-WORKFLOW-002 v3.3
 - **BR-AI-076**: MUST provide rich approval context when confidence is below threshold (<80%)
@@ -187,7 +187,7 @@ The AI & Machine Learning components provide intelligent decision-making capabil
   - **Context Fields**: `workflowId`, `containerImage`, `failureReason`, `failurePhase`, `kubernetesReason`
   - **Purpose**: Enable LLM to learn from failures and avoid repeating mistakes
   - **Reference**: DD-RECOVERY-003
-- **BR-AI-082**: MUST call HolmesGPT-API recovery endpoint for failed workflow analysis
+- **BR-AI-082**: MUST call Kubernaut Agent (KA) recovery endpoint for failed workflow analysis
   - **Endpoint**: `POST /api/v1/recovery/analyze`
   - **Payload**: Original context + failure context + Kubernetes reason codes
   - **Response**: New workflow recommendation avoiding previous failure causes
@@ -238,7 +238,7 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 
 **Architecture**: **Hybrid Approach** (Automated Checks + Selective AI Analysis)
 - **Effectiveness Monitor Service**: GO service performing automated checks, metrics collection, and data aggregation
-- **HolmesGPT API Integration**: AI-powered pattern analysis, root cause validation, and lesson extraction (selective)
+- **Kubernaut Agent (KA) Integration**: AI-powered pattern analysis, root cause validation, and lesson extraction (selective)
 - **Design Decision**: [DD-EFFECTIVENESS-001: Hybrid Automated + AI Analysis Approach](../architecture/decisions/)
 
 ### 4.1 Business Capabilities
@@ -253,48 +253,48 @@ The AI & Machine Learning components provide intelligent decision-making capabil
   - **Frequency**: Every workflow execution
   - **Dependencies**: BR-EXEC-027 to BR-EXEC-030 (action outcome verification)
 
-##### **AI-Powered Analysis (HolmesGPT API - Selective Execution)**
+##### **AI-Powered Analysis (KA - Selective Execution)**
 - **BR-INS-002**: MUST correlate action outcomes with environmental improvements using AI analysis
-  - **Implementation**: HolmesGPT API `/api/v1/postexec/analyze` endpoint
+  - **Implementation**: KA `/api/v1/postexec/analyze` endpoint
   - **Scope**: Causation analysis (not just correlation), root cause validation, unintended consequences
   - **Triggers**: P0 failures, new action types, suspected oscillations, periodic batch analysis
   - **Rationale**: AI distinguishes "problem masked" from "problem solved" (see DD-EFFECTIVENESS-001)
 
 - **BR-INS-003**: MUST track long-term effectiveness trends for different action types
-  - **Implementation**: Data Storage (automated metrics) + HolmesGPT API (pattern analysis)
+  - **Implementation**: Data Storage (automated metrics) + KA (pattern analysis)
   - **Automated**: Time-series metrics, success rates, execution times
   - **AI Analysis**: Context-aware patterns (e.g., "gradual scaling better for Java memory leaks")
 
 - **BR-INS-004**: MUST identify actions that consistently produce positive outcomes
-  - **Implementation**: Effectiveness Monitor (data aggregation) + HolmesGPT API (pattern recognition)
+  - **Implementation**: Effectiveness Monitor (data aggregation) + KA (pattern recognition)
   - **Automated**: Success rate calculations, metric improvements
   - **AI Analysis**: Context-specific effectiveness (environment, workload type, time of day)
 
 - **BR-INS-005**: MUST detect actions that cause adverse effects or oscillations
-  - **Implementation**: Effectiveness Monitor (metric anomaly detection) + HolmesGPT API (causation analysis)
+  - **Implementation**: Effectiveness Monitor (metric anomaly detection) + KA (causation analysis)
   - **Automated**: Detect metric changes (CPU throttling after memory increase)
   - **AI Analysis**: Explain causation ("Fix OOM → JVM heap expansion → GC pauses → CPU throttling")
   - **Critical**: Prevents remediation loops (BR-WF-541)
 
 #### 4.1.2 Analytics Engine (Pattern Learning - AI-Powered)
 - **BR-INS-006**: MUST provide advanced pattern recognition across remediation history
-  - **Implementation**: HolmesGPT API with historical data from Context API
+  - **Implementation**: KA with historical data from Context API
   - **Scope**: Cross-remediation patterns, context-aware insights, trend analysis
 
 - **BR-INS-007**: MUST generate insights on optimal remediation strategies
-  - **Implementation**: HolmesGPT API analyzing effectiveness data across contexts
+  - **Implementation**: KA analyzing effectiveness data across contexts
   - **Examples**: "Gradual scaling 95% effective vs immediate scaling 80% effective for stateful apps"
 
 - **BR-INS-008**: MUST identify seasonal or temporal patterns in system behavior
-  - **Implementation**: HolmesGPT API analyzing time-series effectiveness data
+  - **Implementation**: KA analyzing time-series effectiveness data
   - **Examples**: "OOM incidents increase 3x during peak traffic hours"
 
 - **BR-INS-009**: MUST detect emerging issues before they become critical alerts
-  - **Implementation**: HolmesGPT API analyzing effectiveness degradation trends
+  - **Implementation**: KA analyzing effectiveness degradation trends
   - **Examples**: "Action effectiveness declining 5% week-over-week"
 
 - **BR-INS-010**: MUST provide predictive insights for capacity planning
-  - **Implementation**: HolmesGPT API analyzing resource utilization trends
+  - **Implementation**: KA analyzing resource utilization trends
   - **Examples**: "Current growth rate will exhaust capacity in 45 days"
 
 #### 4.1.3 Continuous Learning
@@ -319,19 +319,19 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 
 #### 5.1.1 Multi-Provider Support
 - **BR-LLM-001**: MUST support OpenAI GPT models (GPT-3.5, GPT-4, GPT-4o)
-  - **v1**: HolmesGPT-API handles LLM provider integration
+  - **v1**: Kubernaut Agent (KA) handles LLM provider integration
   - **v2**: Direct AI Analysis Engine integration for fallback
 - **BR-LLM-002**: MUST support Anthropic Claude models (Claude-3, Claude-3.5)
-  - **v1**: HolmesGPT-API handles provider integration
+  - **v1**: KA handles provider integration
   - **v2**: Direct AI Analysis Engine integration for fallback
 - **BR-LLM-003**: MUST support Azure OpenAI Service integration
-  - **v1**: HolmesGPT-API handles provider integration
+  - **v1**: KA handles provider integration
   - **v2**: Direct AI Analysis Engine integration for fallback
 - **BR-LLM-004**: MUST support AWS Bedrock model access
-  - **v1**: HolmesGPT-API handles provider integration
+  - **v1**: KA handles provider integration
   - **v2**: Direct AI Analysis Engine integration for fallback
 - **BR-LLM-005**: MUST support local model inference (Ollama, Ramalama)
-  - **v1**: HolmesGPT-API handles local model integration
+  - **v1**: KA handles local model integration
   - **v2**: Direct AI Analysis Engine integration for cost optimization
 
 #### 5.1.2 Enhanced Client Capabilities
@@ -340,7 +340,7 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 - **BR-LLM-008**: MUST support streaming responses for large outputs
 - **BR-LLM-009**: MUST handle rate limiting and quota management across providers
 - **BR-LLM-010**: MUST implement cost optimization strategies for API usage
-  - **v1**: HolmesGPT-API handles cost optimization internally
+  - **v1**: KA handles cost optimization internally
   - **v2**: AI Analysis Engine implements intelligent model selection and cost optimization
 
 #### 5.1.3 Response Processing
@@ -361,7 +361,7 @@ The AI & Machine Learning components provide intelligent decision-making capabil
   - **Format Specification**: Prompt MUST request `dependencies` array field for each recommendation
   - **Guidance**: Provide examples in prompt showing proper dependency specification
   - **Example Instruction**: "For each recommendation, specify 'dependencies': array of recommendation IDs that must complete first"
-  - **v1**: HolmesGPT prompt engineering for dependency specification
+  - **v1**: KA prompt engineering for dependency specification
 - **BR-LLM-036**: MUST request execution order specification in prompts
   - **Ordering Guidance**: Prompt MUST instruct LLM to consider execution order and parallelization opportunities
   - **Parallel Detection**: Prompt MUST guide LLM to identify steps that can execute in parallel
@@ -436,7 +436,7 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 - **BR-INT-005**: MUST integrate with intelligence components for enhanced analysis
 - **BR-AI-TRACK-001**: MUST integrate with Remediation Processor tracking system
   - Receive alert tracking ID from Remediation Processor for all AI analysis operations
-  - Include tracking ID in all AI service interactions (HolmesGPT-API, LLM providers)
+  - Include tracking ID in all AI service interactions (Kubernaut Agent (KA), LLM providers)
   - Propagate tracking ID to Workflow Engine with analysis results and recommendations
   - Maintain AI decision audit trail linked to alert tracking for explainability
   - Support AI effectiveness measurement per alert tracking correlation
@@ -625,17 +625,17 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 
 ## 15. Release Versioning Strategy
 
-### 15.1 Version 1 (v1) - HolmesGPT-Only Integration
+### 15.1 Version 1 (v1) - Kubernaut Agent (KA)-Only Integration
 **Scope**: Simplified AI Analysis Engine with single provider integration + AI Insights Service (graceful degradation)
 **Timeline**: 3-4 weeks development
 **Risk**: LOW - Single integration point with proven technology
 **Update**: v2.1 (2025-01-02) - AI Insights Service moved from V2 to V1
 
 #### v1 Core Requirements
-- **Investigation Provider**: HolmesGPT-API integration only (BR-AI-011 to BR-AI-015 v1)
+- **Investigation Provider**: KA integration only (BR-AI-011 to BR-AI-015 v1)
 - **Fallback Mechanism**: Graceful degradation with error handling (BR-AI-024 v1)
-- **LLM Integration**: HolmesGPT-API handles all LLM provider management (BR-LLM-001 to BR-LLM-005 v1)
-- **Cost Optimization**: HolmesGPT-API internal optimization (BR-LLM-010 v1)
+- **LLM Integration**: KA handles all LLM provider management (BR-LLM-001 to BR-LLM-005 v1)
+- **Cost Optimization**: KA internal optimization (BR-LLM-010 v1)
 - **AI Insights Service** (**NEW V2.1**): Effectiveness monitoring with graceful degradation (BR-INS-001 to BR-INS-010 v1)
   - Week 5 deployment: "Insufficient data" status with low confidence (0-20%)
   - Week 8-10: Progressive capability improvement as data accumulates (40-60% confidence)
@@ -645,7 +645,7 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 #### v1 Architecture Benefits
 - ✅ **Reduced Complexity**: Single integration eliminates multi-provider routing logic
 - ✅ **Faster Development**: 60-80% reduction in implementation complexity
-- ✅ **Lower Risk**: Proven HolmesGPT reliability and well-documented API
+- ✅ **Lower Risk**: Proven KA reliability and well-documented API
 - ✅ **Future Ready**: Clean abstraction interfaces enable v2 enhancements
 - ✅ **Progressive Capability** (**NEW V2.1**): AI Insights Service provides immediate value with graceful degradation
 - ✅ **Complete Business Logic** (**NEW V2.1**): 98% of AI Insights code already exists, only microservice wrapper needed
@@ -671,7 +671,7 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 
 ### 15.3 Implementation Strategy
 ```
-Phase 1 (v1): HolmesGPT-only integration + AI Insights (graceful degradation) → Production deployment
+Phase 1 (v1): KA-only integration + AI Insights (graceful degradation) → Production deployment
 Phase 2 (v2): Multi-provider enhancement + Intelligence Service + Post-Mortem Analysis → Advanced capabilities
 Phase 3 (Future): Ensemble models and advanced AI orchestration
 ```
@@ -746,7 +746,7 @@ Phase 3 (Future): Ensemble models and advanced AI orchestration
 ### 17.1 Single-Provider Performance Optimization
 
 #### **BR-AI-PERF-V1-001: Single-Provider Performance Optimization**
-**Business Requirement**: The system MUST provide comprehensive performance optimization for single-provider AI scenarios (HolmesGPT-API) to ensure optimal response times and resource utilization.
+**Business Requirement**: The system MUST provide comprehensive performance optimization for single-provider AI scenarios (Kubernaut Agent (KA)) to ensure optimal response times and resource utilization.
 
 **Functional Requirements**:
 1. **Response Time Optimization** - MUST optimize AI analysis response times through intelligent caching and preprocessing

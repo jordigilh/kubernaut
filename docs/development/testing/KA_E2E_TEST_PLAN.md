@@ -1,10 +1,10 @@
-# HolmesGPT-API (HAPI) E2E Test Plan - Python to Go Migration
+# Kubernaut Agent (KA) E2E Test Plan - Python to Go Migration
 
-**Version**: 1.1.0  
+**Version**: 1.2.0  
 **Created**: 2026-02-02  
-**Updated**: 2026-02-05  
-**Status**: Active  
-**Purpose**: Document all E2E test scenarios for HAPI (48 Python migration + 3 proactive signal mode)  
+**Updated**: 2026-08-02  
+**Status**: Active (historical migration record — scenarios describe the original Python→Go rewrite)  
+**Purpose**: Document all E2E test scenarios for Kubernaut Agent (KA), formerly HolmesGPT-API (HAPI) (48 Python migration + 3 proactive signal mode)  
 
 **Authority**:
 - DD-TEST-006: Test Plan Policy
@@ -27,16 +27,20 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ## Test Scenario Naming Convention
 
-**Format**: `E2E-HAPI-{SEQUENCE}`
+**Format**: `E2E-KA-L{SEQUENCE}`
 
 - **E2E**: End-to-End test tier
-- **HAPI**: HolmesGPT-API service
+- **KA**: Kubernaut Agent service (formerly `HAPI` — HolmesGPT-API)
+- **L**: Legacy-range marker distinguishing these Python-migration-era IDs from
+  post-migration `E2E-KA-{issue#}` IDs (e.g. `E2E-KA-1802`), which are keyed by
+  GitHub issue number rather than a small sequential counter and would
+  otherwise collide with this range (originally `E2E-HAPI-{SEQUENCE}`)
 - **SEQUENCE**: Zero-padded 3-digit (001-048)
 
 **Examples**:
-- `E2E-HAPI-001` - Incident analysis no workflow found scenario
-- `E2E-HAPI-013` - Recovery endpoint happy path
-- `E2E-HAPI-045` - Audit pipeline LLM request event
+- `E2E-KA-L001` - Incident analysis no workflow found scenario
+- `E2E-KA-L013` - Recovery endpoint happy path
+- `E2E-KA-L045` - Audit pipeline LLM request event
 
 ---
 
@@ -44,14 +48,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ### Category A: Incident Analysis (12 scenarios)
 
-#### E2E-HAPI-001: No Workflow Found Returns Human Review
+#### E2E-KA-L001: No Workflow Found Returns Human Review
 
-**Business Requirement**: BR-HAPI-197
+**Business Requirement**: BR-KA-197
 
 **Business Outcome**: When no matching workflow exists, system escalates to human operator with clear reason
 
 **Preconditions**:
-- HAPI service with Mock LLM
+- KA service with Mock LLM
 - ServiceAccount authentication configured
 - Mock LLM scenario: `MOCK_NO_WORKFLOW_FOUND`
 
@@ -79,14 +83,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-002: Low Confidence Returns Human Review with Alternatives
+#### E2E-KA-L002: Low Confidence Returns Human Review with Alternatives
 
-**Business Requirement**: BR-HAPI-197
+**Business Requirement**: BR-KA-197
 
 **Business Outcome**: When confidence is low, system provides tentative recommendation but requires human decision
 
 **Preconditions**:
-- HAPI service with Mock LLM
+- KA service with Mock LLM
 - Mock LLM scenario: `MOCK_LOW_CONFIDENCE`
 
 **Test Steps**:
@@ -110,9 +114,9 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-003: Max Retries Exhausted Returns Validation History
+#### E2E-KA-L003: Max Retries Exhausted Returns Validation History
 
-**Business Requirement**: BR-HAPI-197
+**Business Requirement**: BR-KA-197
 
 **Business Outcome**: When LLM self-correction fails after max retries, provide complete validation history for debugging
 
@@ -140,14 +144,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-004: Normal Incident Analysis Succeeds (Happy Path)
+#### E2E-KA-L004: Normal Incident Analysis Succeeds (Happy Path)
 
 **Business Requirement**: BR-KA-002
 
 **Business Outcome**: Standard signal types produce confident workflow recommendations
 
 **Preconditions**:
-- HAPI with Mock LLM
+- KA with Mock LLM
 - Test workflows seeded in DataStorage
 
 **Test Steps**:
@@ -170,14 +174,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-005: Incident Response Structure Validation
+#### E2E-KA-L005: Incident Response Structure Validation
 
 **Business Requirement**: BR-AI-075
 
 **Business Outcome**: Response contains all fields required by AIAnalysis controller
 
 **Preconditions**:
-- HAPI service running
+- KA service running
 - Test workflows seeded
 
 **Test Steps**:
@@ -201,14 +205,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-006: Incident with Enrichment Results Processing
+#### E2E-KA-L006: Incident with Enrichment Results Processing
 
 **Business Requirement**: DD-KA-002 (Custom Labels Auto-Append)
 
 **Business Outcome**: EnrichmentResults (detectedLabels, customLabels) influence workflow selection
 
 **Preconditions**:
-- HAPI with enrichment processing enabled
+- KA with enrichment processing enabled
 - Test workflows with label filters
 
 **Test Steps**:
@@ -228,14 +232,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-007: Invalid Request Returns Error
+#### E2E-KA-L007: Invalid Request Returns Error
 
 **Business Requirement**: BR-HAPI-200
 
 **Business Outcome**: Invalid requests rejected with clear error messages
 
 **Preconditions**:
-- HAPI service running
+- KA service running
 
 **Test Steps**:
 1. Create IncidentRequest with missing required fields
@@ -254,14 +258,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-008: Missing Remediation ID Returns Error
+#### E2E-KA-L008: Missing Remediation ID Returns Error
 
 **Business Requirement**: DD-WORKFLOW-002
 
 **Business Outcome**: remediation_id is mandatory for audit trail correlation
 
 **Preconditions**:
-- HAPI service running
+- KA service running
 
 **Test Steps**:
 1. Create IncidentRequest WITHOUT remediation_id
@@ -284,14 +288,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 **Note**: Recovery flow (DD-RECOVERY-002) removed. These scenarios are retained for reference but the recovery endpoint may be deprecated.
 
-#### E2E-HAPI-013: Recovery Endpoint Happy Path
+#### E2E-KA-L013: Recovery Endpoint Happy Path
 
 **Business Requirement**: BR-AI-080, BR-AI-081
 
 **Business Outcome**: Recovery endpoint provides complete response for workflow selection after failure
 
 **Preconditions**:
-- HAPI with Mock LLM
+- KA with Mock LLM
 - Previous execution context available
 
 **Test Steps**:
@@ -316,14 +320,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-014: Recovery Response Field Types Validation
+#### E2E-KA-L014: Recovery Response Field Types Validation
 
 **Business Requirement**: BR-AI-080
 
 **Business Outcome**: Response field types match OpenAPI spec for AIAnalysis parsing
 
 **Preconditions**:
-- HAPI service running
+- KA service running
 - Previous execution context
 
 **Test Steps**:
@@ -347,7 +351,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-015: Recovery Processes Previous Execution Context
+#### E2E-KA-L015: Recovery Processes Previous Execution Context
 
 **Business Requirement**: BR-AI-081
 
@@ -378,7 +382,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-016: Recovery Uses Detected Labels for Workflow Selection
+#### E2E-KA-L016: Recovery Uses Detected Labels for Workflow Selection
 
 **Business Requirement**: DD-KA-002
 
@@ -408,7 +412,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-017: Recovery Mock Mode Produces Valid Responses
+#### E2E-KA-L017: Recovery Mock Mode Produces Valid Responses
 
 **Business Requirement**: BR-KA-212
 
@@ -438,14 +442,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-018: Recovery Rejects Invalid Attempt Number
+#### E2E-KA-L018: Recovery Rejects Invalid Attempt Number
 
 **Business Requirement**: BR-HAPI-200
 
 **Business Outcome**: Invalid recovery attempt numbers rejected (must be >= 1)
 
 **Preconditions**:
-- HAPI service running
+- KA service running
 
 **Test Steps**:
 1. Create RecoveryRequest with `recovery_attempt_number = 0`
@@ -464,14 +468,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-019: Recovery Without Previous Execution Context
+#### E2E-KA-L019: Recovery Without Previous Execution Context
 
 **Business Requirement**: BR-AI-081
 
 **Business Outcome**: Recovery attempts should have previous execution context (test API behavior)
 
 **Preconditions**:
-- HAPI service running
+- KA service running
 
 **Test Steps**:
 1. Create RecoveryRequest with `is_recovery_attempt=true` but NO `previous_execution`
@@ -491,7 +495,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-020: Recovery Searches DataStorage for Workflows
+#### E2E-KA-L020: Recovery Searches DataStorage for Workflows
 
 **Business Requirement**: BR-STORAGE-013
 
@@ -520,7 +524,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-021: Recovery Returns Executable Workflow Specification
+#### E2E-KA-L021: Recovery Returns Executable Workflow Specification
 
 **Business Requirement**: BR-AI-080
 
@@ -549,14 +553,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-022: Complete Incident to Recovery Flow
+#### E2E-KA-L022: Complete Incident to Recovery Flow
 
 **Business Requirement**: BR-AI-080, BR-AI-081
 
 **Business Outcome**: End-to-end flow from incident → recovery simulates real AIAnalysis workflow
 
 **Preconditions**:
-- HAPI service running
+- KA service running
 - Test workflows seeded
 
 **Test Steps**:
@@ -580,7 +584,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-023: Recovery Edge Case - Signal Not Reproducible
+#### E2E-KA-L023: Recovery Edge Case - Signal Not Reproducible
 
 **Business Requirement**: BR-KA-212
 
@@ -610,9 +614,9 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-024: Recovery Edge Case - No Recovery Workflow Found
+#### E2E-KA-L024: Recovery Edge Case - No Recovery Workflow Found
 
-**Business Requirement**: BR-HAPI-197
+**Business Requirement**: BR-KA-197
 
 **Business Outcome**: When no recovery workflow available, escalate to human
 
@@ -639,9 +643,9 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-025: Recovery Edge Case - Low Confidence Recovery
+#### E2E-KA-L025: Recovery Edge Case - Low Confidence Recovery
 
-**Business Requirement**: BR-HAPI-197
+**Business Requirement**: BR-KA-197
 
 **Business Outcome**: Low confidence recovery workflows require human approval
 
@@ -670,7 +674,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-026: Normal Recovery Analysis Succeeds
+#### E2E-KA-L026: Normal Recovery Analysis Succeeds
 
 **Business Requirement**: BR-KA-002
 
@@ -700,7 +704,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-027: Recovery Response Structure Validation
+#### E2E-KA-L027: Recovery Response Structure Validation
 
 **Business Requirement**: BR-AI-080
 
@@ -729,7 +733,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-028: Recovery with Previous Execution Context (Workflow Selection)
+#### E2E-KA-L028: Recovery with Previous Execution Context (Workflow Selection)
 
 **Business Requirement**: DD-RECOVERY-003
 
@@ -755,7 +759,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ---
 
-#### E2E-HAPI-029: Real LLM Recovery Analysis (Opt-in)
+#### E2E-KA-L029: Real LLM Recovery Analysis (Opt-in)
 
 **Business Requirement**: BR-HAPI-RECOVERY-001 to 006
 
@@ -786,14 +790,14 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 ### Category C: Audit Pipeline (4 scenarios)
 
-#### E2E-HAPI-045: LLM Request Event Persisted to DataStorage
+#### E2E-KA-L045: LLM Request Event Persisted to DataStorage
 
 **Business Requirement**: BR-AUDIT-005
 
 **Business Outcome**: All LLM API calls are audited for compliance and debugging
 
 **Preconditions**:
-- HAPI with audit buffering enabled
+- KA with audit buffering enabled
 - DataStorage service running
 - ServiceAccount auth for DataStorage queries
 
@@ -842,7 +846,7 @@ events := resp.Data
 
 ---
 
-#### E2E-HAPI-046: LLM Response Event Persisted to DataStorage
+#### E2E-KA-L046: LLM Response Event Persisted to DataStorage
 
 **Business Requirement**: BR-AUDIT-005
 
@@ -873,7 +877,7 @@ events := resp.Data
 
 **Implementation Notes**:
 ```go
-// Same DataStorage query pattern as E2E-HAPI-045
+// Same DataStorage query pattern as E2E-KA-L045
 resp, err := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
     CorrelationID: ogenclient.NewOptString(remediationID),
 })
@@ -889,7 +893,7 @@ for _, event := range events {
 
 ---
 
-#### E2E-HAPI-047: Validation Attempt Event Persisted
+#### E2E-KA-L047: Validation Attempt Event Persisted
 
 **Business Requirement**: DD-KA-001 (formerly DD-HAPI-002) v1.2
 
@@ -921,7 +925,7 @@ for _, event := range events {
 
 ---
 
-#### E2E-HAPI-048: Complete Audit Trail Persisted
+#### E2E-KA-L048: Complete Audit Trail Persisted
 
 **Business Requirement**: BR-AUDIT-005
 
@@ -970,7 +974,7 @@ for _, event := range events {
 
 ---
 
-**Implementation Notes (E2E-HAPI-048)**:
+**Implementation Notes (E2E-KA-L048)**:
 ```go
 // Query all events by correlation_id
 resp, err := dataStorageClient.QueryAuditEvents(ctx, ogenclient.QueryAuditEventsParams{
@@ -999,7 +1003,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ### Category D: Workflow Catalog (15 scenarios)
 
-#### E2E-HAPI-030: Semantic Search with Exact Match
+#### E2E-KA-L030: Semantic Search with Exact Match
 
 **Business Requirement**: BR-STORAGE-013
 
@@ -1032,7 +1036,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-031: Confidence Scoring Validation
+#### E2E-KA-L031: Confidence Scoring Validation
 
 **Business Requirement**: DD-WORKFLOW-004 v2.0
 
@@ -1059,7 +1063,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-032: Empty Results Handling
+#### E2E-KA-L032: Empty Results Handling
 
 **Business Requirement**: BR-KA-250
 
@@ -1085,7 +1089,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-033: Filter Validation
+#### E2E-KA-L033: Filter Validation
 
 **Business Requirement**: DD-LLM-001
 
@@ -1111,7 +1115,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-034: Top-K Limiting
+#### E2E-KA-L034: Top-K Limiting
 
 **Business Requirement**: BR-KA-250
 
@@ -1137,7 +1141,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-035: Error Handling - Service Unavailable
+#### E2E-KA-L035: Error Handling - Service Unavailable
 
 **Business Requirement**: BR-STORAGE-013
 
@@ -1165,7 +1169,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-036: Critical User Journey - OOMKilled Finds Memory Workflow
+#### E2E-KA-L036: Critical User Journey - OOMKilled Finds Memory Workflow
 
 **Business Requirement**: BR-STORAGE-013
 
@@ -1194,7 +1198,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-037: Critical User Journey - CrashLoop Finds Restart Workflow
+#### E2E-KA-L037: Critical User Journey - CrashLoop Finds Restart Workflow
 
 **Business Requirement**: BR-STORAGE-013
 
@@ -1221,7 +1225,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-038: AI Handles No Matching Workflows Gracefully
+#### E2E-KA-L038: AI Handles No Matching Workflows Gracefully
 
 **Business Requirement**: BR-KA-250
 
@@ -1247,7 +1251,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-039: AI Can Refine Search with Keywords
+#### E2E-KA-L039: AI Can Refine Search with Keywords
 
 **Business Requirement**: BR-KA-250
 
@@ -1274,7 +1278,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-040: DataStorage Returns container_image in Search
+#### E2E-KA-L040: DataStorage Returns container_image in Search
 
 **Business Requirement**: BR-AI-075
 
@@ -1302,7 +1306,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-041: DataStorage Returns container_digest in Search
+#### E2E-KA-L041: DataStorage Returns container_digest in Search
 
 **Business Requirement**: BR-AI-075
 
@@ -1329,7 +1333,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-042: End-to-End Container Image Flow
+#### E2E-KA-L042: End-to-End Container Image Flow
 
 **Business Requirement**: BR-AI-075
 
@@ -1358,7 +1362,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-043: Container Image Matches Catalog Entry
+#### E2E-KA-L043: Container Image Matches Catalog Entry
 
 **Business Requirement**: BR-AI-075
 
@@ -1385,7 +1389,7 @@ Expect(hasLLMResponse).To(BeTrue())
 
 ---
 
-#### E2E-HAPI-044: Direct API Search Returns Container Image
+#### E2E-KA-L044: Direct API Search Returns Container Image
 
 **Business Requirement**: BR-AI-075
 
@@ -1418,52 +1422,52 @@ Expect(hasLLMResponse).To(BeTrue())
 
 | Test ID | Category | Business Outcome | Python Source | Go Target | Status |
 |---------|----------|------------------|---------------|-----------|--------|
-| E2E-HAPI-001 | Incident | No workflow → human review | test_mock_llm_edge_cases_e2e.py:121 | incident_analysis_test.go | Not Started |
-| E2E-HAPI-002 | Incident | Low confidence → human review | test_mock_llm_edge_cases_e2e.py:153 | incident_analysis_test.go | Not Started |
-| E2E-HAPI-003 | Incident | Max retries → validation history | test_mock_llm_edge_cases_e2e.py:189 | incident_analysis_test.go | Not Started |
-| E2E-HAPI-004 | Incident | Normal analysis succeeds | test_mock_llm_edge_cases_e2e.py:332 | incident_analysis_test.go | Not Started |
-| E2E-HAPI-005 | Incident | Response structure validation | test_workflow_selection_e2e.py:217 | incident_analysis_test.go | Not Started |
-| E2E-HAPI-006 | Incident | Enrichment results processing | test_workflow_selection_e2e.py:246 | incident_analysis_test.go | Not Started |
-| E2E-HAPI-007 | Incident | Invalid request error | test_workflow_selection_e2e.py:342 | incident_analysis_test.go | Not Started |
-| E2E-HAPI-008 | Incident | Missing remediation_id error | test_workflow_selection_e2e.py:364 | incident_analysis_test.go | Not Started |
-| E2E-HAPI-013 | Recovery | Recovery endpoint happy path | test_recovery_endpoint_e2e.py:130 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-014 | Recovery | Response field types | test_recovery_endpoint_e2e.py:186 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-015 | Recovery | Previous execution processing | test_recovery_endpoint_e2e.py:238 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-016 | Recovery | Detected labels influence | test_recovery_endpoint_e2e.py:279 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-017 | Recovery | Mock mode validation | test_recovery_endpoint_e2e.py:322 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-018 | Recovery | Invalid attempt number error | test_recovery_endpoint_e2e.py:363 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-019 | Recovery | Missing previous execution | test_recovery_endpoint_e2e.py:384 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-020 | Recovery | DataStorage integration | test_recovery_endpoint_e2e.py:419 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-021 | Recovery | Executable workflow spec | test_recovery_endpoint_e2e.py:456 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-022 | Recovery | Complete incident→recovery flow | test_recovery_endpoint_e2e.py:505 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-023 | Recovery | Signal not reproducible | test_mock_llm_edge_cases_e2e.py:234 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-024 | Recovery | No recovery workflow | test_mock_llm_edge_cases_e2e.py:271 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-025 | Recovery | Low confidence recovery | test_mock_llm_edge_cases_e2e.py:298 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-026 | Recovery | Normal recovery succeeds | test_mock_llm_edge_cases_e2e.py:354 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-027 | Recovery | Response structure | test_workflow_selection_e2e.py:280 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-028 | Recovery | Previous context strategies | test_workflow_selection_e2e.py:308 | recovery_analysis_test.go | Not Started |
-| E2E-HAPI-029 | Recovery | Real LLM integration (opt-in) | test_real_llm_integration.py:128 | real_llm_integration_test.go | Not Started |
-| E2E-HAPI-030 | Catalog | Semantic search exact match | test_workflow_catalog_data_storage_integration.py:181 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-031 | Catalog | Confidence scoring | test_workflow_catalog_data_storage_integration.py:252 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-032 | Catalog | Empty results handling | test_workflow_catalog_data_storage_integration.py:303 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-033 | Catalog | Filter validation | test_workflow_catalog_data_storage_integration.py:335 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-034 | Catalog | Top-K limiting | test_workflow_catalog_data_storage_integration.py:384 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-035 | Catalog | Error handling service unavailable | test_workflow_catalog_data_storage_integration.py:428 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-036 | Catalog | OOMKilled user journey | test_workflow_catalog_e2e.py:85 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-037 | Catalog | CrashLoop user journey | test_workflow_catalog_e2e.py:151 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-038 | Catalog | No matches graceful | test_workflow_catalog_e2e.py:218 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-039 | Catalog | Search refinement | test_workflow_catalog_e2e.py:244 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-040 | Catalog | container_image in search | test_workflow_catalog_container_image_integration.py:100 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-041 | Catalog | container_digest in search | test_workflow_catalog_container_image_integration.py:152 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-042 | Catalog | End-to-end container flow | test_workflow_catalog_container_image_integration.py:206 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-043 | Catalog | Container image OCI format | test_workflow_catalog_container_image_integration.py:278 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-044 | Catalog | Direct API container_image | test_workflow_catalog_container_image_integration.py:338 | workflow_catalog_test.go | Not Started |
-| E2E-HAPI-045 | Audit | LLM request event persisted | test_audit_pipeline_e2e.py:350 | audit_pipeline_test.go | Not Started |
-| E2E-HAPI-046 | Audit | LLM response event persisted | test_audit_pipeline_e2e.py:425 | audit_pipeline_test.go | Not Started |
-| E2E-HAPI-047 | Audit | Validation attempt persisted | test_audit_pipeline_e2e.py:492 | audit_pipeline_test.go | Not Started |
-| E2E-HAPI-048 | Audit | Complete audit trail | test_audit_pipeline_e2e.py:573 | audit_pipeline_test.go | Not Started |
+| E2E-KA-L001 | Incident | No workflow → human review | test_mock_llm_edge_cases_e2e.py:121 | incident_analysis_test.go | Not Started |
+| E2E-KA-L002 | Incident | Low confidence → human review | test_mock_llm_edge_cases_e2e.py:153 | incident_analysis_test.go | Not Started |
+| E2E-KA-L003 | Incident | Max retries → validation history | test_mock_llm_edge_cases_e2e.py:189 | incident_analysis_test.go | Not Started |
+| E2E-KA-L004 | Incident | Normal analysis succeeds | test_mock_llm_edge_cases_e2e.py:332 | incident_analysis_test.go | Not Started |
+| E2E-KA-L005 | Incident | Response structure validation | test_workflow_selection_e2e.py:217 | incident_analysis_test.go | Not Started |
+| E2E-KA-L006 | Incident | Enrichment results processing | test_workflow_selection_e2e.py:246 | incident_analysis_test.go | Not Started |
+| E2E-KA-L007 | Incident | Invalid request error | test_workflow_selection_e2e.py:342 | incident_analysis_test.go | Not Started |
+| E2E-KA-L008 | Incident | Missing remediation_id error | test_workflow_selection_e2e.py:364 | incident_analysis_test.go | Not Started |
+| E2E-KA-L013 | Recovery | Recovery endpoint happy path | test_recovery_endpoint_e2e.py:130 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L014 | Recovery | Response field types | test_recovery_endpoint_e2e.py:186 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L015 | Recovery | Previous execution processing | test_recovery_endpoint_e2e.py:238 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L016 | Recovery | Detected labels influence | test_recovery_endpoint_e2e.py:279 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L017 | Recovery | Mock mode validation | test_recovery_endpoint_e2e.py:322 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L018 | Recovery | Invalid attempt number error | test_recovery_endpoint_e2e.py:363 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L019 | Recovery | Missing previous execution | test_recovery_endpoint_e2e.py:384 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L020 | Recovery | DataStorage integration | test_recovery_endpoint_e2e.py:419 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L021 | Recovery | Executable workflow spec | test_recovery_endpoint_e2e.py:456 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L022 | Recovery | Complete incident→recovery flow | test_recovery_endpoint_e2e.py:505 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L023 | Recovery | Signal not reproducible | test_mock_llm_edge_cases_e2e.py:234 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L024 | Recovery | No recovery workflow | test_mock_llm_edge_cases_e2e.py:271 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L025 | Recovery | Low confidence recovery | test_mock_llm_edge_cases_e2e.py:298 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L026 | Recovery | Normal recovery succeeds | test_mock_llm_edge_cases_e2e.py:354 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L027 | Recovery | Response structure | test_workflow_selection_e2e.py:280 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L028 | Recovery | Previous context strategies | test_workflow_selection_e2e.py:308 | recovery_analysis_test.go | Not Started |
+| E2E-KA-L029 | Recovery | Real LLM integration (opt-in) | test_real_llm_integration.py:128 | real_llm_integration_test.go | Not Started |
+| E2E-KA-L030 | Catalog | Semantic search exact match | test_workflow_catalog_data_storage_integration.py:181 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L031 | Catalog | Confidence scoring | test_workflow_catalog_data_storage_integration.py:252 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L032 | Catalog | Empty results handling | test_workflow_catalog_data_storage_integration.py:303 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L033 | Catalog | Filter validation | test_workflow_catalog_data_storage_integration.py:335 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L034 | Catalog | Top-K limiting | test_workflow_catalog_data_storage_integration.py:384 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L035 | Catalog | Error handling service unavailable | test_workflow_catalog_data_storage_integration.py:428 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L036 | Catalog | OOMKilled user journey | test_workflow_catalog_e2e.py:85 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L037 | Catalog | CrashLoop user journey | test_workflow_catalog_e2e.py:151 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L038 | Catalog | No matches graceful | test_workflow_catalog_e2e.py:218 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L039 | Catalog | Search refinement | test_workflow_catalog_e2e.py:244 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L040 | Catalog | container_image in search | test_workflow_catalog_container_image_integration.py:100 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L041 | Catalog | container_digest in search | test_workflow_catalog_container_image_integration.py:152 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L042 | Catalog | End-to-end container flow | test_workflow_catalog_container_image_integration.py:206 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L043 | Catalog | Container image OCI format | test_workflow_catalog_container_image_integration.py:278 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L044 | Catalog | Direct API container_image | test_workflow_catalog_container_image_integration.py:338 | workflow_catalog_test.go | Not Started |
+| E2E-KA-L045 | Audit | LLM request event persisted | test_audit_pipeline_e2e.py:350 | audit_pipeline_test.go | Not Started |
+| E2E-KA-L046 | Audit | LLM response event persisted | test_audit_pipeline_e2e.py:425 | audit_pipeline_test.go | Not Started |
+| E2E-KA-L047 | Audit | Validation attempt persisted | test_audit_pipeline_e2e.py:492 | audit_pipeline_test.go | Not Started |
+| E2E-KA-L048 | Audit | Complete audit trail | test_audit_pipeline_e2e.py:573 | audit_pipeline_test.go | Not Started |
 
-**Note**: Real LLM integration tests (E2E-HAPI-029 + 6 more scenarios from `test_real_llm_integration.py`) are opt-in and will be documented in a separate section if needed.
+**Note**: Real LLM integration tests (E2E-KA-L029 + 6 more scenarios from `test_real_llm_integration.py`) are opt-in and will be documented in a separate section if needed.
 
 ---
 
@@ -1472,7 +1476,7 @@ Expect(hasLLMResponse).To(BeTrue())
 ### Infrastructure Requirements
 
 **All Tests Require**:
-- Kind cluster with HAPI + DataStorage + Mock LLM
+- Kind cluster with KA + DataStorage + Mock LLM
 - PostgreSQL + Redis
 - ServiceAccount authentication configured
 - Test workflows seeded (10 workflows covering staging + production environments)
@@ -1484,15 +1488,15 @@ Expect(hasLLMResponse).To(BeTrue())
 2. Wait for DataStorage ready
 3. Seed workflows → capture UUIDs
 4. Deploy Mock LLM with ConfigMap (real UUIDs)
-5. Deploy HAPI
+5. Deploy KA
 
 ### Go Test Organization
 
 **Files** (7 total):
-1. `incident_analysis_test.go` - E2E-HAPI-001 to 008 (8 scenarios)
-2. `recovery_analysis_test.go` - E2E-HAPI-013 to 029 (17 scenarios)
-3. `workflow_catalog_test.go` - E2E-HAPI-030 to 044 (15 scenarios)
-4. `audit_pipeline_test.go` - E2E-HAPI-045 to 048 (4 scenarios)
+1. `incident_analysis_test.go` - E2E-KA-L001 to 008 (8 scenarios)
+2. `recovery_analysis_test.go` - E2E-KA-L013 to 029 (17 scenarios)
+3. `workflow_catalog_test.go` - E2E-KA-L030 to 044 (15 scenarios)
+4. `audit_pipeline_test.go` - E2E-KA-L045 to 048 (4 scenarios)
 5. `mock_llm_edge_cases_test.go` - (Subset of above, grouped by Mock LLM scenarios)
 6. `workflow_selection_test.go` - (Subset of above, grouped by workflow selection logic)
 7. `real_llm_integration_test.go` - (Opt-in real LLM tests)
@@ -1502,8 +1506,8 @@ Expect(hasLLMResponse).To(BeTrue())
 ### Test Pattern (Ginkgo/Gomega)
 
 ```go
-var _ = Describe("E2E-HAPI-001: No Workflow Found Returns Human Review", Label("e2e"), func() {
-    Context("BR-HAPI-197: Human review scenarios", func() {
+var _ = Describe("E2E-KA-L001: No Workflow Found Returns Human Review", Label("e2e"), func() {
+    Context("BR-KA-197: Human review scenarios", func() {
         It("should return needs_human_review when no matching workflow exists", func() {
             // Arrange: Create request with MOCK_NO_WORKFLOW_FOUND
             req := &hapiogen.IncidentRequest{
@@ -1515,7 +1519,7 @@ var _ = Describe("E2E-HAPI-001: No Workflow Found Returns Human Review", Label("
                 // ... other required fields
             }
             
-            // Act: Call HAPI
+            // Act: Call KA
             resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
             Expect(err).ToNot(HaveOccurred())
             
@@ -1588,11 +1592,11 @@ From `test/services/mock-llm/src/server.py` MOCK_SCENARIOS:
 Tests that interact with Mock LLM **directly** validate EXACT confidence values:
 
 ```go
-// E2E-HAPI-002: Low Confidence
+// E2E-KA-L002: Low Confidence
 Expect(selectedWorkflow.Confidence.Value).To(BeNumerically("~", 0.35, 0.05),
     "Mock LLM 'low_confidence' scenario returns confidence = 0.35 ± 0.05")
 
-// E2E-HAPI-004: OOMKilled
+// E2E-KA-L004: OOMKilled
 Expect(incidentResp.Confidence.Value).To(BeNumerically("~", 0.95, 0.05),
     "Mock LLM 'oomkilled' scenario returns confidence = 0.95 ± 0.05")
 ```
@@ -1603,13 +1607,13 @@ Expect(incidentResp.Confidence.Value).To(BeNumerically("~", 0.95, 0.05),
 Tests that query DataStorage's **pgvector semantic search** use threshold-based validation:
 
 ```go
-// E2E-HAPI-030: Semantic Search
+// E2E-KA-L030: Semantic Search
 Expect(selectedWorkflow.Confidence.Value).To(And(
     BeNumerically(">", 0.0),
     BeNumerically("<=", 1.0)),
     "semantic search confidence must be in valid range (0, 1]")
 
-// E2E-HAPI-031: High Confidence Match
+// E2E-KA-L031: High Confidence Match
 Expect(selectedWorkflow.Confidence.Value).To(And(
     BeNumerically(">", 0.5),
     BeNumerically("<=", 1.0)),
@@ -1629,28 +1633,28 @@ Expect(selectedWorkflow.Confidence.Value).To(And(
 ### Scenarios Updated with Exact Validations
 
 **Incident Analysis** (5 scenarios):
-- E2E-HAPI-002: Low confidence → 0.35 ± 0.05
-- E2E-HAPI-003: Max retries → exactly 3 attempts
-- E2E-HAPI-004: OOMKilled → 0.95 ± 0.05 + exact workflow title
-- E2E-HAPI-005: CrashLoop → 0.88 ± 0.05
+- E2E-KA-L002: Low confidence → 0.35 ± 0.05
+- E2E-KA-L003: Max retries → exactly 3 attempts
+- E2E-KA-L004: OOMKilled → 0.95 ± 0.05 + exact workflow title
+- E2E-KA-L005: CrashLoop → 0.88 ± 0.05
 
 **Recovery Analysis** (5 scenarios):
-- E2E-HAPI-014: Normal recovery → 0.85 ± 0.05
-- E2E-HAPI-023: Problem resolved → 0.85 ± 0.05
-- E2E-HAPI-025: Low confidence → 0.35 ± 0.05
-- E2E-HAPI-026: Confident recovery → 0.85 ± 0.05
-- E2E-HAPI-027: With previous execution → 0.85 ± 0.05
+- E2E-KA-L014: Normal recovery → 0.85 ± 0.05
+- E2E-KA-L023: Problem resolved → 0.85 ± 0.05
+- E2E-KA-L025: Low confidence → 0.35 ± 0.05
+- E2E-KA-L026: Confident recovery → 0.85 ± 0.05
+- E2E-KA-L027: With previous execution → 0.85 ± 0.05
 
 **Workflow Catalog** (6 scenarios):
-- E2E-HAPI-030: Semantic search → valid range + title validation
-- E2E-HAPI-031: Confidence scoring → > 0.5 threshold
-- E2E-HAPI-034: Top-k limiting → exact Mock LLM confidence 0.95
-- E2E-HAPI-037: Detected labels → > 0.3 threshold + title match
-- E2E-HAPI-038: Mock mode → valid range + title validation
-- E2E-HAPI-043: Container metadata → positive confidence + image format
+- E2E-KA-L030: Semantic search → valid range + title validation
+- E2E-KA-L031: Confidence scoring → > 0.5 threshold
+- E2E-KA-L034: Top-k limiting → exact Mock LLM confidence 0.95
+- E2E-KA-L037: Detected labels → > 0.3 threshold + title match
+- E2E-KA-L038: Mock mode → valid range + title validation
+- E2E-KA-L043: Container metadata → positive confidence + image format
 
 **Audit Pipeline** (4 scenarios):
-- E2E-HAPI-045 to E2E-HAPI-048: DataStorage integration
+- E2E-KA-L045 to E2E-KA-L048: DataStorage integration
   - **Fix Applied**: IncidentRequest uses plain strings (not OptString)
   - **Fix Applied**: Use `QueryAuditEvents` instead of `ListAuditEvents`
   - **Fix Applied**: Access events via `resp.Data` (AuditEventsQueryResponse)
@@ -1822,14 +1826,14 @@ Migration complete when:
 
 ---
 
-#### E2E-HAPI-049: Multi-Step Recovery with State Preservation
+#### E2E-KA-L049: Multi-Step Recovery with State Preservation
 
 **Business Requirement**: BR-HAPI-RECOVERY-001 to 006, BR-WF-RECOVERY-001 to 011
 
 **Business Outcome**: LLM analyzes recovery for multi-step workflow with partial completion, preserving successful step changes
 
 **Preconditions**:
-- HAPI service with Mock LLM
+- KA service with Mock LLM
 - Mock LLM scenario: `MOCK_MULTI_STEP_RECOVERY`
 - ServiceAccount authentication configured
 
@@ -1876,14 +1880,14 @@ Migration complete when:
 
 ---
 
-#### E2E-HAPI-050: Cascading Failure Root Cause Analysis
+#### E2E-KA-L050: Cascading Failure Root Cause Analysis
 
 **Business Requirement**: BR-HAPI-RECOVERY-001 to 006, BR-WF-INVESTIGATION-001 to 005
 
 **Business Outcome**: LLM identifies root cause in cascading failures (memory leak) vs. symptoms (OOM, crashes)
 
 **Preconditions**:
-- HAPI service with Mock LLM
+- KA service with Mock LLM
 - Mock LLM scenario: `MOCK_CASCADING_FAILURE`
 - ServiceAccount authentication configured
 
@@ -1939,14 +1943,14 @@ Migration complete when:
 
 ---
 
-#### E2E-HAPI-051: Recovery Near Attempt Limit (Conservative Strategy)
+#### E2E-KA-L051: Recovery Near Attempt Limit (Conservative Strategy)
 
 **Business Requirement**: BR-WF-RECOVERY-001 (max 3 attempts), BR-HAPI-RECOVERY-001 to 006
 
 **Business Outcome**: LLM recommends most conservative strategy (rollback) when near attempt limit
 
 **Preconditions**:
-- HAPI service with Mock LLM
+- KA service with Mock LLM
 - Mock LLM scenario: `MOCK_NEAR_ATTEMPT_LIMIT`
 - ServiceAccount authentication configured
 
@@ -1994,14 +1998,14 @@ Migration complete when:
 
 ---
 
-#### E2E-HAPI-052: Noisy Neighbor Resource Contention Detection
+#### E2E-KA-L052: Noisy Neighbor Resource Contention Detection
 
 **Business Requirement**: BR-HAPI-RECOVERY-001 to 006, BR-PERF-020 (resource management)
 
 **Business Outcome**: LLM identifies noisy neighbor issue and recommends cluster-level resource management
 
 **Preconditions**:
-- HAPI service with Mock LLM
+- KA service with Mock LLM
 - Mock LLM scenario: `MOCK_NOISY_NEIGHBOR`
 - ServiceAccount authentication configured
 
@@ -2053,14 +2057,14 @@ Migration complete when:
 
 ---
 
-#### E2E-HAPI-053: Network Partition Split-Brain Detection
+#### E2E-KA-L053: Network Partition Split-Brain Detection
 
 **Business Requirement**: BR-HAPI-RECOVERY-001 to 006, BR-ORCH-018 (multi-cluster)
 
 **Business Outcome**: LLM identifies network partition and recommends partition-aware recovery strategies
 
 **Preconditions**:
-- HAPI service with Mock LLM
+- KA service with Mock LLM
 - Mock LLM scenario: `MOCK_NETWORK_PARTITION`
 - ServiceAccount authentication configured
 
@@ -2112,14 +2116,14 @@ Migration complete when:
 
 ---
 
-#### E2E-HAPI-054: Basic Recovery Analysis Pattern (Simple)
+#### E2E-KA-L054: Basic Recovery Analysis Pattern (Simple)
 
 **Business Requirement**: BR-HAPI-RECOVERY-001 to 006
 
 **Business Outcome**: Basic recovery analysis for common failure scenarios
 
 **Preconditions**:
-- HAPI service with Mock LLM
+- KA service with Mock LLM
 - Mock LLM scenario: `MOCK_RECOVERY_BASIC`
 - ServiceAccount authentication configured
 
@@ -2168,14 +2172,14 @@ Migration complete when:
 **Architecture**: ADR-054 (Proactive Signal Mode Classification)
 **Go Target**: `test/e2e/kubernaut-agent/proactive_signal_mode_test.go`
 
-#### E2E-HAPI-055: Proactive OOMKill Returns Proactive-Aware Analysis
+#### E2E-KA-L055: Proactive OOMKill Returns Proactive-Aware Analysis
 
 **Business Requirement**: BR-AI-084
 
-**Business Outcome**: When signal_mode=proactive, HAPI adapts its 5-phase investigation prompt to perform preemptive analysis instead of reactive RCA. The Mock LLM detects proactive keywords in the prompt and returns the `oomkilled_proactive` scenario with prevention-focused root cause.
+**Business Outcome**: When signal_mode=proactive, KA adapts its 5-phase investigation prompt to perform preemptive analysis instead of reactive RCA. The Mock LLM detects proactive keywords in the prompt and returns the `oomkilled_proactive` scenario with prevention-focused root cause.
 
 **Preconditions**:
-- HAPI service with Mock LLM
+- KA service with Mock LLM
 - ServiceAccount authentication configured
 - Mock LLM scenario: `oomkilled_proactive`
 
@@ -2200,14 +2204,14 @@ Migration complete when:
 
 ---
 
-#### E2E-HAPI-056: Reactive Signal Mode Returns Standard RCA
+#### E2E-KA-L056: Reactive Signal Mode Returns Standard RCA
 
 **Business Requirement**: BR-AI-084 (backwards compatibility)
 
 **Business Outcome**: Existing reactive requests continue working unchanged. signal_mode=reactive produces standard RCA results.
 
 **Preconditions**:
-- HAPI service with Mock LLM
+- KA service with Mock LLM
 - ServiceAccount authentication configured
 - Mock LLM scenario: `oomkilled` (standard)
 
@@ -2230,14 +2234,14 @@ Migration complete when:
 
 ---
 
-#### E2E-HAPI-057: Missing Signal Mode Defaults to Reactive
+#### E2E-KA-L057: Missing Signal Mode Defaults to Reactive
 
 **Business Requirement**: BR-AI-084 (default behavior)
 
 **Business Outcome**: Requests without signal_mode should default to reactive behavior, ensuring backwards compatibility with pre-ADR-054 clients.
 
 **Preconditions**:
-- HAPI service with Mock LLM
+- KA service with Mock LLM
 - ServiceAccount authentication configured
 - Mock LLM scenario: `oomkilled` (standard, no proactive keywords in prompt)
 
@@ -2265,12 +2269,12 @@ Migration complete when:
 ### Real LLM Integration Tests (Opt-in)
 
 **Scenarios Migrated to Mock LLM** (6 tests - **now run for FREE** in Category F):
-- ✅ E2E-HAPI-049: Multi-step recovery (previously `test_multi_step_recovery_analysis`)
-- ✅ E2E-HAPI-050: Cascading failure (previously `test_cascading_failure_recovery_analysis`)
-- ✅ E2E-HAPI-051: Near attempt limit (previously `test_recovery_near_attempt_limit`)
-- ✅ E2E-HAPI-052: Noisy neighbor (previously `test_multitenant_resource_contention_recovery`)
-- ✅ E2E-HAPI-053: Network partition (previously `test_network_partition_recovery`)
-- ✅ E2E-HAPI-054: Basic recovery (previously `test_recovery_analysis_with_real_llm`)
+- ✅ E2E-KA-L049: Multi-step recovery (previously `test_multi_step_recovery_analysis`)
+- ✅ E2E-KA-L050: Cascading failure (previously `test_cascading_failure_recovery_analysis`)
+- ✅ E2E-KA-L051: Near attempt limit (previously `test_recovery_near_attempt_limit`)
+- ✅ E2E-KA-L052: Noisy neighbor (previously `test_multitenant_resource_contention_recovery`)
+- ✅ E2E-KA-L053: Network partition (previously `test_network_partition_recovery`)
+- ✅ E2E-KA-L054: Basic recovery (previously `test_recovery_analysis_with_real_llm`)
 
 **Remaining Real LLM Tests** (3 tests - **require `RUN_REAL_LLM=true` + costs**):
 - ❌ LLM error handling (`test_llm_handles_invalid_input_gracefully`) - Not LLM-specific, just API validation

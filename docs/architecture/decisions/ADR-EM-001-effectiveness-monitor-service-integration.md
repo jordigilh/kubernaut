@@ -64,7 +64,7 @@ The EM watches for completed remediations, waits for the system to stabilize, th
 ### Scope
 
 - **In scope**: Level 1 automated assessment (V1.0) — deterministic health checks, metric comparison, scoring, audit emission
-- **Out of scope**: Level 2 AI-powered analysis (V1.1 — HolmesGPT PostExec), DD-KA-016 remediation history endpoint implementation (separate work item, joint effort with the Workflow Team per DD-WORKFLOW-017)
+- **Out of scope**: Level 2 AI-powered analysis (V1.1 — KA PostExec), DD-KA-016 remediation history endpoint implementation (separate work item, joint effort with the Workflow Team per DD-WORKFLOW-017)
 
 ### Design Principles
 

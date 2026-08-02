@@ -5,7 +5,7 @@
 **Architectural Decision**: DD-AUTH-014 provides application-level authentication/authorization control without the need for sidecar proxies, simplifying deployment and improving performance.
 
 **Current Authentication Stack**:
-- **HAPI**: `kubernaut-agent/src/middleware/auth.py` (DD-AUTH-014)
+- **KA**: `kubernaut-agent/src/middleware/auth.py` (DD-AUTH-014)
 - **Gateway**: Kubernetes-native TokenReview + SAR
 - **DataStorage**: Direct service-to-service with ServiceAccount tokens
 

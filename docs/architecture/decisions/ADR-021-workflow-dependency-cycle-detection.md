@@ -9,7 +9,9 @@
 
 ## Context & Problem
 
-HolmesGPT generates multi-step workflows with dependencies in **self-documenting JSON format**:
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This ADR describes a dynamic, per-incident workflow-generation model (the agent emits arbitrary multi-step JSON recommendations with inter-step dependencies) that has since been superseded by a predefined workflow catalog approach — the agent now selects an existing cataloged workflow rather than generating novel dependency graphs. The dependency-cycle-detection code described here (`dependency_validator.go`, `ValidateDependencyGraph`, `processHolmesGPTRecommendations`) does not exist in the current codebase.
+
+Kubernaut Agent (KA) generates multi-step workflows with dependencies in **self-documenting JSON format**:
 
 ```json
 {
@@ -30,7 +32,7 @@ HolmesGPT generates multi-step workflows with dependencies in **self-documenting
 
 **Critical Risk: Circular Dependencies**
 
-What if HolmesGPT generates invalid dependencies?
+What if KA generates invalid dependencies?
 
 ```json
 {
@@ -232,7 +234,7 @@ func (r *AIAnalysisReconciler) processHolmesGPTRecommendations(
 ) error {
     log := ctrl.LoggerFrom(ctx)
     
-    // Convert HolmesGPT recommendations to Step format
+    // Convert Kubernaut Agent (KA) recommendations to Step format
     steps := make([]Step, len(recommendations))
     for i, rec := range recommendations {
         steps[i] = Step{
@@ -244,14 +246,14 @@ func (r *AIAnalysisReconciler) processHolmesGPTRecommendations(
     
     // Validate dependency graph BEFORE creating workflow
     if err := ValidateDependencyGraph(steps); err != nil {
-        log.Error(err, "Invalid dependency graph from HolmesGPT",
+        log.Error(err, "Invalid dependency graph from KA",
             "recommendations", len(recommendations))
         
         // Update AIAnalysis status
         aiAnalysis.Status.Phase = "failed"
         aiAnalysis.Status.Reason = "InvalidDependencyGraph"
         aiAnalysis.Status.Message = fmt.Sprintf(
-            "HolmesGPT generated invalid dependencies: %s",
+            "KA generated invalid dependencies: %s",
             err.Error(),
         )
         
@@ -261,7 +263,7 @@ func (r *AIAnalysisReconciler) processHolmesGPTRecommendations(
             Reason:          "Invalid dependency graph - manual review required",
             ConfidenceLevel: "none",
             InvestigationSummary: fmt.Sprintf(
-                "HolmesGPT generated workflow with circular dependencies. Manual workflow design required. Error: %s",
+                "KA generated workflow with circular dependencies. Manual workflow design required. Error: %s",
                 err.Error(),
             ),
             EvidenceCollected: []string{
@@ -306,11 +308,11 @@ func (r *AIAnalysisReconciler) processHolmesGPTRecommendations(
 AIAnalysis Status:
   Phase: failed
   Reason: InvalidDependencyGraph
-  Message: "HolmesGPT generated invalid dependencies: dependency cycle detected: steps involved in cycle: [rec-003, rec-005, rec-007]"
+  Message: "Kubernaut Agent (KA) generated invalid dependencies: dependency cycle detected: steps involved in cycle: [rec-003, rec-005, rec-007]"
   
   ApprovalContext:
     Reason: "Invalid dependency graph - manual review required"
-    InvestigationSummary: "HolmesGPT generated workflow with circular dependencies. Manual workflow design required."
+    InvestigationSummary: "KA generated workflow with circular dependencies. Manual workflow design required."
     RecommendedActions:
       - Action: "manual_workflow_design"
         Rationale: "AI-generated workflow has circular dependencies"
@@ -322,7 +324,7 @@ AIAnalysis Status:
 AIAnalysis Status:
   Phase: failed
   Reason: InvalidDependencyGraph
-  Message: "HolmesGPT generated invalid dependencies: invalid dependency: step rec-003 depends on non-existent step rec-999"
+  Message: "KA generated invalid dependencies: invalid dependency: step rec-003 depends on non-existent step rec-999"
 ```
 
 ---
@@ -456,8 +458,8 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "HolmesGPT generating workflows with circular dependencies"
-          description: "Dependency cycle rate: {{ $value }}/min. May indicate HolmesGPT prompt engineering issue."
+          summary: "Kubernaut Agent (KA) generating workflows with circular dependencies"
+          description: "Dependency cycle rate: {{ $value }}/min. May indicate KA prompt engineering issue."
 ```
 
 ---
@@ -486,8 +488,8 @@ groups:
 5. **Complex cycle**: Verify all cycle nodes identified
 
 ### **Integration Tests**
-1. **HolmesGPT generates cycle**: Verify manual fallback
-2. **HolmesGPT generates missing dependency**: Verify manual fallback
+1. **Kubernaut Agent (KA) generates cycle**: Verify manual fallback
+2. **KA generates missing dependency**: Verify manual fallback
 3. **Valid workflow**: Verify WorkflowExecution created
 
 ### **Property-Based Tests**

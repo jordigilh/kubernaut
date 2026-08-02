@@ -47,16 +47,18 @@ Session summaries and implementation status from January 26, 2026.
 - **handoff/DD_AUTH_013_IMPLEMENTATION_COMPLETE_JAN_26_2026.md** - Implementation completion summary
 - **handoff/DD_AUTH_013_FINAL_STATUS_JAN_26_2026.md** - Final status and validation
 - **handoff/DD_AUTH_013_OPENAPI_UPDATE_SUMMARY_JAN_26_2026.md** - OpenAPI spec update summary
-- **handoff/DD_AUTH_013_HAPI_OPENAPI_TRIAGE_JAN_26_2026.md** - HolmesGPT API OpenAPI triage
+- **handoff/DD_AUTH_013_HAPI_OPENAPI_TRIAGE_JAN_26_2026.md** - Kubernaut Agent (KA) OpenAPI triage
 - **handoff/DD_AUTH_013_DOCS_ORGANIZATION_JAN_26_2026.md** - Documentation organization activity
 
 ---
 
 ## Scope
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This section and the "Implementation Status" / "Key Files Modified" sections below describe the Kubernaut Agent (KA) as a Python/FastAPI service with generated client paths under `pkg/holmesgpt/client/`; KA has since been rewritten as a native Go service and these implementation details are outdated.
+
 ### Services Covered
 - **DataStorage Service**: REST API with `ose-oauth-proxy` sidecar
-- **HolmesGPT API**: FastAPI with `ose-oauth-proxy` sidecar
+- **Kubernaut Agent (KA)**: FastAPI with `ose-oauth-proxy` sidecar
 - **Gateway Service**: Network-level auth (no sidecar for now)
 
 ### HTTP Status Codes Defined
@@ -65,7 +67,7 @@ Session summaries and implementation status from January 26, 2026.
 | **401** | `ose-oauth-proxy` | Authentication failed (invalid/missing token) |
 | **403** | `ose-oauth-proxy` | Authorization failed (K8s SAR denied) |
 | **400** | Application (DataStorage) | Validation error |
-| **422** | Application (FastAPI/HAPI) | Validation error |
+| **422** | Application (FastAPI/KA) | Validation error |
 | **500** | Application | Internal server error |
 | **402** | ❌ NOT USED | Explicitly documented as not applicable |
 
@@ -82,7 +84,7 @@ Session summaries and implementation status from January 26, 2026.
 | **401 Responses** | ✅ Documented | POST /api/v1/audit/events, POST /api/v1/workflows |
 | **403 Responses** | ✅ Documented | POST /api/v1/audit/events, POST /api/v1/workflows |
 
-### HolmesGPT API ✅ COMPLETE
+### Kubernaut Agent (KA) ✅ COMPLETE
 | Component | Status | Document |
 |---|---|---|
 | **OpenAPI Spec** | ✅ Complete | `kubernaut-agent/api/openapi.json` |
@@ -99,8 +101,8 @@ Session summaries and implementation status from January 26, 2026.
 ### January 26, 2026 - DD-AUTH-013 Creation and Implementation
 - ✅ **9:00 AM**: DD-AUTH-013 created (AUTHORITATIVE)
 - ✅ **9:06 AM**: DataStorage OpenAPI spec updated (401/403 responses)
-- ✅ **9:10 AM**: HolmesGPT API OpenAPI spec triaged
-- ✅ **9:13 AM**: HolmesGPT API OpenAPI spec updated (401/403/500 responses)
+- ✅ **9:10 AM**: Kubernaut Agent (KA) OpenAPI spec triaged
+- ✅ **9:13 AM**: KA OpenAPI spec updated (401/403/500 responses)
 - ✅ **9:14 AM**: Implementation complete summary created
 - ✅ **9:16 AM**: Documentation organization initiated
 - ✅ **9:17 AM**: Complete session handoff created
@@ -116,7 +118,7 @@ Session summaries and implementation status from January 26, 2026.
 ### Related DDs
 - **[DD-AUTH-011: Granular RBAC & SAR Verb Mapping](../DD-AUTH-011/DD-AUTH-011-granular-rbac-sar-verb-mapping.md)** - RBAC strategy
 - **[DD-AUTH-009: OAuth2-Proxy Workflow Attribution](../DD-AUTH-009-oauth2-proxy-workflow-attribution-implementation.md)** - Workflow audit tracking
-- **[DD-AUTH-006: HAPI OAuth-Proxy Configuration](../DD-AUTH-006-kubernaut-agent-oauth-proxy-config.md)** - HAPI sidecar config
+- **[DD-AUTH-006: Kubernaut Agent (KA) OAuth-Proxy Configuration](../DD-AUTH-006-kubernaut-agent-oauth-proxy-config.md)** - KA sidecar config
 
 ### Related ADRs
 - **ADR-036**: Externalized Auth/Authz Sidecar Strategy
@@ -156,8 +158,8 @@ test/e2e/datastorage/23_sar_access_control_test.go  (SAR validation with 403 han
 - **BR-DATA-STORAGE-041**: RESTful API for workflow catalog with RBAC
 - **BR-DATA-STORAGE-050**: User attribution for SOC2 compliance
 
-### HolmesGPT API
-- **BR-HAPI-197**: RESTful API for incident analysis with RBAC
+### Kubernaut Agent (KA)
+- **BR-KA-197**: RESTful API for incident analysis with RBAC
 - **BR-HAPI-198**: RESTful API for recovery analysis with RBAC
 
 ---
@@ -174,7 +176,7 @@ test/e2e/datastorage/23_sar_access_control_test.go  (SAR validation with 403 han
 
 ### Pending Tests
 - 🚧 **401 Unauthorized scenarios** (invalid/expired tokens)
-- 🚧 **HolmesGPT API E2E tests** (`test/e2e/kubernaut-agent/auth_validation_test.go`)
+- 🚧 **Kubernaut Agent (KA) E2E tests** (`test/e2e/kubernaut-agent/auth_validation_test.go`)
 
 ---
 
@@ -188,7 +190,7 @@ This design decision is the **canonical reference** for all HTTP status codes re
 
 **Referenced By**:
 - DataStorage OpenAPI spec (`api/openapi/data-storage-v1.yaml`)
-- HolmesGPT API OpenAPI spec (`kubernaut-agent/api/openapi.json`)
+- Kubernaut Agent (KA) OpenAPI spec (`kubernaut-agent/api/openapi.json`)
 - E2E test documentation (`docs/architecture/decisions/DD-AUTH-011/DD-AUTH-011-E2E-TESTING-GUIDE.md`)
 
 ---
@@ -210,7 +212,7 @@ case *dsgen.CreateAuditEventBadRequest:
 }
 ```
 
-### HolmesGPT API Client (Go)
+### Kubernaut Agent (KA) Client (Go)
 ```go
 import hapiclient "github.com/jordigilh/kubernaut/pkg/holmesgpt/client"
 
@@ -224,7 +226,7 @@ if err != nil {
         } else if v.StatusCode == 403 {
             // Authorization failure (SAR denied)
         } else if v.StatusCode == 500 {
-            // HAPI internal server error
+            // KA internal server error
         }
     }
 }
@@ -238,7 +240,7 @@ if err != nil {
 1. 🚧 Fix Podman machine connection issue
 2. 🚧 Fix workflow types in DataStorage E2E test (Tests 4 & 5)
 3. 🚧 Add 401 Unauthorized test scenarios to DataStorage E2E suite
-4. 🚧 Create HAPI E2E auth validation tests
+4. 🚧 Create Kubernaut Agent (KA) E2E auth validation tests
 5. 🚧 Run Notification E2E tests (validates cross-namespace RBAC)
 
 ### Future Enhancements

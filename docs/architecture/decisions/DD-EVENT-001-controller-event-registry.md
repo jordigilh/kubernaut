@@ -121,9 +121,9 @@ Events tied to existing BRs (e.g., session events under BR-AA-HAPI-064) use the 
 | `EventReasonAnalysisCompleted` | `AnalysisCompleted` | Normal | P1 | Analysis completed successfully (terminal) | Planned (v1.1) |
 | `EventReasonAnalysisFailed` | `AnalysisFailed` | Warning | P1 | Analysis failed (terminal) | Planned (v1.1) |
 | `EventReasonApprovalRequired` | `ApprovalRequired` | Normal | P2 | Human approval required for workflow execution | Planned (v1.1) |
-| `EventReasonHumanReviewRequired` | `HumanReviewRequired` | Warning | P2 | HAPI flagged investigation for human review | Planned (v1.1) |
-| `EventReasonSessionCreated` | `SessionCreated` | Normal | P2 | HAPI investigation session submitted (issue #64) | Implemented (v1.1) |
-| `EventReasonSessionLost` | `SessionLost` | Warning | P2 | HAPI session lost (404 on poll), regenerating | Implemented (v1.1) |
+| `EventReasonHumanReviewRequired` | `HumanReviewRequired` | Warning | P2 | Kubernaut Agent (KA) flagged investigation for human review | Planned (v1.1) |
+| `EventReasonSessionCreated` | `SessionCreated` | Normal | P2 | KA investigation session submitted (issue #64) | Implemented (v1.1) |
+| `EventReasonSessionLost` | `SessionLost` | Warning | P2 | KA session lost (404 on poll), regenerating | Implemented (v1.1) |
 | `EventReasonSessionRegenerationExceeded` | `SessionRegenerationExceeded` | Warning | P2 | Max session regenerations (5) exceeded, transitioning to Failed | Implemented (v1.1) |
 | `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Any intermediate phase transition (shared constant) | Planned (v1.1) |
 

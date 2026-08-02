@@ -34,12 +34,12 @@ During the `hpa-maxed` demo scenario, the EA target was `Deployment/api-frontend
 
 ## Decision
 
-**The EA CRD carries two target references: `signalTarget` (from the Gateway/RR) and `remediationTarget` (from HAPI/AA). Each EM assessment component uses the appropriate target.**
+**The EA CRD carries two target references: `signalTarget` (from the Gateway/RR) and `remediationTarget` (from Kubernaut Agent (KA)/AA). Each EM assessment component uses the appropriate target.**
 
 Both targets are already available in the Remediation Orchestrator:
 
 - **Signal target**: Extracted by the Gateway from alert labels, propagated through the RR
-- **Remediation target**: Determined by HAPI's RCA resolution, available in the AA's `status.rootCauseAnalysis.affectedResource`
+- **Remediation target**: Determined by KA's RCA resolution, available in the AA's `status.rootCauseAnalysis.affectedResource`
 
 This is a plumbing change -- no new data needs to be generated.
 
@@ -59,7 +59,7 @@ type EffectivenessAssessmentSpec struct {
     SignalTarget TargetResource `json:"signalTarget"`
 
     // RemediationTarget is the resource the workflow modified.
-    // Source: AA.status.rootCauseAnalysis.affectedResource (from HAPI RCA resolution).
+    // Source: AA.status.rootCauseAnalysis.affectedResource (from KA RCA resolution).
     // Used by: spec hash computation, drift detection.
     RemediationTarget TargetResource `json:"remediationTarget"`
 }
@@ -114,7 +114,7 @@ func (r *Reconciler) createEffectivenessAssessment(ctx context.Context, rr *rrv1
                 Name:      rr.Spec.TargetResource.Name,
                 Namespace: rr.Spec.TargetResource.Namespace,
             },
-            // Remediation target from the AA (HAPI RCA resolution)
+            // Remediation target from the AA (KA RCA resolution)
             RemediationTarget: eav1.TargetResource{
                 Kind:      aa.Status.RootCauseAnalysis.AffectedResource.Kind,
                 Name:      aa.Status.RootCauseAnalysis.AffectedResource.Name,
@@ -134,7 +134,7 @@ Gateway
   ▼
 RR ──────────────────────────────────────────────┐
                                                   │
-HAPI                                              │
+KA                                                │
   │ RCA analysis → selects workflow               │
   │ determines remediationTarget                  │
   │ (HorizontalPodAutoscaler/api-frontend)        │

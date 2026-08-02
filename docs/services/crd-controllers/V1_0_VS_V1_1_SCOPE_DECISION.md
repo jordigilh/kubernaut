@@ -22,7 +22,7 @@
 **Business Requirements**: BR-AI-061 to BR-AI-070 (10 BRs)
 
 **Features**:
-1. ✅ **HolmesGPT Retry with Exponential Backoff**
+1. ✅ **Kubernaut Agent (KA) Retry with Exponential Backoff**
    - 5s → 10s → 20s → 30s (max) delays
    - 5-minute timeout (configurable)
    - Status tracking for retry attempts
@@ -78,7 +78,7 @@
 **Business Requirements**: BR-AI-071 to BR-AI-074 (4 BRs) - **DEFERRED**
 
 **Features** (deferred):
-- ⏳ Query HolmesGPT with feedback when cycle detected
+- ⏳ Query Kubernaut Agent (KA) with feedback when cycle detected
 - ⏳ Structured feedback generation (cycle nodes, DAG constraints, valid patterns)
 - ⏳ Retry workflow generation (max 3 attempts)
 - ⏳ Auto-correction of cycles (hypothesis: 60-70% success rate)
@@ -168,11 +168,11 @@
 
 ## 📊 **COMPARISON: V1.0 vs V1.1 BEHAVIOR**
 
-### **Scenario: HolmesGPT Returns Workflow with Cycle**
+### **Scenario: Kubernaut Agent (KA) Returns Workflow with Cycle**
 
 #### **V1.0 Behavior** ✅ (What we're building)
 ```
-1. HolmesGPT returns workflow with cycle
+1. KA returns workflow with cycle
 2. AIAnalysis detects cycle (Kahn's algorithm)
 3. AIAnalysis creates AIApprovalRequest CRD
 4. RemediationOrchestrator creates NotificationRequest
@@ -188,10 +188,10 @@ Risk: Low (proven, safe)
 
 #### **V1.1 Behavior** ⏳ (What we'll add later)
 ```
-1. HolmesGPT returns workflow with cycle
+1. KA returns workflow with cycle
 2. AIAnalysis detects cycle (Kahn's algorithm)
-3. AIAnalysis generates feedback for HolmesGPT
-4. AIAnalysis queries HolmesGPT again (correction attempt 1)
+3. AIAnalysis generates feedback for KA
+4. AIAnalysis queries KA again (correction attempt 1)
    ├─ If valid → Create WorkflowExecution (SUCCESS, ~6 min MTTR)
    └─ If still cycle → Retry (attempt 2)
 5. Correction attempt 2
@@ -219,7 +219,7 @@ Risk: Medium (unvalidated LLM behavior)
 **Timeline**: Q4 2025
 
 1. ⏳ **Implement AIAnalysis v1.1** (4 days)
-   - HolmesGPT retry + exponential backoff
+   - Kubernaut Agent (KA) retry + exponential backoff
    - Dependency cycle detection
    - Manual approval fallback
 
@@ -230,7 +230,7 @@ Risk: Medium (unvalidated LLM behavior)
 
 3. ⏳ **Integration Testing** (2 days)
    - Cross-controller validation
-   - HolmesGPT failure scenarios
+   - KA failure scenarios
    - Cycle detection scenarios
 
 4. ⏳ **V1.0 Validation** (1-2 weeks)
@@ -303,7 +303,7 @@ Risk: Medium (unvalidated LLM behavior)
 ## 📋 **DECISION CHECKLIST**
 
 ### **V1.0 Readiness** ✅
-- [x] All architectural risks addressed (HolmesGPT retry, cycle detection, parallel limits)
+- [x] All architectural risks addressed (Kubernaut Agent (KA) retry, cycle detection, parallel limits)
 - [x] Implementation plans complete (~14,600 lines)
 - [x] Test coverage designed (>70% unit, >50% integration)
 - [x] Timeline realistic (+7 days)
@@ -324,7 +324,7 @@ Risk: Medium (unvalidated LLM behavior)
 **Approved**: ✅ **Postpone V1.1 to post-V1.0 validation**
 
 **V1.0 Scope** (APPROVED):
-- ✅ AIAnalysis v1.1: HolmesGPT retry + dependency cycle detection
+- ✅ AIAnalysis v1.1: Kubernaut Agent (KA) retry + dependency cycle detection
 - ✅ WorkflowExecution v1.2: Parallel limits + complexity approval
 - ✅ 14 BRs (BR-AI-061 to BR-AI-070, BR-WF-166 to BR-WF-169)
 - ✅ +7 days implementation

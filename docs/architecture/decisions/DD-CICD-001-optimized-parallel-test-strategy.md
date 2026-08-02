@@ -36,7 +36,7 @@
 | **RemediationOrchestrator** | ✅ `make test` | ❌ Missing in workflow | ❌ Missing in workflow | 🔴 66% incomplete |
 | **Gateway** | ✅ `make test` | ✅ In workflow | ✅ In workflow | ✅ Complete |
 | **Data Storage** | ✅ `make test` | ✅ In workflow | ✅ In workflow | ✅ Complete |
-| **HolmesGPT API** | ✅ Separate workflow | ✅ In workflow | ✅ In workflow | ✅ Complete |
+| **Kubernaut Agent (KA)** | ✅ Separate workflow | ✅ In workflow | ✅ In workflow | ✅ Complete |
 | **Notification** | ✅ `make test` | ✅ In workflow | ❌ Missing in workflow | 🟡 33% incomplete |
 
 **Gap Summary**:
@@ -54,7 +54,7 @@
 ```
 Unit Tests (All Services)
     ↓ (5 min)
-    ├── Integration: HolmesGPT (2 min) ────┐
+    ├── Integration: KA (2 min) ────┐
     ├── Integration: Data Storage (5 min) ──┤
     ├── Integration: Gateway (10 min) ──────┤ (Parallel)
     ├── Integration: Notification (2 min) ──┤
@@ -90,6 +90,8 @@ Total Time: ~120 minutes (worst case)
 
 ### **Tier 1: Unit Tests** (Parallel, <2 minutes)
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This proposal treats the Kubernaut Agent (KA) as a Python service (`setup-python`, `pip install`); KA has since been rewritten as a native Go service, so this job structure no longer reflects reality.
+
 **Strategy**: FAST FAIL - Run all unit tests in parallel
 
 ```yaml
@@ -110,7 +112,7 @@ jobs:
         run: make test-unit-${{ matrix.service }}
 
   unit-python-service:
-    name: Unit Tests (HolmesGPT API)
+    name: Unit Tests (KA)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -134,7 +136,7 @@ jobs:
 **Strategy**: Group by infrastructure requirements, parallelize within groups
 
 **Group 1: No Infrastructure** (< 2 minutes)
-- HolmesGPT API (mock LLM, 2 min)
+- KA (mock LLM, 2 min)
 - Notification (envtest only, 45s)
 
 **Group 2: Podman Infrastructure** (< 5 minutes)
@@ -372,7 +374,7 @@ jobs:
         run: make test-unit-${{ matrix.service }}
 
   unit-python-service:
-    name: Unit Tests (Python - HolmesGPT)
+    name: Unit Tests (Python - KA)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -508,7 +510,7 @@ jobs:
           echo ""
           echo "Services Tested: 8/8 (100%)"
           echo "  - SignalProcessing, AIAnalysis, WorkflowExecution, RemediationOrchestrator"
-          echo "  - Gateway, Data Storage, HolmesGPT API, Notification"
+          echo "  - Gateway, Data Storage, KA, Notification"
           echo ""
           echo "Tier 1 - Unit Tests: ${{ needs.unit-go-services.result }} (Go), ${{ needs.unit-python-service.result }} (Python)"
           echo "Tier 2 - Integration: ${{ needs.integration-fast.result }} (Fast), ${{ needs.integration-podman.result }} (Podman), ${{ needs.integration-envtest.result }} (EnvTest), ${{ needs.integration-kind.result }} (Kind)"

@@ -42,11 +42,11 @@ The field is **required** (not optional) — all signals MUST be classified.
 
 SignalProcessing MUST normalize proactive signal types to their base type so the agent can search the existing workflow catalog. Three new status fields are required:
 
-- **`SignalName`** (string, required): The normalized signal name. For proactive signals, this is the base type (e.g., `OOMKilled`). For reactive signals, this matches the incoming `Spec.SignalData.Type` unchanged. This field is the **authoritative signal name** for all downstream consumers (RO, AA, HAPI).
+- **`SignalName`** (string, required): The normalized signal name. For proactive signals, this is the base type (e.g., `OOMKilled`). For reactive signals, this matches the incoming `Spec.SignalData.Type` unchanged. This field is the **authoritative signal name** for all downstream consumers (RO, AA, KA).
 - **`SourceSignalName`** (string, optional): Preserves the pre-normalization signal type for audit trail. Only populated for proactive signals (e.g., `PredictedOOMKill`). Empty for reactive signals.
 - **`SignalMode`** (string, required): See R1.
 
-> **Note**: The raw incoming signal type remains in `Spec.SignalData.Type` (immutable). The normalized value lives in `Status.SignalName`. Downstream consumers (RO → AA → HAPI) MUST read from `Status.SignalName`, not from the spec.
+> **Note**: The raw incoming signal type remains in `Spec.SignalData.Type` (immutable). The normalized value lives in `Status.SignalName`. Downstream consumers (RO → AA → KA) MUST read from `Status.SignalName`, not from the spec.
 
 | Incoming Signal Type | Normalized SignalName | Signal Mode | SourceSignalName (audit) |
 |---|---|---|---|
@@ -95,8 +95,8 @@ Prometheus predict_linear() alert (signal_type: PredictedOOMKill)
         normalizes: PredictedOOMKill → OOMKilled
         sets: signalMode = "proactive", sourceSignalName = "PredictedOOMKill"
       → RO (copies signalMode + normalized signalName from SP status to AA spec)
-        → AIAnalysis (passes signalMode + "OOMKilled" to HAPI)
-          → HAPI (searches catalog for "OOMKilled", prompt says: "predict & prevent")
+        → AIAnalysis (passes signalMode + "OOMKilled" to KA)
+          → KA (searches catalog for "OOMKilled", prompt says: "predict & prevent")
 ```
 
 ### Key Design Decision: No CRD Labels

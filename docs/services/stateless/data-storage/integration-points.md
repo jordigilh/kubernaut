@@ -12,6 +12,14 @@
 > none of which exist in the current implementation. See [What Changed](#what-changed-since-the-november-2025-version)
 > at the end of this document for the full list of corrections.
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**:
+> this document predates the current DataStorage API surface. `GET /api/v1/incidents` does not exist in
+> `api/openapi/data-storage-v1.yaml` (audit/query endpoints have since superseded it); the KA integration
+> example's claim that KA "queries workflow catalog for semantic search" is also stale — the workflow
+> catalog CRUD/search API and pgvector-based semantic search were both retired (see
+> `docs/services/stateless/data-storage/BUSINESS_REQUIREMENTS.md` Category 5/6/10 retirement notes). This
+> needs a full rewrite against the current `api-specification.md`, not a mechanical terminology sweep.
+
 ---
 
 ## Table of Contents

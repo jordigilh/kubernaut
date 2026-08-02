@@ -32,7 +32,7 @@ Storm detection fields in Gateway:
 - `status.stormAggregation.aggregatedCount`: Total occurrences
 - `status.stormAggregation.stormType`: "rate" (currently only one type)
 
-HAPI API contract supports these optional fields:
+Kubernaut Agent (KA) API contract supports these optional fields:
 ```go
 type IncidentRequest struct {
     // ...
@@ -42,7 +42,7 @@ type IncidentRequest struct {
 }
 ```
 
-**Question**: Should we populate `IsStorm` and `StormSignalCount` in AIAnalysis → HAPI requests?
+**Question**: Should we populate `IsStorm` and `StormSignalCount` in AIAnalysis → KA requests?
 
 ---
 
@@ -79,7 +79,7 @@ NOT a Storm = Multiple different resources failing
 ║ T=0:30  SignalProcessing completes enrichment                        ║
 ║         → RO creates AIAnalysis CRD                                  ║
 ║         → AIAnalysis reads RR: occurrenceCount=1 ❌ NO STORM         ║
-║         → AIAnalysis calls HAPI with occurrenceCount=1               ║
+║         → AIAnalysis calls Kubernaut Agent (KA) w/ occurrenceCount=1 ║
 ║                                                                       ║
 ║ T=1:00  Alert 2 arrives (while AIAnalysis is investigating)         ║
 ║         → Gateway updates RR: occurrenceCount=2                      ║
@@ -87,9 +87,9 @@ NOT a Storm = Multiple different resources failing
 ║                                                                       ║
 ║ T=2:30  Alert 5 arrives ← STORM THRESHOLD REACHED                   ║
 ║         → Gateway updates RR: occurrenceCount=5, isStorm=true       ║
-║         → BUT: AIAnalysis already completed, HAPI never sees this   ║
+║         → BUT: AIAnalysis already completed, KA never sees this     ║
 ║                                                                       ║
-║ T=3:00  HAPI completes investigation with occurrenceCount=1 context ║
+║ T=3:00  KA completes investigation with occurrenceCount=1 context   ║
 ║                                                                       ║
 ║ Result: Storm context accumulates AFTER initial investigation       ║
 ╚═══════════════════════════════════════════════════════════════════════╝
@@ -138,7 +138,7 @@ NOT a Storm = Multiple different resources failing
 ║   - Dependency unavailable? → Wait/scale dependency                 ║
 ║                                                                       ║
 ║ Same alert, different root causes → different workflows             ║
-║ Only AIAnalysis/HAPI can determine the right action                 ║
+║ Only AIAnalysis/KA can determine the right action                   ║
 ╚═══════════════════════════════════════════════════════════════════════╝
 ```
 
@@ -154,7 +154,7 @@ NOT a Storm = Multiple different resources failing
 T=5:00  WorkflowExecution fails (pod still crashing)
         → RO creates NEW AIAnalysis for recovery
         → AIAnalysis reads RR with occurrenceCount=20, isStorm=true ✅
-        → HAPI receives storm context in recovery request
+        → KA receives storm context in recovery request
 ```
 
 **Recovery Investigation Frequency**: ~5-10% of cases (most workflows succeed on first attempt)
@@ -182,7 +182,7 @@ T=5:00  WorkflowExecution fails (pod still crashing)
 
 ### Alternative: `occurrence_count` Already Provides This Signal
 
-**Current HAPI contract includes**:
+**Current Kubernaut Agent (KA) contract includes**:
 ```go
 type IncidentRequest struct {
     OccurrenceCount *int `json:"occurrence_count,omitempty"`  // ✅ Already exists
@@ -267,7 +267,7 @@ Custom labels are **not** visible to the LLM (used for filtering only):
 
 ### DD-HOLMESGPT-009: Token Optimization
 
-HolmesGPT-API achieved 60% token reduction (~730 → ~180 tokens):
+Kubernaut Agent (KA) achieved 60% token reduction (~730 → ~180 tokens):
 > "Ultra-compact JSON format for maximum token efficiency"
 
 **Consistency**: Adding 2-3 storm fields (~6 tokens) works against this optimization, especially for 3-6% business value.
@@ -290,7 +290,9 @@ HolmesGPT-API achieved 60% token reduction (~730 → ~180 tokens):
 
 ## 📚 References
 
-- **HAPI API Contract**: `pkg/aianalysis/client/holmesgpt.go`
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: `pkg/aianalysis/client/holmesgpt.go` does not exist in the current codebase.
+
+- **Kubernaut Agent (KA) API Contract**: `pkg/aianalysis/client/holmesgpt.go`
 - **AIAnalysis Integration**: `docs/services/crd-controllers/02-aianalysis/integration-points.md`
 - **Gateway Storm Detection**: `docs/services/stateless/gateway-service/overview.md`
 - **DD-KA-002**: Custom labels not exposed to LLM
@@ -301,10 +303,10 @@ HolmesGPT-API achieved 60% token reduction (~730 → ~180 tokens):
 
 ## ✅ Acceptance Criteria
 
-- [x] AIAnalysis handler does NOT populate `IsStorm` or `StormSignalCount` in HAPI requests
+- [x] AIAnalysis handler does NOT populate `IsStorm` or `StormSignalCount` in Kubernaut Agent (KA) requests
 - [x] AIAnalysis handler DOES populate `OccurrenceCount` (already implemented)
 - [x] Integration documentation reflects this decision
-- [x] HAPI API contract keeps optional fields (backward compatibility, but unused)
+- [x] KA API contract keeps optional fields (backward compatibility, but unused)
 - [x] LLM interprets persistence from `occurrence_count` alone
 
 ---
