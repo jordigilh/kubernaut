@@ -756,6 +756,14 @@ apifrontend:
     # severityTriage:
     #   llmEnabled: true
       # llmEnabled: true
+    # -- #1839: per-dependency resilience timeouts (pkg/apifrontend/config.
+    # ResilienceConfig). Only prometheus is chart-exposed today; connectTimeout/
+    # requestTimeout have non-zero schema defaults (5s/10s, matching the Go
+    # defaults) -- omitted here, override only if Prometheus is known to be
+    # slower than usual in a given environment.
+    # resilience:
+    #   prometheus:
+    #     requestTimeout: "10s"
     auth:
       # Simple single-provider (dev/test convenience, backward compat)
       issuerURL: ""

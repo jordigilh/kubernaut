@@ -1,0 +1,85 @@
+suite: "Issue #1839: apifrontend.config.resilience.prometheus timeouts must match Go code defaults exactly and be chart-overridable"
+# Config.Resilience.Prometheus (pkg/apifrontend/config.defaultResilienceConfig)
+# was a real, already-wired Go capability with zero Helm exposure -- any
+# environment where AF's severity-triage Prometheus calls are slower than 10s
+# (E2E fullpipeline's Prometheus timed out at exactly this default under that
+# suite's scrape+eval+API load, PR #1841 CI) had no chart-level way to tune it
+# short of hand-editing the rendered ConfigMap. Newly exposed here, following
+# the same schema-default-must-match-Go-default discipline as #1803's
+# apifrontend.config.interactive.* fields (see
+# apifrontend_interactive_timeouts_test.yaml) so this doesn't repeat that
+# regression class.
+templates:
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  apifrontend:
+    config:
+      auth:
+        issuerURL: "https://sso.example.com/realms/kubernaut"
+tests:
+  - it: "default install (no resilience.* override) renders connectTimeout: \"5s\", matching the Go default exactly (defaultResilienceConfig().Prometheus.ConnectTimeout = 5 * time.Second)"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'connectTimeout: "5s"'
+
+  - it: "default install (no resilience.* override) renders requestTimeout: \"10s\", matching the Go default exactly (defaultResilienceConfig().Prometheus.RequestTimeout = 10 * time.Second)"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'requestTimeout: "10s"'
+
+  - it: "regression guard: an explicit requestTimeout override still wins over the schema default (e.g. E2E raising it to 30s for a slower Prometheus)"
+    set:
+      apifrontend:
+        config:
+          resilience:
+            prometheus:
+              requestTimeout: "30s"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'requestTimeout: "30s"'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'requestTimeout: "10s"'
+
+  - it: "regression guard: an explicit connectTimeout override still wins over the schema default"
+    set:
+      apifrontend:
+        config:
+          resilience:
+            prometheus:
+              connectTimeout: "8s"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'connectTimeout: "8s"'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'connectTimeout: "5s"'

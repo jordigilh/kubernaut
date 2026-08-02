@@ -56,6 +56,10 @@ apifrontend:
             userRequestsPerSec: 100
         rbac:
             sarCacheTTL: 30s
+        resilience:
+            prometheus:
+                connectTimeout: 5s
+                requestTimeout: 10s
         server:
             healthPort: 8081
             httpPort: 8443
