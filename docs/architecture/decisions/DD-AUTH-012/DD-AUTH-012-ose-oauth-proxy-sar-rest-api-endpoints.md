@@ -135,7 +135,16 @@ containers:
       - --set-xauthrequest=true  # For LLM cost tracking
 ```
 
-**Note**: KA uses `verb:"get"` because it's protecting **its own REST API endpoints** (not DataStorage). Only Gateway should access KA.
+**Note**: KA uses `verb:"get"` because it's protecting **its own REST API endpoints** (not DataStorage).
+
+> **Correction (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This note
+> previously said "Only Gateway should access KA" — that was already stale when this document was written.
+> [DD-AUTH-014](../DD-AUTH-014-middleware-based-sar-authentication.md)'s own changelog documents the actual
+> bug and fix: Gateway was mistakenly granted `kubernaut-agent-client` RBAC despite having zero KA code
+> references, which was corrected by granting that RBAC to the **AIAnalysis controller** instead (the real
+> caller). The correct flow is **Gateway creates AIAnalysis CRDs → AIAnalysis Controller calls KA**; API
+> Frontend (`pkg/apifrontend/ka/`) also calls KA directly for interactive investigation sessions. Gateway
+> itself has no production code path to KA.
 
 ---
 
