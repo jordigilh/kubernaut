@@ -6,6 +6,14 @@
 **Port**: 8080 (REST API + Health), 9090 (Metrics)
 **Implementation Status**: Days 1-8 Complete, 75 Tests (38 Unit, 37 Integration)
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**:
+> this document predates the current DataStorage API surface. `GET /api/v1/incidents` does not exist in
+> `api/openapi/data-storage-v1.yaml` (audit/query endpoints have since superseded it); the KA integration
+> example's claim that KA "queries workflow catalog for semantic search" is also stale — the workflow
+> catalog CRUD/search API and pgvector-based semantic search were both retired (see
+> `docs/services/stateless/data-storage/BUSINESS_REQUIREMENTS.md` Category 5/6/10 retirement notes). This
+> needs a full rewrite against the current `api-specification.md`, not a mechanical terminology sweep.
+
 ---
 
 ## Table of Contents

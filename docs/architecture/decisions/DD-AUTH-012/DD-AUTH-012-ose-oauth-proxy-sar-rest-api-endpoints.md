@@ -201,7 +201,15 @@ if exportedBy == "" {
 
 ## 🔒 **WORKFLOW CATALOG AUDIT TRACKING**
 
-### **Implementation**
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This
+> entire section describes the DataStorage workflow catalog CRUD API, which was **fully retired** (see
+> `BUSINESS_REQUIREMENTS.md`'s Category 10 retirement, and commit history around Jan 2026). Neither
+> `pkg/datastorage/audit/workflow_catalog_event.go` nor `pkg/datastorage/server/workflow_handlers.go` exist
+> in the current codebase — `HandleCreateWorkflow` only survives as a past-tense comment
+> (`server_construction.go:245`) noting its removal. This section needs a full rewrite or deletion against
+> current DataStorage functionality (audit export, legal hold), not a mechanical terminology fix.
+
+### **Implementation** *(historical — describes removed code)*
 
 **File**: `pkg/datastorage/audit/workflow_catalog_event.go`
 
@@ -308,6 +316,10 @@ func (h *WorkflowHandler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Re
 ## 📋 **VALIDATION COMMANDS**
 
 ### **Verify ose-oauth-proxy SAR Enforcement**
+
+> **⚠️ STALE**: the example commands below target `/api/v1/workflows`, which no longer exists in
+> `api/openapi/data-storage-v1.yaml` (same retired workflow-catalog API flagged above). The SAR
+> enforcement mechanism itself is still accurate — only the example endpoint path is stale.
 
 ```bash
 # 1. Check DataStorage deployment uses ose-oauth-proxy

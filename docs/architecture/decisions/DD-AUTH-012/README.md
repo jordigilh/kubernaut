@@ -141,6 +141,14 @@ args:
 
 ## Business Requirements
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806))**: the "DataStorage Service"
+> IDs below don't resolve as written. `BR-DATA-STORAGE-040/041` should be `BR-STORAGE-040/041`
+> (workflow catalog search/update APIs) — but both are now `❌ Retired` (workflow catalog CRUD was removed;
+> see `docs/services/stateless/data-storage/BUSINESS_REQUIREMENTS.md`). `BR-DATA-STORAGE-050` doesn't exist
+> under either prefix; `BR-STORAGE-050` is a real but unrelated BR ("True Score Normalization"). These
+> IDs need re-verification against a currently-implemented DataStorage RBAC/audit requirement, not a
+> mechanical rename.
+
 ### DataStorage Service
 - **BR-DATA-STORAGE-040**: RESTful API for audit events with RBAC
 - **BR-DATA-STORAGE-041**: RESTful API for workflow catalog with RBAC
@@ -184,6 +192,11 @@ userID := r.Header.Get("X-Auth-Request-User")
 ## SOC2 Compliance
 
 ### Workflow Catalog Attribution
+
+> **⚠️ STALE**: the workflow catalog CRUD API this section describes was retired (same root cause flagged
+> in the main DD-AUTH-012 document's "Workflow Catalog Audit Tracking" section). The `ose-oauth-proxy`
+> attribution mechanism itself is still accurate for DataStorage's remaining endpoints (audit export,
+> legal hold) — only the "workflow catalog" framing is stale.
 
 **Requirement**: Track "who" accessed workflow catalog operations (create, search, update).
 
