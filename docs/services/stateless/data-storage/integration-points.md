@@ -1,10 +1,16 @@
 # Data Storage Service - Integration Points
 
-**Version**: v2.0 (Phase 1: Read API ✅ Production-Ready)
-**Last Updated**: November 1, 2025
-**Service Type**: Stateless HTTP REST API Gateway (Read + Write)
-**Port**: 8080 (REST API + Health), 9090 (Metrics)
-**Implementation Status**: Days 1-8 Complete, 75 Tests (38 Unit, 37 Integration)
+**Version**: v2.0 (Unified Audit Event API — ADR-034)
+**Last Updated**: August 2026
+**Service Type**: Stateless HTTP REST API (Audit Write + Query)
+**Ports**: `8080` (REST API), `8081` (Health), `9090` (Metrics)
+**Authentication**: In-process middleware — TokenReview + SubjectAccessReview (DD-AUTH-014), no sidecar
+
+> **Rewritten** ([#1806](https://github.com/jordigilh/kubernaut/issues/1806)): the previous version of this
+> document (dated November 2025) described a `GET /api/v1/incidents` read API, per-domain audit tables
+> (`remediation_audit`, `workflow_audit`), a `pgvector`-based Vector DB, and an `ose-oauth-proxy` sidecar —
+> none of which exist in the current implementation. See [What Changed](#what-changed-since-the-november-2025-version)
+> at the end of this document for the full list of corrections.
 
 > **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**:
 > this document predates the current DataStorage API surface. `GET /api/v1/incidents` does not exist in
@@ -18,1122 +24,242 @@
 
 ## Table of Contents
 
-### Phase 1: Read API Integration (✅ Production-Ready)
-1. [Phase 1 Integration Overview](#phase-1-read-api-integration)
-2. [Downstream Services (Readers)](#downstream-services-readers-phase-1)
-3. [Database Integration](#database-integration-phase-1)
-
-### Phase 2: Write API Integration (📋 Planned)
-4. [Phase 2 Integration Overview](#phase-2-write-api-integration)
-5. [Upstream Services (Writers)](#upstream-services-writers-phase-2)
-6. [Downstream Services (Databases)](#downstream-services-databases-phase-2)
-7. [Integration Patterns](#integration-patterns-phase-2)
+1. [Service Position in Architecture](#service-position-in-architecture)
+2. [Authentication & Authorization](#authentication--authorization-dd-auth-014)
+3. [Upstream Services (Writers)](#upstream-services-writers)
+4. [Downstream Consumers (Readers)](#downstream-consumers-readers)
+5. [API Surface](#api-surface)
+6. [Database Integration](#database-integration)
+7. [Write Pattern: Async Buffered Store](#write-pattern-async-buffered-store)
 8. [Error Handling](#error-handling)
-9. [Data Flow Diagrams](#data-flow-diagrams)
+9. [What Changed Since the November 2025 Version](#what-changed-since-the-november-2025-version)
+10. [Reference Documentation](#reference-documentation)
 
 ---
 
-## Phase 1: Read API Integration
+## Service Position in Architecture
 
-**Status**: ✅ Production-Ready (Days 1-8 Complete)
-**Business Requirements**: BR-STORAGE-021 through BR-STORAGE-028
-
-### **Service Position in Architecture (Phase 1)**
-
-Data Storage Service acts as the **REST API Gateway for Database Access** in Phase 1:
+DataStorage is the **centralized audit event store** for Kubernaut, implementing the unified
+audit table / event-sourcing pattern (ADR-034, BR-AUDIT-005). Every business-critical operation
+across services persists a structured audit event here, queryable by `correlation_id` to
+reconstruct a signal's complete lifecycle (signal → analysis → workflow selection → execution →
+verification → notification) for SOC2 CC8.1 and FedRAMP AU-2/AU-3 compliance.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│              Downstream Services (Readers)                  │
-│  (Read incident data via Data Storage API)                  │
-│                                                             │
-│  • Context API Service (planned)                            │
-│  • Effectiveness Monitor Service (planned)                  │
-│  • Analytics Dashboard (planned)                            │
-│  • External API Clients                                     │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-                     │ HTTP GET /api/v1/incidents
-                     │ HTTP GET /api/v1/incidents/:id
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Data Storage Service (Port 8080)               │
-│                                                             │
-│  1. Validate query parameters (severity, limit, offset)     │
-│  2. Build parameterized SQL query (prevent injection)       │
-│  3. Execute query against PostgreSQL                        │
-│  4. Format response (RFC 7807 for errors)                   │
-│  5. Return JSON response with pagination metadata           │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-                     │ SQL SELECT with $N placeholders
-                     │ (Parameterized queries)
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 Database Service                            │
-│                                                             │
-│  • PostgreSQL 16 (resource_action_traces table)             │
-│    - Partitioned by action_timestamp                        │
-│    - Indexed for query performance                          │
-│    - Connection pooling (max 50 connections)                │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│  Upstream Writers (async, non-blocking)                          │
+│  Gateway · AIAnalysis · WorkflowExecution · RemediationOrchestrator│
+│  Notification · AuthWebhook · SignalProcessing · Kubernaut Agent  │
+└─────────────────────────┬──────────────────────────────────────────┘
+                          │ POST /api/v1/audit/events{,/batch}
+                          │ (Bearer token; TokenReview + SAR in-process)
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  Data Storage Service (:8080 API / :8081 health / :9090 metrics) │
+│  1. Auth middleware: validate Bearer token, SAR-check RBAC       │
+│  2. Validate request against AuditEventRequest schema            │
+│  3. Write to unified audit_events table (hash-chained, ADR-034)  │
+│  4. On DB failure: 202 Accepted, queue to DLQ (DD-009)           │
+└─────────────────────────┬──────────────────────────────────────────┘
+                          │ SQL INSERT (parameterized)
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  PostgreSQL 16 — audit_events (single unified table, ADR-034)    │
+└──────────────────────────────────────────────────────────────────┘
+                          ▲
+                          │ GET (query/reconstruct/effectiveness/history)
+┌─────────────────────────┴──────────────────────────────────────────┐
+│  Downstream Readers                                               │
+│  RemediationOrchestrator (ineffective-chain routing)              │
+│  Kubernaut Agent (prompt enrichment context)                      │
+│  API Frontend (triage/session context)                            │
+└──────────────────────────────────────────────────────────────────┘
 ```
+
+There is no Vector DB / pgvector component and no per-domain audit tables (`remediation_audit`,
+`workflow_audit`, `audit_embeddings`) — see [What Changed](#what-changed-since-the-november-2025-version).
 
 ---
 
-## Downstream Services (Readers - Phase 1)
+## Authentication & Authorization (DD-AUTH-014)
 
-### **1. Kubernaut Agent (KA) Service (Active Integration)**
+DataStorage does **not** use a sidecar proxy. Authentication and authorization happen in an
+in-process Go middleware, confirmed in `deploy/data-storage/deployment.yaml`:
 
-**Purpose**: Query workflow catalog for semantic search during incident investigation
+> *"DD-AUTH-014: Middleware-Based Authentication/Authorization — No oauth-proxy sidecar - auth
+> handled in DataStorage middleware. Flow: Client → DataStorage:8081 (direct)"*
 
-**Terminology**: Per DD-NAMING-001, using "Remediation Workflow" (not "Remediation Playbook")
+1. Caller sends `Authorization: Bearer <ServiceAccount token>`.
+2. Middleware validates the token via the Kubernetes `TokenReview` API.
+3. Middleware authorizes the call via `SubjectAccessReview` (SAR) against the `data-storage-client`
+   ClusterRole — each calling ServiceAccount has its own RoleBinding (see
+   `deploy/data-storage/client-rbac-v2.yaml`).
+4. `401 Unauthorized` = missing/invalid/expired token; `403 Forbidden` = SAR denied (ServiceAccount
+   lacks the RoleBinding).
 
-**Integration Pattern**: HTTP GET
-**Endpoint**: `GET /api/v1/incidents?alert_name=HighMemoryUsage&limit=10`
-
-#### **Read Flow**
-
-```go
-// In KA Service (active)
-import (
-    "encoding/json"
-    "fmt"
-    "net/http"
-    "net/url"
-)
-
-type IncidentsResponse struct {
-    Data       []Incident           `json:"data"`
-    Pagination PaginationMetadata   `json:"pagination"`
-}
-
-type Incident struct {
-    ID               int       `json:"id"`
-    AlertName        string    `json:"alert_name"`
-    AlertSeverity    string    `json:"alert_severity"`
-    ActionType       string    `json:"action_type"`
-    ActionTimestamp  string    `json:"action_timestamp"`
-    ExecutionStatus  string    `json:"execution_status"`
-}
-
-func queryHistoricalIncidents(alertName string) ([]Incident, error) {
-    // Build query URL with filters
-    params := url.Values{}
-    params.Add("alert_name", alertName)
-    params.Add("limit", "10")
-    params.Add("severity", "critical")
-
-    url := fmt.Sprintf("http://data-storage.kubernaut-system:8080/api/v1/incidents?%s", params.Encode())
-
-    resp, err := http.Get(url)
-    if err != nil {
-        return nil, fmt.Errorf("failed to query Data Storage API: %w", err)
-    }
-    defer resp.Body.Close()
-
-    if resp.StatusCode != http.StatusOK {
-        return nil, fmt.Errorf("API returned non-OK status: %d", resp.StatusCode)
-    }
-
-    var response IncidentsResponse
-    if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-        return nil, fmt.Errorf("failed to decode response: %w", err)
-    }
-
-    return response.Data, nil
-}
-```
-
-### **2. Effectiveness Monitor Service (Planned Integration)**
-
-**Purpose**: Analyze remediation effectiveness over time
-
-**Integration Pattern**: HTTP GET with filters
-**Endpoint**: `GET /api/v1/incidents?action_type=scale&limit=1000`
-
-#### **Analysis Flow**
-
-```go
-// In Effectiveness Monitor Service (planned)
-func analyzeRemediationEffectiveness(actionType string) (*EffectivenessReport, error) {
-    // Query all incidents of specific action type
-    url := fmt.Sprintf(
-        "http://data-storage.kubernaut-system:8080/api/v1/incidents?action_type=%s&limit=1000",
-        url.QueryEscape(actionType),
-    )
-
-    incidents, err := fetchIncidents(url)
-    if err != nil {
-        return nil, err
-    }
-
-    // Analyze success rate, avg resolution time, etc.
-    report := analyzeIncidents(incidents)
-    return report, nil
-}
-```
-
----
-
-## Database Integration (Phase 1)
-
-### **PostgreSQL Connection**
-
-**Database**: `action_history`
-**Table**: `resource_action_traces`
-**Connection Pool**: 50 max connections
-**SSL Mode**: Configurable (default: disable for dev)
-
-#### **Connection Configuration**
-
-```go
-// pkg/datastorage/server/server.go
-import (
-    "database/sql"
-    "fmt"
-    _ "github.com/lib/pq"
-)
-
-func connectDatabase(connStr string) (*sql.DB, error) {
-    db, err := sql.Open("postgres", connStr)
-    if err != nil {
-        return nil, fmt.Errorf("failed to open database: %w", err)
-    }
-
-    // Configure connection pool
-    db.SetMaxOpenConns(50)
-    db.SetMaxIdleConns(10)
-    db.SetConnMaxLifetime(5 * time.Minute)
-
-    // Verify connection
-    if err := db.Ping(); err != nil {
-        db.Close()
-        return nil, fmt.Errorf("failed to ping database: %w", err)
-    }
-
-    return db, nil
-}
-```
-
-#### **Query Execution Pattern**
-
-All queries use **parameterized statements** to prevent SQL injection (BR-STORAGE-025):
-
-```go
-// pkg/datastorage/server/server.go (DBAdapter)
-func (a *DBAdapter) Query(filters map[string]string, limit, offset int) ([]map[string]interface{}, error) {
-    // Build query with $N placeholders
-    sql, args := buildQuery(filters, limit, offset)
-    // Example SQL: "SELECT * FROM resource_action_traces WHERE alert_severity = $1 LIMIT $2 OFFSET $3"
-    // Example args: ["critical", 100, 0]
-
-    rows, err := a.db.Query(sql, args...)
-    if err != nil {
-        return nil, fmt.Errorf("query execution failed: %w", err)
-    }
-    defer rows.Close()
-
-    // Dynamic column scanning for flexible schema support
-    results := scanRowsToMaps(rows)
-    return results, nil
-}
-```
-
-### **Performance Optimizations**
-
-1. **Connection Pooling**: Reuse database connections (50 max, 10 idle)
-2. **Prepared Statements**: Parameterized queries for SQL injection prevention
-3. **Dynamic Scanning**: Flexible schema support without hardcoded structs
-4. **Pagination**: Limit/offset to prevent large result sets
-5. **Indexing**: Table indexes on `alert_severity`, `action_type`, `alert_name` (assumed)
-
----
-
-## Phase 2: Write API Integration
-
-**Status**: 📋 Planned for Phase 2
-
----
-
-## Integration Overview
-
-### **Service Position in Architecture**
-
-Data Storage Service acts as the **centralized write gateway** in the Kubernaut architecture:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Upstream Services                        │
-│  (Write audit data to Data Storage Service)                │
-│                                                             │
-│  • Gateway Service                                          │
-│  • AI Analysis Controller                                   │
-│  • Workflow Execution Controller                            │
-│  • Kubernetes Executor Controller (DEPRECATED - ADR-025)   │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-                     │ HTTP POST /api/v1/audit/*
-                     │ (Bearer Token Authentication)
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│              Data Storage Service (Port 8080)               │
-│                                                             │
-│  1. Authenticate with Kubernetes TokenReviewer              │
-│  2. Authorize service account for write operations          │
-│  3. Validate audit data against schema                      │
-│  4. Generate vector embedding                               │
-│  5. Write to PostgreSQL (audit trail)                       │
-│  6. Write to Vector DB (embeddings)                         │
-│  7. Return 201 Created response                             │
-└────────────────────┬────────────────────────────────────────┘
-                     │
-                     │ SQL INSERT (PostgreSQL)
-                     │ pgvector INSERT (Vector DB)
-                     ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 Downstream Services                         │
-│  (Data Storage writes to databases)                         │
-│                                                             │
-│  • PostgreSQL (Audit Trail - Port 5432)                     │
-│  • Vector DB / pgvector (Embeddings - Port 5433)            │
-└─────────────────────────────────────────────────────────────┘
-```
+This superseded the earlier `ose-oauth-proxy` sidecar approach (DD-AUTH-011, DD-AUTH-012), which has
+been removed from the deployment entirely — see those documents' supersession notices for history.
 
 ---
 
 ## Upstream Services (Writers)
 
-### **1. Gateway Service**
+All writers use the shared `pkg/audit.AuditStore` interface (`StoreAudit(ctx, *ogenclient.AuditEventRequest)
+error`, DD-AUDIT-002) backed by `BufferedAuditStore` — a non-blocking, in-memory-buffered,
+batched-with-retry writer (ADR-038). A `StoreAudit` call never blocks the caller's primary
+operation; on buffer-full it drops the event and returns an error rather than crashing.
 
-**Purpose**: Writes remediation request audit trail after CRD creation
+| Service | RoleBinding (`client-rbac-v2.yaml`) | Audit package | `event_category` |
+|---|---|---|---|
+| Gateway | `gateway-data-storage-client` | `pkg/gateway/audit_emission.go` | `gateway` |
+| AIAnalysis Controller | `aianalysis-data-storage-client` | `pkg/aianalysis/audit/audit.go` | `analysis` |
+| WorkflowExecution Controller | `workflowexecution-data-storage-client` | `pkg/workflowexecution/audit/manager.go` | `workflowexecution` |
+| RemediationOrchestrator | `remediationorchestrator-data-storage-client` | `pkg/remediationorchestrator/audit/manager.go` | `orchestration`, `approval` |
+| Notification Controller | `notification-data-storage-client` | `pkg/notification/audit/manager.go` | `notification` |
+| AuthWebhook | `authwebhook-data-storage-client` | `pkg/authwebhook/*.go` (per-CRD audit builders) | varies by admitted CRD |
+| SignalProcessing | `signalprocessing-data-storage-client` | `pkg/signalprocessing/audit/*.go` | `signalprocessing` |
+| Kubernaut Agent (KA) | `kubernaut-agent-data-storage-client` | `cmd/kubernautagent/datastorage.go`, `internal/kubernautagent/audit/` | `aiagent` |
 
-**Integration Pattern**: HTTP POST
-**Authentication**: Bearer Token (gateway-sa)
-**Endpoint**: `POST /api/v1/audit/remediation`
+`event_category` values are enumerated in the `AuditEventRequest` schema
+(`api/openapi/data-storage-v1.yaml`); the full set also includes `workflow`, `effectiveness`,
+`actiontype`, `apifrontend`, and `security` for events emitted by other write paths.
 
-#### **Write Flow**
-
-```go
-// In Gateway Service
-package gateway
-
-import (
-    "context"
-    "time"
-
-    "go.uber.org/zap"
-)
-
-func (g *GatewayService) CreateRemediationRequest(ctx context.Context, signal *NormalizedSignal) error {
-    // 1. Create RemediationRequest CRD
-    rr, err := g.k8sClient.Create(ctx, remediationRequest)
-    if err != nil {
-        return err
-    }
-
-    // 2. Write audit trail to Data Storage
-    auditReq := &datastorage.RemediationAuditRequest{
-        RemediationRequestID: rr.Name,
-        AlertName:            signal.AlertName,
-        Namespace:            signal.Namespace,
-        Cluster:              g.clusterName,
-        Priority:             rr.Spec.Priority,
-        CreatedAt:            time.Now(),
-    }
-
-    _, err = g.dataStorageClient.WriteRemediationAudit(ctx, auditReq)
-    if err != nil {
-        g.logger.Error("Failed to write audit trail",
-            zap.String("remediation_request_id", rr.Name),
-            zap.Error(err),
-        )
-        // Continue - audit failure should not block remediation
-    }
-
-    return nil
-}
-```
-
-#### **Client Implementation**
+#### Write call shape (real, from `pkg/audit/store.go`)
 
 ```go
-package datastorage
-
-import (
-    "bytes"
-    "context"
-    "encoding/json"
-    "fmt"
-    "net/http"
-
-    "go.uber.org/zap"
-)
-
-type DataStorageClient struct {
-    baseURL    string
-    httpClient *http.Client
-    token      string
-    logger     *zap.Logger
-}
-
-func NewDataStorageClient(baseURL, token string, logger *zap.Logger) *DataStorageClient {
-    return &DataStorageClient{
-        baseURL:    baseURL,
-        httpClient: &http.Client{Timeout: 10 * time.Second},
-        token:      token,
-        logger:     logger,
-    }
-}
-
-func (c *DataStorageClient) WriteRemediationAudit(ctx context.Context, req *RemediationAuditRequest) (*WriteResponse, error) {
-    payload, err := json.Marshal(req)
-    if err != nil {
-        return nil, fmt.Errorf("failed to marshal audit request: %w", err)
-    }
-
-    httpReq, err := http.NewRequestWithContext(ctx, "POST",
-        fmt.Sprintf("%s/api/v1/audit/remediation", c.baseURL),
-        bytes.NewReader(payload),
-    )
-    if err != nil {
-        return nil, err
-    }
-
-    httpReq.Header.Set("Content-Type", "application/json")
-    httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
-
-    resp, err := c.httpClient.Do(httpReq)
-    if err != nil {
-        return nil, fmt.Errorf("failed to write audit: %w", err)
-    }
-    defer resp.Body.Close()
-
-    if resp.StatusCode != http.StatusCreated {
-        return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-    }
-
-    var writeResp WriteResponse
-    if err := json.NewDecoder(resp.Body).Decode(&writeResp); err != nil {
-        return nil, err
-    }
-
-    return &writeResp, nil
+// AuditStore is the shared interface every writer uses (DD-AUDIT-002).
+type AuditStore interface {
+    // StoreAudit buffers an event for async write. Never blocks; drops on buffer-full.
+    StoreAudit(ctx context.Context, event *ogenclient.AuditEventRequest) error
+    Flush(ctx context.Context) error
+    Close() error
 }
 ```
 
-#### **Data Flow**
-
-```
-Gateway Service
-    │
-    │ 1. Signal received
-    │ 2. RemediationRequest CRD created
-    │
-    └──> POST /api/v1/audit/remediation
-         {
-           "remediationRequestID": "rr-abc123",
-           "alertName": "HighMemoryUsage",
-           "namespace": "production",
-           "cluster": "us-west-2",
-           "priority": "P0"
-         }
-         │
-         ▼
-    Data Storage Service
-         │
-         │ 3. Validate request
-         │ 4. Generate embedding
-         │ 5. Write to PostgreSQL
-         │ 6. Write embedding to Vector DB
-         │
-         └──> 201 Created
-              {
-                "auditID": "audit-xyz789",
-                "status": "persisted"
-              }
-```
+The Kubernetes Executor Controller and its execution-audit write path referenced in the prior
+version of this document no longer exist — execution is performed via Tekton `TaskRun`,
+orchestrated by WorkflowExecution (ADR-025); there is no separate executor service or CRD.
 
 ---
 
-### **2. AI Analysis Controller**
+## Downstream Consumers (Readers)
 
-**Purpose**: Writes remediation decision audit trail
+| Consumer | Endpoint | Purpose | Code |
+|---|---|---|---|
+| RemediationOrchestrator `RoutingEngine` | `GET /api/v1/remediation-history/context` | Tier1 (24h detail) + Tier2 (90d summary) history to block ineffective-remediation chains (BR-ORCH-042.5, DD-KA-016) | `pkg/remediationorchestrator/routing/ds_history_adapter.go` (`DSHistoryAdapter`, Issue #214) |
+| Kubernaut Agent (KA) | `GET /api/v1/remediation-history/context` | Same endpoint, consumed for RCA prompt enrichment context | `internal/kubernautagent/enrichment/`, `cmd/kubernautagent/datastorage.go` |
+| API Frontend | audit query endpoints | Triage/session context for interactive investigations | `pkg/apifrontend/ds/ogen_client.go` |
+| Any authorized caller | `GET /api/v1/audit/remediation-requests/{correlation_id}/reconstruct` | Full lifecycle reconstruction from audit traces (SOC2 CC8.1) | — |
+| Any authorized caller | `GET /api/v1/audit/verify-chain` | Hash-chain integrity verification (FedRAMP AU-9) | `pkg/datastorage/server/audit_verify_chain_handler.go` |
+| Any authorized caller | `GET /api/v1/effectiveness/{correlation_id}` | Remediation effectiveness data | — |
+| Any authorized caller | `GET /api/v1/audit/export`, `GET/POST /api/v1/audit/legal-hold` | Compliance export and legal-hold management (AU-9, AU-11) | — |
 
-**Integration Pattern**: HTTP POST
-**Authentication**: Bearer Token (aianalysis-controller-sa)
-**Endpoint**: `POST /api/v1/audit/remediation`
+**Effectiveness Monitor**: a query client exists (`pkg/effectivenessmonitor/client/ds_querier.go`),
+but as of this writing there is no `deploy/effectiveness*` manifest and no corresponding
+`RoleBinding` in `client-rbac-v2.yaml` — treat it as in-development, not yet a production caller.
 
-#### **Write Flow**
-
-```go
-// In AI Analysis Controller
-package controllers
-
-import (
-    "context"
-    "time"
-
-    "sigs.k8s.io/controller-runtime/pkg/reconcile"
-    "go.uber.org/zap"
-)
-
-func (c *AIAnalysisController) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-    // ... AI analysis logic ...
-
-    // Write audit trail for AI decision
-    auditReq := &datastorage.RemediationAuditRequest{
-        RemediationRequestID: rr.Name,
-        AlertName:            rr.Spec.AlertName,
-        Namespace:            rr.Spec.Namespace,
-        Cluster:              rr.Spec.Cluster,
-        ActionType:           aiDecision.RecommendedAction,
-        Confidence:           aiDecision.Confidence,
-        Reasoning:            aiDecision.Reasoning,
-        CreatedAt:            time.Now(),
-    }
-
-    _, err := c.dataStorageClient.WriteRemediationAudit(ctx, auditReq)
-    if err != nil {
-        c.logger.Error("Failed to write AI decision audit",
-            zap.String("remediation_request_id", rr.Name),
-            zap.Error(err),
-        )
-    }
-
-    return reconcile.Result{}, nil
-}
-```
+KA's workflow catalog interaction is **read-only discovery** (e.g. listing workflows for its
+validator), not the retired CRUD/search API described in the prior version of this document.
 
 ---
 
-### **3. Workflow Execution Controller**
+## API Surface
 
-**Purpose**: Writes workflow step execution audit trail
+Authoritative source: `api/openapi/data-storage-v1.yaml`, registered in `pkg/datastorage/server/server.go`.
 
-**Integration Pattern**: HTTP POST
-**Authentication**: Bearer Token (workflowexecution-controller-sa)
-**Endpoint**: `POST /api/v1/audit/workflow`
+| Endpoint | Method(s) | Purpose |
+|---|---|---|
+| `/api/v1/audit/events` | `POST`, `GET` | Create one audit event (ADR-034) / query with filters |
+| `/api/v1/audit/events/batch` | `POST` | Batch-create audit events |
+| `/api/v1/audit/notifications` | — | Notification-domain audit query |
+| `/api/v1/audit/legal-hold` | `POST`, `GET` | Place/list legal holds on audit records (AU-9/AU-11) |
+| `/api/v1/audit/legal-hold/{correlation_id}` | `GET` | Legal-hold status for a correlation ID |
+| `/api/v1/audit/export` | `GET` | Compliance export |
+| `/api/v1/audit/remediation-requests/{correlation_id}/reconstruct` | `GET` | Full remediation lifecycle reconstruction (SOC2 CC8.1) |
+| `/api/v1/audit/verify-chain` | `GET` | Hash-chain integrity verification (AU-9) |
+| `/api/v1/effectiveness/{correlation_id}` | `GET` | Effectiveness data for a correlation ID |
+| `/api/v1/remediation-history/context` | `GET` | Tier1/Tier2 remediation history for routing/enrichment |
 
-#### **Write Flow**
+`POST /api/v1/audit/events` behavior (per the OpenAPI spec): `201 Created` on success, `400` on
+validation failure (RFC 7807), `401`/`403` per the auth model above, and **`202 Accepted`** on a
+database write failure — the event is queued to a dead-letter queue for async retry (DD-009)
+rather than being dropped or failing the caller's request.
 
-```go
-// In Workflow Execution Controller
-package controllers
-
-import (
-    "context"
-    "time"
-
-    "go.uber.org/zap"
-)
-
-func (c *WorkflowExecutionController) executeStep(ctx context.Context, step *WorkflowStep) error {
-    startTime := time.Now()
-
-    // Execute step
-    err := step.Execute(ctx)
-
-    // Write audit trail for step execution
-    auditReq := &datastorage.WorkflowAuditRequest{
-        WorkflowID:   step.WorkflowID,
-        StepName:     step.Name,
-        StepStatus:   getStepStatus(err),
-        Duration:     time.Since(startTime),
-        ErrorMessage: getErrorMessage(err),
-        ExecutedAt:   startTime,
-    }
-
-    _, writeErr := c.dataStorageClient.WriteWorkflowAudit(ctx, auditReq)
-    if writeErr != nil {
-        c.logger.Error("Failed to write workflow audit",
-            zap.String("workflow_id", step.WorkflowID),
-            zap.String("step_name", step.Name),
-            zap.Error(writeErr),
-        )
-    }
-
-    return err
-}
-```
-
-#### **Client Method**
-
-```go
-package datastorage
-
-import (
-    "bytes"
-    "context"
-    "encoding/json"
-    "fmt"
-    "net/http"
-)
-
-func (c *DataStorageClient) WriteWorkflowAudit(ctx context.Context, req *WorkflowAuditRequest) (*WriteResponse, error) {
-    payload, err := json.Marshal(req)
-    if err != nil {
-        return nil, fmt.Errorf("failed to marshal workflow audit: %w", err)
-    }
-
-    httpReq, err := http.NewRequestWithContext(ctx, "POST",
-        fmt.Sprintf("%s/api/v1/audit/workflow", c.baseURL),
-        bytes.NewReader(payload),
-    )
-    if err != nil {
-        return nil, err
-    }
-
-    httpReq.Header.Set("Content-Type", "application/json")
-    httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
-
-    resp, err := c.httpClient.Do(httpReq)
-    if err != nil {
-        return nil, fmt.Errorf("failed to write workflow audit: %w", err)
-    }
-    defer resp.Body.Close()
-
-    if resp.StatusCode != http.StatusCreated {
-        return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-    }
-
-    var writeResp WriteResponse
-    if err := json.NewDecoder(resp.Body).Decode(&writeResp); err != nil {
-        return nil, err
-    }
-
-    return &writeResp, nil
-}
-```
+The `GET /api/v1/incidents`, `POST /api/v1/audit/remediation`, and `POST /api/v1/audit/workflow`
+endpoints described in the prior version of this document are **not** in the OpenAPI spec and have
+no server registration — they never shipped this way.
 
 ---
 
-### **4. Kubernetes Executor Controller** (DEPRECATED - ADR-025)
+## Database Integration
 
-**Purpose**: Writes Kubernetes action execution audit trail
-
-> **ADR-025**: The Kubernetes Executor service and CRD were removed; execution is performed via Tekton TaskRun orchestrated by WorkflowExecution. The sample below describes the **historical** audit-write pattern only, not a live integration.
-
-**Integration Pattern**: HTTP POST
-**Authentication**: Bearer Token (kubernetes-executor-sa)
-**Endpoint**: `POST /api/v1/audit/remediation`
-
-#### **Write Flow**
-
-```go
-// In Kubernetes Executor Controller
-package controllers
-
-import (
-    "context"
-    "time"
-
-    "go.uber.org/zap"
-)
-
-func (c *KubernetesExecutorController) executeAction(ctx context.Context, action *KubernetesAction) error {
-    startTime := time.Now()
-
-    // Execute Kubernetes action
-    result, err := c.k8sClient.Execute(ctx, action)
-
-    // Write audit trail for action execution
-    auditReq := &datastorage.RemediationAuditRequest{
-        RemediationRequestID: action.RemediationRequestID,
-        ActionType:           action.Type,
-        TargetResource:       action.TargetResource,
-        Status:               getActionStatus(err),
-        Duration:             time.Since(startTime),
-        ErrorMessage:         getErrorMessage(err),
-        ExecutedAt:           startTime,
-    }
-
-    _, writeErr := c.dataStorageClient.WriteRemediationAudit(ctx, auditReq)
-    if writeErr != nil {
-        c.logger.Error("Failed to write action audit",
-            zap.String("remediation_request_id", action.RemediationRequestID),
-            zap.String("action_type", action.Type),
-            zap.Error(writeErr),
-        )
-    }
-
-    return err
-}
-```
+- **Engine**: PostgreSQL 16, single unified `audit_events` table (ADR-034) — not the per-domain
+  `remediation_audit`/`workflow_audit` tables described previously.
+- **Integrity**: hash-chained records (FedRAMP AU-9) — `pkg/datastorage/repository/audit_events_hashchain.go`,
+  verified on demand via `GET /api/v1/audit/verify-chain`.
+- **No Vector DB**: pgvector-based embedding storage and semantic similarity search were retired
+  (see `docs/services/stateless/data-storage/BUSINESS_REQUIREMENTS.md`, Category 5/6 retirement —
+  `BR-STORAGE-012` through `BR-STORAGE-016`). No embedding generation happens on the write path.
+- **No workflow catalog tables**: CRUD/search endpoints for a workflow catalog were retired
+  (same document, Category 10 — `BR-STORAGE-038` through `BR-STORAGE-042`).
 
 ---
 
-## Downstream Services (Databases)
-
-### **1. PostgreSQL (Audit Trail)**
-
-**Purpose**: Persistent storage for audit records
-
-**Connection**: SQL over SSL/TLS
-**Port**: 5432
-**Database**: `kubernaut_audit`
-
-#### **Schema**
-
-```sql
-CREATE TABLE remediation_audit (
-    id VARCHAR(255) PRIMARY KEY,
-    remediation_request_id VARCHAR(255) NOT NULL,
-    alert_name VARCHAR(255) NOT NULL,
-    namespace VARCHAR(255) NOT NULL,
-    cluster VARCHAR(255) NOT NULL,
-    action_type VARCHAR(255),
-    status VARCHAR(50) NOT NULL,
-    confidence FLOAT,
-    reasoning TEXT,
-    duration_ms INT,
-    error_message TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    INDEX idx_remediation_request_id (remediation_request_id),
-    INDEX idx_alert_name (alert_name),
-    INDEX idx_cluster_namespace (cluster, namespace),
-    INDEX idx_created_at (created_at DESC)
-);
-
-CREATE TABLE workflow_audit (
-    id VARCHAR(255) PRIMARY KEY,
-    workflow_id VARCHAR(255) NOT NULL,
-    step_name VARCHAR(255) NOT NULL,
-    step_status VARCHAR(50) NOT NULL,
-    duration_ms INT NOT NULL,
-    error_message TEXT,
-    executed_at TIMESTAMP NOT NULL DEFAULT NOW(),
-    INDEX idx_workflow_id (workflow_id),
-    INDEX idx_executed_at (executed_at DESC)
-);
-```
-
-#### **Write Pattern**
-
-```go
-package storage
-
-import (
-    "context"
-    "fmt"
-
-    "go.uber.org/zap"
-)
-
-func (s *DataStorageService) WriteRemediationAudit(ctx context.Context, audit *RemediationAudit) error {
-    query := `
-        INSERT INTO remediation_audit (
-            id, remediation_request_id, alert_name, namespace, cluster,
-            action_type, status, confidence, reasoning, duration_ms,
-            error_message, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-    `
-
-    _, err := s.db.ExecContext(ctx, query,
-        audit.ID,
-        audit.RemediationRequestID,
-        audit.AlertName,
-        audit.Namespace,
-        audit.Cluster,
-        audit.ActionType,
-        audit.Status,
-        audit.Confidence,
-        audit.Reasoning,
-        audit.DurationMs,
-        audit.ErrorMessage,
-        audit.CreatedAt,
-    )
-
-    if err != nil {
-        s.logger.Error("Failed to write remediation audit to PostgreSQL",
-            zap.String("audit_id", audit.ID),
-            zap.Error(err),
-        )
-        return fmt.Errorf("postgresql write failed: %w", err)
-    }
-
-    s.logger.Info("Remediation audit persisted to PostgreSQL",
-        zap.String("audit_id", audit.ID),
-        zap.String("remediation_request_id", audit.RemediationRequestID),
-    )
-
-    return nil
-}
-```
-
----
-
-### **2. Vector DB / pgvector (Embeddings)**
-
-**Purpose**: Semantic similarity search for historical incidents
-
-**Connection**: SQL over SSL/TLS (PostgreSQL with pgvector extension)
-**Port**: 5433
-**Database**: `kubernaut_vectors`
-
-#### **Schema**
-
-```sql
-CREATE EXTENSION IF NOT EXISTS vector;
-
-CREATE TABLE audit_embeddings (
-    audit_id VARCHAR(255) PRIMARY KEY,
-    embedding vector(768) NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
--- HNSW index for fast similarity search
-CREATE INDEX ON audit_embeddings USING hnsw (embedding vector_cosine_ops);
-```
-
-#### **Write Pattern**
-
-```go
-package storage
-
-import (
-    "context"
-    "fmt"
-    "strings"
-    "time"
-
-    "go.uber.org/zap"
-)
-
-func (s *DataStorageService) WriteEmbedding(ctx context.Context, auditID string, embedding *Embedding) error {
-    query := `
-        INSERT INTO audit_embeddings (audit_id, embedding, created_at)
-        VALUES ($1, $2, $3)
-    `
-
-    // Convert embedding to pgvector format
-    vectorStr := fmt.Sprintf("[%s]", strings.Join(floatsToStrings(embedding.Vector), ","))
-
-    _, err := s.vectorDB.ExecContext(ctx, query,
-        auditID,
-        vectorStr,
-        time.Now(),
-    )
-
-    if err != nil {
-        s.logger.Error("Failed to write embedding to Vector DB",
-            zap.String("audit_id", auditID),
-            zap.Error(err),
-        )
-        return fmt.Errorf("vector db write failed: %w", err)
-    }
-
-    s.logger.Info("Embedding persisted to Vector DB",
-        zap.String("audit_id", auditID),
-        zap.Int("vector_size", len(embedding.Vector)),
-    )
-
-    return nil
-}
-```
-
-#### **Similarity Search Pattern**
-
-```go
-package storage
-
-import (
-    "context"
-    "fmt"
-    "strings"
-)
-
-func (s *DataStorageService) FindSimilarIncidents(ctx context.Context, embedding *Embedding, limit int) ([]*SimilarIncident, error) {
-    query := `
-        SELECT audit_id, 1 - (embedding <=> $1) AS similarity
-        FROM audit_embeddings
-        ORDER BY embedding <=> $1
-        LIMIT $2
-    `
-
-    vectorStr := fmt.Sprintf("[%s]", strings.Join(floatsToStrings(embedding.Vector), ","))
-
-    rows, err := s.vectorDB.QueryContext(ctx, query, vectorStr, limit)
-    if err != nil {
-        return nil, fmt.Errorf("similarity search failed: %w", err)
-    }
-    defer rows.Close()
-
-    var incidents []*SimilarIncident
-    for rows.Next() {
-        var incident SimilarIncident
-        if err := rows.Scan(&incident.AuditID, &incident.Similarity); err != nil {
-            return nil, err
-        }
-        incidents = append(incidents, &incident)
-    }
-
-    return incidents, nil
-}
-```
-
----
-
-## Integration Patterns
-
-### **Pattern 1: Synchronous Write with Best-Effort Guarantee**
-
-**Used by**: Gateway, AI Analysis, Workflow Execution, Kubernetes Executor (DEPRECATED - ADR-025)
-
-**Characteristics**:
-- Audit write failure does **NOT** block primary operation
-- Errors are logged but not propagated
-- Primary operation success is independent of audit persistence
-
-**Rationale**: Audit trail is important but **not critical** for remediation success.
-
-```go
-package gateway
-
-import (
-    "context"
-
-    "go.uber.org/zap"
-)
-
-// Primary operation
-err := createRemediationRequest(ctx, rr)
-if err != nil {
-    return err // PRIMARY OPERATION FAILED
-}
-
-// Best-effort audit write
-_, auditErr := dataStorageClient.WriteAudit(ctx, audit)
-if auditErr != nil {
-    logger.Error("Audit write failed", zap.Error(auditErr))
-    // Continue - do not block primary operation
-}
-
-return nil // PRIMARY OPERATION SUCCEEDED
-```
-
----
-
-### **Pattern 2: Atomic Database Transaction**
-
-**Used by**: Data Storage Service internal writes
-
-**Characteristics**:
-- PostgreSQL write and Vector DB write are in separate transactions
-- If PostgreSQL succeeds but Vector DB fails, PostgreSQL is **NOT** rolled back
-- Partial success is acceptable (audit trail more important than embedding)
-
-**Rationale**: Audit trail (PostgreSQL) is more critical than embeddings (Vector DB).
-
-```go
-package storage
-
-import (
-    "context"
-    "fmt"
-
-    "go.uber.org/zap"
-)
-
-func (s *DataStorageService) PersistAudit(ctx context.Context, audit *RemediationAudit) error {
-    // 1. Write to PostgreSQL (CRITICAL)
-    if err := s.WriteRemediationAudit(ctx, audit); err != nil {
-        return fmt.Errorf("critical: postgresql write failed: %w", err)
-    }
-
-    // 2. Generate embedding
-    embedding, err := s.GenerateEmbedding(audit)
-    if err != nil {
-        s.logger.Warn("Embedding generation failed",
-            zap.String("audit_id", audit.ID),
-            zap.Error(err),
-        )
-        return nil // PostgreSQL succeeded, continue
-    }
-
-    // 3. Write embedding to Vector DB (BEST-EFFORT)
-    if err := s.WriteEmbedding(ctx, audit.ID, embedding); err != nil {
-        s.logger.Warn("Vector DB write failed",
-            zap.String("audit_id", audit.ID),
-            zap.Error(err),
-        )
-        // Continue - PostgreSQL succeeded
-    }
-
-    return nil
-}
-```
+## Write Pattern: Async Buffered Store
+
+Implemented once in `pkg/audit.BufferedAuditStore` and reused by every writer in the table above
+(DD-AUDIT-002, ADR-038):
+
+1. `StoreAudit()` appends the event to an in-memory channel and returns immediately — the caller's
+   primary operation (e.g. creating a CRD) is never blocked or failed by an audit write.
+2. A background goroutine batches buffered events and flushes them on a timer or when the batch
+   size threshold is reached.
+3. Failed writes are retried with exponential backoff (`s.writeBatchWithRetry`); on shutdown, any
+   remaining buffered events are flushed before the process exits.
+4. If DataStorage itself fails to persist a batch (DB unavailable), it responds `202 Accepted` and
+   queues to a DLQ rather than returning an error to the writer.
+
+This is a materially different (and more resilient) pattern than the "goroutine-per-write,
+best-effort, log-and-continue" model described in the prior version of this document.
 
 ---
 
 ## Error Handling
 
-### **Client-Side Error Handling**
+All error responses use [RFC 7807 Problem Details](https://datatracker.ietf.org/doc/html/rfc7807)
+(`application/problem+json`), per `DD-004-RFC7807-ERROR-RESPONSES.md`:
 
-```go
-package gateway
+| Status | Meaning |
+|---|---|
+| `201` | Audit event created |
+| `202` | Validated but DB write failed — queued to DLQ (DD-009), not lost |
+| `400` | Request failed `AuditEventRequest` schema validation |
+| `401` | Bearer token missing, invalid, or expired (TokenReview rejection) |
+| `403` | SAR denied — caller's ServiceAccount lacks the `data-storage-client` RoleBinding |
+| `500` | Unexpected server error |
 
-import (
-    "context"
-    "time"
-
-    "go.uber.org/zap"
-)
-
-func (g *GatewayService) writeAuditWithRetry(ctx context.Context, audit *datastorage.RemediationAuditRequest) {
-    maxRetries := 3
-    backoff := 100 * time.Millisecond
-
-    for attempt := 1; attempt <= maxRetries; attempt++ {
-        _, err := g.dataStorageClient.WriteRemediationAudit(ctx, audit)
-        if err == nil {
-            return // Success
-        }
-
-        g.logger.Warn("Audit write failed, retrying",
-            zap.Int("attempt", attempt),
-            zap.Int("max_retries", maxRetries),
-            zap.Error(err),
-        )
-
-        if attempt < maxRetries {
-            time.Sleep(backoff)
-            backoff *= 2 // Exponential backoff
-        }
-    }
-
-    g.logger.Error("Audit write failed after all retries",
-        zap.String("audit_id", audit.RemediationRequestID),
-    )
-}
-```
-
-### **Server-Side Error Responses**
-
-```go
-// HTTP 400 - Bad Request
-{
-    "error": "validation_failed",
-    "message": "RemediationRequestID is required",
-    "field": "remediationRequestID"
-}
-
-// HTTP 401 - Unauthorized
-{
-    "error": "authentication_failed",
-    "message": "Token validation failed"
-}
-
-// HTTP 403 - Forbidden
-{
-    "error": "authorization_failed",
-    "message": "Service account not authorized for write operations"
-}
-
-// HTTP 429 - Rate Limit Exceeded
-{
-    "error": "rate_limit_exceeded",
-    "message": "Too many requests. Limit: 100 req/s per service"
-}
-
-// HTTP 500 - Internal Server Error
-{
-    "error": "internal_error",
-    "message": "Failed to persist audit trail",
-    "correlation_id": "req-abc123"
-}
-
-// HTTP 503 - Service Unavailable
-{
-    "error": "service_unavailable",
-    "message": "PostgreSQL connection failed"
-}
-```
+There is no bespoke `{"error": {"code": ..., "message": ...}}` format — that shape, and the
+`VALIDATION_ERROR`/`DUPLICATE_AUDIT`/`EMBEDDING_ERROR` error codes described previously, do not
+appear in the current OpenAPI spec.
 
 ---
 
-## Data Flow Diagrams
+## What Changed Since the November 2025 Version
 
-### **Complete Audit Write Flow**
+The previous version of this document (v2.0, dated November 1, 2025) was written before
+implementation and was never reconciled with what actually shipped. Corrections made in this
+rewrite:
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│ Step 1: Upstream Service (e.g., Gateway)                        │
-│   - Primary operation completes (create RemediationRequest CRD)  │
-│   - Prepare audit request                                        │
-│   - Send POST /api/v1/audit/remediation                          │
-└─────────────────────────┬────────────────────────────────────────┘
-                          │
-                          │ HTTP POST (Bearer Token)
-                          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Step 2: Data Storage Service - Authentication                   │
-│   - Extract Bearer token from Authorization header              │
-│   - Validate token with Kubernetes TokenReviewer                │
-│   - Extract service account identity                             │
-└─────────────────────────┬────────────────────────────────────────┘
-                          │
-                          │ Valid Token
-                          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Step 3: Data Storage Service - Authorization                    │
-│   - Check service account against authorized list               │
-│   - Verify write permission for audit type                      │
-└─────────────────────────┬────────────────────────────────────────┘
-                          │
-                          │ Authorized
-                          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Step 4: Data Storage Service - Validation                       │
-│   - Validate required fields (ID, RemediationRequestID, etc.)   │
-│   - Validate field formats (timestamps, UUIDs, etc.)            │
-│   - Validate business rules (status, action types, etc.)        │
-└─────────────────────────┬────────────────────────────────────────┘
-                          │
-                          │ Valid
-                          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Step 5: Data Storage Service - Embedding Generation             │
-│   - Extract features from audit data                            │
-│   - Generate 768-dimensional embedding vector                   │
-└─────────────────────────┬────────────────────────────────────────┘
-                          │
-                          │ Embedding
-                          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Step 6: Data Storage Service - PostgreSQL Write                 │
-│   - Prepare SQL INSERT with prepared statement                  │
-│   - Execute INSERT to remediation_audit table                   │
-│   - Commit transaction                                           │
-└─────────────────────────┬────────────────────────────────────────┘
-                          │
-                          │ PostgreSQL Success
-                          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Step 7: Data Storage Service - Vector DB Write (Best-Effort)    │
-│   - Convert embedding to pgvector format                        │
-│   - Execute INSERT to audit_embeddings table                    │
-│   - Commit transaction                                           │
-└─────────────────────────┬────────────────────────────────────────┘
-                          │
-                          │ Success (or logged failure)
-                          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Step 8: Data Storage Service - Response                         │
-│   - Format 201 Created response                                 │
-│   - Return audit ID and status                                  │
-│   - Log successful write                                        │
-└─────────────────────────┬────────────────────────────────────────┘
-                          │
-                          │ HTTP 201 Created
-                          ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Step 9: Upstream Service                                        │
-│   - Receive success response                                    │
-│   - Log audit write success (or failure)                        │
-│   - Continue with primary workflow                              │
-└──────────────────────────────────────────────────────────────────┘
-```
+| Previous claim | Current reality |
+|---|---|
+| `GET /api/v1/incidents`, `GET /api/v1/incidents/:id` | Never implemented; not in the OpenAPI spec. `api-specification.md` itself flags this API as disabled pending [#238](https://github.com/jordigilh/kubernaut/issues/238) |
+| `POST /api/v1/audit/remediation`, `/workflow`, per-domain write endpoints | Superseded by a single unified `POST /api/v1/audit/events` (+ `/batch`), ADR-034 |
+| `remediation_audit`, `workflow_audit`, `audit_embeddings` tables | Single unified `audit_events` table; no vector/embedding table |
+| pgvector Vector DB, embedding generation, cosine-similarity search | Fully retired (`BR-STORAGE-012`–`016`) |
+| Workflow catalog CRUD/search via this API | Fully retired (`BR-STORAGE-038`–`042`); KA's catalog access today is read-only discovery |
+| `ose-oauth-proxy` sidecar + Bearer-token-validated-by-in-handler-TokenReviewer | In-process DD-AUTH-014 middleware; no sidecar; ports are `8080`/`8081`/`9090`, not `8080`+`9090` |
+| Synchronous, goroutine-per-write, best-effort audit writes | Shared, non-blocking, batched `BufferedAuditStore` (DD-AUDIT-002/ADR-038) with DLQ fallback |
+| Effectiveness Monitor and Kubernetes Executor Controller as active/planned integrations | Effectiveness Monitor has query code but no production deployment yet; Kubernetes Executor Controller doesn't exist (ADR-025 — replaced by Tekton `TaskRun` via WorkflowExecution) |
 
 ---
 
@@ -1142,12 +268,15 @@ func (g *GatewayService) writeAuditWithRetry(ctx context.Context, audit *datasto
 - **API Specification**: `docs/services/stateless/data-storage/api-specification.md`
 - **Security Configuration**: `docs/services/stateless/data-storage/security-configuration.md`
 - **Testing Strategy**: `docs/services/stateless/data-storage/testing-strategy.md`
-- **TokenReviewer Auth**: `docs/architecture/KUBERNETES_TOKENREVIEWER_AUTH.md`
-- **Service Dependency Map**: `docs/architecture/SERVICE_DEPENDENCY_MAP.md`
+- **Business Requirements**: `docs/services/stateless/data-storage/BUSINESS_REQUIREMENTS.md`
+- **Unified Audit Table Design**: `docs/architecture/decisions/ADR-034-unified-audit-table-design.md`
+- **Middleware-Based Auth**: `docs/architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md`
+- **Shared Audit Library**: `docs/architecture/decisions/DD-AUDIT-002-audit-shared-library-design.md`
+- **Async Buffered Ingestion**: `docs/architecture/decisions/ADR-038-async-buffered-audit-ingestion.md`
+- **DLQ / Write Error Recovery**: `docs/architecture/decisions/DD-009-audit-write-error-recovery.md`
 
 ---
 
 **Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: October 6, 2025
-**Integration Status**: Design complete, implementation pending
-
+**Last Updated**: August 2026
+**Integration Status**: Implemented and in production (V1.0)
