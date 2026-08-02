@@ -45,9 +45,9 @@ func TestLLMIntegration_RealClassification(t *testing.T) {
 		Description: "CrashLoopBackOff: container exits with OOMKilled status every 30 seconds",
 	}
 
-	result, err := triager.TriagePure(ctx, input)
+	result, err := triager.TriageWithRules(ctx, nil, input)
 	if err != nil {
-		t.Fatalf("TriagePure: %v", err)
+		t.Fatalf("TriageWithRules: %v", err)
 	}
 
 	validSeverities := map[string]bool{"critical": true, "high": true, "warning": true, "info": true}

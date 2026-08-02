@@ -152,6 +152,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					MCPClient: mockMCP,
 					Client:    tc,
 					Namespace: "kubernaut-system",
+					Triager:   defaultTestTriager(),
 				}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",

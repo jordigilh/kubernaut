@@ -984,6 +984,18 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		"--set", "apifrontend.config.auth.jwksURL=https://dex:5556/dex/keys",
 		"--set", "apifrontend.config.auth.audience=kubernaut-apifrontend",
 		"--set", "apifrontend.config.auth.oidcCaFile=/etc/tls-ca/ca.crt",
+		// #1839 RCA (must-gather logs, PR #1841 CI): AF's severity-triage
+		// GetAlerts/GetRules calls to Prometheus were consistently timing out
+		// at the 10s Go default (pkg/apifrontend/config.defaultResilienceConfig)
+		// throughout this suite's run, causing kubernaut_remediate to fail
+		// closed with ErrSeverityUndetermined. Raising DeployPrometheus's own
+		// CPU limit (twice, up to a confirmed GOMAXPROCS=3) had zero effect,
+		// and Gateway's audit-store showed the identical symptom against a
+		// completely different service (DataStorage) in the same run --
+		// evidence of broader E2E-environment latency rather than a
+		// Prometheus-specific compute bottleneck. 30s gives real-but-slow
+		// calls enough headroom without masking a truly hung dependency.
+		"--set", "apifrontend.config.resilience.prometheus.requestTimeout=30s",
 		// Setting auth.issuerURL above also activates AF's NetworkPolicy
 		// kubernaut.np.idpEgress egress rule (networkpolicy.yaml), but that rule
 		// defaults to port 443 (values.yaml's networkPolicies.idp.port) -- DEX

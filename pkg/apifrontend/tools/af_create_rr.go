@@ -199,12 +199,18 @@ func validateCreateRRArgs(d *ToolDeps, args *CreateRRArgs) error {
 	return nil
 }
 
-// resolveCreateRRSeverity runs the severity-triage pipeline when a Triager is
-// configured, returning the resolved severity (defaulting to "warning") and
-// the triage result (nil if no triager, or triage found no severity signal).
+// resolveCreateRRSeverity runs the severity-triage pipeline, returning the
+// resolved severity and the triage result.
+//
+// #1839/DD-AF-010: a nil Triager (severityTriage.enabled=false, i.e. no
+// Prometheus wired) fails closed with the same ErrSeverityUndetermined used
+// when a configured Triager finds no correlating evidence. A silent
+// hardcoded "warning" default here would be the exact "fabrication" DD-AF-010
+// already rejected as Alternative B when removing Tier 3 -- an ungrounded
+// severity is ungrounded whether it comes from an LLM guess or a constant.
 func resolveCreateRRSeverity(ctx context.Context, d *ToolDeps, args *CreateRRArgs) (string, *severity.TriageResult, error) {
 	if d.Triager == nil {
-		return "warning", nil, nil
+		return "", nil, fmt.Errorf("severity triage not configured: %w", severity.ErrSeverityUndetermined)
 	}
 	input := severity.TriageInput{
 		Namespace:   args.Namespace,
@@ -218,7 +224,11 @@ func resolveCreateRRSeverity(ctx context.Context, d *ToolDeps, args *CreateRRArg
 		return "", nil, fmt.Errorf("severity triage failed: %w", err)
 	}
 	if result.Severity == "" {
-		return "warning", nil, nil
+		// #1839/DD-AF-010: same fail-closed rule as the nil-Triager case above --
+		// an empty severity with no error (e.g. the Triager's own Config.Enabled
+		// is false) is still "no grounded evidence", not a green light to
+		// fabricate "warning".
+		return "", nil, fmt.Errorf("severity triage returned no result: %w", severity.ErrSeverityUndetermined)
 	}
 	return result.Severity, &result, nil
 }

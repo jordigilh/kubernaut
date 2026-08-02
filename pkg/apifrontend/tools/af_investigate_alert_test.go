@@ -23,6 +23,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 		return tools.InvestigateAlertConfig{
 			Client:       newTypedFakeClient(),
 			ControllerNS: "kubernaut-system",
+			Triager:      defaultTestTriager(),
 		}
 	}
 
@@ -497,6 +498,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			result, err := tools.HandleInvestigateAlert(ctx, tools.InvestigateAlertConfig{
 				Client:       newTypedFakeClient(),
 				ControllerNS: "kubernaut-system",
+				Triager:      defaultTestTriager(),
 			}, &tools.InvestigateAlertArgs{
 				AlertName:  "ScalingLimited",
 				APIVersion: "apps/v1",
@@ -548,6 +550,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 				Client:       tc,
 				ControllerNS: "kubernaut-system",
 				Auditor:      rec,
+				Triager:      defaultTestTriager(),
 			}, &tools.InvestigateAlertArgs{
 				AlertName:  "KubePodCrashLooping",
 				APIVersion: "apps/v1",

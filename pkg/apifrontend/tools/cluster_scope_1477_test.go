@@ -97,6 +97,7 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 				Client:       newTypedFakeClient(),
 				ControllerNS: "kubernaut-system",
 				Mapper:       newScopeAwareMapper(),
+				Triager:      defaultTestTriager(),
 			}
 			result, err := tools.HandleInvestigateAlert(ctx, cfg,
 				&tools.InvestigateAlertArgs{
@@ -207,6 +208,7 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 					MCPClient: mockMCP,
 					Client:    cfg.Client,
 					Namespace: "kubernaut-system",
+					Triager:   defaultTestTriager(),
 				}, tools.InvestigateMCPArgs{
 					APIVersion: "v1",
 					Kind:       "Node",

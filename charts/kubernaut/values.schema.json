@@ -2592,6 +2592,37 @@
                 }
               }
             },
+            "resilience": {
+              "type": "object",
+              "additionalProperties": false,
+              "description": "Per-dependency circuit-breaker/retry/timeout settings (pkg/apifrontend/config.ResilienceConfig). Only prometheus is exposed today -- newly reachable via Helm (#1839); ka/ds/k8s keep their Go defaults until a concrete need to tune them via chart values arises.",
+              "properties": {
+                "prometheus": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Timeouts for AF's severity-triage calls to Prometheus's HTTP API (GetAlerts/GetRules/InstantQuery). Defaults match pkg/apifrontend/config.defaultResilienceConfig's Go zero-config values, so omitting this block changes nothing.",
+                  "properties": {
+                    "connectTimeout": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/goDuration"
+                        }
+                      ],
+                      "default": "5s"
+                    },
+                    "requestTimeout": {
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/goDuration"
+                        }
+                      ],
+                      "default": "10s",
+                      "description": "Raise this if Prometheus is known to be slower than usual in a given environment (e.g. a resource-constrained or heavily-loaded test cluster) -- #1839 found E2E fullpipeline's Prometheus timing out at the 10s default under that suite's scrape+eval+API load."
+                    }
+                  }
+                }
+              }
+            },
             "auth": {
               "type": "object",
               "additionalProperties": false,
@@ -3252,6 +3283,23 @@
             "port": {
               "type": "integer",
               "default": 8080,
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
+        },
+        "prometheus": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Egress target for the Prometheus instance apifrontend.config.severityTriage queries directly (GetAlerts/GetRules/InstantQuery). Only rendered when monitoring.prometheus.enabled=true (mirrors the condition gating the severityTriage config block itself). Defaults to \"anywhere on 9090\" (Prometheus's standard port) for a real external/cluster-wide Prometheus; override for a non-standard-port Prometheus. Issue #1839 gap found: this egress rule never existed at all -- Tier 3's ungrounded LLM fallback silently absorbed every Prometheus connectivity failure (a default-deny NetworkPolicy drop looks identical to \"no alert data\"), so the gap was invisible until Tier 3's removal exposed it as fullpipeline E2E's AF->Prometheus calls timing out 100% of the time on a modern (>=v0.24) Kind cluster, which enforces NetworkPolicy by default.",
+          "properties": {
+            "cidr": {
+              "type": "string",
+              "default": "0.0.0.0/0"
+            },
+            "port": {
+              "type": "integer",
+              "default": 9090,
               "minimum": 1,
               "maximum": 65535
             }

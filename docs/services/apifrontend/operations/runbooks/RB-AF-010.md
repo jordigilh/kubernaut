@@ -16,7 +16,7 @@
 
 ## Triage Pipeline Overview
 
-The severity triage pipeline runs five tiers in order:
+The severity triage pipeline runs four tiers in order:
 
 ```
 Tier 1: Prometheus /api/v1/alerts (firing alerts)
@@ -26,10 +26,17 @@ Tier 1.5: Prometheus /api/v1/rules (pending rules, cached)
 Tier 2: Prometheus /api/v1/query (instant query per matching rule)
   ↓ miss
 Tier 2.5: LLM with rule context
-  ↓ miss
-Tier 3: Pure LLM fallback
-  ↓ error → propagated to caller
+  ↓ miss → ErrSeverityUndetermined, propagated to caller
 ```
+
+> **#1839 (DD-AF-010)**: Tier 3 (pure-LLM fallback with zero grounding
+> evidence — no alert, no rule) was removed. Asking the LLM to invent a
+> severity from bare resource identity alone risked steering remediation
+> toward the wrong workflow. When Tier 2.5 also misses (i.e. no real
+> Prometheus alert or rule correlates to the resource), `Triage()` now
+> returns `severity.ErrSeverityUndetermined` and `af_create_rr` creates no
+> `RemediationRequest`. **This is expected behavior, not an incident** —
+> see the updated Resolution guidance below before escalating.
 
 ## Diagnostic Steps
 
@@ -45,8 +52,8 @@ rate(af_severity_triage_errors_total[5m])
 | 1 | Prometheus `/api/v1/alerts` unreachable or returning errors |
 | 1.5 | Prometheus `/api/v1/rules` unreachable (or cache miss + fetch failed) |
 | 2 | Prometheus `/api/v1/query` failing for instant queries |
-| 2.5 | LLM call with rule context failed |
-| 3 | LLM pure fallback failed — **this is the terminal error** |
+| 2.5 | LLM call with rule context failed — **this is the terminal error** |
+| — | `ErrSeverityUndetermined`: no alert/rule correlates to the resource — **expected fail-closed result, not a failure to diagnose** (see #1839) |
 
 ### 2. Check Prometheus connectivity
 
@@ -64,7 +71,7 @@ Expected: HTTP 200. If not:
 
 ### 3. Check LLM connectivity
 
-If Tier 3 is failing, the LLM provider is unreachable:
+If Tier 2.5 is failing, the LLM provider is unreachable:
 - Check Vertex AI credentials (Workload Identity, ADC)
 - Check GCP project/region configuration
 - Check LLM circuit breaker state: `af_circuit_breaker_state{dependency="llm"}`
@@ -81,8 +88,8 @@ Key log messages:
 - `"skipping Tier 1.5: rules fetch failed"` — Rules fetch failed (non-fatal)
 - `"skipping Tier 2: rules fetch failed"` — Same as above
 - `"Tier 2 query failed"` — Individual instant query failed (non-fatal)
-- `"Tier 2.5 LLM failed"` — LLM with rule context failed (falls to Tier 3)
-- `"tier 3 LLM triage failed"` — Terminal error (propagated to caller)
+- `"Tier 2.5 LLM failed"` — LLM with rule context failed — terminal error (propagated to caller)
+- `cannot determine severity: no active alert or prometheus rule correlates to this resource` (`ErrSeverityUndetermined`) — all tiers missed; **not an error to fix**, this is the fail-closed design (#1839)
 
 ### 5. Check configuration
 
@@ -107,14 +114,15 @@ Verify:
 | LLM provider down | Check Vertex AI status, credentials, circuit breaker state |
 | LLM rate limited | Check `MaxLLMConcurrency` configuration |
 | Config missing `prometheusURL` | AF won't start if triage is enabled without URL |
+| `ErrSeverityUndetermined` (no alert/rule correlates) | **Not a bug** — the target resource has no real Prometheus alert or rule behind it. Ask the user to specify severity explicitly, or add/verify an Alertmanager rule for that workload. Do not "fix" this by re-adding an LLM guess — see DD-AF-010. |
 
 ## Escalation
 
-If both Prometheus and LLM are healthy but triage still fails:
+If both Prometheus and LLM are healthy but triage still fails (excluding the expected `ErrSeverityUndetermined` fail-closed case above):
 1. Check `af_severity_triage_duration_seconds` for timeouts
 2. Check for PromQL parsing errors in Tier 2 (may indicate rule format changes)
 3. Escalate to the kubernaut team with AF logs and `af_severity_triage_*` metric snapshots
 
 ---
 
-*Related: `docs/tests/1282/TEST_PLAN.md` (signal grounding + triage), `docs/adr/ADR-021-severity-triage.md`*
+*Related: `docs/tests/1282/TEST_PLAN.md` (signal grounding + triage), [DD-AF-010](../../../../architecture/decisions/DD-AF-010-remove-ungrounded-severity-inference.md) (Tier 3 removal rationale)*

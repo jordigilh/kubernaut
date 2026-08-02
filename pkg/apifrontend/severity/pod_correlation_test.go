@@ -11,8 +11,10 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
+	clienttesting "k8s.io/client-go/testing"
 
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
@@ -197,6 +199,118 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 			Expect(names).NotTo(ContainElement("worker-nomatch"))
 		})
 
+		It("UT-AF-TRIAGE-009: propagates a non-NotFound Get error instead of degrading gracefully", func() {
+			scheme := newScheme()
+			client := dynamicfake.NewSimpleDynamicClient(scheme)
+			client.PrependReactor("get", "deployments", func(_ clienttesting.Action) (bool, runtime.Object, error) {
+				return true, nil, errors.New("etcd unavailable")
+			})
+			resolver := newPodResolver(client)
+
+			names, err := resolver.ResolvePodNames(context.Background(), "default", "Deployment", "worker")
+			Expect(err).To(MatchError(ContainSubstring("etcd unavailable")))
+			Expect(names).To(BeNil())
+		})
+
+		It("UT-AF-TRIAGE-010: returns empty when the workload object has no spec (graceful degradation)", func() {
+			scheme := newScheme()
+			deploy := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "apps/v1",
+				"kind":       "Deployment",
+				"metadata":   map[string]interface{}{"name": "no-spec", "namespace": "default"},
+			}}
+			client := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
+			resolver := newPodResolver(client)
+
+			names, err := resolver.ResolvePodNames(context.Background(), "default", "Deployment", "no-spec")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(names).To(BeNil())
+		})
+
+		It("UT-AF-TRIAGE-011: returns empty when the workload spec has no selector (graceful degradation)", func() {
+			scheme := newScheme()
+			deploy := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "apps/v1",
+				"kind":       "Deployment",
+				"metadata":   map[string]interface{}{"name": "no-selector", "namespace": "default"},
+				"spec":       map[string]interface{}{"replicas": int64(1)},
+			}}
+			client := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
+			resolver := newPodResolver(client)
+
+			names, err := resolver.ResolvePodNames(context.Background(), "default", "Deployment", "no-selector")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(names).To(BeNil())
+		})
+
+		It("UT-AF-TRIAGE-012b: returns empty when the selector shape doesn't unmarshal into LabelSelector (corrupted/schema-drifted data)", func() {
+			scheme := newScheme()
+			deploy := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "apps/v1",
+				"kind":       "Deployment",
+				"metadata":   map[string]interface{}{"name": "bad-shape", "namespace": "default"},
+				"spec": map[string]interface{}{
+					// matchLabels must be a map[string]string; a bare string fails
+					// json.Unmarshal into metav1.LabelSelector.
+					"selector": map[string]interface{}{"matchLabels": "not-a-map"},
+				},
+			}}
+			client := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
+			resolver := newPodResolver(client)
+
+			names, err := resolver.ResolvePodNames(context.Background(), "default", "Deployment", "bad-shape")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(names).To(BeNil())
+		})
+
+		It("UT-AF-TRIAGE-012c: returns empty when the selector has an invalid matchExpressions operator", func() {
+			scheme := newScheme()
+			deploy := &unstructured.Unstructured{Object: map[string]interface{}{
+				"apiVersion": "apps/v1",
+				"kind":       "Deployment",
+				"metadata":   map[string]interface{}{"name": "bad-operator", "namespace": "default"},
+				"spec": map[string]interface{}{
+					"selector": map[string]interface{}{
+						"matchExpressions": []interface{}{
+							map[string]interface{}{
+								"key":      "tier",
+								"operator": "NotAnOperator",
+								"values":   []interface{}{"backend"},
+							},
+						},
+					},
+				},
+			}}
+			client := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
+			resolver := newPodResolver(client)
+
+			names, err := resolver.ResolvePodNames(context.Background(), "default", "Deployment", "bad-operator")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(names).To(BeNil())
+		})
+
+		It("UT-AF-TRIAGE-013: propagates a pod List error instead of degrading gracefully", func() {
+			scheme := newScheme()
+			deploy := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{Name: "worker", Namespace: "default"},
+				Spec: appsv1.DeploymentSpec{
+					Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "worker"}},
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "worker"}},
+					},
+				},
+			}
+			client := dynamicfake.NewSimpleDynamicClient(scheme, deploy)
+			client.PrependReactor("list", "pods", func(_ clienttesting.Action) (bool, runtime.Object, error) {
+				return true, nil, errors.New("connection reset")
+			})
+			resolver := newPodResolver(client)
+
+			names, err := resolver.ResolvePodNames(context.Background(), "default", "Deployment", "worker")
+			Expect(err).To(MatchError(ContainSubstring("connection reset")))
+			Expect(names).To(BeNil())
+		})
+
 		It("UT-AF-TRIAGE-008: returns empty when selector is empty (M8 guard)", func() {
 			scheme := newScheme()
 			deploy := &appsv1.Deployment{
@@ -263,10 +377,6 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 					},
 				},
 			}
-			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
-			}
-
 			input := severity.TriageInput{
 				Namespace:   "default",
 				Kind:        "Deployment",
@@ -276,10 +386,10 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				PodNames:    []string{"worker-abc-xyz"},
 			}
 
-			triager := severity.NewTriager(mockProm, mockLLM, severity.DefaultConfig(), logr.Discard())
-			result, err := triager.Triage(context.Background(), input)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Source).NotTo(Equal(severity.SourceFiringAlert))
+			triager := severity.NewTriager(mockProm, &mockLLM{}, severity.DefaultConfig(), logr.Discard())
+			_, err := triager.Triage(context.Background(), input)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined),
+				"M3 guard: cross-namespace pod match must not correlate, and #1839 fails closed rather than falling back to an ungrounded LLM guess")
 		})
 
 		It("UT-AF-TRIAGE-003: existing key-overlap path still works (no regression)", func() {
@@ -508,10 +618,6 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 					},
 				},
 			}
-			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
-			}
-
 			input := severity.TriageInput{
 				Namespace:   "default",
 				Kind:        "Deployment",
@@ -521,7 +627,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				PodNames:    []string{"worker-def-123"},
 			}
 
-			triager := severity.NewTriager(mockProm, mockLLM, severity.DefaultConfig(), logr.Discard())
+			triager := severity.NewTriager(mockProm, &mockLLM{}, severity.DefaultConfig(), logr.Discard())
 			result, err := triager.Triage(context.Background(), input)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.Source).To(Equal(severity.SourcePendingAlert),
@@ -548,10 +654,6 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 					},
 				},
 			}
-			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
-			}
-
 			input := severity.TriageInput{
 				Namespace:   "default",
 				Kind:        "Deployment",
@@ -560,7 +662,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				Labels:      map[string]string{"namespace": "default", "kind": "Deployment", "name": "worker"},
 			}
 
-			triager := severity.NewTriager(mockProm, mockLLM, severity.DefaultConfig(), logr.Discard(),
+			triager := severity.NewTriager(mockProm, &mockLLM{}, severity.DefaultConfig(), logr.Discard(),
 				severity.WithPodResolver(failingResolver))
 			result, err := triager.Triage(context.Background(), input)
 			Expect(err).NotTo(HaveOccurred())

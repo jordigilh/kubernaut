@@ -52,6 +52,7 @@ var _ = Describe("Fix #1440: IS CRD co-creation in HandleInvestigateAlert", func
 		return tools.InvestigateAlertConfig{
 			Client:       newTypedFakeClient(),
 			ControllerNS: "kubernaut-system",
+			Triager:      defaultTestTriager(),
 		}
 	}
 

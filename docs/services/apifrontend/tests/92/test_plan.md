@@ -4,6 +4,17 @@
 > `af_create_rr` no longer accepts user-supplied severity or namespace from the LLM.
 > Severity is always AF-resolved via the triage pipeline. Namespace is AF-resolved
 > via K8s downward API. See `docs/tests/1282/TEST_PLAN.md` for current behavior.
+>
+> **Partially superseded by [#1839](https://github.com/jordigilh/kubernaut/issues/1839) /
+> [DD-AF-010](../../../../architecture/decisions/DD-AF-010-remove-ungrounded-severity-inference.md):**
+> Tier 3 (pure LLM classification, BAC-T-06) has been **removed**. When Tier 1/1.5/2/2.5
+> all miss -- i.e. no real Prometheus alert or rule correlates to the resource -- the
+> pipeline now returns `severity.ErrSeverityUndetermined` and `HandleCreateRR` creates no
+> `RemediationRequest`, instead of asking the LLM to invent a severity with zero grounding
+> evidence. All "falls through to Tier 3" test rows below (UT-AF-T-031/032/034/038/043/048/
+> 051/051b/051d, F-T.16, F-T.36) describe pre-#1839 behavior; see DD-AF-010 and
+> `pkg/apifrontend/severity/triage_test.go`'s "No Grounded Signal — Fail Closed (#1839)"
+> describe block for current behavior.
 
 **Test Plan Identifier:** TP-AF-092-SEVERITY-TRIAGE
 **Issue:** [#92](https://github.com/jordigilh/kubernaut-apifrontend/issues/92)

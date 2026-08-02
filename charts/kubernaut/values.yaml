@@ -652,9 +652,13 @@ monitoring:
 # `enabled` field, not a NetworkPolicy-specific one.
 # DD-PLATFORM-006 DA14: monitoring.{prometheusPort,alertManagerPort}/
 # externalWebhooks.{cidr,port}/externalRegistry.{cidr,port}/idp.{cidr,port}/
-# llm.{cidr,port}/mcpGateway.{cidr,port} all have non-zero schema defaults --
-# omitted here, override only what you need, e.g. a non-standard-port IdP/LLM/
-# MCP Gateway, or a narrower CIDR than "anywhere" (0.0.0.0/0):
+# llm.{cidr,port}/mcpGateway.{cidr,port}/prometheus.{cidr,port} all have
+# non-zero schema defaults -- omitted here, override only what you need, e.g.
+# a non-standard-port IdP/LLM/MCP Gateway/Prometheus, or a narrower CIDR than
+# "anywhere" (0.0.0.0/0). prometheus.port defaults to 9090 (Prometheus's
+# standard port) and is only rendered on AF's NetworkPolicy when
+# monitoring.prometheus.enabled=true (#1839 -- see kubernaut.np.
+# prometheusEgress's doc comment in _helpers.tpl for the full RCA):
 #   idp:
 #     cidr: "10.0.0.0/8"
 #     port: 8443
@@ -756,6 +760,14 @@ apifrontend:
     # severityTriage:
     #   llmEnabled: true
       # llmEnabled: true
+    # -- #1839: per-dependency resilience timeouts (pkg/apifrontend/config.
+    # ResilienceConfig). Only prometheus is chart-exposed today; connectTimeout/
+    # requestTimeout have non-zero schema defaults (5s/10s, matching the Go
+    # defaults) -- omitted here, override only if Prometheus is known to be
+    # slower than usual in a given environment.
+    # resilience:
+    #   prometheus:
+    #     requestTimeout: "10s"
     auth:
       # Simple single-provider (dev/test convenience, backward compat)
       issuerURL: ""

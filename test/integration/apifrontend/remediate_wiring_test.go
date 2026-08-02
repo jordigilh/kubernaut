@@ -24,7 +24,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ctx := context.Background()
 		ns := defaultFixture
 
-		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns}, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: defaultTestTriagerIT()}, &tools.RemediateArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-1332-w01",
@@ -48,7 +48,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ctx := context.Background()
 		ns := defaultFixture
 
-		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns}, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Triager: defaultTestTriagerIT()}, &tools.RemediateArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-1332-w02",
@@ -148,7 +148,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 		ns := defaultFixture
 		auditRecorder.Reset()
 
-		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Auditor: auditRecorder}, &tools.RemediateArgs{
+		result, err := tools.HandleRemediate(ctx, &tools.ToolDeps{Client: k8sClient, DynClient: dynamicClient, ControllerNS: ns, Auditor: auditRecorder, Triager: defaultTestTriagerIT()}, &tools.RemediateArgs{
 			Namespace:   ns,
 			Kind:        "Deployment",
 			Name:        "web-1332-w06",

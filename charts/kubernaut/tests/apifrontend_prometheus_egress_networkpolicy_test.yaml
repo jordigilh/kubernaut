@@ -1,0 +1,114 @@
+suite: "Issue #1839: apifrontend NetworkPolicy egress to Prometheus (severity-triage GetAlerts/GetRules/InstantQuery)"
+# RCA: AF's NetworkPolicy never had an egress rule for Prometheus at all --
+# a one-sided gap identical in shape to the KA/LLM/IdP/MCP-Gateway egress
+# gaps (#1795, #1737, #1755) documented elsewhere in networkpolicy.yaml.
+# Invisible until Tier 3's ungrounded LLM fallback (removed by this same PR,
+# see DD-AF-010) was removed: a default-deny NetworkPolicy silently dropping
+# every AF->Prometheus packet produces the exact same Triage() error shape
+# ("no active alert or prometheus rule correlates to this resource") as a
+# genuinely alert-less resource, so the connectivity bug was fully masked.
+# Confirmed live in fullpipeline E2E (PR #1841 CI, Kind v0.32 which enforces
+# NetworkPolicy by default as of kindnetd/Kind v0.24+): every single
+# GetAlerts/GetRules call timed out at the full client timeout with "dial
+# tcp: i/o timeout" / "context deadline exceeded" -- a hard, consistent
+# connectivity block, not intermittent slowness.
+templates:
+  - templates/apifrontend/networkpolicy.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "default install (monitoring.prometheus.enabled=false) renders NO Prometheus egress rule -- a bare install without Prometheus wiring is unaffected"
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 9090
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "monitoring.prometheus.enabled=true renders egress to Prometheus on port 9090 (the standard port, matching the schema default and the E2E test harness's Prometheus Service)"
+    set:
+      monitoring:
+        prometheus:
+          enabled: true
+          url: "http://prometheus-svc.kubernaut-system.svc.cluster.local:9090"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 9090
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "regression guard: an explicit networkPolicies.prometheus.port override still wins over the schema default"
+    set:
+      monitoring:
+        prometheus:
+          enabled: true
+          url: "http://prometheus-svc.kubernaut-system.svc.cluster.local:9091"
+      networkPolicies:
+        prometheus:
+          port: 9091
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 9091
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 9090
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "0.0.0.0/0"
+
+  - it: "regression guard: an explicit networkPolicies.prometheus.cidr override still wins over the schema default"
+    set:
+      monitoring:
+        prometheus:
+          enabled: true
+          url: "http://prometheus-svc.kubernaut-system.svc.cluster.local:9090"
+      networkPolicies:
+        prometheus:
+          cidr: "10.0.0.0/8"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 9090
+                protocol: TCP
+            to:
+              - ipBlock:
+                  cidr: "10.0.0.0/8"
