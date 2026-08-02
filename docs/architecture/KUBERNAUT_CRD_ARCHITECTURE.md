@@ -1,9 +1,9 @@
 # Kubernaut CRD Architecture
 
-**Version**: 1.3.0
-**Date**: February 2026
+**Version**: 2.0.0
+**Date**: August 2026
 **Status**: ✅ Authoritative Reference
-**V1.0 Services**: 10 (5 CRD + 5 stateless; Dynamic Toolset→V2.0; EM Level 1 in V1.0, Level 2→V1.1 per DD-017 v2.0)
+**Scope**: 6 CRD controllers + 6 stateless/hybrid services + 1 optional UI component (see [Complete Service Inventory](#complete-service-inventory))
 **Supersedes**: [MULTI_CRD_RECONCILIATION_ARCHITECTURE.md](MULTI_CRD_RECONCILIATION_ARCHITECTURE.md) (DEPRECATED)
 
 ---
@@ -12,13 +12,15 @@
 
 This document is the **authoritative reference** for Kubernaut's Custom Resource Definition (CRD) architecture. It defines:
 
-- **Service catalog** (10 V1.0 services: 5 CRD controllers + 5 stateless services; Dynamic Toolset→V2.0; EM Level 1 in V1.0, Level 2→V1.1 per DD-017 v2.0)
-- **CRD specifications** for all 4 CRDs
-- **Reconciliation patterns** and controller responsibilities
-- **Integration flows** between services
-- **Execution architecture** using Tekton Pipelines
+- **Service catalog**: 6 CRD controllers + 6 stateless/hybrid services, verified against `cmd/*/main.go` entrypoints and `SetupWithManager` wiring as of August 2026
+- **CRD specifications** for the CRDs central to the remediation lifecycle (`RemediationRequest`, `SignalProcessing`, `AIAnalysis`, `WorkflowExecution`, `RemediationApprovalRequest`, `NotificationRequest`, `EffectivenessAssessment`)
+- **Reconciliation patterns** and controller responsibilities, verified against `internal/controller/*` source
+- **Integration flows** between services, including the AI approval gate and the multi-engine execution layer
+- **Execution architecture**: a Strategy-pattern dispatch across Tekton, native Kubernetes Jobs, and Ansible/AWX — **not** a Tekton-only design
 
-**Sources**: This document is based on authoritative service specifications, implementation plans, and architectural decision records (ADRs) located in `docs/services/` and `docs/architecture/decisions/`.
+**Sources**: This document is based on direct verification of Go source (`api/*/v1alpha1/*_types.go`, `internal/controller/*`, `pkg/*`, `cmd/*/main.go`) plus authoritative service specifications and architectural decision records (ADRs/DDs) in `docs/services/` and `docs/architecture/decisions/`. Where a claim could not be directly verified against source in this pass, it is marked `⚠️ UNVERIFIED` rather than stated as fact.
+
+> **📋 Rewrite note (v2.0.0, Issue #1806)**: This version is a full architectural-accuracy rewrite, not a mechanical terminology pass. The v1.3.0 document described a "HolmesGPT-API" wrapper service, a "Context API" service, and a 5-CRD/5-stateless V1.0 scope that predates or misrepresents the current system. Every section below has been re-verified against source. See the [Changelog](#changelog) for a full diff summary.
 
 ---
 
@@ -32,6 +34,8 @@ This document is the **authoritative reference** for Kubernaut's Custom Resource
 6. [Integration Flows](#integration-flows)
 7. [Code Examples](#code-examples)
 8. [Operational Guide](#operational-guide)
+9. [Deprecated & Removed Components](#deprecated--removed-components)
+10. [Changelog](#changelog)
 
 ---
 
@@ -39,56 +43,53 @@ This document is the **authoritative reference** for Kubernaut's Custom Resource
 
 ### System Overview
 
-Kubernaut is an AI-powered Kubernetes remediation platform that uses a **microservices + CRD architecture** to enable autonomous incident analysis and automated remediation actions.
+Kubernaut is an AI-powered Kubernetes remediation platform built on a **microservices + CRD architecture** for autonomous incident analysis and automated remediation. A `RemediationRequest` CRD, created by the Gateway service (or by apifrontend for natural-language-driven investigations), is coordinated end-to-end by the RemediationOrchestrator controller through enrichment, AI investigation, an AI/Rego-gated approval step, multi-engine execution, and post-remediation effectiveness scoring — with a unified audit trail persisted to DataStorage for every step (SOC2 CC8.1 / ADR-034).
 
-**Key Characteristics**:
-- **10 V1.0 Services**: 5 CRD controllers + 5 stateless services (Dynamic Toolset→V2.0; EM Level 1 in V1.0, Level 2→V1.1 per DD-017 v2.0)
-- **Multi-Signal Processing**: Prometheus alerts, Kubernetes events, CloudWatch, webhooks
-- **AI-Powered Analysis**: HolmesGPT integration for root cause analysis
-- **Tekton-Based Execution**: Industry-standard CI/CD for remediation workflows
-- **29+ Remediation Actions**: Scaling, restarts, rollbacks, node operations, GitOps PRs
+**Key characteristics**:
+- **6 CRD controllers + 6 stateless/hybrid services** (plus an optional standalone web console) — see [Complete Service Inventory](#complete-service-inventory)
+- **Multi-signal ingestion**: Prometheus/Alertmanager alerts, Kubernetes events (Gateway); natural-language queries (apifrontend)
+- **AI-powered analysis**: Kubernaut Agent (KA), a **native Go** RCA and workflow-selection engine — not a Python/HolmesGPT-SDK wrapper
+- **AI/Rego approval gating**: AIAnalysis evaluates a Rego policy on every investigation result; medium-confidence or policy-flagged recommendations require operator approval via a `RemediationApprovalRequest` CRD before execution
+- **Three execution engines**: Tekton `PipelineRun`, native `batchv1.Job`, and Ansible/AWX — dispatched via a Strategy-pattern registry on `spec.executionEngine`, not a Tekton-only pipeline
+- **Deterministic post-remediation scoring**: EffectivenessMonitor runs 4 zero-LLM checks (health, alert, metrics, spec-hash); DataStorage computes the final weighted score on demand
 - **Open Source**: Apache 2.0 license
 
 ---
 
-### 10 V1.0 Services + Tekton Pipelines
+### Complete Service Inventory
 
-Kubernaut's V1.0 architecture consists of:
+| # | Service | Type | Entrypoint | CRD(s) Owned/Reconciled | Notes |
+|---|---------|------|------------|-------------------------|-------|
+| 1 | **Gateway** | Stateless HTTP (no `ctrl.Manager`) | `cmd/gateway/main.go` | Creates `RemediationRequest` via plain client | Single entry point for Prometheus/Alertmanager + K8s Events |
+| 2 | **SignalProcessing** | CRD controller | `cmd/signalprocessing/main.go` | `SignalProcessing` | Signal enrichment + environment/priority/severity classification |
+| 3 | **AIAnalysis** | CRD controller | `cmd/aianalysis/main.go` | `AIAnalysis` | Calls Kubernaut Agent async (submit/poll session via `pkg/agentclient`); Rego approval gating (`pkg/aianalysis/rego`) |
+| 4 | **WorkflowExecution** | CRD controller | `cmd/workflowexecution/main.go` | `WorkflowExecution` | 3 execution engines via Strategy pattern (`pkg/workflowexecution/executor/`): Tekton, native Job, Ansible/AWX |
+| 5 | **RemediationOrchestrator** | CRD controller (hub) | `cmd/remediationorchestrator/main.go` | `RemediationRequest` (owns SignalProcessing, AIAnalysis, WorkflowExecution, RemediationApprovalRequest, NotificationRequest, EffectivenessAssessment); also runs a second, independent `RemediationApprovalRequest` reconciler in the same binary | Central lifecycle hub — see [reconcile_loop.go](../../internal/controller/remediationorchestrator/reconcile_loop.go) |
+| 6 | **Notification** | CRD controller | `cmd/notification/main.go` | `NotificationRequest` | Migrated from stateless HTTP to CRD (Oct 2025) |
+| 7 | **EffectivenessMonitor** | CRD controller, no business API port | `cmd/effectivenessmonitor/main.go` | Watches `EffectivenessAssessment` (created by RO) | 4 deterministic scorers (health/alert/metrics/hash), zero AI/LLM dependency; DataStorage computes the final weighted score |
+| 8 | **DataStorage** | Stateless HTTP | `cmd/datastorage/main.go` | — | Unified audit sink (ADR-034); computes EffectivenessMonitor's final weighted score on demand |
+| 9 | **Kubernaut Agent (KA)** | Stateless HTTP/MCP | `cmd/kubernautagent/main.go` | — | Native Go AI investigation engine (see [DD-KA-019](decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md)); async session API |
+| 10 | **apifrontend (AF)** | Stateless HTTP + embedded mini CRD controller for its own CRD | `cmd/apifrontend/main.go` | `InvestigationSession` (own CRD) | External-facing A2A/MCP gateway; own LLM "Severity Triager"; creates `RemediationRequest`s from NL queries; separate direct MCP + REST integration to KA |
+| 11 | **authwebhook** | K8s admission webhook + CRD controller | `cmd/authwebhook/main.go` | `RemediationWorkflow` (catalog CRD), plus `ActionType` admission handling | No dedicated `docs/services/` directory exists for this service — a real documentation gap, flagged but not fixed here |
+| 12 | **fleetmetadatacache (FMC)** | Stateless HTTP (no `ctrl.Manager`) | `cmd/fleetmetadatacache/main.go` | — | Multi-cluster "fleet" feature; polls remote clusters via MCP Gateway, writes Valkey, serves scope-check HTTP API |
+| — | **kubernaut-console** | Optional standalone web UI (A2A chat) | n/a (external image) | — | Chart-deployable via `charts/kubernaut/templates/console/console.yaml`; no source in this repository |
 
-**CRD Controllers** (5):
-1. **RemediationOrchestrator** - Central lifecycle orchestration
-2. **SignalProcessing** - Signal enrichment and business classification
-3. **AIAnalysis** - HolmesGPT-powered investigation
-4. **RemediationExecution** - Remediation Playbook orchestration with Tekton
-5. **Notification** - Multi-channel notifications
-
-**Stateless Services** (5):
-1. **Gateway** - HTTP ingestion and security
-2. **Context API** - Historical intelligence provider
-3. **Data Storage** - PostgreSQL + Vector DB persistence
-4. **HolmesGPT-API** - AI investigation wrapper
-5. **Effectiveness Monitor (Level 1)** - Automated assessment (V1.0, DD-017 v2.0)
-~~**Dynamic Toolset**~~ - ⏸️ Deferred to V2.0 (DD-016)
-~~**Effectiveness Monitor (Level 2)**~~ - ⏸️ Deferred to V1.1 (DD-017 v2.0 — requires 8+ weeks Level 1 data)
-
-**Execution Engine**:
-- **Tekton Pipelines** - DAG orchestration and parallel execution (Tekton Pipelines or upstream Tekton)
-
-**Source**: [APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md)
+**Evolution since v1.3.0**: The prior document counted "10 V1.0 services" (5 CRD + 5 stateless). Since then: **Context API was fully removed** (absorbed into DataStorage), **Dynamic Toolset code was deleted** (deferred to V2.0, docs kept only as historical record), **HolmesGPT-API was replaced end-to-end by the native-Go Kubernaut Agent**, **Notification migrated from stateless HTTP to a CRD controller**, and **three services not present in v1.3.0 were added**: `apifrontend`, `authwebhook`, and `fleetmetadatacache`. A `KubernetesExecutor` service was designed pre-v1.3.0 but never implemented and was formally eliminated by [ADR-025](decisions/ADR-025-kubernetesexecutor-service-elimination.md) — it does not appear in the count above. See [Deprecated & Removed Components](#deprecated--removed-components) for the full list.
 
 ---
 
 ### Key Architectural Principles
 
-1. **Central Orchestration**: RemediationOrchestrator creates and watches all child CRDs
-2. **Watch-Based Coordination**: Event-driven, not polling (Kubernetes watches)
-3. **Sequential CRD Creation**: SignalProcessing → AIAnalysis → RemediationExecution → Tekton PipelineRuns
-4. **Owner References**: Automatic cascade deletion via Kubernetes ownership
-5. **24-Hour Retention**: CRDs persist for review window, then auto-cleanup
-6. **Tekton Integration**: Industry-standard execution engine (not custom jobs)
-7. **Data Storage Separation**: Action history in PostgreSQL (90+ days), not CRDs (24 hours)
+1. **Central Orchestration**: RemediationOrchestrator creates and watches all child CRDs of a `RemediationRequest` — verified `Owns()` list: `SignalProcessing`, `AIAnalysis`, `WorkflowExecution`, `RemediationApprovalRequest`, `NotificationRequest`, `EffectivenessAssessment` ([reconcile_loop.go:428-433](../../internal/controller/remediationorchestrator/reconcile_loop.go))
+2. **Watch-Based Coordination**: Event-driven reconciliation via Kubernetes watches, not polling
+3. **RO-Centralized Routing (DD-RO-002)**: RemediationOrchestrator makes all routing/skip/block decisions (resource locks, cooldowns, exponential backoff, consecutive-failure cooldowns) *before* creating a `WorkflowExecution`; WorkflowExecution itself is a "pure executor" with no routing logic
+4. **AI/Rego Approval Gate**: AIAnalysis's Rego policy evaluation (`PolicyDecision`: `Approved` / `ManualReviewRequired` / `Denied` / `DegradedMode`) determines whether RemediationOrchestrator creates a `WorkflowExecution` directly or first creates a `RemediationApprovalRequest` and waits for an operator decision ([ADR-040](decisions/ADR-040-remediation-approval-request-architecture.md))
+5. **Owner References**: All child CRDs are owned by `RemediationRequest` (flat sibling hierarchy) for automatic cascade deletion
+6. **Multi-Engine Execution**: WorkflowExecution dispatches to one of three execution backends via a `Registry`/`Executor` Strategy pattern based on `spec.workflowRef.executionEngine` — Tekton `PipelineRun`, native `batchv1.Job` ([BR-WE-014](../../pkg/workflowexecution/executor/job.go)), or Ansible/AWX ([DD-WE-007](decisions/DD-WE-007-ansible-playbook-rbac-rules.md), no Kubernetes watch required for the AWX case)
+7. **Unified Audit Trail**: DataStorage is the single audit sink for every service above (ADR-034); a `correlation_id` (the `RemediationRequest` name) allows full lifecycle reconstruction (BR-AUDIT-005, SOC2 CC8.1)
+8. **Spec Immutability (ADR-001)**: `RemediationRequest`, `SignalProcessing`, `AIAnalysis`, and `RemediationApprovalRequest` specs are immutable after creation (enforced via CEL `self == oldSelf` validation) — each CRD is an immutable audit record of the state at creation time
 
-**Source**: [APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md), [ADR-024](decisions/ADR-024-eliminate-actionexecution-layer.md)
+**Source**: [reconcile_loop.go](../../internal/controller/remediationorchestrator/reconcile_loop.go), [DD-RO-002](decisions/DD-RO-002-centralized-routing-responsibility.md), [ADR-040](decisions/ADR-040-remediation-approval-request-architecture.md), [ADR-034](decisions/ADR-034-unified-audit-table-design.md)
 
 ---
 
@@ -96,90 +97,97 @@ Kubernaut's V1.0 architecture consists of:
 
 ### CRD Controllers
 
-#### 1. RemediationOrchestrator
+#### 1. SignalProcessing
 
-**Purpose**: End-to-end remediation lifecycle management
+**Purpose**: Signal enrichment and business-aware environment/priority/severity classification
 
-**CRD**: `RemediationRequest` (remediationorchestrator.kubernaut.io/v1alpha1)
-
-**Responsibilities**:
-- Create RemediationRequest CRD from Gateway input
-- Sequential CRD creation (SignalProcessing → AIAnalysis → RemediationExecution)
-- Watch-based status aggregation from all child CRDs
-- Timeout detection and escalation
-- Notification triggering (via NotificationRequest CRD)
-- 24-hour retention with finalizer pattern
-
-**Port**: 9090 (metrics), 8080 (health)
-
-**Business Requirements**: BR-AR-001 to BR-AR-067
-
-**Source**: [docs/services/crd-controllers/05-remediationorchestrator/overview.md](../services/crd-controllers/05-remediationorchestrator/overview.md)
-
----
-
-#### 2. SignalProcessing
-
-**Purpose**: Signal enrichment, business-aware environment classification, and recovery context integration
-
-**CRD**: `SignalProcessing` (signalprocessing.kubernaut.io/v1alpha1)
+**CRD**: `SignalProcessing` (`kubernaut.ai/v1alpha1`)
 
 **Responsibilities**:
 - Enrich signals with Kubernetes context (pods, deployments, nodes)
-- Perform business-aware environment classification (confidence, priority, SLA)
-- Fetch recovery context from Context API (for workflow failures)
-- Validate signal completeness
-- Update status for RemediationOrchestrator to create AIAnalysis CRD
+- Classify environment and business priority (`EnvironmentClassification`, `PriorityAssignment`)
+- Normalize severity via a Rego policy ([DD-SEVERITY-001](decisions/DD-SEVERITY-001-severity-determination-refactoring.md)) into `critical` / `high` / `warning` / `info` / `unknown`
+- Derive optional cluster business classification for fleet-scoped signals (`ClusterClassification`, [BR-FLEET-003](../requirements/BR-FLEET-003-cluster-scoped-workflow-targeting.md))
+- Update status (`Phase: Completed`) so RemediationOrchestrator can create the `AIAnalysis` CRD
 
-**Port**: 9090 (metrics), 8080 (health)
+**Phases**: `Pending` → `Enriching` → `Classifying` → `Categorizing` → `Completed` / `Failed`
 
-**Business Requirements**: BR-SP-001 to BR-SP-062
+**Port**: 9090 (metrics), 8081 (health) — no separate API port (pure CRD reconciler)
+
+**Business Requirements**: BR-SP-001 to BR-SP-062 (as of v1.3.0 numbering; not re-verified line-by-line in this pass)
 
 **Source**: [docs/services/crd-controllers/01-signalprocessing/overview.md](../services/crd-controllers/01-signalprocessing/overview.md)
 
 ---
 
-#### 3. AIAnalysis
+#### 2. AIAnalysis
 
-**Purpose**: HolmesGPT-powered alert investigation and remediation recommendation generation
+**Purpose**: AI-powered root cause analysis and remediation-workflow selection, via Kubernaut Agent
 
-**CRD**: `AIAnalysis` (aianalysis.kubernaut.io/v1alpha1)
+**CRD**: `AIAnalysis` (`kubernaut.ai/v1alpha1`)
 
 **Responsibilities**:
-- Trigger HolmesGPT investigation with enriched contexts
-- Perform contextual AI analysis of Kubernetes state
-- Identify root cause candidates with supporting evidence
-- Generate ranked remediation recommendations
-- Create AIApprovalRequest CRD for medium confidence (60-79%)
-- Validate AI responses and detect hallucinations
+- Submit an investigation to Kubernaut Agent **asynchronously** — `SubmitInvestigation()` returns a `session_id`; the controller then polls via `PollSession()` until a terminal state, then calls `GetSessionResult()` (`pkg/agentclient`, [BR-AA-HAPI-064](../requirements/)) — KA has **no** synchronous "analyze and return" endpoint
+- Evaluate the investigation result against a Rego policy (`pkg/aianalysis/rego/evaluator.go`, [BR-AI-011](../requirements/), [BR-AI-014](../requirements/) graceful degradation) to produce a `PolicyDecision`: `Approved`, `ManualReviewRequired`, `Denied`, or `DegradedMode`
+- Detect and reject hallucinated or invalid AI responses
 
-**Port**: 9090 (metrics), 8080 (health)
+**Phases**: `Pending` → `Investigating` → `Analyzing` → `Completed` / `Failed` (no `Ready` phase — corrected from v1.3.0)
 
-**Business Requirements**: BR-AI-001 to BR-AI-050
+**Port**: 9090 (metrics), 8081 (health) — no separate API port
 
-**Source**: [docs/services/crd-controllers/02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md)
+**Auth**: Middleware-based TokenReview+SAR complete ([DD-AUTH-014](decisions/DD-AUTH-014-middleware-based-sar-authentication.md) Phase 5) — AIAnalysis is the confirmed production caller of Kubernaut Agent's client-auth RBAC (`kubernaut-agent-client`), not Gateway
+
+**Business Requirements**: BR-AI-001 to BR-AI-060 (as of v1.3.0 numbering; not re-verified line-by-line)
+
+**Source**: [docs/services/crd-controllers/02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md), [pkg/agentclient/client.go](../../pkg/agentclient/client.go), [pkg/aianalysis/rego/evaluator.go](../../pkg/aianalysis/rego/evaluator.go)
 
 ---
 
-#### 4. RemediationExecution
+#### 3. WorkflowExecution
 
-**Purpose**: Orchestrate multi-step remediation workflows with Tekton Pipelines
+**Purpose**: Execute the selected remediation workflow via one of three execution engines
 
-**CRD**: `RemediationExecution` (workflowexecution.kubernaut.io/v1alpha1)
+**CRD**: `WorkflowExecution` (`kubernaut.ai/v1alpha1`)
 
 **Responsibilities**:
-- Plan workflow execution based on AI recommendations
-- Validate safety requirements and prerequisites (Rego policies via ConfigMaps)
-- **Create Tekton PipelineRuns directly** (no intermediate ActionExecution layer)
-- Monitor PipelineRun execution progress
-- **Write action records to Data Storage Service** (for pattern monitoring)
-- Handle failures with rollback and recovery
+- Dispatch to the correct `Executor` implementation via a `Registry` keyed on `spec.workflowRef.executionEngine` (Strategy pattern, [pkg/workflowexecution/executor/executor.go](../../pkg/workflowexecution/executor/executor.go)):
+  - **`tekton`** — creates and watches a Tekton `PipelineRun`
+  - **`job`** — creates and watches a native `batchv1.Job` ([BR-WE-014](../../pkg/workflowexecution/executor/job.go))
+  - **`ansible`** — dispatches to Ansible Automation Platform (AWX); **no Kubernetes watch is needed** for this engine ([DD-WE-007](decisions/DD-WE-007-ansible-playbook-rbac-rules.md))
+- Act as a **pure executor**: since DD-RO-002, WorkflowExecution contains no routing/skip logic — RemediationOrchestrator makes all resource-lock, cooldown, and backoff decisions *before* creating the CRD
+- Write action records to DataStorage for audit and effectiveness tracking
 
-**Port**: 9090 (metrics), 8080 (health)
+**Phases**: `Pending` → `Running` → `Completed` / `Failed` (the `Skipped` phase was **removed** in the V1.0 "pure executor" refactor — all skip/block information now lives on `RemediationRequest.Status`, not `WorkflowExecution.Status`)
 
-**Business Requirements**: BR-WF-001 to BR-WF-053, BR-ORCHESTRATION-001 to BR-ORCHESTRATION-010
+**Port**: 9090 (metrics), 8081 (health) — no separate API port
 
-**Source**: [docs/services/crd-controllers/03-workflowexecution/overview.md](../services/crd-controllers/03-workflowexecution/overview.md), [TEKTON_EXECUTION_ARCHITECTURE.md](TEKTON_EXECUTION_ARCHITECTURE.md)
+**Business Requirements**: BR-WF-001 to BR-WF-053, BR-WE-014 (Job engine); Ansible engine authority is [DD-WE-007](decisions/DD-WE-007-ansible-playbook-rbac-rules.md)
+
+**Source**: [docs/services/crd-controllers/03-workflowexecution/overview.md](../services/crd-controllers/03-workflowexecution/overview.md), [pkg/workflowexecution/executor/](../../pkg/workflowexecution/executor/)
+
+---
+
+#### 4. RemediationOrchestrator
+
+**Purpose**: End-to-end remediation lifecycle management — the central hub
+
+**CRD**: `RemediationRequest` (`kubernaut.ai/v1alpha1`)
+
+**Responsibilities**:
+- Create `RemediationRequest`-scoped child CRDs in sequence: `SignalProcessing` → `AIAnalysis` → (`RemediationApprovalRequest` if the Rego policy requires manual review) → `WorkflowExecution` → `EffectivenessAssessment` (on terminal success)
+- **Own the `RemediationApprovalRequest` CRD it creates itself** via `pkg/remediationorchestrator/creator/approval.go` (`ApprovalCreator`) — RemediationOrchestrator, not AIAnalysis, is the creator; AIAnalysis only produces the `PolicyDecision` that triggers creation
+- Run **two independent controllers in the same binary**: the primary `RemediationRequest` reconciler (`Reconciler`), and a separate `RemediationApprovalRequest` reconciler (`RARReconciler`) that only manages audit-condition bookkeeping on the RAR itself ([remediation_approval_request.go](../../internal/controller/remediationorchestrator/remediation_approval_request.go))
+- Watch-based status aggregation across all six owned CRD kinds; centralized routing decisions (DD-RO-002): resource-lock, cooldown, exponential backoff (DD-WE-004), consecutive-failure blocking (BR-ORCH-042)
+- Create `NotificationRequest` CRDs for approvals, escalations, timeouts, completions, and failures
+- Create `EffectivenessAssessment` on terminal success and track its outcome to finalize `RemediationRequest.Status.Outcome`
+
+**Phases** (`RemediationRequest.Status.OverallPhase`): `Pending` → `Processing` → `Analyzing` → `AwaitingApproval` (conditional) → `Executing` → `Verifying` → `Completed` / `Failed` / `TimedOut` / `Skipped` / `Cancelled`, with a non-terminal `Blocked` phase for resource-busy/cooldown/backoff/duplicate/unmanaged-resource conditions (corrected from v1.3.0, which omitted `AwaitingApproval`, `Blocked`, `TimedOut`, `Skipped`, and `Cancelled`)
+
+**Port**: 9090 (metrics), 8081 (health)
+
+**Business Requirements**: BR-ORCH-001 to BR-ORCH-045 (as of v1.3.0 numbering, e.g. BR-ORCH-042 consecutive-failure cooldown; not re-verified line-by-line)
+
+**Source**: [docs/services/crd-controllers/05-remediationorchestrator/overview.md](../services/crd-controllers/05-remediationorchestrator/overview.md), [internal/controller/remediationorchestrator/reconcile_loop.go](../../internal/controller/remediationorchestrator/reconcile_loop.go)
 
 ---
 
@@ -187,412 +195,476 @@ Kubernaut's V1.0 architecture consists of:
 
 **Purpose**: Multi-channel notification delivery
 
-**CRD**: `NotificationRequest` (notification.kubernaut.io/v1alpha1)
+**CRD**: `NotificationRequest` (`kubernaut.ai/v1alpha1`)
 
 **Responsibilities**:
-- Deliver multi-channel notifications (Email, Slack, Teams, SMS, webhooks)
-- Escalation notifications with comprehensive context
-- Sensitive data protection and sanitization
-- Channel-specific formatting adapters
-- External service action links (GitHub, Grafana, Prometheus, K8s Dashboard)
+- Deliver notifications across 9 channel types: `email`, `slack`, `teams`, `pagerduty`, `sms`, `webhook`, `console`, `file`, `log` (expanded from v1.3.0's 5-channel list — `pagerduty`, `console`, `file`, and `log` were added)
+- Sanitize sensitive data before delivery
+- Retry partial failures (`Retrying` is a distinct non-terminal phase) and report `PartiallySent` when some but not all channels succeed
+- Deliver 6 notification types: `Escalation`, `Simple`, `StatusUpdate`, `Approval`, `ManualReview`, `Completion`
 
-**Port**: 9090 (metrics), 8080 (health)
+**Phases**: `Pending` → `Sending` → `Retrying` (conditional) → `Sent` / `PartiallySent` / `Failed`
 
-**Business Requirements**: BR-NOT-001 to BR-NOT-037
+**Port**: 9090 (metrics), 8081 (health)
 
-**Source**: [docs/services/crd-controllers/06-notification/overview.md](../services/crd-controllers/06-notification/overview.md)
+**Business Requirements**: BR-NOT-001 to BR-NOT-050 (as of v1.3.0 numbering; not re-verified line-by-line)
+
+**Source**: [docs/services/crd-controllers/06-notification/overview.md](../services/crd-controllers/06-notification/overview.md) — ⚠️ note: this overview document's own header still says "Stateless HTTP API Service" / "NEEDS IMPLEMENTATION"; that header is itself stale relative to `cmd/notification/main.go` and the CRD types in `api/notification/v1alpha1/`, which confirm a CRD controller is implemented and running. Flagged, not fixed, here (out of scope).
 
 ---
 
-### Stateless Services
+#### 6. EffectivenessMonitor
 
-#### 1. Gateway Service
+**Purpose**: Deterministic, zero-LLM post-remediation effectiveness assessment
 
-**Purpose**: HTTP gateway and security (single entry point)
-
-**Type**: Stateless HTTP API
+**CRD**: Watches `EffectivenessAssessment` (`kubernaut.ai/v1alpha1`), created by RemediationOrchestrator on terminal success — EffectivenessMonitor does **not** create this CRD itself
 
 **Responsibilities**:
-- Webhook processing for Prometheus/Grafana alerts
-- Authentication and authorization (TokenReviewer)
-- Alert deduplication (Redis-based fingerprinting)
-- Alert storm detection and escalation
-- Environment classification
-- Priority assignment (Rego policy)
-- Create RemediationRequest CRD
+- 4 deterministic scorers, **zero AI/LLM dependency** (corrected from v1.3.0, which described a HolmesGPT-powered "Level 2" analysis path for this service):
+  - **Health**: pod-running / OOM / latency checks
+  - **Alert**: Prometheus/Alertmanager alert-resolution scoring (BR-EM-002)
+  - **Metrics**: pre/post remediation metric comparison
+  - **Hash**: spec-hash drift detection to catch configuration drift during assessment (BR-EM-004)
+- Emits per-component audit events to DataStorage; **DataStorage — not EffectivenessMonitor — computes the final weighted score on demand** (a key correction from v1.3.0, which had this service performing its own scoring)
+- Optional deferred hash computation for async changes (GitOps sync, operator reconciliation) via `WaitingForPropagation` phase (BR-EM-010, [DD-EM-004](decisions/))
 
-**Port**: 8080 (API/health), 9090 (metrics)
+**Phases**: `Pending` → `Stabilizing` → `Assessing` (→ `WaitingForPropagation` if a hash-compute delay is configured) → `Completed` / `Failed`
 
-**Business Requirements**: BR-WH-001 to BR-WH-015, BR-GATEWAY-001 to BR-GATEWAY-092
+**Port**: 9090 (metrics), 8081 (health) — **no API port at all** (not 8080/combined as a generic stateless-service template might suggest)
+
+**Business Requirements**: **BR-EM-\*** — corrected from v1.3.0, which used the (now-superseded) `BR-INS-*` prefix for this service. Verified examples: BR-EM-001 (pod filtering/health stats), BR-EM-002 (alert resolution scoring), BR-EM-004 (spec-hash drift), BR-EM-009 (derived timing computation), BR-EM-010 (async hash deferral), BR-EM-012 (alert decay detection)
+
+**Source**: [docs/services/crd-controllers/07-effectivenessmonitor/overview.md](../services/crd-controllers/07-effectivenessmonitor/overview.md) — **note the path**: this service's docs moved from `docs/services/stateless/effectiveness-monitor/` to `docs/services/crd-controllers/07-effectivenessmonitor/` because it is a CRD controller, not a stateless service. The old `stateless/effectiveness-monitor/overview.md` file may still exist as a stale leftover; always link the `crd-controllers/07-effectivenessmonitor/` path going forward.
+
+---
+
+### Stateless & Hybrid Services
+
+#### 7. Gateway
+
+**Purpose**: Single entry point for external signals
+
+**Type**: Stateless HTTP (no `ctrl.Manager` — uses a plain Kubernetes client to create CRDs)
+
+**Responsibilities**:
+- Webhook ingestion for Prometheus/Alertmanager alerts and Kubernetes Events
+- Deduplication tracking (`DeduplicationStatus`: `FirstSeenAt`/`LastSeenAt`/`OccurrenceCount` — a simpler shape than v1.3.0's `isDuplicate` boolean claim)
+- Creates `RemediationRequest` CRDs
+
+**Port**: 8080 (API, `listenAddr` in `config/gateway.yaml`), 9090 (metrics)
+
+**Auth**: Middleware-based TokenReview+SAR complete ([DD-AUTH-014](decisions/DD-AUTH-014-middleware-based-sar-authentication.md) Phase 4)
+
+**Business Requirements**: BR-GATEWAY-001 to BR-GATEWAY-183 (as of v1.3.0 numbering; environment/priority classification has since been delegated to SignalProcessing per [DD-CATEGORIZATION-001](decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md) — Gateway no longer performs its own environment classification as v1.3.0 described)
 
 **Source**: [docs/services/stateless/gateway-service/overview.md](../services/stateless/gateway-service/overview.md)
 
 ---
 
-#### 2. Context API Service
+#### 8. DataStorage
 
-**Purpose**: Historical intelligence provider
+**Purpose**: Unified audit sink and data persistence
 
-**Type**: Stateless HTTP API (read-only)
+**Type**: Stateless HTTP REST API
 
 **Responsibilities**:
-- Provide recovery context for workflow failure analysis
-- Historical remediation data queries
-- Success rate calculations
-- Semantic search through past incidents (vector embeddings)
-- Environment-specific patterns and best practices
+- Sole PostgreSQL access point (ADR-032); pgvector-backed semantic search
+- **Unified audit table** (ADR-034): every business-critical event from every service in the [Complete Service Inventory](#complete-service-inventory) lands here, keyed by `correlation_id` (the `RemediationRequest` name) for full lifecycle reconstruction (BR-AUDIT-005, SOC2 CC8.1)
+- **Computes EffectivenessMonitor's final weighted effectiveness score on demand** from the per-component audit events EffectivenessMonitor emits — EffectivenessMonitor itself does not compute this score
+- Absorbed the historical-intelligence role of the now-removed Context API ([DD-CONTEXT-006](decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md))
+- Serves the workflow catalog used by Kubernaut Agent's workflow-discovery protocol
 
 **Port**: 8080 (API/health), 9090 (metrics)
 
-**Business Requirements**: BR-CTX-001 to BR-CTX-180
+**Auth**: Middleware-based TokenReview+SAR complete ([DD-AUTH-014](decisions/DD-AUTH-014-middleware-based-sar-authentication.md) Phase 2 — the original POC service for this pattern)
 
-**Source**: [docs/services/stateless/context-api/overview.md](../services/stateless/context-api/overview.md)
+**Business Requirements**: BR-STORAGE-\* (e.g. BR-STORAGE-031-\* schema/endpoint work, BR-STORAGE-1505 per-IP rate limiting)
+
+**Source**: [docs/services/stateless/data-storage/overview.md](../services/stateless/data-storage/overview.md), [ADR-034](decisions/ADR-034-unified-audit-table-design.md)
 
 ---
 
-#### 3. Data Storage Service
+#### 9. Kubernaut Agent (KA)
 
-**Purpose**: Data persistence and vector database management
+**Purpose**: Native-Go AI root-cause-analysis and remediation-workflow-selection engine
 
-**Type**: Stateless HTTP API
-
-**Responsibilities**:
-- PostgreSQL database operations
-- Vector database management (pgvector for semantic search)
-- Action history storage and retrieval (90+ day retention)
-- Multi-level caching with intelligent eviction
-- Embedding generation and quality validation
-- CRD audit persistence (before 24-hour CRD deletion)
-
-**Port**: 8080 (API/health), 9090 (metrics)
-
-**Business Requirements**: BR-STOR-001 to BR-STOR-135, BR-VDB-001 to BR-VDB-030
-
-**Source**: [APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md)
-
----
-
-#### 4. HolmesGPT-API Service
-
-**Purpose**: AI investigation wrapper
-
-**Type**: Stateless HTTP API (Python)
+**Type**: Stateless HTTP/MCP service
 
 **Responsibilities**:
-- REST API wrapper for HolmesGPT Python SDK
-- Multi-provider LLM integration (OpenAI, Anthropic, local models)
-- Dynamic toolset configuration (kubernetes, prometheus, grafana)
-- Investigation execution with self-documenting JSON format
-- Kubernetes read-only cluster access
+- Root cause analysis using live cluster state (Kubernetes/Prometheus/Alertmanager tools)
+- Determine the actual remediation target, which may differ from the signal's original resource ([DD-KA-006](decisions/DD-KA-006-remediation-target-in-rca.md))
+- Discover and select a remediation workflow from the operator-declared workflow catalog via a 3-step protocol: `list_available_actions` → `list_workflows` → `get_workflow` ([DD-KA-017](decisions/DD-KA-017-three-step-workflow-discovery-integration.md))
+- Validate the LLM's proposed workflow/parameters in Go and re-prompt on failure — **not** LLM tool-calling ([DD-KA-001](decisions/DD-KA-001-workflow-response-validation-architecture.md))
+- Multi-provider LLM support (VertexAI, Anthropic, Gemini, OpenAI, Azure OpenAI, Ollama, vLLM, LlamaStack, Mistral, HuggingFace TGI, DeepSeek)
 
-**Port**: 8080 (API/health), 9090 (metrics)
+**Is a native Go rewrite** ([DD-KA-019](decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md)) of an earlier Python/HolmesGPT-SDK-based design — **not** a wrapper around the HolmesGPT SDK, contra the v1.3.0 "HolmesGPT-API" description
 
-**Business Requirements**: BR-HAPI-001 to BR-HAPI-185
+**API pattern**: async, session-based — **no synchronous "analyze and return" endpoint exists**:
+```
+POST /api/v1/incident/analyze              -> 202 Accepted, { "session_id": "<uuid>" }
+GET  /api/v1/incident/session/{id}                -> session status
+GET  /api/v1/incident/session/{id}/result          -> final result (once complete)
+GET  /api/v1/incident/session/{id}/snapshot        -> in-progress snapshot
+GET  /api/v1/incident/session/{id}/stream          -> streaming updates
+POST /api/v1/incident/session/{id}/cancel          -> cancel an in-flight investigation
+```
+
+**Callers**: The AIAnalysis controller is the sole caller of this async REST session API (autonomous, alert-driven investigations). **apifrontend** has a *separate*, direct integration with KA — both a pooled/dedicated **MCP** client for interactive human-in-the-loop investigation streaming, and a plain **REST** client for non-MCP calls (`cmd/apifrontend/backend_deps.go`) — a different API surface (KA's MCP server / interactive mode) than the one AIAnalysis uses. Both statements ("AIAnalysis is the sole caller of the async incident-analyze session flow" and "apifrontend calls KA directly") are simultaneously true; they refer to different KA API surfaces.
+
+**Port**: 8080 (API), 8081 (health/OpenAPI/admin), 9090 (metrics) — a documented 3-port deviation from the stateless-services 2-port standard, with no on-file design decision justifying it
+
+**Auth**: Middleware-based TokenReview+SAR complete ([DD-AUTH-014](decisions/DD-AUTH-014-middleware-based-sar-authentication.md) Phase 3)
+
+**Business Requirements**: BR-KA-\* (e.g. BR-KA-191 workflow parameter validation, BR-KA-212 RCA target resource, BR-KA-200 outcome semantics)
 
 **Source**: [docs/services/stateless/kubernaut-agent/overview.md](../services/stateless/kubernaut-agent/overview.md)
 
 ---
 
-#### 5. Dynamic Toolset Service
+#### 10. apifrontend (AF)
 
-**Purpose**: HolmesGPT toolset configuration management
+**Purpose**: External-facing A2A/MCP gateway for natural-language-driven incident investigation
 
-**Type**: Stateless Controller (Discovery Loop)
+**Type**: Stateless HTTP + an embedded mini CRD controller for its own `InvestigationSession` CRD (`cmd/apifrontend/session_infra.go`)
 
 **Responsibilities**:
-- Automatic Kubernetes service discovery (Prometheus, Grafana, Jaeger, Elasticsearch, custom)
-- HolmesGPT toolset generation and ConfigMap updates
-- ConfigMap reconciliation and drift protection
-- Service health validation
-- Discovery loop execution (configurable interval)
+- External A2A (agent-to-agent) and MCP-bridge protocol surface for human/agent clients
+- Own LLM-powered "Severity Triager" (Claude via Vertex AI) with session management via Google ADK
+- Creates `RemediationRequest` CRDs directly from natural-language queries — a second CRD-creation entry point alongside Gateway
+- Separate, direct integration with Kubernaut Agent for deep investigation (MCP session pool + plain REST client — see [Kubernaut Agent](#9-kubernaut-agent-ka) above) — **"AF owns triage, KA owns investigation"** is the documented separation of concerns ([docs/services/apifrontend/design/ARCHITECTURE.md](../services/apifrontend/design/ARCHITECTURE.md))
+- Own auth stack (`pkg/apifrontend/auth/`) plus JWT/OIDC validation for external clients, independent of the DD-AUTH-014 middleware pattern used by the CRD-facing services
 
-**Port**: 8080 (health/ready), 9090 (metrics)
+**Port**: ⚠️ UNVERIFIED exact port numbers in this pass — not independently confirmed against `cmd/apifrontend/main.go` flags/config in this rewrite; consult [docs/services/apifrontend/](../services/apifrontend/) directly
 
-**V1.0 Note**: REST API endpoints disabled per DD-TOOLSET-001. Use `kubectl` for ConfigMap introspection.
+**Business Requirements**: BR-AF-\* (e.g. BR-AF-STREAM-001 priority event delivery)
 
-**V1.1 Planned**: ToolsetConfig CRD for configuration management (BR-TOOLSET-044)
-
-**Business Requirements**: BR-TOOLSET-001 to BR-TOOLSET-020
-
-**Source**: [docs/services/stateless/dynamic-toolset/](../services/stateless/dynamic-toolset/)
+**Source**: [docs/services/apifrontend/design/ARCHITECTURE.md](../services/apifrontend/design/ARCHITECTURE.md) — this service has an extensive dedicated documentation tree (`docs/services/apifrontend/`) with its own ADRs, test plans, runbooks, and security docs; this document does not attempt to duplicate that detail.
 
 ---
 
-#### #### 6. Effectiveness Monitor Service (Level 1 in V1.0)
+#### 11. authwebhook
 
-> **DD-017 v2.0** (February 2026): Level 1 (automated assessment) reinstated to V1.0. Level 2 (AI-powered analysis) deferred to V1.1 — requires 8+ weeks of Level 1 data.
->
-> See: `docs/architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md`
+**Purpose**: Kubernetes admission webhook plus the `RemediationWorkflow` catalog CRD controller
 
-**Purpose**: Automated effectiveness assessment (Level 1)
+**Type**: K8s admission webhook (validating/mutating) + CRD controller, in one binary
 
-**Type**: Stateless HTTP API
+**Responsibilities**:
+- Admission handling for `RemediationWorkflow` and `ActionType` CRDs ([ADR-058](decisions/), [ADR-059](decisions/)) — validates semver, catalog constraints, and operator-supplied workflow overrides at `kubectl apply` time
+- Runs a `RemediationWorkflow` **finalizer reconciler** (`authwebhook.RemediationWorkflowReconciler`) — a genuine CRD controller, distinct from the per-run `WorkflowExecution` CRD reconciled by the WorkflowExecution service
+- The `RemediationWorkflow` CRD is the versioned **workflow-catalog definition** (semver-validated, `kubectl apply`-registered); this is architecturally distinct from `WorkflowExecution`, which represents one in-flight execution of a selected catalog workflow
 
-**Responsibilities — Level 1 (V1.0)**:
-- Dual spec hash capture (pre/post remediation state)
-- Health checks (pod running, OOM errors, latency metrics)
-- Metric comparison (pre/post execution)
-- Effectiveness scoring
-- Side-effect detection (oscillation detection)
+**Port**: 9443 (admission webhook TLS) — uses standard Kubernetes admission-webhook TLS/certificate trust, a different auth model than the DD-AUTH-014 middleware pattern used by the API-exposing services above
 
-**Responsibilities — Level 2 (V1.1, deferred)**:
-- HolmesGPT PostExec AI analysis
-- Pattern learning across remediation history
-- Batch processing for high-value cases
-- Long-term effectiveness trend tracking
-- Advanced pattern recognition
+**Documentation gap**: No dedicated `docs/services/` directory exists for this service, despite it being a real, actively-developed component with its own CRD reconciler. This is flagged here as a known gap; filling it is out of scope for this document.
 
-**Port**: 8080 (API/health), 9090 (metrics)
+**Source**: [cmd/authwebhook/main.go](../../cmd/authwebhook/main.go) — verified directly against source in the absence of a service-level doc
 
-**Business Requirements**: BR-INS-001, BR-INS-002, BR-INS-005: V1.0 (Level 1). BR-INS-003, BR-INS-004, BR-INS-006 to BR-INS-010: V1.1 (Level 2)
+---
 
-**Source**: [APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md)
+#### 12. fleetmetadatacache (FMC)
+
+**Purpose**: Multi-cluster "fleet" metadata caching for cross-cluster scope checks
+
+**Type**: Stateless HTTP (no `ctrl.Manager`)
+
+**Responsibilities**:
+- Polls remote/member clusters via the MCP Gateway
+- Writes discovered fleet metadata to Valkey (Redis-compatible)
+- Serves a scope-check HTTP API used by other services to determine whether a resource is in-scope for a given cluster
+
+**Port**: ⚠️ UNVERIFIED exact port numbers in this pass
+
+**Business Requirements**: BR-FLEET-\* (e.g. BR-FLEET-003 cluster-scoped workflow targeting, BR-FLEET-054 remote cluster identifier propagation)
+
+**Source**: [cmd/fleetmetadatacache/main.go](../../cmd/fleetmetadatacache/main.go) — no dedicated `docs/services/` directory was found for this service in this pass either
+
+---
+
+#### kubernaut-console (optional)
+
+**Purpose**: Standalone web UI providing an A2A chat experience against apifrontend
+
+**Type**: Externally-built container image, deployed via the Helm chart (`charts/kubernaut/templates/console/console.yaml`)
+
+**Notes**: This component has no source code in this repository. It is opt-in (not part of the core 12-service topology above) and is included here only for completeness of the service inventory.
 
 ---
 
 ## CRD Specifications
 
+> **A note on the "Key Fields" blocks below**: these are **illustrative, abbreviated summaries** of the most architecturally significant fields on each CRD, verified against the current Go types in `api/*/v1alpha1/*_types.go` as of this rewrite. They are **not** exhaustive schema dumps — several of these structs carry 30-80+ fields covering timeout configuration, skip/block tracking, printer-column display fields, and audit metadata that are omitted here for readability. Consult the linked Go source for the authoritative, complete schema.
+
 ### RemediationRequest (Central Orchestrator)
 
-**API Group**: `remediationorchestrator.kubernaut.io/v1alpha1`
+**API Group**: `kubernaut.ai/v1alpha1` (corrected from v1.3.0's `remediationorchestrator.kubernaut.io/v1alpha1` — verified via `api/remediation/v1alpha1/groupversion_info.go`: `GroupVersion = schema.GroupVersion{Group: "kubernaut.ai", Version: "v1alpha1"}`. **All Kubernaut CRDs share this single API group** — the Go package path (`api/remediation/`, `api/signalprocessing/`, etc.) does not imply a per-service API group, contra v1.3.0's per-CRD group naming)
 
-**Purpose**: Central orchestration CRD that coordinates end-to-end remediation workflow
+**Purpose**: Central, immutable-spec orchestration CRD coordinating the end-to-end remediation workflow
 
 **Ownership**:
-- Created by: Gateway Service
-- Owns: SignalProcessing, AIAnalysis, RemediationExecution, NotificationRequest
+- Created by: Gateway (webhook-driven signals) **or** apifrontend (natural-language-driven investigations)
+- Owns: `SignalProcessing`, `AIAnalysis`, `WorkflowExecution`, `RemediationApprovalRequest`, `NotificationRequest`, `EffectivenessAssessment`
 
-**Lifecycle**:
-1. Gateway creates RemediationRequest from incoming signal
-2. RemediationOrchestrator watches and creates SignalProcessing CRD
-3. RemediationOrchestrator watches SignalProcessing status → creates AIAnalysis CRD
-4. RemediationOrchestrator watches AIAnalysis status → creates RemediationExecution CRD
-5. RemediationOrchestrator watches RemediationExecution status → updates RemediationRequest status
-6. RemediationOrchestrator creates NotificationRequest CRDs for events (failures, timeouts, completions, approval requests)
-7. 24-hour retention → Finalizer removed → Cascade deletion
+**Lifecycle** (corrected from v1.3.0's linear 7-step flow, which omitted the approval gate, the blocking/backoff states, and effectiveness assessment):
+1. Gateway or apifrontend creates `RemediationRequest` from an incoming signal or NL query
+2. RemediationOrchestrator creates `SignalProcessing`; on completion, creates `AIAnalysis`
+3. AIAnalysis investigates via Kubernaut Agent (async submit/poll) and evaluates a Rego policy
+4. If `PolicyDecision = Approved`: RemediationOrchestrator creates `WorkflowExecution` directly
+   If `PolicyDecision = ManualReviewRequired`: RemediationOrchestrator creates `RemediationApprovalRequest` (phase → `AwaitingApproval`) and waits for an operator decision before creating `WorkflowExecution`
+   If `PolicyDecision = Denied`: remediation does not proceed to execution
+5. WorkflowExecution executes via the selected engine (Tekton / Job / Ansible); RemediationOrchestrator may also transition to a non-terminal `Blocked` phase for resource-lock/cooldown/backoff conditions before execution proceeds or retries
+6. On successful execution, RemediationOrchestrator creates `EffectivenessAssessment` (phase → `Verifying`) and finalizes `Status.Outcome` once EffectivenessMonitor's assessment reaches a terminal state or the verification deadline expires
+7. RemediationOrchestrator creates `NotificationRequest` CRDs throughout for approvals, escalations, timeouts, completions, and failures
+8. 24-hour retention window, then finalizer removal → cascade deletion of all owned CRDs
 
-**Key Fields**:
+**Key Fields** (abbreviated — see note above):
 ```yaml
 spec:
-  alertFingerprint: string          # Deduplication key
-  signalName: string               # Semantic signal/alert name (Issue #166)
-  severity: string                   # critical, warning, info
-  environment: string                # prod, staging, dev
-  priority: string                   # P0, P1, P2, P3
-  namespace: string
-  resource:                          # Target resource
+  signalFingerprint: string     # SHA256, immutable, dedup key
+  signalName: string            # e.g. "HighMemoryUsage"
+  severity: string               # raw/external value; SignalProcessing normalizes via Rego
+  signalType: string              # "alert" (adapter-specific values deprecated)
+  targetType: string               # kubernetes | aws | azure | gcp | datadog
+  targetResource:                  # ResourceIdentifier
     kind: string
     name: string
     namespace: string
+    apiVersion: string             # disambiguates multi-group Kinds (Issue #1040)
+  clusterID: string                 # multi-cluster federation (ADR-065); empty = local hub
   firingTime: timestamp
-  deduplication:
-    isDuplicate: boolean
-    occurrenceCount: integer
+  receivedTime: timestamp
+  # NOTE: environment/priority are NOT here — SignalProcessing owns and computes
+  # them; RO reads SignalProcessingStatus.EnvironmentClassification/PriorityAssignment.
 
 status:
-  phase: string                      # Pending, Processing, Analyzing, Executing, Verifying, Completed, Failed
-  message: string
-  reason: string
-  startedAt: timestamp
-  completedAt: timestamp
-  signalProcessingRef: string        # Child CRD reference
-  aiAnalysisRef: string             # Child CRD reference
-  workflowExecutionRef: string      # Child CRD reference
-  notificationRequestRefs: []string  # Child CRD references
+  overallPhase: string    # Pending|Processing|Analyzing|AwaitingApproval|Executing|
+                            # Verifying|Blocked|Completed|Failed|TimedOut|Skipped|Cancelled
+  outcome: string           # Remediated|NoActionRequired|ManualReviewRequired|
+                              # VerificationTimedOut|Inconclusive|DryRun
+  signalProcessingRef: object   # corev1.ObjectReference
+  aiAnalysisRef: object
+  workflowExecutionRef: object
+  effectivenessAssessmentRef: object
+  notificationRequestRefs: []object
+  blockReason: string        # ConsecutiveFailures|DuplicateInProgress|ResourceBusy|
+                               # RecentlyRemediated|ExponentialBackoff|UnmanagedResource|IneffectiveChain
+  consecutiveFailureCount: int32
+  preRemediationSpecHash: string   # captured by RO before WFE creation, for EM's hash-drift check
 ```
 
-**Source**: [docs/services/crd-controllers/05-remediationorchestrator/overview.md](../services/crd-controllers/05-remediationorchestrator/overview.md)
+**Source**: [api/remediation/v1alpha1/remediationrequest_types.go](../../api/remediation/v1alpha1/remediationrequest_types.go), [docs/services/crd-controllers/05-remediationorchestrator/overview.md](../services/crd-controllers/05-remediationorchestrator/overview.md)
 
 ---
 
 ### SignalProcessing (Signal Enrichment & Business Classification)
 
-**API Group**: `signalprocessing.kubernaut.io/v1alpha1`
+**API Group**: `kubernaut.ai/v1alpha1` (single shared group across all Kubernaut CRDs — see the `RemediationRequest` note above)
 
-**Purpose**: Signal enrichment and business-aware environment classification
-
-**Ownership**:
-- Created by: RemediationOrchestrator
-- Owned by: RemediationRequest
-
-**Lifecycle**:
-1. RemediationOrchestrator creates SignalProcessing CRD
-2. SignalProcessing controller enriches with Kubernetes context (Context Service)
-3. SignalProcessing controller fetches recovery context (Context API, if recovery attempt)
-4. SignalProcessing controller performs business-aware environment classification
-5. SignalProcessing controller updates status to "Completed"
-6. RemediationOrchestrator watches status → creates AIAnalysis CRD
+**Ownership**: Created by RemediationOrchestrator; owned by `RemediationRequest`
 
 **Key Fields**:
 ```yaml
 spec:
-  alertData:                         # From RemediationRequest
-    signalName: string               # Semantic signal/alert name (Issue #166)
-    namespace: string
-    resource: object
-  isRecoveryAttempt: boolean         # Fetch recovery context?
-  failedRemediationRef: string          # Previous workflow (if recovery)
+  remediationRequestRef: object   # ObjectReference to parent RR
+  signal:                         # SignalData — copied from RR for self-containment
+    fingerprint: string
+    name: string
+    severity: string
+    type: string
+    source: string
+    clusterID: string
+  enrichmentConfig: object        # V2.0 placeholder — controller currently uses global config, not this
 
 status:
-  phase: string                      # Pending, Enriching, Classifying, Completed, Failed
-  enrichmentResults:
-    kubernetesContext: object        # ~8KB enriched K8s data
-    environment: string              # Classified environment
-    recoveryContext: object          # Historical failure context (if recovery)
-  completedAt: timestamp
-```
-
-**Source**: [docs/services/crd-controllers/01-signalprocessing/overview.md](../services/crd-controllers/01-signalprocessing/overview.md)
-
----
-
-### AIAnalysis (AI Investigation)
-
-**API Group**: `aianalysis.kubernaut.io/v1alpha1`
-
-**Purpose**: HolmesGPT-powered investigation and remediation recommendation
-
-**Ownership**:
-- Created by: RemediationOrchestrator
-- Owned by: RemediationRequest
-- Creates: AIApprovalRequest (if manual approval required)
-
-**Lifecycle**:
-1. RemediationOrchestrator creates AIAnalysis CRD (with enrichment data from SignalProcessing)
-2. AIAnalysis controller reads enrichment data from spec
-3. AIAnalysis controller triggers HolmesGPT investigation
-4. AIAnalysis controller validates recommendations
-5. AIAnalysis controller evaluates approval policy (Rego)
-6. If manual approval required: AIAnalysis controller creates AIApprovalRequest CRD
-7. AIAnalysis controller updates status to "Ready" (after approval, if needed)
-8. RemediationOrchestrator watches status → creates RemediationExecution CRD
-
-**Key Fields**:
-```yaml
-spec:
-  enrichmentData:                    # From SignalProcessing
-    kubernetesContext: object
+  phase: string                    # Pending|Enriching|Classifying|Categorizing|Completed|Failed
+  kubernetesContext: object
+  environmentClassification:       # EnvironmentClassification
     environment: string
-    recoveryContext: object          # If recovery attempt
-
-status:
-  phase: string                      # Pending, Investigating, Analyzing, Completed, Failed
-  rootCause: string
-  confidence: float                  # 0.0-1.0
-  recommendedAction: string
-  requiresApproval: boolean
-  investigationID: string            # HolmesGPT ID
-  tokensUsed: integer
-  approvalRequestName: string        # AIApprovalRequest CRD reference
-  approvalContext:                   # Rich context for notifications
-    reason: string
-    confidenceScore: float
-    investigationSummary: string
-    evidenceCollected: []string
-    recommendedActions: []object
-    alternativesConsidered: []object
-  approvalStatus: string             # Approved, Pending
-  approvedBy: string
-  approvalTime: timestamp
+  priorityAssignment:               # PriorityAssignment
+    priority: string
+  severity: string                 # normalized: critical|high|warning|info|unknown (Rego, DD-SEVERITY-001)
+  policyHash: string                # SHA256 of the Rego policy used, for audit
+  clusterClassification: string     # optional, fleet mode only (BR-FLEET-003)
 ```
 
-**Source**: [docs/services/crd-controllers/02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md), [ADR-018](decisions/ADR-018-approval-notification-v1-integration.md)
+**Source**: [api/signalprocessing/v1alpha1/signalprocessing_types.go](../../api/signalprocessing/v1alpha1/signalprocessing_types.go), [docs/services/crd-controllers/01-signalprocessing/overview.md](../services/crd-controllers/01-signalprocessing/overview.md)
 
 ---
 
-### RemediationExecution (Remediation Playbook Orchestration)
+### AIAnalysis (AI Investigation & Workflow Selection)
 
-**API Group**: `workflowexecution.kubernaut.io/v1alpha1`
+**API Group**: `kubernaut.ai/v1alpha1`
 
-**Purpose**: Multi-step workflow orchestration with Tekton Pipelines
-
-**Ownership**:
-- Created by: RemediationOrchestrator
-- Owned by: RemediationRequest
-- Creates: Tekton PipelineRuns (via Tekton API)
-
-**Lifecycle**:
-1. RemediationOrchestrator creates RemediationExecution CRD (with AI recommendations)
-2. RemediationExecution controller parses AI recommendations
-3. RemediationExecution controller builds dependency graph
-4. RemediationExecution controller validates safety constraints (Rego policies)
-5. RemediationExecution controller creates Tekton PipelineRun
-6. RemediationExecution controller monitors PipelineRun status (via Tekton watch)
-7. RemediationExecution controller writes action records to Data Storage Service
-8. RemediationExecution controller updates status to "Completed" or "Failed"
-9. RemediationOrchestrator watches status → updates RemediationRequest
+**Ownership**: Created by RemediationOrchestrator; owned by `RemediationRequest`; a `PolicyDecision` of `ManualReviewRequired` triggers RemediationOrchestrator (not AIAnalysis) to create `RemediationApprovalRequest`
 
 **Key Fields**:
 ```yaml
 spec:
-  workflowType: string               # multi-step-remediation
-  reason: string
-  steps:                             # From AI recommendations
-    - name: string
-      actionType: string             # kubernetes/scale_deployment, git/create-pr, etc.
-      image: string                  # Cosign-signed image with digest
-      inputs: object
-      runAfter: []string             # Tekton dependencies
-      usesWorkspace: boolean
+  remediationRequestRef: object      # corev1.ObjectReference, for audit lineage
+  remediationId: string
+  analysisRequest:                   # AnalysisRequest (DD-CONTRACT-002)
+    signalContext: object            # SignalContextInput, from SignalProcessing
+    analysisTypes: []string          # Investigation|RootCause|WorkflowSelection
+  timeoutConfig:                     # optional; defaults: Investigating 60s, Analyzing 5s
+    investigatingTimeout: duration
+    analyzingTimeout: duration
+  clusterID: string                  # BR-FLEET-054, propagated from RR
 
 status:
-  phase: string                      # Pending, Executing, Completed, Failed
-  pipelineRunRef: string             # Tekton PipelineRun reference
-  stepStatuses:
-    - name: string
-      status: string                 # Pending, Running, Succeeded, Failed
-      startTime: timestamp
-      completionTime: timestamp
-  completedAt: timestamp
+  phase: string    # Pending|Investigating|Analyzing|Completed|Failed  (no "Ready" phase)
+  reason: string   # AnalysisCompleted|WorkflowResolutionFailed|WorkflowNotNeeded|
+                     # NoWorkflowSelected|RegoEvaluationError|TransientError|APIError|
+                     # InteractiveCancelled|ParentCancelled
+  # PolicyDecision (from Rego evaluation, pkg/aianalysis/rego):
+  #   Approved | ManualReviewRequired | Denied | DegradedMode
 ```
 
-**Source**: [docs/services/crd-controllers/03-workflowexecution/overview.md](../services/crd-controllers/03-workflowexecution/overview.md), [TEKTON_EXECUTION_ARCHITECTURE.md](TEKTON_EXECUTION_ARCHITECTURE.md), [ADR-024](decisions/ADR-024-eliminate-actionexecution-layer.md)
+**Source**: [api/aianalysis/v1alpha1/aianalysis_types.go](../../api/aianalysis/v1alpha1/aianalysis_types.go), [pkg/aianalysis/rego/evaluator.go](../../pkg/aianalysis/rego/evaluator.go), [docs/services/crd-controllers/02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md)
+
+---
+
+### WorkflowExecution (Multi-Engine Remediation Execution)
+
+**API Group**: `kubernaut.ai/v1alpha1`
+
+**Ownership**: Created by RemediationOrchestrator (after approval, if required); owned by `RemediationRequest`; creates the underlying execution resource (Tekton `PipelineRun`, `batchv1.Job`, or an AWX job) per the dispatched engine
+
+**Key Fields**:
+```yaml
+spec:
+  remediationRequestRef: object
+  workflowRef:                       # WorkflowRef — copied verbatim from
+                                      # AIAnalysis.Status.SelectedWorkflow by RO
+    workflowId: string
+    version: string
+    executionEngine: string          # "tekton" | "job" | "ansible"
+    executionBundle: string          # OCI bundle reference (Tekton) or equivalent
+    executionBundleDigest: string
+  targetResource: string             # "namespace/kind/name" format — resource-lock key (DD-WE-001)
+  clusterID: string
+
+status:
+  phase: string    # Pending|Running|Completed|Failed   (Skipped phase REMOVED, DD-RO-002)
+  # Skip/block details are NOT here — they live on RemediationRequest.Status (DD-RO-002)
+```
+
+**Source**: [api/workflowexecution/v1alpha1/workflowexecution_types.go](../../api/workflowexecution/v1alpha1/workflowexecution_types.go), [pkg/workflowexecution/executor/](../../pkg/workflowexecution/executor/), [docs/services/crd-controllers/03-workflowexecution/overview.md](../services/crd-controllers/03-workflowexecution/overview.md)
+
+---
+
+### RemediationApprovalRequest (Manual Approval Gate) — *new since v1.3.0*
+
+**API Group**: `kubernaut.ai/v1alpha1` (same Go package, `api/remediation/v1alpha1/`, as `RemediationRequest` — and the same API group as every other CRD in this document)
+
+**Purpose**: Gate `WorkflowExecution` creation on an explicit operator decision when AIAnalysis's Rego policy flags `ManualReviewRequired`. Modeled on the Kubernetes `CertificateSigningRequest` pattern: fully immutable spec, decision recorded on status. **This CRD did not exist in v1.3.0** — the prior document's `AIApprovalRequest` name and behavior described a design that was superseded by this ADR-040 architecture.
+
+**Ownership**:
+- Created by: **RemediationOrchestrator** (via `pkg/remediationorchestrator/creator/approval.go`'s `ApprovalCreator`) — not AIAnalysis, though AIAnalysis's Rego evaluation is what triggers the creation decision
+- Owned by: `RemediationRequest`
+- Reconciled by: a dedicated `RARReconciler` running in the RemediationOrchestrator binary (audit-condition bookkeeping only — the operator decision itself is written by an external actor, e.g. `kubectl`, a dashboard, or apifrontend acting as a trusted intermediary)
+
+**Key Fields**:
+```yaml
+spec:                                  # fully immutable after creation (ADR-040)
+  remediationRequestRef: object
+  aiAnalysisRef: object
+  clusterID: string
+  confidence: float                    # 0.0-1.0, from AI analysis
+  confidenceLevel: string              # low | medium | high
+  reason: string
+  recommendedWorkflow:                 # RecommendedWorkflowSummary
+    workflowId: string
+    version: string
+    executionBundle: string
+    rationale: string
+  investigationSummary: string
+  evidenceCollected: []string
+  recommendedActions: []object
+  alternativesConsidered: []object
+  whyApprovalRequired: string
+  policyEvaluation:                    # ApprovalPolicyEvaluation, if Rego triggered this
+    policyName: string
+    matchedRules: []string
+    decision: string
+  requiredBy: timestamp                # approval deadline (default 15m, ADR-040)
+
+status:
+  decision: string          # ""(pending) | Approved | Rejected | Expired
+  decidedBy: string          # username, or "system" for timeout
+  decidedVia: string          # trusted-intermediary identity (e.g. apifrontend SA), if delegated
+  decidedAt: timestamp
+  decisionMessage: string
+  workflowOverride:            # WorkflowOverride — operator can override the AI-recommended
+    workflowName: string       # workflow/parameters at approval time (#594)
+    parameters: object
+    rationale: string
+```
+
+**Source**: [api/remediation/v1alpha1/remediationapprovalrequest_types.go](../../api/remediation/v1alpha1/remediationapprovalrequest_types.go), [internal/controller/remediationorchestrator/remediation_approval_request.go](../../internal/controller/remediationorchestrator/remediation_approval_request.go), [pkg/remediationorchestrator/creator/approval.go](../../pkg/remediationorchestrator/creator/approval.go), [ADR-040](decisions/ADR-040-remediation-approval-request-architecture.md)
 
 ---
 
 ### NotificationRequest (Multi-Channel Notifications)
 
-**API Group**: `notification.kubernaut.io/v1alpha1`
+**API Group**: `kubernaut.ai/v1alpha1`
 
-**Purpose**: Multi-channel notification delivery
-
-**Ownership**:
-- Created by: RemediationOrchestrator
-- Owned by: RemediationRequest
-
-**Lifecycle**:
-1. RemediationOrchestrator creates NotificationRequest CRD (for events: failures, timeouts, completions, approval requests)
-2. Notification controller reads notification spec
-3. Notification controller sanitizes sensitive data
-4. Notification controller applies channel-specific formatting
-5. Notification controller delivers to configured channels (Email, Slack, Teams, SMS, webhooks)
-6. Notification controller updates status to "Sent" or "Failed"
+**Ownership**: Created by RemediationOrchestrator; owned by `RemediationRequest`
 
 **Key Fields**:
 ```yaml
 spec:
-  notificationType: string           # escalation, approval_required, completion, failure
-  priority: string                   # P0, P1, P2, P3
-  channels:                          # Target channels
-    - type: string                   # email, slack, teams, sms, webhook
-      config: object
+  notificationType: string   # Escalation|Simple|StatusUpdate|Approval|ManualReview|Completion
+  priority: string             # Critical|High|Medium|Low
+  channels: []object            # each: { type: email|slack|teams|pagerduty|sms|webhook|console|file|log, config: object }
   content:
     title: string
     message: string
-    context: object                  # Remediation context
-    approvalContext: object          # If approval_required
-    actionLinks: []object            # External service links
+    context: object
 
 status:
-  phase: string                      # Pending, Sending, Sent, Failed
-  deliveryResults:
-    - channel: string
-      status: string                 # Sent, Failed
-      sentAt: timestamp
-      error: string
+  phase: string    # Pending|Sending|Retrying|Sent|PartiallySent|Failed
+  deliveryResults: []object
 ```
 
-**Source**: [docs/services/crd-controllers/06-notification/overview.md](../services/crd-controllers/06-notification/overview.md)
+**Source**: [api/notification/v1alpha1/notificationrequest_types.go](../../api/notification/v1alpha1/notificationrequest_types.go), [docs/services/crd-controllers/06-notification/overview.md](../services/crd-controllers/06-notification/overview.md)
+
+---
+
+### EffectivenessAssessment (Post-Remediation Scoring) — *new since v1.3.0*
+
+**API Group**: `kubernaut.ai/v1alpha1`
+
+**Purpose**: Trigger and track EffectivenessMonitor's deterministic post-remediation checks. **This CRD did not exist in v1.3.0**, which instead described an "Effectiveness Monitor Service" doing its own AI-powered scoring directly — both the CRD-based architecture and the "no AI/LLM" scoring model are corrections.
+
+**Ownership**:
+- Created by: RemediationOrchestrator, on successful `WorkflowExecution` completion
+- Owned by: `RemediationRequest`
+- Reconciled by: EffectivenessMonitor (which does **not** create this CRD — only watches and reconciles it)
+
+**Key Fields**:
+```yaml
+spec:                          # immutable after creation (ADR-001)
+  correlationID: string        # = parent RemediationRequest name (DD-AUDIT-CORRELATION-002)
+  # + target resource / config for the 4 scorers (health/alert/metrics/hash)
+
+status:
+  phase: string    # Pending|Stabilizing|Assessing|WaitingForPropagation|Completed|Failed
+  reason: string   # Full|Partial|NoExecution|MetricsTimedOut|Expired|SpecDrift|
+                     # AlertDecayTimeout|Unrecoverable
+  # per-component results are emitted as audit events to DataStorage, not stored in full here;
+  # DataStorage computes the final weighted score on demand from those audit events
+```
+
+**Source**: [api/effectivenessassessment/v1alpha1/effectivenessassessment_types.go](../../api/effectivenessassessment/v1alpha1/effectivenessassessment_types.go), [ADR-EM-001](decisions/ADR-EM-001-effectiveness-monitor-service-integration.md), [docs/services/crd-controllers/07-effectivenessmonitor/overview.md](../services/crd-controllers/07-effectivenessmonitor/overview.md)
+
+---
+
+### Other CRDs (owned by non-hub services, out of this document's primary scope)
+
+| CRD | Owner Service | Purpose |
+|---|---|---|
+| `InvestigationSession` | apifrontend | Tracks apifrontend's own interactive/NL-driven investigation sessions — distinct from KA's internal session concept |
+| `RemediationWorkflow` | authwebhook | Versioned workflow-catalog definition (semver-validated); distinct from the per-run `WorkflowExecution` CRD above |
+| `ActionType` | authwebhook (admission), consumed elsewhere | Catalog of individual action types referenced by workflow definitions |
 
 ---
 
@@ -604,17 +676,13 @@ status:
   <img src="diagrams/kubernaut-layered-architecture.svg" alt="Kubernaut Layered Architecture">
 </p>
 
-**📝 To Edit**:
-- **Source File**: `docs/architecture/diagrams/kubernaut-layered-architecture.excalidraw`
-- **Edit in VSCode**: Install [Excalidraw extension](https://marketplace.visualstudio.com/items?itemName=pomdtr.excalidraw-editor)
-- **Edit in Web**: Upload to [excalidraw.com](https://excalidraw.com)
-- **After editing**: Export as SVG and save to `kubernaut-layered-architecture.svg`
+> **⚠️ Diagram staleness note**: The SVG above (and its `.excalidraw` source) predates this rewrite and still depicts the v1.3.0 topology (4 orchestrated CRD services, no approval gate, no EffectivenessAssessment, single execution engine). Regenerating the diagram asset is out of scope for this text-only rewrite; treat the Mermaid diagrams below as the current source of truth until the SVG is redrawn.
 
-
-**Architecture**:
-- **Independent Services**: Gateway (top - signal ingestion) and Effectiveness (bottom - continuous learning)
-- **Orchestrated Layer**: Remediation Orchestrator (blue bar) coordinates 4 CRD services (SP → AI → WF → NOT)
-- **Data Layer**: Data Storage Service (green bar) - sole PostgreSQL connection per ADR-032
+**Architecture** (as of this rewrite):
+- **Independent entry points**: Gateway (webhook signals) and apifrontend (NL queries) both create `RemediationRequest` CRDs
+- **Orchestrated layer**: RemediationOrchestrator coordinates 6 owned CRD kinds (SignalProcessing, AIAnalysis, RemediationApprovalRequest, WorkflowExecution, NotificationRequest, EffectivenessAssessment)
+- **Execution layer**: WorkflowExecution dispatches to one of 3 engines (Tekton / Job / Ansible) via a Strategy-pattern registry
+- **Data layer**: DataStorage — sole PostgreSQL connection (ADR-032), unified audit sink (ADR-034), and effectiveness-score compute engine
 
 ---
 
@@ -622,52 +690,67 @@ status:
 
 ```mermaid
 graph TB
-    subgraph "Gateway Service"
+    subgraph "Entry Points"
         GW[Gateway HTTP API]
+        AF[apifrontend]
     end
 
-    subgraph "RemediationOrchestrator (Central)"
+    subgraph "RemediationOrchestrator (Central Hub)"
         ORCH[RemediationRequest CRD<br/>Owner of All]
     end
 
     subgraph "Child CRDs (Flat Sibling Hierarchy)"
         SP[SignalProcessing CRD]
         AI[AIAnalysis CRD]
-        WF[RemediationExecution CRD]
+        RAR[RemediationApprovalRequest CRD<br/>conditional - Rego ManualReviewRequired]
+        WF[WorkflowExecution CRD]
         NOT[NotificationRequest CRD]
+        EA[EffectivenessAssessment CRD<br/>on terminal success]
     end
 
-    subgraph "Tekton Pipelines"
-        PR[PipelineRun<br/>Owned by RemediationExecution]
+    subgraph "Execution Engines (Strategy Pattern)"
+        TEK[Tekton PipelineRun]
+        JOB[Native batchv1.Job]
+        AWX[Ansible/AWX job<br/>no K8s watch]
     end
 
-    GW -->|1. Creates| ORCH
-    ORCH -->|2. Creates & Owns| SP
-    ORCH -->|3. Creates & Owns<br/>after SP complete| AI
-    ORCH -->|4. Creates & Owns<br/>after AI complete| WF
+    GW -->|Creates| ORCH
+    AF -->|Creates - NL-driven| ORCH
+    ORCH -->|1. Creates & Owns| SP
+    ORCH -->|2. Creates & Owns<br/>after SP Completed| AI
+    ORCH -->|3. Creates & Owns<br/>if PolicyDecision=ManualReviewRequired| RAR
+    ORCH -->|4. Creates & Owns<br/>after Approved or auto-Approved| WF
     ORCH -->|5. Creates & Owns<br/>on events| NOT
-    WF -->|6. Creates & Owns| PR
+    ORCH -->|6. Creates & Owns<br/>after WFE success| EA
+    WF -->|Dispatches via Registry| TEK
+    WF -->|Dispatches via Registry| JOB
+    WF -->|Dispatches via Registry| AWX
 
     ORCH -.->|Watches Status| SP
     ORCH -.->|Watches Status| AI
+    ORCH -.->|Watches Status| RAR
     ORCH -.->|Watches Status| WF
     ORCH -.->|Watches Status| NOT
-    WF -.->|Watches Status| PR
+    ORCH -.->|Watches Status| EA
+    EM[EffectivenessMonitor] -.->|Watches & Reconciles| EA
+    EM -->|Emits component audit events| DS[DataStorage]
+    DS -->|Computes final weighted score| EM
 
     style ORCH fill:#ffcdd2,stroke:#c62828,stroke-width:2px
     style SP fill:#e1f5ff,stroke:#1976d2,stroke-width:2px
     style AI fill:#e1f5ff,stroke:#1976d2,stroke-width:2px
+    style RAR fill:#fff3cd,stroke:#997404,stroke-width:2px
     style WF fill:#e1f5ff,stroke:#1976d2,stroke-width:2px
     style NOT fill:#e1f5ff,stroke:#1976d2,stroke-width:2px
-    style PR fill:#ffe0b2,stroke:#e65100,stroke-width:2px
+    style EA fill:#e1f5ff,stroke:#1976d2,stroke-width:2px
 ```
 
-**Key Patterns**:
-1. **Centralized Creation**: RemediationOrchestrator creates all child CRDs
-2. **Sequential Flow**: CRD creation based on previous CRD completion status
-3. **Flat Hierarchy**: All service CRDs are siblings (not nested ownership)
-4. **Owner References**: All child CRDs owned by RemediationRequest (cascade deletion)
-5. **Watch-Based**: Controller watches for status changes, not polling
+**Key patterns** (verified against [reconcile_loop.go:426-438](../../internal/controller/remediationorchestrator/reconcile_loop.go)):
+1. **Centralized creation**: RemediationOrchestrator creates every child CRD, including `RemediationApprovalRequest` (not AIAnalysis, contra a common misreading of the approval flow)
+2. **Conditional approval gate**: `RemediationApprovalRequest` is only created when AIAnalysis's Rego policy evaluation yields `ManualReviewRequired`
+3. **Flat hierarchy**: all 6 child CRD kinds are siblings owned directly by `RemediationRequest`
+4. **Multi-engine dispatch**: `WorkflowExecution` is a single CRD kind, but its controller dispatches to 3 different backend implementations at runtime
+5. **Watch-based**: `Owns()` registers all 6 kinds; `GenerationChangedPredicate` was deliberately **not** applied so that child *status* changes (not just spec changes) trigger reconciliation
 
 ---
 
@@ -680,496 +763,92 @@ sequenceDiagram
     participant ORCH as RemediationOrchestrator
     participant SP as SignalProcessing
     participant AI as AIAnalysis
-    participant WF as RemediationExecution
-    participant TEK as Tekton Pipelines
-    participant K8S as Kubernetes
-    participant ST as Data Storage
+    participant KA as Kubernaut Agent
+    participant RAR as RemediationApprovalRequest
+    participant OP as Operator
+    participant WF as WorkflowExecution
+    participant EXE as Execution Engine<br/>(Tekton/Job/Ansible)
+    participant EM as EffectivenessMonitor
+    participant DS as DataStorage
 
-    Note over SRC,ST: Phase 1: Signal Ingestion
-    SRC->>GW: POST /webhook (alert)
-    GW->>GW: Deduplicate, classify, prioritize
+    Note over SRC,DS: Phase 1: Signal Ingestion
+    SRC->>GW: POST /api/v1/signals/... (alert/event)
+    GW->>GW: Deduplicate (occurrence tracking)
     GW->>ORCH: Create RemediationRequest CRD
     GW-->>SRC: 202 Accepted
 
     Note over ORCH,SP: Phase 2: Signal Processing
-    ORCH->>ORCH: Reconcile RemediationRequest
     ORCH->>SP: Create SignalProcessing CRD
-    ORCH->>ORCH: Watch SignalProcessing
     SP->>SP: Enrich with K8s context
-    SP->>SP: Business classification
-    SP->>SP: Update status: Completed
+    SP->>SP: Classify environment/priority; normalize severity (Rego)
+    SP->>SP: Phase: Completed
     SP->>ORCH: Status update triggers watch
 
-    Note over ORCH,AI: Phase 3: AI Investigation
+    Note over ORCH,KA: Phase 3: AI Investigation
     ORCH->>AI: Create AIAnalysis CRD
-    ORCH->>ORCH: Watch AIAnalysis
-    AI->>AI: HolmesGPT investigation
-    AI->>AI: Validate recommendations
-    AI->>AI: Update status: Ready
+    AI->>KA: SubmitInvestigation() -> session_id (202 Accepted)
+    loop Poll until terminal
+        AI->>KA: PollSession(session_id)
+    end
+    AI->>KA: GetSessionResult(session_id)
+    AI->>AI: Evaluate Rego policy -> PolicyDecision
+    AI->>AI: Phase: Completed
     AI->>ORCH: Status update triggers watch
 
-    Note over ORCH,K8S: Phase 4: Remediation Execution
-    ORCH->>WF: Create RemediationExecution CRD
-    ORCH->>ORCH: Watch RemediationExecution
-    WF->>WF: Build workflow from AI recommendations
-    WF->>WF: Validate safety constraints
-    WF->>TEK: Create Tekton PipelineRun
-    TEK->>TEK: Execute action containers
-    TEK->>K8S: Apply remediation
-    K8S-->>TEK: Execution result
-    TEK-->>WF: PipelineRun status: Complete
-    WF->>ST: Store action records
-    WF->>WF: Update status: Completed
+    alt PolicyDecision = ManualReviewRequired
+        Note over ORCH,OP: Phase 4a: Approval Gate
+        ORCH->>RAR: Create RemediationApprovalRequest CRD
+        ORCH->>ORCH: RR.Status.OverallPhase = AwaitingApproval
+        OP->>RAR: Approve / Reject (kubectl, dashboard, or AF as trusted intermediary)
+        RAR->>ORCH: Status update triggers watch
+    else PolicyDecision = Approved
+        Note over ORCH: Phase 4b: Auto-Approved
+    end
+
+    Note over ORCH,DS: Phase 5: Remediation Execution
+    ORCH->>WF: Create WorkflowExecution CRD (workflowRef.executionEngine = tekton|job|ansible)
+    WF->>EXE: Create execution resource (PipelineRun | Job | AWX job)
+    EXE->>EXE: Execute remediation actions
+    EXE-->>WF: Execution result
+    WF->>DS: Write action audit records
+    WF->>WF: Phase: Completed
     WF->>ORCH: Status update triggers watch
 
-    Note over ORCH,ST: Phase 5: Completion
-    ORCH->>ORCH: Update RemediationRequest: Complete
-    ORCH->>ST: Store final audit trail
+    Note over ORCH,DS: Phase 6: Effectiveness Assessment
+    ORCH->>EM: Create EffectivenessAssessment CRD
+    ORCH->>ORCH: RR.Status.OverallPhase = Verifying
+    EM->>EM: 4 deterministic checks (health/alert/metrics/hash)
+    EM->>DS: Emit per-component audit events
+    DS->>DS: Compute final weighted effectiveness score
+    EM->>ORCH: Status update triggers watch
+
+    Note over ORCH,DS: Phase 7: Completion
+    ORCH->>ORCH: RR.Status.OverallPhase = Completed; Outcome = Remediated
+    ORCH->>DS: Full lifecycle already persisted incrementally (ADR-034)
 ```
 
 ---
 
-## Service Feature Breakdown
-
-This section provides detailed feature descriptions for all 11 Kubernaut services, aligned with their Business Requirements (BR-*).
-
----
-
-### CRD Controllers
-
-#### 1. RemediationOrchestrator - Central Lifecycle Management
-
-**Key Features**:
-
-1. **Central Lifecycle Orchestration** (BR-AR-001 to BR-AR-020)
-   - End-to-end remediation workflow coordination
-   - Single source of truth for remediation state
-   - Unified status aggregation across all child CRDs
-
-2. **Sequential CRD Creation** (BR-AR-021 to BR-AR-030)
-   - Creates SignalProcessing CRD (signal enrichment)
-   - Creates AIAnalysis CRD (after processing completes)
-   - Creates RemediationExecution CRD (after AI analysis completes)
-   - Creates NotificationRequest CRDs (on events)
-
-3. **Watch-Based Status Aggregation** (BR-AR-031 to BR-AR-040)
-   - Monitors all child CRD status changes (sub-second latency)
-   - Event-driven reconciliation (not polling)
-   - Automatic retry with exponential backoff
-
-4. **Timeout Detection & Escalation** (BR-AR-041 to BR-AR-050)
-   - Configurable timeouts per phase (15-30 minutes)
-   - Automatic escalation on timeout
-   - Graceful failure handling
-
-5. **Notification Triggering** (BR-AR-051 to BR-AR-060)
-   - Creates NotificationRequest CRDs for failures, timeouts, completions
-   - Approval request notifications (medium confidence 60-79%)
-   - Rich context propagation to notification service
-
-6. **24-Hour Retention & Cleanup** (BR-AR-061 to BR-AR-067)
-   - Finalizer pattern for graceful cleanup
-   - Cascade deletion of all child CRDs (owner references)
-   - Audit trail persistence to Data Storage before deletion
-
-**Port**: 9090 (metrics), 8080 (health)
-
-**Source**: [docs/services/crd-controllers/05-remediationorchestrator/overview.md](../services/crd-controllers/05-remediationorchestrator/overview.md)
-
----
-
-#### 2. SignalProcessing - Signal Processing & Business Classification
-
-**Key Features**:
-
-1. **K8s Context Enrichment** (BR-SP-001 to BR-SP-020)
-   - Enriches signals with comprehensive Kubernetes context (~8KB)
-   - Queries pods, deployments, nodes, resource quotas
-   - Captures current cluster state for AI analysis
-
-2. **Recovery Context Integration** (BR-SP-021 to BR-SP-030)
-   - Fetches historical failure context from Context API (for recovery attempts)
-   - Provides previous remediation attempts and outcomes
-   - Enables AI to learn from past failures (DD-001: Alternative 2)
-
-3. **Business-Aware Environment Classification** (BR-SP-031 to BR-SP-040) - **Rich Metadata**
-   - **Purpose**: Sophisticated classification with business context for AI analysis decisions
-   - **Method**: Enhanced analysis using enriched K8s context (after enrichment phase completes)
-   - **Output**: Structured `EnvironmentClassification` object with:
-     - `environment`: Tier classification (`"production"`, `"staging"`, `"development"`)
-     - `confidence`: Float64 score (0.0-1.0) indicating classification certainty
-     - `businessPriority`: Business priority mapping (`"P0"`, `"P1"`, `"P2"`, `"P3"`)
-     - `slaRequirement`: Service-level agreement time (`"5m"`, `"15m"`, `"30m"`)
-   - **Use Case**: Provides AI analysis with business context for risk-aware recommendations
-   - **Difference from Gateway**: Gateway does quick string lookup; this service adds confidence, priority, and SLA metadata
-
-4. **Alert Validation** (BR-SP-041 to BR-SP-050)
-   - Validates signal completeness and readiness for AI analysis
-   - Ensures required fields are present
-   - Detects malformed or incomplete alerts
-
-5. **Status Updates** (BR-SP-051 to BR-SP-062)
-   - Updates status to "Completed" when enrichment finishes
-   - Triggers RemediationOrchestrator to create AIAnalysis CRD
-   - Provides enriched data for downstream processing
-
-**Port**: 9090 (metrics), 8080 (health)
-
-**Source**: [docs/services/crd-controllers/01-signalprocessing/overview.md](../services/crd-controllers/01-signalprocessing/overview.md)
-
----
-
-#### 3. AIAnalysis - AI-Powered Investigation
-
-**Key Features**:
-
-1. **HolmesGPT Investigation** (BR-AI-001 to BR-AI-015)
-   - Triggers HolmesGPT investigation with enriched contexts
-   - Performs contextual AI analysis of Kubernetes state
-   - Leverages historical patterns from Context API
-
-2. **Root Cause Analysis** (BR-AI-011 to BR-AI-015)
-   - Identifies root cause candidates with supporting evidence
-   - Generates confidence scores for each hypothesis (0.0-1.0)
-   - Correlates alerts across time windows and resource boundaries
-
-3. **Remediation Recommendations** (BR-AI-006 to BR-AI-010)
-   - Generates ranked remediation recommendations
-   - Multi-factor ranking (effectiveness probability, risk, complexity)
-   - Provides recommendation explanations with supporting evidence
-
-4. **Confidence Scoring** (BR-AI-003, BR-AI-022)
-   - Generates confidence scores for analysis results (0.0-1.0)
-   - ≥80%: Auto-approve and create RemediationExecution CRD
-   - 60-79%: Require manual approval via AIApprovalRequest CRD
-   - <60%: Block and escalate to human operator
-
-5. **Approval Remediation** (BR-AI-059 to BR-AI-060)
-   - Creates AIApprovalRequest CRD for medium confidence (60-79%)
-   - Populates rich approval context for notifications (ADR-018)
-   - Tracks operator approval decisions and timing
-
-6. **Hallucination Detection** (BR-AI-021 to BR-AI-024)
-   - Validates AI responses for completeness and accuracy
-   - Detects and handles AI hallucinations or invalid responses
-   - Ensures recommendation safety and feasibility
-
-**Port**: 9090 (metrics), 8080 (health)
-
-**Source**: [docs/services/crd-controllers/02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md)
-
----
-
-#### 4. RemediationExecution - Remediation Playbook Orchestration
-
-**Key Features**:
-
-1. **Tekton PipelineRun Creation** (BR-WF-001 to BR-WF-010)
-   - Creates Tekton PipelineRuns directly (no intermediate ActionExecution layer - ADR-024)
-   - Builds dependency graph from AI recommendations
-   - Parallel or sequential execution based on dependencies
-
-2. **Safety Validation** (BR-WF-015 to BR-WF-020)
-   - Validates safety requirements and prerequisites (Rego policies via ConfigMaps)
-   - Enforces safety constraints before execution
-   - Complexity approval: workflows with >10 steps require manual approval
-
-3. **Dry-Run Capabilities** (BR-WF-021 to BR-WF-030)
-   - Supports dry-run mode for testing workflows
-   - Validates actions without executing them
-   - Provides confidence in workflow safety
-
-4. **Rollback & Recovery** (BR-WF-050 to BR-WF-053)
-   - Automatic or manual rollback with state preservation
-   - Handles failures with recovery strategies
-   - Step-level precondition/postcondition validation (DD-002)
-
-5. **Real-Time Monitoring** (BR-WF-030 to BR-WF-040)
-   - Monitors Tekton PipelineRun execution progress
-   - Tracks step statuses (Pending, Running, Succeeded, Failed)
-   - Real-time execution health monitoring
-
-6. **Action Record Persistence** (BR-WF-041 to BR-WF-049)
-   - Writes action records to Data Storage Service
-   - Enables pattern monitoring and effectiveness tracking
-   - 90+ day retention for historical analysis
-
-**Port**: 9090 (metrics), 8080 (health)
-
-**Source**: [docs/services/crd-controllers/03-workflowexecution/overview.md](../services/crd-controllers/03-workflowexecution/overview.md)
-
----
-
-#### 5. Notification - Multi-Channel Notifications
-
-**Key Features**:
-
-1. **Multi-Channel Delivery** (BR-NOT-001 to BR-NOT-005)
-   - Email notifications with rich formatting
-   - Slack integration for team collaboration
-   - Webhook integrations for custom channels
-
-2. **Escalation Remediations** (BR-NOT-026 to BR-NOT-037)
-   - Comprehensive alert context in escalation notifications
-   - AI-generated root cause analysis (BR-NOT-028)
-   - Recommended remediations sorted by multi-factor ranking (BR-NOT-030)
-   - Actionable next steps (last 5 escalation events + historical summary)
-   - Approval notification
-
-3. **Sensitive Data Sanitization** (BR-NOT-034)
-   - **CRITICAL SECURITY**: Sanitizes sensitive data before sending notifications
-   - Protects secrets, API keys, passwords from exposure
-   - Compliant with security best practices
-
-4. **External Service Action Links** (BR-NOT-037)
-   - Direct action links to external services (GitHub, Grafana, Prometheus, K8s Dashboard)
-   - Authentication and authorization delegated to target services (ADR-014)
-   - Simplified UX: users can request permissions if needed
-
-5. **Audit Log Persistence** (BR-NOT-041 to BR-NOT-050)
-   - Writes notification audit trails to Data Storage Service
-   - Tracks delivery status per channel
-   - 90+ day retention for compliance and analysis
-
-**Port**: 9090 (metrics), 8080 (health)
-
-**Source**: [docs/services/crd-controllers/06-notification/overview.md](../services/crd-controllers/06-notification/overview.md)
-
----
-
-### Stateless Services
-
-#### 6. Gateway Service - HTTP Gateway & Security
-
-**Key Features**:
-
-1. **Signal Ingestion** (BR-GATEWAY-001 to BR-GATEWAY-023)
-   - Multi-source webhook processing (Prometheus AlertManager + Kubernetes Events)
-   - Adapter-specific endpoints (`/api/v1/signals/prometheus`, `/api/v1/signals/kubernetes-event`)
-   - ~70% less code than detection-based architecture (Design B)
-
-2. **Deduplication** (BR-GATEWAY-031 to BR-GATEWAY-040)
-   - Redis-based fingerprinting to prevent duplicate RemediationRequest CRDs
-   - Reduces downstream load by 40-60%
-   - Tracks occurrence count and RemediationRequest references
-
-3. **Storm Detection** (BR-GATEWAY-041 to BR-GATEWAY-050)
-   - Hybrid (rate + pattern) detection to aggregate related incidents
-   - Aggregates 100 pods crashing → 1 remediation workflow
-   - Prevents system overload from alert storms
-
-4. **Priority Assignment** (BR-GATEWAY-061 to BR-GATEWAY-070)
-   - Rego policy-based priority assignment (P0, P1, P2, P3)
-   - Severity/environment fallback for policy failures
-   - Ensures critical production issues get immediate attention
-
-5. **Environment Classification** (BR-GATEWAY-051 to BR-GATEWAY-053) - **Quick Lookup**
-   - **Purpose**: Fast environment identification for initial routing and priority assignment (2-3ms with cache)
-   - **Method**: Simple 4-tier lookup: namespace labels → ConfigMap override → alert labels → "unknown"
-   - **Output**: Simple string value (`"prod"`, `"staging"`, `"dev"`, `"canary"`, etc.)
-   - **Use Case**: Immediate routing decisions before CRD creation
-   - **Note**: This is a lightweight lookup; SignalProcessing performs richer business classification later
-
-6. **CRD Creation** (BR-GATEWAY-023, BR-GATEWAY-071 to BR-GATEWAY-072)
-   - Creates RemediationRequest CRD for RemediationOrchestrator
-   - CRD-driven workflow (no direct GitOps integration)
-   - CRD creation triggers notification flow
-
-**Port**: 8080 (API/health), 9090 (metrics)
-
-**Source**: [docs/services/stateless/gateway-service/overview.md](../services/stateless/gateway-service/overview.md)
-
----
-
-#### 7. Context API - Historical Intelligence Provider
-
-**Key Features**:
-
-1. **Historical Intelligence Provider** (BR-CTX-001 to BR-CTX-020)
-   - Read-only HTTP API for historical remediation data
-   - Provides recovery context for workflow failure analysis
-   - Environment-specific patterns and best practices
-
-2. **Recovery Context Queries** (BR-CTX-021 to BR-CTX-040)
-   - Fetches previous remediation attempts for failed workflows
-   - Provides historical failure context for AI analysis (DD-001: Alternative 2)
-   - Enables continuous learning from past failures
-
-3. **Success Rate Calculations** (BR-CTX-041 to BR-CTX-060)
-   - Calculates success rates for remediation actions
-   - Historical success rate analysis per action type
-   - Time-windowed success rate trends
-
-4. **Semantic Search** (BR-CTX-061 to BR-CTX-080)
-   - Vector embeddings for semantic search through past incidents
-   - pgvector-powered similarity search (<100ms)
-   - Context-aware pattern matching
-
-5. **Environment-Specific Patterns** (BR-CTX-081 to BR-CTX-100)
-   - Discovers patterns specific to environment tiers (prod, staging, dev)
-   - Business criticality-aware recommendations
-   - Risk-adjusted remediation strategies
-
-**Port**: 8080 (API/health), 9090 (metrics)
-
-**Source**: [docs/services/stateless/context-api/overview.md](../services/stateless/context-api/overview.md)
-
----
-
-#### 8. Data Storage Service - Data Persistence & Vector DB
-
-**Key Features**:
-
-1. **PostgreSQL Operations** (BR-STOR-001 to BR-STOR-050)
-   - REST API Gateway for PostgreSQL access (ADR-032: sole DB access point)
-   - Connection pooling (10-50 connections)
-   - ACID transaction support
-
-2. **Vector Database** (BR-VDB-001 to BR-VDB-030)
-   - pgvector for semantic search (<100ms)
-   - Vector similarity search for historical patterns
-   - Embedding indexing and optimization
-
-3. **Action History Storage** (BR-STOR-051 to BR-STOR-080)
-   - 90+ day retention for action records
-   - Remediation Playbooks execution history and outcomes
-   - Pattern monitoring and effectiveness tracking
-
-4. **Multi-Level Caching** (BR-STOR-081 to BR-STOR-100)
-   - In-memory cache + Redis + PostgreSQL
-   - Intelligent cache eviction strategies
-   - Cache hit rate optimization
-
-5. **Embedding Generation** (BR-VDB-011 to BR-VDB-020)
-   - Generates embeddings for semantic search
-   - Embedding quality validation
-   - Batch embedding processing
-
-6. **CRD Audit Persistence** (BR-STOR-101 to BR-STOR-135)
-   - Persists CRD audit trails before 24-hour deletion
-   - Comprehensive remediation audit history
-   - Compliance and forensic analysis support
-
-**Port**: 8080 (API/health), 9090 (metrics)
-
-**Source**: [APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md)
-
----
-
-#### 9. HolmesGPT-API - AI Investigation Wrapper
-
-**Key Features**:
-
-1. **REST API Wrapper** (BR-HAPI-001 to BR-HAPI-030)
-   - Python-based REST API wrapper for HolmesGPT SDK
-   - Standardized HTTP interface for Go services
-   - Async investigation execution
-
-2. **Multi-Provider LLM Integration** (BR-HAPI-031 to BR-HAPI-060)
-   - OpenAI, Anthropic, local models support
-   - Provider-specific configuration and authentication
-   - LLM fallback chains for resilience
-
-3. **Dynamic Toolset Configuration** (BR-HAPI-061 to BR-HAPI-090)
-   - Kubernetes, Prometheus, Grafana toolsets
-   - Dynamic toolset loading from Dynamic Toolset service
-   - Hot-reload capabilities for toolset updates
-
-4. **Investigation Execution** (BR-HAPI-091 to BR-HAPI-120)
-   - HolmesGPT investigation orchestration
-   - Root cause analysis and remediation recommendations
-   - Evidence collection and correlation
-
-5. **Self-Documenting JSON Format** (BR-HAPI-121 to BR-HAPI-150)
-   - Ultra-compact JSON format for AI prompts (DD-HOLMESGPT-009)
-   - 60-75% token reduction vs verbose formats
-   - $1,100/year cost savings, 150ms latency improvement
-
-6. **Kubernetes Read-Only Access** (BR-HAPI-151 to BR-HAPI-185)
-   - Read-only cluster access for safe investigation
-   - No write permissions to production clusters
-   - Audit trail for all K8s API calls
-
-**Port**: 8080 (API/health), 9090 (metrics)
-
-**Source**: [docs/services/stateless/kubernaut-agent/overview.md](../services/stateless/kubernaut-agent/overview.md)
-
----
-
-#### 10. Dynamic Toolset - Toolset Configuration Management
-
-**Key Features**:
-
-1. **Toolset Discovery** (BR-TOOLSET-001 to BR-TOOLSET-005)
-   - Automatic discovery of available toolsets
-   - Toolset metadata and capability discovery
-   - Toolset dependency resolution
-
-2. **Toolset Registration & Lifecycle** (BR-TOOLSET-006 to BR-TOOLSET-010)
-   - Dynamic toolset registration
-   - Toolset versioning and lifecycle management
-   - Deprecation and migration support
-
-3. **ConfigMap-Based Configuration** (BR-TOOLSET-011 to BR-TOOLSET-015)
-   - Kubernetes ConfigMaps for toolset configuration
-   - Declarative toolset definitions
-   - GitOps-friendly configuration management
-
-4. **Hot-Reload Capabilities** (BR-TOOLSET-016 to BR-TOOLSET-018)
-   - Live toolset updates without service restart
-   - ConfigMap watch for automatic reload
-   - Zero-downtime toolset changes
-
-5. **Toolset Validation** (BR-TOOLSET-019 to BR-TOOLSET-020)
-   - Validates toolset configurations
-   - Health checking for toolset availability
-   - Error handling for misconfigured toolsets
-
-**Port**: 8080 (API/health), 9090 (metrics)
-
-**Source**: [APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md)
-
----
-
-#### ~~11. Effectiveness Monitor~~ - ⏸️ **Deferred to V1.1** (DD-017)
-
-> **⚠️ DEFERRED TO V1.1**: Requires 8+ weeks of remediation data for meaningful assessments
-
-**Key Features** (V1.1):
-
-1. **Effectiveness Assessment** (BR-INS-001)
-   - Real-time effectiveness assessment of remediation actions
-   - Multi-dimensional analysis (success/failure rate, environmental impact)
-   - Confidence levels based on data quality (20-95%)
-
-2. **Side Effect Detection** (BR-INS-005)
-   - Detects adverse side effects from actions (e.g., CPU spike after memory fix)
-   - Anomaly detection (metric changes > thresholds)
-   - 10-minute detection window for early warning
-
-3. **Trend Analysis** (BR-INS-003)
-   - Long-term effectiveness trend tracking (90-day rolling window)
-   - Identifies improving/declining/stable patterns
-   - Historical pattern recognition across remediation history
-
-4. **Metrics Correlation** (BR-INS-002)
-   - Correlates actions with environmental improvements (memory, CPU, network)
-   - Pre/post execution metric comparisons
-   - Health checks (pod running, OOM errors, latency metrics)
-
-5. **Continuous Learning** (BR-INS-010)
-   - Selective AI-powered analysis for high-value cases (~18K/year, 0.5% of workflows)
-   - Root cause validation ("problem solved" vs "problem masked")
-   - Oscillation detection ("fix A caused problem B")
-
-6. **Feedback Loop Integration** (BR-INS-006 to BR-INS-009)
-   - Lesson extraction for Context API (for future recommendations)
-   - Pattern learning for context-aware effectiveness
-   - Enables continuous improvement through feedback loops
-
-**Port**: 8080 (API/health), 9090 (metrics)
-
-**Source**: [docs/services/stateless/effectiveness-monitor/overview.md](../services/stateless/effectiveness-monitor/overview.md)
+### apifrontend Interactive Investigation Flow (separate entry point)
+
+```mermaid
+sequenceDiagram
+    participant USER as Human/Agent Client
+    participant AF as apifrontend
+    participant TRI as AF Severity Triager<br/>(Claude via Vertex AI)
+    participant ORCH as RemediationOrchestrator
+    participant KA as Kubernaut Agent
+
+    USER->>AF: Natural-language query (A2A/MCP)
+    AF->>TRI: Triage query (severity, intent)
+    TRI-->>AF: Triage result
+    AF->>ORCH: Create RemediationRequest CRD directly
+    AF->>KA: Deep investigation (MCP session, direct integration)
+    KA-->>AF: Investigation results (streamed)
+    AF-->>USER: Response / recommended workflow / handoff
+```
+
+**Note**: This is a *separate* code path from the Gateway-driven autonomous flow above. apifrontend both creates `RemediationRequest`s directly and calls Kubernaut Agent directly — it does not go through the AIAnalysis controller for its own interactive investigations. Once a `RemediationRequest` exists (from either entry point), it is coordinated identically by RemediationOrchestrator.
 
 ---
 
@@ -1179,120 +858,120 @@ This section provides detailed feature descriptions for all 11 Kubernaut service
 
 **Pattern**: All CRD controllers use Kubernetes watches for event-driven reconciliation.
 
-**Implementation** (controller-runtime):
+**Verified implementation** (`internal/controller/remediationorchestrator/reconcile_loop.go:410-439`):
 ```go
-func (r *RemediationOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+    if err := registerFingerprintIndex(mgr); err != nil {
+        return err
+    }
+    if err := registerWFETargetResourceIndex(mgr); err != nil {
+        return err
+    }
+    if err := registerChildCRDIndexes(mgr); err != nil {
+        return err
+    }
+
     return ctrl.NewControllerManagedBy(mgr).
         For(&remediationv1.RemediationRequest{}).
-        Owns(&processingv1.SignalProcessing{}).
+        Owns(&signalprocessingv1.SignalProcessing{}).
         Owns(&aianalysisv1.AIAnalysis{}).
-        Owns(&workflowv1.RemediationExecution{}).
+        Owns(&workflowexecutionv1.WorkflowExecution{}).
+        Owns(&remediationv1.RemediationApprovalRequest{}).
         Owns(&notificationv1.NotificationRequest{}).
+        Owns(&eav1.EffectivenessAssessment{}).
+        // GenerationChangedPredicate deliberately NOT applied here — an earlier
+        // optimization attempt broke integration tests by filtering out child
+        // CRD *status* updates, which this controller depends on.
         Complete(r)
 }
 ```
 
-**Benefits**:
-- Sub-second latency for status updates
-- No polling overhead
-- Built-in retry and reconciliation loops
-- Kubernetes-native event handling
+**Benefits**: sub-second status-update latency, no polling overhead, controller-runtime's built-in retry/backoff.
 
-**Source**: [05-remediationorchestrator/overview.md](../services/crd-controllers/05-remediationorchestrator/overview.md)
+**Source**: [reconcile_loop.go](../../internal/controller/remediationorchestrator/reconcile_loop.go)
 
 ---
 
 ### CRD Creation Responsibility (Central Orchestrator)
 
-**Pattern**: RemediationOrchestrator owns ALL child CRD creation.
+**Pattern**: RemediationOrchestrator owns essentially all child CRD creation for the `RemediationRequest` lifecycle — including the two CRDs added since v1.3.0.
 
-**What RemediationOrchestrator Creates**:
-1. SignalProcessing CRD (signal enrichment)
-2. AIAnalysis CRD (after SignalProcessing completes)
-3. RemediationExecution CRD (after AIAnalysis completes)
-4. NotificationRequest CRDs (on events: failures, timeouts, completions, approval requests)
+**What RemediationOrchestrator creates**:
+1. `SignalProcessing` (signal enrichment)
+2. `AIAnalysis` (after SignalProcessing completes)
+3. `RemediationApprovalRequest` — **only** when AIAnalysis's Rego evaluation returns `PolicyDecision = ManualReviewRequired` (via `pkg/remediationorchestrator/creator/approval.go`)
+4. `WorkflowExecution` (after AIAnalysis completes with auto-approval, or after `RemediationApprovalRequest.Status.Decision = Approved`) — via `pkg/remediationorchestrator/weCreator` (the same `WFECreationCallbacks` is shared by both the `Analyzing` and `AwaitingApproval` phase handlers)
+5. `NotificationRequest` (on events: approvals, escalations, timeouts, completions, failures)
+6. `EffectivenessAssessment` (after `WorkflowExecution` succeeds)
 
-**What Child Controllers Do NOT Do**:
-- ❌ SignalProcessing does NOT create AIAnalysis
-- ❌ AIAnalysis does NOT create RemediationExecution
-- ❌ RemediationExecution does NOT create NotificationRequest
-- ✅ All child controllers update their OWN status only
+**What child controllers do NOT do**:
+- ❌ SignalProcessing does not create AIAnalysis
+- ❌ AIAnalysis does not create `RemediationApprovalRequest` — it only produces the `PolicyDecision` that RemediationOrchestrator's `AnalyzingHandler` acts on
+- ❌ WorkflowExecution does not make skip/routing decisions (DD-RO-002) — it is a pure executor
+- ❌ EffectivenessMonitor does not create `EffectivenessAssessment` — it only watches and reconciles the one RemediationOrchestrator creates
+- ✅ All child controllers update only their own CRD's status
 
-**Rationale**:
-- Single source of truth for CRD lifecycle
-- Clear ownership boundaries
-- Simplified debugging and audit trail
-- Prevents circular dependencies
+**Rationale**: single source of truth for CRD lifecycle, clear ownership boundaries, and — since DD-RO-002 — centralized routing logic that keeps `WorkflowExecution` simple and auditable.
 
-**Source**: [05-remediationorchestrator/overview.md](../services/crd-controllers/05-remediationorchestrator/overview.md)
+**Source**: [internal/controller/remediationorchestrator/reconciler.go](../../internal/controller/remediationorchestrator/reconciler.go) (see the `approvalCreator`/`weCreator` wiring around lines 290-334), [DD-RO-002](decisions/DD-RO-002-centralized-routing-responsibility.md)
+
+---
+
+### Multi-Engine Execution Dispatch (Strategy Pattern)
+
+**Pattern**: `WorkflowExecution`'s controller does not hardcode a single execution backend. It resolves an `Executor` from a `Registry` keyed by `spec.workflowRef.executionEngine`.
+
+**Verified implementation** (`pkg/workflowexecution/executor/executor.go`):
+```go
+// Executor defines the interface for workflow execution backends.
+// Tekton, Job, and Ansible executors implement this interface.
+type Executor interface {
+    Create(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution,
+        namespace string, opts CreateOptions) (*CreateResult, error)
+    GetStatus(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution,
+        namespace string) (*ExecutionResult, error)
+    Cleanup(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution,
+        namespace string) error
+    Engine() string // "tekton" | "job" | "ansible"
+}
+
+type Registry struct{ executors map[string]Executor }
+
+func (r *Registry) Get(engine string) (Executor, error) {
+    exec, ok := r.executors[engine]
+    if !ok {
+        return nil, fmt.Errorf("unsupported execution engine: %q (registered: %v)", engine, r.Engines())
+    }
+    return exec, nil
+}
+```
+
+Only the `tekton` and `job` engines require a Kubernetes watch on their execution resource (`PipelineRun`, `Job`); the `ansible` engine dispatches to an external AWX server and polls job status via the AWX API — no in-cluster watch is needed ([DD-WE-007](decisions/DD-WE-007-ansible-playbook-rbac-rules.md)).
+
+**Source**: [pkg/workflowexecution/executor/executor.go](../../pkg/workflowexecution/executor/executor.go), [pkg/workflowexecution/executor/job.go](../../pkg/workflowexecution/executor/job.go), [pkg/workflowexecution/executor/ansible.go](../../pkg/workflowexecution/executor/ansible.go), [pkg/workflowexecution/executor/tekton.go](../../pkg/workflowexecution/executor/tekton.go)
 
 ---
 
 ### Status Aggregation
 
-**Pattern**: RemediationOrchestrator watches all child CRD statuses and aggregates overall remediation state.
+**Pattern**: RemediationOrchestrator watches all 6 owned CRD kinds and aggregates overall remediation state into `RemediationRequest.Status.OverallPhase`.
 
-**Implementation**:
-```go
-func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-    remediation := &remediationv1.RemediationRequest{}
-    if err := r.Get(ctx, req.NamespacedName, remediation); err != nil {
-        return ctrl.Result{}, client.IgnoreNotFound(err)
-    }
-
-    // Watch SignalProcessing status
-    if remediation.Status.SignalProcessingRef != "" {
-        processing := &processingv1.SignalProcessing{}
-        if err := r.Get(ctx, types.NamespacedName{Name: remediation.Status.SignalProcessingRef, Namespace: remediation.Namespace}, processing); err == nil {
-            if processing.Status.Phase == "Completed" {
-                // Create AIAnalysis CRD
-                return r.createAIAnalysis(ctx, remediation, processing)
-            }
-        }
-    }
-
-    // Similar logic for AIAnalysis → RemediationExecution
-    // ...
-
-    return ctrl.Result{}, nil
-}
-```
-
-**Source**: [05-remediationorchestrator/overview.md](../services/crd-controllers/05-remediationorchestrator/overview.md)
+**Source**: [internal/controller/remediationorchestrator/reconcile_loop.go](../../internal/controller/remediationorchestrator/reconcile_loop.go) — the phase-handler dispatch (`analyzing_handler.go`, `awaiting_approval_handler.go`, `executing_handler.go`, `verifying_handler.go`, `blocked_handler.go`, etc.) implements one handler per `OverallPhase` value, registered against a `phaseRegistry`, rather than a single monolithic `switch` (a structural change from the v1.3.0 illustration, which showed one large `Reconcile` function).
 
 ---
 
 ### Error Handling Philosophy
 
-**Pattern**: Errors are categorized and handled with specific recovery strategies.
+**Pattern**: errors are categorized and handled with specific recovery strategies — this pattern from v1.3.0 remains architecturally accurate:
 
-**Error Categories**:
+1. **Not Found** (CRD deleted externally) → `client.IgnoreNotFound(err)`, proceed
+2. **API errors** (transient K8s API failures) → controller-runtime automatic exponential-backoff retry
+3. **User errors** (invalid CRD spec) → status updated to a `Failed`-family phase with a `FailureReason`; not retried
+4. **Watch loss** (network interruption) → automatic reconnection, no manual handling
+5. **Conflicts** (optimistic-locking failures) → retry with a freshly-fetched object (`AtomicStatusUpdate` pattern)
+6. **Child failures** (SignalProcessing/AIAnalysis/WorkflowExecution/EffectivenessAssessment failed) → update `RemediationRequest.Status`, create `NotificationRequest`
 
-1. **Not Found Errors** (CRD deleted externally)
-   - Strategy: Ignore and proceed
-   - Implementation: `client.IgnoreNotFound(err)`
-
-2. **API Errors** (Kubernetes API temporary failures)
-   - Strategy: Exponential backoff retry
-   - Implementation: controller-runtime automatic retry
-
-3. **User Errors** (Invalid CRD spec)
-   - Strategy: Update status with error, do not retry
-   - Implementation: Set status.phase = "Failed", status.reason = error
-
-4. **Watch Loss** (Network interruption)
-   - Strategy: controller-runtime automatic reconnection
-   - Implementation: No manual handling required
-
-5. **Conflicts** (Optimistic locking failures)
-   - Strategy: Retry with fresh object
-   - Implementation: `updateStatusWithRetry` pattern
-
-6. **Child Failures** (SignalProcessing, AIAnalysis, RemediationExecution failed)
-   - Strategy: Update parent status, create NotificationRequest
-   - Implementation: Watch child status, escalate on failure
-
-**Source**: [05-remediationorchestrator/implementation/WORKFLOWEXECUTION_PATTERN_ENHANCEMENTS.md](../services/crd-controllers/05-remediationorchestrator/implementation/WORKFLOWEXECUTION_PATTERN_ENHANCEMENTS.md)
+**Source**: [internal/controller/remediationorchestrator/](../../internal/controller/remediationorchestrator/)
 
 ---
 
@@ -1300,341 +979,171 @@ func (r *RemediationOrchestratorReconciler) Reconcile(ctx context.Context, req c
 
 ### 1. Signal Ingestion → Remediation
 
-**Flow**: External signal → Gateway → RemediationRequest CRD → RemediationOrchestrator
+**Flow**: External signal → Gateway → `RemediationRequest` → RemediationOrchestrator
 
-**Steps**:
-1. Prometheus AlertManager sends webhook to Gateway (`POST /api/v1/signals/prometheus`)
-2. Gateway deduplicates (Redis fingerprint check)
-3. Gateway classifies environment (namespace labels)
-4. Gateway assigns priority (Rego policy)
-5. Gateway creates RemediationRequest CRD
-6. RemediationOrchestrator watches RemediationRequest
-7. RemediationOrchestrator creates SignalProcessing CRD
+**Steps**: Prometheus/Alertmanager or K8s Event webhook → Gateway deduplicates (occurrence tracking) → Gateway creates `RemediationRequest` → RemediationOrchestrator creates `SignalProcessing`.
 
-**Latency**: 30-50ms (Gateway), <1s (RemediationOrchestrator watch trigger)
+**Note**: environment/priority classification is performed by SignalProcessing, not Gateway (contra v1.3.0's description of Gateway performing "Environment Classification" and "Priority Assignment" — that logic was delegated to SignalProcessing per [DD-CATEGORIZATION-001](decisions/DD-CATEGORIZATION-001-gateway-signal-processing-split-assessment.md)).
 
-**Source**: [stateless/gateway-service/overview.md](../services/stateless/gateway-service/overview.md)
+**Source**: [docs/services/stateless/gateway-service/overview.md](../services/stateless/gateway-service/overview.md)
 
 ---
 
-### 2. AI Investigation (AIAnalysis → HolmesGPT-API → Dynamic Toolset)
+### 2. AI Investigation & Approval Gating (AIAnalysis → Kubernaut Agent → Rego → RemediationOrchestrator)
 
-**Flow**: AIAnalysis controller → HolmesGPT-API → HolmesGPT SDK → LLM
+**Flow**: AIAnalysis controller → Kubernaut Agent (async) → Rego policy evaluation → RemediationOrchestrator approval decision
 
 **Steps**:
-1. AIAnalysis controller reads enrichment data from spec
-2. AIAnalysis controller calls HolmesGPT-API (`POST /api/v1/investigate`)
-3. HolmesGPT-API loads toolset configuration (Dynamic Toolset service)
-4. HolmesGPT-API executes investigation (HolmesGPT SDK + LLM)
-5. HolmesGPT-API returns investigation results
-6. AIAnalysis controller validates recommendations
-7. AIAnalysis controller updates status with recommendations
+1. AIAnalysis controller calls `SubmitInvestigation()` (`pkg/agentclient`) — 202 Accepted with a `session_id`
+2. AIAnalysis polls `PollSession()` until a terminal state (`completed`/`failed`)
+3. AIAnalysis calls `GetSessionResult()` for the final investigation payload
+4. AIAnalysis evaluates the result against a Rego policy (`pkg/aianalysis/rego`) → `PolicyDecision`
+5. RemediationOrchestrator's `AnalyzingHandler` watches `AIAnalysis.Status` and either creates `WorkflowExecution` directly (`Approved`) or creates `RemediationApprovalRequest` (`ManualReviewRequired`)
 
-**Latency**: 5-30s (LLM-dependent)
+**Corrected from v1.3.0**: this flow was previously described as a single synchronous `POST /api/v1/investigate` call to a "HolmesGPT-API" service with no policy-gating step. The real flow is async (submit/poll/result) and always includes a Rego evaluation step, regardless of whether it results in an approval gate.
 
-**Source**: [02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md), [stateless/kubernaut-agent/overview.md](../services/stateless/kubernaut-agent/overview.md)
+**Source**: [pkg/agentclient/client.go](../../pkg/agentclient/client.go), [pkg/aianalysis/rego/evaluator.go](../../pkg/aianalysis/rego/evaluator.go), [docs/services/crd-controllers/02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md), [docs/services/stateless/kubernaut-agent/overview.md](../services/stateless/kubernaut-agent/overview.md)
 
 ---
 
-### 3. Remediation Execution (RemediationExecution → Tekton Pipelines)
+### 3. Manual Approval (RemediationApprovalRequest)
 
-**Flow**: RemediationExecution controller → Tekton PipelineRun → Action containers
+**Flow**: RemediationOrchestrator creates `RemediationApprovalRequest` → operator decides → RemediationOrchestrator creates `WorkflowExecution`
 
 **Steps**:
-1. RemediationExecution controller parses AI recommendations
-2. RemediationExecution controller builds dependency graph
-3. RemediationExecution controller validates safety constraints (Rego policies via ConfigMaps)
-4. RemediationExecution controller creates Tekton PipelineRun
-5. Tekton executes action containers (parallel or sequential, based on dependencies)
-6. RemediationExecution controller watches PipelineRun status
-7. RemediationExecution controller writes action records to Data Storage Service
-8. RemediationExecution controller updates status to "Completed" or "Failed"
+1. RemediationOrchestrator's `ApprovalCreator` creates `RemediationApprovalRequest`, populating investigation summary, recommended workflow, evidence, and a `requiredBy` deadline (default 15 minutes, [ADR-040](decisions/ADR-040-remediation-approval-request-architecture.md))
+2. `RemediationRequest.Status.OverallPhase` → `AwaitingApproval`
+3. RemediationOrchestrator creates a `NotificationRequest` (type `Approval`) so operators are alerted
+4. An operator (via `kubectl`, a dashboard, or apifrontend acting as a trusted intermediary — `Status.DecidedVia`) sets `Status.Decision` to `Approved` or `Rejected`, optionally supplying a `WorkflowOverride`
+5. If unanswered by `requiredBy`, `Status.Decision` becomes `Expired`
+6. RemediationOrchestrator's `AwaitingApprovalHandler` watches the RAR and, on `Approved`, creates `WorkflowExecution` (honoring any `WorkflowOverride`); on `Rejected`/`Expired`, the `RemediationRequest` moves to a failure/manual-review outcome
 
-**Latency**: Varies (action-dependent, typically 15-120 seconds)
-
-**Source**: [03-workflowexecution/overview.md](../services/crd-controllers/03-workflowexecution/overview.md), [TEKTON_EXECUTION_ARCHITECTURE.md](TEKTON_EXECUTION_ARCHITECTURE.md)
+**Source**: [ADR-040](decisions/ADR-040-remediation-approval-request-architecture.md), [internal/controller/remediationorchestrator/awaiting_approval_handler.go](../../internal/controller/remediationorchestrator/awaiting_approval_handler.go)
 
 ---
 
-### 4. Notification Delivery (RemediationOrchestrator → NotificationRequest)
+### 4. Remediation Execution (WorkflowExecution → 3 Engines)
 
-**Flow**: RemediationOrchestrator creates NotificationRequest → Notification controller delivers
+**Flow**: `WorkflowExecution` controller → `Registry.Get(engine)` → `Executor.Create()` → execution resource
 
-**Events that Trigger Notifications**:
-- RemediationRequest timeout
-- RemediationRequest failure
-- RemediationRequest completion
-- AIApprovalRequest created (approval required)
+**Steps**: parse `workflowRef.executionEngine` → dispatch to the matching `Executor` → create the execution resource in the target namespace → poll/watch status → map to WFE phase → write audit records to DataStorage → phase → `Completed`/`Failed`.
 
-**Steps**:
-1. RemediationOrchestrator detects event (timeout, failure, completion, approval request)
-2. RemediationOrchestrator creates NotificationRequest CRD
-3. Notification controller reads NotificationRequest spec
-4. Notification controller sanitizes sensitive data
-5. Notification controller applies channel-specific formatting
-6. Notification controller delivers to configured channels (Email, Slack, Teams, SMS)
-7. Notification controller updates status to "Sent" or "Failed"
+**Corrected from v1.3.0**: this flow was previously described as always creating a Tekton `PipelineRun` with no alternative path. The current architecture supports 3 engines, selected per-workflow by the catalog entry, not hardcoded per-service.
 
-**Latency**: 1-5 seconds
-
-**Source**: [ADR-017](decisions/ADR-017-notification-crd-creator.md), [ADR-018](decisions/ADR-018-approval-notification-v1-integration.md)
+**Source**: [pkg/workflowexecution/executor/](../../pkg/workflowexecution/executor/), [BR-WE-014](../../pkg/workflowexecution/executor/job.go), [DD-WE-007](decisions/DD-WE-007-ansible-playbook-rbac-rules.md)
 
 ---
 
-### 5. Approval Remediation (AIAnalysis → AIApprovalRequest → NotificationRequest)
+### 5. Effectiveness Assessment (RemediationOrchestrator → EffectivenessMonitor → DataStorage)
 
-**Flow**: AIAnalysis creates AIApprovalRequest → RemediationOrchestrator creates NotificationRequest → Operator approves → AIAnalysis proceeds
+**Flow**: RemediationOrchestrator creates `EffectivenessAssessment` → EffectivenessMonitor runs 4 checks → DataStorage computes the score
 
-**Steps**:
-1. AIAnalysis controller evaluates approval policy (Rego)
-2. If manual approval required (medium confidence 60-79%): AIAnalysis controller creates AIApprovalRequest CRD
-3. AIAnalysis controller updates status with approvalContext (rich context for notifications)
-4. RemediationOrchestrator watches AIAnalysis status → detects approval request
-5. RemediationOrchestrator creates NotificationRequest CRD (type: approval_required, includes approvalContext)
-6. Notification controller delivers approval request to operators
-7. Operator approves or rejects (via kubectl, dashboard, or notification button)
-8. AIApprovalRequest CRD updated with decision
-9. AIAnalysis controller watches AIApprovalRequest → updates status to "Completed" (if approved) or "Failed" (if rejected)
-10. RemediationOrchestrator watches AIAnalysis status → creates WorkflowExecution CRD (if approved) or marks RemediationRequest as Failed (if rejected)
+**Steps**: on `WorkflowExecution` success, RemediationOrchestrator captures `PreRemediationSpecHash` and creates `EffectivenessAssessment` → phase `Pending` → `Stabilizing` (waits out a stabilization window) → `Assessing` (health/alert/metrics/hash checks run; hash check may defer to `WaitingForPropagation` if configured) → each component check emits an audit event to DataStorage → DataStorage computes the final weighted score on demand → phase `Completed`/`Failed` → RemediationOrchestrator finalizes `RemediationRequest.Status.Outcome`.
 
-**Latency**: Human-dependent (minutes to hours)
+**Corrected from v1.3.0**: this entire flow, and the CRD it is based on, did not exist in v1.3.0 (which described a monolithic, partially-AI-powered "Effectiveness Monitor Service" with no CRD and no DataStorage scoring split).
 
-**Source**: [ADR-018](decisions/ADR-018-approval-notification-v1-integration.md), [02-aianalysis/overview.md](../services/crd-controllers/02-aianalysis/overview.md)
+**Source**: [api/effectivenessassessment/v1alpha1/effectivenessassessment_types.go](../../api/effectivenessassessment/v1alpha1/effectivenessassessment_types.go), [docs/services/crd-controllers/07-effectivenessmonitor/overview.md](../services/crd-controllers/07-effectivenessmonitor/overview.md)
+
+---
+
+### 6. Notification Delivery
+
+**Flow**: RemediationOrchestrator creates `NotificationRequest` → Notification controller delivers
+
+**Events that trigger notifications**: approval required, escalation, timeout, completion, failure.
+
+**Source**: [docs/services/crd-controllers/06-notification/overview.md](../services/crd-controllers/06-notification/overview.md)
+
+---
+
+### 7. apifrontend Interactive Investigation (separate entry point) — *new since v1.3.0*
+
+**Flow**: NL query → apifrontend Severity Triager → `RemediationRequest` creation + direct Kubernaut Agent call
+
+See the [apifrontend Interactive Investigation Flow](#apifrontend-interactive-investigation-flow-separate-entry-point) diagram above. This flow did not exist in any form in v1.3.0.
+
+**Source**: [docs/services/apifrontend/design/ARCHITECTURE.md](../services/apifrontend/design/ARCHITECTURE.md)
 
 ---
 
 ## Code Examples
 
-### Controller Setup Pattern
+> These snippets are simplified illustrations of verified patterns, not verbatim source. Field names and control flow match the source referenced; error handling, logging, and metrics instrumentation are omitted for readability.
 
-**Example**: RemediationOrchestrator controller setup with multi-CRD watches
+### Controller Setup Pattern (verified `Owns()` list)
 
 ```go
 package controller
 
 import (
-    remediationv1 "github.com/jordigilh/kubernaut/api/remediationorchestrator/v1alpha1"
-    processingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
+    remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+    signalprocessingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
     aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-    workflowv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
+    workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
     notificationv1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
+    eav1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
     ctrl "sigs.k8s.io/controller-runtime"
-    "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// RemediationOrchestratorReconciler reconciles RemediationRequest objects
-type RemediationOrchestratorReconciler struct {
-    client.Client
-    Scheme *runtime.Scheme
-}
-
-// SetupWithManager sets up the controller with the Manager
-func (r *RemediationOrchestratorReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
     return ctrl.NewControllerManagedBy(mgr).
         For(&remediationv1.RemediationRequest{}).
-        Owns(&processingv1.SignalProcessing{}).
+        Owns(&signalprocessingv1.SignalProcessing{}).
         Owns(&aianalysisv1.AIAnalysis{}).
-        Owns(&workflowv1.RemediationExecution{}).
+        Owns(&workflowexecutionv1.WorkflowExecution{}).
+        Owns(&remediationv1.RemediationApprovalRequest{}).
         Owns(&notificationv1.NotificationRequest{}).
+        Owns(&eav1.EffectivenessAssessment{}).
         Complete(r)
 }
 ```
 
-**Key Pattern**: `For()` primary CRD, `Owns()` all child CRDs (automatic watch setup)
+**Key pattern**: `For()` the primary CRD, `Owns()` all 6 child CRD kinds (automatic watch setup, one entry per kind, no wildcard).
 
 ---
 
-### CRD Creation Example
-
-**Example**: RemediationOrchestrator creates SignalProcessing CRD
+### Approval-Gated Workflow Creation (illustrative, based on verified wiring)
 
 ```go
-package controller
-
-import (
-    "context"
-    "fmt"
-
-    remediationv1 "github.com/jordigilh/kubernaut/api/remediationorchestrator/v1alpha1"
-    processingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    ctrl "sigs.k8s.io/controller-runtime"
-)
-
-func (r *RemediationOrchestratorReconciler) createSignalProcessing(
-    ctx context.Context,
-    remediation *remediationv1.RemediationRequest,
-) error {
-    log := ctrl.LoggerFrom(ctx)
-
-    processing := &processingv1.SignalProcessing{
-        ObjectMeta: metav1.ObjectMeta{
-            Name:      fmt.Sprintf("%s-processing", remediation.Name),
-            Namespace: remediation.Namespace,
-            Labels: map[string]string{
-                "remediationRequest": remediation.Name,
-            },
-            OwnerReferences: []metav1.OwnerReference{
-                *metav1.NewControllerRef(remediation, remediationv1.GroupVersion.WithKind("RemediationRequest")),
-            },
-        },
-        Spec: processingv1.SignalProcessingSpec{
-            AlertData: processingv1.AlertData{
-                SignalName: remediation.Spec.SignalName,
-                Namespace: remediation.Spec.Namespace,
-                Resource:  remediation.Spec.Resource,
-            },
-            IsRecoveryAttempt: remediation.Spec.IsRecoveryAttempt,
-            FailedRemediationRef: remediation.Spec.FailedRemediationRef,
-        },
-    }
-
-    if err := r.Create(ctx, processing); err != nil {
-        log.Error(err, "Failed to create SignalProcessing CRD")
+// AnalyzingHandler reacts to AIAnalysis.Status. Simplified from the real
+// callback wiring in internal/controller/remediationorchestrator/reconciler.go.
+func (h *AnalyzingHandler) onAIAnalysisCompleted(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) error {
+    switch ai.Status.PolicyDecision {
+    case aianalysisv1.PolicyDecisionApproved:
+        _, err := h.createWFE(ctx, rr, ai) // shared with AwaitingApprovalHandler
         return err
+    case aianalysisv1.PolicyDecisionManualReviewRequired:
+        _, err := h.createApproval(ctx, rr, ai) // pkg/remediationorchestrator/creator/approval.go
+        return err // RR.Status.OverallPhase -> AwaitingApproval; WFE created later on Approved
+    default: // Denied, DegradedMode
+        return h.transitionToOutcome(ctx, rr, ai)
     }
-
-    log.Info("Created SignalProcessing CRD", "name", processing.Name)
-
-    // Update RemediationRequest status with reference
-    remediation.Status.SignalProcessingRef = processing.Name
-    remediation.Status.Phase = "Processing"
-    if err := r.Status().Update(ctx, remediation); err != nil {
-        return err
-    }
-
-    return nil
 }
 ```
 
-**Key Pattern**: Owner reference for automatic cascade deletion, status update with child CRD reference
+**Key pattern**: the approval decision is a branch inside RemediationOrchestrator's own phase handler, not a separate call into AIAnalysis or a webhook.
 
 ---
 
-### Watch Configuration
-
-**Example**: RemediationOrchestrator watches child CRD status changes
+### Multi-Engine Executor Dispatch (illustrative, based on verified `Registry`/`Executor`)
 
 ```go
-package controller
-
-import (
-    "context"
-
-    remediationv1 "github.com/jordigilh/kubernaut/api/remediationorchestrator/v1alpha1"
-    processingv1 "github.com/jordigilh/kubernaut/api/signalprocessing/v1alpha1"
-    "k8s.io/apimachinery/pkg/types"
-    ctrl "sigs.k8s.io/controller-runtime"
-    "sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-func (r *RemediationOrchestratorReconciler) Reconcile(
-    ctx context.Context,
-    req ctrl.Request,
-) (ctrl.Result, error) {
-    log := ctrl.LoggerFrom(ctx)
-
-    remediation := &remediationv1.RemediationRequest{}
-    if err := r.Get(ctx, req.NamespacedName, remediation); err != nil {
-        return ctrl.Result{}, client.IgnoreNotFound(err)
+func (r *WorkflowExecutionReconciler) reconcilePending(ctx context.Context, wfe *workflowexecutionv1alpha1.WorkflowExecution) (ctrl.Result, error) {
+    exec, err := r.executorRegistry.Get(wfe.Spec.WorkflowRef.ExecutionEngine) // "tekton" | "job" | "ansible"
+    if err != nil {
+        return ctrl.Result{}, err // unsupported engine -> Failed
     }
-
-    // Watch SignalProcessing status
-    if remediation.Status.SignalProcessingRef != "" {
-        processing := &processingv1.SignalProcessing{}
-        processingKey := types.NamespacedName{
-            Name:      remediation.Status.SignalProcessingRef,
-            Namespace: remediation.Namespace,
-        }
-
-        if err := r.Get(ctx, processingKey, processing); err != nil {
-            if client.IgnoreNotFound(err) != nil {
-                log.Error(err, "Failed to get SignalProcessing")
-                return ctrl.Result{}, err
-            }
-            // SignalProcessing not found (deleted) - handle gracefully
-            return ctrl.Result{}, nil
-        }
-
-        if processing.Status.Phase == "Completed" {
-            // Create AIAnalysis CRD
-            return r.createAIAnalysis(ctx, remediation, processing)
-        }
-
-        // Still processing - requeue
-        return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+    result, err := exec.Create(ctx, wfe, r.executionNamespace, executor.CreateOptions{
+        Dependencies: r.resolveDependencies(ctx, wfe),
+    })
+    if err != nil {
+        return ctrl.Result{}, err
     }
-
-    // No SignalProcessing yet - create it
-    if remediation.Status.Phase == "Pending" {
-        return r.createSignalProcessing(ctx, remediation)
-    }
-
-    return ctrl.Result{}, nil
+    wfe.Status.Phase = "Running"
+    // ... persist result.ResourceName, requeue to poll GetStatus() ...
+    return ctrl.Result{RequeueAfter: pollInterval}, r.Status().Update(ctx, wfe)
 }
 ```
-
-**Key Pattern**: Fetch child CRD by reference, check status, trigger next action
-
----
-
-### Status Update with Retry
-
-**Example**: Update status with optimistic locking conflict resolution
-
-```go
-package controller
-
-import (
-    "context"
-    "time"
-
-    remediationv1 "github.com/jordigilh/kubernaut/api/remediationorchestrator/v1alpha1"
-    "k8s.io/apimachinery/pkg/api/errors"
-    "k8s.io/apimachinery/pkg/types"
-    ctrl "sigs.k8s.io/controller-runtime"
-    "sigs.k8s.io/controller-runtime/pkg/client"
-)
-
-func (r *RemediationOrchestratorReconciler) updateStatusWithRetry(
-    ctx context.Context,
-    namespacedName types.NamespacedName,
-    updateFunc func(*remediationv1.RemediationRequest) error,
-) error {
-    log := ctrl.LoggerFrom(ctx)
-
-    maxRetries := 3
-    for attempt := 0; attempt < maxRetries; attempt++ {
-        // Fetch fresh object
-        remediation := &remediationv1.RemediationRequest{}
-        if err := r.Get(ctx, namespacedName, remediation); err != nil {
-            return err
-        }
-
-        // Apply update function
-        if err := updateFunc(remediation); err != nil {
-            return err
-        }
-
-        // Attempt status update
-        if err := r.Status().Update(ctx, remediation); err != nil {
-            if errors.IsConflict(err) && attempt < maxRetries-1 {
-                log.Info("Conflict updating status, retrying", "attempt", attempt+1)
-                time.Sleep(100 * time.Millisecond * time.Duration(attempt+1))
-                continue
-            }
-            return err
-        }
-
-        // Success
-        return nil
-    }
-
-    return fmt.Errorf("failed to update status after %d retries", maxRetries)
-}
-```
-
-**Key Pattern**: Fetch fresh object, apply update, retry on conflict
 
 ---
 
@@ -1642,214 +1151,108 @@ func (r *RemediationOrchestratorReconciler) updateStatusWithRetry(
 
 ### RBAC Configuration
 
-Each CRD controller requires:
+Each CRD controller requires a ServiceAccount + ClusterRole covering its own CRD and, for RemediationOrchestrator, all 6 owned CRD kinds plus Tekton resources.
 
-1. **ServiceAccount** (e.g., `remediation-orchestrator-sa`)
-2. **ClusterRole** with permissions for:
-   - Own CRD (all verbs)
-   - Child CRDs (`create`, `get`, `list`, `watch`, `patch`, `update`, `delete`)
-   - Status subresource (`update`)
-3. **ClusterRoleBinding** to link ServiceAccount to ClusterRole
-
-**Example**: RemediationOrchestrator RBAC
+**Manager RBAC** — the real, generated `config/rbac/role.yaml` (`ClusterRole/manager-role`) grants the manager process (which hosts the RemediationOrchestrator and other controllers) access to all 6 owned/watched CRD kinds under the single shared `kubernaut.ai` API group, verified directly against the file (abbreviated, K8s/Tekton-native resources omitted):
 
 ```yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: remediation-orchestrator-sa
-  namespace: kubernaut-system
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: remediation-orchestrator-role
+  name: manager-role
 rules:
-# Own CRD
-- apiGroups: ["remediationorchestrator.kubernaut.io"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["aianalyses", "effectivenessassessments", "notificationrequests", "signalprocessings", "workflowexecutions"]
+  verbs: ["create", "delete", "get", "list", "patch", "update", "watch"]
+- apiGroups: ["kubernaut.ai"]
+  resources: ["aianalyses/status", "effectivenessassessments/status", "investigationsessions/status", "notificationrequests/status", "signalprocessings/status", "workflowexecutions/status"]
+  verbs: ["get", "patch", "update"]
+- apiGroups: ["remediation.kubernaut.ai"]
   resources: ["remediationrequests"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: ["remediationorchestrator.kubernaut.io"]
-  resources: ["remediationrequests/status"]
-  verbs: ["get", "update", "patch"]
-
-# Child CRDs
-- apiGroups: ["signalprocessing.kubernaut.io"]
-  resources: ["signalprocessings"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: ["signalprocessing.kubernaut.io"]
-  resources: ["signalprocessings/status"]
-  verbs: ["get", "update", "patch"]
-
-- apiGroups: ["aianalysis.kubernaut.io"]
-  resources: ["aianalyses"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: ["aianalysis.kubernaut.io"]
-  resources: ["aianalyses/status"]
-  verbs: ["get", "update", "patch"]
-
-- apiGroups: ["workflowexecution.kubernaut.io"]
-  resources: ["workflowexecutions"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: ["workflowexecution.kubernaut.io"]
-  resources: ["workflowexecutions/status"]
-  verbs: ["get", "update", "patch"]
-
-- apiGroups: ["notification.kubernaut.io"]
-  resources: ["notificationrequests"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
-- apiGroups: ["notification.kubernaut.io"]
-  resources: ["notificationrequests/status"]
-  verbs: ["get", "update", "patch"]
-
-# Tekton Pipelines (for RemediationExecution controller)
+  verbs: ["get", "list", "watch"]
 - apiGroups: ["tekton.dev"]
-  resources: ["pipelineruns", "taskruns"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: remediation-orchestrator-binding
-subjects:
-- kind: ServiceAccount
-  name: remediation-orchestrator-sa
-  namespace: kubernaut-system
-roleRef:
-  kind: ClusterRole
-  name: remediation-orchestrator-role
-  apiGroup: rbac.authorization.k8s.io
+  resources: ["pipelineruns"]
+  verbs: ["create", "delete", "get", "list", "watch"]
+- apiGroups: ["tekton.dev"]
+  resources: ["taskruns"]
+  verbs: ["get", "list", "watch"]
 ```
 
-**Source**: [README.md](../../README.md)
+**STALE/inconsistent (flagged, not fixed here)**: `config/rbac/role.yaml` itself grants `remediationrequests` under a *different* apiGroup (`remediation.kubernaut.ai`) than every other CRD kind (`kubernaut.ai`), even though the generated CRD manifest `config/crd/bases/kubernaut.ai_remediationrequests.yaml` registers `group: kubernaut.ai` — i.e. `RemediationRequest`'s own RBAC rule appears to reference the wrong (non-existent) API group. This looks like a stale `+kubebuilder:rbac` marker comment in the RemediationOrchestrator controller source, not a real second API group; it likely still works because a broader `get/list/watch` grant is redundant with other rules, but it's a real inconsistency in the generated manifest worth fixing separately. All CRD types are registered under the single `kubernaut.ai` group per every `groupversion_info.go` (verified for `remediation`, `signalprocessing`, `aianalysis`, `workflowexecution`, `notification`, `effectivenessassessment`) and every `config/crd/bases/kubernaut.ai_*.yaml` filename/`spec.group` field.
+
+Per-CRD admin/editor/viewer role templates also exist under `config/rbac/` (e.g. `remediation_remediationrequest_admin_role.yaml`) for cluster-admin delegation use cases — consult `config/rbac/` directly for the authoritative, generated rule set rather than this illustrative excerpt.
 
 ---
 
-### ServiceAccount Patterns (Dynamic Creation for Tekton)
+### Ports (current fleet-wide pattern)
 
-**Pattern**: RemediationExecution controller dynamically creates ServiceAccounts for each Tekton PipelineRun.
+Real pattern: **metrics = 9090 (universal)**, **health = 8081 (near-universal, separate from API)**, **API port varies** (plain HTTP / TLS / absent entirely for pure CRD reconcilers). This corrects v1.3.0's blanket "8080 API/health combined" claim, which does not hold for most services.
 
-**Benefits**:
-- ✅ **99.9% attack surface reduction** vs pre-creating all SAs
-- ✅ **Isolation**: Each PipelineRun has dedicated SA with specific permissions
-- ✅ **Automatic Cleanup**: OwnerReferences delete SA when PipelineRun completes
+| Service | Metrics | Health | API |
+|---|---|---|---|
+| Gateway | 9090 | (bundled with API listener) | 8080 (plain) |
+| SignalProcessing | 9090 | 8081 | — (pure CRD reconciler) |
+| AIAnalysis | 9090 | 8081 | — |
+| WorkflowExecution | 9090 | 8081 | — |
+| RemediationOrchestrator | 9090 | 8081 | — |
+| Notification | 9090 | 8081 | — |
+| EffectivenessMonitor | 9090 | 8081 | — (no API port at all) |
+| DataStorage | 9090 | 8080 (bundled) | 8080 |
+| Kubernaut Agent | 9090 | 8081 | 8080 |
+| apifrontend | ⚠️ UNVERIFIED | ⚠️ UNVERIFIED | ⚠️ UNVERIFIED |
+| authwebhook | ⚠️ UNVERIFIED | ⚠️ UNVERIFIED | 9443 (admission webhook TLS) |
+| fleetmetadatacache | ⚠️ UNVERIFIED | ⚠️ UNVERIFIED | ⚠️ UNVERIFIED |
 
-**Implementation** (RemediationExecution controller):
-
-```go
-func (r *RemediationExecutionReconciler) createServiceAccountForPipeline(
-    ctx context.Context,
-    workflow *workflowv1.RemediationExecution,
-    pipelineRun *tektonv1.PipelineRun,
-) error {
-    sa := &corev1.ServiceAccount{
-        ObjectMeta: metav1.ObjectMeta{
-            Name:      fmt.Sprintf("%s-sa", pipelineRun.Name),
-            Namespace: workflow.Namespace,
-            OwnerReferences: []metav1.OwnerReference{
-                *metav1.NewControllerRef(pipelineRun, tektonv1.SchemeGroupVersion.WithKind("PipelineRun")),
-            },
-        },
-    }
-
-    if err := r.Create(ctx, sa); err != nil {
-        return err
-    }
-
-    // Create Role with specific permissions
-    role := &rbacv1.Role{
-        ObjectMeta: metav1.ObjectMeta{
-            Name:      fmt.Sprintf("%s-role", pipelineRun.Name),
-            Namespace: workflow.Namespace,
-            OwnerReferences: []metav1.OwnerReference{
-                *metav1.NewControllerRef(pipelineRun, tektonv1.SchemeGroupVersion.WithKind("PipelineRun")),
-            },
-        },
-        Rules: []rbacv1.PolicyRule{
-            // Action-specific permissions loaded from action contract
-            {
-                APIGroups: []string{"apps"},
-                Resources: []string{"deployments"},
-                Verbs:     []string{"get", "list", "patch"},
-            },
-        },
-    }
-
-    if err := r.Create(ctx, role); err != nil {
-        return err
-    }
-
-    // Create RoleBinding
-    roleBinding := &rbacv1.RoleBinding{
-        ObjectMeta: metav1.ObjectMeta{
-            Name:      fmt.Sprintf("%s-binding", pipelineRun.Name),
-            Namespace: workflow.Namespace,
-            OwnerReferences: []metav1.OwnerReference{
-                *metav1.NewControllerRef(pipelineRun, tektonv1.SchemeGroupVersion.WithKind("PipelineRun")),
-            },
-        },
-        Subjects: []rbacv1.Subject{
-            {
-                Kind:      "ServiceAccount",
-                Name:      sa.Name,
-                Namespace: workflow.Namespace,
-            },
-        },
-        RoleRef: rbacv1.RoleRef{
-            APIGroup: "rbac.authorization.k8s.io",
-            Kind:     "Role",
-            Name:     role.Name,
-        },
-    }
-
-    return r.Create(ctx, roleBinding)
-}
-```
-
-**Source**: [ADR-025](decisions/ADR-025-kubernetesexecutor-service-elimination.md), [TEKTON_SA_PATTERN_ANALYSIS.md](analysis/TEKTON_SA_PATTERN_ANALYSIS.md)
+**Note**: `docs/architecture/STATELESS_SERVICES_PORT_STANDARD.md` currently documents a "2-port standard with KA as the sole exception" framing. That framing is itself stale/backwards given the table above (most CRD controllers have *no* API port at all, and the 2-vs-3-port split does not track cleanly with "stateless vs. CRD"). That document is being corrected separately and is out of scope here — do not treat its framing as authoritative.
 
 ---
 
-### Performance Considerations
+### Authentication (DD-AUTH-014)
 
-**CRD Watch Latency**:
-- **Target**: <1 second for status update propagation
-- **Typical**: 200-500ms in production
-- **Optimization**: controller-runtime uses efficient informers with local cache
+Middleware-based TokenReview+SAR authentication (interface-driven, **not** an `ose-oauth-proxy` sidecar — that pattern is superseded/dead per [DD-AUTH-011](decisions/DD-AUTH-011/DD-AUTH-011-granular-rbac-sar-verb-mapping.md)/[DD-AUTH-012](decisions/DD-AUTH-012/DD-AUTH-012-ose-oauth-proxy-sar-rest-api-endpoints.md)) is **complete** for:
 
-**Database Query Optimization**:
-- **Data Storage Service**: Connection pooling (10-50 connections)
-- **Context API**: Multi-tier caching (in-memory + Redis + PostgreSQL)
-- **Vector Search**: pgvector indexes for <100ms semantic search
+| Service | DD-AUTH-014 Phase |
+|---|---|
+| DataStorage | Phase 2 (original POC) |
+| Kubernaut Agent | Phase 3 |
+| Gateway | Phase 4 |
+| AIAnalysis controller | Phase 5 |
 
-**Tekton PipelineRun Scalability**:
-- **Parallel Execution**: Max 5 concurrent TaskRuns per PipelineRun (configurable)
-- **Complexity Approval**: Playbooks with >10 total steps require manual approval
+Pure CRD reconcilers with no exposed API port (SignalProcessing, WorkflowExecution, RemediationOrchestrator, Notification, EffectivenessMonitor) rely on standard Kubernetes RBAC only — there is no HTTP surface to authenticate. apifrontend has its own, separate auth stack (`pkg/apifrontend/auth/`) plus JWT/OIDC for external clients. authwebhook uses standard Kubernetes admission-webhook TLS/certificate trust — a different model from both DD-AUTH-014 and apifrontend's stack.
 
-**Source**: [ADR-020](decisions/ADR-020-workflow-parallel-execution-limits.md)
+**Source**: [DD-AUTH-014](decisions/DD-AUTH-014-middleware-based-sar-authentication.md)
 
 ---
 
 ### Monitoring Patterns
 
-**Prometheus Metrics** (all controllers expose on port 9090):
+All controllers/services expose Prometheus metrics on port 9090:
 
 ```yaml
-# CRD Reconciliation Metrics
 controller_runtime_reconcile_total{controller="remediationorchestrator"}
 controller_runtime_reconcile_errors_total{controller="remediationorchestrator"}
 controller_runtime_reconcile_time_seconds{controller="remediationorchestrator"}
 
-# CRD Status Metrics
-kubernaut_remediationrequest_phase_total{phase="Pending|Processing|Analyzing|Executing|Verifying|Completed|Failed"}
-kubernaut_remediationrequest_duration_seconds{phase="Processing|Analyzing|Executing"}
-
-# Remediation Execution Metrics
-kubernaut_workflow_steps_total{workflow_type="multi-step-remediation"}
-kubernaut_workflow_success_rate{workflow_type="multi-step-remediation"}
+kubernaut_remediationrequest_phase_total{phase="Pending|Processing|Analyzing|AwaitingApproval|Executing|Verifying|Blocked|Completed|Failed|TimedOut|Skipped|Cancelled"}
 ```
 
-**Source**: [APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md)
+**Source**: `internal/controller/remediationorchestrator/*_test.go` metrics assertions (e.g. `ReconcileDurationSeconds`, observed with `rr.Namespace` and `string(rr.Status.OverallPhase)` labels in `reconcile_loop.go`)
+
+---
+
+## Deprecated & Removed Components
+
+This section preserves a historical record of services/components this document previously described as current, and what happened to them. Per rule, no BR-*/DD-*/ADR-* IDs below have been renamed or renumbered — only the surrounding prose has been corrected.
+
+| Component | v1.3.0 Description | Current Status |
+|---|---|---|
+| **Context API** | Stateless HTTP API, historical intelligence provider (BR-CTX-001 to BR-CTX-180) | **Fully removed.** No code, no docs directory. DataStorage absorbed its role. See [DD-CONTEXT-006](decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md). |
+| **Dynamic Toolset** | Stateless controller, HolmesGPT toolset configuration discovery loop | **Code deleted.** Deferred to V2.0 ([DD-016](decisions/DD-016-dynamic-toolset-v2-deferral.md)); docs kept only as a historical record at `docs/services/stateless/dynamic-toolset/DEPRECATED_V1_0.md`. |
+| **HolmesGPT-API / HAPI** | Stateless HTTP API (Python), REST wrapper for the HolmesGPT Python SDK | **Fully replaced** by Kubernaut Agent (KA), a native-Go rewrite. See [DD-KA-019](decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md). |
+| **KubernetesExecutor** | *(not described as current in v1.3.0, but its elimination ADR predates v1.3.0 and is re-confirmed here)* | Was fully designed (~10,000 lines of documentation) but **never implemented**; formally eliminated by [ADR-025](decisions/ADR-025-kubernetesexecutor-service-elimination.md) in favor of WorkflowExecution's direct-execution model. `docs/services/crd-controllers/04-kubernetesexecutor/predefined-actions.md` is a stale leftover file still describing the removed service — flagged here as out of scope to fix. |
+| **"Multi-Model Orchestration Service"** | *(not present in v1.3.0 either)* | **Never implemented — zero code ever.** A V2.0-backlog concept only (`docs/requirements/15_ENHANCED_AI_MULTI_MODEL_ORCHESTRATION.md`). If mentioned elsewhere, it must be labeled "V2.0 backlog concept, not implemented," never listed alongside active services. |
+| **AIApprovalRequest** (v1.3.0 name) | CRD created by AIAnalysis for medium-confidence (60-79%) approval gating | Superseded by the current `RemediationApprovalRequest` architecture ([ADR-040](decisions/ADR-040-remediation-approval-request-architecture.md)), created by **RemediationOrchestrator**, gated by a Rego `PolicyDecision` rather than a fixed confidence band. |
+| **"Effectiveness Monitor Level 1/Level 2" split** (v1.3.0 framing, [DD-017](decisions/DD-017-effectiveness-monitor-v1.1-deferral.md)) | Level 1 = automated, Level 2 = HolmesGPT-powered, deferred to V1.1 | The current architecture has **no AI/LLM path at all** for EffectivenessMonitor — all 4 scorers (health/alert/metrics/hash) are deterministic, and score computation is DataStorage's responsibility, not EffectivenessMonitor's. Whether this fully supersedes DD-017's Level 2 plan or DD-017 remains a distinct, still-deferred V1.1 concept was not resolved in this pass — flagged for follow-up. |
 
 ---
 
@@ -1857,18 +1260,23 @@ kubernaut_workflow_success_rate{workflow_type="multi-step-remediation"}
 
 ### Core Architecture
 
-- [APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md) - Complete service catalog
-- [TEKTON_EXECUTION_ARCHITECTURE.md](TEKTON_EXECUTION_ARCHITECTURE.md) - Execution engine details
-- [SERVICE_DEPENDENCY_MAP.md](SERVICE_DEPENDENCY_MAP.md) - Service connectivity matrix
+- [APPROVED_MICROSERVICES_ARCHITECTURE.md](APPROVED_MICROSERVICES_ARCHITECTURE.md) — service catalog (not re-verified in this pass; may itself need a similar rewrite)
+- [TEKTON_EXECUTION_ARCHITECTURE.md](TEKTON_EXECUTION_ARCHITECTURE.md) — Tekton engine details (describes 1 of the current 3 execution engines; not re-verified in this pass)
+- [SERVICE_DEPENDENCY_MAP.md](SERVICE_DEPENDENCY_MAP.md) — service connectivity matrix (not re-verified in this pass)
 
-### Architectural Decisions
+### Architectural Decisions Referenced in This Document
 
 - [ADR-001: CRD Microservices Architecture](decisions/ADR-001-crd-microservices-architecture.md)
-- [ADR-017: Notification CRD Creator](decisions/ADR-017-notification-crd-creator.md)
-- [ADR-018: Approval Notification V1 Integration](decisions/ADR-018-approval-notification-v1-integration.md)
-- [ADR-023: Tekton from V1](decisions/ADR-023-tekton-from-v1.md)
-- [ADR-024: Eliminate ActionExecution Layer](decisions/ADR-024-eliminate-actionexecution-layer.md)
 - [ADR-025: KubernetesExecutor Service Elimination](decisions/ADR-025-kubernetesexecutor-service-elimination.md)
+- [ADR-034: Unified Audit Table Design](decisions/ADR-034-unified-audit-table-design.md)
+- [ADR-040: RemediationApprovalRequest Architecture](decisions/ADR-040-remediation-approval-request-architecture.md)
+- [DD-RO-002: Centralized Routing Responsibility](decisions/DD-RO-002-centralized-routing-responsibility.md)
+- [DD-KA-019: Go Rewrite Design](decisions/DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md)
+- [DD-AUTH-014: Middleware-Based SAR Authentication](decisions/DD-AUTH-014-middleware-based-sar-authentication.md)
+- [DD-CONTEXT-006: Context API Deprecation](decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md)
+- [DD-016: Dynamic Toolset V2.0 Deferral](decisions/DD-016-dynamic-toolset-v2-deferral.md)
+- [DD-017: Effectiveness Monitor V1.1 Deferral](decisions/DD-017-effectiveness-monitor-v1.1-deferral.md)
+- [DD-WE-007: Ansible Playbook RBAC Rules](decisions/DD-WE-007-ansible-playbook-rbac-rules.md)
 
 ### Service Specifications
 
@@ -1878,80 +1286,48 @@ kubernaut_workflow_success_rate{workflow_type="multi-step-remediation"}
   - [03-workflowexecution/overview.md](../services/crd-controllers/03-workflowexecution/overview.md)
   - [05-remediationorchestrator/overview.md](../services/crd-controllers/05-remediationorchestrator/overview.md)
   - [06-notification/overview.md](../services/crd-controllers/06-notification/overview.md)
-
+  - [07-effectivenessmonitor/overview.md](../services/crd-controllers/07-effectivenessmonitor/overview.md) — moved here from `stateless/effectiveness-monitor/`; always link this path
 - [Stateless Services](../services/stateless/)
   - [gateway-service/overview.md](../services/stateless/gateway-service/overview.md)
-  - [context-api/overview.md](../services/stateless/context-api/overview.md)
+  - [data-storage/overview.md](../services/stateless/data-storage/overview.md)
   - [kubernaut-agent/overview.md](../services/stateless/kubernaut-agent/overview.md)
+- [apifrontend/](../services/apifrontend/) — extensive dedicated documentation tree (design, ADRs, security, test plans, runbooks)
 
 ---
 
 ## Changelog
 
-### Version 1.3.0 (2026-02)
+### Version 2.0.0 (2026-08, Issue #1806)
 
-**DD-017 v2.0 Integration**: Effectiveness Monitor Level 1 reinstated to V1.0.
+**Full architectural-accuracy rewrite** — not a mechanical terminology pass. Every section re-verified against Go source (`api/*/v1alpha1`, `internal/controller/*`, `pkg/*`, `cmd/*/main.go`) as of August 2026.
 
-**Changes**:
-- Effectiveness Monitor Level 1 (automated assessment) in V1.0
-- Effectiveness Monitor Level 2 (AI-powered analysis) remains V1.1 (requires 8+ weeks Level 1 data)
-- Updated service count: 8→10 V1.0 services (5 CRD + 5 stateless)
-- BR-INS-001, BR-INS-002, BR-INS-005: V1.0 (Level 1); BR-INS-003, BR-INS-004, BR-INS-006 to BR-INS-010: V1.1 (Level 2)
-- Split EM responsibilities: Level 1 vs Level 2 in service descriptions
+**Major corrections**:
+- **Dead services removed from the active catalog**: Context API (fully removed, DD-CONTEXT-006), Dynamic Toolset (code deleted, V2.0-deferred, DD-016), HolmesGPT-API/HAPI (fully replaced by Kubernaut Agent, DD-KA-019), KubernetesExecutor (never implemented, eliminated by ADR-025)
+- **New services documented**: apifrontend, authwebhook, fleetmetadatacache — none of these existed in v1.3.0's service count
+- **New CRDs documented**: `RemediationApprovalRequest` (ADR-040, supersedes the v1.3.0 `AIApprovalRequest` design) and `EffectivenessAssessment` (neither existed in v1.3.0)
+- **WorkflowExecution engine correction**: replaced the v1.3.0 Tekton-only execution model with the verified 3-engine Strategy-pattern dispatch (Tekton `PipelineRun`, native `batchv1.Job` per BR-WE-014, Ansible/AWX per DD-WE-007)
+- **CRD ownership chain corrected**: RemediationOrchestrator's verified `Owns()` list is `SignalProcessing`, `AIAnalysis`, `WorkflowExecution`, `RemediationApprovalRequest`, `NotificationRequest`, `EffectivenessAssessment` — 6 kinds, not the 4 described in v1.3.0. Also corrected: `RemediationApprovalRequest` is created by RemediationOrchestrator, not by AIAnalysis
+- **EffectivenessMonitor corrected**: zero AI/LLM dependency (v1.3.0 described a partially-AI-powered "Level 2" path); DataStorage — not EffectivenessMonitor — computes the final weighted score; BR prefix corrected from `BR-INS-*` to `BR-EM-*`; docs path corrected from `docs/services/stateless/effectiveness-monitor/` to `docs/services/crd-controllers/07-effectivenessmonitor/`
+- **Kubernaut Agent (KA)**: all "HolmesGPT"/"HAPI" mentions replaced; KA is native Go, not a Python/HolmesGPT-SDK wrapper; API pattern is async submit/poll/result, never a synchronous "analyze" call
+- **RemediationRequest phase set corrected**: added `AwaitingApproval`, `Blocked`, `TimedOut`, `Skipped`, `Cancelled` (v1.3.0 listed only 7 of the 12 real phase values)
+- **Port claims corrected**: replaced the blanket "8080 API/health combined" pattern with the verified per-service reality (metrics=9090 universal, health=8081 near-universal and separate from API, API port varies or is absent entirely for pure CRD reconcilers)
+- **Gateway classification correction**: Gateway no longer performs environment/priority classification itself (delegated to SignalProcessing, DD-CATEGORIZATION-001) — v1.3.0 described Gateway doing a "quick lookup" classification that has since been removed from Gateway entirely
+- **API Group correction**: all Kubernaut CRDs share a single API group, `kubernaut.ai/v1alpha1` — verified against every `api/*/v1alpha1/groupversion_info.go` and every `config/crd/bases/kubernaut.ai_*.yaml` manifest. v1.3.0 used a distinct per-CRD group naming (e.g. `signalprocessing.kubernaut.io/v1alpha1`, `remediationorchestrator.kubernaut.io/v1alpha1`) that does not match reality; a real, separate inconsistency was also found and flagged (not fixed) in the generated `config/rbac/role.yaml`, where the `RemediationRequest` RBAC rule alone cites `remediation.kubernaut.ai` instead of `kubernaut.ai`
 
-**Impact**: DD-017 v2.0 partial reinstatement; architecture consistency across documentation.
+**Sections left as historical record (not corrected further, rationale given)**:
+- `docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md`, `TEKTON_EXECUTION_ARCHITECTURE.md`, `SERVICE_DEPENDENCY_MAP.md` — linked but not independently re-verified in this pass; likely need their own accuracy review
+- `docs/services/crd-controllers/06-notification/overview.md` and `docs/services/crd-controllers/04-kubernetesexecutor/predefined-actions.md` — flagged as containing stale headers/content, but out of scope for this document's rewrite (they are separate files)
+- `docs/architecture/STATELESS_SERVICES_PORT_STANDARD.md` — flagged as stale/backwards (its "2-port standard, KA is the exception" framing does not hold), out of scope to fix here
+- authwebhook and fleetmetadatacache have no dedicated `docs/services/` documentation directory at all — a real gap, flagged but not filled here
+- The exact relationship between the current zero-AI EffectivenessMonitor and DD-017's historical "Level 2" AI-powered deferral plan was not fully resolved — flagged for follow-up
 
-### Version 1.2.0 (2025-12-01)
+### Version 1.3.0 (2026-02) and earlier
 
-**DD-016 & DD-017 Integration**: Updated V1.0 service count from 11 to 8.
-
-**Changes**:
-- Dynamic Toolset deferred to V2.0 (DD-016)
-- Effectiveness Monitor deferred to V1.1 (DD-017)
-- Updated service count: 11→8 V1.0 services (4 CRD + 4 HTTP)
-- Added deferral notices to service descriptions
-- Updated "11 Services + Tekton"→"8 V1.0 Services + Tekton"
-- Corrected service catalog references throughout document
-
-**Impact**: Service count and catalog consistency across all architecture documentation.
-
-### Version 1.1.0 (2025-11-15)
-
-**Service Naming Corrections**: Corrected service naming throughout document per ADR-035.
-
-**Changes**:
-- Replaced "RemediationProcessing" → "SignalProcessing" (CRD controller #2)
-- Replaced "WorkflowExecution" → "RemediationExecution" (CRD controller #4)
-- Updated all CRD specifications, code examples, and diagrams
-- Aligned terminology with authoritative ADR-035
-- Created NAMING_CONVENTION_REMEDIATION_EXECUTION.md reference document
-
-**Impact**: Documentation consistency, no code changes required.
-### Version 1.0.0 (2025-10-20)
-
-**Initial Release**: Authoritative CRD architecture document based on service specifications, implementation plans, and ADRs.
-
-**Key Content**:
-- 11 services (5 CRD controllers + 6 stateless services) → **Updated to 8 V1.0 services in v1.2.0 (DD-016, DD-017)**
-- 4 CRD specifications with detailed schemas
-- Central orchestration pattern (RemediationOrchestrator)
-- Tekton Pipelines integration
-- Watch-based coordination patterns
-- Code examples and operational guide
-
-**Sources**:
-- Service specifications: `docs/services/crd-controllers/*/overview.md`
-- Implementation plans: `docs/services/crd-controllers/*/implementation/IMPLEMENTATION_PLAN_*.md`
-- Architecture documents: `docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md`, `docs/architecture/TEKTON_EXECUTION_ARCHITECTURE.md`
-- Architectural decisions: `docs/architecture/decisions/ADR-*.md`
+See prior revisions of this document (git history) for the pre-rewrite changelog, covering the DD-017 v2.0 Effectiveness Monitor Level 1 reinstatement, the DD-016/DD-017 V1.0 service-count reduction (11→8), and the ADR-035 service-naming corrections (RemediationProcessing→SignalProcessing, WorkflowExecution→RemediationExecution — note that the *current* architecture uses `WorkflowExecution` as the CRD name again, per `api/workflowexecution/v1alpha1/`; the v1.1.0 rename to "RemediationExecution" was itself superseded).
 
 ---
 
 **Document Status**: ✅ Authoritative Reference
 **Maintainer**: Kubernaut Architecture Team
-**Last Updated**: February 2026
-**Version**: 1.3.0
-
-
-
-
+**Last Updated**: August 2026
+**Version**: 2.0.0
