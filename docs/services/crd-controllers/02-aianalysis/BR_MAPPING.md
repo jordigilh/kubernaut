@@ -50,12 +50,19 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 **Authoritative Source Documents**:
 - `docs/requirements/02_AI_MACHINE_LEARNING.md` v1.1 - Primary AI/ML requirements (BR-AI-*)
-- `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md` v1.1 - Kubernaut Agent (KA) requirements (BR-HAPI-*)
 - `docs/requirements/06_INTEGRATION_LAYER.md` - Integration requirements (BR-SP-*)
+
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**:
+> `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md` no longer exists in the current codebase (no file
+> under that name, and no `13_*` requirements doc covers Kubernaut Agent requirements — `13_` is now
+> `13_INFRASTRUCTURE_PLATFORM.md`, an unrelated topic). The `BR-HAPI-*` IDs below are not currently traceable
+> to a single authoritative source file; `BR-HAPI-RECOVERY-001` is referenced (not defined) from
+> `docs/requirements/02_AI_MACHINE_LEARNING.md`. Left as-is per this sweep's BR/DD-ID rename restriction —
+> needs a requirements-doc audit, not a terminology fix.
 
 **Reference Documents** (do NOT define BRs):
 - `docs/architecture/decisions/DD-CONTRACT-002-service-integration-contracts.md` - Integration contracts
-- `docs/architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md` - Recovery flow
+- `DD-RECOVERY-002` - Recovery flow design (archived/deleted, Issue #180 recovery-flow deprecation; no longer on disk)
 - `docs/architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md` - Workflow catalog
 
 ---
@@ -222,7 +229,9 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 ### Kubernaut Agent (KA) → AIAnalysis
 
-**Source**: `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md` v1.1
+**Source**: `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md` v1.1 — ⚠️ **STALE**: this file no longer
+exists; see the source-document note above (`BR-HAPI-*` IDs below not currently traceable to a single
+authoritative file, left unrenamed per this sweep's scope).
 
 | BR ID | Source | Relationship | Notes |
 |-------|--------|--------------|-------|

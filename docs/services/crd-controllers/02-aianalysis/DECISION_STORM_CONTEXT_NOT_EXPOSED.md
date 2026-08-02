@@ -290,9 +290,7 @@ Kubernaut Agent (KA) achieved 60% token reduction (~730 → ~180 tokens):
 
 ## 📚 References
 
-> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: `pkg/aianalysis/client/holmesgpt.go` does not exist in the current codebase.
-
-- **Kubernaut Agent (KA) API Contract**: `pkg/aianalysis/client/holmesgpt.go`
+- **Kubernaut Agent (KA) API Contract**: `pkg/aianalysis/handlers/interfaces.go` (`AgentClientInterface`), `pkg/agentclient/` (ogen-generated client)
 - **AIAnalysis Integration**: `docs/services/crd-controllers/02-aianalysis/integration-points.md`
 - **Gateway Storm Detection**: `docs/services/stateless/gateway-service/overview.md`
 - **DD-KA-002**: Custom labels not exposed to LLM

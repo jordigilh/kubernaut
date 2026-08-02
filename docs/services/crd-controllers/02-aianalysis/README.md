@@ -1,6 +1,6 @@
 # AI Analysis Service
 
-**Version**: v2.6
+**Version**: v2.7
 **Status**: ✅ Design Complete (V1.0 scope) - Ready for Implementation
 **Health/Ready Port**: 8081 (`/healthz`, `/readyz` - no auth required)
 **Metrics Port**: 9090 (`/metrics` - with auth filter)
@@ -10,9 +10,7 @@
 **Controller**: AIAnalysisReconciler
 **Priority**: **P0 - HIGH**
 **Effort**: 2 weeks
-**Go Client**: `pkg/clients/holmesgpt/` (generated with `ogen` from OpenAPI 3.1.0)
-
-> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: The `pkg/clients/holmesgpt/` generated client path no longer exists in the codebase; the current AIAnalysis Kubernaut Agent (KA) client is `AgentClient` in `pkg/aianalysis/`.
+**Go Client**: `pkg/agentclient` (ogen-generated from `internal/kubernautagent/api/openapi.json`), used through `AgentClientInterface` (`pkg/aianalysis/handlers/interfaces.go`) — async submit/poll/result session methods (`SubmitInvestigation`/`PollSession`/`GetSessionResult`/`CancelSession`), not a single synchronous call.
 
 ---
 
@@ -20,13 +18,14 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
-| **v2.6** | 2025-12-03 | **PodSecurityLevel Removed**: Removed `podSecurityLevel` from DetectedLabels (9→8 fields) per DD-WORKFLOW-001 v2.2; PSP deprecated in K8s 1.21, PSS is namespace-level | [DD-WORKFLOW-001 v2.2](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [NOTICE](../../handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md) |
+| **v2.7** | 2026-08-02 | **#1806 CORRECTION**: Fixed the `pkg/clients/holmesgpt/` STALE banner and **Go Client** line (real client is `pkg/agentclient` via `AgentClientInterface` in `pkg/aianalysis/handlers/interfaces.go`, not a concrete `AgentClient` type in `pkg/aianalysis/`); corrected `AIApprovalRequest`→`RemediationApprovalRequest` (already implemented, not deferred to V1.1); corrected the SignalProcessing/Labels Architecture rows (DetectedLabels/OwnerChain are KA-computed outputs per ADR-055/ADR-056, not SignalProcessing-provided inputs); corrected Performance Targets (KA investigation is an async session with a 25-minute wall-clock cap, not a <30s/<60s synchronous call); corrected Common Pitfalls list; bumped Documentation Index versions for overview.md/controller-implementation.md/metrics-slos.md (v3.0) and reconciliation-phases.md (v2.3) | #1806 |
+| v2.6 | 2025-12-03 | **PodSecurityLevel Removed**: Removed `podSecurityLevel` from DetectedLabels (9→8 fields) per DD-WORKFLOW-001 v2.2; PSP deprecated in K8s 1.21, PSS is namespace-level | [DD-WORKFLOW-001 v2.2](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), `NOTICE_PODSECURITYLEVEL_REMOVED.md` (docs/handoff/, deleted in the repo-wide non-authoritative docs purge) |
 | v2.5 | 2025-12-02 | **FailedDetections**: Added `failedDetections` field to DetectedLabels per DD-WORKFLOW-001 v2.1; Updated crd-schema, integration-points, implementation-checklist, REGO_POLICY_EXAMPLES | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
-| v2.4 | 2025-12-02 | **SPEC ALIGNMENT**: Aligned with handoff Q&A; Fixed Kubernaut Agent (KA) port (8080), endpoints, schemas; Removed deprecated fields (RiskTolerance, BusinessCategory, EnrichmentQuality); Added TargetInOwnerChain/Warnings; Go client generated | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
+| v2.4 | 2025-12-02 | **SPEC ALIGNMENT**: Aligned with handoff Q&A; Fixed Kubernaut Agent (KA) port (8080), endpoints, schemas; Removed deprecated fields (RiskTolerance, BusinessCategory, EnrichmentQuality); Added TargetInOwnerChain/Warnings; Go client generated | `AIANALYSIS_TO_HOLMESGPT_API_TEAM.md` (docs/handoff/, deleted in the repo-wide non-authoritative docs purge) |
 | v2.3 | 2025-11-30 | **V1.0 COMPLETE**: All spec files updated (finalizers, metrics, database, checklist); Legacy implementation plans archived | This session |
 | v2.2 | 2025-11-30 | **FIXED**: Port allocation (8081 health, 8084 host per DD-TEST-001); BR count 31→31; Added TESTING_GUIDELINES reference | [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) |
-| v2.0 | 2025-11-30 | **REGENERATED**: Complete spec from Go types; V1.0 scope clarifications; DetectedLabels, CustomLabels, OwnerChain; Recovery flow with PreviousExecutions slice | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) |
-| v1.1 | 2025-10-20 | Added V1.0 approval notification integration | [ADR-018](../../../architecture/decisions/ADR-018-approval-notification-integration.md) |
+| v2.0 | 2025-11-30 | **REGENERATED**: Complete spec from Go types; V1.0 scope clarifications; DetectedLabels, CustomLabels, OwnerChain; Recovery flow with PreviousExecutions slice | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), `DD-RECOVERY-002` (archived/deleted, Issue #180 recovery-flow deprecation) |
+| v1.1 | 2025-10-20 | Added V1.0 approval notification integration | [ADR-018](../../../architecture/decisions/ADR-018-approval-notification-v1-integration.md) |
 | v1.0 | 2025-10-15 | Initial design specification | - |
 
 ---
@@ -35,20 +34,20 @@
 
 | Document | Purpose | Status |
 |----------|---------|--------|
-| **[Overview](./overview.md)** | Service purpose, scope, architecture, key decisions | ✅ Complete (v2.0) |
+| **[Overview](./overview.md)** | Service purpose, scope, architecture, key decisions | ✅ Complete (v3.0) |
 | **[CRD Schema](./crd-schema.md)** | AIAnalysis CRD types, validation, examples | ✅ **Updated (v2.4)** |
-| **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, owner references | ✅ Complete (v2.0) |
-| **[Reconciliation Phases](./reconciliation-phases.md)** | Phase transitions, timeouts, coordination patterns | ✅ Complete (v2.0) |
+| **[Controller Implementation](./controller-implementation.md)** | Reconciler logic, phase handling, owner references | ✅ Complete (v3.0) |
+| **[Reconciliation Phases](./reconciliation-phases.md)** | Phase transitions, timeouts, coordination patterns | ✅ Complete (v2.3) |
 | **[AI Kubernaut Agent & Approval](./ka-approval.md)** | KA integration, Rego policies, approval workflow | ✅ Complete (v3.0) |
 | **[Finalizers & Lifecycle](./finalizers-lifecycle.md)** | Cleanup patterns, CRD lifecycle management | ✅ Complete (v2.0) |
 | **[Testing Strategy](./testing-strategy.md)** | Unit/Integration/E2E tests, mock patterns | ✅ Complete (v2.0) |
 | **[Security Configuration](./security-configuration.md)** | RBAC, network policies, secret handling | ✅ Ports Fixed |
 | **[Observability & Logging](./observability-logging.md)** | Structured logging, distributed tracing | ✅ Ports Fixed |
-| **[Metrics & SLOs](./metrics-slos.md)** | Prometheus metrics, Grafana dashboards | ✅ Complete (v2.0) |
+| **[Metrics & SLOs](./metrics-slos.md)** | Prometheus metrics, Grafana dashboards | ✅ Complete (v3.0) |
 | **[Database Integration](./database-integration.md)** | Audit storage via Data Storage Service | ✅ Complete (v2.0) |
 | **[Integration Points](./integration-points.md)** | Upstream/downstream services, Kubernaut Agent (KA) contract | ✅ **Updated (v2.2)** |
 | **[Migration & Current State](./migration-current-state.md)** | Existing code, migration path | ✅ Ports Fixed |
-| **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks | ✅ **Updated (v2.2)** |
+| `implementation-checklist.md` | APDC-TDD phases, tasks | ❌ Removed (ephemeral v1.0-release doc, commit `9d0774827`) |
 | **[BR Mapping](./BR_MAPPING.md)** | Business requirements mapping | ✅ Authoritative (v1.3) |
 | **[Rego Policy Examples](./REGO_POLICY_EXAMPLES.md)** | Approval policy input schema (v1.4) | ✅ **Updated** |
 
@@ -72,7 +71,6 @@
 ├── 💾 database-integration.md               - Audit storage & schema
 ├── 🔗 integration-points.md                 - Service coordination
 ├── 🔀 migration-current-state.md            - Existing code & migration
-├── ✅ implementation-checklist.md           - APDC-TDD phases & tasks
 ├── 📋 BR_MAPPING.md                         - Business requirements ✅
 └── 🤖 REGO_POLICY_EXAMPLES.md               - Rego approval policies (SERVICE-SPECIFIC) ✅
 ```
@@ -121,7 +119,6 @@
 
 | Feature | Deferred Reason | Target Version |
 |---------|-----------------|----------------|
-| **AIApprovalRequest CRD** | Approval orchestration via CRD | V1.1 |
 | **Multi-provider LLM** | OpenAI, Anthropic, etc. | V2.0 |
 | **LLM Fallback Chains** | Model-specific routing | V2.0 |
 | **AI Conditions Engine** | Advanced condition evaluation | V2.0 |
@@ -132,8 +129,8 @@
 
 | Service | Relationship | Purpose |
 |---------|--------------|---------|
-| **Remediation Orchestrator** | Parent | Creates AIAnalysis CRD, watches for completion |
-| **SignalProcessing** | Upstream | Provides EnrichmentResults, DetectedLabels, CustomLabels, OwnerChain |
+| **Remediation Orchestrator** | Parent | Creates AIAnalysis CRD, watches for completion, creates `RemediationApprovalRequest` when approval is required |
+| **SignalProcessing** | Upstream | Provides EnrichmentResults (incl. CustomLabels); DetectedLabels/OwnerChain are no longer SignalProcessing-provided inputs — KA computes them post-RCA (ADR-055/ADR-056) |
 | **WorkflowExecution** | Downstream | Receives workflow definition from RO |
 | **Kubernaut Agent (KA)** | External | Provides AI investigation, workflow selection |
 | **Data Storage** | External | Workflow catalog, historical success rates |
@@ -169,8 +166,8 @@
 | **Approval Mechanism** | Rego policies + signaling | Flexible policies, RO orchestrates | DD-AIANALYSIS-001 |
 | **State Management** | CRD-based with watch | Watch-based coordination | [Controller Impl](./controller-implementation.md) |
 | **Recovery Pattern** | [Deprecated - Issue #180] | RO creates new AIAnalysis for recovery | DD-RECOVERY-002 |
-| **Labels Architecture** | DetectedLabels + CustomLabels + OwnerChain | Dual-use: LLM context + workflow filtering | DD-WORKFLOW-001 v1.8 |
-| **V1.0 Approval Flow** | `approvalRequired=true` → RO notifies | No AIApprovalRequest CRD in V1.0 | ADR-040 |
+| **Labels Architecture** | CustomLabels (input) + DetectedLabels/OwnerChain (KA-computed outputs, ADR-055/ADR-056) | Dual-use: LLM context + workflow filtering | DD-WORKFLOW-001 v1.8 |
+| **V1.0 Approval Flow** | `approvalRequired=true` → RO notifies | RO creates `RemediationApprovalRequest` CRD for the explicit approval workflow | ADR-040 |
 
 ---
 
@@ -178,9 +175,8 @@
 
 | Metric | Target | Business Impact |
 |--------|--------|----------------|
-| **Kubernaut Agent (KA) Analysis** | <30s | AI investigation time |
+| **Kubernaut Agent (KA) Investigation** | ≤25 minutes wall-clock cap (async session; typical investigations complete far sooner) | AI investigation time — see [Reconciliation Phases](./reconciliation-phases.md) for the submit/poll/result flow |
 | **Rego Policy Evaluation** | <2s | Approval decision time |
-| **Total Processing** | <60s (auto-approve) | Rapid workflow generation |
 | **Confidence Threshold** | >80% for auto-approve | High-quality recommendations |
 
 ---
@@ -194,8 +190,7 @@
 
 **For Implementers**:
 1. **Check BRs**: Start with [BR_MAPPING.md](./BR_MAPPING.md)
-2. **Follow Checklist**: Use [Implementation Checklist](./implementation-checklist.md)
-3. **Review Patterns**: Reference [Controller Implementation](./controller-implementation.md)
+2. **Review Patterns**: Reference [Controller Implementation](./controller-implementation.md)
 
 ---
 
@@ -210,8 +205,7 @@
 
 **Do**:
 - ✅ Use `approvalRequired=true` signaling (V1.0)
-- ✅ Include DetectedLabels + CustomLabels + OwnerChain in KA request
-- ✅ Track ALL previous executions in recovery (slice, not single)
+- ✅ Include CustomLabels + BusinessClassification in the KA request (`RequestBuilder.BuildIncidentRequest`) — DetectedLabels/OwnerChain are KA-computed outputs, not request inputs
 - ✅ Use Kubernetes reason codes for failure (not natural language)
 - ✅ Emit Kubernetes events for visibility
 
@@ -224,7 +218,7 @@
 - **Port Allocation**: [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) (AUTHORITATIVE for ports)
 - **Testing Guidelines**: [TESTING_GUIDELINES.md](../../../development/business-requirements/TESTING_GUIDELINES.md) (BR vs Unit test decisions)
 - **Testing Strategy Rule**: [.cursor/rules/03-testing-strategy.mdc](../../../../.cursor/rules/03-testing-strategy.mdc)
-- **AI/ML Guidelines**: [.cursor/rules/04-ai-ml-guidelines.mdc](../../../../.cursor/rules/04-ai-ml-guidelines.mdc)
+- **AI/ML Guidelines**: [.cursor/rules/04-ai-ml.mdc](../../../../.cursor/rules/04-ai-ml.mdc)
 - **Documentation Structure**: [DD-006](../../../architecture/decisions/DD-006-controller-scaffolding-strategy.md) (COMMON PATTERN vs SERVICE-SPECIFIC)
 
 ---
@@ -256,10 +250,10 @@
 ---
 
 **Document Maintenance**:
-- **Last Updated**: 2025-11-30
+- **Last Updated**: 2026-08-02
 - **Maintained By**: AIAnalysis Service Team
 - **Source of Truth**: `api/aianalysis/v1alpha1/aianalysis_types.go`
 
 ---
 
-**Ready to implement?** Start with [Implementation Checklist](./implementation-checklist.md) 🚀
+**Ready to implement?** Start with [BR Mapping](./BR_MAPPING.md) and [Controller Implementation](./controller-implementation.md) 🚀
