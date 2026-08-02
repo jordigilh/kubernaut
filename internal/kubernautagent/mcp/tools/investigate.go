@@ -445,9 +445,10 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 						t.logger.Error(forceErr, "start: force-transition to user-driving failed (session terminal)",
 							"rr_id", input.RRID, "auto_session_id", autoSessionID)
 					}
-					// #1440 SC-24: Terminal session — create fresh interactive session
-					// so the user always has an investigation to drive.
-					freshID := t.createFallbackSession(ctx, input.RRID, user)
+					// #1440 SC-24 / #1818: Terminal session — reattach to the real
+					// RCA (or a genuine placeholder) so the user always has an
+					// investigation to drive.
+					freshID := t.reattachOrCreateFallback(ctx, input.RRID, user)
 					if freshID != "" {
 						investigationSessionID = freshID
 					} else {
@@ -462,9 +463,11 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 				investigationSessionID = autoSessionID
 			}
 		} else {
-			// #1440 SC-24: No session exists for this RR — create fresh interactive
-			// session so the user is never left with a lease but no investigation.
-			freshID := t.createFallbackSession(ctx, input.RRID, user)
+			// #1440 SC-24: No session exists for this RR — reattach to an
+			// existing user_driving session or a completed session's real RCA
+			// (#1818), or create a genuine placeholder, so the user is never
+			// left with a lease but no investigation.
+			freshID := t.reattachOrCreateFallback(ctx, input.RRID, user)
 			if freshID != "" {
 				investigationSessionID = freshID
 			} else if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
@@ -1143,7 +1146,32 @@ func (t *InvestigateTool) handleStartAutonomous(ctx context.Context, input Inves
 // autonomous session exists (no session found, or terminal session). This
 // ensures the user always has an investigation to drive after acquiring the
 // MCP lease (SC-24, #1440).
-func (t *InvestigateTool) createFallbackSession(ctx context.Context, rrID string, user mcpinternal.UserInfo) string {
+//
+// seedResult carries the real RCA from a completed autonomous investigation
+// for this rrID, when one exists (#1818: GetLatestRCAResultByRemediationID,
+// wired by reattachOrCreateFallback). When non-nil, the fresh session is
+// seeded with that real content — tagged mode=interactive_reattached —
+// instead of the hardcoded "awaiting user direction" placeholder
+// (mode=interactive_fallback). Without this, a real RCA the autonomous
+// investigation already produced would be orphaned behind a placeholder the
+// instant an interactive request raced in after autonomous completion,
+// fragmenting the audit trail for this remediation request (BR-AUDIT-005,
+// SOC2 CC8.1). InteractiveHold is always forced true so the seeded session
+// behaves like a fresh interactive session (stays in UserDriving) rather
+// than immediately re-completing with the copied result.
+func (t *InvestigateTool) createFallbackSession(ctx context.Context, rrID string, user mcpinternal.UserInfo, seedResult *katypes.InvestigationResult) string {
+	mode := "interactive_fallback"
+	result := &katypes.InvestigationResult{
+		RCASummary:      "Interactive session — awaiting user direction",
+		InteractiveHold: true,
+	}
+	if seedResult != nil {
+		mode = "interactive_reattached"
+		reattached := *seedResult
+		reattached.InteractiveHold = true
+		result = &reattached
+	}
+
 	// #1640: key must be "remediation_id" to match every other by-RR-ID
 	// lookup (FindByRemediationID, FindUserDrivingByRemediationID,
 	// GetLatestRCASummaryByRemediationID, etc.) and the correlation_id
@@ -1154,21 +1182,44 @@ func (t *InvestigateTool) createFallbackSession(ctx context.Context, rrID string
 	metadata := map[string]string{
 		"remediation_id": rrID,
 		"username":       user.Username,
-		"mode":           "interactive_fallback",
+		"mode":           mode,
 	}
 	investigateFn := session.InvestigateFunc(func(_ context.Context) (*katypes.InvestigationResult, error) {
-		return &katypes.InvestigationResult{
-			RCASummary:      "Interactive session — awaiting user direction",
-			InteractiveHold: true,
-		}, nil
+		return result, nil
 	})
 	sessionID, err := t.autoMgr.StartInvestigation(ctx, investigateFn, metadata)
 	if err != nil {
 		t.logger.Error(err, "start: fallback session creation failed",
-			"rr_id", rrID, "username", user.Username)
+			"rr_id", rrID, "username", user.Username, "mode", mode)
 		return ""
 	}
 	return sessionID
+}
+
+// reattachOrCreateFallback resolves the investigation session the user
+// should be attached to when no viable Running autonomous session exists
+// for rrID, in order of preference (#1818):
+//  1. An already-user_driving session for this rrID — e.g. left over from a
+//     prior action=start/takeover whose MCP lease was since released — is
+//     reused directly rather than creating a duplicate placeholder.
+//  2. A fresh interactive session seeded with the real RCA from the most
+//     recently completed autonomous investigation for this rrID. Previously
+//     createFallbackSession always seeded a hardcoded placeholder here,
+//     orphaning any real RCA the autonomous investigation had already
+//     produced before the interactive request raced past it.
+//  3. A genuine placeholder session when neither of the above exists.
+//
+// httpCompleter is used (with a nil check) rather than extending
+// AutonomousSessionManager: FindUserDrivingByRemediationID already lives on
+// the narrower HTTPSessionCompleter interface.
+func (t *InvestigateTool) reattachOrCreateFallback(ctx context.Context, rrID string, user mcpinternal.UserInfo) string {
+	if t.httpCompleter != nil {
+		if existingID, found := t.httpCompleter.FindUserDrivingByRemediationID(rrID); found {
+			return existingID
+		}
+	}
+	seedResult, _ := t.autoMgr.GetLatestRCAResultByRemediationID(rrID)
+	return t.createFallbackSession(ctx, rrID, user, seedResult)
 }
 
 // storeReconstructedContext queries the reconstructor and caches prior turns
