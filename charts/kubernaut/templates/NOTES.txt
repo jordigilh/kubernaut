@@ -114,6 +114,28 @@ To enable:
   --set monitoring.prometheus.enabled=true --set monitoring.prometheus.url=http://<prometheus-host>:9090
   --set monitoring.alertManager.enabled=true --set monitoring.alertManager.url=http://<alertmanager-host>:9093
 {{- end }}
+{{- if and (not .Values.global.additionalClusterRoleBindings) (not .Values.gateway.additionalClusterRoleBindings) (not .Values.effectivenessmonitor.additionalClusterRoleBindings) (not .Values.kubernautAgent.additionalClusterRoleBindings) }}
+
+=== Optional: Ecosystem RBAC for Owner-Chain Resolution (Issue #1069) ===
+
+Gateway and EffectivenessMonitor bind to the built-in `view` ClusterRole for
+owner-chain resolution, which automatically covers "well-behaved" operators
+that publish `rbac.authorization.k8s.io/aggregate-to-view: "true"` (cert-manager,
+Istio, KubeVirt, etc.). It does NOT cover OLM (Subscription/ClusterServiceVersion)
+or other ecosystem CRDs that manage their own RBAC without aggregating to view.
+If your cluster runs OLM-managed operators (or similar) under Kubernaut's
+remediation scope, owner-chain resolution for resources they own will hit RBAC
+Forbidden errors and silently truncate the chain.
+
+No additionalClusterRoleBindings are configured (the default). To grant access
+to a specific ecosystem, create a narrowly-scoped ClusterRole and reference it
+by name -- no Kubernaut upgrade required:
+
+  --set global.additionalClusterRoleBindings[0]=my-olm-reader
+
+See the chart README's "Extending owner-chain-resolution RBAC" section for a
+full ClusterRole example and per-service override options.
+{{- end }}
 
 === Upgrading ===
 
