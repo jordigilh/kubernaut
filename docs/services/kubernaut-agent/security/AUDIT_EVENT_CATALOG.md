@@ -103,6 +103,8 @@ type AuditEvent struct {
 
 **Emitted from:** `internal/kubernautagent/session/manager.go`, `internal/kubernautagent/mcp/reconstruct.go` (`ReconstructionSpawner.emitSessionResumed`, wired via `SetAuditStore` in `cmd/kubernautagent/main.go`)
 
+**Reconstruction note (Issue #1818):** a session created by `handleStart`'s interactive-fallback path (`reattachOrCreateFallback`/`createFallbackSession` in `internal/kubernautagent/mcp/tools/investigate.go`, entered when no `StatusRunning` autonomous session exists for the RR) carries a `mode` tag in the session's `Metadata` — `interactive_fallback` (genuine placeholder, no prior investigation) or `interactive_reattached` (seeded with the real RCA `InvestigationResult` copied from an autonomous investigation that completed and raced ahead of the interactive request). The `mode` tag is not itself a field on the `aiagent.session.started` event's `Data`; reconstructing which case occurred for a given `correlation_id` requires resolving the event's `session_id` against the session store (`Manager.GetSession`) to inspect `Metadata["mode"]` and `Result`. Before this fix, every fallback session was unconditionally `interactive_fallback` with a hardcoded placeholder `RCASummary`, silently discarding real RCA content the autonomous investigation had already produced — a BR-AUDIT-005/CC8.1 reconstruction gap (querying by `correlation_id` alone would surface a real, completed investigation session alongside a disconnected placeholder session, not one coherent narrative). Covered by UT-KA-1818-001..004 (unit) and IT-KA-1818-001/002 (integration, including an explicit audit-reconstruction-by-`correlation_id` proof) in `internal/kubernautagent/mcp/tools/`.
+
 ---
 
 ## Interactive Mode (BR-INTERACTIVE)
@@ -156,4 +158,4 @@ Payloads are normalized to Data Storage's OpenAPI discriminated-union schema (`p
 
 ---
 
-*Last updated: 2026-07-31 | #898 backport from main ([PR #1812](https://github.com/jordigilh/kubernaut/pull/1812)) | Covers all 29 event types in `AllEventTypes` as of this date on `release/v1.5`*
+*Last updated: 2026-08-02 | #1818 reattach-on-race fix backport from main | Covers all 29 event types in `AllEventTypes` as of this date on `release/v1.5`*

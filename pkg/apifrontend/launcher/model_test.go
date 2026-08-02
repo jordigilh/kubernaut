@@ -56,6 +56,24 @@ var _ = Describe("Model Factory", func() {
 			}
 		})
 
+		// IT-AF-1792-005: vertex_ai with an unrecognized (non-Claude) model
+		// family fails fast with a clear, actionable error instead of
+		// silently misconstructing an Anthropic client and failing later
+		// with a confusing SDK-level error. v1.5 fail-fast-only backport of
+		// #1792 -- unlike main, v1.5 does not carry native Vertex-hosted-
+		// Gemini support (tracked separately as a follow-up decision).
+		It("IT-AF-1792-005: vertex_ai with an unrecognized model family fails fast with a clear error", func() {
+			cfg := config.LLMConfig{
+				Provider:       config.LLMProviderVertexAI,
+				Model:          "gemini-2.5-pro",
+				VertexProject:  "test-project",
+				VertexLocation: "us-central1",
+			}
+			_, err := launcher.NewModelFromConfig(context.Background(), cfg)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unrecognized model family"))
+		})
+
 		// UT-AF-1254-010: factory dispatches to openai_compatible adapter
 		It("UT-AF-1254-010: constructs openai_compatible model with endpoint", func() {
 			cfg := config.LLMConfig{

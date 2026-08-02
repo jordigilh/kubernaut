@@ -18,6 +18,7 @@ package tools_test
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -47,6 +48,13 @@ type fallbackAutoMgr struct {
 	rcaFound   bool
 	rcaResult  *katypes.InvestigationResult
 	rcaOK      bool
+
+	// #1818: captures the metadata and InvestigateFunc passed to the most
+	// recent StartInvestigation call, so tests can assert on the session
+	// "mode" tag and the seeded RCA content without a real Manager.
+	mu           sync.Mutex
+	lastMetadata map[string]string
+	lastFn       session.InvestigateFunc
 }
 
 func (m *fallbackAutoMgr) FindByRemediationID(_ string) (string, bool) {
@@ -74,14 +82,62 @@ func (m *fallbackAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, 
 func (m *fallbackAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return m.rcaResult, m.rcaOK
 }
-func (m *fallbackAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
+func (m *fallbackAutoMgr) StartInvestigation(_ context.Context, fn session.InvestigateFunc, metadata map[string]string) (string, error) {
 	m.startCalled.Add(1)
+	m.mu.Lock()
+	m.lastMetadata = metadata
+	m.lastFn = fn
+	m.mu.Unlock()
 	return m.startResult, m.startErr
+}
+
+// capturedMode returns the "mode" metadata tag from the most recent
+// StartInvestigation call (#1818: distinguishes interactive_fallback from
+// interactive_reattached).
+func (m *fallbackAutoMgr) capturedMode() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.lastMetadata == nil {
+		return ""
+	}
+	return m.lastMetadata["mode"]
+}
+
+// capturedResult invokes the most recently captured InvestigateFunc and
+// returns its result, so tests can assert on the seeded RCA content (#1818).
+func (m *fallbackAutoMgr) capturedResult() *katypes.InvestigationResult {
+	m.mu.Lock()
+	fn := m.lastFn
+	m.mu.Unlock()
+	if fn == nil {
+		return nil
+	}
+	result, _ := fn(context.Background())
+	return result
 }
 func (m *fallbackAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
 	return nil, nil
 }
 func (m *fallbackAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) { return nil, false }
+
+// reattachHTTPCompleter is a minimal HTTPSessionCompleter stub for #1818
+// tests: only FindUserDrivingByRemediationID is exercised by the reattach
+// decision logic; CompleteUserDriving/ForceCompleteByRemediationID are no-ops
+// since handleStart's start path never calls them.
+type reattachHTTPCompleter struct {
+	foundID string
+	found   bool
+}
+
+func (c *reattachHTTPCompleter) FindUserDrivingByRemediationID(_ string) (string, bool) {
+	return c.foundID, c.found
+}
+func (c *reattachHTTPCompleter) CompleteUserDriving(_ string, _ *katypes.InvestigationResult) error {
+	return nil
+}
+func (c *reattachHTTPCompleter) ForceCompleteByRemediationID(_ string, _ *katypes.InvestigationResult) error {
+	return nil
+}
 
 var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 
@@ -186,6 +242,155 @@ var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 			Expect(reconHistory).To(HaveLen(1))
 			Expect(reconHistory[0].Content).To(ContainSubstring("OOMKilled"),
 				"SC-24: RCA summary from terminal session must be available to the fresh investigation")
+		})
+	})
+
+	Describe("UT-KA-1818-001: handleStart reattaches to an already-user_driving session instead of creating a duplicate", func() {
+		It("should reuse the existing user_driving session ID and skip StartInvestigation entirely", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "lease-sess-1818-001",
+					CorrelationID: "rr-already-driving-001",
+				},
+			}
+			autoMgr := &fallbackAutoMgr{
+				findOK: false, // no Running session — reattach path is entered
+			}
+			completer := &reattachHTTPCompleter{
+				foundID: "existing-user-driving-001",
+				found:   true,
+			}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr, mcptools.WithHTTPCompleter(completer))
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-already-driving-001",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "sre-alice", Groups: []string{"sre-team"}})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.InvestigationSessionID).To(Equal("existing-user-driving-001"),
+				"#1818: must reattach to the already-user_driving session rather than creating a duplicate placeholder")
+
+			Expect(autoMgr.startCalled.Load()).To(Equal(int32(0)),
+				"#1818: StartInvestigation must NOT be called when an existing user_driving session already covers this rr_id")
+		})
+	})
+
+	Describe("UT-KA-1818-002: handleStart seeds the fresh session with the real RCA from a completed autonomous investigation (no-session branch)", func() {
+		It("should tag the fresh session interactive_reattached and seed it with the real RCASummary, not a placeholder", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "lease-sess-1818-002",
+					CorrelationID: "rr-race-completed-002",
+				},
+			}
+			realRCA := &katypes.InvestigationResult{
+				RCASummary: "Pod OOMKilled due to memory leak in /api/v2/reports endpoint",
+				Confidence: 0.87,
+			}
+			autoMgr := &fallbackAutoMgr{
+				findOK:      false, // no Running session — the autonomous investigation already completed
+				startResult: "fresh-investigation-1818-002",
+				rcaResult:   realRCA,
+				rcaOK:       true,
+			}
+			completer := &reattachHTTPCompleter{found: false}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr, mcptools.WithHTTPCompleter(completer))
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-race-completed-002",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "sre-bob", Groups: []string{"sre-team"}})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.InvestigationSessionID).To(Equal("fresh-investigation-1818-002"))
+
+			Expect(autoMgr.startCalled.Load()).To(Equal(int32(1)))
+			Expect(autoMgr.capturedMode()).To(Equal("interactive_reattached"),
+				"#1818: session created from a real completed RCA must be tagged interactive_reattached, not interactive_fallback")
+
+			seeded := autoMgr.capturedResult()
+			Expect(seeded).NotTo(BeNil())
+			Expect(seeded.RCASummary).To(Equal(realRCA.RCASummary),
+				"#1818: the fresh session's immediate result must carry the real RCA, not the canned placeholder — this is what AF's bridge streams back to the user as the early RCA artifact")
+			Expect(seeded.Confidence).To(Equal(realRCA.Confidence))
+			Expect(seeded.InteractiveHold).To(BeTrue(),
+				"#1818: reattached session must stay in InteractiveHold so it behaves like a fresh interactive session, not an immediately-completed one")
+		})
+	})
+
+	Describe("UT-KA-1818-003: handleStart seeds the fresh session with the real RCA when the prior session is terminal (upgrade-failure branch)", func() {
+		It("should tag the fresh session interactive_reattached when UpgradeToInteractive fails with ErrSessionTerminal and a real RCA exists", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "lease-sess-1818-003",
+					CorrelationID: "rr-terminal-with-rca-003",
+				},
+			}
+			realRCA := &katypes.InvestigationResult{
+				RCASummary: "CrashLoopBackOff caused by missing ConfigMap key",
+			}
+			autoMgr := &fallbackAutoMgr{
+				findResult:  "old-completed-session-003",
+				findOK:      true,
+				upgradeErr:  session.ErrSessionTerminal,
+				startResult: "fresh-investigation-1818-003",
+				rcaResult:   realRCA,
+				rcaOK:       true,
+			}
+			completer := &reattachHTTPCompleter{found: false}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr, mcptools.WithHTTPCompleter(completer))
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-terminal-with-rca-003",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "sre-carol", Groups: []string{"sre-team"}})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.InvestigationSessionID).To(Equal("fresh-investigation-1818-003"))
+
+			Expect(autoMgr.capturedMode()).To(Equal("interactive_reattached"),
+				"#1818: the terminal-session fallback path must also reattach real RCA content when available")
+			seeded := autoMgr.capturedResult()
+			Expect(seeded).NotTo(BeNil())
+			Expect(seeded.RCASummary).To(Equal(realRCA.RCASummary))
+		})
+	})
+
+	Describe("UT-KA-1818-004: handleStart falls back to a genuine placeholder when neither a user_driving session nor a real RCA exists", func() {
+		It("should tag the fresh session interactive_fallback (regression guard for the pre-#1818 behavior)", func() {
+			sessionMgr := &mockSessionManager{
+				takeoverSession: &mcpinternal.InteractiveSession{
+					SessionID:     "lease-sess-1818-004",
+					CorrelationID: "rr-no-rca-004",
+				},
+			}
+			autoMgr := &fallbackAutoMgr{
+				findOK:      false,
+				startResult: "fresh-investigation-1818-004",
+				rcaOK:       false,
+			}
+			completer := &reattachHTTPCompleter{found: false}
+			runner := &mockInvestigatorRunner{}
+			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr, mcptools.WithHTTPCompleter(completer))
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-no-rca-004",
+				Action: mcptools.ActionStart,
+			}, mcpinternal.UserInfo{Username: "sre-dave", Groups: []string{"sre-team"}})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.InvestigationSessionID).To(Equal("fresh-investigation-1818-004"))
+
+			Expect(autoMgr.capturedMode()).To(Equal("interactive_fallback"),
+				"#1818: with no user_driving session and no real RCA, must still create the genuine placeholder session")
+			seeded := autoMgr.capturedResult()
+			Expect(seeded).NotTo(BeNil())
+			Expect(seeded.RCASummary).To(Equal("Interactive session — awaiting user direction"))
+			Expect(seeded.InteractiveHold).To(BeTrue())
 		})
 	})
 })
