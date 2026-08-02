@@ -114,8 +114,8 @@ type Invoker interface {
 	// GetRemediationHistoryContext invokes getRemediationHistoryContext operation.
 	//
 	// Returns structured remediation history context for LLM prompt enrichment.
-	// **Business Requirements**: BR-HAPI-016 (Remediation history context)
-	// **Design Document**: DD-HAPI-016
+	// **Business Requirements**: BR-KA-016 (Remediation history context)
+	// **Design Document**: DD-KA-016
 	// **Behavior**:
 	// Aggregates `remediation.workflow_created` (RO) and `effectiveness.assessment.completed` (EM)
 	// audit events into structured remediation chains for a target resource.
@@ -877,8 +877,8 @@ func (c *Client) sendGetEffectivenessScore(ctx context.Context, params GetEffect
 // GetRemediationHistoryContext invokes getRemediationHistoryContext operation.
 //
 // Returns structured remediation history context for LLM prompt enrichment.
-// **Business Requirements**: BR-HAPI-016 (Remediation history context)
-// **Design Document**: DD-HAPI-016
+// **Business Requirements**: BR-KA-016 (Remediation history context)
+// **Design Document**: DD-KA-016
 // **Behavior**:
 // Aggregates `remediation.workflow_created` (RO) and `effectiveness.assessment.completed` (EM)
 // audit events into structured remediation chains for a target resource.

@@ -162,7 +162,7 @@ var _ = Describe("ChatWithParams — BUG-1/BUG-3 fixes", func() {
 		})
 	})
 
-	Describe("UT-KA-1749-002 (BR-HAPI-199): still sends an explicit temperature of 0", func() {
+	Describe("UT-KA-1749-002 (BR-KA-266): still sends an explicit temperature of 0", func() {
 		It("should set Options.Temperature to 0 when RuntimeParams.Temperature is an explicit pointer to 0.0", func() {
 			mock := &capturingClient{resp: llm.ChatResponse{
 				Message: llm.Message{Role: "assistant", Content: "ok"},
@@ -179,7 +179,7 @@ var _ = Describe("ChatWithParams — BUG-1/BUG-3 fixes", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(mock.capturedReq.Options.Temperature).NotTo(BeNil(),
-				"an explicit temperature of 0 must still be sent — BR-HAPI-199 requires "+
+				"an explicit temperature of 0 must still be sent — BR-KA-266 requires "+
 					"deterministic output to be an explicit configuration, not confused with 'unset'")
 			Expect(*mock.capturedReq.Options.Temperature).To(Equal(0.0))
 		})

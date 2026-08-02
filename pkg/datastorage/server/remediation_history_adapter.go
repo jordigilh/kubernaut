@@ -18,8 +18,8 @@ limitations under the License.
 // server.RemediationHistoryQuerier interface, converting EffectivenessEventRow
 // (repository package) to EffectivenessEvent (server package).
 //
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.4: Both tiers query by spec hash for causal chain integrity.
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
+// DD-KA-016 v1.4: Both tiers query by spec hash for causal chain integrity.
 package server
 
 import (

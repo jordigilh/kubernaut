@@ -36,7 +36,7 @@
 | Capability | Description | Reference |
 |------------|-------------|-----------|
 | **HolmesGPT Integration** | Single AI provider via HolmesGPT-API service | BR-AI-001, BR-HAPI-001 |
-| **Workflow Selection** | Select from predefined workflow catalog via MCP tool | BR-AI-075, BR-HAPI-250 |
+| **Workflow Selection** | Select from predefined workflow catalog via MCP tool | BR-AI-075, BR-KA-250 |
 | **Rego Approval Policies** | Auto-approve or flag for manual review | BR-AI-028 |
 | **Recovery Flow** | Track previous execution attempts, pass failure context | BR-AI-080-083 |
 | **DetectedLabels/CustomLabels** | Pass through to HolmesGPT-API for workflow filtering | DD-WORKFLOW-001 v1.8 |
@@ -271,7 +271,7 @@ RemediationRequest (root orchestrator)
 | **Workflow Selection** | 2 | BR-AI-075, BR-AI-076 |
 | **Approval Policies** | 4 | BR-AI-028 to BR-AI-030 |
 | **Recovery Flow** | 4 | BR-AI-080 to BR-AI-083 |
-| **HolmesGPT-API Integration** | 5 | BR-HAPI-250 to BR-HAPI-252 |
+| **HolmesGPT-API Integration** | 5 | BR-KA-250 to BR-HAPI-252 |
 | **Validation & Hallucination** | 4 | BR-AI-023 (catalog validation) |
 
 ---

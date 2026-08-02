@@ -178,7 +178,7 @@ The description uses the same structured format as `action_type_taxonomy.descrip
 |-------|------|----------|-------------|
 | `what` | string | Yes | What this workflow concretely does. One sentence. |
 | `whenToUse` | string | Yes | Root cause conditions under which this workflow is appropriate. |
-| `whenNotToUse` | string | No | Specific exclusion conditions for this workflow. Only include when there is a genuinely useful exclusion. Do not include failure-based exclusions (handled by remediation history, DD-HAPI-016). |
+| `whenNotToUse` | string | No | Specific exclusion conditions for this workflow. Only include when there is a genuinely useful exclusion. Do not include failure-based exclusions (handled by remediation history, DD-KA-016). |
 | `preconditions` | string | No | Conditions that must be verified through investigation that cannot be determined by catalog label filtering. |
 
 ### `spec.labels` Fields (Mandatory Matching Criteria)

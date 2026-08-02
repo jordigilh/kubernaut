@@ -15,8 +15,8 @@ limitations under the License.
 */
 
 // Package datastorage contains unit tests for the DataStorage service.
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
+// DD-KA-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
 package datastorage_test
 
 import (
@@ -61,8 +61,8 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 	// =========================================================================
 	// UT-RH-005 to UT-RH-008: QueryEffectivenessEventsBatch
-	// BR-HAPI-016: Batch query EM component events by correlation_id
-	// DD-HAPI-016 v1.1: Two-step query pattern
+	// BR-KA-016: Batch query EM component events by correlation_id
+	// DD-KA-016 v1.1: Two-step query pattern
 	// =========================================================================
 	Describe("QueryEffectivenessEventsBatch", func() {
 		Context("when EM events exist for correlation IDs", func() {
@@ -225,7 +225,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 
 	// =========================================================================
 	// UT-RH-009 to UT-RH-012: QueryROEventsBySpecHash
-	// BR-HAPI-016: Both Tier 1 and Tier 2 query by spec hash (DD-HAPI-016 v1.4, #586)
+	// BR-KA-016: Both Tier 1 and Tier 2 query by spec hash (DD-KA-016 v1.4, #586)
 	// =========================================================================
 	Describe("QueryROEventsBySpecHash", func() {
 		var (
@@ -347,7 +347,7 @@ var _ = Describe("RemediationHistoryRepository", func() {
 		// GAP-DS-2: Query must filter by event_type to exclude EM events (effectiveness.hash.computed)
 		// that also carry pre_remediation_spec_hash. Only remediation.workflow_created should be returned.
 		Context("event_type filter (GAP-DS-2)", func() {
-			It("UT-RH-013: should filter by event_type=remediation.workflow_created (BR-HAPI-016)", func() {
+			It("UT-RH-013: should filter by event_type=remediation.workflow_created (BR-KA-016)", func() {
 				eventData, _ := json.Marshal(map[string]interface{}{
 					"target_resource":           "prod/Deployment/my-app",
 					"pre_remediation_spec_hash": "sha256:aabb1122",

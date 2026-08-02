@@ -625,7 +625,7 @@ If validation fails, the parser MUST:
 - Response format as defined in this ADR
 
 ### v1.1 (Planned)
-- Playbooks registered via CRD (DD-PLAYBOOK-008)
+- Playbooks registered via CRD (DD-PLAYBOOK-008, retired)
 - Parameters extracted from container images
 - Same prompt/response format
 - Enhanced validation (schema extraction)
@@ -709,7 +709,7 @@ If validation fails, the parser MUST:
 - **DD-STORAGE-008 v1.2**: Playbook Catalog Schema (defines database fields)
 - **DD-PLAYBOOK-003 v2.2**: Parameterized Remediation Actions (defines parameter schema)
 - **DD-PLAYBOOK-002 v1.0**: MCP Playbook Catalog Architecture (defines v2.0 flow)
-- **DD-PLAYBOOK-008**: Version Roadmap (defines v1.0 vs v1.1 features)
+- **DD-PLAYBOOK-008**: Version Roadmap (defines v1.0 vs v1.1 features) — **retired** (Issue #1806); document deleted as an obsolete pre-workflow-rename planning artifact
 - **BR-PLAYBOOK-001**: Playbook Registry Management (defines business requirements)
 
 ---

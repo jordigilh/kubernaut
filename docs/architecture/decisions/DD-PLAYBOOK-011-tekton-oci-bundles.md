@@ -482,7 +482,6 @@ kubectl apply -f pipelinerun-v1.1.yaml
 ## Related Documents
 
 - [DD-PLAYBOOK-003-parameterized-actions.md](DD-PLAYBOOK-003-parameterized-actions.md) - Single remediation playbook pattern
-- [DD-PLAYBOOK-008-version-roadmap.md](DD-PLAYBOOK-008-version-roadmap.md) - Feature roadmap
 - [DD-PLAYBOOK-009-catalog-storage.md](DD-PLAYBOOK-009-catalog-storage.md) - Storage backend
 - [KUBERNAUT_ARCHITECTURE_OVERVIEW.md](../KUBERNAUT_ARCHITECTURE_OVERVIEW.md) - System architecture
 

@@ -123,7 +123,7 @@ Use mock LLM responses during development, validate with real LLM only for final
 ## Related Decisions
 - **Builds On**: ADR-041 (LLM Prompt and Response Contract)
 - **Builds On**: DD-WORKFLOW-002 (MCP Architecture - superseded by native toolset)
-- **Supports**: BR-HAPI-250 (Workflow Catalog Search Tool)
+- **Supports**: BR-KA-250 (Workflow Catalog Search Tool)
 
 ## Quick Reference
 

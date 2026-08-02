@@ -12,7 +12,7 @@
           "Incident Analysis"
         ],
         "summary": "Incident Analyze Endpoint",
-        "description": "Submit incident analysis request (async session-based pattern).\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis endpoint)\nBusiness Requirement: BR-AA-HAPI-064.1 (Async submit returns session ID)\nDesign Decision: DD-AUTH-006 (User attribution for LLM cost tracking)\n\nCalled by: AIAnalysis Controller via SubmitInvestigation()\n\nReturns HTTP 202 Accepted with {\"session_id\": \"<uuid>\"}.\nThe investigation runs as a background task. Poll via GET /incident/session/{id}.",
+        "description": "Submit incident analysis request (async session-based pattern).\n\nBusiness Requirement: BR-KA-002 (Incident analysis endpoint)\nBusiness Requirement: BR-AA-HAPI-064.1 (Async submit returns session ID)\nDesign Decision: DD-AUTH-006 (User attribution for LLM cost tracking)\n\nCalled by: AIAnalysis Controller via SubmitInvestigation()\n\nReturns HTTP 202 Accepted with {\"session_id\": \"<uuid>\"}.\nThe investigation runs as a background task. Poll via GET /incident/session/{id}.",
         "operationId": "incident_analyze_endpoint_api_v1_incident_analyze_post",
         "requestBody": {
           "content": {
@@ -899,7 +899,7 @@
               }
             ],
             "title": "Customlabels",
-            "description": "Custom labels from SignalProcessing (subdomain \u2192 values). Auto-appended to workflow search per DD-HAPI-001."
+            "description": "Custom labels from SignalProcessing (subdomain \u2192 values). Auto-appended to workflow search per DD-KA-002."
           },
           "businessClassification": {
             "anyOf": [
@@ -915,7 +915,7 @@
         },
         "type": "object",
         "title": "EnrichmentResults",
-        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, custom labels, and business classification\nused for workflow filtering and LLM context.\n\nADR-056: detectedLabels removed -- now computed by HAPI post-RCA via LabelDetector.\nADR-055: ownerChain removed -- resolved by HAPI via get_resource_context tool.\n\nDesign Decision: DD-HAPI-001\n\nCustom Labels (DD-HAPI-001):\n- Format: map[string][]string (subdomain \u2192 list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
+        "description": "Enrichment results from SignalProcessing.\n\nContains Kubernetes context, custom labels, and business classification\nused for workflow filtering and LLM context.\n\nADR-056: detectedLabels removed -- now computed by KA post-RCA via LabelDetector.\nADR-055: ownerChain removed -- resolved by KA via get_resource_context tool.\n\nDesign Decision: DD-KA-002\n\nCustom Labels (DD-KA-002):\n- Format: map[string][]string (subdomain \u2192 list of values)\n- Keys are subdomains (e.g., \"constraint\", \"team\")\n- Values are lists of strings (boolean keys or \"key=value\" pairs)\n- Example: {\"constraint\": [\"cost-constrained\"], \"team\": [\"name=payments\"]}\n- Auto-appended to MCP workflow search (invisible to LLM)"
       },
       "HTTPError": {
         "properties": {
@@ -1266,7 +1266,7 @@
           "cluster_name"
         ],
         "title": "IncidentRequest",
-        "description": "Request model for initial incident analysis endpoint\n\nBusiness Requirements:\n- BR-HAPI-002: Incident analysis request schema\n- BR-AUDIT-001: Unified audit trail (remediation_id)\n- BR-INTERACTIVE-010: Interactive investigation via IS CRD signal\n\nDesign Decision: DD-WORKFLOW-002 v2.2\n- remediation_id is MANDATORY for audit trail correlation\n- remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching\n\nDesign Decision: DD-HAPI-001\n- enrichment_results contains DetectedLabels for workflow filtering"
+        "description": "Request model for initial incident analysis endpoint\n\nBusiness Requirements:\n- BR-KA-002: Incident analysis request schema\n- BR-AUDIT-001: Unified audit trail (remediation_id)\n- BR-INTERACTIVE-010: Interactive investigation via IS CRD signal\n\nDesign Decision: DD-WORKFLOW-002 v2.2\n- remediation_id is MANDATORY for audit trail correlation\n- remediation_id is for CORRELATION ONLY - do NOT use for RCA or workflow matching\n\nDesign Decision: DD-KA-002\n- enrichment_results contains DetectedLabels for workflow filtering"
       },
       "IncidentResponse": {
         "properties": {
@@ -1398,7 +1398,7 @@
           "timestamp"
         ],
         "title": "IncidentResponse",
-        "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-HAPI-002 (Incident analysis response schema)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\nDesign Decision: ADR-055 (LLM-Driven Context Enrichment)\n\nFields added per AIAnalysis team requests:\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY\n- needs_human_review: AI could not produce reliable result (Dec 6, 2025)\n\nADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input."
+        "description": "Response model for incident analysis endpoint\n\nBusiness Requirement: BR-KA-002 (Incident analysis response schema)\nDesign Decision: DD-KA-001 v1.2 (Workflow Response Validation)\nDesign Decision: ADR-045 v1.2 (Alternative Workflows for Audit)\nDesign Decision: ADR-055 (LLM-Driven Context Enrichment)\n\nFields added per AIAnalysis team requests:\n- warnings: Non-fatal warnings for transparency (Dec 2, 2025)\n- alternative_workflows: Other workflows considered (Dec 5, 2025) - INFORMATIONAL ONLY\n- needs_human_review: AI could not produce reliable result (Dec 6, 2025)\n\nADR-055: target_in_owner_chain removed -- replaced by affected_resource in Rego input."
       },
       "AlignmentVerdict": {
         "type": "object",
@@ -1529,7 +1529,7 @@
           "timestamp"
         ],
         "title": "ValidationAttempt",
-        "description": "Record of a single validation attempt during LLM self-correction.\n\nBusiness Requirement: BR-HAPI-197 (needs_human_review field)\nDesign Decision: DD-HAPI-002 v1.2 (Workflow Response Validation)\n\nUsed for:\n1. Operator notification - natural language description of why validation failed\n2. Audit trail - complete history of all validation attempts\n3. Debugging - understand LLM behavior when workflows fail"
+        "description": "Record of a single validation attempt during LLM self-correction.\n\nBusiness Requirement: BR-KA-197 (needs_human_review field)\nDesign Decision: DD-KA-001 v1.2 (Workflow Response Validation)\n\nUsed for:\n1. Operator notification - natural language description of why validation failed\n2. Audit trail - complete history of all validation attempts\n3. Debugging - understand LLM behavior when workflows fail"
       },
       "ValidationError": {
         "properties": {

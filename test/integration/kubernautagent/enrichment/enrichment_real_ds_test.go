@@ -18,7 +18,7 @@ limitations under the License.
 // real DataStorage (PostgreSQL + DS container) and real K8s (envtest).
 //
 // Business Requirements:
-//   - BR-HAPI-016: Remediation history context for LLM prompt enrichment
+//   - BR-KA-016: Remediation history context for LLM prompt enrichment
 //   - SOC2 CC8.1: Audit trail persistence
 //
 // Test Plan: docs/testing/TP-433-WIR-v1.0.md (IT-KA-433-ENR-001..006)

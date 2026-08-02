@@ -28,7 +28,7 @@ import (
 // ========================================
 //
 // Business Requirements:
-//   - BR-HAPI-017-001: Three-step tool implementation
+//   - BR-KA-017-001: Three-step tool implementation
 //
 // Design Decisions:
 //   - DD-HAPI-017: Three-Step Workflow Discovery Integration
@@ -45,7 +45,7 @@ import (
 
 var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka", "discovery", "three-step"), func() {
 
-	Context("BR-HAPI-017-001: Incident flow with three-step discovery", func() {
+	Context("BR-KA-017-001: Incident flow with three-step discovery", func() {
 
 		It("E2E-KA-017-001-001: Incident analysis uses three-step discovery to select workflow", func() {
 			// ========================================
@@ -55,7 +55,7 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 			// Business Outcome: Full incident analysis uses three-step discovery with Mock LLM.
 			//   Mock LLM calls list_available_actions → list_workflows → get_workflow,
 			//   KA returns a valid investigation result with selected workflow.
-			// BR: BR-HAPI-017-001
+			// BR: BR-KA-017-001
 			// Phase: 11 (DD-HAPI-017 Implementation Plan)
 
 			// ========================================
@@ -122,7 +122,7 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 			// ========================================
 			// Scenario ID: E2E-KA-017-001-001b (variant)
 			// Business Outcome: Different signal type also works with three-step discovery.
-			// BR: BR-HAPI-017-001
+			// BR: BR-KA-017-001
 
 			// ========================================
 			// ARRANGE

@@ -26,7 +26,7 @@ import (
 // Workflow Catalog E2E Tests
 // Test Plan: docs/development/testing/KA_E2E_TEST_PLAN.md
 // Scenarios: E2E-KA-030 through E2E-KA-044 (15 total)
-// Business Requirements: BR-STORAGE-013, BR-HAPI-250, DD-WORKFLOW-004, DD-LLM-001, BR-AI-075
+// Business Requirements: BR-STORAGE-013, BR-KA-250, DD-WORKFLOW-004, DD-LLM-001, BR-AI-075
 //
 // Purpose: Validate workflow catalog search functionality and DataStorage integration
 //
@@ -145,7 +145,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// Scenario ID: E2E-KA-032
 			// Business Outcome: No matching workflows returns empty array (not error)
 			// Ported from: test_workflow_catalog_data_storage_integration.py:303
-			// BR: BR-HAPI-250
+			// BR: BR-KA-250
 
 		// ========================================
 		// ARRANGE: Create request with Mock LLM scenario for no workflow found
@@ -239,7 +239,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// Scenario ID: E2E-KA-034
 			// Business Outcome: Tool respects result count limit (prevents LLM context overflow)
 			// Ported from: test_workflow_catalog_data_storage_integration.py:384
-			// BR: BR-HAPI-250
+			// BR: BR-KA-250
 
 			// ========================================
 			// ARRANGE
@@ -385,7 +385,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			// Scenario ID: E2E-KA-038
 			// Business Outcome: AI handles "no automated solution" scenario without errors
 			// Ported from: test_workflow_catalog_e2e.py:218
-			// BR: BR-HAPI-250
+			// BR: BR-KA-250
 
 		// ========================================
 		// ARRANGE: Use Mock LLM scenario for no workflow found

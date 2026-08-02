@@ -16,8 +16,8 @@ limitations under the License.
 
 // HTTP handler for GET /api/v1/remediation-history/context.
 //
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.4: Both tiers query by spec hash for causal chain integrity.
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
+// DD-KA-016 v1.4: Both tiers query by spec hash for causal chain integrity.
 //
 // This handler orchestrates the full remediation history query flow:
 //  1. Parse and validate required query parameters
@@ -42,7 +42,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/datastorage/server/response"
 )
 
-// Default lookback windows per DD-HAPI-016 v1.1.
+// Default lookback windows per DD-KA-016 v1.1.
 const (
 	defaultTier1Window = 24 * time.Hour   // 24 hours
 	defaultTier2Window = 2160 * time.Hour // 90 days
@@ -89,7 +89,7 @@ func (h *Handler) HandleGetRemediationHistoryContext(w http.ResponseWriter, r *h
 		return
 	}
 
-	// DD-HAPI-016 v1.1: preRemediation hash match detects regression from Tier 1.
+	// DD-KA-016 v1.1: preRemediation hash match detects regression from Tier 1.
 	regressionDetected := DetectRegression(tier1Entries)
 
 	// GAP-DS-1: Tier 2 runs regardless of Tier 1 results — regression can be
@@ -203,7 +203,7 @@ func (h *Handler) parseHistoryWindow(w http.ResponseWriter, q url.Values, param 
 	return parsed, true
 }
 
-// queryTier1History executes DD-HAPI-016 v1.4 Tier 1 query steps: query RO
+// queryTier1History executes DD-KA-016 v1.4 Tier 1 query steps: query RO
 // events by spec hash (Issue #586), batch query EM events by correlation_id,
 // and correlate into detailed Tier 1 entries. Returns ok=false (after writing
 // the RFC 7807 error response) on any query failure. Extracted from

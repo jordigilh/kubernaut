@@ -751,11 +751,11 @@ The Data Storage Service is the **exclusive database access layer** for Kubernau
 - **Priority**: P0
 - **Status**: ✅ Active
 - **Description**: Provide REST API endpoint for retrieving a single workflow by UUID (`GET /api/v1/workflows/{workflow_id}`) returning the complete workflow object including spec, parameters, and detected labels
-- **Business Value**: Enable external services (HolmesGPT-API, AIAnalysis) to validate workflow existence and retrieve full workflow spec for parameter/image validation
-- **Use Cases**:
-  - **HAPI Workflow Validation**: HolmesGPT-API validates `workflow_id` exists before returning to AIAnalysis (DD-HAPI-002)
-  - **Parameter Schema Retrieval**: HAPI retrieves `spec.parameters[]` to validate LLM-generated parameters
-  - **Image Pullspec Validation**: HAPI retrieves `spec.container_image` for OCI format validation
+- **Business Value**: Enable external services (Kubernaut Agent, AIAnalysis) to validate workflow existence and retrieve full workflow spec for parameter/image validation
+- **Use Cases** (⚠️ **STALE terminology flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here** — same `validate_workflow_parameters`-as-MCP-tool staleness as `02-aianalysis/reconciliation-phases.md`):
+  - **KA Workflow Validation**: Kubernaut Agent validates `workflow_id` exists before returning to AIAnalysis (DD-KA-001, formerly DD-HAPI-002)
+  - **Parameter Schema Retrieval**: KA retrieves `spec.parameters[]` to validate LLM-generated parameters
+  - **Image Pullspec Validation**: KA retrieves `spec.container_image` for OCI format validation
   - **Workflow Existence Check**: 200 OK = exists, 404 = not found
 - **Response Fields**:
   - `workflow_id`: UUID primary key

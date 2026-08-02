@@ -16,7 +16,7 @@ limitations under the License.
 
 // Issue #616: Integration tests for QueryROEventsBySpecHash post-hash matching.
 //
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
 // TP-616-v1.1: These tests validate the SQL query fix that expands
 // QueryROEventsBySpecHash to match both pre_remediation_spec_hash and
 // post_remediation_spec_hash (via EM correlation_id subquery).

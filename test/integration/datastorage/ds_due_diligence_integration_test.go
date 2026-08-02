@@ -16,7 +16,7 @@ limitations under the License.
 
 // DS Due Diligence: F1 — EM subquery timestamp constraint causes false negatives.
 //
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
 // The bug: The EM subquery in QueryROEventsBySpecHash constrains EM events
 // to the same time window as RO events. When a remediation completes near
 // a tier boundary (RO in tier 2, EM assessment in tier 1), the query misses

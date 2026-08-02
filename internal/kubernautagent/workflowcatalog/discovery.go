@@ -28,7 +28,7 @@ import (
 // Authority: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
 // Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
 // Authority: DD-WORKFLOW-019 (KA owns discovery directly)
-// Business Requirement: BR-HAPI-017-001 (Three-Step Tool Implementation)
+// Business Requirement: BR-KA-017-001 (Three-Step Tool Implementation)
 //
 // Step 1: ListActions -- list action types with active workflow counts
 // Step 2: ListWorkflowsByActionType -- list workflows for an action type

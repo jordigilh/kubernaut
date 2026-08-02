@@ -31,8 +31,8 @@ import (
 // RemediationHistoryQuerier defines the data access interface for remediation
 // history context queries. Used by HandleGetRemediationHistoryContext.
 //
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
+// DD-KA-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586).
 type RemediationHistoryQuerier interface {
 	QueryROEventsBySpecHash(ctx context.Context, targetResource, clusterID, specHash string, since, until time.Time) ([]repository.RawAuditRow, error)
 	QueryEffectivenessEventsBatch(ctx context.Context, correlationIDs []string) (map[string][]*EffectivenessEvent, error)
@@ -54,7 +54,7 @@ type Handler struct {
 	logger                 logr.Logger
 	auditStore             audit.AuditStore           // BR-AUDIT-023: Workflow search audit
 	schemaExtractor        *oci.SchemaExtractor       // DD-WORKFLOW-017: OCI image schema extraction; not currently invoked by any handler (Issue #1642 removed its last caller, ValidateBundleExists)
-	remediationHistoryRepo RemediationHistoryQuerier // BR-HAPI-016: Remediation history context (DD-HAPI-016 v1.1)
+	remediationHistoryRepo RemediationHistoryQuerier // BR-KA-016: Remediation history context (DD-KA-016 v1.1)
 }
 
 // HandlerOption is a functional option for configuring the Handler
@@ -95,7 +95,7 @@ func WithSchemaExtractor(extractor *oci.SchemaExtractor) HandlerOption {
 }
 
 // WithRemediationHistoryQuerier sets the remediation history repository.
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
 func WithRemediationHistoryQuerier(repo RemediationHistoryQuerier) HandlerOption {
 	return func(h *Handler) {
 		h.remediationHistoryRepo = repo

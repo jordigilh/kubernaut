@@ -180,7 +180,7 @@ var _ = Describe("Kubernaut Agent Investigator — retryWorkflowSubmit / retryRC
 			Expect(result.HumanReviewNeeded).To(BeTrue(),
 				"a workflow_id recovered via retryWorkflowSubmit must still be catalog-validated, never passed through unvalidated")
 			Expect(result.WorkflowID).To(BeEmpty(),
-				"DD-HAPI-002: an invalid/unvalidated workflow_id must not propagate to execution")
+				"DD-KA-001: an invalid/unvalidated workflow_id must not propagate to execution")
 			// callIdx (not len(calls)) is asserted here because scriptedMockClient
 			// only increments callIdx while consuming pre-scripted steps -- it
 			// intentionally stops incrementing once exhausted and serving the

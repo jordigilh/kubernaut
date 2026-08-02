@@ -17,13 +17,13 @@ limitations under the License.
 // Integration tests for remediation history DataStorage layer.
 //
 // Business Requirements:
-//   - BR-HAPI-016: Remediation history context for LLM prompt enrichment
+//   - BR-KA-016: Remediation history context for LLM prompt enrichment
 //
 // Design Decisions:
-//   - DD-HAPI-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586)
+//   - DD-KA-016 v1.4: Both tiers query by spec hash for causal chain integrity (#586)
 //   - DD-EM-002 v1.1: spec_drift assessment reason
 //
-// Test Plan: docs/testing/DD-HAPI-016/TEST_PLAN.md (IT-DS-016-001 through IT-DS-016-009)
+// Test Plan: docs/testing/DD-KA-016/TEST_PLAN.md (IT-DS-016-001 through IT-DS-016-009)
 //
 // Infrastructure: Real PostgreSQL from suite_test.go (db, logger).
 // Pattern: Same as hash_chain_db_round_trip_test.go — direct DB inserts + repository queries.
@@ -43,7 +43,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-016 v1.1)", Label("integration", "remediation-history"), func() {
+var _ = Describe("BR-KA-016: Remediation History Integration Tests (DD-KA-016 v1.1)", Label("integration", "remediation-history"), func() {
 	var (
 		rhRepo          *repository.RemediationHistoryRepository
 		testCtx         context.Context
@@ -459,7 +459,7 @@ var _ = Describe("BR-HAPI-016: Remediation History Integration Tests (DD-HAPI-01
 
 		// queryAndCorrelate reproduces the handler's orchestration pipeline
 		// using direct business logic calls (no HTTP):
-		//   1. QueryROEventsBySpecHash (DD-HAPI-016 v1.4: both tiers use spec hash)
+		//   1. QueryROEventsBySpecHash (DD-KA-016 v1.4: both tiers use spec hash)
 		//   2. QueryEffectivenessEventsBatch (batch by correlation_id)
 		//   3. CorrelateTier1Chain (correlation + scoring)
 		//   4. DetectRegression (hash match analysis)

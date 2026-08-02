@@ -973,7 +973,7 @@ spec:
                       resourceQuotaConstrained:
                         description: |-
                           ========================================
-                          RESOURCE CONSTRAINTS (#366, DD-HAPI-018 v1.4)
+                          RESOURCE CONSTRAINTS (#366, DD-KA-018 v1.4)
                           ========================================
                           True if any ResourceQuota exists in namespace
                         type: boolean
@@ -1361,12 +1361,12 @@ spec:
               validationAttemptsHistory:
                 description: |-
                   ValidationAttemptsHistory contains complete history of all KA validation attempts
-                  Per DD-HAPI-002 v1.4: KA retries up to 3 times with LLM self-correction
+                  Per DD-KA-001 v1.4: KA retries up to 3 times with LLM self-correction
                   This field provides audit trail for operator notifications and debugging
                 items:
                   description: |-
                     ValidationAttempt contains details of a single KA validation attempt
-                    Per DD-HAPI-002 v1.4: KA retries up to 3 times with LLM self-correction
+                    Per DD-KA-001 v1.4: KA retries up to 3 times with LLM self-correction
                     Each attempt feeds validation errors back to the LLM for correction
                   properties:
                     attempt:

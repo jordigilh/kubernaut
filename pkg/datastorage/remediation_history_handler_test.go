@@ -16,8 +16,8 @@ limitations under the License.
 
 // Package datastorage contains unit tests for the DataStorage service.
 //
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.4: HTTP handler tests for GET /api/v1/remediation-history/context.
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
+// DD-KA-016 v1.4: HTTP handler tests for GET /api/v1/remediation-history/context.
 package datastorage_test
 
 import (
@@ -55,7 +55,7 @@ func (m *mockRemediationHistoryQuerier) QueryEffectivenessEventsBatch(ctx contex
 	return nil, nil
 }
 
-var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
+var _ = Describe("Remediation History Handler (DD-KA-016 v1.4)", func() {
 	var (
 		handler *server.Handler
 		rec     *httptest.ResponseRecorder
@@ -326,7 +326,7 @@ var _ = Describe("Remediation History Handler (DD-HAPI-016 v1.4)", func() {
 
 		// GAP-DS-1: Tier 2 must run even when Tier 1 is empty
 		// When Tier 1 has no events, regression can still be detected from Tier 2 (24h-90d window).
-		It("UT-RH-HANDLER-010: should run Tier 2 and detect regression when Tier 1 is empty (BR-HAPI-016)", func() {
+		It("UT-RH-HANDLER-010: should run Tier 2 and detect regression when Tier 1 is empty (BR-KA-016)", func() {
 			specHashCallCount := 0
 			tier2FixedTime := time.Date(2026, 1, 2, 10, 0, 0, 0, time.UTC)
 

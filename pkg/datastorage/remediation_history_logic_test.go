@@ -16,8 +16,8 @@ limitations under the License.
 
 // Package datastorage contains unit tests for the DataStorage service.
 //
-// BR-HAPI-016: Remediation history context for LLM prompt enrichment.
-// DD-HAPI-016 v1.2: Pure correlation logic tests -- ComputeHashMatch,
+// BR-KA-016: Remediation history context for LLM prompt enrichment.
+// DD-KA-016 v1.2: Pure correlation logic tests -- ComputeHashMatch,
 // CorrelateTier1Chain, BuildTier2Summaries, DetectRegression, DetectRegressionFromTier2.
 package datastorage_test
 
@@ -31,7 +31,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", func() {
+var _ = Describe("Remediation History Correlation Logic (DD-KA-016 v1.1)", func() {
 
 	// Fixed timestamps for deterministic testing.
 	var (
@@ -118,7 +118,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 
 	// ========================================
 	// ComputeHashMatch -- three-way hash comparison
-	// DD-HAPI-016 v1.1: currentSpecHash vs preHash vs postHash
+	// DD-KA-016 v1.1: currentSpecHash vs preHash vs postHash
 	// ========================================
 	Describe("ComputeHashMatch", func() {
 
@@ -139,7 +139,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 
 		It("UT-RH-LOGIC-004: should return preRemediation when current matches both (regression priority)", func() {
 			// When current matches both preHash and postHash (i.e., pre==post==current),
-			// regression detection takes priority per DD-HAPI-016 v1.1.
+			// regression detection takes priority per DD-KA-016 v1.1.
 			result := server.ComputeHashMatch("sha256:abc", "sha256:abc", "sha256:abc")
 			Expect(result).To(Equal(api.RemediationHistoryEntryHashMatchPreRemediation))
 		})
@@ -147,7 +147,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 
 	// ========================================
 	// CorrelateTier1Chain -- joins RO + EM events into detailed entries
-	// DD-HAPI-016 v1.1 Steps 1-3: two-step query + correlation
+	// DD-KA-016 v1.1 Steps 1-3: two-step query + correlation
 	// ========================================
 	Describe("CorrelateTier1Chain", func() {
 
@@ -404,7 +404,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 
 	// ========================================
 	// BuildTier2Summaries -- summary entries for Tier 2 (wider time window)
-	// DD-HAPI-016 v1.1 Step 4: historical hash lookup
+	// DD-KA-016 v1.1 Step 4: historical hash lookup
 	// ========================================
 	Describe("BuildTier2Summaries", func() {
 
@@ -620,7 +620,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 	// ========================================
 	Describe("DetectRegressionFromTier2", func() {
 
-		It("UT-RH-LOGIC-022: should return true when any summary has preRemediation hashMatch (BR-HAPI-016)", func() {
+		It("UT-RH-LOGIC-022: should return true when any summary has preRemediation hashMatch (BR-KA-016)", func() {
 			summaries := []api.RemediationHistorySummary{
 				{
 					RemediationUID: "rr-t2-001",
@@ -641,7 +641,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 			Expect(server.DetectRegressionFromTier2(summaries)).To(BeTrue())
 		})
 
-		It("UT-RH-LOGIC-023: should return false when no summary has preRemediation hashMatch (BR-HAPI-016)", func() {
+		It("UT-RH-LOGIC-023: should return false when no summary has preRemediation hashMatch (BR-KA-016)", func() {
 			summaries := []api.RemediationHistorySummary{
 				{
 					RemediationUID: "rr-t2-001",
@@ -662,7 +662,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 			Expect(server.DetectRegressionFromTier2(summaries)).To(BeFalse())
 		})
 
-		It("UT-RH-LOGIC-024: should return false for empty and nil summaries (BR-HAPI-016)", func() {
+		It("UT-RH-LOGIC-024: should return false for empty and nil summaries (BR-KA-016)", func() {
 			Expect(server.DetectRegressionFromTier2(nil)).To(BeFalse())
 			Expect(server.DetectRegressionFromTier2([]api.RemediationHistorySummary{})).To(BeFalse())
 		})
@@ -670,7 +670,7 @@ var _ = Describe("Remediation History Correlation Logic (DD-HAPI-016 v1.1)", fun
 
 	// ========================================
 	// DetectRegression -- checks if any entry has preRemediation hashMatch
-	// DD-HAPI-016 v1.1: regression = current spec matches a previous preHash
+	// DD-KA-016 v1.1: regression = current spec matches a previous preHash
 	// ========================================
 	Describe("DetectRegression", func() {
 

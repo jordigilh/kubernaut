@@ -218,17 +218,24 @@ if response.NeedsHumanReview {
 
 4. **Validate Workflow Response** (Defense-in-Depth)
 
-   > ⚠️ **Note**: Per DD-HAPI-002 v1.1, primary validation happens in **HolmesGPT-API**
+   > ⚠️ **Note**: Per DD-KA-001 (formerly DD-HAPI-002) v1.1, primary validation happens in **Kubernaut Agent (KA)**
    > where the LLM can self-correct. AIAnalysis validation is defense-in-depth only.
+   >
+   > **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: The
+   > table below still describes `validate_workflow_parameters` as an MCP tool the LLM calls explicitly. Per
+   > [BR-KA-191](../../../requirements/BR-KA-191-workflow-parameter-validation.md), KA has no LLM tool-calling
+   > framework by design — it validates the LLM's *returned* workflow selection programmatically in Go
+   > (`internal/kubernautagent/parser/validator.go`) and re-prompts on failure. This table needs a content
+   > rewrite against the current implementation, not just an ID rename.
 
    | Validation | Primary | AIAnalysis (Defense) |
    |------------|---------|---------------------|
-   | `workflowId` exists in catalog | ✅ **HAPI** (LLM self-corrects) | 🟡 Optional |
+   | `workflowId` exists in catalog | ✅ **KA** (LLM self-corrects) | 🟡 Optional |
    | `containerImage` valid OCI format | ✅ **Data Storage** (registration) | 🟡 Optional |
-   | Parameters conform to schema | ✅ **HAPI** (`validate_workflow_parameters`) | ❌ Not recommended |
+   | Parameters conform to schema | ✅ **KA** (`validate_workflow_parameters`) | ❌ Not recommended |
 
-   **Rationale** (DD-HAPI-002):
-   - If validation fails at HAPI → LLM can self-correct in same session (good UX)
+   **Rationale** (DD-KA-001, formerly DD-HAPI-002):
+   - If validation fails at KA → LLM can self-correct in same session (good UX)
    - If validation fails at AIAnalysis → Must restart entire RCA (poor UX)
 
 ### Transition Criteria
