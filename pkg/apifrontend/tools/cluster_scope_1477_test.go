@@ -97,6 +97,7 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 				Client:       newTypedFakeClient(),
 				ControllerNS: "kubernaut-system",
 				Mapper:       newScopeAwareMapper(),
+				Triager:      defaultTestTriager(),
 			}
 			result, err := tools.HandleInvestigateAlert(ctx, cfg,
 				&tools.InvestigateAlertArgs{
@@ -209,7 +210,7 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 					Kind:       "Node",
 					Name:       "worker-1",
 					Namespace:  "kube-system",
-				}, nil, nil, nil, false, nil, "", nil, nil)
+				}, nil, nil, nil, false, nil, "", nil, defaultTestTriager())
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).NotTo(BeEmpty())
 			Expect(sink.messages).To(ContainElement("stripping namespace for cluster-scoped resource"))

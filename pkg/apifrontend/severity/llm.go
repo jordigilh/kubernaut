@@ -72,12 +72,6 @@ func (g *GenAITriager) TriageWithRules(ctx context.Context, rules []prom.Rule, i
 	return g.classify(ctx, prompt)
 }
 
-// TriagePure classifies severity using LLM without rule context (pure fallback).
-func (g *GenAITriager) TriagePure(ctx context.Context, input TriageInput) (TriageResult, error) {
-	prompt := BuildTriagePrompt(input, nil)
-	return g.classify(ctx, prompt)
-}
-
 func (g *GenAITriager) classify(ctx context.Context, prompt string) (TriageResult, error) {
 	resp, err := g.generator.GenerateContent(ctx, g.model, genai.Text(prompt), nil)
 	if err != nil {
@@ -138,14 +132,6 @@ func NewNoopLLMTriager(logger logr.Logger) *NoopLLMTriager {
 
 // TriageWithRules returns a static "warning" result (noop implementation).
 func (n *NoopLLMTriager) TriageWithRules(_ context.Context, _ []prom.Rule, _ TriageInput) (TriageResult, error) {
-	return TriageResult{
-		Severity:   "warning",
-		Confidence: 1.0,
-	}, nil
-}
-
-// TriagePure returns a static "warning" result (noop implementation).
-func (n *NoopLLMTriager) TriagePure(_ context.Context, _ TriageInput) (TriageResult, error) {
 	return TriageResult{
 		Severity:   "warning",
 		Confidence: 1.0,

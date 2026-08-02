@@ -263,10 +263,6 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 					},
 				},
 			}
-			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
-			}
-
 			input := severity.TriageInput{
 				Namespace:   "default",
 				Kind:        "Deployment",
@@ -276,10 +272,10 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 				PodNames:    []string{"worker-abc-xyz"},
 			}
 
-			triager := severity.NewTriager(mockProm, mockLLM, severity.DefaultConfig(), logr.Discard())
-			result, err := triager.Triage(context.Background(), input)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Source).NotTo(Equal(severity.SourceFiringAlert))
+			triager := severity.NewTriager(mockProm, &mockLLM{}, severity.DefaultConfig(), logr.Discard())
+			_, err := triager.Triage(context.Background(), input)
+			Expect(err).To(MatchError(severity.ErrSeverityUndetermined),
+				"M3 guard: cross-namespace pod match must not correlate, and #1839 fails closed rather than falling back to an ungrounded LLM guess")
 		})
 
 		It("UT-AF-TRIAGE-003: existing key-overlap path still works (no regression)", func() {
@@ -508,9 +504,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 					},
 				},
 			}
-			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
-			}
+			mockLLM := &mockLLM{}
 
 			input := severity.TriageInput{
 				Namespace:   "default",
@@ -548,9 +542,7 @@ var _ = Describe("Pod-Based Alert Correlation", func() {
 					},
 				},
 			}
-			mockLLM := &mockLLM{
-				pureResult: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
-			}
+			mockLLM := &mockLLM{}
 
 			input := severity.TriageInput{
 				Namespace:   "default",

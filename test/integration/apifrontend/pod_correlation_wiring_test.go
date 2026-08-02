@@ -20,14 +20,15 @@ import (
 )
 
 type podCorrelationPromClient struct {
-	alerts []prom.Alert
+	alerts     []prom.Alert
+	ruleGroups []prom.RuleGroup
 }
 
 func (p *podCorrelationPromClient) GetAlerts(_ context.Context) ([]prom.Alert, error) {
 	return p.alerts, nil
 }
 func (p *podCorrelationPromClient) GetRules(_ context.Context) ([]prom.RuleGroup, error) {
-	return nil, nil
+	return p.ruleGroups, nil
 }
 func (p *podCorrelationPromClient) InstantQuery(_ context.Context, _ string) (*prom.QueryResult, error) {
 	return &prom.QueryResult{}, nil

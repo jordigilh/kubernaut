@@ -126,15 +126,7 @@ func (c *httpClient) GetRules(ctx context.Context) ([]RuleGroup, error) {
 	for _, g := range apiResp.Data.Groups {
 		rg := RuleGroup{Name: g.Name, File: g.File}
 		for _, r := range g.Rules {
-			rg.Rules = append(rg.Rules, Rule{
-				Name:        r.Alert,
-				Query:       r.Expr,
-				Duration:    r.Duration,
-				Labels:      r.Labels,
-				Annotations: r.Annotations,
-				State:       r.State,
-				Type:        r.Type,
-			})
+			rg.Rules = append(rg.Rules, Rule(r))
 		}
 		groups = append(groups, rg)
 	}
@@ -236,9 +228,18 @@ type apiRuleGroup struct {
 	Rules []apiRule `json:"rules"`
 }
 
+// apiRule mirrors Prometheus's AlertingRule/RecordingRule API types
+// (web/api/v1/api.go): both use "name" for the rule identifier and "query"
+// for the PromQL expression -- there is no "alert"/"expr" field in the real
+// /api/v1/rules response. A prior "alert"/"expr" mismatch here silently
+// left Rule.Query empty for every rule (see GetRules above), which made
+// ExtractLabelMatchers("") fail to parse for 100% of fetched rules --
+// Tier 1.5/Tier 2's rule-based correlation could never match anything in
+// production. It went undetected because the (now-removed, #1839) Tier 3
+// ungrounded-LLM fallback silently absorbed every resulting miss.
 type apiRule struct {
-	Alert       string            `json:"alert"`
-	Expr        string            `json:"expr"`
+	Name        string            `json:"name"`
+	Query       string            `json:"query"`
 	Duration    float64           `json:"duration"`
 	Labels      map[string]string `json:"labels"`
 	Annotations map[string]string `json:"annotations"`

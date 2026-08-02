@@ -50,23 +50,6 @@ var _ = Describe("LLM Triage", func() {
 		})
 	})
 
-	Describe("Tier 3: Pure LLM", func() {
-		It("UT-AF-T-048: prompt includes resource context", func() {
-			capturedInput := severity.TriageInput{}
-			mock := &promptCaptureLLM{
-				result: severity.TriageResult{Severity: "warning", Source: severity.SourceLLMTriage},
-				captureInput: func(input severity.TriageInput) {
-					capturedInput = input
-				},
-			}
-			result, err := mock.TriagePure(context.Background(), defaultInput)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("warning"))
-			Expect(capturedInput.Namespace).To(Equal("prod"))
-			Expect(capturedInput.Kind).To(Equal("Deployment"))
-		})
-	})
-
 	Describe("Response Validation", func() {
 		It("UT-AF-T-049: valid severity accepted (ADR-066: critical > high > warning > info)", func() {
 			Expect(severity.ValidateSeverity("critical")).To(BeTrue())
@@ -104,24 +87,15 @@ var _ = Describe("LLM Triage", func() {
 	Describe("Error Handling", func() {
 		It("UT-AF-T-052: LLM call error returns error", func() {
 			mock := &mockLLM{
-				pureErr: errors.New("LLM unavailable"),
+				ruleErr: errors.New("LLM unavailable"),
 			}
-			_, err := mock.TriagePure(context.Background(), defaultInput)
+			_, err := mock.TriageWithRules(context.Background(), nil, defaultInput)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("LLM unavailable"))
 		})
 	})
 
 	Describe("NoopLLMTriager", func() {
-		It("UT-AF-T-090: TriagePure always returns warning with full confidence", func() {
-			noop := severity.NewNoopLLMTriager(logr.Discard())
-			result, err := noop.TriagePure(context.Background(), defaultInput)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("warning"))
-			Expect(result.Confidence).To(Equal(1.0))
-			Expect(result.Source).To(BeZero())
-		})
-
 		It("UT-AF-T-091: TriageWithRules always returns warning with full confidence", func() {
 			noop := severity.NewNoopLLMTriager(logr.Discard())
 			rules := []prom.Rule{{Name: "SomeRule", Query: "up == 0"}}
@@ -173,13 +147,6 @@ func (m *promptCaptureLLM) TriageWithRules(_ context.Context, rules []prom.Rule,
 	if m.captureRules != nil {
 		m.captureRules(rules)
 	}
-	if m.captureInput != nil {
-		m.captureInput(input)
-	}
-	return m.result, m.err
-}
-
-func (m *promptCaptureLLM) TriagePure(_ context.Context, input severity.TriageInput) (severity.TriageResult, error) {
 	if m.captureInput != nil {
 		m.captureInput(input)
 	}

@@ -18,12 +18,14 @@ package tools_test
 
 import (
 	"context"
+	"errors"
 
 	"github.com/a2aproject/a2a-go/a2a"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
@@ -38,7 +40,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 				Name:        "web",
 				Description: "Pod CrashLoopBackOff detected",
 				APIVersion:  "apps/v1",
-			}, "sre-user", nil, nil)
+			}, "sre-user", defaultTestTriager(), nil)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
@@ -52,13 +54,13 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 
 			result1, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "first", APIVersion: "apps/v1",
-			}, "user-a", nil, nil)
+			}, "user-a", defaultTestTriager(), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result1.AlreadyExists).To(BeFalse())
 
 			result2, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "second", APIVersion: "apps/v1",
-			}, "user-b", nil, nil)
+			}, "user-b", defaultTestTriager(), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result2.AlreadyExists).To(BeTrue())
 			Expect(result2.RRID).To(Equal(result1.RRID))
@@ -68,7 +70,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 			tc := newTypedFakeClient()
 			result, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
 				Namespace: "", Kind: "Node", Name: "worker-1", APIVersion: "v1",
-			}, "user", nil, nil)
+			}, "user", defaultTestTriager(), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 		})
@@ -98,14 +100,15 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 			Expect(err).To(MatchError(tools.ErrK8sUnavailable))
 		})
 
-		It("UT-AF-1332-007: severity defaults to medium when no triager provided", func() {
+		It("UT-AF-1332-007 / UT-AF-1839-011: nil Triager (severityTriage.enabled=false) fails closed instead of fabricating a severity", func() {
 			tc := newTypedFakeClient()
 
 			result, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web-sev", APIVersion: "apps/v1",
 			}, "user", nil, nil)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("warning"))
+			Expect(errors.Is(err, severity.ErrSeverityUndetermined)).To(BeTrue(),
+				"#1839/DD-AF-010: a nil Triager must fail closed like 'no evidence found', not silently default to warning")
+			Expect(result.RRID).To(BeEmpty())
 		})
 
 		It("UT-AF-1332-008: existing rr_id path looks up RR status (fixes status.phase bug)", func() {
@@ -113,12 +116,12 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 
 			createResult, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "existing-target", APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user", defaultTestTriager(), nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			lookupResult, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
 				RRID: createResult.RRID,
-			}, "user", nil, nil)
+			}, "user", defaultTestTriager(), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(lookupResult.RRID).To(Equal(createResult.RRID))
 			Expect(lookupResult.AlreadyExists).To(BeTrue())
@@ -142,7 +145,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 				Kind:       "Deployment",
 				Name:       "web-apiver",
 				APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user", defaultTestTriager(), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 		})
@@ -171,7 +174,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 				Kind:       "Deployment",
 				Name:       "web-enriched",
 				APIVersion: "apps/v1",
-			}, "user", nil, nil)
+			}, "user", defaultTestTriager(), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 
