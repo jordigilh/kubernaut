@@ -1,12 +1,10 @@
-# ADR-056: Post-RCA Label Computation Relocation
+# ADR-056: Post-RCA Label Computation (Target-Scoped, Not Signal-Scoped)
 
 **Status**: ACCEPTED
 **Decision Date**: 2026-02-12
-**Version**: 1.7
-**Confidence**: 96%
+**Version**: 2.0 (Go rewrite)
+**Confidence**: 94%
 **Applies To**: SignalProcessing, Kubernaut Agent (KA), AIAnalysis Controller, Data Storage
-
-> **Note (2026-08-01, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: Cross-references to DD-HAPI-017/018 below have been updated to their current DD-KA-017/018 equivalents. The remaining body text (change history, "session_state" mechanism, Python file paths) still describes the pre-Go-rewrite implementation and has not yet been fully rewritten against `internal/kubernautagent/enrichment/label_detector.go` — treat DD-KA-018 as authoritative for current detection behavior, and DD-KA-017 for the current tool/label-injection mechanism, wherever this document's body conflicts with them.
 
 ---
 
@@ -14,14 +12,8 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
-| 1.0 | 2026-02-12 | Architecture Team | Initial decision: relocate label computation from SP to HAPI post-RCA. Labels are HAPI-internal, not returned to LLM. |
-| 1.1 | 2026-02-12 | Architecture Team | Add DD-HAPI-018 cross-reference. Increase confidence to 96%. |
-| 1.2 | 2026-02-12 | Architecture Team | Align with DD-HAPI-017 v1.2 flow enforcement. Clarify session state wiring. |
-| 1.3 | 2026-02-20 | Architecture Team | Surface detected labels to LLM as read-only `cluster_context` in `list_available_actions` response. Labels remain HAPI-computed and are NOT LLM-managed parameters. The change gives the LLM explicit infrastructure context for informed action type selection (e.g., GitOps-managed, HPA-enabled). See DD-HAPI-017 v1.3, BR-HAPI-017-007. |
-| 1.4 | 2026-02-20 | Architecture Team | Phase 1 implementation: move label detection from `workflow_discovery.py` (signal source) into the `resource_context` toolset (`get_namespaced_resource_context` for namespaced RCA targets; cluster-scoped targets use `get_cluster_resource_context`). Add conditional `detected_infrastructure` response for one-shot LLM reassessment when active labels exist. Second call on the appropriate tool resolves new target context but skips label re-detection. See DD-HAPI-017 v1.4, BR-HAPI-017-008. |
-| 1.5 | 2026-03-12 | Architecture Team | Status changed from PROPOSED to ACCEPTED. Implementation verified complete: label detection in resource context tools, session-state propagation, `failedDetections` stripping all operational. Dead code (`should_include_detected_labels()`) tracked as tech debt (#345). |
-| 1.6 | 2026-03-24 | Architecture Team | **Issue #524**: Document tool split — `get_namespaced_resource_context` and `get_cluster_resource_context` in the `resource_context` toolset; `resource_scope` in `session_state`. Narrative and diagrams updated from legacy `get_resource_context` name. |
-| 1.7 | 2026-03-25 | Architecture Team | **Issue #529**: Label detection moves from `resource_context` tools to `EnrichmentService` (Phase 2 of three-phase RCA). Labels are now detected for the K8s-verified root owner resolved by HAPI (not the resource the LLM investigated via the tool). `_detect_labels_if_needed` removed from `resource_context.py`; `_build_k8s_context` extracted to shared utility. Labels provided to LLM via enrichment prompt in Phase 3, not via tool response. `session_state["detected_labels"]` no longer written by resource context tools. See BR-HAPI-264. |
+| 1.0–1.7 | 2026-02-12 to 2026-03-25 | Architecture Team | Historical evolution under the Python-era implementation: relocated label computation from SignalProcessing to a `HAPI`-internal step, added a read-only `cluster_context` surfaced in the `list_available_actions` tool response, added a one-shot `detected_infrastructure` field on the resource-context tool response for RCA reassessment, then moved detection into a `HAPI`-internal `EnrichmentService` (Issue #529). Superseded by v2.0 below; see git history for the original entries. |
+| 2.0 | 2026-08-02 | — | Rewritten against the Go KA implementation as part of [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806). **Key correction**: the decision this ADR records — compute infrastructure labels for the RCA-identified target's root owner, not the pre-RCA signal source — is unchanged and confirmed implemented (`internal/kubernautagent/enrichment/label_detector.go`). But the delivery mechanism the Python-era design built (a read-only `cluster_context` tool-response field plus a one-shot `detected_infrastructure` reassessment field) was **not carried into the Go rewrite** — neither string appears anywhere in `internal/kubernautagent/`. The actual Go mechanism is simpler: labels are (1) rendered directly into the investigation prompt (`internal/kubernautagent/prompt/builder.go`) and (2) propagated via `SignalContext.DetectedLabelsJSON` on `context.Context` to filter workflow-discovery queries (`internal/kubernautagent/tools/custom/tools.go`) — not a shared mutable `session_state` dict. Replaced the Python "Changes Required" migration-plan tables with a pointer to the current Go implementation and to [DD-KA-018](DD-KA-018-detected-labels-detection-specification.md) (label count corrected from 7–9 to the current 12 characteristics) and [DD-KA-017](DD-KA-017-three-step-workflow-discovery-integration.md). Renamed `HAPI` → Kubernaut Agent (KA) throughout. |
 
 ---
 
@@ -29,13 +21,13 @@
 
 ### Background: ADR-055 Exposed a Deeper Gap
 
-ADR-055 moved context enrichment (owner chain resolution, spec hash, remediation history) from pre-LLM computation to LLM-driven post-RCA tool calls in the `resource_context` toolset (`get_namespaced_resource_context` for namespaced targets; `get_cluster_resource_context` for cluster-scoped targets such as Node or PV). This correctly addresses the "wrong resource context" problem for those three data points.
+[ADR-055](ADR-055-llm-driven-context-enrichment.md) moved owner-chain resolution, spec hash, and remediation history from pre-RCA signal-source computation to post-RCA target-scoped computation. That correctly addressed the "wrong resource context" problem for those three data points.
 
-However, ADR-055 did not address **DetectedLabels**, which suffer from the same fundamental flaw: they are computed at **signal time** for the **signal source resource** by SignalProcessing, then propagated downstream to HAPI for workflow discovery and LLM prompt context.
+It did not, at the time, address **DetectedLabels**, which suffer from the same flaw: they were computed at **signal time** for the **signal source resource** by SignalProcessing, then propagated downstream for workflow discovery and LLM prompt context.
 
 ### The Stale Labels Problem
 
-When the LLM's RCA identifies a resource different from the signal source, the DetectedLabels computed by SP are **stale and potentially misleading**:
+When the LLM's RCA identifies a resource different from the signal source, DetectedLabels computed for the signal source are **stale and potentially misleading**:
 
 ```
 Signal: Pod "api-xyz" in namespace "prod" crashes
@@ -55,183 +47,67 @@ Workflow discovery receives SP's DetectedLabels:
   - Result: Returns Deployment-oriented workflows instead of Node remediation workflows
 ```
 
-This is not an edge case. RCA routinely pivots to a different resource:
-
-| Signal Source | RCA Target | SP Labels Valid? |
-|--------------|------------|-----------------|
-| Pod crash | Deployment misconfiguration (in owner chain) | Yes |
-| Pod OOMKill | Container resource limits on Deployment | Yes |
-| Pod CrashLoopBackOff | Bad ConfigMap mount | No |
-| Pod crash | Node memory pressure | No |
-| Service latency | Upstream dependency failure | No |
-| Pod eviction | PVC storage class issue | No |
-
-Conservative estimate: ~30-40% of RCA results identify a resource outside the signal source's owner chain.
-
-### Current Data Flow
-
-```
-SignalProcessing                  AIAnalysis              HAPI
-+-----------------------+         +----------+           +----------------------+
-| 1. Compute OwnerChain |         |          |           |                      |
-| 2. Detect labels      |-------->| Copy to  |---------->| prompt_builder:      |
-|    (signal source)    |  enrich | AIA spec |   request |   cluster context    |
-| 3. Store in SP status |  results|          |           |   filter instructions|
-+-----------------------+         +----------+           |                      |
-                                                         | workflow_discovery:  |
-                                                         |   detected_labels    |
-                                                         |   query param        |
-                                                         +----------------------+
-```
-
-SP computes labels for the **signal source** at signal time. These flow through three CRD boundaries (SP -> RO -> AIAnalysis -> HAPI) and are used for:
-
-1. **LLM Prompt Context** (`prompt_builder.py`): `build_cluster_context_section()` converts labels to natural language (e.g., "This namespace is managed by GitOps (argocd)")
-2. **Workflow Discovery Filtering** (`workflow_discovery.py`): Labels passed as `detected_labels` query parameter to Data Storage
-3. **Workflow Search Scoring** (`search.go`): Labels used for boost/penalty scoring in POST search
-
-### Evidence of the Gap in Existing Code
-
-The gap was anticipated but never resolved:
-
-- **`should_include_detected_labels()`** in `kubernaut-agent/src/toolsets/workflow_discovery.py` (line 152): A guard function that checks whether the RCA target matches the signal source before including DetectedLabels. It is **defined but never called** -- the exact guard for this gap was written but never wired into the workflow discovery flow.
-
-- **Data Storage discovery SQL** in `pkg/datastorage/repository/workflow/discovery.go`: `detected_labels` are parsed from the request but **not used in the discovery SQL queries** -- they only participate in boost/penalty scoring in the separate POST search flow. This means the three-step discovery path (list actions -> list workflows -> get workflow) already operates without label filtering.
+This is not an edge case — RCA routinely identifies a resource outside the signal source's owner chain (Pod crash → Node memory pressure; Pod eviction → PVC storage class issue; Service latency → upstream dependency failure).
 
 ### Business Requirements Affected
 
-- **BR-SP-101**: DetectedLabels auto-detection (8 characteristics) -- scope changes from pipeline-wide to SP-internal
-- **BR-SP-103**: FailedDetections tracking -- stays within SP
-- **BR-HAPI-194**: Honor `failedDetections` in workflow filtering -- moves to HAPI-computed labels
-- **BR-KA-250/252**: DetectedLabels integration with Data Storage -- labels now computed by HAPI
-- **DD-WORKFLOW-001 v1.7/v2.1/v2.2**: DetectedLabels schema and validation -- architectural relocation
+- **BR-SP-101**: DetectedLabels auto-detection — scope is SP-internal (signal classification only)
+- **BR-SP-103**: FailedDetections tracking — stays within SP
+- **BR-KA-264/265**: Post-RCA label detection and use in workflow discovery
 
 ---
 
 ## Decision
 
-### Relocate Label Computation from SignalProcessing to HAPI (Post-RCA, Internal)
+### Relocate Label Computation from SignalProcessing to KA (Post-RCA, Automatic)
 
-Move label detection from signal time (SP) to post-RCA time (HAPI), aligned with the actual remediation target resource identified by the LLM. Labels are computed by HAPI and used for three purposes: (1) transparently injected into DataStorage workflow discovery queries as filter criteria, (2) **surfaced read-only to the LLM** as `cluster_context` in the `list_available_actions` tool response (v1.3), and (3) **conditionally returned in the `get_namespaced_resource_context` / `get_cluster_resource_context` response** (whichever applies to the target scope) as `detected_infrastructure` when active labels exist, enabling the LLM to reassess its RCA strategy before workflow selection (v1.4). The LLM does not manage or pass labels as parameters -- they are computed once (one-shot) and injected into responses for reasoning context only.
+Compute infrastructure labels for the **resolved root owner of the RCA-identified target**, not the signal source — as part of the same automatic enrichment pass ADR-055 introduced, not a separate LLM-triggered step.
 
-### Foundational Principle: Impact vs. Target
+### Foundational Principle: Impact vs. Target (unchanged)
 
-The architecture separates two fundamentally different classification scopes:
+- **Impact-scoped (SignalProcessing, pre-RCA)**: Business classification — environment, priority, severity, business unit. These describe the **business impact of the signal** and remain correct regardless of what RCA identifies as the root cause.
+- **Target-scoped (KA, post-RCA)**: DetectedLabels — stateful, hpaManaged, helmManaged, pdbProtected, GitOps-managed, service mesh, CNV/KubeVirt characteristics, etc. These describe **operational properties of the remediation target** and can only be answered correctly for the actual target RCA identifies.
 
-- **Impact-scoped (SP, pre-RCA)**: Business classification -- environment, priority, severity, business unit. These describe the **business impact of the signal**: which service is affected, in which environment, how urgent is it. These are valid at signal time and remain correct regardless of what the RCA identifies as the root cause. A Pod crash in production is P0 whether the fix targets a Pod, a Deployment, or a Node.
+SignalProcessing owns impact classification. KA owns target properties. Neither crosses into the other's domain.
 
-- **Target-scoped (HAPI, post-RCA)**: DetectedLabels -- stateful, hpaManaged, helmManaged, pdbProtected, etc. These describe **operational properties of the remediation target**: what constraints apply to the resource we are about to fix. These can only be answered correctly for the actual target identified by RCA.
-
-SP owns impact classification. HAPI owns target properties. Neither crosses into the other's domain.
-
-### Proposed Architecture
+### Current Implementation (Go KA)
 
 ```
-SignalProcessing                  AIAnalysis              HAPI
-+-----------------------+         +----------+           +-----------------------------------+
-| Business classif.:    |         |          |           | 1. LLM performs RCA               |
-|  - environment        |         | Signal   |           | 2. LLM calls                      |
-|  - priority           |         | context  |---------->|    get_namespaced_resource_context()|
-|  - severity           |         | only     |  request  |    or get_cluster_resource_context() |
-|                       |         |          |           |    for RCA target (by scope)       |
-|  - business unit      |         | (no      |           | 3. Tool internally:                |
-|                       |         |  labels  |           |    - Resolves owner chain          |
-| DetectedLabels:       |         |  or      |           |    - Computes spec hash            |
-|  (SP-internal only)   |         |  owner   |           |    - Fetches history               |
-|  for audit/classify   |         |  chain)  |           |    - Computes labels (one-shot)    |
-+-----------------------+         +----------+           |    - Stores labels in session state|
-                                                         |    Returns to LLM:                 |
-                                                         |      root_owner + history          |
-                                                         |      + detected_infrastructure     |
-                                                         |        (only if active labels)     |
-                                                         |                                    |
-                                                         | 3a. (v1.4) If active labels:       |
-                                                         |    LLM reassesses RCA strategy.    |
-                                                         |    May call the appropriate        |
-                                                         |    resource_context tool again     |
-                                                         |    (get_namespaced_* or get_cluster|
-                                                         |    _*; root_owner + history only,  |
-                                                         |    no label re-detection).         |
-                                                         |                                    |
-                                                         | 4. LLM calls list_available_actions|
-                                                         |    HAPI injects stored labels into |
-                                                         |    DataStorage query AND returns   |
-                                                         |    them as read-only cluster_context|
-                                                         |    in tool response (v1.3)         |
-                                                         |                                    |
-                                                         | 5. LLM calls list_workflows        |
-                                                         |    HAPI transparently injects      |
-                                                         |    stored labels into DS query     |
-                                                         +-----------------------------------+
+SignalProcessing              AIAnalysis           Kubernaut Agent (KA)
++----------------------+      +----------+         +--------------------------+
+| Business classif.:   |      |          |         | 1. LLM performs RCA      |
+|  - environment       |      | Signal   |-------->| 2. KA resolves enrichment|
+|  - priority          |      | context  | request |    target (ADR-055)      |
+|  - severity          |      | only     |         | 3. Enricher.Enrich runs  |
+|  - business unit     |      | (no      |         |    automatically:         |
+|                      |      |  labels  |         |    - owner chain, spec    |
+| DetectedLabels:      |      |  or      |         |      hash, history        |
+|  (SP-internal only)  |      |  owner   |         |    - LabelDetector:       |
+|  for its own audit/  |      |  chain)  |         |      12 characteristics   |
+|  classification      |      |          |         |      for the root owner   |
++----------------------+      +----------+         | 4. Labels rendered into   |
+                                                    |    investigation prompt   |
+                                                    | 5. Labels propagated via  |
+                                                    |    SignalContext.         |
+                                                    |    DetectedLabelsJSON to  |
+                                                    |    filter list_workflows/ |
+                                                    |    list_available_actions |
+                                                    +--------------------------+
 ```
 
 ### Key Design Principles
 
-1. **Impact vs. target separation.** Business classification (SP) describes signal impact and is stable across RCA outcomes. DetectedLabels (HAPI) describe the remediation target and must be computed post-RCA for the correct resource.
+1. **Impact vs. target separation** (unchanged). Business classification (SignalProcessing) describes signal impact and is stable across RCA outcomes. DetectedLabels (KA) describe the remediation target and are computed post-RCA for the correct resource.
 
-2. **DetectedLabels are HAPI-computed, read-only to the LLM.** Labels are computed by HAPI during the applicable `resource_context` tool call (`get_namespaced_resource_context` or `get_cluster_resource_context`, post-RCA) and stored in session state. They are **not passed as tool parameters** (the LLM cannot set or override them). HAPI transparently injects them into workflow discovery queries as filter criteria. **v1.3**: Labels are also surfaced to the LLM as a read-only `cluster_context` section in the `list_available_actions` tool response, giving the LLM explicit infrastructure context (e.g., "this is ArgoCD-managed") for informed action type selection. **v1.4**: When active labels are detected, they are also returned in that tool's response as `detected_infrastructure`, enabling the LLM to reassess its RCA strategy (e.g., realizing that a GitOps-managed resource should be remediated via commit revert rather than direct patch). This is a **one-shot** mechanism: labels are computed on the first resource-context tool call only; subsequent calls for revised targets resolve root_owner + history but skip label re-detection. The LLM's tool interface remains simple -- no label parameters, no risk of label hallucination -- but the LLM can now reason about detected infrastructure characteristics at both RCA reassessment time (via `detected_infrastructure`) and workflow selection time (via `cluster_context`).
+2. **DetectedLabels are KA-computed and delivered two ways, both read-only to the LLM.** Labels are computed once per investigation, during the same automatic enrichment pass that resolves owner chain/spec hash/history (ADR-055) — not via a separate LLM tool call, and not stored in a shared mutable dict. They reach the LLM through: (a) direct rendering into the investigation prompt (`internal/kubernautagent/prompt/builder.go`, e.g. "Detected labels: hpaManaged=true, helmManaged=true"), giving the LLM infrastructure context during RCA and workflow-selection reasoning; and (b) transparent injection as filter criteria into `list_available_actions`/`list_workflows` catalog queries via `SignalContext.DetectedLabelsJSON` (`internal/kubernautagent/tools/custom/tools.go`). The LLM never passes labels as a tool parameter and cannot override them. **Simplified from the original Python-era design**: the earlier read-only `cluster_context` tool-response field and the one-shot `detected_infrastructure` RCA-reassessment field were not carried into the Go rewrite — direct prompt rendering replaced both.
 
-3. **Workflow discovery `list_workflows` drops the `detected_labels` parameter.** The LLM calls `list_workflows(action_type)` and HAPI internally applies the stored labels as filter criteria. This is completely transparent from the LLM's perspective.
+3. **Workflow discovery tools take no label parameter.** The LLM calls `list_workflows(action_type)` with no `detected_labels` argument; KA applies the stored labels as filter criteria internally. This is unchanged from the original decision.
 
-4. **SP keeps its own labels for internal purposes.** SP still computes labels for signal classification, audit events (`HasOwnerChain`, `OwnerChainLength`), and internal detection. These do not leave SP.
+4. **SignalProcessing keeps its own labels for internal purposes.** SP still computes labels for signal classification and its own audit events. These do not leave SP.
 
-5. **The `resource_context` toolset (`get_namespaced_resource_context` / `get_cluster_resource_context`) is the single source of truth for target context.** ADR-055 already made these tools the source for owner chain, spec hash, and remediation history. Adding label detection completes the picture.
+5. **KA's enrichment pass (ADR-055) is the single source of truth for target context, including labels.** Owner chain, spec hash, remediation history, and DetectedLabels are all resolved together, for the same RCA-identified target, in the same automatic pass — not four independently-triggered lookups.
 
-6. **CustomLabels (Rego-extracted) stay as-is.** Customer-defined Rego policies extract labels from the signal source resource. These are a customer extension point and should be designed for impact/signal-scoped properties (team, cost-center, service-tier) rather than resource-specific mechanics. Guidance will be documented. Moving customer Rego execution to HAPI post-RCA is a potential future iteration but out of scope for this decision.
-
-7. **No backwards compatibility required.** The system has not been released. All changes are forward-only.
-
----
-
-## Changes Required
-
-### Phase 1: Extend `resource_context` Tools with Label Detection and One-Shot Reassessment
-
-| File | Change | Rationale |
-|------|--------|-----------|
-| `kubernaut-agent/src/toolsets/resource_context.py` | Add label detection logic to the namespaced and cluster resource context tool implementations (`_invoke_async()`). After resolving owner chain (when applicable), detect: gitOpsManaged, pdbProtected, hpaEnabled, stateful, helmManaged, networkIsolated, serviceMesh. **Store labels in session state** and `resource_scope`. **v1.4**: Conditionally include `detected_infrastructure` in response when any label is active (boolean `true` or non-empty string). Omit when all defaults or on second call (one-shot: session_state sentinel prevents re-detection). Update tool `additional_instructions` for reassessment guidance. | Labels computed for the actual RCA target. Active labels surfaced for LLM reassessment before workflow selection. |
-| `kubernaut-agent/src/toolsets/workflow_discovery.py` | Remove `_ensure_detected_labels()`, `_compute_labels_async()`, `_build_k8s_context()`. Remove `k8s_client`, `resource_name`, `resource_namespace` params. Discovery tools now read labels exclusively from session_state (populated by `get_namespaced_resource_context` / `get_cluster_resource_context`). | Eliminates signal-source label computation. Labels come from RCA target via session_state. |
-| `kubernaut-agent/src/extensions/llm_config.py` | Wire `session_state` through `register_resource_context_toolset()`. Remove `k8s_client`, `resource_name`, `resource_namespace` from `register_workflow_discovery_toolset()`. | Session state shared between both toolsets. |
-| `kubernaut-agent/src/extensions/incident/llm_integration.py` | Pass `session_state` to resource context toolset. Remove K8s client and resource identity passing to workflow discovery. | Wiring change. |
-| `kubernaut-agent/src/extensions/recovery/llm_integration.py` | Same changes as incident flow. | Wiring change. |
-| `kubernaut-agent/src/clients/k8s_client.py` | No changes -- ADR-056 K8s extensions (list_pdbs, list_hpas, list_network_policies, get_namespace_metadata) already implemented. | Already done. |
-| `deploy/kubernaut-agent/service-rbac.yaml` | No changes -- `kubernaut-agent-investigator` ClusterRole already has PDB, HPA, NetworkPolicy RBAC. | Already done. |
-| `kubernaut-agent/tests/unit/test_resource_context_session_state.py` | Rewrite 9 tests (UT-HAPI-056-034 through 042) for label detection in resource context. Add 3 reassessment tests (UT-HAPI-056-090 through 092). | TDD: test each label detection and reassessment path |
-
-### Phase 2: Remove Label and OwnerChain Propagation from Pipeline
-
-| File | Change | Rationale |
-|------|--------|-----------|
-| `pkg/shared/types/enrichment.go` | Remove `OwnerChain []OwnerChainEntry` field from `EnrichmentResults` (**ADR-055: removed**). Keep `OwnerChainEntry` type (used by SP internally). | OwnerChain no longer propagated; SP uses its own CRD type |
-| `pkg/shared/types/enrichment.go` | Remove `DetectedLabels *DetectedLabels` field from `EnrichmentResults` (**ADR-056: removed, now in PostRCAContext**). Keep `DetectedLabels` type (used by SP internally). | Labels no longer propagated; SP uses them internally |
-| `pkg/remediationorchestrator/creator/aianalysis.go` | Remove `buildEnrichmentResults` OwnerChain copy logic and DetectedLabels copy logic | No longer propagated to AIAnalysis |
-| `pkg/aianalysis/handlers/request_builder.go` | Remove DetectedLabels mapping to HAPI request (OwnerChain mapping already removed by ADR-055) | HAPI computes its own labels |
-| `api/signalprocessing/v1alpha1/signalprocessing_types.go` | Keep `OwnerChain` in `KubernetesContext` (SP-internal) | SP still needs it for its own label detection |
-| `pkg/shared/types/zz_generated.deepcopy.go` | Regenerate with `controller-gen` after type changes | DeepCopy must match updated types |
-
-### Phase 3: Transparent Label Injection in Workflow Discovery
-
-| File | Change | Rationale |
-|------|--------|-----------|
-| `kubernaut-agent/src/toolsets/workflow_discovery.py` | Remove `should_include_detected_labels()` function. Remove `detected_labels` from `list_workflows` tool parameter schema. Update toolset to read labels from session state (stored by the `resource_context` tools) and inject them transparently into DataStorage queries. LLM calls `list_workflows(action_type)` with no label parameters. **v1.3 (BR-HAPI-017-007)**: In `ListAvailableActionsTool._invoke()`, after receiving the DS response, inject a `cluster_context` section containing the detected labels (with `failedDetections` stripped) and a natural-language note. This surfaces infrastructure context to the LLM for informed action type selection without making labels a tool parameter. | Labels are HAPI-computed; the LLM receives them as read-only context but cannot set or override them. Guard function no longer needed -- labels always match target. |
-| `kubernaut-agent/src/extensions/incident/prompt_builder.py` | Remove `build_cluster_context_section()` DetectedLabels rendering from LLM prompt. Labels are no longer provided as static prompt context -- they are surfaced dynamically via `cluster_context` in the `list_available_actions` tool response (v1.3). | Labels arrive at the right time (post-RCA, during workflow discovery) rather than at prompt construction time (pre-RCA) |
-| `kubernaut-agent/src/extensions/llm_config.py` | Update `register_workflow_discovery_toolset()` to not pass `detected_labels` from enrichment results. Toolset reads from session state instead. | Labels come from internal state, not request |
-
-### Phase 4: Update SP Internal Label Flow
-
-| File | Change | Rationale |
-|------|--------|-----------|
-| `internal/controller/signalprocessing/signalprocessing_controller.go` | Keep `detectLabels()` but store result in SP-specific status field instead of shared `EnrichmentResults` | Labels stay internal to SP |
-| `pkg/signalprocessing/audit/client.go` | Update audit to read labels from SP's internal field | Audit still captures label detection results |
-| `pkg/signalprocessing/detection/labels.go` | No changes -- label detection logic stays in SP for internal use | SP still detects labels for signal classification |
-
-### Phase 5: Cleanup
-
-| File | Change | Rationale |
-|------|--------|-----------|
-| `pkg/shared/types/enrichment.go` | Evaluate whether `EnrichmentResults` struct is still needed. If only `KubernetesContext` and `CustomLabels` remain, consider simplifying. | Reduce unnecessary abstraction |
-| `api/openapi/data-storage-v1.yaml` | Update OpenAPI spec if `detected_labels` parameter semantics change | API contract alignment |
-| Test files across `test/unit/`, `test/integration/`, `test/e2e/` | Update all tests that reference propagated OwnerChain or DetectedLabels | Test alignment with new architecture |
+6. **No backwards compatibility required.** Carried forward from the original decision; still true.
 
 ---
 
@@ -239,88 +115,61 @@ SignalProcessing                  AIAnalysis              HAPI
 
 ### Positive
 
-1. **Accurate workflow discovery**: Labels always describe the resource being remediated, not the signal source. Workflow selection matches the actual target.
-
-2. **Simpler LLM interface with informed context at two decision points**: The LLM does not manage DetectedLabels as tool parameters -- `list_workflows` drops the `detected_labels` parameter. Fewer tool parameters means less hallucination risk and simpler prompt engineering. **v1.3**: The LLM receives detected labels as read-only `cluster_context` in the `list_available_actions` response, enabling explicit reasoning about infrastructure characteristics during workflow selection. **v1.4**: The LLM also receives labels as `detected_infrastructure` in the `get_namespaced_resource_context` / `get_cluster_resource_context` response (when active), enabling RCA reassessment before workflow discovery (e.g., realizing that a GitOps-managed resource needs a commit revert, not a direct patch).
-
-3. **Simpler pipeline**: Removes OwnerChain and DetectedLabels propagation across three CRD boundaries (SP -> RO -> AIAnalysis -> HAPI). Fewer moving parts, fewer conversion points.
-
-4. **Clean separation of concerns**: SP owns business classification (impact-scoped, stable). HAPI owns target properties (resource-scoped, post-RCA). Each component classifies what it has visibility into.
-
-5. **Eliminates dead code**: `should_include_detected_labels()` and the unused discovery SQL label filtering become unnecessary.
-
-6. **Consistent with ADR-055**: Completes the architectural shift started by ADR-055. All target-specific context (owner chain, spec hash, history, labels) is now computed post-RCA for the actual target.
-
-7. **SP simplification**: SP's enrichment results become lighter. SP still performs label detection for its own audit and classification needs, but the results don't need serialization into shared types.
+1. **Accurate workflow discovery**: Labels always describe the resource being remediated, not the signal source.
+2. **Simpler LLM interface**: `list_workflows` takes no label parameter — fewer parameters, less hallucination risk.
+3. **Simpler pipeline**: Removes DetectedLabels propagation across CRD boundaries (SP → RO → AIAnalysis → KA); KA computes them directly against the K8s API for its resolved target.
+4. **Clean separation of concerns**: SignalProcessing owns business classification (impact-scoped, stable); KA owns target properties (resource-scoped, post-RCA).
+5. **Consistent with ADR-055**: Completes the architectural shift — all target-specific context (owner chain, spec hash, history, labels) is computed together, post-RCA, for the actual target.
+6. **Simpler than originally designed**: The Go implementation dropped the Python-era `cluster_context`/`detected_infrastructure` two-field delivery split in favor of straightforward prompt rendering, with no loss of the underlying guarantee (labels always describe the correct target).
 
 ### Negative
 
-1. **Additional K8s API calls at RCA time**: Label detection requires API calls (PDB lookup, HPA lookup, NetworkPolicy list, annotation inspection) during HAPI tool execution. Estimated ~5-8 additional API calls per investigation. Mitigated by K8s client caching.
-
-2. **Label detection logic duplication**: SP's original Go label detection (`pkg/signalprocessing/detection/labels.go`) was removed per this ADR; KA's `internal/kubernautagent/enrichment/label_detector.go` is now the sole implementation. **Mitigated by [DD-KA-018](DD-KA-018-detected-labels-detection-specification.md)**: the authoritative detection specification, kept in sync with the Go implementation.
-
-3. **Increased HAPI RBAC surface**: HAPI's ServiceAccount needs additional RBAC permissions for PDB, HPA, and NetworkPolicy resources.
-
-4. **Larger refactor scope**: Changes touch SP, AIAnalysis, RO, HAPI, Data Storage, and shared types. Requires careful phased execution.
+1. **Additional K8s API calls at RCA time**: Label detection (PDB, HPA, NetworkPolicy, ResourceQuota, CNV/KubeVirt lookups) runs as part of every investigation's enrichment pass. Mitigated by K8s client caching within `Enricher`.
+2. **Increased KA RBAC surface**: KA's ServiceAccount needs read access for PDBs, HPAs, NetworkPolicies, ResourceQuotas, and (for CNV/KubeVirt detections) VirtualMachine-related resources.
+3. **Single Go implementation, single point of specification drift risk**: `internal/kubernautagent/enrichment/label_detector.go` is the sole implementation (SignalProcessing's original Go label detector was retired per this ADR). Mitigated by [DD-KA-018](DD-KA-018-detected-labels-detection-specification.md), the authoritative detection specification kept in sync with the Go source.
 
 ---
 
 ## Alternatives Considered
 
-### Alternative A: Wire in `should_include_detected_labels()` Guard
+### Alternative A: Guard-Based Exclusion
 
-Keep SP-computed labels but activate the existing guard function to exclude them when RCA diverges from signal source.
+Keep SignalProcessing-computed labels but exclude them whenever RCA diverges from the signal source.
 
-**Rejected because**:
-- Only solves the "wrong labels" problem by exclusion (no labels at all), not by providing correct labels for the target
-- Workflow discovery would operate with no label context for ~30-40% of investigations
-- The guard function's owner chain dependency creates a circular problem (needs the chain to validate labels, but the chain describes the wrong resource)
+**Rejected because**: solves "wrong labels" only by removing labels entirely for ~30-40% of investigations where RCA diverges from the signal source — workflow discovery would then operate with no label context at all for those cases.
 
-### Alternative B: LLM-Driven Natural Language Filtering (No Labels)
+### Alternative B: LLM-Driven Natural-Language Filtering (No Structured Labels)
 
-Remove structured label filtering entirely. Let the LLM describe what it needs in natural language when calling workflow discovery.
+Remove structured label filtering; let the LLM describe infrastructure constraints in natural language.
 
-**Deferred because**:
-- Less deterministic -- harder to test and validate
-- Safety guardrails (Rego) benefit from structured label data (e.g., "require approval for stateful workload operations")
-- Could be revisited as the LLM-driven architecture matures
-- May be the right long-term direction but premature for v1.0
+**Deferred because**: less deterministic and harder to test; Rego-based safety guardrails benefit from structured label data (e.g., "require approval for stateful workload operations"). May be revisited as the architecture matures, but not adopted for V1.0.
 
-### Alternative C: SP Re-enriches After RCA
+### Alternative C: SignalProcessing Re-enriches After RCA
 
-After the LLM identifies the root cause, trigger a second SP enrichment pass for the RCA target resource.
+Trigger a second SignalProcessing enrichment pass for the RCA-identified target.
 
-**Rejected because**:
-- Adds round-trip latency (HAPI -> Controller -> SP -> Controller -> HAPI)
-- Architecturally backwards -- moves more work into the pipeline instead of simplifying it
-- The LLM already has direct K8s API access via `get_namespaced_resource_context` and `get_cluster_resource_context`
+**Rejected because**: adds a round-trip (KA → Controller → SP → Controller → KA) for something KA can compute directly against the K8s API in one pass, as part of the same enrichment step that already resolves owner chain and spec hash.
 
 ---
 
 ## Related Decisions
 
-- **[ADR-055](ADR-055-llm-driven-context-enrichment.md)**: LLM-Driven Context Enrichment (Post-RCA) -- prerequisite; established the `resource_context` toolset and post-RCA pattern (`get_namespaced_resource_context` / `get_cluster_resource_context` per Issue #524)
-- **[DD-KA-018 v2.0](DD-KA-018-detected-labels-detection-specification.md)**: DetectedLabels Detection Specification -- authoritative detection contract, now covering 12 characteristics (the original 7-9, plus 4 CNV/KubeVirt additions). Historically a cross-language SP/HAPI contract; KA (Go) is now the sole implementation.
-- **[DD-KA-017 v2.0](DD-KA-017-three-step-workflow-discovery-integration.md)**: Three-Step Workflow Discovery Integration -- the LLM-facing tool contract (`list_available_actions`/`list_workflows`/`get_workflow`) built on top of KA's own workflow catalog (see DD-WORKFLOW-019 for the DS→KA ownership move).
-- **DD-WORKFLOW-001 v1.7/v2.1/v2.2**: DetectedLabels schema and validation framework
-- **DD-CONTRACT-002**: Enrichment results schema -- will be updated to remove propagated fields
-- **BR-SP-101**: DetectedLabels auto-detection -- scope narrows to SP-internal
-- **BR-HAPI-194**: Honor failedDetections -- relocates to HAPI-computed labels
-- **BR-KA-250/252**: DetectedLabels in workflow search -- source changes from SP to HAPI
-- **Issue #102**: Implementation tracking issue
-- **Issue #132**: GitOps causality evidence chain and CRD safety guardrails -- identified during Phase 1 implementation
+- **[ADR-055](ADR-055-llm-driven-context-enrichment.md)**: Post-RCA Context Enrichment — prerequisite; established the automatic, target-scoped enrichment pass this decision's label computation is now part of.
+- **[DD-KA-018](DD-KA-018-detected-labels-detection-specification.md) v2.0**: DetectedLabels Detection Specification — authoritative detection contract, 12 characteristics, ground truth for `label_detector.go`.
+- **[DD-KA-017](DD-KA-017-three-step-workflow-discovery-integration.md) v2.0**: Three-Step Workflow Discovery Integration — authoritative for how labels reach workflow-discovery filtering via `SignalContext.DetectedLabelsJSON`.
+- **DD-WORKFLOW-001**: DetectedLabels schema and validation framework.
+- **BR-SP-101**: DetectedLabels auto-detection — scope is SP-internal.
+- **BR-KA-264/265**: DetectedLabels detection and use in workflow discovery.
 
 ---
 
 ## Confidence Assessment
 
-**Confidence: 96%** (up from 90% in v1.1)
+**Confidence: 94%**
 
-| Risk | v1.1 | v1.2 | Mitigation |
-|------|------|------|------------|
-| Label detection parity between SP (Go) and KA (Go) | 5% | ~1% | Both implementations are Go; DD-KA-018 remains the formal specification. Cross-language parity risk no longer applies now that HAPI's Python implementation has been fully retired. |
-| Label injection into workflow discovery | 5% | ~1% | KA propagates detected labels via `SignalContext.DetectedLabelsJSON` (request-context value, not a shared mutable dict) — see DD-KA-017. |
+| Risk | Assessment |
+|------|-----------|
+| Label detection specification drift | Low. Single Go implementation (`label_detector.go`); DD-KA-018 is the formal specification kept in sync with source, both dated 2026-08-01. |
+| RBAC configuration gaps | Low-Medium. KA's ServiceAccount needs PDB/HPA/NetworkPolicy/ResourceQuota/CNV-VM RBAC; missing grants surface as `FailedDetections` entries rather than silent wrong data (fail-observable, not fail-silent). |
 
-**Residual gap (4%)**:
-- Python K8s client behavioral differences (~2%): Label selector matching, error types, and timeout behavior differ between Go's controller-runtime and Python's `kubernetes` client. Mitigated by conformance test vectors.
-- RBAC configuration for HAPI (~2%): HAPI's ServiceAccount needs PDB, HPA, and NetworkPolicy RBAC. If not granted, all API-based detections fail via FailedDetections. Mitigated by Helm chart RBAC templates.
+**Residual gap (6%)**: The read-only `cluster_context`/`detected_infrastructure` reassessment mechanism the Python-era design specified was not reimplemented in Go (see v2.0 changelog). This ADR treats that as an intentional simplification confirmed by the current implementation, not a gap to close — but it is called out here in case a future iteration wants the one-shot RCA-reassessment capability back.
