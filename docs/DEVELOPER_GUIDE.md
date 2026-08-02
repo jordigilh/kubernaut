@@ -1,8 +1,15 @@
 # Kubernaut Developer Guide
 
-**Version**: 2.0
-**Date**: 2026-03-21
+**Version**: 2.1
+**Date**: 2026-08-02
 **Status**: Active
+
+> **2026-08-02 (Issue #1806)**: Corrected stale HolmesGPT-API/HAPI-era content. There is no
+> Python "HolmesGPT API" service, no git submodules, and no `dependencies/` or top-level
+> `kubernaut-agent/` directory in this repository. Kubernaut Agent (KA) is a native Go service
+> (`cmd/kubernautagent`), built, tested, and containerized exactly like every other service.
+> Added the 3 services this guide previously omitted: `apifrontend`, `fleetmetadatacache`, and
+> `kubernautagent` itself.
 
 ---
 
@@ -18,8 +25,8 @@ This guide is the single entry point for anyone contributing to Kubernaut — wh
 
 | Tool | Version | Purpose |
 |------|---------|---------|
-| **Go** | 1.25.6+ | Service development (toolchain 1.25.7) |
-| **Python** | 3.12+ | Kubernaut Agent (legacy SDK) |
+| **Go** | 1.25.6+ | Service development (toolchain 1.25.7) — including Kubernaut Agent, a native Go service |
+| **Python** | 3.12+ | Coverage reporting tooling (`scripts/coverage/coverage_report.py`) |
 | **Kubernetes** | 1.32+ | Runtime platform |
 | **kubectl** | 1.32+ | Cluster management |
 | **Kind** | 0.30+ | Local development clusters |
@@ -34,23 +41,28 @@ This guide is the single entry point for anyone contributing to Kubernaut — wh
 
 ```
 kubernaut/
-├── api/                        # CRD type definitions (9 groups)
+├── api/                        # CRD type definitions (11 groups)
 │   ├── actiontype/
 │   ├── aianalysis/
+│   ├── apifrontend/
 │   ├── effectivenessassessment/
+│   ├── investigationsession/
 │   ├── notification/
 │   ├── openapi/
 │   ├── remediation/
 │   ├── remediationworkflow/
 │   ├── signalprocessing/
 │   └── workflowexecution/
-├── cmd/                        # Service entry points (10 services)
+├── cmd/                        # Service entry points (12 services + must-gather CLI tool)
 │   ├── aianalysis/
+│   ├── apifrontend/
 │   ├── authwebhook/
 │   ├── datastorage/
 │   ├── effectivenessmonitor/
+│   ├── fleetmetadatacache/
 │   ├── gateway/
-│   ├── must-gather/
+│   ├── kubernautagent/         #   Native Go AI investigation engine (replaces the old Python HolmesGPT API)
+│   ├── must-gather/            #   Diagnostics CLI tool, not a long-running service
 │   ├── notification/
 │   ├── remediationorchestrator/
 │   ├── signalprocessing/
@@ -66,15 +78,11 @@ kubernaut/
 │   └── ...                     #   Infrastructure, load, chaos, etc.
 ├── charts/kubernaut/           # Helm chart (production deployment)
 ├── deploy/                     # Kustomize overlays (individual service development)
-├── kubernaut-agent/              # Python service (HolmesGPT API)
-│   ├── src/
-│   └── tests/
 ├── docs/                       # Project documentation
 │   ├── architecture/           #   CRD architecture, schemas, design decisions
 │   ├── development/            #   Methodology (APDC), guidelines
 │   ├── services/               #   Per-service docs and templates
 │   └── tests/                  #   Test plans (per issue)
-├── dependencies/               # Git submodules (holmesgpt SDK)
 ├── config/                     # Controller-gen and CRD output
 ├── .github/                    # CI workflows and CODEOWNERS
 └── .cursor/rules/              # AI-enforced development standards
@@ -85,7 +93,7 @@ kubernaut/
 ## Setup
 
 ```bash
-git clone --recurse-submodules https://github.com/jordigilh/kubernaut.git
+git clone https://github.com/jordigilh/kubernaut.git
 cd kubernaut
 
 make install        # Install CRDs into current cluster context
@@ -93,174 +101,35 @@ make build-all      # Build all Go services
 make test-tier-unit # Run unit tests to verify setup
 ```
 
-If you already cloned without `--recurse-submodules`, initialize the submodule separately:
-- ✅ **Production readiness checklist** (109-point assessment)
+There are no git submodules to initialize — Kubernaut Agent (the AI investigation engine) is a
+native Go service under `cmd/kubernautagent`, built and tested exactly like every other service
+in this repository (see [Building](#building) and [Testing](#testing) below).
 
-**Timeline Overview**:
-| Phase | Days | Focus | Deliverables |
-|-------|------|-------|--------------|
-| **Foundation** | 1 | Types, interfaces, K8s client | Package structure, interfaces |
-| **Core Logic** | 2-6 | Business logic components | All components implemented |
-| **Integration** | 7 | Server, API, metrics | Complete service |
-| **Testing** | 8-10 | Integration + Unit tests | 70%+ coverage |
-| **Finalization** | 11-12 | E2E, docs, production readiness | Ready for deployment |
-
-### **Step 2: Follow APDC-TDD Methodology**
-
-**APDC Phases** (per feature/component):
-1. **Analysis** (5-15 min): Comprehensive context understanding
-2. **Plan** (10-20 min): Detailed implementation strategy
-3. **Do** (Variable): RED → GREEN → REFACTOR with integration
-4. **Check** (5-10 min): Comprehensive validation
-
-**Key Principle**: Write tests FIRST, then implementation.
-
-### **Step 3: Create Service Documentation**
-
-After implementation (Day 11-12), use:
-
-📘 **[SERVICE_DOCUMENTATION_GUIDE.md](services/SERVICE_DOCUMENTATION_GUIDE.md)**
-
-**Required Documents** (7 minimum):
-1. `overview.md` - Service purpose, CRD schema, architecture
-2. `security-configuration.md` - RBAC, NetworkPolicy, Secrets
-3. `observability-logging.md` - Structured logging, tracing
-4. `metrics-slos.md` - Prometheus metrics, SLI/SLO
-5. `testing-strategy.md` - Unit/Integration/E2E tests
-6. `finalizers-lifecycle.md` - Cleanup coordination (CRD controllers)
-7. `controller-implementation.md` - Reconciliation loop (CRD controllers)
-
-**Reference Services** (copy and adapt):
-- **Service 1 (Signal Processing)**: Data processing patterns
-- **Service 2 (AI Analysis)**: AI/ML integration patterns
-- **Service 3 (Workflow Execution)**: Multi-step orchestration
-- **Service 4 (Kubernetes Executor)**: Action execution patterns
-- **Service 5 (Remediation Orchestrator)**: Central orchestration
-
----
-
-## 🔧 **Extending Existing Services**
-
-### **When to Extend vs. Create New**
-
-**Extend existing service** when:
-- ✅ Feature fits within service's bounded context
-- ✅ No new CRD required
-- ✅ Shares same data model and dependencies
-
-**Create new service** when:
-- ❌ Feature requires new CRD
-- ❌ Different scaling/deployment requirements
-- ❌ Distinct bounded context
-
-### **Feature Extension Process**
-
-📘 **[FEATURE_EXTENSION_PLAN_TEMPLATE.md](services/FEATURE_EXTENSION_PLAN_TEMPLATE.md)** ⭐ **USE THIS TEMPLATE**
-
-**What it provides**:
-- ✅ **Flexible timeline** (3-12 days based on complexity)
-- ✅ **APDC-TDD methodology** (Analysis → Plan → Do → Check)
-- ✅ **Day-by-day breakdown** with customizable phases
-- ✅ **Complete test examples** (Unit, Integration, E2E)
-- ✅ **Documentation timeline** (what gets created when)
-- ✅ **TDD Do's and Don'ts** (strict discipline)
-- ✅ **BR Coverage Matrix**
-- ✅ **Rollback Plan**
-
-**Timeline Guide**:
-| Feature Complexity | Duration | When to Use |
-|--------------------|----------|-------------|
-| **Simple** | 3-5 days | 1-2 files, minimal integration |
-| **Medium** | 5-8 days | 3-5 files, moderate integration |
-| **Complex** | 8-12 days | 5+ files, significant integration |
-
-**Reference Examples**:
-- **[DD-GATEWAY-008](architecture/decisions/DD-GATEWAY-008-storm-aggregation-windows.md)** — historical storm aggregation DD (**superseded**; removal in [DD-GATEWAY-015](architecture/decisions/DD-GATEWAY-015-storm-detection-removal.md))
-- **[DD-GATEWAY-009](architecture/decisions/DD-GATEWAY-009-state-based-deduplication.md)** — state-based (fingerprint) deduplication at the Gateway
-
-**Key Differences from New Service**:
-- ✅ Shorter timeline (no foundation setup)
-- ✅ Focus on enhancing existing code (not creating new)
-- ✅ Regression testing emphasis
-- ✅ Integration impact assessment
-
-### **Documentation During Feature Extension**
-
-**📊 What Gets Created When**:
-
-```
-Day 1-[N] (Implementation):
-    ├── Code Documentation (inline GoDoc, BR references)
-    ├── Daily EOD Reports (progress checkpoints)
-    └── Configuration Comments (YAML inline docs)
-
-Days [N+1]-[N+M] (Testing):
-    ├── Test Documentation (test descriptions, BR mapping)
-    ├── Test Helper Documentation
-    └── Edge Case Documentation
-
-Day [N+M+1] (Documentation Day):
-    ├── Finalize Service Docs (update existing files)
-    │   ├── overview.md (add feature, update version)
-    │   ├── BUSINESS_REQUIREMENTS.md (add BRs, links)
-    │   ├── testing-strategy.md (add test examples)
-    │   └── metrics-slos.md (add new metrics)
-    │
-    └── Create Operational Docs (new files if needed)
-        ├── Runbook (if feature affects operations)
-        └── Migration Guide (if breaking changes)
-
-Day [N+M+P] (Production Readiness):
-    └── Handoff Summary (executive summary, lessons learned)
-```
-
-**Key Point**: Most documentation is created **DURING** implementation (inline), not at the end. The documentation day is for **finalizing** and **consolidating**.
-
----
-
-## 🧪 **Testing**
-
-### **Testing Strategy**
-
-Kubernaut follows **defense-in-depth testing pyramid**:
-
-- **Unit Tests**: **70%+ coverage** - Business logic with external mocks only
-- **Integration Tests**: **>50% coverage** - Component interactions, real K8s API
-- **E2E Tests**: **<10% coverage** - Critical user journeys
-
-**Reference**: [03-testing-strategy.mdc](../.cursor/rules/03-testing-strategy.mdc)
-
-```bash
-git submodule update --init --recursive
-```
-
-For the Python service (HolmesGPT API):
-
-```bash
-cd kubernaut-agent
-pip install -r requirements.txt
-pytest tests/unit/ -v
-```
+> **Adding a new service or extending an existing one?** See
+> [Extending the Platform](#extending-the-platform) for the implementation plan templates,
+> timelines, and reference services.
 
 ---
 
 ## Services
 
-Kubernaut is composed of 10 Go services (under `cmd/`) and 1 Python service. All services communicate through Kubernetes Custom Resources (CRDs).
+Kubernaut is composed of **12 Go services** (under `cmd/`). All services communicate through Kubernetes Custom Resources (CRDs).
 
 | Service | Type | Location | Description |
 |---------|------|----------|-------------|
 | **gateway** | HTTP Server | `cmd/gateway` | Ingests AlertManager webhooks and Kubernetes Events, deduplicates by fingerprint, resolves owner chains, creates RemediationRequest CRDs |
 | **remediationorchestrator** | CRD Controller | `cmd/remediationorchestrator` | Orchestrates the full remediation pipeline: creates child CRDs (SignalProcessing, AIAnalysis, WorkflowExecution, EffectivenessAssessment, Notification), manages approval gates and timeouts |
 | **signalprocessing** | CRD Controller | `cmd/signalprocessing` | Enriches K8s context, classifies environment/severity/priority, traverses owner chains, detects custom labels |
-| **aianalysis** | CRD Controller | `cmd/aianalysis` | Triggers LLM-based root cause analysis via Kubernaut Agent and manages workflow selection lifecycle |
-| **workflowexecution** | CRD Controller | `cmd/workflowexecution` | Executes remediations via Kubernetes Jobs, Tekton Pipelines, or Ansible (AWX/AAP) |
-| **effectivenessmonitor** | CRD Controller | `cmd/effectivenessmonitor` | Evaluates whether remediations worked (health checks, alert resolution, spec drift) |
-| **datastorage** | HTTP Server | `cmd/datastorage` | Persistence layer (PostgreSQL), workflow catalog, audit trail, OpenAPI |
+| **aianalysis** | CRD Controller | `cmd/aianalysis` | Triggers root cause analysis via an async submit/poll call to Kubernaut Agent and manages workflow selection lifecycle, gated by Rego policy |
+| **workflowexecution** | CRD Controller | `cmd/workflowexecution` | Executes remediations via Kubernetes Jobs, Tekton Pipelines, or Ansible (AWX/AAP) — one engine per workflow, Strategy pattern |
+| **kubernautagent** | HTTPS Server (native Go) | `cmd/kubernautagent` | AI investigation engine — async session API (submit, then poll); multi-provider LLM support. **Not** a Python/HolmesGPT SDK wrapper; there is no separate Python service to build or run |
+| **effectivenessmonitor** | CRD Controller | `cmd/effectivenessmonitor` | Evaluates whether remediations worked (health checks, alert resolution, spec drift) — Level 1 deterministic scoring only; no AI/LLM dependency |
+| **datastorage** | HTTP Server | `cmd/datastorage` | Persistence layer (PostgreSQL), workflow catalog, unified audit sink, OpenAPI |
 | **notification** | CRD Controller | `cmd/notification` | Delivers Slack and console notifications with remediation context |
 | **authwebhook** | Webhook Server | `cmd/authwebhook` | Admission webhooks for CRD validation, registers workflows with DataStorage |
+| **apifrontend** | HTTP Server + mini CRD controller | `cmd/apifrontend` | External-facing A2A/MCP natural-language gateway; creates RemediationRequest CRDs directly and calls Kubernaut Agent independently for deep investigation |
+| **fleetmetadatacache** | HTTP Server | `cmd/fleetmetadatacache` | Caches multi-cluster ("fleet") metadata for cross-cluster workflow targeting |
 | **must-gather** | CLI Tool | `cmd/must-gather` | Diagnostics collection script (not included in `SERVICES` build var) |
-| **kubernaut-agent** | Python | `kubernaut-agent/` | REST wrapper around the LLM SDK for investigations (legacy — v1.4 Go-native KA replaces this) |
 
 ---
 
@@ -283,24 +152,25 @@ make build-all SERVICES="gateway datastorage"
 ### Container images
 
 ```bash
-make docker-build IMG=quay.io/kubernaut-ai/gateway:dev
-make docker-push  IMG=quay.io/kubernaut-ai/gateway:dev
+make docker-build-gateway IMG=quay.io/kubernaut-ai/gateway:dev
+make docker-push-gateway  IMG=quay.io/kubernaut-ai/gateway:dev
+
+# Same pattern for every service, including Kubernaut Agent:
+make docker-build-kubernautagent IMG=quay.io/kubernaut-ai/kubernautagent:dev
 ```
 
-The `CONTAINER_TOOL` variable auto-detects Podman or Docker.
-
-### HolmesGPT API (Python)
-
-```bash
-cd kubernaut-agent
-podman build -t quay.io/kubernaut-ai/kubernaut-agent:dev .
-```
+The `CONTAINER_TOOL` variable auto-detects Podman or Docker. All 12 services (including
+`kubernautagent`) use the same `docker-build-<service>` / `docker-push-<service>` pattern targets
+— there is no separate Python build process.
 
 ---
 
 ## Testing
 
-Kubernaut uses **Ginkgo/Gomega BDD** for all Go tests. Standard `testing.T` tests are not permitted. Python tests use **pytest**.
+Kubernaut uses **Ginkgo/Gomega BDD** for all Go tests, across all 12 services (including
+`kubernautagent`, a native Go service — there is no separate Python test suite). Standard
+`testing.T` tests are not permitted (native Go fuzz tests, `FuzzXxx(f *testing.F)`, are the sole
+exception — see [AGENTS.md](../AGENTS.md#exception-go-native-fuzz-tests)).
 
 ### Coverage targets
 
@@ -337,12 +207,12 @@ make test-integration-gateway
 make test-e2e-gateway
 ```
 
-**HolmesGPT API (Python)**:
+**Kubernaut Agent** (native Go, same pattern as every other service):
 
 ```bash
-make test-unit-kubernaut-agent
-make test-integration-kubernaut-agent
-make test-e2e-kubernaut-agent
+make test-unit-kubernautagent
+make test-integration-kubernautagent
+make test-e2e-kubernautagent
 ```
 
 ### Linting
@@ -364,7 +234,7 @@ make lint-tdd-compliance         # TDD methodology compliance
 
 ### Mock strategy per tier
 
-| Tier | Kubernetes API | PostgreSQL / Redis | LLM (HolmesGPT) | `pkg/` business logic |
+| Tier | Kubernetes API | PostgreSQL / Redis | LLM (via Kubernaut Agent) | `pkg/` business logic |
 |------|---------------|-------------------|-----------------|----------------------|
 | **Unit** | `fake.NewClientBuilder()` | Mocked | Mocked | Real |
 | **Integration** | `envtest` (in-memory API server) | Real containers | Mocked | Real |
@@ -512,6 +382,8 @@ For features that fit within a service's bounded context and do not require a ne
 
 | Document | Description |
 |----------|-------------|
+| [Architecture Overview](architecture/KUBERNAUT_ARCHITECTURE_OVERVIEW.md) | High-level system design, all 12 active services |
+| [Service Catalog](architecture/KUBERNAUT_SERVICE_CATALOG.md) | Per-service specifications, ports, dependencies |
 | [Kubernaut CRD Architecture](architecture/KUBERNAUT_CRD_ARCHITECTURE.md) | System overview, service specs, CRD communication patterns |
 | [Multi-CRD Reconciliation Architecture](architecture/MULTI_CRD_RECONCILIATION_ARCHITECTURE.md) | Watch-based coordination, owner references, cascade deletion |
 | [CRD Schemas](architecture/CRD_SCHEMAS.md) | Authoritative field definitions and validation rules |
