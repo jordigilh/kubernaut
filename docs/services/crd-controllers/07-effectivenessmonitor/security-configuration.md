@@ -1,732 +1,320 @@
 # Effectiveness Monitor Service - Security Configuration
 
-**Version**: 1.0
-**Last Updated**: October 6, 2025
-**Service Type**: Stateless HTTP API Service (Assessment & Analysis)
-**Port**: 8080 (REST + Health), 9090 (Metrics)
+**Version**: v2.0
+**Last Updated**: 2026-08-02
+**Service Type**: Kubernetes CRD controller — **no HTTP business API to protect**
 
 ---
 
-## 📋 Overview
+## Changelog
 
-Security configuration for Effectiveness Monitor Service, providing **assessment and analysis** of remediation action effectiveness with multi-dimensional evaluation.
-
----
-
-## 🔐 Authentication
-
-### **Kubernetes TokenReviewer** (Bearer Token)
-
-```go
-package effectiveness
-
-import (
-    "context"
-    "net/http"
-    "strings"
-
-    authv1 "k8s.io/api/authentication/v1"
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    "k8s.io/client-go/kubernetes"
-    "go.uber.org/zap"
-)
-
-func (s *EffectivenessMonitorService) AuthMiddleware() func(http.Handler) http.Handler {
-    return func(next http.Handler) http.Handler {
-        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            authHeader := r.Header.Get("Authorization")
-            if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-                s.logger.Warn("Missing or invalid Authorization header",
-                    zap.String("method", r.Method),
-                    zap.String("path", r.URL.Path),
-                )
-                http.Error(w, "Missing or invalid Authorization header", http.StatusUnauthorized)
-                return
-            }
-
-            token := strings.TrimPrefix(authHeader, "Bearer ")
-            review := &authv1.TokenReview{
-                Spec: authv1.TokenReviewSpec{Token: token},
-            }
-
-            result, err := s.kubeClient.AuthenticationV1().TokenReviews().Create(
-                context.TODO(), review, metav1.CreateOptions{},
-            )
-
-            if err != nil || !result.Status.Authenticated {
-                s.logger.Warn("Token authentication failed",
-                    zap.Error(err),
-                    zap.Bool("authenticated", result.Status.Authenticated),
-                )
-                http.Error(w, "Token authentication failed", http.StatusUnauthorized)
-                return
-            }
-
-            s.logger.Debug("Token authenticated successfully",
-                zap.String("username", result.Status.User.Username),
-                zap.Strings("groups", result.Status.User.Groups),
-            )
-
-            ctx := context.WithValue(r.Context(), "user", result.Status.User)
-            next.ServeHTTP(w, r.WithContext(ctx))
-        })
-    }
-}
-```
+| Version | Date | Changes | Reference |
+|---------|------|---------|-----------|
+| **v2.0** | 2026-08-02 | **#1806 CORRECTION**: Full rewrite. Removed the entire fictional stateless-HTTP-service security model: a Kubernetes TokenReviewer `AuthMiddleware()` protecting a nonexistent port-8080 REST API, a `HolmesGPTClient` (`pkg/monitor/holmesgpt_client.go`) authenticating to a live `POST /api/v1/postexec/analyze` call, an `effectiveness-monitor-holmesgpt-client`/`kubernaut-agent-postexec-analyzer` cross-service RBAC pair, a direct PostgreSQL connection with an `effectiveness-monitor-db-credentials` Secret, and a 50 req/s rate-limiting middleware. Replaced with the real security posture verified against `charts/kubernaut/templates/effectivenessmonitor/{effectivenessmonitor,networkpolicy}.yaml`, `charts/kubernaut/templates/rbac/datastorage-rbac.yaml`, `internal/controller/effectivenessmonitor/reconciler.go`, and `pkg/effectivenessmonitor/client/{ds_querier,prometheus_http,alertmanager_http}.go`. | [#1806](https://github.com/jordigilh/kubernaut/issues/1806) |
+| v1.0 | 2025-10-06 | ⚠️ **STALE (superseded by v2.0)** — Original fictional stateless-HTTP-service security specification (TokenReviewer auth, HolmesGPT API-key-style flow, PostgreSQL credentials). Never matched any implementation. | — |
 
 ---
 
-## 🤖 HolmesGPT API Authentication
+## Overview
 
-### **Service Account Token for AI Analysis**
+EM is a **Kubernetes CRD controller**, not an HTTP service. There is no port 8080 and no business REST API to authenticate or authorize against — its only two network listeners are `/metrics` (port 9090) and `/healthz`/`/readyz` (port 8081), neither of which requires application-level authentication (see [What Is NOT in This Security Model](#what-is-not-in-this-security-model)). EM's real security surface has four parts:
 
-**Purpose**: Authenticate to HolmesGPT API for post-execution analysis when AI decision logic triggers.
+1. **Least-privilege Kubernetes RBAC** for the controller-runtime watch/read/write operations it actually performs
+2. **ServiceAccount Bearer-token authentication** when calling out to DataStorage (its one required dependency)
+3. **Best-effort TLS + bearer-token, or plain HTTP,** when calling out to Prometheus/AlertManager (both optional)
+4. **A restricted Pod Security Standard** (non-root, read-only rootfs, all capabilities dropped)
 
-**Token Source**: Kubernetes ServiceAccount mounted in pod
+EM has **zero AI/LLM dependency in V1.0** — there is no HolmesGPT, HAPI, or Kubernaut Agent (KA) client anywhere in its codebase, so there is no AI-related credential, endpoint, or RBAC to document here.
 
-```go
-// pkg/monitor/holmesgpt_client.go
-package monitor
+---
 
-import (
-    "context"
-    "crypto/tls"
-    "fmt"
-    "net/http"
-    "os"
-)
+## ServiceAccount & RBAC (Least Privilege)
 
-type HolmesGPTClient struct {
-    baseURL    string
-    httpClient *http.Client
-    token      string
-}
-
-// NewHolmesGPTClient creates client with ServiceAccount token
-func NewHolmesGPTClient(baseURL string) (*HolmesGPTClient, error) {
-    // Read ServiceAccount token from mounted volume
-    tokenPath := "/var/run/secrets/kubernetes.io/serviceaccount/token"
-    tokenBytes, err := os.ReadFile(tokenPath)
-    if err != nil {
-        return nil, fmt.Errorf("failed to read service account token: %w", err)
-    }
-
-    // Create HTTP client with TLS
-    client := &http.Client{
-        Transport: &http.Transport{
-            TLSClientConfig: &tls.Config{
-                MinVersion: tls.VersionTLS12,
-            },
-        },
-        Timeout: 30 * time.Second,
-    }
-
-    return &HolmesGPTClient{
-        baseURL:    baseURL,
-        httpClient: client,
-        token:      string(tokenBytes),
-    }, nil
-}
-
-// AnalyzePostExecution calls HolmesGPT API with authentication
-func (c *HolmesGPTClient) AnalyzePostExecution(ctx context.Context, req PostExecRequest) (*PostExecResponse, error) {
-    url := fmt.Sprintf("%s/api/v1/postexec/analyze", c.baseURL)
-
-    httpReq, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(reqBody))
-    if err != nil {
-        return nil, err
-    }
-
-    // Add Bearer token for authentication
-    httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.token))
-    httpReq.Header.Set("Content-Type", "application/json")
-
-    // Execute request
-    resp, err := c.httpClient.Do(httpReq)
-    // ... (handle response)
-}
-```
-
-### **ServiceAccount Configuration**
+**ServiceAccount and ClusterRole** (`charts/kubernaut/templates/effectivenessmonitor/effectivenessmonitor.yaml` — what is actually deployed. The kubebuilder markers in `internal/controller/effectivenessmonitor/reconciler.go` that generate `config/rbac/role.yaml` are slightly broader on a couple of verbs — e.g. `create`/`delete` on `effectivenessassessments` — but the Helm chart below is the ClusterRole that is actually bound to the running ServiceAccount):
 
 ```yaml
-# deploy/effectiveness-monitor/serviceaccount.yaml
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: effectiveness-monitor
+  name: effectivenessmonitor-controller
   namespace: kubernaut-system
 ---
-# deploy/effectiveness-monitor/clusterrole.yaml
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: effectiveness-monitor-holmesgpt-client
+  name: effectivenessmonitor-controller
 rules:
-# No additional permissions needed for HolmesGPT API calls
-# (Authentication via ServiceAccount token, authorization handled by HolmesGPT API)
+  # Own CRD: watched, status written by the Reconciler
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["effectivenessassessments"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["effectivenessassessments/status"]
+    verbs: ["get", "update", "patch"]
+  # Read-only: RO-created parent, used for correlation only, never mutated
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["remediationrequests"]
+    verbs: ["get", "list", "watch"]
+  # Target-resource reads for health scoring (BR-EM-001) and hash/drift
+  # detection (DD-EM-002) across the kinds EM is asked to assess
+  - apiGroups: [""]
+    resources: ["pods", "nodes", "services", "persistentvolumeclaims", "configmaps"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list"]
+  # Istio CRDs (read-only) — some target kinds are Istio-managed (Issue #373)
+  - apiGroups: ["security.istio.io"]
+    resources: ["authorizationpolicies", "peerauthentications", "requestauthentications"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.istio.io"]
+    resources: ["virtualservices", "destinationrules", "gateways", "serviceentries"]
+    verbs: ["get", "list"]
+  # K8s Event emission (EffectivenessAssessed Normal events on the EA)
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+  # controller-runtime leader election (Issue #687)
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  # Fleet federation only, cluster-scoped Kuadrant MCP Gateway with no
+  # namespace restriction configured (Issue #1686, BR-RBAC-020) — granted
+  # instead via a namespace-scoped Role/RoleBinding when a namespace IS set
+  - apiGroups: ["mcp.kuadrant.io"]
+    resources: ["mcpserverregistrations"]
+    verbs: ["get", "list", "watch"]
 ---
-# deploy/effectiveness-monitor/deployment.yaml
-apiVersion: apps/v1
-kind: Deployment
-spec:
-  template:
-    spec:
-      serviceAccountName: effectiveness-monitor
-      containers:
-      - name: effectiveness-monitor
-        env:
-        - name: HOLMESGPT_API_URL
-          value: "https://kubernaut-agent.kubernaut-system.svc.cluster.local:8443"
-```
-
-### **HolmesGPT API Authorization**
-
-**Authorization handled by HolmesGPT API** (not Effectiveness Monitor):
-
-- HolmesGPT API validates ServiceAccount token via Kubernetes TokenReview
-- HolmesGPT API checks RBAC permissions for `/api/v1/postexec/analyze` endpoint
-- Effectiveness Monitor only needs valid ServiceAccount token
-
-**Required RBAC on HolmesGPT side** (defined in HolmesGPT API service):
-
-```yaml
-# HolmesGPT API RBAC (not Effectiveness Monitor)
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: kubernaut-agent-postexec-analyzer
-rules:
-- apiGroups: ["holmesgpt.kubernaut.io"]
-  resources: ["postexecanalyses"]
-  verbs: ["create"]
----
-# HolmesGPT API ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: effectiveness-monitor-holmesgpt-access
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: kubernaut-agent-postexec-analyzer
+  name: effectivenessmonitor-controller
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: effectivenessmonitor-controller}
 subjects:
-- kind: ServiceAccount
-  name: effectiveness-monitor
+  - kind: ServiceAccount
+    name: effectivenessmonitor-controller
+    namespace: kubernaut-system
+---
+# Issue #545: bind to the built-in "view" ClusterRole for broad read access
+# to CRDs (cert-manager, Istio, etc.) needed to capture a post-remediation
+# spec hash across arbitrary target kinds (DD-EM-002) that the ClusterRole
+# above does not enumerate individually.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: effectivenessmonitor-view
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: view}
+subjects:
+  - kind: ServiceAccount
+    name: effectivenessmonitor-controller
+    namespace: kubernaut-system
+```
+
+**Client RoleBinding for DataStorage** (DD-AUTH-014 synthetic-resource SAR pattern; `charts/kubernaut/templates/rbac/datastorage-rbac.yaml`):
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: effectivenessmonitor-data-storage-client
   namespace: kubernaut-system
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: data-storage-client}
+subjects:
+  - kind: ServiceAccount
+    name: effectivenessmonitor-controller
+    namespace: kubernaut-system
 ```
 
-### **Security Best Practices**
+This binding grants no real Kubernetes `Service` permissions — it exists purely so DataStorage's SubjectAccessReview check has a concrete synthetic resource (`services/data-storage-service`) to authorize `effectivenessmonitor-controller` against. See [Authentication to DataStorage](#authentication-to-datastorage-dd-auth-005--dd-auth-014) below. The same `data-storage-client` ClusterRole is bound to every other DataStorage-calling service (Gateway, SignalProcessing, RemediationOrchestrator, AuthWebhook, WorkflowExecution, Kubernaut Agent, Notification, APIFrontend) — EM's binding is one row in that shared table, not a bespoke grant.
 
-**Token Rotation**:
-- ServiceAccount tokens auto-rotate (Kubernetes projected volume)
-- Client automatically picks up new token on next read
+**What is *not* in this RBAC** (corrections vs. the fictional v1.0 spec):
 
-**TLS/SSL**:
-- All HolmesGPT API calls use HTTPS (TLS 1.2+)
-- Certificate validation enabled
+- ❌ **No `tokenreviews` `create` permission.** EM has no inbound HTTP auth middleware to back with a TokenReview call.
+- ❌ **No `aiapprovalrequests`/`postexecanalyses`-style RBAC of any kind.** Neither CRD exists; EM has no AI dependency to authorize.
+- ❌ **No `serviceaccounts/token` "client ClusterRole" for services calling EM.** Nothing calls EM's business API because EM has no business API.
+- ❌ **No write access to any Kubernetes resource** other than its own EA status subresource, K8s Events, and Lease objects (leader election).
 
-**Error Handling**:
+**Least Privilege Principles**:
+- ✅ Update/patch access to its own `EffectivenessAssessment` CRD and status subresource only
+- ✅ Read-only on `RemediationRequest` — used purely for correlation, never mutated
+- ✅ Read-only on every target-resource kind it health-checks/hashes — never `update`/`delete`/`patch` a customer workload
+- ✅ DataStorage access is real but goes through the same buffered-write / typed-query pattern as every other Go service (BR-AUDIT-006) — EM has no direct database connection of its own
+
+---
+
+## Authentication to DataStorage (DD-AUTH-005 / DD-AUTH-014)
+
+EM makes exactly one class of authenticated outbound call: to **DataStorage** — both to write audit events (`pkg/audit.BufferedStore`, wired via `audit.NewOpenAPIClientAdapter` in `cmd/effectivenessmonitor/main.go`) and to run its two read queries (pre-remediation-hash lookup, workflow-started/-completed checks, via `pkg/effectivenessmonitor/client/ds_querier.go`'s `ogenDataStorageQuerier`). Both paths authenticate identically, using the same shared in-process Bearer-token transport documented in [DD-AUTH-005](../../../architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md):
+
 ```go
-// Graceful degradation on authentication failure
-resp, err := holmesgptClient.AnalyzePostExecution(ctx, req)
-if err != nil {
-    logger.Warn("HolmesGPT API authentication failed, using automated assessment",
-        zap.Error(err),
-        zap.String("workflow_id", workflow.ID),
-    )
-    // Fallback to automated assessment (no AI)
-    return automatedAssessment, nil
-}
+// pkg/effectivenessmonitor/client/ds_querier.go — NewOgenDataStorageQuerier
+// (byte-for-byte the same pattern as pkg/audit/openapi_client_adapter.go's
+// NewOpenAPIClientAdapter, used for the write path)
+baseTransport, _ := sharedtls.DefaultBaseTransportWithRetry() // TLS_CA_FILE-based, retry-wrapped (Issue #853)
+transport := auth.NewAuthTransport(auth.NewDefaultTokenSource(), baseTransport)
+httpClient := &http.Client{Timeout: timeout, Transport: transport}
 ```
 
-**Rate Limiting**:
-- HolmesGPT API enforces rate limits per ServiceAccount
-- Effectiveness Monitor respects rate limits with exponential backoff
+1. `auth.NewDefaultTokenSource()` reads the pod's projected ServiceAccount token from `/var/run/secrets/kubernetes.io/serviceaccount/token` — the standard Kubernetes-issued, auto-rotated token, **not** a manually provisioned "DataStorage API key."
+2. `AuthTransport.RoundTrip` injects `Authorization: Bearer <token>` on every outbound request to DataStorage, cloning the request rather than mutating the caller's.
+3. On the receiving side, per [DD-AUTH-014](../../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md), DataStorage validates the token via Kubernetes `TokenReview`, then authorizes via `SubjectAccessReview` against the synthetic resource `services/data-storage-service` — exactly what the `effectivenessmonitor-data-storage-client` RoleBinding above exists to authorize. `401` means the token was missing/invalid; `403` means the token was valid but the RoleBinding is missing.
+4. There is **no manually provisioned credential Secret** for DataStorage access, and no `HOLMESGPT_API_KEY_PATH`-style env var anywhere in EM.
+
+**Transport layer**: one-way TLS only — the client verifies DataStorage's server certificate against the CA at `$TLS_CA_FILE`. There is no mutual TLS (mTLS) by default.
 
 ---
 
-## 🔒 RBAC Permissions
+## Authentication to Prometheus and AlertManager
 
-### **Effectiveness Monitor Service Permissions**
+Unlike DataStorage, Prometheus and AlertManager are **optional, best-effort enrichment** dependencies (`external.prometheusEnabled`/`external.alertManagerEnabled`), and their auth story is deployment-dependent. Both share one `*http.Client` built once in `cmd/effectivenessmonitor/main.go`'s `buildExternalHTTPClient` and passed into `pkg/effectivenessmonitor/client/prometheus_http.go`'s `NewPrometheusHTTPClient` and `alertmanager_http.go`'s `NewAlertManagerHTTPClient` — **neither client type constructs its own `http.Client` or reads any credential itself**, so all auth/TLS policy is centralized in one place:
 
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: effectiveness-monitor-service
-rules:
-# TokenReviewer for authentication
-- apiGroups: ["authentication.k8s.io"]
-  resources: ["tokenreviews"]
-  verbs: ["create"]
+| `external.tlsCaFile` (config) | Resulting behavior |
+|---|---|
+| **Unset** (default — typical for a plain in-cluster Prometheus/AlertManager `Service`) | Plain `http.Client{Timeout: connectionTimeout}` — no TLS verification, no `Authorization` header |
+| **Set** (typical for OpenShift's cluster-monitoring stack / Thanos-querier, which terminates TLS with a service-serving certificate and requires a Bearer token) | A CA-trusting transport built from a hot-reloadable CA bundle at the configured path (`sharedtls.NewCAReloader`, Issue #756), wrapped with the **same** `auth.NewAuthTransport(auth.NewDefaultTokenSource(), ...)` ServiceAccount-token transport used for DataStorage (Issue #452) |
 
-# Read ConfigMaps for configuration
-- apiGroups: [""]
-  resources: ["configmaps"]
-  verbs: ["get", "list"]
-```
-
-### **Client Permissions** (Services calling Effectiveness Monitor)
-
-```yaml
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: effectiveness-monitor-client
-rules:
-- apiGroups: [""]
-  resources: ["serviceaccounts/token"]
-  verbs: ["create"]
-```
+**Why this matters operationally**: on OpenShift, `external.tlsCaFile` typically points at the cluster-monitoring service-serving CA, and EM's ServiceAccount must additionally be authorized (via a `cluster-monitoring-view`-style binding, granted outside this chart) to read Thanos-querier metrics — that authorization is cluster-admin territory, not part of the `effectivenessmonitor-controller` ClusterRole documented above.
 
 ---
 
-## 🔐 Data Access Control
+## Network Policies
 
-### **Assessment Service** (BR-INS-Security)
-
-Effectiveness Monitor has **limited write capabilities**:
-- ✅ Reads from Data Storage (action history, effectiveness data)
-- ✅ Queries Infrastructure Monitoring (metrics correlation)
-- ✅ Writes assessment results to Data Storage (audit trail)
-- ❌ **NEVER** modifies Kubernetes resources
-- ❌ **NEVER** executes remediation actions
-
-### **Security Implications**
-
-**Medium Risk Profile**:
-- Assessment results inform decision-making
-- Writes to audit trail (tamper-proof logging required)
-- No Kubernetes write permissions
-- Cannot execute actions directly
-
-**Rate Limiting** (BR-INS-Performance):
-```go
-package effectiveness
-
-import (
-    "net/http"
-
-    "golang.org/x/time/rate"
-    "go.uber.org/zap"
-)
-
-// Per-client rate limiting
-func (s *EffectivenessMonitorService) RateLimitMiddleware() func(http.Handler) http.Handler {
-    limiter := rate.NewLimiter(50, 100) // 50 req/s, burst 100
-
-    return func(next http.Handler) http.Handler {
-        return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-            if !limiter.Allow() {
-                s.logger.Warn("Rate limit exceeded",
-                    zap.String("client_ip", r.RemoteAddr),
-                    zap.String("path", r.URL.Path),
-                )
-                http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-                return
-            }
-            next.ServeHTTP(w, r)
-        })
-    }
-}
-```
-
----
-
-## 🛡️ Network Security
-
-### **Network Policies**
+`charts/kubernaut/templates/effectivenessmonitor/networkpolicy.yaml` (rendered name: `<kubernaut.fullname>-effectivenessmonitor`, via the shared `kubernaut.np.metadata` helper):
 
 ```yaml
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: effectiveness-monitor-service
+  name: <kubernaut.fullname>-effectivenessmonitor
   namespace: kubernaut-system
 spec:
   podSelector:
     matchLabels:
-      app: effectiveness-monitor-service
-  policyTypes:
-  - Ingress
-  - Egress
-
+      app: effectivenessmonitor-controller
+  policyTypes: [Ingress, Egress]
   ingress:
-  # Allow from Context API, HolmesGPT API (assessment requests)
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: kubernaut-system
-      podSelector:
-        matchLabels:
-          app: context-api-service
-    - namespaceSelector:
-        matchLabels:
-          name: kubernaut-system
-      podSelector:
-        matchLabels:
-          app: kubernaut-agent-service
-    ports:
-    - protocol: TCP
-      port: 8080
-
-  # Allow from Prometheus for metrics
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          name: monitoring
-    ports:
-    - protocol: TCP
-      port: 9090
-
+    # Metrics scrape — only rendered when networkPolicies.monitoring.namespace
+    # is configured; otherwise there is NO ingress rule at all. Health/readiness
+    # probes come from the kubelet on the node, which NetworkPolicy cannot
+    # restrict, so no explicit kube-system ingress rule is needed for them.
+    - ports: [{port: 9090, protocol: TCP}]
+      from:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: "<monitoring namespace>"}}
   egress:
-  # Allow to Data Storage Service (action history, assessment storage)
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          name: kubernaut-system
-      podSelector:
-        matchLabels:
-          app: data-storage-service
-    ports:
-    - protocol: TCP
-      port: 8085
-
-  # Allow to Infrastructure Monitoring Service (metrics correlation)
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          name: kubernaut-system
-      podSelector:
-        matchLabels:
-          app: infrastructure-monitoring-service
-    ports:
-    - protocol: TCP
-      port: 8094
-
-  # Allow to Kubernetes API server
-  - to:
-    - namespaceSelector: {}
-      podSelector:
-        matchLabels:
-          component: apiserver
-    ports:
-    - protocol: TCP
-      port: 443
-
-  # Allow DNS
-  - to:
-    - namespaceSelector:
-        matchLabels:
-          name: kube-system
-      podSelector:
-        matchLabels:
-          k8s-app: kube-dns
-    ports:
-    - protocol: UDP
-      port: 53
+    # DNS + Kubernetes API server (kubernaut.np.commonEgress)
+    - ports: [{port: 53, protocol: UDP}, {port: 53, protocol: TCP}]
+      to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}}]
+    - ports: [{port: "<discovered/configured API server port>", protocol: TCP}]
+      to: ["<one ipBlock per control-plane API server endpoint>"]
+    # DataStorage — audit writes + the 2 read queries (kubernaut.np.datastorageEgress)
+    - ports: [{port: 8080, protocol: TCP}]
+      to: [{podSelector: {matchLabels: {app: datastorage}}}]
+    # Prometheus / AlertManager (ports from values: networkPolicies.monitoring.{prometheusPort,alertManagerPort})
+    - ports: [{port: "<prometheusPort>", protocol: TCP}]
+    - ports: [{port: "<alertManagerPort>", protocol: TCP}]
+    # Fleet federation only (global.fleet.enabled), added to close a gap
+    # found in Issue #1755 (DD-TEST-015 RCA): OAuth2 token fetch to the IdP
+    # (kubernaut.np.idpEgress) and direct egress to the MCP Gateway itself
+    # for fleet.ReaderFactory's remote-cluster reads (kubernaut.np.mcpGatewayEgress)
 ```
 
-**Why No Service Mesh?**
+Reciprocally, DataStorage's own NetworkPolicy (`charts/kubernaut/templates/datastorage/networkpolicy.yaml`) explicitly allows ingress from pods labeled `app: effectivenessmonitor-controller`.
 
-Kubernetes-native security features (TokenReviewer + NetworkPolicies) provide:
-- Mutual TLS via pod-to-pod encryption (if CNI supports)
-- Fine-grained network access control
-- Kubernetes-native RBAC integration
-- No additional operational complexity
+**What is *not* in this policy** (corrections vs. the fictional v1.0 spec):
+
+- ❌ **No ingress from a "Context API Service" or "kubernaut-agent-service" pod on port 8080.** EM has no such inbound port — Context API was deprecated ([DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md)) and Kubernaut Agent never called EM.
+- ❌ **No egress to an "Infrastructure Monitoring Service" on port 8094.** That service was fictional.
+- ✅ Metrics ingress is **conditional** on `networkPolicies.monitoring.namespace` being configured — not unconditionally open to any pod labeled `app: prometheus` in a hardcoded `monitoring` namespace.
 
 ---
 
-## 🔐 Database Security
+## Pod & Container Security Context
 
-### **Data Storage Service Connection** (PostgreSQL + pgvector)
-
-```go
-package effectiveness
-
-import (
-    "context"
-    "database/sql"
-    "fmt"
-
-    _ "github.com/lib/pq"
-    "go.uber.org/zap"
-)
-
-func (s *EffectivenessMonitorService) ConnectToDataStorage(ctx context.Context) (*sql.DB, error) {
-    // Credentials from Kubernetes Secret
-    dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=require",
-        s.config.DataStorage.Host,
-        s.config.DataStorage.Port,
-        s.config.DataStorage.Username,
-        s.config.DataStorage.Password,
-        s.config.DataStorage.Database,
-    )
-
-    db, err := sql.Open("postgres", dsn)
-    if err != nil {
-        return nil, fmt.Errorf("failed to connect to Data Storage: %w", err)
-    }
-
-    // Connection pooling
-    db.SetMaxOpenConns(25)
-    db.SetMaxIdleConns(10)
-    db.SetConnMaxLifetime(5 * time.Minute)
-
-    s.logger.Info("Connected to Data Storage Service",
-        zap.String("host", s.config.DataStorage.Host),
-        zap.Int("port", s.config.DataStorage.Port),
-    )
-
-    return db, nil
-}
-```
-
-### **Credentials Management**
+`charts/kubernaut/templates/effectivenessmonitor/effectivenessmonitor.yaml` Deployment, via the shared `kubernaut.podSecurityContext`/`kubernaut.containerSecurityContext` helpers (`charts/kubernaut/templates/_helpers.tpl`):
 
 ```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: effectiveness-monitor-db-credentials
-  namespace: kubernaut-system
-type: Opaque
-stringData:
-  DB_USERNAME: effectiveness_monitor_user
-  DB_PASSWORD: <generate-secure-password>
-  DB_HOST: data-storage-service.kubernaut-system.svc.cluster.local
-  DB_PORT: "5432"
-  DB_NAME: kubernaut_audit
-```
-
-**Load Credentials in Main Application**:
-
-```go
-package main
-
-import (
-    "context"
-    "fmt"
-    "os"
-
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    "k8s.io/client-go/kubernetes"
-    "go.uber.org/zap"
-)
-
-func loadDatabaseCredentials(ctx context.Context, kubeClient *kubernetes.Clientset, logger *zap.Logger) (*DatabaseConfig, error) {
-    secret, err := kubeClient.CoreV1().Secrets("kubernaut-system").Get(
-        ctx, "effectiveness-monitor-db-credentials", metav1.GetOptions{},
-    )
-    if err != nil {
-        logger.Error("Failed to load database credentials from secret", zap.Error(err))
-        return nil, fmt.Errorf("failed to load database credentials: %w", err)
-    }
-
-    config := &DatabaseConfig{
-        Host:     string(secret.Data["DB_HOST"]),
-        Port:     5432, // Parse from DB_PORT if needed
-        Username: string(secret.Data["DB_USERNAME"]),
-        Password: string(secret.Data["DB_PASSWORD"]),
-        Database: string(secret.Data["DB_NAME"]),
-    }
-
-    logger.Info("Database credentials loaded successfully")
-    return config, nil
-}
-```
-
----
-
-## 🔐 Sensitive Data Handling
-
-### **Assessment Data Classification**
-
-| Data Type | Sensitivity | Handling |
-|-----------|-------------|----------|
-| **Effectiveness Score** | Medium | Store in audit trail, do not log raw scores |
-| **Side Effect Details** | High | Sanitize before logging, store encrypted |
-| **Environmental Metrics** | Medium | Aggregate only, no raw infrastructure metrics in logs |
-| **Pattern Insights** | Low | Safe to log and expose via API |
-
-### **Logging Sensitive Data**
-
-```go
-package effectiveness
-
-import (
-    "go.uber.org/zap"
-)
-
-func (s *EffectivenessMonitorService) LogAssessmentResult(assessment *EffectivenessScore) {
-    // DO NOT log raw scores - aggregate only
-    s.logger.Info("Assessment completed",
-        zap.String("assessment_id", assessment.AssessmentID),
-        zap.String("action_type", assessment.ActionType),
-        zap.String("confidence_level", s.confidenceBucket(assessment.Confidence)), // Bucketed
-        zap.Bool("side_effects_detected", assessment.SideEffectsDetected),
-        // DO NOT LOG: assessment.TraditionalScore, assessment.EnvironmentalImpact.CPUImpact
-    )
-}
-
-func (s *EffectivenessMonitorService) confidenceBucket(confidence float64) string {
-    if confidence >= 0.8 {
-        return "high"
-    } else if confidence >= 0.5 {
-        return "medium"
-    }
-    return "low"
-}
-```
-
----
-
-## 🛡️ Secrets Management
-
-### **Service Account**
-
-```yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: effectiveness-monitor-sa
-  namespace: kubernaut-system
-```
-
-### **Deployment with ServiceAccount**
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: effectiveness-monitor-service
-  namespace: kubernaut-system
 spec:
-  replicas: 2
-  selector:
-    matchLabels:
-      app: effectiveness-monitor-service
   template:
-    metadata:
-      labels:
-        app: effectiveness-monitor-service
     spec:
-      serviceAccountName: effectiveness-monitor-sa
+      serviceAccountName: effectivenessmonitor-controller
+      securityContext:            # kubernaut.podSecurityContext defaults
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
       containers:
-      - name: effectiveness-monitor
-        image: effectiveness-monitor:v1.0.0
-        ports:
-        - containerPort: 8080
-          name: http
-        - containerPort: 9090
-          name: metrics
-        env:
-        - name: DB_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: effectiveness-monitor-db-credentials
-              key: DB_USERNAME
-        - name: DB_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: effectiveness-monitor-db-credentials
-              key: DB_PASSWORD
-        - name: DB_HOST
-          valueFrom:
-            secretKeyRef:
-              name: effectiveness-monitor-db-credentials
-              key: DB_HOST
-        - name: DB_PORT
-          valueFrom:
-            secretKeyRef:
-              name: effectiveness-monitor-db-credentials
-              key: DB_PORT
-        - name: DB_NAME
-          valueFrom:
-            secretKeyRef:
-              name: effectiveness-monitor-db-credentials
-              key: DB_NAME
+        - name: controller
+          securityContext:        # kubernaut.containerSecurityContext defaults
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          args: ["--config=/etc/effectivenessmonitor/effectivenessmonitor.yaml"]
+          env:
+            - name: TLS_CA_FILE
+              value: "<inter-service TLS CA bundle path>"   # kubernaut.interServiceTLS.caFile
+          ports:
+            - {containerPort: 9090, name: metrics}
+            - {containerPort: 8081, name: health}
+          volumeMounts:
+            - {name: config, mountPath: /etc/effectivenessmonitor}
+            # + conditional: service-ca (Prometheus TLS CA), oauth2-credentials
+            #   (Fleet OAuth2 client secret), shared inter-service TLS CA volume
+      volumes:
+        - name: config
+          configMap: {name: effectivenessmonitor-config}
 ```
+
+**No database credentials Secret by default** — EM has no direct database connection, so there is no `effectiveness-monitor-db-credentials`-style Secret to mount. The **only** Secret volume EM ever mounts is `oauth2-credentials`, and only when both `global.fleet.enabled` **and** Fleet OAuth2 are configured (`effectivenessmonitor.fleet.oauth2.credentialsSecretRef`, containing `client-id`/`client-secret` for the MCP Gateway token exchange).
+
+**Why these settings**:
+- **`runAsNonRoot` / `seccompProfile` / `capabilities.drop: [ALL]`**: the standard restricted Pod Security Standard shared across every Kubernaut service
+- **`readOnlyRootFilesystem`**: immutable container filesystem — EM writes nothing to local disk except through its config-file mount and (transiently) the CA-reloader's in-memory cache
+- **No `HOLMESGPT_API_KEY_PATH`/`HOLMESGPT_ENDPOINT` env vars or Secret volume**: there is no such credential — DataStorage/Prometheus/AlertManager URLs are plain config values (`internal/config/effectivenessmonitor/config.go`), and authentication (where it exists) is the ServiceAccount token described above
 
 ---
 
-## 📊 Metrics Security
+## Sensitive Data Handling
 
-### **Prometheus Metrics with Authentication**
-
-```go
-package effectiveness
-
-import (
-    "net/http"
-
-    "github.com/prometheus/client_golang/prometheus"
-    "github.com/prometheus/client_golang/prometheus/promhttp"
-    "go.uber.org/zap"
-)
-
-var (
-    assessmentDuration = prometheus.NewHistogramVec(
-        prometheus.HistogramOpts{
-            Name:    "effectiveness_assessment_duration_seconds",
-            Help:    "Duration of effectiveness assessments",
-            Buckets: prometheus.ExponentialBuckets(0.1, 2, 10),
-        },
-        []string{"action_type", "confidence_level"},
-    )
-
-    effectivenessScore = prometheus.NewHistogramVec(
-        prometheus.HistogramOpts{
-            Name:    "effectiveness_traditional_score",
-            Help:    "Traditional effectiveness score distribution",
-            Buckets: prometheus.LinearBuckets(0, 0.1, 11),
-        },
-        []string{"action_type", "environment"},
-    )
-)
-
-func init() {
-    prometheus.MustRegister(assessmentDuration, effectivenessScore)
-}
-
-// Metrics endpoint with authentication
-func (s *EffectivenessMonitorService) metricsHandler() http.Handler {
-    return s.AuthMiddleware()(promhttp.Handler())
-}
-```
+EM logs component scores, correlation IDs, and phase transitions (see [Observability & Logging](./observability-logging.md)) but never logs a ServiceAccount token, a CA bundle's contents, or Fleet OAuth2 client credentials — `AuthTransport`/`auth.NewDefaultTokenSource()` only ever read the token to set the `Authorization` header, never to log it. Effectiveness scores and audit-event payloads are not treated as secret; they are the intended, documented output of the service (see the [Audit Event Catalog](./security/AUDIT_EVENT_CATALOG.md)).
 
 ---
 
-## ✅ Security Checklist
+## What Is NOT in This Security Model
 
-### **Pre-Deployment**
+The v1.0 draft of this document described a security model for a service that was never built. None of the following exist anywhere in `pkg/effectivenessmonitor/`, `internal/controller/effectivenessmonitor/`, or the Helm chart:
 
-- [ ] Kubernetes TokenReviewer authentication implemented
-- [ ] RBAC ClusterRole and ServiceAccount configured
-- [ ] NetworkPolicy restricts ingress/egress
-- [ ] Database credentials stored in Kubernetes Secret
-- [ ] Rate limiting configured (50 req/s)
-- [ ] Sensitive data sanitized in logs
+| Previous claim | Current reality |
+|---|---|
+| Kubernetes TokenReviewer `AuthMiddleware()` protecting a port-8080 REST API | No port 8080, no HTTP business API, no inbound auth middleware of any kind. `/metrics` (9090) and `/healthz`/`/readyz` (8081) are unauthenticated at the application layer, restricted only by NetworkPolicy |
+| `HolmesGPTClient` (`pkg/monitor/holmesgpt_client.go`) authenticating with a ServiceAccount token to `POST /api/v1/postexec/analyze` | Never implemented. That endpoint is ⚠️ **Planned V1.1 — NOT YET IMPLEMENTED** ([DD-017](../../../architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md) §"V1.1 Scope: Level 2"); EM has zero AI/LLM/Kubernaut Agent client code in V1.0 |
+| `effectiveness-monitor-holmesgpt-client` ClusterRole + `kubernaut-agent-postexec-analyzer` cross-service RBAC pair | No such RBAC exists on either side |
+| 50 req/s rate-limiting middleware (`RateLimitMiddleware`) | No rate limiting anywhere — EM has no inbound business requests to rate-limit |
+| Direct PostgreSQL connection (`ConnectToDataStorage`, `sql.Open("postgres", ...)`) + `effectiveness-monitor-db-credentials` Secret | No database connection anywhere in EM. All persistence goes through DataStorage's audit API, authenticated as [described above](#authentication-to-datastorage-dd-auth-005--dd-auth-014) |
+| `BR-INS-Security`/`BR-INS-Performance` requirement tags | ⚠️ **STALE** — no `BR-INS-*` requirement document backs the current implementation (see the sibling STALE-ID note in [overview.md](./overview.md#business-requirements-coverage-v10)); this document does not invent a replacement mapping |
 
-### **Runtime Security**
+---
 
-- [ ] All API requests authenticated via Bearer token
-- [ ] Assessment results stored in tamper-proof audit trail
-- [ ] Metrics endpoint secured with TokenReviewer
-- [ ] Connection to Data Storage uses TLS (sslmode=require)
-- [ ] No raw effectiveness scores in logs
+## Related Documents
 
-### **Monitoring**
-
-- [ ] Authentication failures logged with context
-- [ ] Rate limit violations tracked in metrics
-- [ ] Database connection failures alerted
-- [ ] Unauthorized access attempts monitored
+| Document | Purpose |
+|----------|---------|
+| [Overview](./overview.md) | Service purpose, architecture, component scorers |
+| [CRD Schema](./crd-schema.md) | `EffectivenessAssessment` spec/status fields + RBAC summary |
+| [Integration Points](./integration-points.md) | Upstream/downstream services, audit event contract |
+| [Testing Strategy](./testing-strategy.md) | Real unit/integration/E2E test suite |
+| [DD-AUTH-005](../../../architecture/decisions/DD-AUTH-005-datastorage-client-authentication-pattern.md) | ServiceAccount Bearer-token client authentication pattern |
+| [DD-AUTH-014](../../../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md) | TokenReview + SubjectAccessReview middleware pattern (DataStorage-side) |
+| [DD-017](../../../architecture/decisions/DD-017-effectiveness-monitor-v1.1-deferral.md) | V1.0 Level 1 / V1.1 Level 2 scoping — authoritative status of the `postexec/analyze` endpoint |
+| [DD-CONTEXT-006](../../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) | Context API deprecation (why EM has no such upstream client/ingress rule) |
 
 ---
 
 **Document Maintainer**: Kubernaut Documentation Team
-**Last Updated**: October 6, 2025
-**Status**: ✅ Complete Specification
-
+**Last Updated**: 2026-08-02

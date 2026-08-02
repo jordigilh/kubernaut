@@ -454,7 +454,7 @@ DS reads these richer fields from the same audit traces. KA receives richer cont
 ## Related Decisions
 
 - **DD-KA-016**: Remediation History Context Enrichment (depends on this DD for effectiveness data)
-- **DD-EFFECTIVENESS-001**: Hybrid Automated + AI Analysis approach (Level 1 architecture, Level 2 triggers)
+- **DD-EFFECTIVENESS-001**: Original hybrid-approach rationale and proposed Level 2 trigger taxonomy (unbuilt V1.1 design input) — **not** authoritative for Level 1 architecture, which this document and [ADR-EM-001](ADR-EM-001-effectiveness-monitor-service-integration.md) describe as actually implemented
 - **DD-EFFECTIVENESS-002**: Restart Recovery Idempotency (DB-backed idempotency — **SUPERSEDED by v2.1**: EM uses audit-event dedup via DS instead of direct DB tables)
 - **DD-017 v1.0**: Original full deferral (superseded by this v2.0)
 - **DD-CRD-002**: Kubernetes Conditions Standard (conditions infrastructure)
