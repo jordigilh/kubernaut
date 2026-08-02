@@ -9,7 +9,7 @@
 
 ## 🎯 **OBJECTIVE**
 
-Document all HTTP status codes returned by `ose-oauth-proxy` sidecar for DataStorage and HolmesGPT API REST endpoints, ensuring OpenAPI spec accuracy and E2E test coverage.
+Document all HTTP status codes returned by `ose-oauth-proxy` sidecar for DataStorage and Kubernaut Agent (KA) REST endpoints, ensuring OpenAPI spec accuracy and E2E test coverage.
 
 ---
 
@@ -17,12 +17,12 @@ Document all HTTP status codes returned by `ose-oauth-proxy` sidecar for DataSto
 
 ### **🟢 Success Responses (2xx)**
 
-These are returned by **DataStorage/HAPI**, not the proxy:
+These are returned by **DataStorage/KA**, not the proxy:
 
 | Code | Name | Source | Description |
 |------|------|--------|-------------|
-| **200 OK** | Success | DataStorage/HAPI | Request succeeded (GET, PUT, DELETE) |
-| **201 Created** | Created | DataStorage/HAPI | Resource created successfully (POST) |
+| **200 OK** | Success | DataStorage/KA | Request succeeded (GET, PUT, DELETE) |
+| **201 Created** | Created | DataStorage/KA | Resource created successfully (POST) |
 | **202 Accepted** | Accepted | DataStorage | Async processing (DLQ fallback per DD-009) |
 
 ---
@@ -62,7 +62,7 @@ These are returned by **DataStorage/HAPI**, not the proxy:
 **OAuth-Proxy Behavior**:
 - Validates Bearer token via Kubernetes `TokenReview` API
 - If validation fails, returns 401 **before** checking authorization
-- **Does not** reach DataStorage/HAPI application code
+- **Does not** reach DataStorage/KA application code
 
 **Response Format**:
 ```html
@@ -143,7 +143,7 @@ Content-Type: text/html
 
 #### **400 Bad Request** ⚠️ **VALIDATION ERROR**
 
-**Source**: **DataStorage/HAPI** (application code)  
+**Source**: **DataStorage/KA** (application code)  
 **Cause**: Invalid request payload or parameters
 
 **Response Format** (RFC 7807 Problem Details):
@@ -162,7 +162,7 @@ Content-Type: text/html
 
 #### **404 Not Found**
 
-**Source**: **DataStorage/HAPI** (application code)  
+**Source**: **DataStorage/KA** (application code)  
 **Cause**: Resource not found
 
 **Example**:
@@ -178,7 +178,7 @@ curl -H "Authorization: Bearer $VALID_TOKEN" \
 
 #### **500 Internal Server Error**
 
-**Source**: **DataStorage/HAPI** (application code)  
+**Source**: **DataStorage/KA** (application code)  
 **Cause**: Unexpected server error (after auth/authz succeeds)
 
 **Response Format** (RFC 7807):
@@ -195,7 +195,7 @@ curl -H "Authorization: Bearer $VALID_TOKEN" \
 
 #### **503 Service Unavailable**
 
-**Source**: **DataStorage/HAPI** (application code)  
+**Source**: **DataStorage/KA** (application code)  
 **Cause**: Service temporarily unavailable (health check failing)
 
 **Example**: Database connection pool exhausted, Redis unavailable

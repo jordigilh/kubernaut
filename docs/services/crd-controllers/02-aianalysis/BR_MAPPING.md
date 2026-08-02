@@ -50,7 +50,7 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 **Authoritative Source Documents**:
 - `docs/requirements/02_AI_MACHINE_LEARNING.md` v1.1 - Primary AI/ML requirements (BR-AI-*)
-- `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md` v1.1 - HolmesGPT-API requirements (BR-HAPI-*)
+- `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md` v1.1 - Kubernaut Agent (KA) requirements (BR-HAPI-*)
 - `docs/requirements/06_INTEGRATION_LAYER.md` - Integration requirements (BR-SP-*)
 
 **Reference Documents** (do NOT define BRs):
@@ -81,18 +81,18 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 | BR ID | Description | V1.0 | Implementation Notes |
 |-------|-------------|------|---------------------|
-| **BR-AI-001** | Contextual analysis of K8s alerts and system state | ✅ | HolmesGPT-API `/incident/analyze` |
+| **BR-AI-001** | Contextual analysis of K8s alerts and system state | ✅ | KA `/incident/analyze` |
 | **BR-AI-002** | Support multiple analysis types (diagnostic, predictive) | ⏸️ Deferred v2.0 | Single type only (DD-AIANALYSIS-005) |
 | **BR-AI-003** | Generate structured analysis results with confidence scoring | ✅ | `status.confidence`, `status.rootCause` |
 | **BR-AI-006** | Generate actionable remediation recommendations | ✅ | `status.selectedWorkflow` |
-| **BR-AI-007** | Rank recommendations by effectiveness probability | ✅ | Confidence score from HolmesGPT |
-| **BR-AI-008** | Consider historical success rates in scoring | ✅ | HolmesGPT queries Data Storage |
+| **BR-AI-007** | Rank recommendations by effectiveness probability | ✅ | Confidence score from KA |
+| **BR-AI-008** | Consider historical success rates in scoring | ✅ | KA queries Data Storage |
 | **BR-AI-010** | Provide recommendation explanations with evidence | ✅ | `status.selectedWorkflow.rationale` |
-| **BR-AI-011** | Conduct intelligent investigation using historical patterns | ✅ | HolmesGPT + toolsets |
+| **BR-AI-011** | Conduct intelligent investigation using historical patterns | ✅ | KA + toolsets |
 | **BR-AI-012** | Identify root cause candidates with evidence | ✅ | `status.rootCause` |
-| **BR-AI-013** | Correlate alerts across time windows | ✅ | HolmesGPT correlation features |
+| **BR-AI-013** | Correlate alerts across time windows | ✅ | KA correlation features |
 | **BR-AI-014** | Generate investigation reports with actionable insights | ✅ | `status.approvalContext.investigationSummary` |
-| **BR-AI-015** | Support custom investigation scopes and time windows | ✅ | HolmesGPT-API internal config (scope determined dynamically) |
+| **BR-AI-015** | Support custom investigation scopes and time windows | ✅ | KA internal config (scope determined dynamically) |
 | **BR-AI-016** | Provide real-time health status | ✅ | Controller health endpoints |
 | **BR-AI-017** | Track service performance metrics | ✅ | Prometheus metrics |
 | **BR-AI-020** | Maintain service availability above 99.5% SLA | ✅ | Circuit breaker, retries |
@@ -183,7 +183,7 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 |-------|-------------|------|---------------------|
 | **BR-AI-080** | Support recovery attempts from failed WorkflowExecution | ✅ | `spec.isRecoveryAttempt`, `spec.recoveryAttemptNumber` |
 | **BR-AI-081** | Accept previous execution context for recovery analysis | ✅ | `spec.previousExecution` with failure details |
-| **BR-AI-082** | Call HolmesGPT-API recovery endpoint for failed workflows | ✅ | `POST /api/v1/recovery/analyze` + `status.recoveryStatus` populated (Dec 29 2025) |
+| **BR-AI-082** | Call KA recovery endpoint for failed workflows | ✅ | `POST /api/v1/recovery/analyze` + `status.recoveryStatus` populated (Dec 29 2025) |
 | **BR-AI-083** | Reuse original enrichment without re-enriching | ✅ | `spec.enrichmentResults` (copied from original SignalProcessing) |
 
 ---
@@ -220,17 +220,17 @@ This document maps all business requirements (BRs) relevant to the AIAnalysis Se
 
 **Implementation Details**: `EnrichmentResults` struct and `EnrichmentQuality` score are defined in DD-CONTRACT-002, not as separate BRs.
 
-### HolmesGPT-API → AIAnalysis
+### Kubernaut Agent (KA) → AIAnalysis
 
 **Source**: `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md` v1.1
 
 | BR ID | Source | Relationship | Notes |
 |-------|--------|--------------|-------|
-| **BR-HAPI-001** | HolmesGPT-API | Investigation results | `/api/v1/investigate` response |
-| **BR-HAPI-RECOVERY-001** | HolmesGPT-API | Recovery analysis | `/api/v1/recovery/analyze` response |
-| **BR-KA-250** | HolmesGPT-API | Workflow catalog search | MCP tool with `containerImage` |
-| **BR-HAPI-251** | HolmesGPT-API | Container resolution | Resolves `workflowId` → `containerImage` |
-| **BR-HAPI-252** | HolmesGPT-API | Label passthrough | DetectedLabels + CustomLabels to MCP |
+| **BR-HAPI-001** | KA | Investigation results | `/api/v1/investigate` response |
+| **BR-HAPI-RECOVERY-001** | KA | Recovery analysis | `/api/v1/recovery/analyze` response |
+| **BR-KA-250** | KA | Workflow catalog search | MCP tool with `containerImage` |
+| **BR-HAPI-251** | KA | Container resolution | Resolves `workflowId` → `containerImage` |
+| **BR-HAPI-252** | KA | Label passthrough | DetectedLabels + CustomLabels to MCP |
 
 ---
 
@@ -290,11 +290,11 @@ The following describes the **output contract**, not formal BRs.
 | **DD-CONTRACT-001** | AIAnalysis ↔ WorkflowExecution Alignment | Schema contract |
 | **DD-CONTRACT-002** | Service Integration Contracts | Integration flow |
 | **DD-RECOVERY-002** | Direct AIAnalysis Recovery Flow | Recovery pattern |
-| **DD-RECOVERY-003** | Recovery Prompt Design | HolmesGPT-API integration |
+| **DD-RECOVERY-003** | Recovery Prompt Design | KA integration |
 | **DD-AIANALYSIS-001** | Rego Policy Loading Strategy | Approval policy implementation |
 | **DD-WORKFLOW-002** | MCP Workflow Catalog Architecture | Predefined workflows (v3.3) - justifies BR-AI-051-053 deferral |
 | **DD-WORKFLOW-012** | Workflow Immutability Constraints | Pre-validated workflows at registration |
-| **ADR-041** | LLM Prompt and Response Contract | HolmesGPT response format |
+| **ADR-041** | LLM Prompt and Response Contract | KA response format |
 
 ---
 
@@ -304,7 +304,7 @@ The following describes the **output contract**, not formal BRs.
 |--------|-------|-----------|
 | **ADR-018** | Approval Notification Integration | V1.0 approval flow |
 | **ADR-040** | RemediationApprovalRequest Architecture | V1.1 approval CRD |
-| **ADR-041** | LLM Prompt Response Contract | HolmesGPT integration |
+| **ADR-041** | LLM Prompt Response Contract | KA integration |
 
 ---
 
@@ -312,7 +312,7 @@ The following describes the **output contract**, not formal BRs.
 
 | BR Category | Unit Tests | Integration Tests | E2E Tests |
 |-------------|-----------|-------------------|-----------|
-| Core AI Analysis | BR-AI-001-015 | HolmesGPT integration | Full flow |
+| Core AI Analysis | BR-AI-001-015 | KA integration | Full flow |
 | Approval & Policy | BR-AI-026-030 | Rego policy evaluation | Approval workflow |
 | Quality Assurance | BR-AI-021-025 | Catalog validation, schema checks | Graceful degradation |
 | Data Management | BR-AI-031-033 | Payload handling | Timeout scenarios |

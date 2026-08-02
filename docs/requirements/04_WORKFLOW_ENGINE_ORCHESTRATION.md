@@ -95,20 +95,20 @@ The Workflow Engine & Orchestration layer provides sophisticated automation capa
 - **BR-WF-028**: MUST support workflow inheritance and composition
 - **BR-WF-029**: MUST maintain workflow execution history and audit trails
 
-### 2.3 HolmesGPT Investigation Integration (v1)
+### 2.3 Kubernaut Agent (KA) Investigation Integration (v1)
 
 #### 2.3.1 Investigation-Only Integration
-- **BR-WF-HOLMESGPT-001**: MUST use HolmesGPT for investigation and analysis only - NOT for execution
-- **BR-WF-HOLMESGPT-002**: MUST integrate HolmesGPT investigation results into workflow decision-making
-- **BR-WF-HOLMESGPT-003**: MUST translate HolmesGPT recommendations into executable workflow actions
-- **BR-WF-HOLMESGPT-004**: MUST validate HolmesGPT recommendations before execution using existing action executors
-- **BR-WF-HOLMESGPT-005**: MUST provide execution feedback to HolmesGPT for continuous learning
+- **BR-WF-HOLMESGPT-001**: MUST use Kubernaut Agent (KA) for investigation and analysis only - NOT for execution
+- **BR-WF-HOLMESGPT-002**: MUST integrate KA investigation results into workflow decision-making
+- **BR-WF-HOLMESGPT-003**: MUST translate KA recommendations into executable workflow actions
+- **BR-WF-HOLMESGPT-004**: MUST validate KA recommendations before execution using existing action executors
+- **BR-WF-HOLMESGPT-005**: MUST provide execution feedback to KA for continuous learning
 
 #### 2.3.2 Failure Investigation & Recovery
-- **BR-WF-INVESTIGATION-001**: MUST use HolmesGPT for step failure root cause analysis
-- **BR-WF-INVESTIGATION-002**: MUST request recovery recommendations from HolmesGPT when steps fail
-- **BR-WF-INVESTIGATION-003**: MUST assess action safety using HolmesGPT before executing recovery actions
-- **BR-WF-INVESTIGATION-004**: MUST analyze execution results with HolmesGPT for pattern learning
+- **BR-WF-INVESTIGATION-001**: MUST use KA for step failure root cause analysis
+- **BR-WF-INVESTIGATION-002**: MUST request recovery recommendations from KA when steps fail
+- **BR-WF-INVESTIGATION-003**: MUST assess action safety using KA before executing recovery actions
+- **BR-WF-INVESTIGATION-004**: MUST analyze execution results with KA for pattern learning
 - **BR-WF-INVESTIGATION-005**: MUST maintain investigation context across workflow execution phases
 
 #### 2.3.3 Recovery Loop Prevention & Coordination

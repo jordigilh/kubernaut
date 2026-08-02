@@ -19,7 +19,7 @@ E2E test infrastructure builds container images **serially**, causing unnecessar
 ```
 1. Build Data Storage     →  1-2 min    ────┐
                                              ├─ WAIT
-2. Build HolmesGPT-API    →  2-3 min    ────┤
+2. Build Kubernaut Agent (KA)    →  2-3 min    ────┤
                                              ├─ WAIT
 3. Build AIAnalysis       →  3-4 min    ────┘
 
@@ -28,7 +28,7 @@ Total: 6-9 minutes ⏱️
 
 **Note**: Manual testing (Dec 16, 2025) confirms:
 - Data Storage: **1:22** (1-2 min range)
-- HolmesGPT-API: **2:30** (2-3 min range) - previously incorrectly estimated at 10-15 min
+- Kubernaut Agent (KA): **2:30** (2-3 min range) - previously incorrectly estimated at 10-15 min
 - AIAnalysis: **3:53** (3-4 min range) - **slowest build**, determines parallel total
 
 ### **Impact**
@@ -66,7 +66,7 @@ func deployHolmesGPTAPI(...) {
 
 ```
 1. Build Data Storage     →  1-2 min    ────┐
-2. Build HolmesGPT-API    →  2-3 min    ────┤─ WAIT for slowest
+2. Build Kubernaut Agent (KA)    →  2-3 min    ────┤─ WAIT for slowest
 3. Build AIAnalysis       →  3-4 min    ────┘ ← Determines total
 
 Total: 3-4 minutes ⏱️ (determined by slowest: AIAnalysis)
@@ -505,7 +505,7 @@ func TestBuildImagesInParallel(t *testing.T) {
 ### **Phase 1: AIAnalysis Reference Implementation** ✅
 
 - [x] Extract `buildImageOnly` function
-- [x] Create `deploy*Only` functions (Data Storage, HAPI, AIAnalysis)
+- [x] Create `deploy*Only` functions (Data Storage, KA, AIAnalysis)
 - [x] Implement parallel build orchestration
 - [x] Add backward compatibility wrappers
 - [x] Verify E2E tests pass

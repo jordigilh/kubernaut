@@ -1,6 +1,6 @@
 # DD-AUTH-011: Granular RBAC & SAR Verb Mapping - Document Index
 
-**Status**: ✅ AUTHORITATIVE  
+**Status**: ⚠️ SUPERSEDED by [DD-AUTH-014](../DD-AUTH-014-middleware-based-sar-authentication.md) (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), see note in the core DD document)
 **Last Updated**: January 26, 2026  
 **Category**: Authentication & Authorization
 

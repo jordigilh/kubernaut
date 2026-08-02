@@ -16,7 +16,7 @@
 - **Composite image tags**: `{service}-{uuid}` for collision avoidance
 - **Sequential startup**: PostgreSQL → Migrations → Redis → Services
 
-**Migration Status**: 7/8 services migrated (Notification, Gateway, RO, WE, SP, AIAnalysis, HolmesGPT-API)
+**Migration Status**: 7/8 services migrated (Notification, Gateway, RO, WE, SP, AIAnalysis, Kubernaut Agent (KA))
 
 ---
 
@@ -150,7 +150,7 @@ def pytest_sessionfinish(session, exitstatus):
     subprocess.run(["podman", "image", "prune", "-f"], check=False, capture_output=True)
 ```
 
-**Reference**: HolmesGPT-API `kubernaut-agent/tests/integration/conftest.py` (complete implementation)
+**Reference**: KA `kubernaut-agent/tests/integration/conftest.py` (complete implementation)
 
 #### **2. Composite Image Tags** (REQUIRED)
 
@@ -389,9 +389,11 @@ func Stop{Service}IntegrationInfrastructure(writer io.Writer) error {
 
 ## 🐍 **Python Services (pytest Fixtures Pattern)**
 
-### **HolmesGPT-API Integration Tests**
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This section documents a pytest-fixtures pattern for the Kubernaut Agent (KA) from when it was implemented as a Python service; KA has since been rewritten as a native Go service and no longer uses this pattern.
 
-Python services (like HolmesGPT-API) use pytest fixtures instead of programmatic Podman commands, but follow the same principles:
+### **Kubernaut Agent (KA) Integration Tests**
+
+Python services (like KA was) use pytest fixtures instead of programmatic Podman commands, but follow the same principles:
 
 **Pattern**: Framework manages infrastructure (no shell scripts)
 
@@ -748,7 +750,7 @@ build:
 | Image | Build Time | Size |
 |---|---|---|
 | DataStorage | ~30 seconds | 134 MB |
-| HolmesGPT-API | ~2 minutes | 2.8 GB |
+| KA | ~2 minutes | 2.8 GB |
 | Service Controller | ~20 seconds | ~100 MB |
 
 **Total integration setup**: ~3 minutes (much faster than E2E's ~12 minutes)
@@ -854,7 +856,7 @@ build:
 - ✅ WorkflowExecution - Migrated (88 lines saved, Go pattern)
 - ✅ SignalProcessing - Migrated (~80 lines saved, Go pattern)
 - ✅ AIAnalysis - Migrated (~85 lines saved, Go pattern)
-- ✅ HolmesGPT-API - Migrated (Dec 27, 2025, Python pytest fixtures pattern, 358 lines removed)
+- ✅ KA - Migrated (Dec 27, 2025, Python pytest fixtures pattern, 358 lines removed)
 - ⏳ DataStorage - Migration pending
 
 **Related Design Decisions**:

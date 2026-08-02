@@ -378,15 +378,15 @@ Automatic retry without changed conditions is futile. Therefore:
 | AC-042-6-5 | 3 consecutive Inconclusive RRs trigger blocking | UT-RO-1091-009 |
 
 **Option C — LLM-Driven Escalation** (unchanged for non-Inconclusive outcomes):
-Instead of modifying the consecutive failure counter, the system uses DataStorage audit traces to detect ineffective remediation chains. When the same pre-remediation state recurs, the LLM (via HAPI) receives the full remediation history context and can:
+Instead of modifying the consecutive failure counter, the system uses DataStorage audit traces to detect ineffective remediation chains. When the same pre-remediation state recurs, the LLM (via Kubernaut Agent (KA)) receives the full remediation history context and can:
 1. Choose a different remediation strategy
 2. Escalate to manual review if no alternative exists
 3. Provide root cause analysis enriched with historical failure context
 
 **Implementation status**:
 - ✅ `CheckIneffectiveRemediationChain` in `blocking.go` (Issue #214, BR-ORCH-042.5)
-- ✅ HAPI `resource_context` tools (`get_namespaced_resource_context` / `get_cluster_resource_context`) provide remediation history to the LLM
-- ✅ HAPI prompt engineering leverages history context (`remediation_history_prompt.py`, BR-KA-016, DD-KA-016 v1.1)
+- ✅ KA `resource_context` tools (`get_namespaced_resource_context` / `get_cluster_resource_context`) provide remediation history to the LLM
+- ✅ KA prompt engineering leverages history context (`remediation_history_prompt.py`, BR-KA-016, DD-KA-016 v1.1)
 - ✅ Inconclusive backoff and chain-counting (Issue #1091, BR-ORCH-042.6)
 
 **Why not Option A/B?**

@@ -27,15 +27,15 @@ All affected implementation plans have been updated to reflect:
 **Changelog Added**:
 ```
 - v1.0.3 (2025-10-17): 🚀 Architectural Risk Extensions Added
-  - v1.1 Extension: HolmesGPT Retry + Dependency Cycle Detection (+4 days, 90% confidence)
+  - v1.1 Extension: Kubernaut Agent (KA) Retry + Dependency Cycle Detection (+4 days, 90% confidence)
     - BR-AI-061 to BR-AI-065: Exponential backoff retry (5s → 30s, 5 min timeout)
     - BR-AI-066 to BR-AI-070: Kahn's algorithm cycle detection + manual approval fallback
-    - ADR-019: HolmesGPT circuit breaker retry strategy
+    - ADR-019: KA circuit breaker retry strategy
     - ADR-021: Workflow dependency cycle detection
     - Timeline impact: +4 days (total: 17-18 days for V1.0 + v1.1 extension)
   - v1.2 Extension (DEFERRED TO V1.1): AI-Driven Cycle Correction (+3 days, 75% confidence)
-    - BR-AI-071 to BR-AI-074: Auto-correction via HolmesGPT feedback (60-70% success hypothesis)
-    - Deferred pending: V1.0 validation, HolmesGPT API correction mode support
+    - BR-AI-071 to BR-AI-074: Auto-correction via KA feedback (60-70% success hypothesis)
+    - Deferred pending: V1.0 validation, KA correction mode support
     - See: V1.0 vs V1.1 Scope Decision
   - Total V1.0 Scope: Base (14-15 days) + v1.1 extension (4 days) = 18-19 days
   - Confidence: 90% (V1.0), 75% (V1.1 deferred)
@@ -138,7 +138,7 @@ All version updates reference the following ADRs created during this session:
 | ADR | Decision | Impact |
 |---|---|---|
 | **ADR-018** | Approval notification integration strategy | RemediationOrchestrator creates NotificationRequest CRDs |
-| **ADR-019** | HolmesGPT circuit breaker retry strategy | Exponential backoff, 5 min timeout, then fail |
+| **ADR-019** | Kubernaut Agent (KA) circuit breaker retry strategy | Exponential backoff, 5 min timeout, then fail |
 | **ADR-020** | Workflow parallel execution limits | Max 5 concurrent CRDs, complexity approval for >10 steps |
 | **ADR-021** | Workflow dependency cycle detection | Kahn's algorithm validation, manual approval fallback |
 
@@ -152,7 +152,7 @@ All version updates reference the following ADRs created during this session:
 ### **V1.0 Scope (Approved for Implementation)**
 
 **AIAnalysis Controller** (10 new BRs):
-- **BR-AI-061 to BR-AI-065**: HolmesGPT exponential backoff retry (5 BRs)
+- **BR-AI-061 to BR-AI-065**: Kubernaut Agent (KA) exponential backoff retry (5 BRs)
 - **BR-AI-066 to BR-AI-070**: Dependency cycle detection and validation (5 BRs)
 
 **WorkflowExecution Controller** (4 new BRs):
@@ -169,16 +169,16 @@ All version updates reference the following ADRs created during this session:
 ### **V1.1 Scope (Deferred)**
 
 **AIAnalysis Controller** (4 BRs deferred):
-- **BR-AI-071 to BR-AI-074**: AI-driven cycle correction via HolmesGPT feedback (4 BRs)
+- **BR-AI-071 to BR-AI-074**: AI-driven cycle correction via KA feedback (4 BRs)
 
-**Deferral Reason**: Requires HolmesGPT API validation and V1.0 foundation complete
+**Deferral Reason**: Requires KA validation and V1.0 foundation complete
 
 ---
 
 ## 🔗 **CROSS-REFERENCES**
 
 ### **Extension Documents Created**
-1. [AIAnalysis v1.1 Extension](./02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.1_HOLMESGPT_RETRY_EXTENSION.md) - HolmesGPT retry + dependency validation
+1. [AIAnalysis v1.1 Extension](./02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.1_HOLMESGPT_RETRY_EXTENSION.md) - Kubernaut Agent (KA) retry + dependency validation
 2. [AIAnalysis v1.2 Extension](./02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.2_AI_CYCLE_CORRECTION_EXTENSION.md) - AI-driven cycle correction (V1.1)
 3. [WorkflowExecution v1.2 Extension](./03-workflowexecution/implementation/IMPLEMENTATION_PLAN_V1.2_PARALLEL_LIMITS_EXTENSION.md) - Parallel limits + complexity approval
 
@@ -189,7 +189,7 @@ All version updates reference the following ADRs created during this session:
 
 ### **Decision Documents**
 1. [ADR-018: Approval Notifications](../../architecture/decisions/ADR-018-approval-notification-v1-integration.md)
-2. [ADR-019: HolmesGPT Retry](../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md)
+2. [ADR-019: KA Retry](../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md)
 3. [ADR-020: Parallel Limits](../../architecture/decisions/ADR-020-workflow-parallel-execution-limits.md)
 4. [ADR-021: Cycle Detection](../../architecture/decisions/ADR-021-workflow-dependency-cycle-detection.md)
 5. [V1.0 vs V1.1 Decision](./V1_0_VS_V1_1_SCOPE_DECISION.md)
@@ -227,7 +227,7 @@ All version updates reference the following ADRs created during this session:
 
 ### **For V1.1 (After V1.0 Ships)**
 
-1. ⏳ **Validate HolmesGPT API** - Confirm correction mode feasibility
+1. ⏳ **Validate Kubernaut Agent (KA)** - Confirm correction mode feasibility
 2. ⏳ **Test 100 synthetic cycles** - Measure auto-correction success rate
 3. ⏳ **Implement AIAnalysis v1.2** - If success rate >60% validated
 4. ⏳ **V1.1 validation** - Integration and performance testing

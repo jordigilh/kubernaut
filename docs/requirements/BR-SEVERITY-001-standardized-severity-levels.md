@@ -28,7 +28,7 @@ Kubernaut uses severity levels across multiple components and boundaries:
 
 1. **External systems** (Prometheus, PagerDuty, custom alerting) produce severity values in arbitrary schemes (Sev1-4, P0-P4, Critical/High/Medium/Low, etc.)
 2. **SignalProcessing** normalizes external severity to an internal canonical set via Rego policy (DD-SEVERITY-001)
-3. **HAPI LLM prompts** instruct the LLM to assess root cause severity using canonical levels
+3. **Kubernaut Agent (KA) LLM prompts** instruct the LLM to assess root cause severity using canonical levels
 4. **AIAnalysis CRD** validates severity against a `kubebuilder:validation:Enum`
 5. **Workflow catalog** uses severity as a search filter label
 
@@ -175,13 +175,13 @@ This table documents where each component enforces or references the canonical s
 | Component | Mechanism | Levels Supported | Source File |
 |-----------|-----------|-----------------|-------------|
 | **AIAnalysis CRD** | `kubebuilder:validation:Enum` | `critical`, `high`, `medium`, `low`, `unknown` | `api/aianalysis/v1alpha1/aianalysis_types.go` |
-| **HAPI Incident Prompt** | LLM instruction text | `critical`, `high`, `medium`, `low`, `unknown` | `kubernaut-agent/src/extensions/incident/prompt_builder.py` |
-| **HAPI Recovery Prompt** | LLM instruction text | `critical`, `high`, `medium`, `low`, `unknown` | `kubernaut-agent/src/extensions/recovery/prompt_builder.py` |
+| **Kubernaut Agent (KA) Incident Prompt** | LLM instruction text | `critical`, `high`, `medium`, `low`, `unknown` | `kubernaut-agent/src/extensions/incident/prompt_builder.py` |
+| **KA Recovery Prompt** | LLM instruction text | `critical`, `high`, `medium`, `low`, `unknown` | `kubernaut-agent/src/extensions/recovery/prompt_builder.py` |
 | **SignalProcessing Rego** | Rego policy output | `critical`, `high`, `medium`, `low`, `unknown` | `config/rego/severity.rego` |
 | **Workflow Catalog** | DataStorage label filter (JSONB array, ? operator) | `[critical, high, medium, low]` | `api/openapi/data-storage-v1.yaml` |
 | **Prometheus Metrics** | Label cardinality | `critical`, `high`, `medium`, `low`, `unknown` | Various `metrics.go` files |
 
-**Note**: The Workflow Catalog does not use `unknown` because workflows are authored for specific, known conditions. An `unknown` severity assessment triggers human review (BR-HAPI-197), not workflow execution.
+**Note**: The Workflow Catalog does not use `unknown` because workflows are authored for specific, known conditions. An `unknown` severity assessment triggers human review (BR-KA-197), not workflow execution.
 
 **Workflow labels**: In the workflow catalog, severity is stored as a JSONB array (e.g., `["critical"]` or `["critical", "high"]`). A workflow can declare multiple severity levels to indicate it handles signals at any of those levels. The `"*"` wildcard is supported (DD-WORKFLOW-001 v2.8) — `severity: ["*"]` matches any severity. Alternatively, listing all four levels `["critical", "high", "medium", "low"]` achieves the same result. Search queries use the JSONB `?` operator: `labels->'severity' ? $severity_filter OR labels->'severity' ? '*'`.
 
@@ -212,8 +212,8 @@ Any CRD field that stores a canonical severity value MUST use `+kubebuilder:vali
 | # | Criterion | Verification |
 |---|-----------|-------------|
 | AC-1 | All five levels (`critical`, `high`, `medium`, `low`, `unknown`) are accepted by the AIAnalysis CRD | CRD validation test |
-| AC-2 | HAPI incident prompt severity section matches this BR's definitions | Code review / prompt unit test |
-| AC-3 | HAPI recovery prompt severity section matches this BR's definitions | Code review / prompt unit test |
+| AC-2 | Kubernaut Agent (KA) incident prompt severity section matches this BR's definitions | Code review / prompt unit test |
+| AC-3 | KA recovery prompt severity section matches this BR's definitions | Code review / prompt unit test |
 | AC-4 | SignalProcessing default Rego policy maps to all five levels | Rego unit test |
 | AC-5 | No component uses severity values outside this set (e.g., `warning`, `info`, `error`) | `grep` audit across codebase |
 | AC-6 | DD-SEVERITY-001 references this BR as the canonical definition | Document cross-reference |

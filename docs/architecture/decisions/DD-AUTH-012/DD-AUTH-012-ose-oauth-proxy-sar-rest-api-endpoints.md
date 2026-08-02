@@ -1,10 +1,21 @@
 # DD-AUTH-012: ose-oauth-proxy for SAR-Based REST API Authorization
 
 **Date**: January 26, 2026
-**Status**: ✅ **IMPLEMENTED**
+**Status**: ⚠️ **SUPERSEDED by [DD-AUTH-014](../DD-AUTH-014-middleware-based-sar-authentication.md)** (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806))
 **Version**: 1.0
-**Authority**: AUTHORITATIVE - Technical Architecture Decision
-**Related**: DD-AUTH-009 (oauth-proxy migration), DD-AUTH-011 (Granular RBAC), DD-AUTH-004 (DataStorage auth), DD-AUTH-006 (HAPI auth)
+**Authority**: Historical — see supersession note below
+**Related**: DD-AUTH-009 (oauth-proxy migration), DD-AUTH-011 (Granular RBAC, also superseded), DD-AUTH-004 (DataStorage auth), DD-AUTH-006 (Kubernaut Agent (KA) auth)
+
+> **⚠️ SUPERSEDED**: DD-AUTH-014's own "Phase 6: Documentation & Rollout" checklist explicitly called for
+> this document to be marked superseded — that step was never completed until now. The `ose-oauth-proxy`
+> sidecar this entire document is about has been **removed** from both DataStorage and KA deployments.
+> Both services now authenticate/authorize via an **in-process Go middleware** that calls the
+> TokenReview/SubjectAccessReview APIs directly — no sidecar container, no `--openshift-sar` flag.
+> Confirmed in `deploy/data-storage/deployment.yaml`: *"DD-AUTH-014: Middleware-Based
+> Authentication/Authorization — No oauth-proxy sidecar - auth handled in DataStorage middleware. Flow:
+> Client → DataStorage:8081 (direct)"*. Read this document only for historical context on why
+> `oauth2-proxy` was rejected (still relevant background); treat all sidecar-specific configuration,
+> deployment YAML, and validation commands below as obsolete.
 
 ---
 
@@ -25,7 +36,7 @@
 Kubernetes RBAC natively protects:
 - ✅ **CRD controllers**: K8s API enforces RBAC on CRD operations (CREATE, GET, UPDATE, DELETE)
 - ✅ **K8s resources**: Pods, Services, ConfigMaps all protected by K8s RBAC
-- ❌ **REST API endpoints**: HTTP endpoints on stateless services (DataStorage, HAPI) are **NOT** protected by K8s RBAC
+- ❌ **REST API endpoints**: HTTP endpoints on stateless services (DataStorage, Kubernaut Agent (KA)) are **NOT** protected by K8s RBAC
 
 **Gap**: DataStorage `/api/v1/workflows/*` endpoints are REST APIs, not K8s resources. Without SAR, **any authenticated user can access any endpoint** regardless of RBAC permissions.
 
@@ -119,7 +130,7 @@ containers:
 
 ---
 
-### **HolmesGPT API** (Production)
+### **Kubernaut Agent (KA)** (Production)
 
 **Production**: `deploy/kubernaut-agent/06-deployment.yaml`
 
@@ -130,12 +141,21 @@ containers:
     args:
       - --provider=openshift
       - --openshift-service-account=kubernaut-agent
-      # DD-AUTH-006: SAR with verb:"get" (HAPI protects its own endpoints)
+      # DD-AUTH-006: SAR with verb:"get" (KA protects its own endpoints)
       - --openshift-sar={"namespace":"kubernaut-system","resource":"services","resourceName":"kubernaut-agent","verb":"get"}
       - --set-xauthrequest=true  # For LLM cost tracking
 ```
 
-**Note**: HAPI uses `verb:"get"` because it's protecting **its own REST API endpoints** (not DataStorage). Only Gateway should access HAPI.
+**Note**: KA uses `verb:"get"` because it's protecting **its own REST API endpoints** (not DataStorage).
+
+> **Correction (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This note
+> previously said "Only Gateway should access KA" — that was already stale when this document was written.
+> [DD-AUTH-014](../DD-AUTH-014-middleware-based-sar-authentication.md)'s own changelog documents the actual
+> bug and fix: Gateway was mistakenly granted `kubernaut-agent-client` RBAC despite having zero KA code
+> references, which was corrected by granting that RBAC to the **AIAnalysis controller** instead (the real
+> caller). The correct flow is **Gateway creates AIAnalysis CRDs → AIAnalysis Controller calls KA**; API
+> Frontend (`pkg/apifrontend/ka/`) also calls KA directly for interactive investigation sessions. Gateway
+> itself has no production code path to KA.
 
 ---
 
@@ -192,7 +212,15 @@ if exportedBy == "" {
 
 ## 🔒 **WORKFLOW CATALOG AUDIT TRACKING**
 
-### **Implementation**
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This
+> entire section describes the DataStorage workflow catalog CRUD API, which was **fully retired** (see
+> `BUSINESS_REQUIREMENTS.md`'s Category 10 retirement, and commit history around Jan 2026). Neither
+> `pkg/datastorage/audit/workflow_catalog_event.go` nor `pkg/datastorage/server/workflow_handlers.go` exist
+> in the current codebase — `HandleCreateWorkflow` only survives as a past-tense comment
+> (`server_construction.go:245`) noting its removal. This section needs a full rewrite or deletion against
+> current DataStorage functionality (audit export, legal hold), not a mechanical terminology fix.
+
+### **Implementation** *(historical — describes removed code)*
 
 **File**: `pkg/datastorage/audit/workflow_catalog_event.go`
 
@@ -290,15 +318,19 @@ func (h *WorkflowHandler) HandleCreateWorkflow(w http.ResponseWriter, r *http.Re
 
 **Updated**: Production deployments to use `ose-oauth-proxy`
 - DataStorage: `deploy/data-storage/deployment.yaml` (updated today)
-- HolmesGPT API: `deploy/kubernaut-agent/06-deployment.yaml` (already using ose-oauth-proxy)
+- Kubernaut Agent (KA): `deploy/kubernaut-agent/06-deployment.yaml` (already using ose-oauth-proxy)
 
-**Authority**: DD-AUTH-004 (DataStorage), DD-AUTH-006 (HAPI), DD-AUTH-012 (this document)
+**Authority**: DD-AUTH-004 (DataStorage), DD-AUTH-006 (KA), DD-AUTH-012 (this document)
 
 ---
 
 ## 📋 **VALIDATION COMMANDS**
 
 ### **Verify ose-oauth-proxy SAR Enforcement**
+
+> **⚠️ STALE**: the example commands below target `/api/v1/workflows`, which no longer exists in
+> `api/openapi/data-storage-v1.yaml` (same retired workflow-catalog API flagged above). The SAR
+> enforcement mechanism itself is still accurate — only the example endpoint path is stale.
 
 ```bash
 # 1. Check DataStorage deployment uses ose-oauth-proxy
@@ -360,10 +392,10 @@ kubectl exec -n kubernaut-system header-logger -- cat /tmp/headers.log | grep X-
 ## 🎯 **SUCCESS CRITERIA**
 
 - [x] DataStorage deployment uses `ose-oauth-proxy` with SAR enforcement
-- [x] HAPI deployment uses `ose-oauth-proxy` with SAR enforcement
+- [x] Kubernaut Agent (KA) deployment uses `ose-oauth-proxy` with SAR enforcement
 - [x] E2E tests use custom `ose-oauth-proxy` image (multi-arch)
 - [x] SAR enforces `verb:"create"` for DataStorage (DD-AUTH-011)
-- [x] SAR enforces `verb:"get"` for HAPI (DD-AUTH-006)
+- [x] SAR enforces `verb:"get"` for KA (DD-AUTH-006)
 - [x] `X-Auth-Request-User` header injected consistently
 - [x] Workflow catalog audit events capture user attribution
 - [x] No `oauth2-proxy` references in production deployments
@@ -374,7 +406,7 @@ kubectl exec -n kubernaut-system header-logger -- cat /tmp/headers.log | grep X-
 
 ### **Internal Documents**
 - **DD-AUTH-004**: DataStorage OAuth-Proxy Architecture (Legal Hold)
-- **DD-AUTH-006**: HolmesGPT API OAuth-Proxy Integration
+- **DD-AUTH-006**: Kubernaut Agent (KA) OAuth-Proxy Integration
 - **DD-AUTH-009**: OpenShift OAuth-Proxy Migration (v2.0 - ose-oauth-proxy)
 - **DD-AUTH-010**: E2E Real Authentication Mandate
 - **DD-AUTH-011**: Granular RBAC & SAR Verb Mapping
@@ -394,12 +426,12 @@ kubectl exec -n kubernaut-system header-logger -- cat /tmp/headers.log | grep X-
 | **DD-AUTH-009** | Superseded by this document | Documented oauth2-proxy → ose-oauth-proxy migration |
 | **DD-AUTH-011** | Implements RBAC verbs | Defines SAR verb mappings (`verb:"create"`) |
 | **DD-AUTH-004** | DataStorage implementation | First service to use ose-oauth-proxy |
-| **DD-AUTH-006** | HAPI implementation | Second service to use ose-oauth-proxy |
+| **DD-AUTH-006** | Kubernaut Agent (KA) implementation | Second service to use ose-oauth-proxy |
 | **ADR-036** | High-level strategy | Defines network-level security approach |
 
 ---
 
 **Document Version**: 1.0  
 **Last Updated**: January 26, 2026  
-**Status**: ✅ IMPLEMENTED - DataStorage and HAPI deployments updated  
+**Status**: ✅ IMPLEMENTED - DataStorage and Kubernaut Agent (KA) deployments updated  
 **Next Review**: After V1.0 release (February 2026)

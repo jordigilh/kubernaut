@@ -667,13 +667,13 @@ This design decision (DD-SEVERITY-001) focuses on **WHY** (architecture, rationa
 | **Notification Controller** | ✅ No Impact | N/A | N/A | N/A | 100% |
 | **WorkflowExecution Controller** | ✅ No Impact | N/A | N/A | N/A | 100% |
 | **DataStorage** | ✅ Triaged | Separate domain | N/A | N/A | 100% |
-| **HolmesGPT-API** | ✅ No Impact | Pass-through | N/A | N/A | 100% |
+| **Kubernaut Agent (KA)** | ✅ No Impact | Pass-through | N/A | N/A | 100% |
 
 **Key Findings**:
 - ✅ **AIAnalysis Controller**: No severity logic in reconciliation (just processes CRDs)
 - ✅ **Notification Controller**: No severity logic in reconciliation (RO handles NT creation with external severity)
 - ✅ **WorkflowExecution Controller**: No severity logic in reconciliation (RO handles WE creation with external severity)
-- ✅ **HolmesGPT-API**: Accepts severity as string, no validation/transformation (passes to LLM prompt)
+- ✅ **KA**: Accepts severity as string, no validation/transformation (passes to LLM prompt)
 - ✅ **DataStorage**: Workflow severity is separate domain (decision documented in BUSINESS_REQUIREMENTS.md)
 
 **Rationale**: CRD controllers (AA, NT, WE) don't make policy decisions about severity - they just process their respective CRDs. RemediationOrchestrator is responsible for:

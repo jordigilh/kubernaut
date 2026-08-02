@@ -88,7 +88,7 @@ Restore `"*"` wildcard for severity (consistency with environment/priority)
   - No longer used as the primary catalog search filter
   - Retained on workflow entries as documentation/metadata
   - SP continues to populate `signal_type` for signal classification (ADR-054)
-- **NEW**: `ListAvailableActions` context-aware HAPI tool filters available action types by severity/component/environment
+- **NEW**: `ListAvailableActions` context-aware Kubernaut Agent (KA) tool filters available action types by severity/component/environment
 - **NEW**: LLM two-step workflow discovery protocol (list actions -> RCA -> search catalog)
 
 **Rationale**: Different source adapters (Prometheus, K8s Events) produce incompatible signal type vocabularies. The same signal can require different remediations depending on root cause. Action-type indexing decouples workflows from source adapter vocabularies and leverages the LLM's RCA to select the appropriate remediation action.
@@ -106,7 +106,7 @@ Restore `"*"` wildcard for severity (consistency with environment/priority)
   - After: `environment: ["production"]` or `["staging", "production"]` (array)
 - **Search Model**: `WorkflowSearchFilters.environment` **REVERTED** to `string` (from v2.4's `[]string`)
   - Signal Processing sends single value: `"production"`
-  - HAPI passes through single value: `"production"`
+  - Kubernaut Agent (KA) passes through single value: `"production"`
   - DataStorage searches workflows where array contains value
 
 **SQL Pattern**:
@@ -122,8 +122,8 @@ WHERE labels->'environment' ? 'production' OR labels->'environment' ? '*'
 
 **Use Cases**:
 - **Workflow Creation**: DevOps creates workflow: `environment: ["staging", "production"]`
-- **Signal from Production**: SP extracts `"production"` → HAPI searches `"production"` → finds workflows with `["staging", "production"]` or `["production"]`
-- **Signal from Staging**: SP extracts `"staging"` → HAPI searches `"staging"` → finds workflows with `["staging", "production"]` or `["staging"]`
+- **Signal from Production**: SP extracts `"production"` → KA searches `"production"` → finds workflows with `["staging", "production"]` or `["production"]`
+- **Signal from Staging**: SP extracts `"staging"` → KA searches `"staging"` → finds workflows with `["staging", "production"]` or `["staging"]`
 - **Universal Workflow**: `environment: ["*"]` matches ANY environment search
 
 **Validation**: `validate:"required,min=1"` (explicit declaration required, no default)
@@ -136,7 +136,7 @@ WHERE labels->'environment' ? 'production' OR labels->'environment' ? '*'
 
 ### Version 2.4 (2026-01-26) **[SUPERSEDED by v2.5]**
 - **REVERTED**: Incorrect implementation - implemented search-side arrays instead of storage-side arrays
-- **ISSUE**: Allowed HAPI to search multiple environments, but workflows were still single-environment
+- **ISSUE**: Allowed Kubernaut Agent (KA) to search multiple environments, but workflows were still single-environment
 - **CORRECTION**: v2.5 implements correct model (storage-side arrays, search-side single value)
 
 ### Version 2.3 (2025-12-06)
@@ -167,7 +167,7 @@ WHERE labels->'environment' ? 'production' OR labels->'environment' ? '*'
   - **Incident DetectedLabels** (SignalProcessing auto-detects from live K8s) vs
   - **Workflow Catalog detected_labels** (workflow author-defined metadata)
 - **CLARIFICATION**: Data Storage does NOT auto-populate workflow detected_labels (they are author-defined)
-- **NEW**: End-to-end flow diagram showing label flow from SignalProcessing → HolmesGPT-API → Data Storage
+- **NEW**: End-to-end flow diagram showing label flow from SignalProcessing → Kubernaut Agent (KA) → Data Storage
 - **CLARIFICATION**: SignalProcessing V1.0 ✅ IMPLEMENTED for incident DetectedLabels auto-detection
 
 ### Version 1.9 (2025-12-02)
@@ -179,7 +179,7 @@ WHERE labels->'environment' ? 'production' OR labels->'environment' ? '*'
 ### Version 1.8 (2025-11-30)
 - **NEW**: Added **authoritative `OwnerChainEntry` Go schema** with explicit field definitions
 - **CLARIFICATION**: `OwnerChainEntry` requires ONLY: `namespace`, `kind`, `name`
-- **CLARIFICATION**: Do NOT include `apiVersion` or `uid` - not used by HolmesGPT-API validation
+- **CLARIFICATION**: Do NOT include `apiVersion` or `uid` - not used by Kubernaut Agent (KA) validation
 - **NEW**: Added **traversal algorithm** (Go pseudocode) for SignalProcessing implementation
 - **FIX**: Corrected SignalProcessing spec misinterpretation (was using K8s native ownerReference format)
 
@@ -1990,7 +1990,7 @@ custom_labels     JSONB
 - ✅ **BREAKING**: `action_type` added as mandatory label (Group C: Workflow-Defined, 10 types)
 - ✅ **BREAKING**: `signal_type` demoted from required primary key to optional metadata
 - ✅ **NEW**: Enforced action type taxonomy (DD-WORKFLOW-016)
-- ✅ **NEW**: `ListAvailableActions` context-aware HAPI tool
+- ✅ **NEW**: `ListAvailableActions` context-aware Kubernaut Agent (KA) tool
 - ✅ **NEW**: LLM two-step workflow discovery protocol
 - ✅ **Cross-reference**: DD-WORKFLOW-016, DD-KA-016
 

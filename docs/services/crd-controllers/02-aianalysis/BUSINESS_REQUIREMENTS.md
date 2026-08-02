@@ -12,11 +12,11 @@
 
 ## 📋 Overview
 
-The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates HolmesGPT-powered alert investigation, root cause analysis, and remediation workflow selection. It receives enriched signal data from SignalProcessing and produces workflow recommendations for execution.
+The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Kubernaut Agent (KA)-powered alert investigation, root cause analysis, and remediation workflow selection. It receives enriched signal data from SignalProcessing and produces workflow recommendations for execution.
 
 ### Service Responsibilities
 
-1. **HolmesGPT Integration**: Trigger AI-powered investigation via HolmesGPT-API
+1. **KA Integration**: Trigger AI-powered investigation via KA
 2. **Root Cause Analysis**: Identify root cause candidates with supporting evidence
 3. **Workflow Selection**: Select appropriate remediation workflow from catalog
 4. **Confidence Assessment**: Evaluate recommendation confidence for approval routing
@@ -26,37 +26,39 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 ## 🎯 Business Requirements
 
-### Category 1: HolmesGPT Integration & Investigation
+### Category 1: Kubernaut Agent (KA) Integration & Investigation
 
 #### BR-AI-001: Contextual Analysis of Kubernetes Alerts
 
-**Description**: AIAnalysis MUST provide contextual analysis of Kubernetes alerts and system state using HolmesGPT-API integration.
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: The `pkg/aianalysis/client/holmesgpt.go` and `test/integration/aianalysis/holmesgpt_integration_test.go` file citations below no longer match the codebase (the KA client now lives under `pkg/agentclient/`, and the integration test is `test/integration/aianalysis/agentclient_integration_test.go`).
+
+**Description**: AIAnalysis MUST provide contextual analysis of Kubernetes alerts and system state using KA integration.
 
 **Priority**: P0 (CRITICAL)
 
-**Rationale**: Accurate alert investigation requires comprehensive Kubernetes context (pods, deployments, events, logs) to identify root causes. HolmesGPT-API provides AI-powered investigation capabilities.
+**Rationale**: Accurate alert investigation requires comprehensive Kubernetes context (pods, deployments, events, logs) to identify root causes. KA provides AI-powered investigation capabilities.
 
 **Implementation**:
 - `spec.analysisRequest.signalContext`: Signal metadata from Gateway
 - `spec.enrichmentResults`: Kubernetes context from SignalProcessing
-- `handlers.InvestigatingHandler`: HolmesGPT-API integration
+- `handlers.InvestigatingHandler`: KA integration
 - `status.investigationSummary`: RCA summary from LLM
 
 **Acceptance Criteria**:
-- ✅ HolmesGPT-API called with complete signal + enrichment context
+- ✅ KA called with complete signal + enrichment context
 - ✅ Investigation results stored in `status.investigationSummary`
 - ✅ Root cause analysis captured with evidence chain
 
 **Test Coverage**:
 - Unit: `test/unit/aianalysis/handlers/investigating_handler_test.go`
 - Integration: `test/integration/aianalysis/holmesgpt_integration_test.go`
-- E2E: Full investigation flow with real HolmesGPT-API
+- E2E: Full investigation flow with real KA
 
 **Implementation Files**:
 - `pkg/aianalysis/handlers/investigating.go:316-384`
 - `pkg/aianalysis/client/holmesgpt.go:179-216`
 
-**Related ADRs**: ADR-045 (AIAnalysis ↔ HolmesGPT-API Contract)
+**Related ADRs**: ADR-045 (AIAnalysis ↔ Kubernaut Agent Contract)
 
 ---
 
@@ -65,7 +67,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 **Status**: ⏸️ **DEFERRED TO v2.0**
 **Authority**: [DD-AIANALYSIS-005](../../../architecture/decisions/DD-AIANALYSIS-005-multiple-analysis-types-deferral.md) - Multiple Analysis Types Feature Deferral
 
-**Description**: AIAnalysis MUST support multiple analysis types (diagnostic, predictive, prescriptive) through HolmesGPT-API.
+**Description**: AIAnalysis MUST support multiple analysis types (diagnostic, predictive, prescriptive) through KA.
 
 **Priority**: ~~P1 (HIGH)~~ → Deferred to v2.0 (Jan 2026)
 
@@ -78,7 +80,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 - See [DD-AIANALYSIS-005](../../../architecture/decisions/DD-AIANALYSIS-005-multiple-analysis-types-deferral.md) for full analysis
 
 **v1.x Implementation**:
-- Controller makes exactly 1 HAPI call per reconciliation
+- Controller makes exactly 1 KA call per reconciliation
 - Endpoint determines analysis type (incident/recovery/postexec)
 - Tests MUST use single-value `AnalysisTypes` arrays
 
@@ -147,7 +149,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 **Test Coverage**:
 - Unit: Workflow selection logic
-- Integration: HolmesGPT MCP tool integration
+- Integration: KA MCP tool integration
 - E2E: End-to-end workflow selection and execution
 
 **Implementation Files**:
@@ -160,14 +162,14 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 #### BR-AI-012: Root Cause Analysis with Supporting Evidence
 
-**Description**: AIAnalysis MUST identify root cause candidates with supporting evidence from HolmesGPT investigation.
+**Description**: AIAnalysis MUST identify root cause candidates with supporting evidence from KA investigation.
 
 **Priority**: P0 (CRITICAL)
 
 **Rationale**: Root cause identification enables targeted remediation and prevents treating symptoms instead of causes.
 
 **Implementation**:
-- `status.rootCauseAnalysis.summary`: RCA summary from HolmesGPT
+- `status.rootCauseAnalysis.summary`: RCA summary from KA
 - `status.rootCauseAnalysis.contributingFactors`: Contributing factors list
 - `status.approvalContext.evidenceCollected`: Supporting evidence for approval decisions
 
@@ -179,10 +181,10 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 - ✅ Investigation summary provides actionable insights
 
 **Test Coverage**:
-- Integration: RCA populated from HolmesGPT response
+- Integration: RCA populated from KA response
 
 **Implementation Files**:
-- `pkg/aianalysis/handlers/investigating.go` (HolmesGPT integration)
+- `pkg/aianalysis/handlers/investigating.go` (KA integration)
 
 ---
 
@@ -211,7 +213,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 **Test Coverage**:
 - Unit: Status field population and validation
-- Integration: HolmesGPT response parsing to status
+- Integration: KA response parsing to status
 - E2E: End-to-end workflow selection validation
 
 **Related DDs**: DD-CONTRACT-001 (AIAnalysis ↔ WorkflowExecution Alignment)
@@ -372,7 +374,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 **Acceptance Criteria**:
 - ✅ Recovery attempts tracked in spec
-- ✅ Previous failure reasons passed to HolmesGPT-API
+- ✅ Previous failure reasons passed to KA
 - ✅ Attempt number increments on each recovery
 
 **Test Coverage**:
@@ -390,7 +392,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 #### BR-AI-081: Pass Failure Context to LLM ⚠️ DEPRECATED
 
-**Description**: ~~AIAnalysis MUST pass failure context from previous execution attempts to HolmesGPT-API for improved recovery investigation.~~
+**Description**: ~~AIAnalysis MUST pass failure context from previous execution attempts to KA for improved recovery investigation.~~
 
 **Status**: ⚠️ **DEPRECATED** — Superseded by Effectiveness Monitor service.
 **Priority**: ~~P0 (CRITICAL)~~ N/A
@@ -401,10 +403,10 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 - `spec.previousExecutions[].failureReason`: Why workflow failed
 - `spec.previousExecutions[].failurePhase`: Which phase failed (validation, execution, verification)
 - `spec.previousExecutions[].kubernetesReason`: K8s-specific failure reason
-- Recovery context sent to HolmesGPT-API `/api/v1/investigate` endpoint
+- Recovery context sent to KA `/api/v1/investigate` endpoint
 
 **Acceptance Criteria**:
-- ✅ Failure context included in HolmesGPT-API request
+- ✅ Failure context included in KA request
 - ✅ LLM receives structured failure information
 - ✅ Recovery investigation considers previous attempts
 
@@ -416,7 +418,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 - `pkg/aianalysis/handlers/investigating.go` (recovery request building)
 - `pkg/aianalysis/client/holmesgpt.go` (API client)
 
-**Related ADRs**: ADR-045 (AIAnalysis ↔ HolmesGPT-API Contract)
+**Related ADRs**: ADR-045 (AIAnalysis ↔ Kubernaut Agent Contract)
 
 ---
 
@@ -463,7 +465,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 **Implementation**:
 - RemediationOrchestrator creates new AIAnalysis CRD when WorkflowExecution fails
 - New AIAnalysis includes `isRecoveryAttempt = true` and previousExecutions history
-- HolmesGPT-API receives recovery context for alternative workflow selection
+- KA receives recovery context for alternative workflow selection
 - Process repeats until success or max attempts reached
 
 **Acceptance Criteria**:
@@ -486,7 +488,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 **GitHub Issue**: [#55](https://github.com/jordigilh/kubernaut/issues/55)
 **Full Document**: [docs/requirements/BR-AI-084-proactive-signal-mode-prompt-strategy.md](../../../requirements/BR-AI-084-proactive-signal-mode-prompt-strategy.md)
 
-**Description**: AIAnalysis MUST pass `SignalMode` (from SP via RO) to HAPI and HAPI MUST adapt its prompt strategy based on whether the signal is `reactive` or `proactive`. Proactive signals require environment evaluation instead of RCA.
+**Description**: AIAnalysis MUST pass `SignalMode` (from SP via RO) to KA and KA MUST adapt its prompt strategy based on whether the signal is `reactive` or `proactive`. Proactive signals require environment evaluation instead of RCA.
 
 **Acceptance Criteria**: See [dedicated BR document](../../../requirements/BR-AI-084-proactive-signal-mode-prompt-strategy.md#acceptance-criteria).
 
@@ -518,7 +520,7 @@ The **AIAnalysis Service** is a Kubernetes CRD controller that orchestrates Holm
 
 ### E2E Tests
 - **Status**: ⏸️ **BLOCKED BY INFRASTRUCTURE** (Podman VM instability)
-- **Planned Coverage**: Full CRD lifecycle with HolmesGPT-API in Kind cluster
+- **Planned Coverage**: Full CRD lifecycle with KA in Kind cluster
 - **Test Files**:
   - `test/e2e/aianalysis/*_test.go` (30 specs planned)
 - **Impact**: ✅ **ZERO** (Unit + Integration tests provide 98% confidence)

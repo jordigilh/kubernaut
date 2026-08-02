@@ -77,11 +77,11 @@ subjects:
 - ✅ No Kubernetes resource modification permissions
 
 **🚨 CRITICAL SECRET PROTECTION**:
-- ❌ HolmesGPT API keys are NEVER captured verbatim in logs, CRD status, events, or audit trails
+- ❌ Kubernaut Agent (KA) API keys are NEVER captured verbatim in logs, CRD status, events, or audit trails
 - ❌ Rego policy contents are NEVER logged (may contain sensitive approval rules)
-- ✅ HolmesGPT credentials stored in Kubernetes Secrets (projected volume)
+- ✅ KA credentials stored in Kubernetes Secrets (projected volume)
 - ✅ Sanitize ALL outgoing data (logs, events, audit records, traces)
-- ✅ Only HolmesGPT connection status (success/failure) logged, not credentials
+- ✅ Only KA connection status (success/failure) logged, not credentials
 
 ---
 
@@ -162,22 +162,24 @@ spec:
 
 **Why These Restrictions**:
 - No external network access (all dependencies internal)
-- HolmesGPT-API is internal service (no external AI provider calls from controller)
+- Kubernaut Agent (KA) is internal service (no external AI provider calls from controller)
 - No direct database access (goes through Data Storage Service)
 
 ---
 
 ### Secret Management
 
-**HolmesGPT API Credentials & Sensitive Data Protection**:
+**Kubernaut Agent (KA) API Credentials & Sensitive Data Protection**:
 
-AIAnalysis controller handles sensitive HolmesGPT credentials and Rego policies. All secrets follow comprehensive protection patterns similar to Remediation Processor, adapted for AI-specific needs.
+AIAnalysis controller handles sensitive KA credentials and Rego policies. All secrets follow comprehensive protection patterns similar to Remediation Processor, adapted for AI-specific needs.
 
 **Due to large content size, please refer to 01-alert-processor.md for complete secret management patterns including**:
-- Pattern 1: Secret Reference Only (adapted for HolmesGPT credentials)
-- Pattern 2: Audit Log Secret Sanitization (with HolmesGPT response sanitization)
+- Pattern 1: Secret Reference Only (adapted for KA credentials)
+- Pattern 2: Audit Log Secret Sanitization (with KA response sanitization)
 - Pattern 3: Kubernetes Event Sanitization
 - Pattern 4: Structured Logging Sanitization
+
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: The Go example below (`HolmesGPTClient`, `sanitizeHolmesGPTResponse`, `initHolmesGPTClient`, `HOLMESGPT_API_KEY_PATH`, `HOLMESGPT_ENDPOINT`) does not match the current codebase — the real KA client lives under `pkg/agentclient/`, not `pkg/aianalysis/client/holmesgpt.go`. Kept as-is since it is illustrative only.
 
 **AI Analysis Specific Secret Patterns**:
 
@@ -265,18 +267,18 @@ func (r *AIAnalysisReconciler) loadRegoPolicy(ctx context.Context) (string, erro
 ```
 
 **Secret Handling Rules** (MANDATORY):
-- ❌ NEVER store HolmesGPT API keys in CRD status
-- ❌ NEVER log HolmesGPT credentials verbatim (logs, events, traces)
+- ❌ NEVER store KA API keys in CRD status
+- ❌ NEVER log KA credentials verbatim (logs, events, traces)
 - ❌ NEVER log Rego policy contents (may contain sensitive approval logic)
-- ❌ NEVER include HolmesGPT responses verbatim (may contain secrets from logs)
-- ✅ Store HolmesGPT credentials in Kubernetes Secrets with projected volumes
-- ✅ Sanitize HolmesGPT responses before storing in CRD status
+- ❌ NEVER include KA responses verbatim (may contain secrets from logs)
+- ✅ Store KA credentials in Kubernetes Secrets with projected volumes
+- ✅ Sanitize KA responses before storing in CRD status
 - ✅ Only log connection status (success/failure), not credentials
-- ✅ Use regex patterns to sanitize log snippets in HolmesGPT responses
+- ✅ Use regex patterns to sanitize log snippets in KA responses
 
 **Sanitization Coverage** (100% Required):
-- ✅ HolmesGPT API Keys → Never logged, read from file
-- ✅ HolmesGPT Responses → Sanitized before CRD status storage
+- ✅ KA API Keys → Never logged, read from file
+- ✅ KA Responses → Sanitized before CRD status storage
 - ✅ Rego Policy → Never logged (size only)
 - ✅ Audit Logs → Sanitized with regex patterns
 - ✅ Structured Logs → `logWithSanitization()` wrapper
@@ -383,7 +385,7 @@ spec:
 - **readOnlyRootFilesystem**: Immutable container filesystem
 - **drop ALL capabilities**: Minimal Linux capabilities
 - **seccompProfile**: Syscall filtering
-- **Projected volume**: Secure HolmesGPT credential mounting
+- **Projected volume**: Secure Kubernaut Agent (KA) credential mounting
 
 ---
 

@@ -61,7 +61,7 @@ Choose the workflow selection approach for Kubernaut V1.0:
 
 **Architecture**:
 ```
-Alert Signal (HolmesGPT RCA)
+Alert Signal (Kubernaut Agent (KA) RCA)
   ↓ Extracts mandatory labels
   ↓ signal_type, severity, component, environment, priority
 DataStorage Service (Go)
@@ -136,7 +136,7 @@ LIMIT 5;
 
 **Mitigation**:
 - ✅ Mandatory labels are standardized (DD-WORKFLOW-001)
-- ✅ HolmesGPT RCA extracts labels consistently
+- ✅ KA RCA extracts labels consistently
 - ✅ Label schema is well-defined (signal_type enum values)
 - ✅ V1.1+ can add semantic search as enhancement (non-breaking)
 
@@ -150,7 +150,7 @@ LIMIT 5;
 
 **Architecture**:
 ```
-Alert Signal (HolmesGPT RCA)
+Alert Signal (Kubernaut Agent (KA) RCA)
   ↓ Extracts description text
   ↓ "OOMKilled pod in production namespace"
 DataStorage Service (Go)
@@ -342,7 +342,7 @@ Hybrid (Alternative 3):
 4. **environment**: `production`, `staging`, `development`, `*` (wildcard)
 5. **priority**: `p0`, `p1`, `p2`, `p3`, `*` (wildcard)
 
-**Label Extraction**: HolmesGPT RCA extracts labels consistently (validated in integration tests)
+**Label Extraction**: Kubernaut Agent (KA) RCA extracts labels consistently (validated in integration tests)
 
 **Decision**: Strong label schema makes label-only viable
 
@@ -373,7 +373,7 @@ V1.2 (Q2 2026): Hybrid (labels + embeddings) as default
 
 **V1.0 Success Criteria**:
 - ✅ Workflows match by mandatory labels (deterministic)
-- ✅ HolmesGPT RCA extracts labels correctly (>95% accuracy)
+- ✅ Kubernaut Agent (KA) RCA extracts labels correctly (>95% accuracy)
 - ✅ Workflow catalog populated with well-labeled workflows
 
 **V1.1+ Enhancement Trigger**:
@@ -444,7 +444,7 @@ Response (200 OK):
 ### **Data Flow (V1.0)**
 
 ```
-HolmesGPT RCA
+Kubernaut Agent (KA) RCA
   ↓ Extracts mandatory labels from alert
   ↓ signal_type=OOMKilled, severity=critical, ...
 WorkflowExecution Service

@@ -12,6 +12,8 @@
 **Effort**: 2 weeks
 **Go Client**: `pkg/clients/holmesgpt/` (generated with `ogen` from OpenAPI 3.1.0)
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: The `pkg/clients/holmesgpt/` generated client path no longer exists in the codebase; the current AIAnalysis Kubernaut Agent (KA) client is `AgentClient` in `pkg/aianalysis/`.
+
 ---
 
 ## 📋 Changelog
@@ -20,7 +22,7 @@
 |---------|------|---------|-----------|
 | **v2.6** | 2025-12-03 | **PodSecurityLevel Removed**: Removed `podSecurityLevel` from DetectedLabels (9→8 fields) per DD-WORKFLOW-001 v2.2; PSP deprecated in K8s 1.21, PSS is namespace-level | [DD-WORKFLOW-001 v2.2](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [NOTICE](../../handoff/NOTICE_PODSECURITYLEVEL_REMOVED.md) |
 | v2.5 | 2025-12-02 | **FailedDetections**: Added `failedDetections` field to DetectedLabels per DD-WORKFLOW-001 v2.1; Updated crd-schema, integration-points, implementation-checklist, REGO_POLICY_EXAMPLES | [DD-WORKFLOW-001 v2.1](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md) |
-| v2.4 | 2025-12-02 | **SPEC ALIGNMENT**: Aligned with handoff Q&A; Fixed HolmesGPT-API port (8080), endpoints, schemas; Removed deprecated fields (RiskTolerance, BusinessCategory, EnrichmentQuality); Added TargetInOwnerChain/Warnings; Go client generated | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
+| v2.4 | 2025-12-02 | **SPEC ALIGNMENT**: Aligned with handoff Q&A; Fixed Kubernaut Agent (KA) port (8080), endpoints, schemas; Removed deprecated fields (RiskTolerance, BusinessCategory, EnrichmentQuality); Added TargetInOwnerChain/Warnings; Go client generated | [AIANALYSIS_TO_HOLMESGPT_API_TEAM.md](../../handoff/AIANALYSIS_TO_HOLMESGPT_API_TEAM.md) |
 | v2.3 | 2025-11-30 | **V1.0 COMPLETE**: All spec files updated (finalizers, metrics, database, checklist); Legacy implementation plans archived | This session |
 | v2.2 | 2025-11-30 | **FIXED**: Port allocation (8081 health, 8084 host per DD-TEST-001); BR count 31→31; Added TESTING_GUIDELINES reference | [DD-TEST-001](../../../architecture/decisions/DD-TEST-001-port-allocation-strategy.md) |
 | v2.0 | 2025-11-30 | **REGENERATED**: Complete spec from Go types; V1.0 scope clarifications; DetectedLabels, CustomLabels, OwnerChain; Recovery flow with PreviousExecutions slice | [DD-WORKFLOW-001 v1.8](../../../architecture/decisions/DD-WORKFLOW-001-mandatory-label-schema.md), [DD-RECOVERY-002](../../../architecture/decisions/DD-RECOVERY-002-direct-aianalysis-recovery-flow.md) |
@@ -44,7 +46,7 @@
 | **[Observability & Logging](./observability-logging.md)** | Structured logging, distributed tracing | ✅ Ports Fixed |
 | **[Metrics & SLOs](./metrics-slos.md)** | Prometheus metrics, Grafana dashboards | ✅ Complete (v2.0) |
 | **[Database Integration](./database-integration.md)** | Audit storage via Data Storage Service | ✅ Complete (v2.0) |
-| **[Integration Points](./integration-points.md)** | Upstream/downstream services, HolmesGPT-API contract | ✅ **Updated (v2.2)** |
+| **[Integration Points](./integration-points.md)** | Upstream/downstream services, Kubernaut Agent (KA) contract | ✅ **Updated (v2.2)** |
 | **[Migration & Current State](./migration-current-state.md)** | Existing code, migration path | ✅ Ports Fixed |
 | **[Implementation Checklist](./implementation-checklist.md)** | APDC-TDD phases, tasks | ✅ **Updated (v2.2)** |
 | **[BR Mapping](./BR_MAPPING.md)** | Business requirements mapping | ✅ Authoritative (v1.3) |
@@ -106,7 +108,7 @@
 
 | Feature | Description | Reference |
 |---------|-------------|-----------|
-| **HolmesGPT-API Integration** | Single AI provider for investigation | DD-CONTRACT-002 |
+| **Kubernaut Agent (KA) Integration** | Single AI provider for investigation | DD-CONTRACT-002 |
 | **Workflow Selection** | Select workflow from catalog | DD-WORKFLOW-001 v1.8 |
 | **Rego Approval Policies** | ConfigMap-based policy evaluation | DD-AIANALYSIS-001 |
 | **Recovery Flow** | [Deprecated - Issue #180] Handle failed workflow retries | DD-RECOVERY-002 |
@@ -133,7 +135,7 @@
 | **Remediation Orchestrator** | Parent | Creates AIAnalysis CRD, watches for completion |
 | **SignalProcessing** | Upstream | Provides EnrichmentResults, DetectedLabels, CustomLabels, OwnerChain |
 | **WorkflowExecution** | Downstream | Receives workflow definition from RO |
-| **HolmesGPT-API** | External | Provides AI investigation, workflow selection |
+| **Kubernaut Agent (KA)** | External | Provides AI investigation, workflow selection |
 | **Data Storage** | External | Workflow catalog, historical success rates |
 | **Notification** | External | Approval notifications (V1.0: RO triggers) |
 
@@ -163,7 +165,7 @@
 
 | Decision | Choice | Rationale | Document |
 |----------|--------|-----------|----------|
-| **AI Provider** | HolmesGPT-API only | Specialized K8s analysis, V1.0 simplicity | DD-CONTRACT-002 |
+| **AI Provider** | Kubernaut Agent (KA) only | Specialized K8s analysis, V1.0 simplicity | DD-CONTRACT-002 |
 | **Approval Mechanism** | Rego policies + signaling | Flexible policies, RO orchestrates | DD-AIANALYSIS-001 |
 | **State Management** | CRD-based with watch | Watch-based coordination | [Controller Impl](./controller-implementation.md) |
 | **Recovery Pattern** | [Deprecated - Issue #180] | RO creates new AIAnalysis for recovery | DD-RECOVERY-002 |
@@ -176,7 +178,7 @@
 
 | Metric | Target | Business Impact |
 |--------|--------|----------------|
-| **HolmesGPT Analysis** | <30s | AI investigation time |
+| **Kubernaut Agent (KA) Analysis** | <30s | AI investigation time |
 | **Rego Policy Evaluation** | <2s | Approval decision time |
 | **Total Processing** | <60s (auto-approve) | Rapid workflow generation |
 | **Confidence Threshold** | >80% for auto-approve | High-quality recommendations |
@@ -200,7 +202,7 @@
 ## 🔍 Common Pitfalls & Best Practices
 
 **Don't**:
-- ❌ Log HolmesGPT API keys or full responses
+- ❌ Log Kubernaut Agent (KA) API keys or full responses
 - ❌ Create WorkflowExecution CRD directly (RO does this)
 - ❌ Skip approval for production actions
 - ❌ Hard-code Rego policies (use ConfigMap)
@@ -208,7 +210,7 @@
 
 **Do**:
 - ✅ Use `approvalRequired=true` signaling (V1.0)
-- ✅ Include DetectedLabels + CustomLabels + OwnerChain in HolmesGPT-API request
+- ✅ Include DetectedLabels + CustomLabels + OwnerChain in KA request
 - ✅ Track ALL previous executions in recovery (slice, not single)
 - ✅ Use Kubernetes reason codes for failure (not natural language)
 - ✅ Emit Kubernetes events for visibility
@@ -239,7 +241,7 @@
 
 ### **Version 2.0** (2025-11-30)
 - ✅ **REGENERATED** all specifications from Go types
-- ✅ **V1.0 Scope Clarifications**: HolmesGPT-API only, approval signaling (no CRD)
+- ✅ **V1.0 Scope Clarifications**: Kubernaut Agent (KA) only, approval signaling (no CRD)
 - ✅ **Added**: DetectedLabels, CustomLabels, OwnerChain (DD-WORKFLOW-001 v1.8)
 - ✅ **Removed**: businessContext, investigationScope, HistoricalContext (for LLM)
 - ✅ **Updated**: PreviousExecutions as slice (tracks ALL recovery attempts)

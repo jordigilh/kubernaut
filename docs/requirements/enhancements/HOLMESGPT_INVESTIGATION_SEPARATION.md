@@ -1,32 +1,32 @@
-# HolmesGPT Investigation vs Execution Separation - Enhancement Summary
+# Kubernaut Agent (KA) Investigation vs Execution Separation - Enhancement Summary
 
 **Document Version**: 1.1
 **Date**: January 2025
 **Last Verified**: September 30, 2025
 **Status**: Architecture Enhancement Summary
-**Purpose**: Document the comprehensive enhancements made to properly separate HolmesGPT investigation from infrastructure execution
+**Purpose**: Document the comprehensive enhancements made to properly separate KA investigation from infrastructure execution
 
 ---
 
 ## 🎯 **OVERVIEW**
 
-This document summarizes the comprehensive enhancements made to Kubernaut's architecture and requirements to properly separate **HolmesGPT's investigation capabilities** from **infrastructure execution responsibilities**. The key principle established is:
+This document summarizes the comprehensive enhancements made to Kubernaut's architecture and requirements to properly separate **Kubernaut Agent (KA)'s investigation capabilities** from **infrastructure execution responsibilities**. The key principle established is:
 
 ```
-🔍 HolmesGPT: Investigation & Analysis → 📋 Recommendations → ⚡ Kubernaut Executors: Infrastructure Execution
+🔍 KA: Investigation & Analysis → 📋 Recommendations → ⚡ Kubernaut Executors: Infrastructure Execution
 ```
 
 ---
 
 ## 📋 **ENHANCED BUSINESS REQUIREMENTS**
 
-### 1. HolmesGPT REST API Wrapper Enhancements
+### 1. Kubernaut Agent (KA) REST API Wrapper Enhancements
 
 **File**: `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md`
 
 #### **1.1 Core Purpose Clarification**
 - **Enhanced**: Business purpose to explicitly state "investigation and analysis capabilities only"
-- **Added**: Clear statement that HolmesGPT is "NOT for executing infrastructure changes"
+- **Added**: Clear statement that KA is "NOT for executing infrastructure changes"
 - **Enhanced**: Scope to emphasize investigation-only capabilities with execution handled by existing Kubernaut executors
 
 #### **1.2 New Investigation-Focused Requirements**
@@ -44,16 +44,16 @@ This document summarizes the comprehensive enhancements made to Kubernaut's arch
 
 **File**: `docs/requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md`
 
-#### **2.1 HolmesGPT Investigation Integration (v1)**
+#### **2.1 KA Investigation Integration (v1)**
 - **BR-WF-HOLMESGPT-001 to BR-WF-HOLMESGPT-005**: Investigation-only integration requirements
 - **BR-WF-INVESTIGATION-001 to BR-WF-INVESTIGATION-005**: Failure investigation and recovery
 - **BR-WF-EXECUTOR-001 to BR-WF-EXECUTOR-005**: Existing execution infrastructure integration
 
 #### **2.2 Key Integration Principles**
-- Use HolmesGPT for investigation and analysis only - NOT for execution
-- Translate HolmesGPT recommendations into executable workflow actions
-- Validate HolmesGPT recommendations before execution using existing action executors
-- Provide execution feedback to HolmesGPT for continuous learning
+- Use KA for investigation and analysis only - NOT for execution
+- Translate KA recommendations into executable workflow actions
+- Validate KA recommendations before execution using existing action executors
+- Provide execution feedback to KA for continuous learning
 
 ---
 
@@ -66,7 +66,7 @@ This document summarizes the comprehensive enhancements made to Kubernaut's arch
 #### **3.1 Service Specification Updates**
 - **AI Analysis Engine**: Updated to emphasize "Investigation & Recommendations Only (NO EXECUTION)"
 - **Resilient Workflow Engine**: Enhanced to show coordination with existing execution infrastructure
-- **HolmesGPT-API**: Updated to "Investigation Only - No Execution" with new endpoint specifications
+- **Kubernaut Agent (KA)**: Updated to "Investigation Only - No Execution" with new endpoint specifications
 
 #### **3.2 Visual Flow Enhancements**
 - **Added**: Investigation vs Execution separation annotations
@@ -78,9 +78,9 @@ This document summarizes the comprehensive enhancements made to Kubernaut's arch
 **File**: `docs/architecture/RESILIENT_WORKFLOW_AI_SEQUENCE_DIAGRAM.md`
 
 #### **4.1 Clear Role Annotations**
-- **Added**: "HOLMESGPT: INVESTIGATION ONLY - NO EXECUTION" annotation
+- **Added**: "KA: INVESTIGATION ONLY - NO EXECUTION" annotation
 - **Added**: "KUBERNETES EXECUTOR: INFRASTRUCTURE EXECUTION ONLY" annotation
-- **Enhanced**: Investigation phase to show HolmesGPT providing analysis and recommendations only
+- **Enhanced**: Investigation phase to show KA providing analysis and recommendations only
 - **Enhanced**: Execution phase to show existing KubernetesActionExecutor handling all infrastructure changes
 
 ---
@@ -109,7 +109,7 @@ This document summarizes the comprehensive enhancements made to Kubernaut's arch
 
 ### 6. Clear Separation of Concerns
 
-#### **6.1 HolmesGPT Responsibilities** 🔍
+#### **6.1 Kubernaut Agent (KA) Responsibilities** 🔍
 - **Root Cause Analysis**: Intelligent failure investigation
 - **Pattern Recognition**: Historical pattern analysis and learning
 - **Recommendation Generation**: Actionable remediation suggestions
@@ -127,13 +127,13 @@ This document summarizes the comprehensive enhancements made to Kubernaut's arch
 
 #### **7.1 Proper Integration Sequence**
 ```
-1. 🔍 HolmesGPT Investigation
+1. 🔍 KA Investigation
    ↓ (Recommendations)
 2. 🎯 Workflow Engine Coordination
    ↓ (Parsed Actions)
 3. ⚡ Existing Executors Execution
    ↓ (Results)
-4. 🔍 HolmesGPT Post-Analysis
+4. 🔍 KA Post-Analysis
    ↓ (Learning)
 5. 📊 Pattern Storage & Improvement
 ```
@@ -145,7 +145,7 @@ This document summarizes the comprehensive enhancements made to Kubernaut's arch
 ### 8. Enhanced Capabilities
 
 #### **8.1 Improved AI Intelligence**
-- **Specialized Investigation**: HolmesGPT optimized for analysis and recommendations
+- **Specialized Investigation**: Kubernaut Agent (KA) optimized for analysis and recommendations
 - **Enhanced Safety**: Pre-execution safety assessment and risk analysis
 - **Continuous Learning**: Post-execution analysis for pattern improvement
 - **Context-Aware Recommendations**: Intelligent recommendations based on system state
@@ -159,7 +159,7 @@ This document summarizes the comprehensive enhancements made to Kubernaut's arch
 ### 9. Risk Mitigation
 
 #### **9.1 Architectural Risks Addressed**
-- **Security**: HolmesGPT cannot directly execute infrastructure changes
+- **Security**: KA cannot directly execute infrastructure changes
 - **Reliability**: Execution remains with proven, tested infrastructure
 - **Performance**: No AI service latency in critical execution paths
 - **Maintainability**: Clear boundaries between investigation and execution
@@ -177,7 +177,7 @@ This document summarizes the comprehensive enhancements made to Kubernaut's arch
 ### 10. Requirements Coverage
 
 #### **10.1 New Business Requirements Added**
-- **HolmesGPT Investigation**: 22 new requirements (BR-HAPI-INVESTIGATION-001 to BR-HAPI-POSTEXEC-005)
+- **Kubernaut Agent (KA) Investigation**: 22 new requirements (BR-HAPI-INVESTIGATION-001 to BR-HAPI-POSTEXEC-005)
 - **Workflow Integration**: 15 new requirements (BR-WF-HOLMESGPT-001 to BR-WF-INVESTIGATION-005)
 - **Executor Integration**: 5 new requirements (BR-WF-EXECUTOR-001 to BR-WF-EXECUTOR-005)
 
@@ -190,13 +190,13 @@ This document summarizes the comprehensive enhancements made to Kubernaut's arch
 ### 11. Development Impact
 
 #### **11.1 Code Integration Points**
-- **HolmesGPT Client**: Enhanced with new investigation-focused endpoints
+- **KA Client**: Enhanced with new investigation-focused endpoints
 - **Workflow Engine**: Updated integration patterns for investigation-driven workflows
 - **Action Executors**: Validated existing capabilities and integration patterns
-- **Feedback Loops**: New mechanisms for HolmesGPT learning from execution results
+- **Feedback Loops**: New mechanisms for KA learning from execution results
 
 #### **11.2 Testing Strategy**
-- **Investigation Testing**: Separate test strategies for HolmesGPT analysis capabilities
+- **Investigation Testing**: Separate test strategies for KA analysis capabilities
 - **Execution Testing**: Continued use of existing executor test frameworks
 - **Integration Testing**: New tests for investigation-to-execution flow
 - **Safety Testing**: Enhanced validation of recommendation safety assessment
@@ -208,7 +208,7 @@ This document summarizes the comprehensive enhancements made to Kubernaut's arch
 ### 12. Implementation Priorities
 
 #### **12.1 Phase 1: Core Investigation Enhancement**
-- Implement new HolmesGPT investigation endpoints
+- Implement new Kubernaut Agent (KA) investigation endpoints
 - Update workflow engine integration patterns
 - Enhance feedback mechanisms for continuous learning
 
@@ -250,7 +250,7 @@ This document summarizes the comprehensive enhancements made to Kubernaut's arch
 
 ## 🎯 **SUMMARY**
 
-The comprehensive enhancements establish a **clear, secure, and efficient separation** between HolmesGPT's AI-powered investigation capabilities and Kubernaut's proven execution infrastructure. This architecture provides:
+The comprehensive enhancements establish a **clear, secure, and efficient separation** between Kubernaut Agent (KA)'s AI-powered investigation capabilities and Kubernaut's proven execution infrastructure. This architecture provides:
 
 ✅ **Enhanced Intelligence**: Specialized AI investigation with continuous learning
 ✅ **Maintained Reliability**: Proven execution infrastructure with safety controls
