@@ -3287,6 +3287,23 @@
               "maximum": 65535
             }
           }
+        },
+        "prometheus": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Egress target for the Prometheus instance apifrontend.config.severityTriage queries directly (GetAlerts/GetRules/InstantQuery). Only rendered when monitoring.prometheus.enabled=true (mirrors the condition gating the severityTriage config block itself). Defaults to \"anywhere on 9090\" (Prometheus's standard port) for a real external/cluster-wide Prometheus; override for a non-standard-port Prometheus. Issue #1839 gap found: this egress rule never existed at all -- Tier 3's ungrounded LLM fallback silently absorbed every Prometheus connectivity failure (a default-deny NetworkPolicy drop looks identical to \"no alert data\"), so the gap was invisible until Tier 3's removal exposed it as fullpipeline E2E's AF->Prometheus calls timing out 100% of the time on a modern (>=v0.24) Kind cluster, which enforces NetworkPolicy by default.",
+          "properties": {
+            "cidr": {
+              "type": "string",
+              "default": "0.0.0.0/0"
+            },
+            "port": {
+              "type": "integer",
+              "default": 9090,
+              "minimum": 1,
+              "maximum": 65535
+            }
+          }
         }
       }
     }

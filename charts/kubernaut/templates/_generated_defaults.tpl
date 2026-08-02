@@ -356,6 +356,9 @@ networkPolicies:
         alertManagerPort: 9093
         namespace: ""
         prometheusPort: 9090
+    prometheus:
+        cidr: 0.0.0.0/0
+        port: 9090
 notification:
     logging:
         level: INFO

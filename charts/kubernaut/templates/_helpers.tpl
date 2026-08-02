@@ -1231,6 +1231,34 @@ Usage: {{ include "kubernaut.np.llmEgress" . | nindent 4 }}
         cidr: {{ $v.llm.cidr }}
 {{- end }}
 
+{{/*
+Egress rule allowing traffic to Prometheus, which apifrontend.config.
+severityTriage queries directly (GetAlerts/GetRules/InstantQuery) whenever
+monitoring.prometheus.enabled=true. Mirrors kubernaut.np.idpEgress/llmEgress
+-- an ipBlock rather than podSelector/namespaceSelector because Prometheus is
+never chart-managed by this Helm chart itself (no Deployment/Service
+template exists for it here); it's always an externally-provisioned or
+E2E-test-provisioned instance referenced only by URL.
+Issue #1839 RCA: this rule never existed, so AF's severity-triage calls to
+Prometheus were silently dropped by the default-deny NetworkPolicy on any
+Kind cluster new enough to enforce NetworkPolicy (kindnetd, Kind v0.24+) --
+a total, consistent "dial tcp: i/o timeout"/"context deadline exceeded" on
+every single call, not intermittent slowness. Tier 3's now-removed ungrounded
+LLM fallback had silently absorbed this failure for an unknown amount of
+time, since a NetworkPolicy-dropped connection and "no alert data available"
+produce the identical Triage() error shape.
+Usage: {{ include "kubernaut.np.prometheusEgress" . | nindent 4 }}
+*/}}
+{{- define "kubernaut.np.prometheusEgress" -}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "networkPolicies") | fromYaml -}}
+- ports:
+    - port: {{ $v.prometheus.port }}
+      protocol: TCP
+  to:
+    - ipBlock:
+        cidr: {{ $v.prometheus.cidr }}
+{{- end }}
+
 {{/* ===== Console helpers (BR-PLATFORM-006, Kubernaut Operator parity) ===== */}}
 
 {{/*

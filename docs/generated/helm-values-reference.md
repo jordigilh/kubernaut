@@ -433,6 +433,8 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `monitoring.alertManagerPort` | integer | AlertManager port to allow in the NetworkPolicy egress rule | `9093` | No |
 | `monitoring.namespace` | string | Namespace where Prometheus scrapes from | `""` | No |
 | `monitoring.prometheusPort` | integer | Prometheus port to allow in the NetworkPolicy egress rule | `9090` | No |
+| `prometheus.cidr` | string |  | `"0.0.0.0/0"` | No |
+| `prometheus.port` | integer |  | `9090` | No |
 
 ## notification
 
