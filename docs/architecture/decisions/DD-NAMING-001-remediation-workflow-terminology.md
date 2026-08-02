@@ -454,7 +454,7 @@ RemediationWorkflow:
 - **DD-WORKFLOW-003**: Parameterized Workflows (replaces DD-PLAYBOOK-003)
 - **DD-STORAGE-008**: Workflow Catalog Schema (updated from playbook catalog)
 - **DD-PLAYBOOK-001**: Mandatory Workflow Label Schema (to be renamed)
-- **DD-PLAYBOOK-002**: MCP Workflow Search (to be renamed)
+- **DD-PLAYBOOK-002**: MCP Workflow Search — deleted (Issue #1806); superseded by DD-WORKFLOW-002
 
 ---
 

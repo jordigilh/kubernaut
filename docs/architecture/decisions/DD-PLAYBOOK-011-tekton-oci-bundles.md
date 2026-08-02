@@ -481,7 +481,7 @@ kubectl apply -f pipelinerun-v1.1.yaml
 
 ## Related Documents
 
-- [DD-PLAYBOOK-003-parameterized-actions.md](DD-PLAYBOOK-003-parameterized-actions.md) - Single remediation playbook pattern
+- [DD-WORKFLOW-003-parameterized-actions.md](DD-WORKFLOW-003-parameterized-actions.md) - Single remediation workflow pattern (DD-PLAYBOOK-003 deleted, Issue #1806 — superseded by this doc)
 - [DD-PLAYBOOK-009-catalog-storage.md](DD-PLAYBOOK-009-catalog-storage.md) - Storage backend
 - [KUBERNAUT_ARCHITECTURE_OVERVIEW.md](../KUBERNAUT_ARCHITECTURE_OVERVIEW.md) - System architecture
 
