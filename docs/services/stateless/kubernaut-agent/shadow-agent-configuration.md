@@ -3,7 +3,7 @@
 **Version**: 2.0
 **Feature**: Prompt Injection Guardrails ([#601](https://github.com/jordigilh/kubernaut/issues/601))
 **Since**: v1.4
-**ADR**: [ADR-KA-001](../../architecture/decisions/ADR-KA-001-shadow-agent-alignment-check.md)
+**ADR**: [ADR-KA-001](../../../architecture/decisions/ADR-KA-001-shadow-agent-alignment-check.md)
 **Issues**: [#1076](https://github.com/jordigilh/kubernaut/issues/1076), [#1077](https://github.com/jordigilh/kubernaut/issues/1077), [#1078](https://github.com/jordigilh/kubernaut/issues/1078)
 
 ---
