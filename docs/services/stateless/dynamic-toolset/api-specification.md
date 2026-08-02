@@ -43,7 +43,7 @@ Content-Type: application/json
 
 ### List Discovered Toolsets
 
-**Purpose**: Retrieve all currently configured HolmesGPT toolsets
+**Purpose**: Retrieve all currently configured Kubernaut Agent (KA) toolsets
 
 #### Request
 

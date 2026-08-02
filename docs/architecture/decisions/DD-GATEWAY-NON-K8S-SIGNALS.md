@@ -185,7 +185,7 @@ func (c *CRDCreator) validateResourceInfo(signal *types.NormalizedSignal) error 
 2. Add adapters for non-K8s signal sources (CloudWatch, Datadog)
 3. Update validation logic for per-target-type rules
 4. Update SignalProcessing for non-K8s enrichment (or skip)
-5. Update AIAnalysis/HolmesGPT for non-K8s RCA
+5. Update AIAnalysis/Kubernaut Agent (KA) for non-K8s RCA
 6. Update WorkflowExecution for non-K8s remediation workflows
 
 ---

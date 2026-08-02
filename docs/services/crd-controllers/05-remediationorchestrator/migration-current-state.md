@@ -5,7 +5,7 @@
 The Remediation Orchestrator (RemediationRequest Controller) is the **central coordinator** of the multi-CRD reconciliation architecture. It is a **new implementation** (not migrating existing code) that creates and manages the lifecycle of 4 downstream CRDs:
 
 1. **RemediationProcessing** - Signal enrichment and classification
-2. **AIAnalysis** - HolmesGPT analysis and recommendation generation
+2. **AIAnalysis** - Kubernaut Agent (KA) analysis and recommendation generation
 3. **WorkflowExecution** - Workflow orchestration and step management
 4. **KubernetesExecution** (DEPRECATED - ADR-025) - Action execution via Jobs (indirectly via WorkflowExecution)
 

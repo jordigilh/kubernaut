@@ -60,7 +60,7 @@ This design decision introduces **exponential backoff** for the cooldown period 
 **Reference**: This distinction is established in:
 - `controller-implementation.md` (lines 654-655)
 - `QUESTIONS_FROM_WORKFLOW_ENGINE_TEAM.md` (WE→RO-003)
-- `DECISIONS_HAPI_EXECUTION_RESPONSIBILITIES.md`
+- `DECISIONS_KA_EXECUTION_RESPONSIBILITIES.md`
 
 ---
 

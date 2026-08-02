@@ -279,7 +279,7 @@ events := resp.JSON200.Data
   - **Mitigation**: One-time cost, long-term maintainability benefit
 
 - ⚠️ **Build Dependency**: Requires `oapi-codegen` in build pipeline
-  - **Mitigation**: Already used for HolmesGPT-API (ADR-045)
+  - **Mitigation**: Already used for Kubernaut Agent (KA) (ADR-045)
   - **Mitigation**: Standard tool, well-maintained, stable
 
 - ⚠️ **Learning Curve**: Teams must learn generated client patterns
@@ -314,7 +314,7 @@ events := resp.JSON200.Data
 ## Related Decisions
 
 - **Builds On**: ADR-031 (OpenAPI Specification Standard for REST APIs)
-- **Supports**: ADR-045 (AIAnalysis ↔ HolmesGPT-API Service Contract)
+- **Supports**: ADR-045 (AIAnalysis ↔ KA Service Contract)
 - **Enforces**: DD-TEST-001 (Infrastructure Image Cleanup)
 - **Mandates**: BR-API-001 to BR-API-050 (API Communication Business Requirements)
 
@@ -369,7 +369,7 @@ events := resp.JSON200.Data
 ## References
 
 - [ADR-031: OpenAPI Specification Standard](./ADR-031-openapi-specification-standard.md)
-- [ADR-045: AIAnalysis ↔ HolmesGPT-API Service Contract](./ADR-045-aianalysis-kubernaut-agent-contract.md)
+- [ADR-045: AIAnalysis ↔ KA Service Contract](./ADR-045-aianalysis-kubernaut-agent-contract.md)
 - [NT_DS_API_QUERY_ISSUE_DEC_18_2025.md](../../handoff/NT_DS_API_QUERY_ISSUE_DEC_18_2025.md) - Bug report
 - [oapi-codegen Documentation](https://github.com/deepmap/oapi-codegen)
 - [OpenAPI Specification 3.0.3](https://spec.openapis.org/oas/v3.0.3)

@@ -63,7 +63,7 @@ This document maps the 30 AI/ML Service business requirements to their test impl
 
 2. `test/integration/ai/multi_provider_llm_production_test.go:43-652`
    - Context: "BR-AI-001 & BR-AI-002: Multi-Provider LLM Production Validation"
-   - Tests: HolmesGPT, OpenAI, Ollama provider integration
+   - Tests: Kubernaut Agent (KA), OpenAI, Ollama provider integration
 
 3. `test/integration/ai/ai_integration_validation_test.go:180-186`
    - Context: "should validate BR-AI-001: Analytics integration"

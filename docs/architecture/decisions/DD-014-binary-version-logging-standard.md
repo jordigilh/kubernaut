@@ -273,7 +273,7 @@ Gateway Service v0.1.0-1c357782 (built: 2025-11-17T18:37:31Z)
 - [ ] NotificationRequest Controller
 
 ### Phase 3: Stateless Services
-- [ ] HolmesGPT API
+- [ ] Kubernaut Agent (KA)
 - [ ] Context API
 - [ ] Workflow Catalog Service
 - [ ] Data Storage Service

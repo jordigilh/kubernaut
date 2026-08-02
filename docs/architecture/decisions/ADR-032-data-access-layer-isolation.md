@@ -856,7 +856,7 @@ func (s *DataStorageServer) AuthMiddleware(next http.Handler) http.Handler {
 | **Effectiveness Monitor** | ❌ **FORBIDDEN** | ✅ **REQUIRED** (Read + Write) | ⏸️ Pending (Phase 2) |
 | **WorkflowExecution Controller** | ❌ **FORBIDDEN** | ✅ **REQUIRED** (Write audit traces) | ⏸️ Pending (Phase 3) |
 | **Gateway** | ❌ **FORBIDDEN** | ℹ️ **N/A** (HTTP router, no DB use case) | ✅ Compliant |
-| **HolmesGPT API** | ❌ **FORBIDDEN** | ✅ **REQUIRED** (via Context API) | ✅ Compliant |
+| **Kubernaut Agent (KA)** | ❌ **FORBIDDEN** | ✅ **REQUIRED** (via Context API) | ✅ Compliant |
 
 ---
 

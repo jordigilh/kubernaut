@@ -20,7 +20,7 @@ This design introduced two problems:
 
 2. **Unauthorized CRD creation**: Any user with CRD create permission in a managed
    namespace could create fake downstream CRDs (e.g., AIAnalysis, WorkflowExecution)
-   to trigger expensive operations — LLM inference via HolmesGPT, Tekton pipeline
+   to trigger expensive operations — LLM inference via Kubernaut Agent (KA), Tekton pipeline
    execution — without going through the legitimate Gateway → RO pipeline.
 
 ## Decision

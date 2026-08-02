@@ -81,7 +81,7 @@ Timeline:
 10:05:01 - Query Prometheus metrics (10:00 - 10:05 window)
 10:05:02 - Query Data Storage for action history
 10:05:05 - Decision: shouldCallAI() evaluates
-10:05:05 - [IF YES] Call HolmesGPT API (POST /api/v1/postexec/analyze)
+10:05:05 - [IF YES] Call Kubernaut Agent (KA) (POST /api/v1/postexec/analyze)
 10:05:08 - Store results in effectiveness_results table
 10:05:08 - Update action_assessment status: "completed"
 ✅ Assessment complete
@@ -427,7 +427,7 @@ const (
 | **StabilizationDelay** | 5 minutes | Balance between accuracy (need time for metrics to stabilize) and learning speed (want timely feedback) |
 | **AssessmentWorkerInterval** | 30 seconds | Acceptable latency (assessments start within 30s of scheduled time) with low overhead |
 | **StaleAssessmentTimeout** | 30 minutes | Safety margin for crashes (normal assessment: 2-30s, allows for 30min of issues) |
-| **AICallTimeout** | 60 seconds | HolmesGPT API p99 latency: 10-20s, 60s allows for temporary slowdowns |
+| **AICallTimeout** | 60 seconds | KA p99 latency: 10-20s, 60s allows for temporary slowdowns |
 
 ### **Future Considerations (V2)**
 
@@ -696,7 +696,7 @@ Total: ~7s (check) + 0.5s (create) + 5min (stabilization) + 8.3min (assessment)
 | **Stabilization Delay** | **5 minutes** | Hardcoded in V1, allows metrics to stabilize |
 | **Assessment Worker Check** | Every 30 seconds | Picks up assessments where scheduled_for <= NOW |
 | **Automated Assessment** | 2-10 seconds | No AI call, just metrics + calculations |
-| **AI Assessment** | 5-30 seconds | Includes HolmesGPT API call (p95: 20s) |
+| **AI Assessment** | 5-30 seconds | Includes KA call (p95: 20s) |
 | **Stale Timeout** | 30 minutes | Resets "processing" to "pending" after crash |
 | **Restart Recovery** | 2-5 seconds | Informer cache sync + database checks |
 

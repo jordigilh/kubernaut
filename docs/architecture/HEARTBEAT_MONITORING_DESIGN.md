@@ -94,15 +94,15 @@ func (h *HeartbeatMonitor) monitoringLoop() {
 }
 ```
 
-### **Option 2: HolmesGPT API Integration (ALTERNATIVE)**
+### **Option 2: Kubernaut Agent (KA) Integration (ALTERNATIVE)**
 
 **⚠️ Pros:**
 - **AI service proximity**: Already handles AI coordination
 - **Existing monitoring**: May have health checks built-in
 
 **❌ Cons:**
-- **Service coupling**: HolmesGPT failures could affect heartbeat
-- **Scope creep**: HolmesGPT focused on investigations, not infrastructure monitoring
+- **Service coupling**: KA failures could affect heartbeat
+- **Scope creep**: KA focused on investigations, not infrastructure monitoring
 
 ---
 

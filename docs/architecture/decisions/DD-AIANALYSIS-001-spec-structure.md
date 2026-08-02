@@ -468,7 +468,7 @@ func buildSignalData(rr *remediationv1alpha1.RemediationRequest) aianalysisv1alp
 ### Affected Services
 - **RemediationOrchestrator**: Implements data copying from RemediationRequest to AIAnalysis
 - **AIAnalysis Service**: Reads structured data from `AIAnalysisSpec.SignalData`
-- **HolmesGPT API**: Receives structured data from AIAnalysis controller
+- **Kubernaut Agent (KA)**: Receives structured data from AIAnalysis controller
 
 ## Testing Strategy
 

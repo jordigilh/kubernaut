@@ -87,13 +87,13 @@ Each business requirements document follows a consistent structure:
 ---
 
 ### [10_AI_CONTEXT_ORCHESTRATION.md](./10_AI_CONTEXT_ORCHESTRATION.md)
-**Module**: AI Context Orchestration (`pkg/ai/holmesgpt/`, `pkg/api/context/`)
-**Components**: Dynamic Context Orchestration, HolmesGPT Toolset Integration, Context API, Performance Optimization
+**Module**: AI Context Orchestration (`pkg/kubernautagent/`, `pkg/api/context/`)
+**Components**: Dynamic Context Orchestration, Kubernaut Agent (KA) Toolset Integration, Context API, Performance Optimization
 **Requirements**: 180 business requirements
 
 **Key Capabilities**:
 - Dynamic Context Orchestration (AI-driven, on-demand context retrieval)
-- HolmesGPT Custom Toolset Integration (seamless toolset framework integration)
+- KA Custom Toolset Integration (seamless toolset framework integration)
 - Context API Services (RESTful endpoints for real-time context access)
 - Investigation Performance Optimization (40-60% investigation time reduction)
 - Intelligent Context Caching (80%+ cache hit rates)

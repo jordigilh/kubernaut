@@ -232,9 +232,9 @@ When DS computes the weighted effectiveness score and encounters `assessment_sta
 | `AssessmentReason` | `Status.AssessmentReason` | Set to `spec_drift` when drift detected |
 | `SpecIntegrity` condition | `Status.Conditions` | `True`/`False` with reason `SpecUnchanged`/`SpecDrifted` (per DD-CRD-002) |
 
-### Implications for HAPI Remediation History
+### Implications for Kubernaut Agent (KA) Remediation History
 
-When the HAPI team builds remediation history context for the LLM, a `spec_drift` assessment with score 0.0 provides clear context: "this workflow was applied but the remediated state did not hold — the resource had to be modified again." This helps the AI avoid recommending the same failing workflow for the same target resource.
+When the KA team builds remediation history context for the LLM, a `spec_drift` assessment with score 0.0 provides clear context: "this workflow was applied but the remediated state did not hold — the resource had to be modified again." This helps the AI avoid recommending the same failing workflow for the same target resource.
 
 ---
 

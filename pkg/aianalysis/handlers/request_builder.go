@@ -88,7 +88,7 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 		Priority:          spec.BusinessPriority,
 		RiskTolerance:     getOrDefault(customLabels, "risk_tolerance", "medium"),
 		BusinessCategory:  getOrDefault(customLabels, "business_category", "standard"),
-		ClusterName:       getOrDefault(customLabels, "cluster_name", "default"),
+		ClusterName:       clusterNameFor(analysis.Spec.ClusterID, customLabels),
 	}
 
 	// Map enrichment results for richer KA context
@@ -181,4 +181,23 @@ func getOrDefault(labels map[string][]string, key, defaultVal string) string {
 		return values[0]
 	}
 	return defaultVal
+}
+
+// clusterNameFor resolves the wire IncidentRequest's cluster_name field --
+// documented (openapi.json) as "the raw cluster identifier" KA uses to
+// resolve its per-investigation fleet tool overlay via
+// MapIncidentRequestToSignal -> SignalContext.ClusterID
+// (internal/kubernautagent/server/handler.go, DD-FLEET-004).
+//
+// BR-FLEET-054: RemediationOrchestrator already propagates
+// RemediationRequest.Spec.ClusterID onto AIAnalysis.Spec.ClusterID
+// (pkg/remediationorchestrator/creator/aianalysis.go) for fleet-target
+// signals -- that authoritative value takes priority here. The
+// customLabels-derived "cluster_name" fallback is preserved for hub-local
+// signals (clusterID empty) so existing non-fleet behavior is unchanged.
+func clusterNameFor(clusterID string, customLabels map[string][]string) string {
+	if clusterID != "" {
+		return clusterID
+	}
+	return getOrDefault(customLabels, "cluster_name", "default")
 }

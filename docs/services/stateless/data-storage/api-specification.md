@@ -629,9 +629,9 @@ previous := getSuccessRate("incident_type=pod-oom-killer&time_range=14d") // App
 trend := current.SuccessRate - previous.SuccessRate
 ```
 
-**HolmesGPT API** (Direct Consumer):
+**Kubernaut Agent (KA)** (Direct Consumer):
 ```go
-// HolmesGPT API calls Data Storage directly
+// KA calls Data Storage directly
 func (s *HolmesGPTService) GetPlaybookSuccessRate(ctx context.Context, playbookID string) (*SuccessRate, error) {
     // Direct call to Data Storage with authentication
     resp, err := s.dataStorageClient.GetMultiDimensionalSuccessRate(ctx, playbookID)

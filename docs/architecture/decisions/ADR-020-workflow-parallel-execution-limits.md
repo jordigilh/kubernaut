@@ -115,7 +115,7 @@ ParallelExecutor (conceptual):
 func (r *AIAnalysisReconciler) CheckWorkflowComplexity(
     ctx context.Context,
     aiAnalysis *aianalysisv1.AIAnalysis,
-    recommendations []HolmesGPTRecommendation,
+    recommendations []KARecommendation,
 ) (bool, string) {
     log := ctrl.LoggerFrom(ctx)
 
@@ -139,10 +139,10 @@ func (r *AIAnalysisReconciler) CheckWorkflowComplexity(
     return false, ""
 }
 
-func (r *AIAnalysisReconciler) processHolmesGPTRecommendations(
+func (r *AIAnalysisReconciler) processKARecommendations(
     ctx context.Context,
     aiAnalysis *aianalysisv1.AIAnalysis,
-    recommendations []HolmesGPTRecommendation,
+    recommendations []KARecommendation,
 ) error {
     log := ctrl.LoggerFrom(ctx)
 

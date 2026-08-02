@@ -29,7 +29,7 @@
 5. **Timeout protection** (prevent infinite hangs during shutdown)
 
 **Scope**: Applies to:
-- HTTP/REST API services (Gateway, Context API, HolmesGPT API, Data Storage, Notification)
+- HTTP/REST API services (Gateway, Context API, Kubernaut Agent (KA), Data Storage, Notification)
 - CRD Controllers (RemediationProcessing, AIAnalysis, RemediationOrchestrator, ActionExecution, WorkflowExecutor)
 - Any service that handles stateful operations in Kubernetes
 

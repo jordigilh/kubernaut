@@ -229,7 +229,7 @@ AIAnalysis.Status.SelectedWorkflow.ExecutionEngine → RO creator copies verbati
 
 **RO notification path**: For completion notifications, RO reads `wfe.Spec.WorkflowRef.ExecutionEngine` and passes it as a parameter to `CreateCompletionNotification`. The engine is stored in `NR.Spec.Metadata["executionEngine"]` (informational, not a first-class NR field).
 
-**Propagation chain through AIAnalysis (current)**: `AIAnalysis.Status.SelectedWorkflow.ExecutionEngine` (populated by HAPI/KA from the catalog at selection time) is the sole source RO's creator reads from -- there is no separate WE-side catalog lookup to reconcile against, and no possibility of the two diverging.
+**Propagation chain through AIAnalysis (current)**: `AIAnalysis.Status.SelectedWorkflow.ExecutionEngine` (populated by Kubernaut Agent (KA) from the catalog at selection time) is the sole source RO's creator reads from -- there is no separate WE-side catalog lookup to reconcile against, and no possibility of the two diverging.
 
 ### TR-7: OCI Compliance
 
@@ -570,7 +570,7 @@ Minimal implementation to pass each test tier, then refactor.
 | Workflow catalog `execution_engine` field | DataStorage | Exists | ADR-043, `pkg/datastorage/models/workflow.go` |
 | `ExecutionEngineJob` constant | DataStorage | **New (PR-5)** | Add `"job"` constant alongside `"tekton"` |
 | `SelectedWorkflow.ExecutionEngine` field | AIAnalysis | **New (G1)** | Add to `api/aianalysis/v1alpha1/` CRD types |
-| HolmesGPT-API `execution_engine` in response | HolmesGPT-API | **New (G1)** | Include `execution_engine` from catalog in workflow selection response |
+| KA `execution_engine` in response | KA | **New (G1)** | Include `execution_engine` from catalog in workflow selection response |
 | `batchv1` API | Kubernetes | Exists | Core API, no additional CRDs needed |
 | Tekton controllers | Tekton | Exists | Only needed when `executionEngine: "tekton"` |
 | WE controller RBAC | Kubernetes | Update needed | Add `batchv1/jobs` permissions |

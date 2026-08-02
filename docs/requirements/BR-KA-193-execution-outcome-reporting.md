@@ -108,7 +108,7 @@ All context needed for recovery analysis MUST be provided in the request via `re
 
 ## Related Documents
 
-- **BR-HAPI-192**: Recovery context consumption
+- **BR-HAPI-192**: Recovery context consumption (no renamed KA-prefixed doc exists)
 - **DD-RECOVERY-002**: Recovery flow design
 - **DECISIONS_KA_EXECUTION_RESPONSIBILITIES.md**: Cross-team decision record
 
