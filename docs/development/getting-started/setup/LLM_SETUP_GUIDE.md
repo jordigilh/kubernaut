@@ -9,7 +9,7 @@
 > see
 > [`LOCAL_SELF_HOSTED_LLM_v1.5.2.md`](LOCAL_SELF_HOSTED_LLM_v1.5.2.md)
 > (v1.5.2) or
-> [`docs/services/kubernaut-agent/configuration-reference.md`](../../../services/kubernaut-agent/configuration-reference.md)
+> [`docs/services/stateless/kubernaut-agent/configuration-reference.md`](../../../services/stateless/kubernaut-agent/configuration-reference.md)
 > / [`docs/services/apifrontend/configuration-reference.md`](../../../services/apifrontend/configuration-reference.md)
 > (1.6.0/`main`). This document is retained for historical reference only.
 

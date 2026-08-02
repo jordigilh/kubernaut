@@ -132,7 +132,7 @@ grep -rn "OldFieldName\|types.LLMOverride" --include="*.go" .
 
 ## Phase 4: Documentation
 
-- [`docs/services/kubernaut-agent/configuration-reference.md`](../../services/kubernaut-agent/configuration-reference.md)
+- [`docs/services/stateless/kubernaut-agent/configuration-reference.md`](../../services/stateless/kubernaut-agent/configuration-reference.md)
   §6.1: add `reasoning` row to the `phaseModels.<phase>` table, noting it is hot-reloadable and
   NOT subject to the identity lock.
 - Same doc §7.1: add `reasoning` row to `ai.alignmentCheck.llm` overrides.
