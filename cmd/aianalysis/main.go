@@ -203,7 +203,7 @@ type aiAnalysisClients struct {
 // main()'s original fail-fast behavior. Rego hot-reloader and audit store
 // cleanup remain the caller's responsibility during graceful shutdown.
 func wireAIAnalysisClients(ctx context.Context, cfg *config.Config) *aiAnalysisClients {
-	// BR-AA-HAPI-064: HTTP client timeout for session submit/poll/result calls.
+	// BR-AA-KA-064: HTTP client timeout for session submit/poll/result calls.
 	setupLog.Info("Creating Kubernaut Agent client",
 		"url", cfg.Agent.URL,
 		"timeout", cfg.Agent.Timeout,
@@ -277,7 +277,7 @@ func wireAIAnalysisClients(ctx context.Context, cfg *config.Config) *aiAnalysisC
 
 // setupAIAnalysisReconciler creates the metrics collector (DD-METRICS-001),
 // the Investigating/Analyzing phase handlers (BR-AI-007, BR-AI-012), the
-// atomic status manager (DD-PERF-001, AA-HAPI-001), and wires the
+// atomic status manager (DD-PERF-001, AA-KA-001), and wires the
 // AIAnalysisReconciler into mgr. Also registers the healthz/readyz checks,
 // including the cache-sync-aware readyz check that prevents premature
 // reconciliation before controller watches are established. Exits the
@@ -294,17 +294,17 @@ func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerN
 	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(mgr.GetClient(), controllerNS)
 	investigatingHandler := handlers.NewInvestigatingHandler(clients.agentClient, controllerLog, aianalysisMetrics, clients.auditClient,
 		handlers.WithRecorder(eventRecorder),                            // DD-EVENT-001: Session lifecycle events
-		handlers.WithSessionMode(),                                      // BR-AA-HAPI-064: Async submit/poll/result flow
-		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval), // BR-AA-HAPI-064.8: From config
+		handlers.WithSessionMode(),                                      // BR-AA-KA-064: Async submit/poll/result flow
+		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval), // BR-AA-KA-064.8: From config
 		handlers.WithInvestigationSessionChecker(isChecker),             // BR-INTERACTIVE-010: IS CRD awareness
 		handlers.WithISPhaseUpdater(isPhaseUpdater))                     // BR-INTERACTIVE-010: Set IS Active after submit
 	analyzingHandler := handlers.NewAnalyzingHandler(clients.regoEvaluator, controllerLog, aianalysisMetrics, clients.auditClient).
 		WithConfidenceThreshold(cfg.Rego.ConfidenceThreshold) // #225: operator-configurable threshold
 
 	// DD-PERF-001: Atomic status updates reduce K8s API calls by 50-75%.
-	// AA-HAPI-001: Pass APIReader to bypass cache for fresh refetches.
+	// AA-KA-001: Pass APIReader to bypass cache for fresh refetches.
 	statusManager := aistatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
-	setupLog.Info("AIAnalysis status manager initialized (DD-PERF-001 + AA-HAPI-001)")
+	setupLog.Info("AIAnalysis status manager initialized (DD-PERF-001 + AA-KA-001)")
 
 	aaReconciler := &aianalysis.AIAnalysisReconciler{
 		Client:           mgr.GetClient(),

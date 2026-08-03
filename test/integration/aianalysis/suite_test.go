@@ -819,7 +819,7 @@ timeoutSeconds: 120
 	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sManager.GetClient(), controllerNS)
 	investigatingHandler := handlers.NewInvestigatingHandler(realAgentClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
 		handlers.WithRecorder(eventRecorder),                  // DD-EVENT-001: Session lifecycle events
-		handlers.WithSessionMode(),                            // BR-AA-HAPI-064: Async submit/poll/result flow
+		handlers.WithSessionMode(),                            // BR-AA-KA-064: Async submit/poll/result flow
 		handlers.WithSessionPollInterval(2*time.Second),       // Fast polling for tests (production default: 15s)
 		handlers.WithInvestigationSessionChecker(isChecker),   // BR-INTERACTIVE-010: IS CRD awareness
 		handlers.WithISPhaseUpdater(isPhaseUpdater))           // BR-INTERACTIVE-010: Set IS Active after submit
@@ -838,7 +838,7 @@ timeoutSeconds: 120
 		Scheme:           k8sManager.GetScheme(),
 		Recorder:         eventRecorder,
 		Log:              ctrl.Log.WithName("aianalysis-controller"),
-		StatusManager:    status.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader()), // DD-PERF-001 + AA-HAPI-001: Cache-bypassed refetch
+		StatusManager:    status.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader()), // DD-PERF-001 + AA-KA-001: Cache-bypassed refetch
 		AnalyzingHandler: analyzingHandler,
 		AuditClient:      auditClient,
 	}

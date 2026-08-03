@@ -64,7 +64,7 @@ type AgentConfig struct {
 	Timeout time.Duration `yaml:"timeout"`
 
 	// SessionPollInterval is the constant interval between session status polls.
-	// BR-AA-HAPI-064.8: Polling is normal async behavior, not error recovery.
+	// BR-AA-KA-064.8: Polling is normal async behavior, not error recovery.
 	// Default: 15s. Range: [1s, 5m].
 	SessionPollInterval time.Duration `yaml:"sessionPollInterval"`
 }

@@ -85,7 +85,7 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 			}
 
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis should succeed with three-step discovery")

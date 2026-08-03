@@ -1,4 +1,4 @@
-# BR-AA-HAPI-064: Session-Based Pull Design for AA-KA Communication
+# BR-AA-KA-064: Session-Based Pull Design for AA-KA Communication
 
 **Status**: APPROVED
 **Version**: 1.1
@@ -23,16 +23,16 @@ The current architecture has the AA controller make a blocking HTTP call to KA's
 
 ## Requirements
 
-### BR-AA-HAPI-064.1: Async Submit Endpoint
+### BR-AA-KA-064.1: Async Submit Endpoint
 KA MUST accept investigation requests and return a session identifier immediately (HTTP 202 Accepted) without waiting for LLM completion.
 
-### BR-AA-HAPI-064.2: Session Status Polling
+### BR-AA-KA-064.2: Session Status Polling
 KA MUST provide an endpoint to check investigation session status (pending, investigating, completed, failed).
 
-### BR-AA-HAPI-064.3: Session Result Retrieval
+### BR-AA-KA-064.3: Session Result Retrieval
 KA MUST provide an endpoint to retrieve the completed investigation result by session ID.
 
-### BR-AA-HAPI-064.4: AA Controller Session Tracking (InvestigationSession)
+### BR-AA-KA-064.4: AA Controller Session Tracking (InvestigationSession)
 The AA controller MUST store session state in the AIAnalysis CRD status using an `InvestigationSession` sub-structure:
 
 ```go
@@ -44,20 +44,20 @@ type InvestigationSession struct {
 }
 ```
 
-### BR-AA-HAPI-064.5: Session Regeneration on KA Restart
+### BR-AA-KA-064.5: Session Regeneration on KA Restart
 When a poll returns 404 (session not found, typically due to KA restart), the AA controller MUST:
 1. Increment `InvestigationSession.Generation`
 2. Clear `InvestigationSession.ID`
 3. Resubmit the investigation request to get a new session
 4. Update `InvestigationSession.CreatedAt`
 
-### BR-AA-HAPI-064.6: Session Regeneration Cap
+### BR-AA-KA-064.6: Session Regeneration Cap
 The AA controller MUST cap session regenerations at 5. After 5 regenerations, the AA MUST transition to Failed with:
 - `SubReason: "SessionRegenerationExceeded"`
 - Escalation notification to operators
 - Warning K8s Event per DD-EVENT-001
 
-### BR-AA-HAPI-064.7: InvestigationSessionReady Condition
+### BR-AA-KA-064.7: InvestigationSessionReady Condition
 The AA controller MUST maintain an `InvestigationSessionReady` Condition on the AIAnalysis CRD:
 - True/SessionCreated when a new session is submitted
 - True/SessionActive when polls succeed
@@ -65,15 +65,15 @@ The AA controller MUST maintain an `InvestigationSessionReady` Condition on the 
 - True/SessionRegenerated when resubmit after loss succeeds
 - False/SessionRegenerationExceeded when cap is exceeded
 
-### BR-AA-HAPI-064.8: Polling with Controller-Runtime Requeue
+### BR-AA-KA-064.8: Polling with Controller-Runtime Requeue
 The AA controller MUST use controller-runtime `RequeueAfter` for polling, not blocking waits. A constant poll interval of 15s is used (configurable via `--session-poll-interval` flag or `WithSessionPollInterval` option). The original recommended backoff (10s, 20s, 30s) was replaced with a constant interval for simplicity and predictable load patterns.
 
-### BR-AA-HAPI-064.9: Recovery Flow Support
+### BR-AA-KA-064.9: Recovery Flow Support
 ~~The same async pattern MUST apply to recovery investigations (`/api/v1/recovery/analyze`).~~
 
 **DEPRECATED for v1.0**: Recovery investigations are deprecated. Instead, when a remediation is ineffective, the alert re-fires through the Gateway and the existing AI analysis results (from the prior Effectiveness Assessment) are included in the KA prompt context. The RO routing engine has logic to prevent this from becoming an endless cycle. Recovery flow may be revisited in future versions.
 
-### BR-AA-HAPI-064.10: Timeout Removal
+### BR-AA-KA-064.10: Timeout Removal
 Once the async design is validated, the 10-minute hardcoded timeout workaround in `cmd/aianalysis/main.go` MUST be removed. All HTTP calls become short-lived (~30s timeout).
 
 ---
@@ -106,8 +106,8 @@ Once the async design is validated, the 10-minute hardcoded timeout workaround i
 ## Changelog
 
 ### v1.1 (2026-03-04)
-- BR-AA-HAPI-064.8: Updated to reflect constant 15s poll interval design decision (replaces 10s/20s/30s backoff)
-- BR-AA-HAPI-064.9: Marked recovery flow as deprecated for v1.0 (alert re-fire through Gateway replaces dedicated recovery endpoint)
+- BR-AA-KA-064.8: Updated to reflect constant 15s poll interval design decision (replaces 10s/20s/30s backoff)
+- BR-AA-KA-064.9: Marked recovery flow as deprecated for v1.0 (alert re-fire through Gateway replaces dedicated recovery endpoint)
 
 ### v1.0 (2026-02-09)
 - Initial version based on GitHub issue #64 analysis

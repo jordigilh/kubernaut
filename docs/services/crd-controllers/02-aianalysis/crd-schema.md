@@ -30,7 +30,7 @@
 | **ADR-055** | `OwnerChain`/`CustomLabels` moved onto `EnrichmentResults.KubernetesContext`; the LLM's `RemediationTarget` (RCA output) replaced the old `target_in_owner_chain` boolean |
 | **Issue #113** | `KubernetesContext` restructured to a lean, classification-focused shape (`Namespace`, `Workload`, `OwnerChain`, `CustomLabels`) — no more per-kind `PodDetails`/`DeploymentDetails` in the enrichment input |
 | **Issue #1661 / DD-WORKFLOW-018** | `SelectedWorkflow` embeds `sharedtypes.WorkflowSnapshot` (the same type `WorkflowExecution.Spec.WorkflowRef` uses) so the two can never drift; write-once via CEL once `selectedAt` is set |
-| **BR-AA-HAPI-064** | Async submit/poll/result session pattern with KA; `status.investigationSession` (Go type `KASession`) tracks it |
+| **BR-AA-KA-064** | Async submit/poll/result session pattern with KA; `status.investigationSession` (Go type `KASession`) tracks it |
 | **DD-INTERACTIVE-002** | Any RemediationRequest is takeover-capable; `status.interactiveSession` is observability-only |
 | **ADR-040** | `RemediationApprovalRequest` (not `AIApprovalRequest`) is the CRD RemediationOrchestrator creates for manual approval — implemented today, not deferred |
 | **Issue #180** | The `DD-RECOVERY-002` recovery-attempt fields (`isRecoveryAttempt`, `previousExecutions`, etc.) were removed from the spec entirely, not merely deprecated in place |
@@ -376,7 +376,7 @@ The v2.0–v2.7 versions of this document described `IsRecoveryAttempt`, `Recove
 removed, not merely deprecated-in-place. `AIAnalysisSpec` has no recovery-related fields at all
 today (see [AIAnalysisSpec](#aianalysisspec) above).
 
-Per BR-AA-HAPI-064.9: when a remediation is ineffective, the alert re-fires through the Gateway
+Per BR-AA-KA-064.9: when a remediation is ineffective, the alert re-fires through the Gateway
 as a new signal, and prior AI analysis / Effectiveness Assessment results are surfaced to KA as
 prompt context — there is no dedicated "recovery AIAnalysis" spec shape in V1.0. If this changes,
 DD-RECOVERY-002/003 will need to be revisited and this section updated with the real fields.
@@ -462,7 +462,7 @@ type AIAnalysisStatus struct {
     // +optional
     ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
 
-    // Async KA submit/poll session tracking (BR-AA-HAPI-064)
+    // Async KA submit/poll session tracking (BR-AA-KA-064)
     // +optional
     KASession *KASession `json:"investigationSession,omitempty"`
 
@@ -625,7 +625,7 @@ type AlternativeApproach struct {
 ### KASession, InteractiveSessionInfo, PostRCAContext
 
 ```go
-// KASession tracks the async KA session lifecycle (BR-AA-HAPI-064.4/.5; the JSON tag is
+// KASession tracks the async KA session lifecycle (BR-AA-KA-064.4/.5; the JSON tag is
 // still "investigationSession" — renamed from InvestigationSession only at the Go type
 // level to avoid colliding with the unrelated root InvestigationSession CRD).
 type KASession struct {
@@ -637,7 +637,7 @@ type KASession struct {
     LastPolled *metav1.Time `json:"lastPolled,omitempty"`
     // +optional
     CreatedAt *metav1.Time `json:"createdAt,omitempty"`
-    // BR-AA-HAPI-064.8: constant 15s poll interval (configurable 1s–5m)
+    // BR-AA-KA-064.8: constant 15s poll interval (configurable 1s–5m)
     // +optional
     PollCount int32 `json:"pollCount,omitempty"`
     // #1390: after 3 consecutive 409s the session is regenerated

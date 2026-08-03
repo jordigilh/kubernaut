@@ -70,7 +70,7 @@ const (
 	ErrorTypePermanent ErrorType = "Permanent"
 
 	// ErrorTypeSessionLost indicates KA session was lost (404 on poll)
-	// BR-AA-HAPI-064.5: Triggers session regeneration, not standard retry
+	// BR-AA-KA-064.5: Triggers session regeneration, not standard retry
 	ErrorTypeSessionLost ErrorType = "SessionLost"
 )
 

@@ -139,7 +139,7 @@ func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// AA-HAPI-001: Log reconcile state for debugging duplicate call issues
+	// AA-KA-001: Log reconcile state for debugging duplicate call issues
 	log.V(1).Info("Reconcile state",
 		"phase", analysis.Status.Phase,
 		"generation", analysis.Generation,

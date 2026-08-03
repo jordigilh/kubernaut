@@ -731,7 +731,7 @@ spec:
               humanReviewReason:
                 description: |-
                   Reason why human review needed (when NeedsHumanReview=true)
-                  BR-HAPI-197: Maps to KA's human_review_reason enum values
+                  BR-KA-197: Maps to KA's human_review_reason enum values
                   BR-AI-601: alignment_check_failed added for shadow agent alignment verdicts
                 enum:
                 - workflow_not_found
@@ -794,7 +794,7 @@ spec:
               investigationSession:
                 description: |-
                   ========================================
-                  INVESTIGATION SESSION (BR-AA-HAPI-064)
+                  INVESTIGATION SESSION (BR-AA-KA-064)
                   Tracks the async submit/poll session with Kubernaut Agent
                   ========================================
                   KASession tracks the async KA session for submit/poll pattern
@@ -834,7 +834,7 @@ spec:
                   pollCount:
                     description: |-
                       PollCount tracks the number of poll attempts for observability
-                      BR-AA-HAPI-064.8: Constant 15s poll interval (configurable 1s–5m)
+                      BR-AA-KA-064.8: Constant 15s poll interval (configurable 1s–5m)
                     format: int32
                     minimum: 0
                     type: integer
@@ -857,11 +857,11 @@ spec:
               needsHumanReview:
                 description: |-
                   ========================================
-                  HUMAN REVIEW SIGNALING (BR-HAPI-197)
+                  HUMAN REVIEW SIGNALING (BR-KA-197)
                   Set by Kubernaut Agent when AI cannot produce reliable result
                   ========================================
                   True if human review required (KA decision: RCA incomplete/unreliable)
-                  BR-HAPI-197: Triggers NotificationRequest creation in RO
+                  BR-KA-197: Triggers NotificationRequest creation in RO
                   BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.
                 type: boolean
               observedGeneration:

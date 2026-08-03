@@ -146,7 +146,7 @@ func (r *AIAnalysisReconciler) runInvestigatingHandler(ctx context.Context, anal
 
 	// AA-BUG-009: Enhanced idempotency - skip handler if phase already changed OR already executed
 	if outcome.phaseBefore != PhaseInvestigating {
-		log.Info("AA-HAPI-001: Phase already changed, skipping handler",
+		log.Info("AA-KA-001: Phase already changed, skipping handler",
 			"expected", PhaseInvestigating, "actual", outcome.phaseBefore,
 			"observedGeneration", analysis.Status.ObservedGeneration)
 		outcome.handlerExecuted = false
@@ -156,7 +156,7 @@ func (r *AIAnalysisReconciler) runInvestigatingHandler(ctx context.Context, anal
 	if analysis.Status.InvestigationTime > 0 {
 		hasActiveSession := analysis.Status.KASession != nil && analysis.Status.KASession.ID != ""
 		if !hasActiveSession {
-			log.Info("AA-HAPI-001: Handler already executed, skipping duplicate call",
+			log.Info("AA-KA-001: Handler already executed, skipping duplicate call",
 				"investigationTime", analysis.Status.InvestigationTime,
 				"phase", outcome.phaseBefore)
 			outcome.handlerExecuted = false

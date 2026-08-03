@@ -10,7 +10,7 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
-| **v2.3** | 2026-08-02 | **#1806 CORRECTION**: Fixed the remaining stale sections not covered by the prior validation-focused pass (#1847): Phase 2 (Investigating) rewritten from a single 60s synchronous HolmesGPT-API call to the real async submit/poll/result session flow against Kubernaut Agent (KA) with a 25-minute wall-clock cap (BR-AA-HAPI-064); corrected the Phase Overview table/diagram, Phase Timeout Configuration section, Rego policy input/output examples (`require_approval`/`reason`, not `AUTO_APPROVE`/`MANUAL_APPROVAL_REQUIRED`), Recovery Attempts section (`isRecoveryAttempt`/`previousExecutions` do not exist on the current CRD spec), and the Metrics section (the referenced `kubernaut_aianalysis_phase_duration_seconds` metric does not exist; see `metrics-slos.md` for the real 4 metrics) | #1806, BR-AA-HAPI-064 |
+| **v2.3** | 2026-08-02 | **#1806 CORRECTION**: Fixed the remaining stale sections not covered by the prior validation-focused pass (#1847): Phase 2 (Investigating) rewritten from a single 60s synchronous HolmesGPT-API call to the real async submit/poll/result session flow against Kubernaut Agent (KA) with a 25-minute wall-clock cap (BR-AA-KA-064); corrected the Phase Overview table/diagram, Phase Timeout Configuration section, Rego policy input/output examples (`require_approval`/`reason`, not `AUTO_APPROVE`/`MANUAL_APPROVAL_REQUIRED`), Recovery Attempts section (`isRecoveryAttempt`/`previousExecutions` do not exist on the current CRD spec), and the Metrics section (the referenced `kubernaut_aianalysis_phase_duration_seconds` metric does not exist; see `metrics-slos.md` for the real 4 metrics) | #1806, BR-AA-KA-064 |
 | **v2.2** | 2025-12-09 | **V1.0 COMPLIANCE AUDIT**: (1) Timeout should be `spec.TimeoutConfig` not annotation (pending RO clarification); (2) Recovery attempts must use `/api/v1/recovery/analyze` endpoint (pending HAPI confirmation); (3) Recovery fields must be passed to HAPI | `NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md`, `REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md` (both docs/handoff/, deleted in the repo-wide non-authoritative docs purge) |
 | v2.1 | 2025-12-06 | **BR-KA-197**: Added `SubReason` field for granular failure tracking; Removed `Recommending` from Phase enum; Added failure taxonomy | BR-KA-197, DD-HAPI-002 v1.2 |
 | v2.0 | 2025-11-30 | **REGENERATED**: Removed "Approving" phase (V1.0); Removed BR-AI-051-053 (dependency validation); Simplified to 4-phase flow; Added DetectedLabels/CustomLabels handling | DD-RECOVERY-002, BR_MAPPING v1.2 |
@@ -89,7 +89,7 @@ status:
 
 ## Phase 2: Investigating
 
-**Purpose**: AI-powered investigation via **Kubernaut Agent (KA)**, using an async submit/poll/result session (BR-AA-HAPI-064) — **not** a single synchronous HTTP call.
+**Purpose**: AI-powered investigation via **Kubernaut Agent (KA)**, using an async submit/poll/result session (BR-AA-KA-064) — **not** a single synchronous HTTP call.
 
 **Timeout**: 25 minutes wall-clock cap on the whole session (`DefaultMaxInvestigationDuration` in `pkg/aianalysis/handlers/constants.go`, configurable via `WithMaxInvestigationDuration(d time.Duration)` on the `InvestigatingHandler`) — not a per-call timeout.
 
@@ -137,14 +137,14 @@ If the wall-clock session age exceeds `DefaultMaxInvestigationDuration` (25 minu
 
 ### Session Regeneration on 404
 
-If `PollSession` returns `404` (KA restarted and lost session state), the handler clears `status.kaSession.id` and re-submits a new investigation from scratch (BR-AA-HAPI-064.5) rather than failing immediately.
+If `PollSession` returns `404` (KA restarted and lost session state), the handler clears `status.kaSession.id` and re-submits a new investigation from scratch (BR-AA-KA-064.5) rather than failing immediately.
 
 ### Error Handling
 
 | Error | Action | Retry |
 |-------|--------|-------|
 | Kubernaut Agent (KA) unavailable | Retry with exponential backoff | Yes (transient) |
-| `PollSession` returns 404 (session lost) | Clear session ID, re-submit | Yes (BR-AA-HAPI-064.5) |
+| `PollSession` returns 404 (session lost) | Clear session ID, re-submit | Yes (BR-AA-KA-064.5) |
 | 25-minute wall-clock cap exceeded | Mark as `Failed` | No |
 | Invalid/malformed KA response | Mark as `Failed` | No |
 
@@ -398,7 +398,7 @@ status:
 > `AIAnalysisSpec` (`api/aianalysis/v1alpha1/aianalysis_types.go`), **none of these fields
 > exist** — there is no recovery-attempt input contract on the CRD spec today. The recovery/retry
 > flow design (`DD-RECOVERY-002`) was archived/deleted when the recovery flow itself was
-> deprecated (Issue #180) — recovery now flows through Gateway re-fire (BR-AA-HAPI-064.9), not a
+> deprecated (Issue #180) — recovery now flows through Gateway re-fire (BR-AA-KA-064.9), not a
 > dedicated AIAnalysis spec field. If/when a recovery-attempt input contract ships, it should be
 > documented here against the real spec fields rather than the illustrative example below.
 

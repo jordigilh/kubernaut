@@ -41,7 +41,7 @@ const (
 	ConditionApprovalRequired = "ApprovalRequired"
 
 	// ConditionInvestigationSessionReady indicates the KA session health
-	// BR-AA-HAPI-064.7: Operators can observe session health via standard K8s Conditions
+	// BR-AA-KA-064.7: Operators can observe session health via standard K8s Conditions
 	ConditionInvestigationSessionReady = "InvestigationSessionReady"
 )
 
@@ -95,7 +95,7 @@ const (
 	ReasonPolicyRequiresApproval = "PolicyRequiresApproval"
 
 	// ========================================
-	// Session-related reasons (BR-AA-HAPI-064)
+	// Session-related reasons (BR-AA-KA-064)
 	// ========================================
 
 	// ReasonSessionCreated - KA session was created successfully
@@ -182,7 +182,7 @@ func SetApprovalRequired(analysis *aianalysisv1.AIAnalysis, required bool, reaso
 }
 
 // SetInvestigationSessionReady sets the InvestigationSessionReady condition
-// BR-AA-HAPI-064.7: Operators can observe session health via standard K8s Conditions
+// BR-AA-KA-064.7: Operators can observe session health via standard K8s Conditions
 func SetInvestigationSessionReady(analysis *aianalysisv1.AIAnalysis, ready bool, reason, message string) {
 	status := metav1.ConditionTrue
 	if !ready {

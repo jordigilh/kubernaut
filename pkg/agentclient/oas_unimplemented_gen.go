@@ -27,7 +27,7 @@ func (UnimplementedHandler) CancelSessionAPIV1IncidentSessionSessionIDCancelPost
 //
 // Submit incident analysis request (async session-based pattern).
 // Business Requirement: BR-KA-002 (Incident analysis endpoint)
-// Business Requirement: BR-AA-HAPI-064.1 (Async submit returns session ID)
+// Business Requirement: BR-AA-KA-064.1 (Async submit returns session ID)
 // Design Decision: DD-AUTH-006 (User attribution for LLM cost tracking)
 // Called by: AIAnalysis Controller via SubmitInvestigation()
 // Returns HTTP 202 Accepted with {"session_id": "<uuid>"}.
@@ -40,7 +40,7 @@ func (UnimplementedHandler) IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx 
 
 // IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet implements incident_session_result_endpoint_api_v1_incident_session__session_id__result_get operation.
 //
-// Retrieve completed investigation result. BR-AA-HAPI-064.3.
+// Retrieve completed investigation result. BR-AA-KA-064.3.
 //
 // GET /api/v1/incident/session/{session_id}/result
 func (UnimplementedHandler) IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(ctx context.Context, params IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams) (r IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetRes, _ error) {
@@ -49,7 +49,7 @@ func (UnimplementedHandler) IncidentSessionResultEndpointAPIV1IncidentSessionSes
 
 // IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet implements incident_session_status_endpoint_api_v1_incident_session__session_id__get operation.
 //
-// Poll session status. BR-AA-HAPI-064.2.
+// Poll session status. BR-AA-KA-064.2.
 //
 // GET /api/v1/incident/session/{session_id}
 func (UnimplementedHandler) IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx context.Context, params IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams) (r IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetRes, _ error) {

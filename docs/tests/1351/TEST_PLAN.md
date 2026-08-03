@@ -156,13 +156,13 @@ E2E proves journey --> Interactive takeover → select_workflow → AA poll → 
 | UT-AA-1351-001 | BR-ORCH-027 AC-1 | CP-10 | `handleSessionPollUserDriving` enforces `maxInvestigationDuration` | `PhaseFailed` after 25m even in `user_driving` |
 | UT-AA-1351-002 | BR-ORCH-027 | CP-10 | `user_driving` timeout sets `Reason`, `SubReason`, and `SetInvestigationComplete` | All terminal fields populated consistently |
 | UT-AA-1351-003 | BR-AI-009 | CP-10 | `ConsecutiveFailures` reset to 0 on successful poll | Intermittent errors don't accumulate across successes |
-| UT-AA-1351-004 | BR-AA-HAPI-064.5 | CP-10 | `GetSessionResult` 404 triggers session regeneration (like poll 404) | `handleSessionLost` called, not `handleError` |
+| UT-AA-1351-004 | BR-AA-KA-064.5 | CP-10 | `GetSessionResult` 404 triggers session regeneration (like poll 404) | `handleSessionLost` called, not `handleError` |
 | UT-AA-1351-005 | BR-INTERACTIVE-010 SC-7.2 | SI-2 | `handleSessionPollCancelled` requeues on IS check error | Transient API error → `RequeueAfter` (not terminal) |
 | UT-AA-1351-006 | BR-ORCH-028 | SI-2 | AA communicates timeout cap to RO-compatible boundary | `maxInvestigationDuration` wired from config |
 | UT-AA-1351-007 | BR-AI-009 | SI-2 | `InvestigationTime > 0` with `Phase=Investigating` triggers recovery (not skip) | Handler requeues or re-evaluates instead of returning empty |
 | UT-AA-1351-008 | BR-HAPI-197 | AU-2 | `handleSessionPollFailed` sets `Reason=InvestigationFailed` and `SubReason` | No stale retry metadata on terminal status |
 | UT-AA-1351-009 | BR-ORCH-027 | SI-2 | Timeout path calls `SetInvestigationComplete(false, ...)` | `InvestigationComplete` condition consistent with `PhaseFailed` |
-| UT-AA-1351-010 | BR-AA-HAPI-064 | CP-10 | 409 on `GetSessionResult` has bounded retry (cap at N attempts) | Does not re-poll indefinitely; fails after cap |
+| UT-AA-1351-010 | BR-AA-KA-064 | CP-10 | 409 on `GetSessionResult` has bounded retry (cap at N attempts) | Does not re-poll indefinitely; fails after cap |
 | UT-AA-1351-011 | DD-EVENT-001 | AU-2 | `user_driving` event emission rate-limited (not every 15s) | Max 1 event per 5-minute window (or similar) |
 
 ### 5.3 AF Tier 1: Unit Tests — Prove Logic
