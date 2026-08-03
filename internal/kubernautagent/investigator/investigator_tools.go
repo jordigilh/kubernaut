@@ -114,12 +114,14 @@ func submitResultSchemaForPhase(phase katypes.Phase) json.RawMessage {
 	return parser.InvestigationResultSchema()
 }
 
-func (inv *Investigator) executeTool(ctx context.Context, name string, args json.RawMessage) string {
+func (inv *Investigator) executeTool(ctx context.Context, name string, args json.RawMessage, correlationID string) string {
 	if inv.registry == nil {
 		return toolErrorJSON("no registry configured for tool " + name)
 	}
 
-	if ar := inv.pipeline.AnomalyDetector.CheckToolCall(name, args); !ar.Allowed {
+	detector := inv.anomalyDetectorFor(correlationID)
+
+	if ar := detector.CheckToolCall(name, args); !ar.Allowed {
 		inv.logger.Info("anomaly detector rejected tool call",
 			"tool", name,
 			"reason", ar.Reason,
@@ -132,7 +134,7 @@ func (inv *Investigator) executeTool(ctx context.Context, name string, args json
 		inv.logger.Error(err, "tool execution failed",
 			"tool", name,
 		)
-		if ar := inv.pipeline.AnomalyDetector.RecordFailure(name, args); !ar.Allowed {
+		if ar := detector.RecordFailure(name, args); !ar.Allowed {
 			errResult := toolErrorJSON(ar.Reason)
 			alignment.SubmitToolStep(ctx, name, errResult)
 			return errResult

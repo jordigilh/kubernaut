@@ -19,6 +19,7 @@ package adapters_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
@@ -135,5 +136,29 @@ var _ = Describe("ExtractContent — QE-01", func() {
 		Entry("UT-KA-QE01-007: nil result returns error",
 			nil,
 			"", true),
+		Entry("UT-KA-1889-001a: ExhaustedResult (tool budget) returns error",
+			&investigator.ExhaustedResult{Reason: investigator.ReasonToolBudgetExhausted},
+			"", true),
 	)
+
+	Describe("UT-KA-1889-001: tool-budget exhaustion is a named MCPError, not a generic string (#1889 gap 1)", func() {
+		It("wraps a *tools.MCPError with code tool_budget_exhausted, unwrappable via errors.As", func() {
+			_, err := adapters.ExtractContent(&investigator.ExhaustedResult{Reason: investigator.ReasonToolBudgetExhausted})
+			Expect(err).To(HaveOccurred())
+
+			var mcpErr *tools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(),
+				"ExtractContent must wrap ErrCodeToolBudgetExhausted with %%w so errors.As can recover it downstream")
+			Expect(mcpErr.Code).To(Equal("tool_budget_exhausted"))
+		})
+
+		It("leaves other ExhaustedResult reasons (e.g. max turns) with the prior generic error, unchanged", func() {
+			_, err := adapters.ExtractContent(&investigator.ExhaustedResult{Reason: "max turns exhausted"})
+			Expect(err).To(HaveOccurred())
+
+			var mcpErr *tools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeFalse(),
+				"only the tool-budget-exhausted reason gets a named MCPError in this fix; other reasons are out of scope")
+		})
+	})
 })

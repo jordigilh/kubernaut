@@ -98,6 +98,15 @@ func (*TextResult) loopResult() {}
 // Reason distinguishes the two cases for observability (#770).
 type ExhaustedResult struct{ Reason string }
 
+// ReasonToolBudgetExhausted is the ExhaustedResult.Reason value set when the
+// AnomalyDetector's total tool-call budget trips (runLoopTurn). Callers that
+// need to distinguish this specific, well-known condition from the others
+// (max turns, truncation-after-retry) match on this constant rather than a
+// literal string (#1889 gap 1: this exact string is what
+// adapters.ExtractContent matches to surface a named MCPError instead of a
+// redacted generic internal_error).
+const ReasonToolBudgetExhausted = "tool budget exhausted"
+
 func (*ExhaustedResult) loopResult() {}
 
 // CancelledResult is returned when the loop detects context cancellation
@@ -202,6 +211,12 @@ type Investigator struct {
 	metrics       *metrics.Metrics
 	pinDecorator  func(llm.Client) llm.Client
 	phaseResolver PhaseClientResolver
+	// anomalyScope hands out a per-correlationID AnomalyDetector clone so
+	// concurrent investigations sharing this Investigator never corrupt each
+	// other's tool-call budgets (#1892). pipeline.AnomalyDetector remains the
+	// config template; production code must go through anomalyDetectorFor
+	// rather than pipeline.AnomalyDetector directly.
+	anomalyScope *anomalyScope
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
@@ -260,6 +275,10 @@ func New(cfg Config) *Investigator {
 		metrics:       cfg.Metrics,
 		pinDecorator:  cfg.PinDecorator,
 		phaseResolver: cfg.PhaseResolver,
+		anomalyScope: &anomalyScope{
+			template: pipeline.AnomalyDetector,
+			entries:  make(map[string]*anomalyDetectorEntry),
+		},
 	}
 }
 
@@ -333,7 +352,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	rcaCopy := *rcaResult
 	rcaResult = &rcaCopy
 
-	inv.pipeline.AnomalyDetector.Reset()
+	inv.anomalyDetectorFor(correlationID).Reset()
 
 	// Auto-resolve apiVersion when the LLM omitted it (parity with the
 	// autonomous apiVersionValidationGate in runRCA). Uses the REST mapper
@@ -462,14 +481,17 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 			"sink_nil", diagSinkNil.Load(),
 			"sink_ptr", fmt.Sprintf("%p", session.EventSinkFromContext(ctx)))
 	}()
-	inv.pipeline.AnomalyDetector.Reset()
+
+	// #1892: correlationID must be resolved before the first Reset() so the
+	// per-investigation AnomalyDetector (not the shared config template) is
+	// the one reset here.
+	correlationID := signal.RemediationID
+	inv.anomalyDetectorFor(correlationID).Reset()
 
 	// #783 + #1470: Pin client per phase. Each phase resolves its own client,
 	// model name, and runtime params. Subsequent hot-reload swaps do not
 	// affect in-flight work.
 	rcaClient, rcaModelName, rcaRuntimeParams := inv.resolveForPhase(katypes.PhaseRCA)
-
-	correlationID := signal.RemediationID
 	enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
 
 	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
@@ -610,7 +632,7 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 		}
 	}
 
-	inv.pipeline.AnomalyDetector.Reset()
+	inv.anomalyDetectorFor(correlationID).Reset()
 
 	wfClient, wfModelName, wfRuntimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
 
@@ -1361,7 +1383,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 					"tool_index": i,
 				})
 				g.Go(func() error {
-					toolResults[i] = inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
+					toolResults[i] = inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments), correlationID)
 					return nil
 				})
 			}
@@ -1391,8 +1413,8 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 					ToolName:   tc.Name,
 				})
 			}
-			if inv.pipeline.AnomalyDetector.TotalExceeded() {
-				return &ExhaustedResult{Reason: "tool budget exhausted"}, nil
+			if inv.anomalyDetectorFor(correlationID).TotalExceeded() {
+				return &ExhaustedResult{Reason: ReasonToolBudgetExhausted}, nil
 			}
 			continue
 		}
