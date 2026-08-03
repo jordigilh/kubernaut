@@ -305,6 +305,12 @@ FROM registry.access.redhat.com/ubi10/ubi:latest
 
 #### **For Python Services** (e.g., HolmesGPT API)
 
+> **⚠️ CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**:
+> "HolmesGPT API" was the pre-rewrite name of what is now Kubernaut Agent (KA), rewritten to native
+> Go per issue #433 (see `docker/kubernautagent.Dockerfile`). No Python-based production service
+> remains in Kubernaut today; this pattern is retained for reference should a future Python-based
+> service be added.
+
 **Standard Single-Stage Pattern**:
 
 ```dockerfile
