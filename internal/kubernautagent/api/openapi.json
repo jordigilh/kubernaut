@@ -12,7 +12,7 @@
           "Incident Analysis"
         ],
         "summary": "Incident Analyze Endpoint",
-        "description": "Submit incident analysis request (async session-based pattern).\n\nBusiness Requirement: BR-KA-002 (Incident analysis endpoint)\nBusiness Requirement: BR-AA-HAPI-064.1 (Async submit returns session ID)\nDesign Decision: DD-AUTH-006 (User attribution for LLM cost tracking)\n\nCalled by: AIAnalysis Controller via SubmitInvestigation()\n\nReturns HTTP 202 Accepted with {\"session_id\": \"<uuid>\"}.\nThe investigation runs as a background task. Poll via GET /incident/session/{id}.",
+        "description": "Submit incident analysis request (async session-based pattern).\n\nBusiness Requirement: BR-KA-002 (Incident analysis endpoint)\nBusiness Requirement: BR-AA-KA-064.1 (Async submit returns session ID)\nDesign Decision: DD-AUTH-006 (User attribution for LLM cost tracking)\n\nCalled by: AIAnalysis Controller via SubmitInvestigation()\n\nReturns HTTP 202 Accepted with {\"session_id\": \"<uuid>\"}.\nThe investigation runs as a background task. Poll via GET /incident/session/{id}.",
         "operationId": "incident_analyze_endpoint_api_v1_incident_analyze_post",
         "requestBody": {
           "content": {
@@ -369,7 +369,7 @@
           "Incident Analysis"
         ],
         "summary": "Incident Session Status Endpoint",
-        "description": "Poll session status. BR-AA-HAPI-064.2.",
+        "description": "Poll session status. BR-AA-KA-064.2.",
         "operationId": "incident_session_status_endpoint_api_v1_incident_session__session_id__get",
         "parameters": [
           {
@@ -432,7 +432,7 @@
           "Incident Analysis"
         ],
         "summary": "Incident Session Result Endpoint",
-        "description": "Retrieve completed investigation result. BR-AA-HAPI-064.3.",
+        "description": "Retrieve completed investigation result. BR-AA-KA-064.3.",
         "operationId": "incident_session_result_endpoint_api_v1_incident_session__session_id__result_get",
         "parameters": [
           {
