@@ -223,6 +223,9 @@ data:
 {{- end }}
       investigation:
         maxTurns: 40
+      safety:
+        anomaly:
+          maxTotalToolCalls: {{ .Values.kubernautAgent.ai.safety.anomaly.maxTotalToolCalls | default 30 }}
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
       alignmentCheck:
         enabled: true

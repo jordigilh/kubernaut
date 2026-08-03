@@ -419,4 +419,53 @@ var _ = Describe("Kubernaut Agent I7 Anomaly Detection — #433", func() {
 			)
 		})
 	})
+
+	Describe("UT-KA-1892-001: Clone() produces an isolated detector with identical config (#1892)", func() {
+		It("copies config and suspicious patterns but starts with zeroed counters", func() {
+			patterns := []*regexp.Regexp{regexp.MustCompile(`rm -rf`)}
+			cfg := investigator.AnomalyConfig{
+				MaxToolCallsPerTool: 2,
+				MaxTotalToolCalls:   3,
+				MaxRepeatedFailures: 2,
+				ExemptPrefixes:      []string{"todo_"},
+			}
+			source := investigator.NewAnomalyDetector(cfg, patterns)
+
+			// Drive the source detector to the brink of both its per-tool and
+			// total limits, and record a failure, so a naive shallow copy
+			// (sharing the same counter maps) would be observably different
+			// from a true zeroed clone.
+			Expect(source.CheckToolCall("kubectl_describe", json.RawMessage(`{}`)).Allowed).To(BeTrue())
+			Expect(source.CheckToolCall("kubectl_logs", json.RawMessage(`{}`)).Allowed).To(BeTrue())
+			Expect(source.RecordFailure("kubectl_describe", json.RawMessage(`{}`)).Allowed).To(BeTrue())
+
+			clone := source.Clone()
+
+			Expect(clone).NotTo(BeIdenticalTo(source), "Clone must return a distinct instance, not an alias")
+
+			// The clone's counters must be fresh: it should allow a full new
+			// budget of calls even though the source is nearly exhausted.
+			Expect(clone.CheckToolCall("kubectl_describe", json.RawMessage(`{}`)).Allowed).To(BeTrue(),
+				"clone must start with zeroed per-tool/total counters, independent of the source's accumulated state")
+			Expect(clone.CheckToolCall("kubectl_logs", json.RawMessage(`{}`)).Allowed).To(BeTrue())
+			Expect(clone.CheckToolCall("kubectl_events", json.RawMessage(`{}`)).Allowed).To(BeTrue(),
+				"clone's total budget (3) must not be pre-consumed by the source's 2 prior calls")
+
+			// Config and suspicious-pattern behavior must carry over identically.
+			suspicious := clone.CheckToolCall("kubectl_exec", json.RawMessage(`{"command":"rm -rf /"}`))
+			Expect(suspicious.Allowed).To(BeFalse(), "clone must retain the source's suspicious-pattern list")
+
+			// Mutating the clone must never affect the source (true isolation,
+			// not a shared-map shallow copy).
+			source2 := investigator.NewAnomalyDetector(cfg, patterns)
+			clone2 := source2.Clone()
+			for i := 0; i < cfg.MaxToolCallsPerTool; i++ {
+				Expect(clone2.CheckToolCall("kubectl_get", json.RawMessage(`{}`)).Allowed).To(BeTrue())
+			}
+			Expect(clone2.CheckToolCall("kubectl_get", json.RawMessage(`{}`)).Allowed).To(BeFalse(),
+				"sanity: clone2 itself enforces its per-tool limit")
+			Expect(source2.CheckToolCall("kubectl_get", json.RawMessage(`{}`)).Allowed).To(BeTrue(),
+				"exhausting the clone's per-tool counter must not affect the source's independent counter map")
+		})
+	})
 })
