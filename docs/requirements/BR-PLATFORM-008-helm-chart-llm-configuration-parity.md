@@ -1,7 +1,8 @@
 # BR-PLATFORM-008: Helm Chart LLM Configuration Parity
 
-**Status**: 🟡 Proposed (pending DD-PLATFORM-007 approval)
-**Version**: 1.0
+**Status**: 🟢 Implemented (amended 2026-08-02 by kubernaut#1861 — see
+DD-PLATFORM-007's Addendum)
+**Version**: 1.1
 **Date**: 2026-07-25
 **Category**: PLATFORM
 **Priority**: P2
@@ -78,9 +79,14 @@ the same underlying resolution mechanism.
    whose resolved profile has a *different* `credentialsSecretName` gets
    its own dedicated Secret volume and `apiKeyFile` path — mirroring the
    Operator's documented behavior.
-4. The vertex_ai shared-ambient-credentials constraint (kubernaut#1731) is
-   enforced with an explicit `fail()` guard, not left as a silent
-   misconfiguration.
+4. The vertex_ai shared-ambient-credentials constraint (kubernaut#1731) was
+   originally enforced with an explicit `fail()` guard rather than left as
+   a silent misconfiguration. **Superseded by kubernaut#1861**: AF's two
+   severityTriage Vertex constructors now resolve credentials explicitly
+   per-profile instead of relying on the shared ambient env var, so the
+   constraint no longer exists and the guard was removed — AF's own
+   `agent.llm` and `severityTriage.llm` may now independently use
+   `vertex_ai` with different `credentialsSecretName` values.
 5. `helm lint` + `helm template` render validity, plus a `helm-unittest`
    suite covering profile resolution/override/default-inheritance edge
    cases, comparable in coverage to the Operator's `validation_test.go`
@@ -108,7 +114,13 @@ the same underlying resolution mechanism.
 ## Non-Goals
 
 - No Go code changes in KA, AF, or the Operator — every consumption
-  contract this BR wires already exists and is already validated.
+  contract this BR wires already exists and is already validated. **Narrow
+  exception (kubernaut#1861)**: lifting the #1731 vertex_ai guard required
+  fixing `pkg/apifrontend/severity` and `cmd/apifrontend` to resolve
+  severityTriage's Vertex credentials explicitly rather than via ambient
+  ADC — a correctness fix to an existing capability, not new chart-facing
+  functionality, so it doesn't change this BR's functional requirements
+  above.
 - No change to DD-LLM-008's restart-required identity-lock semantics —
   this BR changes how the chart *authors* LLM config (named references
   instead of literal blocks); the rendered runtime ConfigMap/Secret shape
@@ -134,5 +146,7 @@ the same underlying resolution mechanism.
   BR-PLATFORM-006 (each closes a different Helm/Operator functional gap).
 - **Related issues**: #1589 (Helm/Operator parity triage — this BR's `AF
   agent.llm`/`severityTriage.llm` findings belong in the same tracking
-  bucket), #1731 (vertex_ai shared-credentials constraint), #1599
+  bucket), #1731 (vertex_ai shared-credentials constraint, lifted by
+  #1861), #1870 (release/v1.5 fix that proved the lift was safe), #1861
+  (main-line port of #1870, removed this BR's `fail()` guard), #1599
   (restart-required identity lock).

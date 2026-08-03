@@ -76,7 +76,7 @@ vertex_ai shared-ambient-credentials violation) fire only in their correct, veri
 |----|------|--------|-------------|-----------------|------------|
 | R1 | Helm merge helper diverges from Go's `EffectiveLLM`/`EffectivePhaseConfig` field precedence for some field | High (silently wrong LLM identity/credentials in production) | Low (verified field-for-field against the Operator's `configmaps.go`) | IT-PLATFORM-LLM-002..005 | Explicit override-wins/inherit-when-empty assertion per field, not just per profile |
 | R2 | Multi-secret-volume mounting (first-of-its-kind Sprig logic for this chart) has an implementation edge case | Medium (extra/missed mount) | Medium | IT-PLATFORM-LLM-008 | Dedicated cases: same-secret-two-consumers -> 1 mount; distinct-secrets -> N mounts with correct filenames (spike already proved the mechanism against `helm template`) |
-| R3 | #1731 guard applied to the wrong scope (e.g. accidentally blocking KA's `phaseModels`) | Medium (false-positive rejects valid configs) | Low (scope verified against the Operator's `validation.go`) | IT-PLATFORM-LLM-008 (negative case) | KA `phaseModels` with two different `vertex_ai` profiles must render successfully — explicit negative test, not just the positive AF-fails case |
+| R3 | (Historical, resolved by #1861) #1731 guard applied to the wrong scope (e.g. accidentally blocking KA's `phaseModels`) | Medium (false-positive rejects valid configs) | Low (scope verified against the Operator's `validation.go`) | IT-PLATFORM-LLM-008 (negative case) | KA `phaseModels` with two different `vertex_ai` profiles renders successfully — explicit negative test, not just the positive AF-fails case. #1861 removed the guard entirely, so this scope question is now moot; the negative test remains as a regression guard. |
 | R4 | Repeat of an `apiKey`/`apiKeyFile`-style field-name mismatch on a different field | High if it recurs | Low (this DD's entire purpose is closing that class of bug) | All IT-PLATFORM-LLM-* | Manual field-name audit against Go struct YAML tags, documented in PR description (Section 1.3 metric) |
 
 ### 3.1 Risk-to-Test Traceability
@@ -196,7 +196,7 @@ N/A — no new Go code (see Section 4.3).
 | BR-PLATFORM-008 FR-5 | `apifrontend.llmProfileRef` (new) | P0 | Integration | IT-PLATFORM-LLM-006 | Pending |
 | BR-PLATFORM-008 FR-6 | `apifrontend.severityTriage.llmProfileRef` (new) | P0 | Integration | IT-PLATFORM-LLM-007 | Pending |
 | BR-PLATFORM-008 Success Criterion 3 | Multi-secret-volume mounting (shared vs. dedicated) | P0 | Integration | IT-PLATFORM-LLM-008 | Pending |
-| BR-PLATFORM-008 Success Criterion 4 | #1731 vertex_ai `fail()` guard, AF-scoped | P0 | Integration | IT-PLATFORM-LLM-008 | Pending |
+| BR-PLATFORM-008 Success Criterion 4 | #1731 vertex_ai constraint, AF-scoped (originally a `fail()` guard; lifted by #1861 once both severityTriage Vertex constructors resolve credentials independently) | P0 | Integration | IT-PLATFORM-LLM-008 | Pass |
 
 ### Status Legend
 
@@ -278,19 +278,29 @@ Deferred — see Tier Skip Rationale below.
 
 **Dependencies**: none (first test in the suite; GREEN implementation order starts here per the Plan's TDD phase mapping).
 
-### IT-PLATFORM-LLM-008: Multi-secret-mount dedup and #1731 guard
+### IT-PLATFORM-LLM-008: Multi-secret-mount dedup (#1731 guard lifted by #1861)
 
 **BR**: BR-PLATFORM-008 Success Criteria 3 & 4
 **Priority**: P0
 **Type**: Integration (helm-unittest)
 **File**: `charts/kubernaut/tests/llm_profiles_test.yaml`
 
+**Amendment (kubernaut#1861, 2026-08-02)**: the #1731 `fail()` guard
+described below was removed once `cmd/apifrontend`'s two severityTriage
+Vertex constructors stopped depending on the shared ambient
+`GOOGLE_APPLICATION_CREDENTIALS` env var (see DD-PLATFORM-007's Addendum).
+The AF-both-vertex_ai-different-secrets case now asserts a **successful**
+render with two independent mounts/`apiKeyFile`s instead of a
+`failedTemplate`. Original (historical) preconditions/steps below still
+apply for the KA `phaseModels`/shared-secret dedup mechanics, which are
+unaffected by this amendment.
+
 **Preconditions**: base profile `primary` (`credentialsSecretName: llm-credentials-primary`); `phaseModels.rca` -> `primary` (same secret); `phaseModels.validation` -> `gcp-profile` (`vertex_ai`, different secret); AF `severityTriage.llmProfileRef` -> a second `vertex_ai` profile with a *different* `credentialsSecretName` than AF's main resolved profile.
 
 **Test Steps**:
 1. **Given**: the value set above.
 2. **When**: `helm template` renders the `kubernaut-agent` and `apifrontend` Deployments.
-3. **Then**: `rca` inherits the base mount (no dedicated volume); `validation` gets its own mount with `credentials.json` (vertex_ai convention); the AF render fails with the #1731 guard naming both conflicting profile refs.
+3. **Then**: `rca` inherits the base mount (no dedicated volume); `validation` gets its own mount with `credentials.json` (vertex_ai convention); the AF render succeeds with both profiles' own dedicated mounts and `apiKeyFile` values, and no static `GOOGLE_APPLICATION_CREDENTIALS` env var (kubernaut#1861 — previously this render failed with the #1731 guard naming both conflicting profile refs).
 
 **Expected Results**:
 1. KA Deployment has exactly 2 volumes (base + `validation`'s), not 3.
