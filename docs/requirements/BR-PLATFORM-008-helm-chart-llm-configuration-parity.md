@@ -2,7 +2,7 @@
 
 **Status**: 🟢 Implemented (amended 2026-08-02 by kubernaut#1861 — see
 DD-PLATFORM-007's Addendum)
-**Version**: 1.1
+**Version**: 1.2
 **Date**: 2026-07-25
 **Category**: PLATFORM
 **Priority**: P2
@@ -130,6 +130,43 @@ the same underlying resolution mechanism.
   the shared Go struct but aren't exposed by any current Helm consumer
   either — left out of this BR's scope; tracked as a future addition if a
   concrete need arises, not built speculatively here).
+
+---
+
+## FedRAMP Control Mapping (kubernaut#1861 addendum)
+
+Scoped to Success Criterion 4 only (the vertex_ai explicit-credentials fix) —
+the rest of this BR is chart-authoring ergonomics with no independent
+compliance surface.
+
+| Control | Objective | How This Fix Serves It |
+|---------|-----------|-------------------------|
+| **AC-6** | Least privilege | AF's own `agent.llm` connection and `severityTriage.llm` connection can now each authenticate with an independently-scoped GCP service account (different `credentialsSecretName`) instead of being forced to share one ambient-ADC identity — enabling, e.g., a more narrowly-scoped IAM role for severityTriage than for the main agent |
+| **SI-10** | Information input validation | `resolveAnthropicVertexAuth` (`pkg/apifrontend/severity/anthropic.go`) validates credential JSON structure and rejects disallowed credential types (e.g. `external_account`) before constructing an authenticated client, rather than passing untrusted material straight to the SDK |
+
+**Ceiling of proof for this control pair**: UT + IT (not E2E). A genuine
+end-to-end proof would require either live GCP credentials in CI (against
+this repo's own secrets-handling conventions) or a new mock Google
+OAuth2-token/Vertex-AI double in the E2E harness — infrastructure that
+doesn't exist today for *any* `vertex_ai` path (the existing E2E harness only
+ever configures `provider: openai_compatible` against mock-LLM; see
+`test/infrastructure/fullpipeline_e2e_helm.go`). None of the three prior
+fixes in this exact credential-resolution code path (#1731/#1870, #1801,
+#1792) built this either, so IT is the accepted, consistent ceiling for this
+credential domain rather than a gap unique to #1861.
+
+## Test Coverage (kubernaut#1861)
+
+| Test ID | Tier | FedRAMP | What It Proves |
+|---------|------|---------|-----------------|
+| UT-AF-1861-001 | UT | AC-6 | Client constructs from explicit credentials JSON alone, no ambient ADC |
+| UT-AF-1861-002 | UT | SI-10 | Malformed credentials JSON is rejected |
+| UT-AF-1861-003 | UT | SI-10 | Disallowed credential type (`external_account`) is rejected |
+| UT-AF-1861-004 | UT | SI-10 | Empty project errors before credential resolution runs |
+| UT-AF-1861-005 | UT | AC-6 | Falls back to ambient ADC when no explicit credentials given (backward compatibility) |
+| IT-AF-1861-001 | IT | AC-6 | `newLLMTriagerFromConfig` routes a vertex_ai+claude profile's own credentials to a working AnthropicTriager, no ambient ADC |
+| IT-AF-1861-002 | IT | AC-6 | `newLLMTriagerFromConfig` routes a vertex_ai+gemini profile's own credentials to a working GenAITriager, no ambient ADC |
+| IT-PLATFORM-LLM-008 | IT (Helm) | AC-6 | Chart renders two independent Secret volumes/mounts when AF main and severityTriage both resolve to vertex_ai with different `credentialsSecretName` |
 
 ---
 
