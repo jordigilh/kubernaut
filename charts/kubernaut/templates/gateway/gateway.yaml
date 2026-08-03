@@ -183,6 +183,37 @@ subjects:
     name: gateway
     namespace: {{ .Release.Namespace }}
 ---
+# Issue #1069 (DD-GATEWAY-018): bind to the built-in `view` ClusterRole for
+# owner-chain resolution of ecosystem resource kinds via K8s RBAC aggregation
+# — the same pattern already used by RO/EM (#545). `poddisruptionbudgets` is
+# included in `view` by default, fixing the reported Forbidden error;
+# cert-manager, Istio, KubeVirt, etc. are covered automatically on clusters
+# where those operators are installed (they publish aggregate-to-view
+# labels), with no unconditional grant on clusters that don't run them.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gateway-view
+  labels:
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: gateway
+    namespace: {{ .Release.Namespace }}
+---
+# Issue #1069 (DD-GATEWAY-018): operator-supplied ClusterRole references for
+# ecosystems `view` cannot cover via aggregation (e.g. OLM Subscription,
+# ArgoCD Application, which manages its own RBAC internally). The operator
+# creates and owns the referenced ClusterRole; Kubernaut only binds it.
+# global.additionalClusterRoleBindings covers the common case (same grant
+# across Gateway/EM/KA); merged here with gateway's own list (deduplicated)
+# for the asymmetric case.
+{{- include "kubernaut.additionalClusterRoleBindings" (dict "prefix" "gateway" "serviceAccount" "gateway" "names" (concat .Values.global.additionalClusterRoleBindings .Values.gateway.additionalClusterRoleBindings | uniq) "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+---
 # Role: namespace-scoped access to configmaps and secrets (#229)
 {{ include "kubernaut.nsRoleForSecrets" (dict "name" "gateway" "serviceAccount" "gateway" "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 ---
