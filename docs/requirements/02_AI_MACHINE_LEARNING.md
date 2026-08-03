@@ -11,6 +11,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.2 | 2026-08-02 | **Correction** ([Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)): BR-AI-075 corrected — `executionBundle` (not `containerImage`) resolved by KA's in-process discovery cache (DD-WORKFLOW-019), not an MCP search. BR-AI-076 corrected to Rego policy decision language. Marked BR-AI-080–083 (Recovery Flow) `DEPRECATED` per the authoritative note already in `02-aianalysis/BUSINESS_REQUIREMENTS.md` — never implemented, `DD-RECOVERY-002`/`003` no longer exist, and the ID range was reused for graceful-shutdown requirements. |
 | 1.1 | 2025-11-30 | Added BR-AI-075-076 (Workflow Selection), BR-AI-080-083 (Recovery Flow) |
 | 1.0 | 2025-01-15 | Initial version |
 
@@ -161,42 +162,48 @@ The AI & Machine Learning components provide intelligent decision-making capabil
 > **Added**: v1.1 (2025-11-30) - Formalizes workflow selection output requirements per DD-CONTRACT-001
 
 - **BR-AI-075**: MUST produce structured workflow selection output per ADR-041 LLM contract
-  - **Output Fields**: `workflowId` (UUID from catalog), `containerImage` (OCI reference), `parameters` (map)
-  - **Catalog Integration**: Selected workflow MUST exist in Data Storage workflow catalog
-  - **Container Resolution**: Kubernaut Agent (KA) resolves `workflowId` → `containerImage` during MCP search
+  - **Output Fields**: `workflowId` (UUID from catalog), `executionBundle` (OCI reference — renamed
+    from `containerImage`, DD-CONTRACT-001 v2.0), `parameters` (map)
+  - **Catalog Integration**: Selected workflow MUST exist in the `RemediationWorkflow`/`ActionType` CRD catalog
+  - **Bundle Resolution**: Kubernaut Agent (KA) resolves `workflowId` → `executionBundle` via its own
+    in-process discovery cache (DD-WORKFLOW-019) — **not** an MCP/Data Storage search
   - **Parameter Validation**: Parameters MUST conform to workflow's parameter schema
-  - **Reference**: DD-CONTRACT-001 v1.2, DD-WORKFLOW-002 v3.3
-- **BR-AI-076**: MUST provide rich approval context when confidence is below threshold (<80%)
+  - **Reference**: DD-CONTRACT-001 v2.0, DD-WORKFLOW-019
+- **BR-AI-076**: MUST provide rich approval context when policy requires approval
   - **Approval Context Fields**: `investigationSummary`, `rootCauseEvidence`, `recommendationRationale`, `riskAssessment`
-  - **Threshold**: Auto-approval only when confidence ≥80%, otherwise `approvalRequired=true`
-  - **V1.0 Flow**: AIAnalysis sets flag, Remediation Orchestrator triggers notification
-  - **V1.1 Flow**: Creates `RemediationApprovalRequest` CRD for approval workflow
-  - **Reference**: ADR-040, ADR-018
+  - **Threshold**: Rego policy decision (default 80%, operator-configurable — see [Issue #1828](https://github.com/jordigilh/kubernaut/issues/1828)), sets `approvalRequired=true` when not met
+  - **Flow**: AIAnalysis sets `approvalRequired`, RemediationOrchestrator orchestrates notification + `RemediationApprovalRequest` CRD (ADR-040)
+  - **Reference**: ADR-040, ADR-018, DD-CONTRACT-002
 
-### 2.8 Recovery Flow
+### 2.8 Recovery Flow ⚠️ DEPRECATED (2026-03)
 
-> **Added**: v1.1 (2025-11-30) - Formalizes recovery attempt handling per DD-RECOVERY-002
+> **Deprecation Notice (2026-03)**: This section (BR-AI-080 through BR-AI-083, added v1.1 2025-11-30
+> against a since-deleted `DD-RECOVERY-002`/`DD-RECOVERY-003`) was **deprecated and never implemented as
+> described**. Recovery was superseded by the Effectiveness Monitor (EM) service, which handles
+> post-remediation assessment instead — see the authoritative deprecation note in
+> [`02-aianalysis/BUSINESS_REQUIREMENTS.md`](../services/crd-controllers/02-aianalysis/BUSINESS_REQUIREMENTS.md#category-4-recovery-flow-️-deprecated-2026-03).
+> The spec fields referenced below (`isRecoveryAttempt`, `recoveryAttemptNumber`, `previousExecutions`)
+> were never added to the `AIAnalysis` CRD. **Note**: the `BR-AI-080`–`BR-AI-083` ID range was later
+> reused for an unrelated, actually-implemented requirement — AIAnalysis graceful shutdown (SIGTERM
+> handling, in-flight completion, audit buffer flush) — see `pkg/aianalysis/controller_shutdown_test.go`
+> and `cmd/aianalysis/main.go`. Retained below for historical context only.
 
-- **BR-AI-080**: MUST support recovery analysis for failed WorkflowExecution attempts
+- **BR-AI-080** *(deprecated)*: MUST support recovery analysis for failed WorkflowExecution attempts
   - **Trigger**: Remediation Orchestrator creates new AIAnalysis CRD with `isRecoveryAttempt=true`
   - **Attempt Tracking**: `recoveryAttemptNumber` increments for each retry (1, 2, 3, ...)
   - **Max Attempts**: Configurable via annotation (default: 3)
-  - **Reference**: DD-RECOVERY-002
-- **BR-AI-081**: MUST accept and utilize previous execution context for recovery analysis
+- **BR-AI-081** *(deprecated)*: MUST accept and utilize previous execution context for recovery analysis
   - **Input**: `previousExecutions` array containing ALL prior attempt contexts
-  - **Context Fields**: `workflowId`, `containerImage`, `failureReason`, `failurePhase`, `kubernetesReason`
+  - **Context Fields**: `workflowId`, `executionBundle`, `failureReason`, `failurePhase`, `kubernetesReason`
   - **Purpose**: Enable LLM to learn from failures and avoid repeating mistakes
-  - **Reference**: DD-RECOVERY-003
-- **BR-AI-082**: MUST call Kubernaut Agent (KA) recovery endpoint for failed workflow analysis
-  - **Endpoint**: `POST /api/v1/recovery/analyze`
+- **BR-AI-082** *(deprecated)*: MUST call Kubernaut Agent (KA) recovery endpoint for failed workflow analysis
+  - **Endpoint**: `POST /api/v1/recovery/analyze` (never implemented; no such endpoint exists on KA)
   - **Payload**: Original context + failure context + Kubernetes reason codes
   - **Response**: New workflow recommendation avoiding previous failure causes
-  - **Reference**: DD-RECOVERY-003, BR-HAPI-RECOVERY-001
-- **BR-AI-083**: MUST reuse original enrichment data without re-enriching for recovery attempts
+- **BR-AI-083** *(deprecated)*: MUST reuse original enrichment data without re-enriching for recovery attempts
   - **Source**: `spec.enrichmentResults` copied from original SignalProcessing CRD
   - **Rationale**: Signal context hasn't changed; re-enriching wastes resources
   - **Optimization**: Skip SignalProcessing reconciliation for recovery AIAnalysis CRDs
-  - **Reference**: DD-RECOVERY-002
 
 ---
 

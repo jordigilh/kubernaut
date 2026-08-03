@@ -40,7 +40,7 @@ eventDataBytes, err := json.Marshal(eventData)
 | BR ID | Description | Payload Type Mapping |
 |-------|-------------|---------------------|
 | **BR-AI-001** | AI Analysis CRD lifecycle management | `AnalysisCompletePayload`, `PhaseTransitionPayload` |
-| **BR-AI-006** | Kubernaut Agent (KA) integration tracking | `HolmesGPTCallPayload` |
+| **BR-AI-006** | Kubernaut Agent (KA) integration tracking | `AIAnalysisAIAgentCallPayload` |
 | **BR-AI-009** | Error tracking and diagnosis | `ErrorPayload` |
 | **BR-AI-011** | Data quality approval decisions | `ApprovalDecisionPayload` |
 | **BR-AI-030** | Rego policy evaluation tracking | `RegoEvaluationPayload` |
@@ -94,7 +94,7 @@ eventDataMap := payloadToMap(payload) // Single conversion point
 |-----------|---------------|--------|-------------------|--------------|
 | `aianalysis.analysis.completed` | `AnalysisCompletePayload` | 11 | 5 (pointers) | BR-AI-001, BR-STORAGE-001 |
 | `aianalysis.phase.transition` | `PhaseTransitionPayload` | 2 | 0 | BR-AI-001 |
-| `aianalysis.holmesgpt.call` | `HolmesGPTCallPayload` | 3 | 0 | BR-AI-006 |
+| `aianalysis.aiagent.call` | `AIAnalysisAIAgentCallPayload` | 3 | 0 | BR-AI-006 |
 | `aianalysis.approval.decision` | `ApprovalDecisionPayload` | 5 | 2 (pointers) | BR-AI-011 |
 | `aianalysis.rego.evaluation` | `RegoEvaluationPayload` | 3 | 0 | BR-AI-030 |
 | `aianalysis.error.occurred` | `ErrorPayload` | 2 | 0 | BR-AI-009 |
@@ -156,9 +156,13 @@ type PhaseTransitionPayload struct {
 
 ---
 
-### Type 3: HolmesGPTCallPayload
+### Type 3: AIAnalysisAIAgentCallPayload
 
-> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: The real generated type is `AIAnalysisAIAgentCallPayload` (`pkg/datastorage/ogen-client`), not `HolmesGPTCallPayload`, and its field is `HTTPStatusCode`, not `StatusCode` as shown below.
+> **Corrected (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: Was
+> named `HolmesGPTCallPayload` with a `StatusCode` field; renamed to match the real generated type
+> `AIAnalysisAIAgentCallPayload` (`pkg/datastorage/ogen-client/oas_schemas_gen.go`), whose field is
+> `HTTPStatusCode` (JSON `http_status_code`), and whose event type is `aianalysis.aiagent.call`
+> (not `aianalysis.holmesgpt.call`).
 
 **Purpose**: Structured payload for Kubernaut Agent (KA) call events
 
@@ -166,10 +170,10 @@ type PhaseTransitionPayload struct {
 
 **Specification**:
 ```go
-type HolmesGPTCallPayload struct {
-	Endpoint   string `json:"endpoint"`    // API endpoint called (e.g., "/api/v1/investigate")
-	StatusCode int    `json:"status_code"` // HTTP status code (200, 500, etc.)
-	DurationMs int    `json:"duration_ms"` // Call duration in milliseconds
+type AIAnalysisAIAgentCallPayload struct {
+	Endpoint       string `json:"endpoint"`         // API endpoint called (e.g., "/api/v1/investigate")
+	HTTPStatusCode int32  `json:"http_status_code"` // HTTP status code (200, 500, etc.)
+	DurationMs     int32  `json:"duration_ms"`      // Call duration in milliseconds
 }
 ```
 
@@ -371,7 +375,7 @@ It("should validate ALL fields in AnalysisCompletePayload (100% coverage)", func
 |-------------|-------------|------------------|----------|-----------|
 | `AnalysisCompletePayload` | 11 | 11 | ✅ 100% | `should validate ALL fields in AnalysisCompletePayload` |
 | `PhaseTransitionPayload` | 2 | 2 | ✅ 100% | `should validate ALL fields in PhaseTransitionPayload` |
-| `HolmesGPTCallPayload` | 3 | 3 | ✅ 100% | `should validate ALL fields in HolmesGPTCallPayload` |
+| `AIAnalysisAIAgentCallPayload` | 3 | 3 | ✅ 100% | `should validate ALL fields in AIAnalysisAIAgentCallPayload` |
 | `ApprovalDecisionPayload` | 5 | 5 | ✅ 100% | `should validate ALL fields in ApprovalDecisionPayload` |
 | `RegoEvaluationPayload` | 3 | 3 | ✅ 100% | `should validate ALL fields in RegoEvaluationPayload` |
 | `ErrorPayload` | 2 | 2 | ✅ 100% | `should validate ALL fields in ErrorPayload` |

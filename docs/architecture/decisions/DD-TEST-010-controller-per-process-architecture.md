@@ -156,7 +156,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
     By("Setting up per-process controller with handlers")
     // Create service-specific handlers/dependencies per process
     // Example for AIAnalysis:
-    hapiClient := hgclient.NewHolmesGPTClient(...)
+    kaClient := agentclient.NewKubernautAgentClientWithTransport(...)
     regoEvaluator := rego.NewEvaluator(...)
     investigatingHandler := handlers.NewInvestigatingHandler(...)
     analyzingHandler := handlers.NewAnalyzingHandler(...)
@@ -250,7 +250,7 @@ For each service migrating from single-controller → multi-controller:
 
 **Move to Phase 1 (process 1 only)**:
 - [ ] Keep ONLY infrastructure: `StartDSBootstrap()`
-- [ ] Keep service-specific containers (e.g., HAPI for AIAnalysis)
+- [ ] Keep service-specific containers (e.g., Kubernaut Agent (KA) for AIAnalysis)
 - [ ] Remove: envtest, k8sManager, controller, handlers, metrics
 - [ ] Change `return configBytes` → `return []byte{}`
 
@@ -371,7 +371,7 @@ func(data []byte) {
 - Gateway (no controller, different pattern)
 - DataStorage (no controller, REST API service)
 - AuthWebhook (no controller, webhook service)
-- HolmesGPT-API (Python FastAPI, different pattern)
+- Kubernaut Agent / KA (Go HTTP service, different pattern — formerly "HolmesGPT-API", rewritten to native Go per issue #433)
 
 ---
 

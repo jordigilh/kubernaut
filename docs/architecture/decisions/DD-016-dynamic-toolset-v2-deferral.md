@@ -25,7 +25,9 @@ During V1.x development, the **Kubernaut Agent (KA) service architecture** is un
 
 ### Business Requirements Context
 
-**Dynamic Toolset Service Business Requirements**:
+**Dynamic Toolset Service Business Requirements** (BR-HOLMES-XXX IDs kept as-is; no formal BR-KA-XXX
+renumbering exists for these deferred/unimplemented requirements — tracked separately under
+[Issue #1829](https://github.com/jordigilh/kubernaut/issues/1829)):
 - **BR-HOLMES-016**: Dynamic service discovery in Kubernetes cluster
 - **BR-HOLMES-017**: Automatic detection of well-known services
 - **BR-HOLMES-020**: Real-time toolset configuration updates
@@ -239,7 +241,10 @@ When V2.0 expands Kubernaut Agent to identify and integrate with **other observa
 - **MANDATORY**: When V2.0 roadmap includes expanding Kubernaut Agent beyond Prometheus to **multi-service observability** (Grafana, Jaeger, Elasticsearch, custom services)
 - **MANDATORY**: Before V2.0 planning begins (estimated Q3 2025) to assess multi-service discovery requirements
 - **OPTIONAL**: If V1.x users report critical need for automatic multi-service discovery (user feedback loop)
-- **OPTIONAL**: If HolmesGPT SDK significantly changes multi-service toolset configuration approach
+- **OPTIONAL**: If Kubernaut Agent's toolset configuration approach for multi-service discovery changes
+  significantly (this trigger originally referenced the "HolmesGPT SDK"; Kubernaut Agent (KA) was
+  rewritten as a native Go service per issue #433 and no longer depends on that Python SDK — see
+  `internal/kubernautagent/` for the current implementation)
 
 ### Success Metrics (V2.0)
 

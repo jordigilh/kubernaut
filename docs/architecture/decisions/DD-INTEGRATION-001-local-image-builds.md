@@ -422,7 +422,7 @@ def start_infrastructure() -> bool:
 
     # Start services via compose (Python manages the process)
     result = subprocess.run(
-        [compose_cmd, "-f", "docker-compose.workflow-catalog.yml", "-p", "hapi-integration", "up", "-d"],
+        [compose_cmd, "-f", "docker-compose.workflow-catalog.yml", "-p", "kubernautagent-integration", "up", "-d"],
         cwd=script_dir,
         capture_output=True,
         timeout=180
@@ -448,7 +448,7 @@ def integration_infrastructure():
         pytest.fail(
             "REQUIRED: Infrastructure not running.\\n"
             "  Per TESTING_GUIDELINES.md: Tests MUST Fail, NEVER Skip\\n"
-            "  Start it with: make test-integration-holmesgpt"
+            "  Start it with: make test-integration-kubernautagent"
         )
 
     # Set environment variables for service clients

@@ -2,8 +2,32 @@
 
 **Document Version**: 1.0
 **Date**: January 2025
-**Status**: Architecture Documentation
+**Status**: 🗄️ **SUPERSEDED** — see note below
 **Purpose**: Document existing execution infrastructure that handles all infrastructure changes
+
+> **SUPERSEDED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This
+> Jan 2025 document describes a pre-CRD-rewrite execution model — a `pkg/workflow/engine/` "Workflow
+> Engine" with a registered `ActionExecutor` interface (`KubernetesActionExecutor`,
+> `MonitoringActionExecutor`, `CustomActionExecutor`) and a separate `pkg/platform/executor/`
+> `ActionRegistry`, invoked from parsed `holmesGPTClient.Investigate()` recommendations. **None of this
+> code exists in the current codebase** (`pkg/workflow/engine/` and `pkg/platform/executor/` were both
+> removed; verified via repo-wide search — zero remaining references).
+>
+> The document's core **architectural principle — investigation is separate from execution — is still
+> true and implemented today**, just via a completely different mechanism:
+> - **Investigation**: the `AIAnalysis` CRD controller (`pkg/aianalysis/`) submits an investigation to
+>   **Kubernaut Agent (KA)** (`internal/kubernautagent/`, the Go rewrite of the former Python
+>   "HolmesGPT-API"/"HAPI", Issue #433) and selects a workflow from the predefined catalog — it does
+>   not execute anything itself. See
+>   [`docs/services/crd-controllers/02-aianalysis/overview.md`](../services/crd-controllers/02-aianalysis/overview.md).
+> - **Execution**: the `WorkflowExecution` CRD controller (`pkg/workflowexecution/`) runs the selected
+>   workflow as a user-provided OCI-bundle container via a Tekton `PipelineRun` (ADR-043, ADR-044) in a
+>   dedicated `kubernaut-workflows` namespace — there is no `ActionExecutor`/`ActionRegistry` interface
+>   or in-process action dispatch. See
+>   [`docs/services/crd-controllers/03-workflowexecution/overview.md`](../services/crd-controllers/03-workflowexecution/overview.md).
+>
+> This document is retained for historical context only. Do not cite the specific interfaces, file
+> paths, or action-type lists below as current.
 
 ---
 

@@ -119,9 +119,14 @@ Gateway MUST use the `job_name` label (not `job`) to identify Kubernetes Job res
 
 The fingerprint formula `SHA256(namespace:kind:name)` will produce different hashes for previously misidentified alerts. This is correct and desired -- the old fingerprints targeted the wrong resource and should not be deduplicated against new, correctly-targeted signals.
 
-### HAPI Prompt (No Changes Required)
+### Kubernaut Agent (KA) Prompt (No Changes Required)
 
-The HAPI prompt builder (`kubernaut-agent/src/extensions/incident/prompt_builder.py`) receives `resource_kind` and `resource_name` from the AA spec and passes them directly to the LLM. The LLM investigates whatever resource it is told about using `kubectl` tools. The prompt output schema already instructs the LLM to trace up OwnerReferences for the `affectedResource` field. No prompt changes are needed -- the fix is fully contained in the Gateway.
+> **CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This
+> section originally referenced the pre-rewrite Python "HAPI" prompt builder. HolmesGPT-API was
+> rewritten in Go as Kubernaut Agent (KA) (Issue #433); the equivalent current component is
+> `internal/kubernautagent/prompt/builder.go`.
+
+The KA prompt builder (`internal/kubernautagent/prompt/builder.go`) receives `resource_kind` and `resource_name` from the AA spec and passes them directly to the LLM. The LLM investigates whatever resource it is told about using `kubectl` tools. The prompt output schema already instructs the LLM to trace up OwnerReferences for the `affectedResource` field. No prompt changes are needed -- the fix is fully contained in the Gateway.
 
 ### Signal Processing, AI Analysis, Workflow Execution
 

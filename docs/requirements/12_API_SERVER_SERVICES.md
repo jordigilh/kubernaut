@@ -2,8 +2,28 @@
 
 **Document Version**: 1.0
 **Date**: January 2025
-**Status**: Business Requirements Specification
+**Status**: 🗄️ **SUPERSEDED** — see note below
 **Module**: API Server Services (`pkg/api/server/`)
+
+> **SUPERSEDED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This
+> Jan 2025 document specifies an aspirational `pkg/api/server/` layer — a standalone "Context API
+> Server" for HolmesGPT toolset integration, plus a broad enterprise API gateway (GraphQL, Kong/
+> Ambassador/Istio integration, WebSocket/SSE real-time analytics, HSM-backed mTLS, multi-region
+> disaster recovery, etc.). **`pkg/api/server/` does not exist in the current codebase**, and none of
+> this enterprise-gateway feature set was built as designed.
+>
+> The current equivalent, external-facing API surface is **APIFrontend (AF)** (`pkg/apifrontend/`), a
+> much narrower-scoped gateway for natural-language-driven investigation and `RemediationRequest`
+> creation via the A2A and MCP protocols — see
+> [`docs/services/apifrontend/design/ARCHITECTURE.md`](../services/apifrontend/design/ARCHITECTURE.md)
+> for the authoritative current design. The standalone "Context API Server" concept described in
+> Section 2 below was deprecated and its capabilities absorbed into Data Storage; see
+> [DD-CONTEXT-006](../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md). "HolmesGPT"
+> throughout this document refers to the pre-Go-rewrite architecture — the current equivalent is
+> **Kubernaut Agent (KA)** (`internal/kubernautagent/`, Issue #433). This document is retained for
+> historical context only; none of the `BR-CAPI-*`, `BR-API-*`, `BR-SEC-*`, `BR-PERF-*`, `BR-DOC-*`,
+> `BR-WS-*`, `BR-SSE-*`, `BR-MQ-*`, `BR-RT-*`, `BR-GATE-*`, `BR-STD-*`, `BR-ENT-*`, or `BR-CLOUD-*`
+> requirements below should be treated as describing a live, implemented service.
 
 ---
 

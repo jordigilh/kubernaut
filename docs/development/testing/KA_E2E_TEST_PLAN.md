@@ -234,7 +234,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 #### E2E-KA-L007: Invalid Request Returns Error
 
-**Business Requirement**: BR-HAPI-200
+**Business Requirement**: BR-KA-200
 
 **Business Outcome**: Invalid requests rejected with clear error messages
 
@@ -444,7 +444,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 
 #### E2E-KA-L018: Recovery Rejects Invalid Attempt Number
 
-**Business Requirement**: BR-HAPI-200
+**Business Requirement**: BR-KA-200
 
 **Business Outcome**: Invalid recovery attempt numbers rejected (must be >= 1)
 
@@ -824,7 +824,7 @@ This test plan documents all 48 E2E test scenarios from the Python test suite to
 **Implementation Notes**:
 ```go
 // IncidentRequest uses plain strings (not OptString as of ogen v1.0+)
-req := &hapiclient.IncidentRequest{
+req := &agentclient.IncidentRequest{
     IncidentID:        "test-audit-045",
     RemediationID:     remediationID,
     SignalName:        "OOMKilled",  // Issue #166: was SignalType
@@ -1510,21 +1510,21 @@ var _ = Describe("E2E-KA-L001: No Workflow Found Returns Human Review", Label("e
     Context("BR-KA-197: Human review scenarios", func() {
         It("should return needs_human_review when no matching workflow exists", func() {
             // Arrange: Create request with MOCK_NO_WORKFLOW_FOUND
-            req := &hapiogen.IncidentRequest{
-                IncidentID:     hapiogen.NewOptString("test-edge-001"),
-                RemediationID:  hapiogen.NewOptString("test-rem-001"),
-                SignalName:     hapiogen.NewOptString("MOCK_NO_WORKFLOW_FOUND"),  // Issue #166
-                Severity:       hapiogen.NewOptString("high"),
-                SignalSource:   hapiogen.NewOptString("prometheus"),
+            req := &agentclient.IncidentRequest{
+                IncidentID:     agentclient.NewOptString("test-edge-001"),
+                RemediationID:  agentclient.NewOptString("test-rem-001"),
+                SignalName:     agentclient.NewOptString("MOCK_NO_WORKFLOW_FOUND"),  // Issue #166
+                Severity:       agentclient.NewOptString("high"),
+                SignalSource:   agentclient.NewOptString("prometheus"),
                 // ... other required fields
             }
             
             // Act: Call KA
-            resp, err := hapiClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
+            resp, err := hgClient.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
             Expect(err).ToNot(HaveOccurred())
             
             // Assert: Business outcome validation
-            incidentResp, ok := resp.(*hapiogen.IncidentResponse)
+            incidentResp, ok := resp.(*agentclient.IncidentResponse)
             Expect(ok).To(BeTrue(), "Expected IncidentResponse type")
             
             // BEHAVIOR: Human review required
@@ -1704,11 +1704,11 @@ IncidentRequest{
 RecoveryRequest{
     IncidentID:            "test-013",                                    // plain string
     RemediationID:         "test-rem-013",                                // plain string
-    SignalName:            hapiclient.NewOptNilString("CrashLoopBackOff"), // OptNilString (Issue #166)
-    Severity:              hapiclient.NewOptNilString("high"),             // OptNilString
-    IsRecoveryAttempt:     hapiclient.NewOptBool(true),                    // OptBool
-    RecoveryAttemptNumber: hapiclient.NewOptNilInt(2),                     // OptNilInt
-    PreviousExecution:     hapiclient.NewOptNilPreviousExecution(...),     // OptNilPreviousExecution
+    SignalName:            agentclient.NewOptNilString("CrashLoopBackOff"), // OptNilString (Issue #166)
+    Severity:              agentclient.NewOptNilString("high"),             // OptNilString
+    IsRecoveryAttempt:     agentclient.NewOptBool(true),                    // OptBool
+    RecoveryAttemptNumber: agentclient.NewOptNilInt(2),                     // OptNilInt
+    PreviousExecution:     agentclient.NewOptNilPreviousExecution(...),     // OptNilPreviousExecution
 }
 ```
 
@@ -1752,7 +1752,7 @@ PreviousExecution{
         FailureStep: "apply-fix",
         ErrorOutput: "kubectl apply failed",
     },
-    NaturalLanguageSummary: hapiclient.NewOptNilString("Workflow failed at step apply-fix"),
+    NaturalLanguageSummary: agentclient.NewOptNilString("Workflow failed at step apply-fix"),
 }
 ```
 
@@ -2298,6 +2298,6 @@ Migration complete when:
 
 - **Python Test Suite**: `kubernaut-agent/tests/e2e/`
 - **Go Test Suite Target**: `test/e2e/kubernaut-agent/`
-- **Infrastructure**: `test/infrastructure/holmesgpt_api.go`
-- **Migration Plan**: `.cursor/plans/hapi_e2e_go_migration_*.plan.md`
+- **Infrastructure**: `test/infrastructure/kubernautagent.go` (renamed from `holmesgpt_api.go` during the Go rewrite)
+- **Migration Plan**: historical — the Python→Go migration plan referenced here no longer exists under `.cursor/plans/`; the migration itself completed and is reflected in this test plan's `E2E-KA-L{SEQUENCE}` scenarios
 - **Template**: `V1_0_SERVICE_MATURITY_TEST_PLAN_TEMPLATE.md`

@@ -215,17 +215,73 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 //   - HighMemory: for:1h -> stays pending when metric present (tier 1.5)
 //   - DiskPressure: for:0s + metric injected -> inactive then evaluates live data (tier 2)
 //   - NetworkLatency: query matches no-data-ns target but no metric exists -> inactive no data (tier 2.5)
+//   - AFInvestigateGrounding: for:0s + vector(1) (never stale) -> tier 1, grounds
+//     the mock-LLM's dedicated "af-investigate-e2e/Pod/af-investigate-target"
+//     investigate fixture (see below)
+//   - UserSeverityHintGrounding: for:0s + vector(1) (never stale) -> tier 1,
+//     grounds severity_triage_test.go's TC-E2E-SEV-06 "user hint does not
+//     bypass triage" fixture (dedicated namespace="sev-userhint-ns",
+//     kind=Deployment, name="test-user-severity-bypass")
+//
+// #1839 follow-up (no fixtures in "default"): HighCPU and HighMemory used to
+// target namespace="default" (unlike DiskPressure/NetworkLatency, which
+// already used dedicated sev-tier2-ns/no-data-ns namespaces). "default" is
+// the one namespace every test can use without any setup, which is exactly
+// why it kept attracting *unintentional* consumers: severity_triage_test.go's
+// TC-E2E-SEV-06 ("test-user-severity-bypass") had no rule of its own and was
+// silently passing only because it shared namespace="default" with HighCPU,
+// riding Tier 1's namespace-level fallback (bestAlertMatch in
+// severity/triage.go) -- the same hidden-coupling failure mode diagnosed
+// below for the (now-fixed) AF investigate fixture. HighCPU/HighMemory were
+// moved to their own dedicated namespaces (sev-tier1-ns/sev-tier15-ns) --
+// matching the sev-tier2-ns/no-data-ns convention -- specifically so
+// "default" no longer groups multiple fixtures together and cannot silently
+// backstop a future test that forgets to configure its own grounding.
 //
 // PromQL expressions include label selectors for namespace/kind/name because the
 // triage pipeline's Tier 1.5 and Tier 2 use ExtractLabelMatchers(query)
 // + MatchesResource to correlate rules with the target resource.
+//
+// #1839 RCA: deploy/apifrontend/overlays/e2e/mock-llm.yaml's "af_investigate"/
+// "af_progressive_investigate"/"af_investigate_resume" scenarios target a
+// fixed resource via kubernaut_investigate, which (like kubernaut_remediate)
+// now runs through the fail-closed severity triage pipeline. Before Tier 3
+// was removed, an ungrounded call like this silently fell back to the
+// pure-LLM tier and always "succeeded". The fixture originally used
+// namespace="default",kind="Pod",name="nginx" with no dedicated rule, so
+// calls degraded to Triager's namespace-level correlation fallback (any
+// firing alert sharing namespace="default", e.g. HighCPU) — which is
+// timing-dependent: HighCPU's injected OTLP metric goes Prometheus-stale
+// (default 5m) if not re-injected, so tests running late in a parallel E2E
+// suite intermittently lost that accidental grounding and failed with
+// ErrSeverityUndetermined (see progressive_flow_e2e_test.go E2E-AF-1408-001).
+//
+// AFInvestigateGrounding's expr (vector(1) > 0) has no underlying series, so
+// it can never go stale and fires deterministically for the whole suite
+// lifetime. Its target was also moved off the shared "default" namespace and
+// generic "nginx" name onto a dedicated namespace="af-investigate-e2e",
+// name="af-investigate-target": labelsOverlap (severity/triage.go) matches
+// resource-level correlation on kind+name only (namespace is intentionally
+// excluded there), and Tier 1 additionally falls back to a namespace-level
+// match against ANY resource sharing an alert's namespace when no
+// resource-exact match exists. A rule keyed to "default"/"nginx" — both
+// generic, easily-reused placeholder values — would silently backstop any
+// *future* scenario that targets the same generic name/namespace without
+// configuring its own grounding, defeating the whole point of removing
+// Tier 3 (a mis-configured new scenario should fail loudly with
+// ErrSeverityUndetermined, not silently inherit an unrelated fixture's
+// severity). A dedicated namespace+name closes both correlation paths to
+// exactly this one fixture, matching the existing convention of
+// test-firing-target/test-pending-target/test-inactive-target/
+// test-nodata-target below (each unique enough that no other scenario would
+// plausibly collide with it).
 const SeverityTriageAlertRulesYAML = `
 groups:
   - name: e2e-severity-triage
     interval: 5s
     rules:
       - alert: HighCPU
-        expr: e2e_cpu_usage_percent{namespace="default",kind="Deployment",name="test-firing-target"} > 90
+        expr: e2e_cpu_usage_percent{namespace="sev-tier1-ns",kind="Deployment",name="test-firing-target"} > 90
         for: 0s
         labels:
           severity: critical
@@ -233,7 +289,7 @@ groups:
         annotations:
           summary: "CPU usage is critically high"
       - alert: HighMemory
-        expr: e2e_memory_usage_percent{namespace="default",kind="Deployment",name="test-pending-target"} > 85
+        expr: e2e_memory_usage_percent{namespace="sev-tier15-ns",kind="Deployment",name="test-pending-target"} > 85
         for: 1h
         labels:
           severity: high
@@ -256,4 +312,26 @@ groups:
           source: prometheus
         annotations:
           summary: "Network latency is high"
+      - alert: AFInvestigateGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          namespace: af-investigate-e2e
+          kind: Pod
+          name: af-investigate-target
+        annotations:
+          summary: "Synthetic grounding alert for AF investigate E2E fixture (dedicated namespace/name, #1839)"
+      - alert: UserSeverityHintGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          namespace: sev-userhint-ns
+          kind: Deployment
+          name: test-user-severity-bypass
+        annotations:
+          summary: "Synthetic grounding alert for TC-E2E-SEV-06 (dedicated namespace/name, #1839)"
 `

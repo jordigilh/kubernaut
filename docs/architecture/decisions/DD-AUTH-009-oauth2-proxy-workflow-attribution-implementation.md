@@ -1,10 +1,19 @@
 # DD-AUTH-009: OpenShift OAuth-Proxy & Workflow Catalog User Attribution
 
 **Date**: January 26, 2026
-**Status**: ✅ **IMPLEMENTED** - Using Custom Multi-Arch Build
+**Status**: ⚠️ **SUPERSEDED** by [DD-AUTH-014](DD-AUTH-014-middleware-based-sar-authentication.md) (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806))
 **Version**: 2.0 (Updated January 26, 2026)
-**Authority**: AUTHORITATIVE Implementation Plan
+**Authority**: AUTHORITATIVE Implementation Plan (historical — see superseded note)
 **Related**: DD-AUTH-007 (OAuth2-Proxy Migration), DD-AUTH-008 (Secret Management), DD-AUTH-004 (DataStorage OAuth), DD-AUTH-010 (E2E Real Auth), DD-AUTH-011 (Granular RBAC)
+
+> **⚠️ SUPERSEDED (2026-08-02)**: DD-AUTH-014's "Phase 3: Kubernaut Agent" (✅ COMPLETE) migrated KA
+> from this document's `oauth-proxy` sidecar pattern to in-process Go middleware
+> (`pkg/kubernaut-agent/middleware/auth.go`) doing TokenReview/SubjectAccessReview directly —
+> confirmed by the current `charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml`, which has
+> no `oauth-proxy` container. Like DD-AUTH-011/012, DD-AUTH-014's own rollout checklist called for this
+> document to be marked superseded but that step was never completed until now. The workflow-catalog
+> user-attribution *principle* below may still be relevant conceptually — but the oauth-proxy sidecar
+> configuration mechanics (cookie names, SAR flags, container args) are obsolete.
 
 ---
 

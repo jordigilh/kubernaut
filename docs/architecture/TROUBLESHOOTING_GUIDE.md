@@ -199,7 +199,12 @@ kubectl scale statefulset/redis --replicas=3 -n kubernaut-system
 
 ---
 
-### **Context API Service**
+### **Context API Service** — HISTORICAL
+> **⚠️ HISTORICAL (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: Context API
+> was deprecated and its functionality folded into Data Storage per
+> [DD-CONTEXT-006](decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md); it does not exist as a standalone running
+> service today. Table/index names below (`incident_embeddings`, etc.) are illustrative and not verified against
+> current Data Storage schema. Preserved as historical troubleshooting record.
 
 #### **Issue: Vector Search Timeout**
 
@@ -259,7 +264,9 @@ Investigation rate limit exceeded (5/min)
 **Resolution**:
 ```bash
 # Check current rate
-curl http://kubernaut-agent:9090/metrics | grep holmesgpt_rate_limit_exceeded_total
+# CORRECTED (2026-08-02, Issue #1806): real metric name is aiagent_http_rate_limited_total
+# (internal/kubernautagent/metrics/metrics.go); "holmesgpt_rate_limit_exceeded_total" never existed.
+curl http://kubernaut-agent:9090/metrics | grep aiagent_http_rate_limited_total
 
 # Option 1: Increase rate limit (config)
 # Edit ConfigMap to increase from 5/min to 10/min
@@ -413,6 +420,8 @@ histogram_quantile(0.95, rate(contextapi_http_request_duration_seconds_bucket[5m
 
 ```bash
 # Test connectivity between services
+# NOTE (2026-08-02, Issue #1806): context-api is deprecated (DD-CONTEXT-006), folded into Data Storage.
+# Substitute the current data-storage service/port for this check.
 kubectl exec -n kubernaut-system gateway-{pod} -- curl -s http://context-api:8080/healthz
 
 # Check DNS resolution
@@ -478,6 +487,8 @@ kubectl get componentstatuses
 kubectl get pods -n kube-system
 
 # Step 3: Restart all Kubernaut services in order
+# NOTE (2026-08-02, Issue #1806): `context-api` below is deprecated (DD-CONTEXT-006, folded into data-storage)
+# and should be dropped from this list; kept here as historical context for the restart ordering.
 kubectl rollout restart statefulset/postgresql -n kubernaut-system
 kubectl rollout restart statefulset/redis -n kubernaut-system
 sleep 30

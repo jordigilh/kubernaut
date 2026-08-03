@@ -1,9 +1,17 @@
 # Prometheus AlertRules for Kubernaut Services
 
-**Version**: 1.0
-**Last Updated**: October 6, 2025
-**Status**: ✅ Authoritative Reference
+**Version**: 1.1
+**Last Updated**: August 2, 2026
+**Status**: ⚠️ Partially Verified Reference — see [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806) note below
 **Scope**: All 11 Kubernaut V1 Services + Infrastructure
+
+> **Note (2026-08-02)**: The Kubernaut Agent (formerly "HolmesGPT API") and AI Analysis alert
+> sections were corrected against real metric names in `pkg/kubernautagent/llm/instrumented_client.go`
+> and `pkg/aianalysis/metrics/metrics.go` — see inline notes in those sections. The Kubernetes
+> Executor section remains deprecated per ADR-025. All other alert groups (Infrastructure, Service
+> Availability, Performance, Gateway, Remediation Orchestrator, Workflow Execution, Notification,
+> Business Logic) have not been re-verified against current metric exports in this pass and should
+> not be assumed authoritative without checking the relevant service's `metrics.go`.
 
 ---
 
@@ -660,6 +668,17 @@ spec:
 
 ### AI Analysis Alerts
 
+> **Note (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: The
+> `AIAnalysisHolmesGPTUnavailable` alert below was corrected to use a real metric (see inline comment).
+> The other three alerts in this group (`ai_analysis_investigation_errors_total`,
+> `ai_analysis_investigations_total`, `ai_analysis_investigation_duration_seconds_bucket`,
+> `ai_analysis_low_confidence_total`, `ai_analysis_completed_total`) reference metrics that do not
+> exist in `pkg/aianalysis/metrics/metrics.go` (current exports: `aianalysis_rego_evaluations_total`,
+> `aianalysis_approval_decisions_total`, `aianalysis_confidence_score_distribution`,
+> `aianalysis_failures_total`). This predates the Go implementation and is a metrics-naming gap
+> unrelated to the HAPI→KA rename; left as-is pending a dedicated metrics audit issue rather than
+> guessing at replacements out of scope for this rename pass.
+
 ```yaml
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
@@ -675,17 +694,20 @@ spec:
     interval: 30s
     rules:
 
-    # HolmesGPT unavailable
-    - alert: AIAnalysisHolmesGPTUnavailable
-      expr: ai_analysis_holmesgpt_availability == 0
+    # Kubernaut Agent (KA) call failures
+    # Corrected (2026-08-02, #1806): the original "holmesgpt_availability" gauge never existed.
+    # AIAnalysis has no direct availability probe for KA; the closest real signal is the
+    # APIError/AgentAPICallFailed reason on aianalysis_failures_total (pkg/aianalysis/metrics/metrics.go).
+    - alert: AIAnalysisAgentAPICallFailures
+      expr: increase(aianalysis_failures_total{reason="APIError", sub_reason="AgentAPICallFailed"}[5m]) > 0
       for: 5m
       labels:
         severity: warning
         service: ai-analysis
       annotations:
-        summary: "HolmesGPT API is unavailable"
-        description: "AI Analysis cannot reach HolmesGPT at {{ $labels.endpoint }}. AI investigations are failing."
-        runbook_url: https://docs.kubernaut.io/runbooks/ai-analysis/holmesgpt-unavailable
+        summary: "AI Analysis cannot reach Kubernaut Agent (KA)"
+        description: "AIAnalysis recorded {{ $value }} failed calls to Kubernaut Agent in the last 5m. AI investigations are failing."
+        runbook_url: https://docs.kubernaut.io/runbooks/ai-analysis/agent-api-call-failures
 
     # High investigation failures
     - alert: AIAnalysisHighInvestigationFailureRate
@@ -840,7 +862,14 @@ spec:
 
 ---
 
-### HolmesGPT API Alerts
+### Kubernaut Agent (KA) Alerts
+
+> **Corrected (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: Renamed
+> from "HolmesGPT API"; metric names below corrected against the real, currently-shipped metrics in
+> `pkg/kubernautagent/llm/instrumented_client.go` (`aiagent_api_llm_requests_total{status}`,
+> `aiagent_api_llm_request_duration_seconds`, `aiagent_api_llm_tokens_total{type}`). These metrics carry
+> no `provider` label, so `{{ $labels.provider }}` annotations below were removed rather than left
+> pointing at a nonexistent label.
 
 ```yaml
 apiVersion: monitoring.coreos.com/v1
@@ -858,51 +887,51 @@ spec:
     rules:
 
     # Service down
-    - alert: HolmesGPTAPIDown
+    - alert: KubernautAgentDown
       expr: up{job="kubernaut-agent"} == 0
       for: 2m
       labels:
         severity: warning
         service: kubernaut-agent
       annotations:
-        summary: "HolmesGPT API is down"
-        description: "HolmesGPT API has been down for more than 2 minutes. AI investigations will fail."
+        summary: "Kubernaut Agent is down"
+        description: "Kubernaut Agent has been down for more than 2 minutes. AI investigations will fail."
         runbook_url: https://docs.kubernaut.io/runbooks/kubernaut-agent/service-down
 
     # High LLM latency
-    - alert: HolmesGPTAPIHighLLMLatency
-      expr: histogram_quantile(0.95, rate(holmesgpt_llm_request_duration_seconds_bucket[5m])) > 30
+    - alert: KubernautAgentHighLLMLatency
+      expr: histogram_quantile(0.95, rate(aiagent_api_llm_request_duration_seconds_bucket[5m])) > 30
       for: 10m
       labels:
         severity: warning
         service: kubernaut-agent
       annotations:
-        summary: "HolmesGPT LLM requests are slow"
-        description: "95th percentile LLM request time is {{ $value }}s for provider {{ $labels.provider }}."
+        summary: "Kubernaut Agent LLM requests are slow"
+        description: "95th percentile LLM request time is {{ $value }}s."
         runbook_url: https://docs.kubernaut.io/runbooks/kubernaut-agent/high-llm-latency
 
-    # LLM provider errors
-    - alert: HolmesGPTAPILLMProviderErrors
-      expr: rate(holmesgpt_llm_errors_total[5m]) / rate(holmesgpt_llm_requests_total[5m]) > 0.1
+    # LLM errors
+    - alert: KubernautAgentLLMErrors
+      expr: rate(aiagent_api_llm_requests_total{status="error"}[5m]) / rate(aiagent_api_llm_requests_total[5m]) > 0.1
       for: 5m
       labels:
         severity: warning
         service: kubernaut-agent
       annotations:
-        summary: "LLM provider {{ $labels.provider }} has high error rate"
-        description: "{{ $value | humanizePercentage }} of requests to {{ $labels.provider }} are failing."
+        summary: "Kubernaut Agent has a high LLM request error rate"
+        description: "{{ $value | humanizePercentage }} of LLM requests are failing."
         runbook_url: https://docs.kubernaut.io/runbooks/kubernaut-agent/llm-provider-errors
 
     # High token usage
-    - alert: HolmesGPTAPIHighTokenUsage
-      expr: rate(holmesgpt_tokens_used_total[1h]) > 1000000
+    - alert: KubernautAgentHighTokenUsage
+      expr: rate(aiagent_api_llm_tokens_total[1h]) > 1000000
       for: 1h
       labels:
         severity: info
         service: kubernaut-agent
       annotations:
         summary: "High LLM token usage"
-        description: "Using {{ $value }} tokens per hour for provider {{ $labels.provider }}. Review usage and costs."
+        description: "Using {{ $value }} tokens per hour (type={{ $labels.type }}). Review usage and costs."
         runbook_url: https://docs.kubernaut.io/runbooks/kubernaut-agent/high-token-usage
 ```
 
@@ -1229,7 +1258,7 @@ curl -X POST https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK \
 | **Workflow Execution** | 3 | Workflow-specific |
 | ~~**Kubernetes Executor**~~ (DEPRECATED - ADR-025) | 4 | Executor-specific |
 | **Notification Service** | 3 | Notification-specific |
-| **HolmesGPT API** | 4 | HolmesGPT-specific |
+| **Kubernaut Agent (KA)** | 4 | KA-specific |
 | **Business Logic** | 3 | Platform-wide |
 | **Total** | **58** | **All services + infrastructure** |
 
@@ -1267,7 +1296,31 @@ curl -X POST https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK \
 
 ---
 
-**Document Status**: ✅ Complete
-**Last Updated**: October 6, 2025
+## Changelog
+
+### v1.1 (2026-08-02) — HAPI→KA correction pass ([Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))
+
+- Renamed "HolmesGPT API Alerts" section to "Kubernaut Agent (KA) Alerts"; renamed
+  `HolmesGPTAPIDown`/`HolmesGPTAPIHighLLMLatency`/`HolmesGPTAPILLMProviderErrors`/`HolmesGPTAPIHighTokenUsage`
+  to `KubernautAgentDown`/`KubernautAgentHighLLMLatency`/`KubernautAgentLLMErrors`/`KubernautAgentHighTokenUsage`.
+- Corrected LLM metric names from fictional `holmesgpt_*` names to the real, currently-shipped
+  `aiagent_api_llm_requests_total{status}`, `aiagent_api_llm_request_duration_seconds`, and
+  `aiagent_api_llm_tokens_total{type}` (source: `pkg/kubernautagent/llm/instrumented_client.go`).
+  Removed `{{ $labels.provider }}` annotations since these metrics carry no provider label.
+- Replaced `AIAnalysisHolmesGPTUnavailable` (`ai_analysis_holmesgpt_availability`, a metric that
+  never existed) with `AIAnalysisAgentAPICallFailures`, based on the real
+  `aianalysis_failures_total{reason="APIError",sub_reason="AgentAPICallFailed"}` counter
+  (source: `pkg/aianalysis/metrics/metrics.go`).
+- Flagged (but did not fix, out of scope for this rename pass) that the remaining three AI Analysis
+  alerts reference metric names not present in `pkg/aianalysis/metrics/metrics.go` — tracked as a
+  follow-up metrics-audit item, not a HAPI-naming issue.
+- Updated the Summary/Alert Coverage table row from "HolmesGPT API" to "Kubernaut Agent (KA)".
+- Downgraded document status from "Authoritative Reference" to "Partially Verified Reference"
+  pending a full metrics audit of the remaining alert groups.
+
+---
+
+**Document Status**: ⚠️ Partially Verified (see Changelog)
+**Last Updated**: August 2, 2026
 **Maintainer**: Kubernaut Architecture Team
-**Version**: 1.0
+**Version**: 1.1

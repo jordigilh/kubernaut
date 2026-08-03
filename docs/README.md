@@ -169,8 +169,8 @@ Comprehensive business requirements for Phase 2 development.
   - **[Alert Tracking Enhancement](requirements/enhancements/ALERT_TRACKING.md)** - End-to-end alert tracking capabilities
   - **[Post-Mortem Tracking](requirements/enhancements/POST_MORTEM_TRACKING.md)** - LLM-generated post-mortem reports
   - **[Workflow Engine Enhancement](requirements/enhancements/WORKFLOW_ENGINE.md)** - Resilient workflow engine capabilities
-  - **[HolmesGPT Investigation Separation](requirements/enhancements/HOLMESGPT_INVESTIGATION_SEPARATION.md)** - Investigation vs execution separation
-  - **[AI Context Orchestration](requirements/enhancements/AI_CONTEXT_ORCHESTRATION.md)** - Dynamic context management enhancements
+  - **[Investigation/Execution Separation](requirements/enhancements/HOLMESGPT_INVESTIGATION_SEPARATION.md)** - Historical Jan 2025 proposal; corrected under #1806 to confirm the core principle is implemented (AIAnalysis+KA for investigation, WorkflowExecution for execution), though the document's specific mechanisms are superseded
+  - **[AI Context Orchestration](requirements/enhancements/AI_CONTEXT_ORCHESTRATION.md)** - 🗄️ Superseded (#1806) — standalone Context API service deprecated, see DD-CONTEXT-006
 
 ### 📊 **Analysis & Research**
 Comprehensive analysis documents and research findings.

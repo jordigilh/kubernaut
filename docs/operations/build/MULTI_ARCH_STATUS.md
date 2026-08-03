@@ -31,7 +31,7 @@
 | Service | Dockerfile | Build Script | Multi-Arch Ready | Notes |
 |---------|-----------|--------------|------------------|-------|
 | **Notification Controller** | ✅ | ✅ | ✅ | Implemented & tested (v1.0.1) |
-| **HolmesGPT API** | ✅ | ✅ | ✅ | Already supports multi-arch |
+| **Kubernaut Agent (KA)** | ✅ | ✅ | ✅ | Already supports multi-arch |
 | **AI Service** | ✅ | ❌ | 🔄 | Uses Makefile targets |
 | **Alert Service** | ✅ | ❌ | 🔄 | Uses Makefile targets |
 | **Context Service** | ✅ | ❌ | 🔄 | Uses Makefile targets |

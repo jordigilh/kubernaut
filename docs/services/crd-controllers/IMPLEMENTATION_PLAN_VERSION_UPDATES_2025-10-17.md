@@ -47,7 +47,7 @@ All affected implementation plans have been updated to reflect:
 - **Confidence**: Updated to 90% (down from 92% due to new complexity)
 
 **Extension Documents**:
-- [IMPLEMENTATION_PLAN_V1.1_HOLMESGPT_RETRY_EXTENSION.md](./02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.1_HOLMESGPT_RETRY_EXTENSION.md) (~7,100 lines, V1.0 scope)
+- IMPLEMENTATION_PLAN_V1.1_HOLMESGPT_RETRY_EXTENSION.md (~7,100 lines, V1.0 scope) — **dead link** (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806)): this extension doc no longer exists anywhere under `docs/services/crd-controllers/02-aianalysis/`; its retry/dependency-validation content appears to have been folded into the main AIAnalysis implementation docs rather than kept as a standalone extension
 - [IMPLEMENTATION_PLAN_V1.2_AI_CYCLE_CORRECTION_EXTENSION.md](./02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.2_AI_CYCLE_CORRECTION_EXTENSION.md) (~6,200 lines, V1.1 deferred)
 
 ---
@@ -178,7 +178,7 @@ All version updates reference the following ADRs created during this session:
 ## 🔗 **CROSS-REFERENCES**
 
 ### **Extension Documents Created**
-1. [AIAnalysis v1.1 Extension](./02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.1_HOLMESGPT_RETRY_EXTENSION.md) - Kubernaut Agent (KA) retry + dependency validation
+1. AIAnalysis v1.1 Extension (Kubernaut Agent (KA) retry + dependency validation) — **dead link removed** (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806)); doc no longer exists
 2. [AIAnalysis v1.2 Extension](./02-aianalysis/implementation/IMPLEMENTATION_PLAN_V1.2_AI_CYCLE_CORRECTION_EXTENSION.md) - AI-driven cycle correction (V1.1)
 3. [WorkflowExecution v1.2 Extension](./03-workflowexecution/implementation/IMPLEMENTATION_PLAN_V1.2_PARALLEL_LIMITS_EXTENSION.md) - Parallel limits + complexity approval
 
@@ -189,7 +189,7 @@ All version updates reference the following ADRs created during this session:
 
 ### **Decision Documents**
 1. [ADR-018: Approval Notifications](../../architecture/decisions/ADR-018-approval-notification-v1-integration.md)
-2. [ADR-019: KA Retry](../../architecture/decisions/ADR-019-holmesgpt-circuit-breaker-retry-strategy.md)
+2. [ADR-019: KA Retry](../../architecture/decisions/ADR-019-aianalysis-error-classification-retry-strategy.md) (renamed from `ADR-019-holmesgpt-circuit-breaker-retry-strategy.md`)
 3. [ADR-020: Parallel Limits](../../architecture/decisions/ADR-020-workflow-parallel-execution-limits.md)
 4. [ADR-021: Cycle Detection](../../architecture/decisions/ADR-021-workflow-dependency-cycle-detection.md)
 5. [V1.0 vs V1.1 Decision](./V1_0_VS_V1_1_SCOPE_DECISION.md)

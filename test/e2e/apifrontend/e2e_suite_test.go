@@ -76,11 +76,15 @@ var _ = SynchronizedBeforeSuite(
 				To(Succeed(), "Prometheus must become ready within 90s")
 
 			_, _ = fmt.Fprintln(GinkgoWriter, "  Injecting OTLP metrics for severity triage alerts...")
+			// #1839: dedicated namespaces (not "default") so these fixtures
+			// cannot accidentally backstop an unrelated test that shares the
+			// "default" namespace but forgot to configure its own grounding
+			// (see apifrontend_prometheus_e2e.go's SeverityTriageAlertRulesYAML).
 			Expect(kinfra.AFInjectOTLPMetrics(ctx, promURL, "e2e_cpu_usage_percent", 95, map[string]string{
-				"namespace": "default", "kind": "Deployment", "name": "test-firing-target",
+				"namespace": "sev-tier1-ns", "kind": "Deployment", "name": "test-firing-target",
 			})).To(Succeed(), "CPU metric injection must succeed")
 			Expect(kinfra.AFInjectOTLPMetrics(ctx, promURL, "e2e_memory_usage_percent", 90, map[string]string{
-				"namespace": "default", "kind": "Deployment", "name": "test-pending-target",
+				"namespace": "sev-tier15-ns", "kind": "Deployment", "name": "test-pending-target",
 			})).To(Succeed(), "Memory metric injection must succeed")
 
 			// NOTE: e2e_disk_usage_percent is NOT injected here — injected at test

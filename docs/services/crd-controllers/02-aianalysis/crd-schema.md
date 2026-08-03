@@ -427,7 +427,7 @@ type AIAnalysisStatus struct {
     ApprovalReason   string           `json:"approvalReason,omitempty"`
     ApprovalContext  *ApprovalContext `json:"approvalContext,omitempty"`
 
-    // Set by KA when it cannot produce a reliable result (BR-HAPI-197, BR-496 v2)
+    // Set by KA when it cannot produce a reliable result (BR-KA-197, BR-496 v2)
     NeedsHumanReview bool `json:"needsHumanReview"`
     // BR-AI-601: alignment_check_failed added for shadow-agent verdicts
     // +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete;alignment_check_failed;operator_escalation

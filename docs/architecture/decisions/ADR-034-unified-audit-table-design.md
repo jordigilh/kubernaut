@@ -283,7 +283,7 @@ ORDER BY event_timestamp;
 | Data Storage | Data Storage Service | `datastorage` | `service` | Self-audit for writes, workflow catalog |
 | **CRD Controllers** ||||
 | Signal Processing | SignalProcessing Controller | `signalprocessing-controller` | `service` | Signal enrichment, classification |
-| AI Analysis | AIAnalysis Controller | `aianalysis-controller` | `service` | HolmesGPT integration, recommendations |
+| AI Analysis | AIAnalysis Controller | `aianalysis-controller` | `service` | Kubernaut Agent (KA) integration, recommendations |
 | Workflow Execution | WorkflowExecution Controller | `workflowexecution-controller` | `service` | Tekton workflow orchestration |
 | Remediation Orchestrator | RemediationOrchestrator Controller | `remediationorchestrator-controller` | `service` | Remediation lifecycle management |
 | Notification | Notification Controller | `notification-controller` | `service` | Alert delivery, acknowledgments |

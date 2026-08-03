@@ -201,9 +201,12 @@ func (r *RemediationRequestReconciler) createAIAnalysis(
                         IncludeHistoricalPatterns: true,
                     },
                 },
-                // HolmesGPTConfig is populated by AIAnalysis controller from system defaults
-                // Remediation Coordinator only provides business data (targeting info, enriched context)
-                // See AIAnalysis service spec for Kubernaut Agent configuration management
+                // Kubernaut Agent (KA) investigation/tool configuration is NOT part of this spec — it is
+                // owned and applied by the AIAnalysis controller / KA itself, not by Remediation Coordinator.
+                // Remediation Coordinator only provides business data (targeting info, enriched context).
+                // NOTE (2026-08-02, Issue #1806): this comment previously referenced a `HolmesGPTConfig` field,
+                // which does not exist in the current AIAnalysis API (api/aianalysis/) — no equivalent
+                // per-request config field exists today; corrected to avoid citing a fictional field.
             },
         }
 
