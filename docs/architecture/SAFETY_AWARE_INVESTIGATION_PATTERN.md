@@ -42,7 +42,11 @@
 **Format**: Self-Documenting JSON (DD-HOLMESGPT-009)
 **Token Efficiency**: ~290 tokens (60% reduction from verbose format)
 **Legend**: ZERO tokens (no legend needed - all keys are self-documenting)
-**Decision Document**: `docs/architecture/decisions/DD-HOLMESGPT-009-Self-Documenting-JSON-Format.md`
+**Decision Document**: ~~`docs/architecture/decisions/DD-HOLMESGPT-009-Self-Documenting-JSON-Format.md`~~ —
+**dead link** (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806)): this file does not
+exist and there is no renamed `DD-KA-*` equivalent (verified: no `DD-HOLMESGPT-*` files exist anywhere in
+`docs/architecture/decisions/`, and `DD-KA-001` through `DD-KA-006` are unrelated topics). The
+self-documenting JSON format decision was never re-filed under a new DD number.
 
 ```json
 {
@@ -304,6 +308,16 @@ Provide 2-3 action recommendations ranked by safety and effectiveness.
 
 ## 🔄 **Workflow Integration**
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**:
+> Neither `pkg/processor/context_enrichment.go` nor `pkg/aianalysis/prompt_builder.go` (Step 2 below) exist
+> in the current codebase (verified: no file named `prompt_builder.go` anywhere in the repo). More
+> fundamentally, "Step 2" describes AIAnalysis building the LLM prompt string itself — in the current
+> architecture, AIAnalysis sends a structured `IncidentRequest` to Kubernaut Agent (KA), and KA builds the
+> actual investigation prompt internally (`internal/kubernautagent/prompt/builder.go`). The overall pattern
+> (embed safety/priority context in the investigation request instead of a separate safety endpoint) is
+> still accurate; only the illustrative Go snippets and the "which service builds the prompt" detail below
+> are stale.
+
 ### **Step 1: RemediationProcessor Enrichment**
 
 ```go
@@ -477,7 +491,10 @@ var _ = Describe("Safety-Aware Prompt", func() {
 
 ## 📝 **Design Decisions**
 
-**See**: `docs/architecture/decisions/DD-HOLMESGPT-008-Safety-Aware-Investigation.md`
+**See**: ~~`docs/architecture/decisions/DD-HOLMESGPT-008-Safety-Aware-Investigation.md`~~ — **dead link**
+(flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806)): this file does not exist and no
+renamed `DD-KA-*` equivalent was filed. This document (`SAFETY_AWARE_INVESTIGATION_PATTERN.md`) is itself
+the only surviving record of that decision.
 
 **Key Decision**: Embed safety context in investigation prompt instead of separate endpoint.
 
@@ -491,7 +508,8 @@ var _ = Describe("Safety-Aware Prompt", func() {
 ## 🔗 **Related Documentation**
 
 - **Architecture**: `docs/architecture/APPROVED_MICROSERVICES_ARCHITECTURE.md`
-- **Decision**: `docs/architecture/decisions/DD-HOLMESGPT-008-Safety-Aware-Investigation.md`
+- **Decision**: ~~`docs/architecture/decisions/DD-HOLMESGPT-008-Safety-Aware-Investigation.md`~~ — dead link,
+  see note under "Design Decisions" above
 - **RemediationProcessor**: `docs/services/stateless/remediation-processor/README.md`
 - **WorkflowExecution**: `docs/services/stateless/workflow-execution/README.md`
 - **Rego Policies**: `config/rego/safety_policies.rego`

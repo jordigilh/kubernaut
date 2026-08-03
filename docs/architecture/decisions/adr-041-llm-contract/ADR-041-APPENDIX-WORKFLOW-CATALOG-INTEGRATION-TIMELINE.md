@@ -526,7 +526,12 @@ tool_executor.get_all_tools_openai_format(model)
 **Architecture Documentation**:
 - ADR-041 Main Document: `docs/architecture/decisions/adr-041-llm-contract/ADR-041-llm-prompt-response-contract.md`
 - Workflow Catalog Architecture: `docs/architecture/decisions/DD-WORKFLOW-002-MCP-WORKFLOW-CATALOG-ARCHITECTURE.md`
-- HolmesGPT API Architecture: `docs/architecture/HOLMESGPT_REST_API_ARCHITECTURE.md`
+- ~~HolmesGPT API Architecture: `docs/architecture/HOLMESGPT_REST_API_ARCHITECTURE.md`~~ — **dead link**
+  (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806)): this file does not exist in the
+  current codebase and there is no single renamed replacement. The current Kubernaut Agent (KA) HTTP API
+  is implemented across `internal/kubernautagent/server/` (handlers), `pkg/agentclient/` (OpenAPI-generated
+  client), and `pkg/kubernautagent/` (shared types) — no consolidated architecture doc supersedes this
+  reference.
 
 ---
 
