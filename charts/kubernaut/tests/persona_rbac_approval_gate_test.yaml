@@ -1,0 +1,63 @@
+suite: sre persona RBAC approval-gate visibility (#1869)
+templates:
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+tests:
+  # ---------------------------------------------------------------------
+  # IT-HELM-1869-001/002: the `sre` persona -- the only interactive-chat
+  # persona real console users authenticate as, and the only persona
+  # besides remediation-approver with kubernaut_approve -- must also be
+  # able to fetch RemediationApprovalRequest details and resolve a
+  # no-action outcome, or the approval gate is unusable end-to-end even
+  # though the server-side policy and RAR creation both work correctly.
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-1869-001: sre persona ClusterRole grants kubernaut_get_approval_request (can view what it's approving)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-tool-sre
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - contains:
+          path: rules[0].resourceNames
+          content: kubernaut_get_approval_request
+      - contains:
+          path: rules[0].resourceNames
+          content: kubernaut_approve
+
+  - it: "IT-HELM-1869-002: sre persona ClusterRole grants kubernaut_complete_no_action (can resolve a no-action outcome)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-tool-sre
+    asserts:
+      - contains:
+          path: rules[0].resourceNames
+          content: kubernaut_complete_no_action
+
+  - it: "IT-HELM-1869-003: remediation-approver persona is unaffected (already had kubernaut_get_approval_request pre-fix)"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-tool-remediation-approver
+    asserts:
+      - contains:
+          path: rules[0].resourceNames
+          content: kubernaut_get_approval_request
+      - contains:
+          path: rules[0].resourceNames
+          content: kubernaut_approve

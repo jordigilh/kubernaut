@@ -867,6 +867,16 @@ apifrontend:
           - get_alert_details
           # Alert-driven investigation (#1372)
           - kubernaut_investigate_alert
+          # Approval-gate visibility (#1869): sre already has kubernaut_approve
+          # (it's expected to decide on a pending approval) but lacked
+          # kubernaut_get_approval_request to fetch the RAR details needed to
+          # render the decision, and kubernaut_complete_no_action to resolve
+          # a no-action outcome -- confirmed via live reproduction that this
+          # left the approval gate silently unusable end-to-end for the only
+          # interactive-chat-capable persona. remediation-approver already
+          # had kubernaut_get_approval_request; sre did not.
+          - kubernaut_get_approval_request
+          - kubernaut_complete_no_action
         ai-orchestrator:
           - kubernaut_list_remediations
           - kubernaut_get_remediation
