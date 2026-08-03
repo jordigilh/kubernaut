@@ -2,7 +2,7 @@
 
 **Status**: Proposed
 **Decision Date**: 2026-05-29
-**Version**: 1.1
+**Version**: 1.2
 **Confidence**: 88%
 **Deciders**: Architecture Team
 **Applies To**: kubernaut-apifrontend, kubernaut-agent, data-storage
@@ -24,6 +24,7 @@
 
 | Version | Date | Author | Changes |
 |---------|------|--------|---------|
+| 1.2 | 2026-08-03 | AI-assisted | Session findings from #1900 scoping discussion: (1) tempered the "DS blindness" motivation with the actual current DS audit footprint (DD-AUDIT-003: DS emits exactly one event today) and existing `Event.UserID`/`CorrelationID`-based reconstruction; (2) added a Threat Model Note clarifying that fail-open vs. fail-closed is orthogonal to the already-excluded compromised-AF case; (3) added Alternative D (Fail-Closed Enforcement Mode) as an explicitly deferred alternative, tracked separately in #1907. No change to the Alternative B decision or its status. |
 | 1.1 | 2026-06-29 | AI-assisted | Added: Cryptographic Key Management (rotation lifecycle, key hierarchy), Audit Event Binding (JWT-to-event integrity), FedRAMP/SOC2 control mapping. Addresses AU-9, SC-12, CC8.1 compliance gaps. |
 | 1.0 | 2026-05-29 | AI-assisted | Initial enhancement proposal |
 
@@ -62,6 +63,8 @@ The `acting_user` and `acting_user_groups` fields in the MCP payload are **unsig
 
 2. **User identity stops at KA**: DS has no knowledge of which human triggered the action. Audit events in DS are attributed to the calling service's SA. Answering "what did Alice cause to happen in DS?" requires joining AF audit events → KA session metadata → DS audit events by correlation ID.
 
+   > **Current severity (added v1.2)**: this gap is real but narrower than it first appears once measured against DS's actual current audit footprint. Per `DD-AUDIT-003`, "Data Storage's production code today emits exactly **one** event: `datastorage.ratelimit.denied`" — the other 10 previously-documented DS events were retired to Auth Webhook/KA per `DD-WORKFLOW-018`/`019`. The human attribution an auditor needs is already present in AF's/KA's own emitted events (`pkg/apifrontend/audit/audit.go`'s `Event.UserID` + `Event.CorrelationID` fields), which DS is mostly just persisting as the backing store for the unified `audit_events` table (`ADR-034`). CC8.1 reconstruction via `correlation_id` join already works today without this proposal. The benefit this proposal adds for DS specifically is **directness** (DS's own event carries `sub` instead of requiring a join) and defense-in-depth (protection if correlation-ID propagation has a gap somewhere), not closing an otherwise-impossible reconstruction — keep this distinction in mind when re-justifying priority for this proposal.
+
 3. **No expiry on user claims**: The `acting_user` string has no temporal binding. A stale or replayed MCP payload carries the same user attribution indefinitely, unlike a JWT with `exp`.
 
 ### Scope
@@ -73,6 +76,11 @@ This proposal enhances **audit integrity**, not authorization. The authorization
 - **Not changing the authorization model**: AF remains the sole authorization boundary. KA and DS do not make per-user authorization decisions. This is by design for Kubernaut's fixed topology.
 - **Not building a generic agent-to-agent identity platform**: Kubernaut is not Uber. We have ~11 services with a deterministic call graph, not thousands of agents composing dynamically. We do not need SPIRE, STS, actor chains, or per-hop token exchange.
 - **Not adding K8s impersonation**: DD-AUTH-MCP-001 v3.0 deliberately removed runtime K8s impersonation (#1288).
+- **Not defending against a compromised AF** (added v1.2, made explicit — see Threat Model Note below): this proposal assumes AF is a correctly-functioning, non-malicious signer whose code can have bugs. It does not raise the bar against an attacker who has fully compromised the AF pod/process itself.
+
+### Threat Model Note: Fail Mode vs. Compromised Signer (added v1.2)
+
+Graceful degradation (the fail-open behavior specified in "Key Design Properties" below) and a hypothetical fail-closed enforcement mode are **equivalent** under the compromised-AF case excluded above. A compromised AF holds the private signing key and can mint a **validly signed, forged** identity JWT under either policy — fail-closed only rejects a *missing or broken* signature (bugs, stripped headers, transit corruption), not a willing, capable forger holding the legitimate key. The choice between fail-open and fail-closed is entirely about tolerance for the non-malicious-defect threat model this proposal targets (see Problem Statement #1); it has no bearing on the compromised-AF exclusion. Defending against a compromised AF would require an independent trust root outside AF (e.g. genuine external-IdP token exchange, RFC 8693) — a materially larger, separately-evaluated architecture already attempted in a lighter form and reverted (#1287), not something this proposal or its fail-closed variant (#1907) can deliver.
 
 ---
 
@@ -164,6 +172,25 @@ This proposal enhances **audit integrity**, not authorization. The authorization
 - Already rejected in DD-AUTH-MCP-001 v3.0 for good reasons
 
 **Confidence**: 40% (rejected — revisits a previously rejected approach)
+
+### Alternative D: Fail-Closed Enforcement Mode — DEFERRED (added v1.2)
+
+**Approach**: Same identity JWT design as Alternative B, but KA/DS reject the request (401/403) instead of falling back to SA attribution when the identity JWT is missing or fails signature/expiry verification.
+
+**Pros**:
+- Closes the one gap graceful degradation leaves by design: a missing/corrupted signature no longer just degrades the audit trail silently, it's rejected outright
+- Stronger guarantee against the non-malicious-defect threat model this proposal targets (Problem Statement #1)
+
+**Cons**:
+- **Scope creep from audit to authorization**: contradicts this proposal's own Decision Driver ("Audit integrity" — KA/DS "do not make per-user authorization decisions"); turning JWT verification into a hard gate on every call is a de facto authorization control, a different and larger decision than what this document proposes, warranting its own `CHECKPOINT DD` review (per `AGENTS.md`)
+- **New availability dependency on every call**: adds a hard dependency on AF's signing path and KA/DS's verification path (key distribution, clock skew, signing-key availability) to every AF→KA/DS request, on top of the existing SA + `TokenReview` dependency
+- **Rollout/key-rotation becomes tier-1 critical**: a partial rollout or delayed public-key propagation turns into a full outage instead of a graceful `identity_verified=false` period; key rotation would need the same operational rigor as TLS certificate rotation
+- **New DoS surface**: since the control's purpose is forensic, a benign signing bug now denies legitimate operator requests entirely instead of just weakening the audit trail for that call
+- **Does not harden the compromised-AF case** — see Threat Model Note above; this is not a security improvement over Alternative B against that threat, only against non-malicious defects
+
+**Status**: Deferred — not adopted here. Tracked separately in [#1907](https://github.com/jordigilh/kubernaut/issues/1907), which should only be considered after Alternative B's graceful-degradation mode has run in production long enough to confirm `identity_verified = false` telemetry stays near zero.
+
+**Confidence**: not scored — captured for future reference, not proposed for adoption in this decision.
 
 ---
 
@@ -500,11 +527,14 @@ This section maps the DD-AUTH-016 design to the specific FedRAMP and SOC2 contro
 - DD-AUTH-014: Middleware-based SAR authentication
 - ADR-034: Unified audit table design (event sourcing, hash chain integrity, retention)
 - kubernaut#31: SPIRE workload identity binding (v1.6 roadmap)
+- kubernaut#1907: Fail-closed enforcement mode (deferred alternative, Alternative D)
+- kubernaut#1287: AF: use SA token for KA communication instead of JWT delegation (prior rejection of a heavier token-exchange approach, relevant to the compromised-AF non-goal)
+- DD-AUDIT-003: Service audit trace requirements (source for DS's current audit footprint cited in Problem Statement #2's severity note)
 - [NIST SP 800-57 Part 1 Rev. 5](https://csrc.nist.gov/publications/detail/sp/800-57-part-1/rev-5/final): Recommendation for Key Management (key sizes, rotation)
 - [NIST SP 800-53 Rev. 5 — SC-12](https://csrc.nist.gov/publications/detail/sp/800-53/rev-5/final): Cryptographic Key Establishment and Management
 - [FIPS 186-5](https://csrc.nist.gov/publications/detail/fips/186/5/final): Digital Signature Standard (RSA-PSS, ECDSA)
 
 ---
 
-**Document Version**: 1.1
-**Last Updated**: 2026-06-29
+**Document Version**: 1.2
+**Last Updated**: 2026-08-03
