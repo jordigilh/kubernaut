@@ -632,7 +632,7 @@ trend := current.SuccessRate - previous.SuccessRate
 **Kubernaut Agent (KA)** (Direct Consumer):
 ```go
 // KA calls Data Storage directly
-func (s *HolmesGPTService) GetPlaybookSuccessRate(ctx context.Context, playbookID string) (*SuccessRate, error) {
+func (s *KAService) GetPlaybookSuccessRate(ctx context.Context, playbookID string) (*SuccessRate, error) {
     // Direct call to Data Storage with authentication
     resp, err := s.dataStorageClient.GetMultiDimensionalSuccessRate(ctx, playbookID)
     // Return response

@@ -1,8 +1,21 @@
 # DD-WORKFLOW-008: Workflow Feature Roadmap
 
 **Date**: 2025-11-15
-**Status**: Planning
+**Status**: Planning (historical — see [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806) note below)
 **Related**: DD-WORKFLOW-012 (Workflow Immutability)
+
+> **PARTIAL CORRECTION (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**:
+> This is a Nov-2025 forward-looking roadmap; treat version-by-version claims accordingly. The v1.0
+> baseline's "semantic search REST API (`GET /api/v1/playbooks/search`)" and pgvector architecture were
+> later built as described here, then fully retired by [DD-WORKFLOW-018](DD-WORKFLOW-018-etcd-single-source-of-truth.md)/[DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md)
+> — the catalog is now etcd-backed (`RemediationWorkflow`/`ActionType` CRDs) with label-based, non-semantic
+> discovery owned in-process by Kubernaut Agent (KA), not a Data Storage REST search endpoint. The v1.1
+> "CRD-based management" vision was realized, but via a different mechanism than described here (a
+> `RemediationWorkflow` CRD + AuthWebhook admission bridge, per [DD-WORKFLOW-017](DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md)/[ADR-058](ADR-058-webhook-driven-workflow-registration.md),
+> not a standalone "Workflow Registry Controller" reconciling CRDs against a database). The v2.0
+> "HolmesGPT Replacement Evaluation" question is now **RESOLVED** — see the inline note on that section
+> below. This document is retained as a historical planning record; do not use the v1.0/v1.1 architecture
+> descriptions to understand the current system.
 
 ---
 
@@ -125,11 +138,18 @@
 
 #### Strategic Evaluations Required
 
-**1. HolmesGPT Replacement Evaluation** 🔍 **REQUIRES DETAILED ANALYSIS**
+**1. HolmesGPT Replacement Evaluation** 🔍 **REQUIRES DETAILED ANALYSIS** — ✅ **RESOLVED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**
+> **Resolution**: This "build vs. continue with HolmesGPT" question was decided and implemented. See
+> [DD-KA-019](DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md) (approved 2026-03-04): HolmesGPT
+> was replaced with a Kubernaut-owned Go rewrite, **Kubernaut Agent (KA)**, isolating the LLM framework
+> behind a small adapter interface (~60 LOC) so Kubernaut owns the agentic loop, tool execution, and LLM
+> providers directly, and eliminating shell-based tool execution (`subprocess.run(shell=True)`) entirely.
+> The analysis items below (compatibility risk, maintenance burden, migration path) were the actual inputs
+> to that decision — retained here for historical record, not as an open question.
 - **Problem**: HolmesGPT not designed as REST API service, causing dependency risks
 - **Proposal**: Replace with custom kubernaut agent
 - **Timeline**: After v1.1 release
-- **Decision Needed**: Build vs. continue with HolmesGPT
+- **Decision Needed**: ~~Build vs. continue with HolmesGPT~~ Resolved: built (DD-KA-019)
 - **Analysis Required**:
   - Compatibility risks with HolmesGPT SDK evolution
   - Maintenance burden of forked/wrapped HolmesGPT
@@ -137,7 +157,14 @@
   - Migration path from v1.x to v2.0
   - Impact on existing integrations
 
-**2. Toolset Integration Strategy Evaluation** 🔍 **REQUIRES DETAILED ANALYSIS**
+**2. Toolset Integration Strategy Evaluation** 🔍 **REQUIRES DETAILED ANALYSIS** — largely resolved, see note
+> **Note (2026-08-02, #1806)**: Also decided, per [DD-KA-019-002](DD-KA-019-go-rewrite-design/DD-KA-019-002-toolset-implementation.md)
+> (approved 2026-03-04): Kubernetes and Prometheus toolsets use Go bindings called directly in-process
+> (`client-go`, `net/http`), i.e. closer to this section's "Option A" than "Option B" for those two
+> toolsets specifically — not a blanket resolution of every tool integration decision (DD-KA-019-002 v1.1
+> also documents an MCP Tool Provider skeleton for other use cases). Not verified against every toolset
+> added since; treat the specific comparison items below as historical input rather than an open
+> question for K8s/Prometheus.
 - **Problem**: Two approaches for exposing tools to LLM
   - **Option A**: Embed tools directly in container (e.g., kubectl in kubernaut-agent image)
   - **Option B**: Expose tools via MCP (current MVP approach)

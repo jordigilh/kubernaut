@@ -1,15 +1,36 @@
 # ADR-021: Workflow Dependency Cycle Detection & Validation
 
-**Status**: ✅ **APPROVED**  
+**Status**: 🗄️ **SUPERSEDED / NEVER IMPLEMENTED** — see note below  
 **Date**: 2025-10-17  
-**Related**: ADR-020 (Parallel Execution Limits)  
-**Confidence**: 90%
+**Related**: ADR-020 (Parallel Execution Limits), [DD-WORKFLOW-016](DD-WORKFLOW-016-action-type-workflow-indexing.md) (current: predefined workflow catalog), [DD-WORKFLOW-017](DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md), [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md)  
+**Confidence**: 90% (original design confidence for an approach later superseded before implementation)
 
----
+> **SUPERSEDED / NEVER IMPLEMENTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**:
+> This entire document — not just this opening note — describes a dynamic, per-incident
+> workflow-generation model: the agent emits an arbitrary multi-step JSON graph of recommendations with
+> inter-step `dependencies`, and a cycle-detection validator protects against the agent generating an
+> invalid (circular) graph. That model was superseded **before implementation** by the predefined
+> workflow-catalog approach (DD-WORKFLOW-016/017/019): Kubernaut Agent (KA) selects one existing,
+> pre-registered `RemediationWorkflow` from the catalog via the three-step discovery protocol
+> (`list_available_actions` -> `list_workflows` -> `get_workflow`) rather than generating a novel
+> multi-step dependency graph per incident. A cataloged workflow's internal steps (e.g. a Tekton
+> `PipelineRun`'s task graph) are authored and validated by the workflow's own execution engine at
+> registration time, not dynamically emitted by the LLM per remediation — so there is no
+> agent-generated, cross-step dependency graph for a Go validator to check for cycles in the shipped
+> architecture.
+>
+> Confirmed via repo-wide search of `pkg/` and `internal/`: `dependency_validator.go`,
+> `ValidateDependencyGraph`, `GetExecutionOrder`, `processHolmesGPTRecommendations`, and the Prometheus
+> metrics/alerts named below (`aianalysis_dependency_validation_total`,
+> `aianalysis_dependency_cycles_detected_total`, `HighDependencyCycleRate`) do not exist anywhere in the
+> codebase, in this or any other form — this was never built, in whole or in part, under any name. The
+> companion enhancement proposal, `ADR-021-AI-DRIVEN-CYCLE-CORRECTION-ASSESSMENT.md`, describes the same
+> unbuilt architecture and is equally historical (out of scope for this correction pass, not edited
+> here). This document is retained in full below for historical/design-archaeology context only — do not
+> use any part of it, including the code, metrics, or Business Requirements (BR-AI-066 through
+> BR-AI-070) below, to understand current KA or AIAnalysis behavior.
 
 ## Context & Problem
-
-> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This ADR describes a dynamic, per-incident workflow-generation model (the agent emits arbitrary multi-step JSON recommendations with inter-step dependencies) that has since been superseded by a predefined workflow catalog approach — the agent now selects an existing cataloged workflow rather than generating novel dependency graphs. The dependency-cycle-detection code described here (`dependency_validator.go`, `ValidateDependencyGraph`, `processHolmesGPTRecommendations`) does not exist in the current codebase.
 
 Kubernaut Agent (KA) generates multi-step workflows with dependencies in **self-documenting JSON format**:
 

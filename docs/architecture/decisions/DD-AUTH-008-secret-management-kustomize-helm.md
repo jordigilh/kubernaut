@@ -1,9 +1,22 @@
 # DD-AUTH-008: Secret Management Strategy (Kustomize + Helm)
 
 **Date**: January 26, 2026
-**Status**: ✅ **APPROVED** - Authoritative
+**Status**: ✅ **APPROVED** - Authoritative (general pattern) / ⚠️ Worked examples below are stale — see note
 **Authority**: Supersedes inline secret generation approaches
 **Related**: DD-AUTH-007 (OAuth2-Proxy Migration), DD-AUTH-004 (DataStorage OAuth), DD-AUTH-006 (Kubernaut Agent (KA) OAuth)
+
+> **⚠️ CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: The
+> worked examples below use DataStorage and "HolmesGPT API" (now Kubernaut Agent (KA)) `ose-oauth-proxy`
+> cookie secrets as their running example. Per [DD-AUTH-011](DD-AUTH-011/DD-AUTH-011-granular-rbac-sar-verb-mapping.md)
+> and [DD-AUTH-014](DD-AUTH-014-middleware-based-sar-authentication.md), **both services have since
+> removed the `ose-oauth-proxy` sidecar** in favor of in-process Go middleware doing TokenReview/
+> SubjectAccessReview directly — confirmed by `charts/kubernaut/templates/datastorage/` and
+> `charts/kubernaut/templates/kubernaut-agent/`, neither of which has an `oauth-proxy` container or
+> `cookie-secret` volume today. The Kustomize-generates/Helm-references **separation-of-concerns
+> principle** this document establishes is still valid and still used elsewhere (e.g., the `console`
+> service's oauth2-proxy cookie-secret, see `charts/kubernaut/values.yaml`) — only the specific
+> DataStorage/KA cookie-secret examples below are now historical. The current values.yaml key for KA
+> is `kubernautAgent` (not `holmesgptApi` as shown below).
 
 ---
 

@@ -177,6 +177,10 @@ func (r *EffectivenessMonitorReconciler) performAssessment(
     basicScore := r.calculateBasicEffectiveness(metricsBefore, metricsAfter)
 
     // Decision: Call AI?
+    // ⚠️ CORRECTED (2026-08-02, Issue #1806): the AI-analysis branch below (shouldCallAI /
+    // holmesgptClient.PostExecutionAnalyze) is illustrative pseudocode, not real Go code — neither symbol exists
+    // in source, and the actual `internal/controller/effectivenessmonitor` implementation does not call out to
+    // Kubernaut Agent (KA) (formerly "HolmesGPT") for post-execution analysis. Preserved as historical design intent.
     if r.shouldCallAI(assessment, basicScore) {
         aiAnalysis := r.holmesgptClient.PostExecutionAnalyze(ctx, &PostExecRequest{
             ExecutionID:         assessment.TraceID,

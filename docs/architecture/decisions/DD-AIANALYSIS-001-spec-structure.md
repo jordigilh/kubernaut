@@ -30,6 +30,16 @@
 - Replaced generic `map[string]string` with typed structs
 - Aligned with RemediationRequest and RemediationProcessing data flow
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: The
+> "Decision" section's `AIAnalysisSpec`/`SignalData` code sample below was never updated to match either (a)
+> this document's own Version 1.1 changelog entry above, which says `LLMProvider`, `LLMModel`, `MaxTokens`,
+> `Temperature`, and `IncludeHistory` were removed, or (b) the real current spec. Verified against
+> `api/aianalysis/v1alpha1/aianalysis_types.go`: the current `AIAnalysisSpec` has `RemediationRequestRef`,
+> `RemediationID`, `AnalysisRequest` (containing `SignalContext SignalContextInput`), and `TimeoutConfig` —
+> there is no `SignalData`, `EnrichedContext`, or any `LLM*` field, and no `"holmesgpt"` enum value anywhere
+> in the CRD types. Rewriting the "Decision" example to match the real, current CRD shape is out of scope
+> for this terminology-only sweep.
+
 ## Context
 
 The current `AIAnalysisSpec` in `api/aianalysis/v1alpha1/aianalysis_types.go` uses a generic `map[string]string` for `SignalContext`, which lacks type safety and proper validation.
