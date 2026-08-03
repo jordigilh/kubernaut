@@ -58,9 +58,9 @@ func (b *batchSpy) lastBatch() []*ogenclient.AuditEventRequest {
 	return b.batches[len(b.batches)-1]
 }
 
-var _ = Describe("Kubernaut Agent audit coverage 668 (BR-HAPI-197 DD-AUDIT-002)", func() {
+var _ = Describe("Kubernaut Agent audit coverage 668 (BR-KA-197 DD-AUDIT-002)", func() {
 
-	Describe("toIncidentResponseData human_review_reason mapping (BR-HAPI-197)", func() {
+	Describe("toIncidentResponseData human_review_reason mapping (BR-KA-197)", func() {
 		It("maps recognised LLM human_review_reason strings onto ogen enum values", func() {
 			recorder := &fakeOgenClient{}
 			store := audit.NewDSAuditStore(recorder)

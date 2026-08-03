@@ -290,7 +290,7 @@ func (h *AnalyzingHandler) checkStaleAnalyzingCache(ctx context.Context, rr *rem
 }
 
 // failIfRemediationTargetMissing escalates to manual review when the
-// completed AIAnalysis has no usable RemediationTarget (DD-HAPI-006 v1.2,
+// completed AIAnalysis has no usable RemediationTarget (DD-KA-006 v1.2,
 // BR-ORCH-036 v4.0). Extracted from handleDirectExecution per
 // GO-ANTIPATTERN-AUDIT-2026-07-01 Wave 2 (issue #1520).
 func (h *AnalyzingHandler) failIfRemediationTargetMissing(ctx context.Context, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, logger logr.Logger) (phase.TransitionIntent, bool, error) {
@@ -299,7 +299,7 @@ func (h *AnalyzingHandler) failIfRemediationTargetMissing(ctx context.Context, r
 		return phase.TransitionIntent{}, false, nil
 	}
 	logger.Error(fmt.Errorf("RCA RemediationTarget missing on completed AIAnalysis"),
-		"Failing RR with ManualReviewRequired per DD-HAPI-006 v1.2 / BR-ORCH-036 v4.0",
+		"Failing RR with ManualReviewRequired per DD-KA-006 v1.2 / BR-ORCH-036 v4.0",
 		"aianalysis", ai.Name)
 	h.callbacks.RecordEvent(rr, "Warning", "EscalatedToManualReview",
 		"RemediationTarget missing on completed AIAnalysis - manual investigation required")

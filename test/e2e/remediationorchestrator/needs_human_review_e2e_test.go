@@ -34,10 +34,10 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
-// E2E Tests for BR-HAPI-197: Human Review Required Flag
+// E2E Tests for BR-KA-197: Human Review Required Flag
 //
-// Business Requirement: BR-HAPI-197
-// Documentation: docs/testing/BR-HAPI-197/remediationorchestrator_test_plan_v1.0.md
+// Business Requirement: BR-KA-197
+// Documentation: docs/testing/BR-KA-197/remediationorchestrator_test_plan_v1.0.md
 //
 // These tests validate the complete remediation flow when KA returns `needs_human_review=true`,
 // ensuring that automatic remediation is blocked and NotificationRequest is created instead.
@@ -51,7 +51,7 @@ import (
 // - "mock_rca_incomplete" → needs_human_review=true, reason="rca_incomplete"
 // - "mock_low_confidence" → needs_human_review=true, reason="low_confidence"
 // - "oomkilled" → needs_human_review=false (normal workflow selection)
-var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-review"), func() {
+var _ = Describe("BR-KA-197: Human Review E2E Tests", Label("e2e", "human-review"), func() {
 	var testNS string
 
 	BeforeEach(func() {
@@ -318,7 +318,7 @@ var _ = Describe("BR-HAPI-197: Human Review E2E Tests", Label("e2e", "human-revi
 				Confidence: 0.95,
 				Rationale:  "High confidence workflow match for pod restart scenario",
 			}
-			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
+			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
 			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "OOM kill detected on pod",
 				Severity:   signalprocessingv1.SeverityCritical,

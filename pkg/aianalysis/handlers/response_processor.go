@@ -43,7 +43,7 @@ import (
 
 // ResponseProcessor handles processing of KA responses
 // BR-AI-008: Capture all response fields including RCA, workflow, and alternatives
-// BR-HAPI-197: Check needs_human_review before proceeding
+// BR-KA-197: Check needs_human_review before proceeding
 // BR-KA-200: Handle problem_resolved outcomes
 type ResponseProcessor struct {
 	log         logr.Logger
@@ -65,7 +65,7 @@ func NewResponseProcessor(log logr.Logger, m *metrics.Metrics, auditClient Audit
 
 // ProcessIncidentResponse processes the IncidentResponse from generated client
 // BR-AI-009: Reset failure counter on successful API call
-// BR-HAPI-197: Check needs_human_review before proceeding
+// BR-KA-197: Check needs_human_review before proceeding
 func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	// BR-AI-009: Reset failure counter on successful API call
 	analysis.Status.ConsecutiveFailures = 0
@@ -91,7 +91,7 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 	// BR-AI-OBSERVABILITY-004: Record confidence score for AI quality tracking
 	p.metrics.RecordConfidenceScore(analysis.Spec.AnalysisRequest.SignalContext.SignalName, resp.Confidence)
 
-	// BR-HAPI-197: Check if KA explicitly requires human review (Layer 1 - Primary)
+	// BR-KA-197: Check if KA explicitly requires human review (Layer 1 - Primary)
 	// CRITICAL: This MUST be checked FIRST. KA's explicit needs_human_review=true
 	// takes priority over all other classification logic.
 	if needsHumanReview {
@@ -102,7 +102,7 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		return result, err
 	}
 
-	// BR-HAPI-197 AC-4 + Issue #28: AIAnalysis applies confidence threshold (V1.0: 70%)
+	// BR-KA-197 AC-4 + Issue #28: AIAnalysis applies confidence threshold (V1.0: 70%)
 	// KA returns confidence but does NOT enforce thresholds - AIAnalysis owns this logic
 	const confidenceThreshold = 0.7 // TODO V1.1: Make configurable per BR-AI-088
 
@@ -198,7 +198,7 @@ func (p *ResponseProcessor) finalizeSuccessfulInvestigation(analysis *aianalysis
 	// Store alternative workflows (INFORMATIONAL ONLY - NOT for execution)
 	storeAlternativeWorkflows(analysis, resp)
 
-	// BR-HAPI-197: No human review needed for successful workflow selection
+	// BR-KA-197: No human review needed for successful workflow selection
 	analysis.Status.NeedsHumanReview = false
 
 	// Set InvestigationComplete condition
@@ -377,7 +377,7 @@ func extractDetectedLabels(m map[string]interface{}) *sharedtypes.DetectedLabels
 }
 
 // handleWorkflowResolutionFailureFromIncident handles workflow resolution failure from IncidentResponse
-// BR-HAPI-197: Workflow resolution failed, human must intervene
+// BR-KA-197: Workflow resolution failed, human must intervene
 // #768: Delegates to handleNoMatchingWorkflowsCompleted when humanReviewReason=no_matching_workflows
 func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	humanReviewReason := ""
@@ -442,13 +442,13 @@ func (p *ResponseProcessor) applyWorkflowResolutionFailureState(ctx context.Cont
 	analysis.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
 	analysis.Status.InvestigationID = resp.IncidentID
 
-	// BR-HAPI-197: Store human review flag and reason in CRD status
+	// BR-KA-197: Store human review flag and reason in CRD status
 	analysis.Status.NeedsHumanReview = true
 	if humanReviewReason != "" {
 		analysis.Status.HumanReviewReason = humanReviewReason
 	}
 
-	// BR-HAPI-197: Track failure metrics
+	// BR-KA-197: Track failure metrics
 	p.metrics.FailuresTotal.WithLabelValues("WorkflowResolutionFailed", "NoWorkflowResolved").Inc()
 
 	// Record failure metric
@@ -551,7 +551,7 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 	analysis.Status.SubReason = aianalysisv1.SubReasonProblemResolved
 	analysis.Status.InvestigationID = resp.IncidentID
 
-	// BR-HAPI-197: No human review needed for resolved problems
+	// BR-KA-197: No human review needed for resolved problems
 	analysis.Status.NeedsHumanReview = false
 
 	switch {
@@ -698,7 +698,7 @@ func (p *ResponseProcessor) handleNoMatchingWorkflowsCompleted(ctx context.Conte
 }
 
 // handleNoWorkflowTerminalFailure handles terminal failure when no workflow selected with low confidence
-// Issue #29: BR-AI-050 - AIAnalysis must detect terminal failure per BR-HAPI-197 AC-4
+// Issue #29: BR-AI-050 - AIAnalysis must detect terminal failure per BR-KA-197 AC-4
 //
 //nolint:unparam // ctrl.Result is always the zero value here; signature matches the shared dispatch contract of sibling handleXFromIncident functions (see handleProblemResolvedFromIncident) (Issue #1546 Tier 4)
 func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
@@ -717,7 +717,7 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	analysis.Status.SubReason = aianalysisv1.SubReasonNoMatchingWorkflows // Maps to CRD SubReason enum
 	analysis.Status.InvestigationID = resp.IncidentID
 
-	// BR-HAPI-197 AC-4: AIAnalysis sets needs_human_review for terminal failures
+	// BR-KA-197 AC-4: AIAnalysis sets needs_human_review for terminal failures
 	analysis.Status.NeedsHumanReview = true
 	analysis.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 
@@ -753,7 +753,7 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 }
 
 // handleLowConfidenceFailure handles workflow selection with confidence below threshold
-// Issue #28: BR-HAPI-197 AC-4 - AIAnalysis applies confidence threshold (not KA)
+// Issue #28: BR-KA-197 AC-4 - AIAnalysis applies confidence threshold (not KA)
 func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	const confidenceThreshold = 0.7 // V1.0: global 70% default
 
@@ -773,7 +773,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	analysis.Status.SubReason = aianalysisv1.SubReasonLowConfidence // Maps to CRD SubReason enum
 	analysis.Status.InvestigationID = resp.IncidentID
 
-	// BR-HAPI-197 AC-4: AIAnalysis sets needs_human_review for low confidence
+	// BR-KA-197 AC-4: AIAnalysis sets needs_human_review for low confidence
 	analysis.Status.NeedsHumanReview = true
 	analysis.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonLowConfidence
 

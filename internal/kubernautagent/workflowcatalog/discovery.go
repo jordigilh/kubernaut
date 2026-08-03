@@ -26,7 +26,7 @@ import (
 // THREE-STEP WORKFLOW DISCOVERY (Issue #1677 Phase 2b)
 // ========================================
 // Authority: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
-// Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
+// Authority: DD-KA-017 (Three-Step Workflow Discovery Integration)
 // Authority: DD-WORKFLOW-019 (KA owns discovery directly)
 // Business Requirement: BR-KA-017-001 (Three-Step Tool Implementation)
 //

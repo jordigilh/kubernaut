@@ -159,7 +159,7 @@ var _ = Describe("Kubernaut Agent Anomaly Detector Wiring — TP-433-WIR Phase 4
 		})
 	})
 
-	Describe("IT-KA-860-001: executeTool allows pagination-heavy list_workflows sequence (#860, BR-HAPI-433-004 I7)", func() {
+	Describe("IT-KA-860-001: executeTool allows pagination-heavy list_workflows sequence (#860, BR-KA-433-004 I7)", func() {
 		It("should allow 12 list_workflows calls (5 initial + 7 pagination) without per-tool rejection", func() {
 			reg := registry.New()
 			reg.Register(&fakeTool{name: "list_workflows", result: `{"workflows":[{"id":"drain-node"}],"pagination":{"hasNext":true,"nextCursor":"abc"}}`})

@@ -743,7 +743,7 @@ false
 	// ISSUE #746: NO-MATCHING-WORKFLOW MISCLASSIFICATION FIX
 	// Parser must correctly classify LLM responses where no workflow matches
 	// as no_matching_workflows instead of llm_parsing_error. Achieves behavioral
-	// parity with HAPI v1.2.1 fallback chain (BR-HAPI-197.2).
+	// parity with HAPI v1.2.1 fallback chain (BR-KA-197.2).
 	// ========================================
 	Describe("KA Parser — No-Matching-Workflow Misclassification (#746)", func() {
 
@@ -819,7 +819,7 @@ false
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result).NotTo(BeNil())
 				Expect(result.HumanReviewNeeded).To(BeTrue(),
-					"#746: No workflow selected must trigger HumanReviewNeeded (BR-HAPI-197.2)")
+					"#746: No workflow selected must trigger HumanReviewNeeded (BR-KA-197.2)")
 				Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
 					"#746: Parser must derive no_matching_workflows when no workflow selected (HAPI parity)")
 			})

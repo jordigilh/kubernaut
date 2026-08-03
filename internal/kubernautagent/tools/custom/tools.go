@@ -287,7 +287,7 @@ func (t *listWorkflowsTool) Execute(ctx context.Context, args json.RawMessage) (
 }
 
 // convertWorkflowsToDiscoveryEntries converts catalog workflow records into
-// the LLM-facing discovery entry shape. DD-HAPI-017 v1.1: ActualSuccessRate
+// the LLM-facing discovery entry shape. DD-KA-017 v1.1: ActualSuccessRate
 // and TotalExecutions are intentionally excluded -- global aggregate metrics
 // are misleading for per-incident workflow selection. Ported verbatim from
 // pkg/datastorage/server/workflow_discovery_handlers.go (Issue #1677 Phase 2d).

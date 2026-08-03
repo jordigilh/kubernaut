@@ -451,7 +451,7 @@ func InjectRemediationTarget(result *katypes.InvestigationResult, signal katypes
 		return
 	}
 
-	// BR-496 v2 / BR-HAPI-261 AC#5: if the LLM's kind is a descendant
+	// BR-496 v2 / BR-KA-261 AC#5: if the LLM's kind is a descendant
 	// in the ownership hierarchy (e.g. Pod when root is Deployment),
 	// resolve upward to the K8s-verified root owner. Only preserve
 	// the LLM's target when its kind is genuinely cross-type (not in

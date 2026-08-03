@@ -263,7 +263,7 @@ var _ = Describe("E2E-KA-DISC: Interactive Workflow Discovery", Label("e2e", "ka
 	})
 
 	Describe("E2E-KA-DISC-005: cross-resource RCA discovery lifecycle (#1374)", func() {
-		It("should discover workflows matching RCA target GVK, not original alert GVK [BR-INTERACTIVE-010, BR-WORKFLOW-004, BR-HAPI-261]", func() {
+		It("should discover workflows matching RCA target GVK, not original alert GVK [BR-INTERACTIVE-010, BR-WORKFLOW-004, BR-KA-261]", func() {
 			rrID := fmt.Sprintf("rr-disc005-%d", time.Now().Unix())
 			createTestRemediationRequest(ctx, rrID, withSignalName("IstioHighDenyRate"))
 

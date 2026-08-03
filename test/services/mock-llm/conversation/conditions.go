@@ -18,7 +18,7 @@ package conversation
 import openai "github.com/jordigilh/kubernaut/pkg/shared/types/openai"
 
 // HasThreeStepTools checks whether the tools list includes list_available_actions,
-// indicating the three-step discovery protocol (DD-HAPI-017).
+// indicating the three-step discovery protocol (DD-KA-017).
 func HasThreeStepTools(tools []openai.Tool) bool {
 	for _, t := range tools {
 		if t.Function.Name == openai.ToolListAvailableActions {

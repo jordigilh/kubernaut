@@ -347,7 +347,7 @@ func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, 
 }
 
 // ========================================
-// BR-HAPI-197: WORKFLOW RESOLUTION FAILURE HANDLING
+// BR-KA-197: WORKFLOW RESOLUTION FAILURE HANDLING
 // When KA returns needs_human_review=true, we MUST:
 // 1. NOT proceed to Analyzing phase
 // 2. Set structured failure reason (Reason + SubReason)
@@ -355,7 +355,7 @@ func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, 
 // ========================================
 
 // handleWorkflowResolutionFailure handles needs_human_review=true responses
-// BR-HAPI-197: Workflow resolution failed, human must intervene
+// BR-KA-197: Workflow resolution failed, human must intervene
 // NOTE: Old handleWorkflowResolutionFailure and handleProblemResolved methods
 // have been replaced by generated-type versions:
 // - handleWorkflowResolutionFailureFromIncident (for IncidentResponse)

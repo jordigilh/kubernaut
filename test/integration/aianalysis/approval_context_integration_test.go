@@ -244,7 +244,7 @@ var _ = Describe("Approval Context Integration", Label("integration", "approval"
 					fmt.Sprintf("NeedsHumanReview should be %v for %s", tc.expectedApproval, tc.scenario))
 
 				Expect(result.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed),
-					"Reason should be umbrella category per BR-HAPI-197")
+					"Reason should be umbrella category per BR-KA-197")
 
 				expectedSubReason := map[string]string{
 					"llm_parsing_error": "LLMParsingError",

@@ -24,7 +24,7 @@ import (
 // THREE-STEP WORKFLOW DISCOVERY MODELS
 // ========================================
 // Authority: DD-WORKFLOW-016 (Action-Type Workflow Catalog Indexing)
-// Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
+// Authority: DD-KA-017 (Three-Step Workflow Discovery Integration)
 // Business Requirement: BR-KA-017-001 (Three-Step Tool Implementation)
 // ========================================
 
@@ -44,7 +44,7 @@ type ActionTypeEntry struct {
 // WorkflowDiscoveryEntry represents a workflow summary in the discovery response (Step 2)
 // Contains enough information for the LLM to compare workflows without the full parameter schema.
 //
-// DD-HAPI-017 v1.1: ActualSuccessRate and TotalExecutions REMOVED from this LLM-facing struct.
+// DD-KA-017 v1.1: ActualSuccessRate and TotalExecutions REMOVED from this LLM-facing struct.
 // Global aggregate metrics are misleading for per-incident workflow selection — the conditions
 // under which they were collected (different signals, targets, environments) are not applicable
 // to the current case. The LLM should rely on contextual remediation history via spec-hash
@@ -89,7 +89,7 @@ type WorkflowDiscoveryResponse struct {
 // WorkflowDiscoveryFilters represents the signal context filters used across
 // all three steps of the discovery protocol.
 // These filters are passed as query parameters on GET endpoints.
-// Authority: DD-WORKFLOW-016, DD-HAPI-017
+// Authority: DD-WORKFLOW-016, DD-KA-017
 type WorkflowDiscoveryFilters struct {
 	// Mandatory context filters (required for all discovery calls)
 	Severity    string `json:"severity"`

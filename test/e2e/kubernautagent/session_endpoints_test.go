@@ -195,7 +195,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// ========================================
 			// Scenario ID: E2E-KA-064-003
 			// Business Outcome: MOCK_NO_WORKFLOW_FOUND escalates to human review via session flow
-			// BR: BR-AA-HAPI-064.1, BR-HAPI-197
+			// BR: BR-AA-HAPI-064.1, BR-KA-197
 
 			// ========================================
 			// ARRANGE
@@ -261,7 +261,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// ========================================
 			// Scenario ID: E2E-KA-064-004
 			// Business Outcome: MOCK_LOW_CONFIDENCE returns low-confidence recommendation for AA to evaluate
-			// BR: BR-AA-HAPI-064.1, BR-HAPI-197
+			// BR: BR-AA-HAPI-064.1, BR-KA-197
 
 			// ========================================
 			// ARRANGE
@@ -306,7 +306,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// BR-KA-197 + BR-AI-088: KA returns confidence but does NOT enforce thresholds
 			// AIAnalysis owns the threshold logic
 			Expect(result.NeedsHumanReview.Value).To(BeFalse(),
-				"KA should NOT set needs_human_review based on confidence thresholds (BR-HAPI-197)")
+				"KA should NOT set needs_human_review based on confidence thresholds (BR-KA-197)")
 			Expect(result.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present even with low confidence")
 			Expect(result.Confidence).To(BeNumerically("<", 0.5),
@@ -323,7 +323,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// ========================================
 			// Scenario ID: E2E-KA-064-005
 			// Business Outcome: MOCK_MAX_RETRIES_EXHAUSTED returns complete validation history for debugging
-			// BR: BR-AA-HAPI-064.1, BR-HAPI-197
+			// BR: BR-AA-HAPI-064.1, BR-KA-197
 
 			// ========================================
 			// ARRANGE

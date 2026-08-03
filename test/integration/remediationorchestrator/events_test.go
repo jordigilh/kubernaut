@@ -139,7 +139,7 @@ var _ = Describe("RemediationOrchestrator K8s Event Observability (DD-EVENT-001,
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale: "High confidence auto-approve",
 			}
-			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
+			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "OOM kill detected",
 				Severity:   "critical",

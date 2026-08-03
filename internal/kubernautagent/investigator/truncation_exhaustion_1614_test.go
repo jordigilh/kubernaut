@@ -30,12 +30,12 @@ import (
 // Issue #1614: a response truncated (FinishReasonLength) on the initial
 // attempt AND on the escalated retry was silently returned as a normal
 // TextResult, shipping partial/garbage content downstream as if it were a
-// complete answer. BR-HAPI-197 requires this "AI cannot produce a reliable
+// complete answer. BR-KA-197 requires this "AI cannot produce a reliable
 // result" condition to set HumanReviewNeeded instead. Reuses
 // scriptedMockClient/loopCharTestInvestigator/testSignal from
 // investigator_loop_characterization_test.go and cancel_test.go.
 var _ = Describe("UT-KA-1614-001: double-truncation (initial + escalated retry) exhaustion", func() {
-	It("classifies as human-review-needed with a truncation reason instead of returning partial content (BR-HAPI-197)", func() {
+	It("classifies as human-review-needed with a truncation reason instead of returning partial content (BR-KA-197)", func() {
 		mockClient := &scriptedMockClient{
 			steps: []scriptedStep{
 				{resp: llm.ChatResponse{

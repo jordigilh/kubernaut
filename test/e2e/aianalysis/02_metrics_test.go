@@ -83,7 +83,7 @@ func seedMetricsWithAnalysis() {
 	}).Should(BeTrue(), "Metrics seeding (success) analysis should complete")
 
 	// Create failed analysis to populate failure metrics
-	// BR-HAPI-197: Ensure aianalysis_failures_total metric is populated
+	// BR-KA-197: Ensure aianalysis_failures_total metric is populated
 	failedAnalysis := &aianalysisv1.AIAnalysis{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "metrics-seed-failed-" + randomSuffix(),

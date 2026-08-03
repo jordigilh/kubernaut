@@ -34,7 +34,7 @@ const (
 // Kubernaut Agent E2E Tests — #433
 // Test Plan: docs/tests/433/TEST_PLAN.md
 // Scenarios: E2E-KA-433-001 through E2E-KA-433-009
-// Business Requirements: BR-HAPI-433
+// Business Requirements: BR-KA-433
 //
 // These tests validate API contract parity between the Go Kubernaut Agent
 // and the retired Python KA service. The same ogen-generated client is
@@ -46,7 +46,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 	// FUNCTIONAL TESTS (E2E-KA-433-001..005)
 	// =====================================================================
 
-	Context("BR-HAPI-433: Full investigation parity with Python KA", func() {
+	Context("BR-KA-433: Full investigation parity with Python KA", func() {
 
 		It("E2E-KA-433-001: OOMKilled investigation produces correct workflow selection", func() {
 			// ========================================
@@ -54,7 +54,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// ========================================
 			// Scenario ID: E2E-KA-433-001
 			// Business Outcome: Full OOMKilled investigation against mock-llm produces correct workflow selection (parity with Python)
-			// BR: BR-HAPI-433
+			// BR: BR-KA-433
 			// Risk Mitigation: R7 (Mock-llm parity divergence)
 
 			req := &agentclient.IncidentRequest{
@@ -97,7 +97,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// ========================================
 			// Scenario ID: E2E-KA-433-002
 			// Business Outcome: Full CrashLoopBackOff investigation produces correct workflow selection (parity with Python)
-			// BR: BR-HAPI-433
+			// BR: BR-KA-433
 			// Risk Mitigation: R7 (Mock-llm parity divergence)
 
 			req := &agentclient.IncidentRequest{
@@ -126,7 +126,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 		})
 	})
 
-	Context("BR-HAPI-433 (FR-07): Session-based async API contract", func() {
+	Context("BR-KA-433 (FR-07): Session-based async API contract", func() {
 
 		It("E2E-KA-433-003: POST /analyze returns 202 with session_id", func() {
 			// ========================================
@@ -134,7 +134,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// ========================================
 			// Scenario ID: E2E-KA-433-003
 			// Business Outcome: POST /analyze returns 202 with session ID in response body
-			// BR: BR-HAPI-433 (FR-07)
+			// BR: BR-KA-433 (FR-07)
 
 			req := &agentclient.IncidentRequest{
 				IncidentID:        "e2e-ka-003-session",
@@ -164,7 +164,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// ========================================
 			// Scenario ID: E2E-KA-433-004
 			// Business Outcome: GET /session/{id} returns investigation progress/status
-			// BR: BR-HAPI-433 (FR-07)
+			// BR: BR-KA-433 (FR-07)
 
 			req := &agentclient.IncidentRequest{
 				IncidentID:        "e2e-ka-004-poll",
@@ -206,7 +206,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// ========================================
 			// Scenario ID: E2E-KA-433-005
 			// Business Outcome: GET /result returns completed investigation JSON matching API contract
-			// BR: BR-HAPI-433 (FR-07)
+			// BR: BR-KA-433 (FR-07)
 
 			req := &agentclient.IncidentRequest{
 				IncidentID:        "e2e-ka-005-result",
@@ -242,7 +242,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 	// NON-FUNCTIONAL TESTS (E2E-KA-433-006..009)
 	// =====================================================================
 
-	Context("BR-HAPI-433 (NFR): Non-functional requirements", func() {
+	Context("BR-KA-433 (NFR): Non-functional requirements", func() {
 
 		It("E2E-KA-433-006: GET /healthz returns 200 (Issue #753: dedicated health port)", func() {
 			// ========================================
@@ -250,7 +250,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// ========================================
 			// Scenario ID: E2E-KA-433-006
 			// Business Outcome: GET /healthz returns 200 within 5s of container start
-			// BR: BR-HAPI-433 (NFR)
+			// BR: BR-KA-433 (NFR)
 
 			resp, err := http.Get(kaHealthURL + "/healthz")
 			Expect(err).NotTo(HaveOccurred())
@@ -265,7 +265,7 @@ var _ = Describe("E2E-KA-433: Kubernaut Agent API Contract Parity", Label("e2e",
 			// ========================================
 			// Scenario ID: E2E-KA-433-007
 			// Business Outcome: GET /metrics exposes Prometheus metrics (go runtime + request counters)
-			// BR: BR-HAPI-433 (NFR)
+			// BR: BR-KA-433 (NFR)
 
 			resp, err := http.Get(kaMetricsURL + "/metrics")
 			Expect(err).NotTo(HaveOccurred())
