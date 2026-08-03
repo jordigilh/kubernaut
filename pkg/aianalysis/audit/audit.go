@@ -43,7 +43,7 @@ const (
 	EventTypeRegoEvaluation    = "aianalysis.rego.evaluation"
 	EventTypeError             = "aianalysis.error.occurred"
 
-	// Session audit event types (BR-AA-HAPI-064)
+	// Session audit event types (BR-AA-KA-064)
 	EventTypeAIAgentSubmit      = "aianalysis.aiagent.submit"
 	EventTypeAIAgentResult      = "aianalysis.aiagent.result"
 	EventTypeAIAgentSessionLost = "aianalysis.aiagent.session_lost"
@@ -443,12 +443,12 @@ func determineNeedsHumanReview(analysis *aianalysisv1.AIAnalysis) bool {
 }
 
 // ========================================
-// SESSION AUDIT METHODS (BR-AA-HAPI-064)
+// SESSION AUDIT METHODS (BR-AA-KA-064)
 // Stubs for async submit/poll audit events - implementation in GREEN phase
 // ========================================
 
 // RecordAIAgentSubmit records an async KA submit event with session ID.
-// BR-AA-HAPI-064: Audit trail for session creation
+// BR-AA-KA-064: Audit trail for session creation
 func (c *AuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
 	payload := ogenclient.AIAnalysisAIAgentCallPayload{
 		Endpoint:       "session_submit",
@@ -473,7 +473,7 @@ func (c *AuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianaly
 }
 
 // RecordAIAgentResult records an async KA result retrieval with investigation time.
-// BR-AA-HAPI-064: Audit trail for result retrieval.
+// BR-AA-KA-064: Audit trail for result retrieval.
 //
 // For backward compatibility with existing audit tests (DD-AUDIT-003), this also
 // emits an EventTypeAIAgentCall event, which is the sync-era equivalent of
@@ -508,7 +508,7 @@ func (c *AuditClient) RecordAIAgentResult(ctx context.Context, analysis *aianaly
 }
 
 // RecordAIAgentSessionLost records a session lost event with generation count.
-// BR-AA-HAPI-064: Audit trail for session regeneration
+// BR-AA-KA-064: Audit trail for session regeneration
 func (c *AuditClient) RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
 	payload := ogenclient.AIAnalysisAIAgentCallPayload{
 		Endpoint:       "session_lost",

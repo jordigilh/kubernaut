@@ -10,7 +10,7 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
-| v3.0 | 2026-08-02 | **#1806 CORRECTION**: Full rewrite, superseding the v2.0 STALE banner. Fixed the package structure to match the real code (`internal/controller/aianalysis/` for the reconciler, `pkg/aianalysis/handlers/` for phase logic, `pkg/agentclient` for the KA client — not `pkg/ai/holmesgpt` / `internal/controller/aianalysis/holmesgpt`, which do not exist); replaced the fictional `HolmesGPTClient holmesgpt.Client` reconciler field and single synchronous `Investigate()` call with the real async submit/poll/result session flow (`AgentClientInterface.SubmitInvestigation`/`PollSession`/`GetSessionResult`, BR-AA-HAPI-064); replaced the 60s/5s hardcoded phase timeouts with the real `DefaultSessionPollInterval` (15s) and `DefaultMaxInvestigationDuration` (25m) wall-clock cap; corrected `AIApprovalRequest` references to `RemediationApprovalRequest` | #1806, BR-AA-HAPI-064 |
+| v3.0 | 2026-08-02 | **#1806 CORRECTION**: Full rewrite, superseding the v2.0 STALE banner. Fixed the package structure to match the real code (`internal/controller/aianalysis/` for the reconciler, `pkg/aianalysis/handlers/` for phase logic, `pkg/agentclient` for the KA client — not `pkg/ai/holmesgpt` / `internal/controller/aianalysis/holmesgpt`, which do not exist); replaced the fictional `HolmesGPTClient holmesgpt.Client` reconciler field and single synchronous `Investigate()` call with the real async submit/poll/result session flow (`AgentClientInterface.SubmitInvestigation`/`PollSession`/`GetSessionResult`, BR-AA-KA-064); replaced the 60s/5s hardcoded phase timeouts with the real `DefaultSessionPollInterval` (15s) and `DefaultMaxInvestigationDuration` (25m) wall-clock cap; corrected `AIApprovalRequest` references to `RemediationApprovalRequest` | #1806, BR-AA-KA-064 |
 | v2.0 | 2025-11-30 | **REGENERATED**: Fixed SignalProcessing naming; Removed legacy phases (recommending→analyzing); Removed HolmesGPTConfig/InvestigationScope; Added DetectedLabels/CustomLabels/OwnerChain; V1.0 4-phase flow | DD-WORKFLOW-001 v1.8, DD-RECOVERY-002 |
 | v1.1 | 2025-10-16 | Added self-documenting JSON format | DD-HOLMESGPT-009 |
 | v1.0 | 2025-10-15 | Initial specification | - |
@@ -36,7 +36,7 @@ pkg/aianalysis/
 ├── rego/evaluator.go            # Rego policy evaluation (BR-AI-011)
 └── handlers/
     ├── interfaces.go            # AgentClientInterface, AuditClientInterface, RegoEvaluatorInterface
-    ├── constants.go             # Retry/backoff + session constants (BR-AA-HAPI-064)
+    ├── constants.go             # Retry/backoff + session constants (BR-AA-KA-064)
     ├── investigating.go         # InvestigatingHandler: async submit/poll/result session flow
     ├── analyzing.go             # AnalyzingHandler: Rego policy evaluation
     ├── request_builder.go       # Builds agentclient.IncidentRequest from AIAnalysis spec
@@ -124,7 +124,7 @@ type AgentClientInterface interface {
     // Legacy synchronous method (being deprecated)
     Investigate(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error)
 
-    // Async session methods (BR-AA-HAPI-064) — the real, current flow
+    // Async session methods (BR-AA-KA-064) — the real, current flow
     SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error)
     PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error)
     GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error)
@@ -255,7 +255,7 @@ func (r *AIAnalysisReconciler) reconcilePending(ctx context.Context, analysis *a
 }
 ```
 
-### Investigating Phase — Async Submit/Poll/Result (BR-AA-HAPI-064)
+### Investigating Phase — Async Submit/Poll/Result (BR-AA-KA-064)
 
 Unlike a single synchronous HTTP call, the Investigating phase is a **non-blocking session state machine** driven by `InvestigatingHandler.Handle` (`pkg/aianalysis/handlers/investigating.go`). Each reconcile either submits, polls, or fetches the result — it never blocks the reconcile loop waiting on Kubernaut Agent (KA):
 
@@ -288,7 +288,7 @@ func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *
     session := analysis.Status.KASession
     status, err := h.kaClient.PollSession(ctx, session.ID) // GET /api/v1/incident/session/{id}
     if err != nil {
-        return h.handleSessionPollError(ctx, analysis, err) // 404 -> session regeneration (BR-AA-HAPI-064.5)
+        return h.handleSessionPollError(ctx, analysis, err) // 404 -> session regeneration (BR-AA-KA-064.5)
     }
 
     switch status.Status {
@@ -414,9 +414,9 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | **4-Phase Flow** | Pending → Investigating → Analyzing → Completed | "Approving" phase moved to RO (creates `RemediationApprovalRequest`) |
-| **Async Session Model** | Submit/poll/result, not a blocking synchronous call | Non-blocking reconciles; investigations can take minutes without holding a goroutine or HTTP connection open (BR-AA-HAPI-064) |
+| **Async Session Model** | Submit/poll/result, not a blocking synchronous call | Non-blocking reconciles; investigations can take minutes without holding a goroutine or HTTP connection open (BR-AA-KA-064) |
 | **25-Minute Wall-Clock Cap** | `DefaultMaxInvestigationDuration`, checked every poll | Bounds resource consumption from a stuck/slow KA session, including interactive takeover (#1078) |
-| **Session Regeneration** | On 404 from `PollSession`/`GetSessionResult`, clear session ID and resubmit (capped at 5 regenerations) | Recovers from KA restarts without failing the whole investigation (BR-AA-HAPI-064.5/.6) |
+| **Session Regeneration** | On 404 from `PollSession`/`GetSessionResult`, clear session ID and resubmit (capped at 5 regenerations) | Recovers from KA restarts without failing the whole investigation (BR-AA-KA-064.5/.6) |
 | **No HolmesGPTConfig / InvestigationScope** | Removed | V1.0 uses a single Kubernaut Agent (KA) provider; KA decides investigation scope dynamically |
 | **approvalRequired flag** | V1.0 signaling; RO creates `RemediationApprovalRequest` | No approval orchestration logic inside AIAnalysis itself |
 

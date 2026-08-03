@@ -169,7 +169,7 @@ type AgentClientInterface interface {
     // Legacy synchronous method (being deprecated) — internally does submit→poll→result
     Investigate(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error)
 
-    // Async session methods (BR-AA-HAPI-064) — what the controller actually uses
+    // Async session methods (BR-AA-KA-064) — what the controller actually uses
     SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error)
     PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error)
     GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error)
@@ -179,7 +179,7 @@ type AgentClientInterface interface {
 }
 ```
 
-### Endpoints (async session API, BR-AA-HAPI-064)
+### Endpoints (async session API, BR-AA-KA-064)
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
@@ -190,7 +190,7 @@ type AgentClientInterface interface {
 | `https://kubernaut-agent:8443/health` | GET | Health check |
 
 There is no `POST /api/v1/recovery/analyze` endpoint and no separate "recovery" request shape —
-per BR-AA-HAPI-064.9, an ineffective remediation re-fires as a new signal through the Gateway
+per BR-AA-KA-064.9, an ineffective remediation re-fires as a new signal through the Gateway
 instead of triggering a dedicated recovery call.
 
 ### Async Submit → Poll → Result Flow
@@ -300,7 +300,7 @@ distinct from a fixed "3 attempts, 1s/2s/4s" table:
 |---|---|---|---|
 | `401` | `Authentication` | No | Alerts |
 | `403` | `Authorization` | No | Alerts |
-| `404` on poll | `SessionLost` (not `Configuration`) | Triggers session regeneration, not a standard retry | BR-AA-HAPI-064.5 |
+| `404` on poll | `SessionLost` (not `Configuration`) | Triggers session regeneration, not a standard retry | BR-AA-KA-064.5 |
 | `404` elsewhere | `Configuration` | No | Alerts |
 | `422` / `400` | `Permanent` | No | Alerts |
 | `429` | `RateLimit` | Yes | 2× base delay, no alert |

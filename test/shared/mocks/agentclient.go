@@ -29,7 +29,7 @@ import (
 // MockAgentClient is a mock implementation of AgentClientInterface for unit tests.
 // Now uses generated types from KA OpenAPI spec for type-safe testing.
 // BR-AI-006: Mock for API call testing
-// BR-AA-HAPI-064: Extended with async session methods
+// BR-AA-KA-064: Extended with async session methods
 type MockAgentClient struct {
 	// InvestigateFunc allows tests to customize the Investigate behavior
 	InvestigateFunc func(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error)
@@ -47,7 +47,7 @@ type MockAgentClient struct {
 	Err error
 
 	// ========================================
-	// Async session fields (BR-AA-HAPI-064)
+	// Async session fields (BR-AA-KA-064)
 	// ========================================
 
 	// SubmitInvestigationFunc allows tests to customize SubmitInvestigation behavior
@@ -217,7 +217,7 @@ func (m *MockAgentClient) WithFullResponse(
 }
 
 // ========================================
-// Async Session Methods (BR-AA-HAPI-064)
+// Async Session Methods (BR-AA-KA-064)
 // ========================================
 
 // SubmitInvestigation implements AgentClientInterface for async submit.
@@ -293,7 +293,7 @@ func (m *MockAgentClient) CancelSession(_ context.Context, _ string) error {
 }
 
 // ========================================
-// Async Session Test Helpers (BR-AA-HAPI-064)
+// Async Session Test Helpers (BR-AA-KA-064)
 // ========================================
 
 // WithSessionSubmitResponse configures the mock to return a specific session ID on submit.

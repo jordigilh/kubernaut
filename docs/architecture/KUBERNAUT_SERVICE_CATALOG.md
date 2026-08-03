@@ -122,7 +122,7 @@ CRD controller (`cmd/aianalysis`) — API `8080`, health `8081`, metrics `9090`
 #### **V1.0 Implementation Scope**
 - **🎯 Focus**: Kubernaut Agent (KA) integration via **async submit/poll** (`pkg/agentclient`) — never a single synchronous call
 - **🔐 Approval Gating**: Rego policy evaluation (`pkg/aianalysis/rego/evaluator.go`) determines whether a `RemediationApprovalRequest` is required before WorkflowExecution proceeds
-- **🔄 Historical naming note**: [BR-AA-HAPI-064](../requirements/BR-AA-HAPI-064-session-based-pull-design.md) — the `HAPI` token in this BR ID is a legacy naming artifact; the requirement itself describes the current session-based **pull** (poll) design against Kubernaut Agent
+- **🔄 Historical naming note**: [BR-AA-KA-064](../requirements/BR-AA-KA-064-session-based-pull-design.md) — the `HAPI` token in this BR ID is a legacy naming artifact; the requirement itself describes the current session-based **pull** (poll) design against Kubernaut Agent
 
 #### **Business Requirements**
 - **Primary**: BR-AI-001 to BR-AI-088 (see e.g. [BR-AI-085](../requirements/BR-AI-085-rego-policy-input-schema.md) Rego policy input schema, [BR-AI-088](../requirements/BR-AI-088-configurable-confidence-thresholds.md) configurable confidence thresholds)

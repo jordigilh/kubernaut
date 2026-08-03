@@ -6,7 +6,7 @@
 **Author**: AI Assistant
 **Status**: Draft
 **Issue**: #72 (our events), #73 (session events, implemented)
-**BR**: BR-AA-095, BR-AA-HAPI-064.6 (session events)
+**BR**: BR-AA-095, BR-AA-KA-064.6 (session events)
 **DD**: DD-EVENT-001 v1.1
 
 ---
@@ -59,9 +59,9 @@
 | BR-AA-095 | Happy path event trail | Integration | IT-AA-095-01 | ⏸️ Pending |
 | BR-AA-095 | Investigation failure event trail | Integration | IT-AA-095-02 | ⏸️ Pending |
 | BR-AA-095 | Human review event trail | Integration | IT-AA-095-03 | ⏸️ Pending |
-| BR-AA-HAPI-064 | SessionCreated on happy path | Integration | IT-AA-064-01a | ✅ Implemented |
-| BR-AA-HAPI-064 | SessionLost on stale session (404) | Integration | IT-AA-064-01b | ✅ Implemented |
-| BR-AA-HAPI-064.6 | SessionRegenerationExceeded on cap | Integration | IT-AA-064-01c | ✅ Implemented |
+| BR-AA-KA-064 | SessionCreated on happy path | Integration | IT-AA-064-01a | ✅ Implemented |
+| BR-AA-KA-064 | SessionLost on stale session (404) | Integration | IT-AA-064-01b | ✅ Implemented |
+| BR-AA-KA-064.6 | SessionRegenerationExceeded on cap | Integration | IT-AA-064-01c | ✅ Implemented |
 
 ---
 
@@ -226,7 +226,7 @@
 
 ## 5. Session Event Tests (Implemented)
 
-Originally delegated to the Issue #64 team, these tests were implemented by the current team. They map to BR-AA-HAPI-064.6 and the existing test plan at `docs/testing/BR-AA-HAPI-064/session_based_pull_test_plan_v1.0.md`.
+Originally delegated to the Issue #64 team, these tests were implemented by the current team. They map to BR-AA-KA-064.6 and the existing test plan at `docs/testing/BR-AA-KA-064/session_based_pull_test_plan_v1.0.md`.
 
 ### Unit Tests
 
@@ -246,7 +246,7 @@ Originally delegated to the Issue #64 team, these tests were implemented by the 
 | IT-AA-064-01b | SessionLost + SessionCreated | Stale session (404) triggers Warning + regeneration with new SessionCreated | Implemented |
 | IT-AA-064-01c | SessionLost + SessionRegenerationExceeded | Cap reached: Warning events emitted, AA transitions to Failed | Implemented |
 
-**File**: `test/integration/aianalysis/events_test.go` (within BR-AA-HAPI-064 session context)
+**File**: `test/integration/aianalysis/events_test.go` (within BR-AA-KA-064 session context)
 
 ---
 

@@ -309,7 +309,7 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 | `aianalysis.analysis.failed` | AI analysis failed (KA timeout, invalid response, etc.) | **P0** |
 | `aianalysis.phase.transition` | AIAnalysis phase state machine transition | P0 |
 | `aianalysis.aiagent.call` | Call to Kubernaut Agent (KA) recorded (endpoint, HTTP status, duration) | P0 |
-| `aianalysis.aiagent.submit` / `.result` / `.session_lost` | Async submit/poll/result session lifecycle with KA (BR-AA-HAPI-064) | P0 |
+| `aianalysis.aiagent.submit` / `.result` / `.session_lost` | Async submit/poll/result session lifecycle with KA (BR-AA-KA-064) | P0 |
 | `aianalysis.approval.decision` | Manual approval decision recorded | P0 |
 | `aianalysis.rego.evaluation` | Rego policy evaluation result | P0 |
 | `aianalysis.error.occurred` | Structured error event | P0 |

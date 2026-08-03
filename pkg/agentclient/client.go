@@ -125,7 +125,7 @@ func NewKubernautAgentClientWithTransport(cfg Config, transport http.RoundTrippe
 //   - *IncidentResponse: Successful response with AI analysis
 //   - *APIError: HTTP error (4xx, 5xx)
 func (c *KubernautAgentClient) Investigate(ctx context.Context, req *IncidentRequest) (*IncidentResponse, error) {
-	// BR-AA-HAPI-064: KA endpoints are async-only (202 Accepted).
+	// BR-AA-KA-064: KA endpoints are async-only (202 Accepted).
 	// This sync wrapper internally does submit -> poll -> get result,
 	// providing backward-compatible API for callers that don't need
 	// explicit session management (e.g., integration tests, one-shot callers).
@@ -147,7 +147,7 @@ func (c *KubernautAgentClient) Investigate(ctx context.Context, req *IncidentReq
 // The poll interval is 1s, bounded by the ctx deadline. Transient 429 (rate-limited)
 // responses are retried with a 2s back-off rather than failing immediately.
 //
-// BR-AA-HAPI-064: Internal helper for sync-over-async wrapping.
+// BR-AA-KA-064: Internal helper for sync-over-async wrapping.
 func (c *KubernautAgentClient) awaitSession(ctx context.Context, sessionID string) error {
 	for {
 		result, err := c.PollSession(ctx, sessionID)
@@ -178,7 +178,7 @@ func (c *KubernautAgentClient) awaitSession(ctx context.Context, sessionID strin
 }
 
 // ========================================
-// SESSION TYPES (BR-AA-HAPI-064)
+// SESSION TYPES (BR-AA-KA-064)
 // ========================================
 
 // SessionStatusResult represents the status of an investigation session.
@@ -201,12 +201,12 @@ type SessionStatusResult struct {
 }
 
 // ========================================
-// ASYNC SESSION METHODS (BR-AA-HAPI-064)
+// ASYNC SESSION METHODS (BR-AA-KA-064)
 // DD-KA-003: All session methods now use the generated OpenAPI client.
 // ========================================
 
 // SubmitInvestigation submits an incident investigation request and returns a session ID.
-// BR-AA-HAPI-064.1: POST /api/v1/incident/analyze returns 202 with session_id
+// BR-AA-KA-064.1: POST /api/v1/incident/analyze returns 202 with session_id
 // DD-KA-003: Delegates to generated client for OTel tracing and type-safe dispatch.
 func (c *KubernautAgentClient) SubmitInvestigation(ctx context.Context, req *IncidentRequest) (string, error) {
 	res, err := c.client.IncidentAnalyzeEndpointAPIV1IncidentAnalyzePost(ctx, req)
@@ -237,8 +237,8 @@ func (c *KubernautAgentClient) SubmitInvestigation(ctx context.Context, req *Inc
 }
 
 // PollSession polls the status of an investigation session.
-// BR-AA-HAPI-064.2: GET /api/v1/incident/session/{id}
-// Returns *APIError{StatusCode: 404} when session not found (BR-AA-HAPI-064.5 regeneration trigger).
+// BR-AA-KA-064.2: GET /api/v1/incident/session/{id}
+// Returns *APIError{StatusCode: 404} when session not found (BR-AA-KA-064.5 regeneration trigger).
 func (c *KubernautAgentClient) PollSession(ctx context.Context, sessionID string) (*SessionStatusResult, error) {
 	res, err := c.client.IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGet(ctx,
 		IncidentSessionStatusEndpointAPIV1IncidentSessionSessionIDGetParams{SessionID: sessionID})
@@ -268,7 +268,7 @@ func (c *KubernautAgentClient) PollSession(ctx context.Context, sessionID string
 }
 
 // GetSessionResult retrieves the result of a completed incident investigation session.
-// BR-AA-HAPI-064.3: GET /api/v1/incident/session/{id}/result
+// BR-AA-KA-064.3: GET /api/v1/incident/session/{id}/result
 func (c *KubernautAgentClient) GetSessionResult(ctx context.Context, sessionID string) (*IncidentResponse, error) {
 	res, err := c.client.IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGet(ctx,
 		IncidentSessionResultEndpointAPIV1IncidentSessionSessionIDResultGetParams{SessionID: sessionID})

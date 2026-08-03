@@ -92,7 +92,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			}
 
 			// ========================================
-			// ACT: Call KA incident analysis via session client (BR-AA-HAPI-064)
+			// ACT: Call KA incident analysis via session client (BR-AA-KA-064)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -177,7 +177,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			}
 
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -259,7 +259,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			}
 
 			// ========================================
-			// ACT: Call KA (triggers validation) (BR-AA-HAPI-064: async session flow)
+			// ACT: Call KA (triggers validation) (BR-AA-KA-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -341,7 +341,7 @@ var _ = Describe("E2E-KA Audit Pipeline", Label("e2e", "ka", "audit"), func() {
 			}
 
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")

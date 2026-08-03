@@ -28,10 +28,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
-// Session-Based Endpoint E2E Tests (BR-AA-HAPI-064)
-// Test Plan: docs/testing/BR-AA-HAPI-064/session_based_pull_test_plan_v1.0.md
+// Session-Based Endpoint E2E Tests (BR-AA-KA-064)
+// Test Plan: docs/testing/BR-AA-KA-064/session_based_pull_test_plan_v1.0.md
 // Scenarios: E2E-KA-064-001 through E2E-KA-064-012
-// Business Requirements: BR-AA-HAPI-064.1 through .9
+// Business Requirements: BR-AA-KA-064.1 through .9
 //
 // Purpose: Validate all KA session REST API endpoints with realistic business outcomes.
 // These tests exercise the async submit/poll/result pattern using raw session endpoints.
@@ -58,7 +58,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// ========================================
 			// Scenario ID: E2E-KA-064-001
 			// Business Outcome: Standard CrashLoopBackOff signal produces confident recommendation via async session
-			// BR: BR-AA-HAPI-064.1, .2, .3
+			// BR: BR-AA-KA-064.1, .2, .3
 			// Endpoints: POST /incident/analyze, GET /incident/session/{id}, GET /incident/session/{id}/result
 
 			// ========================================
@@ -131,7 +131,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// ========================================
 			// Scenario ID: E2E-KA-064-002
 			// Business Outcome: OOMKilled signal type produces confident workflow recommendation via async session
-			// BR: BR-AA-HAPI-064.1, .2, .3
+			// BR: BR-AA-KA-064.1, .2, .3
 
 			// ========================================
 			// ARRANGE
@@ -195,7 +195,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// ========================================
 			// Scenario ID: E2E-KA-064-003
 			// Business Outcome: MOCK_NO_WORKFLOW_FOUND escalates to human review via session flow
-			// BR: BR-AA-HAPI-064.1, BR-KA-197
+			// BR: BR-AA-KA-064.1, BR-KA-197
 
 			// ========================================
 			// ARRANGE
@@ -261,7 +261,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// ========================================
 			// Scenario ID: E2E-KA-064-004
 			// Business Outcome: MOCK_LOW_CONFIDENCE returns low-confidence recommendation for AA to evaluate
-			// BR: BR-AA-HAPI-064.1, BR-KA-197
+			// BR: BR-AA-KA-064.1, BR-KA-197
 
 			// ========================================
 			// ARRANGE
@@ -323,7 +323,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// ========================================
 			// Scenario ID: E2E-KA-064-005
 			// Business Outcome: MOCK_MAX_RETRIES_EXHAUSTED returns complete validation history for debugging
-			// BR: BR-AA-HAPI-064.1, BR-KA-197
+			// BR: BR-AA-KA-064.1, BR-KA-197
 
 			// ========================================
 			// ARRANGE
@@ -398,7 +398,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// ========================================
 			// Scenario ID: E2E-KA-064-006
 			// Business Outcome: Session status is queryable and reaches terminal state
-			// BR: BR-AA-HAPI-064.2
+			// BR: BR-AA-KA-064.2
 
 			// ========================================
 			// ARRANGE
@@ -465,7 +465,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// ========================================
 			// Scenario ID: E2E-KA-064-011
 			// Business Outcome: Invalid session IDs return clear errors (404)
-			// BR: BR-AA-HAPI-064.2, BR-AA-HAPI-064.5
+			// BR: BR-AA-KA-064.2, BR-AA-KA-064.5
 
 			// ========================================
 			// ARRANGE: Use a fabricated UUID that doesn't exist
@@ -490,7 +490,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			Expect(apiErr.StatusCode).To(Equal(http.StatusNotFound),
 				"Non-existent session should return HTTP 404")
 
-			// BUSINESS IMPACT: AA controller detects session loss and triggers regeneration (BR-AA-HAPI-064.5)
+			// BUSINESS IMPACT: AA controller detects session loss and triggers regeneration (BR-AA-KA-064.5)
 		})
 
 		It("E2E-KA-064-012: Result for non-existent session returns error", func() {
@@ -499,7 +499,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// ========================================
 			// Scenario ID: E2E-KA-064-012
 			// Business Outcome: Result retrieval for invalid sessions returns clear errors
-			// BR: BR-AA-HAPI-064.3
+			// BR: BR-AA-KA-064.3
 
 			// ========================================
 			// ARRANGE: Use a fabricated UUID that doesn't exist

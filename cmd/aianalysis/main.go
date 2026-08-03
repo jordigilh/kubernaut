@@ -203,7 +203,7 @@ type aiAnalysisClients struct {
 // main()'s original fail-fast behavior. Rego hot-reloader and audit store
 // cleanup remain the caller's responsibility during graceful shutdown.
 func wireAIAnalysisClients(ctx context.Context, cfg *config.Config) *aiAnalysisClients {
-	// BR-AA-HAPI-064: HTTP client timeout for session submit/poll/result calls.
+	// BR-AA-KA-064: HTTP client timeout for session submit/poll/result calls.
 	setupLog.Info("Creating Kubernaut Agent client",
 		"url", cfg.Agent.URL,
 		"timeout", cfg.Agent.Timeout,
@@ -294,8 +294,8 @@ func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerN
 	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(mgr.GetClient(), controllerNS)
 	investigatingHandler := handlers.NewInvestigatingHandler(clients.agentClient, controllerLog, aianalysisMetrics, clients.auditClient,
 		handlers.WithRecorder(eventRecorder),                            // DD-EVENT-001: Session lifecycle events
-		handlers.WithSessionMode(),                                      // BR-AA-HAPI-064: Async submit/poll/result flow
-		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval), // BR-AA-HAPI-064.8: From config
+		handlers.WithSessionMode(),                                      // BR-AA-KA-064: Async submit/poll/result flow
+		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval), // BR-AA-KA-064.8: From config
 		handlers.WithInvestigationSessionChecker(isChecker),             // BR-INTERACTIVE-010: IS CRD awareness
 		handlers.WithISPhaseUpdater(isPhaseUpdater))                     // BR-INTERACTIVE-010: Set IS Active after submit
 	analyzingHandler := handlers.NewAnalyzingHandler(clients.regoEvaluator, controllerLog, aianalysisMetrics, clients.auditClient).

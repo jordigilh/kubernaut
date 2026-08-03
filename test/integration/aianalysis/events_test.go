@@ -285,7 +285,7 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 	})
 
 	// ========================================
-	// BR-AA-HAPI-064: Session Lifecycle Event Tests
+	// BR-AA-KA-064: Session Lifecycle Event Tests
 	// CRD Events team handoff (issues #71-#73 completed)
 	// ========================================
 

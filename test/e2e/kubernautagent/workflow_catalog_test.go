@@ -33,7 +33,7 @@ import (
 // NOTE: These tests validate the workflow catalog tool (used by KA internally for LLM-driven workflow search).
 // The workflow catalog is not a direct HTTP endpoint, but is invoked as part of incident analysis.
 //
-// BR-AA-HAPI-064: All success-path tests migrated from ogen direct client (sync 200) to
+// BR-AA-KA-064: All success-path tests migrated from ogen direct client (sync 200) to
 // sessionClient.Investigate() (async submit/poll/result wrapper) because KA
 // endpoints are now async-only (202 Accepted).
 
@@ -72,7 +72,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 
 			// ========================================
 			// ACT: Call KA (which internally uses workflow catalog)
-			// (BR-AA-HAPI-064: async session flow)
+			// (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -120,7 +120,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			}
 
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -167,7 +167,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			ClusterName:       "e2e-test",
 		}
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA should handle empty workflow results gracefully")
@@ -213,7 +213,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				ClusterName:       "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -261,7 +261,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				ClusterName:       "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -313,7 +313,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			}
 			// ========================================
 			// ACT: Simulate LLM completing RCA for OOMKilled
-			// (BR-AA-HAPI-064: async session flow)
+			// (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -360,7 +360,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				ClusterName:       "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -407,7 +407,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 			ClusterName:       "e2e-test",
 		}
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			respObj, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA should handle empty workflow results gracefully")
@@ -455,7 +455,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				ClusterName:       "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -499,7 +499,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				ClusterName:       "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -543,7 +543,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				ClusterName:       "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -587,7 +587,7 @@ var _ = Describe("E2E-KA Workflow Catalog", Label("e2e", "ka", "catalog"), func(
 				ClusterName:       "e2e-test",
 			}
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			_, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")

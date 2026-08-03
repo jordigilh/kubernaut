@@ -39,9 +39,9 @@ import (
 )
 
 // ========================================
-// BR-AA-HAPI-064: Session-Based Pull Design Unit Tests
+// BR-AA-KA-064: Session-Based Pull Design Unit Tests
 //
-// Test Plan: docs/testing/BR-AA-HAPI-064/session_based_pull_test_plan_v1.0.md
+// Test Plan: docs/testing/BR-AA-KA-064/session_based_pull_test_plan_v1.0.md
 //
 // These tests validate the async submit/poll/result flow between
 // AA controller and KA using session IDs.
@@ -107,7 +107,7 @@ func (s *sessionAuditSpy) RecordAIAgentSessionLost(ctx context.Context, analysis
 // Test Suite
 // ========================================
 
-var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", func() {
+var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func() {
 	var (
 		handler    *handlers.InvestigatingHandler
 		mockClient *mocks.MockAgentClient
@@ -245,7 +245,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 	// ========================================
 	Describe("Session Poll Flow", func() {
 		// UT-AA-064-003: Poll session -- status "pending"
-		// BR-AA-HAPI-064.8: Constant poll interval (not backoff). Polling is normal
+		// BR-AA-KA-064.8: Constant poll interval (not backoff). Polling is normal
 		// async behavior, not error recovery. Interval is configurable (default 15s).
 		Context("UT-AA-064-003: Poll session -- status pending, controller requeues", func() {
 			It("should update LastPolled and PollCount, requeue at constant interval", func() {
@@ -263,13 +263,13 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.KASession.LastPolled).NotTo(BeNil(), "LastPolled should be updated")
 				Expect(analysis.Status.KASession.PollCount).To(Equal(int32(1)), "PollCount should be incremented to 1")
-				// BR-AA-HAPI-064.8: Constant interval, default 15s
+				// BR-AA-KA-064.8: Constant interval, default 15s
 				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "First poll should requeue at constant interval (15s)")
 			})
 		})
 
 		// UT-AA-064-004: Poll session -- status "investigating", same constant interval
-		// BR-AA-HAPI-064.8: Constant poll interval regardless of PollCount.
+		// BR-AA-KA-064.8: Constant poll interval regardless of PollCount.
 		Context("UT-AA-064-004: Poll session -- investigating, constant interval", func() {
 			It("should use same constant interval for second consecutive poll", func() {
 				analysis := createSessionTestAnalysis()
@@ -287,7 +287,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				result, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				// BR-AA-HAPI-064.8: Constant interval, same as first poll
+				// BR-AA-KA-064.8: Constant interval, same as first poll
 				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "Second poll should use same constant interval (15s)")
 			})
 		})
@@ -364,7 +364,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 		})
 
 		// UT-AA-064-007: Polling interval is constant across all polls
-		// BR-AA-HAPI-064.8: Constant interval -- polling is not error recovery.
+		// BR-AA-KA-064.8: Constant interval -- polling is not error recovery.
 		// Every poll uses the same configured interval regardless of PollCount.
 		Context("UT-AA-064-007: Polling interval is constant across all polls", func() {
 			It("should use the same constant interval for every poll", func() {
@@ -385,7 +385,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 					intervals = append(intervals, result.RequeueAfter)
 				}
 
-				// BR-AA-HAPI-064.8: All polls use the same constant interval
+				// BR-AA-KA-064.8: All polls use the same constant interval
 				Expect(intervals).To(HaveLen(4))
 				for i, interval := range intervals {
 					Expect(interval).To(Equal(handlers.DefaultSessionPollInterval),
@@ -561,7 +561,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				result, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				// BR-AA-HAPI-064.8: Re-poll at standard constant interval (not backoff)
+				// BR-AA-KA-064.8: Re-poll at standard constant interval (not backoff)
 				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "409 should re-poll at standard session poll interval (15s)")
 				// Phase should NOT be Failed
 				Expect(analysis.Status.Phase).NotTo(Equal(aianalysis.PhaseFailed), "Should NOT fail on 409 (transient)")
@@ -739,7 +739,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 					Timeout: 30 * time.Second,
 				}
 
-				// BR-AA-HAPI-064.10: Timeout removal - verify config value
+				// BR-AA-KA-064.10: Timeout removal - verify config value
 				Expect(cfg.Timeout).To(Equal(30*time.Second), "Async client should use 30s timeout, not 10m workaround")
 			})
 		})

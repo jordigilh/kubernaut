@@ -39,14 +39,14 @@ import (
 //
 // Methods:
 // - Investigate: (Legacy sync) Analyzes incidents via /incident/analyze endpoint
-// - SubmitInvestigation: (Async) Submits investigation, returns session ID (BR-AA-HAPI-064.1)
-// - PollSession: (Async) Polls session status (BR-AA-HAPI-064.2)
-// - GetSessionResult: (Async) Retrieves incident investigation result (BR-AA-HAPI-064.3)
+// - SubmitInvestigation: (Async) Submits investigation, returns session ID (BR-AA-KA-064.1)
+// - PollSession: (Async) Polls session status (BR-AA-KA-064.2)
+// - GetSessionResult: (Async) Retrieves incident investigation result (BR-AA-KA-064.3)
 type AgentClientInterface interface {
 	// Legacy synchronous methods (will be deprecated)
 	Investigate(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error)
 
-	// Async session methods (BR-AA-HAPI-064)
+	// Async session methods (BR-AA-KA-064)
 	SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error)
 	PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error)
 	GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error)
@@ -66,9 +66,9 @@ type AgentClientInterface interface {
 // Methods:
 // - RecordAIAgentCall: Records AI agent API calls with status and duration
 // - RecordPhaseTransition: Records phase transition events (DD-AUDIT-003)
-// - RecordAIAgentSubmit: Records async AI agent submit event (BR-AA-HAPI-064)
-// - RecordAIAgentResult: Records async AI agent result retrieval event (BR-AA-HAPI-064)
-// - RecordAIAgentSessionLost: Records session lost event (BR-AA-HAPI-064)
+// - RecordAIAgentSubmit: Records async AI agent submit event (BR-AA-KA-064)
+// - RecordAIAgentResult: Records async AI agent result retrieval event (BR-AA-KA-064)
+// - RecordAIAgentSessionLost: Records session lost event (BR-AA-KA-064)
 type AuditClientInterface interface {
 	RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int)
 	RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string)
@@ -78,7 +78,7 @@ type AuditClientInterface interface {
 	RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis)
 
 	// ========================================
-	// Session audit methods (BR-AA-HAPI-064)
+	// Session audit methods (BR-AA-KA-064)
 	// ========================================
 
 	// RecordAIAgentSubmit records an async AI agent submit event with session ID

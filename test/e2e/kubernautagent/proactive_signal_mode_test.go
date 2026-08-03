@@ -23,7 +23,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
-// BR-AA-HAPI-064: All success-path tests migrated from ogen direct client (sync 200) to
+// BR-AA-KA-064: All success-path tests migrated from ogen direct client (sync 200) to
 // sessionClient.Investigate() (async submit/poll/result wrapper) because KA
 // endpoints are now async-only (202 Accepted).
 
@@ -80,7 +80,7 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 			)
 
 			// ========================================
-			// ACT: Call KA incident analysis endpoint (BR-AA-HAPI-064: async session flow)
+			// ACT: Call KA incident analysis endpoint (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -161,7 +161,7 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 			)
 
 			// ========================================
-			// ACT: Call KA incident analysis endpoint (BR-AA-HAPI-064: async session flow)
+			// ACT: Call KA incident analysis endpoint (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -216,7 +216,7 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 			// signal_mode intentionally NOT set — defaults to reactive
 
 			// ========================================
-			// ACT: Call KA incident analysis endpoint (BR-AA-HAPI-064: async session flow)
+			// ACT: Call KA incident analysis endpoint (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")

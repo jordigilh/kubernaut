@@ -102,7 +102,7 @@ TP-433 (119 scenarios) covers the Go Kubernaut Agent rewrite core: engine, inves
 
 ### 4.2 Features Not to be Tested
 
-- **Session HTTP semantics** (BR-AA-HAPI-064): E2E-tier per TESTING_GUIDELINES; existing E2E-KA-433-003..005 cover 202/404/409
+- **Session HTTP semantics** (BR-AA-KA-064): E2E-tier per TESTING_GUIDELINES; existing E2E-KA-433-003..005 cover 202/404/409
 - **Workflow security gate** (BR-HAPI-017-003): Tested in Data Storage ITs (`IT-DS-017-*`); KA delegates to DS
 - **Three-step discovery pagination** (BR-HAPI-017-001): Tested in DS ITs; KA tools forward to DS
 - **Conversation continuity** (BR-HAPI-263): Two-invocation architecture is intentional -- Phase 3 starts fresh with injected RCA summary per `phase3_workflow_selection.tmpl` header

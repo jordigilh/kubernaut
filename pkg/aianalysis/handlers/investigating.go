@@ -46,7 +46,7 @@ import (
 // BR-AI-007: Call KA and process response
 // BR-AI-009: Retry transient errors with exponential backoff
 // BR-AI-010: Fail immediately on permanent errors
-// BR-AA-HAPI-064: Async session-based submit/poll/result flow
+// BR-AA-KA-064: Async session-based submit/poll/result flow
 // Refactoring P1.1: Uses ResponseProcessor for response handling
 // Refactoring P1.2: Uses RequestBuilder for request construction
 // Refactoring P2.1: Uses ErrorClassifier for error classification and retry logic
@@ -58,8 +58,8 @@ type InvestigatingHandler struct {
 	processor                *ResponseProcessor          // P1.1: Response processing logic
 	builder                  *RequestBuilder             // P1.2: Request construction logic
 	errorClassifier          *ErrorClassifier            // P2.1: Error classification and retry logic
-	useSessionMode           bool                        // BR-AA-HAPI-064: Enable async session-based flow
-	sessionPollInterval      time.Duration               // BR-AA-HAPI-064.8: Constant interval between session polls
+	useSessionMode           bool                        // BR-AA-KA-064: Enable async session-based flow
+	sessionPollInterval      time.Duration               // BR-AA-KA-064.8: Constant interval between session polls
 	maxInvestigationDuration time.Duration               // #1078: Wall-clock cap on investigation before PhaseFailed
 	recorder                 record.EventRecorder        // DD-EVENT-001: K8s event recorder for session lifecycle events
 	isChecker                InvestigationSessionChecker // BR-INTERACTIVE-010: Check IS CRD before submit
@@ -69,7 +69,7 @@ type InvestigatingHandler struct {
 // InvestigatingHandlerOption is a functional option for InvestigatingHandler configuration.
 type InvestigatingHandlerOption func(*InvestigatingHandler)
 
-// WithSessionMode enables the async session-based submit/poll/result flow (BR-AA-HAPI-064).
+// WithSessionMode enables the async session-based submit/poll/result flow (BR-AA-KA-064).
 // When enabled, the handler uses SubmitInvestigation/PollSession/GetSessionResult
 // instead of the legacy synchronous Investigate method.
 func WithSessionMode() InvestigatingHandlerOption {
@@ -87,7 +87,7 @@ func WithRecorder(r record.EventRecorder) InvestigatingHandlerOption {
 }
 
 // WithSessionPollInterval sets the constant interval between session status polls.
-// BR-AA-HAPI-064.8: Polling is normal async behavior, not error recovery, so a constant
+// BR-AA-KA-064.8: Polling is normal async behavior, not error recovery, so a constant
 // interval is used instead of exponential backoff. Default: DefaultSessionPollInterval (15s).
 func WithSessionPollInterval(d time.Duration) InvestigatingHandlerOption {
 	return func(h *InvestigatingHandler) {
@@ -128,7 +128,7 @@ func WithISPhaseUpdater(updater ISPhaseUpdater) InvestigatingHandlerOption {
 // Refactoring P1.1: Initializes ResponseProcessor
 // Refactoring P1.2: Initializes RequestBuilder
 // Refactoring P2.1: Initializes ErrorClassifier with configurable backoff parameters
-// BR-AA-HAPI-064: Accepts functional options (e.g., WithSessionMode())
+// BR-AA-KA-064: Accepts functional options (e.g., WithSessionMode())
 func NewInvestigatingHandler(hgClient AgentClientInterface, log logr.Logger, m *metrics.Metrics, auditClient AuditClientInterface, opts ...InvestigatingHandlerOption) *InvestigatingHandler {
 	if m == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
@@ -142,7 +142,7 @@ func NewInvestigatingHandler(hgClient AgentClientInterface, log logr.Logger, m *
 		metrics:                  m,
 		auditClient:              auditClient,
 		log:                      handlerLog,
-		sessionPollInterval:      DefaultSessionPollInterval,      // BR-AA-HAPI-064.8: Constant poll interval
+		sessionPollInterval:      DefaultSessionPollInterval,      // BR-AA-KA-064.8: Constant poll interval
 		maxInvestigationDuration: DefaultMaxInvestigationDuration, // #1078: Wall-clock cap
 		processor:                NewResponseProcessor(log, m, auditClient),
 		builder:                  NewRequestBuilder(log),
@@ -156,7 +156,7 @@ func NewInvestigatingHandler(hgClient AgentClientInterface, log logr.Logger, m *
 
 // Handle processes the Investigating phase
 // BR-AI-007: Call KA and update status
-// BR-AA-HAPI-064: Async session-based flow when useSessionMode=true
+// BR-AA-KA-064: Async session-based flow when useSessionMode=true
 func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	h.log.Info("Processing Investigating phase",
 		"name", analysis.Name,
@@ -166,7 +166,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 	// AA-HAPI-001: Idempotency is handled at controller level (phase_handlers.go:125-130)
 	// via AtomicStatusUpdate callback with APIReader refetch. No handler-level check needed.
 
-	// BR-AA-HAPI-064: Use async session-based flow when enabled
+	// BR-AA-KA-064: Use async session-based flow when enabled
 	if h.useSessionMode {
 		return h.handleSessionBased(ctx, analysis)
 	}
@@ -380,12 +380,12 @@ func mapErrorTypeToSubReason(errorType ErrorType) string {
 }
 
 // ========================================
-// SESSION-BASED FLOW (BR-AA-HAPI-064)
+// SESSION-BASED FLOW (BR-AA-KA-064)
 // Async submit/poll/result pattern for KA communication
 // ========================================
 
 // handleSessionBased routes the session-based flow based on InvestigationSession state.
-// BR-AA-HAPI-064: Non-blocking communication with KA via submit/poll/result
+// BR-AA-KA-064: Non-blocking communication with KA via submit/poll/result
 func (h *InvestigatingHandler) handleSessionBased(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	session := analysis.Status.KASession
 
@@ -459,8 +459,8 @@ func (h *InvestigatingHandler) checkISMismatchAndCancel(ctx context.Context, ana
 }
 
 // handleSessionSubmit submits a new investigation to KA and records the session ID.
-// BR-AA-HAPI-064.1: Submit returns session ID for subsequent polling
-// BR-AA-HAPI-064.9: Submit incident investigation to KA
+// BR-AA-KA-064.1: Submit returns session ID for subsequent polling
+// BR-AA-KA-064.9: Submit incident investigation to KA
 func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	// Detect if this is a regeneration (session exists but ID was cleared after 404)
 	isRegeneration := analysis.Status.KASession != nil &&
@@ -602,7 +602,7 @@ func (h *InvestigatingHandler) finalizeSessionSubmit(ctx context.Context, analys
 }
 
 // handleSessionPoll polls the status of an active KA session.
-// BR-AA-HAPI-064.2: Poll session status (pending/investigating/completed/failed)
+// BR-AA-KA-064.2: Poll session status (pending/investigating/completed/failed)
 //
 // Poll-tracking status writes (PollCount, LastPolled) are filtered by the
 // informer predicate (aiAnalysisUpdatePredicate) so they don't trigger
@@ -738,7 +738,7 @@ func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context,
 }
 
 // handleSessionPollPending handles poll results where investigation is still in progress.
-// BR-AA-HAPI-064.8: Constant poll interval (not backoff -- polling is normal async behavior).
+// BR-AA-KA-064.8: Constant poll interval (not backoff -- polling is normal async behavior).
 //
 // Updates PollCount and LastPolled in the CRD status for observability.
 // The aiAnalysisUpdatePredicate filters PollCount/LastPolled-only status writes
@@ -765,7 +765,7 @@ func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, ana
 }
 
 // handleSessionPollCompleted handles poll results where investigation has completed.
-// BR-AA-HAPI-064.3: Fetch result and process through ResponseProcessor
+// BR-AA-KA-064.3: Fetch result and process through ResponseProcessor
 func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	session := analysis.Status.KASession
 
@@ -833,7 +833,7 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 }
 
 // handleSessionPollFailed handles poll results where investigation has failed on KA side.
-// BR-AA-HAPI-064: Surface KA-side failure to operators via CRD status
+// BR-AA-KA-064: Surface KA-side failure to operators via CRD status
 // AA-MED-1: Ensure Reason and SubReason are set for structured failure reporting.
 func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
 	session := analysis.Status.KASession
@@ -956,7 +956,7 @@ func (h *InvestigatingHandler) handleCancellationTakeover(ctx context.Context, a
 }
 
 // handleSessionPollError handles errors during session polling (e.g., 404 session lost).
-// BR-AA-HAPI-064.5: 404 triggers session regeneration, not standard retry
+// BR-AA-KA-064.5: 404 triggers session regeneration, not standard retry
 func (h *InvestigatingHandler) handleSessionPollError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
 	// Check for 404 (session lost) - triggers regeneration logic
 	var apiErr *agentclient.APIError
@@ -969,8 +969,8 @@ func (h *InvestigatingHandler) handleSessionPollError(ctx context.Context, analy
 }
 
 // handleSessionLost handles session loss (404 on poll) with regeneration logic.
-// BR-AA-HAPI-064.5: Increment generation, clear ID, requeue for re-submit
-// BR-AA-HAPI-064.6: Fail with SessionRegenerationExceeded if cap reached
+// BR-AA-KA-064.5: Increment generation, clear ID, requeue for re-submit
+// BR-AA-KA-064.6: Fail with SessionRegenerationExceeded if cap reached
 func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
 	session := analysis.Status.KASession
 	session.Generation++
@@ -992,7 +992,7 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 			fmt.Sprintf("KA session lost (generation %d), attempting regeneration", session.Generation))
 	}
 
-	// BR-AA-HAPI-064.6: Check if regeneration cap exceeded
+	// BR-AA-KA-064.6: Check if regeneration cap exceeded
 	if session.Generation >= MaxSessionRegenerations {
 		h.log.Info("Session regeneration cap exceeded",
 			"generation", session.Generation,
@@ -1035,7 +1035,7 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 }
 
 // handleSessionGetResultError handles errors when fetching the session result.
-// BR-AA-HAPI-064: 409 Conflict tracked with consecutive error counter (#1390)
+// BR-AA-KA-064: 409 Conflict tracked with consecutive error counter (#1390)
 // AA-HIGH-1: 404 triggers session regeneration (same as poll 404)
 func (h *InvestigatingHandler) handleSessionGetResultError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
 	var apiErr *agentclient.APIError

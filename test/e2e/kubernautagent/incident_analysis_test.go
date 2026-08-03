@@ -24,7 +24,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/ogenx"
 )
 
-// BR-AA-HAPI-064: Success-path tests migrated from ogen direct client (sync 200) to
+// BR-AA-KA-064: Success-path tests migrated from ogen direct client (sync 200) to
 // sessionClient.Investigate() (async submit/poll/result wrapper) because KA
 // endpoints are now async-only (202 Accepted).
 // Error-path tests (E2E-KA-007, 008) retain the ogen client for strict
@@ -71,7 +71,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			}
 
 			// ========================================
-			// ACT: Call KA incident analysis via session client (BR-AA-HAPI-064)
+			// ACT: Call KA incident analysis via session client (BR-AA-KA-064)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -132,7 +132,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			}
 
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -188,7 +188,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			}
 
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -258,7 +258,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			}
 
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -314,7 +314,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			}
 
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
@@ -370,7 +370,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			}
 
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")
