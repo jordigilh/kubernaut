@@ -25,9 +25,9 @@ import (
 	"strings"
 	"time"
 
-	adkanthropic "github.com/Alcova-AI/adk-anthropic-go"
 	"cloud.google.com/go/auth/credentials"
 	"cloud.google.com/go/auth/httptransport"
+	adkanthropic "github.com/Alcova-AI/adk-anthropic-go"
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
 	"google.golang.org/genai"
@@ -182,36 +182,37 @@ func newVertexGeminiModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, 
 }
 
 // InjectAmbientGoogleCredentials sets GOOGLE_APPLICATION_CREDENTIALS
-// in-process to cfg.APIKeyFile, for the provider: vertex_ai model families
+// in-process to cfg.APIKeyFile, for provider: vertex_ai model families
 // whose upstream SDK has no explicit-credentials-bytes option and can only
 // discover credentials via ambient ADC (ADC = Google's Application Default
-// Credentials lookup chain, which checks this env var first): Claude-on-
-// Vertex via adk-anthropic-go/anthropic-sdk-go's vertex.WithGoogleAuth, and
-// AF's severityTriage Gemini-on-Vertex path, which today constructs its
-// genai.Client without an explicit HTTPClient (cmd/apifrontend's
-// newGenAITriagerForVertex).
+// Credentials lookup chain, which checks this env var first).
+//
+// As of kubernaut#1861, this is used by exactly one call site: AF's own
+// agent.llm Claude-on-Vertex connection (newVertexAnthropicModel below),
+// via adk-anthropic-go v1.0.0, which hardcodes
+// anthropic-sdk-go/vertex.WithGoogleAuth internally with no credentials
+// override exposed. Every other vertex_ai path in this package/AF now
+// resolves credentials explicitly from cfg.APIKey instead:
+// newVertexGeminiModel (this file, since #1801) and both of
+// cmd/apifrontend's severityTriage constructors, newAnthropicTriagerForVertex
+// and newGenAITriagerForVertex (since #1861, mirroring release/v1.5's
+// #1870) -- the latter two used to call this function too, which is
+// exactly what previously required the DD-PLATFORM-007 Helm-chart fail()
+// guard blocking AF's main and severityTriage profiles from both resolving
+// to vertex_ai with different credentialsSecretName values. That guard has
+// been removed: since severityTriage no longer touches this env var at
+// all, there is no longer a shared-mutable-state collision to prevent,
+// even though this one remaining call site still relies on ambient ADC.
 //
 // This performs the env var assignment here, in Go, immediately before
-// each such construction call, rather than declaring it statically in the
-// Helm Deployment manifest (kubernaut#1801) -- mirroring the same
-// runtime-injection pattern already used elsewhere in Kubernaut (Kubernaut
-// Agent never touches this env var at all, passing credential bytes
-// explicitly instead; the HolmesGPT API predecessor used an analogous
+// construction, rather than declaring it statically in the Helm Deployment
+// manifest (kubernaut#1801) -- mirroring the same runtime-injection
+// pattern already used elsewhere in Kubernaut (Kubernaut Agent never
+// touches this env var at all, passing credential bytes explicitly
+// instead; the HolmesGPT API predecessor used an analogous
 // _inject_runtime_env() at startup) to avoid exposing credential-adjacent
 // config statically in the pod spec, where it's visible via `kubectl get
 // pod -o yaml` to anyone with pod-read RBAC.
-//
-// Safe to call repeatedly with different cfg values across sequential,
-// single-threaded startup construction calls (AF's main agent LLM and
-// severityTriage LLM are both built once at process startup, never
-// concurrently and never per-request, per buildA2AHandler/
-// buildSeverityTriageDeps) -- the underlying oauth2/google credential
-// resolution captures the parsed credential material at construction time,
-// not lazily on each token refresh, so changing the env var afterward
-// doesn't affect an already-constructed client. The pre-existing #1731
-// Helm-render guard independently prevents the one scenario where this
-// would matter (AF's main and severityTriage profiles both resolving to
-// vertex_ai with two different credentialsSecretName values).
 //
 // No-ops when cfg.APIKeyFile is empty (non-vertex_ai providers, or a
 // vertex_ai profile that -- unexpectedly -- has no resolved credentials

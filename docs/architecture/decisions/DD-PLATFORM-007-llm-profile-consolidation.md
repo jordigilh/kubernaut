@@ -1,15 +1,18 @@
 # DD-PLATFORM-007: LLM Profile Consolidation (Helm Chart)
 
 **Date**: July 25, 2026
-**Status**: 🟡 **PROPOSED** (pending user approval)
-**Decision Date**: TBD (on approval)
-**Version**: 1.2
+**Status**: 🟢 **IMPLEMENTED** (amended 2026-08-02 by kubernaut#1861 — see Addendum)
+**Decision Date**: 2026-07-25
+**Version**: 1.3
 **Confidence**: 92%
 **Deciders**: Kubernaut Platform (chart maintainers)
-**Applies To**: `charts/kubernaut` (Helm chart) only — no Operator changes,
-**no Go code changes** (every consumption contract this DD wires already
-exists and is already validated in `cmd/kubernautagent`, `cmd/apifrontend`,
-`pkg/apifrontend/config`, `internal/kubernautagent/config`)
+**Applies To**: `charts/kubernaut` (Helm chart); originally no Go code
+changes (every consumption contract this DD wires already existed and was
+already validated in `cmd/kubernautagent`, `cmd/apifrontend`,
+`pkg/apifrontend/config`, `internal/kubernautagent/config`) — the
+kubernaut#1861 amendment additionally touched `pkg/apifrontend/severity`,
+`cmd/apifrontend`, and `pkg/apifrontend/launcher` to lift the #1731 guard
+(see Addendum)
 
 **Related Business Requirements**:
 - BR-PLATFORM-008: Helm Chart LLM Configuration Parity
@@ -35,8 +38,14 @@ exists and is already validated in `cmd/kubernautagent`, `cmd/apifrontend`,
   `agent.llm`/`severityTriage.llm` findings).
 - #1731: vertex_ai's ambient-Application-Default-Credentials constraint —
   a profile and any consumer resolving to it must share
-  `credentialsSecretName` when both are `vertex_ai`. This DD must enforce
-  it with a `fail()` guard, not leave it as a silent misconfiguration.
+  `credentialsSecretName` when both are `vertex_ai`. This DD originally
+  enforced it with a `fail()` guard; **lifted in kubernaut#1861** (see
+  Changelog v1.3 and the Addendum below) once both AF severityTriage
+  Vertex constructors stopped depending on the shared ambient env var.
+- #1870 / #1861: the release/v1.5 and main-line fixes (respectively) that
+  made the #1731 constraint liftable, by giving AF's severityTriage
+  Claude-on-Vertex and Gemini-on-Vertex constructors their own explicit,
+  independent credentials.
 - #1599: restart-required identity lock (see DD-LLM-008).
 - #1582: `bedrock` provider not yet wired in either client dispatch —
   stays schema-rejected, unchanged by this DD.
@@ -50,6 +59,7 @@ exists and is already validated in `cmd/kubernautagent`, `cmd/apifrontend`,
 | 1.0 | 2026-07-25 | Platform (AI-assisted analysis) | Initial draft. User selected Alternative A (full profile-map mirror of the Operator) after a scoped comparison against Alternative B (minimal, KA-only fix) and Alternative C (defer). Scope grew during preflight beyond the original "reduce duplication" framing once the actual Go consumption contracts were inspected: found one dead config field (`alignmentCheck.llm.apiKey` vs. the Go struct's `apiKeyFile`) and two fully-implemented, zero-Helm-exposure Go capabilities (AF's `agent.llm`, AF's `severityTriage.llm`). |
 | 1.1 | 2026-07-25 | Platform (AI-assisted analysis) | User confirmed keeping AF wiring in scope (no split), then requested a confidence assessment. Resolved 3 of 4 previously-flagged unknowns by reading the Operator's reconciler directly (`kubernaut-operator/internal/resources/configmaps.go`/`deployments.go`/`common.go`, not just the CRD types): (1) confirmed `phaseModels` override field subset excludes `azureApiVersion`/`bedrockRegion` even though the Go struct has them — corrected the Resolution Mechanism section to match the Operator's actual rendering, not the theoretical max; (2) confirmed and specified the exact multi-secret-mount convention (`/etc/kubernaut-agent/phase-credentials/<phase>/{api_key\|credentials.json}`, inherit-if-same-secret optimization) — verified this chart's current KA Deployment volume list is static, so this is genuinely new template logic, not an extension of an existing loop; (3) **corrected** the #1731 vertex_ai constraint's scope from "any phase/severity-triage override" to **AF-specific only** (`apifrontend.llmProfileRef` vs. `apifrontend.severityTriage.llmProfileRef`) — KA's Vertex client is architecturally different (DD-LLM-007) and has no equivalent limitation; the original v1.0 draft had over-generalized this. Confidence raised 78%→86% (verified design detail, but multi-secret-mount Sprig logic remains genuinely first-of-its-kind for this chart — still below the 90% "proceed directly" gate). |
 | 1.2 | 2026-07-25 | Platform (AI-assisted analysis) | User chose the time-boxed spike option at 86% confidence. Ran a 2-hour-budget spike (isolated throwaway chart, not committed) prototyping exactly the multi-secret-mount mechanism against `helm template` — see "Spike Findings" section. Result: **YES**, achievable with plain Sprig, no exotic constructs; `rca`/`workflow_discovery`/`validation` test case rendered correctly (inherit-if-same-secret, per-consumer-vs-base dedup, provider-specific credential filename, deterministic `sortAlpha` ordering, both `fail()` guards firing correctly). Confidence raised 86%→92% — the single highest-risk mechanism is now proven, not just designed; remaining work is integration effort into the real chart, not open uncertainty. |
+| 1.3 | 2026-08-02 | Platform (AI-assisted analysis) | **Amendment (kubernaut#1861)**: the AF-scoped `fail()` guard this DD introduced for #1731 has been removed. It existed because `cmd/apifrontend`'s two severityTriage Vertex constructors (`newAnthropicTriagerForVertex`, `newGenAITriagerForVertex`) relied solely on the process-wide `GOOGLE_APPLICATION_CREDENTIALS` ambient-ADC env var, making two independent vertex_ai profiles (AF's own + severityTriage's) unable to coexist with different `credentialsSecretName` values. #1861 (mirroring release/v1.5's #1870) fixed both constructors to resolve credentials explicitly from each profile's own mounted `apiKeyFile`/`apiKey` instead — the same technique AF's own `agent.llm` Gemini-on-Vertex path already used (#1801's `newVertexGeminiModel`). This is now a Go-code-affecting DD (superseding this document's original "no Go code changes" scope note for the vertex_ai case only); everything else in this DD's Wiring Manifest remains a chart-only change. See "Addendum: kubernaut#1861" below for full rationale, including the one remaining ambient-ADC dependency this fix does *not* remove. |
 
 ---
 
@@ -316,20 +326,21 @@ convention verified in `internal/resources/common.go`/`deployments.go`:
   matches, the override inherits the base's already-mounted path instead
   of mounting a redundant duplicate Secret.
 
-A `fail()` guard enforces #1731 — **scope corrected after verifying
-`kubernaut-operator/internal/resources/validation.go` directly**: this
-constraint is **AF-specific** (API Frontend's own resolved profile vs.
-`severityTriage`'s resolved profile), not a general KA/phaseModels rule.
-AF's Vertex AI client (Google ADK-based, per DD-LLM-007) relies solely on
-ambient Application Default Credentials process-wide, so two different
+**(Historical — superseded by kubernaut#1861, see Addendum below)** A
+`fail()` guard originally enforced #1731 here — **scope corrected after
+verifying `kubernaut-operator/internal/resources/validation.go`
+directly**: this constraint was **AF-specific** (API Frontend's own
+resolved profile vs. `severityTriage`'s resolved profile), not a general
+KA/phaseModels rule. AF's Vertex AI clients relied solely on ambient
+Application Default Credentials process-wide, so two different
 `credentialsSecretName`s both resolving to `vertex_ai` within the same AF
 process would silently collide on whichever ADC happens to be ambient.
 KA's own Vertex client (`pkg/kubernautagent/llm/anthropicfamily/client.go`)
 is architecturally different (DD-LLM-007) and supports explicit
 per-instance credentials via `resolveADCAuth`, which is exactly why the
-Operator's own validation only guards AF, never KA's `phaseModels` — this
-DD's guard applies to the same scope (`apifrontend.llmProfileRef` vs.
-`apifrontend.severityTriage.llmProfileRef` only), not to KA.
+Operator's own validation only guarded AF, never KA's `phaseModels`.
+kubernaut#1861 closed the same gap for AF's two severityTriage Vertex
+constructors, so the guard is no longer needed for either KA or AF.
 
 ---
 
@@ -501,14 +512,69 @@ checklist once implementation starts.
   `llmProfiles`, `llmProfileRef` fields), `internal/resources/validation_test.go` (VL-001..027)
 - DD-PLATFORM-004, DD-PLATFORM-006, DD-LLM-007, DD-LLM-008
 - BR-PLATFORM-008: Helm Chart LLM Configuration Parity
-- Issues #1589, #1731, #1599, #1582
+- Issues #1589, #1731, #1599, #1582, #1870, #1861
 
 ---
 
-**Document Version**: 1.2
-**Last Updated**: 2026-07-25
-**Status**: 🟡 Proposed — awaiting user approval before implementation
-(Pre-Implementation Workflow Step 4 gate). Alternative already selected
-(A), scope confirmed (KA + AF together), spike complete with a YES
-decision on the approach. Confidence 92% — within the AGENTS.md
-90-94% "proceed with caution, flag remaining risks" band.
+## Addendum: kubernaut#1861 — lifting the #1731 vertex_ai guard
+
+**Date**: 2026-08-02
+
+The `fail()` guard this DD introduced in `charts/kubernaut/templates/
+apifrontend/apifrontend.yaml` blocked one specific combination: AF's own
+`apifrontend.llmProfileRef` and `apifrontend.config.severityTriage.
+llmProfileRef` both resolving to `provider: vertex_ai` with *different*
+`credentialsSecretName` values. The reason was that both of
+`cmd/apifrontend/backend_deps.go`'s severityTriage Vertex constructors
+(`newAnthropicTriagerForVertex`, `newGenAITriagerForVertex`) called
+`pkg/apifrontend/launcher.InjectAmbientGoogleCredentials`, which sets the
+single, process-wide `GOOGLE_APPLICATION_CREDENTIALS` env var — two
+different Secrets could never both be visible to the SDK's ADC lookup at
+the same time.
+
+kubernaut#1861 (a main-line port of release/v1.5's #1870) fixed both
+constructors to resolve credentials explicitly instead:
+
+- `newAnthropicTriagerForVertex` now passes `llmCfg.APIKey` straight
+  through to `severity.NewAnthropicVertexClient`'s new `credentialsJSON`
+  parameter, which uses `anthropic-sdk-go/vertex.WithCredentials` — this
+  package's prior assumption that Claude-on-Vertex has no
+  explicit-credentials option was **incorrect** for this SDK.
+- `newGenAITriagerForVertex` now resolves `llmCfg.APIKey` via
+  `cloud.google.com/go/auth/credentials.DetectDefault` and sets
+  `genai.ClientConfig.Credentials` directly — mirroring the pattern AF's
+  own `agent.llm` Gemini-on-Vertex path (`newVertexGeminiModel`) already
+  used since kubernaut#1801.
+
+With both severityTriage constructors now credential-independent, the two
+profiles never contend for the same env var, so the guard was removed
+(`IT-PLATFORM-LLM-008`'s "fails render" case became two "renders
+successfully" cases proving separate mounts, separate `apiKeyFile` values,
+and no static `GOOGLE_APPLICATION_CREDENTIALS`).
+
+**What #1861 does *not* fix**: AF's own `agent.llm` Claude-on-Vertex
+connection (`newVertexAnthropicModel` in `pkg/apifrontend/launcher/
+model.go`) goes through the third-party `adk-anthropic-go` module rather
+than `pkg/apifrontend/severity`'s direct `anthropic-sdk-go` usage. As of
+`adk-anthropic-go` v1.0.0, its Vertex AI variant hardcodes
+`vertex.WithGoogleAuth` internally with no credentials-override field on
+its `Config` struct — verified by reading the vendored module source
+(`anthropic.go`'s `VariantVertexAI` case), not assumed. This path still
+relies on ambient ADC via `InjectAmbientGoogleCredentials`. This remains
+safe: since severityTriage's two Vertex constructors no longer touch that
+env var at all, nothing else in the process depends on what this one
+remaining call site sets it to, so there is no collision to guard against.
+Closing this specific gap would require either a fix upstream in
+`adk-anthropic-go`, or bypassing it for AF's own agent.llm Claude-on-Vertex
+construction — out of scope here; DD-LLM-007 already documents this as an
+intentional architectural boundary between AF's ADK-based launcher and
+KA's own, framework-independent Vertex client.
+
+---
+
+**Document Version**: 1.3
+**Last Updated**: 2026-08-02
+**Status**: 🟢 Implemented (chart + Go). Original v1.2 scope ("no Go code
+changes") implemented as designed; the #1861 amendment above additionally
+touched `pkg/apifrontend/severity`, `cmd/apifrontend`, and
+`pkg/apifrontend/launcher` to lift the #1731 guard.

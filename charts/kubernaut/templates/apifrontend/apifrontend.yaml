@@ -275,21 +275,24 @@ llmEnabled=false disables it entirely, forcing rule-based-only triage).
 {{- end }}
 {{- $stHasDedicatedSecret := and $stLLMEnabled (ne $stProfile.credentialsSecretName $afProfile.credentialsSecretName) }}
 {{- /*
-kubernaut#1731: GOOGLE_APPLICATION_CREDENTIALS is a single process-wide
-ambient-credential env var, so AF's own connection and severityTriage's
-cannot both be vertex_ai while pointing at different Secrets -- there would
-be no way to make both file paths visible to the SDK's ADC lookup at once.
-Every other cross-provider/cross-secret combination is fine, since only
-vertex_ai depends on this ambient env var (every other provider uses an
-explicit apiKeyFile mount instead). Still true after kubernaut#1801 moved
-the assignment from a static Deployment env: entry to an in-process
-os.Setenv in cmd/apifrontend (pkg/apifrontend/launcher.
-InjectAmbientGoogleCredentials) -- it's the same single process-wide
-variable either way, just no longer statically declared in the pod spec.
+kubernaut#1861 (lifts kubernaut#1731's guard): AF's own connection and
+severityTriage's may now both resolve to vertex_ai with different
+credentialsSecretName values. Previously blocked here because
+GOOGLE_APPLICATION_CREDENTIALS is a single process-wide ambient-credential
+env var and both cmd/apifrontend severityTriage constructors
+(newAnthropicTriagerForVertex, newGenAITriagerForVertex) relied on it via
+pkg/apifrontend/launcher.InjectAmbientGoogleCredentials. As of kubernaut#1861,
+both constructors resolve credentials explicitly from this profile's own
+apiKeyFile/apiKey (below) instead -- mirroring AF's own agent.llm
+Gemini-on-Vertex path (kubernaut#1801's newVertexGeminiModel) and the
+identical release/v1.5 fix (kubernaut#1870) -- so there is no longer a
+shared-mutable-state collision between the two connections. AF's own
+agent.llm Claude-on-Vertex connection (newVertexAnthropicModel) still
+relies on ambient ADC due to an adk-anthropic-go v1.0.0 SDK limitation, but
+that's no longer a collision risk either: severityTriage never touches the
+env var now, so nothing else in the process depends on what that one
+remaining call site sets it to.
 */}}
-{{- if and $stHasDedicatedSecret (eq $afProfile.provider "vertex_ai") (eq $stProfile.provider "vertex_ai") }}
-{{- fail (printf "apifrontend.llmProfileRef (%q) and apifrontend.config.severityTriage.llmProfileRef (%q) both resolve to provider=vertex_ai but different credentialsSecretName values (%q vs %q) -- GOOGLE_APPLICATION_CREDENTIALS is a single process-wide ambient-credential path, so both must share the same Secret when both are vertex_ai (kubernaut#1731). Use the same credentialsSecretName for both, or use a non-vertex_ai provider for one of them." $afProfileRefName $stProfileRefName $afProfile.credentialsSecretName $stProfile.credentialsSecretName) }}
-{{- end }}
 {{- $stAPIKeyFile := "" }}
 {{- if $stHasDedicatedSecret }}
 {{- $stAPIKeyFile = include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/apifrontend/severity-triage-credentials" "provider" $stProfile.provider) }}
