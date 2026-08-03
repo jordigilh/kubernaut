@@ -284,6 +284,26 @@ func fleetClusterIDScenarioYAML(fleetNS string) string {
 // can never tie with the generic "af_investigate" scenario registered
 // below (mock-llm's registry breaks same-confidence ties by registration
 // order; both keyword_scenarios would otherwise score 1.0).
+//
+// The message scenario's repeat_tool_call: true is mandatory, not
+// optional (mirrors af_investigate's own repeat_tool_call below, same
+// root cause): handlers/openai.go's handleFullDAG only fires a bare
+// ToolCallName when hasToolResults(req.Messages) is false OR
+// repeatAllowed is true. By the time Turn 3 asks mock-llm to decide on
+// kubernaut_message, Turn 1's (kubernaut_remediate) and Turn 2's
+// (kubernaut_investigate) tool results are ALREADY in the accumulated
+// conversation history AF's ADK agent sends on every call in this
+// session, so hasToolResults is unconditionally true and the tool_call
+// block was silently skipped, falling through to a generic DAG/text
+// response -- CI RCA (run 30837678285, job 91775573342, E2E-FLEET-018)
+// confirmed via the apifrontend log that no "kubernaut_message" tool
+// call was ever attempted for Turn 3, despite this scenario matching in
+// mock-llm's own log. repeat_tool_call's guard
+// (!lastMessageIsToolResult(req.Messages)) still fires exactly once: it
+// re-enables the tool call for Turn 3's first LLM completion (last
+// message is the user's text prompt, not a tool result) but naturally
+// self-disables on the very next completion once kubernaut_message's own
+// result becomes the last message.
 func kaInteractiveFleetBridgeScenarioYAML() string {
 	return `      - name: "af_ka_interactive_fleet_bridge_remediate_1768"
         keywords: ["ka-interactive-fleet-bridge-start"]
@@ -300,6 +320,7 @@ func kaInteractiveFleetBridgeScenarioYAML() string {
       - name: "af_ka_interactive_fleet_bridge_message_1768"
         keywords: ["ka-interactive-fleet-e2e-test"]
         match_last_only: true
+        repeat_tool_call: true
         tool_call:
           name: "kubernaut_message"
           arguments:
