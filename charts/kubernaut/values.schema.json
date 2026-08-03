@@ -2134,6 +2134,27 @@
               "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
             }
           }
+        },
+        "investigation": {
+          "type": "object",
+          "description": "BR-KA-213, Issue #1826: investigation-outcome confidence bands, templated into the Phase 3 workflow-selection prompt's Outcome A (\"resolved\")/Outcome B (\"inconclusive\") thresholds. Previously hardcoded as literal 0.7/0.5 in the prompt template.",
+          "additionalProperties": false,
+          "properties": {
+            "resolvedConfidenceThreshold": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "default": 0.7,
+              "description": "Minimum confidence for the LLM to classify an investigation outcome as \"resolved\" (problem self-resolved, no workflow needed)."
+            },
+            "inconclusiveConfidenceThreshold": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "default": 0.5,
+              "description": "Confidence below which the LLM classifies an investigation outcome as \"inconclusive\". Must be less than resolvedConfidenceThreshold."
+            }
+          }
         }
       }
     },

@@ -358,6 +358,8 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `interactive.maxConcurrentSessions` | integer | Maximum concurrent interactive sessions per instance. Issue #1737: raised from 5 to 50 -- the old default was too low even for realistic production use and caused full-suite E2E failures purely from Ginkgo's own test parallelism. | `50` | No |
 | `interactive.rateLimitPerUser` | integer | Maximum requests per second per authenticated user. Issue #1737: raised from 10 to 20, alongside maxConcurrentSessions. | `20` | No |
 | `interactive.sessionTTL` | string | Maximum duration for an interactive session before auto-release. | `"30m"` | No |
+| `investigation.inconclusiveConfidenceThreshold` | number | Confidence below which the LLM classifies an investigation outcome as "inconclusive". Must be less than resolvedConfidenceThreshold. | `0.5` | No |
+| `investigation.resolvedConfidenceThreshold` | number | Minimum confidence for the LLM to classify an investigation outcome as "resolved" (problem self-resolved, no workflow needed). | `0.7` | No |
 | `llmProfileRef` | string | Name of an entry in global.llmProfiles used for KA's investigator LLM calls (DD-PLATFORM-007). Defaults to "primary" (DD-PLATFORM-006 DA4); an undefined profile still fails the render. Replaces the old kubernautAgent.llm.* literal block. | `"primary"` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |

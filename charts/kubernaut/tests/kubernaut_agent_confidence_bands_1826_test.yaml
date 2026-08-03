@@ -1,0 +1,52 @@
+suite: "KubernautAgent (KA) investigation-outcome confidence bands (BR-KA-213, Issue #1826): resolvedConfidenceThreshold/inconclusiveConfidenceThreshold were previously hardcoded as literal 0.7/0.5 in phase3_workflow_selection.tmpl. Now operator-configurable via kubernautAgent.investigation.*, rendered into KA's ai.investigation config section via kubernaut.mergedValues (schema defaults 0.7/0.5 always materialize into the ConfigMap, mirroring investigation.maxTurns -- verify-helm-defaults-parity requires this since these fields have real schema defaults, unlike nil-semantics fields such as rego.confidenceThreshold)."
+templates:
+  - templates/kubernaut-agent/kubernaut-agent.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "IT-PLATFORM-1826-001: KA ConfigMap renders the schema's 0.7/0.5 confidence-band defaults when unset"
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*resolvedConfidenceThreshold: 0\\.7$"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*inconclusiveConfidenceThreshold: 0\\.5$"
+
+  - it: "IT-PLATFORM-1826-002: KA renders operator-configured confidence bands from kubernautAgent.investigation.*"
+    set:
+      kubernautAgent:
+        investigation:
+          resolvedConfidenceThreshold: 0.85
+          inconclusiveConfidenceThreshold: 0.3
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-agent-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*resolvedConfidenceThreshold: 0\\.85"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*inconclusiveConfidenceThreshold: 0\\.3"

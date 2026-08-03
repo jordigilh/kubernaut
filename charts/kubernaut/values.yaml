@@ -512,6 +512,14 @@ kubernautAgent:
   # follow-up); only oauth2.credentialsSecretRef remains overridable here.
   fleet:
     oauth2: {}
+  # -- Investigation-outcome confidence bands (BR-KA-213, Issue #1826), templated
+  # into the Phase 3 workflow-selection prompt's "resolved"/"inconclusive"
+  # thresholds. Defaults (0.7/0.5, applied by the Go binary when unset here)
+  # match the values previously hardcoded directly in the prompt template.
+  # investigation:
+  #   resolvedConfidenceThreshold: 0.7
+  #   inconclusiveConfidenceThreshold: 0.5
+  investigation: {}
 
 # -- AuthWebhook admission controller
 # DD-PLATFORM-006 DA14: replicas (1) / logging.level ("INFO") have non-zero

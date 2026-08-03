@@ -200,6 +200,13 @@ type Config struct {
 	// disabled), Investigate never attempts pre-scoping and every
 	// investigation behaves exactly as it did before DD-FLEET-004.
 	FleetOverlayResolver FleetOverlayResolver
+	// ResolvedConfidenceThreshold and InconclusiveConfidenceThreshold are the
+	// operator-configurable investigation-outcome confidence bands (BR-KA-213,
+	// Issue #1826) threaded into the Phase 3 workflow-selection prompt. Zero
+	// means "not configured" — RenderWorkflowSelection substitutes its V1.0
+	// defaults (0.7/0.5) in that case; see prompt.WorkflowSelectionInput.
+	ResolvedConfidenceThreshold     float64
+	InconclusiveConfidenceThreshold float64
 }
 
 // Investigator orchestrates the two-invocation architecture:
@@ -227,6 +234,10 @@ type Investigator struct {
 	// shared across all concurrent investigations, so this must never be
 	// mutated post-New (DD-FLEET-004 preflight finding).
 	fleetOverlayResolver FleetOverlayResolver
+	// resolvedConfidenceThreshold and inconclusiveConfidenceThreshold mirror
+	// Config's fields of the same name (BR-KA-213, Issue #1826).
+	resolvedConfidenceThreshold     float64
+	inconclusiveConfidenceThreshold float64
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
@@ -274,23 +285,25 @@ func New(cfg Config) *Investigator {
 		pipeline.AnomalyDetector = NewAnomalyDetector(DefaultAnomalyConfig(), nil)
 	}
 	return &Investigator{
-		client:               cfg.Client,
-		builder:              cfg.Builder,
-		resultParser:         cfg.ResultParser,
-		enricher:             cfg.Enricher,
-		auditStore:           cfg.AuditStore,
-		logger:               cfg.Logger,
-		maxTurns:             cfg.MaxTurns,
-		phaseTools:           cfg.PhaseTools,
-		registry:             cfg.Registry,
-		pipeline:             pipeline,
-		modelName:            cfg.ModelName,
-		scopeResolver:        cfg.ScopeResolver,
-		swappable:            cfg.Swappable,
-		metrics:              cfg.Metrics,
-		pinDecorator:         cfg.PinDecorator,
-		phaseResolver:        cfg.PhaseResolver,
-		fleetOverlayResolver: cfg.FleetOverlayResolver,
+		client:                          cfg.Client,
+		builder:                         cfg.Builder,
+		resultParser:                    cfg.ResultParser,
+		enricher:                        cfg.Enricher,
+		auditStore:                      cfg.AuditStore,
+		logger:                          cfg.Logger,
+		maxTurns:                        cfg.MaxTurns,
+		phaseTools:                      cfg.PhaseTools,
+		registry:                        cfg.Registry,
+		pipeline:                        pipeline,
+		modelName:                       cfg.ModelName,
+		scopeResolver:                   cfg.ScopeResolver,
+		swappable:                       cfg.Swappable,
+		metrics:                         cfg.Metrics,
+		pinDecorator:                    cfg.PinDecorator,
+		phaseResolver:                   cfg.PhaseResolver,
+		fleetOverlayResolver:            cfg.FleetOverlayResolver,
+		resolvedConfidenceThreshold:     cfg.ResolvedConfidenceThreshold,
+		inconclusiveConfidenceThreshold: cfg.InconclusiveConfidenceThreshold,
 	}
 }
 

@@ -416,6 +416,10 @@ func buildInvestigator(
 		PhaseResolver:        phaseResolver,
 		PinDecorator:         pinDecorator,
 		FleetOverlayResolver: p.fleetOverlayResolver,
+		// BR-KA-213, Issue #1826: operator-configurable investigation-outcome
+		// confidence bands, templated into the Phase 3 workflow-selection prompt.
+		ResolvedConfidenceThreshold:     p.cfg.AI.Investigation.ResolvedConfidenceThreshold,
+		InconclusiveConfidenceThreshold: p.cfg.AI.Investigation.InconclusiveConfidenceThreshold,
 		Pipeline: investigator.Pipeline{
 			Sanitizer:         p.sanitizer,
 			AnomalyDetector:   p.anomalyDetector,

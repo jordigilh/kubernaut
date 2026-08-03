@@ -736,6 +736,84 @@ runtime:
 	})
 })
 
+// BR-KA-213 / Issue #1826: KA's own investigation-outcome confidence bands
+// (previously hardcoded as 0.7/0.5 directly in phase3_workflow_selection.tmpl)
+// are now operator-configurable via ai.investigation.{resolved,inconclusive}
+// ConfidenceThreshold. Distinct from AIAnalysis's BR-AI-088 approval-threshold
+// knobs — this governs the LLM's own investigation-quality self-assessment,
+// before any workflow is selected.
+var _ = Describe("InvestigationConfig confidence bands — BR-KA-213 / Issue #1826", func() {
+	Describe("UT-KA-1826-003a: DefaultConfig sets the 0.7/0.5 V1.0 defaults", func() {
+		It("should default ResolvedConfidenceThreshold to 0.7 and InconclusiveConfidenceThreshold to 0.5", func() {
+			cfg := config.DefaultConfig()
+			Expect(cfg.AI.Investigation.ResolvedConfidenceThreshold).To(Equal(0.7))
+			Expect(cfg.AI.Investigation.InconclusiveConfidenceThreshold).To(Equal(0.5))
+		})
+	})
+
+	Describe("UT-KA-1826-003b: Kubernaut Agent loads confidence bands from YAML", func() {
+		It("should parse operator-overridden confidence bands", func() {
+			yaml := []byte(`
+ai:
+  investigation:
+    maxTurns: 15
+    resolvedConfidenceThreshold: 0.8
+    inconclusiveConfidenceThreshold: 0.4
+`)
+			cfg, err := config.Load(yaml)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cfg.AI.Investigation.ResolvedConfidenceThreshold).To(Equal(0.8))
+			Expect(cfg.AI.Investigation.InconclusiveConfidenceThreshold).To(Equal(0.4))
+		})
+	})
+
+	Describe("UT-KA-1826-003c: Validate rejects out-of-range or inverted confidence bands", func() {
+		It("should reject a resolvedConfidenceThreshold of 0", func() {
+			cfg := config.DefaultConfig()
+			cfg.AI.Investigation.ResolvedConfidenceThreshold = 0
+			err := cfg.Validate()
+			Expect(err).To(MatchError(ContainSubstring("ai.investigation.resolvedConfidenceThreshold must be in range (0.0, 1.0]")))
+		})
+
+		It("should reject a resolvedConfidenceThreshold above 1.0", func() {
+			cfg := config.DefaultConfig()
+			cfg.AI.Investigation.ResolvedConfidenceThreshold = 1.5
+			err := cfg.Validate()
+			Expect(err).To(MatchError(ContainSubstring("ai.investigation.resolvedConfidenceThreshold must be in range (0.0, 1.0]")))
+		})
+
+		It("should reject an inconclusiveConfidenceThreshold of 0", func() {
+			cfg := config.DefaultConfig()
+			cfg.AI.Investigation.InconclusiveConfidenceThreshold = 0
+			err := cfg.Validate()
+			Expect(err).To(MatchError(ContainSubstring("ai.investigation.inconclusiveConfidenceThreshold must be in range (0.0, 1.0]")))
+		})
+
+		It("should reject an inconclusiveConfidenceThreshold above 1.0", func() {
+			cfg := config.DefaultConfig()
+			cfg.AI.Investigation.InconclusiveConfidenceThreshold = 1.1
+			err := cfg.Validate()
+			Expect(err).To(MatchError(ContainSubstring("ai.investigation.inconclusiveConfidenceThreshold must be in range (0.0, 1.0]")))
+		})
+
+		It("should reject inconclusiveConfidenceThreshold >= resolvedConfidenceThreshold (no gray zone)", func() {
+			cfg := config.DefaultConfig()
+			cfg.AI.Investigation.ResolvedConfidenceThreshold = 0.6
+			cfg.AI.Investigation.InconclusiveConfidenceThreshold = 0.6
+			err := cfg.Validate()
+			Expect(err).To(MatchError(ContainSubstring("inconclusiveConfidenceThreshold")))
+			Expect(err).To(MatchError(ContainSubstring("must be less than")))
+		})
+
+		It("should accept a valid custom band with a gap between the two thresholds", func() {
+			cfg := config.DefaultConfig()
+			cfg.AI.Investigation.ResolvedConfidenceThreshold = 0.8
+			cfg.AI.Investigation.InconclusiveConfidenceThreshold = 0.4
+			Expect(cfg.Validate()).To(Succeed())
+		})
+	})
+})
+
 var _ = Describe("LoggingConfig Format — BR-PLATFORM-1330", func() {
 
 	Describe("UT-KA-1330-005: runtime.logging.format YAML round-trip (CM-6)", func() {
