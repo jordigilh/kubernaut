@@ -602,6 +602,11 @@ func main() {
 
 	store.StartCleanupLoop(ctx, cfg.Runtime.Session.TTL/2)
 
+	// #1892: sweep idle per-investigation AnomalyDetector entries so a
+	// correlationID whose investigation never reaches a clean exit path
+	// (crash, cancellation, client disconnect) does not leak memory forever.
+	inv.StartAnomalyDetectorCleanupLoop(ctx, 30*time.Minute, investigator.DefaultAnomalyDetectorTTL)
+
 	// Issue #753: Start dedicated health and metrics servers
 	go func() {
 		logger.Info("health server listening", "addr", cfg.Runtime.Server.HealthAddr)

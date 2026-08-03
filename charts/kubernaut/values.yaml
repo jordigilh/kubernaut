@@ -428,6 +428,16 @@ kubernautAgent:
     #   model: "gpt-4o-mini"
     #   endpoint: ""
     #   apiKey: ""
+  # -- AI investigation behavior and safety guardrails.
+  ai:
+    safety:
+      anomaly:
+        # -- Maximum total tool calls allowed per investigation phase before the
+        # investigation aborts as budget-exhausted (I7 anomaly detector,
+        # DD-KA-019-003). Raise this if legitimate investigations are hitting
+        # the ceiling; for interactive sessions this surfaces as the MCPError
+        # code tool_budget_exhausted (#1889).
+        maxTotalToolCalls: 30
 
 # -- AuthWebhook admission controller
 authwebhook:

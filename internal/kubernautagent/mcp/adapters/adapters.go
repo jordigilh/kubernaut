@@ -73,6 +73,9 @@ func ExtractContent(result investigator.LoopResult) (string, error) {
 	case *investigator.SubmitNoWorkflowResult:
 		return r.Content, nil
 	case *investigator.ExhaustedResult:
+		if r.Reason == investigator.ReasonToolBudgetExhausted {
+			return "", fmt.Errorf("investigation exhausted: %w", tools.ErrCodeToolBudgetExhausted)
+		}
 		return "", fmt.Errorf("investigation exhausted: %s", r.Reason)
 	case *investigator.CancelledResult:
 		return "", fmt.Errorf("investigation cancelled at turn %d", r.Turn)
