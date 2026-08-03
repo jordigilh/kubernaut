@@ -274,7 +274,7 @@ processor reads and where they land on the CRD:
 
 | KA response field | AIAnalysis status field | Notes |
 |---|---|---|
-| `confidence` | (used for threshold check + `RecordConfidenceScore` metric) | 0.7 confidence threshold is enforced by **AIAnalysis**, not KA (BR-HAPI-197 AC-4) |
+| `confidence` | (used for threshold check + `RecordConfidenceScore` metric) | 0.7 confidence threshold is enforced by **AIAnalysis**, not KA (BR-KA-197 AC-4) |
 | `needs_human_review` | `status.needsHumanReview` | Checked **first**, before any other classification logic |
 | `human_review_reason` | `status.humanReviewReason` → mapped to `status.subReason` | |
 | `is_actionable` / warning `"Alert not actionable"` | `status.actionability = "NotActionable"` | #388, #607 |

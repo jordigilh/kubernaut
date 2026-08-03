@@ -24,7 +24,10 @@ This document establishes the **authoritative field mapping matrix** for Remedia
 
 **Authority**: All services emitting audit events for RR reconstruction MUST follow these mappings. This is a mandatory compliance requirement for V1.0.
 
-**Scope**: 8 critical fields across 5 services (Gateway, AI Analysis, Workflow Engine, Execution, Orchestrator)
+**Scope**: 7 critical fields across 4 services (Gateway, Workflow Engine, Execution, Orchestrator).
+Originally 8 fields across 5 services; Field #4 (AI Analysis `providerData`) was removed 2026-08-02
+([#1806](https://github.com/jordigilh/kubernaut/issues/1806) /
+[#1882](https://github.com/jordigilh/kubernaut/issues/1882)) — see Field #4 entry below for why.
 
 ---
 
@@ -45,13 +48,16 @@ This document provides the authoritative mapping between RemediationRequest CRD 
 | 1 | `.spec.originalPayload` | `event_data.original_payload` | Gateway | `gateway.signal.received` | JSON Object | ✅ YES | 2-5KB |
 | 2 | `.spec.signalLabels` | `event_data.signal_labels` | Gateway | `gateway.signal.received` | JSON Object | ✅ YES | 0.5-2KB |
 | 3 | `.spec.signalAnnotations` | `event_data.signal_annotations` | Gateway | `gateway.signal.received` | JSON Object | ✅ YES | 0.5-2KB |
-| 4 | `.spec.aiAnalysis.providerData` | `event_data.provider_data` | AI Analysis | `aianalysis.analysis.completed` | JSON Object | ✅ YES | 1-3KB |
+| ~~4~~ | ~~`.spec.aiAnalysis.providerData`~~ | **REMOVED** — see Field #4 below | — | — | — | — | — |
 | 5 | `.status.selectedWorkflowRef` | `event_data.selected_workflow_ref` | Workflow Engine | `workflow.selection.completed` | JSON Object | ✅ YES | 200B |
 | 6 | `.status.executionRef` | `event_data.execution_ref` | Execution | `execution.started` | JSON Object | ✅ YES | 200B |
 | 7 | `.status.error` | `event_data.error_details` | All Services | `*.failure` | JSON Object | ⚠️ OPTIONAL | 0.5-1KB |
 | 8 | `.status.timeoutConfig` | `event_data.timeout_config` | Orchestrator | `orchestration.remediation.created` | JSON Object | ⚠️ OPTIONAL | 100-200B |
 
-**Total Storage Impact**: ~5-12KB per remediation (compressed)
+*Row numbering (1, 2, 3, 5-8) is preserved as-is rather than renumbered, so cross-references elsewhere
+in this document and in dependent docs stay valid.*
+
+**Total Storage Impact**: ~4-9KB per remediation (compressed) — 7 active fields (Field #4 removed)
 
 ---
 
@@ -163,43 +169,39 @@ rr.Spec.SignalAnnotations = gatewayEvent.EventData["signal_annotations"].(map[st
 
 ---
 
-### **Field #4: `providerData`** (CRITICAL)
+### **Field #4: `providerData`** — ❌ REMOVED (2026-08-03)
 
-**RR CRD Path**: `.spec.aiAnalysis.providerData`
+> **✅ RESOLVED ([#1882](https://github.com/jordigilh/kubernaut/issues/1882))**: This field
+> mapping was stale (flagged 2026-08-02, [#1806](https://github.com/jordigilh/kubernaut/issues/1806))
+> and has now been removed from RR reconstruction scope per an explicit architecture-team decision:
+> - `.spec.aiAnalysis.providerData` never existed on `RemediationRequestSpec`
+>   (`api/remediation/v1alpha1/remediationrequest_types.go`). AI decision data (confidence,
+>   reasoning, selected workflow, provider/model) belongs to the **AIAnalysis CRD**
+>   (`AIAnalysis.Status`), not `RemediationRequest`.
+> - **Decision**: RR CRD reconstruction does **not** need a "Field #4". `RemediationRequest`'s
+>   own spec/status never carried AI provider/reasoning data, so there is nothing to remove from
+>   the RR CRD's reconstructed shape — this was a mapping error, not a missing capability.
+> - The underlying need — capturing AI provider/confidence/reasoning/recommendations data in the
+>   audit trail so it can be reconstructed later — is real, but it targets a **future AIAnalysis
+>   CRD reconstruction**, not RR reconstruction. That work is already captured as deferred,
+>   not-yet-implemented future scope in
+>   [DD-AUDIT-007: Full Child CRD Reconstruction (Future)](./DD-AUDIT-007-full-child-crd-reconstruction-future.md),
+>   which explicitly proposes an `aianalysis.lifecycle.snapshot` event carrying the full
+>   AIAnalysis spec + status (including `selected_workflow`, `confidence`,
+>   `root_cause_analysis`) — see that document's "OpenAPI Schema Extensions" section.
+> - Today (V1.0), the AI decision fields that *do* exist on the real
+>   `aianalysis.analysis.completed` payload (`Confidence`, `WorkflowID`, `ApprovalRequired`,
+>   `ApprovalReason`, `DegradedMode`, `WarningsCount`, `Reason`, `SubReason`) are already captured
+>   per [DD-AUDIT-003](./DD-AUDIT-003-service-audit-trace-requirements.md) ("2. AI Analysis
+>   Controller" → "SOC2 Compliance Event") and queryable via `correlation_id` — they are just not
+>   part of *RR* reconstruction, consistent with the decision above.
+>
+> **No action required in this document** beyond removing the field (done). If/when
+> DD-AUDIT-007 is implemented, its own field mapping table is the correct place for an
+> AIAnalysis-CRD equivalent of this document — not a re-added Field #4 here.
 
-**Audit Event Capture**:
-```yaml
-event_type: aianalysis.analysis.completed
-event_category: analysis
-event_data:
-  provider_data:  # ← NEW FIELD
-    provider: "holmesgpt"
-    model: "gpt-4"
-    confidence: 0.92
-    reasoning: "Pod exceeded memory limit due to memory leak in payment processing service"
-    recommendations:
-      - action: "increase_memory_limit"
-        confidence: 0.85
-        details: "Increase memory limit from 512Mi to 1Gi"
-      - action: "investigate_memory_leak"
-        confidence: 0.95
-        details: "Profile payment processing service for memory leaks"
-    raw_response:
-      completion_id: "chatcmpl-abc123"
-      tokens_used: 1234
-      response_time_ms: 2500
-```
-
-**Implementation**:
-- **File**: `pkg/aianalysis/controller.go`
-- **Change**: Add `provider_data` to `AIAnalysisEventData`
-- **Type**: Nested JSON object (flexible schema)
-
-**Reconstruction Logic**:
-```go
-aiEvent := getAuditEvent(ctx, "aianalysis.analysis.completed", correlationID)
-rr.Spec.AIAnalysis.ProviderData = aiEvent.EventData["provider_data"]
-```
+This field has been struck from the mapping table above. No RR CRD path, audit event, or
+reconstruction logic exists for it — see the resolution note for where this data actually lives.
 
 ---
 
@@ -355,11 +357,10 @@ func ReconstructRR(ctx context.Context, correlationID string) (*RemediationReque
     rr.Spec.SignalLabels = gatewayEvent.EventData["signal_labels"].(map[string]string)
     rr.Spec.SignalAnnotations = gatewayEvent.EventData["signal_annotations"].(map[string]string)
 
-    // STEP 2: AI Analysis fields (provider_data)
-    aiEvent := getAuditEvent(ctx, "aianalysis.analysis.completed", correlationID)
-    if aiEvent != nil {
-        rr.Spec.AIAnalysis.ProviderData = aiEvent.EventData["provider_data"]
-    }
+    // STEP 2 removed (Field #4, resolved #1882): RemediationRequestSpec has no AIAnalysis
+    // field — AI provider/confidence/reasoning data belongs to the AIAnalysis CRD, not RR.
+    // See DD-AUDIT-007 for the (deferred, not yet implemented) AIAnalysis CRD reconstruction
+    // path that would carry this data instead.
 
     // STEP 3: Workflow selection (selected_workflow_ref)
     workflowEvent := getAuditEvent(ctx, "workflow.selection.completed", correlationID)
@@ -406,7 +407,7 @@ func ReconstructRR(ctx context.Context, correlationID string) (*RemediationReque
 | `original_payload` | ✅ YES | Must be valid JSON | Return error |
 | `signal_labels` | ✅ YES | Must be map[string]string | Return error |
 | `signal_annotations` | ✅ YES | Must be map[string]string | Return error |
-| `provider_data` | ✅ YES | Must be valid JSON | Return error |
+| ~~`provider_data`~~ | — | **removed, see Field #4** | — |
 | `selected_workflow_ref` | ✅ YES | Must have `name` field | Return error |
 | `execution_ref` | ✅ YES | Must have `name` field | Return error |
 | `error_details` | ❌ NO | Optional | Skip if missing |
@@ -419,18 +420,18 @@ func ReconstructRR(ctx context.Context, correlationID string) (*RemediationReque
 ```go
 // calculateAccuracy determines reconstruction completeness
 func calculateAccuracy(rr *RemediationRequest) int {
-    totalFields := 8
+    totalFields := 7 // Field #4 removed 2026-08-03, see resolution note (#1882)
+
     capturedFields := 0
 
-    // Required fields (6 fields = 75% of accuracy)
+    // Required fields (5 fields = 71% of accuracy)
     if rr.Spec.OriginalPayload != nil { capturedFields++ }
     if len(rr.Spec.SignalLabels) > 0 { capturedFields++ }
     if len(rr.Spec.SignalAnnotations) > 0 { capturedFields++ }
-    if rr.Spec.AIAnalysis.ProviderData != nil { capturedFields++ }
     if rr.Status.SelectedWorkflowRef != nil { capturedFields++ }
     if rr.Status.ExecutionRef != nil { capturedFields++ }
 
-    // Optional fields (2 fields = 25% of accuracy)
+    // Optional fields (2 fields = 29% of accuracy)
     if rr.Status.Error != nil { capturedFields++ }
     if rr.Status.TimeoutConfig != nil { capturedFields++ }
 
@@ -439,9 +440,9 @@ func calculateAccuracy(rr *RemediationRequest) int {
 ```
 
 **Accuracy Targets**:
-- **100%**: All 8 fields captured (6 required + 2 optional)
-- **75%**: All 6 required fields captured (minimum for V1.0)
-- **<75%**: Incomplete reconstruction (ERROR)
+- **100%**: All 7 fields captured (5 required + 2 optional)
+- **71%**: All 5 required fields captured (minimum for V1.0)
+- **<71%**: Incomplete reconstruction (ERROR)
 
 ---
 
@@ -454,7 +455,7 @@ func calculateAccuracy(rr *RemediationRequest) int {
 - [ ] Unit tests for field mapping
 
 ### **Per-Field Implementation** (Days 1-4)
-For each of the 8 fields:
+For each of the 7 active fields (#1-3, #5-8; Field #4 removed):
 - [ ] Add field to service's event builder
 - [ ] Update audit event emission code
 - [ ] Add unit test for field capture
@@ -477,16 +478,16 @@ For each of the 8 fields:
 | `original_payload` | 3KB | 3:1 | 1KB |
 | `signal_labels` | 1KB | 2:1 | 0.5KB |
 | `signal_annotations` | 1KB | 2:1 | 0.5KB |
-| `provider_data` | 2KB | 2:1 | 1KB |
+| ~~`provider_data`~~ | — | — | **removed, see Field #4** |
 | `selected_workflow_ref` | 200B | 1.5:1 | 133B |
 | `execution_ref` | 200B | 1.5:1 | 133B |
 | `error_details` | 0.5KB | 2:1 | 250B |
 | `timeout_config` | 150B | 1.5:1 | 100B |
 
-**Total Per Remediation**:
-- **Uncompressed**: ~8KB
-- **Compressed**: ~3.5KB
-- **With 7-year retention**: 3.5KB × 1M remediations = **3.5GB** (manageable)
+**Total Per Remediation** (Field #4 removed):
+- **Uncompressed**: ~6KB
+- **Compressed**: ~2.5KB
+- **With 7-year retention**: 2.5KB × 1M remediations = **2.5GB** (manageable)
 
 ---
 

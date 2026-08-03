@@ -22,7 +22,7 @@ This test plan covers the AIAnalysis service (Go, CRD Controller) implementation
 
 ### Out of Scope
 
-- HAPI Python-side label detection and session_state (see [hapi_test_plan_v1.0.md](hapi_test_plan_v1.0.md))
+- HAPI Python-side label detection and session_state (see [ka_test_plan_v1.0.md](ka_test_plan_v1.0.md))
 - Rego policy logic itself (existing tests, unchanged)
 - CEL immutability rules (validated at CRD manifest level, not unit-testable)
 

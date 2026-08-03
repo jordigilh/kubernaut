@@ -1,6 +1,6 @@
 # BR-HAPI-197 Test Plans - Human Review Required Flag
 
-**Business Requirement**: [BR-HAPI-197](../../requirements/BR-HAPI-197-needs-human-review-field.md)
+**Business Requirement**: [BR-HAPI-197](../../requirements/BR-KA-197-needs-human-review-field.md)
 **Status**: Implementation In Progress
 **Date**: January 20, 2026
 
@@ -66,7 +66,7 @@ This directory contains all test plans related to **BR-HAPI-197** (Human Review 
 ## 🔗 **Related Documentation**
 
 ### **Business Requirements**
-- [BR-HAPI-197](../../requirements/BR-HAPI-197-needs-human-review-field.md) - Human Review Required Flag
+- [BR-HAPI-197](../../requirements/BR-KA-197-needs-human-review-field.md) - Human Review Required Flag
 - [BR-KA-212](../../requirements/BR-KA-212-rca-target-resource.md) - RCA Target Resource (extends BR-HAPI-197, now BR-KA-197)
 
 ### **Design Decisions**

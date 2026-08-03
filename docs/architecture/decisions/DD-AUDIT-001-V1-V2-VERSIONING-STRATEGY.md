@@ -6,6 +6,23 @@
 
 ---
 
+> **⚠️ SUPERSEDED (2026-08-02, [#1806](https://github.com/jordigilh/kubernaut/issues/1806))**: The
+> "V1.0/V1.1 Audit Data Requirements" section below (four separate per-service SQL tables —
+> `orchestration_audit`, `ai_analysis_audit`, `workflow_execution_audit`, `notification_audit` —
+> plus dedicated `POST /api/v1/audit/*` write endpoints) was never built. Six days after this
+> document, [ADR-034: Unified Audit Table Design](./ADR-034-unified-audit-table-design.md)
+> (2025-11-08) established the actual shipped architecture: a single unified `audit_events` table
+> with `event_category`/`event_type`/`event_data` (JSONB) event-sourcing, populated by all
+> services via a shared audit client library (DD-AUDIT-002) rather than per-service tables or
+> bespoke REST endpoints. The `holmesgpt_response_time_ms` column in the `ai_analysis_audit`
+> example is also stale — no such per-service table or column exists. The high-level Versioning
+> Strategy concept (V1.0/V1.1 data capture now, V2.0 RAR generation later, no schema changes
+> needed) remains directionally accurate; only the concrete per-service-table schema below is
+> superseded. See ADR-034 and [DD-AUDIT-004](./DD-AUDIT-004-RR-RECONSTRUCTION-FIELD-MAPPING.md)
+> for the current, authoritative audit schema.
+
+---
+
 ## 🎯 **Versioning Strategy Overview**
 
 ### **V1.0 & V1.1: Foundation (Data Capture Only)**

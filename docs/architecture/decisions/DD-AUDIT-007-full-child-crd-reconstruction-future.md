@@ -12,6 +12,17 @@
 
 This document captures the **future feature** for reconstructing **complete child CRDs** (SignalProcessing, AIAnalysis, WorkflowExecution, NotificationRequest, RemediationApprovalRequest) from audit traces, similar to the existing RR reconstruction capability.
 
+> **Confirmed scope (2026-08-03, [#1882](https://github.com/jordigilh/kubernaut/issues/1882))**: AI
+> decision data (provider, model, confidence, reasoning, recommendations) does **not** belong to
+> `RemediationRequest` reconstruction — see
+> [DD-AUDIT-004, Field #4](./DD-AUDIT-004-RR-RECONSTRUCTION-FIELD-MAPPING.md#field-4-providerdata--removed-2026-08-03),
+> which was removed from that document for exactly this reason. That data lives on the
+> **AIAnalysis CRD** and, until this future feature is implemented, is captured only as discrete
+> `event_data` fields (queryable via `correlation_id`, per
+> [DD-AUDIT-003](./DD-AUDIT-003-service-audit-trace-requirements.md)) rather than as a full
+> reconstructable CRD. The `aianalysis.lifecycle.snapshot` event proposed below is the intended
+> future home for that capability.
+
 **Current State (V1.0)**:
 - ✅ RemediationRequest reconstruction (100% field coverage)
 - ✅ Correlation ID links all child events

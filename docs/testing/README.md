@@ -73,7 +73,7 @@ Integration test infrastructure is fully programmatic Go -- `test/infrastructure
 
 ### Test Plans
 
-Test plans for specific features and issues live in subdirectories named by issue number or BR/DD identifier (e.g., `docs/testing/291/TEST_PLAN.md`, `docs/testing/BR-HAPI-197/`).
+Test plans for specific features and issues live in subdirectories named by issue number or BR/DD identifier (e.g., `docs/testing/291/TEST_PLAN.md`, `docs/testing/BR-KA-197/`).
 
 ## Validation Commands
 

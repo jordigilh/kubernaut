@@ -1161,7 +1161,7 @@ A formal test plan will be created before implementation per DD-TEST-006. The te
 
 **Severity**: MEDIUM
 **Probability**: HIGH (already exists)
-**Impact**: `deploy/mock-llm/01-deployment.yaml` uses `/liveness` and `/readiness` probe paths with no ConfigMap, while `holmesgpt_api.go` uses `/health` with ConfigMap. The Go rewrite enforcing strict routing (BR-MOCK-005) will break the static manifests.
+**Impact**: `deploy/mock-llm/01-deployment.yaml` uses `/liveness` and `/readiness` probe paths with no ConfigMap, while `kubernautagent.go` (renamed from `holmesgpt_api.go` post-Go-rewrite) uses `/health` with ConfigMap. The Go rewrite enforcing strict routing (BR-MOCK-005) will break the static manifests.
 
 **Mitigation**: Reconcile static manifests during Go rewrite:
 1. Update `deploy/mock-llm/01-deployment.yaml` to use `/health` for both probes
@@ -1212,7 +1212,7 @@ A formal test plan will be created before implementation per DD-TEST-006. The te
 
 ### Source
 
-Cross-reference audit of: Python Mock LLM source (`server.py`, `__main__.py`, `Dockerfile`), Go infrastructure (`mock_llm.go`, `holmesgpt_api.go`), static manifests (`deploy/mock-llm/`), DD-TEST-011, #531 issue body, and all 9 sub-issues.
+Cross-reference audit of: Python Mock LLM source (`server.py`, `__main__.py`, `Dockerfile`), Go infrastructure (`mock_llm.go`, `holmesgpt_api.go` — since renamed to `kubernautagent.go` post-Go-rewrite), static manifests (`deploy/mock-llm/`), DD-TEST-011, #531 issue body, and all 9 sub-issues.
 
 ### Findings Addressed in This Document
 

@@ -24,7 +24,7 @@ This directory contains all test plans related to **ADR-056** (Relocate Detected
 
 | Service | Test Plan | Status | Test Count |
 |---------|-----------|--------|------------|
-| **HAPI (Python)** | [hapi_test_plan_v1.0.md](hapi_test_plan_v1.0.md) | Active | 80 unit, 7 integration, 3 E2E |
+| **HAPI (Python)** | [ka_test_plan_v1.0.md](ka_test_plan_v1.0.md) | Active | 80 unit, 7 integration, 3 E2E |
 | **AIAnalysis (Go)** | [aianalysis_test_plan_v1.0.md](aianalysis_test_plan_v1.0.md) | Active | 18 unit, 6 integration, 3 E2E |
 
 ---
