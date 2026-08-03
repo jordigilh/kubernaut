@@ -111,7 +111,7 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 			return sentinel, toolMessages, true, nil
 		}
 		if budgetExhausted {
-			return &ExhaustedResult{Reason: "tool budget exhausted"}, toolMessages, true, nil
+			return &ExhaustedResult{Reason: ReasonToolBudgetExhausted}, toolMessages, true, nil
 		}
 		return nil, toolMessages, false, nil
 	}
@@ -311,7 +311,7 @@ func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Me
 			"tool_index": i,
 		})
 		g.Go(func() error {
-			toolResults[i] = inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments))
+			toolResults[i] = inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments), correlationID)
 			return nil
 		})
 	}
@@ -342,7 +342,7 @@ func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Me
 		})
 	}
 
-	budgetExhausted = inv.pipeline.AnomalyDetector.TotalExceeded()
+	budgetExhausted = inv.anomalyDetectorFor(correlationID).TotalExceeded()
 	return messages, nil, budgetExhausted
 }
 
