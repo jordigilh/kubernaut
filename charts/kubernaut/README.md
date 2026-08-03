@@ -544,6 +544,49 @@ See `docs/generated/helm-values-reference.md#gateway`,
 (ingress, service type/nodePort, per-service `fleet.oauth2.credentialsSecretRef` override,
 external Prometheus/AlertManager for EM).
 
+#### Extending owner-chain-resolution RBAC (Issue #1069, DD-GATEWAY-018)
+
+Gateway and EffectivenessMonitor bind to Kubernetes' built-in `view` ClusterRole so
+owner-chain resolution (walking owner references up to the controlling resource) works
+for `PodDisruptionBudget` and any ecosystem CRD whose operator publishes
+`rbac.authorization.k8s.io/aggregate-to-view: "true"` labels (cert-manager, Istio,
+KubeVirt, and other "well-behaved" operators are covered automatically, and only on
+clusters where those operators are actually installed).
+
+Some ecosystems don't aggregate to `view` (OLM's `Subscription`/`ClusterServiceVersion`,
+ArgoCD's `Application` -- ArgoCD manages its own RBAC internally). For these,
+`global.additionalClusterRoleBindings` lets you bind a `ClusterRole` you create and own to
+**all three** service accounts at once, without waiting on a Kubernaut release -- this is the
+common case, since Gateway/EM/KA inspect the same owner-chain/target resource at different
+pipeline stages and usually need identical visibility:
+
+```yaml
+# 1. Create and own a ClusterRole scoped to exactly what you want Kubernaut to read.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: my-olm-reader
+rules:
+  - apiGroups: ["operators.coreos.com"]
+    resources: ["subscriptions", "clusterserviceversions", "installplans"]
+    verbs: ["get", "list", "watch"]
+```
+
+```yaml
+# 2. Reference it by name once -- applies to gateway, effectivenessmonitor, AND
+# kubernautAgent. Kubernaut only binds it, never authors its rules.
+global:
+  additionalClusterRoleBindings:
+    - my-olm-reader
+```
+
+If you want asymmetric access instead -- most commonly, granting Gateway/EM an ecosystem
+while withholding it from `kubernautAgent`, the highest-risk, LLM-driven component
+(BR-PLATFORM-005) -- use the per-service fields instead of (or in addition to) the global
+one: `gateway.additionalClusterRoleBindings`, `effectivenessmonitor.additionalClusterRoleBindings`,
+`kubernautAgent.additionalClusterRoleBindings`. The same pattern works for ArgoCD
+(`apiGroups: ["argoproj.io"]`, `resources: ["applications"]`) or any other resource kind.
+
 ### Infrastructure
 
 **PostgreSQL/Valkey are deployed in-chart by default** (`postgresql.enabled`/`valkey.enabled`

@@ -433,6 +433,16 @@ subjects:
     name: kubernaut-agent-sa
     namespace: {{ .Release.Namespace }}
 ---
+# Issue #1069 (DD-GATEWAY-018): operator-supplied ClusterRole references,
+# generalizing kubernaut-operator's KA-only AdditionalClusterRoleBindings
+# mechanism to the Helm chart, for resource kinds not already covered above.
+# global.additionalClusterRoleBindings covers the common case (same grant
+# across Gateway/EM/KA); merged here with KA's own list (deduplicated). Use
+# kubernautAgent.additionalClusterRoleBindings alone (leave global unset) to
+# withhold an ecosystem grant from KA specifically -- the highest-risk,
+# LLM-driven component (BR-PLATFORM-005).
+{{- include "kubernaut.additionalClusterRoleBindings" (dict "prefix" "kubernaut-agent" "serviceAccount" "kubernaut-agent-sa" "names" (concat .Values.global.additionalClusterRoleBindings .Values.kubernautAgent.additionalClusterRoleBindings | uniq) "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:

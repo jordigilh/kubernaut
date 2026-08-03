@@ -1,0 +1,70 @@
+suite: "DD-GATEWAY-018: NOTES.txt hints at additionalClusterRoleBindings when left at its default (unconfigured)"
+templates:
+  - templates/NOTES.txt
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "global and all 3 per-service additionalClusterRoleBindings unset (default): NOTES.txt hints at the OLM/ecosystem RBAC gap and gives the fix"
+    asserts:
+      - matchRegexRaw:
+          pattern: "Optional: Ecosystem RBAC for Owner-Chain Resolution \\(Issue #1069\\)"
+      - matchRegexRaw:
+          pattern: "does NOT cover OLM \\(Subscription/ClusterServiceVersion\\)"
+      - matchRegexRaw:
+          pattern: "No additionalClusterRoleBindings are configured \\(the default\\)"
+      - matchRegexRaw:
+          pattern: "--set global\\.additionalClusterRoleBindings\\[0\\]=my-olm-reader"
+
+  - it: "global.additionalClusterRoleBindings set: hint is absent"
+    set:
+      global:
+        additionalClusterRoleBindings:
+          - my-olm-reader
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "Optional: Ecosystem RBAC for Owner-Chain Resolution"
+
+  - it: "only gateway.additionalClusterRoleBindings set (global and other services unset): hint is absent"
+    set:
+      gateway:
+        additionalClusterRoleBindings:
+          - my-olm-reader
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "Optional: Ecosystem RBAC for Owner-Chain Resolution"
+
+  - it: "only effectivenessmonitor.additionalClusterRoleBindings set: hint is absent"
+    set:
+      effectivenessmonitor:
+        additionalClusterRoleBindings:
+          - my-olm-reader
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "Optional: Ecosystem RBAC for Owner-Chain Resolution"
+
+  - it: "only kubernautAgent.additionalClusterRoleBindings set: hint is absent"
+    set:
+      kubernautAgent:
+        additionalClusterRoleBindings:
+          - my-olm-reader
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "Optional: Ecosystem RBAC for Owner-Chain Resolution"

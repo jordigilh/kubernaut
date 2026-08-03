@@ -25,7 +25,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -64,28 +63,33 @@ func generateFakeServiceAccountJSON1801() []byte {
 	return b
 }
 
-// IT-AF-1801: proves newLLMTriagerFromConfig's vertex_ai branches
-// (newAnthropicTriagerForVertex, newGenAITriagerForVertex) construct
-// successfully from an explicitly-supplied credentials file alone, with
-// zero dependency on the test host's own ambient ADC state — the
+// kubernaut#1861 supersedes IT-AF-1801-003/004's original assertions here:
+// newAnthropicTriagerForVertex/newGenAITriagerForVertex no longer inject
+// GOOGLE_APPLICATION_CREDENTIALS at all — they resolve explicit
+// credentials from cfg.APIKey directly (severity.NewAnthropicVertexClient's
+// credentialsJSON param, genai.ClientConfig.Credentials), the
 // severityTriage-side counterpart of pkg/apifrontend/launcher's
-// IT-AF-1801-001/002 (main agent LLM side). Proves
-// launcher.InjectAmbientGoogleCredentials is actually wired into both
-// triager constructors (CHECKPOINT W), not just present as dead code.
-var _ = Describe("newLLMTriagerFromConfig — vertex_ai credential wiring without ambient ADC (#1801)", func() {
+// IT-AF-1801-002 (main agent LLM Gemini-on-Vertex side, which already used
+// this pattern). This is exactly what makes the two vertex_ai profiles
+// independent of each other's credentials, and is what let the
+// DD-PLATFORM-007 fail() guard blocking that combination be removed.
+var _ = Describe("newLLMTriagerFromConfig — vertex_ai credential wiring without ambient ADC (#1861)", func() {
 	var (
-		credPath   string
-		origADC    string
-		hadOrigADC bool
+		origADC, origHome       string
+		hadOrigADC, hadOrigHome bool
 	)
 
 	BeforeEach(func() {
+		// Both GOOGLE_APPLICATION_CREDENTIALS and the well-known
+		// ~/.config/gcloud/application_default_credentials.json file (which
+		// credentials.DetectDefault falls back to via $HOME when
+		// CredentialsJSON resolution takes an unexpected path) must be
+		// blocked, or a developer machine with real gcloud ADC configured
+		// could make these assertions pass for the wrong reason.
 		origADC, hadOrigADC = os.LookupEnv("GOOGLE_APPLICATION_CREDENTIALS")
 		Expect(os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")).To(Succeed())
-
-		dir := GinkgoT().TempDir()
-		credPath = filepath.Join(dir, "credentials.json")
-		Expect(os.WriteFile(credPath, generateFakeServiceAccountJSON1801(), 0o600)).To(Succeed())
+		origHome, hadOrigHome = os.LookupEnv("HOME")
+		Expect(os.Setenv("HOME", GinkgoT().TempDir())).To(Succeed())
 	})
 
 	AfterEach(func() {
@@ -94,33 +98,45 @@ var _ = Describe("newLLMTriagerFromConfig — vertex_ai credential wiring withou
 		} else {
 			Expect(os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")).To(Succeed())
 		}
+		if hadOrigHome {
+			Expect(os.Setenv("HOME", origHome)).To(Succeed())
+		} else {
+			Expect(os.Unsetenv("HOME")).To(Succeed())
+		}
 	})
 
-	It("IT-AF-1801-003: vertex_ai + claude-* triager constructs via cfg.APIKeyFile alone, with no ambient ADC pre-set", func() {
+	It("IT-AF-1861-001: vertex_ai + claude-* triager constructs via cfg.APIKey explicit bytes alone, never touching the ambient env var", func() {
 		cfg := types.LLMConfig{
 			Provider:       types.LLMProviderVertexAI,
 			Model:          "claude-sonnet-4-20250514",
 			VertexProject:  "test-project",
 			VertexLocation: "us-central1",
-			APIKeyFile:     credPath,
+			// Simulates AF's config loader resolving APIKey from
+			// APIKeyFile's content (pkg/apifrontend/config's
+			// resolveLLMKey), exactly as it does for every other provider.
+			APIKey: string(generateFakeServiceAccountJSON1801()),
 		}
 		triager, err := newLLMTriagerFromConfig(context.Background(), cfg, logr.Discard())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(triager).To(BeAssignableToTypeOf(&severity.AnthropicTriager{}))
-		Expect(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")).To(Equal(credPath))
+
+		_, isSet := os.LookupEnv("GOOGLE_APPLICATION_CREDENTIALS")
+		Expect(isSet).To(BeFalse())
 	})
 
-	It("IT-AF-1801-004: vertex_ai + gemini-* triager constructs via cfg.APIKeyFile alone, with no ambient ADC pre-set", func() {
+	It("IT-AF-1861-002: vertex_ai + gemini-* triager constructs via cfg.APIKey explicit bytes alone, never touching the ambient env var", func() {
 		cfg := types.LLMConfig{
 			Provider:       types.LLMProviderVertexAI,
 			Model:          "gemini-2.5-pro",
 			VertexProject:  "test-project",
 			VertexLocation: "us-central1",
-			APIKeyFile:     credPath,
+			APIKey:         string(generateFakeServiceAccountJSON1801()),
 		}
 		triager, err := newLLMTriagerFromConfig(context.Background(), cfg, logr.Discard())
 		Expect(err).NotTo(HaveOccurred())
 		Expect(triager).To(BeAssignableToTypeOf(&severity.GenAITriager{}))
-		Expect(os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")).To(Equal(credPath))
+
+		_, isSet := os.LookupEnv("GOOGLE_APPLICATION_CREDENTIALS")
+		Expect(isSet).To(BeFalse())
 	})
 })

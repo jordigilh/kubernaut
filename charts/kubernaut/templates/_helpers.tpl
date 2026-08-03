@@ -536,6 +536,57 @@ subjects:
 {{- end }}
 
 {{/*
+Render one ClusterRoleBinding per entry in a service's
+additionalClusterRoleBindings list, binding an operator-supplied,
+pre-existing ClusterRole (referenced by name only) to the given
+ServiceAccount. Generalizes kubernaut-operator's KubernautAgent-only
+AdditionalClusterRoleBindings mechanism to any Helm-chart service (#1069,
+DD-GATEWAY-018): it lets operators grant Kubernaut read access to resource
+kinds Kubernaut doesn't anticipate or ship RBAC for (e.g. OLM, ArgoCD,
+Kafka/Strimzi, custom CRDs), without a Kubernaut code change, while keeping
+the grant declarative and GitOps-tracked in the same values.yaml as the rest
+of the deployment. The operator creates and owns the referenced ClusterRole;
+Kubernaut only binds it -- no PolicyRule content is authored by this chart.
+
+Params (dict):
+  - prefix: naming prefix for generated ClusterRoleBindings, e.g. "gateway"
+  - serviceAccount: name of the ServiceAccount to bind
+  - names: list of pre-existing ClusterRole names to reference (may be empty/nil)
+  - Release: .Release (for the ServiceAccount's namespace)
+  - labels: rendered `kubernaut.labels` output
+*/}}
+{{- define "kubernaut.additionalClusterRoleBindings" -}}
+{{- $prefix := .prefix -}}
+{{- $sa := .serviceAccount -}}
+{{- $labels := .labels -}}
+{{- $release := .Release -}}
+{{- range .names }}
+{{- $crName := . -}}
+{{- $crbName := printf "%s-ext-%s" $prefix $crName -}}
+{{- if gt (len $crbName) 253 }}
+{{- $hash := sha256sum $crName | trunc 8 -}}
+{{- $maxRoleLen := sub (sub (sub 253 (len (printf "%s-ext-" $prefix))) 1) 8 -}}
+{{- $crbName = printf "%s-ext-%s-%s" $prefix (trunc $maxRoleLen $crName) $hash -}}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $crbName }}
+  labels:
+    {{- $labels | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $crName }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $sa }}
+    namespace: {{ $release.Namespace }}
+{{- end }}
+{{- end -}}
+
+{{/*
 Render a namespace-scoped Role + RoleBinding granting a fleet
 ClusterRegistry's CRD watch (MCPServerRegistration for kuadrant;
 Backend/MCPRoute for eaigw), used in place of the equivalent cluster-wide
