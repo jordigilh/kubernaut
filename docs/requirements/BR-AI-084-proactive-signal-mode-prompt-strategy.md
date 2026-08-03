@@ -109,8 +109,8 @@ RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
 - [ ] RO `SignalName` source changed from `rr.Spec.SignalName` to `sp.Status.SignalName` (normalized)
 - [ ] AA request builder passes `signalMode` to KA (`pkg/aianalysis/handlers/request_builder.go`)
 - [ ] KA OpenAPI spec includes `signal_mode` in `IncidentRequest`
-- [ ] Go client regenerated (`make generate-holmesgpt-client`)
-- [ ] Python client regenerated
+- [ ] Go client regenerated (`make generate-agentclient`) — corrected from `make generate-holmesgpt-client`, see STALE note below
+- [ ] ~~Python client regenerated~~ — moot, see STALE note below (no Python client in current codebase)
 - [ ] KA prompt switches based on `signal_mode`
 - [ ] Proactive mode allows "no action" as valid LLM outcome
 - [ ] Audit events include `signalMode`
@@ -120,7 +120,19 @@ RO copies sp.Status.SignalMode → aa.Spec.SignalContext.SignalMode
 
 ## Implementation Points
 
-> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: The "Go client regen" row's path (`pkg/holmesgpt/client/oas_schemas_gen.go`) and make target (`make generate-holmesgpt-client`) no longer match the codebase — the generated OpenAPI client now lives under `pkg/agentclient/`.
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: The "Go client regen" row's path (`pkg/holmesgpt/client/oas_schemas_gen.go`) and make target (`make generate-holmesgpt-client`) no longer match the codebase — the generated OpenAPI client now lives under `pkg/agentclient/`, and the real make target is `generate-agentclient` (verified against `Makefile`).
+>
+> **Additionally verified**: this entire requirements document predates the Kubernaut Agent Go rewrite
+> (`DD-KA-019`, decided 2026-03-04). The "KA Python model", "KA prompt builder", and "KA LLM integration"
+> rows below (`kubernaut-agent/src/models/incident_models.py`,
+> `kubernaut-agent/src/extensions/incident/prompt_builder.py`,
+> `kubernaut-agent/src/extensions/incident/llm_integration.py`) reference Python paths that do not exist in
+> the current codebase (repo-wide search: no `kubernaut-agent/src/` directory exists). Per
+> `testing-strategy.md`'s BR-AI-084 test results (all "✅ Passed"), R4 (KA prompt strategy switching) was
+> actually implemented in Go at `internal/kubernautagent/prompt/builder.go` (confirmed: this file has a
+> `SignalMode` field and reactive/proactive branching), not as three separate Python files. R3's "Both Go
+> and Python clients MUST be regenerated" and the corresponding Acceptance Criteria checkbox below
+> ("Python client regenerated") are moot — there is no Python client in the current codebase.
 
 | Component | File(s) | Change |
 |---|---|---|

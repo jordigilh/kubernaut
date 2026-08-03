@@ -1,9 +1,32 @@
 # DD-WORKFLOW-004: Deterministic Query Construction for Workflow Search
 
 **Date**: November 22, 2025
-**Status**: ✅ **APPROVED**
-**Confidence**: 98%
+**Status**: 🗄️ **SUPERSEDED** — see note below
+**Confidence**: 98% (original assessment of the now-superseded design)
 **Purpose**: Define the query construction strategy for workflow catalog search - deterministic vs. LLM-based approach.
+
+> **SUPERSEDED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This
+> Nov 2025 decision addressed how to build a free-text `query` string (e.g. `"OOMKilled critical memory
+> leak java heap"`) for a Data Storage `POST /api/v1/workflows/search` **pgvector semantic-search**
+> endpoint — deterministic string formatting (this doc's Option B) vs. a second LLM call (Option A). That
+> entire premise never shipped. Per the current, verified architecture
+> ([DD-WORKFLOW-016](DD-WORKFLOW-016-action-type-workflow-indexing.md),
+> [DD-WORKFLOW-017](DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md),
+> [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md)), there is no free-text query to
+> construct — deterministically or via LLM — at all: Kubernaut Agent (KA) discovers workflows through a
+> three-step protocol (`list_available_actions` -> `list_workflows` -> `get_workflow`) that passes the
+> already-structured signal-context fields (`severity`, `component`, `environment`, `priority`,
+> `custom_labels`, `detected_labels`) directly as exact-match/hard filters — no query string, no
+> embedding generation, and no pgvector similarity search exist anywhere in the current discovery path
+> (confirmed via grep: zero `pgvector`/embedding references in `internal/kubernautagent/workflowcatalog/`).
+> The LLM instead reads rendered, human-readable action-type and workflow descriptions across the three
+> steps and reasons about the best fit directly — replacing "which query text produces the best semantic
+> match" with "which cataloged workflow's description best fits the RCA". The Python
+> `construct_workflow_search_query()` / Go `QueryBuilder` code below, and the "Next Steps" implementing
+> them, were never built and are obsolete. This document is retained for historical context (the
+> underlying "avoid a second LLM call when the first call's output is already sufficient" reasoning
+> remains a valid general engineering principle) — do not use it to understand the current discovery
+> mechanism.
 
 ---
 
@@ -569,6 +592,7 @@ else:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.1 | 2026-08-02 | **[Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806) correction**: Marked SUPERSEDED. The pgvector semantic-search `query`-string premise this doc addresses never shipped; the real discovery protocol (DD-WORKFLOW-016/017/019) uses structured filter parameters with no query construction step at all. No body content removed; retained as historical reference. |
 | 1.0 | 2025-11-22 | Initial version: Deterministic query construction decision |
 
 ---

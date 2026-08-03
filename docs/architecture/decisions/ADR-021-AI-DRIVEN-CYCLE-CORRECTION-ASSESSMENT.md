@@ -7,6 +7,21 @@
 
 ---
 
+> **⚠️ NEVER BUILT / DEFERRED (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not
+> corrected here)**: This entire proposal (`ValidateAndCorrectDependencies`, `dependency_validator_ai.go`,
+> `CycleCorrectionAttempts`, `AnalyzeWithCorrection`) was never implemented — repo-wide search finds zero
+> matches for any of these symbols outside this document. Per `BR_MAPPING.md` v1.3 and `DD-AIANALYSIS-005`,
+> BR-AI-071–074 (the BRs this assessment proposes) are deferred to V2.0+, contingent on **dynamic workflow
+> generation** being added at all — a feature that itself was never built. V1.0 uses **predefined,
+> pre-validated workflows from the catalog** (`DD-WORKFLOW-002` v3.3): workflows are validated for cycles
+> (among other things) at *registration* time, not at LLM-selection time, so the premise of this
+> assessment (an LLM generating a workflow DAG that might contain a runtime-discovered cycle) does not
+> apply to the current architecture at all. The "HolmesGPT" naming throughout the pseudocode below
+> (`HolmesGPTRecommendation`, `r.HolmesGPTClient`, `HolmesGPTRequest`) is left unrenamed as historical
+> record of a proposal that predates Kubernaut Agent (KA) and was never built under either name.
+
+---
+
 ## Context & Problem
 
 **Current Approach** (ADR-021): When HolmesGPT generates a workflow with circular dependencies, AIAnalysis controller:

@@ -363,9 +363,11 @@ After determining that storm context has minimal value for LLM RCA (3-6%), the a
 
 ## References
 
-> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: `pkg/aianalysis/client/holmesgpt.go` does not exist in the current codebase.
+> **✅ CORRECTED** ([#1806](https://github.com/jordigilh/kubernaut/issues/1806)): `pkg/aianalysis/client/holmesgpt.go`
+> does not exist in the current codebase; the real KA API contract files are cited below (verified against
+> `pkg/aianalysis/handlers/interfaces.go` and `pkg/agentclient/`).
 
-- **Kubernaut Agent (KA) API Contract**: `pkg/aianalysis/client/holmesgpt.go`
+- **Kubernaut Agent (KA) API Contract**: `pkg/aianalysis/handlers/interfaces.go` (`AgentClientInterface`), `pkg/agentclient/` (ogen-generated client)
 - **AIAnalysis Integration**: `docs/services/crd-controllers/02-aianalysis/integration-points.md`
 - **Gateway Storm Detection**: `docs/services/stateless/gateway-service/overview.md`
 - **Storm Detection Brainstorm**: (internal development reference, removed in v1.0)

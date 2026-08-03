@@ -5,6 +5,16 @@
 This document describes the comprehensive resilience patterns and failure handling mechanisms implemented in the Kubernaut system to ensure high availability, graceful degradation, and robust error recovery.
 
 > **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This document describes an in-process fallback chain (a single `AIServiceIntegrator` with an in-process circuit breaker calling a "Direct LLM Analysis" and "Rule-based Fallback") that does not reflect the current CRD-based microservices architecture, where AIAnalysis is a separate controller with Kubernaut Agent (KA) as the sole V1.0 AI provider (no in-process multi-provider LLM fallback chain).
+>
+> **Additionally verified** (naming/metrics only, architecture correction above still stands): no
+> `CircuitBreaker` type exists anywhere in `pkg/aianalysis` — the real resilience mechanism for KA HTTP
+> calls is a retry-with-backoff transport (`sharedtls.DefaultBaseTransportWithRetry`,
+> `pkg/shared/tls/tls.go`), not a circuit breaker. The pseudocode symbols `investigateWithHolmesGPT`,
+> `ai.holmesGPTClient`, and `ai.holmesGPTCircuitBreaker` below have no current equivalent (there is no
+> `AIServiceIntegrator` type in the codebase). None of the four Prometheus metrics below
+> (`kubernaut_service_availability_ratio`, `kubernaut_fallback_activations_total`,
+> `kubernaut_recovery_time_seconds`, `kubernaut_circuit_breaker_state`) are registered anywhere in the
+> codebase (repo-wide search) — they are illustrative only, not real instrumentation.
 
 ## Business Requirements Addressed
 

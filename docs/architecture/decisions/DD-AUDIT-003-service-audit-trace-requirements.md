@@ -66,7 +66,7 @@
 - **Note**: Typed OpenAPI payloads deferred to follow-up DataStorage schema update; events use untyped `event_data` JSONB fallback
 
 **Recent Changes** (v1.8 - March 25, 2026):
-- **HolmesGPT API Service**: Added 2 Phase 2 enrichment audit events per Issue #533:
+- **Kubernaut Agent (KA) Service**: Added 2 Phase 2 enrichment audit events per Issue #533:
   - `aiagent.enrichment.completed` — Phase 2 enrichment succeeded (root_owner resolved, labels detected, history fetched)
   - `aiagent.enrichment.failed` — Phase 2 enrichment failed after retry exhaustion (captures reason, detail, affected_resource)
 - **Authority**: BR-AUDIT-005 v2.0 (SOC2 CC8.1), #533, #529 (three-phase RCA architecture)
@@ -213,12 +213,21 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 
 ### **Service Inventory**
 
+> **⚠️ HISTORICAL SNAPSHOT (corrected [#1806](https://github.com/jordigilh/kubernaut/issues/1806))**:
+> This inventory and the "Decision" breakdown below are the **original v1.0 (Nov 2025) snapshot** —
+> "HolmesGPT API Service" (item 5) refers to the pre-Go-rewrite Python service, and the "12 services"
+> / "9 out of 12" counts predate KA's P0 reclassification, Fleet Metadata Cache, API Frontend, and
+> other services added since. **For the current, authoritative 14-service breakdown, see the
+> [Summary Table](#-summary-table) below** — do not use this section's counts. Kept here only as a
+> record of the original decision rationale (criteria weighting, industry-standard framing), which
+> is still broadly valid even though the specific service list is outdated.
+
 **Stateless Services** (8):
 1. Gateway Service
 2. Data Storage Service
 3. Auth Webhook Service
 4. Context API Service
-5. HolmesGPT API Service
+5. HolmesGPT API Service (pre-rewrite; see Kubernaut Agent (KA), now P0 MUST — §11 below)
 6. Dynamic Toolset Service
 7. Notification Service
 8. Effectiveness Monitor Service
@@ -231,14 +240,14 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 
 ---
 
-## ✅ **Decision**
+## ✅ **Decision** (Historical v1.0 Snapshot — see note above)
 
-**APPROVED**: **9 out of 12 services** generate audit traces
+**APPROVED** (as of v1.0, Nov 2025): **9 out of 12 services** generate audit traces
 
-**Breakdown**:
+**Breakdown** (v1.0, historical — superseded by the current 14-service Summary Table below):
 - ✅ **7 services MUST** (P0): Gateway, AI Analysis, Remediation Execution, Notification, Data Storage, Auth Webhook, Effectiveness Monitor
 - ✅ **2 services SHOULD** (P1): Signal Processing, Remediation Orchestrator
-- ⚠️ **3 services NO audit**: Context API, HolmesGPT API, Dynamic Toolset
+- ⚠️ **2 services NO audit** (v1.0): Context API, Dynamic Toolset — HolmesGPT API was also NO-audit at v1.0 but is corrected to P0 MUST as of v1.3 (Kubernaut Agent); see §11 below
 
 **Rationale**:
 1. **Compliance Alignment**: P0 services meet SOC 2, ISO 27001, GDPR requirements
@@ -250,7 +259,7 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 
 ## 📊 **Service-by-Service Analysis**
 
-### **P0: MUST Generate Audit Traces (7 Services)**
+### **P0: MUST Generate Audit Traces (7 services listed below, #1-7; Kubernaut Agent (KA) is also P0 MUST but is listed as #11 further down for numbering-stability reasons — see correction note there)**
 
 ---
 
@@ -281,31 +290,44 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 **Rationale**:
 - ✅ **Business-Critical**: AI recommendations drive remediation actions
 - ✅ **Compliance**: AI decision-making requires audit trail (AI Act, SOC 2)
-- ✅ **External Interactions**: Calls HolmesGPT API (external LLM)
+- ✅ **External Interactions**: Calls Kubernaut Agent (KA), which in turn calls the external LLM
 - ✅ **State Changes**: Updates `AIAnalysis` CRD with recommendations
 - ✅ **Debugging Value**: Critical for understanding AI decisions
 - ✅ **Cost Tracking**: LLM API costs need monitoring
 
 **Audit Events**:
 
+> **⚠️ CORRECTED (2026-08-02, [#1806](https://github.com/jordigilh/kubernaut/issues/1806))**: The
+> hyphenated `ai-analysis.*` event types below (an early, pre-implementation naming draft) do not
+> exist anywhere in the codebase — verified via `grep -rn "ai-analysis\." pkg/aianalysis/`, zero
+> matches. The real event types are the unhyphenated `aianalysis.*` ones, defined in
+> `pkg/aianalysis/audit/audit.go`. Table replaced with the real event set below.
+
 | Event Type | Description | Priority |
 |------------|-------------|----------|
-| `ai-analysis.investigation.started` | AI investigation started | P0 |
-| `ai-analysis.llm.request_sent` | LLM API request sent | P0 |
-| `ai-analysis.llm.response_received` | LLM API response received | P0 |
-| `ai-analysis.recommendation.generated` | Remediation recommendation generated | P0 |
-| `ai-analysis.crd.updated` | AIAnalysis CRD updated | P0 |
-| `ai-analysis.llm.request_failed` | LLM API request failed | P0 |
-| `aianalysis.analysis.completed` | AI analysis completed with full Holmes response (SOC2) | **P0** |
-| `aianalysis.analysis.failed` | AI analysis failed (Holmes API timeout, invalid response, etc.) | **P0** |
+| `aianalysis.analysis.completed` | AI analysis completed with full KA response (SOC2 reconstruction, DD-AUDIT-004) | **P0** |
+| `aianalysis.analysis.failed` | AI analysis failed (KA timeout, invalid response, etc.) | **P0** |
+| `aianalysis.phase.transition` | AIAnalysis phase state machine transition | P0 |
+| `aianalysis.aiagent.call` | Call to Kubernaut Agent (KA) recorded (endpoint, HTTP status, duration) | P0 |
+| `aianalysis.aiagent.submit` / `.result` / `.session_lost` | Async submit/poll/result session lifecycle with KA (BR-AA-HAPI-064) | P0 |
+| `aianalysis.approval.decision` | Manual approval decision recorded | P0 |
+| `aianalysis.rego.evaluation` | Rego policy evaluation result | P0 |
+| `aianalysis.error.occurred` | Structured error event | P0 |
 
 **SOC2 Compliance Event** (v1.3 - January 2026):
 - **Event**: `aianalysis.analysis.completed`
-- **Purpose**: Single event capturing complete `provider_data` for RR reconstruction (DD-AUDIT-004)
-- **Distinction**: Complements existing granular `ai-analysis.*` events for operational visibility
-- **Naming**: No hyphen (`aianalysis` not `ai-analysis`) to match SOC2 test plan convention
+- **Purpose**: Single event capturing complete analysis outcome for RR reconstruction (DD-AUDIT-004)
+- **Distinction**: Complements the other granular `aianalysis.*` events above for operational visibility
+- **Naming**: No hyphen (`aianalysis`) to match SOC2 test plan convention
 - **Required By**: BR-AUDIT-005 v2.0 (100% RR CRD reconstruction accuracy)
-- **Event Data Fields**:
+- **Event Data Fields**: real payload is `AIAnalysisAuditPayload` / `AnalysisCompletePayload`
+  (`pkg/aianalysis/audit/audit.go`, DD-AUDIT-004) — fields are `Phase`, `ApprovalRequired`,
+  `ApprovalReason`, `DegradedMode`, `WarningsCount`, `Confidence`, `WorkflowID`,
+  `TargetInOwnerChain`, `Reason`, `SubReason`. The illustrative JSON below is **stale**
+  (corrected [#1806](https://github.com/jordigilh/kubernaut/issues/1806)): there is no
+  `provider_data`/`provider` wrapper or `analysis_id` field in the real payload — that shape
+  predates the actual DD-AUDIT-004 V2.0 implementation. Kept only as a historical illustration
+  of the original design intent, not the real schema:
   ```json
   {
     "provider_data": {
@@ -543,7 +565,7 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 
 ---
 
-### **NO Audit Traces Needed (3 Services)**
+### **NO Audit Traces Needed (3 of the 4 services below — #11 Kubernaut Agent is P0 MUST, corrected [#1806](https://github.com/jordigilh/kubernaut/issues/1806); kept in this section only to preserve stable numbering with the Related Decisions/cross-links below)**
 
 ---
 
@@ -629,27 +651,42 @@ context_api:
 
 ---
 
-#### 11. HolmesGPT API Service ❌
+#### 11. Kubernaut Agent (KA) Service ✅
 
-**Status**: ⚠️ **NO** audit traces needed (delegated to AI Analysis Controller)
+> **⚠️ CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This
+> subsection previously described the pre-Go-rewrite HolmesGPT API as a thin, stateless **proxy** with
+> **NO audit traces needed**, on the theory that the caller (AI Analysis Controller) was solely
+> responsible for auditing LLM interactions. That was already contradicted elsewhere in this very
+> document — the Summary Table (below) and the "[v1.3 Update: Kubernaut Agent Audit
+> Traces](#v13-update-kubernaut-agent-audit-traces)" section both correctly classify this service as
+> **P0 MUST**, and the "[KA Narrative vs Table Inconsistency](#ka-narrative-vs-table-inconsistency)"
+> note further down only checked the narrative-vs-table wording, not this subsection's stronger
+> "NO audit" verdict — so the contradiction survived multiple correction passes. Verified against
+> `internal/kubernautagent/audit/` (`emitter.go`, `ds_buffered_store.go`): KA is **not** a passive
+> proxy — it directly generates and buffers its own `aiagent.*` audit events (LLM requests/responses,
+> tool calls, workflow-validation attempts, response completion/failure, enrichment) and ships them to
+> Data Storage via `BufferedDSAuditStore`. The rationale and "Industry Precedent" framing below is
+> retained only as a historical record of the pre-rewrite design; it no longer reflects reality and
+> MUST NOT be used to justify skipping audit review for this service.
 
-**Rationale**:
-- ❌ **Wrapper Service**: Thin wrapper around HolmesGPT SDK
-- ❌ **No State Changes**: Only proxies requests to external LLM
-- ❌ **Audit Responsibility**: AI Analysis Controller audits LLM interactions
-- ✅ **Alternative**: Application logs + metrics sufficient
+**Status**: ✅ **MUST** audit traces (self-generated, not delegated)
 
-**Why No Audit Traces**:
-- HolmesGPT API is a **proxy** (like an API gateway)
-- Audit responsibility belongs to the **caller** (AI Analysis Controller)
-- Industry standard: Proxy services don't duplicate audit traces
+**Rationale** (current, v1.3+):
+- ✅ **Direct Emitter**: KA generates its own `aiagent.*` audit events for every LLM interaction, tool call, and workflow-selection validation attempt (`internal/kubernautagent/audit/emitter.go`)
+- ✅ **Compliance-Critical**: LLM investigation outcomes and workflow-selection decisions are exactly the kind of AI-driven decision audit trail SOC2 CC7.2 and BR-AUDIT-005 require
+- ✅ **Async, Non-Blocking**: Uses `BufferedDSAuditStore` (`internal/kubernautagent/audit/ds_buffered_store.go`) to ship events to Data Storage without blocking the investigation critical path
+- See the [`AUDIT_EVENT_CATALOG.md`](../../services/stateless/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md) for the complete, current, actively-maintained event catalog (37 event types as of v2.5)
 
-**Alternative Observability**:
+**Historical Rationale (pre-v1.3, HolmesGPT API era — no longer accurate, kept for context only)**:
+- ~~Wrapper Service: Thin wrapper around HolmesGPT SDK~~
+- ~~No State Changes: Only proxies requests to external LLM~~
+- ~~Audit Responsibility: AI Analysis Controller audits LLM interactions~~
+- ~~HolmesGPT API is a proxy (like an API gateway); audit responsibility belongs to the caller~~
+
+**Alternative Observability** (still valid, in addition to audit events):
 - ✅ Application logs (request/response logging)
-- ✅ Prometheus metrics (LLM latency, error rate)
+- ✅ Prometheus metrics (LLM latency, error rate — see `PROMETHEUS_ALERTRULES.md`)
 - ✅ OpenTelemetry traces (distributed tracing)
-
-**Industry Precedent**: AWS API Gateway (not audited), Nginx reverse proxy (not audited)
 
 ---
 
@@ -658,9 +695,9 @@ context_api:
 **Status**: ⚠️ **NO** audit traces needed
 
 **Rationale**:
-- ❌ **Configuration Service**: Only serves HolmesGPT toolset configuration
+- ❌ **Configuration Service**: Only serves toolset configuration to Kubernaut Agent (KA)
 - ❌ **Read-Only**: No state changes (configuration is static)
-- ❌ **No External Interactions**: Internal service (called by HolmesGPT API)
+- ❌ **No External Interactions**: Internal service (called by Kubernaut Agent)
 - ❌ **No Compliance Requirements**: Configuration reads don't require audit trail
 - ✅ **Alternative**: Application logs sufficient
 
@@ -719,7 +756,7 @@ context_api:
 | **Signal Processing Controller** | ✅ **SHOULD** | P1 | Operational visibility (enrichment) |
 | **Remediation Orchestrator Controller** | ✅ **SHOULD** | P1 | Operational visibility (coordination) |
 | **Context API Service** | ❌ **NO** | N/A | Read-only, no state changes |
-| **HolmesGPT API Service** | ✅ **MUST** | P0 | LLM interactions and investigation outcomes (DD-AUDIT-005, BR-AUDIT-005). Emits `aiagent.*` events: `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.llm.tool_call`, `aiagent.workflow.validation_attempt`, `aiagent.response.complete`, `aiagent.response.failed`, `aiagent.enrichment.completed`, `aiagent.enrichment.failed` |
+| **Kubernaut Agent (KA) Service** (renamed from HolmesGPT API, v1.3) | ✅ **MUST** | P0 | LLM interactions and investigation outcomes (DD-AUDIT-005, BR-AUDIT-005). Emits `aiagent.*` events: `aiagent.llm.request`, `aiagent.llm.response`, `aiagent.llm.tool_call`, `aiagent.workflow.validation_attempt`, `aiagent.response.complete`, `aiagent.response.failed`, `aiagent.enrichment.completed`, `aiagent.enrichment.failed` |
 | **Dynamic Toolset Service** | ❌ **NO** | N/A | Configuration, read-only |
 | **Fleet Metadata Cache Service** | ❌ **NO** | N/A | Read-only scope cache, not a chain participant (Issue #54, ADR-068) |
 
@@ -729,7 +766,16 @@ context_api:
 
 ## 🎯 **Implementation Priority**
 
-### Phase 1: P0 Services (MUST) - 8 Services
+> **⚠️ HISTORICAL ROADMAP (corrected [#1806](https://github.com/jordigilh/kubernaut/issues/1806))**:
+> This "Implementation Priority" phasing predates Kubernaut Agent (KA)'s P0 reclassification (v1.3)
+> and Fleet Metadata Cache's addition (v2.3) — Phase 1 below is missing KA (should be 9 services, not
+> 8) and Phase 3 wrongly lists "HolmesGPT API Service" among the no-audit services (corrected inline
+> below); FMC isn't listed in either phase (it's NO-audit per the Summary Table's §13, added after
+> this roadmap was written). All audit implementation work described here already shipped — this
+> section is a historical rollout plan, not a current TODO list. See the Summary Table above for the
+> current, authoritative per-service MUST/SHOULD/NO breakdown.
+
+### Phase 1: P0 Services (MUST) - 8 Services (historical; now 9 with Kubernaut Agent (KA))
 
 **Timeline**: Sprint 1-2 (2 weeks)
 
@@ -768,12 +814,13 @@ context_api:
 
 ---
 
-### Phase 3: No Audit Traces - 3 Services
+### Phase 3: No Audit Traces - 2 Services (historical: originally 3, HolmesGPT API moved to Phase 1 as Kubernaut Agent (KA) at v1.3)
 
 **Services**:
 1. Context API Service (application logs only)
-2. HolmesGPT API Service (application logs only)
-3. Dynamic Toolset Service (application logs only)
+2. Dynamic Toolset Service (application logs only)
+
+(Fleet Metadata Cache is also NO-audit, added v2.3 — see Summary Table §13; not listed here as this roadmap predates it.)
 
 **Effort**: 0 hours (no audit implementation needed)
 
@@ -833,7 +880,7 @@ context_api:
 | Kubernaut Service | Industry Equivalent | Audited? | Rationale |
 |-------------------|---------------------|----------|-----------|
 | Context API Service | AWS S3 GET | ❌ No | Read-only operations not audited |
-| HolmesGPT API Service | AWS API Gateway | ✅ Yes | Per DD-AUDIT-005: emits `aiagent.*` events for LLM interactions, tool calls, and investigation outcomes (provider perspective). Updated from v1.0 which incorrectly classified HAPI as proxy-only. |
+| Kubernaut Agent (KA) Service (renamed from HolmesGPT API, v1.3) | AWS API Gateway | ✅ Yes | Per DD-AUDIT-005: emits `aiagent.*` events for LLM interactions, tool calls, and investigation outcomes (provider perspective). Updated from v1.0 which incorrectly classified it as proxy-only. |
 | Dynamic Toolset Service | Kubernetes ConfigMap | ❌ No | Configuration reads not audited |
 
 **Key Insight**: Industry standard is to audit **state-changing operations** and **external interactions**, NOT read-only or configuration operations.
@@ -974,7 +1021,9 @@ The reconstruction pipeline (`pkg/datastorage/reconstruction/`) MUST:
 
 ### KA Narrative vs Table Inconsistency
 
-DD-AUDIT-003 v2.0 narrative describes KA as P0 MUST (via the `aiagent` category, v1.3 update). The summary table at Section "Summary Table" correctly lists HolmesGPT API Service as P0 MUST with `aiagent.*` events emitted by KA (per v1.3 clarification). No action needed -- the naming reflects the KA Go rewrite (v1.3).
+DD-AUDIT-003 v2.0 narrative describes KA as P0 MUST (via the `aiagent` category, v1.3 update). The summary table at Section "Summary Table" correctly lists Kubernaut Agent (KA) Service as P0 MUST with `aiagent.*` events emitted by KA (per v1.3 clarification).
+
+**Correction (2026-08-02, [#1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This note's original "No action needed" conclusion only checked the narrative-vs-table wording — it missed that §11 ("HolmesGPT API Service ❌") still had a full "NO audit traces needed" verdict and rationale, directly contradicting the Summary Table it claims to agree with. §11, the Service Inventory / Decision section, the "SOC2 Compliance Event" JSON sample, and the "Implementation Priority" Phase 1/3 roadmap have all now been corrected in place (see their own inline notes). Action **was** needed; it is done as of this pass.
 
 ## API Frontend (AF) Event Catalog
 
