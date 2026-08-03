@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
 	"net/http"
 	"time"
 
+	"cloud.google.com/go/auth/credentials"
 	"github.com/go-logr/logr"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -613,17 +615,26 @@ func newLLMTriagerFromConfig(ctx context.Context, llmCfg types.LLMConfig, logger
 }
 
 func newGenAITriagerForVertex(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
-	// #1801: this path constructs genai.NewClient below without an
-	// explicit HTTPClient/credentials, so it relies on genai's own ADC
-	// auto-detect, which checks GOOGLE_APPLICATION_CREDENTIALS -- inject
-	// it in-process here rather than via a static Helm-declared env var.
-	if err := launcher.InjectAmbientGoogleCredentials(llmCfg); err != nil {
-		return nil, fmt.Errorf("vertex_ai GenAI triager: %w", err)
+	// #1861 (main-line port of #1731/#1870): resolve explicit credentials
+	// from llmCfg.APIKey (the mounted credentials.json content, resolved
+	// generically by pkg/apifrontend/config's resolveLLMKey) rather than
+	// injecting GOOGLE_APPLICATION_CREDENTIALS -- mirroring
+	// launcher.newVertexGeminiModel's identical pattern for AF's own
+	// agent.llm connection. Lets severityTriage authenticate independently
+	// of AF's own connection even when both resolve to vertex_ai, which
+	// the now-removed DD-PLATFORM-007 fail() guard used to block.
+	cred, err := credentials.DetectDefault(&credentials.DetectOptions{
+		CredentialsJSON: bytes.TrimSpace([]byte(llmCfg.APIKey)),
+		Scopes:          []string{"https://www.googleapis.com/auth/cloud-platform"},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("vertex_ai GenAI triager: resolving credentials: %w", err)
 	}
 	clientCfg := &genai.ClientConfig{
-		Project:  llmCfg.VertexProject,
-		Location: llmCfg.VertexLocation,
-		Backend:  genai.BackendVertexAI,
+		Project:     llmCfg.VertexProject,
+		Location:    llmCfg.VertexLocation,
+		Backend:     genai.BackendVertexAI,
+		Credentials: cred,
 	}
 	if llmCfg.Endpoint != "" {
 		clientCfg.HTTPOptions = genai.HTTPOptions{BaseURL: llmCfg.Endpoint}
@@ -659,14 +670,14 @@ func newGenAITriagerForGemini(ctx context.Context, llmCfg types.LLMConfig, logge
 }
 
 func newAnthropicTriagerForVertex(ctx context.Context, llmCfg types.LLMConfig, logger logr.Logger) (severity.LLMTriager, error) {
-	// #1801: severity.NewAnthropicVertexClient's vertex.WithGoogleAuth has
-	// no explicit-credentials-bytes option and can only discover
-	// credentials via ambient ADC -- inject it in-process here rather
-	// than via a static Helm-declared env var.
-	if err := launcher.InjectAmbientGoogleCredentials(llmCfg); err != nil {
-		return nil, fmt.Errorf("vertex_ai Anthropic triager: %w", err)
-	}
-	client, err := severity.NewAnthropicVertexClient(ctx, llmCfg.VertexProject, llmCfg.VertexLocation)
+	// #1861 (main-line port of #1731/#1870): severity.NewAnthropicVertexClient
+	// now accepts explicit credentials bytes via vertex.WithCredentials --
+	// contrary to this call site's prior assumption, anthropic-sdk-go's
+	// Vertex option isn't ambient-ADC-only. Pass llmCfg.APIKey through
+	// directly instead of injecting GOOGLE_APPLICATION_CREDENTIALS, letting
+	// severityTriage authenticate independently of AF's own agent.llm
+	// connection even when both resolve to vertex_ai.
+	client, err := severity.NewAnthropicVertexClient(ctx, llmCfg.VertexProject, llmCfg.VertexLocation, llmCfg.APIKey)
 	if err != nil {
 		return nil, fmt.Errorf("vertex_ai Anthropic client: %w", err)
 	}
