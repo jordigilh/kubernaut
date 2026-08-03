@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -28,6 +28,29 @@ import (
 type ToolCallOverride struct {
 	Name      string                 `yaml:"name"`
 	Arguments map[string]interface{} `yaml:"arguments,omitempty"`
+
+	// NextToolCall recursively chains an additional tool call after this
+	// one's result arrives, allowing next_tool_call: to nest arbitrarily
+	// deep in YAML (issue #1853). E.g.:
+	//   tool_call: {name: investigate}
+	//   next_tool_call:
+	//     name: discover_workflows
+	//     next_tool_call:
+	//       name: select_workflow
+	NextToolCall *ToolCallOverride `yaml:"next_tool_call,omitempty"`
+
+	// FallbackArguments replaces Arguments in its entirety when at least one
+	// "$from_tool:<tool>:<field>" placeholder in Arguments cannot be resolved
+	// (the referenced tool was never called earlier in this conversation).
+	// This mirrors tool schemas with mutually exclusive argument sets -- e.g.
+	// kubernaut_investigate accepts EITHER rr_id (continue/take over an
+	// existing session) OR namespace/kind/name (create a new RR) -- so a
+	// scenario scripted for the "continue" case can gracefully degrade to
+	// the "create new" case instead of sending a half-resolved/literal
+	// template string. Added for issue #1853 after a live cluster showed
+	// af_investigate failing this exact way when invoked with no prior
+	// kubernaut_remediate call in the session.
+	FallbackArguments map[string]interface{} `yaml:"fallback_arguments,omitempty"`
 }
 
 // ScenarioOverride defines optional per-scenario overrides from a YAML config file.

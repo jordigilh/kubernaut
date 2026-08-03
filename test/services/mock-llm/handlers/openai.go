@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -225,13 +225,26 @@ func (h *handler) handleFullDAG(
 		return
 	}
 
-	if cfg.NextToolCall != nil && ctx.CountToolResults() == 1 {
-		h.trackToolCall(cfg.NextToolCall.Name)
-		writeChatCompletion(w, req.Stream, response.BuildToolCallResponse(model, cfg.NextToolCall.Name, scenarios.MockScenarioConfig{
-			ToolCallName: cfg.NextToolCall.Name,
-			ToolCallArgs: cfg.NextToolCall.Arguments,
-		}))
-		return
+	// NextToolCall chain: once N tool results exist, fire the Nth chained call
+	// (1-indexed), resolving any $from_tool templates in its arguments
+	// against the conversation so far. Generalizes the original
+	// single-NextToolCall behavior to arbitrary depth (issue #1853), e.g.
+	// investigate -> discover_workflows -> select_workflow -> watch, while
+	// preserving the original "fire at most once per link" guard: once
+	// CountToolResults() exceeds the chain length, nextChainCallByCount
+	// returns nil and this falls through to the DAG/text path below.
+	if chain := flattenToolCallChain(cfg.NextToolCall); len(chain) > 0 {
+		if next := nextChainCallByCount(chain, ctx.CountToolResults()); next != nil {
+			args := resolveTemplateArgsMap(next.Arguments, next.FallbackArguments, func(toolName, field string) string {
+				return response.ExtractFieldFromToolResult(req.Messages, toolName, field)
+			})
+			h.trackToolCall(next.Name)
+			writeChatCompletion(w, req.Stream, response.BuildToolCallResponse(model, next.Name, scenarios.MockScenarioConfig{
+				ToolCallName: next.Name,
+				ToolCallArgs: args,
+			}))
+			return
+		}
 	}
 
 	dag := conversation.SelectDAG(req.Tools)
@@ -362,22 +375,7 @@ func msgString(m openai.Message) string {
 // The map is cloned before mutation to avoid data races and state leaks
 // across concurrent requests sharing the same scenario singleton.
 func resolveOpenAITemplateArgs(messages []openai.Message, cfg *scenarios.MockScenarioConfig) {
-	if len(cfg.ToolCallArgs) == 0 {
-		return
-	}
-	cfg.ToolCallArgs = cloneAnyMap(cfg.ToolCallArgs)
-	for k, v := range cfg.ToolCallArgs {
-		sv, ok := v.(string)
-		if !ok || !strings.HasPrefix(sv, templatePrefix) {
-			continue
-		}
-		parts := strings.SplitN(sv[len(templatePrefix):], ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-		toolName, field := parts[0], parts[1]
-		if resolved := response.ExtractFieldFromToolResult(messages, toolName, field); resolved != "" {
-			cfg.ToolCallArgs[k] = resolved
-		}
-	}
+	cfg.ToolCallArgs = resolveTemplateArgsMap(cfg.ToolCallArgs, cfg.FallbackArguments, func(toolName, field string) string {
+		return response.ExtractFieldFromToolResult(messages, toolName, field)
+	})
 }
