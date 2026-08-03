@@ -162,6 +162,11 @@ func startAPIServer(ctx context.Context, p apiServerStartParams) (httpServer *ht
 
 	p.store.StartCleanupLoop(ctx, p.cfg.Runtime.Session.TTL/2)
 
+	// #1892: sweep idle per-investigation AnomalyDetector entries so a
+	// correlationID whose investigation never reaches a clean exit path
+	// (crash, cancellation, client disconnect) does not leak memory forever.
+	p.inv.StartAnomalyDetectorCleanupLoop(ctx, 30*time.Minute, investigator.DefaultAnomalyDetectorTTL)
+
 	// Route setup (including the JWKS pre-warm inside newAuthMiddleware) has
 	// completed by this point; only the network bind remains. Mark the API
 	// server ready now so /readyz does not report ready any earlier than this.
