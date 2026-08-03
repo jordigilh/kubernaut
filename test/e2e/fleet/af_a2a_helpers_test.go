@@ -117,6 +117,26 @@ func afA2ATasksSend(id, text string) string {
 	})
 }
 
+// afA2ATasksSendWithTask builds a message/send JSON-RPC payload that
+// continues an existing task (id: taskID), so a later turn (e.g.
+// kubernaut_message) lands in the same ADK session/interactive investigation
+// established by an earlier turn (e.g. kubernaut_investigate). Mirrors
+// test/e2e/fullpipeline/af_helpers_test.go's fpA2ATasksSendWithTask
+// (E2E-FLEET-018, issue #1768 Track 2 Gap D).
+func afA2ATasksSendWithTask(id, taskID, text string) string {
+	return afBuildJSONRPC(id, "message/send", map[string]interface{}{
+		"id": taskID,
+		"message": map[string]interface{}{
+			"messageId": "msg-" + id,
+			"contextId": "ctx-" + taskID,
+			"role":      "user",
+			"parts": []map[string]interface{}{
+				{"kind": "text", "text": text},
+			},
+		},
+	})
+}
+
 type afRPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
