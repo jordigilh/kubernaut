@@ -1,14 +1,35 @@
 # DD-WORKFLOW-002: MCP Workflow Catalog Architecture
 
-> **SUPERSEDED** by [DD-WORKFLOW-016](./DD-WORKFLOW-016-action-type-workflow-indexing.md) (Action-Type Workflow Catalog Indexing, February 2026).
+> **SUPERSEDED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This
+> Nov 2025 proposal describes a **Python** HolmesGPT API calling a standalone **Embedding Service (MCP
+> Server)** that generates 384-dim sentence-transformer embeddings and posts a single
+> `search_workflow_catalog` semantic-search tool call to a Data Storage `POST /api/v1/workflows/search`
+> pgvector endpoint — none of which reflects the shipped architecture. The standalone Embedding Service
+> was never built; HolmesGPT API was rewritten in Go as **Kubernaut Agent (KA)**; and the single
+> semantic-search tool was first replaced by a three-step, `action_type`-taxonomy-based discovery
+> protocol (`list_available_actions` -> `list_workflows` -> `get_workflow`, DD-WORKFLOW-016, Feb 2026),
+> which has since been relocated again: that three-step protocol's discovery/scoring logic now runs
+> **in-process inside KA** against an informer-backed cache of `RemediationWorkflow`/`ActionType` CRDs
+> (confirmed via `internal/kubernautagent/workflowcatalog/discovery.go`,
+> `internal/kubernautagent/workflowcatalog/cache_filter.go`), not any Data Storage REST/MCP endpoint or
+> PostgreSQL/pgvector store (both retired as dead code — no `pgvector`/embedding reference remains
+> anywhere in the KA discovery path). See [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md)
+> for the current discovery-ownership design and
+> [DD-WORKFLOW-017](DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) for the current
+> end-to-end lifecycle (registration -> discovery -> execution -> management). This document — including
+> the Feb-2026 correction note directly below, which remains accurate about the discovery *protocol
+> shape* but not about *where* it now runs — is retained for historical context only; do not use it to
+> understand the current architecture.
+
+> **SUPERSEDED (intermediate correction, Feb 2026)** by [DD-WORKFLOW-016](./DD-WORKFLOW-016-action-type-workflow-indexing.md) (Action-Type Workflow Catalog Indexing).
 >
-> DD-WORKFLOW-016 replaces the single `search_workflow_catalog` tool with a three-step discovery protocol (`list_available_actions`, `list_workflows`, `get_workflow`). The `signal_type`-based querying, semantic search with pgvector embeddings, and Embedding Service architecture defined in this document are no longer valid. The `action_type` taxonomy (DD-WORKFLOW-016) replaces `signal_type` as the primary catalog indexing key. Refer to DD-WORKFLOW-016 for the current Kubernaut Agent (KA) toolset and DS endpoint design.
+> DD-WORKFLOW-016 replaces the single `search_workflow_catalog` tool with a three-step discovery protocol (`list_available_actions`, `list_workflows`, `get_workflow`). The `signal_type`-based querying, semantic search with pgvector embeddings, and Embedding Service architecture defined in this document are no longer valid. The `action_type` taxonomy (DD-WORKFLOW-016) replaces `signal_type` as the primary catalog indexing key. **Update (2026-08-02)**: refer to DD-WORKFLOW-019 and DD-WORKFLOW-017 — not this note's original DD-WORKFLOW-016-only pointer — for the current Kubernaut Agent (KA) toolset and endpoint design, since discovery ownership itself moved from Data Storage to KA after this note was written.
 
 **Date**: November 14, 2025
-**Status**: **SUPERSEDED** by DD-WORKFLOW-016
+**Status**: 🗄️ **SUPERSEDED** — see notes above (originally by DD-WORKFLOW-016, Feb 2026; discovery ownership further superseded by DD-WORKFLOW-019, Jul 2026)
 **Deciders**: Architecture Team
-**Version**: 3.3
-**Related**: DD-WORKFLOW-012 (Workflow Immutability), ADR-034 (Unified Audit Table), DD-WORKFLOW-014 (Workflow Selection Audit Trail), DD-CONTRACT-001 (AIAnalysis ↔ WorkflowExecution Alignment)
+**Version**: 3.4
+**Related**: DD-WORKFLOW-012 (Workflow Immutability), ADR-034 (Unified Audit Table), DD-WORKFLOW-014 (Workflow Selection Audit Trail), DD-CONTRACT-001 (AIAnalysis ↔ WorkflowExecution Alignment), [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md) (current discovery-ownership design), [DD-WORKFLOW-017](DD-WORKFLOW-017-workflow-lifecycle-component-interactions.md) (current end-to-end lifecycle)
 
 ---
 
@@ -28,6 +49,15 @@
 ---
 
 ## Changelog
+
+### Version 3.4 (2026-08-02) — Issue #1806 correction
+- **Correction pass**: Added a dated SUPERSEDED banner (matching DD-WORKFLOW-010's style) above the
+  existing Feb-2026 DD-WORKFLOW-016 correction note, clarifying that discovery/scoring ownership has
+  moved a second time — from Data Storage (DD-WORKFLOW-016) to an in-process KA cache
+  (DD-WORKFLOW-019) — and that the standalone Embedding Service and Python HolmesGPT API described in
+  this document's body were never built in that form. Verified via grep: no `pgvector`/embedding
+  reference remains in `internal/kubernautagent/workflowcatalog/`. No body content removed; retained
+  below as historical reference only.
 
 ### Version 3.3 (2025-11-30)
 - **BREAKING**: Standardized all filter field names to **snake_case** for consistency

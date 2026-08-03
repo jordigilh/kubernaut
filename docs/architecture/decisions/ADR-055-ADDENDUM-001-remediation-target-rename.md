@@ -5,6 +5,22 @@
 **Issue**: #542  
 **Parent ADR**: ADR-055 (LLM-Driven Context Enrichment)
 
+> **Historical Context (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**:
+> Layer 1 below documents PR #543 as it landed in March 2026, against the **pre-Go-rewrite Python**
+> `kubernaut-agent`/HAPI implementation (`prompt_builder.py`, `result_parser.py`, `llm_integration.py`,
+> `enrichment_service.py`, and a "HolmesGPT OAS client"). None of those Python files exist in the
+> repository today — `kubernaut-agent`/HolmesGPT API was rewritten in Go as **Kubernaut Agent (KA)** per
+> [DD-KA-019](DD-KA-019-go-rewrite-design/DD-KA-019-go-rewrite-design.md) (approved 2026-03-04, the same
+> day as this addendum). The underlying decision this addendum records — renaming the semantically
+> ambiguous `affectedResource` to the clearer `remediationTarget` — remains valid and is confirmed still
+> implemented today: `RemediationTarget` is a live type in
+> `api/aianalysis/v1alpha1/aianalysis_types.go` (line 630), and the Rego evaluator
+> (`pkg/aianalysis/rego/evaluator.go`, lines 115/286) still exposes it under the `remediation_target` JSON
+> key exactly as Layer 2 below describes — confirmed by [ADR-055 v2.0](ADR-055-llm-driven-context-enrichment.md)'s
+> own description of `remediation_target` as "structured Rego policy input". Layer 2 (Go CRD & Consumers)
+> is therefore accurate as current-state documentation, not just history; only Layer 1 (Python) is
+> obsolete.
+
 ## Context
 
 Issue #542 identified that the field name `affectedResource` was semantically ambiguous.

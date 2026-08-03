@@ -8,6 +8,28 @@
 
 ---
 
+> **⚠️ SUPERSEDED / HISTORICAL (Issue [#1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This
+> document is fully superseded by ADR-041 (see Status line above and Changelog footer) and describes the
+> **pre-Go-rewrite, playbook-based** architecture as it existed on 2025-11-16. It is kept as historical
+> record and intentionally NOT rewritten in place — renaming the actors below would misrepresent what was
+> actually decided at the time. For readers encountering this via search:
+> - **"HolmesGPT API"** (prompt generator) = the pre-rewrite service now called **Kubernaut Agent (KA)**,
+>   implemented today as `internal/kubernautagent/` (Go server) with `pkg/agentclient/` as its
+>   OpenAPI-generated client (verified against `pkg/agentclient/client.go`,
+>   `internal/kubernautagent/investigator/investigator.go`).
+> - **"kubernaut-agent" (Response Parser)**: at the time this ADR was written, this was a *separate*
+>   downstream Python component. Per the Go rewrite (`DD-KA-019`), prompt generation and response parsing
+>   are now both performed in-process by the same Kubernaut Agent (KA) entity — there is no longer a
+>   separate downstream parser.
+> - **"Downstream services (RemediationExecution)"**: `RemediationExecution` does not exist in the current
+>   codebase (verified: no matches under `api/`); the current downstream CRD is `WorkflowExecution`.
+> - This document's **playbook-based** selection contract (`selected_playbook`) was itself replaced by
+>   ADR-041's **workflow-based** selection contract (`selected_workflow`) — see ADR-041 for the current
+>   contract shape.
+> - Note (unrelated to #1806): this file's own heading below says "ADR-038" while the filename says
+>   "ADR-039" — a leftover from the ADR-038→039→040→041 renumbering chain documented in ADR-041's
+>   changelog. Left as-is; out of scope for this terminology sweep.
+
 ## Context
 
 The HolmesGPT API sends prompts to the LLM for Root Cause Analysis (RCA) and remediation playbook selection. The LLM must understand the prompt structure and return a structured JSON response that the system can parse and execute.
@@ -715,6 +737,13 @@ If validation fails, the parser MUST:
 ---
 
 ## Changelog
+
+### Post-2.0 Correction (2026-08, Issue #1806)
+- Added a historical/superseded clarification banner at the top of this document mapping
+  "HolmesGPT API"/"kubernaut-agent" to their current names (Kubernaut Agent (KA),
+  `pkg/agentclient/`, `internal/kubernautagent/`) and noting `RemediationExecution` is now
+  `WorkflowExecution`. Body text left unchanged as historical record (already fully superseded
+  by ADR-041 since 2025).
 
 ### Version 2.0 (2025-11-16) - Major Update
 - **BREAKING**: Added RCA severity assessment (critical, high, medium, low)

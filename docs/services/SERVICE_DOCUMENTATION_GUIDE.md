@@ -62,9 +62,9 @@
 **Directory**: `docs/services/crd-controllers/02-aianalysis/`
 
 **Key Patterns**:
-- HolmesGPT AI provider integration
+- Kubernaut Agent (KA) AI provider integration
 - Rego policy evaluation (Open Policy Agent)
-- Child CRD management (AIApprovalRequest)
+- Child CRD management (`RemediationApprovalRequest`)
 - Approval workflows (auto vs. manual)
 
 **Special Files**:
@@ -1343,11 +1343,13 @@ Documentation is complete when:
 5. [gateway-service/testing-strategy.md](mdc:docs/services/stateless/gateway-service/testing-strategy.md) - HTTP routing and webhook testing
 
 **Stateless Services** (MEDIUM priority):
-6. [context-api/testing-strategy.md](mdc:docs/services/stateless/context-api/testing-strategy.md) - Query and caching testing
-7. [data-storage/testing-strategy.md](mdc:docs/services/stateless/data-storage/testing-strategy.md) - Vector DB and persistence testing
-8. [kubernaut-agent/testing-strategy.md](mdc:docs/services/stateless/kubernaut-agent/testing-strategy.md) - LLM and prompt testing
-9. [notification-service/testing-strategy.md](mdc:docs/services/stateless/notification-service/testing-strategy.md) - Multi-channel notification testing
-10. [dynamic-toolset/testing-strategy.md](mdc:docs/services/stateless/dynamic-toolset/testing-strategy.md) - Service discovery testing
+<!-- CORRECTED (2026-08-02, Issue #1806): removed dead link to context-api/testing-strategy.md — the
+     standalone Context API service was deprecated and its capabilities absorbed into Data Storage
+     (DD-CONTEXT-006). Query/caching testing now lives under data-storage/testing-strategy.md below. -->
+6. [data-storage/testing-strategy.md](mdc:docs/services/stateless/data-storage/testing-strategy.md) - Vector DB and persistence testing
+7. [kubernaut-agent/testing-strategy.md](mdc:docs/services/stateless/kubernaut-agent/testing-strategy.md) - LLM and prompt testing
+8. [notification-service/testing-strategy.md](mdc:docs/services/stateless/notification-service/testing-strategy.md) - Multi-channel notification testing
+9. [dynamic-toolset/testing-strategy.md](mdc:docs/services/stateless/dynamic-toolset/testing-strategy.md) - Service discovery testing
 
 ### **What Each Service Contains**
 Each service testing strategy includes:
@@ -1370,8 +1372,9 @@ Each service testing strategy includes:
   3. Redundant Coverage (same test at multiple levels)
 
 ### **Key Testing Patterns**
-- **Go Services**: Use Ginkgo `DescribeTable` for state-based testing (10/11 services)
-- **Python Service**: Use `@pytest.mark.parametrize` for parametrized testing (HolmesGPT API)
+- **Go Services**: Use Ginkgo `DescribeTable` for state-based testing (all 12 active services — the former
+  Python HolmesGPT-API was rewritten in Go as Kubernaut Agent (KA), Issue #433, and uses the same Ginkgo
+  pattern as every other service)
 - **Service-Specific Examples**: All examples tailored to each service's domain
 - **Maintainability-First**: Prioritize simplicity and maintainability over exhaustive coverage
 
