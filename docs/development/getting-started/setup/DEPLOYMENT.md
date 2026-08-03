@@ -1,5 +1,14 @@
 # Deployment Guide
 
+> **⚠️ CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This guide
+> predates the Go rewrite of HolmesGPT into **Kubernaut Agent (KA)** (v1.3, issue
+> [#433](https://github.com/jordigilh/kubernaut/issues/433)) and the move to Helm-based production deployment.
+> References to "HolmesGPT service"/`holmesgpt-service` below have been renamed to Kubernaut Agent (KA) for
+> terminology accuracy, but the env vars, Docker Compose flow, and manual `kubectl apply -f k8s/` steps described
+> here do not reflect the current deployment path. For current production deployment, use the Helm chart at
+> `charts/kubernaut/` (see `charts/kubernaut/README.md`); KA's real ports are API `8443`, health `8081`, metrics
+> `9090` (`charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml`), not `8090` as shown below.
+
 ## Prerequisites
 
 - Kubernetes cluster with RBAC enabled
@@ -35,7 +44,7 @@ make bootstrap-dev-compose
 
 Access (legacy):
 - Go service: http://localhost:8080
-- HolmesGPT service: http://localhost:8090
+- HolmesGPT service (now Kubernaut Agent (KA)): http://localhost:8090
 - LocalAI endpoint: http://192.168.1.169:8080 (if configured)
 
 ### 3. Kubernetes (Production)
@@ -44,7 +53,7 @@ Access (legacy):
 # Create namespace
 kubectl create namespace kubernaut
 
-# Create secrets
+# Create secrets (legacy secret name; predates Kubernaut Agent (KA) rewrite)
 kubectl create secret generic holmesgpt-secrets \
   --from-literal=openai-api-key=your_api_key \
   -n kubernaut
@@ -58,6 +67,9 @@ kubectl apply -f k8s/ -n kubernaut
 ### Go Service Environment Variables
 
 ```env
+# Legacy env vars for the pre-rewrite "HolmesGPT" service, now Kubernaut Agent (KA); current KA
+# configuration is via a mounted config file, not these env vars — see
+# charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml
 AI_SERVICES_HOLMESGPT_ENABLED=true
 AI_SERVICES_HOLMESGPT_ENDPOINT=http://holmesgpt-service:8090
 POSTGRES_HOST=postgres-service
@@ -70,30 +82,30 @@ POSTGRES_PASSWORD=secretpassword
 
 ### Minimum
 
-- Go Service: 256Mi memory, 200m CPU (includes HolmesGPT client)
-- HolmesGPT Service: 512Mi memory, 200m CPU
+- Go Service: 256Mi memory, 200m CPU (includes Kubernaut Agent (KA) client)
+- Kubernaut Agent (KA) (formerly "HolmesGPT Service"): 512Mi memory, 200m CPU
 
 ### Recommended Production
 
-- Go Service: 1Gi memory, 500m CPU, 3 replicas (includes HolmesGPT client)
-- HolmesGPT Service: 2Gi memory, 500m CPU, 2 replicas
+- Go Service: 1Gi memory, 500m CPU, 3 replicas (includes Kubernaut Agent (KA) client)
+- Kubernaut Agent (KA) (formerly "HolmesGPT Service"): 2Gi memory, 500m CPU, 2 replicas
 
 ## Monitoring
 
 ### Health Checks
 
 ```bash
-# Go service health (includes HolmesGPT connectivity)
+# Go service health (includes Kubernaut Agent (KA) connectivity)
 curl http://localhost:8080/health
 
-# HolmesGPT service health
+# Kubernaut Agent (KA) health (formerly "HolmesGPT service health"; legacy port shown, current KA health port is 8081)
 curl http://localhost:8090/health
 ```
 
 ### Metrics
 
 Prometheus metrics available at:
-- Go service: http://localhost:8080/metrics (includes HolmesGPT integration metrics)
+- Go service: http://localhost:8080/metrics (includes Kubernaut Agent (KA) integration metrics)
 
 ## Security
 
@@ -133,35 +145,35 @@ spec:
   - to: []
     ports:
     - protocol: TCP
-      port: 8090  # HolmesGPT Service
+      port: 8090  # Kubernaut Agent (KA), formerly "HolmesGPT Service"; legacy port shown, current KA API port is 8443
 ```
 
 ## Troubleshooting
 
 ### Common Issues
 
-**HolmesGPT service fails to start:**
-- Check HolmesGPT container configuration
+**Kubernaut Agent (KA) fails to start** (formerly "HolmesGPT service fails to start"):
+- Check the KA container configuration
 - Verify LLM provider connectivity
 - Review startup logs for validation errors
 
-**Go service can't connect to HolmesGPT:**
-- Verify HolmesGPT service is running and healthy
+**Go service can't connect to Kubernaut Agent (KA)** (formerly "...to HolmesGPT"):
+- Verify KA is running and healthy
 - Check network connectivity between services
-- Confirm HolmesGPT service URL configuration
+- Confirm KA service URL configuration
 
 **High latency:**
-- Optimize HolmesGPT configuration
-- Increase HolmesGPT service replicas
+- Optimize Kubernaut Agent (KA) configuration
+- Increase KA replicas
 - Optimize LLM provider settings (model, max_tokens)
 
 ### Log Analysis
 
 ```bash
-# Go service logs (includes HolmesGPT integration)
+# Go service logs (includes Kubernaut Agent (KA) integration)
 kubectl logs -f deployment/kubernaut -n kubernaut
 
-# HolmesGPT service logs
+# Kubernaut Agent (KA) logs (formerly "HolmesGPT service logs"; legacy deployment name shown)
 kubectl logs -f deployment/holmesgpt-service -n kubernaut
 
 # Filter for errors

@@ -2,9 +2,11 @@
 
 ### Overview
 
-**Architectural Principle**: Remediation Coordinator provides targeting data only (~8KB). HolmesGPT fetches logs/metrics dynamically using built-in toolsets.
+**Architectural Principle**: Remediation Coordinator provides targeting data only (~8KB). Kubernaut Agent (KA)
+(formerly "HolmesGPT" — renamed in the Go rewrite, v1.3, issue [#433](https://github.com/jordigilh/kubernaut/issues/433))
+fetches logs/metrics dynamically using built-in tools.
 
-**Why This Matters**: Understanding this pattern ensures compliance with Kubernetes etcd limits and provides fresh data for HolmesGPT investigations.
+**Why This Matters**: Understanding this pattern ensures compliance with Kubernetes etcd limits and provides fresh data for KA investigations.
 
 ---
 
@@ -17,13 +19,15 @@
 
 **Data Freshness**:
 - Logs stored in CRDs become stale immediately
-- HolmesGPT needs real-time data for accurate investigations
+- Kubernaut Agent (KA) needs real-time data for accurate investigations
 - Kubernetes API provides fresh pod logs on demand
 
-**HolmesGPT Design**:
-- Built-in toolsets fetch data from live sources
-- `kubernetes` toolset: Pod logs, events, kubectl describe
-- `prometheus` toolset: Metrics queries, PromQL generation
+**Kubernaut Agent (KA) Design**:
+- Built-in tools fetch data from live sources (see `pkg/kubernautagent/tools/` — `k8s`, `logs`, `prometheus`,
+  `alertmanager`; full list in
+  [AI Analysis Service — KA Toolsets](../02-aianalysis/ka-approval.md#ka-toolsets))
+- `k8s`/`logs` tools: Pod logs, events, resource describe
+- `prometheus` tool: Metrics queries, PromQL generation
 
 ---
 
@@ -40,7 +44,7 @@ spec:
       severity: "critical"
       environment: "production"
 
-      # Resource targeting for HolmesGPT
+      # Resource targeting for Kubernaut Agent (KA)
       namespace: "production-app"
       resourceKind: "Pod"
       resourceName: "web-app-789"
@@ -66,28 +70,31 @@ spec:
 ```
 
 **What Is NOT Stored**:
-- ❌ Pod logs (HolmesGPT `kubernetes` toolset fetches)
-- ❌ Metrics data (HolmesGPT `prometheus` toolset fetches)
-- ❌ Events (HolmesGPT fetches dynamically)
-- ❌ kubectl describe output (HolmesGPT generates)
+- ❌ Pod logs (KA `k8s`/`logs` tools fetch)
+- ❌ Metrics data (KA `prometheus` tool fetches)
+- ❌ Events (KA fetches dynamically)
+- ❌ kubectl describe output (KA generates on demand)
 
 ---
 
-### How HolmesGPT Uses Targeting Data
+### How Kubernaut Agent (KA) Uses Targeting Data
 
-**AIAnalysis Controller → HolmesGPT-API**:
+**AIAnalysis Controller → Kubernaut Agent (KA) REST API** (via `pkg/agentclient`, OpenAPI-generated):
 
-```python
-# HolmesGPT uses targeting data to fetch fresh logs/metrics
-holmes_client.investigate(
-    namespace="production-app",      # From SignalContext
-    resource_name="web-app-789",     # From SignalContext
-    # HolmesGPT toolsets automatically:
-    # 1. kubectl logs -n production-app web-app-789 --tail 500
-    # 2. kubectl describe pod web-app-789 -n production-app
-    # 3. kubectl get events -n production-app
-    # 4. promql: container_memory_usage_bytes{pod="web-app-789"}
-)
+> **⚠️ CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: The snippet
+> below is illustrative pseudocode only — it does not reflect a real Go API. The actual integration is the
+> AIAnalysis controller calling KA's REST API through the generated `pkg/agentclient` client; see
+> `test/integration/aianalysis/agentclient_integration_test.go` for the real call pattern and
+> [AI Analysis Service — KA Toolsets](../02-aianalysis/ka-approval.md#ka-toolsets) for KA's tool implementation.
+
+```text
+# Conceptual flow — KA uses targeting data to fetch fresh logs/metrics:
+#   1. AIAnalysis controller calls KA's investigation API with namespace/resource_name (from SignalContext)
+#   2. KA's built-in tools automatically:
+#      - fetch pod logs (tail ~500 lines)
+#      - describe the target resource
+#      - list recent events in the namespace
+#      - query Prometheus (e.g. container_memory_usage_bytes{pod="web-app-789"})
 ```
 
 **Result**: Fresh, real-time data for investigation (not stale CRD snapshots)
@@ -109,7 +116,7 @@ kubernetesContext:
     namespace:
       type: string
       maxLength: 63  # RFC 1123 DNS label
-      description: "Target namespace for HolmesGPT investigation"
+      description: "Target namespace for Kubernaut Agent (KA) investigation"
     resourceKind:
       type: string
       maxLength: 100  # Kubernetes resource kind max
@@ -118,7 +125,7 @@ kubernetesContext:
     resourceName:
       type: string
       maxLength: 253  # RFC 1123 DNS subdomain
-      description: "Resource name for HolmesGPT targeting"
+      description: "Resource name for Kubernaut Agent (KA) targeting"
     labels:
       type: object
       maxProperties: 20
@@ -190,7 +197,7 @@ func (r *RemediationRequestReconciler) createAIAnalysis(
                     Environment:       alertProcessing.Status.EnrichedSignal.Environment,
                     BusinessPriority:  alertProcessing.Status.EnrichedSignal.BusinessPriority,
 
-                    // Resource targeting for HolmesGPT toolsets
+                    // Resource targeting for Kubernaut Agent (KA) tools
                     Namespace:    alertProcessing.Status.EnrichedSignal.Namespace,
                     ResourceKind: alertProcessing.Status.EnrichedSignal.ResourceKind,
                     ResourceName: alertProcessing.Status.EnrichedSignal.ResourceName,
@@ -310,11 +317,10 @@ All field constraints match Kubernetes object specifications:
 
 ### Reference
 
-For detailed HolmesGPT toolset capabilities and CRD schemas:
+For detailed Kubernaut Agent (KA) tool capabilities and CRD schemas:
 - [SignalProcessing CRD Schema](../../design/CRD/02_REMEDIATION_PROCESSING_CRD.md)
 - [AIAnalysis CRD Schema](../02-aianalysis/crd-schema.md)
-- [AI Analysis Service Spec - HolmesGPT Toolsets](./02-ai-analysis.md#holmesgpt-toolsets--dynamic-data-fetching)
-- [HolmesGPT Official Documentation](https://github.com/robusta-dev/holmesgpt)
+- [AI Analysis Service Spec - KA Toolsets](../02-aianalysis/ka-approval.md#ka-toolsets)
 
 ---
 

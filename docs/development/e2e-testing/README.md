@@ -2,6 +2,16 @@
 
 This directory contains configurations and guides for Kubernaut's end-to-end testing infrastructure, primarily using **Kind (Kubernetes in Docker)** for lightweight, fast testing.
 
+> **⚠️ CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: Two corrections
+> while verifying this doc. (1) **HolmesGPT** was rewritten in Go and renamed **Kubernaut Agent (KA)** in v1.3
+> (issue [#433](https://github.com/jordigilh/kubernaut/issues/433)); references below are renamed accordingly.
+> (2) Several commands referenced below do not exist in the current repo — there is no bare `make test-e2e`,
+> `setup-test-e2e`, or `cleanup-test-e2e` target, no `run-e2e-tests.sh`/`run-use-case-N.sh` scripts, and no
+> `deploy/holmesgpt-deployment.yaml`. The actual current E2E entry points are per-service Makefile targets, e.g.
+> `make test-e2e-kubernautagent`, `make test-e2e-fullpipeline`, `make test-e2e-fleet` (see `Makefile` for the full
+> list via `grep '^test-e2e' Makefile`). The Kind/hybrid/bare-metal narrative below is preserved as historical
+> context and has not been otherwise re-verified against current source.
+
 ## 🎯 **Primary Testing Platform: Kind**
 
 **Recommended Platform:** Kind (Kubernetes in Docker)
@@ -111,15 +121,15 @@ sudo ./cleanup-e2e-environment-root.sh
 
 **Architecture Overview:**
 - 🖥️ **Kubernetes Cluster**: Remote host (helios08)
-- 🤖 **HolmesGPT Container**: Custom REST API container (localhost:8090 or in-cluster)
+- 🤖 **Kubernaut Agent (KA) Container** (formerly "HolmesGPT Container"): Custom REST API container (localhost:8090 or in-cluster)
 - 🔧 **Kubernaut**: Local machine (manages remote cluster)
 - 🧪 **Tests**: Local machine
 - 📊 **Vector DB**: Local machine (PostgreSQL)
 
 **Network Topology:**
 - Local machine → Remote cluster ✅
-- Local machine → HolmesGPT Container ✅
-- Remote cluster → HolmesGPT ⚙️ (configurable: local or in-cluster deployment)
+- Local machine → Kubernaut Agent (KA) Container ✅
+- Remote cluster → Kubernaut Agent (KA) ⚙️ (configurable: local or in-cluster deployment)
 
 ```bash
 # Navigate to e2e testing directory
@@ -131,11 +141,13 @@ make deploy-cluster-remote-only
 # 2. Setup local Kubernaut to connect to remote cluster
 make setup-local-hybrid
 
-# 3. Deploy HolmesGPT container
+# 3. Deploy Kubernaut Agent (KA) container (formerly "HolmesGPT container")
 # Option A: Local deployment
 docker run -d -p 8090:8090 kubernaut/kubernaut-agent:latest
 
 # Option B: In-cluster deployment
+# NOTE: deploy/holmesgpt-deployment.yaml does not exist in the current repo; use the Helm chart instead
+# (charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml)
 oc apply -f deploy/holmesgpt-deployment.yaml
 
 # 4. Validate hybrid network topology
@@ -434,7 +446,7 @@ The complete E2E environment includes everything needed for Kubernaut testing:
 #### **Top 10 E2E Use Cases**
 1. **AI-Driven Pod Resource Exhaustion Recovery**
 2. **Multi-Node Failure with Workload Migration**
-3. **HolmesGPT Investigation Pipeline Under Load**
+3. **Kubernaut Agent (KA) Investigation Pipeline Under Load** (formerly "HolmesGPT Investigation Pipeline Under Load")
 4. **Network Partition Recovery with Service Mesh**
 5. **Storage Failure with Vector Database Persistence**
 6. **AI Model Timeout Cascade with Fallback Logic**
@@ -455,7 +467,7 @@ The complete E2E environment includes everything needed for Kubernaut testing:
 
 # Run individual use cases
 ./run-use-case-1.sh             # Resource exhaustion recovery
-./run-use-case-3.sh             # HolmesGPT investigation
+./run-use-case-3.sh             # Kubernaut Agent (KA) investigation, formerly "HolmesGPT investigation"
 ./run-use-case-9.sh             # Security incident response
 ```
 
