@@ -1,9 +1,27 @@
 # Notification Service - Payload Schemas
 
 **Date**: October 5, 2025
-**Status**: ✅ **AUTHORITATIVE SCHEMA**
+**Status**: ⚠️ **NOT IMPLEMENTED / SUPERSEDED** (flagged [#1880](https://github.com/jordigilh/kubernaut/issues/1880))
 **Purpose**: Unified notification payload for all CRD controllers
 **Confidence**: 90%
+
+> **⚠️ NOT IMPLEMENTED**: The unified `EscalationRequest` HTTP schema and
+> `POST /api/v1/notify/escalation` endpoint described below were never built. The real
+> mechanism (verified against source, 2026-08-03) is per-service **`NotificationRequest` CRD
+> creation** — each controller (Remediation Orchestrator, AIAnalysis, WorkflowExecution, ...)
+> creates a `NotificationRequest` CRD (`api/notification/v1alpha1`), owned by its parent CRD for
+> cascade deletion, which the Notification service reconciles and delivers via its own routing
+> rules (BR-NOT-065). There is no shared Go `EscalationRequest`/`EscalationDetails` type, no HTTP
+> POST from any controller to Notification, and no `Channels`/`Urgency` fields set by callers.
+> The closest verified real analog is Remediation Orchestrator's
+> [`pkg/remediationorchestrator/creator/notification.go`](../../../pkg/remediationorchestrator/creator/notification.go)
+> and the real (much simpler) `NotificationRequestSpec` in
+> [`api/notification/v1alpha1/notificationrequest_types.go`](../../../api/notification/v1alpha1/notificationrequest_types.go) —
+> see [RemediationOrchestrator's integration-points.md §4](../../services/crd-controllers/05-remediationorchestrator/integration-points.md#4-notification-integration-notificationrequest-crd-not-http)
+> for a grounded walkthrough. The schema body below is retained as historical/never-built design
+> for reference only — it does not describe any code that exists today, and AIAnalysis's/
+> WorkflowExecution's/RemediationProcessor's actual escalation paths were not re-audited in this
+> pass (out of scope for #1880; only RO's path above was verified).
 
 ---
 
