@@ -270,6 +270,10 @@ hooks:
         image: docker.io/bitnami/kubectl:latest@sha256:6e2cdb22d6ab7264ea198c717f555e30536b54029d26c8781b9f25f78951b564
 kubernautAgent:
     additionalClusterRoleBindings: []
+    ai:
+        safety:
+            anomaly:
+                maxTotalToolCalls: 30
     alignmentCheck:
         enabled: false
         llmProfileRef: ""

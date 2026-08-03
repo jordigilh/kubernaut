@@ -43,7 +43,7 @@ func (inv *Investigator) RunWorkflowDiscoveryFromRCA(ctx context.Context, signal
 	rcaCopy := *rcaResult
 	rcaResult = &rcaCopy
 
-	inv.pipeline.AnomalyDetector.Reset()
+	inv.anomalyDetectorFor(correlationID).Reset()
 
 	inv.autoResolveRCATargetAPIVersion(rcaResult, correlationID)
 
