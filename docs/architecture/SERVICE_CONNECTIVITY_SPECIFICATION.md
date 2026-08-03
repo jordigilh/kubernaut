@@ -7,6 +7,22 @@
 
 ---
 
+> **⚠️ HISTORICAL (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This document
+> predates Kubernaut's CRD-controller architecture and describes an earlier, sequential-HTTP-call design
+> (`Remediation Processor`, `Workflow Orchestrator`, `K8s Executor`, `Intelligence Service`, etc.) that was never
+> built as specified here. The current production architecture is 12 CRD-controller/stateless services — see
+> [Kubernaut Service Catalog](KUBERNAUT_SERVICE_CATALOG.md) for the authoritative decomposition. Two corrections
+> specific to this issue: (1) **HolmesGPT** (the "External AI & Investigation Tools" integration below) was
+> rewritten in Go and renamed **Kubernaut Agent (KA)** in v1.3 (issue [#433](https://github.com/jordigilh/kubernaut/issues/433));
+> it is now a first-class Kubernaut service (`cmd/kubernautagent/`), not an external tool consumed via a
+> "Context API Service". (2) **Context API** (referenced throughout this document as the HolmesGPT-facing
+> service) was deprecated and folded into Data Storage per
+> [DD-CONTEXT-006](decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md); it no longer exists as a running service.
+> The rest of this document's service list/ports/flows is preserved as-is for historical reference and has not
+> been otherwise re-verified against current source.
+
+---
+
 ## 🎯 **PURPOSE**
 
 This document defines the **approved service connectivity patterns** for Kubernaut's microservices architecture, providing detailed justification for each service connection and integration pattern based on business requirements.
@@ -134,7 +150,12 @@ This document defines the **approved service connectivity patterns** for Kuberna
 
 ### **External AI & Investigation Tools**
 
-#### **HolmesGPT Integration**
+#### **HolmesGPT Integration** — HISTORICAL, see banner above
+> As of v1.3, HolmesGPT was rewritten in Go and renamed **Kubernaut Agent (KA)**; it runs as a first-class
+> Kubernaut service (real ports: API `8443`, health `8081`, metrics `9090` — see
+> `charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml`), not as an externally-integrated tool behind
+> a "Context API Service" (deprecated, DD-CONTEXT-006). The entry below is preserved unmodified as a historical
+> record of the original (never-built-as-specified) design.
 - **Connected Service**: 🌐 Context API Service
 - **Protocol**: HTTPS REST API
 - **Endpoint**: `http://holmesgpt-service:8090/api/v1/`

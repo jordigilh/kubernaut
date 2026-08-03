@@ -25,6 +25,22 @@
 
 ---
 
+> **⚠️ HISTORICAL (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This document
+> describes a pre-CRD, sequential-HTTP-call "10-service" design (`webhook-service`, `ai-service`,
+> `workflow-engine-service`, `executor-service`, `storage-service`, `intelligence-service`, `monitor-service`,
+> `context-api-service`, `notification-service`) that predates — and does not reflect — Kubernaut's current
+> CRD-controller architecture. See [Kubernaut Service Catalog](KUBERNAUT_SERVICE_CATALOG.md) for the
+> authoritative current 12-service decomposition. Two corrections specific to this issue: (1) **HolmesGPT** was
+> rewritten in Go and renamed **Kubernaut Agent (KA)** in v1.3 (issue
+> [#433](https://github.com/jordigilh/kubernaut/issues/433)); it runs as a first-class Kubernaut service
+> (`cmd/kubernautagent/`, real ports: API `8443`, health `8081`, metrics `9090`), not as an external tool behind
+> a `context-service`. (2) **Context API** (`context-service`/`context-api-service` below) was deprecated and
+> folded into Data Storage per [DD-CONTEXT-006](decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md); it no
+> longer exists as a running service. The remaining service list/ports/flows below are preserved as historical
+> record and have not been otherwise re-verified against current source.
+
+---
+
 ## 1. Overview
 
 This document defines the communication patterns and protocols between Kubernaut's **approved 10-service microservices architecture**, establishing clear service boundaries, data flow, and integration patterns for the distributed architecture following Single Responsibility Principle compliance.
@@ -100,7 +116,7 @@ Services:
     Port: 8091 (HTTP), 9091 (metrics), 8191 (health)
     Image: quay.io/jordigilh/context-service:v1.0.0
     Dependencies: [notification-service]
-    External: [HolmesGPT, External AI]
+    External: [Kubernaut Agent (KA), External AI]  # formerly "HolmesGPT" — see banner above
 
   notification-service:
     Purpose: Multi-Channel Notifications Only
@@ -115,7 +131,7 @@ Services:
 ```mermaid
 graph TB
     ALM[AlertManager] --> WH[webhook-service:8080]
-    HGP[HolmesGPT] --> CA[context-api-service:8091]
+    KA["Kubernaut Agent (KA)<br/>formerly HolmesGPT"] --> CA[context-api-service:8091]
 
     WH --> AI[ai-service:8093]
     WH --> WE[workflow-engine-service:8092]
@@ -230,7 +246,9 @@ Response:
 
 ### 3.2 Context API Service Communication
 
-#### 3.2.1 HolmesGPT Integration
+#### 3.2.1 HolmesGPT Integration — HISTORICAL, see banner above
+> HolmesGPT was rewritten in Go and renamed Kubernaut Agent (KA) in v1.3; Context API was deprecated per
+> DD-CONTEXT-006. This flow is preserved unmodified as a historical record.
 
 **Current Implementation**: HTTP REST API (already implemented)
 **Target Architecture**: Enhanced with service mesh integration

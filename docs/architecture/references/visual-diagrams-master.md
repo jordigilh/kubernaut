@@ -111,19 +111,30 @@ stateDiagram-v2
 
 ## 02-aianalysis/ Diagrams
 
+> **⚠️ HISTORICAL (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This entire
+> section predates the Go rewrite of HolmesGPT into **Kubernaut Agent (KA)** (v1.3, issue
+> [#433](https://github.com/jordigilh/kubernaut/issues/433)) and describes an API/CRD shape that was never built as
+> shown: a synchronous `POST /api/v1/investigate` call (the real KA API is async/session-based:
+> `POST /api/v1/incident/analyze` → poll `GET .../session/{id}` → `GET .../session/{id}/result`), and a standalone
+> `AIApprovalRequest` CRD (no such CRD was ever built — approval is signaled via `RemediationApprovalRequest`).
+> For accurate, current diagrams and integration details, see
+> [AI Analysis Service — Kubernaut Agent (KA) Integration & Approval Policies](../../services/crd-controllers/02-aianalysis/ka-approval.md).
+> Diagrams below are preserved unmodified as historical record except for HolmesGPT terminology, which is renamed
+> for readability.
+
 ### Architecture Diagram
 ```mermaid
 graph TB
     subgraph "AI Analysis Service"
         AIA[AIAnalysis CRD]
         Controller[AIAnalysisReconciler]
-        HolmesAPI[HolmesGPT API Client]
+        KAClient[Kubernaut Agent -KA- API Client]
         RegoEngine[Rego Policy Engine]
         HistoricalDB[Historical Success Rate]
     end
 
     subgraph "External Services"
-        HolmesGPT[HolmesGPT-API Service<br/>Port 8090]
+        KA[Kubernaut Agent -KA- Service<br/>formerly HolmesGPT-API]
         AR[RemediationRequest CRD<br/>Parent]
         Notification[Notification Service<br/>Port 8080]
     end
@@ -139,8 +150,8 @@ graph TB
 
     AR -->|Creates & Owns| AIA
     Controller -->|Watches| AIA
-    Controller -->|Investigate Alert| HolmesAPI
-    HolmesAPI -->|AI Analysis| HolmesGPT
+    Controller -->|Investigate Alert| KAClient
+    KAClient -->|AI Analysis| KA
     Controller -->|Load Policy| CM
     Controller -->|Evaluate Policy| RegoEngine
     Controller -->|Search Similar| VectorDB
@@ -163,7 +174,7 @@ sequenceDiagram
     participant AR as RemediationRequest
     participant AIA as AIAnalysis CRD
     participant Ctrl as AIAnalysis<br/>Reconciler
-    participant HG as HolmesGPT-API
+    participant HG as Kubernaut Agent (KA)<br/>formerly HolmesGPT-API
     participant Rego as Rego Engine
     participant App as AIApprovalRequest<br/>CRD
     participant Not as Notification<br/>Service
@@ -218,7 +229,7 @@ stateDiagram-v2
     [*] --> Pending
     Pending --> Validating: Reconcile triggered
     Validating --> Investigating: Alert data valid
-    Investigating --> Approving: HolmesGPT analysis complete
+    Investigating --> Approving: Kubernaut Agent (KA) analysis complete
     Approving --> Approved: Auto-approve OR manual approve
     Approving --> Rejected: Manual rejection
     Approved --> Ready: Workflow definition prepared
@@ -227,7 +238,7 @@ stateDiagram-v2
     Failed --> [*]: Manual intervention required
 
     note right of Investigating
-        HolmesGPT AI analysis
+        Kubernaut Agent (KA) AI analysis
         Generate recommendations
         Confidence >80%
         Timeout: 60s
