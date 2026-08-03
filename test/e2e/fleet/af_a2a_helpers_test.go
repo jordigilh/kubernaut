@@ -118,17 +118,39 @@ func afA2ATasksSend(id, text string) string {
 }
 
 // afA2ATasksSendWithTask builds a message/send JSON-RPC payload that
-// continues an existing task (id: taskID), so a later turn (e.g.
-// kubernaut_message) lands in the same ADK session/interactive investigation
-// established by an earlier turn (e.g. kubernaut_investigate). Mirrors
-// test/e2e/fullpipeline/af_helpers_test.go's fpA2ATasksSendWithTask
-// (E2E-FLEET-018, issue #1768 Track 2 Gap D).
-func afA2ATasksSendWithTask(id, taskID, text string) string {
+// continues an existing task (id: taskID) AND an existing ADK session
+// (contextID), so a later turn (e.g. kubernaut_message) lands in the same
+// ADK session/interactive investigation established by an earlier turn
+// (e.g. kubernaut_remediate).
+//
+// contextID MUST be the ORIGINAL contextId set on Turn 1's own request
+// (afA2ATasksSend's "ctx-"+id) -- NOT derived from taskID. taskID is a
+// server-assigned A2A task identifier (returned in the response, e.g.
+// "019fc928-d7dc-..."), unrelated to the client-chosen contextId, and
+// pkg/apifrontend/launcher/session_interceptor.go's SessionInterceptor.Before
+// only ever overrides msg.ContextID when it is EMPTY ("if msg.ContextID !=
+// "" { return ctx, nil }") -- it never redirects an explicitly-set-but-wrong
+// contextId back to the caller's actual active session. CI RCA (run
+// 30843052414, job 91792637919, E2E-FLEET-018) proved that setting
+// contextId: "ctx-"+taskID here silently opened a BRAND NEW, empty ADK
+// session for every continuation turn (confirmed via the apifrontend log:
+// Turn 1 logs "session created ... session_id":"ctx-fleet-018-1", Turn 2
+// logs a SECOND "session created ... session_id":"ctx-<turn1's taskID>" --
+// a different session that never saw Turn 1's own kubernaut_remediate tool
+// call+result). That broke every "$from_tool:kubernaut_remediate:rr_id"
+// resolution downstream of Turn 1: Turn 2's af_investigate scenario has a
+// fallback_arguments clause (namespace/kind/name -> memory-eater) that
+// silently absorbed the failure by creating an UNRELATED new RR, and Turn
+// 3's kubernaut_message scenario has no such fallback (no
+// create-new-RR argument shape exists for kubernaut_message), so it failed
+// loudly: "invalid rr_id: invalid resource name \"$from_tool:...\""
+// (apifrontend log, agent/root.go:567).
+func afA2ATasksSendWithTask(id, taskID, contextID, text string) string {
 	return afBuildJSONRPC(id, "message/send", map[string]interface{}{
 		"id": taskID,
 		"message": map[string]interface{}{
 			"messageId": "msg-" + id,
-			"contextId": "ctx-" + taskID,
+			"contextId": contextID,
 			"role":      "user",
 			"parts": []map[string]interface{}{
 				{"kind": "text", "text": text},

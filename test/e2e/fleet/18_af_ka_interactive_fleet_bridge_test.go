@@ -119,7 +119,8 @@ var _ = Describe("E2E-FLEET-018 [AC-4, AC-6, AU-3]: AF kubernaut_message drives 
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 		By("Turn 1: kubernaut_remediate (creates RR with cluster_id=remote-cluster targeting the marker deployment)")
-		body := afA2ATasksSend("fleet-018-1", "ka-interactive-fleet-bridge-start")
+		turn1ID := "fleet-018-1"
+		body := afA2ATasksSend(turn1ID, "ka-interactive-fleet-bridge-start")
 		resp1, err := afA2AInvokeWithTimeout(body, 60*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp1.Body.Close() }()
@@ -133,8 +134,15 @@ var _ = Describe("E2E-FLEET-018 [AC-4, AC-6, AU-3]: AF kubernaut_message drives 
 		Expect(taskID).NotTo(BeEmpty(), "Turn 1 A2A task ID must not be empty")
 		GinkgoWriter.Printf("  E2E-FLEET-018 Turn 1 — task: %s (state: %s)\n", taskID, task.Status.State)
 
+		// sharedCtxID MUST be Turn 1's own contextId ("ctx-"+turn1ID, set by
+		// afA2ATasksSend), not derived from taskID (a server-assigned A2A
+		// task identifier, unrelated to the ADK session/contextId) -- see
+		// afA2ATasksSendWithTask's doc comment for the CI-confirmed failure
+		// mode this avoids.
+		sharedCtxID := "ctx-" + turn1ID
+
 		By("Turn 2: kubernaut_investigate (blocks until KA's autonomous investigation establishes the interactive session)")
-		body = afA2ATasksSendWithTask("fleet-018-2", taskID, "investigate the remediation")
+		body = afA2ATasksSendWithTask("fleet-018-2", taskID, sharedCtxID, "investigate the remediation")
 		resp2, err := afA2AInvokeWithTimeout(body, 180*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp2.Body.Close() }()
@@ -147,7 +155,7 @@ var _ = Describe("E2E-FLEET-018 [AC-4, AC-6, AU-3]: AF kubernaut_message drives 
 		GinkgoWriter.Printf("  E2E-FLEET-018 Turn 2 — task: %s (state: %s)\n", task2.ID, task2.Status.State)
 
 		By("Turn 3: kubernaut_message (continues the interactive session, triggers RunInteractiveTurn's fleet overlay)")
-		body = afA2ATasksSendWithTask("fleet-018-3", taskID, "ka-interactive-fleet-e2e-test")
+		body = afA2ATasksSendWithTask("fleet-018-3", taskID, sharedCtxID, "ka-interactive-fleet-e2e-test")
 		resp3, err := afA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp3.Body.Close() }()
