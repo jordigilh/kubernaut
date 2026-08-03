@@ -242,6 +242,7 @@ global:
         enabled: false
         endpoint: ""
         mcpGatewayEndpoint: ""
+        mcpGatewayNamespace: ""
         mcpGatewayType: ""
         oauth2:
             credentialsSecretRef: ""

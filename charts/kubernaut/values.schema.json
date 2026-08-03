@@ -472,6 +472,11 @@
                 "kuadrant"
               ]
             },
+            "mcpGatewayNamespace": {
+              "type": "string",
+              "default": "",
+              "description": "Shared fallback restricting the ClusterRegistry CRD watch to a single namespace, used when a service's own fleet.namespace (signalprocessing) or top-level namespace (fleetmetadatacache) is unset (Issue #1730). Empty (default) leaves each service's own default/cluster-wide behavior unchanged. The per-service override still wins when explicitly set."
+            },
             "tlsCAFile": {
               "type": "string",
               "default": "",

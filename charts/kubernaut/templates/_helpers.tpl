@@ -115,6 +115,15 @@ works for callers whose `svc` dict doesn't declare one of these keys at all,
 e.g. fleetmetadatacache's own dict never had a `backend` key) purely so a
 future per-service exception could be reintroduced without changing this
 helper's signature again -- today it always resolves to the global value.
+
+`namespace` (Issue #1730) is the one exception that IS still genuinely
+per-service (signalprocessing.fleet.namespace, fleetmetadatacache's
+top-level namespace): it falls back to global.fleet.mcpGatewayNamespace
+only when the caller's own field is unset, rather than always resolving to
+the global value like every other key above. Callers that don't declare a
+`namespace` key at all (e.g. gateway/remediationorchestrator/
+workflowexecution's `svc` dicts) simply get the global fallback verbatim,
+which is harmless since they don't consume this output key.
 Usage:
   {{- $f := include "kubernaut.fleet.config" (dict "root" $ "svc" .Values.gateway.fleet) | fromYaml }}
   {{ $f.mcpGatewayEndpoint }}
@@ -127,6 +136,7 @@ Usage:
     "endpoint" ((get $svc "endpoint") | default $g.endpoint)
     "mcpGatewayEndpoint" ((get $svc "mcpGatewayEndpoint") | default $g.mcpGatewayEndpoint)
     "mcpGatewayType" ((get $svc "mcpGatewayType") | default $g.mcpGatewayType)
+    "namespace" ((get $svc "namespace") | default $g.mcpGatewayNamespace)
     "tlsCAFile" ((get $svc "tlsCAFile") | default $g.tlsCAFile)
     "tokenSecretRef" ((get $svc "tokenSecretRef") | default $g.tokenSecretRef)
   | toYaml -}}

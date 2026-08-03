@@ -55,6 +55,12 @@ global:
     # mcpGatewayEndpoint applies here too: absent key -> `gatewayType:` (YAML
     # null) instead of `gatewayType: ""`.
     mcpGatewayType: ""
+    # -- Issue #1730: shared fallback for signalprocessing.fleet.namespace and
+    # fleetmetadatacache.namespace (both restrict that service's own
+    # ClusterRegistry CRD watch to a single namespace, BR-RBAC-020 #1686).
+    # Every per-service override still wins when explicitly set -- this only
+    # de-duplicates the common case where both point at the same namespace.
+    mcpGatewayNamespace: ""
     oauth2:
       # -- OAuth2 client_credentials auth on/off for MCP Gateway authentication.
       enabled: false

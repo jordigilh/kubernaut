@@ -87,8 +87,8 @@ fleet:
   {{- if $signalprocessingFleetPreamble.config.mcpGatewayType }}
   mcpGatewayType: {{ $signalprocessingFleetPreamble.config.mcpGatewayType | quote }}
   {{- end }}
-  {{- if .Values.signalprocessing.fleet.namespace }}
-  namespace: {{ .Values.signalprocessing.fleet.namespace | quote }}
+  {{- if $signalprocessingFleetPreamble.config.namespace }}
+  namespace: {{ $signalprocessingFleetPreamble.config.namespace | quote }}
   {{- end }}
   {{- if $signalprocessingFleetPreamble.oauth2.enabled }}
   oauth2:
@@ -156,7 +156,7 @@ rules:
   instead via a namespace-scoped Role/RoleBinding below, matching what the
   ClusterRegistry informer actually watches (least privilege).
   */}}
-  {{- if and (eq $signalprocessingFleetPreamble.config.mcpGatewayType "kuadrant") (not .Values.signalprocessing.fleet.namespace) }}
+  {{- if and (eq $signalprocessingFleetPreamble.config.mcpGatewayType "kuadrant") (not $signalprocessingFleetPreamble.config.namespace) }}
   # BR-FLEET-003 (#1511): SP's ClusterRegistry watches MCPServerRegistration
   # CRs directly via a dynamic informer to evaluate the `cluster`
   # classification dimension when the Kuadrant MCP Gateway is used.
@@ -179,11 +179,12 @@ subjects:
   - kind: ServiceAccount
     name: signalprocessing-controller
     namespace: {{ .Release.Namespace }}
-{{- if and (eq $signalprocessingFleetPreamble.config.mcpGatewayType "kuadrant") .Values.signalprocessing.fleet.namespace }}
+{{- if and (eq $signalprocessingFleetPreamble.config.mcpGatewayType "kuadrant") $signalprocessingFleetPreamble.config.namespace }}
 ---
 # #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rule
-# above, granted instead of it when signalprocessing.fleet.namespace is set.
-{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "signalprocessing" "serviceAccount" "signalprocessing-controller" "namespace" .Values.signalprocessing.fleet.namespace "appLabels" "app: signalprocessing-controller" "mcpServerRegistrations" true "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+# above, granted instead of it when signalprocessing.fleet.namespace (or its
+# global.fleet.mcpGatewayNamespace fallback, Issue #1730) is set.
+{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "signalprocessing" "serviceAccount" "signalprocessing-controller" "namespace" $signalprocessingFleetPreamble.config.namespace "appLabels" "app: signalprocessing-controller" "mcpServerRegistrations" true "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 {{- end }}
 ---
 # Role: namespace-scoped access to configmaps and secrets (#229)
