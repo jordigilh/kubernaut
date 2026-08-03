@@ -7,6 +7,7 @@ spec:
       app: kubernaut-agent
   policyTypes:
     - Ingress
+    - Egress
   ingress:
     # Investigation traffic from aianalysis-controller
     - ports:
@@ -27,3 +28,22 @@ spec:
     {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.kubernautAgent.ingressCIDRs "port" 8443) | nindent 4 }}
     {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.kubernautAgent.ingressNamespaceSelectors "port" 8443) | nindent 4 }}
     {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
+  egress:
+    {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.datastorageEgress" . | nindent 4 }}
+    {{- /* Issue #1819 gap found: KA's ai.llm.endpoint (mandatory config) is
+    called directly by the investigator's LLM client, and, since #1729, KA's
+    own MCP client (registerFleetTools, cmd/kubernautagent/toolregistry.go)
+    calls the Fleet MCP Gateway and its OAuth2 IdP directly whenever
+    global.fleet.enabled=true -- yet networkpolicy-agent.yaml declared only
+    `policyTypes: [Ingress]`, meaning Kubernetes allowed unrestricted egress
+    rather than none. Mirrors the identical llmEgress (unconditional) /
+    idpEgress+mcpGatewayEgress (fleet-gated) pattern already applied to
+    workflowexecution/aianalysis/remediationorchestrator/signalprocessing/
+    effectivenessmonitor/gateway/apifrontend (see those templates' comments
+    for the full per-service RCA history, e.g. #1755 DD-TEST-015). */}}
+    {{- include "kubernaut.np.llmEgress" . | nindent 4 }}
+    {{- if .Values.global.fleet.enabled }}
+    {{- include "kubernaut.np.idpEgress" . | nindent 4 }}
+    {{- include "kubernaut.np.mcpGatewayEgress" . | nindent 4 }}
+    {{- end }}
