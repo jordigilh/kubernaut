@@ -291,9 +291,9 @@ Describe("Test 1: Unsupported Media Type (415)", func() {
 This gap likely exists in other services as well. After implementing for Dynamic Toolset, audit:
 
 - ✅ Gateway Service (check if implemented)
-- ✅ Context API (check if implemented)
+- ⛔ Context API (deprecated/removed, see DD-CONTEXT-006 — not applicable)
 - ✅ Data Storage Service (check if implemented)
-- ✅ HolmesGPT API (Python/FastAPI - check if implemented)
+- ✅ Kubernaut Agent (KA) (Go, formerly Python/FastAPI HolmesGPT API — check if implemented)
 - ⏸️ Notification Service (CRD controller - not applicable)
 
 ---

@@ -790,7 +790,7 @@ It("should complete E2E flow with no_workflows_matched and create notification",
 
 ## 🔗 **Related Documentation**
 
-- [BR-HAPI-197: Human Review Required Flag](../../requirements/BR-HAPI-197-needs-human-review-field.md)
+- [BR-HAPI-197: Human Review Required Flag](../../requirements/BR-KA-197-needs-human-review-field.md)
 - [BR-HAPI-197 Completion Plan](../../handoff/BR-HAPI-197-COMPLETION-PLAN-JAN20-2026.md)
 - [DD-CONTRACT-002: Service Integration Contracts](../../architecture/decisions/DD-CONTRACT-002-service-integration-contracts.md)
 - [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUIDELINES.md)

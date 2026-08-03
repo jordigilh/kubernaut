@@ -64,7 +64,7 @@ Describe("UT-AA-197-001: Extract needs_human_review from KA response", func() {
 })
 ```
 
-**Reference**: See [docs/testing/BR-HAPI-197/](../../testing/BR-HAPI-197/) for real-world examples
+**Reference**: See [docs/testing/BR-KA-197/](../../testing/BR-KA-197/) for real-world examples
 
 **Fallback**: If test plan does not exist, use Business Requirement ID in test description (e.g., `BR-WORKFLOW-001`)
 

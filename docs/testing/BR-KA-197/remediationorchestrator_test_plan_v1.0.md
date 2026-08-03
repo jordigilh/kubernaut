@@ -922,7 +922,7 @@ It("should complete E2E flow with needsHumanReview and block remediation", func(
 
 ## 🔗 **Related Documentation**
 
-- [BR-HAPI-197: Human Review Required Flag](../../requirements/BR-HAPI-197-needs-human-review-field.md)
+- [BR-HAPI-197: Human Review Required Flag](../../requirements/BR-KA-197-needs-human-review-field.md)
 - [BR-HAPI-197 Completion Plan](../../handoff/BR-HAPI-197-COMPLETION-PLAN-JAN20-2026.md)
 - [DD-CONTRACT-002: Service Integration Contracts](../../architecture/decisions/DD-CONTRACT-002-service-integration-contracts.md)
 - [AIAnalysis Test Plan (BR-HAPI-197)](aianalysis_test_plan_v1.0.md)

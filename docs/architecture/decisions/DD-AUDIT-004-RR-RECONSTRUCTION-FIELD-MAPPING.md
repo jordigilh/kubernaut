@@ -45,7 +45,7 @@ This document provides the authoritative mapping between RemediationRequest CRD 
 | 1 | `.spec.originalPayload` | `event_data.original_payload` | Gateway | `gateway.signal.received` | JSON Object | ✅ YES | 2-5KB |
 | 2 | `.spec.signalLabels` | `event_data.signal_labels` | Gateway | `gateway.signal.received` | JSON Object | ✅ YES | 0.5-2KB |
 | 3 | `.spec.signalAnnotations` | `event_data.signal_annotations` | Gateway | `gateway.signal.received` | JSON Object | ✅ YES | 0.5-2KB |
-| 4 | `.spec.aiAnalysis.providerData` | `event_data.provider_data` | AI Analysis | `aianalysis.analysis.completed` | JSON Object | ✅ YES | 1-3KB |
+| 4 | `.spec.aiAnalysis.providerData` ⚠️ [stale, see Field #4 below] | `event_data.provider_data` | AI Analysis | `aianalysis.analysis.completed` | JSON Object | ✅ YES | 1-3KB |
 | 5 | `.status.selectedWorkflowRef` | `event_data.selected_workflow_ref` | Workflow Engine | `workflow.selection.completed` | JSON Object | ✅ YES | 200B |
 | 6 | `.status.executionRef` | `event_data.execution_ref` | Execution | `execution.started` | JSON Object | ✅ YES | 200B |
 | 7 | `.status.error` | `event_data.error_details` | All Services | `*.failure` | JSON Object | ⚠️ OPTIONAL | 0.5-1KB |
@@ -165,9 +165,31 @@ rr.Spec.SignalAnnotations = gatewayEvent.EventData["signal_annotations"].(map[st
 
 ### **Field #4: `providerData`** (CRITICAL)
 
-**RR CRD Path**: `.spec.aiAnalysis.providerData`
+> **⚠️ CORRECTED (2026-08-02, [#1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This
+> field mapping is stale and does not match the current architecture — flagging rather than
+> guessing a replacement, since the correct mapping requires an architecture-team decision:
+> - `.spec.aiAnalysis.providerData` does not exist on `RemediationRequestSpec`
+>   (`api/remediation/v1alpha1/remediationrequest_types.go`). There is a real top-level
+>   `.spec.providerData` field, but it holds Gateway-captured **signal-source** data (parsed
+>   per `targetType`: Kubernetes/AWS/Datadog resource identifiers), not AI/LLM provider output —
+>   an unrelated field that happens to share the name "providerData".
+> - `event_type: aianalysis.analysis.completed` is real (`pkg/aianalysis/audit/audit.go`), but its
+>   payload has no `provider_data`/`provider`/`model`/`reasoning`/`recommendations`/`raw_response`
+>   wrapper. The real payload (`AIAnalysisAuditPayload`/`AnalysisCompletePayload`) fields are
+>   `Phase`, `ApprovalRequired`, `ApprovalReason`, `DegradedMode`, `WarningsCount`, `Confidence`,
+>   `WorkflowID`, `Reason`, `SubReason` (already corrected in
+>   [DD-AUDIT-003](./DD-AUDIT-003-service-audit-trace-requirements.md), "2. AI Analysis
+>   Controller" section, "SOC2 Compliance Event" subsection).
+> - Open question for the architecture team, tracked in
+>   [#1882](https://github.com/jordigilh/kubernaut/issues/1882): does RR CRD reconstruction
+>   actually need a "Field #4" at all, given `RemediationRequestSpec`/`Status` have no field that
+>   stores AI decision confidence/reasoning/recommendations (that data lives only on the
+>   AIAnalysis CRD, which this doc's stated scope — RR reconstruction — doesn't cover)? Left as
+>   illustrative-only below pending that decision; do not implement against it as written.
 
-**Audit Event Capture**:
+**RR CRD Path**: `.spec.aiAnalysis.providerData` (fictional — see correction above)
+
+**Audit Event Capture** (illustrative only — does not match the real payload):
 ```yaml
 event_type: aianalysis.analysis.completed
 event_category: analysis
@@ -190,12 +212,14 @@ event_data:
       response_time_ms: 2500
 ```
 
-**Implementation**:
-- **File**: `pkg/aianalysis/controller.go`
-- **Change**: Add `provider_data` to `AIAnalysisEventData`
-- **Type**: Nested JSON object (flexible schema)
+**Implementation** (illustrative only — see correction above; `AIAnalysisEventData`/
+`pkg/aianalysis/controller.go` are not the real type/file — the real payload builder is
+`buildAnalysisCompletePayload` in `pkg/aianalysis/audit/audit.go`):
+- ~~**File**: `pkg/aianalysis/controller.go`~~
+- ~~**Change**: Add `provider_data` to `AIAnalysisEventData`~~
+- ~~**Type**: Nested JSON object (flexible schema)~~
 
-**Reconstruction Logic**:
+**Reconstruction Logic** (illustrative only — `RemediationRequestSpec` has no `AIAnalysis` field):
 ```go
 aiEvent := getAuditEvent(ctx, "aianalysis.analysis.completed", correlationID)
 rr.Spec.AIAnalysis.ProviderData = aiEvent.EventData["provider_data"]
@@ -355,7 +379,9 @@ func ReconstructRR(ctx context.Context, correlationID string) (*RemediationReque
     rr.Spec.SignalLabels = gatewayEvent.EventData["signal_labels"].(map[string]string)
     rr.Spec.SignalAnnotations = gatewayEvent.EventData["signal_annotations"].(map[string]string)
 
-    // STEP 2: AI Analysis fields (provider_data)
+    // STEP 2: AI Analysis fields (provider_data) — illustrative only, see Field #4 correction
+    // above; RemediationRequestSpec has no AIAnalysis field and the real payload has no
+    // provider_data wrapper.
     aiEvent := getAuditEvent(ctx, "aianalysis.analysis.completed", correlationID)
     if aiEvent != nil {
         rr.Spec.AIAnalysis.ProviderData = aiEvent.EventData["provider_data"]
