@@ -1,5 +1,12 @@
 ## Integration Points
 
+> **Note**: The Go code examples below illustrate integration patterns; several field-level
+> details (e.g., `SignalProcessingSpec`/`AIAnalysisSpec`/`WorkflowExecutionSpec` literals) have
+> drifted from the current CRD schemas beyond the dead-type-mixing fixed in
+> [#1879](https://github.com/jordigilh/kubernaut/issues/1879). See
+> [#1880](https://github.com/jordigilh/kubernaut/issues/1880) for the tracked full accuracy pass;
+> verify against `api/*/v1alpha1` source before copying these snippets.
+
 ### 1. Upstream Integration: Gateway Service
 
 **Integration Pattern**: Gateway creates RemediationRequest CRD with duplicate detection already performed
@@ -134,7 +141,10 @@ func (r *RemediationRequestReconciler) createSignalProcessing(
     }
 
     // Update RemediationRequest with SignalProcessing reference
-    remediation.Status.RemediationProcessingRef = &corev1.ObjectReference{
+    // NOTE: RemediationRequestStatus also has a legacy RemediationProcessingRef field
+    // (kept for API compatibility), but SignalProcessingRef is the one actually
+    // populated/read by the controller (pkg/remediationorchestrator/aggregator/status.go).
+    remediation.Status.SignalProcessingRef = &corev1.ObjectReference{
         Name:      signalProcessing.Name,
         Namespace: signalProcessing.Namespace,
         Kind:      "SignalProcessing",
@@ -154,10 +164,10 @@ func (r *RemediationRequestReconciler) createSignalProcessing(
 func (r *RemediationRequestReconciler) createAIAnalysis(
     ctx context.Context,
     remediation *remediationv1.RemediationRequest,
-    alertProcessing *processingv1.RemediationProcessing,
+    signalProcessing *signalprocessingv1.SignalProcessing,
 ) error {
-    // When RemediationProcessing completes, create AIAnalysis with enriched data
-    if alertProcessing.Status.Phase == "completed" {
+    // When SignalProcessing completes, create AIAnalysis with enriched data
+    if signalProcessing.Status.Phase == "completed" {
         aiAnalysis := &aiv1.AIAnalysis{
             ObjectMeta: metav1.ObjectMeta{
                 Name:      fmt.Sprintf("%s-analysis", remediation.Name),
@@ -171,35 +181,25 @@ func (r *RemediationRequestReconciler) createAIAnalysis(
                     Name:      remediation.Name,
                     Namespace: remediation.Namespace,
                 },
-                // DATA SNAPSHOT: Copy enriched alert context
+                // DATA SNAPSHOT: Copy enriched signal context
+                // NOTE: This AnalysisRequest literal is illustrative only and does not match
+                // the current api/aianalysis/v1alpha1 shape (AnalysisRequest{SignalContext
+                // SignalContextInput, AnalysisTypes []AnalysisType}; no InvestigationScope/
+                // ResourceScope). SignalProcessingStatus also has no EnrichedSignal field —
+                // enrichment results are split across KubernetesContext/EnvironmentClassification/
+                // PriorityAssignment/BusinessClassification. Tracked for a follow-up accuracy pass.
                 AnalysisRequest: aiv1.AnalysisRequest{
-                    AlertContext: aiv1.SignalContext{
-                        Fingerprint:      alertProcessing.Status.EnrichedSignal.Fingerprint,
-                        Severity:         alertProcessing.Status.EnrichedSignal.Severity,
-                        Environment:      alertProcessing.Status.EnrichedSignal.Environment,
-                        BusinessPriority: alertProcessing.Status.EnrichedSignal.BusinessPriority,
+                    SignalContext: aiv1.SignalContextInput{
+                        Fingerprint: signalProcessing.Status.EnrichedSignal.Fingerprint,
+                        Severity:    signalProcessing.Status.EnrichedSignal.Severity,
+                        Environment: signalProcessing.Status.EnrichedSignal.Environment,
 
                         // Resource targeting for Kubernaut Agent toolsets (NOT logs/metrics)
-                        Namespace:    alertProcessing.Status.EnrichedSignal.Namespace,
-                        ResourceKind: alertProcessing.Status.EnrichedSignal.ResourceKind,
-                        ResourceName: alertProcessing.Status.EnrichedSignal.ResourceName,
-
-                        // Kubernetes context (small data ~8KB)
-                        KubernetesContext: alertProcessing.Status.EnrichedSignal.KubernetesContext,
+                        Namespace:    signalProcessing.Status.EnrichedSignal.Namespace,
+                        ResourceKind: signalProcessing.Status.EnrichedSignal.ResourceKind,
+                        ResourceName: signalProcessing.Status.EnrichedSignal.ResourceName,
                     },
-                    AnalysisTypes: []string{"investigation", "root-cause", "recovery-analysis"},
-                    InvestigationScope: aiv1.InvestigationScope{
-                        TimeWindow: "24h",
-                        ResourceScope: []aiv1.ResourceScopeItem{
-                            {
-                                Kind:      alertProcessing.Status.EnrichedSignal.ResourceKind,
-                                Namespace: alertProcessing.Status.EnrichedSignal.Namespace,
-                                Name:      alertProcessing.Status.EnrichedSignal.ResourceName,
-                            },
-                        },
-                        CorrelationDepth:          "detailed",
-                        IncludeHistoricalPatterns: true,
-                    },
+                    AnalysisTypes: []aiv1.AnalysisType{"Investigation", "RootCause"},
                 },
                 // Kubernaut Agent (KA) investigation/tool configuration is NOT part of this spec — it is
                 // owned and applied by the AIAnalysis controller / KA itself, not by Remediation Coordinator.
@@ -215,9 +215,13 @@ func (r *RemediationRequestReconciler) createAIAnalysis(
         }
 
         // Update RemediationRequest with AIAnalysis reference
-        remediation.Status.AIAnalysisRef = &remediationv1.AIAnalysisReference{
-            Name:      aiAnalysis.Name,
-            Namespace: aiAnalysis.Namespace,
+        // (Status.AIAnalysisRef is *corev1.ObjectReference, matching SignalProcessingRef/
+        // WorkflowExecutionRef below — not a bespoke AIAnalysisReference type)
+        remediation.Status.AIAnalysisRef = &corev1.ObjectReference{
+            Name:       aiAnalysis.Name,
+            Namespace:  aiAnalysis.Namespace,
+            Kind:       "AIAnalysis",
+            APIVersion: aiv1.GroupVersion.String(),
         }
 
         return r.Status().Update(ctx, remediation)
@@ -364,10 +368,10 @@ func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error 
     return ctrl.NewControllerManagedBy(mgr).
         For(&remediationv1.RemediationRequest{}).
 
-        // Watch RemediationProcessing for completion
+        // Watch SignalProcessing for completion
         Watches(
-            &source.Kind{Type: &processingv1.RemediationProcessing{}},
-            handler.EnqueueRequestsFromMapFunc(r.alertProcessingToRemediation),
+            &source.Kind{Type: &signalprocessingv1.SignalProcessing{}},
+            handler.EnqueueRequestsFromMapFunc(r.signalProcessingToRemediation),
         ).
 
         // Watch AIAnalysis for completion
@@ -391,14 +395,14 @@ func (r *RemediationRequestReconciler) SetupWithManager(mgr ctrl.Manager) error 
         Complete(r)
 }
 
-// Map RemediationProcessing to parent RemediationRequest
-func (r *RemediationRequestReconciler) alertProcessingToRemediation(obj client.Object) []ctrl.Request {
-    ap := obj.(*processingv1.RemediationProcessing)
+// Map SignalProcessing to parent RemediationRequest
+func (r *RemediationRequestReconciler) signalProcessingToRemediation(obj client.Object) []ctrl.Request {
+    sp := obj.(*signalprocessingv1.SignalProcessing)
     return []ctrl.Request{
         {
             NamespacedName: types.NamespacedName{
-                Name:      ap.Spec.RemediationRequestRef.Name,
-                Namespace: ap.Spec.RemediationRequestRef.Namespace,
+                Name:      sp.Spec.RemediationRequestRef.Name,
+                Namespace: sp.Spec.RemediationRequestRef.Namespace,
             },
         },
     }
@@ -668,7 +672,7 @@ type RemediationAudit struct {
 }
 
 type ServiceCRDStatus struct {
-    ServiceType    string    `json:"serviceType"` // "RemediationProcessing", "AIAnalysis", etc.
+    ServiceType    string    `json:"serviceType"` // "SignalProcessing", "AIAnalysis", etc.
     CRDName        string    `json:"crdName"`
     Phase          string    `json:"phase"`
     StartTime      time.Time `json:"startTime"`
@@ -684,7 +688,7 @@ type ServiceCRDStatus struct {
 - **Gateway Service** - Creates RemediationRequest CRD with duplicate detection already performed (BR-WH-008)
 
 **Downstream Services** (CRDs created and watched by RemediationRequest):
-- **RemediationProcessing Controller** - Enrichment & classification service
+- **SignalProcessing Controller** - Enrichment & classification service
 - **AIAnalysis Controller** - Kubernaut Agent investigation service
 - **WorkflowExecution Controller** - Multi-step orchestration service
 - **KubernetesExecution Controller** (DEPRECATED - ADR-025) - Infrastructure operations service
