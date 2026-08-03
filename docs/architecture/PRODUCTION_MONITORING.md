@@ -190,6 +190,14 @@ spec:
 ### Key Performance Indicators (KPIs)
 
 **Business KPIs:**
+
+> **⚠️ CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: The metric
+> names in this subsection (KPIs below) are illustrative examples and do not match actual emitted Prometheus
+> metric names — none of `kubernaut_alerts_processed_total`, `kubernaut_investigation_confidence_score`, etc. exist
+> in source. Real Kubernaut Agent (KA) metrics use the `aiagent_` prefix (e.g. `aiagent_http_rate_limited_total`;
+> see `internal/kubernautagent/metrics/metrics.go`). The `service="holmesgpt"` label below has been renamed to
+> `service="kubernaut-agent"` for terminology accuracy only; this does not make the examples real metrics.
+
 ```prometheus
 # Alert processing performance
 kubernaut_alerts_processed_total{status="success"} 1250
@@ -197,9 +205,9 @@ kubernaut_alerts_processed_total{status="filtered"} 85
 kubernaut_alerts_filtered_ratio 0.064
 
 # Investigation accuracy and confidence
-kubernaut_investigation_confidence_score{service="holmesgpt"} 0.87
+kubernaut_investigation_confidence_score{service="kubernaut-agent"} 0.87
 kubernaut_investigation_confidence_score{service="llm"} 0.82
-kubernaut_investigation_accuracy_rate{service="holmesgpt"} 0.91
+kubernaut_investigation_accuracy_rate{service="kubernaut-agent"} 0.91
 
 # Action execution success
 kubernaut_actions_executed_total{action="scale_deployment",status="success"} 145
@@ -220,7 +228,7 @@ kubernaut_cache_operations_total{operation="hit",cache_type="context"} 1967
 kubernaut_cache_operations_total{operation="miss",cache_type="context"} 374
 
 # Service Health
-kubernaut_service_availability_ratio{service="holmesgpt"} 0.997
+kubernaut_service_availability_ratio{service="kubernaut-agent"} 0.997
 kubernaut_service_availability_ratio{service="llm"} 0.995
 kubernaut_service_availability_ratio{service="context_api"} 0.999
 ```
@@ -305,7 +313,7 @@ func (p *Processor) ProcessAlert(alert types.Alert) error {
 │ ┌─────────────────┐     ┌─────────────────┐     ┌─────────────┐ │
 │ │ Context         │     │ KA              │     │ Action      │ │
 │ │ Enrichment      │     │ Investigation   │     │ Executor    │ │
-│ │ (Span: context) │     │ (Span: holmes)  │     │ (Span: exec)│ │
+│ │ (Span: context) │     │ (Span: ka)      │     │ (Span: exec)│ │
 │ └─────────────────┘     └─────────────────┘     └─────────────┘ │
 │                                                                 │
 │ All spans share Trace ID: abc123                               │
