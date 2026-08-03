@@ -964,9 +964,25 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		// workflow -- the RemediationRequest never reaches a terminal phase,
 		// so watch blocks until the test's 6-minute client timeout fires
 		// ("context deadline exceeded"), well before its own internal
-		// 15-minute maxWatchDuration. Matches the anchor value in
-		// test/infrastructure/kubernautagent.go/apifrontend_e2e.go.
-		"--set", "kubernautAgent.interactive.rateLimitPerUser=40",
+		// 15-minute maxWatchDuration.
+		//
+		// Round 2 (same RCA, next CI run): bumping to 40 alone did take
+		// effect (confirmed via the KA pod's startup log) but was still
+		// insufficient -- fullpipeline's own kubernaut_select_workflow AND a
+		// concurrent spec's session-pool "ping" both got 429'd again in the
+		// same ~500ms window, just by a smaller margin (~4 requests over an
+		// 80-token burst instead of over a 40-token one). fullpipeline runs
+		// 31 specs across TEST_PROCS Ginkgo processes, each churning
+		// multiple MCP session (re)negotiations under the single shared
+		// "e2e-user-sre" identity -- a materially higher concurrent-MCP-call
+		// footprint than the smaller suites #1853's 40 was tuned against.
+		// Raised to 100 (the schema-enforced ceiling,
+		// internal/kubernautagent/config/config.go's
+		// "rateLimitPerUser must not exceed 100" check), giving a 200-token
+		// burst bucket -- 2.5x the headroom of the 80-token bucket that just
+		// missed by ~4 requests. Test-infra-only knob with zero production
+		// impact (this whole block is E2E chart-install overrides).
+		"--set", "kubernautAgent.interactive.rateLimitPerUser=100",
 		// Gateway/DataStorage/APIFrontend: pinned chart-level NodePort (DD-TEST-001
 		// port allocation: 30080/30081/30443, pre-mapped host-reachable in
 		// kind-fullpipeline-config.yaml's extraPortMappings) + ipBlock ingressCIDRs
