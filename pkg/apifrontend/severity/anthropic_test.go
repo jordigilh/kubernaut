@@ -164,7 +164,7 @@ var _ = Describe("AnthropicTriager", func() {
 
 	Describe("NewAnthropicVertexClient", func() {
 		It("UT-AF-1404-012: rejects an empty project before touching GCP ADC", func() {
-			_, err := severity.NewAnthropicVertexClient(context.Background(), "", "us-central1")
+			_, err := severity.NewAnthropicVertexClient(context.Background(), "", "us-central1", "")
 			Expect(err).To(MatchError(ContainSubstring("vertexProject is required")))
 		})
 
