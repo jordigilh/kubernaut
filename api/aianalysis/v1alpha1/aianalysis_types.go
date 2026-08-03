@@ -423,15 +423,15 @@ type AIAnalysisStatus struct {
 	ApprovalContext *ApprovalContext `json:"approvalContext,omitempty"`
 
 	// ========================================
-	// HUMAN REVIEW SIGNALING (BR-HAPI-197)
+	// HUMAN REVIEW SIGNALING (BR-KA-197)
 	// Set by Kubernaut Agent when AI cannot produce reliable result
 	// ========================================
 	// True if human review required (KA decision: RCA incomplete/unreliable)
-	// BR-HAPI-197: Triggers NotificationRequest creation in RO
+	// BR-KA-197: Triggers NotificationRequest creation in RO
 	// BR-496 v2: Set when root_owner missing (rca_incomplete) or validation/confidence issues.
 	NeedsHumanReview bool `json:"needsHumanReview"`
 	// Reason why human review needed (when NeedsHumanReview=true)
-	// BR-HAPI-197: Maps to KA's human_review_reason enum values
+	// BR-KA-197: Maps to KA's human_review_reason enum values
 	// BR-AI-601: alignment_check_failed added for shadow agent alignment verdicts
 	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete;alignment_check_failed;operator_escalation
 	// +optional

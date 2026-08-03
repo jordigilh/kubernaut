@@ -190,7 +190,7 @@ var _ = Describe("BR-PERFORMANCE-970: AnomalyDetector Thread Safety", func() {
 		})
 	})
 
-	Describe("UT-KA-970-005: Serialized Admission Prevents Budget Overrun (BR-HAPI-433-004)", func() {
+	Describe("UT-KA-970-005: Serialized Admission Prevents Budget Overrun (BR-KA-433-004)", func() {
 		It("should admit exactly MaxTotalToolCalls and reject the rest under concurrent pressure", func() {
 			const budget = 5
 			cfg := investigator.AnomalyConfig{

@@ -727,7 +727,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 			})
 		})
 
-		Context("BR-HAPI-197: NeedsHumanReview Handling", func() {
+		Context("BR-KA-197: NeedsHumanReview Handling", func() {
 			// UT-RO-197-001: Creates NotificationRequest when NeedsHumanReview=true
 			It("should create manual review notification when NeedsHumanReview=true", func() {
 				rr := helpers.NewRemediationRequest("test-rr", "default")
@@ -806,7 +806,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				Expect(err).ToNot(HaveOccurred())
 				Expect(result.RequeueAfter).To(BeZero())
 
-				// Verify notification was created (BR-HAPI-197 path, not BR-ORCH-036)
+				// Verify notification was created (BR-KA-197 path, not BR-ORCH-036)
 				nrList := &notificationv1.NotificationRequestList{}
 				err = client.List(ctx, nrList)
 				Expect(err).ToNot(HaveOccurred())

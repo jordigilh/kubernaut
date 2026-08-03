@@ -18,7 +18,7 @@ limitations under the License.
 // Bug 3 fix: response_processor must not append warnings to Status.Message.
 //
 // Business Requirements:
-//   - BR-HAPI-197: NeedsHumanReview handling — Status.Message for validation errors, Status.Warnings for warnings
+//   - BR-KA-197: NeedsHumanReview handling — Status.Message for validation errors, Status.Warnings for warnings
 //   - BR-ORCH-036: Manual review notification body — Details and Warnings sections must not duplicate content
 package aianalysis_test
 

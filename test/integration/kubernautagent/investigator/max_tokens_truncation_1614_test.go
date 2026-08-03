@@ -40,7 +40,7 @@ import (
 // These IT tests drive the real Investigate() production entry point end to
 // end — through runLoopTurn -> classifyRCALoopResult -> checkRCAEarlyReturn
 // -> finalizeAndEmitRCAOnlyResult -> audit persistence — proving both the
-// business outcome (BR-HAPI-197) and the FedRAMP/SOC2 control objectives
+// business outcome (BR-KA-197) and the FedRAMP/SOC2 control objectives
 // (AC-6, AU-2, AU-3, AU-12, SOC2 CC7.2/CC8.1) that depend on this wiring,
 // mirroring the paired UT+IT pattern used for the analogous #1044
 // apiVersion-gate fix (apiversion_gate_integration_test.go) and the
@@ -78,7 +78,7 @@ var _ = Describe("TP-1614: Double max_tokens truncation Integration — Full Inv
 		RemediationID: "rr-1614-double-truncation",
 	}
 
-	Describe("IT-KA-1614-001: Full pipeline — double truncation stops before workflow discovery (BR-HAPI-197, AC-6)", func() {
+	Describe("IT-KA-1614-001: Full pipeline — double truncation stops before workflow discovery (BR-KA-197, AC-6)", func() {
 		It("should set HumanReviewNeeded=true and never invoke workflow discovery once the retry is also truncated", func() {
 			mockClient := &mockLLMClient{
 				responses: []llm.ChatResponse{
@@ -105,7 +105,7 @@ var _ = Describe("TP-1614: Double max_tokens truncation Integration — Full Inv
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 			Expect(result.HumanReviewNeeded).To(BeTrue(),
-				"IT-KA-1614-001 / BR-HAPI-197: a response still truncated after the escalated retry is an unreliable AI result and must require human review")
+				"IT-KA-1614-001 / BR-KA-197: a response still truncated after the escalated retry is an unreliable AI result and must require human review")
 			Expect(result.Reason).To(ContainSubstring("output truncated after retry"),
 				"IT-KA-1614-001: reason must identify truncation, not a generic exhaustion")
 			Expect(mockClient.calls).To(HaveLen(2),

@@ -320,7 +320,7 @@ var _ = Describe("Kubernaut Agent I7 Anomaly Detection — #433", func() {
 			Expect(result.Allowed).To(BeFalse(), "custom per-tool limit of 2 should apply")
 		})
 
-		It("UT-KA-860-005: DefaultAnomalyConfig reflects MaxToolCallsPerTool=10 (BR-HAPI-433-004 I7)", func() {
+		It("UT-KA-860-005: DefaultAnomalyConfig reflects MaxToolCallsPerTool=10 (BR-KA-433-004 I7)", func() {
 			cfg := investigator.DefaultAnomalyConfig()
 			Expect(cfg.MaxToolCallsPerTool).To(Equal(10),
 				"UT-KA-860-005: default per-tool limit raised to 10 per #860")
@@ -329,7 +329,7 @@ var _ = Describe("Kubernaut Agent I7 Anomaly Detection — #433", func() {
 		})
 	})
 
-	Describe("Pagination Exemption from Per-Tool Budget (#860, BR-HAPI-433-004 I7)", func() {
+	Describe("Pagination Exemption from Per-Tool Budget (#860, BR-KA-433-004 I7)", func() {
 
 		It("UT-KA-860-001: pagination call (list_workflows with cursor) does NOT increment per-tool count", func() {
 			cfg := investigator.AnomalyConfig{

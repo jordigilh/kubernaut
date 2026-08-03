@@ -77,7 +77,7 @@ var _ = Describe("Escalation Wiring (#1449)", Label("integration", "escalation",
 		}
 	})
 
-	It("IT-AA-1449-003: KA operator_escalation result flows through reconciler to CRD status (BR-HAPI-197)", func() {
+	It("IT-AA-1449-003: KA operator_escalation result flows through reconciler to CRD status (BR-KA-197)", func() {
 		rrName := helpers.UniqueTestName("rr-1449-wiring")
 		aaName := helpers.UniqueTestName("aa-1449-wiring")
 		sessionID := "session-1449-escalation-wiring"

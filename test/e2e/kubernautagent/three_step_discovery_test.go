@@ -24,14 +24,14 @@ import (
 )
 
 // ========================================
-// E2E-KA-017: Three-Step Workflow Discovery (DD-HAPI-017)
+// E2E-KA-017: Three-Step Workflow Discovery (DD-KA-017)
 // ========================================
 //
 // Business Requirements:
 //   - BR-KA-017-001: Three-step tool implementation
 //
 // Design Decisions:
-//   - DD-HAPI-017: Three-Step Workflow Discovery Integration
+//   - DD-KA-017: Three-Step Workflow Discovery Integration
 //   - DD-WORKFLOW-016: Action-Type Workflow Catalog Indexing
 //
 // Test Strategy:
@@ -56,7 +56,7 @@ var _ = Describe("E2E-KA-017: Three-Step Workflow Discovery", Label("e2e", "ka",
 			//   Mock LLM calls list_available_actions → list_workflows → get_workflow,
 			//   KA returns a valid investigation result with selected workflow.
 			// BR: BR-KA-017-001
-			// Phase: 11 (DD-HAPI-017 Implementation Plan)
+			// Phase: 11 (DD-KA-017 Implementation Plan)
 
 			// ========================================
 			// ARRANGE

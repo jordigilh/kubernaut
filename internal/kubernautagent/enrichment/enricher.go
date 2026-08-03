@@ -154,7 +154,7 @@ type MetricDeltas struct {
 // With MaxRetries=0 (default), enrichment is best-effort (current behavior).
 // With MaxRetries>0, all errors are retried with exponential backoff and
 // failures after exhaustion trigger HardFail on EnrichmentResult.
-// Matches HAPI v1.2.1 EnrichmentService behavior (BR-HAPI-261 AC#7).
+// Matches HAPI v1.2.1 EnrichmentService behavior (BR-KA-261 AC#7).
 type RetryConfig struct {
 	MaxRetries  int
 	BaseBackoff time.Duration
@@ -171,7 +171,7 @@ type EnrichmentResult struct {
 	OwnerChainError error `json:"-"`
 	// HardFail is true when owner chain resolution fails after retry
 	// exhaustion (all errors retried, matching HAPI v1.2.1). The
-	// investigator uses this to trigger rca_incomplete (BR-HAPI-261
+	// investigator uses this to trigger rca_incomplete (BR-KA-261
 	// AC#7, #704). Only set when RetryConfig has MaxRetries > 0.
 	// Issue #1039: NotFound errors are exempt (deleted resources).
 	HardFail bool `json:"-"`

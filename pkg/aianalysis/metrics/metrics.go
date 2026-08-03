@@ -136,7 +136,7 @@ type Metrics struct {
 
 	// ========================================
 	// FAILURE METRICS (aianalysis_failures_*)
-	// BR-HAPI-197: Track workflow resolution failures
+	// BR-KA-197: Track workflow resolution failures
 	// Business Value: HIGH - Failure mode tracking
 	// ========================================
 
@@ -202,7 +202,7 @@ func NewMetrics() *Metrics {
 
 		// Initialize FailuresTotal with known failure types so metric appears in /metrics
 		// even before first failure occurs (required for E2E metric existence tests)
-		// BR-HAPI-197: Failure tracking
+		// BR-KA-197: Failure tracking
 		registeredMetrics.FailuresTotal.WithLabelValues("NoWorkflowSelected", "InvestigationFailed").Add(0)
 		registeredMetrics.FailuresTotal.WithLabelValues("APIError", "AgentAPICallFailed").Add(0)
 		registeredMetrics.FailuresTotal.WithLabelValues("RegoEvaluationError", "PolicyEvaluationFailed").Add(0)
@@ -314,7 +314,7 @@ func (m *Metrics) RecordConfidenceScore(signalType string, confidence float64) {
 }
 
 // RecordFailure records an AIAnalysis failure
-// Business: Failure mode tracking (BR-HAPI-197)
+// Business: Failure mode tracking (BR-KA-197)
 func (m *Metrics) RecordFailure(reason, subReason string) {
 	m.FailuresTotal.WithLabelValues(reason, subReason).Inc()
 }

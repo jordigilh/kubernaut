@@ -159,7 +159,7 @@ var _ = Describe("AIAnalysis Metrics", func() {
 
 	// ========================================
 	// FAILURE METRICS (Business: Failure Tracking)
-	// BR-HAPI-197: Track failure modes for root cause analysis
+	// BR-KA-197: Track failure modes for root cause analysis
 	// ========================================
 	Describe("ErrorMetrics.RecordFailureMode", func() {
 		It("should enable operators to identify top failure modes for prioritized fixes", func() {

@@ -185,7 +185,7 @@ var _ = Describe("TP-693: injectRemediationTarget — remediation target resolut
 			investigator.InjectRemediationTarget(result, signal, enrichData)
 
 			Expect(result.RemediationTarget.Kind).To(Equal("Deployment"),
-				"UT-KA-693-006: ReplicaSet is in chain; must resolve to root Deployment per BR-HAPI-261 AC#4")
+				"UT-KA-693-006: ReplicaSet is in chain; must resolve to root Deployment per BR-KA-261 AC#4")
 			Expect(result.RemediationTarget.Name).To(Equal("worker"),
 				"UT-KA-693-006: must use root owner name")
 			Expect(result.RemediationTarget.Namespace).To(Equal("demo-crashloop"))

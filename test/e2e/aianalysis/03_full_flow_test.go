@@ -318,18 +318,18 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			By("Creating AIAnalysis with MOCK_LOW_CONFIDENCE signal type")
 			Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-			By("Waiting for Failed phase (BR-HAPI-197 AC-4: confidence 0.35 < 0.7 threshold -> Failed/LowConfidence)")
+			By("Waiting for Failed phase (BR-KA-197 AC-4: confidence 0.35 < 0.7 threshold -> Failed/LowConfidence)")
 			Eventually(func() string {
 				_ = k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)
 				return analysis.Status.Phase
 			}, timeout, interval).Should(Equal("Failed"))
 
-			By("Verifying failure reason per BR-HAPI-197 AC-4")
+			By("Verifying failure reason per BR-KA-197 AC-4")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 			Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed))
 			Expect(analysis.Status.SubReason).To(Equal("LowConfidence"))
 			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
-				"NeedsHumanReview must be true when confidence < threshold (BR-HAPI-197)")
+				"NeedsHumanReview must be true when confidence < threshold (BR-KA-197)")
 
 			By("Verifying AlternativeWorkflows populated (mock low_confidence scenario returns exactly 2 alternatives)")
 			Expect(analysis.Status.AlternativeWorkflows).To(HaveLen(2))

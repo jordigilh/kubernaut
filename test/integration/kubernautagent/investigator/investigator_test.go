@@ -823,7 +823,7 @@ var _ = Describe("TP-693: Workflow signal override after re-enrichment", func() 
 			Expect(result.HumanReviewNeeded).To(BeTrue(),
 				"IT-KA-704-001: owner chain failure must trigger human review")
 			Expect(result.HumanReviewReason).To(Equal("rca_incomplete"),
-				"IT-KA-704-001: reason must be rca_incomplete per BR-HAPI-261 AC#7")
+				"IT-KA-704-001: reason must be rca_incomplete per BR-KA-261 AC#7")
 			Expect(result.RCASummary).NotTo(BeEmpty(),
 				"IT-KA-704-001: RCA phase should complete before enrichment check")
 			Expect(result.WorkflowID).To(BeEmpty(),
@@ -987,7 +987,7 @@ var _ = Describe("F5/F6: RunWorkflowDiscoveryFromRCA enrichment parity (#1374)",
 		})
 	})
 
-	Describe("IT-KA-1374-F5-003: RunWorkflowDiscoveryFromRCA post-RCA re-enrichment [BR-INTERACTIVE-010, BR-HAPI-261]", func() {
+	Describe("IT-KA-1374-F5-003: RunWorkflowDiscoveryFromRCA post-RCA re-enrichment [BR-INTERACTIVE-010, BR-KA-261]", func() {
 		It("should re-enrich when RCA target differs from signal", func() {
 			k8s := &resourceAwareFixtureClient{
 				chains: map[string][]enrichment.OwnerChainEntry{

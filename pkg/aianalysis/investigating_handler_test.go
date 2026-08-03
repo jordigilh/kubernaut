@@ -382,7 +382,7 @@ var _ = Describe("InvestigatingHandler", func() {
 		})
 
 		// ========================================
-		// BR-HAPI-197: Human Review Required Handling
+		// BR-KA-197: Human Review Required Handling
 		// When KA returns needs_human_review=true, AIAnalysis MUST:
 		// - NOT proceed to Analyzing phase
 		// - Fail with structured reason (WorkflowResolutionFailed + SubReason)
@@ -390,7 +390,7 @@ var _ = Describe("InvestigatingHandler", func() {
 		// ========================================
 
 		Context("when KA returns needs_human_review=true", func() {
-			// BR-HAPI-197: Preferred method - use human_review_reason enum
+			// BR-KA-197: Preferred method - use human_review_reason enum
 			DescribeTable("should map human_review_reason enum to SubReason",
 				func(humanReviewReason string, expectedSubReason string) {
 					mockClient.WithHumanReviewReasonEnum(humanReviewReason, []string{"test warning"})
@@ -413,7 +413,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Entry("investigation_inconclusive → InvestigationInconclusive", "investigation_inconclusive", "InvestigationInconclusive"),
 			)
 
-			// BR-HAPI-197: Backward compatibility - fallback to warning parsing
+			// BR-KA-197: Backward compatibility - fallback to warning parsing
 			// Business Value: Operators can diagnose failures even with older KA versions
 			DescribeTable("should fallback to warning parsing when enum is nil",
 				func(warnings []string, expectedSubReason string) {
@@ -460,7 +460,7 @@ var _ = Describe("InvestigatingHandler", func() {
 					[]string{"Some completely unexpected error"}, "WorkflowNotFound"),
 			)
 
-			// BR-HAPI-197: Unknown enum value handling
+			// BR-KA-197: Unknown enum value handling
 			// Business Value: System handles new KA enum values gracefully
 			It("should default to WorkflowNotFound for unknown human_review_reason enum", func() {
 				mockClient.WithHumanReviewReasonEnum("some_future_enum_value", []string{"Unknown reason"})
@@ -473,7 +473,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.SubReason).To(Equal("WorkflowNotFound"), "Should default to WorkflowNotFound for unknown enum")
 			})
 
-			// BR-HAPI-197.4: Preserve partial response for operator context
+			// BR-KA-197.4: Preserve partial response for operator context
 			It("should preserve partial workflow and RCA for operator context", func() {
 				reason := "parameter_validation_failed"
 				mockClient.WithHumanReviewRequiredWithPartialResponse(
@@ -498,7 +498,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				Expect(analysis.Status.Warnings).To(ContainElement(ContainSubstring("Parameter validation failed")))
 			})
 
-			// BR-HAPI-197.6: MUST NOT proceed to Analyzing
+			// BR-KA-197.6: MUST NOT proceed to Analyzing
 			It("should NOT proceed to Analyzing phase (terminal failure)", func() {
 				mockClient.WithHumanReviewReasonEnum("workflow_not_found", []string{"Workflow not found"})
 				analysis := createTestAnalysis()

@@ -37,7 +37,7 @@ import (
 
 // Issue #1677 Phase 2g (DD-WORKFLOW-019): relocates the DataStorage-side
 // discovery edge-case IT coverage this replaces:
-//   - pkg/datastorage/repository/workflow's DD-HAPI-017 three-step protocol +
+//   - pkg/datastorage/repository/workflow's DD-KA-017 three-step protocol +
 //     wildcard-label (#464) + issue #522 reproduction
 //     (test/integration/datastorage/workflow_discovery_repository_test.go)
 //   - cluster classification filter (#1511, BR-FLEET-003)
@@ -214,9 +214,9 @@ var _ = Describe("IT-KA-1677 Workflow Catalog discovery edge cases (wildcards, c
 	}
 
 	// ========================================
-	// DD-HAPI-017 three-step discovery protocol (was IT-DS-017-001-*)
+	// DD-KA-017 three-step discovery protocol (was IT-DS-017-001-*)
 	// ========================================
-	Describe("DD-HAPI-017 three-step discovery protocol", func() {
+	Describe("DD-KA-017 three-step discovery protocol", func() {
 		It("IT-KA-1677-DHAPI017-001: ListActions counts all workflows for the matching action type", func() {
 			actionType := seedActiveActionType("DHAPI017a")
 			createRW(newRW(uniqueName("wf-scale-1"), actionType, rwFixture{Component: []string{"v1/Pod"}, Environment: []string{"production"}, Priority: "P0"}))

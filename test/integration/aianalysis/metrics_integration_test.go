@@ -152,7 +152,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		})
 
 		// NOTE: Flaky in parallel execution - metrics registry state interference
-		It("should NOT emit failure metrics when AIAnalysis completes successfully - BR-HAPI-197", func() {
+		It("should NOT emit failure metrics when AIAnalysis completes successfully - BR-KA-197", func() {
 			// 1. Capture baseline failure metrics before test
 			// DD-METRICS-001: FailuresTotal has 2 labels (reason, sub_reason)
 			baselineFailures := getCounterValue(reconciler.Metrics.FailuresTotal, "WorkflowResolutionFailed", "NoWorkflowResolved") +

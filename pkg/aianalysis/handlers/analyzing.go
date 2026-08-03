@@ -166,7 +166,7 @@ func (h *AnalyzingHandler) handleNoWorkflowSelected(ctx context.Context, analysi
 	analysis.Status.Message = "No workflow selected - investigation may have failed"
 	analysis.Status.Reason = aianalysisv1.ReasonNoWorkflowSelected
 
-	// BR-HAPI-197: Track failure metrics
+	// BR-KA-197: Track failure metrics
 	h.metrics.RecordFailure("NoWorkflowSelected", "InvestigationFailed") // P2.3: Use convenience method
 
 	// DD-AUDIT-003: Record analysis failure audit event
@@ -222,7 +222,7 @@ func (h *AnalyzingHandler) handleRegoEvaluationError(ctx context.Context, analys
 	analysis.Status.Message = "Rego evaluation failed unexpectedly"
 	analysis.Status.Reason = aianalysisv1.ReasonRegoEvaluationError
 
-	// BR-HAPI-197: Track failure metrics
+	// BR-KA-197: Track failure metrics
 	h.metrics.RecordFailure("RegoEvaluationError", "PolicyEvaluationFailed") // P2.3: Use convenience method
 
 	// DD-AUDIT-003: Record analysis failure audit event

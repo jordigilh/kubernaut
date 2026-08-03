@@ -1088,7 +1088,7 @@ var eventTypeCatalog = []eventTypeTestCase{
 	},
 
 	// ========================================
-	// WORKFLOW DISCOVERY SERVICE (1 event type - DD-HAPI-017)
+	// WORKFLOW DISCOVERY SERVICE (1 event type - DD-KA-017)
 	// ========================================
 	{
 		Service:       "workflow",

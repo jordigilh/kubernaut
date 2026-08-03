@@ -90,7 +90,7 @@
 | **BR-SECURITY-015** | Multi-architecture support (ARM64 + AMD64) | P0 |
 | **BR-SOC2-CC8.1** | User attribution for audit trail | P0 |
 | **BR-STORAGE-014** | Workflow catalog management with user tracking | P1 |
-| **BR-SECURITY-016** | Secure secret management (not in Git) | P0 |
+| **BR-SEC-016** | Secure secret management (not in Git) | P0 |
 
 ---
 

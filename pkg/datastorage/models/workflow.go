@@ -88,7 +88,7 @@ type RemediationWorkflow struct {
 	ContentHash string `json:"contentHash" db:"content_hash" validate:"required,len=64"`
 
 	// ========================================
-	// ACTION TYPE (DD-WORKFLOW-016, DD-HAPI-017)
+	// ACTION TYPE (DD-WORKFLOW-016, DD-KA-017)
 	// ========================================
 	// ActionType links to action_type_taxonomy table (seeded via DataStorage API)
 	// Required for three-step discovery protocol (list actions -> list workflows -> get workflow)

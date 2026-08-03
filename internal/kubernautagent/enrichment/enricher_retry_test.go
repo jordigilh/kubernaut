@@ -66,7 +66,7 @@ func (c *countingK8sClient) CallCount() int {
 	return int(atomic.LoadInt32(&c.calls))
 }
 
-var _ = Describe("Enricher Retry Infrastructure — BR-HAPI-261/264 #704", func() {
+var _ = Describe("Enricher Retry Infrastructure — BR-KA-261/264 #704", func() {
 	var (
 		logger     = logr.Discard()
 		auditStore *recordingAuditStore

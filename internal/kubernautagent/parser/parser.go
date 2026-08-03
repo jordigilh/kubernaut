@@ -142,7 +142,7 @@ func applyOutcomeRouting(result *katypes.InvestigationResult) {
 		result.IsActionable = &trueVal
 		return
 	}
-	// #746 / BR-HAPI-197.2: When no workflow is selected and no specific outcome
+	// #746 / BR-KA-197.2: When no workflow is selected and no specific outcome
 	// (inconclusive, problem_resolved, etc.) has already set HumanReviewNeeded,
 	// derive no_matching_workflows. Matches HAPI v1.2.1:
 	//   elif selected_workflow is None: needs_human_review = True; reason = "no_matching_workflows"

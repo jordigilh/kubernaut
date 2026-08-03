@@ -142,7 +142,7 @@ type WorkflowMaintainer struct {
 }
 
 // WorkflowSchemaLabels contains mandatory matching/filtering criteria for discovery.
-// These fields are used by the three-step discovery protocol (DD-HAPI-017) to filter
+// These fields are used by the three-step discovery protocol (DD-KA-017) to filter
 // workflows for a given incident context. Stored in the labels JSONB column.
 //
 // BR-WORKFLOW-004: severity, environment, component, priority are required.

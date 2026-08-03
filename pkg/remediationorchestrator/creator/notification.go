@@ -685,7 +685,7 @@ type ManualReviewContext struct {
 	Reason string
 	// SubReason provides granular detail (e.g., "WorkflowNotFound", "LowConfidence")
 	SubReason string
-	// HumanReviewReason (BR-HAPI-197): Explicit reason from KA when needs_human_review=true
+	// HumanReviewReason (BR-KA-197): Explicit reason from KA when needs_human_review=true
 	// Maps to AIAnalysis.Status.HumanReviewReason enum (workflow_not_found, rca_incomplete, etc.)
 	HumanReviewReason string
 	// Message is a human-readable description of the failure
