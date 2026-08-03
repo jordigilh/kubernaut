@@ -1,10 +1,30 @@
 # DD-WORKFLOW-013: Scoring Field Population and Data Flow
 
 **Date**: 2025-11-27
-**Status**: ✅ **APPROVED**
-**Version**: 1.0
+**Status**: ⚠️ **PARTIALLY SUPERSEDED** — see correction notice below
+**Version**: 1.1
 **Authority**: Technical Reference
-**Related**: DD-WORKFLOW-004 (Hybrid Scoring), DD-WORKFLOW-012 (Immutability), DD-WORKFLOW-002 (MCP Architecture)
+**Related**: DD-WORKFLOW-004 (Hybrid Scoring — superseded), DD-WORKFLOW-012 (Immutability), DD-WORKFLOW-002 (MCP Architecture — superseded), [DD-WORKFLOW-016](DD-WORKFLOW-016-action-type-workflow-indexing.md) (current scoring authority), [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md) (current ownership)
+
+---
+
+## 📋 Changelog
+
+| Version | Date | Author | Changes |
+|---------|------|--------|---------|
+| 1.1 | 2026-08-02 | Architecture Team (#1806 correction) | **Partial correction pass**: this is not a blanket-supersede case. The scoring *concept* (a numeric field used internally for sorting, kept out of the LLM's view) survives; the specific transport ("HolmesGPT API → Data Storage Service" as two separate network hops) and the specific formula (pgvector `base_similarity` + SQL-computed `label_boost`/`label_penalty`) do not. See "⚠️ Reading This Document" below for the full breakdown, verified against `internal/kubernautagent/workflowcatalog/cache_filter.go` and `pkg/datastorage/models/workflow.go`. | [#1806](https://github.com/jordigilh/kubernaut/issues/1806) |
+| 1.0 | 2025-11-27 | Architecture Team | Initial version. | — |
+
+---
+
+## ⚠️ Reading This Document (2026-08-02 Correction Notice)
+
+This document was written against the Nov-2025 Python HolmesGPT-API / PostgreSQL-pgvector architecture. Treat it accordingly:
+
+- **What is still current**: `final_score` still exists, is still computed once per discovery call, still drives `ORDER BY final_score DESC` (now a Go in-memory sort, not SQL), and is still stripped before rendering results to the LLM — the general "keep a scoring breakdown internally, hide the score itself from the LLM" pattern this document argues for is directionally correct. Per [DD-WORKFLOW-016](DD-WORKFLOW-016-action-type-workflow-indexing.md) (`final_score -- Internal: used by KA for sorting, stripped before LLM rendering`), the LLM today sees **zero** score fields at all (not even a minimal `confidence`) — the current design goes further than this document's "PROPOSED (minimal): only `confidence`" conclusion, stripping scores entirely rather than reducing them to one field.
+- **What is superseded (actor/transport)**: Step 1/2 below describe "LLM Query → HolmesGPT API → Data Storage Service" as two separate Python/Go services connected over HTTP (`kubernaut-agent/src/toolsets/workflow_catalog.py` calling `POST http://data-storage:8080/api/v1/workflows/search`). Per [DD-WORKFLOW-019](DD-WORKFLOW-019-ka-owned-workflow-discovery.md), that Python file and that Data Storage REST search endpoint are both retired dead code — discovery is a single in-process call from Kubernaut Agent (KA, Go) into its own informer-backed cache (`internal/kubernautagent/workflowcatalog/discovery.go`'s `ListWorkflowsByActionType` / `discovery_cache.go`'s `filterAndScoreCachedWorkflows`), with no second service and no network hop for this step.
+- **What is superseded (formula)**: Steps 3-4 describe a PostgreSQL SQL query computing `base_similarity` from pgvector cosine similarity (`1 - (embedding <=> $1)`), plus SQL `CASE`-statement `label_boost`/`label_penalty`. There is no embedding and no `base_similarity` field anywhere in the current implementation (confirmed via grep: zero `pgvector`/embedding references in `internal/kubernautagent/workflowcatalog/`). The real, current formula lives in `internal/kubernautagent/workflowcatalog/cache_filter.go`'s `finalScore(detectedBoost, customBoost, penalty)`: `(5.0 + detectedBoost + customBoost - penalty) / 10.0`, capped at 1.0 — a label-match/conflict scoring model with a flat 0.5 baseline (no semantic component at all), computed in Go over the informer cache rather than in SQL.
+- **What partially survives as a shared type**: `pkg/datastorage/models/workflow.go`'s `WorkflowSearchResult` struct (fields `Confidence`, `LabelBoost`, `LabelPenalty`, `FinalScore`, `Rank`, ~lines 355-420) still exists and is explicitly annotated in-code as implementing **"DD-WORKFLOW-004 v1.5 (Label-Only Scoring with Wildcard Weighting)"** — i.e. a *label-only, no-embedding* scoring model. This confirms DD-WORKFLOW-004 itself was silently revised past v1.0 (semantic pgvector query construction, its own document text never updated to reflect this) all the way to a label-only v1.5 design before KA took ownership; this document's Step 3/4 SQL, however, reflects neither v1.0 nor v1.5 exactly.
 
 ---
 
@@ -286,7 +306,7 @@ LLM Response (Minimal)
 
 ---
 
-**Status**: ✅ **APPROVED**
-**Confidence**: 95%
-**Implementation**: Keep all fields in Go, expose only `confidence` to LLM
+**Status**: ⚠️ **PARTIALLY SUPERSEDED** (2026-08-02, #1806) — the "keep detail internal, hide score from LLM" principle holds; the transport (single in-process KA call, not HolmesGPT-API-to-Data-Storage HTTP) and formula (label-only, no pgvector `base_similarity`) do not. See correction notice near the top of this document.
+**Confidence**: 95% (original, pre-correction assessment)
+**Implementation (current)**: `internal/kubernautagent/workflowcatalog/cache_filter.go`'s `finalScore` computes the score in Go over the informer cache; the LLM sees no score field at all (not even `confidence`) per DD-WORKFLOW-016.
 
