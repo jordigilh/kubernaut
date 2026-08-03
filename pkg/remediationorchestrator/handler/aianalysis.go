@@ -286,7 +286,7 @@ func (h *AIAnalysisHandler) handleApprovalRequired(
 }
 
 // handleFailed processes AIAnalysis Failed phase.
-// Handles NeedsHumanReview (BR-HAPI-197), WorkflowResolutionFailed (BR-ORCH-036),
+// Handles NeedsHumanReview (BR-KA-197), WorkflowResolutionFailed (BR-ORCH-036),
 // and infrastructure failures (BR-ORCH-036 v3.0: APIError, Timeout, MaxRetriesExceeded).
 // All failure paths create escalation notifications before transitioning to Failed.
 func (h *AIAnalysisHandler) handleFailed(
@@ -294,7 +294,7 @@ func (h *AIAnalysisHandler) handleFailed(
 	rr *remediationv1.RemediationRequest,
 	ai *aianalysisv1.AIAnalysis,
 ) (ctrl.Result, error) {
-	// BR-HAPI-197: Check NeedsHumanReview FIRST (takes precedence over WorkflowResolutionFailed)
+	// BR-KA-197: Check NeedsHumanReview FIRST (takes precedence over WorkflowResolutionFailed)
 	// This flag is set by KA when AI cannot produce a reliable result
 	if ai.Status.NeedsHumanReview {
 		return h.handleHumanReviewRequired(ctx, rr, ai)
@@ -310,7 +310,7 @@ func (h *AIAnalysisHandler) handleFailed(
 	return h.propagateFailure(ctx, rr, ai)
 }
 
-// handleHumanReviewRequired processes AIAnalysis when KA explicitly requires human review (BR-HAPI-197).
+// handleHumanReviewRequired processes AIAnalysis when KA explicitly requires human review (BR-KA-197).
 // Issue #550: Routes to handleManualReviewCompleted when no workflow was selected (SelectedWorkflow=nil),
 // or to the existing Failed path when a workflow was present but rejected (SelectedWorkflow!=nil).
 func (h *AIAnalysisHandler) handleHumanReviewRequired(
@@ -332,13 +332,13 @@ func (h *AIAnalysisHandler) handleHumanReviewRequired(
 
 	logger.Info("AIAnalysis requires human review (workflow present but rejected) - creating manual review notification")
 
-	// Build manual review context with BR-HAPI-197 fields
+	// Build manual review context with BR-KA-197 fields
 	reviewCtx := &creator.ManualReviewContext{
 		Source:            notificationv1.ReviewSourceAIAnalysis,
-		Reason:            "HumanReviewRequired", // BR-HAPI-197 reason
+		Reason:            "HumanReviewRequired", // BR-KA-197 reason
 		SubReason:         ai.Status.HumanReviewReason,
 		Message:           ai.Status.Message,
-		HumanReviewReason: ai.Status.HumanReviewReason, // BR-HAPI-197: Store for metadata
+		HumanReviewReason: ai.Status.HumanReviewReason, // BR-KA-197: Store for metadata
 	}
 
 	// Populate root cause and warnings (common pattern)
@@ -391,7 +391,7 @@ func (h *AIAnalysisHandler) handleManualReviewCompleted(
 
 	logger.Info("AIAnalysis requires human review (no workflow selected) - completing with ManualReviewRequired")
 
-	// Build manual review context with BR-HAPI-197 fields
+	// Build manual review context with BR-KA-197 fields
 	reviewCtx := &creator.ManualReviewContext{
 		Source:            notificationv1.ReviewSourceAIAnalysis,
 		Reason:            "HumanReviewRequired",
@@ -561,7 +561,7 @@ func (h *AIAnalysisHandler) propagateFailure(
 
 // HandleRemediationTargetMissing handles the defense-in-depth case where AIAnalysis completed
 // with a SelectedWorkflow but RemediationTarget is nil or has empty Kind/Name.
-// This is the RO layer of the three-layer defense chain (KA -> AA -> RO) per DD-HAPI-006 v1.2
+// This is the RO layer of the three-layer defense chain (KA -> AA -> RO) per DD-KA-006 v1.2
 // and BR-ORCH-036 v4.0. Produces the same seamless response as handleHumanReviewRequired:
 // Failed + ManualReviewRequired + NotificationRequest.
 func (h *AIAnalysisHandler) HandleRemediationTargetMissing(
@@ -574,7 +574,7 @@ func (h *AIAnalysisHandler) HandleRemediationTargetMissing(
 		"aiAnalysis", ai.Name,
 	)
 
-	logger.Info("RemediationTarget missing on completed AIAnalysis - creating manual review notification (DD-HAPI-006 defense-in-depth)")
+	logger.Info("RemediationTarget missing on completed AIAnalysis - creating manual review notification (DD-KA-006 defense-in-depth)")
 
 	reviewCtx := &creator.ManualReviewContext{
 		Source:    notificationv1.ReviewSourceAIAnalysis,

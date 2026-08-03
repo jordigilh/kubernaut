@@ -29,7 +29,7 @@ import (
 // workflowcatalog discovery path and its custom MCP tools -- so its unit
 // coverage moves here, alongside the model it belongs to.
 //
-// Test Plan: docs/testing/DD-HAPI-017/TEST_PLAN.md
+// Test Plan: docs/testing/DD-KA-017/TEST_PLAN.md
 // Test ID: UT-DS-017-005-001.
 var _ = Describe("WorkflowDiscoveryFilters.HasContextFilters", func() {
 	Context("UT-DS-017-005-001: remediationId propagated correctly", func() {

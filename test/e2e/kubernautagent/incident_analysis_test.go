@@ -33,13 +33,13 @@ import (
 // Incident Analysis E2E Tests
 // Test Plan: docs/development/testing/KA_E2E_TEST_PLAN.md
 // Scenarios: E2E-KA-001 through E2E-KA-008 (8 total)
-// Business Requirements: BR-HAPI-197, BR-KA-002, BR-AI-075, BR-KA-200
+// Business Requirements: BR-KA-197, BR-KA-002, BR-AI-075, BR-KA-200
 //
 // Purpose: Validate incident analysis endpoint behavior and correctness
 
 var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), func() {
 
-	Context("BR-HAPI-197: Human review scenarios", func() {
+	Context("BR-KA-197: Human review scenarios", func() {
 
 		It("E2E-KA-001: No workflow found returns human review", func() {
 			// ========================================
@@ -48,7 +48,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// Scenario ID: E2E-KA-001
 			// Business Outcome: When no matching workflow exists, system escalates to human operator with clear reason
 			// Ported from: test_mock_llm_edge_cases_e2e.py:121 (Python KA, deprecated)
-			// BR: BR-HAPI-197
+			// BR: BR-KA-197
 
 			// ========================================
 			// ARRANGE: Create request with MOCK_NO_WORKFLOW_FOUND
@@ -109,7 +109,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// Scenario ID: E2E-KA-002
 			// Business Outcome: When confidence is low, system provides tentative recommendation but requires human decision
 			// Ported from: test_mock_llm_edge_cases_e2e.py:153 (Python KA, deprecated)
-			// BR: BR-HAPI-197
+			// BR: BR-KA-197
 
 			// ========================================
 			// ARRANGE
@@ -143,7 +143,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// BR-KA-197 + BR-AI-088: KA returns confidence but does NOT enforce thresholds
 			// AIAnalysis owns the threshold logic (70% in V1.0, configurable in V1.1)
 			Expect(incidentResp.NeedsHumanReview.Value).To(BeFalse(),
-				"KA should NOT set needs_human_review based on confidence thresholds (BR-HAPI-197)")
+				"KA should NOT set needs_human_review based on confidence thresholds (BR-KA-197)")
 			Expect(incidentResp.SelectedWorkflow.Set).To(BeTrue(),
 				"selected_workflow must be present")
 
@@ -165,7 +165,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// Scenario ID: E2E-KA-003
 			// Business Outcome: When LLM self-correction fails after max retries, provide complete validation history for debugging
 			// Ported from: test_mock_llm_edge_cases_e2e.py:189 (Python KA, deprecated)
-			// BR: BR-HAPI-197
+			// BR: BR-KA-197
 
 			// ========================================
 			// ARRANGE

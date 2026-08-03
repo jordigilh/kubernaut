@@ -258,7 +258,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 					ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				},
 			}
-			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution.
+			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution.
 			// Use a unique target name to avoid ResourceBusy conflicts with other tests
 			// that share the same ROControllerNamespace (e.g., IT-AUDIT-COMPLETION-001).
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
@@ -372,7 +372,7 @@ var _ = Describe("Phase Transition & Lifecycle Completion Audit Events (ADR-032 
 					ExecutionEngine: "job", // Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				},
 			}
-			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
+			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "Test root cause",
 				Severity:   "warning",

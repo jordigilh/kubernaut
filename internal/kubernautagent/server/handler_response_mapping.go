@@ -193,7 +193,7 @@ func buildSelectedWorkflow(r *katypes.InvestigationResult) agentclient.IncidentR
 }
 
 // buildResponseWarnings returns r.Warnings verbatim when set, a synthesized
-// human-review warning (BR-HAPI-197) when review is needed but no warning
+// human-review warning (BR-KA-197) when review is needed but no warning
 // was set, or an empty (non-nil) slice otherwise.
 func buildResponseWarnings(r *katypes.InvestigationResult) []string {
 	if len(r.Warnings) > 0 {
@@ -286,7 +286,7 @@ func buildAlignmentVerdictResponse(r *katypes.InvestigationResult) agentclient.A
 }
 
 // synthesizeHumanReviewWarning generates a warning when human review is required
-// but no explicit warnings were set by the parser. Per BR-HAPI-197, human review
+// but no explicit warnings were set by the parser. Per BR-KA-197, human review
 // responses must include at least one warning explaining why automation is unavailable.
 func synthesizeHumanReviewWarning(r *katypes.InvestigationResult) string {
 	reason := r.HumanReviewReason

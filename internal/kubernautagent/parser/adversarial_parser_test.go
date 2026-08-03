@@ -339,11 +339,11 @@ End of analysis.`
 			Expect(err).NotTo(HaveOccurred())
 			// #746: LLM's needs_human_review=true and human_review_reason="investigation_inconclusive"
 			// are cleared by the parser (line 52-53). Then applyOutcomeRouting re-derives HR:
-			// no workflow selected → no_matching_workflows (BR-HAPI-197.2, HAPI v1.2.1 parity).
+			// no workflow selected → no_matching_workflows (BR-KA-197.2, HAPI v1.2.1 parity).
 			// The key assertion: the LLM's "investigation_inconclusive" reason is NOT preserved —
 			// the parser derives "no_matching_workflows" from the absence of a workflow.
 			Expect(result.HumanReviewNeeded).To(BeTrue(),
-				"No workflow selected → parser-derived HumanReviewNeeded (BR-HAPI-197.2)")
+				"No workflow selected → parser-derived HumanReviewNeeded (BR-KA-197.2)")
 			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
 				"Parser must derive no_matching_workflows, not preserve LLM's investigation_inconclusive")
 		})
@@ -366,7 +366,7 @@ End of analysis.`
 			Expect(result.HumanReviewNeeded).To(BeTrue(),
 				"inconclusive outcome must set HumanReviewNeeded")
 			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
-				"RCA present + no workflow + inconclusive = no_matching_workflows (BR-HAPI-197)")
+				"RCA present + no workflow + inconclusive = no_matching_workflows (BR-KA-197)")
 		})
 	})
 
@@ -440,7 +440,7 @@ End of analysis.`
 		})
 	})
 
-	Describe("UT-KA-433-OUT-003: inconclusive + RCA + no workflow → no_matching_workflows (BR-HAPI-197)", func() {
+	Describe("UT-KA-433-OUT-003: inconclusive + RCA + no workflow → no_matching_workflows (BR-KA-197)", func() {
 		It("should derive no_matching_workflows when RCA present but no workflow selected", func() {
 			input := `{
 				"rca_summary": "Unable to determine root cause with available data",
@@ -452,7 +452,7 @@ End of analysis.`
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.HumanReviewNeeded).To(BeTrue())
 			Expect(result.HumanReviewReason).To(Equal("no_matching_workflows"),
-				"inconclusive + RCA present + no workflow = no_matching_workflows per BR-HAPI-197")
+				"inconclusive + RCA present + no workflow = no_matching_workflows per BR-KA-197")
 		})
 	})
 

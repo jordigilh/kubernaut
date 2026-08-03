@@ -417,7 +417,7 @@ func (m *MockAgentClient) AssertNotCalled() error {
 }
 
 // ========================================
-// BR-HAPI-197: Human Review Required Test Helpers
+// BR-KA-197: Human Review Required Test Helpers
 // ========================================
 
 // WithHumanReviewRequired configures the mock to return needs_human_review=true

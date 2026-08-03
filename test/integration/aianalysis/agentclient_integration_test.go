@@ -181,7 +181,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 		})
 	})
 
-	Context("Human Review Flag - BR-HAPI-197", func() {
+	Context("Human Review Flag - BR-KA-197", func() {
 		It("should handle needs_human_review=true with reason enum", func() {
 			// Real KA call - Unknown signal type may trigger human review
 			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
@@ -210,7 +210,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 			}
 		})
 
-		It("should handle testable human_review_reason enum values - BR-HAPI-197", func() {
+		It("should handle testable human_review_reason enum values - BR-KA-197", func() {
 			// REFACTORED: Now using Mock LLM scenarios to test 5 of 7 human_review_reason enums
 			// Mock LLM has built-in scenarios triggered by special signal types (see server.py lines 605-694)
 			//
@@ -219,7 +219,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 			// Not testable here (2/7): image_mismatch, parameter_validation_failed
 			//                          (require KA business logic validation)
 			//
-			// NOTE (BR-HAPI-197 AC-4 Clarification):
+			// NOTE (BR-KA-197 AC-4 Clarification):
 			// KA does NOT set needs_human_review=true for low confidence scenarios.
 			// KA returns confidence scores, and AIAnalysis controller applies the threshold.
 			// Only KA validation failures (llm_parsing_error, no_matching_workflows) set needs_human_review.
@@ -238,7 +238,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 				},
 				{
 					signalType:         "MOCK_LOW_CONFIDENCE",
-					expectedReviewFlag: false, // BR-HAPI-197 AC-4: KA does NOT set for low confidence
+					expectedReviewFlag: false, // BR-KA-197 AC-4: KA does NOT set for low confidence
 					expectedReason:     "",    // AIAnalysis controller will set this
 					description:        "Low confidence scenario (<0.5)",
 				},
@@ -362,7 +362,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 		})
 	})
 
-	Context("LLM Parsing Error - BR-HAPI-197", func() {
+	Context("LLM Parsing Error - BR-KA-197", func() {
 		It("should handle max retries exhausted scenario", func() {
 			// ADDED: Explicit test for MOCK_MAX_RETRIES_EXHAUSTED scenario
 			// Mock LLM simulates LLM returning unparseable responses, triggering retry exhaustion
@@ -387,7 +387,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp).NotTo(BeNil())
 
-			// BR-HAPI-197: Max retries exhausted requires human review
+			// BR-KA-197: Max retries exhausted requires human review
 			Expect(resp.NeedsHumanReview.Value).To(BeTrue(),
 				"Max retries exhausted should require human review")
 

@@ -267,7 +267,7 @@ var _ = Describe("Audit Emission Integration Tests (BR-ORCH-041)", func() {
 				Confidence: 0.95,
 			}
 			ai.Status.ApprovalRequired = false
-			// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
+			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
 			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "Test root cause",
 				Severity:   "critical",

@@ -592,7 +592,7 @@ type reEnrichedTargetParams struct {
 
 // applyReEnrichedTarget handles the RCA-target-changed branch of
 // reEnrichWorkflowTarget: re-enriches using the post-RCA target, applies the
-// hard-fail/deleted-resource/label-preservation rules (BR-HAPI-261 AC#7,
+// hard-fail/deleted-resource/label-preservation rules (BR-KA-261 AC#7,
 // #704), and updates p.WorkflowSignal's resource identity in place. Returns
 // hardFailed=true when the caller must treat rcaResult as final.
 func (inv *Investigator) applyReEnrichedTarget(ctx context.Context, p reEnrichedTargetParams) (updatedEnrichData *enrichment.EnrichmentResult, hardFailed bool) {
@@ -603,7 +603,7 @@ func (inv *Investigator) applyReEnrichedTarget(ctx context.Context, p reEnriched
 	)
 	reEnriched := inv.resolveEnrichmentCached(ctx, p.EnrichmentCache, p.PostRCAKind, p.PostRCAName, p.PostRCANS, p.Signal.ClusterID, p.Signal.IncidentID)
 
-	// BR-HAPI-261 AC#7 / #704: check HardFail BEFORE label merge
+	// BR-KA-261 AC#7 / #704: check HardFail BEFORE label merge
 	// to prevent the merge from silently dropping the failure signal.
 	// Use enrichData (initial enrichment) for labels because the failed
 	// re-enrichment has empty/all-failed detections — preserving signal-level

@@ -96,7 +96,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 			Confidence: 0.95,
 		}
-		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
+		// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
 			Severity:   "critical",
@@ -288,7 +288,7 @@ var _ = Describe("EA Creation on Terminal Phase (ADR-EM-001)", func() {
 			},
 			Confidence: 0.95,
 		}
-		// DD-HAPI-006: RemediationTarget is required for routing to WorkflowExecution
+		// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
 		ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "OOM kill detected",
 			Severity:   "critical",
@@ -639,7 +639,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 
 	// ========================================
 	// IT-RO-188-003b: Defense-in-depth when AA has empty remediationTarget
-	// DD-HAPI-006 v1.2 / BR-ORCH-036 v4.0: RO must fail with ManualReviewRequired
+	// DD-KA-006 v1.2 / BR-ORCH-036 v4.0: RO must fail with ManualReviewRequired
 	// when RemediationTarget is nil or has empty Kind/Name.
 	// ========================================
 	It("IT-RO-188-003b: should fail with ManualReviewRequired when AA has empty remediationTarget", func() {
@@ -700,7 +700,7 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		ai.Status.CompletedAt = &aiNow
 		Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
-		By("Waiting for RR to transition to Failed (DD-HAPI-006 v1.2 defense-in-depth)")
+		By("Waiting for RR to transition to Failed (DD-KA-006 v1.2 defense-in-depth)")
 		Eventually(func() remediationv1.RemediationPhase {
 			_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
 			return rr.Status.OverallPhase

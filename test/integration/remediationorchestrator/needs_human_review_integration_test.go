@@ -14,11 +14,11 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Integration tests for BR-HAPI-197 (Human Review Required Flag)
+// Integration tests for BR-KA-197 (Human Review Required Flag)
 // These tests validate that RO handles AIAnalysis needsHumanReview flag correctly.
 //
 // Business Requirements:
-// - BR-HAPI-197 (Human Review Required Flag for AI Reliability Issues)
+// - BR-KA-197 (Human Review Required Flag for AI Reliability Issues)
 // - BR-ORCH-036 (Manual Review Notification)
 //
 // Design Decisions:
@@ -54,7 +54,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 )
 
-var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
+var _ = Describe("NeedsHumanReview Integration Tests (BR-KA-197)", func() {
 	var testNamespace string
 
 	BeforeEach(func() {
@@ -259,7 +259,7 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-HAPI-197)", func() {
 			}, 60*time.Second, 500*time.Millisecond).Should(Succeed())
 
 			// Step 5: Update AIAnalysis status with needsHumanReview=true (rca_incomplete reason)
-			// This simulates KA returning needs_human_review=true due to missing remediationTarget (BR-HAPI-212)
+			// This simulates KA returning needs_human_review=true due to missing remediationTarget (BR-KA-212)
 			analysis.Status = aianalysisv1.AIAnalysisStatus{
 				Phase:             "Failed",
 				Reason:            "WorkflowResolutionFailed",
