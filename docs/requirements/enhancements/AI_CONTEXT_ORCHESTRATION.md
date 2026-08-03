@@ -1,9 +1,24 @@
 # AI Context Orchestration - Executive Summary
 
-**Business Requirements Document**: [10_AI_CONTEXT_ORCHESTRATION.md](./10_AI_CONTEXT_ORCHESTRATION.md)
+**Business Requirements Document**: [10_AI_CONTEXT_ORCHESTRATION.md](../10_AI_CONTEXT_ORCHESTRATION.md)
 **Feature Category**: AI & Machine Learning Enhancement
 **Priority**: High
 **Business Impact**: Strategic Platform Evolution
+**Status**: 🗄️ **SUPERSEDED** — see note below
+
+> **SUPERSEDED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This
+> Jan 2025 executive summary describes a standalone **Context API service** and a Python **HolmesGPT**
+> with pluggable toolsets, providing "historical intelligence" as a distinct service from real-time
+> investigation. That standalone Context API service was deprecated and removed; its capabilities were
+> absorbed into Data Storage, and HolmesGPT-API was rewritten in Go as **Kubernaut Agent (KA)**. See
+> [DD-CONTEXT-006](../../architecture/decisions/DD-CONTEXT-006-CONTEXT-API-DEPRECATION.md) for the
+> authoritative deprecation decision, and the parent
+> [10_AI_CONTEXT_ORCHESTRATION.md](../10_AI_CONTEXT_ORCHESTRATION.md) document (superseded in the same
+> pass) for the corresponding full business-requirements correction. This document is retained for
+> historical context only; the metrics, requirements counts, and architecture diagrams below describe
+> a proposal that was not built as designed. (Also fixed: the "Business Requirements Document" link
+> above was a broken relative path — corrected from `./10_AI_CONTEXT_ORCHESTRATION.md` to
+> `../10_AI_CONTEXT_ORCHESTRATION.md`, since that document lives one directory up.)
 
 ---
 
