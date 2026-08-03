@@ -1753,7 +1753,7 @@ components:
             - gateway: Gateway signal and CRD lifecycle events
             - notification: Notification delivery and escalation events
             - analysis: AI analysis, agent calls, and rego evaluation events
-            - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
+            - aiagent: AI Agent Provider (Kubernaut Agent, KA) - autonomous tool-calling agent
             - signalprocessing: Signal Processing Service
             - workflow: Workflow catalog and discovery events
             - workflowexecution: Workflow execution lifecycle events
@@ -2184,7 +2184,7 @@ components:
               nullable: true
 
     # ========================================
-    # WORKFLOW DISCOVERY SCHEMAS (DD-WORKFLOW-016, DD-HAPI-017)
+    # WORKFLOW DISCOVERY SCHEMAS (DD-WORKFLOW-016, DD-KA-017 formerly DD-HAPI-017)
     # ========================================
     # The three-step discovery protocol's own response types (ActionTypeListResponse,
     # WorkflowDiscoveryResponse, WorkflowDiscoveryEntry, RemediationWorkflow,
@@ -2599,7 +2599,7 @@ components:
         message:
           type: string
           description: Human-readable error description
-          example: "Holmes API request timeout after 30s"
+          example: "Kubernaut Agent (KA) request timeout after 30s"
         code:
           type: string
           description: Machine-readable error classification (ERR_[CATEGORY]_[SPECIFIC])
@@ -2844,7 +2844,7 @@ components:
           type: string
           description: |
             Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
-            Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery.
+            Propagated from AIAnalysis.SelectedWorkflow.ActionType via KA's three-step discovery protocol.
             Used by DS remediation history to populate actionType on entries and summaries.
           example: "ScaleReplicas"
 
@@ -3912,7 +3912,7 @@ components:
           description: |
             Structured health check results from the K8s API assessment.
             Only present for effectiveness.health.assessed events.
-            Enables downstream consumers (DS, HAPI) to extract typed fields
+            Enables downstream consumers (DS, KA) to extract typed fields
             without parsing the human-readable details string.
           properties:
             pod_running:
@@ -4193,13 +4193,13 @@ components:
           description: Updated description
           example: "Updated workflow description"
 
-    # Workflow Discovery Events (DD-HAPI-017, DD-WORKFLOW-014 v3.0)
+    # Workflow Discovery Events (DD-KA-017 formerly DD-HAPI-017, DD-WORKFLOW-014 v3.0)
     WorkflowDiscoveryAuditPayload:
       type: object
       required: [event_type, query, results, search_metadata]
       description: |
         Audit event payload for three-step workflow discovery operations.
-        Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
+        Authority: DD-KA-017 (Three-Step Workflow Discovery Integration, formerly DD-HAPI-017)
         Authority: DD-WORKFLOW-014 v3.0 (Workflow Selection Audit Trail)
         Replaces WorkflowSearchAuditPayload (search endpoint removed).
       properties:
@@ -4431,12 +4431,12 @@ components:
         error_message:
           type: string
           description: Error message
-          example: "HolmesGPT API timeout after 30s"
+          example: "Kubernaut Agent (KA) timeout after 30s"
 
     ProviderResponseSummary:
       type: object
       required: [incident_id, analysis_preview, needs_human_review, warnings_count]
-      description: Summary of Holmes API response from AIAnalysis consumer perspective (BR-AUDIT-005 v2.0 Gap #4)
+      description: Summary of Kubernaut Agent (KA) response from AIAnalysis consumer perspective (BR-AUDIT-005 v2.0 Gap #4)
       properties:
         incident_id:
           type: string
@@ -4455,7 +4455,7 @@ components:
           description: Whether human review is required
         warnings_count:
           type: integer
-          description: Number of warnings from Holmes
+          description: Number of warnings from Kubernaut Agent (KA)
           example: 2
 
     # ========================================
@@ -4550,8 +4550,9 @@ components:
             type: string
 
     # ========================================
-    # HolmesGPT API Event Payloads
-    # From: kubernaut-agent/src/models/audit_models.py
+    # Kubernaut Agent (KA) Event Payloads
+    # From: internal/kubernautagent/audit/ds_payloads.go (rewritten in Go, Issue #433;
+    # formerly kubernaut-agent/src/models/audit_models.py under the pre-rewrite Python HAPI)
     # ========================================
 
     AIAgentResponsePayload:
@@ -4732,7 +4733,7 @@ components:
     IncidentResponseData:
       type: object
       required: [incidentId, analysis, rootCauseAnalysis, confidence, timestamp]
-      description: Complete IncidentResponse structure from HolmesGPT API (DD-AUDIT-004 - strongly typed, no additionalProperties)
+      description: Complete IncidentResponse structure from Kubernaut Agent (KA) (DD-AUDIT-004 - strongly typed, no additionalProperties)
       properties:
         incidentId:
           type: string
@@ -4829,7 +4830,7 @@ components:
               type: string
               description: |
                 Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
-                Propagated from HAPI three-step discovery protocol.
+                Propagated from KA's three-step discovery protocol.
               example: "ScaleReplicas"
             executionBundle:
               type: string
