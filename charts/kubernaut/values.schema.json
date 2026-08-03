@@ -2039,6 +2039,33 @@
             }
           }
         },
+        "ai": {
+          "type": "object",
+          "description": "AI investigation behavior and safety guardrails.",
+          "additionalProperties": false,
+          "properties": {
+            "safety": {
+              "type": "object",
+              "description": "Guardrails that constrain AI tool-calling behavior.",
+              "additionalProperties": false,
+              "properties": {
+                "anomaly": {
+                  "type": "object",
+                  "description": "I7 anomaly detector (DD-KA-019-003): aborts an investigation that exhibits runaway tool-calling behavior.",
+                  "additionalProperties": false,
+                  "properties": {
+                    "maxTotalToolCalls": {
+                      "type": "integer",
+                      "default": 30,
+                      "minimum": 1,
+                      "description": "Maximum total tool calls allowed per investigation phase before the investigation aborts as budget-exhausted (surfaces as MCPError code tool_budget_exhausted for interactive sessions)."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "interactive": {
           "type": "object",
           "description": "MCP interactive mode (#703): enables human-in-the-loop investigation sessions.",

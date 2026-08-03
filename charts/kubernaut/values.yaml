@@ -496,6 +496,16 @@ kubernautAgent:
   # -- Shadow agent alignment check (#601): parallel audit for prompt injection detection.
   alignmentCheck:
     enabled: false
+  # -- AI investigation behavior and safety guardrails.
+  ai:
+    safety:
+      anomaly:
+        # -- Maximum total tool calls allowed per investigation phase before the
+        # investigation aborts as budget-exhausted (I7 anomaly detector,
+        # DD-KA-019-003). Raise this if legitimate investigations are hitting
+        # the ceiling; for interactive sessions this surfaces as the MCPError
+        # code tool_budget_exhausted (#1889).
+        maxTotalToolCalls: 30
   # -- Multi-cluster fleet configuration (BR-FLEET-054, ADR-068, issue #1729).
   # Gated by global.fleet.enabled (Issue #1707) -- when true and
   # global.fleet.mcpGatewayEndpoint/mcpGatewayType are set, KA's investigator

@@ -346,6 +346,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 |-----------|------|--------------|---------|----------|
 | `additionalClusterRoleBindings` | array of string | Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to the Kubernaut Agent ServiceAccount, generalizing kubernaut-operator's equivalent KA-only mechanism to the Helm chart, for resource kinds not already covered by its investigator ClusterRole. | `[]` | No |
 | `affinity` | object | Kubernetes affinity rules | `` | No |
+| `ai.safety.anomaly.maxTotalToolCalls` | integer | Maximum total tool calls allowed per investigation phase before the investigation aborts as budget-exhausted (surfaces as MCPError code tool_budget_exhausted for interactive sessions). | `30` | No |
 | `alignmentCheck.enabled` | boolean | Enable the shadow alignment agent. | `false` | No |
 | `alignmentCheck.llmProfileRef` | string | DD-PLATFORM-007: name of an entry in global.llmProfiles for a dedicated alignment-check shadow-agent LLM. Empty (default) inherits kubernautAgent.llmProfileRef's resolved profile, reusing the investigation LLM. Replaces the old alignmentCheck.llm.* block, whose apiKey field never had any effect (the Kubernaut Agent binary only reads apiKeyFile -- see kubernaut#1726 for the same class of bug). | `""` | No |
 | `alignmentCheck.maxStepTokens` | integer | Max evaluator response tokens per step. | `500` | No |

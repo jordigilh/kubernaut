@@ -495,7 +495,7 @@ type AIAnalysisStatus struct {
 	ConsecutiveFailures int32 `json:"consecutiveFailures,omitempty"`
 
 	// ========================================
-	// INVESTIGATION SESSION (BR-AA-HAPI-064)
+	// INVESTIGATION SESSION (BR-AA-KA-064)
 	// Tracks the async submit/poll session with Kubernaut Agent
 	// ========================================
 	// KASession tracks the async KA session for submit/poll pattern
@@ -545,8 +545,8 @@ type PostRCAContext struct {
 }
 
 // KASession tracks the async Kubernaut Agent session lifecycle.
-// BR-AA-HAPI-064.4: AA controller session tracking
-// BR-AA-HAPI-064.5: Session regeneration on 404 (KA restart)
+// BR-AA-KA-064.4: AA controller session tracking
+// BR-AA-KA-064.5: Session regeneration on 404 (KA restart)
 // Renamed from InvestigationSession to avoid CRD name collision with
 // the root InvestigationSession type in api/investigationsession/v1alpha1/.
 type KASession struct {
@@ -566,7 +566,7 @@ type KASession struct {
 	// +optional
 	CreatedAt *metav1.Time `json:"createdAt,omitempty"`
 	// PollCount tracks the number of poll attempts for observability
-	// BR-AA-HAPI-064.8: Constant 15s poll interval (configurable 1s–5m)
+	// BR-AA-KA-064.8: Constant 15s poll interval (configurable 1s–5m)
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	PollCount int32 `json:"pollCount,omitempty"`

@@ -104,6 +104,14 @@ type TextResult struct {
 
 func (*TextResult) loopResult() {}
 
+// ReasonToolBudgetExhausted is the ExhaustedResult.Reason value set when the
+// AnomalyDetector's total tool-call budget trips mid-investigation. Exported
+// as a named constant (rather than a bare string literal) so
+// adapters.ExtractContent can match on it precisely to surface
+// tools.ErrCodeToolBudgetExhausted instead of a generic internal error
+// (#1889 gap 1).
+const ReasonToolBudgetExhausted = "tool budget exhausted"
+
 // ExhaustedResult is returned when the loop exhausts maxTurns, tool budget,
 // or the truncation-retry escalation (#1614: the escalated retry is ALSO
 // truncated). Reason distinguishes the cases for observability (#770).
@@ -238,6 +246,12 @@ type Investigator struct {
 	// Config's fields of the same name (BR-KA-213, Issue #1826).
 	resolvedConfidenceThreshold     float64
 	inconclusiveConfidenceThreshold float64
+	// anomalyScope hands out a per-correlationID AnomalyDetector clone so
+	// concurrent investigations sharing this Investigator never corrupt each
+	// other's tool-call budgets (#1892). pipeline.AnomalyDetector remains the
+	// config template; production code must go through anomalyDetectorFor
+	// rather than pipeline.AnomalyDetector directly.
+	anomalyScope *anomalyScope
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
@@ -304,6 +318,10 @@ func New(cfg Config) *Investigator {
 		fleetOverlayResolver:            cfg.FleetOverlayResolver,
 		resolvedConfidenceThreshold:     cfg.ResolvedConfidenceThreshold,
 		inconclusiveConfidenceThreshold: cfg.InconclusiveConfidenceThreshold,
+		anomalyScope: &anomalyScope{
+			template: pipeline.AnomalyDetector,
+			entries:  make(map[string]*anomalyDetectorEntry),
+		},
 	}
 }
 
@@ -393,14 +411,18 @@ func (inv *Investigator) Investigate(ctx context.Context, signal katypes.SignalC
 	ctx = inv.prescopeFleetOverlay(ctx, signal.ClusterID, signal.RemediationID)
 
 	defer inv.startDiagSummary(ctx)()
-	inv.pipeline.AnomalyDetector.Reset()
+
+	// #1892: correlationID must be resolved before the first Reset() so the
+	// per-investigation AnomalyDetector (not the shared config template) is
+	// the one reset here.
+	correlationID := signal.RemediationID
+	inv.anomalyDetectorFor(correlationID).Reset()
 
 	// #783 + #1470: Pin client per phase. Each phase resolves its own client,
 	// model name, and runtime params. Subsequent hot-reload swaps do not
 	// affect in-flight work.
 	rcaClient, rcaModelName, rcaRuntimeParams := inv.resolveForPhase(katypes.PhaseRCA)
 
-	correlationID := signal.RemediationID
 	enrichmentCache := make(map[string]*enrichment.EnrichmentResult)
 
 	signalKind, signalName, signalNS := ResolveEnrichmentTarget(signal, nil)
@@ -466,7 +488,7 @@ func (inv *Investigator) runWorkflowDiscoveryPhase(ctx context.Context, p workfl
 	promptEnrichment := toPromptEnrichment(enrichData)
 	workflowSignal = inv.enrichWorkflowSignalForDiscovery(workflowSignal, p.Signal, p.RCAResult, enrichData, p.CorrelationID)
 
-	inv.pipeline.AnomalyDetector.Reset()
+	inv.anomalyDetectorFor(p.CorrelationID).Reset()
 
 	wfClient, wfModelName, wfRuntimeParams := inv.resolveForPhase(katypes.PhaseWorkflowDiscovery)
 

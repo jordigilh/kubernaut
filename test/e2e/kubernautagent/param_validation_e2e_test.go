@@ -65,7 +65,7 @@ var _ = Describe("E2E-KA Parameter Validation Self-Correction (#1170)", Label("e
 			}
 
 			// ========================================
-			// ACT (BR-AA-HAPI-064: async session flow)
+			// ACT (BR-AA-KA-064: async session flow)
 			// ========================================
 			incidentResp, err := sessionClient.Investigate(ctx, req)
 			Expect(err).ToNot(HaveOccurred(), "KA incident analysis API call should succeed")

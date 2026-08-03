@@ -54,7 +54,7 @@ var _ = Describe("AgentClient", func() {
 
 	Describe("Investigate", func() {
 		// BR-AI-006: Successful API call (via session flow)
-		// BR-AA-HAPI-064: Investigate() wraps submit -> poll -> result internally
+		// BR-AA-KA-064: Investigate() wraps submit -> poll -> result internally
 		Context("with successful response", func() {
 			BeforeEach(func() {
 				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -195,7 +195,7 @@ var _ = Describe("AgentClient", func() {
 			})
 		})
 
-		// BR-AA-HAPI-064: awaitSession returns error when session fails server-side
+		// BR-AA-KA-064: awaitSession returns error when session fails server-side
 		Context("with session that fails during investigation", func() {
 			BeforeEach(func() {
 				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -238,7 +238,7 @@ var _ = Describe("AgentClient", func() {
 			})
 		})
 
-		// BR-AA-HAPI-064: awaitSession respects context cancellation
+		// BR-AA-KA-064: awaitSession respects context cancellation
 		Context("with context cancelled during polling", func() {
 			BeforeEach(func() {
 				mockServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

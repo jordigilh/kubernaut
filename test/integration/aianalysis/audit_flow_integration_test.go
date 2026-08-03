@@ -389,8 +389,8 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			//
 			// AIAnalysis Controller events (9):
 			// - 3 phase transitions (Pending→Investigating→Analyzing→Completed)
-			// - 1 AI agent submit (aiagent.submit — session creation, BR-AA-HAPI-064)
-			// - 1 AI agent result (aiagent.result — session result retrieval, BR-AA-HAPI-064)
+			// - 1 AI agent submit (aiagent.submit — session creation, BR-AA-KA-064)
+			// - 1 AI agent result (aiagent.result — session result retrieval, BR-AA-KA-064)
 			// - 1 AI agent API call metadata (aiagent.call — backward compat from RecordAIAgentResult)
 			// - 1 Rego evaluation (policy check)
 			// - 1 Approval decision (auto-approval or manual review)
@@ -400,7 +400,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			//       are EXCLUDED from this test. KA integration tests validate those separately.
 			//       This test focuses ONLY on AIAnalysis controller audit behavior.
 			//
-			// Total: 9 AIAnalysis events (deterministic per DD-AIANALYSIS-005 v1.x + BR-AA-HAPI-064 session audit)
+			// Total: 9 AIAnalysis events (deterministic per DD-AIANALYSIS-005 v1.x + BR-AA-KA-064 session audit)
 			// Breakdown: 3 phase transitions + 3 AI agent events (submit+result+call) + 1 Rego + 1 approval + 1 completion
 			Expect(len(events)).To(Equal(9),
 				"AIAnalysis workflow generates exactly 9 audit events: 3 phase transitions + 3 AI agent (submit+result+call) + 1 Rego + 1 approval + 1 completion")

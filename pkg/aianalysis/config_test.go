@@ -31,7 +31,7 @@ import (
 // CONFIG VALIDATION UNIT TESTS
 // ========================================
 //
-// Business Requirement: BR-AI-007, BR-AI-012, BR-AA-HAPI-064
+// Business Requirement: BR-AI-007, BR-AI-012, BR-AA-KA-064
 // ADR-030: Service Configuration Management
 //
 // Purpose: Validate that AIAnalysis Config.Validate() correctly rejects
@@ -133,13 +133,13 @@ var _ = Describe("AIAnalysis Config - Unit Tests", Label("config", "validation",
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("agent.timeout")))
 		})
 
-		It("BR-AA-HAPI-064: should reject session poll interval below 1s", func() {
+		It("BR-AA-KA-064: should reject session poll interval below 1s", func() {
 			cfg := config.DefaultConfig()
 			cfg.Agent.SessionPollInterval = 0
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("sessionPollInterval")))
 		})
 
-		It("BR-AA-HAPI-064: should reject session poll interval above 5m", func() {
+		It("BR-AA-KA-064: should reject session poll interval above 5m", func() {
 			cfg := config.DefaultConfig()
 			cfg.Agent.SessionPollInterval = 10 * time.Minute
 			Expect(cfg.Validate()).To(MatchError(ContainSubstring("sessionPollInterval")))

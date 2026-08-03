@@ -57,14 +57,14 @@ const (
 )
 
 // ========================================
-// SESSION CONFIGURATION (BR-AA-HAPI-064)
+// SESSION CONFIGURATION (BR-AA-KA-064)
 // Async submit/poll session management
 // ========================================
 
 const (
 	// MaxSessionRegenerations is the maximum number of session regenerations
 	// before the investigation fails with SessionRegenerationExceeded.
-	// BR-AA-HAPI-064.6: Cap at 5 regenerations
+	// BR-AA-KA-064.6: Cap at 5 regenerations
 	MaxSessionRegenerations int32 = 5
 
 	// MaxConsecutiveGetResultErrors is the maximum number of consecutive 409 errors
@@ -73,7 +73,7 @@ const (
 	MaxConsecutiveGetResultErrors int32 = 3
 
 	// DefaultSessionPollInterval is the constant polling interval for session status checks.
-	// BR-AA-HAPI-064.8: Polling is not error recovery -- KA is healthy, just not done yet.
+	// BR-AA-KA-064.8: Polling is not error recovery -- KA is healthy, just not done yet.
 	// A constant interval is simpler, predictable, and sufficient for async LLM investigations.
 	// Configurable via WithSessionPollInterval option or --session-poll-interval flag.
 	DefaultSessionPollInterval = 15 * time.Second

@@ -127,7 +127,7 @@ Kubernaut is an AI-powered Kubernetes remediation platform built on a **microser
 **CRD**: `AIAnalysis` (`kubernaut.ai/v1alpha1`)
 
 **Responsibilities**:
-- Submit an investigation to Kubernaut Agent **asynchronously** — `SubmitInvestigation()` returns a `session_id`; the controller then polls via `PollSession()` until a terminal state, then calls `GetSessionResult()` (`pkg/agentclient`, [BR-AA-HAPI-064](../requirements/)) — KA has **no** synchronous "analyze and return" endpoint
+- Submit an investigation to Kubernaut Agent **asynchronously** — `SubmitInvestigation()` returns a `session_id`; the controller then polls via `PollSession()` until a terminal state, then calls `GetSessionResult()` (`pkg/agentclient`, [BR-AA-KA-064](../requirements/)) — KA has **no** synchronous "analyze and return" endpoint
 - Evaluate the investigation result against a Rego policy (`pkg/aianalysis/rego/evaluator.go`, [BR-AI-011](../requirements/), [BR-AI-014](../requirements/) graceful degradation) to produce a `PolicyDecision`: `Approved`, `ManualReviewRequired`, `Denied`, or `DegradedMode`
 - Detect and reject hallucinated or invalid AI responses
 

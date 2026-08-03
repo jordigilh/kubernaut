@@ -58,7 +58,7 @@ func (n *noopAuditClient) RecordAnalysisComplete(ctx context.Context, analysis *
 	// No-op: Unit tests don't need audit recording
 }
 
-// BR-AA-HAPI-064: Session audit no-ops
+// BR-AA-KA-064: Session audit no-ops
 func (n *noopAuditClient) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
 }
 
@@ -99,7 +99,7 @@ func (s *auditClientSpy) RecordAnalysisComplete(ctx context.Context, analysis *a
 	// Not tracked in spy for Gap #7 tests
 }
 
-// BR-AA-HAPI-064: Session audit spy methods
+// BR-AA-KA-064: Session audit spy methods
 func (s *auditClientSpy) RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
 	// Not tracked in spy for Gap #7 tests
 }

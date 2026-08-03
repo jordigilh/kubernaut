@@ -10,7 +10,7 @@
 
 | Version | Date | Changes | Reference |
 |---------|------|---------|-----------|
-| v3.0 | 2026-08-02 | **#1806 CORRECTION**: Full rewrite. Replaced the synchronous "single HTTP call to HolmesGPT-API" architecture with the real async submit/poll/result session model against Kubernaut Agent (KA); fixed the Go client package reference (`pkg/agentclient`, not `pkg/clients/holmesgpt/`); corrected the Input Contract (`DetectedLabels`/`CustomLabels`/`OwnerChain` are NOT part of `spec.analysisRequest` — `DetectedLabels` are KA-computed *after* RCA and returned as an output in `status.postRCAContext`, per ADR-056); removed the recovery-attempt input fields (`isRecoveryAttempt`/`previousExecutions` do not exist on the current CRD spec — recovery-via-resubmission was deprecated, Issue #180); corrected the Output Contract to match `RootCauseAnalysis`/`RemediationTarget`/`SelectedWorkflow` (`WorkflowSnapshot`-embedded, no bare `containerImage` field); replaced `AIApprovalRequest` (never implemented) with the real `RemediationApprovalRequest` CRD | #1806, ADR-056, BR-AA-HAPI-064 |
+| v3.0 | 2026-08-02 | **#1806 CORRECTION**: Full rewrite. Replaced the synchronous "single HTTP call to HolmesGPT-API" architecture with the real async submit/poll/result session model against Kubernaut Agent (KA); fixed the Go client package reference (`pkg/agentclient`, not `pkg/clients/holmesgpt/`); corrected the Input Contract (`DetectedLabels`/`CustomLabels`/`OwnerChain` are NOT part of `spec.analysisRequest` — `DetectedLabels` are KA-computed *after* RCA and returned as an output in `status.postRCAContext`, per ADR-056); removed the recovery-attempt input fields (`isRecoveryAttempt`/`previousExecutions` do not exist on the current CRD spec — recovery-via-resubmission was deprecated, Issue #180); corrected the Output Contract to match `RootCauseAnalysis`/`RemediationTarget`/`SelectedWorkflow` (`WorkflowSnapshot`-embedded, no bare `containerImage` field); replaced `AIApprovalRequest` (never implemented) with the real `RemediationApprovalRequest` CRD | #1806, ADR-056, BR-AA-KA-064 |
 | v2.0 | 2025-11-30 | **REGENERATED**: Complete rewrite for V1.0 scope; Fixed RemediationProcessing→SignalProcessing; Added DetectedLabels/CustomLabels/OwnerChain; Removed "Approving" phase; Updated ports per DD-TEST-001 | DD-WORKFLOW-001 v1.8, DD-RECOVERY-002 |
 | v1.1 | 2025-10-20 | Added V1.0 approval notification integration | ADR-018 |
 | v1.0 | 2025-10-15 | Initial design specification | - |
@@ -23,7 +23,7 @@
 
 **Core Responsibilities**:
 1. **Receive enrichment data from SignalProcessing** (via Remediation Orchestrator)
-2. **Submit an investigation to Kubernaut Agent (KA)** asynchronously, then poll the session until it completes (BR-AA-HAPI-064)
+2. **Submit an investigation to Kubernaut Agent (KA)** asynchronously, then poll the session until it completes (BR-AA-KA-064)
 3. **Evaluate Rego approval policies** for automated vs. manual approval
 4. **Provide structured output** for WorkflowExecution creation
 
@@ -35,7 +35,7 @@
 
 | Capability | Description | Reference |
 |------------|-------------|-----------|
-| **Kubernaut Agent (KA) Integration** | Single AI provider, accessed via an async submit/poll/result session (not a single synchronous call) | BR-AI-001, BR-AA-HAPI-064 |
+| **Kubernaut Agent (KA) Integration** | Single AI provider, accessed via an async submit/poll/result session (not a single synchronous call) | BR-AI-001, BR-AA-KA-064 |
 | **Workflow Selection** | Select from predefined workflow catalog; catalog resolution happens inside KA | BR-AI-075, BR-KA-250 |
 | **Rego Approval Policies** | Auto-approve or flag for manual review | BR-AI-028 |
 | **Interactive Takeover** | A human operator can take over an in-progress session via MCP (`user_driving` state); the 25-minute session cap still applies | DD-INTERACTIVE-002, BR-INTERACTIVE-001 |
@@ -211,7 +211,7 @@ status:
   approvalRequired: true
   approvalReason: "Confidence below 80% threshold (72% < 80%)"
 
-  # Async session tracking (BR-AA-HAPI-064)
+  # Async session tracking (BR-AA-KA-064)
   investigationSession:
     id: "sess-abc123"
     generation: 0
@@ -271,7 +271,7 @@ RemediationRequest (root orchestrator)
 | **Investigation & Analysis** | 12 | BR-AI-001 to BR-AI-023 |
 | **Workflow Selection** | 2 | BR-AI-075, BR-AI-076 |
 | **Approval Policies** | 4 | BR-AI-028 to BR-AI-030 |
-| **Async Session Management** | 4 | BR-AA-HAPI-064 (submit/poll/result, session regeneration) |
+| **Async Session Management** | 4 | BR-AA-KA-064 (submit/poll/result, session regeneration) |
 | **Kubernaut Agent (KA) Integration** | 5 | BR-KA-250 to BR-HAPI-252 |
 | **Validation & Hallucination** | 4 | BR-AI-023 (catalog validation) |
 

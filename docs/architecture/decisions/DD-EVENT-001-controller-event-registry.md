@@ -106,7 +106,7 @@ Each controller has a dedicated K8s Event Observability BR:
 | BR-ORCH-095 | RemediationOrchestrator | K8s Event Observability (DD-EVENT-001) |
 | BR-EM-095 | EffectivenessMonitor | K8s Event Observability (DD-EVENT-001) |
 
-Events tied to existing BRs (e.g., session events under BR-AA-HAPI-064) use the existing BR number for test IDs.
+Events tied to existing BRs (e.g., session events under BR-AA-KA-064) use the existing BR number for test IDs.
 
 ---
 
@@ -127,7 +127,7 @@ Events tied to existing BRs (e.g., session events under BR-AA-HAPI-064) use the 
 | `EventReasonSessionRegenerationExceeded` | `SessionRegenerationExceeded` | Warning | P2 | Max session regenerations (5) exceeded, transitioning to Failed | Implemented (v1.1) |
 | `EventReasonPhaseTransition` | `PhaseTransition` | Normal | P3 | Any intermediate phase transition (shared constant) | Planned (v1.1) |
 
-**Note**: Session events (SessionCreated, SessionLost, SessionRegenerationExceeded) were originally delegated to the Issue #64 team but have been implemented by the current team via `WithRecorder` functional option on `InvestigatingHandler`. See BR-AA-HAPI-064.6 and `docs/testing/BR-AA-HAPI-064/session_based_pull_test_plan_v1.0.md`.
+**Note**: Session events (SessionCreated, SessionLost, SessionRegenerationExceeded) were originally delegated to the Issue #64 team but have been implemented by the current team via `WithRecorder` functional option on `InvestigatingHandler`. See BR-AA-KA-064.6 and `docs/testing/BR-AA-KA-064/session_based_pull_test_plan_v1.0.md`.
 
 ### WorkflowExecution Controller
 
@@ -352,7 +352,7 @@ Per-controller issues with TDD methodology (RED-GREEN-REFACTOR):
 | Controller | Issue | Events to Add | BR | Owner |
 |---|---|---|---|---|
 | AA | #72 | 6 (excl. 3 session events) | BR-AA-095 | Current team |
-| AA (session) | #73 | 3 (SessionCreated, SessionLost, SessionRegenerationExceeded) | BR-AA-HAPI-064.6 | Current team (originally delegated to Issue #64 team) |
+| AA (session) | #73 | 3 (SessionCreated, SessionLost, SessionRegenerationExceeded) | BR-AA-KA-064.6 | Current team (originally delegated to Issue #64 team) |
 | WE | TBD | 5 | BR-WE-095 | Current team |
 | SP | TBD | 5 | BR-SP-095 | Current team |
 | NT | TBD | 6 | BR-NT-095 | Current team |
@@ -427,7 +427,7 @@ Define unique constants for each intermediate transition (e.g., `EventReasonPend
 - **DD-CONTROLLER-001**: Observed generation idempotency pattern (related controller design)
 - **DD-TEST-006**: Test plan policy and test ID convention (`{TestType}-{ServiceCode}-{BR#}-{Sequence}`)
 - **Issue #64**: AA-HAPI session-based pull design (owns session event implementation)
-- **BR-AA-HAPI-064.6**: Session regeneration cap event (test plan: `docs/testing/BR-AA-HAPI-064/`)
+- **BR-AA-KA-064.6**: Session regeneration cap event (test plan: `docs/testing/BR-AA-KA-064/`)
 
 ## Test Plans
 

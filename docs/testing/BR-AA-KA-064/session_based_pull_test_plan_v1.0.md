@@ -1,20 +1,20 @@
-# V1.0 Test Plan: BR-AA-HAPI-064 Session-Based Pull Design
+# V1.0 Test Plan: BR-AA-KA-064 Session-Based Pull Design
 
 **Version**: 1.0.0
 **Created**: 2026-02-09
 **Status**: APPROVED
-**Purpose**: TDD test plan for session-based asynchronous AA-HAPI communication
+**Purpose**: TDD test plan for session-based asynchronous AA-KA communication
 
 ---
 
 ## Overview
 
-This test plan covers the full TDD implementation of BR-AA-HAPI-064 (Session-Based Pull Design),
+This test plan covers the full TDD implementation of BR-AA-KA-064 (Session-Based Pull Design),
 which replaces the synchronous blocking HTTP call between AA and HAPI with an asynchronous
 submit/poll pattern using session IDs.
 
 **Reference Documents**:
-- [BR-AA-HAPI-064](../../../docs/requirements/BR-AA-HAPI-064-session-based-pull-design.md)
+- [BR-AA-KA-064](../../../docs/requirements/BR-AA-KA-064-session-based-pull-design.md)
 - [DD-AA-HAPI-064](../../../docs/architecture/decisions/DD-AA-HAPI-064-session-based-pull-design.md)
 - [DD-EVENT-001](../../../docs/architecture/decisions/DD-EVENT-001-controller-event-registry.md)
 - [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUIDELINES.md)
@@ -50,13 +50,13 @@ Per [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUID
 
 This test plan covers:
 
-- AA controller submit/poll/result handler logic (incident only; recovery deprecated for v1.0 per BR-AA-HAPI-064.9)
+- AA controller submit/poll/result handler logic (incident only; recovery deprecated for v1.0 per BR-AA-KA-064.9)
 - HAPI session manager lifecycle and async endpoints (incident only; recovery deprecated for v1.0)
 - `InvestigationSession` CRD tracking, `InvestigationSessionReady` Condition, K8s Events
 - Session regeneration (404 detection, Generation counter, cap at 5)
 - Audit trace validation with **exact** counts at integration tier
 - Mock LLM session endpoint support for CI/CD
-- Service-specific E2E with async AA-HAPI communication
+- Service-specific E2E with async AA-KA communication
 
 **Out of Scope**:
 
@@ -67,7 +67,7 @@ This test plan covers:
 ### Design Decision: Async-First Endpoints (No Backward Compatibility)
 
 **Decision date**: 2026-02-11
-**Context**: BR-AA-HAPI-064 replaces synchronous blocking HTTP calls between AA and HAPI with an
+**Context**: BR-AA-KA-064 replaces synchronous blocking HTTP calls between AA and HAPI with an
 asynchronous submit/poll/result pattern. Both HAPI endpoints (`POST /api/v1/incident/analyze` and
 `POST /api/v1/recovery/analyze`) are modified to return HTTP 202 Accepted with a `session_id`
 instead of HTTP 200 with the full synchronous response.
@@ -135,7 +135,7 @@ request lifecycle, so the submit → get-result pattern works without polling or
 ### 1.1 Incident Submit Flow
 
 - **UT-AA-064-001**: Submit investigation when InvestigationSession is nil
-  - BR: BR-AA-HAPI-064.1, BR-AA-HAPI-064.4, BR-AA-HAPI-064.7
+  - BR: BR-AA-KA-064.1, BR-AA-KA-064.4, BR-AA-KA-064.7
   - Business Outcome: Controller creates a HAPI session and records it in CRD status
   - Given: AIAnalysis with nil InvestigationSession, Phase=Investigating
   - When: `Handle()` called
@@ -145,7 +145,7 @@ request lifecycle, so the submit → get-result pattern works without polling or
     - Result: `RequeueAfter: 10s` (non-blocking return)
     - Audit side effect: `auditClientSpy` recorded exactly 1 `holmesgpt.submit` event with sessionID
 - **UT-AA-064-002**: Submit investigation after session regeneration (ID cleared, Generation preserved)
-  - BR: BR-AA-HAPI-064.5
+  - BR: BR-AA-KA-064.5
   - Business Outcome: After a session loss, AA resubmits while preserving the regeneration count
   - Given: AIAnalysis with `InvestigationSession{ID: "", Generation: 2}`
   - When: `Handle()` called
@@ -156,7 +156,7 @@ request lifecycle, so the submit → get-result pattern works without polling or
 ### 1.2 Incident Poll Flow
 
 - **UT-AA-064-003**: Poll session -- status "pending", controller requeues
-  - BR: BR-AA-HAPI-064.2, BR-AA-HAPI-064.8
+  - BR: BR-AA-KA-064.2, BR-AA-KA-064.8
   - Business Outcome: AA waits for HAPI to complete investigation without blocking
   - Given: InvestigationSession with valid ID
   - When: `PollSession()` returns `{status: "pending"}`
@@ -165,7 +165,7 @@ request lifecycle, so the submit → get-result pattern works without polling or
     - Condition: Reason=`SessionActive`
     - Result: `RequeueAfter: 10s` (first poll interval)
 - **UT-AA-064-004**: Poll session -- status "investigating", backoff increases
-  - BR: BR-AA-HAPI-064.2, BR-AA-HAPI-064.8
+  - BR: BR-AA-KA-064.2, BR-AA-KA-064.8
   - Business Outcome: AA uses increasing backoff to avoid overloading HAPI
   - Given: InvestigationSession with valid ID, second consecutive poll
   - When: `PollSession()` returns `{status: "investigating"}`
@@ -173,7 +173,7 @@ request lifecycle, so the submit → get-result pattern works without polling or
     - CRD status: `LastPolled` updated
     - Result: `RequeueAfter: 20s` (second poll backoff)
 - **UT-AA-064-005**: Poll session -- status "completed", result fetched and processed
-  - BR: BR-AA-HAPI-064.3
+  - BR: BR-AA-KA-064.3
   - Business Outcome: AA retrieves the completed investigation and advances to policy analysis
   - Given: InvestigationSession with valid ID
   - When: `PollSession()` returns `{status: "completed"}`, `GetSessionResult()` returns `IncidentResponse` with workflow
@@ -181,14 +181,14 @@ request lifecycle, so the submit → get-result pattern works without polling or
     - CRD status: Phase transitions to `Analyzing`, SelectedWorkflow populated
     - Audit side effect: `auditClientSpy` recorded exactly 1 `holmesgpt.result` event with `investigationTime > 0`
 - **UT-AA-064-006**: Poll session -- status "failed", investigation terminates
-  - BR: BR-AA-HAPI-064.2
+  - BR: BR-AA-KA-064.2
   - Business Outcome: HAPI-side failure is surfaced to operators via CRD status
   - Given: InvestigationSession with valid ID
   - When: `PollSession()` returns `{status: "failed", error: "LLM provider error"}`
   - Then:
     - CRD status: Phase=`Failed`, error details in Message/Reason
 - **UT-AA-064-007**: Polling backoff caps at 30s
-  - BR: BR-AA-HAPI-064.8
+  - BR: BR-AA-KA-064.8
   - Business Outcome: Polling frequency stabilizes to avoid unnecessary API load
   - Given: Consecutive polls (1st, 2nd, 3rd, 4th)
   - Then: RequeueAfter values are 10s, 20s, 30s, 30s respectively (capped)
@@ -196,7 +196,7 @@ request lifecycle, so the submit → get-result pattern works without polling or
 ### 1.3 Session Lost and Regeneration
 
 - **UT-AA-064-008**: Session lost (404) -- first regeneration
-  - BR: BR-AA-HAPI-064.5
+  - BR: BR-AA-KA-064.5
   - Business Outcome: AA self-heals after HAPI restart by resubmitting investigation
   - Given: `InvestigationSession{ID: "session-1", Generation: 0}`
   - When: `PollSession()` returns 404
@@ -206,7 +206,7 @@ request lifecycle, so the submit → get-result pattern works without polling or
     - Result: `RequeueAfter: 0` (immediate resubmit)
     - Audit side effect: `auditClientSpy` recorded exactly 1 `holmesgpt.session_lost` event with `generation=1`
 - **UT-AA-064-009**: Session lost -- multiple regenerations under cap
-  - BR: BR-AA-HAPI-064.5
+  - BR: BR-AA-KA-064.5
   - Business Outcome: AA continues self-healing up to the regeneration limit
   - Given: `InvestigationSession{Generation: 3}`
   - When: `PollSession()` returns 404
@@ -214,7 +214,7 @@ request lifecycle, so the submit → get-result pattern works without polling or
     - CRD status: Generation=4, ID cleared
     - Result: `RequeueAfter: 0` (immediate resubmit, not failed)
 - **UT-AA-064-010**: Regeneration cap exceeded -- investigation fails with escalation
-  - BR: BR-AA-HAPI-064.6, DD-EVENT-001
+  - BR: BR-AA-KA-064.6, DD-EVENT-001
   - Business Outcome: After 5 failed session regenerations, AA escalates to operators via CRD status, K8s Warning Event, and escalation notification
   - Given: `InvestigationSession{Generation: 4}`
   - When: `PollSession()` returns 404 (incrementing Generation to 5)
@@ -249,15 +249,15 @@ request lifecycle, so the submit → get-result pattern works without polling or
 ### 1.5 Client Configuration Correctness
 
 - **UT-AA-064-014**: Async client constructor sets 30s timeout (not 10m workaround)
-  - BR: BR-AA-HAPI-064.10
-  - Business Outcome: All AA-HAPI HTTP calls are short-lived; the 10-minute blocking workaround is removed
+  - BR: BR-AA-KA-064.10
+  - Business Outcome: All AA-KA HTTP calls are short-lived; the 10-minute blocking workaround is removed
   - Given: `NewHolmesGPTClient()` constructed with async config
   - Then: `client.HTTPClient.Timeout == 30 * time.Second` (config value assertion, runs in milliseconds)
 
 ### 1.6 Recovery Submit/Poll Flow (Dedicated)
 
 - **UT-AA-064-015**: Recovery submit routes to recovery endpoint
-  - BR: BR-AA-HAPI-064.9
+  - BR: BR-AA-KA-064.9
   - Business Outcome: Recovery investigations use the dedicated recovery endpoint, not the incident endpoint
   - Given: AIAnalysis with `IsRecoveryAttempt=true`, nil InvestigationSession
   - When: `Handle()` called
@@ -265,14 +265,14 @@ request lifecycle, so the submit → get-result pattern works without polling or
     - `SubmitRecoveryInvestigation()` called (NOT `SubmitInvestigation`)
     - CRD status: InvestigationSession populated with session ID
 - **UT-AA-064-016**: Recovery poll completed -- recovery result fetched and processed
-  - BR: BR-AA-HAPI-064.9, BR-AA-HAPI-064.3
+  - BR: BR-AA-KA-064.9, BR-AA-KA-064.3
   - Business Outcome: Recovery investigation results are correctly processed through the recovery response path
   - Given: Recovery session with status=completed
   - When: `GetRecoverySessionResult()` returns RecoveryResponse
   - Then:
     - CRD status: Phase transitions correctly, RecoveryStatus populated
 - **UT-AA-064-017**: Recovery session lost -- same regeneration cap applies
-  - BR: BR-AA-HAPI-064.9, BR-AA-HAPI-064.5
+  - BR: BR-AA-KA-064.9, BR-AA-KA-064.5
   - Business Outcome: Recovery investigations have the same resilience guarantees as incident investigations
   - Given: Recovery session, `PollSession()` returns 404
   - Then: Same regeneration flow (Generation increment, cap at 5, escalation on exceed)
@@ -361,10 +361,10 @@ request lifecycle, so the submit → get-result pattern works without polling or
 
 ### 2.5 HTTP Endpoints (Recovery -- Dedicated)
 
-> **DEPRECATED for v1.0** (BR-AA-HAPI-064.9): Recovery endpoints are deprecated. These test scenarios are deferred until recovery is revisited.
+> **DEPRECATED for v1.0** (BR-AA-KA-064.9): Recovery endpoints are deprecated. These test scenarios are deferred until recovery is revisited.
 
 - **UT-HAPI-064-016**: ~~`POST /api/v1/recovery/analyze` returns 202 with session_id~~
-  - BR: BR-AA-HAPI-064.9
+  - BR: BR-AA-KA-064.9
   - Business Outcome: Recovery investigations use the same async pattern as incident investigations
   - Given: Valid RecoveryRequest body
   - Then: HTTP 202 Accepted, `{"session_id": "uuid"}`
@@ -392,7 +392,7 @@ request lifecycle, so the submit → get-result pattern works without polling or
 ### 3.1 Incident Flow + Audit Trace Validation
 
 - **IT-AA-064-001**: Full submit/poll/result happy path with real HAPI
-  - BR: BR-AA-HAPI-064.1, .2, .3, .4
+  - BR: BR-AA-KA-064.1, .2, .3, .4
   - Business Outcome: AA controller drives a complete async investigation lifecycle via CRD reconciliation
   - Given: envtest cluster, real HAPI (Mock LLM), AA controller running
   - When: AIAnalysis CRD created with Phase=Investigating
@@ -413,7 +413,7 @@ request lifecycle, so the submit → get-result pattern works without polling or
     - **Total AA events**: exactly 6
     - Each event validated: `correlationId`, `eventCategory="analysis"`, `eventAction`, `eventOutcome` per ADR-034
 - **IT-AA-064-003**: Session regeneration via simulated HAPI restart
-  - BR: BR-AA-HAPI-064.5, .7
+  - BR: BR-AA-KA-064.5, .7
   - Business Outcome: HAPI restart is transparent to the remediation pipeline -- controller self-heals and completes
   - Given: Session created, then Mock HAPI returns 404 for first poll (simulating restart), then normal on resubmit
   - Then:
@@ -432,7 +432,7 @@ request lifecycle, so the submit → get-result pattern works without polling or
     - `aianalysis.analysis.completed`: exactly 1
     - **Total AA events**: exactly 8
 - **IT-AA-064-005**: Audit trace exact counts -- regeneration cap exceeded (5 losses)
-  - BR: BR-AA-HAPI-064.6, BR-AUDIT-005
+  - BR: BR-AA-KA-064.6, BR-AUDIT-005
   - Business Outcome: Persistent HAPI instability failure path is fully auditable
   - Given: Mock HAPI returns 404 for every poll (5 consecutive losses)
   - Then: `countEventsByType` **exact** assertions:
@@ -443,7 +443,7 @@ request lifecycle, so the submit → get-result pattern works without polling or
     - **Total AA events**: exactly 11
     - CRD: Phase=Failed, SubReason="SessionRegenerationExceeded"
 - **IT-AA-064-006**: InvestigationSessionReady Condition lifecycle
-  - BR: BR-AA-HAPI-064.7
+  - BR: BR-AA-KA-064.7
   - Business Outcome: Operators can observe session health via standard K8s Conditions
   - Given: Full cycle with one session loss and regeneration
   - Then: Condition transitions verified at each stage:
@@ -454,16 +454,16 @@ request lifecycle, so the submit → get-result pattern works without polling or
 
 ### 3.2 Recovery Flow + Audit Trace Validation (Dedicated)
 
-> **DEPRECATED for v1.0** (BR-AA-HAPI-064.9): Recovery investigations are deprecated. These integration test scenarios are deferred.
+> **DEPRECATED for v1.0** (BR-AA-KA-064.9): Recovery investigations are deprecated. These integration test scenarios are deferred.
 
 - **IT-AA-064-007**: ~~Recovery submit/poll/result happy path~~
-  - BR: BR-AA-HAPI-064.9
+  - BR: BR-AA-KA-064.9
   - Business Outcome: Recovery investigations complete successfully using the async pattern
   - Given: AIAnalysis CRD with `IsRecoveryAttempt=true`
   - When: Controller reconciles
   - Then: Calls recovery endpoints (`/api/v1/recovery/analyze`, `/recovery/session/{id}`, `/recovery/session/{id}/result`), Phase reaches Completed
 - **IT-AA-064-008**: Recovery audit trace exact counts
-  - BR: BR-AA-HAPI-064.9, BR-AUDIT-005
+  - BR: BR-AA-KA-064.9, BR-AUDIT-005
   - Business Outcome: Recovery investigations produce the same audit completeness as incident investigations
   - Given: Full recovery submit/poll/result cycle
   - Then: `countEventsByType` **exact** assertions:
@@ -475,10 +475,10 @@ request lifecycle, so the submit → get-result pattern works without polling or
 
 CRD Events team completed issues #71-#73. These integration tests validate session lifecycle K8s events emitted by the InvestigatingHandler (via `WithRecorder`).
 
-**Location**: `test/integration/aianalysis/events_test.go` (within BR-AA-HAPI-064 session context)
+**Location**: `test/integration/aianalysis/events_test.go` (within BR-AA-KA-064 session context)
 
 - **IT-AA-064-01a**: SessionCreated on happy path
-  - BR: BR-AA-HAPI-064, DD-EVENT-001
+  - BR: BR-AA-KA-064, DD-EVENT-001
   - Business Outcome: Operators can observe that a HAPI session was created via K8s Events
   - Given: AIAnalysis CRD created, controller reconciles with `WithSessionMode()`
   - Then: Normal event with reason=`SessionCreated` emitted, message contains "session created"
@@ -506,7 +506,7 @@ CRD Events team completed issues #71-#73. These integration tests validate sessi
 ### 4.1 Incident Session Flow
 
 - **IT-HAPI-064-001**: Submit + poll + result via business logic
-  - BR: BR-AA-HAPI-064.1, .2, .3
+  - BR: BR-AA-KA-064.1, .2, .3
   - Business Outcome: HAPI processes an investigation asynchronously and produces a complete result
   - Given: Running HAPI with Mock LLM
   - When: Call `analyze_incident()` async (new session-based flow)
@@ -534,15 +534,15 @@ CRD Events team completed issues #71-#73. These integration tests validate sessi
 
 ### 4.2 Recovery Session Flow (Dedicated)
 
-> **DEPRECATED for v1.0** (BR-AA-HAPI-064.9): Recovery session endpoints are deprecated. These integration test scenarios are deferred.
+> **DEPRECATED for v1.0** (BR-AA-KA-064.9): Recovery session endpoints are deprecated. These integration test scenarios are deferred.
 
 - **IT-HAPI-064-005**: ~~Recovery submit + poll + result~~
-  - BR: BR-AA-HAPI-064.9
+  - BR: BR-AA-KA-064.9
   - Business Outcome: Recovery investigations work end-to-end through the async session pattern
   - Given: RecoveryRequest submitted
   - Then: Session created, background task calls recovery logic, result retrievable via recovery endpoint
 - **IT-HAPI-064-006**: Recovery session audit events emitted with exact counts
-  - BR: BR-AA-HAPI-064.9, BR-AUDIT-005
+  - BR: BR-AA-KA-064.9, BR-AUDIT-005
   - Business Outcome: Recovery audit trail is as complete as incident audit trail
   - Given: Full recovery session lifecycle
   - Then: After `audit_store.flush()`, **exact** assertions:
@@ -564,7 +564,7 @@ CRD Events team completed issues #71-#73. These integration tests validate sessi
 **Existing pattern reference**: `test/e2e/aianalysis/03_full_flow_test.go`, `test/e2e/aianalysis/suite_test.go`
 
 - **E2E-AA-064-001**: AA async submit/poll/result flow (incident)
-  - BR: BR-AA-HAPI-064.1 through .8
+  - BR: BR-AA-KA-064.1 through .8
   - Business Outcome: AA controller completes an async investigation in a real K8s environment
   - Given: Kind cluster with AA controller, DS, HAPI, Mock LLM deployed. No other controllers.
   - When: Test creates AIAnalysis CRD directly (no RO/Gateway)
@@ -585,62 +585,62 @@ CRD Events team completed issues #71-#73. These integration tests validate sessi
 #### Incident Session Endpoints (6 scenarios)
 
 - **E2E-HAPI-064-001**: Incident submit/poll/result for CrashLoopBackOff (happy path)
-  - BR: BR-AA-HAPI-064.1, .2, .3
+  - BR: BR-AA-KA-064.1, .2, .3
   - Business Outcome: Standard CrashLoopBackOff signal produces confident recommendation via async session
   - Endpoints: POST /incident/analyze (202), GET /incident/session/{id}, GET /incident/session/{id}/result
   - Assertions: session_id non-empty, status=completed, confidence ~0.88, needs_human_review=false
   - **Status**: Implemented
 - **E2E-HAPI-064-002**: Incident submit/poll/result for OOMKilled (happy path)
-  - BR: BR-AA-HAPI-064.1, .2, .3
+  - BR: BR-AA-KA-064.1, .2, .3
   - Business Outcome: OOMKilled signal produces confident recommendation via async session
   - Assertions: confidence ~0.88, needs_human_review=false
   - **Status**: Implemented
 - **E2E-HAPI-064-003**: No workflow found via session (MOCK_NO_WORKFLOW_FOUND)
-  - BR: BR-AA-HAPI-064.1, BR-HAPI-197
+  - BR: BR-AA-KA-064.1, BR-HAPI-197
   - Business Outcome: Escalation to human review with clear reason via session flow
   - Assertions: needs_human_review=true, human_review_reason=NoMatchingWorkflows, confidence=0, selected_workflow=nil
   - **Status**: Implemented
 - **E2E-HAPI-064-004**: Low confidence via session (MOCK_LOW_CONFIDENCE)
-  - BR: BR-AA-HAPI-064.1, BR-HAPI-197
+  - BR: BR-AA-KA-064.1, BR-HAPI-197
   - Business Outcome: Low-confidence recommendation returned for AA threshold evaluation
   - Assertions: needs_human_review=false (HAPI doesn't enforce thresholds), confidence <0.5, alternative_workflows present
   - **Status**: Implemented
 - **E2E-HAPI-064-005**: Max retries exhausted via session (MOCK_MAX_RETRIES_EXHAUSTED)
-  - BR: BR-AA-HAPI-064.1, BR-HAPI-197
+  - BR: BR-AA-KA-064.1, BR-HAPI-197
   - Business Outcome: Complete validation history for debugging after max retries
   - Assertions: needs_human_review=true, human_review_reason=LlmParsingError, 3 validation attempts, sequential attempt numbers
   - **Status**: Implemented
 - **E2E-HAPI-064-006**: Session status transitions observable during investigation
-  - BR: BR-AA-HAPI-064.2
+  - BR: BR-AA-KA-064.2
   - Business Outcome: Session status is queryable and reaches terminal state
   - Assertions: "completed" status observed (intermediate states may not be observable with Mock LLM speed)
   - **Status**: Implemented
 
 #### Recovery Session Endpoints (3 scenarios)
 
-> **DEPRECATED for v1.0** (BR-AA-HAPI-064.9): Recovery session E2E scenarios are deprecated and deferred.
+> **DEPRECATED for v1.0** (BR-AA-KA-064.9): Recovery session E2E scenarios are deprecated and deferred.
 
 - **E2E-HAPI-064-007**: ~~Recovery submit/poll/result happy path~~
-  - BR: BR-AA-HAPI-064.9
+  - BR: BR-AA-KA-064.9
   - Business Outcome: Recovery session endpoints work identically to incident endpoints
   - Endpoints: POST /recovery/analyze (202), GET /incident/session/{id}, GET /recovery/session/{id}/result
   - Assertions: can_recover=true, selected_workflow present, confidence ~0.85
   - **Status**: Implemented
 - **E2E-HAPI-064-008**: Recovery not reproducible via session (MOCK_NOT_REPRODUCIBLE)
-  - BR: BR-AA-HAPI-064.9, BR-HAPI-212
+  - BR: BR-AA-KA-064.9, BR-HAPI-212
   - Business Outcome: When issue self-resolved, recovery indicates no action needed
   - Assertions: can_recover=false, needs_human_review=false, selected_workflow=null, confidence ~0.85
   - **Status**: Implemented
 - **E2E-HAPI-064-009**: No recovery workflow found via session (MOCK_NO_WORKFLOW_FOUND)
-  - BR: BR-AA-HAPI-064.9, BR-HAPI-197
+  - BR: BR-AA-KA-064.9, BR-HAPI-197
   - Business Outcome: Escalation to human review when no recovery workflow available
   - Assertions: can_recover=true, needs_human_review=true, human_review_reason=NoMatchingWorkflows
   - **Status**: Implemented
 
 #### Complete Lifecycle (1 scenario)
 
-- **E2E-HAPI-064-010**: ~~Full incident then recovery via session endpoints~~ **DEPRECATED for v1.0** (BR-AA-HAPI-064.9)
-  - BR: BR-AA-HAPI-064.1, .9
+- **E2E-HAPI-064-010**: ~~Full incident then recovery via session endpoints~~ **DEPRECATED for v1.0** (BR-AA-KA-064.9)
+  - BR: BR-AA-KA-064.1, .9
   - ~~Business Outcome: End-to-end incident → recovery lifecycle using session endpoints~~
   - ~~Flow: Submit incident → poll → result → simulate failure → submit recovery → poll → result~~
   - ~~Assertions: both sessions complete, session IDs distinct, recovery selects workflow~~
@@ -649,12 +649,12 @@ CRD Events team completed issues #71-#73. These integration tests validate sessi
 #### Session Error Handling (2 scenarios)
 
 - **E2E-HAPI-064-011**: Poll non-existent session returns 404
-  - BR: BR-AA-HAPI-064.2, BR-AA-HAPI-064.5
+  - BR: BR-AA-KA-064.2, BR-AA-KA-064.5
   - Business Outcome: Invalid session IDs return clear HTTP 404 errors
   - Assertions: APIError with StatusCode=404
   - **Status**: Implemented
 - **E2E-HAPI-064-012**: Result for non-existent session returns 404
-  - BR: BR-AA-HAPI-064.3
+  - BR: BR-AA-KA-064.3
   - Business Outcome: Result retrieval for invalid sessions returns clear HTTP 404 errors
   - Assertions: APIError with StatusCode=404
   - **Status**: Implemented
@@ -719,16 +719,16 @@ Mock LLM itself does not need session endpoints (HAPI manages sessions internall
 
 | BR Requirement                              | Unit Scenarios                  | Integration Scenarios                | E2E Scenarios |
 | ------------------------------------------- | ------------------------------- | ------------------------------------ | ------------- |
-| BR-AA-HAPI-064.1 (Async Submit)             | AA-001, 002, 015                | AA-001, 007                          | AA-001        |
-| BR-AA-HAPI-064.2 (Session Polling)          | AA-003, 004, 005, 006, 007      | AA-001, 006                          | AA-001        |
-| BR-AA-HAPI-064.3 (Result Retrieval)         | AA-005, 016                     | AA-001, 007                          | AA-001        |
-| BR-AA-HAPI-064.4 (InvestigationSession CRD) | AA-001, 002                     | AA-001                               | AA-001        |
-| BR-AA-HAPI-064.5 (Regeneration)             | AA-002, 008, 009, 017           | AA-003, 004                          | -             |
-| BR-AA-HAPI-064.6 (Regeneration Cap)         | AA-010                          | AA-005                               | -             |
-| BR-AA-HAPI-064.7 (Condition)                | AA-001                          | AA-006                               | -             |
-| BR-AA-HAPI-064.8 (Requeue Backoff)          | AA-003, 004, 007                | AA-001                               | AA-001        |
-| BR-AA-HAPI-064.9 (Recovery)                 | AA-015, 016, 017                | AA-007, 008                          | AA-003        |
-| BR-AA-HAPI-064.10 (Timeout Removal)         | AA-014                          | -                                    | AA-001        |
+| BR-AA-KA-064.1 (Async Submit)             | AA-001, 002, 015                | AA-001, 007                          | AA-001        |
+| BR-AA-KA-064.2 (Session Polling)          | AA-003, 004, 005, 006, 007      | AA-001, 006                          | AA-001        |
+| BR-AA-KA-064.3 (Result Retrieval)         | AA-005, 016                     | AA-001, 007                          | AA-001        |
+| BR-AA-KA-064.4 (InvestigationSession CRD) | AA-001, 002                     | AA-001                               | AA-001        |
+| BR-AA-KA-064.5 (Regeneration)             | AA-002, 008, 009, 017           | AA-003, 004                          | -             |
+| BR-AA-KA-064.6 (Regeneration Cap)         | AA-010                          | AA-005                               | -             |
+| BR-AA-KA-064.7 (Condition)                | AA-001                          | AA-006                               | -             |
+| BR-AA-KA-064.8 (Requeue Backoff)          | AA-003, 004, 007                | AA-001                               | AA-001        |
+| BR-AA-KA-064.9 (Recovery)                 | AA-015, 016, 017                | AA-007, 008                          | AA-003        |
+| BR-AA-KA-064.10 (Timeout Removal)         | AA-014                          | -                                    | AA-001        |
 | BR-AUDIT-005 (Audit Traces)                 | AA-001, 005, 008 (side effects) | AA-002, 004, 005, 008; HAPI-003, 006 | AA-002        |
 
 ---
@@ -759,7 +759,7 @@ Mock LLM itself does not need session endpoints (HAPI manages sessions internall
 
 ## References
 
-- [BR-AA-HAPI-064](../../../docs/requirements/BR-AA-HAPI-064-session-based-pull-design.md)
+- [BR-AA-KA-064](../../../docs/requirements/BR-AA-KA-064-session-based-pull-design.md)
 - [DD-AA-HAPI-064](../../../docs/architecture/decisions/DD-AA-HAPI-064-session-based-pull-design.md)
 - [DD-EVENT-001](../../../docs/architecture/decisions/DD-EVENT-001-controller-event-registry.md)
 - [TESTING_GUIDELINES.md](../../development/business-requirements/TESTING_GUIDELINES.md)

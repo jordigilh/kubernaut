@@ -12,13 +12,13 @@ controller:
   leaderElectionId: aianalysis.kubernaut.ai
 
 # ========================================
-# HOLMESGPT-API CONNECTIVITY (BR-AI-007, BR-AA-HAPI-064)
+# HOLMESGPT-API CONNECTIVITY (BR-AI-007, BR-AA-KA-064)
 # ========================================
 holmesgpt:
   url: https://kubernaut-agent:8443
   # LLM RCA + 3-step workflow discovery can take 2-3 min with real Vertex AI
   timeout: 180s
-  # BR-AA-HAPI-064.8: Constant interval between session status polls.
+  # BR-AA-KA-064.8: Constant interval between session status polls.
   # Polling is normal async behavior, not error recovery.
   sessionPollInterval: 15s
 

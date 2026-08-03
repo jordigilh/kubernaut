@@ -161,6 +161,9 @@ ai:
     maxTurns: 40
     resolvedConfidenceThreshold: {{ $v.investigation.resolvedConfidenceThreshold }}
     inconclusiveConfidenceThreshold: {{ $v.investigation.inconclusiveConfidenceThreshold }}
+    safety:
+      anomaly:
+        maxTotalToolCalls: {{ $v.ai.safety.anomaly.maxTotalToolCalls }}
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
   alignmentCheck:
     enabled: true

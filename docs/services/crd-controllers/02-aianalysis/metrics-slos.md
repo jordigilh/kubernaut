@@ -10,7 +10,7 @@
 
 | Version | Date | Changes |
 |---------|------|---------|
-| v3.0 | 2026-08-02 | **#1806 CORRECTION**: Full rewrite. Rebuilt the metrics table, dashboard, alerts, and queries around the 4 metrics that actually exist in [`pkg/aianalysis/metrics/metrics.go`](../../../../pkg/aianalysis/metrics/metrics.go) (`aianalysis_rego_evaluations_total`, `aianalysis_approval_decisions_total`, `aianalysis_confidence_score_distribution`, `aianalysis_failures_total`). Removed all `aianalysis_holmesgpt_*`, `aianalysis_investigation_*`, and `aianalysis_workflow_*` metrics — none of these exist in code (client-side KA call metrics were intentionally removed; see Scope Note below). Replaced the 60-second-sync-call latency SLOs with SLOs grounded in the real async submit/poll/result session model (25-minute wall-clock cap, BR-AA-HAPI-064) |
+| v3.0 | 2026-08-02 | **#1806 CORRECTION**: Full rewrite. Rebuilt the metrics table, dashboard, alerts, and queries around the 4 metrics that actually exist in [`pkg/aianalysis/metrics/metrics.go`](../../../../pkg/aianalysis/metrics/metrics.go) (`aianalysis_rego_evaluations_total`, `aianalysis_approval_decisions_total`, `aianalysis_confidence_score_distribution`, `aianalysis_failures_total`). Removed all `aianalysis_holmesgpt_*`, `aianalysis_investigation_*`, and `aianalysis_workflow_*` metrics — none of these exist in code (client-side KA call metrics were intentionally removed; see Scope Note below). Replaced the 60-second-sync-call latency SLOs with SLOs grounded in the real async submit/poll/result session model (25-minute wall-clock cap, BR-AA-KA-064) |
 | v2.0 | 2025-11-30 | V1.0 ALIGNMENT: Updated approval metrics to signaling pattern (no AIApprovalRequest CRD); Added DetectedLabels/CustomLabels metrics; Updated phase names |
 | v1.0 | 2025-10-15 | Initial specification |
 
@@ -39,7 +39,7 @@ If you need per-investigation timing, use `AIAnalysis.status.investigationTime` 
 | **Auto-Approval Rate** | `approval_decisions{decision="auto_approved"} / approval_decisions_total` | 40-60% | Rego policy effectiveness (BR-AI-059) |
 | **AI Confidence (Avg)** | `avg(aianalysis_confidence_score_distribution)` | ≥0.80 | High-quality workflow selection (BR-AI-OBSERVABILITY-004) |
 | **Failure Rate** | `sum(rate(aianalysis_failures_total[1h]))` | Trend-monitored (no fleet-wide fixed target — depends on cluster alert volume) | Overall investigation health (BR-KA-197) |
-| **TransientError Share** | `failures{reason="TransientError"} / failures_total` | Trend-monitored | Async KA session health — covers both retry-exhaustion and the 25-minute session timeout cap (#1078, BR-AA-HAPI-064) |
+| **TransientError Share** | `failures{reason="TransientError"} / failures_total` | Trend-monitored | Async KA session health — covers both retry-exhaustion and the 25-minute session timeout cap (#1078, BR-AA-KA-064) |
 
 > **Note on denominators**: There is no "total investigations started" counter (client-side KA call counters were deliberately removed — see Scope Note). `aianalysis_confidence_score_distribution`'s sample count and `aianalysis_failures_total`'s sum are the closest available proxies for "successful" vs. "failed" investigation volume respectively (see `recordPhaseMetrics` in `internal/controller/aianalysis/metrics_recorder.go`), so ratio SLIs above use each metric family's own total as the denominator rather than a global count.
 
@@ -257,7 +257,7 @@ groups:
       summary: "AIAnalysis failure rate elevated"
       description: "{{ $value }} failures/hour across all reasons — inspect `sum by (reason, sub_reason) (aianalysis_failures_total)` for the dominant cause"
 
-  # Async session health: Transient/timeout failures (#1078, BR-AA-HAPI-064)
+  # Async session health: Transient/timeout failures (#1078, BR-AA-KA-064)
   - alert: AIAnalysisTransientFailuresElevated
     expr: |
       sum(rate(aianalysis_failures_total{reason="TransientError"}[1h])) > 2

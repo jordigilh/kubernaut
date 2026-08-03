@@ -183,6 +183,17 @@ func (d *AnomalyDetector) Reset() {
 	d.failureTracker = make(map[string]int)
 }
 
+// Clone returns a new AnomalyDetector with the same config and suspicious
+// patterns but freshly zeroed counters. Used to give each concurrent
+// investigation its own isolated budget instance (#1892) instead of sharing
+// a single pod-wide detector, whose Reset()/counter mutations would
+// otherwise silently corrupt other in-flight investigations.
+func (d *AnomalyDetector) Clone() *AnomalyDetector {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return NewAnomalyDetector(d.config, d.suspiciousPatterns)
+}
+
 func (d *AnomalyDetector) checkSuspiciousArgs(name string, args json.RawMessage) AnomalyResult {
 	if len(d.suspiciousPatterns) == 0 || len(args) == 0 {
 		return AnomalyResult{Allowed: true}

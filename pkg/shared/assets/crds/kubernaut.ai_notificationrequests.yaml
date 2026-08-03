@@ -187,7 +187,7 @@ spec:
                         type: boolean
                       humanReviewReason:
                         description: HumanReviewReason from Kubernaut Agent when needs_human_review=true
-                          (BR-HAPI-197).
+                          (BR-KA-197).
                         type: string
                       reason:
                         description: Reason is the high-level failure reason (e.g.,

@@ -111,6 +111,16 @@ var (
 		Code:    "not_driver",
 		Message: "Caller is not the active driver for this session",
 	}
+	// ErrCodeToolBudgetExhausted is returned when the AnomalyDetector's
+	// total tool-call budget trips mid-investigation (#1889 gap 1). Before
+	// this fix, ExtractContent wrapped ExhaustedResult{Reason:
+	// ReasonToolBudgetExhausted} in a plain fmt.Errorf, which ErrorBoundary
+	// then redacted to the generic ErrCodeInternalError — leaving the MCP
+	// client unable to distinguish "hit a real safety limit" from "server bug".
+	ErrCodeToolBudgetExhausted = &MCPError{
+		Code:    "tool_budget_exhausted",
+		Message: "Investigation exceeded the maximum number of tool calls allowed",
+	}
 )
 
 // ErrorBoundary wraps a tool handler error: if the error is already an MCPError

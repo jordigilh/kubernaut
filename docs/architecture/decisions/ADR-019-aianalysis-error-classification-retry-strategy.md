@@ -78,7 +78,7 @@ every error from a KA call into one of:
 | `Transient` | HTTP 5xx, unknown status | ✅ Yes | 5xx: No; unknown: Yes |
 | `Timeout` | `context.DeadlineExceeded`, `net.Error.Timeout()` | ✅ Yes | ❌ No |
 | `Network` | DNS failure, connection refused, generic `net.Error` | ✅ Yes | DNS/refused: Yes; generic: No |
-| `SessionLost` | 404 on session poll (BR-AA-HAPI-064.5) | Session regeneration, not standard retry | — |
+| `SessionLost` | 404 on session poll (BR-AA-KA-064.5) | Session regeneration, not standard retry | — |
 | `Permanent` (caller cancel) | `context.Canceled` | ❌ No | ❌ No |
 
 ### Retry Schedule (Exponential Backoff, Actual)
