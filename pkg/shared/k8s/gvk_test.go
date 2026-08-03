@@ -64,6 +64,42 @@ func (m *mockRESTMapper) ResourceSingularizer(resource string) (string, error) {
 	panic("not implemented")
 }
 
+// resettableMockMapper simulates a restmapper.DeferredDiscoveryRESTMapper whose first
+// KindsFor call misses a CRD group (as if it were absent from the pod's first discovery
+// round — #1888) but resolves correctly once Reset() is called and the lookup retried.
+type resettableMockMapper struct {
+	*mockRESTMapper
+	kindsForCalls    int
+	resetCalls       int
+	postResetResults map[string][]schema.GroupVersionKind
+}
+
+func (m *resettableMockMapper) KindsFor(resource schema.GroupVersionResource) ([]schema.GroupVersionKind, error) {
+	m.kindsForCalls++
+	if m.resetCalls > 0 {
+		if gvks, ok := m.postResetResults[resource.Resource]; ok {
+			return gvks, nil
+		}
+		return nil, &meta.NoResourceMatchError{PartialResource: resource}
+	}
+	return m.mockRESTMapper.KindsFor(resource)
+}
+
+func (m *resettableMockMapper) Reset() {
+	m.resetCalls++
+}
+
+// alwaysFailingResettableMapper simulates a mapper that still cannot resolve a kind even
+// after Reset() — e.g., a genuinely invalid/typo'd Kind, or discovery still down.
+type alwaysFailingResettableMapper struct {
+	*mockRESTMapper
+	resetCalls int
+}
+
+func (m *alwaysFailingResettableMapper) Reset() {
+	m.resetCalls++
+}
+
 var _ = Describe("ResolveGVKForKind (#310)", func() {
 
 	// Mock REST mapper that returns metrics.k8s.io/v1beta1/Node first —
@@ -143,6 +179,61 @@ var _ = Describe("ResolveGVKForKind (#310)", func() {
 
 		It("should return error when kind is unknown and mapper is nil", func() {
 			_, err := k8sutil.ResolveGVKForKind(nil, "NonExistentKind")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("NonExistentKind"))
+		})
+	})
+
+	Context("REST mapper self-heal on lookup failure (#1888)", func() {
+		It("UT-K8S-1888-001: resolves a kind that missed the first discovery round once Reset() retries", func() {
+			mapper := &resettableMockMapper{
+				mockRESTMapper: &mockRESTMapper{},
+				// meta.UnsafeGuessKindToResource("Search") guesses the plural "searchs"
+				// (the naive heuristic doesn't know the real CRD plural is "searches" —
+				// irrelevant here since this mock controls resolution directly).
+				postResetResults: map[string][]schema.GroupVersionKind{
+					"searchs": {{Group: "search.open-cluster-management.io", Version: "v1alpha1", Kind: "Search"}},
+				},
+			}
+
+			gvk, err := k8sutil.ResolveGVKForKind(mapper, "Search")
+
+			Expect(err).NotTo(HaveOccurred(),
+				"a kind missing from the first discovery round must self-heal on retry, not stay permanently unresolvable")
+			Expect(gvk).To(Equal(schema.GroupVersionKind{
+				Group: "search.open-cluster-management.io", Version: "v1alpha1", Kind: "Search",
+			}))
+		})
+
+		It("UT-K8S-1888-002: retries exactly once — Reset() and KindsFor are not called in an unbounded loop", func() {
+			mapper := &resettableMockMapper{
+				mockRESTMapper: &mockRESTMapper{},
+				postResetResults: map[string][]schema.GroupVersionKind{
+					"searchs": {{Group: "search.open-cluster-management.io", Version: "v1alpha1", Kind: "Search"}},
+				},
+			}
+
+			_, err := k8sutil.ResolveGVKForKind(mapper, "Search")
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(mapper.resetCalls).To(Equal(1), "Reset() must be called exactly once on failure, not looped")
+			Expect(mapper.kindsForCalls).To(Equal(2), "KindsFor must be called exactly twice: once before Reset(), once after")
+		})
+
+		It("UT-K8S-1888-003: propagates the original error when the kind is still unresolvable after Reset()", func() {
+			mapper := &alwaysFailingResettableMapper{mockRESTMapper: &mockRESTMapper{}}
+
+			_, err := k8sutil.ResolveGVKForKind(mapper, "TrulyUnknownKind")
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("TrulyUnknownKind"))
+			Expect(mapper.resetCalls).To(Equal(1), "Reset() should still be attempted once even though it doesn't help")
+		})
+
+		It("UT-K8S-1888-004: a mapper without Reset() behaves exactly as before (no retry, no panic)", func() {
+			// metricsMapper (plain mockRESTMapper) does not implement meta.ResettableRESTMapper.
+			_, err := k8sutil.ResolveGVKForKind(metricsMapper, "NonExistentKind")
+
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("NonExistentKind"))
 		})
