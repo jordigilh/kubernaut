@@ -1215,6 +1215,19 @@
                 }
               ],
               "description": "BR-AI-076: nil = use Rego default (0.8)"
+            },
+            "lowConfidenceFloor": {
+              "oneOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "BR-AI-088.4, Issue #1828: Investigating-phase floor for auto-proceeding with a KA-selected workflow (distinct from confidenceThreshold above, which tunes the later Rego auto-approval gate). nil = use the built-in 70% default."
             }
           }
         },

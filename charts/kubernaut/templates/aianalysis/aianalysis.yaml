@@ -41,6 +41,9 @@ rego:
   {{- if .Values.aianalysis.rego.confidenceThreshold }}
   confidenceThreshold: {{ .Values.aianalysis.rego.confidenceThreshold }}
   {{- end }}
+  {{- if .Values.aianalysis.rego.lowConfidenceFloor }}
+  lowConfidenceFloor: {{ .Values.aianalysis.rego.lowConfidenceFloor }}
+  {{- end }}
 {{- end }}
 ---
 apiVersion: v1

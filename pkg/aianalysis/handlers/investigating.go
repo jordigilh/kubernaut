@@ -122,6 +122,17 @@ func WithISPhaseUpdater(updater ISPhaseUpdater) InvestigatingHandlerOption {
 	}
 }
 
+// WithLowConfidenceFloor sets the operator-configurable floor for
+// auto-proceeding with a KA-selected workflow (BR-AI-088.4, Issue #1828).
+// nil (the default when this option is omitted) means "use the built-in 70%
+// floor". Delegates to the internal ResponseProcessor, constructed before
+// options are applied in NewInvestigatingHandler.
+func WithLowConfidenceFloor(floor *float64) InvestigatingHandlerOption {
+	return func(h *InvestigatingHandler) {
+		h.processor.WithLowConfidenceFloor(floor)
+	}
+}
+
 // P1.3 Refactoring: AuditClientInterface moved to interfaces.go
 
 // NewInvestigatingHandler creates a new InvestigatingHandler

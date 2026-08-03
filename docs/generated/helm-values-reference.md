@@ -17,6 +17,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `policies.content` | string |  | `""` | No |
 | `policies.existingConfigMap` | string |  | `""` | No |
 | `rego.confidenceThreshold` | object | BR-AI-076: nil = use Rego default (0.8) | `` | No |
+| `rego.lowConfidenceFloor` | object | BR-AI-088.4, Issue #1828: Investigating-phase floor for auto-proceeding with a KA-selected workflow (distinct from confidenceThreshold above, which tunes the later Rego auto-approval gate). nil = use the built-in 70% default. | `` | No |
 | `replicas` | integer |  | `1` | No |
 | `resources.limits.cpu` | string | Kubernetes resource quantity (e.g., 256Mi, 100m) | `` | No |
 | `resources.limits.memory` | string | Kubernetes resource quantity (e.g., 256Mi, 100m) | `` | No |

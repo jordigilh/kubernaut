@@ -297,7 +297,8 @@ func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerN
 		handlers.WithSessionMode(),                                      // BR-AA-HAPI-064: Async submit/poll/result flow
 		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval), // BR-AA-HAPI-064.8: From config
 		handlers.WithInvestigationSessionChecker(isChecker),             // BR-INTERACTIVE-010: IS CRD awareness
-		handlers.WithISPhaseUpdater(isPhaseUpdater))                     // BR-INTERACTIVE-010: Set IS Active after submit
+		handlers.WithISPhaseUpdater(isPhaseUpdater),                     // BR-INTERACTIVE-010: Set IS Active after submit
+		handlers.WithLowConfidenceFloor(cfg.Rego.LowConfidenceFloor))    // BR-AI-088.4, #1828: operator-configurable floor
 	analyzingHandler := handlers.NewAnalyzingHandler(clients.regoEvaluator, controllerLog, aianalysisMetrics, clients.auditClient).
 		WithConfidenceThreshold(cfg.Rego.ConfidenceThreshold) // #225: operator-configurable threshold
 
