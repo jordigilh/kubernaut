@@ -523,3 +523,46 @@ var _ = Describe("Prompt #1430 / BR-HAPI-200: No-action exception in Phase 1 CRI
 			"#1430 / AU-3: prompt must document empty options list for no-action scenario")
 	})
 })
+
+// =============================================================================
+// Issue #1899: Alert Prioritization must not override the Observation Mode
+// consent gate. Live-repro'd on a shared cluster: a bare "list active alerts"
+// query caused the LLM to autonomously call kubernaut_investigate_alert with
+// zero user consent, because the unconditional "Always use
+// kubernaut_investigate_alert..." directive had no gate on user intent/mode.
+// This is a defense-in-depth textual fix alongside the harness-enforced
+// consent guard (DD-AF-011): even within a single genuine turn (no
+// reinvocation involved), the prompt must not let Alert Prioritization
+// override Observation Mode's "unless the user EXPLICITLY requests it" rule.
+// =============================================================================
+
+var _ = Describe("Prompt — Alert Prioritization Consent Gate (#1899)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1899-010: AC-6/SI-10 Alert Prioritization declares itself subordinate to Observation Mode", func() {
+		Expect(instruction).To(ContainSubstring("SUBORDINATE TO THE DECISION ALGORITHM AND OBSERVATION MODE"),
+			"#1899: Alert Prioritization must explicitly state it never overrides the consent gate")
+	})
+
+	It("UT-AF-1899-011: AC-6 prompt explicitly forbids treating a bare list/show/status as an implicit investigate request", func() {
+		Expect(instruction).To(ContainSubstring("Do NOT treat a `prioritized` field in that response as an implicit instruction to investigate anything"),
+			"#1899: a list_alerts response's prioritized field must not be read as investigation consent")
+	})
+
+	It("UT-AF-1899-012: AC-6/SI-10 kubernaut_investigate_alert directive is gated on a prior investigate/fix/diagnose trigger", func() {
+		Expect(instruction).To(ContainSubstring("ONLY when the user's message already matched the Interactive/Autonomous/Full-Interactive-Remediation triggers above"),
+			"#1899: kubernaut_investigate_alert must only fire once the user's intent already matched an investigate/fix trigger, not a bare list/show/status query")
+		Expect(instruction).To(ContainSubstring("If the user's message was purely informational, do NOT call `kubernaut_investigate_alert`"),
+			"#1899: prompt must explicitly forbid investigate_alert on purely informational messages")
+	})
+
+	It("UT-AF-1899-013: AC-6 prompt does not contain the old unconditional investigate_alert directive", func() {
+		Expect(instruction).NotTo(ContainSubstring("Always use `kubernaut_investigate_alert` with `alerts[selected_index]` unless the user explicitly picks a different one from `tied_indices`.\n\n## Output Style"),
+			"#1899: the unconditional (unqualified) directive must not survive verbatim adjacent to the next section")
+	})
+})

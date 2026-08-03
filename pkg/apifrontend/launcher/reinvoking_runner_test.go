@@ -78,10 +78,16 @@ func toolCallModelEvent(invocationID string) *adksession.Event {
 var _ = Describe("reinvokingRunner (BR-SESS-013, issue #1776)", func() {
 	It("UT-AF-REINV-002: Run() re-invokes when last event has no tool call (session Active, count < Max)", func() {
 		sessionSvc := adksession.InMemoryService()
-		_, err := sessionSvc.Create(context.Background(), &adksession.CreateRequest{
+		createResp, err := sessionSvc.Create(context.Background(), &adksession.CreateRequest{
 			AppName: "test-app", UserID: "user-1", SessionID: "sess-1",
 		})
 		Expect(err).NotTo(HaveOccurred())
+		// DD-AF-011 (#1899): reinvocation now also requires an active driver
+		// session in state -- this test represents a genuinely stalled
+		// mid-investigation continuation, so declare one.
+		driverEvt := adksession.NewEvent("setup")
+		driverEvt.Actions.StateDelta = map[string]any{session.StateKeyDriverActive: true}
+		Expect(sessionSvc.AppendEvent(context.Background(), createResp.Session, driverEvt)).To(Succeed())
 
 		fake := &scriptedRunner{
 			sessionSvc: sessionSvc,
@@ -127,5 +133,157 @@ var _ = Describe("reinvokingRunner (BR-SESS-013, issue #1776)", func() {
 		Expect(fake.calls).To(HaveLen(1),
 			"Run() must NOT re-invoke the inner runner when the last event already contains a tool call")
 		Expect(events).To(HaveLen(1))
+	})
+})
+
+// checkpointRunnerCall records the DD-AF-011 (#1899) checkpoint-flag values
+// observed in session state at the moment a given inner Run() call started,
+// so tests can prove exactly when (and how often) clearing happened.
+type checkpointRunnerCall struct {
+	phase2AtEntry any
+	phase3AtEntry any
+}
+
+// checkpointObservingRunner is a fake inner Runner that records the
+// checkpoint-flag state visible at the start of each call, optionally
+// applying a scripted mid-call state mutation (sideEffects) before yielding
+// its response event -- used to simulate a tool call (e.g. a re-triggered
+// kubernaut_investigate) re-blocking a checkpoint within the same genuine
+// top-level turn.
+type checkpointObservingRunner struct {
+	sessionSvc  adksession.Service
+	appName     string
+	responses   []*adksession.Event
+	sideEffects map[int]map[string]any
+	calls       []checkpointRunnerCall
+}
+
+func (r *checkpointObservingRunner) Run(ctx context.Context, userID, sessionID string, _ *genai.Content, _ agent.RunConfig) iter.Seq2[*adksession.Event, error] {
+	callIdx := len(r.calls)
+	return func(yield func(*adksession.Event, error) bool) {
+		resp, err := r.sessionSvc.Get(ctx, &adksession.GetRequest{AppName: r.appName, UserID: userID, SessionID: sessionID})
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		p2, _ := resp.Session.State().Get(session.StateKeyPhase2Blocked)
+		p3, _ := resp.Session.State().Get(session.StateKeyPhase3Blocked)
+		r.calls = append(r.calls, checkpointRunnerCall{phase2AtEntry: p2, phase3AtEntry: p3})
+
+		if delta, ok := r.sideEffects[callIdx]; ok {
+			effect := adksession.NewEvent("side-effect")
+			effect.Actions.StateDelta = delta
+			if appendErr := r.sessionSvc.AppendEvent(ctx, resp.Session, effect); appendErr != nil {
+				yield(nil, appendErr)
+				return
+			}
+		}
+
+		if callIdx >= len(r.responses) {
+			return
+		}
+		refreshed, err := r.sessionSvc.Get(ctx, &adksession.GetRequest{AppName: r.appName, UserID: userID, SessionID: sessionID})
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		event := r.responses[callIdx]
+		if appendErr := r.sessionSvc.AppendEvent(ctx, refreshed.Session, event); appendErr != nil {
+			yield(nil, appendErr)
+			return
+		}
+		yield(event, nil)
+	}
+}
+
+var _ = Describe("reinvokingRunner checkpoint-flag clearing (DD-AF-011, #1899)", func() {
+	const appName = "test-app"
+
+	It("IT-AF-1899-006: a genuine top-level Run() call clears leftover checkpoint flags before invoking the inner runner", func() {
+		ctx := context.Background()
+		sessionSvc := adksession.InMemoryService()
+		createResp, err := sessionSvc.Create(ctx, &adksession.CreateRequest{
+			AppName: appName, UserID: "user-1", SessionID: "sess-ckpt-1",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		// Simulate leftover blocked checkpoints from a prior turn (e.g. the
+		// user asked a question mid-investigation and never confirmed).
+		leftover := adksession.NewEvent("leftover")
+		leftover.Actions.StateDelta = map[string]any{
+			session.StateKeyPhase2Blocked: true,
+			session.StateKeyPhase3Blocked: true,
+		}
+		Expect(sessionSvc.AppendEvent(ctx, createResp.Session, leftover)).To(Succeed())
+
+		fake := &checkpointObservingRunner{
+			sessionSvc: sessionSvc,
+			appName:    appName,
+			responses:  []*adksession.Event{toolCallModelEvent("inv-1")},
+		}
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, appName, logr.Discard())
+
+		for _, runErr := range rr.Run(ctx, "user-1", "sess-ckpt-1", genai.NewContentFromText("go ahead", genai.RoleUser), agent.RunConfig{}) {
+			Expect(runErr).NotTo(HaveOccurred())
+		}
+
+		Expect(fake.calls).To(HaveLen(1))
+		Expect(fake.calls[0].phase2AtEntry).To(Equal(false),
+			"a genuine top-level user turn must clear af_phase2_blocked before the inner runner is ever invoked")
+		Expect(fake.calls[0].phase3AtEntry).To(Equal(false),
+			"a genuine top-level user turn must clear af_phase3_blocked before the inner runner is ever invoked")
+	})
+
+	It("IT-AF-1899-007: a checkpoint re-blocked mid-turn correctly suppresses reinvocation and is NOT wiped by Run() itself afterward", func() {
+		ctx := context.Background()
+		sessionSvc := adksession.InMemoryService()
+		createResp, err := sessionSvc.Create(ctx, &adksession.CreateRequest{
+			AppName: appName, UserID: "user-1", SessionID: "sess-ckpt-2",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		leftover := adksession.NewEvent("leftover")
+		leftover.Actions.StateDelta = map[string]any{
+			session.StateKeyPhase2Blocked: true,
+			session.StateKeyDriverActive:  true,
+		}
+		Expect(sessionSvc.AppendEvent(ctx, createResp.Session, leftover)).To(Succeed())
+
+		fake := &checkpointObservingRunner{
+			sessionSvc: sessionSvc,
+			appName:    appName,
+			// call 0 re-blocks phase2 mid-turn (as phaseGuardAfter would
+			// after an in-turn kubernaut_investigate) and ends with a
+			// text-only event (no tool call). Per DD-AF-011 (#1899), a
+			// blocked checkpoint must ALSO suppress reinvocation itself
+			// (never nudge past a gate the harness just put up) -- so this
+			// call is expected to be the ONLY inner call for this turn.
+			sideEffects: map[int]map[string]any{
+				0: {session.StateKeyPhase2Blocked: true},
+			},
+			responses: []*adksession.Event{
+				textOnlyModelEvent("inv-1", "let me think about that"),
+				toolCallModelEvent("inv-2"),
+			},
+		}
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, appName, logr.Discard())
+
+		for _, runErr := range rr.Run(ctx, "user-1", "sess-ckpt-2", genai.NewContentFromText("go ahead", genai.RoleUser), agent.RunConfig{}) {
+			Expect(runErr).NotTo(HaveOccurred())
+		}
+
+		Expect(fake.calls).To(HaveLen(1),
+			"a checkpoint re-blocked mid-turn must suppress reinvocation for the rest of THIS turn -- "+
+				"the model must wait for the user, not be nudged again")
+		Expect(fake.calls[0].phase2AtEntry).To(Equal(false),
+			"the genuine top-level call must see the leftover checkpoint cleared before it runs")
+
+		getResp, err := sessionSvc.Get(ctx, &adksession.GetRequest{AppName: appName, UserID: "user-1", SessionID: "sess-ckpt-2"})
+		Expect(err).NotTo(HaveOccurred())
+		final, err := getResp.Session.State().Get(session.StateKeyPhase2Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(final).To(Equal(true),
+			"Run() must NOT clear the checkpoint flag a second time after correctly deciding not to reinvoke -- "+
+				"clearCheckpointFlags only runs once, at genuine top-level entry, never mid-loop")
 	})
 })
