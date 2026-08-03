@@ -163,7 +163,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		"sessionMode", h.useSessionMode,
 	)
 
-	// AA-HAPI-001: Idempotency is handled at controller level (phase_handlers.go:125-130)
+	// AA-KA-001: Idempotency is handled at controller level (phase_handlers.go:125-130)
 	// via AtomicStatusUpdate callback with APIReader refetch. No handler-level check needed.
 
 	// BR-AA-KA-064: Use async session-based flow when enabled
@@ -194,7 +194,7 @@ func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv
 		return h.handleError(ctx, analysis, err)
 	}
 
-	// AA-HAPI-001: Set ObservedGeneration immediately after successful KA call
+	// AA-KA-001: Set ObservedGeneration immediately after successful KA call
 	// This prevents duplicate KA calls when controller reconciles before status persists
 	// DD-CONTROLLER-001 v3.0 Pattern C: Set before phase transition
 	analysis.Status.ObservedGeneration = analysis.Generation

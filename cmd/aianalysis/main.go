@@ -277,7 +277,7 @@ func wireAIAnalysisClients(ctx context.Context, cfg *config.Config) *aiAnalysisC
 
 // setupAIAnalysisReconciler creates the metrics collector (DD-METRICS-001),
 // the Investigating/Analyzing phase handlers (BR-AI-007, BR-AI-012), the
-// atomic status manager (DD-PERF-001, AA-HAPI-001), and wires the
+// atomic status manager (DD-PERF-001, AA-KA-001), and wires the
 // AIAnalysisReconciler into mgr. Also registers the healthz/readyz checks,
 // including the cache-sync-aware readyz check that prevents premature
 // reconciliation before controller watches are established. Exits the
@@ -302,9 +302,9 @@ func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerN
 		WithConfidenceThreshold(cfg.Rego.ConfidenceThreshold) // #225: operator-configurable threshold
 
 	// DD-PERF-001: Atomic status updates reduce K8s API calls by 50-75%.
-	// AA-HAPI-001: Pass APIReader to bypass cache for fresh refetches.
+	// AA-KA-001: Pass APIReader to bypass cache for fresh refetches.
 	statusManager := aistatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
-	setupLog.Info("AIAnalysis status manager initialized (DD-PERF-001 + AA-HAPI-001)")
+	setupLog.Info("AIAnalysis status manager initialized (DD-PERF-001 + AA-KA-001)")
 
 	aaReconciler := &aianalysis.AIAnalysisReconciler{
 		Client:           mgr.GetClient(),

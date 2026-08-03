@@ -838,7 +838,7 @@ timeoutSeconds: 120
 		Scheme:           k8sManager.GetScheme(),
 		Recorder:         eventRecorder,
 		Log:              ctrl.Log.WithName("aianalysis-controller"),
-		StatusManager:    status.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader()), // DD-PERF-001 + AA-HAPI-001: Cache-bypassed refetch
+		StatusManager:    status.NewManager(k8sManager.GetClient(), k8sManager.GetAPIReader()), // DD-PERF-001 + AA-KA-001: Cache-bypassed refetch
 		AnalyzingHandler: analyzingHandler,
 		AuditClient:      auditClient,
 	}
