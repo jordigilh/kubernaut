@@ -170,8 +170,19 @@ func (s *kaInteractiveFleetBridgeScenario) ConfigForContext(ctx *DetectionContex
 
 	// evidence only appears in ctx.AllText once the tool result (turn 2) has
 	// been appended to the conversation with the correct cluster's live
-	// object data.
-	if ctx != nil && strings.Contains(ctx.AllText, kaInteractiveFleetEvidence) {
+	// object data. ctx.AllText is lowercased by buildDetectionContext
+	// (test/services/mock-llm/handlers/openai.go), so the comparison must
+	// lowercase kaInteractiveFleetEvidence too -- CI RCA for run 30853023883
+	// (job 91823709232, E2E-FLEET-018) proved the mixed-case "247Mi" never
+	// matched the lowercase haystack even when resources_get's real tool
+	// result genuinely carried "247Mi" (the K8s memory quantity string is
+	// case-sensitive, e.g. "247Mi" not "247mi"), so this branch silently
+	// never fired and ConfigForContext fell through to
+	// cfg.MultiToolCalls -- which handleFullDAG's hasToolResults guard then
+	// suppressed on the second call (tool result already present), landing
+	// on the generic DAG default response instead of the expected evidence
+	// text.
+	if ctx != nil && strings.Contains(ctx.AllText, strings.ToLower(kaInteractiveFleetEvidence)) {
 		// #1768 Track 2 Gap D spike finding: EventTypeToolResult has no
 		// FormatEventForUser case (pkg/apifrontend/tools/ka_investigate_bridge.go)
 		// and is silently dropped from the A2A artifact stream, so the raw

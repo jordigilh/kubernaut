@@ -948,6 +948,25 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		// found: every interactive/mcp-labeled FP E2E spec failed this way against
 		// the Helm-deployed chart, whose default leaves interactive mode off).
 		"--set", "kubernautAgent.interactive.enabled=true",
+		// #1894 gap found via must-gather RCA on E2E-FP-1853-002: the chart's
+		// own default for interactive.rateLimitPerUser is 20 req/s (burst 40,
+		// see _generated_defaults.tpl), never overridden here -- unlike the
+		// raw-manifest KA deployment path (test/infrastructure/
+		// kubernautagent.go, used by the standalone kubernautagent/apifrontend
+		// E2E suites), which was already bumped 20->40 for this exact
+		// symptom by #1853 (commit 3f9a5a102). fullpipeline (and fleet, which
+		// bootstraps from this same helm install) were missed, so every
+		// parallel Ginkgo spec sharing the "e2e-user-sre" JWT identity still
+		// contends for a 20rps/40-burst bucket: confirmed by the KA pod's own
+		// startup log ("rateLimitPerUser":20) and by kubernaut_discover_workflows/
+		// kubernaut_select_workflow failing with 429 "Too Many Requests" mid
+		// MCP-session-pool reuse, which starves kubernaut_watch of a selected
+		// workflow -- the RemediationRequest never reaches a terminal phase,
+		// so watch blocks until the test's 6-minute client timeout fires
+		// ("context deadline exceeded"), well before its own internal
+		// 15-minute maxWatchDuration. Matches the anchor value in
+		// test/infrastructure/kubernautagent.go/apifrontend_e2e.go.
+		"--set", "kubernautAgent.interactive.rateLimitPerUser=40",
 		// Gateway/DataStorage/APIFrontend: pinned chart-level NodePort (DD-TEST-001
 		// port allocation: 30080/30081/30443, pre-mapped host-reachable in
 		// kind-fullpipeline-config.yaml's extraPortMappings) + ipBlock ingressCIDRs
