@@ -2583,7 +2583,7 @@
                 "llmProfileRef": {
                   "type": "string",
                   "default": "",
-                  "description": "DD-PLATFORM-007: name of an entry in global.llmProfiles for severity-triage's LLM fallback tiers, independent of API Frontend's own apifrontend.llmProfileRef connection. Empty (default) inherits API Frontend's own resolved profile, matching the Kubernaut Operator's APIFrontendSeverityTriageSpec.LLMProfileRef behavior. Newly exposed -- this Go capability (Config.SeverityTriage.LLM) existed but was previously unreachable via Helm. May reference a profile with a different provider/credentialsSecretName than API Frontend's own; the one exception is vertex_ai: when both resolve to vertex_ai, they must share credentialsSecretName (kubernaut#1731), enforced with a fail() guard."
+                  "description": "DD-PLATFORM-007: name of an entry in global.llmProfiles for severity-triage's LLM fallback tiers, independent of API Frontend's own apifrontend.llmProfileRef connection. Empty (default) inherits API Frontend's own resolved profile, matching the Kubernaut Operator's APIFrontendSeverityTriageSpec.LLMProfileRef behavior. Newly exposed -- this Go capability (Config.SeverityTriage.LLM) existed but was previously unreachable via Helm. May reference a profile with a different provider/credentialsSecretName than API Frontend's own, including two independent vertex_ai profiles (kubernaut#1861 lifted the earlier kubernaut#1731 restriction requiring both to share the same credentialsSecretName)."
                 },
                 "llmEnabled": {
                   "type": "boolean",
