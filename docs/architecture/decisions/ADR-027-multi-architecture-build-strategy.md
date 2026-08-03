@@ -55,6 +55,13 @@ This pattern affects **all 11+ Kubernaut services** and will impact every develo
 - **Runtime Stage**: `registry.access.redhat.com/ubi10/ubi-minimal:latest`
 
 #### **For Python Services** (e.g., HolmesGPT API)
+
+> **⚠️ CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**:
+> "HolmesGPT API" was the pre-rewrite name of what is now Kubernaut Agent (KA), rewritten to native
+> Go per issue #433 (see `docker/kubernautagent.Dockerfile`). No Python-based production service
+> remains in Kubernaut today; this pattern is retained for reference should a future Python-based
+> service be added.
+
 - **Build Stage**: `registry.access.redhat.com/ubi10/python-312:latest`
 - **Runtime Stage**: `registry.access.redhat.com/ubi10/python-312:latest`
 
@@ -422,7 +429,8 @@ build-image:
 
 **Stateless Services**:
 6. gateway-service - Status TBD
-7. **kubernaut-agent-service** - ✅ **Already UBI10 Compliant** (Python UBI10)
+7. **kubernaut-agent-service** - ✅ **Already UBI10 Compliant** (Python UBI10 at time of writing;
+   rewritten to native Go per issue #433 — see `docker/kubernautagent.Dockerfile`, still UBI10-based)
 8. **context-api-service** - ⚠️ **Requires UBI10 Implementation** (new service)
 9. data-storage-service - Status TBD
 10. effectiveness-monitor-service - Status TBD
@@ -564,7 +572,7 @@ build-image:
 |---|---|---|---|---|---|
 | **notification** | alpine/distroless | UBI10 Go + minimal | **P1 - HIGH** | 2-3 hours | Week 2 |
 | **context-api** | N/A (new) | UBI10 Go + minimal | **P1 - HIGH** | 1 hour (doc only) | Day 9 |
-| **kubernaut-agent** | UBI10 Python ✅ | N/A (compliant) | N/A | 0 hours | ✅ Complete |
+| **kubernaut-agent** | UBI10 Python ✅ (at time of writing; now UBI10 Go per issue #433) | N/A (compliant) | N/A | 0 hours | ✅ Complete |
 | **workflow-service** | UBI10 Go ✅ | N/A (compliant) | N/A | 0 hours | ✅ Complete |
 | Other services | TBD | UBI10 (appropriate) | P2-P3 | TBD | Weeks 3-4 |
 

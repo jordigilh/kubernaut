@@ -769,7 +769,7 @@ Go 1.13 introduced error wrapping with `%w` verb. Always use `%w` to preserve er
 ```go
 // ✅ CORRECT: Use %w to wrap errors
 func (s *AIAnalysisService) analyzeAlert(ctx context.Context, alert *Alert) error {
-    result, err := s.holmesClient.Analyze(ctx, alert)
+    result, err := s.kaClient.Analyze(ctx, alert)
     if err != nil {
         return fmt.Errorf("KA analysis failed: %w", err)
     }
@@ -1008,12 +1008,12 @@ var ServiceTimeouts = map[string]time.Duration{
     "data-storage-write":     10 * time.Second,
     "gateway-webhook":        30 * time.Second,
     "context-api-query":      15 * time.Second,
-    "holmesgpt-analysis":     60 * time.Second,
+    "ka-analysis":            60 * time.Second,
     "notification-send":      30 * time.Second,
     "effectiveness-assess":   45 * time.Second,
 
     // External Service Timeouts
-    "holmesgpt-external":     120 * time.Second,
+    "ka-external":            120 * time.Second,
     "prometheus-query":       30 * time.Second,
     "kubernetes-api":         15 * time.Second,
     "redis-operation":        5 * time.Second,
@@ -1215,12 +1215,12 @@ func (rb *RetryBudget) Remaining() int {
 
 ```go
 // Example: Retry with backoff for upstream service call
-func (s *AIAnalysisService) callHolmesGPT(ctx context.Context, req *AnalysisRequest) (*AnalysisResponse, error) {
+func (s *AIAnalysisService) callKubernautAgent(ctx context.Context, req *AnalysisRequest) (*AnalysisResponse, error) {
     var resp *AnalysisResponse
 
     err := retry.RetryWithBackoff(ctx, retry.NormalRetry, func() error {
         var err error
-        resp, err = s.holmesClient.Analyze(ctx, req)
+        resp, err = s.kaClient.Analyze(ctx, req)
         if err != nil {
             // Classify error to determine if retryable
             if isNetworkError(err) {
@@ -1291,7 +1291,7 @@ type Config struct {
 }
 
 var Configurations = map[string]Config{
-    "holmesgpt-external": {
+    "ka-external": {
         MaxFailures: 5,
         Timeout:     5 * time.Minute, // Longer timeout for external AI
         HalfOpenMax: 1,
@@ -1604,7 +1604,7 @@ type KubernautAgentClient struct {
 }
 
 func NewKubernautAgentClient() *KubernautAgentClient {
-    config := circuitbreaker.Configurations["holmesgpt-external"]
+    config := circuitbreaker.Configurations["ka-external"]
     breaker := circuitbreaker.NewMetricsCircuitBreaker(config, "ai-analysis", "ka")
 
     return &KubernautAgentClient{

@@ -812,6 +812,15 @@ For schemas of CRDs created by Central Controller:
 
 **Purpose**: Temporary file containing schema extensions to be appended to `CRD_SCHEMAS.md`
 
+> **⚠️ CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: Beyond
+> the section-level DEPRECATED status above, the `AIAnalysisSpec` Go snippet below (including the
+> `LLMProvider` field and its `holmesgpt` enum value) does not match the current
+> `api/aianalysis/v1alpha1/aianalysis_types.go`, which has no `LLMProvider`/`llmProvider` field at all —
+> Kubernaut Agent (KA) is the sole analysis backend invoked by the AIAnalysis controller today, selected
+> via KA's own runtime LLM profile configuration (`kubernautAgent.llmProfileRef` in
+> `charts/kubernaut/values.yaml`), not a per-CRD enum. Treat this entire extension section as historical;
+> defer to the Go types for the authoritative current schema, as the note below already instructs.
+
 ---
 
 ## 🎯 AIAnalysis CRD
