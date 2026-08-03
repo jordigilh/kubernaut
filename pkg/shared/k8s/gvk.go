@@ -93,7 +93,21 @@ func ResolveGVKForKind(mapper meta.RESTMapper, kind string) (schema.GroupVersion
 
 	if mapper != nil {
 		pluralGVR, _ := meta.UnsafeGuessKindToResource(schema.GroupVersionKind{Kind: kind})
-		gvks, err := mapper.KindsFor(schema.GroupVersionResource{Resource: pluralGVR.Resource})
+		resource := schema.GroupVersionResource{Resource: pluralGVR.Resource}
+		gvks, err := mapper.KindsFor(resource)
+		if err != nil || len(gvks) == 0 {
+			// #1888: restmapper.DeferredDiscoveryRESTMapper's own self-heal only fires
+			// once, before its first successful discovery populate (its Fresh() gate
+			// becomes permanently true afterward and is never invalidated on a TTL). A
+			// CRD group missing from that first round would otherwise stay unresolvable
+			// for the life of the pod. Retry once via Reset() when the mapper supports it
+			// (see DD-K8S-001), mirroring the existing pattern in
+			// pkg/kubernautagent/tools/k8s/resolver.go.
+			if rm, ok := mapper.(meta.ResettableRESTMapper); ok {
+				rm.Reset()
+				gvks, err = mapper.KindsFor(resource)
+			}
+		}
 		if err == nil && len(gvks) > 0 {
 			return gvks[0], nil
 		}
