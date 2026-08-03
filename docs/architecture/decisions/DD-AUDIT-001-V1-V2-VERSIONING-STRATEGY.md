@@ -54,7 +54,7 @@ After 24h:
 func (r *AIAnalysisReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
     // 1. Update CRD status (real-time operator visibility)
     aiAnalysis.Status.Phase = "Completed"
-    aiAnalysis.Status.HolmesGPTResults = results
+    aiAnalysis.Status.AIAgentResults = results // illustrative; see SelectedWorkflow/RootCauseAnalysis in api/aianalysis/v1alpha1
     aiAnalysis.Status.ApprovalDecision = "approved"
     if err := r.Status().Update(ctx, aiAnalysis); err != nil {
         return ctrl.Result{}, err

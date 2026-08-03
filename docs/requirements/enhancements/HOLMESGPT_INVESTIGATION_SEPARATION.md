@@ -1,10 +1,37 @@
-# Kubernaut Agent (KA) Investigation vs Execution Separation - Enhancement Summary
+# Investigation/Execution Separation - Enhancement Summary
 
 **Document Version**: 1.1
 **Date**: January 2025
 **Last Verified**: September 30, 2025
-**Status**: Architecture Enhancement Summary
+**Status**: 🗄️ **HISTORICAL PROPOSAL — Core principle implemented, specific mechanisms superseded** (see note below)
 **Purpose**: Document the comprehensive enhancements made to properly separate KA investigation from infrastructure execution
+
+> **CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This
+> January 2025 document proposed separating "HolmesGPT" investigation from infrastructure execution
+> for the pre-CRD-rewrite architecture. **The underlying principle — AI investigation must not directly
+> execute infrastructure changes — was implemented, and remains true in the current architecture**, but
+> via entirely different, CRD-based mechanisms than this document describes:
+>
+> - **Investigation**: `AIAnalysis` CRD controller (`pkg/aianalysis/`) submits to **Kubernaut Agent
+>   (KA)** (`internal/kubernautagent/`, the Go rewrite of "HolmesGPT-API"/"HAPI", Issue #433) for root
+>   cause analysis and workflow selection from a predefined catalog — investigation-only, no execution.
+>   See [`docs/services/crd-controllers/02-aianalysis/overview.md`](../../services/crd-controllers/02-aianalysis/overview.md).
+> - **Execution**: `WorkflowExecution` CRD controller (`pkg/workflowexecution/`) runs the selected
+>   workflow's OCI bundle via a Tekton `PipelineRun` (ADR-043, ADR-044) — this is the current
+>   equivalent of what this document calls "existing Kubernaut Executors" / the "ActionExecutor
+>   framework". See [`docs/services/crd-controllers/03-workflowexecution/overview.md`](../../services/crd-controllers/03-workflowexecution/overview.md).
+>
+> The **specific technical proposals below are superseded and do not describe current code**:
+> the `BR-HAPI-INVESTIGATION-*`/`BR-WF-HOLMESGPT-*` requirement IDs, the `ActionExecutor`/
+> `KubernetesActionExecutor` framework (see
+> [`EXECUTION_INFRASTRUCTURE_CAPABILITIES.md`](../EXECUTION_INFRASTRUCTURE_CAPABILITIES.md), itself
+> superseded in this same pass), and two of the four referenced files no longer exist:
+> `docs/requirements/13_HOLMESGPT_REST_API_WRAPPER.md` and
+> `docs/architecture/REQUIREMENTS_BASED_ARCHITECTURE_DIAGRAM.md` were both removed in later
+> restructuring with no direct successor (the current requirements/architecture docs for these
+> services are `docs/requirements/04_WORKFLOW_ENGINE_ORCHESTRATION.md` and the per-service docs under
+> `docs/services/crd-controllers/`, linked above). This document is retained for historical context
+> only — do not treat its endpoint list, BR IDs, or file references as current.
 
 ---
 

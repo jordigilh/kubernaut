@@ -1081,8 +1081,8 @@ When both containers are on the **same podman network**, use container names for
 #### **Correct Configuration**
 ```go
 // test/integration/aianalysis/suite_test.go
-hapiConfig := infrastructure.GenericContainerConfig{
-    Name:    "aianalysis_hapi_test",
+kaConfig := infrastructure.GenericContainerConfig{
+    Name:    "aianalysis_ka_test",
     Network: "aianalysis_test_network", // Same network as DataStorage
     Ports:   map[int]int{8080: 18120},  // container:host
 Env: map[string]string{
@@ -1118,7 +1118,7 @@ Env: map[string]string{
 │  │                │ ✅ Container DNS      │  │
 │  │                │ name:8080             │  │
 │  │  ┌─────────────┴─────────────────┐     │  │
-│  │  │ aianalysis_hapi_test          │     │  │
+│  │  │ aianalysis_ka_test            │     │  │
 │  │  │ - Internal port: 8080         │     │  │
 │  │  │ - Host port: 18120            │     │  │
 │  │  │ - ENV: DATA_STORAGE_URL=      │     │  │
@@ -1184,7 +1184,7 @@ Env: map[string]string{
 #### **Step 1: Verify Container DNS Resolution**
 ```bash
 # From inside KA container, resolve DataStorage container name
-podman exec aianalysis_hapi_test nslookup aianalysis_datastorage_test
+podman exec aianalysis_ka_test nslookup aianalysis_datastorage_test
 
 # Expected output:
 # Server:    10.88.0.1
@@ -1196,7 +1196,7 @@ podman exec aianalysis_hapi_test nslookup aianalysis_datastorage_test
 #### **Step 2: Test Container-to-Container Connectivity**
 ```bash
 # From inside KA container, test DataStorage health endpoint
-podman exec aianalysis_hapi_test curl -v http://aianalysis_datastorage_test:8080/health
+podman exec aianalysis_ka_test curl -v http://aianalysis_datastorage_test:8080/health
 
 # Expected: HTTP 200 with {"status":"healthy",...}
 ```
@@ -1208,7 +1208,7 @@ podman ps --filter "name=aianalysis" --format "{{.Names}}: {{.Ports}}"
 
 # Expected output:
 # aianalysis_datastorage_test: 0.0.0.0:18095->8080/tcp
-# aianalysis_hapi_test: 0.0.0.0:18120->8080/tcp
+# aianalysis_ka_test: 0.0.0.0:18120->8080/tcp
 ```
 
 #### **Step 4: Test Host-to-Container Connectivity**

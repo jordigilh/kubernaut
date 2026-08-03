@@ -1,8 +1,18 @@
 # DD-AUTH-013: HTTP Status Codes for OAuth-Proxy - Document Index
 
-**Status**: ✅ AUTHORITATIVE  
+**Status**: ✅ AUTHORITATIVE (status codes) / ⚠️ Mechanism corrected — see note below  
 **Last Updated**: January 26, 2026  
 **Category**: Authentication & Authorization
+
+> **⚠️ CORRECTED (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: Per
+> [DD-AUTH-014](../DD-AUTH-014-middleware-based-sar-authentication.md) (Phase 2 DataStorage, Phase 3
+> Kubernaut Agent (KA), both ✅ COMPLETE), the `ose-oauth-proxy` **sidecar** described throughout this
+> document has been removed for both DataStorage and KA — confirmed by `charts/kubernaut/templates/`,
+> which has no `oauth-proxy` container for either service today. Both now authenticate/authorize via
+> in-process Go middleware calling the Kubernetes TokenReview/SubjectAccessReview APIs directly. The
+> **401/403/400/422/500 status-code semantics** documented below remain accurate — the middleware
+> returns the same codes for the same failure conditions — only the "`ose-oauth-proxy` sidecar" source
+> attribution is now "in-process auth middleware."
 
 ## Quick Links
 

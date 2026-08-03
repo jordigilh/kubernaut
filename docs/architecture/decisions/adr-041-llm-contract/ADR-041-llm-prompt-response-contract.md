@@ -45,11 +45,28 @@
 ### Version 2.0 (2025-11-16)
 - Previous changelog entries...
 
+### Post-2.7 Correction (2026-08, Issue #1806)
+- Renamed "HolmesGPT API" → "Kubernaut Agent (KA)" in Context and Decision sections (contract actor,
+  now implemented as `internal/kubernautagent/` with `pkg/agentclient/` as its OpenAPI-generated client —
+  verified against `pkg/agentclient/client.go`).
+- Clarified "Response Parser (kubernaut-agent)" — per the Go rewrite (`DD-KA-019`), prompt generation and
+  response parsing are both performed in-process by the same Kubernaut Agent (KA) entity; there is no
+  longer a separate downstream Python parser.
+- Corrected "Downstream services (RemediationExecution)" → "WorkflowExecution" (`RemediationExecution` does
+  not exist anywhere under `api/` in the current codebase; verified by repo-wide search).
+- **Flagged, not corrected**: this document appears to end abruptly after the Section 1 incident-context
+  prompt template (no Response Format, Validation, or Examples sections despite the title/contract scope
+  promising them) before jumping into an embedded "Appendix A" summary. This looks like accidental content
+  loss rather than an intentional trim. Out of scope for this terminology-only sweep — flagging for a
+  separate content-completeness follow-up. The embedded Appendix A debugging log (Nov 18, 2025) is left
+  as-is: it accurately describes the pre-Go-rewrite Python HolmesGPT SDK's toolset-enablement behavior at
+  the time the bug was found, which is historical fact, not a claim about current KA behavior.
+
 ---
 
 ## Context
 
-The HolmesGPT API sends prompts to the LLM for Root Cause Analysis (RCA) and remediation workflow selection. The LLM must understand the prompt structure and return a structured JSON response that the system can parse and execute.
+The Kubernaut Agent (KA) sends prompts to the LLM for Root Cause Analysis (RCA) and remediation workflow selection. The LLM must understand the prompt structure and return a structured JSON response that the system can parse and execute.
 
 ### Problem
 
@@ -74,10 +91,10 @@ Without a single authoritative definition of the prompt/response contract:
 **Create a single authoritative ADR defining the LLM prompt structure and expected response format for workflow selection.**
 
 This ADR serves as the contract between:
-- HolmesGPT API (prompt generator)
+- Kubernaut Agent (KA) (prompt generator)
 - LLM Provider (Claude 4.5 Haiku - current testing model, subject to change)
-- Response Parser (kubernaut-agent)
-- Downstream services (RemediationExecution)
+- Response Parser (Kubernaut Agent (KA), in-process — see Post-2.7 Correction below)
+- Downstream services (WorkflowExecution)
 
 ---
 

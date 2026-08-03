@@ -94,15 +94,20 @@ spec:
 ```go
 AnalysisTypes: []string{"investigation", "workflow-selection"},  // ❌ Expects 2 calls
 
-Expect(eventTypeCounts[aiaudit.EventTypeHolmesGPTCall]).To(Equal(2))  // ❌ Fails
+Expect(eventTypeCounts[aiaudit.EventTypeAIAgentCall]).To(Equal(2))  // ❌ Fails
 ```
 
 **After (Correct)**:
 ```go
 AnalysisTypes: []string{"investigation"},  // ✅ Single type
 
-Expect(eventTypeCounts[aiaudit.EventTypeHolmesGPTCall]).To(Equal(1))  // ✅ Passes
+Expect(eventTypeCounts[aiaudit.EventTypeAIAgentCall]).To(Equal(1))  // ✅ Passes
 ```
+
+> **✅ CORRECTED** ([#1806](https://github.com/jordigilh/kubernaut/issues/1806)): the constant referenced
+> above is `aiaudit.EventTypeAIAgentCall` (value `"aianalysis.aiagent.call"`), not
+> `EventTypeHolmesGPTCall` — verified against `pkg/aianalysis/audit/audit.go`; `EventTypeHolmesGPTCall` does
+> not exist anywhere in the current codebase (repo-wide search).
 
 ### Files Requiring Updates
 
@@ -126,7 +131,7 @@ Expect(eventTypeCounts[aiaudit.EventTypeHolmesGPTCall]).To(Equal(1))  // ✅ Pas
 **Model**: Loop through `AnalysisTypes`, make multiple KA calls
 ```go
 for _, analysisType := range analysis.Spec.AnalysisRequest.AnalysisTypes {
-    // Call HAPI with type-specific request
+    // Call KA with type-specific request
     // Emit separate audit event
     // Aggregate results
 }

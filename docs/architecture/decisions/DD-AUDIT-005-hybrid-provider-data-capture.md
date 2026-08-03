@@ -2,36 +2,43 @@
 
 **Status**: Approved
 **Created**: January 5, 2026
-**Author**: AI Analysis + HolmesAPI Integration Team
+**Author**: AI Analysis + Kubernaut Agent Integration Team
 **Business Requirement**: BR-AUDIT-005 v2.0 (Gap #4 - AI Provider Data)
 **Related Documents**:
 - [SOC2 Audit Test Plan](../../development/SOC2/SOC2_AUDIT_RR_RECONSTRUCTION_TEST_PLAN.md)
-- [DD-AUDIT-002: Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library.md)
+- [DD-AUDIT-002: Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library-design.md)
 - [DD-AUDIT-003: Service Audit Trace Requirements](./DD-AUDIT-003-service-audit-trace-requirements.md)
+
+> **Note (2026-08-02, [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))**: This
+> decision was originally written (Jan 2026) when the provider service was named HolmesGPT API
+> (HAPI). It was renamed **Kubernaut Agent (KA)** in the v1.3 Go rewrite ([#433](https://github.com/jordigilh/kubernaut/issues/433));
+> terminology below has been updated to KA throughout. The decision's substance — hybrid
+> provider (`aiagent.*`) + consumer (`aianalysis.*`) audit events — is unchanged and still
+> current; see the "v1.3 Update" section for what changed in practice.
 
 ---
 
 ## Context
 
-For SOC2 Type II compliance and RemediationRequest (RR) reconstruction, we need to capture complete AI provider response data in audit trails. The AI Analysis service depends on HolmesGPT API (HAPI) for root cause analysis and workflow recommendations.
+For SOC2 Type II compliance and RemediationRequest (RR) reconstruction, we need to capture complete AI provider response data in audit trails. The AI Analysis service depends on Kubernaut Agent (KA) for root cause analysis and workflow recommendations.
 
 **Problem**: Where should the audit event for AI provider data be emitted?
 - **Option A**: AI Analysis Controller only (consumer captures response)
-- **Option B**: HolmesAPI only (provider captures response)
+- **Option B**: Kubernaut Agent (KA) only (provider captures response)
 - **Option C**: BOTH services (hybrid approach)
 
 ---
 
 ## Decision
 
-**We will use a HYBRID approach where BOTH HolmesAPI and AI Analysis Controller emit audit events.**
+**We will use a HYBRID approach where BOTH Kubernaut Agent (KA) and AI Analysis Controller emit audit events.**
 
 ### Event Distribution
 
 | Service | Event Type | Purpose | Content |
 |---------|-----------|---------|---------|
-| **HolmesAPI** | `aiagent.response.complete` | Provider perspective (success) | Full `IncidentResponse` structure |
-| **HolmesAPI** | `aiagent.response.failed` | Provider perspective (failure) | Error message, failure phase, duration (#442, SOC2 CC8.1) |
+| **Kubernaut Agent (KA)** | `aiagent.response.complete` | Provider perspective (success) | Full `IncidentResponse` structure |
+| **Kubernaut Agent (KA)** | `aiagent.response.failed` | Provider perspective (failure) | Error message, failure phase, duration (#442, SOC2 CC8.1) |
 | **AI Analysis** | `aianalysis.analysis.completed` | Consumer perspective | `provider_response_summary` + business context |
 
 ---
@@ -42,7 +49,7 @@ For SOC2 Type II compliance and RemediationRequest (RR) reconstruction, we need 
 
 **SOC2 Principle**: Multiple independent audit sources provide stronger compliance evidence than a single source.
 
-1. **Provider Audit (HAPI)**:
+1. **Provider Audit (KA)**:
    - ✅ Captures response **at the source** (API endpoint)
    - ✅ Complete `IncidentResponse` structure with all fields
    - ✅ Independent of consumer processing
@@ -56,7 +63,7 @@ For SOC2 Type II compliance and RemediationRequest (RR) reconstruction, we need 
 
 ### Single Source of Truth
 
-**HAPI owns the complete API response data** - AA references it by summary.
+**KA owns the complete API response data** - AA references it by summary.
 
 ```sql
 -- Full provider response (authoritative)
@@ -89,24 +96,24 @@ WHERE event_type = 'aianalysis.analysis.completed'
 
 **Cons**:
 - ❌ AA must store full response in CRD status (increases CRD size)
-- ❌ No independent verification of HAPI → AA data transfer
-- ❌ Duplicates HAPI data in AA service
+- ❌ No independent verification of KA → AA data transfer
+- ❌ Duplicates KA data in AA service
 - ❌ Single point of failure for audit capture
 
 **Verdict**: ⛔ **REJECTED** - Violates single source of truth principle
 
 ---
 
-#### Option B: HAPI Only (Provider Captures)
+#### Option B: KA Only (Provider Captures)
 
 **Pros**:
-- ✅ Single source of truth (HAPI owns response)
+- ✅ Single source of truth (KA owns response)
 - ✅ No CRD status bloat
-- ✅ Easy implementation (HAPI audit already exists)
+- ✅ Easy implementation (KA audit already exists)
 
 **Cons**:
 - ❌ No AA business context (phase, approval, degraded mode)
-- ❌ Requires 2 queries for RR reconstruction (HAPI + AA events)
+- ❌ Requires 2 queries for RR reconstruction (KA + AA events)
 - ❌ Can't prove AA received the response
 
 **Verdict**: ⚠️ **INSUFFICIENT** - Missing critical business context
@@ -132,23 +139,31 @@ WHERE event_type = 'aianalysis.analysis.completed'
 
 ## Implementation
 
-### HolmesAPI Changes
+### Kubernaut Agent (KA) Changes
 
-**File**: `kubernaut-agent/src/audit/events.py`
+> **Historical note**: The code below is illustrative pseudocode from the original (Jan 2026)
+> decision, written when KA was still the pre-rewrite Python service (`kubernaut-agent/src/...`
+> paths, `def`/snake_case). It predates the v1.3 Go rewrite ([#433](https://github.com/jordigilh/kubernaut/issues/433))
+> and was never a literal source file — `HAPIResponseEventData` / `HAPIResponseFailedEventData`
+> were never real types in the codebase. It's kept to show the original design intent (per-event
+> Pydantic-style models); the actual current Go payload types live in
+> `pkg/kubernautagent/audit/` and `pkg/aianalysis/audit/audit.go`.
+
+**File** (historical, pre-rewrite): `kubernaut-agent/src/audit/events.py`
 
 ```python
-def create_hapi_response_complete_event(
+def create_ka_response_complete_event(
     incident_id: str,
     remediation_id: str,
     response_data: Dict[str, Any]  # Full IncidentResponse
 ) -> Dict[str, Any]:
     """
-    Create Holmes API response completion audit event
+    Create Kubernaut Agent response completion audit event
 
     BR-AUDIT-005 Gap #4: Capture complete API response for SOC2 audit trail
-    DD-AUDIT-005: Provider perspective audit (HAPI owns response data)
+    DD-AUDIT-005: Provider perspective audit (KA owns response data)
     """
-    event_data_model = HAPIResponseEventData(
+    event_data_model = KAResponseEventData(
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
         response_data=response_data  # Full IncidentResponse
@@ -163,7 +178,7 @@ def create_hapi_response_complete_event(
     )
 ```
 
-**File**: `kubernaut-agent/src/audit/events.py` (failure path, added in #442)
+**File** (historical, pre-rewrite): `kubernaut-agent/src/audit/events.py` (failure path, added in #442)
 
 ```python
 def create_aiagent_response_failed_event(
@@ -174,12 +189,12 @@ def create_aiagent_response_failed_event(
     duration_seconds: Optional[float] = None,
 ) -> AuditEventRequest:
     """
-    Create audit event for a failed HAPI investigation.
+    Create audit event for a failed KA investigation.
 
     SOC2 CC8.1: Failed investigations MUST have an audit trail.
     DD-AUDIT-005: Provider perspective failure audit.
     """
-    event_data_model = HAPIResponseFailedEventData(
+    event_data_model = KAResponseFailedEventData(
         event_type="aiagent.response.failed",
         event_id=str(uuid.uuid4()),
         incident_id=incident_id,
@@ -196,7 +211,7 @@ def create_aiagent_response_failed_event(
     )
 ```
 
-**File**: `kubernaut-agent/src/extensions/incident/endpoint.py`
+**File** (historical, pre-rewrite): `kubernaut-agent/src/extensions/incident/endpoint.py`
 
 ```python
 @router.post("/incident/analyze")
@@ -205,7 +220,7 @@ async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentRespons
 
     # DD-AUDIT-005: Capture complete response for audit trail (provider perspective)
     audit_store = get_audit_store()
-    audit_store.store_audit(create_hapi_response_complete_event(
+    audit_store.store_audit(create_ka_response_complete_event(
         incident_id=request.incident_id,
         remediation_id=request.remediation_id,
         response_data=result.model_dump()
@@ -216,7 +231,7 @@ async def incident_analyze_endpoint(request: IncidentRequest) -> IncidentRespons
 
 The endpoint also wraps `analyze_incident` in a `try/except` to emit `aiagent.response.failed` on exception, capturing `error_message`, `phase`, and `duration_seconds` before re-raising (#442).
 
-**Effort**: ~15 minutes
+**Effort**: ~15 minutes (historical; superseded by the Go rewrite's `pkg/kubernautagent/audit/` implementation)
 
 ---
 
@@ -304,7 +319,7 @@ func (c *AuditClient) RecordAnalysisComplete(ctx context.Context, analysis *aian
 **File**: `test/integration/aianalysis/audit_provider_data_integration_test.go`
 
 ```go
-It("should capture Holmes response in BOTH HAPI and AA audit events", func() {
+It("should capture Holmes response in BOTH KA and AA audit events", func() {
     // Create AIAnalysis CRD
     aiAnalysis := createTestAIAnalysis()
     err := k8sClient.Create(ctx, aiAnalysis)
@@ -319,12 +334,12 @@ It("should capture Holmes response in BOTH HAPI and AA audit events", func() {
 
     correlationID := aiAnalysis.Spec.RemediationID
 
-    // Verify HAPI audit event (provider perspective)
-    hapiEvents := waitForAuditEvents(correlationID, "aiagent.response.complete", 1)
-    hapiEventData := hapiEvents[0].EventData.(map[string]interface{})
-    Expect(hapiEventData).To(HaveKey("response_data"))
+    // Verify KA audit event (provider perspective)
+    kaEvents := waitForAuditEvents(correlationID, "aiagent.response.complete", 1)
+    kaEventData := kaEvents[0].EventData.(map[string]interface{})
+    Expect(kaEventData).To(HaveKey("response_data"))
 
-    responseData := hapiEventData["response_data"].(map[string]interface{})
+    responseData := kaEventData["response_data"].(map[string]interface{})
     Expect(responseData).To(HaveKey("root_cause_analysis"))
     Expect(responseData).To(HaveKey("selected_workflow"))
     Expect(responseData).To(HaveKey("alternative_workflows"))
@@ -338,7 +353,7 @@ It("should capture Holmes response in BOTH HAPI and AA audit events", func() {
     Expect(summary).To(HaveKey("analysis_preview"))
     Expect(summary).To(HaveKey("selected_workflow_id"))
 
-    // Verify AA business context (not in HAPI event)
+    // Verify AA business context (not in KA event)
     Expect(aaEventData).To(HaveKey("phase"))
     Expect(aaEventData).To(HaveKey("approval_required"))
     Expect(aaEventData).To(HaveKey("degraded_mode"))
@@ -357,7 +372,7 @@ It("should capture Holmes response in BOTH HAPI and AA audit events", func() {
 
 | Audit Aspect | Single Event | Hybrid Events |
 |--------------|-------------|---------------|
-| **Provider Data Integrity** | ⚠️ Unverified | ✅ HAPI event proves source |
+| **Provider Data Integrity** | ⚠️ Unverified | ✅ KA event proves source |
 | **Consumer Processing** | ⚠️ Assumed | ✅ AA event proves receipt |
 | **Data Transfer Validation** | ❌ No proof | ✅ Both events prove transfer |
 | **Debugging** | 🔴 Limited context | ✅ Full provider + consumer views |
@@ -391,9 +406,9 @@ It("should capture Holmes response in BOTH HAPI and AA audit events", func() {
 
 1. ✅ **Enhanced SOC2 Compliance**: Multiple independent audit sources
 2. ✅ **Easier Debugging**: Both provider and consumer perspectives available
-3. ✅ **Single Source of Truth**: HAPI owns complete response data
+3. ✅ **Single Source of Truth**: KA owns complete response data
 4. ✅ **Business Context**: AA provides phase, approval, degraded mode info
-5. ✅ **Data Transfer Validation**: Can prove HAPI → AA data integrity
+5. ✅ **Data Transfer Validation**: Can prove KA → AA data integrity
 
 ### Negative
 
@@ -413,7 +428,7 @@ It("should capture Holmes response in BOTH HAPI and AA audit events", func() {
 
 If storage cost becomes a concern in the future, we can:
 
-1. **Compress HAPI response_data** using gzip before storing
+1. **Compress KA response_data** using gzip before storing
 2. **Archive old audit events** to cold storage after 90 days
 3. **Sample audit events** for non-production environments
 
@@ -457,9 +472,9 @@ Starting in v1.3 ([issue #433](https://github.com/jordigilh/kubernaut/issues/433
 
 ## Related Decisions
 
-- [DD-AUDIT-002: Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library.md)
+- [DD-AUDIT-002: Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library-design.md)
 - [DD-AUDIT-003: Service Audit Trace Requirements](./DD-AUDIT-003-service-audit-trace-requirements.md)
-- [DD-AUDIT-004: Structured Event Data Standards](./DD-AUDIT-004-structured-event-data-standards.md)
+- [DD-AUDIT-004: Structured Types for Audit Event Payloads](./DD-AUDIT-004-structured-types-for-audit-event-payloads.md)
 
 ---
 
@@ -467,6 +482,6 @@ Starting in v1.3 ([issue #433](https://github.com/jordigilh/kubernaut/issues/433
 
 - [BR-AUDIT-005 v2.0: Audit Event Gaps for RR Reconstruction](../../requirements/11_SECURITY_ACCESS_CONTROL.md)
 - [SOC2 Audit Test Plan v2.1.0](../../development/SOC2/SOC2_AUDIT_RR_RECONSTRUCTION_TEST_PLAN.md)
-- [ADR-034: Unified Audit Table Design](./ADR-034-unified-audit-table.md)
+- [ADR-034: Unified Audit Table Design](./ADR-034-unified-audit-table-design.md)
 - [ADR-038: Asynchronous Buffered Audit Trace Ingestion](./ADR-038-async-buffered-audit-ingestion.md)
 

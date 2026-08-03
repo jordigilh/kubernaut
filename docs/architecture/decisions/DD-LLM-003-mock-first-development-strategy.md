@@ -43,6 +43,17 @@ Use mock LLM responses during development, validate with real LLM only for final
 
 ## Implementation
 
+> **⚠️ STALE (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806), not corrected here)**: This
+> document predates the Kubernaut Agent Go rewrite (`DD-KA-019`, decided 2026-03-04, ~3 months after this
+> document). `workflow_catalog.py` and the `pytest kubernaut-agent/tests/...` commands below refer to the
+> pre-rewrite Python KA test suite, which no longer exists. The structural analog to "HolmesGPT SDK
+> InvestigationResult" in the current Go codebase is `katypes.InvestigationResult`
+> (`pkg/kubernautagent/types/types.go`, alias `katypes`), produced by `Investigator.Investigate` in
+> `internal/kubernautagent/investigator/investigator.go`. The current mock-LLM test harness is the Go
+> service at `test/services/mock-llm/` (see `test/services/mock-llm/scenarios/`), not a Python mock. The
+> underlying mock-first development principle (this decision) still applies; only the file paths and
+> language are stale.
+
 ### Phase 1: Mock LLM Development (Week 1-2)
 - Use MOCK_WORKFLOWS in workflow_catalog.py (already implemented)
 - Mock LLM responses match HolmesGPT SDK InvestigationResult structure

@@ -7586,7 +7586,7 @@ type AuditEvent struct {
 	// - gateway: Gateway signal and CRD lifecycle events
 	// - notification: Notification delivery and escalation events
 	// - analysis: AI analysis, agent calls, and rego evaluation events
-	// - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
+	// - aiagent: AI Agent Provider (Kubernaut Agent, KA) - autonomous tool-calling agent
 	// - signalprocessing: Signal Processing Service
 	// - workflow: Workflow catalog and discovery events
 	// - workflowexecution: Workflow execution lifecycle events
@@ -7961,7 +7961,7 @@ func (s *AuditEvent) SetLegalHoldPlacedAt(val OptNilDateTime) {
 // - gateway: Gateway signal and CRD lifecycle events
 // - notification: Notification delivery and escalation events
 // - analysis: AI analysis, agent calls, and rego evaluation events
-// - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
+// - aiagent: AI Agent Provider (Kubernaut Agent, KA) - autonomous tool-calling agent
 // - signalprocessing: Signal Processing Service
 // - workflow: Workflow catalog and discovery events
 // - workflowexecution: Workflow execution lifecycle events
@@ -11258,7 +11258,7 @@ type AuditEventRequest struct {
 	// - gateway: Gateway signal and CRD lifecycle events
 	// - notification: Notification delivery and escalation events
 	// - analysis: AI analysis, agent calls, and rego evaluation events
-	// - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
+	// - aiagent: AI Agent Provider (Kubernaut Agent, KA) - autonomous tool-calling agent
 	// - signalprocessing: Signal Processing Service
 	// - workflow: Workflow catalog and discovery events
 	// - workflowexecution: Workflow execution lifecycle events
@@ -11543,7 +11543,7 @@ func (s *AuditEventRequest) SetEventData(val AuditEventRequestEventData) {
 // - gateway: Gateway signal and CRD lifecycle events
 // - notification: Notification delivery and escalation events
 // - analysis: AI analysis, agent calls, and rego evaluation events
-// - aiagent: AI Agent Provider (HolmesGPT API) - autonomous tool-calling agent
+// - aiagent: AI Agent Provider (Kubernaut Agent, KA) - autonomous tool-calling agent
 // - signalprocessing: Signal Processing Service
 // - workflow: Workflow catalog and discovery events
 // - workflowexecution: Workflow execution lifecycle events
@@ -16368,7 +16368,7 @@ type EffectivenessAssessmentAuditPayload struct {
 	HashMatch OptBool `json:"hash_match"`
 	// Structured health check results from the K8s API assessment.
 	// Only present for effectiveness.health.assessed events.
-	// Enables downstream consumers (DS, HAPI) to extract typed fields
+	// Enables downstream consumers (DS, KA) to extract typed fields
 	// without parsing the human-readable details string.
 	HealthChecks OptEffectivenessAssessmentAuditPayloadHealthChecks `json:"health_checks"`
 	// Structured pre/post remediation metric comparison results from Prometheus.
@@ -16880,7 +16880,7 @@ func (s *EffectivenessAssessmentAuditPayloadEventType) UnmarshalText(data []byte
 
 // Structured health check results from the K8s API assessment.
 // Only present for effectiveness.health.assessed events.
-// Enables downstream consumers (DS, HAPI) to extract typed fields
+// Enables downstream consumers (DS, KA) to extract typed fields
 // without parsing the human-readable details string.
 type EffectivenessAssessmentAuditPayloadHealthChecks struct {
 	// Whether at least one pod exists for the target resource.
@@ -18315,7 +18315,7 @@ func (s *HashComparisonData) SetHashMatch(val OptNilBool) {
 	s.HashMatch = val
 }
 
-// Complete IncidentResponse structure from HolmesGPT API (DD-AUDIT-004 - strongly typed, no
+// Complete IncidentResponse structure from Kubernaut Agent (KA) (DD-AUDIT-004 - strongly typed, no
 // additionalProperties).
 // Ref: #/components/schemas/IncidentResponseData
 type IncidentResponseData struct {
@@ -18892,7 +18892,7 @@ func (s *IncidentResponseDataRootCauseAnalysisSeverity) UnmarshalText(data []byt
 type IncidentResponseDataSelectedWorkflow struct {
 	WorkflowId OptString `json:"workflowId"`
 	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
-	// Propagated from HAPI three-step discovery protocol.
+	// Propagated from KA's three-step discovery protocol.
 	ActionType      OptString                                         `json:"actionType"`
 	ExecutionBundle OptString                                         `json:"executionBundle"`
 	Confidence      OptFloat32                                        `json:"confidence"`
@@ -25057,7 +25057,8 @@ type PlaceLegalHoldUnauthorized RFC7807Problem
 
 func (*PlaceLegalHoldUnauthorized) placeLegalHoldRes() {}
 
-// Summary of Holmes API response from AIAnalysis consumer perspective (BR-AUDIT-005 v2.0 Gap.
+// Summary of Kubernaut Agent (KA) response from AIAnalysis consumer perspective (BR-AUDIT-005 v2.0
+// Gap.
 // Ref: #/components/schemas/ProviderResponseSummary
 type ProviderResponseSummary struct {
 	// Incident identifier.
@@ -25068,7 +25069,7 @@ type ProviderResponseSummary struct {
 	SelectedWorkflowID OptString `json:"selected_workflow_id"`
 	// Whether human review is required.
 	NeedsHumanReview bool `json:"needs_human_review"`
-	// Number of warnings from Holmes.
+	// Number of warnings from Kubernaut Agent (KA).
 	WarningsCount int `json:"warnings_count"`
 }
 
@@ -27117,7 +27118,7 @@ type RemediationOrchestratorAuditPayload struct {
 	// Version of the selected workflow.
 	WorkflowVersion OptString `json:"workflow_version"`
 	// Action type from DD-WORKFLOW-016 taxonomy (e.g., ScaleReplicas, RestartPod).
-	// Propagated from AIAnalysis.SelectedWorkflow.ActionType via HAPI three-step discovery.
+	// Propagated from AIAnalysis.SelectedWorkflow.ActionType via KA's three-step discovery protocol.
 	// Used by DS remediation history to populate actionType on entries and summaries.
 	ActionType OptString `json:"action_type"`
 	// Signal type that triggered the remediation (e.g., "alert", "event").
@@ -30692,7 +30693,7 @@ func (s *WorkflowCatalogUpdatedPayload) SetUpdatedFields(val WorkflowCatalogUpda
 }
 
 // Audit event payload for three-step workflow discovery operations.
-// Authority: DD-HAPI-017 (Three-Step Workflow Discovery Integration)
+// Authority: DD-KA-017 (Three-Step Workflow Discovery Integration, formerly DD-HAPI-017)
 // Authority: DD-WORKFLOW-014 v3.0 (Workflow Selection Audit Trail)
 // Replaces WorkflowSearchAuditPayload (search endpoint removed).
 // Ref: #/components/schemas/WorkflowDiscoveryAuditPayload
