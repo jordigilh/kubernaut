@@ -535,14 +535,21 @@ func (s *AIAgentAuthDeniedPayload) encodeFields(e *jx.Encoder) {
 			s.Method.Encode(e)
 		}
 	}
+	{
+		if s.Reason.Set {
+			e.FieldStart("reason")
+			s.Reason.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfAIAgentAuthDeniedPayload = [5]string{
+var jsonFieldsNameOfAIAgentAuthDeniedPayload = [6]string{
 	0: "event_type",
 	1: "event_id",
 	2: "source_ip",
 	3: "path",
 	4: "method",
+	5: "reason",
 }
 
 // Decode decodes AIAgentAuthDeniedPayload from json.
@@ -605,6 +612,16 @@ func (s *AIAgentAuthDeniedPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"method\"")
+			}
+		case "reason":
+			if err := func() error {
+				s.Reason.Reset()
+				if err := s.Reason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reason\"")
 			}
 		default:
 			return d.Skip()
@@ -735,14 +752,21 @@ func (s *AIAgentAuthFailurePayload) encodeFields(e *jx.Encoder) {
 			s.Method.Encode(e)
 		}
 	}
+	{
+		if s.Reason.Set {
+			e.FieldStart("reason")
+			s.Reason.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfAIAgentAuthFailurePayload = [5]string{
+var jsonFieldsNameOfAIAgentAuthFailurePayload = [6]string{
 	0: "event_type",
 	1: "event_id",
 	2: "source_ip",
 	3: "path",
 	4: "method",
+	5: "reason",
 }
 
 // Decode decodes AIAgentAuthFailurePayload from json.
@@ -805,6 +829,16 @@ func (s *AIAgentAuthFailurePayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"method\"")
+			}
+		case "reason":
+			if err := func() error {
+				s.Reason.Reset()
+				if err := s.Reason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reason\"")
 			}
 		default:
 			return d.Skip()
@@ -17192,6 +17226,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 					s.Method.Encode(e)
 				}
 			}
+			{
+				if s.Reason.Set {
+					e.FieldStart("reason")
+					s.Reason.Encode(e)
+				}
+			}
 		}
 	case AIAgentAuthDeniedPayloadAuditEventEventData:
 		e.FieldStart("event_type")
@@ -17218,6 +17258,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				if s.Method.Set {
 					e.FieldStart("method")
 					s.Method.Encode(e)
+				}
+			}
+			{
+				if s.Reason.Set {
+					e.FieldStart("reason")
+					s.Reason.Encode(e)
 				}
 			}
 		}
@@ -22218,6 +22264,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 					s.Method.Encode(e)
 				}
 			}
+			{
+				if s.Reason.Set {
+					e.FieldStart("reason")
+					s.Reason.Encode(e)
+				}
+			}
 		}
 	case AIAgentAuthDeniedPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
@@ -22244,6 +22296,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.Method.Set {
 					e.FieldStart("method")
 					s.Method.Encode(e)
+				}
+			}
+			{
+				if s.Reason.Set {
+					e.FieldStart("reason")
+					s.Reason.Encode(e)
 				}
 			}
 		}
