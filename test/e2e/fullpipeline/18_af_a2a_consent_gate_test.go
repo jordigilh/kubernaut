@@ -420,3 +420,104 @@ var _ = Describe("AF A2A No Reinvocation After Session-Terminal Tool [E2E-FP-191
 		GinkgoWriter.Printf("  Confirmed: %s completed cleanly with no WorkflowExecution — no errant reinvocation resurrected the closed session\n", rrName)
 	})
 })
+
+// E2E-FP-1918-001: Harness-Enforced Actionability Gate (issue #1918).
+// A single combined message declares interaction_mode=full_remediation_autonomous
+// on kubernaut_investigate -- an autonomy grant that would normally leave
+// phase2_blocked=false -- against an RR whose description carries the
+// mock-LLM "mock_not_actionable" keyword, so KA's own RCA reasoning
+// concludes is_actionable=false with no workflow identified. The scripted
+// mock-LLM then still attempts a same-turn kubernaut_discover_workflows
+// call, simulating a lower-reasoning model that ignores or misreads the
+// not-actionable RCA narrative and tries to proceed anyway. Pre-#1918-fix,
+// full_remediation_autonomous alone would leave phase2_blocked=false and
+// this call would reach KA's real discover_workflows implementation.
+// Post-fix, phaseGuardAfter's #1918 override forces phase2_blocked=true from
+// KA's structured is_actionable/has_workflow signal (independent of any
+// model reasoning), so phaseGuardBefore's existing DD-AF-011 hard-reject
+// stops discover_workflows before it ever reaches KA. This proves the real
+// AF/A2A stack end-to-end: the RR reaches a clean terminal state and no
+// WorkflowExecution is ever created for it.
+var _ = Describe("AF Harness-Enforced Actionability Gate [E2E-FP-1918-001]", Label("fp", "af", "a2a", "autonomous", "issue-1918"), func() {
+
+	It("should force phase2_blocked and hard-reject discover_workflows when KA's RCA is not actionable, even under full_remediation_autonomous", NodeTimeout(6*time.Minute), func(_ SpecContext) {
+		targetNS := fpRemediateNS["not-actionable-1918"]
+		Expect(targetNS).NotTo(BeEmpty(), "not-actionable-1918 namespace must be set by SynchronizedBeforeSuite")
+
+		By("Verifying AF is reachable")
+		resp, err := afHTTPClient.Get(afBaseURL + "/healthz")
+		if err != nil || resp.StatusCode == http.StatusBadGateway || resp.StatusCode == http.StatusServiceUnavailable {
+			Skip("AF not reachable in FP cluster — skipping E2E-FP-1918-001")
+		}
+		_ = resp.Body.Close()
+
+		By("Ensuring managed target namespace exists for the not-actionable-autonomous RR")
+		ns := &corev1.Namespace{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: targetNS,
+				Labels: map[string]string{
+					"kubernaut.ai/managed":     "true",
+					"kubernaut.ai/environment": "staging",
+				},
+			},
+		}
+		if err := k8sClient.Create(ctx, ns); err != nil && !apierrors.IsAlreadyExists(err) {
+			Expect(err).NotTo(HaveOccurred(), "Failed to create namespace %s", targetNS)
+		}
+		DeferCleanup(func() {
+			_ = k8sClient.Delete(context.Background(), ns, &client.DeleteOptions{})
+		})
+
+		By("Deploying zero-replica target Deployment in isolated namespace")
+		dep := &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "memory-eater",
+				Namespace: targetNS,
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas: ptr.To[int32](0),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"app": "memory-eater"},
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{"app": "memory-eater"},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:  "app",
+							Image: "busybox:1.36",
+							Resources: corev1.ResourceRequirements{
+								Limits: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("64Mi"),
+								},
+							},
+						}},
+					},
+				},
+			},
+		}
+		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+
+		By("Turn 1 (single message): declare full_remediation_autonomous mode against a not-actionable signal, then attempt discover_workflows in the same turn")
+		body := fpA2ATasksSend("fp-na1918-1",
+			"investigate and fix using mock not actionable rca for deployment memory-eater")
+		resp, err = fpA2AInvokeWithTimeout(body, 180*time.Second)
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		rpc, parseErr := fpParseRPC(resp)
+		Expect(parseErr).NotTo(HaveOccurred())
+		Expect(rpc.Error).To(BeNil(), "the investigate-then-discover turn should complete gracefully, not return a JSON-RPC error")
+		task, taskErr := fpExtractTask(rpc.Result)
+		Expect(taskErr).NotTo(HaveOccurred())
+		Expect(task.ID).NotTo(BeEmpty(), "A2A task ID must not be empty")
+		GinkgoWriter.Printf("  Turn 1 (investigate+discover attempt) — task: %s (state: %s)\n", task.ID, task.Status.State)
+
+		By("Verifying the RR was created, and no WorkflowExecution was ever created for it (#1918)")
+		rrName := fpWaitForRRWithTargetNS(targetNS, 60*time.Second)
+		Expect(rrName).NotTo(BeEmpty())
+		fpAssertNoWEForRR(rrName)
+		GinkgoWriter.Printf("  Confirmed: %s completed with no WorkflowExecution — the harness gate blocked discover_workflows regardless of the declared autonomous mode\n", rrName)
+	})
+})

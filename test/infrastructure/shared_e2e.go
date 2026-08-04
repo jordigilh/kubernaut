@@ -389,6 +389,53 @@ func noReinvocationAfterCompleteScenarioYAML(ns string) string {
 `, ns)
 }
 
+// notActionableAutonomousScenarioYAML returns a keyword scenario for
+// E2E-FP-1918-001 (issue #1918: harness-enforced actionability gate). A
+// single message chains kubernaut_remediate (description carries the
+// mock-LLM "mock_not_actionable" keyword, registered in
+// test/services/mock-llm/scenarios/scenario_mock_keywords.go and matched
+// against the full LLM prompt content -- which includes
+// SignalContext.Description via SignalToPrompt) -> kubernaut_investigate
+// (declaring interaction_mode=full_remediation_autonomous, an autonomy grant
+// that would normally leave phase2_blocked=false) -> a same-turn
+// kubernaut_discover_workflows attempt, simulating a lower-reasoning model
+// that ignores/misreads the not-actionable RCA and tries to proceed anyway.
+// Pre-#1918-fix, full_remediation_autonomous alone would leave
+// phase2_blocked=false and this call would reach KA's real
+// discover_workflows implementation. Post-fix, phaseGuardAfter's #1918
+// override already forced phase2_blocked=true when kubernaut_investigate
+// returned KA's is_actionable=false signal, so phaseGuardBefore's existing
+// DD-AF-011 hard-reject rejects the discover_workflows call before it ever
+// reaches KA -- proven end-to-end by asserting no WorkflowExecution is ever
+// created for the RR (mirrors noReinvocationAfterCompleteScenarioYAML's
+// assertion style above). Returns "" if ns is empty.
+func notActionableAutonomousScenarioYAML(ns string) string {
+	if ns == "" {
+		return ""
+	}
+	return fmt.Sprintf(`      - name: "af_not_actionable_autonomous_1918"
+        keywords: ["investigate and fix using mock not actionable rca"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_remediate"
+          arguments:
+            namespace: "%s"
+            kind: "Deployment"
+            name: "memory-eater"
+            api_version: "apps/v1"
+            description: "mock_not_actionable FP E2E harness-enforced actionability gate request (#1918)"
+        next_tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+            interaction_mode: "full_remediation_autonomous"
+          next_tool_call:
+            name: "kubernaut_discover_workflows"
+            arguments:
+              rr_id: "$from_tool:kubernaut_remediate:rr_id"
+`, ns)
+}
+
 // resolveWorkflowUUID looks up the real catalog UUID seeded for a workflow
 // fixture (keyed "<workflowName>:<environment>" in workflowUUIDs, per
 // SeedWorkflowsViaKubectlApply/SeedWorkflowsViaDirectCRDCreationFromKubeconfig)
@@ -520,6 +567,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		consentGatePhase2AttemptScenarioYAML(afRemediateNS["consent-phase2"]) +
 		consentGatePhase3AttemptScenarioYAML(afRemediateNS["consent-phase3"], afSelectWorkflowID) +
 		noReinvocationAfterCompleteScenarioYAML(afRemediateNS["terminal-1912"]) +
+		notActionableAutonomousScenarioYAML(afRemediateNS["not-actionable-1918"]) +
 		`      - name: "af_investigate"
         keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
