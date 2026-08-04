@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,10 +23,10 @@ import (
 
 // GeminiRequest represents a Gemini API generateContent request.
 type GeminiRequest struct {
-	Contents          []GeminiContent    `json:"contents"`
-	SystemInstruction *GeminiContent     `json:"systemInstruction,omitempty"`
-	Tools             []GeminiToolDecl   `json:"tools,omitempty"`
-	GenerationConfig  *GeminiGenConfig   `json:"generationConfig,omitempty"`
+	Contents          []GeminiContent  `json:"contents"`
+	SystemInstruction *GeminiContent   `json:"systemInstruction,omitempty"`
+	Tools             []GeminiToolDecl `json:"tools,omitempty"`
+	GenerationConfig  *GeminiGenConfig `json:"generationConfig,omitempty"`
 }
 
 // GeminiContent represents a content block with role and parts.
@@ -37,10 +37,10 @@ type GeminiContent struct {
 
 // GeminiPart represents a single part within a content block.
 type GeminiPart struct {
-	Text             string               `json:"text,omitempty"`
-	Thought          bool                 `json:"thought,omitempty"`
-	FunctionCall     *GeminiFunctionCall  `json:"functionCall,omitempty"`
-	FunctionResponse *GeminiFunctionResp  `json:"functionResponse,omitempty"`
+	Text             string              `json:"text,omitempty"`
+	Thought          bool                `json:"thought,omitempty"`
+	FunctionCall     *GeminiFunctionCall `json:"functionCall,omitempty"`
+	FunctionResponse *GeminiFunctionResp `json:"functionResponse,omitempty"`
 }
 
 // GeminiFunctionCall represents a function call issued by the model.
@@ -179,6 +179,22 @@ func HasFunctionResponse(contents []GeminiContent) bool {
 		}
 	}
 	return false
+}
+
+// CountFunctionResponses returns the total number of FunctionResponse parts
+// across all contents. Used to position a caller within a NextToolCall chain
+// (issue #1853): the Nth response received means the Nth chain link is due
+// to fire next, generalizing the historical single-NextToolCall firing rule.
+func CountFunctionResponses(contents []GeminiContent) int {
+	count := 0
+	for _, c := range contents {
+		for _, p := range c.Parts {
+			if p.FunctionResponse != nil {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 // LastContentIsFunctionResponse returns true if the final content entry in the

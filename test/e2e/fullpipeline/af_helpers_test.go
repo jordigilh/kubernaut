@@ -1,3 +1,19 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package fullpipeline
 
 import (
@@ -56,12 +72,46 @@ func fpA2ATasksSend(id, text string) string {
 // fpA2ATasksSendWithTask continues an existing A2A task by including taskId.
 // Includes a contextId derived from the taskId to prevent the SessionInterceptor
 // from overriding to a stale session.
+//
+// This is safe for multi-turn tests whose driver-establishing kubernaut_investigate
+// call happens on Turn 2+ (e.g. 07/08/09/17): every fpA2ATasksSendWithTask call for
+// the same taskID derives the identical "ctx-"+taskID session, so ADK session state
+// (af_interactive_driver_active, etc.) set on Turn 2 is visible on Turn 3+. It is NOT
+// safe when Turn 1 itself (via fpA2ATasksSend, whose contextId is "ctx-"+id, NOT
+// "ctx-"+taskID) already ran kubernaut_investigate -- Turn 2's derived "ctx-"+taskID
+// session is a brand-new, empty ADK session that never saw that state, so a
+// driver-gated tool call on Turn 2 is wrongly hard-rejected with "no_active_driver"
+// (issue #1899 E2E tests: use fpA2ATasksSendWithContext instead in that case).
 func fpA2ATasksSendWithTask(id, taskID, text string) string {
 	return fpBuildJSONRPC(id, "message/send", map[string]interface{}{
 		"id": taskID,
 		"message": map[string]interface{}{
 			"messageId": "msg-" + id,
 			"contextId": "ctx-" + taskID,
+			"role":      "user",
+			"parts": []map[string]interface{}{
+				{"kind": "text", "text": text},
+			},
+		},
+	})
+}
+
+// fpA2ATasksSendWithContext continues an existing A2A task like
+// fpA2ATasksSendWithTask, but pins contextId to the caller-supplied ctxID
+// instead of deriving one from taskID. Use this when Turn 1's own message
+// (sent via fpA2ATasksSend, whose session context is "ctx-"+turn1ID) already
+// ran a driver-establishing tool (kubernaut_investigate) chained together
+// with other tool calls in that SAME turn: subsequent genuine turns must
+// keep landing in that exact ADK session (ctxID = "ctx-"+turn1ID) to see the
+// af_interactive_driver_active / af_phase*_blocked / interaction_mode state
+// Turn 1 persisted, rather than a fresh "ctx-"+taskID session that never saw
+// it (issue #1899).
+func fpA2ATasksSendWithContext(id, ctxID, taskID, text string) string {
+	return fpBuildJSONRPC(id, "message/send", map[string]interface{}{
+		"id": taskID,
+		"message": map[string]interface{}{
+			"messageId": "msg-" + id,
+			"contextId": ctxID,
 			"role":      "user",
 			"parts": []map[string]interface{}{
 				{"kind": "text", "text": text},
@@ -158,10 +208,12 @@ func fpWaitForRR(nameSubstring string, timeout time.Duration) string {
 }
 
 // fpWaitForRRWithTargetNS polls for a RemediationRequest whose targetResource.name
-// contains nameSubstring AND whose spec.targetResource.namespace equals targetNS.
+// contains "memory-eater" AND whose spec.targetResource.namespace equals targetNS.
 // This avoids picking up RRs from parallel tests that share the same name pattern
-// but target different namespaces.
-func fpWaitForRRWithTargetNS(nameSubstring, targetNS string, timeout time.Duration) string {
+// but target different namespaces. Every FP suite caller targets the shared
+// "memory-eater" fixture Deployment, so the name is fixed rather than parameterized.
+func fpWaitForRRWithTargetNS(targetNS string, timeout time.Duration) string {
+	const nameSubstring = "memory-eater"
 	var rrName string
 	Eventually(func() bool {
 		rrList := &remediationv1.RemediationRequestList{}
@@ -414,4 +466,3 @@ func fpPostSignalToGateway(reason, podName, podNamespace string) string {
 		"Gateway response must include remediationRequestName for signal %q", reason)
 	return rrName
 }
-

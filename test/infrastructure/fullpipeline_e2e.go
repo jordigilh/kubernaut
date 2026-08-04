@@ -408,6 +408,30 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	afRemediateNS = map[string]string{
 		"autonomous":  fmt.Sprintf("fp-auto-%s", uuid.New().String()[:8]),
 		"interactive": fmt.Sprintf("fp-int-%s", uuid.New().String()[:8]),
+		// combined-investigate: dedicated namespace for E2E-FP-1853-001
+		// (issue #1853 mode 2 — Interactive, single combined message):
+		// "create and investigate remediation" triggers kubernaut_remediate
+		// chained into kubernaut_investigate within one turn, stopping at RCA.
+		"combined-investigate": fmt.Sprintf("fp-comb-%s", uuid.New().String()[:8]),
+		// full-interactive: dedicated namespace for E2E-FP-1853-002 (issue
+		// #1853 mode 3 — "Full Interactive Remediation" / autonomous-interactive
+		// per pkg/apifrontend/agent/prompt.txt): "investigate and fix
+		// remediation" triggers kubernaut_investigate chained all the way
+		// through discover_workflows -> select_workflow -> watch with no
+		// pause for manual workflow selection.
+		"full-interactive": fmt.Sprintf("fp-full-%s", uuid.New().String()[:8]),
+		// consent-phase2: dedicated namespace for E2E-FP-1899-001 (DD-AF-011,
+		// issue #1899 Phase 1->2 consent gate): a single message declares
+		// interaction_mode=interactive on kubernaut_investigate then attempts
+		// a same-turn fire-and-forget kubernaut_discover_workflows -- the
+		// structural gate must block it until a genuine follow-up turn.
+		"consent-phase2": fmt.Sprintf("fp-cg2-%s", uuid.New().String()[:8]),
+		// consent-phase3: dedicated namespace for E2E-FP-1899-002 (DD-AF-011,
+		// issue #1899 Phase 2->3 consent gate): a single message declares
+		// interaction_mode=full_remediation (authorizing discover_workflows
+		// to auto-chain) then attempts a same-turn fire-and-forget
+		// kubernaut_select_workflow -- the gate must block only the 3rd hop.
+		"consent-phase3": fmt.Sprintf("fp-cg3-%s", uuid.New().String()[:8]),
 	}
 	_, _ = fmt.Fprintln(writer, "  📌 AF remediate namespaces:")
 	for key, ns := range afRemediateNS {
@@ -1236,11 +1260,11 @@ func waitForFullPipelineServicesReady(ctx context.Context, namespace, kubeconfig
 		"kubernaut-agent",
 		"gateway",
 		"event-exporter",
-		"mock-slack",    // Accepts Slack webhook POSTs so notifications reach terminal phase
-		"prometheus",    // ADR-EM-001: Prometheus for EM metric comparison
-		"alertmanager",  // ADR-EM-001: AlertManager for EM alert resolution
-		"apifrontend",   // Issue #1189: AF as FP signal source
-		"dex",           // Issue #1189: OIDC provider for AF authentication
+		"mock-slack",   // Accepts Slack webhook POSTs so notifications reach terminal phase
+		"prometheus",   // ADR-EM-001: Prometheus for EM metric comparison
+		"alertmanager", // ADR-EM-001: AlertManager for EM alert resolution
+		"apifrontend",  // Issue #1189: AF as FP signal source
+		"dex",          // Issue #1189: OIDC provider for AF authentication
 	}
 	if !skipMockLLM() {
 		deployments = append(deployments, "mock-llm")

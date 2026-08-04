@@ -1,3 +1,19 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package fullpipeline
 
 import (
@@ -76,7 +92,7 @@ var _ = Describe("AF A2A Cross-Namespace RR [E2E-FP-1292-001]", Label("fp", "af"
 		GinkgoWriter.Printf("  A2A task: %s (state: %s)\n", task.ID, task.Status.State)
 
 		By("Waiting for RR in kubernaut-system (controllerNS per ADR-057)")
-		rrName := fpWaitForRRWithTargetNS("memory-eater", workloadNS, 120*time.Second)
+		rrName := fpWaitForRRWithTargetNS(workloadNS, 120*time.Second)
 		Expect(rrName).NotTo(BeEmpty())
 		GinkgoWriter.Printf("  RR created: %s/%s\n", namespace, rrName)
 

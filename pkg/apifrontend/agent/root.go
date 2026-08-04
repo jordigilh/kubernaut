@@ -1,3 +1,19 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package agent
 
 import (
@@ -68,7 +84,7 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 		Tools:                allTools,
 		Instruction:          cfg.Instruction,
 		InstructionProvider:  cfg.InstructionProvider,
-		BeforeModelCallbacks: []llmagent.BeforeModelCallback{historySanitizer},
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{historySanitizer, checkpointToolFilter},
 		BeforeToolCallbacks:  beforeCallbacks,
 		AfterToolCallbacks:   []llmagent.AfterToolCallback{afterMetrics, afterAudit, afterPhase, afterLog},
 	})
@@ -130,7 +146,9 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"complete", func() (tool.Tool, error) { return tools.NewCompleteTool(mcpC, cfg.Auditor) }},
 		{"cancel", func() (tool.Tool, error) { return tools.NewCancelInvestigationTool(mcpC, cfg.Auditor) }},
 		{"status", func() (tool.Tool, error) { return tools.NewStatusTool(mcpC, cfg.Auditor) }},
-		{"reconnect", func() (tool.Tool, error) { return tools.NewReconnectTool(mcpC, cfg.TypedClient, cfg.Namespace, cfg.Auditor) }},
+		{"reconnect", func() (tool.Tool, error) {
+			return tools.NewReconnectTool(mcpC, cfg.TypedClient, cfg.Namespace, cfg.Auditor)
+		}},
 		// RR tools — AF SA writes AF-owned CRDs
 		{"check_existing_remediation", func() (tool.Tool, error) {
 			return tools.NewCheckExistingRemediationTool(cfg.TypedClient, cfg.Namespace)
@@ -150,19 +168,19 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 			toolConstructor{"get_alert_details", func() (tool.Tool, error) {
 				return tools.NewGetAlertDetailsTool(cfg.PromClient)
 			}},
-		toolConstructor{"kubernaut_investigate_alert", func() (tool.Tool, error) {
-			return tools.NewInvestigateAlertTool(tools.InvestigateAlertConfig{
-				Client:             cfg.TypedClient,
-				DynClient:          cfg.K8sClient,
-				ControllerNS:       cfg.Namespace,
-				Triager:            cfg.Triager,
-				PromClient:         cfg.PromClient,
-				Auditor:            cfg.Auditor,
-				ValidationFailures: cfg.AlertValidationFailures,
-				Mapper:             cfg.RESTMapper,
-				Signaler:           buildAlertISSignaler(cfg),
-			})
-		}},
+			toolConstructor{"kubernaut_investigate_alert", func() (tool.Tool, error) {
+				return tools.NewInvestigateAlertTool(tools.InvestigateAlertConfig{
+					Client:             cfg.TypedClient,
+					DynClient:          cfg.K8sClient,
+					ControllerNS:       cfg.Namespace,
+					Triager:            cfg.Triager,
+					PromClient:         cfg.PromClient,
+					Auditor:            cfg.Auditor,
+					ValidationFailures: cfg.AlertValidationFailures,
+					Mapper:             cfg.RESTMapper,
+					Signaler:           buildAlertISSignaler(cfg),
+				})
+			}},
 		)
 	}
 
@@ -496,4 +514,3 @@ func newAuditToolCallback(auditor audit.Emitter, sessionSvc *session.CRDSessionS
 		return nil, nil
 	}
 }
-

@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -54,6 +54,22 @@ func applyOverride(cs *configScenario, ov config.ScenarioOverride) {
 			entries[i] = MultiToolCallEntry{Name: tc.Name, Arguments: tc.Arguments}
 		}
 		cs.config.MultiToolCalls = entries
+	}
+}
+
+// convertToolCallChain recursively converts a YAML-parsed ToolCallOverride
+// chain (config.ToolCallOverride.NextToolCall) into the scenario-internal
+// MultiToolCallEntry linked-list representation, preserving arbitrary chain
+// depth (issue #1853).
+func convertToolCallChain(tc *config.ToolCallOverride) *MultiToolCallEntry {
+	if tc == nil {
+		return nil
+	}
+	return &MultiToolCallEntry{
+		Name:              tc.Name,
+		Arguments:         tc.Arguments,
+		NextToolCall:      convertToolCallChain(tc.NextToolCall),
+		FallbackArguments: tc.FallbackArguments,
 	}
 }
 
@@ -127,19 +143,15 @@ func DefaultRegistryFull(overrides *config.Overrides, goldenDir string) *Registr
 		// ADK agent conversations.
 		for _, ks := range overrides.KeywordScenarios {
 			cfg := MockScenarioConfig{
-				ScenarioName:   ks.Name,
-				ToolCallName:   ks.ToolCall.Name,
-				ToolCallArgs:   ks.ToolCall.Arguments,
-				ForceText:      BoolPtr(false),
-				RepeatToolCall: ks.RepeatToolCall,
-				ThoughtText:    ks.ThoughtText,
+				ScenarioName:      ks.Name,
+				ToolCallName:      ks.ToolCall.Name,
+				ToolCallArgs:      ks.ToolCall.Arguments,
+				FallbackArguments: ks.ToolCall.FallbackArguments,
+				ForceText:         BoolPtr(false),
+				RepeatToolCall:    ks.RepeatToolCall,
+				ThoughtText:       ks.ThoughtText,
 			}
-			if ks.NextToolCall != nil {
-				cfg.NextToolCall = &MultiToolCallEntry{
-					Name:      ks.NextToolCall.Name,
-					Arguments: ks.NextToolCall.Arguments,
-				}
-			}
+			cfg.NextToolCall = convertToolCallChain(ks.NextToolCall)
 			if ks.MatchLastOnly {
 				r.Register(lastUserKeywordScenarioMulti(ks.Name, ks.Keywords, cfg))
 			} else {

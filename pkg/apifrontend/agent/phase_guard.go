@@ -1,21 +1,57 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package agent
 
 import (
 	"github.com/go-logr/logr"
 	"google.golang.org/adk/agent/llmagent"
+	adksession "google.golang.org/adk/session"
 	"google.golang.org/adk/tool"
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
 const (
-	stateKeyDriverActive  = "af_interactive_driver_active"
-	stateKeyActiveRRID    = "af_active_rr_id"
+	// stateKeyDriverActive/stateKeyActiveRRID mirror
+	// session.StateKeyDriverActive/session.StateKeyActiveRRID -- kept as
+	// local aliases (rather than a broad rename) to minimize churn in this
+	// file; both packages read/write the identical state keys.
+	stateKeyDriverActive  = session.StateKeyDriverActive
+	stateKeyActiveRRID    = session.StateKeyActiveRRID
 	stateKeyActiveSession = "af_active_session_id"
 )
 
 const errNoActiveDriver = "interactive session not active — you must call kubernaut_investigate first to establish a driver session before using this tool"
+
+// errCheckpointBlocked is returned by phaseGuardBefore's DD-AF-011 (#1899)
+// backstop layer when a phase-gated tool is attempted while its checkpoint
+// flag is still set. checkpointToolFilter (a BeforeModelCallback) is the
+// primary layer that keeps the model from even seeing the tool as an
+// option; this is defense-in-depth for the rare case a call slips through.
+const errCheckpointBlocked = "this action requires explicit user confirmation first -- wait for the user's next message before proceeding"
+
+// checkpointGatedTools maps each phase-gated tool to the checkpoint flag
+// that, when set, must hard-reject it (DD-AF-011, #1899).
+var checkpointGatedTools = map[string]string{
+	"kubernaut_discover_workflows": session.StateKeyPhase2Blocked,
+	"kubernaut_select_workflow":    session.StateKeyPhase3Blocked,
+}
 
 // mcpDependentTools are tools that require an active interactive driver session
 // (i.e., a successful kubernaut_investigate) before they can be called. Without
@@ -85,6 +121,18 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 			}
 		}
 
+		// DD-AF-011 (#1899) backstop layer: hard-reject phase-gated tools
+		// whose checkpoint flag is still set, even though a driver is
+		// active. checkpointToolFilter (BeforeModelCallback) is the primary
+		// layer that should already keep these tools out of the model's
+		// tool list; this defends against a call slipping through.
+		if flagKey, gated := checkpointGatedTools[t.Name()]; gated {
+			if blocked, _ := state.Get(flagKey); blocked == true {
+				logger.Info("phase-guard blocked tool", "tool", t.Name(), "reason", "checkpoint_blocked")
+				return map[string]any{"error": errCheckpointBlocked}, nil
+			}
+		}
+
 		return nil, nil
 	}
 
@@ -92,6 +140,10 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 		toolName := t.Name()
 		isEntry := driverEntryTools[toolName]
 		isTerminal := sessionTerminalTools[toolName]
+		// DD-AF-011 (#1899): discover_workflows is neither a driver-entry nor
+		// a session-terminal tool, but its success still needs to persist
+		// the phase-3 checkpoint flag.
+		isDiscoverWorkflows := toolName == "kubernaut_discover_workflows"
 
 		isSuccess := callErr == nil && resp != nil
 		if isSuccess {
@@ -108,7 +160,7 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 			}
 		}
 
-		if !isEntry && !isTerminal {
+		if !isEntry && !isTerminal && !isDiscoverWorkflows {
 			return resp, callErr
 		}
 		if !isSuccess {
@@ -116,9 +168,20 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 		}
 
 		logger := logr.FromContextOrDiscard(ctx)
+		state := ctx.State()
+
+		if isDiscoverWorkflows {
+			if state != nil {
+				mode := interactionModeFromState(state)
+				blocked := mode != session.InteractionModeFullRemediationAutonomous
+				if err := state.Set(session.StateKeyPhase3Blocked, blocked); err != nil {
+					logger.Error(err, "phase-guard failed to persist phase3_blocked state")
+				}
+			}
+			return resp, callErr
+		}
 
 		if isEntry {
-			state := ctx.State()
 			if state != nil {
 				if err := state.Set(stateKeyDriverActive, true); err != nil {
 					logger.Error(err, "phase-guard failed to set driver state")
@@ -144,6 +207,26 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 						logger.Error(err, "phase-guard failed to store session_id in state")
 					}
 				}
+
+				// DD-AF-011 (#1899): only kubernaut_investigate carries the
+				// interaction_mode signal (kubernaut_reconnect resumes an
+				// already-established session and leaves any prior mode/
+				// checkpoint state untouched).
+				if toolName == "kubernaut_investigate" {
+					mode := session.InteractionModeInteractive
+					if inputArgs != nil {
+						if raw, ok := inputArgs["interaction_mode"].(string); ok && session.ValidInteractionMode(raw) {
+							mode = raw
+						}
+					}
+					if err := state.Set(session.StateKeyInteractionMode, mode); err != nil {
+						logger.Error(err, "phase-guard failed to persist interaction mode")
+					}
+					blocked := mode == session.InteractionModeInteractive
+					if err := state.Set(session.StateKeyPhase2Blocked, blocked); err != nil {
+						logger.Error(err, "phase-guard failed to persist phase2_blocked state")
+					}
+				}
 			}
 		}
 
@@ -161,6 +244,24 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 	}
 
 	return before, after
+}
+
+// interactionModeFromState reads the DD-AF-011 (#1899) interaction mode
+// persisted by a prior kubernaut_investigate success, failing safe to
+// InteractionModeInteractive when unset or invalid (AC-6, SI-10).
+func interactionModeFromState(state adksession.State) string {
+	if state == nil {
+		return session.InteractionModeInteractive
+	}
+	v, err := state.Get(session.StateKeyInteractionMode)
+	if err != nil {
+		return session.InteractionModeInteractive
+	}
+	s, ok := v.(string)
+	if !ok || !session.ValidInteractionMode(s) {
+		return session.InteractionModeInteractive
+	}
+	return s
 }
 
 // NewPhaseGuardForTest exports the phase guard without registry for unit testing.
