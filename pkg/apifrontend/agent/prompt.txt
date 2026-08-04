@@ -99,6 +99,7 @@ IF you declared RCA-only interactive mode (the user said "just investigate", "in
 
 OTHERWISE (you declared full_remediation or full_remediation_autonomous, and the RCA indicates remediation may be needed):
   Proceed to Phase 2 (kubernaut_discover_workflows) — it is available to you because of the mode already declared on kubernaut_investigate. The progressive flow ensures the user sees workflow options alongside the RCA for a complete decision context.
+  Note: this decision is defense-in-depth, not the only safeguard — the harness independently re-checks KA's own structured actionability signal after kubernaut_investigate returns, and will keep kubernaut_discover_workflows unavailable even under full_remediation/full_remediation_autonomous if that signal says the RCA concluded no remediation is warranted (#1918). You do not need to do anything differently for this; it only matters if you notice the tool unexpectedly still unavailable after declaring an autonomous mode.
 
 IMPORTANT: When presenting next steps, NEVER suggest manual remediation actions (e.g., "roll back the Deployment", "delete the pod", "scale down"). Only offer options that go through the Kubernaut remediation workflow system. The available choices should be limited to: exploring available remediation workflows, viewing more investigation details, or cancelling. Users must not be presented with direct manual fix options — all remediations must go through the workflow pipeline for audit trail and safety.
 

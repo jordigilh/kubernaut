@@ -129,6 +129,14 @@ type InvestigateRCA struct {
 	RCASummary     string   `json:"rca_summary,omitempty"`
 	TotalLLMTurns  int      `json:"total_llm_turns,omitempty"`
 	TotalToolCalls int      `json:"total_tool_calls,omitempty"`
+	// IsActionable/HasWorkflow (#1918) mirror KA's rcaEventPayload fields of
+	// the same name, giving phase_guard.go's harness-enforced gate a
+	// structured signal for whether Phase 2 (kubernaut_discover_workflows)
+	// should stay reachable, independent of the model's own reading of the
+	// RCA narrative. *bool (not bool) so an absent key (older/unset signal)
+	// stays distinguishable from a genuine computed false.
+	IsActionable *bool `json:"is_actionable,omitempty"`
+	HasWorkflow  bool  `json:"has_workflow,omitempty"`
 }
 
 // SessionStartedHook is called after a successful StartInvestigation with the
