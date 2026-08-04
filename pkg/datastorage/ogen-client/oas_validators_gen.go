@@ -2883,6 +2883,38 @@ func (s ApifrontendUserDecisionPayloadEventType) Validate() error {
 	}
 }
 
+func (s *ApifrontendWorkflowDiscoveryPayload) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.EventType.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "event_type",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ApifrontendWorkflowDiscoveryPayloadEventType) Validate() error {
+	switch s {
+	case "apifrontend.workflow.discovery":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *AuditEvent) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -3410,6 +3442,11 @@ func (s AuditEventEventData) Validate() error {
 		return nil
 	case ApifrontendToolExecutedPayloadAuditEventEventData:
 		if err := s.ApifrontendToolExecutedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendWorkflowDiscoveryPayloadAuditEventEventData:
+		if err := s.ApifrontendWorkflowDiscoveryPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -4068,6 +4105,11 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case ApifrontendToolExecutedPayloadAuditEventRequestEventData:
 		if err := s.ApifrontendToolExecutedPayload.Validate(); err != nil {
+			return err
+		}
+		return nil
+	case ApifrontendWorkflowDiscoveryPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendWorkflowDiscoveryPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
