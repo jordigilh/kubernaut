@@ -101,6 +101,42 @@ func notActionableConfig() MockScenarioConfig {
 	}
 }
 
+// notActionableGroundedConfig backs E2E-FP-1918-001
+// (test/e2e/fullpipeline/18_af_a2a_consent_gate_test.go, issue #1918).
+//
+// Unlike notActionableConfig (registered via the free-text "mock_not_actionable"
+// keyword in registry_default.go, matched broadly against ctx.Content+ctx.AllText),
+// this scenario is registered via signalScenario, which only inspects
+// ctx.Content -- the fixed last-user-text of a single Gemini request, never
+// the accumulated allText that folds in prior turns' function responses/args
+// (see response.ExtractTextFromContents). This distinction matters because
+// af_create_rr.go's HandleCreateRR echoes the RR's derived SignalName back
+// in kubernaut_remediate's own JSON response (CreateRRResult.SignalName) --
+// which becomes part of AF's OWN orchestration conversation's allText on the
+// next turn. A broadly-matched keyword there would silently hijack AF's own
+// tool-selection turn into whatever KA-side scenario shares that keyword,
+// exactly as empirically confirmed happening with notActionableConfig's
+// "mock_not_actionable" keyword during E2E-FP-1918-001 development. Grounding
+// this scenario via a real K8s Event Reason (deriveSignalName's Tier 3a) and
+// matching only via signalScenario keeps it safe: KA's own investigation
+// prompt literally renders "Signal Name: <value>" (see
+// incident_investigation.tmpl) which extractSignal's regex picks up from
+// ctx.Content, while AF's own conversation content never contains that
+// space-separated phrase (its echoed field is JSON "signal_name":"...",
+// underscore not space) and is unaffected by allText growth on later turns.
+func notActionableGroundedConfig() MockScenarioConfig {
+	return MockScenarioConfig{
+		ScenarioName: "not_actionable_grounded_1918", SignalName: "E2EFP1918NotActionable", Severity: "info",
+		Confidence:   0.0,
+		Rationale:    "E2E-FP-1918-001: synthetic not-actionable signal, zero-replica Deployment never scheduled a Pod",
+		RootCause:    "Synthetic E2E test signal on a zero-replica Deployment -- no real workload or fault exists",
+		ResourceKind: "Deployment", ResourceNS: "not-actionable-1918", ResourceName: "memory-eater",
+		APIVersion:           "apps/v1",
+		InvestigationOutcome: "predictive_no_action",
+		IsActionable:         BoolPtr(false),
+	}
+}
+
 func parallelToolsConfig() MockScenarioConfig {
 	actionable := true
 	return MockScenarioConfig{
