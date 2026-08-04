@@ -677,6 +677,25 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           arguments:
             rr_id: "$from_tool:kubernaut_remediate:rr_id"
             workflow_id: "` + afSelectWorkflowID + `"
+      # af_select_discovered_workflow_1899 exists alongside af_select_workflow
+      # above (distinct keyword, same resolved UUID) so the #1899 consent-gate
+      # E2E tests have a dedicated, self-documenting keyword ("select the
+      # discovered workflow") for their genuine follow-up select_workflow
+      # turn, independent of whether af_select_workflow's own keyword phrase
+      # ever changes. Confirmed via must-gather RCA on release/v1.5 (where
+      # af_select_workflow still used a hardcoded human-readable literal,
+      # issue #1834): an unresolved workflow_id fails kubernaut_select_workflow
+      # with invalid_workflow, which would mask the consent gate's own PASS
+      # behind an unrelated downstream error.
+      - name: "af_select_discovered_workflow_1899"
+        keywords: ["select the discovered workflow"]
+        match_last_only: true
+        repeat_tool_call: true
+        tool_call:
+          name: "kubernaut_select_workflow"
+          arguments:
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+            workflow_id: "` + afSelectWorkflowID + `"
       - name: "af_watch"
         keywords: ["watch remediation", "watch pipeline", "watch progress"]
         match_last_only: true
