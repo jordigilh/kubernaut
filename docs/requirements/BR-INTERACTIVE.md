@@ -200,6 +200,43 @@ See [docs/mcp/discover-workflows-contract.md](../mcp/discover-workflows-contract
 
 ---
 
+## BR-INTERACTIVE-011: AF Remediation Mode Selection and Full Interactive Remediation
+
+**Business Requirement ID**: BR-INTERACTIVE-011
+**Priority**: P1
+**Status**: Implemented
+**GitHub Issue**: [#1855](https://github.com/jordigilh/kubernaut/issues/1855)
+
+### Business Need
+
+AF's ADK agent (`pkg/apifrontend/agent/prompt.txt`) selects between three distinct remediation modes purely from LLM judgment of user phrasing, with no explicit mode parameter or API contract. Two of the three modes (autonomous, interactive) were already formalized by BR-INTERACTIVE-001..010 and covered by tests; the third mode -- "Full Interactive Remediation" -- streams the same RCA transparency as interactive mode but then auto-selects the highest-confidence workflow and proceeds to execution without pausing for user selection. This mode existed in production and had E2E coverage (`E2E-FP-1853-002`, #1853) but no business-requirement record of its trigger phrasing, decision algorithm, or success criteria, leaving operators and future contributors with no authoritative reference for how mode selection works or why mode 3 is safe to auto-select.
+
+### Mode Selection Decision Algorithm
+
+AF's agent selects a mode per user turn based on phrasing alone (no session state, no explicit mode flag):
+
+| Mode | Trigger phrasing (examples) | Tool sequence | Pauses for user? |
+|------|------------------------------|----------------|-------------------|
+| 1. Autonomous | "fix", "remediate", "address", "resolve", "heal" (alone, no oversight implied) | `kubernaut_remediate` only | No — pipeline (AA/RO/WFE) handles investigation and workflow selection autonomously after RR creation |
+| 2. Interactive | "investigate", "what's wrong with", "diagnose", "look into" (alone) | `kubernaut_investigate` → **stop** | Yes — after RCA (Phase 1), waits for the user to explicitly drive `kubernaut_discover_workflows` → `kubernaut_select_workflow` → `kubernaut_watch` |
+| 3. Full Interactive Remediation | "investigate and fix", "diagnose and remediate", "look into and fix", or combined intent implying both transparency and completion | `kubernaut_investigate` → `kubernaut_discover_workflows` → `kubernaut_select_workflow` → `kubernaut_watch` (no pause) | No — same RCA transparency as mode 2, but auto-selects the highest-confidence workflow and proceeds straight through to a terminal state |
+
+Modes 2 and 3 share identical Phase 1 (RCA) behavior; the only branch point is whether the agent pauses after presenting findings (mode 2) or immediately proceeds to workflow discovery/selection/execution using the highest-confidence recommendation (mode 3). This mirrors `prompt.txt`'s own framing: "In interactive mode: STOP here and wait for user selection" vs. mode 3's "select the highest-confidence workflow automatically."
+
+### Success Criteria
+
+1. `prompt.txt` documents all three modes with explicit trigger-phrase lists, distinguishable by an LLM without ambiguity between mode 1 (single-verb fix intent) and mode 3 (combined investigate+fix intent)
+2. Mode 3 streams full Phase 1 (RCA) transparency to the user/A2A artifact before any workflow action is taken — parity with mode 2's transparency, not a shortcut that hides reasoning
+3. Mode 3 never pauses between Phase 1 and Phase 4 (execution) — no manual tool call is required from the user once mode 3 is triggered
+4. Mode 3 selects the workflow discovery result's highest-confidence recommendation, not an arbitrary or first-listed option
+5. Mode selection is re-evaluated per user turn from phrasing alone; there is no persistent "mode" field on RR/AIAnalysis/IS that could desynchronize from the agent's actual behavior
+
+### Contract Reference
+
+Behavioral proof: `test/e2e/fullpipeline/17_af_a2a_full_interactive_remediation_test.go` (`E2E-FP-1853-002`, #1853) drives mode 3 end-to-end (zero manual turns, terminal `WorkflowExecution`) using the `af_full_interactive_remediation_1853` mock-llm scenario (`test/infrastructure/shared_e2e.go`). Sibling mode-2 coverage: `test/e2e/fullpipeline/16_af_a2a_combined_investigate_test.go` (`E2E-FP-1853-001`). Mode 1 coverage: `E2E-FP-1189-002` (#1332). See `docs/testing/1853/TEST_PLAN.md` for the full test rationale.
+
+---
+
 ## Traceability Matrix
 
 | BR ID | PR | Checkpoint | Test Tier |
@@ -213,3 +250,4 @@ See [docs/mcp/discover-workflows-contract.md](../mcp/discover-workflows-contract
 | BR-INTERACTIVE-007 | PR1 | CP-1 | Unit |
 | BR-INTERACTIVE-008 | PR2 + PR6 | CP-2 + CP-5 | Unit + E2E |
 | BR-INTERACTIVE-009 | #1169 | — | Unit + IT + E2E |
+| BR-INTERACTIVE-011 | #1853 | — | E2E (`E2E-FP-1853-001`, `E2E-FP-1853-002`) |
