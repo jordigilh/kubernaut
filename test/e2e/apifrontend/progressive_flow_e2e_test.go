@@ -337,3 +337,163 @@ var _ = Describe("Structured Artifact Contract E2E — #1408", Ordered, Label("e
 			"SI-10: at least one artifact must have metadata schema=investigation_summary with DataPart containing summary")
 	})
 })
+
+// =============================================================================
+// E2E-AF-1922: session_active Fallback RCA Card Content Completeness
+//
+// Proves the rejected-driver journey: two concurrent "progressive investigate"
+// calls target the same fixture resource (af-investigate-e2e/af-investigate-target),
+// so the fingerprint-based RR reuse (createOrReuseRR) routes both through the
+// same RRID. The first caller acquires KA's single-driver session; the second
+// caller's kubernaut_investigate call is rejected with session_active
+// (BR-INTERACTIVE-004) and must still receive a renderable investigation_summary
+// fallback artifact (not a silently-dropped message), because that artifact's
+// rca.causal_chain is what the Console's hasRCAData guard requires to render
+// the RCA card.
+//
+// FedRAMP: AC-4 (information flow enforcement — the rejected caller's session
+// is still observable through the same audit-traceable artifact channel).
+//
+// Mock-LLM scenario: af_progressive_investigate
+// Keyword trigger: "progressive investigate"
+// =============================================================================
+
+var _ = Describe("session_active Fallback RCA Card Content — #1922", Ordered, Label("e2e", "session-active-fallback", "1922"), func() {
+	var sreToken string
+
+	BeforeEach(func() {
+		var err error
+		sreToken, err = fetchDEXTokenForPersona("sre")
+		Expect(err).NotTo(HaveOccurred(), "SRE DEX token required")
+		Expect(sreToken).NotTo(BeEmpty())
+	})
+
+	a2aSSEPost := func(ctx context.Context, body string) (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/a2a/invoke", strings.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "text/event-stream")
+		req.Header.Set("Authorization", "Bearer "+sreToken)
+		return httpClient.Do(req)
+	}
+
+	// findFallbackCausalChain scans an SSE response for an artifact-update
+	// event with metadata.schema="investigation_summary" and reports whether
+	// one was found and whether its rca.causal_chain is non-empty.
+	findFallbackCausalChain := func(resp *http.Response) (found, causalChainNonEmpty bool) {
+		sc := bufio.NewScanner(resp.Body)
+		sc.Buffer(make([]byte, 64*1024), 1024*1024)
+
+		for sc.Scan() {
+			line := strings.TrimRight(sc.Text(), "\r")
+			if !strings.HasPrefix(strings.TrimSpace(line), "data:") {
+				continue
+			}
+			data := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
+			if data == "" || !strings.HasPrefix(data, "{") {
+				continue
+			}
+
+			var envelope struct {
+				Result json.RawMessage `json:"result"`
+			}
+			if json.Unmarshal([]byte(data), &envelope) != nil || len(envelope.Result) == 0 {
+				continue
+			}
+
+			var raw map[string]any
+			if json.Unmarshal(envelope.Result, &raw) != nil {
+				continue
+			}
+			if kind, _ := raw["kind"].(string); kind != artifactUpdate {
+				continue
+			}
+			artifact, _ := raw["artifact"].(map[string]any)
+			if artifact == nil {
+				continue
+			}
+			meta, _ := artifact["metadata"].(map[string]any)
+			if meta["schema"] != "investigation_summary" {
+				continue
+			}
+			found = true
+
+			parts, _ := artifact["parts"].([]any)
+			for _, p := range parts {
+				part, _ := p.(map[string]any)
+				if part == nil {
+					continue
+				}
+				dpData, _ := part["data"].(map[string]any)
+				if dpData == nil {
+					continue
+				}
+				rcaData, _ := dpData["rca"].(map[string]any)
+				if rcaData == nil {
+					continue
+				}
+				if chain, ok := rcaData["causal_chain"].([]any); ok && len(chain) > 0 {
+					causalChainNonEmpty = true
+				}
+			}
+			if found {
+				break
+			}
+		}
+		return found, causalChainNonEmpty
+	}
+
+	It("E2E-AF-1922-001: AC-4 — rejected concurrent driver's session_active response still carries a renderable RCA card", func() {
+		firstCtx, firstCancel := context.WithTimeout(context.Background(), 4*time.Minute)
+		defer firstCancel()
+
+		firstStarted := make(chan struct{})
+		go func() {
+			defer GinkgoRecover()
+			resp, err := a2aSSEPost(firstCtx, a2aMessageStream("e2e-1922-first", "progressive investigate"))
+			close(firstStarted)
+			if err != nil {
+				return
+			}
+			defer func() { _ = resp.Body.Close() }()
+			// Drain to completion in the background so KA holds the
+			// single-driver session for the duration of the test, exactly
+			// as a real first responder would.
+			sc := bufio.NewScanner(resp.Body)
+			sc.Buffer(make([]byte, 64*1024), 1024*1024)
+			for sc.Scan() { //nolint:revive // drain-only loop, no per-line action needed
+			}
+		}()
+
+		select {
+		case <-firstStarted:
+		case <-time.After(10 * time.Second):
+			Fail("first investigate call did not start streaming within 10s")
+		}
+		// Give the first call time to create/reuse the RR and acquire KA's
+		// single-driver session before the second (contending) call arrives.
+		time.Sleep(3 * time.Second)
+
+		secondCtx, secondCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer secondCancel()
+		resp, err := a2aSSEPost(secondCtx, a2aMessageStream("e2e-1922-second", "progressive investigate"))
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+		found, causalChainNonEmpty := findFallbackCausalChain(resp)
+
+		GinkgoWriter.Printf("second (contending) caller: investigation_summary artifact found=%v, causal_chain non-empty=%v\n",
+			found, causalChainNonEmpty)
+
+		By("AC-4: the rejected concurrent driver must still receive an investigation_summary fallback artifact")
+		Expect(found).To(BeTrue(),
+			"second caller (rejected via session_active) must still receive an investigation_summary artifact (#1922)")
+
+		By("AC-4: the fallback artifact's rca.causal_chain must be non-empty so the Console's hasRCAData guard renders the RCA card")
+		Expect(causalChainNonEmpty).To(BeTrue(),
+			"rca.causal_chain must be non-empty for the rejected caller's RCA card to render (#1922)")
+	})
+})
