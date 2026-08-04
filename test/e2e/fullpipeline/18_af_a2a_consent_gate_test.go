@@ -111,6 +111,7 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 1->2 [E2E-FP-18
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
 
 		By("Turn 1 (single message): declare interactive mode, then fire-and-forget attempt discover_workflows in the same turn")
+		const turn1CtxID = "ctx-fp-cg2-1"
 		body := fpA2ATasksSend("fp-cg2-1",
 			"create and investigate then sneak workflow discovery for deployment memory-eater")
 		resp, err = fpA2AInvokeWithTimeout(body, 180*time.Second)
@@ -133,7 +134,13 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 1->2 [E2E-FP-18
 		GinkgoWriter.Printf("  Confirmed: no WorkflowExecution exists for %s after the blocked same-turn attempt\n", rrName)
 
 		By("Turn 2 (genuine): user explicitly asks to discover workflows — phase 1->2 gate must now lift")
-		body = fpA2ATasksSendWithTask("fp-cg2-2", taskID, "discover available workflows")
+		// #1899: pin to Turn 1's own session context (not a "ctx-"+taskID
+		// derivation) -- kubernaut_investigate ran inside Turn 1 itself, so
+		// the af_interactive_driver_active state it set only exists in
+		// turn1CtxID's ADK session. fpA2ATasksSendWithTask would land here
+		// in a brand-new empty session and get wrongly hard-rejected with
+		// "no_active_driver" (confirmed via must-gather RCA).
+		body = fpA2ATasksSendWithContext("fp-cg2-2", turn1CtxID, taskID, "discover available workflows")
 		resp2, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp2.Body.Close() }()
@@ -144,7 +151,7 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 1->2 [E2E-FP-18
 		GinkgoWriter.Printf("  Turn 2 — discover workflows OK (gate lifted on genuine user turn)\n")
 
 		By("Turn 3 (genuine): user explicitly selects a workflow — phase 2->3 gate must also lift on its own genuine turn")
-		body = fpA2ATasksSendWithTask("fp-cg2-3", taskID, "select workflow oomkill-increase-memory-v1")
+		body = fpA2ATasksSendWithContext("fp-cg2-3", turn1CtxID, taskID, "select workflow oomkill-increase-memory-v1")
 		resp3, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp3.Body.Close() }()
@@ -155,7 +162,7 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 1->2 [E2E-FP-18
 		GinkgoWriter.Printf("  Turn 3 — select workflow OK\n")
 
 		By("Turn 4 (genuine): watch remediation progress to completion")
-		body = fpA2ATasksSendWithTask("fp-cg2-4", taskID, "watch remediation progress")
+		body = fpA2ATasksSendWithContext("fp-cg2-4", turn1CtxID, taskID, "watch remediation progress")
 		resp4, err := fpA2AInvokeWithTimeout(body, 300*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp4.Body.Close() }()
@@ -249,6 +256,7 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 2->3 [E2E-FP-18
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
 
 		By("Turn 1 (single message): declare full_remediation mode (authorizes discovery), then fire-and-forget attempt select_workflow in the same turn")
+		const turn1CtxID = "ctx-fp-cg3-1"
 		body := fpA2ATasksSend("fp-cg3-1",
 			"create and investigate then sneak workflow selection for deployment memory-eater")
 		resp, err = fpA2AInvokeWithTimeout(body, 180*time.Second)
@@ -271,7 +279,11 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 2->3 [E2E-FP-18
 		GinkgoWriter.Printf("  Confirmed: no WorkflowExecution exists for %s after the blocked same-turn attempt\n", rrName)
 
 		By("Turn 2 (genuine): user explicitly selects a workflow — phase 2->3 gate must now lift")
-		body = fpA2ATasksSendWithTask("fp-cg3-2", taskID, "select workflow oomkill-increase-memory-v1")
+		// #1899: pin to Turn 1's own session context, same rationale as
+		// E2E-FP-1899-001 above -- kubernaut_investigate (and the
+		// mode-authorized discover_workflows auto-chain) ran inside Turn 1
+		// itself, so their state only exists in turn1CtxID's ADK session.
+		body = fpA2ATasksSendWithContext("fp-cg3-2", turn1CtxID, taskID, "select workflow oomkill-increase-memory-v1")
 		resp2, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp2.Body.Close() }()
@@ -282,7 +294,7 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 2->3 [E2E-FP-18
 		GinkgoWriter.Printf("  Turn 2 — select workflow OK (gate lifted on genuine user turn)\n")
 
 		By("Turn 3 (genuine): watch remediation progress to completion")
-		body = fpA2ATasksSendWithTask("fp-cg3-3", taskID, "watch remediation progress")
+		body = fpA2ATasksSendWithContext("fp-cg3-3", turn1CtxID, taskID, "watch remediation progress")
 		resp3, err := fpA2AInvokeWithTimeout(body, 300*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp3.Body.Close() }()
