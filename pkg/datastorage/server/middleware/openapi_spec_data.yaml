@@ -1915,6 +1915,7 @@ components:
             - $ref: '#/components/schemas/ApifrontendUserDecisionPayload'
             - $ref: '#/components/schemas/ApifrontendAuthAccessDeniedPayload'
             - $ref: '#/components/schemas/ApifrontendToolExecutedPayload'
+            - $ref: '#/components/schemas/ApifrontendWorkflowDiscoveryPayload'
             - $ref: '#/components/schemas/ApifrontendAuthSuccessPayload'
             - $ref: '#/components/schemas/ApifrontendAuthFailurePayload'
             - $ref: '#/components/schemas/ApifrontendRatelimitDeniedPayload'
@@ -2061,6 +2062,7 @@ components:
               'apifrontend.user.decision': '#/components/schemas/ApifrontendUserDecisionPayload'
               'apifrontend.auth.access_denied': '#/components/schemas/ApifrontendAuthAccessDeniedPayload'
               'apifrontend.tool.executed': '#/components/schemas/ApifrontendToolExecutedPayload'
+              'apifrontend.workflow.discovery': '#/components/schemas/ApifrontendWorkflowDiscoveryPayload'
               'apifrontend.auth.success': '#/components/schemas/ApifrontendAuthSuccessPayload'
               'apifrontend.auth.failure': '#/components/schemas/ApifrontendAuthFailurePayload'
               'apifrontend.ratelimit.denied': '#/components/schemas/ApifrontendRatelimitDeniedPayload'
@@ -4854,6 +4856,16 @@ components:
           type: string
           format: date-time
           description: ISO timestamp of analysis completion
+        isActionable:
+          type: boolean
+          nullable: true
+          description: |
+            Whether the investigation determined the incident is actionable
+            (Issue #1923). Tri-state: true/false when KA reached an explicit
+            determination, unset/null when the investigation never reached
+            the decisive step (e.g. blocked before tool-availability gating
+            resolved it). Propagated unmodified from KA's investigation
+            result; does not reflect any DataStorage-side re-evaluation.
         needsHumanReview:
           type: boolean
           default: false
@@ -6533,6 +6545,22 @@ components:
         target_kind:
           type: string
           description: Kubernetes resource kind (e.g., Pod, Deployment) the tool operated on
+
+    ApifrontendWorkflowDiscoveryPayload:
+      type: object
+      required: [event_type, rr_id, workflow_count]
+      description: Workflow discovery event payload (apifrontend.workflow.discovery) — kubernaut_discover_workflows tool returned a workflow list (AU-12, Issue #1923)
+      properties:
+        event_type:
+          type: string
+          enum: ['apifrontend.workflow.discovery']
+          description: Event type for discriminator (matches parent event_type)
+        rr_id:
+          type: string
+          description: RemediationRequest identifier the discovery was performed for
+        workflow_count:
+          type: integer
+          description: Number of workflows returned by KA's discovery protocol
 
     ApifrontendAuthSuccessPayload:
       type: object

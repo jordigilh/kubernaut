@@ -141,6 +141,7 @@ var typedPayloadEvents = map[EventType]bool{
 	EventUserDecision:            true,
 	EventAuthAccessDenied:        true,
 	EventToolExecuted:            true,
+	EventWorkflowDiscovery:       true,
 }
 
 func hasTypedPayload(t EventType) bool {
@@ -246,6 +247,7 @@ var eventDataBuilders = map[EventType]eventDataBuilder{
 	EventUserDecision:            buildUserDecisionPayload,
 	EventAuthAccessDenied:        buildAuthAccessDeniedPayload,
 	EventToolExecuted:            buildToolExecutedPayload,
+	EventWorkflowDiscovery:       buildWorkflowDiscoveryPayload,
 }
 
 func buildEventData(e *Event) ogenclient.AuditEventRequestEventData {
@@ -555,4 +557,13 @@ func buildToolExecutedPayload(e *Event) ogenclient.AuditEventRequestEventData {
 		payload.ErrorCode = ogenclient.NewOptString(v)
 	}
 	return ogenclient.NewApifrontendToolExecutedPayloadAuditEventRequestEventData(payload)
+}
+
+func buildWorkflowDiscoveryPayload(e *Event) ogenclient.AuditEventRequestEventData {
+	d := e.Detail
+	return ogenclient.NewApifrontendWorkflowDiscoveryPayloadAuditEventRequestEventData(ogenclient.ApifrontendWorkflowDiscoveryPayload{
+		EventType:     ogenclient.ApifrontendWorkflowDiscoveryPayloadEventTypeApifrontendWorkflowDiscovery,
+		RrID:          detailStr(d, "rr_id"),
+		WorkflowCount: detailInt(d, "workflow_count"),
+	})
 }

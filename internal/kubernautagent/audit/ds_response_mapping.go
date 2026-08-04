@@ -148,6 +148,10 @@ type investigationResultJSON struct {
 	CausalChain          []string               `json:"causal_chain"`
 	DueDiligence         *dueDiligenceJSON      `json:"due_diligence"`
 	Reasoning            *reasoningJSON         `json:"reasoning"`
+	// IsActionable is a pointer so json.Unmarshal leaves it nil when the key
+	// is absent (pre-#1923 audit JSON blobs), distinguishing "never
+	// determined" from an explicit false (Issue #1923 Gap 1).
+	IsActionable *bool `json:"is_actionable"`
 }
 
 // reasoningJSON mirrors katypes.ReasoningSummary (BR-AI-086 AC6): visible
@@ -237,6 +241,10 @@ func toIncidentResponseData(responseDataJSON string, incidentID string) ogenclie
 
 	if len(ir.AlternativeWorkflows) > 0 {
 		data.AlternativeWorkflows = toAlternativeWorkflowsResponse(ir.AlternativeWorkflows)
+	}
+
+	if ir.IsActionable != nil {
+		data.IsActionable.SetTo(*ir.IsActionable)
 	}
 
 	return data

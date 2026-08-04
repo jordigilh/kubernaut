@@ -93,6 +93,7 @@ var _ = Describe("StoreAdapter", func() {
 		{"UT-AF-1156-028", audit.EventUserDecision, map[string]string{"session_id": "sess-1", "decision": "accept", "workflow_id": "restart-pod"}, "apifrontend.user.decision"},
 		{"UT-AF-1156-029", audit.EventAuthAccessDenied, map[string]string{"tool_name": "kubectl_exec", "user_role": "viewer", "endpoint": "a2a"}, "apifrontend.auth.access_denied"},
 		{"UT-AF-1156-030", audit.EventToolExecuted, map[string]string{"session_id": "sess-1", "tool_name": "kubectl_get", "execution_duration_ms": "100", "tool_outcome": "success"}, "apifrontend.tool.executed"},
+		{"UT-AF-1923-001", audit.EventWorkflowDiscovery, map[string]string{"rr_id": "rr-1", "workflow_count": "2"}, "apifrontend.workflow.discovery"},
 	}
 
 	Describe("Event type mapping", func() {
@@ -401,6 +402,60 @@ var _ = Describe("StoreAdapter", func() {
 			Expect(ok).To(BeTrue())
 			Expect(payload.RrName.IsSet()).To(BeFalse(), "RrName should not be set when detail map has no rr_name")
 			Expect(payload.RrNamespace.IsSet()).To(BeFalse(), "RrNamespace should not be set when detail map has no rr_namespace")
+		})
+	})
+
+	Describe("Issue #1923: workflow.discovery persistence and typed payload (AU-12)", func() {
+		It("UT-AF-1923-002: EventWorkflowDiscovery populates rr_id/workflow_count on the typed payload", func() {
+			adapter.Emit(context.Background(), &audit.Event{
+				Type: audit.EventWorkflowDiscovery,
+				Detail: map[string]string{
+					"rr_id":          "rr-oom-web-123",
+					"workflow_count": "3",
+				},
+			})
+			evt := store.lastEvent()
+			Expect(evt).NotTo(BeNil(), "EventWorkflowDiscovery must be persisted, not logged-only (Issue #1923 Gap 2)")
+
+			payload, ok := evt.EventData.GetApifrontendWorkflowDiscoveryPayload()
+			Expect(ok).To(BeTrue(), "event_data should be ApifrontendWorkflowDiscoveryPayload")
+			Expect(payload.RrID).To(Equal("rr-oom-web-123"))
+			Expect(payload.WorkflowCount).To(Equal(3))
+		})
+
+		It("UT-AF-1923-003: EventWorkflowDiscovery with a non-numeric workflow_count defaults to zero rather than erroring", func() {
+			adapter.Emit(context.Background(), &audit.Event{
+				Type: audit.EventWorkflowDiscovery,
+				Detail: map[string]string{
+					"rr_id":          "rr-bad-count",
+					"workflow_count": "not-a-number",
+				},
+			})
+			evt := store.lastEvent()
+			Expect(evt).NotTo(BeNil())
+
+			payload, ok := evt.EventData.GetApifrontendWorkflowDiscoveryPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.RrID).To(Equal("rr-bad-count"))
+			Expect(payload.WorkflowCount).To(Equal(0), "malformed workflow_count must fail safe to 0, not drop the event")
+		})
+
+		It("UT-AF-1923-006: EventWorkflowDiscovery with no rr_id in Detail does not panic and falls back to StoreAdapter's random-UUID correlation_id", func() {
+			Expect(func() {
+				adapter.Emit(context.Background(), &audit.Event{
+					Type:   audit.EventWorkflowDiscovery,
+					Detail: map[string]string{"workflow_count": "1"},
+				})
+			}).NotTo(Panic())
+
+			evt := store.lastEvent()
+			Expect(evt).NotTo(BeNil())
+			Expect(evt.CorrelationID).NotTo(BeEmpty(),
+				"correlationID() must still fall back to a random UUID even when rr_id is absent")
+
+			payload, ok := evt.EventData.GetApifrontendWorkflowDiscoveryPayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.RrID).To(BeEmpty())
 		})
 	})
 

@@ -2450,6 +2450,43 @@ var _ = Describe("MCP Bridge - discover_workflows (#1176)", Label("bridge", "dis
 		Expect(found).To(BeTrue(), "expected EventWorkflowDiscovery audit event")
 	})
 
+	It("UT-AF-1923-004: EventWorkflowDiscovery carries the RR ID as CorrelationID, not a random UUID", func() {
+		mockMCP := &ka.MockMCPClient{
+			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
+				return &ka.DiscoverWorkflowsResult{
+					Workflows: []ka.DiscoveredWorkflow{{WorkflowID: "wf-1", Name: "Test"}},
+				}, nil
+			},
+		}
+		h := newDiscoverHandler(mockMCP)
+		sessionID := mcpInitialize(h, testUser)
+
+		status, _ := mcpCallTool(h, sessionID, "kubernaut_discover_workflows", map[string]any{"rr_id": "rr-corr-1923"}, testUser)
+		Expect(status).To(Equal(http.StatusOK))
+
+		events := auditor.Events()
+		var found bool
+		for _, e := range events {
+			if e.Type == audit.EventWorkflowDiscovery {
+				found = true
+				Expect(e.CorrelationID).To(Equal("rr-corr-1923"),
+					"Issue #1923: workflow.discovery's correlation_id must be the RR ID, not a synthetic UUID")
+				Expect(e.Detail).To(HaveKeyWithValue("rr_id", "rr-corr-1923"))
+				break
+			}
+		}
+		Expect(found).To(BeTrue(), "expected EventWorkflowDiscovery audit event")
+	})
+
+	// Note: an "empty rr_id" scenario is not exercised here because
+	// DiscoverWorkflowsArgs.RRID has no `omitempty` tag, so the MCP SDK's
+	// generated JSON schema marks rr_id as required -- the protocol layer
+	// rejects such a call before this handler closure ever runs. The
+	// defensive behavior of the downstream persistence path for an absent
+	// rr_id (no panic, empty string not treated as a valid correlation_id)
+	// is covered directly at the StoreAdapter level by
+	// UT-AF-1923-006 (pkg/apifrontend/audit/store_adapter_test.go).
+
 	It("UT-AF-WP-031: error from KA returns isError in tool response", func() {
 		mockMCP := &ka.MockMCPClient{
 			DiscoverWorkflowsFn: func(_ context.Context, _ ka.DiscoverWorkflowsArgs) (*ka.DiscoverWorkflowsResult, error) {
