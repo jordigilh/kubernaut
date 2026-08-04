@@ -501,7 +501,7 @@ var _ = Describe("AF Harness-Enforced Actionability Gate [E2E-FP-1918-001]", Lab
 
 		By("Turn 1 (single message): declare full_remediation_autonomous mode against a not-actionable signal, then attempt discover_workflows in the same turn")
 		body := fpA2ATasksSend("fp-na1918-1",
-			"investigate and fix using mock not actionable rca for deployment memory-eater")
+			"investigate and verify the harness actionability override for deployment memory-eater")
 		resp, err = fpA2AInvokeWithTimeout(body, 180*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()

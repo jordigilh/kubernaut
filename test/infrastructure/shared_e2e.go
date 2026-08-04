@@ -390,8 +390,27 @@ func noReinvocationAfterCompleteScenarioYAML(ns string) string {
 }
 
 // notActionableAutonomousScenarioYAML returns a keyword scenario for
-// E2E-FP-1918-001 (issue #1918: harness-enforced actionability gate). A
-// single message chains kubernaut_remediate (description carries the
+// E2E-FP-1918-001 (issue #1918: harness-enforced actionability gate).
+//
+// IMPORTANT: this scenario's trigger keyword must NOT contain the substring
+// "mock not actionable"/"mock_not_actionable" (or any other built-in KA
+// keyword from registry_default.go's defaultRegistryWithGoldenDir). The
+// shared FP mock-LLM registers KA's built-in keyword scenarios BEFORE this
+// package's "keyword_scenarios:" YAML overrides (defaults first, then
+// overrides, in DefaultRegistryFull), and Registry.Detect keeps the FIRST
+// scenario at a given confidence score on a tie -- so if the AF chat
+// message driving THIS scenario also contained that substring, the shared
+// mock-LLM would route the AF orchestrator's own tool-selection turn to
+// KA's built-in "not_actionable" scenario (meant for KA's internal RCA
+// reasoning turn, not AF tool orchestration) instead of to this scenario,
+// silently producing no kubernaut_remediate call at all. The
+// "mock_not_actionable" keyword itself only needs to appear later, in the
+// kubernaut_remediate description below -- that text becomes the RR's
+// SignalContext.Description (via SignalToPrompt), read by KA's own,
+// separate investigation LLM call, which is exactly where it's meant to
+// trigger the built-in scenario.
+//
+// A single message chains kubernaut_remediate (description carries the
 // mock-LLM "mock_not_actionable" keyword, registered in
 // test/services/mock-llm/scenarios/scenario_mock_keywords.go and matched
 // against the full LLM prompt content -- which includes
@@ -414,7 +433,7 @@ func notActionableAutonomousScenarioYAML(ns string) string {
 		return ""
 	}
 	return fmt.Sprintf(`      - name: "af_not_actionable_autonomous_1918"
-        keywords: ["investigate and fix using mock not actionable rca"]
+        keywords: ["investigate and verify the harness actionability override"]
         match_last_only: true
         tool_call:
           name: "kubernaut_remediate"
