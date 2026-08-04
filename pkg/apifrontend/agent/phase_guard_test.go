@@ -411,6 +411,36 @@ var _ = Describe("Phase Guard (#1307)", func() {
 			"select_workflow must be hard-rejected while phase 3 is blocked")
 	})
 
+	// IT-AF-1915-001 deliberately reuses the same full_remediation mechanism
+	// already proven by IT-AF-1899-002b/003/005b above (auto-discover,
+	// pause-before-select) -- #1915's bug was never in this harness
+	// mechanism (it worked correctly and was already covered here under
+	// #1899's own test IDs). The gap was purely that prompt.txt never
+	// instructed the model to declare full_remediation for a plain
+	// "investigate" request (see prompt_test.go's UT-AF-1915-* for that
+	// fix). This test exists only for #1915's own BR/audit traceability --
+	// so a regression search for "1915" finds its regression coverage --
+	// not to duplicate #1899's mechanism assertions.
+	It("IT-AF-1915-001: full_remediation (the new plain-investigate default, #1915) auto-discovers but still pauses before select", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation"}, map[string]any{
+			"session_id": "sess-1915-a", "rr_id": "rr-1915-a", "status": "completed",
+		}, nil)
+
+		phase2Blocked, err := state.Get(session.StateKeyPhase2Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(phase2Blocked).To(Equal(false),
+			"#1915: full_remediation must auto-proceed through workflow discovery for a plain investigate request")
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil, map[string]any{
+			"workflows": []any{"wf-1"},
+		}, nil)
+
+		phase3Blocked, err := state.Get(session.StateKeyPhase3Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(phase3Blocked).To(Equal(true),
+			"#1915: full_remediation must still require a genuine user turn before executing a workflow -- auto-discovery is not auto-execution")
+	})
+
 	It("IT-AF-1899-005c: select_workflow is allowed when the harness never blocked phase 3 (full_remediation_autonomous)", func() {
 		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation_autonomous"}, map[string]any{
 			"session_id": "sess-1899-i", "rr_id": "rr-1899-i", "status": "completed",
@@ -497,6 +527,59 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 		_, ok := registry.Get("alice")
 		Expect(ok).To(BeFalse(),
 			"Registry must be cleared after kubernaut_cancel succeeds")
+	})
+
+	It("UT-AF-1912-001: Clears driverActive on kubernaut_complete success, alongside the registry (#1912)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "ka-sess-001", "rr_id": "rr-123",
+		}, nil)
+
+		active, err := state.Get(session.StateKeyDriverActive)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(active).To(Equal(true), "precondition: driverActive must be true after a successful investigate")
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_complete"}, nil, map[string]any{
+			"status": "completed",
+		}, nil)
+
+		active, err = state.Get(session.StateKeyDriverActive)
+		if err == nil {
+			Expect(active).To(Equal(false),
+				"driverActive must be cleared after kubernaut_complete succeeds -- a stale true leaves reinvocation incorrectly eligible (#1912)")
+		}
+		// A missing key (ErrStateKeyNotExist) is equally acceptable: NeedsReinvocationCtx's
+		// driverActive(state) helper treats "absent" and "false" identically.
+	})
+
+	It("UT-AF-1912-002: Clears driverActive on kubernaut_cancel success, alongside the registry (#1912)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "ka-sess-001", "rr_id": "rr-123",
+		}, nil)
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_cancel"}, nil, map[string]any{
+			"status": "cancelled",
+		}, nil)
+
+		active, err := state.Get(session.StateKeyDriverActive)
+		if err == nil {
+			Expect(active).To(Equal(false),
+				"driverActive must be cleared after kubernaut_cancel succeeds -- a stale true leaves reinvocation incorrectly eligible (#1912)")
+		}
+	})
+
+	It("UT-AF-1912-003: Does NOT clear driverActive on kubernaut_complete failure (#1912)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "ka-sess-001", "rr_id": "rr-123",
+		}, nil)
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_complete"}, nil, map[string]any{
+			"error": "complete failed",
+		}, nil)
+
+		active, err := state.Get(session.StateKeyDriverActive)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(active).To(Equal(true),
+			"driverActive must NOT be cleared when kubernaut_complete returns an error -- the driver session is still legitimately active")
 	})
 
 	It("UT-AF-SESS-020-024: Does NOT clear context on complete/cancel failure (AC-2)", func() {

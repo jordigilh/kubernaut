@@ -232,4 +232,19 @@ var _ = Describe("Re-invocation Fallback", func() {
 		Expect(result).To(BeTrue(),
 			"a genuinely stalled mid-investigation turn (driver active, no checkpoint gate) must still be nudged")
 	})
+
+	It("UT-AF-1912-004: does NOT nudge once driverActive is cleared, even if the session phase still reads Active (#1912)", func() {
+		// Simulates the state phase_guard.go now leaves behind post-#1912-fix:
+		// a session-terminal tool (kubernaut_complete/kubernaut_cancel) has
+		// cleared driverActive, but the CRD's SessionPhase may not have been
+		// re-synced to Terminated/Completed yet by the time a later,
+		// unrelated text-only turn arrives in the same chat session.
+		events := getEvents(textEvent())
+		state := newFakeState(map[string]any{
+			session.StateKeyDriverActive: false,
+		})
+		result := session.NeedsReinvocationCtx(ctx, v1alpha1.SessionPhaseActive, events, state, 0)
+		Expect(result).To(BeFalse(),
+			"a cleared driverActive must never be reinvoked back into an ended session, regardless of stale phase (#1912)")
+	})
 })

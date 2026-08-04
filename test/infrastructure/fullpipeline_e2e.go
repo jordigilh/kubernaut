@@ -432,6 +432,13 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		// to auto-chain) then attempts a same-turn fire-and-forget
 		// kubernaut_select_workflow -- the gate must block only the 3rd hop.
 		"consent-phase3": fmt.Sprintf("fp-cg3-%s", uuid.New().String()[:8]),
+		// terminal-1912: dedicated namespace for E2E-FP-1912-001 (issue
+		// #1912): a single message declares interaction_mode=
+		// full_remediation_autonomous (no checkpoint left blocking) then
+		// completes the driver session in the same turn -- driverActive
+		// must be cleared alongside it, or a stray text-only turn could be
+		// misread as still-active and incorrectly reinvoked.
+		"terminal-1912": fmt.Sprintf("fp-t1912-%s", uuid.New().String()[:8]),
 	}
 	_, _ = fmt.Fprintln(writer, "  📌 AF remediate namespaces:")
 	for key, ns := range afRemediateNS {
