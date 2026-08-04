@@ -166,7 +166,12 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 1->2 [E2E-FP-18
 		GinkgoWriter.Printf("  Turn 4 — watch OK\n")
 
 		By("Verifying the journey completed once every phase was genuinely confirmed")
-		fpWaitForWEComplete(rrName, 60*time.Second)
+		// 5m matches the identical investigate->discover->select->execute->watch
+		// chain in 07_af_a2a_autonomous_test.go / 17_af_a2a_full_interactive_remediation_test.go:
+		// full-pipeline completion after the final "watch" turn routinely takes
+		// well over 60s under CI load (observed 90-190s for equivalent specs in
+		// the same run), so a 60s post-watch confirmation window is too tight.
+		fpWaitForWEComplete(rrName, 5*time.Minute)
 		GinkgoWriter.Printf("  Full pipeline completed for %s after the consent gate lifted on genuine turns\n", rrName)
 	})
 })
@@ -288,7 +293,12 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 2->3 [E2E-FP-18
 		GinkgoWriter.Printf("  Turn 3 — watch OK\n")
 
 		By("Verifying the journey completed once the user genuinely confirmed workflow selection")
-		fpWaitForWEComplete(rrName, 60*time.Second)
+		// 5m matches the identical investigate->discover->select->execute->watch
+		// chain in 07_af_a2a_autonomous_test.go / 17_af_a2a_full_interactive_remediation_test.go:
+		// full-pipeline completion after the final "watch" turn routinely takes
+		// well over 60s under CI load (observed 90-190s for equivalent specs in
+		// the same run), so a 60s post-watch confirmation window is too tight.
+		fpWaitForWEComplete(rrName, 5*time.Minute)
 		GinkgoWriter.Printf("  Full pipeline completed for %s after the consent gate lifted on the genuine turn\n", rrName)
 	})
 })
