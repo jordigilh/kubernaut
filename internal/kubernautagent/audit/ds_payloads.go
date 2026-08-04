@@ -478,6 +478,9 @@ func buildAuthFailurePayload(event *AuditEvent) ogenclient.AuditEventRequestEven
 	if v := dataString(event.Data, "method"); v != "" {
 		payload.Method.SetTo(v)
 	}
+	if v := dataString(event.Data, "reason"); v != "" {
+		payload.Reason.SetTo(v)
+	}
 	return ogenclient.NewAIAgentAuthFailurePayloadAuditEventRequestEventData(payload)
 }
 
@@ -494,6 +497,9 @@ func buildAuthDeniedPayload(event *AuditEvent) ogenclient.AuditEventRequestEvent
 	}
 	if v := dataString(event.Data, "method"); v != "" {
 		payload.Method.SetTo(v)
+	}
+	if v := dataString(event.Data, "reason"); v != "" {
+		payload.Reason.SetTo(v)
 	}
 	return ogenclient.NewAIAgentAuthDeniedPayloadAuditEventRequestEventData(payload)
 }
