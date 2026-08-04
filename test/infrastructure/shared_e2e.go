@@ -511,6 +511,118 @@ func consentGatePhase3AttemptScenarioYAML(ns, selectWorkflowID string) string {
 `, ns, selectWorkflowID)
 }
 
+// noReinvocationAfterCompleteScenarioYAML returns a keyword scenario for
+// E2E-FP-1912-001 (issue #1912: driverActive never cleared after a
+// session-terminal tool). A single message chains kubernaut_remediate ->
+// kubernaut_investigate (declaring interaction_mode=full_remediation_autonomous,
+// so no DD-AF-011 checkpoint is left blocking -- driverActive is the ONLY
+// remaining signal that could still gate an errant reinvocation) ->
+// kubernaut_complete, ending the driver session in the very same turn.
+// Pre-#1912-fix, phaseGuardAfter's isTerminal branch cleared the
+// ActiveContextRegistry entry but never driverActive itself, so a stray
+// text-only model turn immediately after kubernaut_complete's result could
+// be misread by NeedsReinvocationCtx as "investigation still active,
+// nudge it forward" and synthesize a "continue the investigation" prompt
+// back into a session the user (via the model) had already closed. This
+// scenario proves the real AF/A2A stack never lets that resurrect into a
+// consequential action: no WorkflowExecution is ever created for the RR,
+// matching the assertion style of consentGatePhase2/3AttemptScenarioYAML
+// above. Returns "" if ns is empty.
+func noReinvocationAfterCompleteScenarioYAML(ns string) string {
+	if ns == "" {
+		return ""
+	}
+	return fmt.Sprintf(`      - name: "af_no_reinvocation_after_complete_1912"
+        keywords: ["create and investigate then complete and go silent"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_remediate"
+          arguments:
+            namespace: "%s"
+            kind: "Deployment"
+            name: "memory-eater"
+            api_version: "apps/v1"
+            description: "FP E2E no-reinvocation-after-complete request (#1912)"
+        next_tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+            interaction_mode: "full_remediation_autonomous"
+          next_tool_call:
+            name: "kubernaut_complete"
+            arguments:
+              rr_id: "$from_tool:kubernaut_remediate:rr_id"
+`, ns)
+}
+
+// notActionableAutonomousScenarioYAML returns a keyword scenario for
+// E2E-FP-1918-001 (issue #1918: harness-enforced actionability gate).
+//
+// IMPORTANT: this scenario's trigger keyword, and every tool-call argument
+// below, must NOT contain the substring "mock not actionable"/
+// "mock_not_actionable" (or any other built-in KA keyword from
+// registry_default.go's defaultRegistryWithGoldenDir). Two independent
+// reasons, both empirically confirmed against a live CI run:
+//
+//  1. af_create_rr.go's HandleCreateRR validates/truncates kubernaut_remediate's
+//     description argument for severity-triage input only -- it is never
+//     persisted onto the RR CRD spec, so a keyword placed there never reaches
+//     KA's investigation prompt at all (the test's own 18_ Go file instead
+//     injects a synthetic Warning K8s Event so deriveSignalName's Tier 3a
+//     resolves a grounded SignalName KA's prompt does include).
+//  2. Even a keyword placed in a tool-call ARGUMENT (not just the trigger
+//     keyword) leaks into the SAME AF/ADK conversation's next turn: ADK's
+//     multi-turn reconstruction echoes the model's own prior function-call
+//     arguments back into the conversation, and response.ExtractTextFromContents
+//     folds FunctionCall.Args JSON into allText. Since the built-in
+//     "not_actionable" keyword scenario matches non-last-only on
+//     ctx.Content+ctx.AllText and is registered before this package's
+//     overrides, it wins Registry.Detect's tie-break on turn 2 -- silently
+//     replacing this scenario's own NextToolCall chain with a plain-text
+//     response and ending the AF conversation after just kubernaut_remediate,
+//     before kubernaut_investigate is ever called.
+//
+// A single message chains kubernaut_remediate -> kubernaut_investigate
+// (declaring interaction_mode=full_remediation_autonomous, an autonomy grant
+// that would normally leave phase2_blocked=false) -> a same-turn
+// kubernaut_discover_workflows attempt, simulating a lower-reasoning model
+// that ignores/misreads the not-actionable RCA and tries to proceed anyway.
+// Pre-#1918-fix, full_remediation_autonomous alone would leave
+// phase2_blocked=false and this call would reach KA's real
+// discover_workflows implementation. Post-fix, phaseGuardAfter's #1918
+// override already forced phase2_blocked=true when kubernaut_investigate
+// returned KA's is_actionable=false signal, so phaseGuardBefore's existing
+// DD-AF-011 hard-reject rejects the discover_workflows call before it ever
+// reaches KA -- proven end-to-end by asserting no WorkflowExecution is ever
+// created for the RR (mirrors noReinvocationAfterCompleteScenarioYAML's
+// assertion style above). Returns "" if ns is empty.
+func notActionableAutonomousScenarioYAML(ns string) string {
+	if ns == "" {
+		return ""
+	}
+	return fmt.Sprintf(`      - name: "af_not_actionable_autonomous_1918"
+        keywords: ["investigate and verify the harness actionability override"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_remediate"
+          arguments:
+            namespace: "%s"
+            kind: "Deployment"
+            name: "memory-eater"
+            api_version: "apps/v1"
+            description: "FP E2E harness-enforced actionability gate request (#1918)"
+        next_tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+            interaction_mode: "full_remediation_autonomous"
+          next_tool_call:
+            name: "kubernaut_discover_workflows"
+            arguments:
+              rr_id: "$from_tool:kubernaut_remediate:rr_id"
+`, ns)
+}
+
 // resolveWorkflowUUID looks up the real catalog UUID seeded for a workflow
 // fixture (keyed "<workflowName>:<environment>" in workflowUUIDs, per
 // SeedWorkflowsViaKubectlApply/SeedWorkflowsViaDirectCRDCreationFromKubeconfig)
@@ -647,6 +759,8 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afSelectWorkflowID) +
 		consentGatePhase2AttemptScenarioYAML(afRemediateNS["consent-phase2"]) +
 		consentGatePhase3AttemptScenarioYAML(afRemediateNS["consent-phase3"], afSelectWorkflowID) +
+		noReinvocationAfterCompleteScenarioYAML(afRemediateNS["terminal-1912"]) +
+		notActionableAutonomousScenarioYAML(afRemediateNS["not-actionable-1918"]) +
 		`      - name: "af_investigate"
         keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true

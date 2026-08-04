@@ -6714,6 +6714,9 @@ components:
         method:
           type: string
           description: HTTP request method
+        reason:
+          type: string
+          description: Specific failure classification (e.g. "missing_auth_header", "invalid_auth_format", "empty_bearer_token", "invalid_token", "invalid_token_audience") distinguishing an audience-bound TokenReview mismatch (cross-service token replay attempt) from a routine missing/malformed/expired token (BR-SECURITY-1900, AU-3, extends BR-AUDIT-005)
 
     AIAgentAuthDeniedPayload:
       type: object
@@ -6736,6 +6739,9 @@ components:
         method:
           type: string
           description: HTTP request method
+        reason:
+          type: string
+          description: Specific denial classification (e.g. "authorization_denied") (BR-SECURITY-1900, AU-3, extends BR-AUDIT-005)
 
     ApifrontendCircuitbreakerTripPayload:
       type: object

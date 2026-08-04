@@ -64,6 +64,7 @@ The prior approach delegated this validation to an `ose-oauth-proxy` sidecar, wh
 - [DD-AUTH-014](../architecture/decisions/DD-AUTH-014-middleware-based-sar-authentication.md) — Middleware-Based SAR Authentication (primary design authority)
 - [DD-AUTH-013](../architecture/decisions/DD-AUTH-013/DD-AUTH-013-http-status-codes-oauth-proxy.md) — HTTP status code mapping for auth errors
 - [BR-SECURITY-016](./BR-SECURITY-016-kubernetes-rbac-enforcement.md) — Sibling requirement: RBAC authorization, gated by this authentication check
+- [BR-SECURITY-1900](./BR-SECURITY-1900-audience-bound-tokenreview.md) — Extension (deferred to v1.6, tracked in [#1900](https://github.com/jordigilh/kubernaut/issues/1900)): optional audience-bound `TokenReview` for AF/KA, preventing a token minted for one service from being replayed against another; also delivered a SOC2 audit-reason enrichment for KA's auth-failure audit events, independent of the deferred audience work
 - Test evidence: [`test/e2e/datastorage/23_sar_access_control_test.go`](../../test/e2e/datastorage/23_sar_access_control_test.go)
 
 ---

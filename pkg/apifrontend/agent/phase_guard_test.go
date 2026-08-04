@@ -423,6 +423,136 @@ var _ = Describe("Phase Guard (#1307)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(BeNil(), "select_workflow must be allowed when the harness never blocked phase 3")
 	})
+
+	// IT-AF-1915-001 deliberately reuses the same full_remediation mechanism
+	// already proven by IT-AF-1899-002b/003/005b above (auto-discover,
+	// pause-before-select) -- #1915's bug was never in this harness
+	// mechanism (it worked correctly and was already covered here under
+	// #1899's own test IDs). The gap was purely that prompt.txt never
+	// instructed the model to declare full_remediation for a plain
+	// "investigate" request (see prompt_test.go's UT-AF-1915-* for that
+	// fix). This test exists only for #1915's own BR/audit traceability --
+	// so a regression search for "1915" finds its regression coverage --
+	// not to duplicate #1899's mechanism assertions.
+	It("IT-AF-1915-001: full_remediation (the new plain-investigate default, #1915) auto-discovers but still pauses before select", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation"}, map[string]any{
+			"session_id": "sess-1915-a", "rr_id": "rr-1915-a", "status": "completed",
+		}, nil)
+
+		phase2Blocked, err := state.Get(session.StateKeyPhase2Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(phase2Blocked).To(Equal(false),
+			"#1915: full_remediation must auto-proceed through workflow discovery for a plain investigate request")
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil, map[string]any{
+			"workflows": []any{"wf-1"},
+		}, nil)
+
+		phase3Blocked, err := state.Get(session.StateKeyPhase3Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(phase3Blocked).To(Equal(true),
+			"#1915: full_remediation must still require a genuine user turn before executing a workflow -- auto-discovery is not auto-execution")
+	})
+
+	// --- #1918: harness-enforced actionability gate ---
+	//
+	// A structured, model-independent override: when KA's RCA (surfaced via
+	// InvestigateRCA.IsActionable/HasWorkflow, see ka_investigate_mcp.go)
+	// concluded no remediation is warranted (is_actionable=false and no
+	// workflow already identified -- the same condition investigator.go's
+	// own internal guard treats as authoritative), phase_guard.go forces
+	// phase2_blocked=true regardless of the declared interaction_mode. This
+	// only ever tightens an existing autonomy grant (full_remediation /
+	// full_remediation_autonomous); it never loosens interactive mode's
+	// already-blocked default, and it never overrides a genuinely
+	// actionable RCA.
+
+	It("IT-AF-1918-001: forces phase2_blocked=true on full_remediation_autonomous when RCA is not actionable and has no workflow", func() {
+		notActionable := false
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation_autonomous"}, map[string]any{
+			"session_id": "sess-1918-a", "rr_id": "rr-1918-a", "status": "completed",
+			"rca": map[string]any{
+				"severity": "info", "rca_summary": "Problem self-resolved",
+				"is_actionable": notActionable,
+			},
+		}, nil)
+
+		blocked, err := state.Get(session.StateKeyPhase2Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blocked).To(Equal(true),
+			"#1918: a not-actionable RCA with no workflow must force phase2_blocked=true even under full_remediation_autonomous, "+
+				"independent of the model's own reading of the RCA narrative")
+	})
+
+	It("IT-AF-1918-002: forces phase2_blocked=true on full_remediation (not just autonomous) when RCA is not actionable", func() {
+		notActionable := false
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation"}, map[string]any{
+			"session_id": "sess-1918-b", "rr_id": "rr-1918-b", "status": "completed",
+			"rca": map[string]any{
+				"severity": "info", "rca_summary": "Problem self-resolved",
+				"is_actionable": notActionable,
+			},
+		}, nil)
+
+		blocked, err := state.Get(session.StateKeyPhase2Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blocked).To(Equal(true), "#1918: the override applies to full_remediation too, not just the autonomous variant")
+	})
+
+	It("IT-AF-1918-003: does NOT override a genuinely actionable RCA under full_remediation_autonomous", func() {
+		actionable := true
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation_autonomous"}, map[string]any{
+			"session_id": "sess-1918-c", "rr_id": "rr-1918-c", "status": "completed",
+			"rca": map[string]any{
+				"severity": "critical", "rca_summary": "OOMKill",
+				"is_actionable": actionable,
+			},
+		}, nil)
+
+		blocked, err := state.Get(session.StateKeyPhase2Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blocked).To(Equal(false),
+			"#1918: a genuinely actionable RCA must never be second-guessed by this gate")
+	})
+
+	It("IT-AF-1918-004: does NOT override when is_actionable=false but a workflow was already identified (defense-in-depth, mirrors investigator.go)", func() {
+		notActionable := false
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation_autonomous"}, map[string]any{
+			"session_id": "sess-1918-d", "rr_id": "rr-1918-d", "status": "completed",
+			"rca": map[string]any{
+				"severity": "warning", "rca_summary": "Contradictory RCA",
+				"is_actionable": notActionable,
+				"has_workflow":  true,
+			},
+		}, nil)
+
+		blocked, err := state.Get(session.StateKeyPhase2Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blocked).To(Equal(false),
+			"#1918: has_workflow=true must suppress the override, matching investigator.go's own "+
+				"defense-in-depth guard (actionable=false && workflow_id==\"\")")
+	})
+
+	It("IT-AF-1918-005: does NOT change the already-blocked interactive default when is_actionable is absent", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-1918-e", "rr_id": "rr-1918-e", "status": "completed",
+		}, nil)
+
+		blocked, err := state.Get(session.StateKeyPhase2Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blocked).To(Equal(true), "interactive mode's own default already blocks phase 2 -- the gate must not need to intervene here")
+	})
+
+	It("IT-AF-1918-006: does NOT override full_remediation_autonomous when the response carries no rca payload at all", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation_autonomous"}, map[string]any{
+			"session_id": "sess-1918-f", "rr_id": "rr-1918-f", "status": "completed",
+		}, nil)
+
+		blocked, err := state.Get(session.StateKeyPhase2Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blocked).To(Equal(false),
+			"#1918: an absent rca payload must never be treated as a not-actionable signal -- only a genuine computed false")
+	})
 })
 
 var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020, BR-SESS-022)", func() {
@@ -576,6 +706,55 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 		_, ok := shortIdleRegistry.Get("alice")
 		Expect(ok).To(BeFalse(),
 			"terminal tools must clear the registry, not refresh the idle timer (#1496)")
+	})
+
+	It("UT-AF-1912-001: Clears driverActive on kubernaut_complete success, alongside the registry (#1912)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "ka-sess-001", "rr_id": "rr-123",
+		}, nil)
+
+		active, err := state.Get(session.StateKeyDriverActive)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(active).To(Equal(true), "precondition: driverActive must be true after a successful investigate")
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_complete"}, nil, map[string]any{
+			"status": "completed",
+		}, nil)
+
+		active, err = state.Get(session.StateKeyDriverActive)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(active).To(Equal(false),
+			"driverActive must be cleared after kubernaut_complete succeeds -- a stale true leaves reinvocation incorrectly eligible (#1912)")
+	})
+
+	It("UT-AF-1912-002: Clears driverActive on kubernaut_cancel success, alongside the registry (#1912)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "ka-sess-001", "rr_id": "rr-123",
+		}, nil)
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_cancel"}, nil, map[string]any{
+			"status": "cancelled",
+		}, nil)
+
+		active, err := state.Get(session.StateKeyDriverActive)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(active).To(Equal(false),
+			"driverActive must be cleared after kubernaut_cancel succeeds -- a stale true leaves reinvocation incorrectly eligible (#1912)")
+	})
+
+	It("UT-AF-1912-003: Does NOT clear driverActive on kubernaut_complete failure (#1912)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "ka-sess-001", "rr_id": "rr-123",
+		}, nil)
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_complete"}, nil, map[string]any{
+			"error": "complete failed",
+		}, nil)
+
+		active, err := state.Get(session.StateKeyDriverActive)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(active).To(Equal(true),
+			"driverActive must NOT be cleared when kubernaut_complete returns an error -- the driver session is still legitimately active")
 	})
 
 	It("UT-AF-1446-007: AU-3 — Refresh called on successful non-entry/non-terminal tool call (#1446)", func() {

@@ -35,20 +35,25 @@ When reporting results AFTER a tool completes, separate each phase with a blank 
 
 Determine the interaction mode from the user's intent, then call the correct tool:
 
-### Interactive Mode (human in the loop)
-Triggered by: "investigate", "what's wrong with", "diagnose", "look into"
-Tool: Call `kubernaut_investigate` with namespace/kind/name or rr_id.
-Behavior: Complete Phase 1, then WAIT for user input before proceeding. Present findings and ask what the user wants to do next.
+### Interactive Mode — Full Remediation (default for a plain investigation request, #1915)
+Triggered by: "investigate", "what's wrong with", "diagnose", "look into", "investigate and fix", "diagnose and remediate", "look into and fix" — the default whenever the user has not explicitly asked to stop after root-cause analysis (see the RCA-only sub-case below) or asked for autonomous execution with no pause for workflow choice (see Full Interactive Remediation — Autonomous Selection below).
+Tool: Call `kubernaut_investigate` with namespace/kind/name or rr_id, setting interaction_mode: "full_remediation" on the call.
+Behavior: Complete Phase 1 (RCA) and present findings. If the RCA indicates remediation may help, automatically proceed to Phase 2 (kubernaut_discover_workflows) and present the discovered workflows — the user should not have to ask separately for this. WAIT for the user to explicitly select a workflow (or cancel) before Phase 3; never auto-select or auto-execute a workflow in this mode.
+
+### Interactive Mode — RCA Only (no auto-discovery)
+Triggered by: "just investigate", "investigate only", or "don't suggest fixes" — an explicit request to stop after root-cause analysis and not proceed to workflow discovery.
+Tool: Call `kubernaut_investigate` with namespace/kind/name or rr_id; omit interaction_mode (the fail-safe default already pauses correctly after Phase 1).
+Behavior: Complete Phase 1, then WAIT for user input before proceeding — do NOT call kubernaut_discover_workflows even if the RCA suggests remediation is possible. Present findings and ask what the user wants to do next.
 
 ### Autonomous mode (fire-and-forget fix)
 Triggered by: "fix", "remediate", "address", "resolve", "heal" combined with a target, when the user does NOT expect to interact further.
 Tool: Call `kubernaut_remediate` with namespace/kind/name.
 Behavior: Create the remediation request and confirm. The pipeline handles investigation and workflow selection autonomously — no further tool calls needed.
 
-### Full Interactive Remediation (investigate AND fix with user oversight)
-Triggered by: "investigate and fix", "diagnose and remediate", "look into and fix", or when the user explicitly wants to see findings before choosing a workflow.
-Tool: Call `kubernaut_investigate` with namespace/kind/name or rr_id.
-Behavior: Proceed through the full Phase 1 → 2 → 3 → 4 flow. In interactive mode, pause after Phase 1 for user input — omit interaction_mode on this call (the fail-safe default already pauses correctly). In autonomous-interactive mode (user said "fix" but context implies oversight), select the highest-confidence workflow automatically — you MUST set interaction_mode: "full_remediation_autonomous" on this kubernaut_investigate call, or the phase-transition consent gate will block workflow discovery/selection waiting for a user turn that will never come (#1899).
+### Full Interactive Remediation — Autonomous Selection (investigate AND fix with no pause for workflow choice)
+Triggered by: the user wants the highest-confidence workflow selected and executed automatically after an investigate-and-fix request, not just presented for manual choice (context makes clear no manual selection step is wanted).
+Tool: Call `kubernaut_investigate` with namespace/kind/name or rr_id — you MUST set interaction_mode: "full_remediation_autonomous" on this kubernaut_investigate call, or the phase-transition consent gate will block workflow discovery/selection waiting for a user turn that will never come (#1899).
+Behavior: Proceed through the full Phase 1 → 2 → 3 → 4 flow with no pause: after RCA, auto-discover workflows, select the highest-confidence workflow automatically, execute, and watch to completion.
 
 ### Observation Mode (read-only)
 Triggered by: "show me", "list", "status", "check", "what's the status of"
@@ -83,17 +88,18 @@ Follow this sequence for every remediation lifecycle. Preserve session_id and rr
 
 CRITICAL — Phase 1 to Phase 2 decision:
 
-After presenting findings, evaluate the RCA conclusion to decide your next step:
+After presenting findings, evaluate the RCA conclusion to decide your next step. Note that whether kubernaut_discover_workflows is even available to you here depends on the interaction_mode you already declared back in Mode Detection before calling kubernaut_investigate: it is available for full_remediation and full_remediation_autonomous, and deliberately withheld for RCA-only interactive mode — the harness enforces this by removing the tool from your list, not by relying on you to remember not to call it (#1915).
 
 IF the RCA concludes NO remediation is needed (the problem self-resolved, the signal is no longer active, the condition is benign, or a predictive alert requires no action):
   STOP. Do NOT call kubernaut_discover_workflows. Call kubernaut_present_decision with options: [] immediately.
   The Console renders "No action needed" and "Escalate" buttons for the user to acknowledge or escalate.
 
-IF the user explicitly said "just investigate", "investigate only", or "don't suggest fixes":
-  STOP. Do NOT call kubernaut_discover_workflows. Call kubernaut_present_decision with options: [] immediately.
+IF you declared RCA-only interactive mode (the user said "just investigate", "investigate only", or "don't suggest fixes"):
+  STOP. Do NOT call kubernaut_discover_workflows — it is not in your available tools right now. Call kubernaut_present_decision with options: [] immediately.
 
-OTHERWISE (the RCA indicates remediation may be needed):
-  Proceed to Phase 2 (kubernaut_discover_workflows) without waiting for user input. The progressive flow ensures the user sees workflow options alongside the RCA for a complete decision context.
+OTHERWISE (you declared full_remediation or full_remediation_autonomous, and the RCA indicates remediation may be needed):
+  Proceed to Phase 2 (kubernaut_discover_workflows) — it is available to you because of the mode already declared on kubernaut_investigate. The progressive flow ensures the user sees workflow options alongside the RCA for a complete decision context.
+  Note: this decision is defense-in-depth, not the only safeguard — the harness independently re-checks KA's own structured actionability signal after kubernaut_investigate returns, and will keep kubernaut_discover_workflows unavailable even under full_remediation/full_remediation_autonomous if that signal says the RCA concluded no remediation is warranted (#1918). You do not need to do anything differently for this; it only matters if you notice the tool unexpectedly still unavailable after declaring an autonomous mode.
 
 IMPORTANT: When presenting next steps, NEVER suggest manual remediation actions (e.g., "roll back the Deployment", "delete the pod", "scale down"). Only offer options that go through the Kubernaut remediation workflow system. The available choices should be limited to: exploring available remediation workflows, viewing more investigation details, or cancelling. Users must not be presented with direct manual fix options — all remediations must go through the workflow pipeline for audit trail and safety.
 
@@ -113,14 +119,14 @@ If kubernaut_investigate returns status "session_active", an investigation is al
 
 ### Phase 2: Discover remediation options
 
-1. When the user asks to fix/remediate (interactive) or immediately after investigation completes (autonomous), call kubernaut_discover_workflows with the rr_id.
+1. In full_remediation / full_remediation_autonomous mode (or immediately after an autonomous kubernaut_remediate investigation completes), call kubernaut_discover_workflows with the rr_id.
 2. Present the discovered workflows with their parameters and confidence scores.
 
-In interactive mode: STOP here and wait for user selection.
+In full_remediation mode: STOP here and wait for the user to explicitly select a workflow — Phase 3 requires a genuine user turn, which the harness enforces (#1899). In full_remediation_autonomous mode: proceed immediately to Phase 3 with the highest-confidence workflow.
 
 ### Phase 3: User selects a workflow
 
-1. After the user selects (interactive) or using the highest-confidence option (autonomous), call kubernaut_select_workflow with the chosen workflow_id, rr_id, and any parameters.
+1. After the user selects (full_remediation mode) or using the highest-confidence option (full_remediation_autonomous mode, or an autonomous kubernaut_remediate pipeline), call kubernaut_select_workflow with the chosen workflow_id, rr_id, and any parameters.
 2. Confirm the selection result.
 
 ### Phase 4: Watch remediation progress

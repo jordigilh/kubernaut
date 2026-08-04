@@ -626,3 +626,52 @@ var _ = Describe("Prompt — Full Interactive Remediation declares interaction_m
 			"#1899: the interactive sub-case should explicitly note it relies on the fail-safe default, disambiguating it from the autonomous-interactive sub-case's explicit declaration")
 	})
 })
+
+// =============================================================================
+// Issue #1915: plain "investigate" must default to full_remediation
+//
+// Before this fix, a plain "investigate X" request never declared
+// interaction_mode on kubernaut_investigate, so the harness fail-safe
+// defaulted to bare interactive mode (Phase2Blocked=true) and removed
+// kubernaut_discover_workflows from the model's tool list. The prompt's own
+// "CRITICAL — Phase 1 to Phase 2" section then contradictorily told the
+// model to "proceed to Phase 2" anyway, causing the model to find the tool
+// missing and incorrectly conclude "no matching workflows" instead of
+// pausing correctly. The fix makes full_remediation (auto-discover, pause
+// only before workflow selection) the prompt-declared default for plain
+// investigate requests, reserving bare interactive (RCA-only, no
+// auto-discovery) for an explicit opt-out phrase.
+// =============================================================================
+
+var _ = Describe("Prompt — Plain Investigate Defaults to full_remediation (#1915)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1915-001: AC-6/SI-10 Mode Detection declares full_remediation for the default plain-investigate trigger", func() {
+		Expect(instruction).To(ContainSubstring(`interaction_mode: "full_remediation"`),
+			"#1915: plain investigate/what's wrong with/diagnose/look into must now explicitly declare full_remediation on kubernaut_investigate, not rely on the (bare-interactive) omitted default")
+	})
+
+	It("UT-AF-1915-002: AC-6 an explicit RCA-only opt-out phrase still maps to omitted interaction_mode (bare interactive)", func() {
+		Expect(instruction).To(ContainSubstring("Interactive Mode — RCA Only"),
+			"#1915: bare interactive (no auto-discovery) must remain reachable via an explicit, distinctly-named opt-out sub-case")
+		Expect(instruction).To(SatisfyAny(
+			ContainSubstring("just investigate"),
+			ContainSubstring("investigate only"),
+		), "#1915: the RCA-only opt-out sub-case must still list the explicit trigger phrases")
+	})
+
+	It("UT-AF-1915-003: SI-4 the Phase 1->2 CRITICAL section ties the discover_workflows decision to the already-declared mode, not to the model's own free choice", func() {
+		Expect(instruction).To(ContainSubstring("depends on the interaction_mode you already declared"),
+			"#1915: the CRITICAL section must explain that tool availability is harness-gated by the earlier Mode Detection decision, resolving the #1915 contradiction where the prompt said \"proceed\" while the harness had already hidden the tool")
+	})
+
+	It("UT-AF-1915-004: the autonomous-interactive sub-case is unambiguously distinct from the new full_remediation default", func() {
+		Expect(instruction).To(ContainSubstring("Autonomous Selection"),
+			"#1915: full_remediation_autonomous's own sub-case must be clearly named apart from the new full_remediation default, so the model does not conflate 'investigate' with 'investigate and fix'")
+	})
+})

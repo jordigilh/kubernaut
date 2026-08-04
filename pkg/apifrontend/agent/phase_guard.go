@@ -203,6 +203,9 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx tool.Context,
 	if isEntry {
 		recordDriverEntryState(ctx, toolName, inputArgs, resp)
 	}
+	if isTerminal {
+		clearDriverSessionState(ctx)
+	}
 	syncActiveContextRegistry(registry, ctx, isEntry, isTerminal)
 
 	return resp, callErr
@@ -274,7 +277,7 @@ func recordDriverEntryState(ctx tool.Context, toolName string, inputArgs, resp m
 	}
 
 	if toolName == "kubernaut_investigate" {
-		recordInteractionMode(state, inputArgs, logger)
+		recordInteractionMode(state, inputArgs, resp, logger)
 	}
 }
 
@@ -282,7 +285,7 @@ func recordDriverEntryState(ctx tool.Context, toolName string, inputArgs, resp m
 // declared on a successful kubernaut_investigate call (failing safe to
 // interactive when omitted/invalid, AC-6/SI-10) and the phase2_blocked
 // checkpoint flag it implies.
-func recordInteractionMode(state adksession.State, inputArgs map[string]any, logger logr.Logger) {
+func recordInteractionMode(state adksession.State, inputArgs, resp map[string]any, logger logr.Logger) {
 	mode := session.InteractionModeInteractive
 	if inputArgs != nil {
 		if raw, ok := inputArgs["interaction_mode"].(string); ok && session.ValidInteractionMode(raw) {
@@ -293,9 +296,53 @@ func recordInteractionMode(state adksession.State, inputArgs map[string]any, log
 		logger.Error(err, "phase-guard failed to persist interaction mode")
 	}
 	blocked := mode == session.InteractionModeInteractive
+
+	// #1918: harness-enforced actionability gate. Independent of the
+	// model's own reading of the RCA narrative, force phase2_blocked=true
+	// when KA's structured signal says the RCA concluded no remediation is
+	// warranted (the same is_actionable=false && no-workflow condition
+	// investigator.go's own internal short-circuit guard already treats as
+	// authoritative). This only ever tightens an autonomy grant already
+	// made by the model (full_remediation/full_remediation_autonomous) --
+	// it never loosens interactive mode's own blocked default, and never
+	// overrides a genuinely actionable RCA.
+	if rcaConcludedNotActionable(resp) {
+		blocked = true
+		logger.Info("phase-guard forcing phase2_blocked: RCA concluded not actionable with no workflow",
+			"declared_mode", mode)
+	}
+
 	if err := state.Set(session.StateKeyPhase2Blocked, blocked); err != nil {
 		logger.Error(err, "phase-guard failed to persist phase2_blocked state")
 	}
+}
+
+// rcaConcludedNotActionable inspects a kubernaut_investigate response's
+// nested "rca" payload (tools.InvestigateRCA, marshaled to map[string]any by
+// the ADK function-tool framework) for the #1918 harness-enforced
+// actionability gate. It returns true only when KA's RCA explicitly computed
+// is_actionable=false AND no workflow was already identified -- mirroring
+// investigator.go's own internal short-circuit guard
+// (actionable=false && workflow_id=="") so AF never second-guesses a case KA
+// itself would have already treated as ambiguous. A missing rca payload or a
+// missing/non-bool is_actionable key (older KA versions, or no RCA at all)
+// returns false: the gate must only override on a genuine computed false,
+// never on absence.
+func rcaConcludedNotActionable(resp map[string]any) bool {
+	rcaRaw, ok := resp["rca"]
+	if !ok || rcaRaw == nil {
+		return false
+	}
+	rca, ok := rcaRaw.(map[string]any)
+	if !ok {
+		return false
+	}
+	isActionable, ok := rca["is_actionable"].(bool)
+	if !ok || isActionable {
+		return false
+	}
+	hasWorkflow, _ := rca["has_workflow"].(bool)
+	return !hasWorkflow
 }
 
 // storeActiveRRID resolves the RR ID for a driver-entry tool call, preferring
@@ -315,6 +362,32 @@ func storeActiveRRID(state adksession.State, resp, inputArgs map[string]any, log
 	}
 	if err := state.Set(stateKeyActiveRRID, rrID); err != nil {
 		logger.Error(err, "phase-guard failed to store rr_id in state")
+	}
+}
+
+// clearDriverSessionState resets the driver-active flag and the stashed
+// rr_id/session_id after a successful session-terminal tool call (#1912).
+// Pre-fix, phaseGuardAfter only cleared the ActiveContextRegistry entry on
+// the isTerminal branch, leaving stateKeyDriverActive stuck true. Since
+// session.NeedsReinvocationCtx (reinvoke.go) treats a true driverActive as
+// "investigation still active" regardless of whether any DD-AF-011 (#1899)
+// checkpoint flag remained blocked, that stale flag could incorrectly
+// nudge reinvocation on a later text-only turn in the same chat session,
+// resurrecting a driver session the user had already ended.
+func clearDriverSessionState(ctx tool.Context) {
+	state := ctx.State()
+	if state == nil {
+		return
+	}
+	logger := logr.FromContextOrDiscard(ctx)
+	if err := state.Set(stateKeyDriverActive, false); err != nil {
+		logger.Error(err, "phase-guard failed to clear driver state")
+	}
+	if err := state.Set(stateKeyActiveRRID, ""); err != nil {
+		logger.Error(err, "phase-guard failed to clear active rr_id state")
+	}
+	if err := state.Set(stateKeyActiveSession, ""); err != nil {
+		logger.Error(err, "phase-guard failed to clear active session state")
 	}
 }
 
