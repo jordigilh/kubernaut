@@ -33,14 +33,18 @@ import (
 //
 // phaseGuardBefore (phase_guard.go) is the backstop layer for the rare case
 // a call slips past this filter (e.g. a provider quirk or race).
+//
+// nolint:nilnil // every (nil, nil) below is the ADK
+// llmagent.BeforeModelCallback contract for "no override response, proceed
+// with the (possibly mutated) request" — not an ambiguous error case.
 func checkpointToolFilter(ctx agent.CallbackContext, req *model.LLMRequest) (*model.LLMResponse, error) {
 	if req == nil || len(req.Tools) == 0 {
-		return nil, nil
+		return nil, nil // nolint:nilnil
 	}
 
 	state := ctx.State()
 	if state == nil {
-		return nil, nil
+		return nil, nil // nolint:nilnil
 	}
 
 	if checkpointFlagSet(state, session.StateKeyPhase2Blocked) {
@@ -50,7 +54,7 @@ func checkpointToolFilter(ctx agent.CallbackContext, req *model.LLMRequest) (*mo
 		delete(req.Tools, "kubernaut_select_workflow")
 	}
 
-	return nil, nil
+	return nil, nil // nolint:nilnil
 }
 
 func checkpointFlagSet(state adksession.State, key string) bool {
