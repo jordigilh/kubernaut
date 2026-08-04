@@ -292,6 +292,9 @@ type AIAgentAuthDeniedPayload struct {
 	Path OptString `json:"path"`
 	// HTTP request method.
 	Method OptString `json:"method"`
+	// Specific denial classification (e.g. "authorization_denied") (BR-SECURITY-1900, AU-3, extends
+	// BR-AUDIT-005).
+	Reason OptString `json:"reason"`
 }
 
 // GetEventType returns the value of EventType.
@@ -319,6 +322,11 @@ func (s *AIAgentAuthDeniedPayload) GetMethod() OptString {
 	return s.Method
 }
 
+// GetReason returns the value of Reason.
+func (s *AIAgentAuthDeniedPayload) GetReason() OptString {
+	return s.Reason
+}
+
 // SetEventType sets the value of EventType.
 func (s *AIAgentAuthDeniedPayload) SetEventType(val AIAgentAuthDeniedPayloadEventType) {
 	s.EventType = val
@@ -342,6 +350,11 @@ func (s *AIAgentAuthDeniedPayload) SetPath(val OptString) {
 // SetMethod sets the value of Method.
 func (s *AIAgentAuthDeniedPayload) SetMethod(val OptString) {
 	s.Method = val
+}
+
+// SetReason sets the value of Reason.
+func (s *AIAgentAuthDeniedPayload) SetReason(val OptString) {
+	s.Reason = val
 }
 
 // Event type for discriminator (matches parent event_type).
@@ -393,6 +406,11 @@ type AIAgentAuthFailurePayload struct {
 	Path OptString `json:"path"`
 	// HTTP request method.
 	Method OptString `json:"method"`
+	// Specific failure classification (e.g. "missing_auth_header", "invalid_auth_format",
+	// "empty_bearer_token", "invalid_token", "invalid_token_audience") distinguishing an audience-bound
+	// TokenReview mismatch (cross-service token replay attempt) from a routine missing/malformed/expired
+	// token (BR-SECURITY-1900, AU-3, extends BR-AUDIT-005).
+	Reason OptString `json:"reason"`
 }
 
 // GetEventType returns the value of EventType.
@@ -420,6 +438,11 @@ func (s *AIAgentAuthFailurePayload) GetMethod() OptString {
 	return s.Method
 }
 
+// GetReason returns the value of Reason.
+func (s *AIAgentAuthFailurePayload) GetReason() OptString {
+	return s.Reason
+}
+
 // SetEventType sets the value of EventType.
 func (s *AIAgentAuthFailurePayload) SetEventType(val AIAgentAuthFailurePayloadEventType) {
 	s.EventType = val
@@ -443,6 +466,11 @@ func (s *AIAgentAuthFailurePayload) SetPath(val OptString) {
 // SetMethod sets the value of Method.
 func (s *AIAgentAuthFailurePayload) SetMethod(val OptString) {
 	s.Method = val
+}
+
+// SetReason sets the value of Reason.
+func (s *AIAgentAuthFailurePayload) SetReason(val OptString) {
+	s.Reason = val
 }
 
 // Event type for discriminator (matches parent event_type).
