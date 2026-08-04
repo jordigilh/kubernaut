@@ -32,6 +32,18 @@ import (
 // test anywhere in the suite to exercise a NextToolCall chain deeper than 2
 // tool calls, proving the #1853 N-deep chaining fix end to end against the
 // real AF binary.
+//
+// DD-AF-011 (#1899) happy-path coverage: fullInteractiveRemediationScenarioYAML
+// (test/infrastructure/shared_e2e.go) declares interaction_mode:
+// "full_remediation_autonomous" on the kubernaut_investigate call, which is
+// what authorizes the harness-enforced phase-transition consent gate
+// (checkpointToolFilter + phaseGuardBefore) to let this same-turn auto-chain
+// reach kubernaut_select_workflow/kubernaut_watch at all -- without it, the
+// gate's fail-safe "interactive" default would block discover_workflows and
+// this test would fail the same way E2E-FP-1899-001/002 prove a fire-and-
+// forget attempt is blocked. This test is therefore the E2E happy-path
+// regression proof for full_remediation_autonomous under the consent gate,
+// complementing the negative-path proofs in 18_af_a2a_consent_gate_test.go.
 var _ = Describe("AF A2A Full Interactive Remediation Full Pipeline [E2E-FP-1853-002]", Label("fp", "af", "a2a", "interactive", "issue-1853"), func() {
 
 	It("should auto-chain investigate -> discover_workflows -> select_workflow -> watch from a single combined message, with no manual pause", NodeTimeout(8*time.Minute), func(_ SpecContext) {
