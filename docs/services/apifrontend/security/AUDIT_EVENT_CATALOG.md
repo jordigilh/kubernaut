@@ -39,7 +39,7 @@ type Event struct {
 | `tool.executed` | `EventToolExecuted` | AU-12, AU-2 | Any tool call completes (consolidated from `tool.invoked` + `mcp.tool_invoked`, Issue #1156) | `tool_name`, `tool_outcome` (`success`/`error`), `session_id`, `execution_duration_ms`, `namespace` (if applicable), `error` (on failure) |
 | `mcp.tool_failed` | `EventMCPToolFailed` | AU-12 | MCP tool/call request fails (panic, rate limit, throttle, error, marshal failure) | `tool_name`, `error` |
 | `mcp.session_init` | `EventMCPSessionInit` | AU-12 | MCP `initialize` JSON-RPC request handled (first per session) | `mcp_session_id`, `protocol_version` |
-| `workflow.discovery` | `EventWorkflowDiscovery` | AU-12 | `kubernaut_discover_workflows` tool returns workflow list | `workflow_count` |
+| `workflow.discovery` | `EventWorkflowDiscovery` | AU-12 | `kubernaut_discover_workflows` tool returns workflow list | `rr_id`, `workflow_count` (Issue #1923: now persisted to DataStorage with `correlation_id` set to `rr_id`, not a synthetic UUID) |
 
 **Emitted from:** `pkg/apifrontend/agent/root.go` (afterAudit callback), `pkg/apifrontend/handler/mcp.go`, `pkg/apifrontend/handler/mcp_bridge.go`, `pkg/apifrontend/tools/ka_interactive.go`
 
