@@ -223,6 +223,24 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 						logger.Error(err, "phase-guard failed to persist interaction mode")
 					}
 					blocked := mode == session.InteractionModeInteractive
+
+					// #1918: harness-enforced actionability gate. Independent
+					// of the model's own reading of the RCA narrative, force
+					// phase2_blocked=true when KA's structured signal says
+					// the RCA concluded no remediation is warranted (the
+					// same is_actionable=false && no-workflow condition
+					// investigator.go's own internal short-circuit guard
+					// already treats as authoritative). This only ever
+					// tightens an autonomy grant already made by the model
+					// (full_remediation/full_remediation_autonomous) -- it
+					// never loosens interactive mode's own blocked default,
+					// and never overrides a genuinely actionable RCA.
+					if rcaConcludedNotActionable(resp) {
+						blocked = true
+						logger.Info("phase-guard forcing phase2_blocked: RCA concluded not actionable with no workflow",
+							"tool", toolName, "declared_mode", mode)
+					}
+
 					if err := state.Set(session.StateKeyPhase2Blocked, blocked); err != nil {
 						logger.Error(err, "phase-guard failed to persist phase2_blocked state")
 					}
@@ -296,4 +314,32 @@ func NewPhaseGuardWithRegistryForTest(registry *launcher.ActiveContextRegistry) 
 	func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error),
 ) {
 	return newPhaseGuard(registry)
+}
+
+// rcaConcludedNotActionable inspects a kubernaut_investigate response's
+// nested "rca" payload (tools.InvestigateRCA, marshaled to map[string]any by
+// the ADK function-tool framework) for the #1918 harness-enforced
+// actionability gate. It returns true only when KA's RCA explicitly computed
+// is_actionable=false AND no workflow was already identified -- mirroring
+// investigator.go's own internal short-circuit guard
+// (actionable=false && workflow_id=="") so AF never second-guesses a case KA
+// itself would have already treated as ambiguous. A missing rca payload or a
+// missing/non-bool is_actionable key (older KA versions, or no RCA at all)
+// returns false: the gate must only override on a genuine computed false,
+// never on absence.
+func rcaConcludedNotActionable(resp map[string]any) bool {
+	rcaRaw, ok := resp["rca"]
+	if !ok || rcaRaw == nil {
+		return false
+	}
+	rca, ok := rcaRaw.(map[string]any)
+	if !ok {
+		return false
+	}
+	isActionable, ok := rca["is_actionable"].(bool)
+	if !ok || isActionable {
+		return false
+	}
+	hasWorkflow, _ := rca["has_workflow"].(bool)
+	return !hasWorkflow
 }

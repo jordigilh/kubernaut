@@ -91,6 +91,79 @@ var _ = Describe("bridgeEventsCollectSummary RCA Parsing — TP-1395-1396 (#1396
 			Expect(rca).To(BeNil(), "RCA should be nil when complete event has no Data")
 		})
 	})
+
+	// #1918: AF's phase_guard.go harness gate needs is_actionable/has_workflow
+	// mirrored onto InvestigateRCA so it can decide Phase 2 reachability
+	// independent of the model's own reading of the RCA narrative.
+	Describe("UT-AF-1918-004: bridgeEventsCollectSummary mirrors is_actionable/has_workflow from the complete event Data", func() {
+		It("should populate IsActionable=false and HasWorkflow=false when KA's RCA concluded no remediation is warranted", func() {
+			events := make(chan ka.InvestigationEvent, 5)
+			notActionable := false
+			rcaPayload := map[string]interface{}{
+				"severity":      "info",
+				"confidence":    0.90,
+				"rca_summary":   "Problem self-resolved after pod restart",
+				"is_actionable": notActionable,
+			}
+			rcaJSON, err := json.Marshal(rcaPayload)
+			Expect(err).NotTo(HaveOccurred())
+
+			events <- ka.InvestigationEvent{Type: ka.EventTypeComplete, Data: rcaJSON}
+
+			ctx := context.Background()
+			_, rca := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+
+			Expect(rca).NotTo(BeNil())
+			Expect(rca.IsActionable).NotTo(BeNil(),
+				"#1918: IsActionable must be surfaced on InvestigateRCA so phase_guard.go can read it")
+			Expect(*rca.IsActionable).To(BeFalse())
+			Expect(rca.HasWorkflow).To(BeFalse())
+		})
+
+		It("should populate IsActionable=true and HasWorkflow=true when KA's RCA selected a workflow", func() {
+			events := make(chan ka.InvestigationEvent, 5)
+			actionable := true
+			rcaPayload := map[string]interface{}{
+				"severity":      "critical",
+				"confidence":    0.92,
+				"rca_summary":   "OOMKill caused by memory leak",
+				"is_actionable": actionable,
+				"has_workflow":  true,
+			}
+			rcaJSON, err := json.Marshal(rcaPayload)
+			Expect(err).NotTo(HaveOccurred())
+
+			events <- ka.InvestigationEvent{Type: ka.EventTypeComplete, Data: rcaJSON}
+
+			ctx := context.Background()
+			_, rca := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+
+			Expect(rca).NotTo(BeNil())
+			Expect(rca.IsActionable).NotTo(BeNil())
+			Expect(*rca.IsActionable).To(BeTrue())
+			Expect(rca.HasWorkflow).To(BeTrue())
+		})
+
+		It("should leave IsActionable nil when KA's payload omits it (older/unset signal)", func() {
+			events := make(chan ka.InvestigationEvent, 5)
+			rcaPayload := map[string]interface{}{
+				"severity":    "warning",
+				"confidence":  0.80,
+				"rca_summary": "Investigation in progress",
+			}
+			rcaJSON, err := json.Marshal(rcaPayload)
+			Expect(err).NotTo(HaveOccurred())
+
+			events <- ka.InvestigationEvent{Type: ka.EventTypeComplete, Data: rcaJSON}
+
+			ctx := context.Background()
+			_, rca := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+
+			Expect(rca).NotTo(BeNil())
+			Expect(rca.IsActionable).To(BeNil(),
+				"#1918: an absent is_actionable key must stay nil, not be coerced to false")
+		})
+	})
 })
 
 // =============================================================================
