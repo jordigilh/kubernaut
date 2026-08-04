@@ -35,6 +35,19 @@ type rcaEventPayload struct {
 	RCASummary     string   `json:"rca_summary,omitempty"`
 	TotalLLMTurns  int      `json:"total_llm_turns,omitempty"`
 	TotalToolCalls int      `json:"total_tool_calls,omitempty"`
+	// IsActionable/HasWorkflow (#1918) give AF's phase_guard.go a structured,
+	// model-independent signal for its harness-enforced Phase 2 gate --
+	// mirrors the same condition (actionable=false && workflow_id=="")
+	// investigator.go already treats as authoritative internally. A *bool
+	// (rather than bool) so "never computed" (nil, omitted from JSON) stays
+	// distinguishable from "computed false" -- the gate must only override
+	// on a genuine false, never on absence.
+	IsActionable *bool `json:"is_actionable,omitempty"`
+	// HasWorkflow is derived from WorkflowID != "" rather than carrying the
+	// raw ID itself, preserving this payload's existing SI-10 boundary of
+	// never leaking internal workflow state (see the "should NOT leak
+	// internal workflow or validation state" case below).
+	HasWorkflow bool `json:"has_workflow,omitempty"`
 }
 
 // MarshalRCASubset extracts the AF-relevant fields from an InvestigationResult
@@ -53,6 +66,8 @@ func MarshalRCASubset(result *katypes.InvestigationResult) json.RawMessage {
 		RCASummary:     result.RCASummary,
 		TotalLLMTurns:  result.TotalLLMTurns,
 		TotalToolCalls: result.TotalToolCalls,
+		IsActionable:   result.IsActionable,
+		HasWorkflow:    result.WorkflowID != "",
 	}
 
 	data, err := json.Marshal(payload)
