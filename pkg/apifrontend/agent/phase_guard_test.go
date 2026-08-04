@@ -423,6 +423,36 @@ var _ = Describe("Phase Guard (#1307)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result).To(BeNil(), "select_workflow must be allowed when the harness never blocked phase 3")
 	})
+
+	// IT-AF-1915-001 deliberately reuses the same full_remediation mechanism
+	// already proven by IT-AF-1899-002b/003/005b above (auto-discover,
+	// pause-before-select) -- #1915's bug was never in this harness
+	// mechanism (it worked correctly and was already covered here under
+	// #1899's own test IDs). The gap was purely that prompt.txt never
+	// instructed the model to declare full_remediation for a plain
+	// "investigate" request (see prompt_test.go's UT-AF-1915-* for that
+	// fix). This test exists only for #1915's own BR/audit traceability --
+	// so a regression search for "1915" finds its regression coverage --
+	// not to duplicate #1899's mechanism assertions.
+	It("IT-AF-1915-001: full_remediation (the new plain-investigate default, #1915) auto-discovers but still pauses before select", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation"}, map[string]any{
+			"session_id": "sess-1915-a", "rr_id": "rr-1915-a", "status": "completed",
+		}, nil)
+
+		phase2Blocked, err := state.Get(session.StateKeyPhase2Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(phase2Blocked).To(Equal(false),
+			"#1915: full_remediation must auto-proceed through workflow discovery for a plain investigate request")
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil, map[string]any{
+			"workflows": []any{"wf-1"},
+		}, nil)
+
+		phase3Blocked, err := state.Get(session.StateKeyPhase3Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(phase3Blocked).To(Equal(true),
+			"#1915: full_remediation must still require a genuine user turn before executing a workflow -- auto-discovery is not auto-execution")
+	})
 })
 
 var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020, BR-SESS-022)", func() {
