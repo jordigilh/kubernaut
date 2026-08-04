@@ -13,6 +13,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
 // statefulToolContext extends fakeToolContext with a working session.State
@@ -65,10 +66,10 @@ func (m *mapState) All() iter.Seq2[string, any] {
 
 var _ = Describe("Phase Guard (#1307)", func() {
 	var (
-		state    *mapState
-		toolCtx  tool.Context
-		before   func(tool.Context, tool.Tool, map[string]any) (map[string]any, error)
-		after    func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
+		state   *mapState
+		toolCtx tool.Context
+		before  func(tool.Context, tool.Tool, map[string]any) (map[string]any, error)
+		after   func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
 	)
 
 	BeforeEach(func() {
@@ -115,7 +116,11 @@ var _ = Describe("Phase Guard (#1307)", func() {
 	)
 
 	It("UT-AF-1307-010: after investigate succeeds, discover_workflows is allowed", func() {
-		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+		// DD-AF-011 (#1899): declares full_remediation so the new consent
+		// gate doesn't block phase 2 -- this test exercises driver-active
+		// gating, not the consent gate itself (see phase_guard_test.go's
+		// "DD-AF-011" Describe block for that coverage).
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation"}, map[string]any{
 			"session_id": "sess-001", "status": "active",
 		}, nil)
 
@@ -135,8 +140,10 @@ var _ = Describe("Phase Guard (#1307)", func() {
 	})
 
 	It("UT-AF-1307-013: after investigate succeeds, discover_workflows is allowed", func() {
-		// Simulate successful investigation via AfterToolCallback
-		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+		// Simulate successful investigation via AfterToolCallback.
+		// DD-AF-011 (#1899): declares full_remediation to bypass the new
+		// consent gate, since this test is about driver-active gating.
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation"}, map[string]any{
 			"session_id": "sess-inv-001", "status": "completed",
 		}, nil)
 
@@ -182,8 +189,10 @@ var _ = Describe("Phase Guard (#1307)", func() {
 	})
 
 	It("UT-AF-1307-021: before callback injects rr_id from state when LLM omits it", func() {
-		// Simulate successful investigation storing rr_id
-		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+		// Simulate successful investigation storing rr_id.
+		// DD-AF-011 (#1899): declares full_remediation to bypass the new
+		// consent gate, since this test is about rr_id injection.
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation"}, map[string]any{
 			"session_id": "sess-rr-021", "rr_id": "rr-inject-me", "status": "completed",
 		}, nil)
 
@@ -197,8 +206,10 @@ var _ = Describe("Phase Guard (#1307)", func() {
 	})
 
 	It("UT-AF-1307-022: LLM-provided rr_id is NOT overwritten by state injection", func() {
-		// Store one rr_id in state
-		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+		// Store one rr_id in state.
+		// DD-AF-011 (#1899): declares full_remediation to bypass the new
+		// consent gate, since this test is about rr_id precedence.
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation"}, map[string]any{
 			"session_id": "sess-rr-022", "rr_id": "rr-stale-state", "status": "completed",
 		}, nil)
 
@@ -270,6 +281,131 @@ var _ = Describe("Phase Guard (#1307)", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stored).To(Equal("rr-response-new"),
 			"response rr_id must take priority over input args rr_id")
+	})
+
+	// --- DD-AF-011 (#1899): phase-transition consent gate ---
+
+	It("IT-AF-1899-002: successful investigate with no interaction_mode defaults to interactive and blocks phase 2", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-1899-a", "rr_id": "rr-1899-a", "status": "completed",
+		}, nil)
+
+		mode, err := state.Get(session.StateKeyInteractionMode)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(mode).To(Equal(session.InteractionModeInteractive),
+			"fail-safe default: an omitted interaction_mode must resolve to interactive (AC-6)")
+
+		blocked, err := state.Get(session.StateKeyPhase2Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blocked).To(Equal(true),
+			"interactive mode must block phase 2 (discover_workflows) until a genuine user turn")
+	})
+
+	It("IT-AF-1899-002b: successful investigate with interaction_mode=full_remediation does NOT block phase 2", func() {
+		inputArgs := map[string]any{"interaction_mode": "full_remediation"}
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, inputArgs, map[string]any{
+			"session_id": "sess-1899-b", "rr_id": "rr-1899-b", "status": "completed",
+		}, nil)
+
+		blocked, err := state.Get(session.StateKeyPhase2Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blocked).To(Equal(false),
+			"full_remediation must auto-proceed through workflow discovery")
+	})
+
+	It("IT-AF-1899-002c: an unrecognized interaction_mode value fails safe to interactive", func() {
+		inputArgs := map[string]any{"interaction_mode": "definitely-not-a-real-mode"}
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, inputArgs, map[string]any{
+			"session_id": "sess-1899-c", "rr_id": "rr-1899-c", "status": "completed",
+		}, nil)
+
+		mode, err := state.Get(session.StateKeyInteractionMode)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(mode).To(Equal(session.InteractionModeInteractive),
+			"SI-10: an invalid mode value must never grant MORE autonomy than the safest default")
+	})
+
+	It("IT-AF-1899-003: successful discover_workflows blocks phase 3 unless mode is full_remediation_autonomous", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation"}, map[string]any{
+			"session_id": "sess-1899-d", "rr_id": "rr-1899-d", "status": "completed",
+		}, nil)
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil, map[string]any{
+			"workflows": []any{"wf-1"},
+		}, nil)
+
+		blocked, err := state.Get(session.StateKeyPhase3Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blocked).To(Equal(true),
+			"full_remediation must still wait for genuine user confirmation before executing a workflow")
+	})
+
+	It("IT-AF-1899-003b: full_remediation_autonomous does NOT block phase 3", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation_autonomous"}, map[string]any{
+			"session_id": "sess-1899-e", "rr_id": "rr-1899-e", "status": "completed",
+		}, nil)
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil, map[string]any{
+			"workflows": []any{"wf-1"},
+		}, nil)
+
+		blocked, err := state.Get(session.StateKeyPhase3Blocked)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(blocked).To(Equal(false),
+			"full_remediation_autonomous must auto-proceed through workflow selection")
+	})
+
+	It("IT-AF-1899-003c: a failed discover_workflows does not set phase3_blocked", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-1899-f", "rr_id": "rr-1899-f", "status": "completed",
+		}, nil)
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil, map[string]any{
+			"error": "discovery failed",
+		}, nil)
+
+		_, err := state.Get(session.StateKeyPhase3Blocked)
+		Expect(err).To(MatchError(adksession.ErrStateKeyNotExist),
+			"a failed discover_workflows must not set a checkpoint — nothing succeeded to gate yet")
+	})
+
+	It("IT-AF-1899-005: before hard-rejects discover_workflows while phase2 is blocked, even with an active driver", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-1899-g", "rr_id": "rr-1899-g", "status": "completed",
+		}, nil)
+
+		result, err := before(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).NotTo(BeNil(),
+			"discover_workflows must be hard-rejected while phase 2 is blocked, even though a driver is active")
+		errMsg, ok := result["error"].(string)
+		Expect(ok).To(BeTrue())
+		Expect(errMsg).To(ContainSubstring("wait"),
+			"error must guide the LLM to wait for the user, not retry")
+	})
+
+	It("IT-AF-1899-005b: before hard-rejects select_workflow while phase3 is blocked", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation"}, map[string]any{
+			"session_id": "sess-1899-h", "rr_id": "rr-1899-h", "status": "completed",
+		}, nil)
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil, map[string]any{
+			"workflows": []any{"wf-1"},
+		}, nil)
+
+		result, err := before(toolCtx, fakeTool{name: "kubernaut_select_workflow"}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).NotTo(BeNil(),
+			"select_workflow must be hard-rejected while phase 3 is blocked")
+	})
+
+	It("IT-AF-1899-005c: select_workflow is allowed when the harness never blocked phase 3 (full_remediation_autonomous)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation_autonomous"}, map[string]any{
+			"session_id": "sess-1899-i", "rr_id": "rr-1899-i", "status": "completed",
+		}, nil)
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil, map[string]any{
+			"workflows": []any{"wf-1"},
+		}, nil)
+
+		result, err := before(toolCtx, fakeTool{name: "kubernaut_select_workflow"}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil(), "select_workflow must be allowed when the harness never blocked phase 3")
 	})
 })
 
@@ -362,7 +498,9 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 
 	It("UT-AF-SESS-020-025: No-op when registry is nil (backward compat)", func() {
 		beforeNil, afterNil := NewPhaseGuardWithRegistryForTest(nil)
-		_, _ = afterNil(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+		// DD-AF-011 (#1899): declares full_remediation to bypass the new
+		// consent gate, since this test is about registry backward-compat.
+		_, _ = afterNil(toolCtx, fakeTool{name: "kubernaut_investigate"}, map[string]any{"interaction_mode": "full_remediation"}, map[string]any{
 			"session_id": "ka-sess-001", "rr_id": "rr-123",
 		}, nil)
 

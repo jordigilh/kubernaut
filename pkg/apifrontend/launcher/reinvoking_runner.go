@@ -71,6 +71,14 @@ func newReinvokingRunner(inner adka2a.Runner, sessionService adksession.Service,
 // until every reinvocation has genuinely finished.
 func (r *reinvokingRunner) Run(ctx context.Context, userID, sessionID string, msg *genai.Content, cfg agent.RunConfig) iter.Seq2[*adksession.Event, error] {
 	return func(yield func(*adksession.Event, error) bool) {
+		// DD-AF-011 (#1899): clear any leftover phase checkpoint flags
+		// exactly once, here, at the genuine top-level entry point for a
+		// real inbound A2A message. This must NOT run inside the
+		// reinvocation loop below (which re-enters r.inner.Run with a
+		// synthetic message, not a real user turn) -- doing so would
+		// immediately erase a checkpoint the current turn just set.
+		r.clearCheckpointFlags(ctx, userID, sessionID)
+
 		currentMsg := msg
 		reinvokeCount := 0
 		for {
@@ -124,7 +132,50 @@ func (r *reinvokingRunner) needsReinvocation(ctx context.Context, userID, sessio
 	if resp == nil || resp.Session == nil {
 		return false
 	}
-	return session.NeedsReinvocationCtx(ctx, isv1alpha1.SessionPhaseActive, resp.Session.Events(), reinvokeCount)
+	return session.NeedsReinvocationCtx(ctx, isv1alpha1.SessionPhaseActive, resp.Session.Events(), resp.Session.State(), reinvokeCount)
+}
+
+// clearCheckpointFlags clears any DD-AF-011 (#1899) phase checkpoint flags
+// left over from a prior turn, so a genuine new user message always starts
+// with a clean slate for phase-transition consent. Per the empirically
+// confirmed spike findings (see the #1899 plan), a direct
+// sessionService.Get(...).Session.State().Set(...) call would silently no-op
+// against the real ADK InMemoryService -- Get()/Create() return copies, and
+// only AppendEvent applying Event.Actions.StateDelta durably persists to the
+// canonical stored session. This mirrors exactly what ADK's own base_flow.go
+// does automatically inside real tool callbacks; reinvokingRunner sits
+// outside any tool callback, so it must do this explicitly.
+//
+// A session-fetch failure (e.g. first-ever turn, session not yet created) is
+// logged and treated as "nothing to clear" -- fail safe, never block the
+// turn on this best-effort cleanup.
+func (r *reinvokingRunner) clearCheckpointFlags(ctx context.Context, userID, sessionID string) {
+	resp, getErr := r.sessionService.Get(ctx, &adksession.GetRequest{
+		AppName:   r.appName,
+		UserID:    userID,
+		SessionID: sessionID,
+	})
+	if getErr != nil || resp == nil || resp.Session == nil {
+		return
+	}
+
+	state := resp.Session.State()
+	phase2, _ := state.Get(session.StateKeyPhase2Blocked)
+	phase3, _ := state.Get(session.StateKeyPhase3Blocked)
+	if phase2 != true && phase3 != true {
+		return
+	}
+
+	event := adksession.NewEvent("checkpoint-clear")
+	event.Actions.StateDelta = map[string]any{
+		session.StateKeyPhase2Blocked: false,
+		session.StateKeyPhase3Blocked: false,
+	}
+	if appendErr := r.sessionService.AppendEvent(ctx, resp.Session, event); appendErr != nil {
+		r.logger.Error(appendErr, "failed to clear checkpoint flags for new user turn",
+			"session_id", sessionID,
+		)
+	}
 }
 
 // plainRunnerAdapter adapts a real *runner.Runner (whose Run method has an
