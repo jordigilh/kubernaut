@@ -48,6 +48,18 @@ import (
 // Short because the phase transition should follow almost immediately after AA submits.
 const isPhaseActivePollTimeout = 5 * time.Second
 
+// Status/warning text emitted during the interactive-investigation await
+// loop (#1916, SI-11). Deliberately omits internal service acronyms (KA, AA)
+// and CRD names (IS CRD) — console users must never see internal system
+// architecture, per pkg/apifrontend/agent/prompt.txt's Behavioral Constraints
+// item 1. That constraint only governs LLM-generated text; these are Go
+// harness literals, so they must independently avoid the same leakage.
+const (
+	statusSessionReadyText        = "Investigation session ready, connecting..."
+	statusSessionAcknowledgedText = "Interactive session created, starting investigation..."
+	warnSessionTrackingFailedFmt  = "Warning: session tracking setup failed (%s), investigation continues"
+)
+
 type rrIDContextKey struct{}
 
 // WithRRID attaches the remediation request ID to the context so that
@@ -324,7 +336,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		checkCancel()
 		if awaitErr == nil && awaitResult.Status == "ready" {
 			kaSessionID = awaitResult.SessionID
-			_ = launcher.EmitStatusSafe(ctx, "Investigation session ready, connecting to KA...")
+			_ = launcher.EmitStatusSafe(ctx, statusSessionReadyText)
 		}
 
 		// Wait for the IS CRD phase to become Active — AA sets this after
@@ -337,7 +349,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		}
 		isCtx, isCancel := context.WithTimeout(ctx, isPhaseTimeout)
 		if AwaitISPhaseActive(isCtx, client, namespace, args.RRID) {
-			_ = launcher.EmitStatusSafe(ctx, "Interactive session acknowledged by AA, starting investigation...")
+			_ = launcher.EmitStatusSafe(ctx, statusSessionAcknowledgedText)
 		}
 		isCancel()
 	}
@@ -403,7 +415,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 				"session_id", result.SessionID,
 				"namespace", namespace,
 			)
-			_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Warning: IS CRD creation failed (%s), investigation continues", security.RedactError(hookErr)))
+			_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf(warnSessionTrackingFailedFmt, security.RedactError(hookErr)))
 		}
 	}
 
