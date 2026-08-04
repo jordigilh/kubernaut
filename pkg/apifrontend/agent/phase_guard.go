@@ -203,6 +203,9 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx tool.Context,
 	if isEntry {
 		recordDriverEntryState(ctx, toolName, inputArgs, resp)
 	}
+	if isTerminal {
+		clearDriverSessionState(ctx)
+	}
 	syncActiveContextRegistry(registry, ctx, isEntry, isTerminal)
 
 	return resp, callErr
@@ -315,6 +318,32 @@ func storeActiveRRID(state adksession.State, resp, inputArgs map[string]any, log
 	}
 	if err := state.Set(stateKeyActiveRRID, rrID); err != nil {
 		logger.Error(err, "phase-guard failed to store rr_id in state")
+	}
+}
+
+// clearDriverSessionState resets the driver-active flag and the stashed
+// rr_id/session_id after a successful session-terminal tool call (#1912).
+// Pre-fix, phaseGuardAfter only cleared the ActiveContextRegistry entry on
+// the isTerminal branch, leaving stateKeyDriverActive stuck true. Since
+// session.NeedsReinvocationCtx (reinvoke.go) treats a true driverActive as
+// "investigation still active" regardless of whether any DD-AF-011 (#1899)
+// checkpoint flag remained blocked, that stale flag could incorrectly
+// nudge reinvocation on a later text-only turn in the same chat session,
+// resurrecting a driver session the user had already ended.
+func clearDriverSessionState(ctx tool.Context) {
+	state := ctx.State()
+	if state == nil {
+		return
+	}
+	logger := logr.FromContextOrDiscard(ctx)
+	if err := state.Set(stateKeyDriverActive, false); err != nil {
+		logger.Error(err, "phase-guard failed to clear driver state")
+	}
+	if err := state.Set(stateKeyActiveRRID, ""); err != nil {
+		logger.Error(err, "phase-guard failed to clear active rr_id state")
+	}
+	if err := state.Set(stateKeyActiveSession, ""); err != nil {
+		logger.Error(err, "phase-guard failed to clear active session state")
 	}
 }
 
