@@ -259,6 +259,13 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// trip into the A2A artifact stream (see scenario_ka_interactive_fleet_bridge.go).
 	r.Register(kaInteractiveFleetBridgeE2EScenario())
 
+	// E2E-FLEET-018 companion: once kubernaut_message's tool result already
+	// carries the fleet-scoped evidence, AF's own agent loop must echo it
+	// back as plain text instead of falling through to a generic
+	// completion (see afKaInteractiveFleetBridgeMessageEchoScenario's doc
+	// comment in scenario_ka_interactive_fleet_bridge.go).
+	r.Register(afKaInteractiveFleetBridgeMessageEchoE2EScenario())
+
 	// Default fallback (lowest priority = 0.01)
 	r.Register(defaultFallbackScenario())
 

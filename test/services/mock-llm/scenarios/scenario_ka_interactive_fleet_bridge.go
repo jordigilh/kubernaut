@@ -281,3 +281,92 @@ func (s *kaInteractiveFleetBridgeScenario) ConfigForContext(ctx *DetectionContex
 	}
 	return cfg
 }
+
+// afKaInteractiveFleetBridgeMessageEchoConfidence must out-rank both the
+// shared keyword scenario af_ka_interactive_fleet_bridge_message_1768
+// (fixed 1.0, DefaultRegistryFull) and afCreateRRScenario's "kubernaut_remediate"
+// fallback (0.9, scenario_af_create_rr.go) -- CI RCA for run 30863138421
+// (job 91851206788, E2E-FLEET-018) proved both are exactly what AF's ADK
+// agent lands on once the kubernaut_message tool result is already the
+// last message (see Match's doc comment below for the full mechanism).
+const afKaInteractiveFleetBridgeMessageEchoConfidence = 1.15
+
+// afKaInteractiveFleetBridgeMessageEchoScenario closes the gap
+// kaInteractiveFleetBridgeScenarioYAML's own doc comment (shared_e2e.go)
+// left open: "self-disables on the very next completion once
+// kubernaut_message's own result becomes the last message" describes
+// repeat_tool_call's guard correctly stopping the tool_call from re-firing,
+// but says nothing about what AF's ADK agent is supposed to say instead --
+// and the answer, before this scenario existed, was "whatever the generic
+// DAG/default fallback produces," which is unrelated canned content (the
+// "memory-eater"/traffic_spike/resource_limits JSON the E2E test's failure
+// output showed, four times over, across CI runs 30853023883, 30858855479,
+// 30863138421) with no "247Mi" anywhere in it.
+//
+// This scenario is the AF-side mirror of kaInteractiveFleetBridgeScenario's
+// evidence-found branch: same keyword/target-name signal, but scoped to
+// AF's own agent loop (no "submit_result" tool offered, the inverse of
+// kaInteractiveFleetBridgeScenario.Match's KA-side guard) and gated on the
+// evidence value already being present in ctx.AllText -- which only
+// becomes true after KA's real RunInteractiveTurn call has actually
+// executed the fleet-scoped tool and appended its result to the
+// conversation AF's ADK agent resends on every subsequent call in this
+// session. Before that point (Turn 3's very first completion, deciding
+// whether to call kubernaut_message at all), this scenario correctly does
+// not match, leaving that decision to the keyword scenario above.
+type afKaInteractiveFleetBridgeMessageEchoScenario struct{}
+
+func afKaInteractiveFleetBridgeMessageEchoE2EScenario() *afKaInteractiveFleetBridgeMessageEchoScenario {
+	return &afKaInteractiveFleetBridgeMessageEchoScenario{}
+}
+
+func (s *afKaInteractiveFleetBridgeMessageEchoScenario) Name() string {
+	return "af_ka_interactive_fleet_bridge_message_echo_1768"
+}
+
+func (s *afKaInteractiveFleetBridgeMessageEchoScenario) Metadata() ScenarioMetadata {
+	return ScenarioMetadata{
+		Name: "af_ka_interactive_fleet_bridge_message_echo_1768",
+		Description: "E2E-FLEET-018: once kubernaut_message's tool result already carries the fleet-scoped " +
+			"evidence, AF's own agent loop echoes it back as plain text instead of falling through to a " +
+			"generic completion, so the A2A artifact actually contains the evidence the E2E test asserts on",
+	}
+}
+
+func (s *afKaInteractiveFleetBridgeMessageEchoScenario) DAG() *conversation.DAG { return nil }
+
+// Match requires the same keyword/target-name signal as
+// kaInteractiveFleetBridgeScenario, the absence of "submit_result" (KA's
+// tool registry always appends it for every RCA-phase call --
+// toolDefinitionsForPhase, internal/kubernautagent -- but AF's own ~27
+// kubernaut_* tools never include it, so this reliably confines the match
+// to AF-level calls), and the evidence value already present in
+// ctx.AllText (i.e. kubernaut_message's tool result has already been
+// appended to the conversation this call resends).
+func (s *afKaInteractiveFleetBridgeMessageEchoScenario) Match(ctx *DetectionContext) (bool, float64) {
+	if ctx == nil {
+		return false, 0
+	}
+	combined := strings.ToLower(ctx.Content + " " + ctx.AllText)
+	if !strings.Contains(combined, kaInteractiveFleetKeyword) &&
+		!strings.Contains(combined, strings.ToLower(kaInteractiveFleetTargetName)) {
+		return false, 0
+	}
+	if slices.Contains(ctx.AvailableTools, "submit_result") {
+		return false, 0
+	}
+	if !strings.Contains(ctx.AllText, strings.ToLower(kaInteractiveFleetEvidence)) {
+		return false, 0
+	}
+	return true, afKaInteractiveFleetBridgeMessageEchoConfidence
+}
+
+func (s *afKaInteractiveFleetBridgeMessageEchoScenario) ConfigForContext(_ *DetectionContext) MockScenarioConfig {
+	return MockScenarioConfig{
+		ScenarioName: s.Name(),
+		ForceText:    BoolPtr(true),
+		ExactAnalysisText: fmt.Sprintf(
+			"kubernaut_message confirmed: evidence %s found on the fleet-scoped target deployment.",
+			kaInteractiveFleetEvidence),
+	}
+}
