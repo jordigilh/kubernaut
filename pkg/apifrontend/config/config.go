@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -299,7 +300,11 @@ func defaultResilienceConfig() ResilienceConfig {
 			RetryMax:           2,
 			RetryInitBackoff:   500 * time.Millisecond,
 			RetryMaxBackoff:    5 * time.Second,
-			RetryableStatuses:  []int{502, 503, 504},
+			// 429 (Too Many Requests) is included because KA enforces a
+			// concurrency throttle (chi.Throttle); ADR-048-ADDENDUM-001
+			// requires clients to retry with backoff on throttle responses
+			// rather than fail fast.
+			RetryableStatuses: []int{http.StatusTooManyRequests, 502, 503, 504},
 		},
 		DS: DependencyConfig{
 			ConnectTimeout:     3 * time.Second,
