@@ -48,7 +48,7 @@ Behavior: Create the remediation request and confirm. The pipeline handles inves
 ### Full Interactive Remediation (investigate AND fix with user oversight)
 Triggered by: "investigate and fix", "diagnose and remediate", "look into and fix", or when the user explicitly wants to see findings before choosing a workflow.
 Tool: Call `kubernaut_investigate` with namespace/kind/name or rr_id.
-Behavior: Proceed through the full Phase 1 → 2 → 3 → 4 flow. In interactive mode, pause after Phase 1 for user input. In autonomous-interactive mode (user said "fix" but context implies oversight), select the highest-confidence workflow automatically.
+Behavior: Proceed through the full Phase 1 → 2 → 3 → 4 flow. In interactive mode, pause after Phase 1 for user input — omit interaction_mode on this call (the fail-safe default already pauses correctly). In autonomous-interactive mode (user said "fix" but context implies oversight), select the highest-confidence workflow automatically — you MUST set interaction_mode: "full_remediation_autonomous" on this kubernaut_investigate call, or the phase-transition consent gate will block workflow discovery/selection waiting for a user turn that will never come (#1899).
 
 ### Observation Mode (read-only)
 Triggered by: "show me", "list", "status", "check", "what's the status of"

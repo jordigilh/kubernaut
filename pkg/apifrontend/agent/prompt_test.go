@@ -566,3 +566,47 @@ var _ = Describe("Prompt — Alert Prioritization Consent Gate (#1899)", func() 
 			"#1899: the unconditional (unqualified) directive must not survive verbatim adjacent to the next section")
 	})
 })
+
+// =============================================================================
+// DD-AF-011 (#1899): Full Interactive Remediation must declare interaction_mode
+//
+// The harness-enforced phase-transition consent gate fails safe to
+// "interactive" whenever kubernaut_investigate's interaction_mode argument
+// is omitted or unrecognized. Before this fix, "Full Interactive
+// Remediation"'s autonomous-interactive sub-case (line: "select the
+// highest-confidence workflow automatically") told the LLM to auto-proceed
+// through discover_workflows/select_workflow, but never instructed it to
+// declare interaction_mode: full_remediation_autonomous on the triggering
+// kubernaut_investigate call. Once the consent gate went live, that
+// omission would have silently regressed the autonomous-interactive flow:
+// the gate would always fail-safe-block discover_workflows waiting for a
+// user turn that, in this mode, is never coming -- turning "investigate
+// and fix" (with oversight-implying context) into a permanent stall. This
+// closes that gap with an explicit instruction, verified textually here
+// (a live-LLM behavioral guarantee is out of scope for a prompt-content
+// test, consistent with every other prompt.txt directive in this suite).
+// =============================================================================
+
+var _ = Describe("Prompt — Full Interactive Remediation declares interaction_mode (#1899)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1899-014: AC-6/SI-10 autonomous-interactive sub-case instructs declaring full_remediation_autonomous", func() {
+		Expect(instruction).To(ContainSubstring(`interaction_mode: "full_remediation_autonomous"`),
+			"#1899: without this explicit instruction, the consent gate's fail-safe interactive default would permanently stall the autonomous-interactive flow at discover_workflows, waiting for a user turn that never comes")
+	})
+
+	It("UT-AF-1899-015: prompt explains WHY the mode must be declared, not just what value to use", func() {
+		Expect(instruction).To(ContainSubstring("consent gate will block workflow discovery/selection"),
+			"#1899: the instruction must explain the consequence of omitting interaction_mode, not just state the value, so the directive survives future prompt edits/summarization with its rationale intact")
+	})
+
+	It("UT-AF-1899-016: interactive sub-case explicitly notes interaction_mode is omitted (fail-safe default applies)", func() {
+		Expect(instruction).To(ContainSubstring(`omit interaction_mode`),
+			"#1899: the interactive sub-case should explicitly note it relies on the fail-safe default, disambiguating it from the autonomous-interactive sub-case's explicit declaration")
+	})
+})
