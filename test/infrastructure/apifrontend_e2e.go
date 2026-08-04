@@ -41,6 +41,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -574,54 +576,47 @@ spec:
 	return kubectlApplyStdinAF(ctx, kubeconfigPath, manifest, writer)
 }
 
+// personaOrder is the fixed, deterministic rendering order for the 6
+// per-persona ClusterRoles/ClusterRoleBindings PersonaToolClusterRolesYAML
+// generates. Must match afPersonaGroupNames (fullpipeline_e2e_helm.go) and
+// charts/kubernaut/values.yaml's apifrontend.config.rbac.personas keys.
+var personaOrder = []string{
+	"sre", "ai-orchestrator", "cicd", "observability", "l3-audit", "remediation-approver",
+}
+
 // PersonaToolClusterRolesYAML generates the 6 per-persona ClusterRoles (with
-// kubernaut.ai/tools verb=use resourceNames) and 6 ClusterRoleBindings (mapping
-// DEX OIDC groups to the ClusterRoles). Mirrors the Helm chart template that
-// generates kubernaut-tool-{persona} ClusterRoles from values.yaml personas.
+// kubernaut.ai/tools verb=use resourceNames) and 6 ClusterRoleBindings
+// (mapping DEX OIDC groups to the ClusterRoles).
 //
-// Used by both AF E2E and full-pipeline E2E deployments.
-func PersonaToolClusterRolesYAML() string {
-	type persona struct {
-		name  string
-		tools []string
-	}
-	personas := []persona{
-		{"sre", []string{
-			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_approve",
-			"kubernaut_cancel_remediation", "kubernaut_watch", "kubernaut_investigate",
-			"kubernaut_discover_workflows", "kubernaut_select_workflow",
-			"kubernaut_present_decision", "kubernaut_list_workflows", "kubernaut_get_remediation_history",
-			"kubernaut_get_effectiveness", "kubernaut_get_audit_trail",
-			"kubectl_get", "kubectl_list", "kubectl_list_events",
-			"kubernaut_check_existing_remediation", "kubernaut_remediate",
-		}},
-		{"ai-orchestrator", []string{
-			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_approve",
-			"kubernaut_cancel_remediation", "kubernaut_watch", "kubernaut_investigate",
-			"kubernaut_discover_workflows", "kubernaut_select_workflow",
-			"kubernaut_present_decision",
-			"kubectl_get", "kubectl_list", "kubectl_list_events",
-			"kubernaut_check_existing_remediation", "kubernaut_remediate",
-		}},
-		{"cicd", []string{
-			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",
-		}},
-		{"observability", []string{
-			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",
-			"kubernaut_get_effectiveness", "kubernaut_list_workflows",
-			"kubectl_get", "kubectl_list", "kubectl_list_events",
-		}},
-		{"l3-audit", []string{
-			"kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_list_workflows",
-			"kubernaut_get_remediation_history", "kubernaut_get_effectiveness", "kubernaut_get_audit_trail",
-		}},
-		{"remediation-approver", []string{
-			"kubernaut_approve", "kubernaut_list_remediations", "kubernaut_get_remediation", "kubernaut_watch",
-		}},
+// Tool lists are derived directly from charts/kubernaut/values.yaml's
+// apifrontend.config.rbac.personas (via LoadPersonaToolsFromValuesYAML)
+// rather than hand-copied literals. This function used to embed its own
+// copy of each persona's tool list; that copy silently drifted out of sync
+// for 5 of 6 personas as values.yaml gained tools across #1367/#1372/#1869
+// with zero build/lint signal, breaking test/e2e/apifrontend's
+// E2E-KA-1418-001/002 (kubernaut_complete_no_action as sre) on SAR denial
+// (incident found 2026-08-03, regression-pinned by
+// UT-INFRA-RBAC-002 in rbac_parity_test.go). Deriving from values.yaml
+// eliminates this whole class of drift permanently.
+//
+// Used by AF-only E2E deployments (see afDeployE2ERBAC). Full-pipeline E2E
+// does not call this: it deploys the real chart via `helm install` and only
+// adds the ClusterRoleBindings (see bindAFPersonaToolClusterRoles,
+// fullpipeline_e2e_helm.go), so it was never subject to this drift.
+func PersonaToolClusterRolesYAML() (string, error) {
+	personaTools, err := LoadPersonaToolsFromValuesYAML()
+	if err != nil {
+		return "", fmt.Errorf("failed to load persona tool RBAC from values.yaml: %w", err)
 	}
 
 	var b strings.Builder
-	for _, p := range personas {
+	for _, name := range personaOrder {
+		tools, ok := personaTools[name]
+		if !ok {
+			return "", fmt.Errorf(
+				"persona %q (afPersonaGroupNames) not found in values.yaml apifrontend.config.rbac.personas", name)
+		}
+
 		fmt.Fprintf(&b, `---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -632,8 +627,8 @@ rules:
     resources: ["tools"]
     verbs: ["use"]
     resourceNames:
-`, p.name)
-		for _, t := range p.tools {
+`, name)
+		for _, t := range tools {
 			fmt.Fprintf(&b, "      - %q\n", t)
 		}
 
@@ -650,10 +645,40 @@ subjects:
   - kind: Group
     name: %s
     apiGroup: rbac.authorization.k8s.io
-`, p.name, p.name, p.name)
+`, name, name, name)
 	}
 
-	return b.String()
+	return b.String(), nil
+}
+
+// LoadPersonaToolsFromValuesYAML reads charts/kubernaut/values.yaml and
+// returns apifrontend.config.rbac.personas as persona name -> tool list --
+// the single source of truth PersonaToolClusterRolesYAML renders from.
+// Exported for reuse by test/e2e/apifrontend's persona ACL-matrix test
+// (#1827), so that test asserts against the same source of truth instead
+// of re-declaring a third hand-copied tool list.
+func LoadPersonaToolsFromValuesYAML() (map[string][]string, error) {
+	path := filepath.Join(getProjectRoot(), "charts", "kubernaut", "values.yaml")
+	data, err := os.ReadFile(path) //nolint:gosec // G304: known project path
+	if err != nil {
+		return nil, fmt.Errorf("failed to read values.yaml: %w", err)
+	}
+	var parsed struct {
+		APIFrontend struct {
+			Config struct {
+				RBAC struct {
+					Personas map[string][]string `yaml:"personas"`
+				} `yaml:"rbac"`
+			} `yaml:"config"`
+		} `yaml:"apifrontend"`
+	}
+	if err := yaml.Unmarshal(data, &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse values.yaml: %w", err)
+	}
+	if len(parsed.APIFrontend.Config.RBAC.Personas) == 0 {
+		return nil, fmt.Errorf("values.yaml apifrontend.config.rbac.personas is empty or missing")
+	}
+	return parsed.APIFrontend.Config.RBAC.Personas, nil
 }
 
 // ============================================================================
@@ -793,7 +818,10 @@ metadata:
 		return fmt.Errorf("failed to deploy AF RBAC from base: %w", err)
 	}
 
-	personaToolRBAC := PersonaToolClusterRolesYAML()
+	personaToolRBAC, err := PersonaToolClusterRolesYAML()
+	if err != nil {
+		return fmt.Errorf("failed to generate persona tool ClusterRoles: %w", err)
+	}
 	if err := kubectlApplyStdinAF(ctx, kubeconfigPath, personaToolRBAC, writer); err != nil {
 		return fmt.Errorf("failed to deploy persona tool ClusterRoles: %w", err)
 	}

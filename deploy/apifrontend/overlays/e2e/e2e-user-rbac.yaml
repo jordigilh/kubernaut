@@ -2,6 +2,32 @@
 # ADR-022: All AF K8s operations (MCP bridge and A2A) use AF's ServiceAccount.
 # E2E users do not need CRD permissions for kubernaut_* tools at runtime.
 # These grants remain for E2E test fixture setup (admin kubectl).
+#
+# Removed 2026-08-04 (#1827 persona ACL-matrix E2E, incident found in CI on
+# PR #1914): this file used to also carry a broad "MCP tool authorization"
+# rule (kubernaut.ai/tools, verb=use) listing ~25 resourceNames, bound to
+# sre/ai-orchestrator/observability/remediation-approver via the
+# ClusterRoleBindings below. Because Kubernetes RBAC is additive (a SAR
+# Allowed=true from ANY matching ClusterRole/Binding wins), that block
+# silently granted every one of those 4 groups access to tools far beyond
+# what charts/kubernaut/values.yaml's apifrontend.config.rbac.personas
+# actually authorizes for them -- e.g. ai-orchestrator could call
+# kubernaut_get_effectiveness, kubernaut_get_audit_trail, kubernaut_approve,
+# etc. even though its persona entry never lists them. This defeated the
+# exact per-persona least-privilege model persona_acl_matrix_test.go
+# (TC-E2E-ACL-001) exists to prove, and went undetected because no prior
+# test asserted a *negative* (denied) case for those (persona, tool) pairs
+# through AF's real /mcp endpoint using a genuine Dex-issued token.
+#
+# The block was removed rather than reconciled with values.yaml because it
+# had already drifted from it (e.g. "kubernaut_list_alerts" here vs.
+# "list_alerts" in values.yaml's persona lists -- see the compat grant
+# below) and duplicated authority PersonaToolClusterRolesYAML already
+# derives correctly from values.yaml (afDeployE2ERBAC applies both). Removal
+# impact was verified by grepping every kubernaut_* raw MCP tool call in
+# test/e2e/apifrontend for the persona token used; the only dependency found
+# was sre's alert_prioritization_e2e_test.go calls to "kubernaut_list_alerts"
+# -- preserved narrowly below instead of restoring the full broad grant.
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -30,36 +56,6 @@ rules:
   - apiGroups: ["batch"]
     resources: ["jobs", "cronjobs"]
     verbs: ["get"]
-  # MCP tool authorization (SAR verb: "use" on kubernaut.ai/tools)
-  - apiGroups: ["kubernaut.ai"]
-    resources: ["tools"]
-    resourceNames:
-      - kubernaut_discover_workflows
-      - kubernaut_investigate
-      - kubernaut_select_workflow
-      - kubernaut_present_decision
-      - kubernaut_message
-      - kubernaut_complete
-      - kubernaut_cancel
-      - kubernaut_status
-      - kubernaut_reconnect
-      - kubernaut_remediate
-      - kubernaut_check_existing_remediation
-      - kubernaut_cancel_remediation
-      - kubernaut_watch
-      - kubernaut_approve
-      - kubernaut_list_remediations
-      - kubernaut_get_remediation
-      - kubernaut_list_workflows
-      - kubernaut_get_remediation_history
-      - kubernaut_get_effectiveness
-      - kubernaut_get_audit_trail
-      - kubernaut_list_alerts
-      - kubernaut_complete_no_action
-      - kubernaut_list_approval_requests
-      - kubernaut_get_approval_request
-      - kubernaut_await_session
-    verbs: ["use"]
   # kubernaut_remediate / kubernaut_check_existing_remediation / kubernaut_cancel_remediation / kubernaut_watch
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
@@ -128,4 +124,38 @@ subjects:
 roleRef:
   kind: ClusterRole
   name: e2e-user-k8s-tools
+  apiGroup: rbac.authorization.k8s.io
+---
+# Narrow compat grant for sre only: values.yaml's sre persona list carries
+# "list_alerts" (the internal name AF's own ADK agent uses for the A2A tool
+# -- pkg/apifrontend/agent/root.go), but the raw /mcp endpoint registers the
+# same capability under a different resourceName, "kubernaut_list_alerts"
+# (pkg/apifrontend/handler/mcp_bridge.go, mcptools.go). This pre-existing
+# naming mismatch means PersonaToolClusterRolesYAML (which derives strictly
+# from values.yaml) cannot itself authorize sre's direct-MCP
+# alert_prioritization_e2e_test.go calls. Scoped to sre + this single
+# resourceName only -- see the removal note above for why the broader grant
+# this replaced was deleted rather than kept for all 4 groups.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: e2e-sre-list-alerts-compat
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["tools"]
+    resourceNames:
+      - kubernaut_list_alerts
+    verbs: ["use"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-sre-list-alerts-compat
+subjects:
+  - kind: Group
+    name: sre
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-sre-list-alerts-compat
   apiGroup: rbac.authorization.k8s.io

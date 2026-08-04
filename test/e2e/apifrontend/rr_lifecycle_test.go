@@ -239,4 +239,53 @@ var _ = Describe("RAR Flow (G5)", Label("e2e", "phase2", "g5"), func() {
 		Expect(toolErr).To(BeFalse(), "SRE should be allowed to approve: %s", atext)
 		Expect(strings.ToLower(atext)).To(ContainSubstring("approved"))
 	})
+
+	// TC-E2E-RAR-04 (#1827): kubernaut_approve's "Approved" path is covered
+	// by RAR-01/03 above, but the "Rejected" decision was never exercised
+	// end-to-end through AF's own /mcp endpoint (only unit-tested directly
+	// against tools.HandleApprove, see kubernaut_approve_test.go) -- so a
+	// wire-level regression in the Decision="Rejected" branch (MCP argument
+	// marshaling, RBAC, or RAR status patch) had no E2E signal.
+	It("TC-E2E-RAR-04: kubernaut_approve Rejected path succeeds via AF /mcp", func() {
+		const rrName = "e2e-rr-rar04"
+		Expect(createRR(rrNamespace, rrName, "test-deploy-rar04")).To(Succeed())
+		DeferCleanup(func() { deleteRR(rrNamespace, rrName) })
+
+		approverTok, err := fetchDEXTokenForPersona("remediation-approver")
+		Expect(err).NotTo(HaveOccurred())
+		approverSession, err := initMCPSession(approverTok)
+		Expect(err).NotTo(HaveOccurred())
+
+		rarName := "e2e-rar-g5-04"
+		Expect(k8sClient.Create(context.Background(), buildRAR(rrNamespace, rarName, rrName))).To(Succeed())
+		DeferCleanup(func() {
+			rar := &remediationv1alpha1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: rarName, Namespace: rrNamespace},
+			}
+			_ = client.IgnoreNotFound(k8sClient.Delete(context.Background(), rar))
+		})
+
+		rejBody := buildJSONRPC("g5-04-reject", "tools/call", map[string]interface{}{
+			"name": "kubernaut_approve",
+			"arguments": map[string]interface{}{
+				"rar_name": rarName,
+				"decision": "Rejected",
+				"reason":   "E2E G5 rejection (#1827)",
+			},
+		})
+		rraw, rcode, err := mcpPOST(approverTok, approverSession, rejBody)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rcode).To(BeNumerically("<", 400))
+		rtext, toolErr, rperr := parseMCPToolPayload(unwrapSSEDataLine(rraw))
+		Expect(rperr).NotTo(HaveOccurred())
+		Expect(toolErr).To(BeFalse(), "reject should succeed (not a tool-level error): %s", rtext)
+		Expect(strings.ToLower(rtext)).To(ContainSubstring("rejected"))
+
+		By("the RAR's status.decision is persisted as Rejected")
+		rar := &remediationv1alpha1.RemediationApprovalRequest{}
+		Expect(k8sClient.Get(context.Background(), client.ObjectKey{
+			Namespace: rrNamespace, Name: rarName,
+		}, rar)).To(Succeed())
+		Expect(string(rar.Status.Decision)).To(Equal("Rejected"))
+	})
 })
