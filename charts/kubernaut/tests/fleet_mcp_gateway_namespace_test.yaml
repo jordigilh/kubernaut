@@ -1,0 +1,201 @@
+suite: "Issue #1730: global.fleet.mcpGatewayNamespace de-duplicates signalprocessing.fleet.namespace and fleetmetadatacache.namespace"
+# RCA: signalprocessing.fleet.namespace and fleetmetadatacache.namespace are
+# two independently-configured values serving the identical purpose
+# (restricting that service's own ClusterRegistry CRD watch to a single
+# namespace, BR-RBAC-020 #1686) -- but SP/EM/FMC all watch the *same*
+# physical MCP Gateway installation, so in virtually every real deployment
+# both would be set to the same value. Mirrors the "global default + rare
+# per-service escape hatch" pattern already established for
+# backend/mcpGatewayEndpoint/mcpGatewayType/tlsCAFile/oauth2.* (Issue #1707
+# follow-up) and the operator's effectiveSignalProcessingMCPGatewayNamespace/
+# effectiveFleetMetadataCacheMCPGatewayNamespace precedent
+# (kubernaut-operator internal/resources/rbac.go, fleetmetadatacache.go).
+# Both per-component override fields still exist and still win when set --
+# this is additive, not a breaking collapse.
+templates:
+  - templates/signalprocessing/signalprocessing.yaml
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # ---------------------------------------------------------------------
+  # SignalProcessing
+  # ---------------------------------------------------------------------
+  - it: "IT-PLATFORM-1730-001: SP's ConfigMap fleet.namespace falls back to global.fleet.mcpGatewayNamespace when signalprocessing.fleet.namespace is unset"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayNamespace: "shared-fleet-ns"
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*namespace: \"shared-fleet-ns\""
+
+  - it: "IT-PLATFORM-1730-001b: SP's namespace-scoped Role uses global.fleet.mcpGatewayNamespace when signalprocessing.fleet.namespace is unset"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+          mcpGatewayNamespace: "shared-fleet-ns"
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-fleet-registry
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: shared-fleet-ns
+
+  - it: "IT-PLATFORM-1730-001c: signalprocessing.fleet.namespace still wins over global.fleet.mcpGatewayNamespace when both are set (per-service escape hatch preserved)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+          mcpGatewayNamespace: "shared-fleet-ns"
+      signalprocessing:
+        fleet:
+          namespace: "sp-only-ns"
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-fleet-registry
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: sp-only-ns
+
+  - it: "IT-PLATFORM-1730-001d: SP remains cluster-wide (no namespace) when neither signalprocessing.fleet.namespace nor global.fleet.mcpGatewayNamespace is set (regression guard)"
+    set:
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: ClusterRole
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["mcp.kuadrant.io"]
+            resources: ["mcpserverregistrations"]
+            verbs: ["get", "list", "watch"]
+
+  # ---------------------------------------------------------------------
+  # FleetMetadataCache
+  # ---------------------------------------------------------------------
+  - it: "IT-PLATFORM-1730-002: FMC's mcpGateway.namespace falls back to global.fleet.mcpGatewayNamespace when fleetmetadatacache.namespace is unset"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayNamespace: "shared-fleet-ns"
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*namespace: \"shared-fleet-ns\""
+
+  - it: "IT-PLATFORM-1730-002b: FMC's namespace-scoped Role uses global.fleet.mcpGatewayNamespace when fleetmetadatacache.namespace is unset"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+          mcpGatewayNamespace: "shared-fleet-ns"
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: metadata.namespace
+          value: shared-fleet-ns
+
+  - it: "IT-PLATFORM-1730-002c: fleetmetadatacache.namespace still wins over global.fleet.mcpGatewayNamespace when both are set (per-service escape hatch preserved)"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        namespace: "fmc-only-ns"
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          mcpGatewayType: kuadrant
+          mcpGatewayNamespace: "shared-fleet-ns"
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: Role
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: fmc-only-ns
+
+  - it: "IT-PLATFORM-1730-002d: FMC falls back to its own kubernaut-system default when neither fleetmetadatacache.namespace nor global.fleet.mcpGatewayNamespace is set (regression guard)"
+    set:
+      fleetmetadatacache:
+        enabled: true
+        oauth2:
+          credentialsSecretRef: "fmc-creds"
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            tokenURL: "http://oauth.example.com"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: metadata.name
+      value: fleetmetadatacache-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*namespace: \"kubernaut-system\""

@@ -99,21 +99,33 @@ type investigationTemplateData struct {
 
 // workflowTemplateData maps to fields expected by phase3_workflow_selection.tmpl.
 type workflowTemplateData struct {
-	Severity              string
-	SignalName            string
-	Namespace             string
-	ResourceKind          string
-	ResourceName          string
-	ClusterName           string
-	SignalMode            string
-	PriorityDescription   string
-	Environment           string
-	RiskDescription       string
-	RCASummary            string
-	EnrichmentContext     string
-	Phase1Assessment      string
-	InvestigationAnalysis string
+	Severity                        string
+	SignalName                      string
+	Namespace                       string
+	ResourceKind                    string
+	ResourceName                    string
+	ClusterName                     string
+	SignalMode                      string
+	PriorityDescription             string
+	Environment                     string
+	RiskDescription                 string
+	RCASummary                      string
+	EnrichmentContext               string
+	Phase1Assessment                string
+	InvestigationAnalysis           string
+	ResolvedConfidenceThreshold     float64
+	InconclusiveConfidenceThreshold float64
 }
+
+// BR-KA-213 / Issue #1826: V1.0 defaults for the investigation-outcome
+// confidence bands (Outcome A "resolved" / Outcome B "inconclusive" in
+// phase3_workflow_selection.tmpl). Previously hardcoded directly in the
+// template; now the operator-configurable default when
+// WorkflowSelectionInput leaves the corresponding field zero.
+const (
+	defaultResolvedConfidenceThreshold     = 0.7
+	defaultInconclusiveConfidenceThreshold = 0.5
+)
 
 // Phase1RemediationTarget identifies the remediation target from Phase 1 RCA.
 type Phase1RemediationTarget struct {
@@ -231,25 +243,33 @@ type WorkflowSelectionInput struct {
 	RCASummary string
 	EnrichData *EnrichmentData
 	Phase1     *Phase1Data
+	// ResolvedConfidenceThreshold and InconclusiveConfidenceThreshold are the
+	// operator-configured investigation-outcome confidence bands (BR-KA-213,
+	// Issue #1826). Zero means "caller did not set it" — RenderWorkflowSelection
+	// substitutes the V1.0 defaults (0.7/0.5) in that case.
+	ResolvedConfidenceThreshold     float64
+	InconclusiveConfidenceThreshold float64
 }
 
 // RenderWorkflowSelection renders the Phase 3 workflow selection prompt.
 func (b *Builder) RenderWorkflowSelection(in WorkflowSelectionInput) (string, error) {
 	sanitized := sanitizeSignal(in.Signal)
 	data := workflowTemplateData{
-		Severity:              withDefault(sanitized.Severity, "critical"),
-		SignalName:            withDefault(sanitized.Name, "investigation"),
-		Namespace:             withDefault(sanitized.Namespace, "default"),
-		ResourceKind:          withDefault(sanitized.ResourceKind, "Pod"),
-		ResourceName:          withDefault(sanitized.ResourceName, "unknown"),
-		ClusterName:           withDefault(sanitized.ClusterName, "default"),
-		SignalMode:            withDefault(sanitized.SignalMode, signalprocessingv1alpha1.SignalModeReactive),
-		PriorityDescription:   withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
-		Environment:           withDefault(sanitized.Environment, sanitized.Namespace),
-		RiskDescription:       withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
-		RCASummary:            sanitizeField(in.RCASummary),
-		Phase1Assessment:      formatPhase1Assessment(in.Phase1),
-		InvestigationAnalysis: formatInvestigationAnalysis(in.Phase1),
+		Severity:                        withDefault(sanitized.Severity, "critical"),
+		SignalName:                      withDefault(sanitized.Name, "investigation"),
+		Namespace:                       withDefault(sanitized.Namespace, "default"),
+		ResourceKind:                    withDefault(sanitized.ResourceKind, "Pod"),
+		ResourceName:                    withDefault(sanitized.ResourceName, "unknown"),
+		ClusterName:                     withDefault(sanitized.ClusterName, "default"),
+		SignalMode:                      withDefault(sanitized.SignalMode, signalprocessingv1alpha1.SignalModeReactive),
+		PriorityDescription:             withDefault(sanitized.Priority, inferPriority(sanitized.Severity)),
+		Environment:                     withDefault(sanitized.Environment, sanitized.Namespace),
+		RiskDescription:                 withDefault(sanitized.RiskTolerance, inferRisk(sanitized.Severity)),
+		RCASummary:                      sanitizeField(in.RCASummary),
+		Phase1Assessment:                formatPhase1Assessment(in.Phase1),
+		InvestigationAnalysis:           formatInvestigationAnalysis(in.Phase1),
+		ResolvedConfidenceThreshold:     withDefaultFloat(in.ResolvedConfidenceThreshold, defaultResolvedConfidenceThreshold),
+		InconclusiveConfidenceThreshold: withDefaultFloat(in.InconclusiveConfidenceThreshold, defaultInconclusiveConfidenceThreshold),
 	}
 
 	if in.EnrichData != nil {
@@ -336,6 +356,15 @@ var injectionPatterns = regexp.MustCompile(
 
 func withDefault(value, fallback string) string {
 	if value != "" {
+		return value
+	}
+	return fallback
+}
+
+// withDefaultFloat mirrors withDefault for the confidence-band fields
+// (BR-KA-213, Issue #1826): zero means "caller did not set it".
+func withDefaultFloat(value, fallback float64) float64 {
+	if value != 0 {
 		return value
 	}
 	return fallback

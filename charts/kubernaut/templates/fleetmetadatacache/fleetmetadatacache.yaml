@@ -17,7 +17,11 @@ server:
 mcpGateway:
   endpoint: {{ $fmcFleetPreamble.config.mcpGatewayEndpoint | quote }}
   gatewayType: {{ $fmcFleetPreamble.config.mcpGatewayType | quote }}
-  namespace: {{ $v.namespace | quote }}
+  {{- /* Issue #1730: fleetmetadatacache.namespace falls back to
+  global.fleet.mcpGatewayNamespace (via kubernaut.fleet.config) when unset;
+  $v.namespace's own schema default ("kubernaut-system") is the final
+  fallback when neither is set, preserving pre-#1730 behavior. */}}
+  namespace: {{ $fmcFleetPreamble.config.namespace | default $v.namespace | quote }}
 valkey:
   {{- /* values.yaml documents valkeyAddr: "" as "uses shared Valkey
   instance", but left unimplemented that default actually falls through to
@@ -98,6 +102,11 @@ override fail() case. */}}
 {{- if eq (include "kubernaut.fleetmetadatacache.effectiveEnabled" .) "true" }}
 {{- $fmcFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.fleetmetadatacache "oauth2" .Values.fleetmetadatacache.oauth2) | fromYaml }}
 {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "fleetmetadatacache") | fromYaml }}
+{{- /* Issue #1730: fleetmetadatacache.namespace falls back to
+global.fleet.mcpGatewayNamespace (via kubernaut.fleet.config) when unset;
+$v.namespace's own schema default ("kubernaut-system") is the final
+fallback when neither is set, preserving pre-#1730 behavior. */}}
+{{- $fmcNamespace := $fmcFleetPreamble.config.namespace | default $v.namespace }}
 {{- if not $fmcFleetPreamble.config.mcpGatewayEndpoint }}
 {{- fail "global.fleet.mcpGatewayEndpoint is required when fleetmetadatacache.enabled=true — FleetMetadataCache polls remote clusters via the MCP Gateway" }}
 {{- end }}
@@ -268,7 +277,7 @@ ClusterRole/ClusterRoleBinding are skipped entirely in favor of the
 namespace-scoped Role/RoleBinding below (least privilege) instead of
 rendering a redundant empty ClusterRole.
 */}}
-{{- if not $v.namespace }}
+{{- if not $fmcNamespace }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -312,8 +321,9 @@ subjects:
 {{- else }}
 ---
 # #1686 (BR-RBAC-020): namespace-scoped equivalent of the ClusterRole rules
-# above, granted instead of them when fleetmetadatacache.namespace is set.
-{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "fleetmetadatacache" "serviceAccount" "fleetmetadatacache" "namespace" $v.namespace "appLabels" "app.kubernetes.io/name: fleetmetadatacache" "mcpServerRegistrations" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "kuadrantGateways" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "eaigwBackends" (ne $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+# above, granted instead of them when fleetmetadatacache.namespace (or its
+# global.fleet.mcpGatewayNamespace fallback, Issue #1730) is set.
+{{ include "kubernaut.fleet.registryNsRBAC" (dict "name" "fleetmetadatacache" "serviceAccount" "fleetmetadatacache" "namespace" $fmcNamespace "appLabels" "app.kubernetes.io/name: fleetmetadatacache" "mcpServerRegistrations" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "kuadrantGateways" (eq $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "eaigwBackends" (ne $fmcFleetPreamble.config.mcpGatewayType "kuadrant") "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 {{- end }}
 ---
 apiVersion: networking.k8s.io/v1

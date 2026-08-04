@@ -46,10 +46,12 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	wfPromptSignal := SignalToPrompt(signal)
 	LogLabelOverrideOrRejection(inv.logger, signal, wfPromptSignal, correlationID, "workflow selection")
 	systemPrompt, err := inv.builder.RenderWorkflowSelection(prompt.WorkflowSelectionInput{
-		Signal:     wfPromptSignal,
-		RCASummary: rcaSummary,
-		EnrichData: enrichData,
-		Phase1:     p1Ctx,
+		Signal:                          wfPromptSignal,
+		RCASummary:                      rcaSummary,
+		EnrichData:                      enrichData,
+		Phase1:                          p1Ctx,
+		ResolvedConfidenceThreshold:     inv.resolvedConfidenceThreshold,
+		InconclusiveConfidenceThreshold: inv.inconclusiveConfidenceThreshold,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("rendering workflow selection prompt: %w", err)

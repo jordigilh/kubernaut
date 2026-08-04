@@ -242,6 +242,7 @@ global:
         enabled: false
         endpoint: ""
         mcpGatewayEndpoint: ""
+        mcpGatewayNamespace: ""
         mcpGatewayType: ""
         oauth2:
             credentialsSecretRef: ""
@@ -289,6 +290,9 @@ kubernautAgent:
         maxConcurrentSessions: 50
         rateLimitPerUser: 20
         sessionTTL: 30m
+    investigation:
+        inconclusiveConfidenceThreshold: 0.5
+        resolvedConfidenceThreshold: 0.7
     llmProfileRef: primary
     logging:
         level: INFO

@@ -199,7 +199,19 @@ func (s *kaToolCallE2EScenario) ConfigForContext(ctx *DetectionContext) MockScen
 	// cluster's live object data -- neither the turn-1 alert-derived prompt
 	// nor SP's own KubernetesContext enrichment carries a resource-limit
 	// value (see kaToolE2ELocal/RemoteEvidence doc comment above).
-	if ctx != nil && strings.Contains(ctx.AllText, expectedEvidence) {
+	// ctx.AllText is lowercased by buildDetectionContext
+	// (test/services/mock-llm/handlers/openai.go), so expectedEvidence
+	// ("111Mi"/"222Mi", a case-sensitive K8s memory quantity string) must be
+	// lowercased for the comparison too -- found via CI RCA for run
+	// 30853023883 (job 91823709232) while fixing the identical bug in
+	// scenario_ka_interactive_fleet_bridge.go (E2E-FLEET-018). This scenario's
+	// own test (E2E-FLEET-017) never surfaced the bug because BOTH the
+	// success and failure RootCause messages below interpolate
+	// expectedEvidence verbatim via %q, so ContainSubstring(evidence)
+	// passes either way -- but the failure branch's actual claim ("did not
+	// return the expected evidence") would have been silently, permanently
+	// true.
+	if ctx != nil && strings.Contains(ctx.AllText, strings.ToLower(expectedEvidence)) {
 		cfg.RootCause = fmt.Sprintf(
 			"Verified %s via %s: found expected evidence %q from a genuine, correctly-targeted cluster round trip",
 			kaToolE2ETargetName, toolName, expectedEvidence)

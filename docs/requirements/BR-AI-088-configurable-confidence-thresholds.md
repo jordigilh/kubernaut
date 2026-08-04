@@ -122,12 +122,13 @@ data:
 
 **Not to be confused with [BR-KA-200](./BR-KA-200-resolved-stale-signals.md)'s inconclusive-investigation
 threshold**: BR-KA-200 governs a *different*, earlier gate — the LLM's own self-assessment of
-whether it reached *any* credible conclusion at all (hardcoded `>= 0.7` "resolved" / `< 0.5`
-"inconclusive" bands baked into KA's prompt, `internal/kubernautagent/prompt/templates/phase3_workflow_selection.tmpl`).
-That gate runs *before* a workflow is ever selected and produces `selected_workflow: null` when
-uncertain — there is no `confidence` value for this BR's rules to evaluate in that case. BR-AI-088
-only applies *after* KA has already selected an actionable workflow and reported a confidence
-score for it.
+whether it reached *any* credible conclusion at all (`>= 0.7` "resolved" / `< 0.5` "inconclusive"
+bands templated into KA's prompt, `internal/kubernautagent/prompt/templates/phase3_workflow_selection.tmpl`;
+operator-configurable since [BR-KA-213](./BR-KA-213-investigation-outcome-confidence-bands.md) /
+Issue #1826, defaults unchanged). That gate runs *before* a workflow is ever selected and produces
+`selected_workflow: null` when uncertain — there is no `confidence` value for this BR's rules to
+evaluate in that case. BR-AI-088 only applies *after* KA has already selected an actionable
+workflow and reported a confidence score for it.
 
 ### BR-AI-088.5: Audit Logging
 
@@ -278,6 +279,22 @@ is_high_confidence if {
 }
 ```
 
+### V1.0 Configurable Low-Confidence Floor (#1828)
+
+BR-AI-088.4's "Threshold Application" gate (`ProcessIncidentResponse`'s decision to set
+`requiresHumanReview` for a below-floor `selected_workflow.confidence`) was hardcoded to 70% —
+distinct from `rego.confidenceThreshold` above, which tunes the *later* Rego auto-approval
+decision (BR-AI-003/#225). Operators can now override it without a code change:
+
+```yaml
+# AIAnalysis config.yaml — set the Investigating-phase low-confidence floor
+rego:
+  policyPath: "/etc/aianalysis/policies/approval.rego"
+  lowConfidenceFloor: 0.5  # Overrides the V1.0 70% global default
+```
+
+Also exposed via Helm as `aianalysis.rego.lowConfidenceFloor` (`charts/kubernaut/values.schema.json`).
+
 ### V1.1 Migration Path
 
 ```yaml
@@ -316,5 +333,7 @@ confidence_rules:
 | 1.0 | 2025-12-06 | Initial business requirement for V1.1 |
 | 1.1 | 2026-02-28 | Updated V1.0 compatibility: threshold now configurable via `input.confidence_threshold` (#225). Fixed 70% → 80% discrepancy (actual V1.0 default is 80% per BR-AI-003). |
 | 1.2 | 2026-08-01 | Renamed `BR-KA-198` → `BR-AI-088`; re-categorized from Kubernaut Agent to AIAnalysis (the service that actually owns this logic). No functional changes. |
+| 1.3 | 2026-07-29 | Updated the BR-KA-200 cross-reference note: KA's investigation-outcome bands are now operator-configurable (BR-KA-213 / Issue #1826), not hardcoded. No change to this BR's own scope. |
+| 1.4 | 2026-07-29 | Added V1.0 `rego.lowConfidenceFloor` config knob (#1828), making the previously-hardcoded 70% Investigating-phase floor operator-configurable, resolving the `TODO V1.1: Make configurable per BR-AI-088` marker in `response_processor.go`. |
 
 

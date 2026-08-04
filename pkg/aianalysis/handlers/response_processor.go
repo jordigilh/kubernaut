@@ -41,14 +41,19 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
+// defaultLowConfidenceFloor is the V1.0 global default applied when no
+// operator override is configured (BR-KA-197 AC-4, BR-AI-088.4).
+const defaultLowConfidenceFloor = 0.7
+
 // ResponseProcessor handles processing of KA responses
 // BR-AI-008: Capture all response fields including RCA, workflow, and alternatives
 // BR-KA-197: Check needs_human_review before proceeding
 // BR-KA-200: Handle problem_resolved outcomes
 type ResponseProcessor struct {
-	log         logr.Logger
-	metrics     *metrics.Metrics
-	auditClient AuditClientInterface
+	log                logr.Logger
+	metrics            *metrics.Metrics
+	auditClient        AuditClientInterface
+	lowConfidenceFloor *float64 // BR-AI-088.4, Issue #1828: operator-configurable override of defaultLowConfidenceFloor
 }
 
 // NewResponseProcessor creates a new ResponseProcessor
@@ -61,6 +66,26 @@ func NewResponseProcessor(log logr.Logger, m *metrics.Metrics, auditClient Audit
 		metrics:     m,
 		auditClient: auditClient,
 	}
+}
+
+// WithLowConfidenceFloor sets the operator-configurable floor for
+// auto-proceeding with a KA-selected workflow (BR-AI-088.4, Issue #1828).
+// nil means "use defaultLowConfidenceFloor" (V1.0 70% global default).
+// Mirrors AnalyzingHandler.WithConfidenceThreshold's chainable-setter shape
+// (analyzing.go) for the sibling, later Rego auto-approval gate (#225) —
+// these are two distinct gates; see the field's doc comment.
+func (p *ResponseProcessor) WithLowConfidenceFloor(floor *float64) *ResponseProcessor {
+	p.lowConfidenceFloor = floor
+	return p
+}
+
+// effectiveLowConfidenceFloor returns the operator-configured floor, or
+// defaultLowConfidenceFloor when unset.
+func (p *ResponseProcessor) effectiveLowConfidenceFloor() float64 {
+	if p.lowConfidenceFloor != nil {
+		return *p.lowConfidenceFloor
+	}
+	return defaultLowConfidenceFloor
 }
 
 // ProcessIncidentResponse processes the IncidentResponse from generated client
@@ -102,9 +127,10 @@ func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysi
 		return result, err
 	}
 
-	// BR-KA-197 AC-4 + Issue #28: AIAnalysis applies confidence threshold (V1.0: 70%)
+	// BR-KA-197 AC-4 + Issue #28: AIAnalysis applies confidence threshold (V1.0: 70% default)
 	// KA returns confidence but does NOT enforce thresholds - AIAnalysis owns this logic
-	const confidenceThreshold = 0.7 // TODO V1.1: Make configurable per BR-AI-088
+	// BR-AI-088.4 / Issue #1828: operator-configurable via WithLowConfidenceFloor
+	confidenceThreshold := p.effectiveLowConfidenceFloor()
 
 	if hasSelectedWorkflow && resp.Confidence < confidenceThreshold {
 		return p.handleLowConfidenceFailure(ctx, analysis, resp)
@@ -755,7 +781,8 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 // handleLowConfidenceFailure handles workflow selection with confidence below threshold
 // Issue #28: BR-KA-197 AC-4 - AIAnalysis applies confidence threshold (not KA)
 func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
-	const confidenceThreshold = 0.7 // V1.0: global 70% default
+	// BR-AI-088.4 / Issue #1828: operator-configurable via WithLowConfidenceFloor (V1.0: 70% default)
+	confidenceThreshold := p.effectiveLowConfidenceFloor()
 
 	p.log.Info("Low confidence workflow, requires human review",
 		"confidence", resp.Confidence,

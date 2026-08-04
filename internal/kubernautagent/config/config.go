@@ -178,6 +178,9 @@ func (c *Config) validateAI() error {
 	if c.AI.Investigation.MaxTurns <= 0 {
 		return fmt.Errorf("ai.investigation.maxTurns must be positive, got %d", c.AI.Investigation.MaxTurns)
 	}
+	if err := c.AI.Investigation.validateConfidenceBands(); err != nil {
+		return err
+	}
 	if c.AI.Summarizer.MaxToolOutputSize <= 0 {
 		return fmt.Errorf("ai.summarizer.maxToolOutputSize must be positive, got %d", c.AI.Summarizer.MaxToolOutputSize)
 	}
@@ -192,6 +195,36 @@ func (c *Config) validateAI() error {
 	}
 	if c.AI.Safety.Anomaly.MaxRepeatedFailures <= 0 {
 		return fmt.Errorf("ai.safety.anomaly.maxRepeatedFailures must be positive, got %d", c.AI.Safety.Anomaly.MaxRepeatedFailures)
+	}
+	return nil
+}
+
+// validateConfidenceBands checks the BR-KA-213 / Issue #1826 investigation-outcome
+// confidence bands. Unlike AIAnalysis's pointer-typed RegoConfig knobs (where nil
+// distinguishes "unset" from "explicitly zero"), InvestigationConfig's fields are
+// plain float64: Load() always starts from DefaultConfig()'s 0.7/0.5 before
+// unmarshaling, so by the time Validate() runs the field already holds either the
+// default or an operator-supplied value — there is no "unset" state left to special
+// case, matching this struct's existing MaxTurns <= 0 always-reject convention.
+func (ic *InvestigationConfig) validateConfidenceBands() error {
+	if err := validateConfidenceUnitInterval(ic.ResolvedConfidenceThreshold, "ai.investigation.resolvedConfidenceThreshold"); err != nil {
+		return err
+	}
+	if err := validateConfidenceUnitInterval(ic.InconclusiveConfidenceThreshold, "ai.investigation.inconclusiveConfidenceThreshold"); err != nil {
+		return err
+	}
+	if ic.InconclusiveConfidenceThreshold >= ic.ResolvedConfidenceThreshold {
+		return fmt.Errorf("ai.investigation.inconclusiveConfidenceThreshold (%v) must be less than resolvedConfidenceThreshold (%v)",
+			ic.InconclusiveConfidenceThreshold, ic.ResolvedConfidenceThreshold)
+	}
+	return nil
+}
+
+// validateConfidenceUnitInterval checks that a confidence-style field falls in
+// range (0.0, 1.0].
+func validateConfidenceUnitInterval(v float64, fieldName string) error {
+	if v <= 0 || v > 1.0 {
+		return fmt.Errorf("%s must be in range (0.0, 1.0], got %v", fieldName, v)
 	}
 	return nil
 }
@@ -337,10 +370,22 @@ func defaultRuntimeConfig() RuntimeConfig {
 // summarizer, enrichment, alignment-check, safety). Extracted from
 // DefaultConfig per the GO-ANTIPATTERN-AUDIT-2026-07-01 complexity
 // remediation (Wave C).
+// V1.0 defaults for the investigation-outcome confidence bands (BR-KA-213,
+// Issue #1826), mirroring the values previously hardcoded directly in
+// phase3_workflow_selection.tmpl.
+const (
+	defaultResolvedConfidenceThreshold     = 0.7
+	defaultInconclusiveConfidenceThreshold = 0.5
+)
+
 func defaultAIConfig() AIConfig {
 	return AIConfig{
-		LLM:           types.LLMConfig{Provider: "openai"},
-		Investigation: InvestigationConfig{MaxTurns: 40},
+		LLM: types.LLMConfig{Provider: "openai"},
+		Investigation: InvestigationConfig{
+			MaxTurns:                        40,
+			ResolvedConfidenceThreshold:     defaultResolvedConfidenceThreshold,
+			InconclusiveConfidenceThreshold: defaultInconclusiveConfidenceThreshold,
+		},
 		Summarizer: SummarizerConfig{
 			Threshold:         8000,
 			MaxToolOutputSize: DefaultMaxToolOutputSize,

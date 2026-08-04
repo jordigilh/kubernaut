@@ -159,6 +159,8 @@ ai:
 {{- end }}
   investigation:
     maxTurns: 40
+    resolvedConfidenceThreshold: {{ $v.investigation.resolvedConfidenceThreshold }}
+    inconclusiveConfidenceThreshold: {{ $v.investigation.inconclusiveConfidenceThreshold }}
     safety:
       anomaly:
         maxTotalToolCalls: {{ $v.ai.safety.anomaly.maxTotalToolCalls }}

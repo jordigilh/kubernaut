@@ -67,6 +67,7 @@ implementation time — no change to the previously-approved design intent.
 | UT-KA-FLEET-026 | UT | `RunInteractiveTurn`, given a `ctx` carrying `SignalContext{ClusterID: "remote-cluster"}` and a `FleetOverlayResolver` that maps `kubectl_get` to a remote-cluster tool double, executes the LLM's `kubectl_get` call via the overlay tool, not the local registry's tool of the same name | AC-4, AC-6 | BR-FLEET-054 | `internal/kubernautagent/investigator/interactive_fleet_overlay_test.go` |
 | UT-KA-FLEET-027 | UT | `RunInteractiveTurn`, given a `ctx` with **no** `SignalContext` (or `ClusterID == ""`) — the hub-local/regression case — behaves identically to pre-fix: no overlay applied, local registry tool executes, zero behavior change | AC-4 | BR-FLEET-054 | `internal/kubernautagent/investigator/interactive_fleet_overlay_test.go` |
 | IT-KA-FLEET-022 | IT | Full wiring: `InvestigateTool.handleMessage` (real `signalResolver` resolving a non-hub `cluster_id` via CRD fallback) → real `Investigator.RunInteractiveTurn` → LLM calls `kubectl_get` → resolves through a fake `FleetOverlayResolver`'s remote tool, proving the production dispatch path (not just the isolated investigator method) | AC-4 | BR-INTEGRATION-054, BR-FLEET-054 | `internal/kubernautagent/mcp/tools/interactive_fleet_overlay_wiring_test.go` |
+| E2E-FLEET-018 | E2E | Full journey: a real, Helm-deployed AF binary's `kubernaut_message` tool, sent over a real A2A request, continues an interactive session (opened via `kubernaut_investigate` with `cluster_id="remote-cluster"`) and drives a real, Helm-deployed KA's `RunInteractiveTurn` → `prescopeFleetOverlay` → real Kuadrant MCP Gateway → genuinely separate remote Kind cluster (DD-TEST-013); asserts the remote cluster's live evidence value surfaces in the A2A artifact stream, not a canned response or hub-local fallback | AC-4, AC-6, AU-3 | BR-INTEGRATION-054, BR-FLEET-054 | `test/e2e/fleet/18_af_ka_interactive_fleet_bridge_test.go` |
 
 ## 5. Wiring Manifest
 
@@ -93,6 +94,7 @@ unchanged.
 
 ## 7. Coverage Target
 
-UT + IT tiers only (E2E deferred until #1729 unblocks production Helm wiring for KA's fleet
-config in interactive scenarios). Both control objectives (AC-4, AC-6) get at least one UT
-proving journey; AC-4's wiring gets an IT proving journey per the Wiring Manifest above.
+UT + IT + E2E, all three tiers complete. E2E was deferred pending #1729 (KA Helm-chart
+fleet-config parity); with #1729 closed (E2E-FLEET-017), E2E-FLEET-018 now closes the pyramid
+for this gap. All three control objectives (AC-4, AC-6, AU-3) have at least one UT/IT proving
+journey; AC-4 additionally has a full-journey E2E proving journey per the table above.

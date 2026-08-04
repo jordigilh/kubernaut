@@ -472,6 +472,11 @@
                 "kuadrant"
               ]
             },
+            "mcpGatewayNamespace": {
+              "type": "string",
+              "default": "",
+              "description": "Shared fallback restricting the ClusterRegistry CRD watch to a single namespace, used when a service's own fleet.namespace (signalprocessing) or top-level namespace (fleetmetadatacache) is unset (Issue #1730). Empty (default) leaves each service's own default/cluster-wide behavior unchanged. The per-service override still wins when explicitly set."
+            },
             "tlsCAFile": {
               "type": "string",
               "default": "",
@@ -1210,6 +1215,19 @@
                 }
               ],
               "description": "BR-AI-076: nil = use Rego default (0.8)"
+            },
+            "lowConfidenceFloor": {
+              "oneOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "BR-AI-088.4, Issue #1828: Investigating-phase floor for auto-proceeding with a KA-selected workflow (distinct from confidenceThreshold above, which tunes the later Rego auto-approval gate). nil = use the built-in 70% default."
             }
           }
         },
@@ -2154,6 +2172,27 @@
           "properties": {
             "oauth2": {
               "$ref": "#/definitions/fleetOAuth2CredentialsOverride"
+            }
+          }
+        },
+        "investigation": {
+          "type": "object",
+          "description": "BR-KA-213, Issue #1826: investigation-outcome confidence bands, templated into the Phase 3 workflow-selection prompt's Outcome A (\"resolved\")/Outcome B (\"inconclusive\") thresholds. Previously hardcoded as literal 0.7/0.5 in the prompt template.",
+          "additionalProperties": false,
+          "properties": {
+            "resolvedConfidenceThreshold": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "default": 0.7,
+              "description": "Minimum confidence for the LLM to classify an investigation outcome as \"resolved\" (problem self-resolved, no workflow needed)."
+            },
+            "inconclusiveConfidenceThreshold": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 1,
+              "default": 0.5,
+              "description": "Confidence below which the LLM classifies an investigation outcome as \"inconclusive\". Must be less than resolvedConfidenceThreshold."
             }
           }
         }

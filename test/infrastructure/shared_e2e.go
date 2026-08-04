@@ -245,6 +245,90 @@ func fleetClusterIDScenarioYAML(fleetNS string) string {
 `, fleetNS)
 }
 
+// kaInteractiveFleetBridgeScenarioYAML returns the AF-side keyword scenario
+// E2E-FLEET-018 (issue #1768 Track 2 Gap D) needs for Turn 1 (kubernaut_remediate,
+// creates a new RR scoped to the remote fleet cluster) and Turn 3
+// (kubernaut_message, continues the interactive session established by
+// Turn 2). Turn 2 (kubernaut_investigate) deliberately has no dedicated
+// scenario here -- it reuses the generic "af_investigate" scenario
+// registered below (same convention as 08_af_a2a_interactive_test.go's
+// fullpipeline flow), since investigate_start.go's handleStart requires
+// only a pre-existing rr_id (any valid tool call shape satisfies it) and
+// this test asserts no evidence from that phase, only from Turn 3.
+//
+// Three turns, not two: investigate_start.go's handleStart rejects a
+// kubernaut_investigate call whose rr_id doesn't reference an existing
+// RemediationRequest (ErrCodeRRNotFound), and investigate_takeover.go's
+// handleMessage rejects a kubernaut_message call with no active driver
+// session (authorizeActiveDriver) -- so the session must be established by
+// a real kubernaut_investigate turn before kubernaut_message can continue
+// it, exactly like the fullpipeline flow (kubernaut_remediate ->
+// kubernaut_investigate -> kubernaut_message/discover_workflows/...). CI
+// RCA for run 30828771399 (job 91740902692, E2E-FLEET-018) proved the
+// original 2-turn design (kubernaut_investigate then kubernaut_message,
+// chaining rr_id off kubernaut_investigate's own response) broken:
+// InvestigateOutput carries no rr_id field, so
+// "$from_tool:kubernaut_investigate:rr_id" always resolved empty,
+// handleMessage's authorizeActiveDriver rejected the empty-rr_id call
+// before RunInteractiveTurn ever ran, and AF's ADK loop fell back to a
+// generic default scenario, re-invoking three times over unrelated
+// "memory-eater" canned text with no "247Mi" evidence anywhere in it.
+//
+// Deliberately unconditional (no namespace-key gate, unlike
+// fleetClusterIDScenarioYAML above) since the fleet suite always deploys
+// the dedicated kaInteractiveFleetTargetName marker
+// (scenario_ka_interactive_fleet_bridge.go) in the fixed "kubernaut-system"
+// namespace on the remote cluster.
+//
+// Turn 1's keyword deliberately avoids the substring "investigate" so it
+// can never tie with the generic "af_investigate" scenario registered
+// below (mock-llm's registry breaks same-confidence ties by registration
+// order; both keyword_scenarios would otherwise score 1.0).
+//
+// The message scenario's repeat_tool_call: true is mandatory, not
+// optional (mirrors af_investigate's own repeat_tool_call below, same
+// root cause): handlers/openai.go's handleFullDAG only fires a bare
+// ToolCallName when hasToolResults(req.Messages) is false OR
+// repeatAllowed is true. By the time Turn 3 asks mock-llm to decide on
+// kubernaut_message, Turn 1's (kubernaut_remediate) and Turn 2's
+// (kubernaut_investigate) tool results are ALREADY in the accumulated
+// conversation history AF's ADK agent sends on every call in this
+// session, so hasToolResults is unconditionally true and the tool_call
+// block was silently skipped, falling through to a generic DAG/text
+// response -- CI RCA (run 30837678285, job 91775573342, E2E-FLEET-018)
+// confirmed via the apifrontend log that no "kubernaut_message" tool
+// call was ever attempted for Turn 3, despite this scenario matching in
+// mock-llm's own log. repeat_tool_call's guard
+// (!lastMessageIsToolResult(req.Messages)) still fires exactly once: it
+// re-enables the tool call for Turn 3's first LLM completion (last
+// message is the user's text prompt, not a tool result) but naturally
+// self-disables on the very next completion once kubernaut_message's own
+// result becomes the last message.
+func kaInteractiveFleetBridgeScenarioYAML() string {
+	return `      - name: "af_ka_interactive_fleet_bridge_remediate_1768"
+        keywords: ["ka-interactive-fleet-bridge-start"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_remediate"
+          arguments:
+            namespace: "kubernaut-system"
+            kind: "Deployment"
+            name: "ka-interactive-fleet-target"
+            api_version: "apps/v1"
+            cluster_id: "remote-cluster"
+            description: "E2E-FLEET-018 interactive bridge fleet cluster-scoping (#1768 Track 2 Gap D)"
+      - name: "af_ka_interactive_fleet_bridge_message_1768"
+        keywords: ["ka-interactive-fleet-e2e-test"]
+        match_last_only: true
+        repeat_tool_call: true
+        tool_call:
+          name: "kubernaut_message"
+          arguments:
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+            message: "ka-interactive-fleet-e2e-test: what is the current memory limit configured on the target deployment?"
+`
+}
+
 // combinedRemediateInvestigateScenarioYAML returns a keyword scenario for
 // issue #1853 mode 2 (Interactive, single combined message): a single A2A
 // message containing both "create a remediation" and "investigate" intent
@@ -491,7 +575,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           name: "kubernaut_watch"
           arguments:
             name: "$from_tool:kubernaut_remediate:rr_id"
-` + fleetClusterIDScenarioYAML(afRemediateNS["fleet"])
+` + fleetClusterIDScenarioYAML(afRemediateNS["fleet"]) + kaInteractiveFleetBridgeScenarioYAML()
 
 	configMap := fmt.Sprintf(`apiVersion: v1
 kind: ConfigMap

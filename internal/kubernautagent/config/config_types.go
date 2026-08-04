@@ -377,6 +377,14 @@ type MCPServerEntry struct {
 
 type InvestigationConfig struct {
 	MaxTurns int `yaml:"maxTurns"`
+	// ResolvedConfidenceThreshold and InconclusiveConfidenceThreshold are the
+	// operator-configurable investigation-outcome confidence bands (BR-KA-213,
+	// Issue #1826), templated into the Phase 3 workflow-selection prompt's
+	// Outcome A ("resolved") / Outcome B ("inconclusive") thresholds. Previously
+	// hardcoded as literal 0.7/0.5 directly in phase3_workflow_selection.tmpl.
+	// Zero (unset in YAML) means "use the V1.0 defaults" — see DefaultConfig.
+	ResolvedConfidenceThreshold     float64 `yaml:"resolvedConfidenceThreshold"`
+	InconclusiveConfidenceThreshold float64 `yaml:"inconclusiveConfidenceThreshold"`
 }
 
 type ToolsConfig struct {
