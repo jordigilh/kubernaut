@@ -441,11 +441,14 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		"terminal-1912": fmt.Sprintf("fp-t1912-%s", uuid.New().String()[:8]),
 		// not-actionable-1918: dedicated namespace for E2E-FP-1918-001 (issue
 		// #1918): declares interaction_mode=full_remediation_autonomous (an
-		// autonomy grant that would normally leave phase2_blocked=false) on
-		// an RR whose description carries the mock-LLM "mock_not_actionable"
-		// keyword, so KA's own RCA reasoning returns is_actionable=false.
-		// The harness-enforced actionability gate must force
-		// phase2_blocked=true regardless of the declared mode, and the
+		// autonomy grant that would normally leave phase2_blocked=false)
+		// against an RR whose target Deployment carries a synthetic Warning
+		// K8s Event (reason MOCK_NOT_ACTIONABLE, injected by the 18_ test
+		// itself) so deriveSignalName resolves a grounded SignalName that
+		// surfaces in KA's prompt, matching the mock-LLM's built-in
+		// "not_actionable" scenario -- KA's own RCA reasoning returns
+		// is_actionable=false. The harness-enforced actionability gate must
+		// force phase2_blocked=true regardless of the declared mode, and the
 		// chained kubernaut_discover_workflows attempt that follows must be
 		// hard-rejected before it ever reaches KA.
 		"not-actionable-1918": fmt.Sprintf("fp-na1918-%s", uuid.New().String()[:8]),

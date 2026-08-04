@@ -214,6 +214,14 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// deriveSignalName finds no grounded infrastructure signal.
 	r.Register(signalScenario("af_unknown", []string{"unknown"}, oomkilledConfig()))
 
+	// Issue #1918: grounded not-actionable signal for E2E-FP-1918-001, safe
+	// from the ctx.AllText leak that a broadly-matched keyword (like
+	// not_actionable's "mock_not_actionable") would suffer when AF's own
+	// kubernaut_remediate response echoes the RR's derived SignalName back
+	// into its own tool-orchestration conversation (see
+	// notActionableGroundedConfig's doc comment for the full explanation).
+	r.Register(signalScenario("not_actionable_grounded_1918", []string{"e2efp1918notactionable"}, notActionableGroundedConfig()))
+
 	// Issue #1170: Multi-turn param validation self-correction (BR-HAPI-191).
 	// Returns bad params on first call, corrected params after validation feedback.
 	r.Register(paramValidationSelfcorrectScenarioNew())

@@ -392,29 +392,31 @@ func noReinvocationAfterCompleteScenarioYAML(ns string) string {
 // notActionableAutonomousScenarioYAML returns a keyword scenario for
 // E2E-FP-1918-001 (issue #1918: harness-enforced actionability gate).
 //
-// IMPORTANT: this scenario's trigger keyword must NOT contain the substring
-// "mock not actionable"/"mock_not_actionable" (or any other built-in KA
-// keyword from registry_default.go's defaultRegistryWithGoldenDir). The
-// shared FP mock-LLM registers KA's built-in keyword scenarios BEFORE this
-// package's "keyword_scenarios:" YAML overrides (defaults first, then
-// overrides, in DefaultRegistryFull), and Registry.Detect keeps the FIRST
-// scenario at a given confidence score on a tie -- so if the AF chat
-// message driving THIS scenario also contained that substring, the shared
-// mock-LLM would route the AF orchestrator's own tool-selection turn to
-// KA's built-in "not_actionable" scenario (meant for KA's internal RCA
-// reasoning turn, not AF tool orchestration) instead of to this scenario,
-// silently producing no kubernaut_remediate call at all. The
-// "mock_not_actionable" keyword itself only needs to appear later, in the
-// kubernaut_remediate description below -- that text becomes the RR's
-// SignalContext.Description (via SignalToPrompt), read by KA's own,
-// separate investigation LLM call, which is exactly where it's meant to
-// trigger the built-in scenario.
+// IMPORTANT: this scenario's trigger keyword, and every tool-call argument
+// below, must NOT contain the substring "mock not actionable"/
+// "mock_not_actionable" (or any other built-in KA keyword from
+// registry_default.go's defaultRegistryWithGoldenDir). Two independent
+// reasons, both empirically confirmed against a live CI run:
 //
-// A single message chains kubernaut_remediate (description carries the
-// mock-LLM "mock_not_actionable" keyword, registered in
-// test/services/mock-llm/scenarios/scenario_mock_keywords.go and matched
-// against the full LLM prompt content -- which includes
-// SignalContext.Description via SignalToPrompt) -> kubernaut_investigate
+//  1. af_create_rr.go's HandleCreateRR validates/truncates kubernaut_remediate's
+//     description argument for severity-triage input only -- it is never
+//     persisted onto the RR CRD spec, so a keyword placed there never reaches
+//     KA's investigation prompt at all (the test's own 18_ Go file instead
+//     injects a synthetic Warning K8s Event so deriveSignalName's Tier 3a
+//     resolves a grounded SignalName KA's prompt does include).
+//  2. Even a keyword placed in a tool-call ARGUMENT (not just the trigger
+//     keyword) leaks into the SAME AF/ADK conversation's next turn: ADK's
+//     multi-turn reconstruction echoes the model's own prior function-call
+//     arguments back into the conversation, and response.ExtractTextFromContents
+//     folds FunctionCall.Args JSON into allText. Since the built-in
+//     "not_actionable" keyword scenario matches non-last-only on
+//     ctx.Content+ctx.AllText and is registered before this package's
+//     overrides, it wins Registry.Detect's tie-break on turn 2 -- silently
+//     replacing this scenario's own NextToolCall chain with a plain-text
+//     response and ending the AF conversation after just kubernaut_remediate,
+//     before kubernaut_investigate is ever called.
+//
+// A single message chains kubernaut_remediate -> kubernaut_investigate
 // (declaring interaction_mode=full_remediation_autonomous, an autonomy grant
 // that would normally leave phase2_blocked=false) -> a same-turn
 // kubernaut_discover_workflows attempt, simulating a lower-reasoning model
@@ -442,7 +444,7 @@ func notActionableAutonomousScenarioYAML(ns string) string {
             kind: "Deployment"
             name: "memory-eater"
             api_version: "apps/v1"
-            description: "mock_not_actionable FP E2E harness-enforced actionability gate request (#1918)"
+            description: "FP E2E harness-enforced actionability gate request (#1918)"
         next_tool_call:
           name: "kubernaut_investigate"
           arguments:

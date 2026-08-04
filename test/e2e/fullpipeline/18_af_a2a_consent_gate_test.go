@@ -422,22 +422,32 @@ var _ = Describe("AF A2A No Reinvocation After Session-Terminal Tool [E2E-FP-191
 })
 
 // E2E-FP-1918-001: Harness-Enforced Actionability Gate (issue #1918).
-// A single combined message declares interaction_mode=full_remediation_autonomous
-// on kubernaut_investigate -- an autonomy grant that would normally leave
-// phase2_blocked=false -- against an RR whose description carries the
-// mock-LLM "mock_not_actionable" keyword, so KA's own RCA reasoning
-// concludes is_actionable=false with no workflow identified. The scripted
-// mock-LLM then still attempts a same-turn kubernaut_discover_workflows
-// call, simulating a lower-reasoning model that ignores or misreads the
-// not-actionable RCA narrative and tries to proceed anyway. Pre-#1918-fix,
-// full_remediation_autonomous alone would leave phase2_blocked=false and
-// this call would reach KA's real discover_workflows implementation.
-// Post-fix, phaseGuardAfter's #1918 override forces phase2_blocked=true from
-// KA's structured is_actionable/has_workflow signal (independent of any
-// model reasoning), so phaseGuardBefore's existing DD-AF-011 hard-reject
-// stops discover_workflows before it ever reaches KA. This proves the real
+// A synthetic Warning K8s Event (reason MOCK_NOT_ACTIONABLE) is created on
+// the target Deployment before the chat turn so deriveSignalName resolves a
+// grounded, non-"unknown" SignalName that surfaces verbatim in KA's
+// investigation prompt (see af_create_rr.go's deriveSignalName Tier 3a) --
+// matching the mock-LLM's built-in "not_actionable" scenario for whichever
+// investigation runs against this RR. A single combined message then
+// declares interaction_mode=full_remediation_autonomous on
+// kubernaut_investigate -- an autonomy grant that would normally leave
+// phase2_blocked=false -- and the scripted mock-LLM still attempts a
+// same-turn kubernaut_discover_workflows call, simulating a lower-reasoning
+// model that ignores or misreads the not-actionable RCA narrative and tries
+// to proceed anyway. Pre-#1918-fix, full_remediation_autonomous alone would
+// leave phase2_blocked=false and this call would reach KA's real
+// discover_workflows implementation. Post-fix, phaseGuardAfter's #1918
+// override forces phase2_blocked=true from KA's structured
+// is_actionable/has_workflow signal (independent of any model reasoning),
+// so phaseGuardBefore's existing DD-AF-011 hard-reject stops
+// discover_workflows before it ever reaches KA. This proves the real
 // AF/A2A stack end-to-end: the RR reaches a clean terminal state and no
-// WorkflowExecution is ever created for it.
+// WorkflowExecution is ever created for it. Note: RemediationOrchestrator/
+// AIAnalysis reconcile the RR autonomously as soon as it exists, independent
+// of AF's own chat session, so this assertion also (legitimately)
+// exercises KA's own pre-existing investigator.go short-circuit
+// (actionable=false && no workflow) for the backend path -- the IT-level
+// test (actionability_gate_1918_test.go) is what isolates AF's own harness
+// gate specifically, with a controlled fake KA client.
 var _ = Describe("AF Harness-Enforced Actionability Gate [E2E-FP-1918-001]", Label("fp", "af", "a2a", "autonomous", "issue-1918"), func() {
 
 	It("should force phase2_blocked and hard-reject discover_workflows when KA's RCA is not actionable, even under full_remediation_autonomous", NodeTimeout(6*time.Minute), func(_ SpecContext) {
@@ -498,6 +508,53 @@ var _ = Describe("AF Harness-Enforced Actionability Gate [E2E-FP-1918-001]", Lab
 			},
 		}
 		Expect(k8sClient.Create(ctx, dep)).To(Succeed())
+
+		By("Injecting a synthetic Warning event so AF derives a grounded, not-actionable signal name (#1918)")
+		// af_create_rr.go's HandleCreateRR validates/truncates kubernaut_remediate's
+		// description argument for severity triage input only -- it is never
+		// persisted onto the RR CRD spec, so embedding a mock-LLM keyword there
+		// (as an earlier version of this test did) never reaches KA's investigation
+		// prompt at all. deriveSignalName's only path to a grounded, non-"unknown"
+		// SignalName for a zero-replica Deployment (no real container ever runs, so
+		// no organic OOMKill/BackOff events exist) is Tier 3a: the dominant Warning
+		// event reason on the target resource. Creating this Event directly gives
+		// deriveSignalName a real signal ("E2EFP1918NotActionable") that surfaces
+		// verbatim in KA's investigation prompt for BOTH the backend's own
+		// autonomous AIAnalysis reconciliation (which starts as soon as the RR CRD
+		// exists, independent of AF's chat session) and AF's own kubernaut_investigate
+		// bridge call.
+		//
+		// IMPORTANT: this must NOT be the built-in "not_actionable" scenario's own
+		// "MOCK_NOT_ACTIONABLE" keyword. That keyword is matched broadly (ctx.Content
+		// + ctx.AllText, see mockKeywordScenarioMulti), and HandleCreateRR echoes the
+		// derived SignalName back in kubernaut_remediate's own JSON response
+		// (CreateRRResult.SignalName) -- which folds into AF's OWN orchestration
+		// conversation's allText on the next turn, silently hijacking AF's own
+		// tool-selection into KA's scenario (empirically confirmed during this
+		// test's development). "E2EFP1918NotActionable" instead matches only via
+		// the dedicated not_actionable_grounded_1918 scenario (signalScenario,
+		// registry_default.go), which inspects ctx.Content only -- safe from that
+		// leak. See notActionableGroundedConfig's doc comment for the full
+		// explanation.
+		Expect(k8sClient.Create(ctx, &corev1.Event{
+			ObjectMeta: metav1.ObjectMeta{
+				GenerateName: "memory-eater-e2efp1918-not-actionable-",
+				Namespace:    targetNS,
+			},
+			InvolvedObject: corev1.ObjectReference{
+				Kind:       "Deployment",
+				Namespace:  targetNS,
+				Name:       "memory-eater",
+				APIVersion: "apps/v1",
+			},
+			Reason:         "E2EFP1918NotActionable",
+			Message:        "E2E-FP-1918-001: synthetic signal so KA's RCA concludes is_actionable=false",
+			Type:           corev1.EventTypeWarning,
+			FirstTimestamp: metav1.Now(),
+			LastTimestamp:  metav1.Now(),
+			Count:          1,
+			Source:         corev1.EventSource{Component: "e2e-fp-1918-test"},
+		})).To(Succeed())
 
 		By("Turn 1 (single message): declare full_remediation_autonomous mode against a not-actionable signal, then attempt discover_workflows in the same turn")
 		body := fpA2ATasksSend("fp-na1918-1",
