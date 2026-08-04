@@ -253,6 +253,19 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// (see scenario_ka_fleet_investigation.go).
 	r.Register(kaToolCallE2EInvestigationScenario())
 
+	// E2E-FLEET-018 (issue #1768 Track 2 Gap D): real KA RunInteractiveTurn,
+	// triggered by AF's kubernaut_message tool, calls the fleet-overlay-
+	// resolved read tool and echoes proof of a genuine remote-cluster round
+	// trip into the A2A artifact stream (see scenario_ka_interactive_fleet_bridge.go).
+	r.Register(kaInteractiveFleetBridgeE2EScenario())
+
+	// E2E-FLEET-018 companion: once kubernaut_message's tool result already
+	// carries the fleet-scoped evidence, AF's own agent loop must echo it
+	// back as plain text instead of falling through to a generic
+	// completion (see afKaInteractiveFleetBridgeMessageEchoScenario's doc
+	// comment in scenario_ka_interactive_fleet_bridge.go).
+	r.Register(afKaInteractiveFleetBridgeMessageEchoE2EScenario())
+
 	// Default fallback (lowest priority = 0.01)
 	r.Register(defaultFallbackScenario())
 

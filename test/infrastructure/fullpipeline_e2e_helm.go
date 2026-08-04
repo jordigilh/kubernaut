@@ -948,6 +948,41 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		// found: every interactive/mcp-labeled FP E2E spec failed this way against
 		// the Helm-deployed chart, whose default leaves interactive mode off).
 		"--set", "kubernautAgent.interactive.enabled=true",
+		// #1894 gap found via must-gather RCA on E2E-FP-1853-002: the chart's
+		// own default for interactive.rateLimitPerUser is 20 req/s (burst 40,
+		// see _generated_defaults.tpl), never overridden here -- unlike the
+		// raw-manifest KA deployment path (test/infrastructure/
+		// kubernautagent.go, used by the standalone kubernautagent/apifrontend
+		// E2E suites), which was already bumped 20->40 for this exact
+		// symptom by #1853 (commit 3f9a5a102). fullpipeline (and fleet, which
+		// bootstraps from this same helm install) were missed, so every
+		// parallel Ginkgo spec sharing the "e2e-user-sre" JWT identity still
+		// contends for a 20rps/40-burst bucket: confirmed by the KA pod's own
+		// startup log ("rateLimitPerUser":20) and by kubernaut_discover_workflows/
+		// kubernaut_select_workflow failing with 429 "Too Many Requests" mid
+		// MCP-session-pool reuse, which starves kubernaut_watch of a selected
+		// workflow -- the RemediationRequest never reaches a terminal phase,
+		// so watch blocks until the test's 6-minute client timeout fires
+		// ("context deadline exceeded"), well before its own internal
+		// 15-minute maxWatchDuration.
+		//
+		// Round 2 (same RCA, next CI run): bumping to 40 alone did take
+		// effect (confirmed via the KA pod's startup log) but was still
+		// insufficient -- fullpipeline's own kubernaut_select_workflow AND a
+		// concurrent spec's session-pool "ping" both got 429'd again in the
+		// same ~500ms window, just by a smaller margin (~4 requests over an
+		// 80-token burst instead of over a 40-token one). fullpipeline runs
+		// 31 specs across TEST_PROCS Ginkgo processes, each churning
+		// multiple MCP session (re)negotiations under the single shared
+		// "e2e-user-sre" identity -- a materially higher concurrent-MCP-call
+		// footprint than the smaller suites #1853's 40 was tuned against.
+		// Raised to 100 (the schema-enforced ceiling,
+		// internal/kubernautagent/config/config.go's
+		// "rateLimitPerUser must not exceed 100" check), giving a 200-token
+		// burst bucket -- 2.5x the headroom of the 80-token bucket that just
+		// missed by ~4 requests. Test-infra-only knob with zero production
+		// impact (this whole block is E2E chart-install overrides).
+		"--set", "kubernautAgent.interactive.rateLimitPerUser=100",
 		// Gateway/DataStorage/APIFrontend: pinned chart-level NodePort (DD-TEST-001
 		// port allocation: 30080/30081/30443, pre-mapped host-reachable in
 		// kind-fullpipeline-config.yaml's extraPortMappings) + ipBlock ingressCIDRs

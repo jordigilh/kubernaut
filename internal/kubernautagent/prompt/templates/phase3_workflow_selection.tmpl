@@ -75,10 +75,10 @@ DO NOT GUESS workflow IDs. You MUST call `list_workflows` to see what is availab
 ## Special Investigation Outcomes (BR-KA-200)
 
 ### Outcome A: Problem Self-Resolved
-Set `selected_workflow` to None, `investigation_outcome` to "resolved" (confidence >= 0.7).
+Set `selected_workflow` to None, `investigation_outcome` to "resolved" (confidence >= {{ printf "%g" .ResolvedConfidenceThreshold }}).
 
 ### Outcome B: Investigation Inconclusive
-Set `selected_workflow` to None, `investigation_outcome` to "inconclusive" (confidence < 0.5).
+Set `selected_workflow` to None, `investigation_outcome` to "inconclusive" (confidence < {{ printf "%g" .InconclusiveConfidenceThreshold }}).
 
 **Example inconclusive submit_result**:
 ```json

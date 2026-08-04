@@ -7,7 +7,7 @@
 **Version**: V1.0
 **Status**: ✅ Implemented (KA/AIAnalysis complete; see Implementation Status)
 **Date**: December 7, 2025
-**Last Updated**: 2026-08-01 (Renamed `BR-HAPI-200` → `BR-KA-200`, terminology corrected to KA, `HumanReviewReason` snippet corrected from Python to the current Go/OpenAPI enum — [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806))
+**Last Updated**: 2026-08-01 (Renamed `BR-HAPI-200` → `BR-KA-200`, terminology corrected to KA, `HumanReviewReason` snippet corrected from Python to the current Go/OpenAPI enum — [Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)). Further updated 2026-07-29 ([Issue #1826](https://github.com/jordigilh/kubernaut/issues/1826) / [BR-KA-213](./BR-KA-213-investigation-outcome-confidence-bands.md)): the `0.7`/`0.5` confidence bands referenced throughout this document are now operator-configurable (`ai.investigation.{resolved,inconclusive}ConfidenceThreshold`) instead of hardcoded prompt text — see BR-KA-213 for the configuration surface. The values and semantics documented below are the V1.0 defaults, applied when the operator leaves the new config fields unset.
 
 ---
 
@@ -499,7 +499,8 @@ And AIAnalysis status.needsHumanReview SHALL be false
 | Document | Relationship |
 |----------|-------------|
 | [BR-KA-197](BR-KA-197-needs-human-review-field.md) | Parent: needs_human_review field |
-| [BR-AI-088](BR-AI-088-configurable-confidence-thresholds.md) | **Different gate, not a duplicate**: BR-AI-088 is AIAnalysis's downstream, operator-configurable approval threshold applied to an *already-selected* workflow's `confidence`. This BR's 0.5/0.7 bands are KA's own upstream, hardcoded, LLM-self-assessed investigation-quality gate that runs before any workflow is selected. |
+| [BR-AI-088](BR-AI-088-configurable-confidence-thresholds.md) | **Different gate, not a duplicate**: BR-AI-088 is AIAnalysis's downstream, operator-configurable approval threshold applied to an *already-selected* workflow's `confidence`. This BR's 0.5/0.7 bands are KA's own upstream, LLM-self-assessed investigation-quality gate that runs before any workflow is selected. |
+| [BR-KA-213](BR-KA-213-investigation-outcome-confidence-bands.md) | Makes this BR's 0.5/0.7 bands operator-configurable (`ai.investigation.{resolved,inconclusive}ConfidenceThreshold`) instead of hardcoded prompt text. No change to this BR's decision-tree semantics. |
 | [DD-KA-001](../architecture/decisions/DD-KA-001-workflow-response-validation-architecture.md) | Design: Validation architecture (supersedes the retired DD-HAPI-002) |
 
 ---
@@ -514,6 +515,7 @@ And AIAnalysis status.needsHumanReview SHALL be false
 | 1.3 | 2026-03-02 | Issue #388 Fix A: Added Outcome D (Alert Not Actionable) with new `actionable` boolean field, `is_actionable` in IncidentResponse, `Actionability` CRD enum field, `NotActionable` SubReason. Updated decision tree (step 3). Added AC-7, AC-8. Relabeled from "Outcome C" to "Outcome D" to align with prompt contract (Outcome C = No Automated Remediation). |
 | 1.4 | 2026-08-01 | Renamed `BR-HAPI-200` → `BR-KA-200`, `HolmesGPT-API`/`HAPI` → `Kubernaut Agent (KA)`/`KA` ([Issue #1806](https://github.com/jordigilh/kubernaut/issues/1806)). Replaced the Python `HumanReviewReason` enum snippet with the current Go/`ogen`-generated enum. Verified the decision tree, warnings-based defense-in-depth, and AIAnalysis routing logic against `pkg/aianalysis/handlers/response_processor.go` — unchanged, still accurate. Confirmed RO Handler is implemented (`AnalyzingCallbacks.HandleWorkflowNotNeeded`); corrected Notification Rules status to reflect it is not yet implemented as a dedicated rule set. Removed a dead link to a non-existent `docs/handoff/` notice. |
 | 1.5 | 2026-08-01 | Added a Related Documents cross-reference to BR-AI-088 clarifying that BR-AI-088's operator-configurable approval threshold and this BR's hardcoded 0.5/0.7 investigation-outcome bands are two distinct, non-overlapping gates (Issue #1806 follow-up). |
+| 1.6 | 2026-07-29 | Issue #1826 / BR-KA-213: the 0.5/0.7 investigation-outcome bands are no longer hardcoded — made operator-configurable via `ai.investigation.{resolved,inconclusive}ConfidenceThreshold`, templated into the Phase 3 prompt at render time. Defaults unchanged. Added BR-KA-213 cross-reference. |
 
 ---
 

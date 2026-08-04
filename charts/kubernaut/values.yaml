@@ -55,6 +55,12 @@ global:
     # mcpGatewayEndpoint applies here too: absent key -> `gatewayType:` (YAML
     # null) instead of `gatewayType: ""`.
     mcpGatewayType: ""
+    # -- Issue #1730: shared fallback for signalprocessing.fleet.namespace and
+    # fleetmetadatacache.namespace (both restrict that service's own
+    # ClusterRegistry CRD watch to a single namespace, BR-RBAC-020 #1686).
+    # Every per-service override still wins when explicitly set -- this only
+    # de-duplicates the common case where both point at the same namespace.
+    mcpGatewayNamespace: ""
     oauth2:
       # -- OAuth2 client_credentials auth on/off for MCP Gateway authentication.
       enabled: false
@@ -516,6 +522,14 @@ kubernautAgent:
   # follow-up); only oauth2.credentialsSecretRef remains overridable here.
   fleet:
     oauth2: {}
+  # -- Investigation-outcome confidence bands (BR-KA-213, Issue #1826), templated
+  # into the Phase 3 workflow-selection prompt's "resolved"/"inconclusive"
+  # thresholds. Defaults (0.7/0.5, applied by the Go binary when unset here)
+  # match the values previously hardcoded directly in the prompt template.
+  # investigation:
+  #   resolvedConfidenceThreshold: 0.7
+  #   inconclusiveConfidenceThreshold: 0.5
+  investigation: {}
 
 # -- AuthWebhook admission controller
 # DD-PLATFORM-006 DA14: replicas (1) / logging.level ("INFO") have non-zero

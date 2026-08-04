@@ -17,6 +17,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `policies.content` | string |  | `""` | No |
 | `policies.existingConfigMap` | string |  | `""` | No |
 | `rego.confidenceThreshold` | object | BR-AI-076: nil = use Rego default (0.8) | `` | No |
+| `rego.lowConfidenceFloor` | object | BR-AI-088.4, Issue #1828: Investigating-phase floor for auto-proceeding with a KA-selected workflow (distinct from confidenceThreshold above, which tunes the later Rego auto-approval gate). nil = use the built-in 70% default. | `` | No |
 | `replicas` | integer |  | `1` | No |
 | `resources.limits.cpu` | string | Kubernetes resource quantity (e.g., 256Mi, 100m) | `` | No |
 | `resources.limits.memory` | string | Kubernetes resource quantity (e.g., 256Mi, 100m) | `` | No |
@@ -307,6 +308,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `fleet.enabled` | boolean | Multi-cluster fleet federation on/off (Issue #1707), consolidated from four independent per-service toggles (gateway/remediationorchestrator/apifrontend/effectivenessmonitor fleet.enabled) | `false` | No |
 | `fleet.endpoint` | string | Endpoint for the selected backend. Auto-derived for fleetmetadatacache; required for acm. | `""` | No |
 | `fleet.mcpGatewayEndpoint` | string | Shared MCP Gateway endpoint URL, used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override). | `""` | No |
+| `fleet.mcpGatewayNamespace` | string | Shared fallback restricting the ClusterRegistry CRD watch to a single namespace, used when a service's own fleet.namespace (signalprocessing) or top-level namespace (fleetmetadatacache) is unset (Issue #1730). Empty (default) leaves each service's own default/cluster-wide behavior unchanged. The per-service override still wins when explicitly set. | `""` | No |
 | `fleet.mcpGatewayType` | string | Shared MCP Gateway type (eaigw or kuadrant), used by every fleet-integration-capable service (Issue #1707 follow-up: global-only, no per-service override). | `""` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | Shared Secret name (keys: client-id, client-secret) for MCP Gateway OAuth2, used as the fallback when a service's own fleet.oauth2.credentialsSecretRef is unset (the one field that remains overridable per service). | `""` | No |
 | `fleet.oauth2.enabled` | boolean | OAuth2 client_credentials auth on/off for MCP Gateway authentication (Issue #1707 follow-up: global-only, no per-service override). | `false` | No |
@@ -358,6 +360,8 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `interactive.maxConcurrentSessions` | integer | Maximum concurrent interactive sessions per instance. Issue #1737: raised from 5 to 50 -- the old default was too low even for realistic production use and caused full-suite E2E failures purely from Ginkgo's own test parallelism. | `50` | No |
 | `interactive.rateLimitPerUser` | integer | Maximum requests per second per authenticated user. Issue #1737: raised from 10 to 20, alongside maxConcurrentSessions. | `20` | No |
 | `interactive.sessionTTL` | string | Maximum duration for an interactive session before auto-release. | `"30m"` | No |
+| `investigation.inconclusiveConfidenceThreshold` | number | Confidence below which the LLM classifies an investigation outcome as "inconclusive". Must be less than resolvedConfidenceThreshold. | `0.5` | No |
+| `investigation.resolvedConfidenceThreshold` | number | Minimum confidence for the LLM to classify an investigation outcome as "resolved" (problem self-resolved, no workflow needed). | `0.7` | No |
 | `llmProfileRef` | string | Name of an entry in global.llmProfiles used for KA's investigator LLM calls (DD-PLATFORM-007). Defaults to "primary" (DD-PLATFORM-006 DA4); an undefined profile still fails the render. Replaces the old kubernautAgent.llm.* literal block. | `"primary"` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |

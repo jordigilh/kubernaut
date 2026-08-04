@@ -81,6 +81,16 @@ type RegoConfig struct {
 	// nil means "use the Rego policy's built-in default".
 	// Stepping stone toward BR-AI-088 (V1.1 rule-based thresholds).
 	ConfidenceThreshold *float64 `yaml:"confidenceThreshold,omitempty"`
+
+	// LowConfidenceFloor is the operator-configurable floor for auto-proceeding with a
+	// KA-selected workflow (BR-AI-088.4, Issue #1828). During the Investigating phase,
+	// when selected_workflow.confidence is below this floor, the ResponseProcessor sets
+	// NeedsHumanReview=true (HumanReviewReasonLowConfidence) instead of proceeding to the
+	// Analyzing phase. This is a distinct, earlier gate from ConfidenceThreshold above
+	// (which tunes Rego's later auto-approval decision, BR-AI-003/#225) — see BR-AI-088.4's
+	// note distinguishing the two. Must be in range (0.0, 1.0] when set.
+	// nil means "use the built-in 70% floor" (V1.0 global default).
+	LowConfidenceFloor *float64 `yaml:"lowConfidenceFloor,omitempty"`
 }
 
 // DefaultConfig returns safe defaults for the AIAnalysis controller.
@@ -171,16 +181,33 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	// Validate Rego config
-	if c.Rego.PolicyPath == "" {
+	return c.Rego.Validate()
+}
+
+// Validate checks the Rego policy configuration.
+// Extracted from Config.Validate (gocyclo remediation) so each of the two
+// operator-configurable confidence knobs (ConfidenceThreshold, #225;
+// LowConfidenceFloor, BR-AI-088.4/#1828) adds one call site here instead of
+// two more branches to the top-level function's cyclomatic complexity.
+func (r *RegoConfig) Validate() error {
+	if r.PolicyPath == "" {
 		return fmt.Errorf("rego.policyPath is required")
 	}
-	if c.Rego.ConfidenceThreshold != nil {
-		t := *c.Rego.ConfidenceThreshold
-		if t <= 0 || t > 1.0 {
-			return fmt.Errorf("rego.confidenceThreshold must be in range (0.0, 1.0], got %v", t)
-		}
+	if err := validateUnitInterval(r.ConfidenceThreshold, "rego.confidenceThreshold"); err != nil {
+		return err
 	}
+	return validateUnitInterval(r.LowConfidenceFloor, "rego.lowConfidenceFloor")
+}
 
+// validateUnitInterval checks that an optional confidence-style field, when
+// set, falls in range (0.0, 1.0]. A nil value (operator did not override the
+// field) is always valid.
+func validateUnitInterval(v *float64, fieldName string) error {
+	if v == nil {
+		return nil
+	}
+	if *v <= 0 || *v > 1.0 {
+		return fmt.Errorf("%s must be in range (0.0, 1.0], got %v", fieldName, *v)
+	}
 	return nil
 }
