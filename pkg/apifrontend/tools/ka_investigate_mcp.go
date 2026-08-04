@@ -94,6 +94,18 @@ type InvestigateMCPArgs struct {
 	// the rr_id takeover path, since the cluster identity is read back from
 	// the existing RR object instead). Empty for the local hub cluster.
 	ClusterID string `json:"cluster_id,omitempty"`
+
+	// InteractionMode declares how much autonomy the harness should grant
+	// for phase transitions following this investigation (DD-AF-011,
+	// #1899). One of "interactive" (default when omitted -- wait for
+	// genuine user confirmation before discover_workflows/select_workflow),
+	// "full_remediation" (auto-proceed to workflow discovery, but still
+	// wait for user confirmation before executing a workflow), or
+	// "full_remediation_autonomous" (auto-proceed through both discovery
+	// and execution -- only use this when the user explicitly requested
+	// full, unattended remediation). An omitted or unrecognized value fails
+	// safe to "interactive" (AC-6 least privilege, SI-10 input validation).
+	InteractionMode string `json:"interaction_mode,omitempty" jsonschema:"one of interactive (default), full_remediation, full_remediation_autonomous -- declares how much autonomy to grant for post-investigation phase transitions"`
 }
 
 // InvestigateMCPResult is the output of the MCP investigate tool.

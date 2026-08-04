@@ -454,6 +454,18 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		// through discover_workflows -> select_workflow -> watch with no
 		// pause for manual workflow selection.
 		"full-interactive": fmt.Sprintf("fp-full-%s", uuid.New().String()[:8]),
+		// consent-phase2: dedicated namespace for E2E-FP-1899-001 (DD-AF-011,
+		// issue #1899 Phase 1->2 consent gate): a single message declares
+		// interaction_mode=interactive on kubernaut_investigate then attempts
+		// a same-turn fire-and-forget kubernaut_discover_workflows -- the
+		// structural gate must block it until a genuine follow-up turn.
+		"consent-phase2": fmt.Sprintf("fp-cg2-%s", uuid.New().String()[:8]),
+		// consent-phase3: dedicated namespace for E2E-FP-1899-002 (DD-AF-011,
+		// issue #1899 Phase 2->3 consent gate): a single message declares
+		// interaction_mode=full_remediation (authorizing discover_workflows
+		// to auto-chain) then attempts a same-turn fire-and-forget
+		// kubernaut_select_workflow -- the gate must block only the 3rd hop.
+		"consent-phase3": fmt.Sprintf("fp-cg3-%s", uuid.New().String()[:8]),
 	}
 	_, _ = fmt.Fprintln(writer, "  📌 AF remediate namespaces:")
 	for key, ns := range afRemediateNS {

@@ -90,7 +90,12 @@ resilience:
     retryMax: 1
     retryInitBackoff: 100ms
     retryMaxBackoff: 1s
-    retryableStatuses: [502, 503, 504]
+    # 429 included: KA enforces a concurrency throttle (chi.Throttle);
+    # ADR-048-ADDENDUM-001 requires clients to retry with backoff on
+    # throttle responses instead of failing fast. Under concurrent E2E
+    # load, KA's throttle can transiently reject select_workflow/
+    # discover_workflows calls (#1911 fullpipeline CI failure RCA).
+    retryableStatuses: [429, 502, 503, 504]
   ds:
     connectTimeout: 2s
     requestTimeout: 5s

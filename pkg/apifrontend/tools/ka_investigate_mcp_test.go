@@ -217,6 +217,36 @@ var _ = Describe("HandleInvestigationMCP — #1326 BR-MCP-002 non-blocking MCP i
 	})
 })
 
+var _ = Describe("DD-AF-011 (#1899): InteractionMode field on InvestigateMCPArgs", func() {
+
+	Describe("IT-AF-1899-001: interaction_mode is a JSON-visible argument on kubernaut_investigate", func() {
+		It("should serialize a declared mode under the interaction_mode key", func() {
+			args := tools.InvestigateMCPArgs{
+				RRID:            "rr-1899-001",
+				InteractionMode: "full_remediation_autonomous",
+			}
+			b, err := json.Marshal(args)
+			Expect(err).NotTo(HaveOccurred())
+
+			var decoded map[string]any
+			Expect(json.Unmarshal(b, &decoded)).To(Succeed())
+			Expect(decoded["interaction_mode"]).To(Equal("full_remediation_autonomous"),
+				"the LLM-visible JSON key must be interaction_mode so the ADK tool schema exposes it")
+		})
+
+		It("should omit interaction_mode from JSON when left empty (fail-safe default is implicit)", func() {
+			args := tools.InvestigateMCPArgs{RRID: "rr-1899-002"}
+			b, err := json.Marshal(args)
+			Expect(err).NotTo(HaveOccurred())
+
+			var decoded map[string]any
+			Expect(json.Unmarshal(b, &decoded)).To(Succeed())
+			Expect(decoded).NotTo(HaveKey("interaction_mode"),
+				"an omitted mode must not force the LLM to always specify one")
+		})
+	})
+})
+
 var _ = Describe("formatEventForUser — #1326 BR-MCP-008 event filtering", func() {
 
 	Describe("UT-AF-1326-040: reasoning_delta events produce text", func() {

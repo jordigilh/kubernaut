@@ -1,3 +1,19 @@
+/*
+Copyright 2026 Jordi Gil.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package agent_test
 
 import (
@@ -521,5 +537,92 @@ var _ = Describe("Prompt #1430 / BR-KA-200: No-action exception in Phase 1 CRITI
 			"#1430 / AU-3: present_decision must remain in prompt for no-action path")
 		Expect(instruction).To(ContainSubstring("options: []"),
 			"#1430 / AU-3: prompt must document empty options list for no-action scenario")
+	})
+})
+
+// =============================================================================
+// Issue #1899: Alert Prioritization must not override the Observation Mode
+// consent gate. Live-repro'd on a shared cluster: a bare "list active alerts"
+// query caused the LLM to autonomously call kubernaut_investigate_alert with
+// zero user consent, because the unconditional "Always use
+// kubernaut_investigate_alert..." directive had no gate on user intent/mode.
+// This is a defense-in-depth textual fix alongside the harness-enforced
+// consent guard (DD-AF-011): even within a single genuine turn (no
+// reinvocation involved), the prompt must not let Alert Prioritization
+// override Observation Mode's "unless the user EXPLICITLY requests it" rule.
+// =============================================================================
+
+var _ = Describe("Prompt — Alert Prioritization Consent Gate (#1899)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1899-010: AC-6/SI-10 Alert Prioritization declares itself subordinate to Observation Mode", func() {
+		Expect(instruction).To(ContainSubstring("SUBORDINATE TO THE DECISION ALGORITHM AND OBSERVATION MODE"),
+			"#1899: Alert Prioritization must explicitly state it never overrides the consent gate")
+	})
+
+	It("UT-AF-1899-011: AC-6 prompt explicitly forbids treating a bare list/show/status as an implicit investigate request", func() {
+		Expect(instruction).To(ContainSubstring("Do NOT treat a `prioritized` field in that response as an implicit instruction to investigate anything"),
+			"#1899: a list_alerts response's prioritized field must not be read as investigation consent")
+	})
+
+	It("UT-AF-1899-012: AC-6/SI-10 kubernaut_investigate_alert directive is gated on a prior investigate/fix/diagnose trigger", func() {
+		Expect(instruction).To(ContainSubstring("ONLY when the user's message already matched the Interactive/Autonomous/Full-Interactive-Remediation triggers above"),
+			"#1899: kubernaut_investigate_alert must only fire once the user's intent already matched an investigate/fix trigger, not a bare list/show/status query")
+		Expect(instruction).To(ContainSubstring("If the user's message was purely informational, do NOT call `kubernaut_investigate_alert`"),
+			"#1899: prompt must explicitly forbid investigate_alert on purely informational messages")
+	})
+
+	It("UT-AF-1899-013: AC-6 prompt does not contain the old unconditional investigate_alert directive", func() {
+		Expect(instruction).NotTo(ContainSubstring("Always use `kubernaut_investigate_alert` with `alerts[selected_index]` unless the user explicitly picks a different one from `tied_indices`.\n\n## Output Style"),
+			"#1899: the unconditional (unqualified) directive must not survive verbatim adjacent to the next section")
+	})
+})
+
+// =============================================================================
+// DD-AF-011 (#1899): Full Interactive Remediation must declare interaction_mode
+//
+// The harness-enforced phase-transition consent gate fails safe to
+// "interactive" whenever kubernaut_investigate's interaction_mode argument
+// is omitted or unrecognized. Before this fix, "Full Interactive
+// Remediation"'s autonomous-interactive sub-case (line: "select the
+// highest-confidence workflow automatically") told the LLM to auto-proceed
+// through discover_workflows/select_workflow, but never instructed it to
+// declare interaction_mode: full_remediation_autonomous on the triggering
+// kubernaut_investigate call. Once the consent gate went live, that
+// omission would have silently regressed the autonomous-interactive flow:
+// the gate would always fail-safe-block discover_workflows waiting for a
+// user turn that, in this mode, is never coming -- turning "investigate
+// and fix" (with oversight-implying context) into a permanent stall. This
+// closes that gap with an explicit instruction, verified textually here
+// (a live-LLM behavioral guarantee is out of scope for a prompt-content
+// test, consistent with every other prompt.txt directive in this suite).
+// =============================================================================
+
+var _ = Describe("Prompt — Full Interactive Remediation declares interaction_mode (#1899)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-1899-014: AC-6/SI-10 autonomous-interactive sub-case instructs declaring full_remediation_autonomous", func() {
+		Expect(instruction).To(ContainSubstring(`interaction_mode: "full_remediation_autonomous"`),
+			"#1899: without this explicit instruction, the consent gate's fail-safe interactive default would permanently stall the autonomous-interactive flow at discover_workflows, waiting for a user turn that never comes")
+	})
+
+	It("UT-AF-1899-015: prompt explains WHY the mode must be declared, not just what value to use", func() {
+		Expect(instruction).To(ContainSubstring("consent gate will block workflow discovery/selection"),
+			"#1899: the instruction must explain the consequence of omitting interaction_mode, not just state the value, so the directive survives future prompt edits/summarization with its rationale intact")
+	})
+
+	It("UT-AF-1899-016: interactive sub-case explicitly notes interaction_mode is omitted (fail-safe default applies)", func() {
+		Expect(instruction).To(ContainSubstring(`omit interaction_mode`),
+			"#1899: the interactive sub-case should explicitly note it relies on the fail-safe default, disambiguating it from the autonomous-interactive sub-case's explicit declaration")
 	})
 })
