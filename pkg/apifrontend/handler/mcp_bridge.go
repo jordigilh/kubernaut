@@ -264,7 +264,8 @@ func registerKAMCPTools(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semaphore.We
 					return result, err
 				}
 				emitAudit(ctx, cfg, "kubernaut_discover_workflows", audit.EventWorkflowDiscovery,
-					map[string]string{"workflow_count": strconv.Itoa(result.Count)})
+					map[string]string{"rr_id": args.RRID, "workflow_count": strconv.Itoa(result.Count)},
+					withCorrelationID(args.RRID))
 				return result, nil
 			})
 	}
@@ -607,7 +608,24 @@ func recordMetrics(cfg *MCPBridgeConfig, toolName, result string, start time.Tim
 	}
 }
 
-func emitAudit(ctx context.Context, cfg *MCPBridgeConfig, toolName string, eventType audit.EventType, extra map[string]string) {
+// emitAuditOption customizes a single emitAudit call without changing the
+// signature (and therefore behavior) of its other call sites. Introduced for
+// Issue #1923: emitAudit never set CorrelationID/RequestID on the audit.Event
+// it built, so every event emitted through it fell back to a random UUID
+// (see store_adapter.go's correlationID() fallback chain).
+type emitAuditOption func(*audit.Event)
+
+// withCorrelationID sets the audit.Event's CorrelationID, so downstream
+// persistence (StoreAdapter) uses it instead of falling back to a synthetic
+// UUID. Scoped narrowly to callers that opt in (e.g. kubernaut_discover_workflows
+// passing the RR ID) -- other emitAudit call sites are unaffected.
+func withCorrelationID(id string) emitAuditOption {
+	return func(e *audit.Event) {
+		e.CorrelationID = id
+	}
+}
+
+func emitAudit(ctx context.Context, cfg *MCPBridgeConfig, toolName string, eventType audit.EventType, extra map[string]string, opts ...emitAuditOption) {
 	if cfg.Auditor == nil {
 		return
 	}
@@ -619,12 +637,16 @@ func emitAudit(ctx context.Context, cfg *MCPBridgeConfig, toolName string, event
 	for k, v := range extra {
 		detail[k] = v
 	}
-	cfg.Auditor.Emit(ctx, &audit.Event{
+	event := &audit.Event{
 		Timestamp: time.Now(),
 		Type:      eventType,
 		UserID:    username,
 		Detail:    detail,
-	})
+	}
+	for _, opt := range opts {
+		opt(event)
+	}
+	cfg.Auditor.Emit(ctx, event)
 }
 
 // enrichAuditFromArgs extracts known fields (session_id, rr_id, namespace) from tool

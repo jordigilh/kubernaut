@@ -231,6 +231,60 @@ var _ = Describe("Audit lifecycle against DataStorage contract — BR-AI-952 / G
 	})
 
 	// ═══════════════════════════════════════════════════════════════════════
+	// #1923: is_actionable round-trips through DSAuditStore -> real ogen
+	// client -> wire JSON (BR-AUDIT-005 v2.0, SOC2 CC8.1, AU-3)
+	// ═══════════════════════════════════════════════════════════════════════
+
+	Describe("IT-KA-1923-001: is_actionable survives the real DSAuditStore -> ogen-client -> wire JSON path", func() {
+		It("propagates is_actionable=true from response_data through to the persisted event_data JSON", func() {
+			var captured []byte
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, readErr := io.ReadAll(r.Body)
+				Expect(readErr).NotTo(HaveOccurred())
+				captured = body
+
+				evID := uuid.New()
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = fmt.Fprintf(w, `{"event_id":%q,"event_timestamp":"2026-08-04T20:00:00Z","message":"accepted"}`,
+					evID.String())
+			}))
+			defer srv.Close()
+
+			cl, err := ogenclient.NewClient(srv.URL)
+			Expect(err).NotTo(HaveOccurred())
+
+			store := audit.NewDSAuditStore(cl)
+			event := audit.NewEvent(audit.EventTypeResponseComplete, "corr-1923-"+uuid.New().String())
+			event.Data["response_data"] = `{
+				"rca_summary": "OOMKilled due to memory leak",
+				"severity": "high",
+				"confidence": 0.9,
+				"is_actionable": true
+			}`
+
+			Expect(store.StoreAudit(context.Background(), event)).To(Succeed())
+
+			var envelope map[string]json.RawMessage
+			Expect(json.Unmarshal(captured, &envelope)).To(Succeed())
+			Expect(envelope).To(HaveKey("event_data"))
+
+			var eventData map[string]json.RawMessage
+			Expect(json.Unmarshal(envelope["event_data"], &eventData)).To(Succeed())
+
+			var responseData map[string]json.RawMessage
+			Expect(json.Unmarshal(eventData["response_data"], &responseData)).To(Succeed())
+			Expect(responseData).To(HaveKey("isActionable"),
+				"Issue #1923 Gap 1: is_actionable must reach the DataStorage wire payload, not be silently dropped")
+
+			var isActionable bool
+			Expect(json.Unmarshal(responseData["isActionable"], &isActionable)).To(Succeed())
+			Expect(isActionable).To(BeTrue())
+		})
+	})
+
+	// ═══════════════════════════════════════════════════════════════════════
 	// #1401: Security audit events round-trip through DSAuditStore
 	// ═══════════════════════════════════════════════════════════════════════
 

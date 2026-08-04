@@ -107,6 +107,38 @@ var _ = Describe("IT-AF-1156: Audit Normalization Integration", func() {
 		Expect(string(evt.EventData.Type)).To(Equal("apifrontend.session.created"))
 	})
 
+	It("IT-AF-1923-001: workflow.discovery event round-trips through BufferedAuditStore with typed payload and RR-scoped correlation_id (AU-12, SOC2 CC8.1)", func() {
+		adapter.Emit(context.Background(), &audit.Event{
+			Type:          audit.EventWorkflowDiscovery,
+			CorrelationID: "rr-discovery-1923",
+			Detail: map[string]string{
+				"rr_id":          "rr-discovery-1923",
+				"workflow_count": "4",
+			},
+		})
+
+		Expect(auditStore.Flush(context.Background())).To(Succeed())
+
+		Eventually(func() int { return len(dsClient.allEvents()) }).
+			WithTimeout(2 * time.Second).
+			WithPolling(50 * time.Millisecond).
+			Should(BeNumerically(">=", 1))
+
+		events := dsClient.allEvents()
+		Expect(events).To(HaveLen(1), "Issue #1923 Gap 2: workflow.discovery must be persisted, not logged-only")
+		evt := events[0]
+		Expect(evt.EventType).To(Equal("apifrontend.workflow.discovery"))
+		Expect(evt.EventCategory).To(Equal(ogenclient.AuditEventRequestEventCategoryApifrontend))
+		Expect(evt.CorrelationID).To(Equal("rr-discovery-1923"),
+			"correlation_id must be the RR ID for full remediation-request reconstruction, not a synthetic UUID")
+		Expect(string(evt.EventData.Type)).To(Equal("apifrontend.workflow.discovery"))
+
+		payload, ok := evt.EventData.GetApifrontendWorkflowDiscoveryPayload()
+		Expect(ok).To(BeTrue(), "event_data should be ApifrontendWorkflowDiscoveryPayload")
+		Expect(payload.RrID).To(Equal("rr-discovery-1923"))
+		Expect(payload.WorkflowCount).To(Equal(4))
+	})
+
 	It("IT-AF-1156-002: auth.success event round-trips with typed payload", func() {
 		adapter.Emit(context.Background(), &audit.Event{
 			Type:   audit.EventAuthSuccess,
