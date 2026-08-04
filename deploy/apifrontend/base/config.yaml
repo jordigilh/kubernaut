@@ -69,7 +69,10 @@ resilience:
     retryMax: 2
     retryInitBackoff: 500ms
     retryMaxBackoff: 5s
-    retryableStatuses: [502, 503, 504]
+    # 429 included: KA enforces a concurrency throttle (chi.Throttle);
+    # ADR-048-ADDENDUM-001 requires clients to retry with backoff on
+    # throttle responses instead of failing fast.
+    retryableStatuses: [429, 502, 503, 504]
   ds:
     connectTimeout: 3s
     requestTimeout: 10s
