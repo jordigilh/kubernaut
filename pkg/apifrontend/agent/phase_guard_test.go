@@ -529,6 +529,59 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 			"Registry must be cleared after kubernaut_cancel succeeds")
 	})
 
+	It("UT-AF-1912-001: Clears driverActive on kubernaut_complete success, alongside the registry (#1912)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "ka-sess-001", "rr_id": "rr-123",
+		}, nil)
+
+		active, err := state.Get(session.StateKeyDriverActive)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(active).To(Equal(true), "precondition: driverActive must be true after a successful investigate")
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_complete"}, nil, map[string]any{
+			"status": "completed",
+		}, nil)
+
+		active, err = state.Get(session.StateKeyDriverActive)
+		if err == nil {
+			Expect(active).To(Equal(false),
+				"driverActive must be cleared after kubernaut_complete succeeds -- a stale true leaves reinvocation incorrectly eligible (#1912)")
+		}
+		// A missing key (ErrStateKeyNotExist) is equally acceptable: NeedsReinvocationCtx's
+		// driverActive(state) helper treats "absent" and "false" identically.
+	})
+
+	It("UT-AF-1912-002: Clears driverActive on kubernaut_cancel success, alongside the registry (#1912)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "ka-sess-001", "rr_id": "rr-123",
+		}, nil)
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_cancel"}, nil, map[string]any{
+			"status": "cancelled",
+		}, nil)
+
+		active, err := state.Get(session.StateKeyDriverActive)
+		if err == nil {
+			Expect(active).To(Equal(false),
+				"driverActive must be cleared after kubernaut_cancel succeeds -- a stale true leaves reinvocation incorrectly eligible (#1912)")
+		}
+	})
+
+	It("UT-AF-1912-003: Does NOT clear driverActive on kubernaut_complete failure (#1912)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "ka-sess-001", "rr_id": "rr-123",
+		}, nil)
+
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_complete"}, nil, map[string]any{
+			"error": "complete failed",
+		}, nil)
+
+		active, err := state.Get(session.StateKeyDriverActive)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(active).To(Equal(true),
+			"driverActive must NOT be cleared when kubernaut_complete returns an error -- the driver session is still legitimately active")
+	})
+
 	It("UT-AF-SESS-020-024: Does NOT clear context on complete/cancel failure (AC-2)", func() {
 		registry.Set("alice", "ctx-session-abc")
 

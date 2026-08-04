@@ -230,6 +230,23 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 			}
 		}
 
+		// #1912: a session-terminal tool ending the driver session must clear
+		// driverActive alongside the registry entry below. Leaving it true
+		// left NeedsReinvocationCtx (reinvoke.go) permanently able to treat a
+		// finished session as still driving, incorrectly nudging reinvocation
+		// on any later text-only turn in the same chat session.
+		if isTerminal && state != nil {
+			if err := state.Set(stateKeyDriverActive, false); err != nil {
+				logger.Error(err, "phase-guard failed to clear driver state")
+			}
+			if err := state.Set(stateKeyActiveRRID, ""); err != nil {
+				logger.Error(err, "phase-guard failed to clear active rr_id state")
+			}
+			if err := state.Set(stateKeyActiveSession, ""); err != nil {
+				logger.Error(err, "phase-guard failed to clear active session state")
+			}
+		}
+
 		if registry != nil {
 			if identity := auth.UserIdentityFromContext(ctx); identity != nil && identity.Username != "" {
 				if isEntry {

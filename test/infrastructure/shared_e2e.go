@@ -345,6 +345,50 @@ func consentGatePhase3AttemptScenarioYAML(ns, selectWorkflowID string) string {
 `, ns, selectWorkflowID)
 }
 
+// noReinvocationAfterCompleteScenarioYAML returns a keyword scenario for
+// E2E-FP-1912-001 (issue #1912: driverActive never cleared after a
+// session-terminal tool). A single message chains kubernaut_remediate ->
+// kubernaut_investigate (declaring interaction_mode=full_remediation_autonomous,
+// so no DD-AF-011 checkpoint is left blocking -- driverActive is the ONLY
+// remaining signal that could still gate an errant reinvocation) ->
+// kubernaut_complete, ending the driver session in the very same turn.
+// Pre-#1912-fix, phaseGuardAfter's isTerminal branch cleared the
+// ActiveContextRegistry entry but never driverActive itself, so a stray
+// text-only model turn immediately after kubernaut_complete's result could
+// be misread by NeedsReinvocationCtx as "investigation still active,
+// nudge it forward" and synthesize a "continue the investigation" prompt
+// back into a session the user (via the model) had already closed. This
+// scenario proves the real AF/A2A stack never lets that resurrect into a
+// consequential action: no WorkflowExecution is ever created for the RR,
+// matching the assertion style of consentGatePhase2/3AttemptScenarioYAML
+// above. Returns "" if ns is empty.
+func noReinvocationAfterCompleteScenarioYAML(ns string) string {
+	if ns == "" {
+		return ""
+	}
+	return fmt.Sprintf(`      - name: "af_no_reinvocation_after_complete_1912"
+        keywords: ["create and investigate then complete and go silent"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_remediate"
+          arguments:
+            namespace: "%s"
+            kind: "Deployment"
+            name: "memory-eater"
+            api_version: "apps/v1"
+            description: "FP E2E no-reinvocation-after-complete request (#1912)"
+        next_tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+            interaction_mode: "full_remediation_autonomous"
+          next_tool_call:
+            name: "kubernaut_complete"
+            arguments:
+              rr_id: "$from_tool:kubernaut_remediate:rr_id"
+`, ns)
+}
+
 // resolveWorkflowUUID looks up the real catalog UUID seeded for a workflow
 // fixture (keyed "<workflowName>:<environment>" in workflowUUIDs, per
 // SeedWorkflowsViaKubectlApply/SeedWorkflowsViaDirectCRDCreationFromKubeconfig)
@@ -475,6 +519,7 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
 		fullInteractiveRemediationScenarioYAML(afRemediateNS["full-interactive"], afSelectWorkflowID) +
 		consentGatePhase2AttemptScenarioYAML(afRemediateNS["consent-phase2"]) +
 		consentGatePhase3AttemptScenarioYAML(afRemediateNS["consent-phase3"], afSelectWorkflowID) +
+		noReinvocationAfterCompleteScenarioYAML(afRemediateNS["terminal-1912"]) +
 		`      - name: "af_investigate"
         keywords: ["start investigation", "investigate", "begin investigation"]
         match_last_only: true
