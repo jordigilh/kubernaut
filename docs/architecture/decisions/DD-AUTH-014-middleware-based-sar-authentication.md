@@ -1,19 +1,46 @@
 # DD-AUTH-014: Middleware-Based SAR Authentication (Interface-Driven)
 
 **Status**: Approved  
-**Version**: 3.0  
-**Date**: January 31, 2026  
+**Version**: 4.2  
+**Date**: August 4, 2026  
 **Decision Makers**: Architecture Team  
 **Affected Services**: 
 - **Phase 2 (POC)**: ✅ DataStorage (Complete)
 - **Phase 3**: ✅ Kubernaut Agent (KA) (Complete)
 - **Phase 4**: ✅ Gateway (Complete - January 2026)
 - **Phase 5**: ✅ AIAnalysis Controller (Complete - January 2026)
+- **Phase 7**: ❌ Audience-bound `TokenReview` for AF + KA — implemented and fully reverted (August 2026), deferred to [#1900](https://github.com/jordigilh/kubernaut/issues/1900) for v1.6. Only the KA SOC2 audit-reason enrichment side-effect shipped (#1909).
 - **Future**: Notification, other REST API services (TBD)
 
 ---
 
 ## 📋 **Changelog**
+
+### Version 4.2 (August 4, 2026) — AF audience-binding also reverted; fully deferred to v1.6 (#1900)
+- **REMOVED**: API Frontend's `tokenReviewAudiences` audience-bound `TokenReview` option (`apifrontend.auth.tokenReviewAudiences`, `pkg/apifrontend/auth/tokenreview.go`'s `WithExpectedAudiences`/`TokenReviewerOption`/`audiencesIntersect`, and the `buildTokenReviewFallback` wiring in `cmd/apifrontend/auth_wiring.go`) — full symmetry with the v4.1 KA revert
+- **WHY**: AF's audience check had no structural blocker like KA's (proven working against a real `kube-apiserver` via envtest, `IT-AF-1900-001/002`), but on further review its incremental value was unclear: AF already gates all tool/action use via `SubjectAccessReview` (`pkg/apifrontend/auth/sar.go`), so an audience-mismatched-but-authenticated caller is already denied at the authorization layer regardless of this check — its value is authentication-layer defense-in-depth only, narrower than "closes a replay hole" as originally framed. Additionally, shipping AF's half alone would not have unblocked this issue's original motivation ([kubernaut-operator#139](https://github.com/jordigilh/kubernaut-operator/issues/139)), since that plan depends on KA's half, which the v4.1 finding showed is structurally unbuildable
+- **RESULT**: Neither AF nor KA implements audience-bound `TokenReview` today. [#1900](https://github.com/jordigilh/kubernaut/issues/1900) remains open (not closed by #1909), targeting v1.6, carrying the full investigation
+- **UNAFFECTED**: The SOC2/FedRAMP audit-reason enrichment (kept in v4.1) ships as-is — it is generic to any classified auth-failure reason, not audience-specific
+- **ALSO FILED**: [#1919](https://github.com/jordigilh/kubernaut/issues/1919) / [kubernaut-console#48](https://github.com/jordigilh/kubernaut-console/issues/48) — a related but distinct authorization gap found during this review: the console UI renders unconditionally once OIDC auth succeeds, with no pre-render authorization check (per-tool SAR only runs once the user attempts an action). Proposed fix is a dedicated coarse-grained role/synthetic resource (`kubernaut.ai/console`, verb `use`), not an audience check — tracked separately for v1.6, out of scope here
+- **SEE**: [BR-SECURITY-1900](../../requirements/BR-SECURITY-1900-audience-bound-tokenreview.md) § "Fully Deferred to v1.6" for the full architectural analysis of both services
+
+### Version 4.1 (August 3, 2026) — KA audience-binding descoped (#1900)
+- **REMOVED**: Kubernaut Agent's `expectedAFAudience` audience-bound `TokenReview` option (`auth.expectedAFAudience`, `k8sAuthenticatorOptions`/`newAuthMiddleware` wiring in `cmd/kubernautagent/routes.go`, and the `WithExpectedAudiences` functional option on the shared `pkg/shared/auth.K8sAuthenticator`)
+- **WHY**: KA's real AF-originated traffic flows exclusively through the `/api/v1/mcp` endpoint, which DD-AUTH-MCP-001 requires to permanently serve both AF-delegated calls *and* arbitrary direct in-cluster K8s clients on the same authenticator — the latter can never be forced to carry a `kubernaut-agent`-audience token, since they are independent K8s principals KA does not mint tokens for. The one KA code path that *could* safely be audience-bound (`pkg/apifrontend/ka.Client`'s `Analyze/Status/Result/Cancel` REST methods) has zero production callers (`deps.KAClient` in `cmd/apifrontend/backend_deps.go` is only ever used for `.Healthy()`, a local circuit-breaker check with no network call) — so binding it protects nothing live. Attempting to ship the option anyway (even Helm-unset/opt-in) either breaks every interactive MCP session the moment an operator enables it, or sits unwired as orphaned `pkg/` code with no real caller, violating CHECKPOINT C (Business Integration Validation)
+- **KEPT (at the time — later also reverted in v4.2, see above)**: AF's own audience-bound `TokenReview` check (`apifrontend.auth.tokenReviewAudiences`, `pkg/apifrontend/auth/tokenreview.go`'s `TokenReviewer.expectedAudiences`) was unaffected by this KA-only finding — AF's `TokenReview` fallback authenticates callers presenting tokens directly *to AF*; it has no equivalent "one endpoint serves two structurally different populations" constraint, so requiring `Spec.Audiences: ["kubernaut-apifrontend"]` there didn't collide with anything else AF does
+- **KEPT**: The SOC2/FedRAMP audit-reason enrichment (`pkg/shared/auth.WithFailureReasonCapture`, KA's `AuditAuthMiddleware` persisting `Data["reason"]` into `AIAgentAuthFailurePayload`/`AIAgentAuthDeniedPayload`) — this is generic to *any* auth-failure reason (`missing_auth_header`, `invalid_auth_format`, `empty_bearer_token`, `invalid_token`, `authorization_denied`), so it stands on its own merit independent of whether KA ever gets an audience check
+- **SEE**: [BR-SECURITY-1900](../../requirements/BR-SECURITY-1900-audience-bound-tokenreview.md) § "KA Audience-Binding: Descoped" for the full architectural analysis
+
+### Version 4.0 (August 3, 2026) — Audience-Bound TokenReview (#1900)
+- **ADDED**: Optional audience-bound `TokenReview` validation for API Frontend and Kubernaut Agent (BR-SECURITY-1900), see [§ Audience-Bound TokenReview](#-audience-bound-tokenreview-br-security-1900) below
+- **PROBLEM**: `K8sAuthenticator`/`TokenReviewer` requested no `Spec.Audiences`, so a ServiceAccount token minted for one service (e.g. AF) was accepted just as readily by a different service (e.g. KA) — a cross-service token-replay path
+- **SOLUTION**: `WithExpectedAudiences(...)` functional option on both `K8sAuthenticator` (`pkg/shared/auth`) and `TokenReviewer` (`pkg/apifrontend/auth`); sets `Spec.Audiences` on the outbound request (server-side enforcement) AND independently verifies `Status.Audiences` intersects the expected set (defense-in-depth against an audience-unaware API server)
+- **BACKWARD COMPATIBLE**: No audience configured → behavior unchanged (opt-in hardening, not a breaking change); confirmed zero behavior change for DataStorage/Gateway, which call `NewK8sAuthenticator` with no options
+- **CONFIG**: `apifrontend.auth.tokenReviewAudiences` (AF), `kubernautagent.auth.expectedAFAudience` (KA) — **both fields were removed, KA's in v4.1 and AF's in v4.2 above, see rationale there**
+- **AUDIT**: `pkg/shared/auth/middleware.go`'s `security_event` log now distinguishes `reason=invalid_token_audience` from the generic `invalid_token` (SOC2 AU-3/CC7.2); AF's existing `classifyAuthError` already mapped `ErrInvalidAudience` to `failure_reason=invalid_audience`
+- **TESTED**: Unit (fake clientset) + Integration (envtest, real API server) + E2E (real Kind cluster) for both AF and KA — see BR-SECURITY-1900 for the full test matrix
+- **NEW BR**: [BR-SECURITY-1900](../../requirements/BR-SECURITY-1900-audience-bound-tokenreview.md)
+- **OUT OF SCOPE**: Extending audience binding to DataStorage/Gateway; a fail-closed enforcement mode that treats an audience-unaware API server itself as a hard failure (deferred, tracked separately per the same "don't scope-creep the fix" reasoning used for DD-AUTH-016's fail-closed alternative)
 
 ### Version 3.0 (January 31, 2026)
 - **CRITICAL FIX**: Corrected RBAC for HolmesGPT API access
@@ -328,6 +355,61 @@ func (m *AuthMiddleware) Handler(next http.Handler) http.Handler {
     })
 }
 ```
+
+---
+
+## 🔒 **Audience-Bound TokenReview (BR-SECURITY-1900) — Reverted, Deferred to v1.6**
+
+**Added in v4.0, KA scope removed in v4.1, AF scope removed in v4.2 (#1900, deferred to [#1900](https://github.com/jordigilh/kubernaut/issues/1900) for v1.6).** The base implementation above requests `TokenReview` with no `Spec.Audiences`, so any Kubernaut service trusting the cluster's `TokenReview` API accepts any token that authenticates — including one minted for a *different* Kubernaut service. This section documents an opt-in mechanism, implemented for both AF and KA and then fully reverted for both, that would scope a `TokenReview`-validating service to only accept tokens minted for it. **Neither AF nor KA implements this today** — see [§ Why It Was Fully Reverted](#why-it-was-fully-reverted) below. The code samples below are retained as historical reference for whoever picks up [#1900](https://github.com/jordigilh/kubernaut/issues/1900) for v1.6.
+
+### Mechanism (as implemented, then reverted)
+
+```go
+// pkg/apifrontend/auth/tokenreview.go (AF's dedicated TokenReviewer) -- REVERTED, no longer in the codebase
+reviewer := auth.NewTokenReviewer(clientset, auth.WithExpectedAudiences("apifrontend"))
+```
+
+When configured:
+1. `Spec.Audiences` is set on the outbound `TokenReview` request, so an audience-aware API server enforces the match **server-side** (the primary defense — the K8s API server itself is authoritative on which audience a presented token was minted for).
+2. The response's `Status.Audiences` is independently checked (`audiencesIntersect`) against the expected set. This is defense-in-depth: an audience-*unaware* API server (one that ignores `Spec.Audiences` and returns `Authenticated: true` with empty `Status.Audiences`) must not be mistaken for one that enforced the requested scoping.
+
+### Token Minting Side (TokenRequest)
+
+The caller minting the token would request the same audience via the `TokenRequest` API:
+
+```go
+tokenReq := &authenticationv1.TokenRequest{
+    Spec: authenticationv1.TokenRequestSpec{
+        Audiences:         []string{"apifrontend"},
+        ExpirationSeconds: ptr(int64(3600)),
+    },
+}
+```
+
+A token minted with a different audience and then replayed against a `TokenReviewer` configured with `WithExpectedAudiences("apifrontend")` would be rejected — the cross-service replay this BR was meant to defend against.
+
+### Threat Model Boundary
+
+Audience binding defends against a validly-minted token being **replayed across a trust boundary** it wasn't scoped for. It does **not** defend against a compromised token-issuing authority: a service with legitimate `TokenRequest` permissions that has itself been compromised can simply mint a token scoped to any audience it likes, including the victim's. This is the same boundary documented in [DD-AUTH-016](./DD-AUTH-016-signed-user-identity-delegation.md)'s threat model for the analogous AF-minted identity JWT — audience/signature binding raises the bar for credential misuse, it does not substitute for protecting the minting authority itself.
+
+### Audit Trail
+
+KA's shared `pkg/shared/auth/middleware.go` retains generic `security_event` reason classification (`invalidTokenReason`, `WithFailureReasonCapture`) that would recognize an `ErrTokenInvalid` wrapping an "audience mismatch" substring as `reason=invalid_token_audience` — this mechanism ships regardless as forward-compatible plumbing (it also correctly classifies `missing_auth_header`, `empty_bearer_token`, `authorization_denied`, etc., all of which KA does produce today) — but since **neither** KA nor AF has an audience-checking authenticator anymore, it has no live producer and will only ever be exercised by tests constructing a synthetic error string.
+
+### Configuration
+
+Not configurable today — both `apifrontend.auth.tokenReviewAudiences` and `kubernautagent.auth.expectedAFAudience` were removed along with the reverted mechanism. If re-implemented for v1.6, the same field names/shapes remain a reasonable starting point.
+
+### Why It Was Fully Reverted
+
+Kubernaut Agent originally got the identical mechanism (`expectedAFAudience` → the shared `K8sAuthenticator`'s `WithExpectedAudiences`), but it was removed after tracing where AF's *real* traffic to KA actually flows in production wiring (`cmd/apifrontend/backend_deps.go`):
+
+- **100% of AF's live traffic to KA goes through `/api/v1/mcp`** (`ka.NewSDKMCPClient`/`ka.NewKASessionPool`, the trusted-intermediary pattern). [DD-AUTH-MCP-001](./DD-AUTH-MCP-001-mcp-endpoint-security.md) documents this endpoint as *permanently* serving two populations on the same authenticator: AF acting as a delegate, and arbitrary direct in-cluster K8s clients. The direct-client half can never be forced to carry a `kubernaut-agent`-audience token — those are independent K8s principals, not something KA or AF mints tokens for — so binding this endpoint's authenticator would either break every interactive MCP session the moment it's enabled, or require abandoning the documented dual-client requirement.
+- **The one path that *could* safely be audience-bound has no real traffic.** `deps.KAClient` (`pkg/apifrontend/ka.Client`, exposing `Analyze/Status/Result/Cancel` over KA's plain REST API) is constructed in production wiring, but the only production call site (`cmd/apifrontend/mcp_a2a_handlers.go`) only ever calls `.Healthy()` — a local circuit-breaker check with no network call. `Analyze/Status/Result/Cancel` have zero callers outside test files; it's dead code from a pre-MCP design.
+
+Splitting KA's authenticator into a REST-only audience-checked path and an MCP audience-unaware path (an initially-proposed middle ground) does not change this conclusion — the REST path it would protect isn't used for anything real, and the MCP path it can't touch is the only one that is. Shipping the option regardless would leave `pkg/shared/auth.K8sAuthenticator`'s `WithExpectedAudiences` option with no genuine production caller anywhere (DS/GW don't use it either), which fails CHECKPOINT C (Business Integration Validation: no orphaned `pkg/` code without a real caller).
+
+AF's own audience check had no such structural blocker — it guards tokens presented directly *to AF*, with no "one endpoint serves two structurally different populations" constraint — and was proven working against a real `kube-apiserver` via envtest. It was reverted anyway (v4.2) on further review: AF already gates all tool/action use via `SubjectAccessReview` (`pkg/apifrontend/auth/sar.go`), so an audience-mismatched-but-authenticated caller is already denied at the authorization layer independent of this check. Its remaining value is authentication-layer defense-in-depth only — real, but narrower than "closes a replay hole" as originally framed, since SAR already closes the practical exploitation path. Shipping AF's half alone also wouldn't unblock this issue's original motivation ([kubernaut-operator#139](https://github.com/jordigilh/kubernaut-operator/issues/139)'s custom-audience projected-token plan), since that depends on KA's half, which remains structurally unbuildable per the findings above. Both are deferred together to [#1900](https://github.com/jordigilh/kubernaut/issues/1900) for v1.6, to be revisited as one coherent decision.
 
 ---
 
@@ -813,6 +895,7 @@ ctx := context.WithValue(r.Context(), "user", user)
 ### **Business Requirements**
 - **BR-SECURITY-016**: Kubernetes RBAC enforcement for REST API endpoints
 - **BR-SECURITY-017**: ServiceAccount token authentication
+- **BR-SECURITY-1900**: Audience-bound TokenReview validation (NEW - August 2026, #1900)
 - **BR-GATEWAY-182**: Gateway ServiceAccount Authentication (NEW - January 2026)
 - **BR-GATEWAY-183**: Gateway SubjectAccessReview Authorization (NEW - January 2026)
 
@@ -956,7 +1039,7 @@ func (a *CachedAuthenticator) ValidateToken(ctx context.Context, token string) (
 
 ---
 
-**Document Version**: 1.0  
-**Last Updated**: January 26, 2026  
-**Status**: Proposed (Awaiting Architecture Review)  
+**Document Version**: 4.0  
+**Last Updated**: August 3, 2026  
+**Status**: Approved  
 **Author**: AI Assistant + Engineering Team
