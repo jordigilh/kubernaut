@@ -505,6 +505,28 @@ func DeployMockLLMInNamespace(ctx context.Context, namespace, kubeconfigPath, im
           arguments:
             rr_id: "$from_tool:kubernaut_remediate:rr_id"
             workflow_id: "oomkill-increase-memory-v1"
+      # af_select_discovered_workflow_1899 exists alongside af_select_workflow
+      # above (rather than fixing af_select_workflow's own hardcoded literal
+      # in place) because af_select_workflow's "oomkill-increase-memory-v1"
+      # literal is issue #1834 upstream (kubernaut_select_workflow strictly
+      # compares against DiscoveryResult.Recommended.WorkflowID verbatim, a
+      # real catalog UUID, not this human-readable fixture name) -- fixing it
+      # here is out of scope for #1899 and risks changing behavior for
+      # 07/08/09's existing passing coverage. The consent-gate E2E tests
+      # (#1899) use this distinct keyword/UUID pair instead so their genuine
+      # follow-up "select workflow" turn actually reaches a successful
+      # kubernaut_select_workflow call (confirmed via must-gather RCA: the
+      # literal fails with invalid_workflow, which was masking the consent
+      # gate's own PASS behind an unrelated downstream error).
+      - name: "af_select_discovered_workflow_1899"
+        keywords: ["select the discovered workflow"]
+        match_last_only: true
+        repeat_tool_call: true
+        tool_call:
+          name: "kubernaut_select_workflow"
+          arguments:
+            rr_id: "$from_tool:kubernaut_remediate:rr_id"
+            workflow_id: "` + afSelectWorkflowID + `"
       - name: "af_watch"
         keywords: ["watch remediation", "watch pipeline", "watch progress"]
         match_last_only: true

@@ -151,7 +151,14 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 1->2 [E2E-FP-18
 		GinkgoWriter.Printf("  Turn 2 — discover workflows OK (gate lifted on genuine user turn)\n")
 
 		By("Turn 3 (genuine): user explicitly selects a workflow — phase 2->3 gate must also lift on its own genuine turn")
-		body = fpA2ATasksSendWithContext("fp-cg2-3", turn1CtxID, taskID, "select workflow oomkill-increase-memory-v1")
+		// #1899: "select the discovered workflow" (af_select_discovered_workflow_1899)
+		// resolves to the real seeded catalog UUID, unlike the shared
+		// af_select_workflow scenario's "select workflow ..." phrase, whose
+		// hardcoded human-readable literal fails kubernaut_select_workflow's
+		// strict UUID comparison (issue #1834 upstream, confirmed via
+		// must-gather RCA) -- that failure was masking this test's own
+		// consent-gate PASS behind an unrelated invalid_workflow error.
+		body = fpA2ATasksSendWithContext("fp-cg2-3", turn1CtxID, taskID, "select the discovered workflow")
 		resp3, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp3.Body.Close() }()
@@ -283,7 +290,10 @@ var _ = Describe("AF A2A Phase-Transition Consent Gate — Phase 2->3 [E2E-FP-18
 		// E2E-FP-1899-001 above -- kubernaut_investigate (and the
 		// mode-authorized discover_workflows auto-chain) ran inside Turn 1
 		// itself, so their state only exists in turn1CtxID's ADK session.
-		body = fpA2ATasksSendWithContext("fp-cg3-2", turn1CtxID, taskID, "select workflow oomkill-increase-memory-v1")
+		// "select the discovered workflow" (not "select workflow ...") for
+		// the same af_select_discovered_workflow_1899/#1834 reason as
+		// E2E-FP-1899-001's Turn 3 above.
+		body = fpA2ATasksSendWithContext("fp-cg3-2", turn1CtxID, taskID, "select the discovered workflow")
 		resp2, err := fpA2AInvokeWithTimeout(body, 90*time.Second)
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp2.Body.Close() }()
