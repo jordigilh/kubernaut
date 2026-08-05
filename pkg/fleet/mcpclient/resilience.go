@@ -47,6 +47,13 @@ type ResilienceConfig struct {
 	MaxElapsedTime time.Duration
 	// TokenRefreshTimeout bounds OAuth2 token refresh HTTP calls.
 	TokenRefreshTimeout time.Duration
+	// ConnectTimeout bounds each individual MCP connect attempt made by
+	// connectWithBackoff and doReconnect, independent of whether the
+	// caller's context carries a deadline. Without this, a single hung
+	// handshake (issue #1934) blocks the entire backoff loop -- and thus
+	// service startup or reconnection -- forever, silently defeating
+	// MaxElapsedTime/MaxInterval.
+	ConnectTimeout time.Duration
 }
 
 // DefaultResilienceConfig returns production-ready defaults per Phase 6 plan.
@@ -56,6 +63,9 @@ func DefaultResilienceConfig() ResilienceConfig {
 		MaxInterval:         30 * time.Second,
 		MaxElapsedTime:      5 * time.Minute,
 		TokenRefreshTimeout: 10 * time.Second,
+		// Matches MaxInterval: a single attempt should never take longer
+		// than the max backoff interval we'd otherwise wait between attempts.
+		ConnectTimeout: 30 * time.Second,
 	}
 }
 
@@ -187,7 +197,9 @@ func (rc *ResilientClient) connectWithBackoff(ctx context.Context) error {
 		default:
 		}
 
-		c, connErr := New(ctx, rc.endpoint, rc.opts...)
+		attemptCtx, cancel := context.WithTimeout(ctx, rc.config.ConnectTimeout)
+		defer cancel()
+		c, connErr := New(attemptCtx, rc.endpoint, rc.opts...)
 		if connErr != nil {
 			lastErr = connErr
 			rc.logger.V(1).Info("Connection attempt failed, retrying",
@@ -244,7 +256,9 @@ func (rc *ResilientClient) doReconnect(ctx context.Context) error {
 		_ = old.Close()
 	}
 
-	c, err := New(ctx, rc.endpoint, rc.opts...)
+	attemptCtx, cancel := context.WithTimeout(ctx, rc.config.ConnectTimeout)
+	defer cancel()
+	c, err := New(attemptCtx, rc.endpoint, rc.opts...)
 	if err != nil {
 		rc.logger.Error(err, "Reconnection failed")
 		return err
