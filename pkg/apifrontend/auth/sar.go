@@ -22,6 +22,20 @@ type ToolAuthorizer interface {
 	Check(ctx context.Context, user string, groups []string, toolName string) (bool, error)
 }
 
+// ConsoleAuthorizer checks whether a user is authorized to access the
+// kubernaut console/chat UI at all -- a coarse-grained gate independent of
+// (and enforced in addition to) any per-tool ToolAuthorizer.Check result
+// (#1919, AC-3/AC-6). Implementations must be safe for concurrent use.
+//
+// This is an optional capability: callers holding a ToolAuthorizer type-assert
+// for ConsoleAuthorizer and skip the console check when the concrete
+// authorizer doesn't implement it, so existing ToolAuthorizer-only test
+// doubles need no changes (see checkRBAC in mcp_bridge.go and newRBACGuard in
+// agent/root.go).
+type ConsoleAuthorizer interface {
+	CheckConsoleAccess(ctx context.Context, user string, groups []string) (bool, error)
+}
+
 type cacheEntry struct {
 	allowed   bool
 	expiresAt time.Time
@@ -81,14 +95,33 @@ func (s *SARChecker) evictExpired(interval time.Duration) {
 // by performing a Kubernetes SubjectAccessReview against the kubernaut.ai/tools resource.
 // Results are cached for the configured TTL. Errors are never cached (retried on next call).
 func (s *SARChecker) Check(ctx context.Context, user string, groups []string, toolName string) (bool, error) {
-	if user == "" {
-		return false, fmt.Errorf("user must not be empty")
-	}
 	if toolName == "" {
 		return false, fmt.Errorf("tool name must not be empty")
 	}
+	return s.checkSAR(ctx, user, groups, "tools", toolName)
+}
 
-	key := cacheKey(user, groups, toolName)
+// CheckConsoleAccess verifies whether the given user (with groups) holds the
+// coarse-grained, unnamed "console" grant (#1919, AC-3/AC-6) -- a separate,
+// independently-auditable authorization step from any per-tool grant. It
+// performs a Kubernetes SubjectAccessReview against the kubernaut.ai/console
+// resource (verb=use, no resourceName). Results are cached for the
+// configured TTL, in the same cache but keyed distinctly from Check's
+// "tools" entries so the two never collide.
+func (s *SARChecker) CheckConsoleAccess(ctx context.Context, user string, groups []string) (bool, error) {
+	return s.checkSAR(ctx, user, groups, "console", "")
+}
+
+// checkSAR is the shared SAR-call-plus-cache implementation behind both
+// Check (resource="tools", name=toolName) and CheckConsoleAccess
+// (resource="console", name=""). Fail-closed: empty user or any API error
+// returns (false, err).
+func (s *SARChecker) checkSAR(ctx context.Context, user string, groups []string, resource, name string) (bool, error) {
+	if user == "" {
+		return false, fmt.Errorf("user must not be empty")
+	}
+
+	key := cacheKey(user, groups, resource, name)
 
 	s.mu.RLock()
 	if entry, ok := s.cache[key]; ok && time.Now().Before(entry.expiresAt) {
@@ -104,15 +137,15 @@ func (s *SARChecker) Check(ctx context.Context, user string, groups []string, to
 			ResourceAttributes: &authorizationv1.ResourceAttributes{
 				Verb:     "use",
 				Group:    "kubernaut.ai",
-				Resource: "tools",
-				Name:     toolName,
+				Resource: resource,
+				Name:     name,
 			},
 		},
 	}
 
 	result, err := s.client.AuthorizationV1().SubjectAccessReviews().Create(ctx, sar, metav1.CreateOptions{})
 	if err != nil {
-		s.logger.Error(err, "SAR API call failed", "user", user, "tool", toolName)
+		s.logger.Error(err, "SAR API call failed", "user", user, "resource", resource, "name", name)
 		return false, fmt.Errorf("SAR authorization check failed: %w", err)
 	}
 
@@ -126,19 +159,20 @@ func (s *SARChecker) Check(ctx context.Context, user string, groups []string, to
 	s.mu.Unlock()
 
 	if !allowed {
-		s.logger.V(1).Info("SAR denied tool access", "user", user, "tool", toolName, "groups", groups)
+		s.logger.V(1).Info("SAR denied access", "user", user, "resource", resource, "name", name, "groups", groups)
 	}
 
 	return allowed, nil
 }
 
-func cacheKey(user string, groups []string, toolName string) string {
+func cacheKey(user string, groups []string, resource, name string) string {
 	sorted := make([]string, len(groups))
 	copy(sorted, groups)
 	sort.Strings(sorted)
-	raw := user + "\x00" + strings.Join(sorted, "\x00") + "\x00" + toolName
+	raw := user + "\x00" + strings.Join(sorted, "\x00") + "\x00" + resource + "\x00" + name
 	h := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(h[:])
 }
 
 var _ ToolAuthorizer = (*SARChecker)(nil)
+var _ ConsoleAuthorizer = (*SARChecker)(nil)

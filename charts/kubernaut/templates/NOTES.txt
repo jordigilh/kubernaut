@@ -83,6 +83,32 @@ configured Prometheus in the agent's config.yaml (tools.prometheus.url).
 No additional SDK config changes are needed for Prometheus access.
 
 {{- end }}
+{{- if .Values.apifrontend.enabled }}
+{{- $personas := .Values.apifrontend.config.rbac.personas | default dict }}
+{{- $consoleGroups := .Values.apifrontend.config.rbac.consoleAccessGroups | default list }}
+{{- $missingConsoleAccess := list }}
+{{- range $persona, $tools := $personas }}
+{{- if not (has $persona $consoleGroups) }}
+{{- $missingConsoleAccess = append $missingConsoleAccess $persona }}
+{{- end }}
+{{- end }}
+{{- if $missingConsoleAccess }}
+=== RBAC WARNING: console-access gate (#1919) ===
+
+apifrontend.config.rbac.personas group(s) below have per-tool RBAC grants but
+are NOT listed in apifrontend.config.rbac.consoleAccessGroups:
+
+{{- range $missingConsoleAccess }}
+  - {{ . }}
+{{- end }}
+
+Every AF tool call (/mcp and /a2a/invoke) additionally requires the
+coarse-grained kubernaut.ai/console "use" grant. Users in the group(s) above
+will have ALL tool calls denied until you add them to consoleAccessGroups,
+even though their per-tool grants above remain intact and unchanged.
+
+{{- end }}
+{{- end }}
 === Monitoring ===
 
 Kubernaut is designed to work with kube-prometheus-stack.

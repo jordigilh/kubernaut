@@ -1,0 +1,122 @@
+suite: console access RBAC gate (#1919)
+templates:
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  signalprocessing:
+    policies:
+      existingConfigMap: dummy
+  aianalysis:
+    policies:
+      existingConfigMap: dummy
+  kubernautAgent:
+    llm:
+      provider: openai
+      model: gpt-4o
+      credentialsSecretName: dummy
+tests:
+  # ---------------------------------------------------------------------
+  # IT-HELM-1919-001: the coarse-grained ClusterRole exists and grants
+  # exactly kubernaut.ai/console use, distinct from the per-tool
+  # kubernaut-tool-* ClusterRoles (#1919, AC-3/AC-6).
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-1919-001: kubernaut-console-access ClusterRole grants kubernaut.ai/console use"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-console-access
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - contains:
+          path: rules[0].resources
+          content: console
+      - contains:
+          path: rules[0].verbs
+          content: use
+      - contains:
+          path: rules[0].apiGroups
+          content: kubernaut.ai
+
+  # ---------------------------------------------------------------------
+  # IT-HELM-1919-002: default consoleAccessGroups produces a
+  # ClusterRoleBinding per group, bound to the console-access ClusterRole.
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-1919-002: sre is bound to kubernaut-console-access by default"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-console-access-sre
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: roleRef.name
+          value: kubernaut-console-access
+      - equal:
+          path: subjects[0].kind
+          value: Group
+      - equal:
+          path: subjects[0].name
+          value: sre
+
+  - it: "IT-HELM-1919-002b: a group not listed in consoleAccessGroups has no ClusterRoleBinding rendered"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-console-access-guest
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true
+
+  - it: "IT-HELM-1919-002c: cicd and l3-audit (automation/audit personas) are also bound by default, per #1919's non-goal of weakening existing per-tool grants"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-console-access-cicd
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: roleRef.name
+          value: kubernaut-console-access
+
+  # ---------------------------------------------------------------------
+  # IT-HELM-1919-003: an empty consoleAccessGroups list is empty-safe --
+  # the ClusterRole still renders, but zero ClusterRoleBindings do.
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-1919-003: empty consoleAccessGroups renders the ClusterRole but no bindings"
+    template: templates/apifrontend/apifrontend.yaml
+    set:
+      apifrontend:
+        config:
+          rbac:
+            consoleAccessGroups: []
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-console-access
+    asserts:
+      - isKind:
+          of: ClusterRole
+
+  - it: "IT-HELM-1919-003b: empty consoleAccessGroups renders no kubernaut-console-access-sre binding"
+    template: templates/apifrontend/apifrontend.yaml
+    set:
+      apifrontend:
+        config:
+          rbac:
+            consoleAccessGroups: []
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-console-access-sre
+      skipEmptyTemplates: true
+    asserts:
+      - hasDocuments:
+          count: 0
+          filterAware: true

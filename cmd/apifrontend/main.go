@@ -284,20 +284,28 @@ func run() int {
 		statusHandler = handler.NewStatusHandler(deps.TypedClient(), cfg.Session.Namespace, logger)
 	}
 
+	// #1919: GET /a2a/access is an advisory pre-flight check for the
+	// console/chat client, backed by the same *auth.SARChecker used for
+	// per-tool authorization elsewhere in this file. sarChecker satisfies
+	// auth.ConsoleAuthorizer at compile time (see sar.go's
+	// `var _ auth.ConsoleAuthorizer = (*SARChecker)(nil)`).
+	consoleAccessHandler := handler.NewConsoleAccessHandler(sarChecker, auditor, logger)
+
 	draining := &atomic.Bool{}
 	routerCfg := handler.RouterConfig{
-		MetricsRegistry:    metricsReg,
-		Logger:             logger,
-		A2AHandler:         a2aHandler,
-		MCPHandler:         mcpHandler,
-		AgentCardHandler:   agentCardHandler,
-		AuthMiddleware:     authMiddleware,
-		PreAuthMiddleware:  preAuthMW,
-		PostAuthMiddleware: postAuthMW,
-		ReadyChecker:       handler.AllReady(func() bool { return !draining.Load() }, depsReady, authReady, sessInfra.Healthy.Load),
-		SSETracker:         buildSSETracker(cfg, metricsReg),
-		StatusHandler:      statusHandler,
-		Draining:           draining,
+		MetricsRegistry:      metricsReg,
+		Logger:               logger,
+		A2AHandler:           a2aHandler,
+		MCPHandler:           mcpHandler,
+		AgentCardHandler:     agentCardHandler,
+		AuthMiddleware:       authMiddleware,
+		PreAuthMiddleware:    preAuthMW,
+		PostAuthMiddleware:   postAuthMW,
+		ReadyChecker:         handler.AllReady(func() bool { return !draining.Load() }, depsReady, authReady, sessInfra.Healthy.Load),
+		SSETracker:           buildSSETracker(cfg, metricsReg),
+		StatusHandler:        statusHandler,
+		ConsoleAccessHandler: consoleAccessHandler,
+		Draining:             draining,
 	}
 	router, err := handler.NewRouter(routerCfg)
 	if err != nil {

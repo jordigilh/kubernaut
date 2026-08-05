@@ -748,6 +748,18 @@ apifrontend:
           - kubernaut_get_remediation
           - kubernaut_watch
           - kubernaut_await_session
+      # #1919 (AC-3/AC-6): groups granted the coarse-grained console-access
+      # gate (kubernaut.ai/console, verb=use) -- a separate, independently
+      # auditable grant from the per-tool personas above. All 6 personas are
+      # included by default so every persona that has tool access also has
+      # console access out of the box.
+      consoleAccessGroups:
+        - sre
+        - ai-orchestrator
+        - cicd
+        - observability
+        - l3-audit
+        - remediation-approver
   resources:
     requests:
       memory: 64Mi
