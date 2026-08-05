@@ -167,6 +167,14 @@ func (e *Evaluator) finalizeGroundingObservation(ctx context.Context, obs Ground
 func renderConversation(messages []llm.Message, maxTokens int) string {
 	var b strings.Builder
 	for i, msg := range messages {
+		// #1935/#1936 (BR-AI-086, FedRAMP CC7.2): the model's reasoning/
+		// thinking text lives in a separate field from Content — without
+		// rendering it, the shadow agent's grounding review never saw the
+		// reasoning that anchored an assistant turn's tool_use decisions,
+		// even after the conversation itself stopped being stale.
+		if msg.Reasoning != nil && msg.Reasoning.Text != "" {
+			fmt.Fprintf(&b, "[%s:thinking] %s\n", msg.Role, msg.Reasoning.Text)
+		}
 		fmt.Fprintf(&b, "[%s] %s\n", msg.Role, msg.Content)
 		if i < len(messages)-1 {
 			b.WriteString("---\n")

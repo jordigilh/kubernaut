@@ -66,6 +66,16 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 	if err != nil {
 		return nil, err
 	}
+	// #1935/#1936 root cause #2 (workflow-discovery extension, #1945):
+	// runLLMLoop's accumulated tool-call history must flow back into
+	// messages before it feeds handleWorkflowSelectionLoopResult (and, via
+	// it, retryWorkflowSubmit's two call sites and selfCorrectWorkflowSelection
+	// below) — otherwise every retry/self-correction attempt operates on a
+	// stale [system, user]-only slice regardless of how many
+	// list_available_actions/list_workflows calls actually ran.
+	if extended := loopResultMessages(loopRes); len(extended) > 0 {
+		messages = extended
+	}
 
 	content, early := inv.handleWorkflowSelectionLoopResult(ctx, loopRes, rcaSummary, messages, llmCtx)
 	if early != nil {
@@ -297,6 +307,15 @@ func (inv *Investigator) runSelfCorrectionAttempt(ctx context.Context, r *katype
 	corrLoopRes, corrErr := inv.runLLMLoop(ctx, state.messages, katypes.PhaseWorkflowDiscovery, llmCtx)
 	if corrErr != nil {
 		return nil, corrErr
+	}
+	// #1945 (main port #1936): the nested loop's accumulated tool-call
+	// history must flow back into state.messages before the next
+	// self-correction attempt's request is built from it — otherwise
+	// attempt N+1 is missing every tool call made during attempt N's own
+	// nested loop (list_workflows, etc.), independent of the top-level
+	// reassignment in runWorkflowSelection above.
+	if extended := loopResultMessages(corrLoopRes); len(extended) > 0 {
+		state.messages = extended
 	}
 	return inv.classifySelfCorrectionLoopResult(corrLoopRes, r, state, rcaSummary)
 }

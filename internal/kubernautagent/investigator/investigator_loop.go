@@ -129,7 +129,7 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 		return &ExhaustedResult{Reason: "output truncated after retry"}, messages, true, nil
 	}
 
-	return &TextResult{Content: resp.Message.Content, Reasoning: resp.Message.Reasoning}, messages, true, nil
+	return &TextResult{Content: resp.Message.Content, Reasoning: resp.Message.Reasoning, Messages: messages}, messages, true, nil
 }
 
 // doLLMCall builds the per-turn chat request (using state.maxTokens for any
@@ -290,7 +290,7 @@ func (inv *Investigator) emitLLMResponseAudit(ctx context.Context, correlationID
 // total tool-call budget is now exhausted.
 func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Message, resp llm.ChatResponse, turn int, phase string, correlationID string) (newMessages []llm.Message, sentinel LoopResult, budgetExhausted bool) {
 	for _, tc := range resp.ToolCalls {
-		if sr := sentinelResult(tc, resp.Message.Reasoning); sr != nil {
+		if sr := sentinelResult(tc, resp.Message.Reasoning, messages); sr != nil {
 			inv.logger.Info("sentinel detected",
 				"tool", tc.Name,
 				"phase", phase,

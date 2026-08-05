@@ -50,6 +50,14 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 	if err != nil {
 		return nil, err
 	}
+	// #1935/#1936 root cause #2: runLLMLoop's accumulated tool-call history
+	// must flow back into messages before it feeds alignment.NotifyRCAComplete,
+	// retryRCASubmit, sameKindValidationGate, and apiVersionValidationGate
+	// below — otherwise all four operate on a stale [system, user]-only slice
+	// regardless of how many tools actually ran.
+	if extended := loopResultMessages(loopRes); len(extended) > 0 {
+		messages = extended
+	}
 
 	alignment.NotifyRCAComplete(ctx, messages)
 
