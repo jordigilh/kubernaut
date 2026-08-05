@@ -79,11 +79,38 @@ type ChatResponse struct {
 
 // Message represents a single conversation message.
 type Message struct {
-	Role       string     `json:"role"`
-	Content    string     `json:"content"`
-	ToolCallID string     `json:"tool_call_id,omitempty"`
-	ToolName   string     `json:"tool_name,omitempty"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	Role       string          `json:"role"`
+	Content    string          `json:"content"`
+	ToolCallID string          `json:"tool_call_id,omitempty"`
+	ToolName   string          `json:"tool_name,omitempty"`
+	ToolCalls  []ToolCall      `json:"tool_calls,omitempty"`
+	Reasoning  *ReasoningBlock `json:"reasoning,omitempty"`
+}
+
+// ReasoningBlock captures a provider's reasoning/thinking output for a single
+// assistant message, kept provider-agnostic so business logic in
+// internal/kubernautagent/investigator/* never sees provider-specific wire
+// formats (DD-KA-019). Nil means no reasoning was requested or returned.
+// Authority: BR-AI-086 AC1.
+//
+// Issue #1935: claude-sonnet-5 emits a signed thinking block by default
+// (unlike claude-sonnet-4-6). Without this field, vertexanthropic silently
+// dropped it on every turn, corrupting gate-retry replay history (same
+// failure class as #1299 "orphaned content blocks on replay") and producing
+// false due-diligence claims about tool availability. Backported from
+// main's pkg/kubernautagent/llm/anthropicfamily (BR-AI-086/#1580).
+type ReasoningBlock struct {
+	// Text is the visible reasoning content (Anthropic thinking, DeepSeek
+	// reasoning_content, vLLM reasoning). Empty when Redacted is true.
+	Text string `json:"text,omitempty"`
+	// Signature is an opaque, provider-specific value (Anthropic thinking
+	// signature, encrypted payload) that must be replayed verbatim on the
+	// next turn without inspection or modification.
+	Signature string `json:"signature,omitempty"`
+	// Redacted marks an opaque reasoning block whose visible text was
+	// withheld by the provider (Anthropic redacted_thinking) but which must
+	// still be replayed on subsequent turns.
+	Redacted bool `json:"redacted,omitempty"`
 }
 
 // ToolDefinition describes a tool available to the LLM.

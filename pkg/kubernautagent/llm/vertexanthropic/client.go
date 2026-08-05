@@ -216,26 +216,9 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 			params.Messages = append(params.Messages,
 				anthropic.NewUserMessage(anthropic.NewTextBlock(m.Content)))
 		case "assistant":
-			if len(m.ToolCalls) > 0 {
-				var parts []anthropic.ContentBlockParamUnion
-				if m.Content != "" {
-					parts = append(parts, anthropic.NewTextBlock(m.Content))
-				}
-				for _, tc := range m.ToolCalls {
-					var input any
-					if tc.Arguments != "" {
-						input = json.RawMessage(tc.Arguments)
-					} else {
-						input = json.RawMessage("{}")
-					}
-					parts = append(parts, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
-				}
-				params.Messages = append(params.Messages,
-					anthropic.NewAssistantMessage(parts...))
-		} else if m.Content != "" {
-			params.Messages = append(params.Messages,
-				anthropic.NewAssistantMessage(anthropic.NewTextBlock(m.Content)))
-		}
+			if am, ok := convertAssistantMessage(m); ok {
+				params.Messages = append(params.Messages, am)
+			}
 		case "tool":
 			pendingToolResults = append(pendingToolResults,
 				anthropic.NewToolResultBlock(m.ToolCallID, m.Content, false))
@@ -259,6 +242,64 @@ func (c *Client) buildParams(req llm.ChatRequest) anthropic.MessageNewParams {
 	}
 
 	return params
+}
+
+// convertAssistantMessage builds the Anthropic assistant message for a
+// single Kubernaut assistant-role message (thinking, text, and/or tool_use
+// blocks). Returns ok=false when there is nothing to emit (no content, no
+// tool calls, no reasoning).
+//
+// A reasoning block, when present, is always placed FIRST in the content
+// array — the Anthropic API requires the thinking/redacted_thinking block
+// that preceded a tool_use to be replayed before it on the next turn (same
+// failure class as issue #1299: orphaned content blocks on replay; root
+// cause of #1935). Ported from main's anthropicfamily client (BR-AI-086).
+func convertAssistantMessage(m llm.Message) (anthropic.MessageParam, bool) {
+	var parts []anthropic.ContentBlockParamUnion
+	if m.Reasoning != nil {
+		parts = append(parts, reasoningToContentBlock(m.Reasoning))
+	}
+	if len(m.ToolCalls) > 0 {
+		if m.Content != "" {
+			parts = append(parts, anthropic.NewTextBlock(m.Content))
+		}
+		for _, tc := range m.ToolCalls {
+			var input any
+			if tc.Arguments != "" {
+				input = json.RawMessage(tc.Arguments)
+			} else {
+				input = json.RawMessage("{}")
+			}
+			parts = append(parts, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
+		}
+		return anthropic.NewAssistantMessage(parts...), true
+	}
+	if m.Content != "" {
+		parts = append(parts, anthropic.NewTextBlock(m.Content))
+		return anthropic.NewAssistantMessage(parts...), true
+	}
+	if len(parts) > 0 {
+		return anthropic.NewAssistantMessage(parts...), true
+	}
+	return anthropic.MessageParam{}, false
+}
+
+// reasoningToContentBlock converts a captured ReasoningBlock back into the
+// Anthropic content block union used for replay: a visible ThinkingBlockParam
+// when not redacted, or an opaque RedactedThinkingBlockParam otherwise. Both
+// must be replayed byte-for-byte — never inspected or modified.
+func reasoningToContentBlock(r *llm.ReasoningBlock) anthropic.ContentBlockParamUnion {
+	if r.Redacted {
+		return anthropic.ContentBlockParamUnion{
+			OfRedactedThinking: &anthropic.RedactedThinkingBlockParam{Data: r.Signature},
+		}
+	}
+	return anthropic.ContentBlockParamUnion{
+		OfThinking: &anthropic.ThinkingBlockParam{
+			Signature: r.Signature,
+			Thinking:  r.Text,
+		},
+	}
 }
 
 func parseInputSchema(raw json.RawMessage, logger logr.Logger) anthropic.ToolInputSchemaParam {
@@ -301,6 +342,18 @@ func (c *Client) mapResponse(msg *anthropic.Message) llm.ChatResponse {
 				Name:      tu.Name,
 				Arguments: string(tu.Input),
 			})
+		case "thinking":
+			tb := block.AsThinking()
+			resp.Message.Reasoning = &llm.ReasoningBlock{
+				Text:      tb.Thinking,
+				Signature: tb.Signature,
+			}
+		case "redacted_thinking":
+			rtb := block.AsRedactedThinking()
+			resp.Message.Reasoning = &llm.ReasoningBlock{
+				Signature: rtb.Data,
+				Redacted:  true,
+			}
 		}
 	}
 	resp.Message.Content = strings.Join(textParts, "")
