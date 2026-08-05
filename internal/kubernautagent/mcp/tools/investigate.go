@@ -141,13 +141,44 @@ type TimeoutTracker interface {
 	StartTracking(sessionID string, notify func(msg string))
 	ResetInactivity(sessionID string)
 	StopTracking(sessionID string)
+	// SetActiveCancel and ClearActiveCancel cascade session-inactivity
+	// expiry into cancellation of an in-flight action's context (BR-KA-267,
+	// #1949) — see withInactivityCancel below and mcp.TimeoutManager's
+	// implementation for the full rationale.
+	SetActiveCancel(sessionID string, cancel context.CancelFunc)
+	ClearActiveCancel(sessionID string)
+}
+
+// withInactivityCancel derives a cancellable context from ctx and registers
+// its CancelFunc with the timeout tracker so that, if sessionID's inactivity
+// timer expires while this action is still in flight, the action's context
+// is actively torn down instead of the goroutine running unbounded past
+// session expiry (BR-KA-267, #1949 — the TimeoutManager's inactivity clock
+// previously had no way to reach into an in-flight tool call/LLM loop).
+//
+// The returned cleanup func MUST be called (via defer) by every caller once
+// the guarded action completes, on every return path: it clears the
+// registration first (so a session reused for a later, unrelated action
+// never invokes a stale CancelFunc) and then cancels the derived context to
+// free its resources.
+func (t *InvestigateTool) withInactivityCancel(ctx context.Context, sessionID string) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	if t.timeoutTracker != nil {
+		t.timeoutTracker.SetActiveCancel(sessionID, cancel)
+	}
+	return ctx, func() {
+		if t.timeoutTracker != nil {
+			t.timeoutTracker.ClearActiveCancel(sessionID)
+		}
+		cancel()
+	}
 }
 
 // NopAutonomousManager is a no-op implementation for tests that exercise
 // actions unrelated to autonomous session management (start, message, etc.).
 type NopAutonomousManager struct{}
 
-func (NopAutonomousManager) FindByRemediationID(string) (string, bool)                  { return "", false }
+func (NopAutonomousManager) FindByRemediationID(string) (string, bool)                   { return "", false }
 func (NopAutonomousManager) CancelInvestigation(string) error                            { return nil }
 func (NopAutonomousManager) SuspendInvestigation(string) error                           { return nil }
 func (NopAutonomousManager) TransitionToUserDriving(string, string, []string) error      { return nil }
@@ -155,7 +186,9 @@ func (NopAutonomousManager) ForceTransitionToUserDriving(string, string, []strin
 func (NopAutonomousManager) UpgradeToInteractive(string, string, []string) error         { return nil }
 func (NopAutonomousManager) FindPendingByRemediationID(string) (string, bool)            { return "", false }
 func (NopAutonomousManager) LaunchDeferredInvestigation(string) error                    { return nil }
-func (NopAutonomousManager) GetLatestRCASummaryByRemediationID(string) (string, bool)    { return "", false }
+func (NopAutonomousManager) GetLatestRCASummaryByRemediationID(string) (string, bool) {
+	return "", false
+}
 func (NopAutonomousManager) GetLatestRCAResultByRemediationID(string) (*katypes.InvestigationResult, bool) {
 	return nil, false
 }
@@ -171,22 +204,22 @@ func (NopAutonomousManager) GetSessionLazySink(string) (*session.LazySink, bool)
 // start, message, complete, cancel, takeover, discover_workflows.
 // BR-INTERACTIVE-001, BR-INTERACTIVE-004.
 type InvestigateTool struct {
-	sessions        mcpinternal.SessionManager
-	runner          InvestigatorRunner
-	recon           mcpinternal.ContextReconstructor
-	autoMgr         AutonomousSessionManager
-	httpCompleter   HTTPSessionCompleter
-	signalResolver  SignalContextResolver
-	rrChecker       RRExistenceChecker
-	catalog         WorkflowCatalog
-	metrics         ToolMetrics
-	rateLimiter     MessageRateLimiter
-	timeoutTracker  TimeoutTracker
-	auditStore      audit.AuditStore
-	logger          logr.Logger
-	notifyFn        func(sessionID, msg string) // optional: delivers timeout warnings to client
-	sessionMu       sync.Map                    // rrID -> *sync.Mutex (per-session serialization)
-	reconHistory    sync.Map                    // rrID -> []LLMMessage (reconstructed context for LLM)
+	sessions       mcpinternal.SessionManager
+	runner         InvestigatorRunner
+	recon          mcpinternal.ContextReconstructor
+	autoMgr        AutonomousSessionManager
+	httpCompleter  HTTPSessionCompleter
+	signalResolver SignalContextResolver
+	rrChecker      RRExistenceChecker
+	catalog        WorkflowCatalog
+	metrics        ToolMetrics
+	rateLimiter    MessageRateLimiter
+	timeoutTracker TimeoutTracker
+	auditStore     audit.AuditStore
+	logger         logr.Logger
+	notifyFn       func(sessionID, msg string) // optional: delivers timeout warnings to client
+	sessionMu      sync.Map                    // rrID -> *sync.Mutex (per-session serialization)
+	reconHistory   sync.Map                    // rrID -> []LLMMessage (reconstructed context for LLM)
 }
 
 // InvestigateOption configures optional dependencies for InvestigateTool.
@@ -583,6 +616,13 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	t.emitInteractiveStarted(sess.SessionID, input.RRID, user.Username)
 	t.startTimeoutTracking(sess.SessionID)
 
+	// BR-KA-267, #1949: cascade session-inactivity expiry into cancellation
+	// of the context-reconstruction call below (a DataStorage-backed read
+	// that can stall), consistent with the other interactive-session
+	// handlers that drive a potentially long-running call under this Lease.
+	ctx, cancelInactivity := t.withInactivityCancel(ctx, sess.SessionID)
+	defer cancelInactivity()
+
 	reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
 	contextSummary := fmt.Sprintf("%d prior turns reconstructed", reconCount)
 
@@ -632,6 +672,13 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 	if t.timeoutTracker != nil {
 		t.timeoutTracker.ResetInactivity(sess.SessionID)
 	}
+
+	// BR-KA-267, #1949: cascade session-inactivity expiry into cancellation
+	// of this handler's in-flight context, so a stuck LLM/tool call cannot
+	// outlive the interactive session's stated inactivity bound.
+	var cancelInactivity func()
+	ctx, cancelInactivity = t.withInactivityCancel(ctx, sess.SessionID)
+	defer cancelInactivity()
 
 	// F9 / #1374: Attach signal context for PhaseRCA tool parity with
 	// the autonomous path. Future tools may read SignalContextFromContext.
@@ -833,6 +880,14 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	if t.timeoutTracker != nil {
 		t.timeoutTracker.ResetInactivity(sess.SessionID)
 	}
+
+	// BR-KA-267, #1949: cascade session-inactivity expiry into cancellation
+	// of this handler's in-flight context, so a stuck dependency call (e.g.
+	// a catalog read or LLM tool dispatch) cannot outlive the interactive
+	// session's stated inactivity bound and leak a goroutine.
+	var cancelInactivity func()
+	ctx, cancelInactivity = t.withInactivityCancel(ctx, sess.SessionID)
+	defer cancelInactivity()
 
 	// Step 1: Obtain the structured RCA result for Phase 3 workflow discovery.
 	//

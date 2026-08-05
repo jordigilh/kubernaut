@@ -282,8 +282,9 @@ func (c *cancelLifecycleHTTPCompleter) forceCompleteCalled() bool {
 
 // mockTimeoutTracker tracks StopTracking calls.
 type mockTimeoutTracker struct {
-	mu        sync.Mutex
-	sessionID string
+	mu            sync.Mutex
+	sessionID     string
+	activeCancels map[string]context.CancelFunc
 }
 
 func (t *mockTimeoutTracker) StartTracking(_ string, _ func(string)) {}
@@ -296,9 +297,35 @@ func (t *mockTimeoutTracker) StopTracking(sessionID string) {
 
 func (t *mockTimeoutTracker) ResetInactivity(_ string) {}
 
+func (t *mockTimeoutTracker) SetActiveCancel(sessionID string, cancel context.CancelFunc) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.activeCancels == nil {
+		t.activeCancels = make(map[string]context.CancelFunc)
+	}
+	t.activeCancels[sessionID] = cancel
+}
+
+func (t *mockTimeoutTracker) ClearActiveCancel(sessionID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.activeCancels, sessionID)
+}
+
+// simulateExpiry invokes the CancelFunc registered via SetActiveCancel for
+// sessionID (if any), standing in for mcp.TimeoutManager's real inactivity
+// timer firing (BR-KA-267, #1949).
+func (t *mockTimeoutTracker) simulateExpiry(sessionID string) {
+	t.mu.Lock()
+	cancel := t.activeCancels[sessionID]
+	t.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+}
+
 func (t *mockTimeoutTracker) stoppedSessionID() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.sessionID
 }
-
