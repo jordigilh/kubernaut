@@ -198,4 +198,86 @@ var _ = Describe("SARChecker", func() {
 			Expect(allowed).To(BeFalse(), "AC 5: fail-closed on invalid input")
 		})
 	})
+
+	Describe("UT-AF-1919-001: CheckConsoleAccess allowed [AC-3]", func() {
+		It("should return true when SAR allows kubernaut.ai/console use", func() {
+			fakeK8s.PrependReactor("create", "subjectaccessreviews", allowAll)
+			checker = auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
+
+			allowed, err := checker.CheckConsoleAccess(ctx, "alice", []string{"sre"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(allowed).To(BeTrue(), "AC-3: console access should be granted when SAR allows")
+		})
+	})
+
+	Describe("UT-AF-1919-002: CheckConsoleAccess denied [AC-3]", func() {
+		It("should return false when SAR denies kubernaut.ai/console use", func() {
+			fakeK8s.PrependReactor("create", "subjectaccessreviews", denyAll)
+			checker = auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
+
+			allowed, err := checker.CheckConsoleAccess(ctx, "viewer", []string{"observability"})
+			Expect(err).NotTo(HaveOccurred(), "AC-3: denial is not an error")
+			Expect(allowed).To(BeFalse(), "AC-3: console access should be denied when SAR denies")
+		})
+	})
+
+	Describe("UT-AF-1919-003: CheckConsoleAccess fail-closed on empty user [AC-3]", func() {
+		It("should reject empty user as input validation", func() {
+			checker = auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
+
+			allowed, err := checker.CheckConsoleAccess(ctx, "", []string{"sre"})
+			Expect(err).To(HaveOccurred(), "AC-3: empty user must be rejected")
+			Expect(allowed).To(BeFalse(), "AC-3: fail-closed on invalid input")
+		})
+	})
+
+	Describe("UT-AF-1919-004: CheckConsoleAccess fail-closed on SAR API error [AC-3]", func() {
+		It("should return false and an error when SAR API fails", func() {
+			fakeK8s.PrependReactor("create", "subjectaccessreviews", failAll)
+			checker = auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
+
+			allowed, err := checker.CheckConsoleAccess(ctx, "alice", []string{"sre"})
+			Expect(err).To(HaveOccurred(), "AC-3: API error should be propagated")
+			Expect(allowed).To(BeFalse(), "AC-3: fail-closed — API error must deny access")
+		})
+	})
+
+	Describe("UT-AF-1919-005: CheckConsoleAccess SAR request shape [AC-3]", func() {
+		It("should build a SAR for the coarse-grained console resource, not a named tool", func() {
+			fakeK8s.PrependReactor("create", "subjectaccessreviews", allowAll)
+			checker = auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
+
+			_, err := checker.CheckConsoleAccess(ctx, "alice@corp.com", []string{"sre", "system:authenticated"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(lastSAR).NotTo(BeNil(), "AC-3: SAR request should have been captured")
+			Expect(lastSAR.Spec.User).To(Equal("alice@corp.com"))
+			Expect(lastSAR.Spec.Groups).To(ConsistOf("sre", "system:authenticated"))
+			Expect(lastSAR.Spec.ResourceAttributes).NotTo(BeNil())
+			Expect(lastSAR.Spec.ResourceAttributes.Verb).To(Equal("use"), "verb must be 'use'")
+			Expect(lastSAR.Spec.ResourceAttributes.Group).To(Equal("kubernaut.ai"), "apiGroup must be 'kubernaut.ai'")
+			Expect(lastSAR.Spec.ResourceAttributes.Resource).To(Equal("console"), "resource must be 'console', distinct from 'tools'")
+			Expect(lastSAR.Spec.ResourceAttributes.Name).To(Equal(""), "console access is a coarse-grained, unnamed resource")
+		})
+	})
+
+	Describe("UT-AF-1919: tools and console SAR cache entries do not collide", func() {
+		It("should call the SAR API separately for Check(tools) and CheckConsoleAccess even with identical user/groups", func() {
+			callCount := atomic.Int32{}
+			fakeK8s.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				callCount.Add(1)
+				createAction := action.(k8stesting.CreateAction)
+				sar := createAction.GetObject().(*authorizationv1.SubjectAccessReview)
+				sar.Status = authorizationv1.SubjectAccessReviewStatus{Allowed: true}
+				return true, sar, nil
+			})
+			checker = auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
+
+			_, _ = checker.Check(ctx, "alice", []string{"sre"}, "kubernaut_approve")
+			_, _ = checker.CheckConsoleAccess(ctx, "alice", []string{"sre"})
+
+			Expect(callCount.Load()).To(Equal(int32(2)),
+				"AC-3: tools and console checks for the same user/groups must be cached independently")
+		})
+	})
 })

@@ -585,6 +585,22 @@ func checkRBAC(ctx context.Context, cfg *MCPBridgeConfig, toolName string) error
 		return fmt.Errorf("permission denied: no authorizer configured")
 	}
 
+	// #1919 (AC-3, AC-6): console access is a separate, coarser-grained gate
+	// than per-tool authorization, enforced here (not just at the advisory
+	// GET /a2a/access endpoint) so a client that never calls that endpoint
+	// cannot bypass it. Optional-interface type-assertion: authorizers that
+	// don't implement ConsoleAuthorizer (all pre-existing test doubles) skip
+	// this check and fall through to the per-tool check unchanged.
+	if ca, ok := cfg.Authorizer.(auth.ConsoleAuthorizer); ok {
+		consoleAllowed, cErr := ca.CheckConsoleAccess(ctx, user.Username, user.Groups)
+		if cErr != nil {
+			return fmt.Errorf("permission denied: console access check failed: %w", cErr)
+		}
+		if !consoleAllowed {
+			return fmt.Errorf("permission denied: no console access")
+		}
+	}
+
 	allowed, err := cfg.Authorizer.Check(ctx, user.Username, user.Groups, toolName)
 	if err != nil {
 		return fmt.Errorf("permission denied: authorization check failed for %s: %w", toolName, err)

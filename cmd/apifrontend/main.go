@@ -676,19 +676,31 @@ func buildRouterConfig(p routerBuildParams) (handler.RouterConfig, http.Handler,
 		statusHandler = handler.NewStatusHandler(p.HDeps.Backends.TypedClient(), cfg.Session.Namespace, logger)
 	}
 
+	// #1919: GET /a2a/access is only registered when the configured
+	// Authorizer also implements ConsoleAuthorizer. Production always
+	// constructs *auth.SARChecker (see buildSARClient), which satisfies both
+	// interfaces at compile time (sar.go's `var _ auth.ConsoleAuthorizer =
+	// (*SARChecker)(nil)`); the assertion only ever fails for a
+	// ToolAuthorizer-only test double.
+	var consoleAccessHandler http.Handler
+	if ca, ok := p.HDeps.Authorizer.(auth.ConsoleAuthorizer); ok {
+		consoleAccessHandler = handler.NewConsoleAccessHandler(ca, p.HDeps.Auditor, logger)
+	}
+
 	routerCfg := handler.RouterConfig{
-		MetricsRegistry:    metricsReg,
-		Logger:             logger,
-		A2AHandler:         p.A2AHandler,
-		MCPHandler:         p.MCPHandler,
-		AgentCardHandler:   p.AgentCardHandler,
-		AuthMiddleware:     p.AuthMiddleware,
-		PreAuthMiddleware:  p.PreAuthMW,
-		PostAuthMiddleware: p.PostAuthMW,
-		ReadyChecker:       handler.AllReady(func() bool { return !p.Draining.Load() }, p.DepsReady, p.AuthReady, sessInfra.Healthy.Load),
-		SSETracker:         buildSSETracker(cfg, metricsReg),
-		StatusHandler:      statusHandler,
-		Draining:           p.Draining,
+		MetricsRegistry:      metricsReg,
+		Logger:               logger,
+		A2AHandler:           p.A2AHandler,
+		MCPHandler:           p.MCPHandler,
+		AgentCardHandler:     p.AgentCardHandler,
+		AuthMiddleware:       p.AuthMiddleware,
+		PreAuthMiddleware:    p.PreAuthMW,
+		PostAuthMiddleware:   p.PostAuthMW,
+		ReadyChecker:         handler.AllReady(func() bool { return !p.Draining.Load() }, p.DepsReady, p.AuthReady, sessInfra.Healthy.Load),
+		SSETracker:           buildSSETracker(cfg, metricsReg),
+		StatusHandler:        statusHandler,
+		ConsoleAccessHandler: consoleAccessHandler,
+		Draining:             p.Draining,
 	}
 	router, err := handler.NewRouter(routerCfg)
 	if err != nil {

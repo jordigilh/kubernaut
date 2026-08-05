@@ -254,61 +254,90 @@ func NewRBACGuardForTest(authorizer auth.ToolAuthorizer, auditor audit.Emitter) 
 	return newRBACGuard(authorizer, auditor)
 }
 
+// denyRBACGuard emits an EventAuthAccessDenied audit event (AU-12, if auditor
+// is non-nil) and logs the denial, mirroring denyRBAC's contract in
+// mcp_bridge.go for the A2A tool-calling path. userID may be empty (no
+// identity yet resolved).
+func denyRBACGuard(ctx tool.Context, auditor audit.Emitter, toolName, userID, reason string, groups []string, logErr error) {
+	logger := logr.FromContextOrDiscard(ctx)
+	if logErr != nil {
+		logger.Error(logErr, "rbac-guard denied tool", "tool", toolName, "user", userID, "reason", reason)
+	} else {
+		logger.Info("rbac-guard denied tool", "tool", toolName, "user", userID, "reason", reason)
+	}
+	if auditor == nil {
+		return
+	}
+	detail := map[string]string{
+		"tool_name": toolName,
+		"endpoint":  "a2a",
+	}
+	if reason != "" {
+		detail["reason"] = reason
+	}
+	if groups != nil {
+		detail["groups"] = strings.Join(groups, ",")
+	}
+	auditor.Emit(ctx, &audit.Event{
+		Type:   audit.EventAuthAccessDenied,
+		UserID: userID,
+		Detail: detail,
+	})
+}
+
+// checkConsoleAccessGuard enforces the #1919 (AC-3, AC-6) coarse-grained
+// console-access gate for the A2A tool-calling path: a separate, coarser gate
+// than per-tool authorization, enforced here (not just at the advisory
+// GET /a2a/access endpoint) so a client driving the A2A tool-calling loop
+// directly cannot bypass it. Optional-interface type-assertion: authorizers
+// that don't implement ConsoleAuthorizer (all pre-existing test doubles) skip
+// this check unchanged (result == nil, ok == true). Returns the guard's
+// terminal result (non-nil) when access is denied or the check errors.
+func checkConsoleAccessGuard(ctx tool.Context, authorizer auth.ToolAuthorizer, auditor audit.Emitter, identity *auth.UserIdentity, toolName string) (result map[string]any, ok bool) {
+	ca, isConsoleAuthorizer := authorizer.(auth.ConsoleAuthorizer)
+	if !isConsoleAuthorizer {
+		return nil, true
+	}
+
+	consoleAllowed, cErr := ca.CheckConsoleAccess(ctx, identity.Username, identity.Groups)
+	if cErr != nil {
+		denyRBACGuard(ctx, auditor, toolName, identity.Username, "console_authorizer_error", identity.Groups, cErr)
+		return map[string]any{"error": "authorization check failed: console access"}, false
+	}
+	if !consoleAllowed {
+		denyRBACGuard(ctx, auditor, toolName, identity.Username, "console_access_denied", identity.Groups, nil)
+		return map[string]any{"error": "forbidden: no console access"}, false
+	}
+	return nil, true
+}
+
 // newRBACGuard returns a BeforeToolCallback that enforces RBAC via SAR.
 // Fail-closed: if no identity, authorizer error, or denial, the tool call is rejected.
 // Denied attempts are emitted as audit events for FedRAMP SI-4 compliance.
 func newRBACGuard(authorizer auth.ToolAuthorizer, auditor audit.Emitter) llmagent.BeforeToolCallback {
 	return func(ctx tool.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
+		toolName := t.Name()
+
 		identity := auth.UserIdentityFromContext(ctx)
 		if identity == nil {
-			logr.FromContextOrDiscard(ctx).Info("rbac-guard denied tool", "tool", t.Name(), "reason", "no_identity_in_context")
-			if auditor != nil {
-				auditor.Emit(ctx, &audit.Event{
-					Type: audit.EventAuthAccessDenied,
-					Detail: map[string]string{
-						"tool_name": t.Name(),
-						"endpoint":  "a2a",
-						"reason":    "no_identity_in_context",
-					},
-				})
-			}
+			denyRBACGuard(ctx, auditor, toolName, "", "no_identity_in_context", nil, nil)
 			return map[string]any{"error": "unauthorized: no identity in context"}, nil
 		}
 
-		toolName := t.Name()
+		if result, ok := checkConsoleAccessGuard(ctx, authorizer, auditor, identity, toolName); !ok {
+			return result, nil
+		}
+
 		allowed, err := authorizer.Check(ctx, identity.Username, identity.Groups, toolName)
 		if err != nil {
-			logr.FromContextOrDiscard(ctx).Error(err, "rbac-guard denied tool", "tool", toolName, "user", identity.Username, "reason", "authorizer_error")
-			if auditor != nil {
-				auditor.Emit(ctx, &audit.Event{
-					Type:   audit.EventAuthAccessDenied,
-					UserID: identity.Username,
-					Detail: map[string]string{
-						"tool_name": toolName,
-						"endpoint":  "a2a",
-						"reason":    "authorizer_error",
-						"groups":    strings.Join(identity.Groups, ","),
-					},
-				})
-			}
+			denyRBACGuard(ctx, auditor, toolName, identity.Username, "authorizer_error", identity.Groups, err)
 			return map[string]any{"error": "authorization check failed"}, nil
 		}
 		if allowed {
 			return nil, nil
 		}
 
-		if auditor != nil {
-			auditor.Emit(ctx, &audit.Event{
-				Type:   audit.EventAuthAccessDenied,
-				UserID: identity.Username,
-				Detail: map[string]string{
-					"tool_name": toolName,
-					"endpoint":  "a2a",
-					"groups":    strings.Join(identity.Groups, ","),
-				},
-			})
-		}
-
+		denyRBACGuard(ctx, auditor, toolName, identity.Username, "", identity.Groups, nil)
 		return map[string]any{"error": fmt.Sprintf("forbidden: role does not grant access to tool %q", toolName)}, nil
 	}
 }

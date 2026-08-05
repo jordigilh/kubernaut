@@ -48,7 +48,7 @@ import (
 // The standalone SSE stream (GET) and session teardown (DELETE) are
 // tolerated with spec-permitted non-2xx responses, matching how a
 // stateless real-world MCP Gateway would answer them.
-func newFakeMCPServer(onInitialize func(w http.ResponseWriter, id json.RawMessage)) *httptest.Server {
+func newFakeMCPServer(onInitialize func(w http.ResponseWriter, r *http.Request, id json.RawMessage)) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
@@ -73,7 +73,7 @@ func newFakeMCPServer(onInitialize func(w http.ResponseWriter, id json.RawMessag
 		case "notifications/initialized", "notifications/cancelled":
 			w.WriteHeader(http.StatusAccepted)
 		case "initialize":
-			onInitialize(w, req.ID)
+			onInitialize(w, r, req.ID)
 		default:
 			w.WriteHeader(http.StatusNotImplemented)
 		}
@@ -186,7 +186,7 @@ var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 		It("should retry with exponential backoff until success", func() {
 			var attempts atomic.Int32
 
-			server := newFakeMCPServer(func(w http.ResponseWriter, id json.RawMessage) {
+			server := newFakeMCPServer(func(w http.ResponseWriter, _ *http.Request, id json.RawMessage) {
 				count := attempts.Add(1)
 				if count < 3 {
 					w.WriteHeader(http.StatusServiceUnavailable)
@@ -247,7 +247,7 @@ var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 	Context("UT-FLEET-RES-007 [readiness gate Wave 0]: Concurrent Reconnect() calls deduplicate", func() {
 		It("collapses overlapping Reconnect() calls into a single MCP handshake instead of racing (prevents leaked connections when a periodic readiness prober and the lazy reconnect-on-error path call Reconnect concurrently)", func() {
 			var handshakeCount atomic.Int32
-			server := newFakeMCPServer(func(w http.ResponseWriter, id json.RawMessage) {
+			server := newFakeMCPServer(func(w http.ResponseWriter, _ *http.Request, id json.RawMessage) {
 				handshakeCount.Add(1)
 				// Widen the overlap window so all concurrent Reconnect() callers
 				// below arrive before any single handshake completes.
@@ -324,6 +324,86 @@ var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 			Expect(os.WriteFile(secretFile, []byte("rotated"), 0o600)).To(Succeed())
 
 			time.Sleep(500 * time.Millisecond)
+		})
+	})
+
+	Context("UT-FLEET-RES-008 [CP-10]: connectWithBackoff bounds each attempt independently of caller deadline", func() {
+		It("returns instead of hanging forever when the server never responds to initialize (#1933-class hang)", func() {
+			// Never write an "initialize" response until the client gives up on
+			// its per-attempt deadline (post-fix) or a generous safety-net
+			// duration (pre-fix, proving the missing bound) -- whichever comes
+			// first, so the fake handler doesn't leak past the test.
+			server := newFakeMCPServer(func(_ http.ResponseWriter, r *http.Request, _ json.RawMessage) {
+				select {
+				case <-r.Context().Done():
+				case <-time.After(3 * time.Second):
+				}
+			})
+			defer server.Close()
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.ConnectTimeout = 150 * time.Millisecond
+			cfg.InitialInterval = 50 * time.Millisecond
+			cfg.MaxInterval = 50 * time.Millisecond
+			cfg.MaxElapsedTime = 150 * time.Millisecond
+
+			done := make(chan error, 1)
+			go func() {
+				_, err := mcpclient.NewResilient(context.Background(), server.URL+"/mcp", cfg, logger)
+				done <- err
+			}()
+
+			select {
+			case err := <-done:
+				Expect(err).To(HaveOccurred(),
+					"NewResilient should give up after exhausting bounded attempts against a permanently hanging server")
+			case <-time.After(1500 * time.Millisecond):
+				Fail("NewResilient did not return within 1.5s: a single hung connect attempt is blocking the " +
+					"entire backoff loop (issue #1934) instead of being bounded by ConnectTimeout")
+			}
+		})
+	})
+
+	Context("UT-FLEET-RES-009 [CP-10]: doReconnect bounds its attempt independently of caller deadline", func() {
+		It("returns instead of hanging forever when the server hangs on reconnect (#1933-class hang)", func() {
+			var attempts atomic.Int32
+			server := newFakeMCPServer(func(w http.ResponseWriter, r *http.Request, id json.RawMessage) {
+				if attempts.Add(1) == 1 {
+					// Initial connect (inside NewResilient below) succeeds immediately.
+					writeMCPInitializeResult(w, id)
+					return
+				}
+				// Every subsequent handshake (the Reconnect() under test) hangs.
+				select {
+				case <-r.Context().Done():
+				case <-time.After(3 * time.Second):
+				}
+			})
+			defer server.Close()
+
+			cfg := mcpclient.DefaultResilienceConfig()
+			cfg.ConnectTimeout = 150 * time.Millisecond
+			cfg.InitialInterval = 50 * time.Millisecond
+			cfg.MaxInterval = 50 * time.Millisecond
+			cfg.MaxElapsedTime = 500 * time.Millisecond
+
+			rc, err := mcpclient.NewResilient(context.Background(), server.URL+"/mcp", cfg, logger)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rc.Ready()).To(BeTrue())
+
+			done := make(chan error, 1)
+			go func() {
+				done <- rc.Reconnect(context.Background())
+			}()
+
+			select {
+			case err := <-done:
+				Expect(err).To(HaveOccurred(),
+					"Reconnect should fail promptly when the server hangs on the handshake, instead of blocking forever")
+			case <-time.After(1 * time.Second):
+				Fail("Reconnect did not return within 1s: doReconnect's single connect attempt has no bound " +
+					"when the caller supplies no deadline (issue #1934)")
+			}
 		})
 	})
 })

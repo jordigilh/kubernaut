@@ -953,6 +953,26 @@ apifrontend:
           - kubernaut_get_remediation
           - kubernaut_watch
           - kubernaut_await_session
+      # -- #1919 (AC-3/AC-6): OIDC groups granted the coarse-grained
+      # kubernaut-console-access ClusterRole (kubernaut.ai/console, verb=use).
+      # A separate, independently-auditable grant from the per-tool
+      # `personas` above -- NOT rendered *from* them (an operator can revoke
+      # console access from a group without touching its tool grants) -- but
+      # defaulted to *every* group listed in `personas`, per the issue's own
+      # guidance ("bind it to the same groups that get any tool access") and
+      # its explicit non-goal of weakening existing per-tool grants: checkRBAC
+      # and newRBACGuard enforce this gate on *every* tool call (not just
+      # console-UI ones, to close the direct-/mcp-or-/a2a-invoke bypass), so a
+      # persona/group omitted here would silently lose all its `personas`
+      # tool access too. Edit freely -- e.g. remove a group here to make it
+      # console-access-only.
+      consoleAccessGroups:
+        - sre
+        - ai-orchestrator
+        - cicd
+        - observability
+        - l3-audit
+        - remediation-approver
   resources:
     requests:
       memory: 64Mi

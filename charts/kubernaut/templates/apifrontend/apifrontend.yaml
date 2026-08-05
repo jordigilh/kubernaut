@@ -458,6 +458,42 @@ rules:
       {{- end }}
 {{- end }}
 ---
+# #1919 (AC-3/AC-6): coarse-grained console-access gate, deliberately a
+# separate, independently-auditable grant from the per-tool ClusterRoles
+# above (not derived from them) -- operators grant "console access" and
+# "tool access" as two explicit steps. Enforced server-side at every
+# tool-invocation site (checkRBAC/newRBACGuard), not just the advisory
+# GET /a2a/access endpoint.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubernaut-console-access
+  labels:
+    kubernaut.ai/component: console-authorization
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["console"]
+    verbs: ["use"]
+{{- range .Values.apifrontend.config.rbac.consoleAccessGroups }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubernaut-console-access-{{ . }}
+  labels:
+    kubernaut.ai/component: console-authorization
+    {{- include "kubernaut.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubernaut-console-access
+subjects:
+  - kind: Group
+    name: {{ . }}
+    apiGroup: rbac.authorization.k8s.io
+{{- end }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:

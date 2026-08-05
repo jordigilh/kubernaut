@@ -28,7 +28,11 @@ type RouterConfig struct {
 	MaxPayloadBytes    int64
 	SSETracker         *streaming.ConnectionTracker
 	StatusHandler      http.Handler
-	Draining           *atomic.Bool
+	// ConsoleAccessHandler serves GET /a2a/access (#1919), an advisory
+	// pre-flight check for the console/chat client. Registered only when
+	// non-nil, same authenticated middleware tier as StatusHandler.
+	ConsoleAccessHandler http.Handler
+	Draining             *atomic.Bool
 }
 
 func (c *RouterConfig) validate() error {
@@ -117,6 +121,18 @@ func NewRouter(cfg RouterConfig) (http.Handler, error) { //nolint:gocritic // hu
 			statusChain = cfg.PreAuthMiddleware(statusChain)
 		}
 		mux.Handle("POST /a2a/status", statusChain)
+	}
+
+	if cfg.ConsoleAccessHandler != nil {
+		innerConsoleAccess := writeDeadlineMiddleware(cfg.ConsoleAccessHandler)
+		if cfg.PostAuthMiddleware != nil {
+			innerConsoleAccess = cfg.PostAuthMiddleware(innerConsoleAccess)
+		}
+		consoleAccessChain := cfg.AuthMiddleware(innerConsoleAccess)
+		if cfg.PreAuthMiddleware != nil {
+			consoleAccessChain = cfg.PreAuthMiddleware(consoleAccessChain)
+		}
+		mux.Handle("GET /a2a/access", consoleAccessChain)
 	}
 
 	recoverLogger := cfg.Logger
