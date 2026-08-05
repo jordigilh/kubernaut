@@ -57,25 +57,25 @@ import (
 	sharedtransport "github.com/jordigilh/kubernaut/pkg/shared/transport"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
-	"github.com/jordigilh/kubernaut/internal/version"
-	kaapi "github.com/jordigilh/kubernaut/internal/kubernautagent/api"
 	alignprompt "github.com/jordigilh/kubernaut/internal/kubernautagent/alignment/prompt"
+	kaapi "github.com/jordigilh/kubernaut/internal/kubernautagent/api"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/enrichment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
-	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	mcpkg "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcpadapters "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/adapters"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	kametrics "github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	dsschema "github.com/jordigilh/kubernaut/pkg/datastorage/schema"
+	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
+	"github.com/jordigilh/kubernaut/internal/version"
+	dsschema "github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/investigation"
 	k8stools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
 	logtools "github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/logs"
@@ -346,6 +346,9 @@ func main() {
 		Metrics:       agentMetrics,
 		PhaseResolver: phaseResolver,
 		PinDecorator:  pinDecorator,
+		// BR-KA-267, #1949: bound tool-call execution so a stuck dependency
+		// call cannot hang an investigation goroutine indefinitely.
+		ToolCallTimeout: cfg.AI.Safety.ToolCallTimeout,
 		Pipeline: investigator.Pipeline{
 			Sanitizer:         sanitizer,
 			AnomalyDetector:   anomalyDetector,
@@ -1250,8 +1253,6 @@ func buildMCPHandler(
 		logger.Error(nil, "MCP interactive mode: investigator unavailable")
 		return nil, nil
 	}
-
-	
 
 	// SEC-07: Build controller-runtime client with MCP-specific timeouts.
 	// Scheme includes remediationv1 for RR existence validation (HARM-004)

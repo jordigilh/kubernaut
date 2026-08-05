@@ -44,6 +44,21 @@ import (
 
 const maxSelfCorrectionAttempts = 3
 
+// DefaultToolCallTimeout bounds a single LLM-requested tool call dispatched
+// from runLLMLoop's errgroup tool-dispatch block when Config.ToolCallTimeout
+// is unset (zero value), mirroring the AnomalyDetector nil-fallback below
+// (BR-KA-267, #1949).
+const DefaultToolCallTimeout = 60 * time.Second
+
+// DefaultLLMCallTimeout bounds a single streaming LLM call dispatched from
+// chatOrStream when RuntimeParams.TimeoutSeconds is unset/non-positive
+// (BR-KA-267, #1949). Previously that condition left the call with no
+// deadline at all — the parent ctx was passed through unbounded — so a
+// stalled provider connection hung the investigation goroutine indefinitely.
+// The value mirrors types.DefaultLLMTimeoutSeconds, the equivalent fallback
+// already used by the non-streaming ChatWithParams/HTTP-client call chains.
+const DefaultLLMCallTimeout = 120 * time.Second
+
 // Diagnostic counters for emitToSink — temporary, remove after RCA.
 var (
 	diagSendOK   atomic.Int64
@@ -237,6 +252,10 @@ type Config struct {
 	// this resolver instead of using the legacy single-pin pattern.
 	// When nil, falls back to legacy Swappable + PinDecorator behavior.
 	PhaseResolver PhaseClientResolver
+	// ToolCallTimeout bounds a single LLM-requested tool call dispatched from
+	// runLLMLoop's errgroup tool-dispatch block (BR-KA-267, #1949). Zero
+	// falls back to DefaultToolCallTimeout in New().
+	ToolCallTimeout time.Duration
 }
 
 // Investigator orchestrates the two-invocation architecture:
@@ -265,6 +284,9 @@ type Investigator struct {
 	// config template; production code must go through anomalyDetectorFor
 	// rather than pipeline.AnomalyDetector directly.
 	anomalyScope *anomalyScope
+	// toolCallTimeout mirrors Config.ToolCallTimeout; see its doc comment
+	// (BR-KA-267, #1949). Always non-zero after New().
+	toolCallTimeout time.Duration
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
@@ -306,6 +328,10 @@ func New(cfg Config) *Investigator {
 	if pipeline.AnomalyDetector == nil {
 		pipeline.AnomalyDetector = NewAnomalyDetector(DefaultAnomalyConfig(), nil)
 	}
+	toolCallTimeout := cfg.ToolCallTimeout
+	if toolCallTimeout <= 0 {
+		toolCallTimeout = DefaultToolCallTimeout
+	}
 	return &Investigator{
 		client:        cfg.Client,
 		builder:       cfg.Builder,
@@ -327,6 +353,7 @@ func New(cfg Config) *Investigator {
 			template: pipeline.AnomalyDetector,
 			entries:  make(map[string]*anomalyDetectorEntry),
 		},
+		toolCallTimeout: toolCallTimeout,
 	}
 }
 
@@ -1474,7 +1501,14 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 					"tool_index": i,
 				})
 				g.Go(func() error {
-					toolResults[i] = inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments), correlationID)
+					// BR-KA-267, #1949: bound each tool call so a stuck
+					// dependency (e.g. a K8s informer-cache read or
+					// DataStorage call) cannot hang this goroutine
+					// indefinitely — g.Wait() below previously had no
+					// deadline at all.
+					toolCtx, cancel := context.WithTimeout(ctx, inv.toolCallTimeout)
+					defer cancel()
+					toolResults[i] = inv.executeTool(toolCtx, tc.Name, json.RawMessage(tc.Arguments), correlationID)
 					return nil
 				})
 			}
@@ -1580,11 +1614,17 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 	var attempts int
 	resp, err := llm.RetryWithBackoff(ctx, maxAttempts, bo, func(int) llm.AttemptResult[llm.ChatResponse] {
 		attempts++
-		callCtx := ctx
-		var cancel context.CancelFunc
-		if runtimeParams.TimeoutSeconds > 0 {
-			callCtx, cancel = context.WithTimeout(ctx, time.Duration(runtimeParams.TimeoutSeconds)*time.Second)
+		// BR-KA-267, #1949: a timeout is applied unconditionally, never the
+		// bare (potentially unbounded) parent ctx — RuntimeParams.TimeoutSeconds
+		// <= 0 (unset/misconfigured) previously left this streaming call with
+		// no deadline at all, so a stalled connection hung the goroutine
+		// running it indefinitely. DefaultLLMCallTimeout mirrors the
+		// production default configured via llm.DefaultRuntimeParams.
+		timeout := time.Duration(runtimeParams.TimeoutSeconds) * time.Second
+		if timeout <= 0 {
+			timeout = DefaultLLMCallTimeout
 		}
+		callCtx, cancel := context.WithTimeout(ctx, timeout)
 
 		// eventSent tracks whether this attempt's callback has already
 		// forwarded a token delta to the sink. Once true, a retry is never
@@ -1603,9 +1643,7 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 			return nil
 		})
 
-		if cancel != nil {
-			cancel()
-		}
+		cancel()
 
 		return llm.AttemptResult[llm.ChatResponse]{Value: resp, Err: err, SafeToRetry: !eventSent && llm.IsRetryable(err)}
 	})
