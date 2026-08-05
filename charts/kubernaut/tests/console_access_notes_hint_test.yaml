@@ -1,0 +1,74 @@
+suite: "#1919/#1943: NOTES.txt warns when a personas group is missing from consoleAccessGroups"
+templates:
+  - templates/NOTES.txt
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "default values (all 6 built-in personas already in consoleAccessGroups): hint is absent"
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "RBAC WARNING: console-access gate"
+
+  - it: "a custom persona group added, consoleAccessGroups left unchanged: hint lists the ungranted group"
+    set:
+      apifrontend:
+        config:
+          rbac:
+            personas:
+              custom-team:
+                - kubernaut_status
+    asserts:
+      - matchRegexRaw:
+          pattern: "RBAC WARNING: console-access gate \\(#1919\\)"
+      - matchRegexRaw:
+          pattern: "- custom-team"
+      - matchRegexRaw:
+          pattern: "ALL tool calls denied until you add them to consoleAccessGroups"
+
+  - it: "a custom persona group added AND added to consoleAccessGroups: hint is absent"
+    set:
+      apifrontend:
+        config:
+          rbac:
+            personas:
+              custom-team:
+                - kubernaut_status
+            consoleAccessGroups:
+              - sre
+              - ai-orchestrator
+              - cicd
+              - observability
+              - l3-audit
+              - remediation-approver
+              - custom-team
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "RBAC WARNING: console-access gate"
+
+  - it: "apifrontend.enabled=false (console also disabled, its dependency): hint is absent regardless of personas/consoleAccessGroups mismatch"
+    set:
+      apifrontend:
+        enabled: false
+      console:
+        enabled: false
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "RBAC WARNING: console-access gate"

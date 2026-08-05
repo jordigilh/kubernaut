@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Misleading `vertex_ai` + Gemini chart docs/examples (#1793)** — `charts/kubernaut`'s README and values examples suggested `gemini-2.5-pro` worked under `provider: vertex_ai` when it did not; now genuinely supported and covered by Helm + Go wiring tests.
 - **`GOOGLE_APPLICATION_CREDENTIALS` no longer statically declared in API Frontend's Deployment (#1801)** — This credential-adjacent env var was previously rendered as a static `env:` entry whenever `provider: vertex_ai` was configured, visible via `kubectl get pod -o yaml` to anyone with pod-read RBAC. It's now injected in-process at construction time (`pkg/apifrontend/launcher.InjectAmbientGoogleCredentials`) only for the model families whose SDK has no explicit-credentials-bytes option, matching Kubernaut Agent's and the HolmesGPT API predecessor's precedent. API Frontend's Gemini-on-Vertex path now authenticates with explicit credential bytes end-to-end, touching zero env vars.
 
+### Security
+
+- **`consoleAccessGroups` upgrade-safety warning (#1919, #1943, AC-3/AC-6)** — PR #1940 added a coarse-grained `kubernaut.ai/console` "use" SAR grant, enforced server-side at both AF tool-invocation paths (`/mcp` and `/a2a/invoke`) in addition to the pre-existing per-tool `kubernaut.ai/tools` check, defaulting `apifrontend.config.rbac.consoleAccessGroups` to all six built-in personas. Since `consoleAccessGroups` is a separate, independently-maintained values key rather than being derived from `apifrontend.config.rbac.personas`'s keys, an operator who configured a custom persona group (or replaced the defaults) would silently have every AF tool call denied for that group after upgrading, even though its per-tool grants are unchanged. `helm install`/`helm upgrade` now prints a `NOTES.txt` warning listing any `personas` group missing from `consoleAccessGroups` to catch this at deploy time.
+
 ## [1.5.2] - 2026-06-24
 
 ### Added
