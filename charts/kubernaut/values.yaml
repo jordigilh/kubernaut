@@ -953,6 +953,21 @@ apifrontend:
           - kubernaut_get_remediation
           - kubernaut_watch
           - kubernaut_await_session
+      # -- #1919 (AC-3/AC-6): OIDC groups granted the coarse-grained
+      # kubernaut-console-access ClusterRole (kubernaut.ai/console, verb=use).
+      # A deliberately separate, independently-auditable grant from the
+      # per-tool `personas` above -- NOT derived from them, so an operator
+      # must explicitly opt a group into console/chat access even if that
+      # group already has tool grants. Enforced both by the advisory
+      # GET /a2a/access endpoint and, more importantly, server-side inside
+      # every tool-call path (checkRBAC/newRBACGuard), so a client that never
+      # calls /a2a/access still cannot bypass the gate. Defaults to the same
+      # groups the E2E RBAC already grants tool access to; edit freely.
+      consoleAccessGroups:
+        - sre
+        - ai-orchestrator
+        - observability
+        - remediation-approver
   resources:
     requests:
       memory: 64Mi

@@ -369,9 +369,17 @@ tests:
         fleet:
           namespace: team-a
     template: templates/apifrontend/apifrontend.yaml
+    # #1919 added a second, unconditional ClusterRole (kubernaut-console-access)
+    # to this template that `personas: null` (suite-level set above) cannot
+    # clear, so neither `path: kind, value: ClusterRole` (2 ClusterRoles) nor
+    # `path: metadata.name, value: apifrontend` (shared by the ServiceAccount/
+    # ConfigMap/ClusterRoleBinding/RoleBinding/Service/Deployment in this same
+    # template) is unique anymore. rules[0].resources[0] is: the fleet-registry
+    # ClusterRole's first rule is always investigationsessions, vs.
+    # kubernaut-console-access's only rule being resources=["console"].
     documentSelector:
-      path: kind
-      value: ClusterRole
+      path: rules[0].resources[0]
+      value: investigationsessions
     asserts:
       - notContains:
           path: rules
@@ -390,9 +398,11 @@ tests:
         fleet:
           namespace: ""
     template: templates/apifrontend/apifrontend.yaml
+    # #1919: see IT-HELM-020-007b comment above -- select by rules[0].resources[0]
+    # to disambiguate from the also-unconditional kubernaut-console-access ClusterRole.
     documentSelector:
-      path: kind
-      value: ClusterRole
+      path: rules[0].resources[0]
+      value: investigationsessions
     asserts:
       - contains:
           path: rules

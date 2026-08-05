@@ -2894,6 +2894,13 @@
                       "type": "string"
                     }
                   }
+                },
+                "consoleAccessGroups": {
+                  "type": "array",
+                  "description": "OIDC groups granted the coarse-grained kubernaut-console-access ClusterRole (kubernaut.ai/console, verb=use), a separate grant from the per-tool personas above (#1919)",
+                  "items": {
+                    "type": "string"
+                  }
                 }
               }
             }

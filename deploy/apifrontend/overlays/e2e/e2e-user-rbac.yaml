@@ -70,6 +70,13 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationapprovalrequests/status"]
     verbs: ["get", "update", "patch"]
+  # #1919: coarse-grained console-access gate, now enforced server-side at
+  # every tool-invocation site (checkRBAC/newRBACGuard), not just the
+  # advisory GET /a2a/access endpoint -- E2E users need this grant or every
+  # existing MCP/A2A tool-call E2E test would start failing the new check.
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["console"]
+    verbs: ["use"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
