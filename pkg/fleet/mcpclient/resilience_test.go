@@ -18,7 +18,9 @@ package mcpclient_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -33,6 +35,57 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 )
+
+// newFakeMCPServer starts an httptest.Server implementing just enough of the
+// MCP streamable-HTTP handshake to unblock mcp.Client.Connect. go-sdk's
+// Connect() issues a multi-step negotiation -- a "server/discover" probe
+// (rejected here so the client falls back to the legacy flow), then
+// "initialize", then a "notifications/initialized" notification -- each
+// carrying a distinct request id. A response body must echo the id of the
+// request that triggered it: the client matches responses to pending calls
+// by id and otherwise waits forever for one that never arrives, so a fixed
+// response id (e.g. always "id":1) breaks the moment initialize gets id 2.
+// The standalone SSE stream (GET) and session teardown (DELETE) are
+// tolerated with spec-permitted non-2xx responses, matching how a
+// stateless real-world MCP Gateway would answer them.
+func newFakeMCPServer(onInitialize func(w http.ResponseWriter, id json.RawMessage)) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		body, _ := io.ReadAll(r.Body)
+		var req struct {
+			ID     json.RawMessage `json:"id"`
+			Method string          `json:"method"`
+		}
+		_ = json.Unmarshal(body, &req)
+
+		switch req.Method {
+		case "server/discover":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"method not found"}}`, req.ID)
+		case "notifications/initialized", "notifications/cancelled":
+			w.WriteHeader(http.StatusAccepted)
+		case "initialize":
+			onInitialize(w, req.ID)
+		default:
+			w.WriteHeader(http.StatusNotImplemented)
+		}
+	}))
+}
+
+// writeMCPInitializeResult writes a minimal, spec-compliant "initialize"
+// JSON-RPC result addressed to id.
+func writeMCPInitializeResult(w http.ResponseWriter, id json.RawMessage) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-11-25","capabilities":{},"serverInfo":{"name":"test","version":"1.0"}}}`, id)
+}
 
 var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 	var logger = zap.New(zap.UseDevMode(true))
@@ -133,15 +186,14 @@ var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 		It("should retry with exponential backoff until success", func() {
 			var attempts atomic.Int32
 
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := newFakeMCPServer(func(w http.ResponseWriter, id json.RawMessage) {
 				count := attempts.Add(1)
 				if count < 3 {
 					w.WriteHeader(http.StatusServiceUnavailable)
 					return
 				}
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"test","version":"1.0"}}}`))
-			}))
+				writeMCPInitializeResult(w, id)
+			})
 			defer server.Close()
 
 			cfg := mcpclient.DefaultResilienceConfig()
@@ -195,14 +247,13 @@ var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 	Context("UT-FLEET-RES-007 [readiness gate Wave 0]: Concurrent Reconnect() calls deduplicate", func() {
 		It("collapses overlapping Reconnect() calls into a single MCP handshake instead of racing (prevents leaked connections when a periodic readiness prober and the lazy reconnect-on-error path call Reconnect concurrently)", func() {
 			var handshakeCount atomic.Int32
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			server := newFakeMCPServer(func(w http.ResponseWriter, id json.RawMessage) {
 				handshakeCount.Add(1)
 				// Widen the overlap window so all concurrent Reconnect() callers
 				// below arrive before any single handshake completes.
 				time.Sleep(300 * time.Millisecond)
-				w.Header().Set("Content-Type", "application/json")
-				_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{},"serverInfo":{"name":"test","version":"1.0"}}}`))
-			}))
+				writeMCPInitializeResult(w, id)
+			})
 			defer server.Close()
 
 			cfg := mcpclient.DefaultResilienceConfig()
@@ -235,10 +286,10 @@ var _ = Describe("MCP Client Resilience (Phase 6)", func() {
 				Expect(e).ToNot(HaveOccurred())
 			}
 			Expect(rc.Ready()).To(BeTrue())
-			Expect(handshakeCount.Load()).To(BeNumerically("<=", 4),
+			Expect(handshakeCount.Load()).To(BeNumerically("<=", 2),
 				"singleflight should collapse %d overlapping Reconnect() calls into at most 2 MCP "+
-					"handshakes (2 HTTP round trips each: initialize + notifications/initialized) "+
-					"(observed %d requests) -- a higher count means callers are racing instead of deduplicating",
+					"handshakes (observed %d \"initialize\" round trips) -- a higher count means "+
+					"callers are racing instead of deduplicating",
 				concurrency, handshakeCount.Load())
 		})
 	})
