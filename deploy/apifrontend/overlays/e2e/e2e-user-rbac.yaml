@@ -129,3 +129,107 @@ roleRef:
   kind: ClusterRole
   name: e2e-user-k8s-tools
   apiGroup: rbac.authorization.k8s.io
+---
+# #1919: coarse-grained console-access gate (kubernaut.ai/console, verb=use),
+# now enforced server-side at every tool-invocation site
+# (checkRBAC/newRBACGuard), not just the advisory GET /a2a/access endpoint --
+# E2E personas need this grant or every existing MCP/A2A tool-call E2E test
+# would fail the new check. Deliberately a SEPARATE ClusterRole from
+# e2e-user-k8s-tools (not one more rule added to it): SARChecker.checkSAR
+# (pkg/apifrontend/auth/sar.go) never sets ResourceAttributes.Namespace, so
+# this is always a cluster-scoped check -- a namespace-scoped RoleBinding
+# (like observability's e2e-observability-k8s-tools above, intentionally
+# namespace-scoped to prove K8s RBAC namespace restriction for *those*
+# unrelated pods/events/deployments/etc. rules) can never satisfy it.
+# Mixing the two into one ClusterRole silently broke observability's console
+# access the first time this was tried (RCA'd via CI must-gather on PR
+# #1940) -- every persona below gets an unconditional ClusterRoleBinding
+# instead, matching the "every persona with a tool grant needs console
+# access too" default applied to charts/kubernaut/values.yaml's
+# consoleAccessGroups.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: e2e-console-access
+rules:
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["console"]
+    verbs: ["use"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-sre-console-access
+subjects:
+  - kind: Group
+    name: sre
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-console-access
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-ai-orchestrator-console-access
+subjects:
+  - kind: Group
+    name: ai-orchestrator
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-console-access
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-cicd-console-access
+subjects:
+  - kind: Group
+    name: cicd
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-console-access
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-observability-console-access
+subjects:
+  - kind: Group
+    name: observability
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-console-access
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-l3-audit-console-access
+subjects:
+  - kind: Group
+    name: l3-audit
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-console-access
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-remediation-approver-console-access
+subjects:
+  - kind: Group
+    name: remediation-approver
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-console-access
+  apiGroup: rbac.authorization.k8s.io
