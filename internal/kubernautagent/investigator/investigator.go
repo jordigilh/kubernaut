@@ -957,8 +957,10 @@ CRITICAL: root_cause_analysis must be a JSON object, NOT a string. Do NOT wrap i
 		// FormatEventForUser (pkg/apifrontend/tools/ka_investigate_mcp.go)
 		// reads. A prior "content" key here meant AF silently dropped every
 		// one of these events (extractJSONField returned "").
+		// #1935 finding #3: fall back to Reasoning.Text so the console
+		// ThinkingPanel isn't blank on extended-thinking turns.
 		emitToSink(ctx, session.EventTypeReasoningDelta, attempt+1, string(katypes.PhaseRCA), map[string]interface{}{
-			"text":          resp.Message.Content,
+			"text":          reasoningDeltaText(resp.Message),
 			"retry_attempt": attempt + 1,
 		})
 
@@ -1278,9 +1280,11 @@ Do NOT respond with plain text. You MUST call one of the above tools.`
 		}
 
 		// #1771/#1634: field name must be "text" (see attemptRCASubmitRetry's
-		// equivalent emitToSink call above for rationale).
+		// equivalent emitToSink call above for rationale). #1935 finding #3:
+		// fall back to Reasoning.Text so the console ThinkingPanel isn't
+		// blank on extended-thinking turns.
 		emitToSink(ctx, session.EventTypeReasoningDelta, attempt+1, string(katypes.PhaseWorkflowDiscovery), map[string]interface{}{
-			"text":          resp.Message.Content,
+			"text":          reasoningDeltaText(resp.Message),
 			"retry_attempt": attempt + 1,
 		})
 
@@ -1406,9 +1410,12 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 		audit.StoreBestEffort(ctx, inv.auditStore, respEvent, inv.auditLog())
 
 		// #1771/#1634: field name must be "text" (see attemptRCASubmitRetry's
-		// equivalent emitToSink call for rationale).
+		// equivalent emitToSink call for rationale). #1935 finding #3: fall
+		// back to Reasoning.Text so the console ThinkingPanel isn't blank on
+		// extended-thinking turns (confirmed 100% empty Content on Sonnet-5
+		// RCA-phase tool-calling turns against live production audit data).
 		emitToSink(ctx, session.EventTypeReasoningDelta, turn, string(phase), map[string]interface{}{
-			"text":            truncatePreview(resp.Message.Content, 200),
+			"text":            truncatePreview(reasoningDeltaText(resp.Message), 200),
 			"tool_call_count": len(resp.ToolCalls),
 		})
 

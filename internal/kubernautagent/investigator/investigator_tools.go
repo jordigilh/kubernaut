@@ -62,6 +62,27 @@ func truncatePreview(s string, maxLen int) string {
 	return s[:maxLen]
 }
 
+// reasoningDeltaText builds the "text" payload for the EventTypeReasoningDelta
+// event that streams into the console's ThinkingPanel (KA -> AF -> A2A
+// artifact channel; see pkg/apifrontend/tools/ka_investigate_mcp.go's
+// FormatEventForUser/emitEventToA2A -> launcher.EmitReasoningSafe). Sourcing
+// this exclusively from msg.Content (the pre-#1935 behavior) leaves the panel
+// silently blank on Anthropic extended-thinking turns: confirmed against live
+// production audit data for rr-618ac7d3b894-ba320bf0, where every
+// claude-sonnet-5 RCA-phase turn (5/5) had Content=="" while making 1-4 tool
+// calls, because Sonnet 5 puts its narrative in the private, signed thinking
+// block instead of visible Content. Authority: BR-AI-086, FedRAMP CC7.2
+// (#1935 finding #3).
+func reasoningDeltaText(msg llm.Message) string {
+	if msg.Reasoning == nil || msg.Reasoning.Text == "" {
+		return msg.Content
+	}
+	if msg.Content == "" {
+		return msg.Reasoning.Text
+	}
+	return msg.Reasoning.Text + "\n\n" + msg.Content
+}
+
 func toolNames(defs []llm.ToolDefinition) []string {
 	names := make([]string, len(defs))
 	for i, d := range defs {
