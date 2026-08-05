@@ -104,6 +104,39 @@ roleRef:
   name: e2e-user-k8s-tools
   apiGroup: rbac.authorization.k8s.io
 ---
+# cicd and l3-audit bindings below exist solely for the kubernaut.ai/console
+# use grant added above (#1919): PersonaToolClusterRolesYAML already grants
+# both groups their per-tool kubernaut.ai/tools rights from values.yaml, but
+# has no notion of the coarser console-access resource, so without these
+# bindings both personas would fail every values.yaml-granted tool call once
+# checkRBAC/newRBACGuard started enforcing kubernaut.ai/console use on every
+# call (regression caught by persona_acl_matrix_test.go, CI on PR #1940).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-cicd-k8s-tools
+subjects:
+  - kind: Group
+    name: cicd
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-user-k8s-tools
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-l3-audit-k8s-tools
+subjects:
+  - kind: Group
+    name: l3-audit
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: e2e-user-k8s-tools
+  apiGroup: rbac.authorization.k8s.io
+---
 # Observability group uses a namespace-scoped RoleBinding (not ClusterRoleBinding)
 # to verify that K8s RBAC correctly restricts access to specific namespaces.
 apiVersion: rbac.authorization.k8s.io/v1
