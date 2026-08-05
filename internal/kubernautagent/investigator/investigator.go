@@ -143,11 +143,20 @@ func (*CancelledResult) loopResult() {}
 // LoopResult, for the concrete types that carry one (#1935 root cause #2).
 // CancelledResult and ExhaustedResult are handled separately by their
 // callers (cancellation snapshot / abort path) and return nil here.
+// #1945: extended to also cover the workflow-discovery phase's sentinel
+// types (SubmitWithWorkflowResult/SubmitNoWorkflowResult) — sentinelResult
+// already populates their Messages field, but until this fix that data was
+// silently discarded by the default case, mirroring the same gap #1935
+// fixed for SubmitResult/TextResult in the RCA phase.
 func loopResultMessages(r LoopResult) []llm.Message {
 	switch v := r.(type) {
 	case *SubmitResult:
 		return v.Messages
 	case *TextResult:
+		return v.Messages
+	case *SubmitWithWorkflowResult:
+		return v.Messages
+	case *SubmitNoWorkflowResult:
 		return v.Messages
 	default:
 		return nil
@@ -1029,6 +1038,17 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 		return nil, err
 	}
 
+	// #1945 (workflow-discovery extension of #1935 root cause #2): runLLMLoop
+	// accumulates tool-call/tool-result turns in its OWN local `messages`
+	// slice as the investigation progresses, but this variable stayed frozen
+	// at its initial [system, user] value for the rest of runWorkflowSelection
+	// regardless of how many tools were actually called. Reassigning it here
+	// fixes both retryWorkflowSubmit call sites below (the TextResult-branch
+	// call and the post-parse-error call), since both read this same variable.
+	if extended := loopResultMessages(loopRes); len(extended) > 0 {
+		messages = extended
+	}
+
 	var content string
 	switch r := loopRes.(type) {
 	case *CancelledResult:
@@ -1154,6 +1174,18 @@ func (inv *Investigator) runWorkflowSelection(ctx context.Context, signal katype
 			if corrErr != nil {
 				return nil, corrErr
 			}
+
+			// #1945: the closure's own nested runLLMLoop call needs the same
+			// reassignment as the top-level one above — otherwise tool calls
+			// made DURING this correction attempt (e.g. a re-check of
+			// list_workflows) are lost before the NEXT attempt's request is
+			// built, even though the top-level fix already ran once. messages
+			// is captured by reference from the enclosing runWorkflowSelection
+			// scope, so this persists across attempts.
+			if extended := loopResultMessages(corrLoopRes); len(extended) > 0 {
+				messages = extended
+			}
+
 			switch cr := corrLoopRes.(type) {
 			case *CancelledResult:
 				return nil, context.Canceled
