@@ -955,18 +955,23 @@ apifrontend:
           - kubernaut_await_session
       # -- #1919 (AC-3/AC-6): OIDC groups granted the coarse-grained
       # kubernaut-console-access ClusterRole (kubernaut.ai/console, verb=use).
-      # A deliberately separate, independently-auditable grant from the
-      # per-tool `personas` above -- NOT derived from them, so an operator
-      # must explicitly opt a group into console/chat access even if that
-      # group already has tool grants. Enforced both by the advisory
-      # GET /a2a/access endpoint and, more importantly, server-side inside
-      # every tool-call path (checkRBAC/newRBACGuard), so a client that never
-      # calls /a2a/access still cannot bypass the gate. Defaults to the same
-      # groups the E2E RBAC already grants tool access to; edit freely.
+      # A separate, independently-auditable grant from the per-tool
+      # `personas` above -- NOT rendered *from* them (an operator can revoke
+      # console access from a group without touching its tool grants) -- but
+      # defaulted to *every* group listed in `personas`, per the issue's own
+      # guidance ("bind it to the same groups that get any tool access") and
+      # its explicit non-goal of weakening existing per-tool grants: checkRBAC
+      # and newRBACGuard enforce this gate on *every* tool call (not just
+      # console-UI ones, to close the direct-/mcp-or-/a2a-invoke bypass), so a
+      # persona/group omitted here would silently lose all its `personas`
+      # tool access too. Edit freely -- e.g. remove a group here to make it
+      # console-access-only.
       consoleAccessGroups:
         - sre
         - ai-orchestrator
+        - cicd
         - observability
+        - l3-audit
         - remediation-approver
   resources:
     requests:

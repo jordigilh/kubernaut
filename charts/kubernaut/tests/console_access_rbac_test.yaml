@@ -61,16 +61,28 @@ tests:
           path: subjects[0].name
           value: sre
 
-  - it: "IT-HELM-1919-002b: cicd (not a default console-access group) has no ClusterRoleBinding rendered"
+  - it: "IT-HELM-1919-002b: a group not listed in consoleAccessGroups has no ClusterRoleBinding rendered"
     template: templates/apifrontend/apifrontend.yaml
     documentSelector:
       path: metadata.name
-      value: kubernaut-console-access-cicd
+      value: kubernaut-console-access-guest
       skipEmptyTemplates: true
     asserts:
       - hasDocuments:
           count: 0
           filterAware: true
+
+  - it: "IT-HELM-1919-002c: cicd and l3-audit (automation/audit personas) are also bound by default, per #1919's non-goal of weakening existing per-tool grants"
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: kubernaut-console-access-cicd
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: roleRef.name
+          value: kubernaut-console-access
 
   # ---------------------------------------------------------------------
   # IT-HELM-1919-003: an empty consoleAccessGroups list is empty-safe --
