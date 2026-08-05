@@ -73,9 +73,14 @@ type LoopResult interface {
 // SubmitResult is returned when the LLM calls the generic submit_result tool
 // (RCA phase). Reasoning carries the winning turn's thinking block, when the
 // LLM's reasoning capability was enabled (BR-AI-086 AC6) — nil otherwise.
+// Messages carries the fully-paired assistant/tool turns accumulated by
+// runLLMLoop BEFORE this final (still-unpaired) submit_result call — see
+// sentinelResult's doc comment for why the final call itself is excluded
+// (#1935/#1936 root cause #2).
 type SubmitResult struct {
 	Content   string
 	Reasoning *llm.ReasoningBlock
+	Messages  []llm.Message
 }
 
 func (*SubmitResult) loopResult() {}
@@ -84,6 +89,7 @@ func (*SubmitResult) loopResult() {}
 type SubmitWithWorkflowResult struct {
 	Content   string
 	Reasoning *llm.ReasoningBlock
+	Messages  []llm.Message
 }
 
 func (*SubmitWithWorkflowResult) loopResult() {}
@@ -92,14 +98,18 @@ func (*SubmitWithWorkflowResult) loopResult() {}
 type SubmitNoWorkflowResult struct {
 	Content   string
 	Reasoning *llm.ReasoningBlock
+	Messages  []llm.Message
 }
 
 func (*SubmitNoWorkflowResult) loopResult() {}
 
 // TextResult is returned when the LLM responds with plain text (no tool call).
+// Messages carries the fully-paired assistant/tool turns accumulated by
+// runLLMLoop prior to this final text turn (#1935/#1936 root cause #2).
 type TextResult struct {
 	Content   string
 	Reasoning *llm.ReasoningBlock
+	Messages  []llm.Message
 }
 
 func (*TextResult) loopResult() {}
@@ -131,18 +141,43 @@ type CancelledResult struct {
 
 func (*CancelledResult) loopResult() {}
 
+// loopResultMessages extracts the accumulated message history from a
+// LoopResult, for the concrete types that carry one (#1935/#1936 root cause
+// #2). CancelledResult and ExhaustedResult are handled separately by their
+// own callers (cancellation snapshot / abort path) and return nil here.
+func loopResultMessages(r LoopResult) []llm.Message {
+	switch v := r.(type) {
+	case *SubmitResult:
+		return v.Messages
+	case *TextResult:
+		return v.Messages
+	case *SubmitWithWorkflowResult:
+		return v.Messages
+	case *SubmitNoWorkflowResult:
+		return v.Messages
+	default:
+		return nil
+	}
+}
+
 // sentinelResult maps a sentinel tool call to its LoopResult type, attaching
 // the reasoning block (if any) from the turn whose response produced tc, so
 // reasoning captured at the LLM-client layer (BR-AI-086 AC1-3) reaches the
-// InvestigationResult that gets built from the sentinel's Content.
-func sentinelResult(tc llm.ToolCall, reasoning *llm.ReasoningBlock) LoopResult {
+// InvestigationResult that gets built from the sentinel's Content. messages
+// is the history accumulated so far — i.e. every PRIOR, fully-paired
+// assistant(tool_use)/tool(tool_result) turn, NOT including the sentinel
+// call itself (tc). Deliberately excluding the sentinel call avoids ever
+// replaying a dangling, unpaired tool_use block to the LLM on a later
+// retry — the sentinel is consumed here, never executed as a real tool, so
+// it has no matching tool_result (#1935/#1936 root cause #2).
+func sentinelResult(tc llm.ToolCall, reasoning *llm.ReasoningBlock, messages []llm.Message) LoopResult {
 	switch tc.Name {
 	case SubmitResultToolName:
-		return &SubmitResult{Content: tc.Arguments, Reasoning: reasoning}
+		return &SubmitResult{Content: tc.Arguments, Reasoning: reasoning, Messages: messages}
 	case SubmitResultWithWorkflowToolName:
-		return &SubmitWithWorkflowResult{Content: tc.Arguments, Reasoning: reasoning}
+		return &SubmitWithWorkflowResult{Content: tc.Arguments, Reasoning: reasoning, Messages: messages}
 	case SubmitResultNoWorkflowToolName:
-		return &SubmitNoWorkflowResult{Content: tc.Arguments, Reasoning: reasoning}
+		return &SubmitNoWorkflowResult{Content: tc.Arguments, Reasoning: reasoning, Messages: messages}
 	default:
 		return nil
 	}
