@@ -535,14 +535,21 @@ func (s *AIAgentAuthDeniedPayload) encodeFields(e *jx.Encoder) {
 			s.Method.Encode(e)
 		}
 	}
+	{
+		if s.Reason.Set {
+			e.FieldStart("reason")
+			s.Reason.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfAIAgentAuthDeniedPayload = [5]string{
+var jsonFieldsNameOfAIAgentAuthDeniedPayload = [6]string{
 	0: "event_type",
 	1: "event_id",
 	2: "source_ip",
 	3: "path",
 	4: "method",
+	5: "reason",
 }
 
 // Decode decodes AIAgentAuthDeniedPayload from json.
@@ -605,6 +612,16 @@ func (s *AIAgentAuthDeniedPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"method\"")
+			}
+		case "reason":
+			if err := func() error {
+				s.Reason.Reset()
+				if err := s.Reason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reason\"")
 			}
 		default:
 			return d.Skip()
@@ -735,14 +752,21 @@ func (s *AIAgentAuthFailurePayload) encodeFields(e *jx.Encoder) {
 			s.Method.Encode(e)
 		}
 	}
+	{
+		if s.Reason.Set {
+			e.FieldStart("reason")
+			s.Reason.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfAIAgentAuthFailurePayload = [5]string{
+var jsonFieldsNameOfAIAgentAuthFailurePayload = [6]string{
 	0: "event_type",
 	1: "event_id",
 	2: "source_ip",
 	3: "path",
 	4: "method",
+	5: "reason",
 }
 
 // Decode decodes AIAgentAuthFailurePayload from json.
@@ -805,6 +829,16 @@ func (s *AIAgentAuthFailurePayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"method\"")
+			}
+		case "reason":
+			if err := func() error {
+				s.Reason.Reset()
+				if err := s.Reason.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"reason\"")
 			}
 		default:
 			return d.Skip()
@@ -14165,6 +14199,172 @@ func (s *ApifrontendUserDecisionPayloadEventType) UnmarshalJSON(data []byte) err
 }
 
 // Encode implements json.Marshaler.
+func (s *ApifrontendWorkflowDiscoveryPayload) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ApifrontendWorkflowDiscoveryPayload) encodeFields(e *jx.Encoder) {
+	{
+		e.FieldStart("event_type")
+		s.EventType.Encode(e)
+	}
+	{
+		e.FieldStart("rr_id")
+		e.Str(s.RrID)
+	}
+	{
+		e.FieldStart("workflow_count")
+		e.Int(s.WorkflowCount)
+	}
+}
+
+var jsonFieldsNameOfApifrontendWorkflowDiscoveryPayload = [3]string{
+	0: "event_type",
+	1: "rr_id",
+	2: "workflow_count",
+}
+
+// Decode decodes ApifrontendWorkflowDiscoveryPayload from json.
+func (s *ApifrontendWorkflowDiscoveryPayload) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendWorkflowDiscoveryPayload to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "event_type":
+			requiredBitSet[0] |= 1 << 0
+			if err := func() error {
+				if err := s.EventType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"event_type\"")
+			}
+		case "rr_id":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.RrID = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"rr_id\"")
+			}
+		case "workflow_count":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Int()
+				s.WorkflowCount = int(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workflow_count\"")
+			}
+		default:
+			return d.Skip()
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ApifrontendWorkflowDiscoveryPayload")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfApifrontendWorkflowDiscoveryPayload) {
+					name = jsonFieldsNameOfApifrontendWorkflowDiscoveryPayload[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ApifrontendWorkflowDiscoveryPayload) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendWorkflowDiscoveryPayload) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ApifrontendWorkflowDiscoveryPayloadEventType as json.
+func (s ApifrontendWorkflowDiscoveryPayloadEventType) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes ApifrontendWorkflowDiscoveryPayloadEventType from json.
+func (s *ApifrontendWorkflowDiscoveryPayloadEventType) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ApifrontendWorkflowDiscoveryPayloadEventType to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch ApifrontendWorkflowDiscoveryPayloadEventType(v) {
+	case ApifrontendWorkflowDiscoveryPayloadEventTypeApifrontendWorkflowDiscovery:
+		*s = ApifrontendWorkflowDiscoveryPayloadEventTypeApifrontendWorkflowDiscovery
+	default:
+		*s = ApifrontendWorkflowDiscoveryPayloadEventType(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ApifrontendWorkflowDiscoveryPayloadEventType) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ApifrontendWorkflowDiscoveryPayloadEventType) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *AsyncAcceptanceResponse) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -17192,6 +17392,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 					s.Method.Encode(e)
 				}
 			}
+			{
+				if s.Reason.Set {
+					e.FieldStart("reason")
+					s.Reason.Encode(e)
+				}
+			}
 		}
 	case AIAgentAuthDeniedPayloadAuditEventEventData:
 		e.FieldStart("event_type")
@@ -17218,6 +17424,12 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				if s.Method.Set {
 					e.FieldStart("method")
 					s.Method.Encode(e)
+				}
+			}
+			{
+				if s.Reason.Set {
+					e.FieldStart("reason")
+					s.Reason.Encode(e)
 				}
 			}
 		}
@@ -18130,6 +18342,20 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case ApifrontendWorkflowDiscoveryPayloadAuditEventEventData:
+		e.FieldStart("event_type")
+		e.Str("apifrontend.workflow.discovery")
+		{
+			s := s.ApifrontendWorkflowDiscoveryPayload
+			{
+				e.FieldStart("rr_id")
+				e.Str(s.RrID)
+			}
+			{
+				e.FieldStart("workflow_count")
+				e.Int(s.WorkflowCount)
+			}
+		}
 	case ApifrontendAuthSuccessPayloadAuditEventEventData:
 		e.FieldStart("event_type")
 		e.Str("apifrontend.auth.success")
@@ -18927,6 +19153,9 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "apifrontend.tool.executed":
 					s.Type = ApifrontendToolExecutedPayloadAuditEventEventData
 					found = true
+				case "apifrontend.workflow.discovery":
+					s.Type = ApifrontendWorkflowDiscoveryPayloadAuditEventEventData
+					found = true
 				case "apifrontend.auth.success":
 					s.Type = ApifrontendAuthSuccessPayloadAuditEventEventData
 					found = true
@@ -19289,6 +19518,10 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		}
 	case ApifrontendToolExecutedPayloadAuditEventEventData:
 		if err := s.ApifrontendToolExecutedPayload.Decode(d); err != nil {
+			return err
+		}
+	case ApifrontendWorkflowDiscoveryPayloadAuditEventEventData:
+		if err := s.ApifrontendWorkflowDiscoveryPayload.Decode(d); err != nil {
 			return err
 		}
 	case ApifrontendAuthSuccessPayloadAuditEventEventData:
@@ -22218,6 +22451,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 					s.Method.Encode(e)
 				}
 			}
+			{
+				if s.Reason.Set {
+					e.FieldStart("reason")
+					s.Reason.Encode(e)
+				}
+			}
 		}
 	case AIAgentAuthDeniedPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
@@ -22244,6 +22483,12 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				if s.Method.Set {
 					e.FieldStart("method")
 					s.Method.Encode(e)
+				}
+			}
+			{
+				if s.Reason.Set {
+					e.FieldStart("reason")
+					s.Reason.Encode(e)
 				}
 			}
 		}
@@ -23156,6 +23401,20 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				}
 			}
 		}
+	case ApifrontendWorkflowDiscoveryPayloadAuditEventRequestEventData:
+		e.FieldStart("event_type")
+		e.Str("apifrontend.workflow.discovery")
+		{
+			s := s.ApifrontendWorkflowDiscoveryPayload
+			{
+				e.FieldStart("rr_id")
+				e.Str(s.RrID)
+			}
+			{
+				e.FieldStart("workflow_count")
+				e.Int(s.WorkflowCount)
+			}
+		}
 	case ApifrontendAuthSuccessPayloadAuditEventRequestEventData:
 		e.FieldStart("event_type")
 		e.Str("apifrontend.auth.success")
@@ -23953,6 +24212,9 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "apifrontend.tool.executed":
 					s.Type = ApifrontendToolExecutedPayloadAuditEventRequestEventData
 					found = true
+				case "apifrontend.workflow.discovery":
+					s.Type = ApifrontendWorkflowDiscoveryPayloadAuditEventRequestEventData
+					found = true
 				case "apifrontend.auth.success":
 					s.Type = ApifrontendAuthSuccessPayloadAuditEventRequestEventData
 					found = true
@@ -24315,6 +24577,10 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		}
 	case ApifrontendToolExecutedPayloadAuditEventRequestEventData:
 		if err := s.ApifrontendToolExecutedPayload.Decode(d); err != nil {
+			return err
+		}
+	case ApifrontendWorkflowDiscoveryPayloadAuditEventRequestEventData:
+		if err := s.ApifrontendWorkflowDiscoveryPayload.Decode(d); err != nil {
 			return err
 		}
 	case ApifrontendAuthSuccessPayloadAuditEventRequestEventData:
@@ -30780,6 +31046,12 @@ func (s *IncidentResponseData) encodeFields(e *jx.Encoder) {
 		json.EncodeDateTime(e, s.Timestamp)
 	}
 	{
+		if s.IsActionable.Set {
+			e.FieldStart("isActionable")
+			s.IsActionable.Encode(e)
+		}
+	}
+	{
 		if s.NeedsHumanReview.Set {
 			e.FieldStart("needsHumanReview")
 			s.NeedsHumanReview.Encode(e)
@@ -30813,17 +31085,18 @@ func (s *IncidentResponseData) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfIncidentResponseData = [10]string{
-	0: "incidentId",
-	1: "analysis",
-	2: "rootCauseAnalysis",
-	3: "selectedWorkflow",
-	4: "confidence",
-	5: "timestamp",
-	6: "needsHumanReview",
-	7: "humanReviewReason",
-	8: "warnings",
-	9: "alternativeWorkflows",
+var jsonFieldsNameOfIncidentResponseData = [11]string{
+	0:  "incidentId",
+	1:  "analysis",
+	2:  "rootCauseAnalysis",
+	3:  "selectedWorkflow",
+	4:  "confidence",
+	5:  "timestamp",
+	6:  "isActionable",
+	7:  "needsHumanReview",
+	8:  "humanReviewReason",
+	9:  "warnings",
+	10: "alternativeWorkflows",
 }
 
 // Decode decodes IncidentResponseData from json.
@@ -30903,6 +31176,16 @@ func (s *IncidentResponseData) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"timestamp\"")
+			}
+		case "isActionable":
+			if err := func() error {
+				s.IsActionable.Reset()
+				if err := s.IsActionable.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"isActionable\"")
 			}
 		case "needsHumanReview":
 			if err := func() error {

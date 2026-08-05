@@ -117,4 +117,85 @@ var _ = Describe("Marshal RCA Subset — TP-1395-1396 (#1396)", func() {
 			Expect(len(data)).To(BeNumerically("<", 2048), "RCA subset should be < 2KB for typical payloads")
 		})
 	})
+
+	// #1918: harness-enforced actionability gate. AF's phase_guard.go needs a
+	// structured, model-independent signal to decide whether
+	// kubernaut_discover_workflows should stay reachable after an
+	// investigate call, instead of trusting the LLM's own reading of the RCA
+	// narrative. is_actionable mirrors InvestigationResult.IsActionable
+	// (*bool, so "never computed" is distinguishable from "computed false"
+	// via JSON key absence); has_workflow is derived from WorkflowID != "" --
+	// the same two-signal condition KA's own investigator.go guard already
+	// treats as authoritative internally (actionable=false && workflow_id=="").
+	Describe("UT-KA-1918: is_actionable/has_workflow bounded fields for AF's harness gate", func() {
+		It("UT-KA-1918-001: marshals is_actionable=false and has_workflow=false when RCA concluded no remediation is warranted", func() {
+			notActionable := false
+			result := &katypes.InvestigationResult{
+				Severity:    "info",
+				Confidence:  0.90,
+				RCASummary:  "Problem self-resolved after pod restart",
+				CausalChain: []string{"transient network partition"},
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Pod", Name: "api-server-abc", Namespace: "production",
+				},
+				IsActionable: &notActionable,
+			}
+
+			data := session.MarshalRCASubset(result)
+			var parsed map[string]interface{}
+			Expect(json.Unmarshal(data, &parsed)).To(Succeed())
+
+			Expect(parsed).To(HaveKeyWithValue("is_actionable", false),
+				"#1918: is_actionable must be surfaced so AF can gate Phase 2 independent of the model's own RCA reading")
+			Expect(parsed).NotTo(HaveKey("has_workflow"),
+				"#1918: has_workflow is omitempty and WorkflowID is empty here, so the key should be absent (false)")
+		})
+
+		It("UT-KA-1918-002: marshals is_actionable=true and has_workflow=true when RCA is actionable with a selected workflow", func() {
+			actionable := true
+			result := &katypes.InvestigationResult{
+				Severity:    "critical",
+				Confidence:  0.92,
+				RCASummary:  "OOMKill caused by memory leak",
+				CausalChain: []string{"memory leak"},
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Deployment", Name: "data-processor", Namespace: "production",
+				},
+				IsActionable: &actionable,
+				WorkflowID:   "wf-restart-deployment",
+			}
+
+			data := session.MarshalRCASubset(result)
+			var parsed map[string]interface{}
+			Expect(json.Unmarshal(data, &parsed)).To(Succeed())
+
+			Expect(parsed).To(HaveKeyWithValue("is_actionable", true))
+			Expect(parsed).To(HaveKeyWithValue("has_workflow", true),
+				"#1918: has_workflow must be derived from WorkflowID presence, not the raw ID itself (SI-10 -- no workflow_id leak)")
+
+			raw := string(data)
+			Expect(raw).NotTo(ContainSubstring("wf-restart-deployment"),
+				"#1918: has_workflow is a boolean derivation -- the raw workflow_id value must never appear in the bounded subset")
+		})
+
+		It("UT-KA-1918-003: omits is_actionable from JSON when IsActionable was never computed (nil), so AF cannot mistake unknown for false", func() {
+			result := &katypes.InvestigationResult{
+				Severity:    "warning",
+				Confidence:  0.80,
+				RCASummary:  "Investigation in progress",
+				CausalChain: []string{"pending"},
+				RemediationTarget: katypes.RemediationTarget{
+					Kind: "Pod", Name: "worker-1", Namespace: "staging",
+				},
+				// IsActionable intentionally left nil.
+			}
+
+			data := session.MarshalRCASubset(result)
+			var parsed map[string]interface{}
+			Expect(json.Unmarshal(data, &parsed)).To(Succeed())
+
+			Expect(parsed).NotTo(HaveKey("is_actionable"),
+				"#1918: a nil (never-computed) IsActionable must be omitted, not coerced to false -- AF's gate must only override on a genuine false, never on absence")
+		})
+	})
 })

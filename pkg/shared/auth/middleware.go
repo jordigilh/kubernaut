@@ -39,6 +39,32 @@ const (
 	UserInfoContextKey ContextKey = "userInfo"
 )
 
+// failureReasonKey is an unexported context key for the mutable holder
+// WithFailureReasonCapture installs. Unexported so only this package can
+// write to it (via logSecurityEvent); consumers only ever see it through
+// the accessor function WithFailureReasonCapture returns.
+type failureReasonKey struct{}
+
+// WithFailureReasonCapture returns a derived context carrying a mutable
+// recorder, plus an accessor that returns whatever security-event reason
+// (e.g. "invalid_token_audience", "missing_auth_header",
+// "authorization_denied") Handler classified for the request, once it
+// returns. Empty if the request succeeded or Handler was never invoked with
+// the returned context.
+//
+// BR-SECURITY-1900 (AU-3, extending BR-AUDIT-005): an outer HTTP wrapper
+// that persists audit-table events by observing only the response status
+// code (e.g. KubernautAgent's AuditAuthMiddleware) cannot otherwise tell an
+// audience-bound TokenReview mismatch apart from a routine
+// missing/malformed/expired token -- both produce an identical 401. Callers
+// must derive the request's context from the value returned here (e.g. via
+// r.WithContext) before invoking Handler, then call the accessor after
+// Handler returns.
+func WithFailureReasonCapture(ctx context.Context) (context.Context, func() string) {
+	holder := new(string)
+	return context.WithValue(ctx, failureReasonKey{}, holder), func() string { return *holder }
+}
+
 // Middleware provides authentication and authorization for HTTP requests.
 //
 // Authority: DD-AUTH-014 (Middleware-Based SAR Authentication)
@@ -169,7 +195,7 @@ func (m *Middleware) authenticateRequest(w http.ResponseWriter, r *http.Request)
 	userInfo, err := m.authenticator.ValidateTokenFull(r.Context(), token)
 	if err != nil {
 		if errors.Is(err, ErrTokenInvalid) {
-			m.logSecurityEvent(r, "invalid_token", "", http.StatusUnauthorized)
+			m.logSecurityEvent(r, invalidTokenReason(err), "", http.StatusUnauthorized)
 			m.writeError(w, http.StatusUnauthorized, "Unauthorized", "Invalid or expired token")
 			return UserInfo{}, false
 		}
@@ -266,10 +292,39 @@ func stripImpersonationHeaders(r *http.Request) {
 	}
 }
 
+// invalidTokenReason classifies an ErrTokenInvalid failure for the
+// security_event audit log (BR-SECURITY-1900, AU-3/CC7.2) using an
+// "audience mismatch" substring convention, so an authenticator that wraps a
+// cross-service token-replay detection in ErrTokenInvalid this way is
+// distinguishable in audit review from a routine expired/malformed/
+// unauthenticated token, without introducing a second sentinel error that
+// callers would need to match on. No authenticator anywhere in the codebase
+// currently produces this substring: audience-bound TokenReview validation
+// was implemented for both KA and AF under #1900, then fully reverted for
+// both (see BR-SECURITY-1900 -- KA's real AF traffic flows exclusively
+// through the dual-purpose MCP endpoint that DD-AUTH-MCP-001 requires to
+// also serve audience-unaware direct in-cluster clients, and AF's variant
+// was descoped as defense-in-depth of unclear incremental value given SAR
+// already denies unauthorized tool access regardless of the authentication
+// layer). This classifier ships anyway as generic, forward-compatible
+// plumbing for any future authenticator that adopts the convention; the
+// tests exercising "invalid_token_audience" (pkg/shared/auth) construct a
+// synthetic error string by hand for exactly this reason -- there is no
+// live authenticator to exercise it against today.
+func invalidTokenReason(err error) string {
+	if strings.Contains(err.Error(), "audience mismatch") {
+		return "invalid_token_audience"
+	}
+	return "invalid_token"
+}
+
 // writeError writes an RFC 7807 Problem Details JSON error response.
 // logSecurityEvent emits a structured security audit log entry for FedRAMP AU-2 compliance.
 // FED-M1: Every 401/403 must produce a traceable security event.
 func (m *Middleware) logSecurityEvent(r *http.Request, reason, user string, statusCode int) {
+	if holder, ok := r.Context().Value(failureReasonKey{}).(*string); ok {
+		*holder = reason
+	}
 	m.logger.Info("security_event",
 		"event_type", "authentication",
 		"reason", reason,

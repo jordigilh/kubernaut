@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
+	sharedauth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 type statusRecorder struct {
@@ -45,10 +46,22 @@ func (r *statusRecorder) Unwrap() http.ResponseWriter {
 // AuditAuthMiddleware wraps an HTTP handler and emits audit events for
 // 401 (auth failure) and 403 (auth denied) responses. This satisfies
 // FedRAMP AU-12 without modifying the shared auth middleware (H5).
+//
+// BR-SECURITY-1900 (AU-3, extends BR-AUDIT-005): the request context is
+// derived via sharedauth.WithFailureReasonCapture before the wrapped chain
+// runs, so a 401/403 produced by the shared auth middleware (whose
+// classification includes "invalid_token_audience" for an audience-bound
+// TokenReview mismatch, i.e. a cross-service token-replay attempt) can be
+// distinguished in the persisted audit-table event from a routine
+// missing/malformed/expired token or generic authorization denial. A 401/403
+// from anywhere else in the chain (e.g. no shared auth middleware present)
+// still produces the pre-existing generic event, with no reason field set.
 func AuditAuthMiddleware(next http.Handler, store audit.AuditStore, logger logr.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		captureCtx, failureReason := sharedauth.WithFailureReasonCapture(r.Context())
+
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		next.ServeHTTP(rec, r)
+		next.ServeHTTP(rec, r.WithContext(captureCtx))
 
 		switch rec.status {
 		case http.StatusUnauthorized:
@@ -58,6 +71,9 @@ func AuditAuthMiddleware(next http.Handler, store audit.AuditStore, logger logr.
 			evt.Data["source_ip"] = extractIP(r, nil)
 			evt.Data["path"] = r.URL.Path
 			evt.Data["method"] = r.Method
+			if reason := failureReason(); reason != "" {
+				evt.Data["reason"] = reason
+			}
 			audit.StoreBestEffort(r.Context(), store, evt, logger)
 		case http.StatusForbidden:
 			evt := audit.NewEvent(audit.EventTypeAuthDenied, "security-"+uuid.New().String())
@@ -66,6 +82,9 @@ func AuditAuthMiddleware(next http.Handler, store audit.AuditStore, logger logr.
 			evt.Data["source_ip"] = extractIP(r, nil)
 			evt.Data["path"] = r.URL.Path
 			evt.Data["method"] = r.Method
+			if reason := failureReason(); reason != "" {
+				evt.Data["reason"] = reason
+			}
 			audit.StoreBestEffort(r.Context(), store, evt, logger)
 		}
 	})

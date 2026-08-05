@@ -454,6 +454,38 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		// through discover_workflows -> select_workflow -> watch with no
 		// pause for manual workflow selection.
 		"full-interactive": fmt.Sprintf("fp-full-%s", uuid.New().String()[:8]),
+		// consent-phase2: dedicated namespace for E2E-FP-1899-001 (DD-AF-011,
+		// issue #1899 Phase 1->2 consent gate): a single message declares
+		// interaction_mode=interactive on kubernaut_investigate then attempts
+		// a same-turn fire-and-forget kubernaut_discover_workflows -- the
+		// structural gate must block it until a genuine follow-up turn.
+		"consent-phase2": fmt.Sprintf("fp-cg2-%s", uuid.New().String()[:8]),
+		// consent-phase3: dedicated namespace for E2E-FP-1899-002 (DD-AF-011,
+		// issue #1899 Phase 2->3 consent gate): a single message declares
+		// interaction_mode=full_remediation (authorizing discover_workflows
+		// to auto-chain) then attempts a same-turn fire-and-forget
+		// kubernaut_select_workflow -- the gate must block only the 3rd hop.
+		"consent-phase3": fmt.Sprintf("fp-cg3-%s", uuid.New().String()[:8]),
+		// terminal-1912: dedicated namespace for E2E-FP-1912-001 (issue
+		// #1912): a single message declares interaction_mode=
+		// full_remediation_autonomous (no checkpoint left blocking) then
+		// completes the driver session in the same turn -- driverActive
+		// must be cleared alongside it, or a stray text-only turn could be
+		// misread as still-active and incorrectly reinvoked.
+		"terminal-1912": fmt.Sprintf("fp-t1912-%s", uuid.New().String()[:8]),
+		// not-actionable-1918: dedicated namespace for E2E-FP-1918-001 (issue
+		// #1918): declares interaction_mode=full_remediation_autonomous (an
+		// autonomy grant that would normally leave phase2_blocked=false)
+		// against an RR whose target Deployment carries a synthetic Warning
+		// K8s Event (reason MOCK_NOT_ACTIONABLE, injected by the 18_ test
+		// itself) so deriveSignalName resolves a grounded SignalName that
+		// surfaces in KA's prompt, matching the mock-LLM's built-in
+		// "not_actionable" scenario -- KA's own RCA reasoning returns
+		// is_actionable=false. The harness-enforced actionability gate must
+		// force phase2_blocked=true regardless of the declared mode, and the
+		// chained kubernaut_discover_workflows attempt that follows must be
+		// hard-rejected before it ever reaches KA.
+		"not-actionable-1918": fmt.Sprintf("fp-na1918-%s", uuid.New().String()[:8]),
 	}
 	_, _ = fmt.Fprintln(writer, "  📌 AF remediate namespaces:")
 	for key, ns := range afRemediateNS {

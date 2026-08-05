@@ -292,6 +292,9 @@ type AIAgentAuthDeniedPayload struct {
 	Path OptString `json:"path"`
 	// HTTP request method.
 	Method OptString `json:"method"`
+	// Specific denial classification (e.g. "authorization_denied") (BR-SECURITY-1900, AU-3, extends
+	// BR-AUDIT-005).
+	Reason OptString `json:"reason"`
 }
 
 // GetEventType returns the value of EventType.
@@ -319,6 +322,11 @@ func (s *AIAgentAuthDeniedPayload) GetMethod() OptString {
 	return s.Method
 }
 
+// GetReason returns the value of Reason.
+func (s *AIAgentAuthDeniedPayload) GetReason() OptString {
+	return s.Reason
+}
+
 // SetEventType sets the value of EventType.
 func (s *AIAgentAuthDeniedPayload) SetEventType(val AIAgentAuthDeniedPayloadEventType) {
 	s.EventType = val
@@ -342,6 +350,11 @@ func (s *AIAgentAuthDeniedPayload) SetPath(val OptString) {
 // SetMethod sets the value of Method.
 func (s *AIAgentAuthDeniedPayload) SetMethod(val OptString) {
 	s.Method = val
+}
+
+// SetReason sets the value of Reason.
+func (s *AIAgentAuthDeniedPayload) SetReason(val OptString) {
+	s.Reason = val
 }
 
 // Event type for discriminator (matches parent event_type).
@@ -393,6 +406,11 @@ type AIAgentAuthFailurePayload struct {
 	Path OptString `json:"path"`
 	// HTTP request method.
 	Method OptString `json:"method"`
+	// Specific failure classification (e.g. "missing_auth_header", "invalid_auth_format",
+	// "empty_bearer_token", "invalid_token", "invalid_token_audience") distinguishing an audience-bound
+	// TokenReview mismatch (cross-service token replay attempt) from a routine missing/malformed/expired
+	// token (BR-SECURITY-1900, AU-3, extends BR-AUDIT-005).
+	Reason OptString `json:"reason"`
 }
 
 // GetEventType returns the value of EventType.
@@ -420,6 +438,11 @@ func (s *AIAgentAuthFailurePayload) GetMethod() OptString {
 	return s.Method
 }
 
+// GetReason returns the value of Reason.
+func (s *AIAgentAuthFailurePayload) GetReason() OptString {
+	return s.Reason
+}
+
 // SetEventType sets the value of EventType.
 func (s *AIAgentAuthFailurePayload) SetEventType(val AIAgentAuthFailurePayloadEventType) {
 	s.EventType = val
@@ -443,6 +466,11 @@ func (s *AIAgentAuthFailurePayload) SetPath(val OptString) {
 // SetMethod sets the value of Method.
 func (s *AIAgentAuthFailurePayload) SetMethod(val OptString) {
 	s.Method = val
+}
+
+// SetReason sets the value of Reason.
+func (s *AIAgentAuthFailurePayload) SetReason(val OptString) {
+	s.Reason = val
 }
 
 // Event type for discriminator (matches parent event_type).
@@ -7539,6 +7567,83 @@ func (s *ApifrontendUserDecisionPayloadEventType) UnmarshalText(data []byte) err
 	}
 }
 
+// Workflow discovery event payload (apifrontend.workflow.discovery) — kubernaut_discover_workflows
+// tool returned a workflow list (AU-12, Issue.
+// Ref: #/components/schemas/ApifrontendWorkflowDiscoveryPayload
+type ApifrontendWorkflowDiscoveryPayload struct {
+	// Event type for discriminator (matches parent event_type).
+	EventType ApifrontendWorkflowDiscoveryPayloadEventType `json:"event_type"`
+	// RemediationRequest identifier the discovery was performed for.
+	RrID string `json:"rr_id"`
+	// Number of workflows returned by KA's discovery protocol.
+	WorkflowCount int `json:"workflow_count"`
+}
+
+// GetEventType returns the value of EventType.
+func (s *ApifrontendWorkflowDiscoveryPayload) GetEventType() ApifrontendWorkflowDiscoveryPayloadEventType {
+	return s.EventType
+}
+
+// GetRrID returns the value of RrID.
+func (s *ApifrontendWorkflowDiscoveryPayload) GetRrID() string {
+	return s.RrID
+}
+
+// GetWorkflowCount returns the value of WorkflowCount.
+func (s *ApifrontendWorkflowDiscoveryPayload) GetWorkflowCount() int {
+	return s.WorkflowCount
+}
+
+// SetEventType sets the value of EventType.
+func (s *ApifrontendWorkflowDiscoveryPayload) SetEventType(val ApifrontendWorkflowDiscoveryPayloadEventType) {
+	s.EventType = val
+}
+
+// SetRrID sets the value of RrID.
+func (s *ApifrontendWorkflowDiscoveryPayload) SetRrID(val string) {
+	s.RrID = val
+}
+
+// SetWorkflowCount sets the value of WorkflowCount.
+func (s *ApifrontendWorkflowDiscoveryPayload) SetWorkflowCount(val int) {
+	s.WorkflowCount = val
+}
+
+// Event type for discriminator (matches parent event_type).
+type ApifrontendWorkflowDiscoveryPayloadEventType string
+
+const (
+	ApifrontendWorkflowDiscoveryPayloadEventTypeApifrontendWorkflowDiscovery ApifrontendWorkflowDiscoveryPayloadEventType = "apifrontend.workflow.discovery"
+)
+
+// AllValues returns all ApifrontendWorkflowDiscoveryPayloadEventType values.
+func (ApifrontendWorkflowDiscoveryPayloadEventType) AllValues() []ApifrontendWorkflowDiscoveryPayloadEventType {
+	return []ApifrontendWorkflowDiscoveryPayloadEventType{
+		ApifrontendWorkflowDiscoveryPayloadEventTypeApifrontendWorkflowDiscovery,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ApifrontendWorkflowDiscoveryPayloadEventType) MarshalText() ([]byte, error) {
+	switch s {
+	case ApifrontendWorkflowDiscoveryPayloadEventTypeApifrontendWorkflowDiscovery:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ApifrontendWorkflowDiscoveryPayloadEventType) UnmarshalText(data []byte) error {
+	switch ApifrontendWorkflowDiscoveryPayloadEventType(data) {
+	case ApifrontendWorkflowDiscoveryPayloadEventTypeApifrontendWorkflowDiscovery:
+		*s = ApifrontendWorkflowDiscoveryPayloadEventTypeApifrontendWorkflowDiscovery
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Response when audit event is queued for async processing (202 Accepted).
 // Ref: #/components/schemas/AsyncAcceptanceResponse
 type AsyncAcceptanceResponse struct {
@@ -8169,6 +8274,7 @@ type AuditEventEventData struct {
 	ApifrontendUserDecisionPayload               ApifrontendUserDecisionPayload
 	ApifrontendAuthAccessDeniedPayload           ApifrontendAuthAccessDeniedPayload
 	ApifrontendToolExecutedPayload               ApifrontendToolExecutedPayload
+	ApifrontendWorkflowDiscoveryPayload          ApifrontendWorkflowDiscoveryPayload
 	ApifrontendAuthSuccessPayload                ApifrontendAuthSuccessPayload
 	ApifrontendAuthFailurePayload                ApifrontendAuthFailurePayload
 	ApifrontendRatelimitDeniedPayload            ApifrontendRatelimitDeniedPayload
@@ -8317,6 +8423,7 @@ const (
 	ApifrontendUserDecisionPayloadAuditEventEventData                                AuditEventEventDataType = "apifrontend.user.decision"
 	ApifrontendAuthAccessDeniedPayloadAuditEventEventData                            AuditEventEventDataType = "apifrontend.auth.access_denied"
 	ApifrontendToolExecutedPayloadAuditEventEventData                                AuditEventEventDataType = "apifrontend.tool.executed"
+	ApifrontendWorkflowDiscoveryPayloadAuditEventEventData                           AuditEventEventDataType = "apifrontend.workflow.discovery"
 	ApifrontendAuthSuccessPayloadAuditEventEventData                                 AuditEventEventDataType = "apifrontend.auth.success"
 	ApifrontendAuthFailurePayloadAuditEventEventData                                 AuditEventEventDataType = "apifrontend.auth.failure"
 	ApifrontendRatelimitDeniedPayloadAuditEventEventData                             AuditEventEventDataType = "apifrontend.ratelimit.denied"
@@ -8749,6 +8856,11 @@ func (s AuditEventEventData) IsApifrontendAuthAccessDeniedPayload() bool {
 // IsApifrontendToolExecutedPayload reports whether AuditEventEventData is ApifrontendToolExecutedPayload.
 func (s AuditEventEventData) IsApifrontendToolExecutedPayload() bool {
 	return s.Type == ApifrontendToolExecutedPayloadAuditEventEventData
+}
+
+// IsApifrontendWorkflowDiscoveryPayload reports whether AuditEventEventData is ApifrontendWorkflowDiscoveryPayload.
+func (s AuditEventEventData) IsApifrontendWorkflowDiscoveryPayload() bool {
+	return s.Type == ApifrontendWorkflowDiscoveryPayloadAuditEventEventData
 }
 
 // IsApifrontendAuthSuccessPayload reports whether AuditEventEventData is ApifrontendAuthSuccessPayload.
@@ -10732,6 +10844,27 @@ func NewApifrontendToolExecutedPayloadAuditEventEventData(v ApifrontendToolExecu
 	return s
 }
 
+// SetApifrontendWorkflowDiscoveryPayload sets AuditEventEventData to ApifrontendWorkflowDiscoveryPayload.
+func (s *AuditEventEventData) SetApifrontendWorkflowDiscoveryPayload(v ApifrontendWorkflowDiscoveryPayload) {
+	s.Type = ApifrontendWorkflowDiscoveryPayloadAuditEventEventData
+	s.ApifrontendWorkflowDiscoveryPayload = v
+}
+
+// GetApifrontendWorkflowDiscoveryPayload returns ApifrontendWorkflowDiscoveryPayload and true boolean if AuditEventEventData is ApifrontendWorkflowDiscoveryPayload.
+func (s AuditEventEventData) GetApifrontendWorkflowDiscoveryPayload() (v ApifrontendWorkflowDiscoveryPayload, ok bool) {
+	if !s.IsApifrontendWorkflowDiscoveryPayload() {
+		return v, false
+	}
+	return s.ApifrontendWorkflowDiscoveryPayload, true
+}
+
+// NewApifrontendWorkflowDiscoveryPayloadAuditEventEventData returns new AuditEventEventData from ApifrontendWorkflowDiscoveryPayload.
+func NewApifrontendWorkflowDiscoveryPayloadAuditEventEventData(v ApifrontendWorkflowDiscoveryPayload) AuditEventEventData {
+	var s AuditEventEventData
+	s.SetApifrontendWorkflowDiscoveryPayload(v)
+	return s
+}
+
 // SetApifrontendAuthSuccessPayload sets AuditEventEventData to ApifrontendAuthSuccessPayload.
 func (s *AuditEventEventData) SetApifrontendAuthSuccessPayload(v ApifrontendAuthSuccessPayload) {
 	s.Type = ApifrontendAuthSuccessPayloadAuditEventEventData
@@ -11751,6 +11884,7 @@ type AuditEventRequestEventData struct {
 	ApifrontendUserDecisionPayload               ApifrontendUserDecisionPayload
 	ApifrontendAuthAccessDeniedPayload           ApifrontendAuthAccessDeniedPayload
 	ApifrontendToolExecutedPayload               ApifrontendToolExecutedPayload
+	ApifrontendWorkflowDiscoveryPayload          ApifrontendWorkflowDiscoveryPayload
 	ApifrontendAuthSuccessPayload                ApifrontendAuthSuccessPayload
 	ApifrontendAuthFailurePayload                ApifrontendAuthFailurePayload
 	ApifrontendRatelimitDeniedPayload            ApifrontendRatelimitDeniedPayload
@@ -11899,6 +12033,7 @@ const (
 	ApifrontendUserDecisionPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "apifrontend.user.decision"
 	ApifrontendAuthAccessDeniedPayloadAuditEventRequestEventData                                   AuditEventRequestEventDataType = "apifrontend.auth.access_denied"
 	ApifrontendToolExecutedPayloadAuditEventRequestEventData                                       AuditEventRequestEventDataType = "apifrontend.tool.executed"
+	ApifrontendWorkflowDiscoveryPayloadAuditEventRequestEventData                                  AuditEventRequestEventDataType = "apifrontend.workflow.discovery"
 	ApifrontendAuthSuccessPayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "apifrontend.auth.success"
 	ApifrontendAuthFailurePayloadAuditEventRequestEventData                                        AuditEventRequestEventDataType = "apifrontend.auth.failure"
 	ApifrontendRatelimitDeniedPayloadAuditEventRequestEventData                                    AuditEventRequestEventDataType = "apifrontend.ratelimit.denied"
@@ -12331,6 +12466,11 @@ func (s AuditEventRequestEventData) IsApifrontendAuthAccessDeniedPayload() bool 
 // IsApifrontendToolExecutedPayload reports whether AuditEventRequestEventData is ApifrontendToolExecutedPayload.
 func (s AuditEventRequestEventData) IsApifrontendToolExecutedPayload() bool {
 	return s.Type == ApifrontendToolExecutedPayloadAuditEventRequestEventData
+}
+
+// IsApifrontendWorkflowDiscoveryPayload reports whether AuditEventRequestEventData is ApifrontendWorkflowDiscoveryPayload.
+func (s AuditEventRequestEventData) IsApifrontendWorkflowDiscoveryPayload() bool {
+	return s.Type == ApifrontendWorkflowDiscoveryPayloadAuditEventRequestEventData
 }
 
 // IsApifrontendAuthSuccessPayload reports whether AuditEventRequestEventData is ApifrontendAuthSuccessPayload.
@@ -14311,6 +14451,27 @@ func (s AuditEventRequestEventData) GetApifrontendToolExecutedPayload() (v Apifr
 func NewApifrontendToolExecutedPayloadAuditEventRequestEventData(v ApifrontendToolExecutedPayload) AuditEventRequestEventData {
 	var s AuditEventRequestEventData
 	s.SetApifrontendToolExecutedPayload(v)
+	return s
+}
+
+// SetApifrontendWorkflowDiscoveryPayload sets AuditEventRequestEventData to ApifrontendWorkflowDiscoveryPayload.
+func (s *AuditEventRequestEventData) SetApifrontendWorkflowDiscoveryPayload(v ApifrontendWorkflowDiscoveryPayload) {
+	s.Type = ApifrontendWorkflowDiscoveryPayloadAuditEventRequestEventData
+	s.ApifrontendWorkflowDiscoveryPayload = v
+}
+
+// GetApifrontendWorkflowDiscoveryPayload returns ApifrontendWorkflowDiscoveryPayload and true boolean if AuditEventRequestEventData is ApifrontendWorkflowDiscoveryPayload.
+func (s AuditEventRequestEventData) GetApifrontendWorkflowDiscoveryPayload() (v ApifrontendWorkflowDiscoveryPayload, ok bool) {
+	if !s.IsApifrontendWorkflowDiscoveryPayload() {
+		return v, false
+	}
+	return s.ApifrontendWorkflowDiscoveryPayload, true
+}
+
+// NewApifrontendWorkflowDiscoveryPayloadAuditEventRequestEventData returns new AuditEventRequestEventData from ApifrontendWorkflowDiscoveryPayload.
+func NewApifrontendWorkflowDiscoveryPayloadAuditEventRequestEventData(v ApifrontendWorkflowDiscoveryPayload) AuditEventRequestEventData {
+	var s AuditEventRequestEventData
+	s.SetApifrontendWorkflowDiscoveryPayload(v)
 	return s
 }
 
@@ -18331,6 +18492,13 @@ type IncidentResponseData struct {
 	Confidence float32 `json:"confidence"`
 	// ISO timestamp of analysis completion.
 	Timestamp time.Time `json:"timestamp"`
+	// Whether the investigation determined the incident is actionable
+	// (Issue #1923). Tri-state: true/false when KA reached an explicit
+	// determination, unset/null when the investigation never reached
+	// the decisive step (e.g. blocked before tool-availability gating
+	// resolved it). Propagated unmodified from KA's investigation
+	// result; does not reflect any DataStorage-side re-evaluation.
+	IsActionable OptNilBool `json:"isActionable"`
 	// True when AI could not produce reliable result.
 	NeedsHumanReview OptBool `json:"needsHumanReview"`
 	// Structured reason when needsHumanReview=true (BR-KA-197, BR-KA-200, BR-KA-212, BR-AI-601).
@@ -18369,6 +18537,11 @@ func (s *IncidentResponseData) GetConfidence() float32 {
 // GetTimestamp returns the value of Timestamp.
 func (s *IncidentResponseData) GetTimestamp() time.Time {
 	return s.Timestamp
+}
+
+// GetIsActionable returns the value of IsActionable.
+func (s *IncidentResponseData) GetIsActionable() OptNilBool {
+	return s.IsActionable
 }
 
 // GetNeedsHumanReview returns the value of NeedsHumanReview.
@@ -18419,6 +18592,11 @@ func (s *IncidentResponseData) SetConfidence(val float32) {
 // SetTimestamp sets the value of Timestamp.
 func (s *IncidentResponseData) SetTimestamp(val time.Time) {
 	s.Timestamp = val
+}
+
+// SetIsActionable sets the value of IsActionable.
+func (s *IncidentResponseData) SetIsActionable(val OptNilBool) {
+	s.IsActionable = val
 }
 
 // SetNeedsHumanReview sets the value of NeedsHumanReview.

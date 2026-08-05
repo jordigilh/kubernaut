@@ -47,6 +47,18 @@ import (
 // Short because the phase transition should follow almost immediately after AA submits.
 const isPhaseActivePollTimeout = 5 * time.Second
 
+// Status/warning text emitted during the interactive-investigation await
+// loop (#1916, SI-11). Deliberately omits internal service acronyms (KA, AA)
+// and CRD names (IS CRD) — console users must never see internal system
+// architecture, per pkg/apifrontend/agent/prompt.txt's Behavioral Constraints
+// item 1. That constraint only governs LLM-generated text; these are Go
+// harness literals, so they must independently avoid the same leakage.
+const (
+	statusSessionReadyText        = "Investigation session ready, connecting..."
+	statusSessionAcknowledgedText = "Interactive session created, starting investigation..."
+	warnSessionTrackingFailedFmt  = "Warning: session tracking setup failed (%s), investigation continues"
+)
+
 type rrIDContextKey struct{}
 
 // WithRRID attaches the remediation request ID to the context so that
@@ -94,6 +106,18 @@ type InvestigateMCPArgs struct {
 	// the rr_id takeover path, since the cluster identity is read back from
 	// the existing RR object instead). Empty for the local hub cluster.
 	ClusterID string `json:"cluster_id,omitempty"`
+
+	// InteractionMode declares how much autonomy the harness should grant
+	// for phase transitions following this investigation (DD-AF-011,
+	// #1899). One of "interactive" (default when omitted -- wait for
+	// genuine user confirmation before discover_workflows/select_workflow),
+	// "full_remediation" (auto-proceed to workflow discovery, but still
+	// wait for user confirmation before executing a workflow), or
+	// "full_remediation_autonomous" (auto-proceed through both discovery
+	// and execution -- only use this when the user explicitly requested
+	// full, unattended remediation). An omitted or unrecognized value fails
+	// safe to "interactive" (AC-6 least privilege, SI-10 input validation).
+	InteractionMode string `json:"interaction_mode,omitempty" jsonschema:"one of interactive (default), full_remediation, full_remediation_autonomous -- declares how much autonomy to grant for post-investigation phase transitions"`
 }
 
 // InvestigateMCPResult is the output of the MCP investigate tool.
@@ -117,6 +141,14 @@ type InvestigateRCA struct {
 	RCASummary     string   `json:"rca_summary,omitempty"`
 	TotalLLMTurns  int      `json:"total_llm_turns,omitempty"`
 	TotalToolCalls int      `json:"total_tool_calls,omitempty"`
+	// IsActionable/HasWorkflow (#1918) mirror KA's rcaEventPayload fields of
+	// the same name, giving phase_guard.go's harness-enforced gate a
+	// structured signal for whether Phase 2 (kubernaut_discover_workflows)
+	// should stay reachable, independent of the model's own reading of the
+	// RCA narrative. *bool (not bool) so an absent key (older/unset signal)
+	// stays distinguishable from a genuine computed false.
+	IsActionable *bool `json:"is_actionable,omitempty"`
+	HasWorkflow  bool  `json:"has_workflow,omitempty"`
 }
 
 // SessionStartedHook is called after a successful StartInvestigation with the
@@ -451,7 +483,7 @@ func awaitInvestigationReady(ctx context.Context, cfg *InvestigateConfig, rrID, 
 	var kaSessionID string
 	if awaitErr == nil && awaitResult.Status == "ready" {
 		kaSessionID = awaitResult.SessionID
-		_ = launcher.EmitStatusSafe(ctx, "Investigation session ready, connecting to KA...")
+		_ = launcher.EmitStatusSafe(ctx, statusSessionReadyText)
 	}
 
 	// Wait for the IS CRD phase to become Active — AA sets this after
@@ -464,7 +496,7 @@ func awaitInvestigationReady(ctx context.Context, cfg *InvestigateConfig, rrID, 
 	}
 	isCtx, isCancel := context.WithTimeout(ctx, isPhaseTimeout)
 	if AwaitISPhaseActive(isCtx, cfg.Client, cfg.Namespace, rrID) {
-		_ = launcher.EmitStatusSafe(ctx, "Interactive session acknowledged by AA, starting investigation...")
+		_ = launcher.EmitStatusSafe(ctx, statusSessionAcknowledgedText)
 	}
 	isCancel()
 
@@ -545,7 +577,7 @@ func finalizeInvestigationStart(ctx context.Context, cfg *InvestigateConfig, rrI
 				"session_id", result.SessionID,
 				"namespace", cfg.Namespace,
 			)
-			_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf("Warning: IS CRD creation failed (%s), investigation continues", security.RedactError(hookErr)))
+			_ = launcher.EmitStatusSafe(ctx, fmt.Sprintf(warnSessionTrackingFailedFmt, security.RedactError(hookErr)))
 		}
 	}
 

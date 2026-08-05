@@ -1,8 +1,8 @@
 # kubernaut-apifrontend Architecture Design Document
 
-**Version:** 1.1
+**Version:** 1.2
 **Status:** Accepted
-**Last Updated:** 2026-05-10
+**Last Updated:** 2026-08-03 (added Section 3.0 Operational Modes, BR-INTERACTIVE-011, #1855)
 
 ---
 
@@ -288,6 +288,24 @@ type SessionStore interface {
 ---
 
 ## 3. Data Flow
+
+### 3.0 Operational Modes
+
+AF's ADK agent selects one of three remediation modes per user turn, purely from
+phrasing in `pkg/apifrontend/agent/prompt.txt` -- there is no explicit mode
+parameter or session-level mode field.
+
+| Mode | Trigger phrasing | Behavior | BR |
+|------|-------------------|----------|-----|
+| Autonomous | "fix", "remediate", "heal" (alone) | `kubernaut_remediate` only; pipeline (AA/RO/WFE) investigates and selects a workflow with no further AF/LLM involvement | [BR-INTERACTIVE-001](../../../requirements/BR-INTERACTIVE.md#br-interactive-001-interactive-investigation-sessions) |
+| Interactive | "investigate", "diagnose", "look into" (alone) | `kubernaut_investigate` → RCA streamed to user → **stop and wait** for the user to drive discovery/selection/watch | [BR-INTERACTIVE-004](../../../requirements/BR-INTERACTIVE.md#br-interactive-004-dynamic-takeover-of-autonomous-investigations), [BR-INTERACTIVE-010](../../../requirements/BR-INTERACTIVE-010.md) |
+| Full Interactive Remediation | "investigate and fix", "diagnose and remediate" (combined) | Same RCA transparency as Interactive, but auto-selects the highest-confidence workflow and proceeds straight through to execution with no pause | [BR-INTERACTIVE-011](../../../requirements/BR-INTERACTIVE.md#br-interactive-011-af-remediation-mode-selection-and-full-interactive-remediation) |
+
+See BR-INTERACTIVE-011 for the full decision algorithm and success criteria.
+Flow 1 below illustrates the Interactive-mode "yield to user" path (`alt User
+accepts and selects workflow`); Full Interactive Remediation follows the same
+Phase 1-2 steps but takes that branch automatically without a `tasks/send`
+round-trip from the user.
 
 ### Flow 1: NL Query → Triage → RR Creation → Investigation → User Decision
 
