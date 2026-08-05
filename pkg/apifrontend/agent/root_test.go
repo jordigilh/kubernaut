@@ -99,6 +99,22 @@ func (m *mockAuthorizerImpl) Check(_ context.Context, _ string, _ []string, _ st
 	return m.allow, m.err
 }
 
+// dualAuthorizer implements both auth.ToolAuthorizer and auth.ConsoleAuthorizer
+// with independently controllable outcomes, for testing #1919's console-access
+// enforcement layered on top of the pre-existing per-tool check in newRBACGuard.
+type dualAuthorizer struct {
+	toolAllowed    bool
+	consoleAllowed bool
+}
+
+func (d *dualAuthorizer) Check(_ context.Context, _ string, _ []string, _ string) (bool, error) {
+	return d.toolAllowed, nil
+}
+
+func (d *dualAuthorizer) CheckConsoleAccess(_ context.Context, _ string, _ []string) (bool, error) {
+	return d.consoleAllowed, nil
+}
+
 var _ = Describe("Root Agent", func() {
 	Describe("NewRootAgent", func() {
 		It("UT-AF-100-001: returns configured agent with model", func() {
@@ -261,8 +277,8 @@ var _ = Describe("Root Agent", func() {
 			callCount  atomic.Int32
 		}
 
-		newMockToolCallLLM := func(targetTool string) *mockToolCallLLM {
-			return &mockToolCallLLM{targetTool: targetTool}
+		newMockToolCallLLM := func() *mockToolCallLLM {
+			return &mockToolCallLLM{targetTool: "af_test_tool"}
 		}
 
 		buildToolCallLLMName := func(_ *mockToolCallLLM) string { return "mock-tool-call-llm" }
@@ -355,7 +371,7 @@ var _ = Describe("Root Agent", func() {
 		}
 
 		It("IT-AF-1221-020: allowed identity -> tool executes via runner.Run", func() {
-			mockLLM := newMockToolCallLLM("af_test_tool")
+			mockLLM := newMockToolCallLLM()
 			r, _ := buildRunner(mockLLM, &mockAuthorizerImpl{allow: true})
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
@@ -371,7 +387,7 @@ var _ = Describe("Root Agent", func() {
 		})
 
 		It("IT-AF-1221-021: denied identity -> tool blocked with forbidden", func() {
-			mockLLM := newMockToolCallLLM("af_test_tool")
+			mockLLM := newMockToolCallLLM()
 			r, _ := buildRunner(mockLLM, &mockAuthorizerImpl{allow: false})
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
@@ -384,12 +400,27 @@ var _ = Describe("Root Agent", func() {
 		})
 
 		It("IT-AF-1221-022: no identity in context -> denied with unauthorized", func() {
-			mockLLM := newMockToolCallLLM("af_test_tool")
+			mockLLM := newMockToolCallLLM()
 			r, _ := buildRunner(mockLLM, &mockAuthorizerImpl{allow: true})
 
 			// No identity injected — context.Background() without WithUserIdentity
 			result := runAgent(r, context.Background())
 			Expect(result).To(ContainSubstring("unauthorized"))
+		})
+
+		It("IT-AF-1919-006 [AC-3]: console access denied blocks the tool call via runner.Run even though the tool would be allowed (bypass-closure proof: /a2a/access is never called)", func() {
+			mockLLM := newMockToolCallLLM()
+			r, _ := buildRunner(mockLLM, &dualAuthorizer{toolAllowed: true, consoleAllowed: false})
+
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre-user@example.com",
+				Groups:   []string{"sre"},
+			})
+
+			result := runAgent(r, ctx)
+			Expect(result).To(ContainSubstring("console"),
+				"AC-3: a client that never calls GET /a2a/access must still be denied at the tool-call site "+
+					"when console access is denied, even though the per-tool check would allow the call")
 		})
 
 		It("UT-AF-1332-080: RBAC denial emits EventAuthAccessDenied audit event (SI-4)", func() {
@@ -450,6 +481,61 @@ var _ = Describe("Root Agent", func() {
 			Expect(ev.Type).To(Equal(audit.EventAuthAccessDenied))
 			Expect(ev.Detail["reason"]).To(Equal("no_identity_in_context"))
 			Expect(ev.Detail["tool_name"]).To(Equal("kubernaut_remediate"))
+		})
+
+		It("UT-AF-1919-008 [AC-3, AU-12]: denies when console access is denied even though the tool would be allowed, and audits reason=console_access_denied", func() {
+			spyAuditor := &spyAuditEmitter{}
+			guard := agentpkg.NewRBACGuardForTest(&dualAuthorizer{toolAllowed: true, consoleAllowed: false}, spyAuditor)
+
+			testTool, err := functiontool.New(functiontool.Config{
+				Name:        "kubernaut_investigate",
+				Description: "test tool for #1919 console gate",
+			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+				return struct{}{}, nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			baseCtx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre-user@example.com",
+				Groups:   []string{"sre"},
+			})
+			ctx := mockToolCtx{Context: baseCtx, callID: "console-gate-008"}
+
+			result, err := guard(ctx, testTool, map[string]any{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(HaveKey("error"))
+			Expect(result["error"]).To(ContainSubstring("console"),
+				"AC-3: denial must be attributable to the console-access gate, not the (allowed) per-tool check")
+
+			Expect(spyAuditor.events).To(HaveLen(1), "AU-12: console-access denial must emit exactly one audit event")
+			ev := spyAuditor.events[0]
+			Expect(ev.Type).To(Equal(audit.EventAuthAccessDenied))
+			Expect(ev.UserID).To(Equal("sre-user@example.com"))
+			Expect(ev.Detail["reason"]).To(Equal("console_access_denied"))
+			Expect(ev.Detail["tool_name"]).To(Equal("kubernaut_investigate"))
+		})
+
+		It("UT-AF-1919-009 [AC-3]: unchanged when the authorizer does not implement ConsoleAuthorizer", func() {
+			guard := agentpkg.NewRBACGuardForTest(&mockAuthorizerImpl{allow: true}, nil)
+
+			testTool, err := functiontool.New(functiontool.Config{
+				Name:        "kubernaut_investigate",
+				Description: "test tool for #1919 zero-touch fallback",
+			}, func(_ tool.Context, _ struct{}) (struct{}, error) {
+				return struct{}{}, nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			baseCtx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre-user@example.com",
+				Groups:   []string{"sre"},
+			})
+			ctx := mockToolCtx{Context: baseCtx, callID: "console-gate-009"}
+
+			result, err := guard(ctx, testTool, map[string]any{})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).To(BeNil(),
+				"AC-3: an authorizer that doesn't implement ConsoleAuthorizer must fall through to the unchanged per-tool-only check (nil result = proceed)")
 		})
 	})
 

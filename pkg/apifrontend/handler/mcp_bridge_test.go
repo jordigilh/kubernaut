@@ -49,6 +49,22 @@ func (a *allowAllAuthorizer) Check(_ context.Context, _ string, _ []string, _ st
 	return true, nil
 }
 
+// dualAuthorizer implements both auth.ToolAuthorizer and auth.ConsoleAuthorizer
+// with independently controllable outcomes, for testing #1919's console-access
+// enforcement layered on top of the pre-existing per-tool check.
+type dualAuthorizer struct {
+	toolAllowed    bool
+	consoleAllowed bool
+}
+
+func (d *dualAuthorizer) Check(_ context.Context, _ string, _ []string, _ string) (bool, error) {
+	return d.toolAllowed, nil
+}
+
+func (d *dualAuthorizer) CheckConsoleAccess(_ context.Context, _ string, _ []string) (bool, error) {
+	return d.consoleAllowed, nil
+}
+
 // mapAuthorizer is a ToolAuthorizer mock that uses a role-to-tools map for decisions.
 type mapAuthorizer struct {
 	roles map[string][]string
@@ -930,6 +946,64 @@ var _ = Describe("MCP Bridge - Tier 2: Security", Label("tier2", "bridge"), func
 			Expect(isErrorResult(body)).To(BeTrue())
 			text := extractTextContent(body)
 			Expect(text).To(ContainSubstring("permission denied"))
+		})
+
+		It("UT-AF-1919-006 [AC-3, AC-6]: checkRBAC denies when console access is denied even though the tool would be allowed", func() {
+			cfg := handler.MCPConfig{
+				ServerName:    "kubernaut-apifrontend",
+				ServerVersion: "v0.1.0-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					K8sClient:   fakeK8s,
+					TypedClient: newBridgeTypedClient(),
+					Namespace:   "default",
+
+					Authorizer:         &dualAuthorizer{toolAllowed: true, consoleAllowed: false},
+					Auditor:            auditor,
+					Metrics:            metrics,
+					ToolTimeout:        2 * time.Second,
+					MaxConcurrentTools: 5,
+				},
+			}
+			h, err := handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			user := &auth.UserIdentity{Username: "operator", Groups: []string{"sre"}, Issuer: "test"}
+			sid := mcpInitialize(h, user)
+
+			_, body := mcpCallTool(h, sid, kubernautListRemediations, map[string]any{}, user)
+			Expect(isErrorResult(body)).To(BeTrue(),
+				"AC-3: console access denial must block the tool call even though the per-tool check allows it")
+			text := extractTextContent(body)
+			Expect(text).To(ContainSubstring("console"))
+		})
+
+		It("UT-AF-1919-007 [AC-3]: checkRBAC is unchanged when the authorizer does not implement ConsoleAuthorizer", func() {
+			cfg := handler.MCPConfig{
+				ServerName:    "kubernaut-apifrontend",
+				ServerVersion: "v0.1.0-test",
+				Enabled:       true,
+				Bridge: &handler.MCPBridgeConfig{
+					K8sClient:   fakeK8s,
+					TypedClient: newBridgeTypedClient(),
+					Namespace:   "default",
+
+					Authorizer:         &allowAllAuthorizer{},
+					Auditor:            auditor,
+					Metrics:            metrics,
+					ToolTimeout:        2 * time.Second,
+					MaxConcurrentTools: 5,
+				},
+			}
+			h, err := handler.NewMCPHandler(cfg)
+			Expect(err).NotTo(HaveOccurred())
+
+			user := &auth.UserIdentity{Username: "operator", Groups: []string{"sre"}, Issuer: "test"}
+			sid := mcpInitialize(h, user)
+
+			_, body := mcpCallTool(h, sid, kubernautListRemediations, map[string]any{}, user)
+			Expect(isErrorResult(body)).To(BeFalse(),
+				"AC-3: an authorizer that doesn't implement ConsoleAuthorizer must fall through to the unchanged per-tool-only check")
 		})
 
 		It("UT-AF-B-029: wildcard * grants access to all tools", func() {
