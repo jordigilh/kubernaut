@@ -56,6 +56,22 @@ a cherry-pick. Two notable adaptations from the original `main` implementation:
    (and the `mcpclient` resilience code #1934 fixed) does not exist on
    `release/v1.5` — it was introduced on `main` after `release/v1.5` branched.
    See #1941 for the confirmation.
+4. **Operator-facing upgrade risk not addressed by the original `main`
+   implementation, added here**: because `consoleAccessGroups` is a separate,
+   independently-maintained values key rather than being derived from
+   `apifrontend.config.rbac.personas`'s keys, an operator who configured a
+   custom persona group (or replaced the default six) would, after
+   upgrading, silently have every AF tool call denied for that group --
+   even though its per-tool grants are unchanged -- with no clear signal
+   beyond a `forbidden: no console access` error. `main`'s PR #1940 did not
+   add any warning for this. Added a `charts/kubernaut/templates/NOTES.txt`
+   hint (printed on `helm install`/`helm upgrade`) that diffs `personas`
+   keys against `consoleAccessGroups` and lists any gap, plus a
+   `CHANGELOG.md` entry under `[Unreleased]` documenting the required
+   operator action. Verified manually via `helm install --dry-run` (helm-unittest
+   does not render `NOTES.txt`) with both default values (no warning) and a
+   `--set apifrontend.config.rbac.personas.custom-team[0]=...` override (warning
+   correctly lists the ungranted group).
 
 Everything else below mirrors the original `main` test plan's intent,
 re-verified against `release/v1.5`'s actual code.
