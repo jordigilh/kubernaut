@@ -75,22 +75,40 @@ type LoopResult interface {
 }
 
 // SubmitResult is returned when the LLM calls the generic submit_result tool (RCA phase).
-type SubmitResult struct{ Content string }
+// Messages carries the fully-paired assistant/tool turns accumulated by
+// runLLMLoop BEFORE this final (still-unpaired) submit_result call — see
+// sentinelResult's doc comment for why the final call itself is excluded
+// (#1935 root cause #2).
+type SubmitResult struct {
+	Content  string
+	Messages []llm.Message
+}
 
 func (*SubmitResult) loopResult() {}
 
 // SubmitWithWorkflowResult is returned when the LLM calls submit_result_with_workflow.
-type SubmitWithWorkflowResult struct{ Content string }
+type SubmitWithWorkflowResult struct {
+	Content  string
+	Messages []llm.Message
+}
 
 func (*SubmitWithWorkflowResult) loopResult() {}
 
 // SubmitNoWorkflowResult is returned when the LLM calls submit_result_no_workflow.
-type SubmitNoWorkflowResult struct{ Content string }
+type SubmitNoWorkflowResult struct {
+	Content  string
+	Messages []llm.Message
+}
 
 func (*SubmitNoWorkflowResult) loopResult() {}
 
 // TextResult is returned when the LLM responds with plain text (no tool call).
-type TextResult struct{ Content string }
+// Messages carries the fully-paired assistant/tool turns accumulated by
+// runLLMLoop prior to this final text turn (#1935 root cause #2).
+type TextResult struct {
+	Content  string
+	Messages []llm.Message
+}
 
 func (*TextResult) loopResult() {}
 
@@ -121,15 +139,36 @@ type CancelledResult struct {
 
 func (*CancelledResult) loopResult() {}
 
-// sentinelResult maps a sentinel tool call to its LoopResult type.
-func sentinelResult(tc llm.ToolCall) LoopResult {
+// loopResultMessages extracts the accumulated message history from a
+// LoopResult, for the concrete types that carry one (#1935 root cause #2).
+// CancelledResult and ExhaustedResult are handled separately by their
+// callers (cancellation snapshot / abort path) and return nil here.
+func loopResultMessages(r LoopResult) []llm.Message {
+	switch v := r.(type) {
+	case *SubmitResult:
+		return v.Messages
+	case *TextResult:
+		return v.Messages
+	default:
+		return nil
+	}
+}
+
+// sentinelResult maps a sentinel tool call to its LoopResult type. messages
+// is the history accumulated so far — i.e. every PRIOR, fully-paired
+// assistant(tool_use)/tool(tool_result) turn, NOT including the sentinel
+// call itself (tc). Deliberately excluding the sentinel call avoids ever
+// replaying a dangling, unpaired tool_use block to the LLM on a later
+// retry — the sentinel is consumed here, never executed as a real tool, so
+// it has no matching tool_result (#1935 root cause #2).
+func sentinelResult(tc llm.ToolCall, messages []llm.Message) LoopResult {
 	switch tc.Name {
 	case SubmitResultToolName:
-		return &SubmitResult{Content: tc.Arguments}
+		return &SubmitResult{Content: tc.Arguments, Messages: messages}
 	case SubmitResultWithWorkflowToolName:
-		return &SubmitWithWorkflowResult{Content: tc.Arguments}
+		return &SubmitWithWorkflowResult{Content: tc.Arguments, Messages: messages}
 	case SubmitResultNoWorkflowToolName:
-		return &SubmitNoWorkflowResult{Content: tc.Arguments}
+		return &SubmitNoWorkflowResult{Content: tc.Arguments, Messages: messages}
 	default:
 		return nil
 	}
@@ -754,6 +793,19 @@ func (inv *Investigator) runRCA(ctx context.Context, signal katypes.SignalContex
 		return nil, err
 	}
 
+	// #1935 root cause #2: runLLMLoop accumulates tool-call/tool-result turns
+	// in its OWN local `messages` slice as the investigation progresses, but
+	// only CancelledResult carried that history back to the caller — so this
+	// `messages` variable stayed frozen at its initial [system, user] value
+	// for the rest of runRCA regardless of how many tools were actually
+	// called. Reassigning it here, BEFORE the shadow-agent notification,
+	// fixes every downstream consumer in one place: the alignment grounding
+	// review (NotifyRCAComplete below), retryRCASubmit, and both validation
+	// gates all read this same variable.
+	if extended := loopResultMessages(loopRes); len(extended) > 0 {
+		messages = extended
+	}
+
 	alignment.NotifyRCAComplete(ctx, messages)
 
 	var content string
@@ -1362,7 +1414,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 
 		if len(resp.ToolCalls) > 0 {
 			for _, tc := range resp.ToolCalls {
-				if sr := sentinelResult(tc); sr != nil {
+				if sr := sentinelResult(tc, messages); sr != nil {
 					inv.logger.Info("sentinel detected",
 						"tool", tc.Name,
 						"phase", string(phase),
@@ -1446,7 +1498,7 @@ func (inv *Investigator) runLLMLoop(ctx context.Context, messages []llm.Message,
 			continue
 		}
 
-		return &TextResult{Content: resp.Message.Content}, nil
+		return &TextResult{Content: resp.Message.Content, Messages: messages}, nil
 	}
 
 	return &ExhaustedResult{Reason: "max turns exhausted"}, nil
