@@ -904,6 +904,21 @@ func (a *allowAllToolAuthorizer) Check(_ context.Context, _ string, _ []string, 
 	return true, nil
 }
 
+// dualToolConsoleAuthorizer implements both auth.ToolAuthorizer and
+// auth.ConsoleAuthorizer, mirroring the shape *auth.SARChecker has in
+// production -- used to prove buildRouterConfig (#1919) wires
+// RouterConfig.ConsoleAccessHandler whenever the configured Authorizer
+// supports the optional ConsoleAuthorizer capability.
+type dualToolConsoleAuthorizer struct{}
+
+func (d *dualToolConsoleAuthorizer) Check(_ context.Context, _ string, _ []string, _ string) (bool, error) {
+	return true, nil
+}
+
+func (d *dualToolConsoleAuthorizer) CheckConsoleAccess(_ context.Context, _ string, _ []string) (bool, error) {
+	return true, nil
+}
+
 type noopAuditor struct{}
 
 func (n *noopAuditor) Emit(_ context.Context, _ *audit.Event) {}
@@ -1824,5 +1839,82 @@ func TestNewLLMTriagerFromConfig_AcceptsOpenAICompatible(t *testing.T) {
 		if _, ok := triager.(*severity.OpenAICompatibleTriager); !ok {
 			t.Errorf("IT-AF-1618-001: provider %q: expected *severity.OpenAICompatibleTriager, got %T", provider, triager)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #1919: buildRouterConfig wires RouterConfig.ConsoleAccessHandler whenever
+// the configured Authorizer also implements auth.ConsoleAuthorizer, and
+// leaves it nil otherwise (e.g. a ToolAuthorizer-only test double) --
+// proving the Wiring Manifest's "RouterConfig.ConsoleAccessHandler" row:
+// production entry point is buildRouterConfig, called from
+// buildRouterAndServers in run().
+// ---------------------------------------------------------------------------
+
+func testRouterBuildParams(authorizer auth.ToolAuthorizer) routerBuildParams {
+	healthy := &atomic.Bool{}
+	healthy.Store(true)
+	draining := &atomic.Bool{}
+	return routerBuildParams{
+		HDeps: &handlerDeps{
+			Cfg:        &config.Config{},
+			Backends:   testBackendDeps(),
+			SessInfra:  &sessionInfra{Healthy: healthy, StopFunc: func() {}},
+			MetricsReg: metrics.NewRegistry(),
+			Authorizer: authorizer,
+			Auditor:    &noopAuditor{},
+			Logger:     logr.Discard(),
+		},
+		MCPHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+		DepsReady:        func() bool { return true },
+		AgentCardHandler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+		A2AHandler:       http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }),
+		AuthMiddleware:   func(next http.Handler) http.Handler { return next },
+		AuthReady:        func() bool { return true },
+		Draining:         draining,
+	}
+}
+
+func TestBuildRouterConfig_ConsoleAccessHandler_WiredWhenAuthorizerSupportsIt(t *testing.T) {
+	t.Parallel()
+
+	routerCfg, _, err := buildRouterConfig(testRouterBuildParams(&dualToolConsoleAuthorizer{}))
+	if err != nil {
+		t.Fatalf("IT-AF-1919-W01: unexpected error: %v", err)
+	}
+	if routerCfg.ConsoleAccessHandler == nil {
+		t.Fatal("IT-AF-1919-W01: ConsoleAccessHandler must be wired when Authorizer implements ConsoleAuthorizer")
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/a2a/access", http.NoBody)
+	req = req.WithContext(auth.WithUserIdentity(req.Context(), &auth.UserIdentity{Username: "u", Groups: []string{"sre"}}))
+	rec := httptest.NewRecorder()
+	routerCfg.ConsoleAccessHandler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("IT-AF-1919-W01: expected 200 from wired ConsoleAccessHandler, got %d", rec.Code)
+	}
+}
+
+func TestBuildRouterConfig_ConsoleAccessHandler_NilWhenAuthorizerDoesNotSupportIt(t *testing.T) {
+	t.Parallel()
+
+	routerCfg, _, err := buildRouterConfig(testRouterBuildParams(&allowAllToolAuthorizer{}))
+	if err != nil {
+		t.Fatalf("IT-AF-1919-W02: unexpected error: %v", err)
+	}
+	if routerCfg.ConsoleAccessHandler != nil {
+		t.Fatal("IT-AF-1919-W02: ConsoleAccessHandler must be nil when Authorizer does not implement ConsoleAuthorizer")
+	}
+
+	router, err := handler.NewRouter(routerCfg)
+	if err != nil {
+		t.Fatalf("IT-AF-1919-W02: unexpected router construction error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/a2a/access", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("IT-AF-1919-W02: expected 404 for unregistered /a2a/access route, got %d", rec.Code)
 	}
 }
