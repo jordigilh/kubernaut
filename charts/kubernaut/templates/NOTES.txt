@@ -77,6 +77,40 @@ own opt-in Ingress posture, BR-PLATFORM-009). To reach it, either:
   kubectl port-forward -n {{ .Release.Namespace }} svc/console 4180:4180
 
 {{- end }}
+{{- /*
+DD-PLATFORM-006 Decision Area 14: reads apifrontend's own merged value
+(schema default true, once apifrontend.enabled is removed from values.yaml),
+not a raw .Values.apifrontend.enabled, which would incorrectly skip this
+warning for any user relying on the schema's default -- see console.yaml's
+identical guard for the same rationale.
+*/}}
+{{- $afNotesV := include "kubernaut.mergedValues" (dict "root" $ "service" "apifrontend") | fromYaml }}
+{{- if $afNotesV.enabled }}
+{{- $personas := .Values.apifrontend.config.rbac.personas | default dict }}
+{{- $consoleGroups := .Values.apifrontend.config.rbac.consoleAccessGroups | default list }}
+{{- $missingConsoleAccess := list }}
+{{- range $persona, $tools := $personas }}
+{{- if not (has $persona $consoleGroups) }}
+{{- $missingConsoleAccess = append $missingConsoleAccess $persona }}
+{{- end }}
+{{- end }}
+{{- if $missingConsoleAccess }}
+=== RBAC WARNING: console-access gate (#1919) ===
+
+apifrontend.config.rbac.personas group(s) below have per-tool RBAC grants but
+are NOT listed in apifrontend.config.rbac.consoleAccessGroups:
+
+{{- range $missingConsoleAccess }}
+  - {{ . }}
+{{- end }}
+
+Every AF tool call (/mcp and /a2a/invoke) additionally requires the
+coarse-grained kubernaut.ai/console "use" grant. Users in the group(s) above
+will have ALL tool calls denied until you add them to consoleAccessGroups,
+even though their per-tool grants above remain intact and unchanged.
+
+{{- end }}
+{{- end }}
 === Monitoring ===
 
 Kubernaut is designed to work with kube-prometheus-stack.
