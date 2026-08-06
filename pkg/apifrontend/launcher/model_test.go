@@ -102,7 +102,13 @@ var _ = Describe("Model Factory", func() {
 				return
 			}
 			Expect(m).NotTo(BeNil())
-			Expect(fmt.Sprintf("%T", m)).To(ContainSubstring("anthropic"))
+			// #1955 now wraps the Anthropic/Vertex-Anthropic construction
+			// sites in a *launcher.timeoutModel decorator, so unwrap it
+			// before asserting on the underlying provider's concrete type —
+			// this spec's job is the dispatch (anthropic vs. gemini), not
+			// the timeout wiring (covered separately by
+			// model_timeout_1955_test.go's IT-AF-1955-004).
+			Expect(fmt.Sprintf("%T", launcher.UnwrapTimeoutForTest(m))).To(ContainSubstring("anthropic"))
 		})
 
 		// IT-AF-1792-005: vertex_ai + an unrecognized model family. Found
