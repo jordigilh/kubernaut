@@ -420,6 +420,7 @@ func defaultAIConfig() AIConfig {
 				MaxRepeatedFailures: 3,
 				ExemptPrefixes:      []string{"todo_"},
 			},
+			ToolCallTimeout: 60 * time.Second,
 		},
 	}
 }
