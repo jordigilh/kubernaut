@@ -88,7 +88,7 @@ var _ = Describe("ParseRRID — name-only rr_id format (#E2E-FIX)", func() {
 	})
 })
 
-var _ = Describe("ParseRARID — tolerant rar_id parser (#1493)", func() {
+var _ = Describe("ParseRARID — name-only rar_id format (#1959)", func() {
 
 	Describe("UT-AF-1493-001: bare name resolves with injected namespace", func() {
 		It("should pair bare rar_id with the explicit namespace argument", func() {
@@ -99,12 +99,15 @@ var _ = Describe("ParseRARID — tolerant rar_id parser (#1493)", func() {
 		})
 	})
 
-	Describe("UT-AF-1493-002: namespace/name format is accepted and split", func() {
-		It("should split on slash when rar_id contains namespace/name", func() {
+	Describe("UT-AF-1959-002: rar_id containing slash is passed through as name (no split)", func() {
+		It("should NOT split on slash — rar_id is always the full name, namespace always from controllerNS", func() {
 			ns, name, err := tools.ParseRARID("payments/rar-oom-1", "injected-ns", "")
 			Expect(err).NotTo(HaveOccurred())
-			Expect(ns).To(Equal("payments"))
-			Expect(name).To(Equal("rar-oom-1"))
+			Expect(name).To(Equal("payments/rar-oom-1"),
+				"ParseRARID must not split; all RARs live in the controller namespace per ADR-057, "+
+					"so a namespace segment embedded in rar_id can never be legitimate and must not "+
+					"override the trusted, injected namespace")
+			Expect(ns).To(Equal("injected-ns"))
 		})
 	})
 

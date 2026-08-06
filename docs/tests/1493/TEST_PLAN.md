@@ -7,6 +7,8 @@
 **Status**: Approved
 **Business Requirement**: BR-API-1493
 
+> **⚠️ Superseded in part by [#1959](https://github.com/jordigilh/kubernaut/issues/1959)**: the `namespace/name` tolerance in `ParseRARID` (`UT-AF-1493-002`) and the `approval_request_name` namespace prefix in `BuildPhaseMetadata` (added by a sibling commit for #1492) were found to be redundant per **ADR-057** (all RARs live in the controller namespace) and inconsistent with the `ParseRRID` bare-name-only precedent (`2bfd24c31`). See `docs/tests/1959/TEST_PLAN.md` for the correction. The bare-name acceptance fix below remains valid and is preserved.
+
 ---
 
 ## 1. Purpose

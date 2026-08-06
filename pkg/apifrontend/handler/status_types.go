@@ -95,8 +95,11 @@ func addPhaseSpecificMetadata(meta map[string]any, rr *remediationv1.Remediation
 	case remediationv1.PhaseBlocked:
 		addBlockedPhaseMetadata(meta, rr)
 	case remediationv1.PhaseAwaitingApproval:
-		rarName := fmt.Sprintf("rar-%s", rr.Name)
-		meta["approval_request_name"] = rr.Namespace + "/" + rarName
+		// #1959: bare name only — every RAR lives in the controller namespace
+		// (ADR-057), so a namespace prefix here is redundant. ParseRARID
+		// resolves rar_id the same way ParseRRID resolves rr_id: namespace
+		// always comes from the injected controllerNS, never from the ID.
+		meta["approval_request_name"] = fmt.Sprintf("rar-%s", rr.Name)
 	case remediationv1.PhaseCompleted:
 		if rr.Status.Outcome != "" {
 			meta["outcome"] = rr.Status.Outcome
