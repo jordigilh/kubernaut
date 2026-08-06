@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync/atomic"
+	"time"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -39,6 +40,20 @@ import (
 )
 
 const maxSelfCorrectionAttempts = 3
+
+// DefaultToolCallTimeout bounds a single LLM-requested tool call dispatched
+// from processToolCalls when Config.ToolCallTimeout is unset (zero value),
+// mirroring the AnomalyDetector nil-fallback below (BR-KA-267, #1949).
+const DefaultToolCallTimeout = 60 * time.Second
+
+// DefaultLLMCallTimeout bounds a single streaming LLM call dispatched from
+// chatOrStream when RuntimeParams.TimeoutSeconds is unset/non-positive
+// (BR-KA-267, #1949). Previously that condition left the call with no
+// deadline at all — the parent ctx was passed through unbounded — so a
+// stalled provider connection hung the investigation goroutine indefinitely.
+// The value mirrors types.DefaultLLMTimeoutSeconds, the equivalent fallback
+// already used by the non-streaming ChatWithParams/HTTP-client call chains.
+const DefaultLLMCallTimeout = 120 * time.Second
 
 // Diagnostic counters for emitToSink — temporary, remove after RCA.
 var (
@@ -250,6 +265,10 @@ type Config struct {
 	// defaults (0.7/0.5) in that case; see prompt.WorkflowSelectionInput.
 	ResolvedConfidenceThreshold     float64
 	InconclusiveConfidenceThreshold float64
+	// ToolCallTimeout bounds a single LLM-requested tool call dispatched from
+	// processToolCalls (BR-KA-267, #1949). Zero falls back to
+	// DefaultToolCallTimeout in New().
+	ToolCallTimeout time.Duration
 }
 
 // Investigator orchestrates the two-invocation architecture:
@@ -287,6 +306,9 @@ type Investigator struct {
 	// config template; production code must go through anomalyDetectorFor
 	// rather than pipeline.AnomalyDetector directly.
 	anomalyScope *anomalyScope
+	// toolCallTimeout mirrors Config.ToolCallTimeout; see its doc comment
+	// (BR-KA-267, #1949). Always non-zero after New().
+	toolCallTimeout time.Duration
 }
 
 func (inv *Investigator) auditLog() logr.Logger {
@@ -333,6 +355,10 @@ func New(cfg Config) *Investigator {
 	if pipeline.AnomalyDetector == nil {
 		pipeline.AnomalyDetector = NewAnomalyDetector(DefaultAnomalyConfig(), nil)
 	}
+	toolCallTimeout := cfg.ToolCallTimeout
+	if toolCallTimeout <= 0 {
+		toolCallTimeout = DefaultToolCallTimeout
+	}
 	return &Investigator{
 		client:                          cfg.Client,
 		builder:                         cfg.Builder,
@@ -357,6 +383,7 @@ func New(cfg Config) *Investigator {
 			template: pipeline.AnomalyDetector,
 			entries:  make(map[string]*anomalyDetectorEntry),
 		},
+		toolCallTimeout: toolCallTimeout,
 	}
 }
 

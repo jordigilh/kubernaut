@@ -46,6 +46,14 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		t.timeoutTracker.ResetInactivity(sess.SessionID)
 	}
 
+	// BR-KA-267, #1949: cascade session-inactivity expiry into cancellation
+	// of this handler's in-flight context, so a stuck dependency call (e.g.
+	// a catalog read or LLM tool dispatch) cannot outlive the interactive
+	// session's stated inactivity bound and leak a goroutine.
+	var cancelInactivity func()
+	ctx, cancelInactivity = t.withInactivityCancel(ctx, sess.SessionID)
+	defer cancelInactivity()
+
 	// Step 1: Obtain the structured RCA result for Phase 3 workflow discovery.
 	rcaResult, err := t.resolveRCAForDiscovery(ctx, input.RRID, sess.SessionID)
 	if err != nil {

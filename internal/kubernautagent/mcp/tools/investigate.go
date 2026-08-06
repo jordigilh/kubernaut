@@ -155,6 +155,37 @@ type TimeoutTracker interface {
 	StartTracking(sessionID string, notify func(msg string))
 	ResetInactivity(sessionID string)
 	StopTracking(sessionID string)
+	// SetActiveCancel and ClearActiveCancel cascade session-inactivity
+	// expiry into cancellation of an in-flight action's context (BR-KA-267,
+	// #1949) — see withInactivityCancel below and mcp.TimeoutManager's
+	// implementation for the full rationale.
+	SetActiveCancel(sessionID string, cancel context.CancelFunc)
+	ClearActiveCancel(sessionID string)
+}
+
+// withInactivityCancel derives a cancellable context from ctx and registers
+// its CancelFunc with the timeout tracker so that, if sessionID's inactivity
+// timer expires while this action is still in flight, the action's context
+// is actively torn down instead of the goroutine running unbounded past
+// session expiry (BR-KA-267, #1949 — the TimeoutManager's inactivity clock
+// previously had no way to reach into an in-flight tool call/LLM loop).
+//
+// The returned cleanup func MUST be called (via defer) by every caller once
+// the guarded action completes, on every return path: it clears the
+// registration first (so a session reused for a later, unrelated action
+// never invokes a stale CancelFunc) and then cancels the derived context to
+// free its resources.
+func (t *InvestigateTool) withInactivityCancel(ctx context.Context, sessionID string) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	if t.timeoutTracker != nil {
+		t.timeoutTracker.SetActiveCancel(sessionID, cancel)
+	}
+	return ctx, func() {
+		if t.timeoutTracker != nil {
+			t.timeoutTracker.ClearActiveCancel(sessionID)
+		}
+		cancel()
+	}
 }
 
 // NopAutonomousManager is a no-op implementation for tests that exercise

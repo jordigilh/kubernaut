@@ -311,7 +311,13 @@ func (inv *Investigator) processToolCalls(ctx context.Context, messages []llm.Me
 			"tool_index": i,
 		})
 		g.Go(func() error {
-			toolResults[i] = inv.executeTool(ctx, tc.Name, json.RawMessage(tc.Arguments), correlationID)
+			// BR-KA-267, #1949: bound each tool call so a stuck dependency
+			// (e.g. a K8s informer-cache read or DataStorage call) cannot
+			// hang this goroutine indefinitely — g.Wait() below previously
+			// had no deadline at all.
+			toolCtx, cancel := context.WithTimeout(ctx, inv.toolCallTimeout)
+			defer cancel()
+			toolResults[i] = inv.executeTool(toolCtx, tc.Name, json.RawMessage(tc.Arguments), correlationID)
 			return nil
 		})
 	}
@@ -409,11 +415,17 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 	var attempts int
 	resp, err := llm.RetryWithBackoff(ctx, maxAttempts, bo, func(int) llm.AttemptResult[llm.ChatResponse] {
 		attempts++
-		callCtx := ctx
-		var cancel context.CancelFunc
-		if runtimeParams.TimeoutSeconds > 0 {
-			callCtx, cancel = context.WithTimeout(ctx, time.Duration(runtimeParams.TimeoutSeconds)*time.Second)
+		// BR-KA-267, #1949: a timeout is applied unconditionally, never the
+		// bare (potentially unbounded) parent ctx — RuntimeParams.TimeoutSeconds
+		// <= 0 (unset/misconfigured) previously left this streaming call with
+		// no deadline at all, so a stalled connection hung the goroutine
+		// running it indefinitely. DefaultLLMCallTimeout mirrors the
+		// production default configured via llm.DefaultRuntimeParams.
+		timeout := time.Duration(runtimeParams.TimeoutSeconds) * time.Second
+		if timeout <= 0 {
+			timeout = DefaultLLMCallTimeout
 		}
+		callCtx, cancel := context.WithTimeout(ctx, timeout)
 
 		// eventSent tracks whether this attempt's callback has already
 		// forwarded a token delta to the sink. Once true, a retry is never
@@ -432,9 +444,7 @@ func (inv *Investigator) chatOrStream(ctx context.Context, client llm.Client, re
 			return nil
 		})
 
-		if cancel != nil {
-			cancel()
-		}
+		cancel()
 
 		return llm.AttemptResult[llm.ChatResponse]{Value: resp, Err: err, SafeToRetry: !eventSent && llm.IsRetryable(err)}
 	})
