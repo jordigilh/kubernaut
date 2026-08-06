@@ -208,16 +208,21 @@ var _ = Describe("ADVERSARIAL: kubernaut_get_approval_request", func() {
 			Expect(err.Error()).To(ContainSubstring("invalid input"))
 		})
 
-		It("ADV-AF-109-006: simultaneous rar_id and namespace/name - rar_id takes precedence", func() {
+		It("ADV-AF-1959-006 (was ADV-AF-109-006): rar_id with an embedded namespace no longer silently overrides the injected namespace", func() {
+			// #1959: previously, a slash in rar_id was split and the resulting
+			// namespace segment SILENTLY replaced the trusted, injected
+			// controllerNS — letting caller-supplied input override the trust
+			// boundary. Now rar_id is always a literal resource name (no
+			// split), so "payments/rar-oom-1" is rejected as an invalid K8s
+			// resource name rather than being reinterpreted as namespace/name.
 			tc := newTypedFakeClient(newTypedDetailedRAR("payments", "rar-oom-1"))
-			result, err := tools.HandleGetApprovalRequest(ctx, tc, tools.GetApprovalRequestArgs{
+			_, err := tools.HandleGetApprovalRequest(ctx, tc, tools.GetApprovalRequestArgs{
 				RARID:     "payments/rar-oom-1",
 				Namespace: "other-ns",
 				Name:      "other-name",
 			})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Namespace).To(Equal("payments"))
-			Expect(result.Name).To(Equal("rar-oom-1"))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("invalid input"))
 		})
 	})
 
