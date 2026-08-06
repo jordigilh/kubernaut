@@ -323,6 +323,25 @@ jobs:
             exit 1
           fi
 
+      # #1982: config/crd/bases/*.yaml (and its Helm chart + embedded-asset
+      # copies) must reflect the current Go type definitions in api/ -- K8s
+      # API servers silently prune fields absent from a structural-schema
+      # CRD, so drift here is silent data loss at runtime, not a build
+      # failure. Previously lived in helm-smoke-test (Stage 2+, ~30-45min)
+      # and diffed `make manifests`'s own output against itself (the target
+      # copies config/crd/bases/ -> charts/kubernaut/crds/ internally), which
+      # can never disagree regardless of whether the committed YAML was
+      # stale. Moved here, alongside the two freshness checks above, for
+      # both correctness (diff against git HEAD, not a second generated
+      # copy) and speed (Stage 1, no build-images/Kind dependency).
+      - name: CRD freshness gate
+        run: |
+          make manifests
+          if ! git diff --exit-code -- config/crd/bases/ charts/kubernaut/crds/ charts/kubernaut/files/crds/ pkg/shared/assets/crds/; then
+            echo "::error::CRD YAMLs are stale relative to Go types in api/. Run 'make manifests' and commit the result."
+            exit 1
+          fi
+
       # DD-PLATFORM-006 Decision Area 14 (PR9): proves omitting a
       # schema-defaulted field from values.yaml is render-neutral -- catches
       # a template reading .Values.<path> directly instead of through
@@ -1261,9 +1280,14 @@ jobs:
   # Validates the Helm chart install/upgrade/uninstall lifecycle on a Kind cluster.
   # Runs after images are built (parallel with integration + E2E tests).
   #
-  # Includes two freshness gates that run BEFORE the Kind cluster is created:
-  #   1. CRD freshness: `make manifests` + diff against charts/kubernaut/crds/
-  #   2. values.schema.json: `helm lint --strict` validates schema consistency
+  # Includes a freshness gate that runs BEFORE the Kind cluster is created:
+  #   values.schema.json: `helm lint --strict` validates schema consistency
+  #
+  # (CRD freshness moved to the helm-unittest job -- see #1982: Stage 1, no
+  # build-images/Kind dependency, so drift fails in ~2min instead of here at
+  # ~30-45min. It also fixes the check itself: the gate previously here
+  # diffed `make manifests`'s own output against itself and could never
+  # disagree, regardless of whether the committed CRD YAML was stale.)
   #
   # Image strategy: Load pre-built images from workflow artifacts (no
   # registry, no pull secret) and `kind load` them directly into the cluster.
@@ -1308,26 +1332,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: recursive
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: '1.26.5'
-          cache: true
-
-      - name: CRD freshness gate
-        run: |
-          echo "Generating CRDs from Go types (make manifests)..."
-          make manifests
-          echo ""
-          echo "Comparing config/crd/bases/ with charts/kubernaut/crds/..."
-          if ! diff -r config/crd/bases/ charts/kubernaut/crds/; then
-            echo ""
-            echo "FAIL: Chart CRDs are stale. Run 'make manifests' and copy"
-            echo "      config/crd/bases/*.yaml to charts/kubernaut/crds/"
-            exit 1
-          fi
-          echo "PASS: Chart CRDs match generated CRDs"
 
       - name: Install Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
@@ -2032,7 +2036,7 @@ jobs:
           echo ""
           echo "Helm Smoke Tests (parallel with Stage 3+4):"
           echo "  Smoke Tests (Kind):  ${{ needs.helm-smoke-test.result }}"
-          echo "  Gates: CRD freshness + values.schema.json validation"
+          echo "  Gates: values.schema.json validation (CRD freshness now in helm-unittest, Stage 1)"
           echo ""
           echo "═══════════════════════════════════════════════════════════"
           echo "Test Strategy:"
@@ -2133,7 +2137,7 @@ jobs:
           # Check for Helm smoke test (handle skipped if dependencies failed)
           if [ "${{ needs.helm-smoke-test.result }}" == "failure" ]; then
             echo ""
-            echo "❌ Helm smoke tests failed - check CRD freshness, schema validation, or install logs"
+            echo "❌ Helm smoke tests failed - check schema validation or install logs"
             exit 1
           elif [ "${{ needs.helm-smoke-test.result }}" == "skipped" ]; then
             echo ""
