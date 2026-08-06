@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.6] - 2026-08-06
+
 ### Security
 
 - **Coarse-grained console-access authorization gate (#1919, #1941, AC-3/AC-6/AU-12)** — Adds a new `kubernaut.ai/console` "use" SubjectAccessReview grant, enforced server-side at both existing AF tool-invocation paths (`/mcp` and `/a2a/invoke`), in addition to the pre-existing per-tool `kubernaut.ai/tools` check. Also adds an advisory `GET /a2a/access` pre-flight endpoint for UI clients. **Operator action may be required**: the chart's new `apifrontend.config.rbac.consoleAccessGroups` value defaults to all six built-in personas (`sre`, `ai-orchestrator`, `cicd`, `observability`, `l3-audit`, `remediation-approver`), so deployments using only those default persona group names need no changes. If you configured a custom group under `apifrontend.config.rbac.personas` (or renamed/replaced the defaults), you must add that same group name to `apifrontend.config.rbac.consoleAccessGroups`, or users in that group will have **every** AF tool call denied after upgrading, even though their existing per-tool grants are unchanged. `helm install`/`helm upgrade` now prints an `NOTES.txt` warning listing any `personas` group missing from `consoleAccessGroups` to catch this case at deploy time.
