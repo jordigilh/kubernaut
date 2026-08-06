@@ -64,6 +64,11 @@ type AIConfig struct {
 type SafetyConfig struct {
 	Sanitization SanitizationConfig `yaml:"sanitization"`
 	Anomaly      AnomalyConfig      `yaml:"anomaly"`
+	// ToolCallTimeout bounds the execution time of a single LLM-requested
+	// tool call dispatched from the investigation loop (BR-KA-267, #1949).
+	// A zero value is treated as "not configured" and falls back to
+	// investigator.DefaultToolCallTimeout at construction time.
+	ToolCallTimeout time.Duration `yaml:"toolCallTimeout"`
 }
 
 // IntegrationsConfig holds external service connection settings.

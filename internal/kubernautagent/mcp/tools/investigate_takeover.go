@@ -65,6 +65,13 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	t.emitInteractiveStarted(sess.SessionID, input.RRID, user.Username) //nolint:contextcheck // emitInteractiveStarted uses audit.StoreBestEffort by design (ADR-038); see investigate_autonomous.go doc comment
 	t.startTimeoutTracking(sess.SessionID)
 
+	// BR-KA-267, #1949: cascade session-inactivity expiry into cancellation
+	// of the context-reconstruction call below (a DataStorage-backed read
+	// that can stall), consistent with the other interactive-session
+	// handlers that drive a potentially long-running call under this Lease.
+	ctx, cancelInactivity := t.withInactivityCancel(ctx, sess.SessionID)
+	defer cancelInactivity()
+
 	reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
 	contextSummary := fmt.Sprintf("%d prior turns reconstructed", reconCount)
 
@@ -100,6 +107,13 @@ func (t *InvestigateTool) handleMessage(ctx context.Context, input InvestigateIn
 	if t.timeoutTracker != nil {
 		t.timeoutTracker.ResetInactivity(sess.SessionID)
 	}
+
+	// BR-KA-267, #1949: cascade session-inactivity expiry into cancellation
+	// of this handler's in-flight context, so a stuck LLM/tool call cannot
+	// outlive the interactive session's stated inactivity bound.
+	var cancelInactivity func()
+	ctx, cancelInactivity = t.withInactivityCancel(ctx, sess.SessionID)
+	defer cancelInactivity()
 
 	// F9 / #1374: Attach signal context for PhaseRCA tool parity with
 	// the autonomous path. Future tools may read SignalContextFromContext.
