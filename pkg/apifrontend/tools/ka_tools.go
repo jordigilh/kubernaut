@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
@@ -15,6 +16,18 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 )
+
+// PooledToolCallTimeout bounds a single pooled-session KA MCP call
+// (discover_workflows, select_workflow, message, complete, cancel,
+// status, reconnect). Without it, a lost/stuck response on a reused
+// session blocks the caller indefinitely (#1954) — the caller's raw ctx
+// was previously passed straight through with no deadline. 60s covers
+// discover_workflows's legitimate LLM-bound latency (observed 14-25s in
+// KA) with headroom, while staying well under KA's own inactivity
+// backstop (#1949/#1951). A var, not a const, so tests can shrink it to
+// verify real end-to-end timeout enforcement in milliseconds, mirroring
+// AwaitSessionTimeout's test-override pattern (crd_tools.go).
+var PooledToolCallTimeout = 60 * time.Second
 
 // WorkflowParameter describes a single input parameter for a workflow.
 type WorkflowParameter struct {
@@ -72,7 +85,9 @@ func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args D
 		return DiscoverWorkflowsResult{}, fmt.Errorf("workflow discovery is not available: MCP client not configured")
 	}
 
-	kaResult, err := mcpClient.DiscoverWorkflows(ctx, ka.DiscoverWorkflowsArgs{
+	toolCtx, cancel := context.WithTimeout(ctx, PooledToolCallTimeout)
+	defer cancel()
+	kaResult, err := mcpClient.DiscoverWorkflows(toolCtx, ka.DiscoverWorkflowsArgs{
 		RRID:       args.RRID,
 		WorkflowID: args.WorkflowID,
 		Kind:       args.Kind,
@@ -247,7 +262,9 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 	if mcpClient == nil {
 		return SelectWorkflowResult{}, fmt.Errorf("workflow selection is not available: MCP client not configured")
 	}
-	result, err := mcpClient.SelectWorkflow(ctx, ka.SelectWorkflowArgs{
+	toolCtx, cancel := context.WithTimeout(ctx, PooledToolCallTimeout)
+	defer cancel()
+	result, err := mcpClient.SelectWorkflow(toolCtx, ka.SelectWorkflowArgs{
 		RRID:       args.RRID,
 		WorkflowID: args.WorkflowID,
 		Kind:       args.Kind,
