@@ -848,6 +848,16 @@ func (t *InvestigateTool) handleReconnect(input InvestigateInput, user mcpintern
 }
 
 func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
+	// #1949 retest diagnostics: bracket every step from RunWorkflowDiscovery
+	// returning through the final return with elapsed-time markers. The
+	// 2026-08-06 retest showed KA's own business logic (LLM loop, catalog
+	// validation) completing normally but the tool-call response never
+	// reaching AF — this narrows down whether that gap is inside this
+	// handler (post-loop) or in response delivery after it returns.
+	// Temporary instrumentation for the #1949 follow-up investigation; safe
+	// to remove once the exact drop point is confirmed.
+	handlerStart := time.Now()
+
 	mu := t.getSessionMutex(input.RRID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -977,6 +987,12 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	if err != nil {
 		return InvestigateOutput{}, fmt.Errorf("workflow discovery failed: %w", err)
 	}
+	t.logger.Info("discover_workflows: RunWorkflowDiscovery returned",
+		"rr_id", input.RRID,
+		"session_id", sess.SessionID,
+		"workflow_id", workflowResult.WorkflowID,
+		"human_review_needed", workflowResult.HumanReviewNeeded,
+		"elapsed_since_handler_start", time.Since(handlerStart).String())
 
 	// Step 5: Store results on the interactive session.
 	sess.RCAResult = rcaResult
@@ -1008,19 +1024,35 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	}
 
 	// Enrich workflow names from catalog.
+	enrichStart := time.Now()
 	t.enrichDiscoveryNames(ctx, sess.DiscoveryResult)
+	t.logger.Info("discover_workflows: enrichDiscoveryNames completed",
+		"rr_id", input.RRID,
+		"session_id", sess.SessionID,
+		"enrich_duration", time.Since(enrichStart).String(),
+		"elapsed_since_handler_start", time.Since(handlerStart).String())
 
 	// Reset inactivity timer after the LLM calls complete.
 	t.sessions.TouchActivity(input.RRID)
 	if t.timeoutTracker != nil {
 		t.timeoutTracker.ResetInactivity(sess.SessionID)
 	}
+	t.logger.Info("discover_workflows: post-completion inactivity timer reset",
+		"rr_id", input.RRID,
+		"session_id", sess.SessionID,
+		"elapsed_since_handler_start", time.Since(handlerStart).String())
 
 	// Build the JSON response for the user.
 	discoveryJSON, err := json.Marshal(sess.DiscoveryResult)
 	if err != nil {
 		return InvestigateOutput{}, fmt.Errorf("marshal discovery result: %w", err)
 	}
+
+	t.logger.Info("discover_workflows: returning response to caller",
+		"rr_id", input.RRID,
+		"session_id", sess.SessionID,
+		"response_bytes", len(discoveryJSON),
+		"elapsed_since_handler_start", time.Since(handlerStart).String())
 
 	return InvestigateOutput{
 		SessionID: sess.SessionID,
@@ -1085,12 +1117,18 @@ func (t *InvestigateTool) resolveWorkflowName(ctx context.Context, workflowID st
 	if workflowID == "" {
 		return ""
 	}
+	// #1949 retest diagnostics: log the catalog HTTP round-trip duration.
+	// Temporary instrumentation for the #1949 follow-up investigation.
+	lookupStart := time.Now()
 	wf, err := t.catalog.GetWorkflowByID(ctx, workflowID)
+	lookupDuration := time.Since(lookupStart)
 	if err != nil {
 		t.logger.V(1).Info("catalog lookup failed for workflow name enrichment",
-			"workflow_id", workflowID, "error", err)
+			"workflow_id", workflowID, "error", err, "lookup_duration", lookupDuration.String())
 		return ""
 	}
+	t.logger.Info("discover_workflows: catalog lookup for name enrichment completed",
+		"workflow_id", workflowID, "lookup_duration", lookupDuration.String())
 	return wf.WorkflowName
 }
 
