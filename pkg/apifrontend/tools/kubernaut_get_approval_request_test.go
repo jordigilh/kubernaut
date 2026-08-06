@@ -39,10 +39,11 @@ var _ = Describe("kubernaut_get_approval_request", func() {
 		Expect(result.Expired).To(BeFalse())
 	})
 
-	It("UT-AF-109-002: returns full RAR detail by rar_id shorthand", func() {
+	It("UT-AF-1959-003 (was UT-AF-109-002): returns full RAR detail by bare rar_id shorthand", func() {
 		tc := newTypedFakeClient(newTypedDetailedRAR("payments", "rar-oom-1"))
 		result, err := tools.HandleGetApprovalRequest(ctx, tc, tools.GetApprovalRequestArgs{
-			RARID: "payments/rar-oom-1",
+			RARID:     "rar-oom-1",
+			Namespace: "payments",
 		})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Name).To(Equal("rar-oom-1"))

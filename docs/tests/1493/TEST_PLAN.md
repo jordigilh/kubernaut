@@ -7,6 +7,8 @@
 **Status**: Approved
 **Business Requirement**: BR-API-1493
 
+> **⚠️ Superseded in part by [#1959](https://github.com/jordigilh/kubernaut/issues/1959)**: the `namespace/name` tolerance in `ParseRARID` (`UT-AF-1493-002`) was found to be redundant per **ADR-057** (all RARs live in the controller namespace) and inconsistent with the `ParseRRID` bare-name-only precedent (`2bfd24c31`). See `docs/tests/1959/TEST_PLAN.md` for the correction. The bare-name acceptance fix below remains valid and is preserved. (Note: `release/v1.5` never received the namespace-prefix metadata change from #1492, so only the `ParseRARID` simplification applies here.)
+
 ---
 
 ## 1. Purpose
