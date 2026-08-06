@@ -105,7 +105,7 @@ var _ = Describe("kubernaut_get_approval_request", func() {
 		Expect(err.Error()).To(ContainSubstring("invalid input"))
 	})
 
-	It("UT-AF-109-008: invalid rar_id format returns error", func() {
+	It("UT-AF-109-008: bare rar_id without namespace returns not-found (no matching RAR)", func() {
 		tc := newTypedFakeClient()
 		_, err := tools.HandleGetApprovalRequest(ctx, tc, tools.GetApprovalRequestArgs{
 			RARID: "bad-format-no-slash",
@@ -128,6 +128,31 @@ var _ = Describe("kubernaut_get_approval_request", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RecommendedWorkflow.Name).To(Equal("oomkill-increase-memory-v1"))
 		Expect(result.RecommendedWorkflow.Version).To(Equal("1.0.0"))
+	})
+
+	It("UT-AF-1493-005: returns full RAR detail with bare rar_id and injected namespace", func() {
+		tc := newTypedFakeClient(newTypedDetailedRAR("payments", "rar-oom-1"))
+		result, err := tools.HandleGetApprovalRequest(ctx, tc, tools.GetApprovalRequestArgs{
+			RARID:     "rar-oom-1",
+			Namespace: "payments",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Name).To(Equal("rar-oom-1"))
+		Expect(result.Namespace).To(Equal("payments"))
+		Expect(result.RemediationRequest).To(Equal("rr-oom-1"))
+	})
+
+	It("IT-AF-1493-001: bare rar_id dispatches through handler to K8s lookup", func() {
+		tc := newTypedFakeClient(newTypedDetailedRAR("payments", "rar-oom-1"))
+		result, err := tools.HandleGetApprovalRequest(ctx, tc, tools.GetApprovalRequestArgs{
+			RARID:     "rar-oom-1",
+			Namespace: "payments",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Name).To(Equal("rar-oom-1"))
+		Expect(result.Namespace).To(Equal("payments"))
+		Expect(result.Confidence).To(BeNumerically("~", 0.72, 0.001))
+		Expect(result.EvidenceCollected).To(HaveLen(2))
 	})
 
 	Context("ADVERSARIAL tests", func() {

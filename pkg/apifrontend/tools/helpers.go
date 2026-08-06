@@ -50,21 +50,23 @@ func ParseRRID(rrID, namespace, name string) (ns, n string, err error) {
 	return namespace, name, nil
 }
 
-// ParseResourceID parses a resource ID shorthand (namespace/name) into its components.
-// If resourceID is empty, namespace and name are returned as-is.
-func ParseResourceID(resourceID, namespace, name string) (ns, n string, err error) {
-	if resourceID != "" {
-		parts := strings.SplitN(resourceID, "/", 2)
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return "", "", fmt.Errorf("invalid resource_id format %q: expected namespace/name", resourceID)
+// ParseRARID resolves rar_id to namespace and name. It accepts both bare names
+// (paired with the injected namespace) and "namespace/name" format for backward
+// compatibility. If rarID is empty, the explicit namespace and name arguments
+// are used as fallback.
+func ParseRARID(rarID, namespace, name string) (ns, n string, err error) {
+	if rarID != "" {
+		if parts := strings.SplitN(rarID, "/", 2); len(parts) == 2 && parts[0] != "" && parts[1] != "" {
+			return parts[0], parts[1], nil
 		}
-		return parts[0], parts[1], nil
+		return namespace, rarID, nil
 	}
-	if namespace == "" || name == "" {
-		return "", "", fmt.Errorf("namespace and name are required when resource_id is not provided")
+	if name == "" {
+		return "", "", fmt.Errorf("name is required when rar_id is not provided")
 	}
 	return namespace, name, nil
 }
+
 
 // ToUserFriendlyError translates K8s API errors into user-friendly messages.
 // Internal details (namespace paths, resource versions, field paths) are not exposed.
