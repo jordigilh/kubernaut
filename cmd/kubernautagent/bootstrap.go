@@ -420,6 +420,9 @@ func buildInvestigator(
 		// confidence bands, templated into the Phase 3 workflow-selection prompt.
 		ResolvedConfidenceThreshold:     p.cfg.AI.Investigation.ResolvedConfidenceThreshold,
 		InconclusiveConfidenceThreshold: p.cfg.AI.Investigation.InconclusiveConfidenceThreshold,
+		// BR-KA-267, #1949: bound tool-call execution so a stuck dependency
+		// call cannot hang an investigation goroutine indefinitely.
+		ToolCallTimeout: p.cfg.AI.Safety.ToolCallTimeout,
 		Pipeline: investigator.Pipeline{
 			Sanitizer:         p.sanitizer,
 			AnomalyDetector:   p.anomalyDetector,
