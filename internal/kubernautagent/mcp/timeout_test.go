@@ -120,4 +120,66 @@ var _ = Describe("TimeoutManager — PR4 BR-INTERACTIVE-003 DD-INTERACTIVE-002",
 			mgr.StopTracking("sess-active-001")
 		})
 	})
+
+	Describe("UT-KA-1949-004: SetActiveCancel is invoked on expiry, before onExpire (BR-KA-267, #1949)", func() {
+		It("calls the registered CancelFunc when the inactivity timer fires", func() {
+			var mu sync.Mutex
+			var cancelCalled, expireCalled bool
+			expired := make(chan struct{}, 1)
+			mgr := mcpinternal.NewTimeoutManager(
+				100*time.Millisecond,
+				[]time.Duration{},
+				func(_ string) {
+					mu.Lock()
+					expireCalled = true
+					// The cancel must have already been invoked by the time
+					// onExpire runs, so the in-flight investigation context
+					// is torn down before (or at worst alongside) session
+					// bookkeeping cleanup — never after.
+					Expect(cancelCalled).To(BeTrue(), "SetActiveCancel's CancelFunc must fire before onExpire")
+					mu.Unlock()
+					expired <- struct{}{}
+				},
+			)
+
+			mgr.StartTracking("sess-cascade-001", func(_ string) {})
+			mgr.SetActiveCancel("sess-cascade-001", func() {
+				mu.Lock()
+				cancelCalled = true
+				mu.Unlock()
+			})
+
+			Eventually(expired, 500*time.Millisecond).Should(Receive())
+
+			mu.Lock()
+			Expect(cancelCalled).To(BeTrue(), "registered CancelFunc must be invoked on expiry")
+			Expect(expireCalled).To(BeTrue())
+			mu.Unlock()
+
+			mgr.StopTracking("sess-cascade-001")
+		})
+	})
+
+	Describe("UT-KA-1949-005: ClearActiveCancel prevents a stale cancel from firing after normal completion", func() {
+		It("does not invoke a cleared CancelFunc when the session later times out for an unrelated reason", func() {
+			cancelCalled := make(chan struct{}, 1)
+			mgr := mcpinternal.NewTimeoutManager(
+				60*time.Millisecond,
+				[]time.Duration{},
+				func(_ string) {},
+			)
+
+			mgr.StartTracking("sess-clear-001", func(_ string) {})
+			mgr.SetActiveCancel("sess-clear-001", func() { cancelCalled <- struct{}{} })
+
+			// Simulate the action completing normally: the cancel is
+			// cleared before the inactivity timer would otherwise fire.
+			mgr.ClearActiveCancel("sess-clear-001")
+
+			Consistently(cancelCalled, 200*time.Millisecond).ShouldNot(Receive(),
+				"a cleared CancelFunc must never fire, even once the session's inactivity timer later expires")
+
+			mgr.StopTracking("sess-clear-001")
+		})
+	})
 })

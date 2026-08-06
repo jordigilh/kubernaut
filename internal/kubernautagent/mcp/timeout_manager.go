@@ -17,6 +17,7 @@ limitations under the License.
 package mcp
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -25,6 +26,12 @@ import (
 type timeoutEntry struct {
 	inactivityTimer *time.Timer
 	warningTimers   []*time.Timer
+	// activeCancel, when non-nil, is invoked before onExpire fires (BR-KA-267,
+	// #1949) so an in-flight investigation's context is actively torn down
+	// on session expiry, rather than the session merely being marked expired
+	// while its goroutine keeps running unbounded. Set via SetActiveCancel,
+	// cleared via ClearActiveCancel once the action it guards completes.
+	activeCancel context.CancelFunc
 }
 
 // TimeoutManager tracks per-session inactivity and fires warnings and
@@ -71,11 +78,19 @@ func (m *TimeoutManager) StartTracking(sessionID string, notify func(msg string)
 		}
 	}
 
-	entry := &timeoutEntry{
-		inactivityTimer: time.AfterFunc(m.inactivityTimeout, func() {
-			m.onExpire(sessionID)
-		}),
-	}
+	entry := &timeoutEntry{}
+	entry.inactivityTimer = time.AfterFunc(m.inactivityTimeout, func() {
+		// BR-KA-267, #1949: cascade expiry into cancellation of whatever
+		// in-flight action's context was registered via SetActiveCancel,
+		// before onExpire runs its own (unrelated) session-cleanup logic.
+		m.mu.Lock()
+		cancel := entry.activeCancel
+		m.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+		m.onExpire(sessionID)
+	})
 
 	for _, interval := range m.warningIntervals {
 		remaining := m.inactivityTimeout - interval
@@ -100,6 +115,33 @@ func (m *TimeoutManager) ResetInactivity(sessionID string) {
 		return
 	}
 	entry.inactivityTimer.Reset(m.inactivityTimeout)
+}
+
+// SetActiveCancel registers cancel to be invoked when sessionID's inactivity
+// timer expires, before onExpire fires (BR-KA-267, #1949). This lets a
+// caller cascade session-inactivity expiry into cancellation of whatever
+// context an in-flight action (e.g. a tool-dispatch loop) derived from, so
+// an expired session cannot leave that action running unbounded. A no-op if
+// sessionID is not currently tracked (StartTracking was never called, or
+// the session already stopped).
+func (m *TimeoutManager) SetActiveCancel(sessionID string, cancel context.CancelFunc) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if entry, ok := m.sessions[sessionID]; ok {
+		entry.activeCancel = cancel
+	}
+}
+
+// ClearActiveCancel removes the CancelFunc registered via SetActiveCancel for
+// sessionID, so a later inactivity expiry (for the next, unrelated action
+// sharing the same session) does not invoke a stale CancelFunc bound to an
+// action that already completed.
+func (m *TimeoutManager) ClearActiveCancel(sessionID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if entry, ok := m.sessions[sessionID]; ok {
+		entry.activeCancel = nil
+	}
 }
 
 // StopAll stops all tracked sessions and removes all entries.
