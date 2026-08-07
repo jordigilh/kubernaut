@@ -111,32 +111,13 @@ func buildValkeyTLSConfig(tlsCfg fmcconfig.ValkeyTLSConfig, logger logr.Logger) 
 	return valkeyTLSConfig
 }
 
-func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) *fmcDeps {
-	reg := prometheus.NewRegistry()
-	metrics := fmc.NewMetrics(reg)
-
-	reloadCfg := mcpclient.ReloadableOAuth2Config{
-		TokenURL:         cfg.OAuth2.TokenURL,
-		ClientIDPath:     cfg.OAuth2.CredentialsDir + "/client-id",
-		ClientSecretPath: cfg.OAuth2.CredentialsDir + "/client-secret",
-		Scopes:           cfg.OAuth2.Scopes,
-		TokenTimeout:     cfg.OAuth2.TokenTimeout,
-		TlsCaFile:        cfg.OAuth2.TlsCaFile,
-	}
-	opts := []mcpclient.Option{
-		mcpclient.WithReloadableOAuth2Transport(reloadCfg, logger), //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
-	}
-	logger.Info("OAuth2 authentication configured for MCP Gateway",
-		"tokenURL", cfg.OAuth2.TokenURL,
-		"credentialsDir", cfg.OAuth2.CredentialsDir)
-
-	resilienceCfg := mcpclient.DefaultResilienceConfig()
-	mcpClient, err := mcpclient.NewResilient(ctx, cfg.MCPGateway.Endpoint, resilienceCfg, logger, opts...)
-	if err != nil {
-		logger.Error(err, "Failed to connect to MCP Gateway")
-		os.Exit(1)
-	}
-
+// buildFMCK8sClients constructs the dynamic client (for the cluster
+// registry) and typed clientset (for the #1993 TokenReview/SAR auth
+// middleware), tuned for the concurrency the scope-check API path needs, and
+// resolves the release namespace (the SAR target namespace for the
+// fleetmetadatacache-service Service). Exits the process on failure,
+// matching wireFMCDependencies' fail-fast behavior.
+func buildFMCK8sClients(logger logr.Logger) (dynamic.Interface, kubernetes.Interface, string) {
 	k8sCfg, err := ctrl.GetConfig()
 	if err != nil {
 		logger.Error(err, "Failed to get Kubernetes config")
@@ -169,6 +150,37 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		logger.Error(err, "Failed to determine release namespace for auth middleware")
 		os.Exit(1)
 	}
+
+	return dynClient, k8sClientset, releaseNamespace
+}
+
+func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) *fmcDeps {
+	reg := prometheus.NewRegistry()
+	metrics := fmc.NewMetrics(reg)
+
+	reloadCfg := mcpclient.ReloadableOAuth2Config{
+		TokenURL:         cfg.OAuth2.TokenURL,
+		ClientIDPath:     cfg.OAuth2.CredentialsDir + "/client-id",
+		ClientSecretPath: cfg.OAuth2.CredentialsDir + "/client-secret",
+		Scopes:           cfg.OAuth2.Scopes,
+		TokenTimeout:     cfg.OAuth2.TokenTimeout,
+		TlsCaFile:        cfg.OAuth2.TlsCaFile,
+	}
+	opts := []mcpclient.Option{
+		mcpclient.WithReloadableOAuth2Transport(reloadCfg, logger), //nolint:contextcheck // OAuth2 token source refresh runs as a background reload, independent of any single request
+	}
+	logger.Info("OAuth2 authentication configured for MCP Gateway",
+		"tokenURL", cfg.OAuth2.TokenURL,
+		"credentialsDir", cfg.OAuth2.CredentialsDir)
+
+	resilienceCfg := mcpclient.DefaultResilienceConfig()
+	mcpClient, err := mcpclient.NewResilient(ctx, cfg.MCPGateway.Endpoint, resilienceCfg, logger, opts...)
+	if err != nil {
+		logger.Error(err, "Failed to connect to MCP Gateway")
+		os.Exit(1)
+	}
+
+	dynClient, k8sClientset, releaseNamespace := buildFMCK8sClients(logger)
 
 	valkeyTLSConfig := buildValkeyTLSConfig(cfg.Valkey.TLS, logger)
 	writer := fmc.NewValkeyWriter(cfg.Valkey.Addr, fmc.WithTLSConfig(valkeyTLSConfig))
