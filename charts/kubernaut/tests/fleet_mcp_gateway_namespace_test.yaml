@@ -27,6 +27,13 @@ set:
         provider: openai
         model: gpt-4
         credentialsSecretName: llm-credentials-primary
+    # Issue #1984 Phase D: OAuth2 is schema-mandatory whenever
+    # mcpGatewayEndpoint is set, which every test below does.
+    fleet:
+      oauth2:
+        enabled: true
+        tokenURL: "https://dex.example.com/token"
+        credentialsSecretRef: fleet-oauth2-creds
   kubernautAgent:
     llmProfileRef: primary
   signalprocessing:
@@ -35,6 +42,10 @@ set:
   aianalysis:
     policies:
       existingConfigMap: test-cm
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
 tests:
   # ---------------------------------------------------------------------
   # SignalProcessing

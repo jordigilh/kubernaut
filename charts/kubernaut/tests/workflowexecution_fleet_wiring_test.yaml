@@ -40,6 +40,16 @@ tests:
         fleet:
           enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
+          # Issue #1984 Phase D: OAuth2 is now schema-mandatory once
+          # mcpGatewayEndpoint is set.
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: "shared-read-only-creds"
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: "we-write-scoped-creds"
     documentSelector:
       path: metadata.name
       value: workflowexecution-config
@@ -48,36 +58,26 @@ tests:
           path: data["workflowexecution.yaml"]
           pattern: "(?m)^\\s*endpoint: \"http://mcp\\.example\\.com\""
 
-  - it: "WE ConfigMap renders fleet.endpoint empty (local-only mode) when global.fleet.enabled=true but mcpGatewayEndpoint unset (remote execution is optional, unlike GW/RO/FMC)"
+  - it: "IT-HELM-1984-110 (Phase B): global.fleet.enabled=true without mcpGatewayEndpoint is now rejected at the schema level, even scoped to this single-template suite -- GW/RO's pre-existing unconditional endpoint requirement (fail() guards removed in Phase B, now values.schema.json) makes WE's own local-only-fallback rendering (line 241 `endpoint: \"\"`) unreachable in any real full-chart install, since GW/RO always render alongside WE and always demanded the endpoint whenever fleet.enabled=true"
     set:
       global:
         fleet:
           enabled: true
-    documentSelector:
-      path: metadata.name
-      value: workflowexecution-config
     asserts:
-      - matchRegex:
-          path: data["workflowexecution.yaml"]
-          pattern: "(?m)^\\s*endpoint: \"\""
+      - failedTemplate: {}
 
   # ---------------------------------------------------------------------
   # oauth2: shared token URL/scopes/CA from global, but credentialsSecretRef
   # is WE's own -- NOT a fallback to global.fleet.oauth2.credentialsSecretRef
   # ---------------------------------------------------------------------
-  - it: "WE ConfigMap has no fleet.oauth2 block when global.fleet.oauth2.enabled=false, even with fleet enabled"
+  - it: "IT-HELM-1984-111 (Phase D): global.fleet.mcpGatewayEndpoint set + oauth2.enabled=false (the default) is now schema-rejected -- closes the ADR-068 gap that let WE reach the MCP Gateway unauthenticated. Formerly asserted a successful render with no oauth2 block; that combination is no longer constructible (see oauth2_mandatory_schema_validation_test.yaml IT-HELM-1984-301 for the general-case coverage)."
     set:
       global:
         fleet:
           enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
-    documentSelector:
-      path: metadata.name
-      value: workflowexecution-config
     asserts:
-      - notMatchRegex:
-          path: data["workflowexecution.yaml"]
-          pattern: "(?m)^\\s*oauth2:"
+      - failedTemplate: {}
 
   - it: "WE ConfigMap renders fleet.oauth2.tokenURL/scopes from global, but credentialsSecretRef from workflowexecution.fleet.oauth2.credentialsSecretRef (its own, not global)"
     set:
@@ -109,7 +109,12 @@ tests:
           pattern: "shared-read-only-creds"
 
   # ---------------------------------------------------------------------
-  # Fail-closed guards: no silent fallback for WE's write-scoped credential
+  # Fail-closed guards: no silent fallback for WE's write-scoped credential.
+  # Issue #1984 Phase D: these guards moved from workflowexecution.yaml's
+  # fail() to values.schema.json's if/then blocks on
+  # global.fleet.mcpGatewayEndpoint (BR-PLATFORM-010) -- the specific
+  # errorMessage strings are now schema validation errors, not Go template
+  # fail() text.
   # ---------------------------------------------------------------------
   - it: "helm fails at render time when oauth2 is enabled and workflowexecution.fleet.oauth2.credentialsSecretRef is unset, EVEN IF global.fleet.oauth2.credentialsSecretRef is set (proves no fallback)"
     set:
@@ -123,8 +128,7 @@ tests:
             credentialsSecretRef: "shared-read-only-creds"
     template: templates/workflowexecution/workflowexecution.yaml
     asserts:
-      - failedTemplate:
-          errorMessage: "workflowexecution.fleet.oauth2.credentialsSecretRef is required when global.fleet.oauth2.enabled=true (WE needs its own write-scoped MCP Gateway credentials -- it does NOT fall back to global.fleet.oauth2.credentialsSecretRef, which is shared read-only by gateway/remediationorchestrator/apifrontend/effectivenessmonitor/signalprocessing/fleetmetadatacache)"
+      - failedTemplate: {}
 
   - it: "helm fails at render time when oauth2 is enabled and global.fleet.oauth2.tokenURL is unset"
     set:
@@ -140,8 +144,7 @@ tests:
             credentialsSecretRef: "we-write-scoped-creds"
     template: templates/workflowexecution/workflowexecution.yaml
     asserts:
-      - failedTemplate:
-          errorMessage: "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true"
+      - failedTemplate: {}
 
   # ---------------------------------------------------------------------
   # Secret volume/mount wiring for the write-scoped OAuth2 credential
@@ -177,12 +180,7 @@ tests:
             secret:
               secretName: we-write-scoped-creds
 
-  - it: "WE Deployment has no oauth2-credentials volume/mount when fleet oauth2 is disabled"
-    set:
-      global:
-        fleet:
-          enabled: true
-          mcpGatewayEndpoint: "http://mcp.example.com"
+  - it: "WE Deployment has no oauth2-credentials volume/mount when fleet oauth2 is disabled (default: fleet disabled entirely -- Issue #1984 Phase B/D collapsed the 'fleet enabled but endpoint/oauth2 unset' state space to nothing, since both are now unconditionally schema-required whenever global.fleet.enabled=true)"
     documentSelector:
       path: kind
       value: Deployment

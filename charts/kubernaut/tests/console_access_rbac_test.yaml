@@ -15,6 +15,12 @@ set:
         credentialsSecretName: llm-credentials-primary
   kubernautAgent:
     llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
 tests:
   # ---------------------------------------------------------------------
   # IT-HELM-1919-001: the coarse-grained ClusterRole exists and grants

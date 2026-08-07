@@ -10,11 +10,23 @@ set:
       mcpGatewayEndpoint: "http://mcp.example.com"
       mcpGatewayType: "eaigw"
       oauth2:
+        enabled: true
         tokenURL: "http://oauth.example.com"
+        credentialsSecretRef: "fleet-oauth2-creds"
   fleetmetadatacache:
     enabled: true
     oauth2:
       credentialsSecretRef: "fmc-creds"
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
 tests:
   # ── ConfigMap: 3-port layout + TLS cert dir ─────────────────────────────
   - it: "ConfigMap renders the 3-port standard (api/health/metrics) and server.tls.certDir"

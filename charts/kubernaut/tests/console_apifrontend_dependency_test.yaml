@@ -23,7 +23,7 @@ set:
     policies:
       existingConfigMap: test-cm
 tests:
-  - it: "console.enabled=true + apifrontend.enabled=false fails the render -- Console's nginx sidecar hardcodes a reverse-proxy to APIFrontend with no other possible backend"
+  - it: "console.enabled=true + apifrontend.enabled=false fails the render -- Console's nginx sidecar hardcodes a reverse-proxy to APIFrontend with no other possible backend (Phase C: schema-enforced, was a console.yaml fail() guard)"
     template: templates/console/console.yaml
     set:
       apifrontend:
@@ -38,8 +38,67 @@ tests:
         ingress:
           host: console.apps.example.com
     asserts:
-      - failedTemplate:
-          errorMessage: "console.enabled=true requires apifrontend.enabled=true (Console's nginx sidecar reverse-proxies exclusively to APIFrontend, with no other possible backend)"
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-201 (Phase C, BR-PLATFORM-010): console.enabled=true without console.auth.secretName is schema-rejected, even when only NOTES.txt is rendered (proves schema enforcement, independent of console.yaml's own fail() guard)"
+    template: templates/NOTES.txt
+    set:
+      console:
+        enabled: true
+        ingress:
+          host: console.apps.example.com
+      apifrontend:
+        config:
+          auth:
+            issuerURL: https://sso.example.com/realms/kubernaut
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-202 (Phase C, BR-PLATFORM-010): console.enabled=true without an OIDC issuer (neither apifrontend.config.auth.issuerURL nor jwtProviders[0].issuerURL) is schema-rejected, even when only NOTES.txt is rendered"
+    template: templates/NOTES.txt
+    set:
+      console:
+        enabled: true
+        auth:
+          secretName: console-auth
+        ingress:
+          host: console.apps.example.com
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-203 (Phase C, BR-PLATFORM-010): console.enabled=true with apifrontend.config.auth.jwtProviders[0].issuerURL set (instead of the legacy issuerURL) satisfies the OIDC-issuer schema requirement, even when only NOTES.txt is rendered"
+    template: templates/NOTES.txt
+    set:
+      console:
+        enabled: true
+        auth:
+          secretName: console-auth
+        ingress:
+          host: console.apps.example.com
+      apifrontend:
+        config:
+          auth:
+            jwtProviders:
+              - name: primary
+                issuerURL: https://sso.example.com/realms/kubernaut
+                audiences: ["kubernaut"]
+    asserts:
+      - matchRegexRaw:
+          pattern: "has been installed in namespace"
+
+  - it: "IT-HELM-1984-204 (Phase C, BR-PLATFORM-010): console.enabled=true without console.ingress.host is schema-rejected, even when only NOTES.txt is rendered"
+    template: templates/NOTES.txt
+    set:
+      console:
+        enabled: true
+        auth:
+          secretName: console-auth
+      apifrontend:
+        config:
+          auth:
+            issuerURL: https://sso.example.com/realms/kubernaut
+    asserts:
+      - failedTemplate: {}
 
   - it: "console.enabled=true + apifrontend.enabled=true (default) renders successfully -- no new false-positive from the added guard"
     template: templates/console/console.yaml

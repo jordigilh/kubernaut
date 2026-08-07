@@ -51,7 +51,13 @@ tests:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
           oauth2:
+            enabled: true
             tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "fleet-oauth2-creds"
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: we-oauth2-creds
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     documentSelector:
       path: kind

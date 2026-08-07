@@ -1,6 +1,7 @@
 suite: "DD-PLATFORM-006 Decision Area 11: kubernautAgent.interactive.enabled requires apifrontend.enabled"
 templates:
   - templates/kubernaut-agent/kubernaut-agent.yaml
+  - templates/NOTES.txt
 set:
   postgresql:
     auth:
@@ -22,7 +23,8 @@ set:
     policies:
       existingConfigMap: test-cm
 tests:
-  - it: "kubernautAgent.interactive.enabled=true + apifrontend.enabled=false fails the render -- APIFrontend's ka.NewSDKMCPClient is the only caller of KA's interactive endpoint"
+  - it: "kubernautAgent.interactive.enabled=true + apifrontend.enabled=false fails the render -- APIFrontend's ka.NewSDKMCPClient is the only caller of KA's interactive endpoint (Phase C: schema-enforced, was a kubernaut-agent.yaml fail() guard)"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
     set:
       kubernautAgent:
         interactive:
@@ -30,10 +32,21 @@ tests:
       apifrontend:
         enabled: false
     asserts:
-      - failedTemplate:
-          errorMessage: "kubernautAgent.interactive.enabled=true requires apifrontend.enabled=true (APIFrontend's ka.NewSDKMCPClient is the only MCP client that connects to KubernautAgent's interactive endpoint, with no other possible caller)"
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-205 (Phase C, BR-PLATFORM-010): kubernautAgent.interactive.enabled=true + apifrontend.enabled=false is schema-rejected even when only NOTES.txt is rendered, proving schema (not kubernaut-agent.yaml's own fail() guard) enforces it"
+    template: templates/NOTES.txt
+    set:
+      kubernautAgent:
+        interactive:
+          enabled: true
+      apifrontend:
+        enabled: false
+    asserts:
+      - failedTemplate: {}
 
   - it: "kubernautAgent.interactive.enabled=true + apifrontend.enabled=true (default) renders successfully -- no new false-positive from the added guard"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
     set:
       kubernautAgent:
         interactive:
@@ -46,6 +59,7 @@ tests:
           of: Deployment
 
   - it: "kubernautAgent.interactive.enabled=false (default) + apifrontend.enabled=false renders successfully -- the guard is scoped to interactive mode only"
+    template: templates/kubernaut-agent/kubernaut-agent.yaml
     set:
       apifrontend:
         enabled: false

@@ -8,6 +8,12 @@ set:
       existingSecret: dummy
   valkey:
     existingSecret: dummy
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
 tests:
   - it: "postgresql pod securityContext defaults to runAsNonRoot + runAsUser 70 + fsGroup + RuntimeDefault seccomp"
     template: templates/infrastructure/postgresql.yaml

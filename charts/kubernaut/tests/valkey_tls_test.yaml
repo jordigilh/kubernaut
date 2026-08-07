@@ -21,8 +21,20 @@ set:
         credentialsSecretName: llm-credentials-primary
   kubernautAgent:
     llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
   tls:
     mode: hook
+  # Issue #1984 Phase D: OAuth2 is schema-mandatory whenever
+  # mcpGatewayEndpoint is set (all the FMC test cases below set it).
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
 tests:
   # ── Valkey Deployment: plaintext port disabled, TLS port enabled ──────────
   - it: "Valkey Deployment disables the plaintext port and enables tls-port 6380"
@@ -207,7 +219,9 @@ tests:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
           oauth2:
+            enabled: true
             tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "fleet-oauth2-creds"
     asserts:
       - equal:
           path: spec.egress[1].ports[0].port
@@ -280,7 +294,9 @@ tests:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
           oauth2:
+            enabled: true
             tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "fleet-oauth2-creds"
     asserts:
       - matchRegex:
           path: data['config.yaml']
@@ -300,7 +316,9 @@ tests:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
           oauth2:
+            enabled: true
             tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "fleet-oauth2-creds"
     asserts:
       - matchRegex:
           path: data['config.yaml']
@@ -322,7 +340,9 @@ tests:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
           oauth2:
+            enabled: true
             tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "fleet-oauth2-creds"
     asserts:
       - matchRegex:
           path: data['config.yaml']
@@ -342,7 +362,9 @@ tests:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
           oauth2:
+            enabled: true
             tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "fleet-oauth2-creds"
     asserts:
       - contains:
           path: spec.template.spec.containers[0].volumeMounts

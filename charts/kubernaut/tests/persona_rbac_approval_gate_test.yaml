@@ -15,6 +15,12 @@ set:
         credentialsSecretName: llm-credentials-primary
   kubernautAgent:
     llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
 tests:
   # ---------------------------------------------------------------------
   # IT-HELM-1869-001/002: the `sre` persona -- the only interactive-chat

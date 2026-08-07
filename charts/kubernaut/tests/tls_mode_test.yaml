@@ -17,6 +17,12 @@ set:
         credentialsSecretName: llm-credentials-primary
   kubernautAgent:
     llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
   # kubernaut.tls.issuerName requires an explicit issuerRef.name when there is
   # no live cluster access to auto-discover an Issuer/ClusterIssuer (helm
   # template / helm-unittest / GitOps rendering all fall into this path).

@@ -18,6 +18,12 @@ set:
     certManager:
       issuerRef:
         name: test-issuer
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
 tests:
   # ── PostgreSQL: all 4 resources in wave "-1" ────────────────────────────
   - it: "PostgreSQL ServiceAccount is pinned to sync-wave -1"

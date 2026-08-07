@@ -1,0 +1,174 @@
+suite: "Issue #1984 Phase B: global.fleet.mcpGatewayEndpoint mandatory-ness (Gateway/RemediationOrchestrator when global.fleet.enabled=true, FleetMetadataCache when effectively enabled) moves from template fail() guards to values.schema.json if/then (SI-10/CM-6)"
+# Technique (see policies_schema_validation_test.yaml for the full rationale):
+# select only templates/NOTES.txt (unrelated to gateway/remediationorchestrator/
+# fleetmetadatacache) so a failedTemplate assertion can only be explained by
+# values.schema.json itself, not by any of those services' own fail() guards.
+templates:
+  - templates/gateway/gateway.yaml
+  - templates/remediationorchestrator/remediationorchestrator.yaml
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+  - templates/NOTES.txt
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # ---------------------------------------------------------------------
+  # Gateway/RemediationOrchestrator: global.fleet.enabled=true requires
+  # global.fleet.mcpGatewayEndpoint, enforced regardless of template
+  # selection.
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-1984-101: schema rejects global.fleet.enabled=true with empty mcpGatewayEndpoint, even when only NOTES.txt is rendered"
+    set:
+      global:
+        fleet:
+          enabled: true
+    template: templates/NOTES.txt
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-102: schema rejects global.fleet.enabled=true + backend=acm with empty mcpGatewayEndpoint (endpoint requirement is backend-independent), even when only NOTES.txt is rendered"
+    set:
+      global:
+        fleet:
+          enabled: true
+          backend: acm
+    template: templates/NOTES.txt
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-103: global.fleet.enabled=false (default) does not require mcpGatewayEndpoint -- NOTES.txt renders cleanly"
+    template: templates/NOTES.txt
+    asserts:
+      - matchRegexRaw:
+          pattern: "has been installed in namespace"
+
+  # ---------------------------------------------------------------------
+  # FleetMetadataCache: effectively-enabled (explicit true, or derived from
+  # global.fleet.enabled + backend defaulting to "fleetmetadatacache")
+  # requires global.fleet.mcpGatewayEndpoint, independent of global.fleet.enabled.
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-1984-104: schema rejects fleetmetadatacache.enabled=true (standalone, global.fleet.enabled left at default false) with empty mcpGatewayEndpoint, even when only NOTES.txt is rendered"
+    set:
+      fleetmetadatacache:
+        enabled: true
+    template: templates/NOTES.txt
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-105: schema rejects global.fleet.enabled=true + backend unset (derives to fleetmetadatacache) with empty mcpGatewayEndpoint via the FMC-specific branch too (same failure surfaces from IT-HELM-1984-101's GW/RO branch; this case pins the FMC derivation independently by also setting fleetmetadatacache.enabled=true explicitly)"
+    set:
+      global:
+        fleet:
+          enabled: true
+      fleetmetadatacache:
+        enabled: true
+    template: templates/NOTES.txt
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-106: fleetmetadatacache.enabled=true with mcpGatewayEndpoint set renders NOTES.txt cleanly (schema satisfied, including Phase D's shared + WE-dedicated oauth2 requirements)"
+    set:
+      fleetmetadatacache:
+        enabled: true
+      global:
+        fleet:
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "fmc-creds"
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: "we-creds"
+    template: templates/NOTES.txt
+    asserts:
+      - matchRegexRaw:
+          pattern: "has been installed in namespace"
+
+  # ---------------------------------------------------------------------
+  # Happy-path renders on the real templates: unaffected by the new
+  # constraint when satisfied, confirm no regression.
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-1984-107: gateway renders successfully when global.fleet.enabled=true and mcpGatewayEndpoint is set"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "gw-creds"
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: "we-creds"
+    template: templates/gateway/gateway.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - isKind:
+          of: Deployment
+
+  - it: "IT-HELM-1984-108: remediationorchestrator renders successfully when global.fleet.enabled=true and mcpGatewayEndpoint is set"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "ro-creds"
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: "we-creds"
+    template: templates/remediationorchestrator/remediationorchestrator.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - isKind:
+          of: Deployment
+
+  - it: "IT-HELM-1984-109: fleetmetadatacache renders successfully when effectively enabled (derived) and mcpGatewayEndpoint is set"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "fmc-creds"
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: "we-creds"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - isKind:
+          of: Deployment

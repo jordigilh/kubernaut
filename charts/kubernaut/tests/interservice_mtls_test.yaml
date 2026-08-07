@@ -3,6 +3,13 @@ templates:
   - templates/interservice/ca.yaml
   - templates/interservice/leaf-certs.yaml
   - templates/hooks/interservice-ca-sync-job.yaml
+set:
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
 tests:
   # ── cert-manager mode: bootstrap Issuer + root CA + CA Issuer ──────────
   - it: "cert-manager mode: renders a self-signed bootstrap Issuer"
