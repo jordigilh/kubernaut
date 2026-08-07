@@ -293,7 +293,7 @@ kubernautAgent:
     investigation:
         inconclusiveConfidenceThreshold: 0.5
         resolvedConfidenceThreshold: 0.7
-    llmProfileRef: primary
+    llmProfileRef: ""
     logging:
         level: INFO
     pdb:

@@ -19,7 +19,8 @@ preamble below is already duplicated.
 {{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "apifrontend") | fromYaml }}
 {{- $apifrontendFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.apifrontend.fleet "oauth2" .Values.apifrontend.fleet.oauth2) | fromYaml }}
 {{- $kaV := include "kubernaut.mergedValues" (dict "root" . "service" "kubernautAgent") | fromYaml }}
-{{- $afProfileRefName := $v.llmProfileRef | default $kaV.llmProfileRef }}
+{{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" . "ref" $kaV.llmProfileRef) }}
+{{- $afProfileRefName := $v.llmProfileRef | default $kaEffectiveRef }}
 {{- $afProfile := include "kubernaut.llm.resolveProfile" (dict "root" . "name" $afProfileRefName) | fromYaml }}
 {{- $afAPIKeyFile := include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/apifrontend/llm-credentials" "provider" $afProfile.provider) }}
 {{- $stCfg := $v.config.severityTriage }}
@@ -263,7 +264,8 @@ severityTriage's independent llm profile (empty ref/nil inherits AF's own;
 llmEnabled=false disables it entirely, forcing rule-based-only triage).
 */}}
 {{- $kaV := include "kubernaut.mergedValues" (dict "root" $ "service" "kubernautAgent") | fromYaml }}
-{{- $afProfileRefName := $v.llmProfileRef | default $kaV.llmProfileRef }}
+{{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $kaV.llmProfileRef) }}
+{{- $afProfileRefName := $v.llmProfileRef | default $kaEffectiveRef }}
 {{- $afProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $afProfileRefName) | fromYaml }}
 {{- $afAPIKeyFile := include "kubernaut.llm.mountedKeyFile" (dict "dir" "/etc/apifrontend/llm-credentials" "provider" $afProfile.provider) }}
 {{- $stCfg := $v.config.severityTriage }}

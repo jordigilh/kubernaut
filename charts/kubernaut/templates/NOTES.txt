@@ -8,7 +8,8 @@ Kubernaut {{ .Chart.AppVersion }} has been installed in namespace {{ .Release.Na
 
 2. Verify LLM credentials secret exists:
 {{- $kaNotesV := include "kubernaut.mergedValues" (dict "root" $ "service" "kubernautAgent") | fromYaml }}
-{{- $kaNotesProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaNotesV.llmProfileRef) | fromYaml }}
+{{- $kaNotesEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $kaNotesV.llmProfileRef) }}
+{{- $kaNotesProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaNotesEffectiveRef) | fromYaml }}
 
    kubectl get secret {{ $kaNotesProfile.credentialsSecretName }} -n {{ .Release.Namespace }}
 
