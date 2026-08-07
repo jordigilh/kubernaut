@@ -160,11 +160,22 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 			}
 		}
 
+		// #1997: phaseGuardAfter only ever records a side effect (session
+		// state, ActiveContextRegistry) -- it never modifies resp/callErr.
+		// Every exit path below returns (nil, nil), the ADK AfterToolCallback
+		// convention for "pass through unchanged" (google.golang.org/adk,
+		// internal/llminternal/base_flow.go: invokeAfterToolCallbacks treats
+		// a non-nil result as an explicit override that stops the chain,
+		// falling back to the original fResult/fErr only once every
+		// callback has returned nil). Re-returning the original resp/callErr
+		// here looked harmless but silently skipped every AfterToolCallback
+		// registered after this one (afterLog) for any tool call at all,
+		// not just the ones this guard cares about.
 		if !isEntry && !isTerminal && !isDiscoverWorkflows {
-			return resp, callErr
+			return nil, nil
 		}
 		if !isSuccess {
-			return resp, callErr
+			return nil, nil
 		}
 
 		logger := logr.FromContextOrDiscard(ctx)
@@ -178,7 +189,7 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 					logger.Error(err, "phase-guard failed to persist phase3_blocked state")
 				}
 			}
-			return resp, callErr
+			return nil, nil
 		}
 
 		if isEntry {
@@ -275,7 +286,7 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 			}
 		}
 
-		return resp, callErr
+		return nil, nil
 	}
 
 	return before, after
