@@ -1,0 +1,131 @@
+suite: "Issue #1993: FMC scope-check API auth RBAC (TokenReview/SAR)"
+templates:
+  - templates/rbac/fmc-scope-check-client-rbac.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+    fleet:
+      mcpGatewayEndpoint: "http://mcp.example.com"
+      mcpGatewayType: eaigw
+      oauth2:
+        enabled: true
+        tokenURL: "http://oauth.example.com"
+        credentialsSecretRef: fleet-oauth2-creds
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
+  fleetmetadatacache:
+    enabled: true
+    oauth2:
+      credentialsSecretRef: "fmc-creds"
+tests:
+  - it: "IT-HELM-1993-101: fleetmetadatacache-auth-middleware ClusterRole grants tokenreviews/subjectaccessreviews create"
+    documentIndex: 0 # first document in this file is the ClusterRole
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["authentication.k8s.io"]
+            resources: ["tokenreviews"]
+            verbs: ["create"]
+      - contains:
+          path: rules
+          content:
+            apiGroups: ["authorization.k8s.io"]
+            resources: ["subjectaccessreviews"]
+            verbs: ["create"]
+
+  - it: "IT-HELM-1993-101b: fleetmetadatacache-auth-middleware ClusterRoleBinding binds the fleetmetadatacache ServiceAccount"
+    documentIndex: 1 # second document is the matching ClusterRoleBinding
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: roleRef.name
+          value: fleetmetadatacache-auth-middleware
+      - contains:
+          path: subjects
+          content:
+            kind: ServiceAccount
+            name: fleetmetadatacache
+            namespace: NAMESPACE
+
+  - it: "IT-HELM-1993-102: fmc-scope-check-client ClusterRole grants get on fleetmetadatacache-service only"
+    documentSelector:
+      path: metadata.name
+      value: fmc-scope-check-client
+    asserts:
+      - isKind:
+          of: ClusterRole
+      - equal:
+          path: rules
+          value:
+            - apiGroups: [""]
+              resources: ["services"]
+              resourceNames: ["fleetmetadatacache-service"]
+              verbs: ["get"]
+
+  - it: "IT-HELM-1993-102b: gateway ServiceAccount is bound to fmc-scope-check-client"
+    documentSelector:
+      path: metadata.name
+      value: gateway-fmc-scope-check-client
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: roleRef.name
+          value: fmc-scope-check-client
+      - contains:
+          path: subjects
+          content:
+            kind: ServiceAccount
+            name: gateway
+            namespace: NAMESPACE
+
+  - it: "IT-HELM-1993-102c: remediationorchestrator-controller ServiceAccount is bound to fmc-scope-check-client"
+    documentSelector:
+      path: metadata.name
+      value: remediationorchestrator-fmc-scope-check-client
+    asserts:
+      - isKind:
+          of: ClusterRoleBinding
+      - equal:
+          path: roleRef.name
+          value: fmc-scope-check-client
+      - contains:
+          path: subjects
+          content:
+            kind: ServiceAccount
+            name: remediationorchestrator-controller
+            namespace: NAMESPACE
+
+  - it: "IT-HELM-1993-103: nothing renders when fleetmetadatacache is not effectively enabled"
+    set:
+      fleetmetadatacache:
+        enabled: false
+      global:
+        fleet:
+          enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
