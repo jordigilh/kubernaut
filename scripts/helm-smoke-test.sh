@@ -1676,10 +1676,15 @@ run_template_tests() {
 
   local aia_tpl sp_tpl
 
-  # ST-POLICY-001: Template fails when no policies are provided
+  # ST-POLICY-001: Template fails when no policies are provided (Issue #1984:
+  # enforcement moved from a template fail() guard to values.schema.json
+  # anyOf -- error now comes from Helm's schema validator, not a custom
+  # fail() message, so assertions match the schema violation path instead of
+  # "is required" text).
   aia_tpl=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) 2>&1)
-  if [[ $? -ne 0 ]] && grep -qE "is required" <<< "$aia_tpl"; then
+  if [[ $? -ne 0 ]] && grep -q "/aianalysis/policies" <<< "$aia_tpl" && \
+     grep -q "/signalprocessing/policies" <<< "$aia_tpl"; then
     tap_ok "ST-POLICY-001: Template fails when no Rego policies are provided"
   else
     tap_not_ok "ST-POLICY-001: mandatory policy validation" \
@@ -1690,22 +1695,24 @@ run_template_tests() {
   aia_tpl=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) \
     --set-file "aianalysis.policies.content=$POLICY_AA_FILE" 2>&1)
-  if [[ $? -ne 0 ]] && grep -q "signalprocessing.policies.content is required" <<< "$aia_tpl"; then
+  if [[ $? -ne 0 ]] && grep -q "/signalprocessing/policies" <<< "$aia_tpl" && \
+     ! grep -q "/aianalysis/policies" <<< "$aia_tpl"; then
     tap_ok "ST-POLICY-002: Template fails when SP policy is missing (AA provided)"
   else
     tap_not_ok "ST-POLICY-002: SP mandatory policy validation" \
-      "Template should fail with SP required message when only AA policy is provided"
+      "Template should fail on /signalprocessing/policies schema violation only when AA policy is provided"
   fi
 
   # ST-POLICY-003: Template fails with SP policy but without AA policy
   aia_tpl=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) \
     --set-file "signalprocessing.policies.content=$POLICY_SP_FILE" 2>&1)
-  if [[ $? -ne 0 ]] && grep -q "aianalysis.policies.content is required" <<< "$aia_tpl"; then
+  if [[ $? -ne 0 ]] && grep -q "/aianalysis/policies" <<< "$aia_tpl" && \
+     ! grep -q "/signalprocessing/policies" <<< "$aia_tpl"; then
     tap_ok "ST-POLICY-003: Template fails when AA policy is missing (SP provided)"
   else
     tap_not_ok "ST-POLICY-003: AA mandatory policy validation" \
-      "Template should fail with AA required message when only SP policy is provided"
+      "Template should fail on /aianalysis/policies schema violation only when SP policy is provided"
   fi
 
   # ST-POLICY-004: Both --set-file renders AI Analysis approval policy ConfigMap

@@ -1349,7 +1349,9 @@ jobs:
             --set global.llmProfiles.primary.provider=openai \
             --set global.llmProfiles.primary.model=gpt-4o \
             --set global.llmProfiles.primary.credentialsSecretName=lint-placeholder \
-            --set kubernautAgent.llmProfileRef=primary
+            --set kubernautAgent.llmProfileRef=primary \
+            --set aianalysis.policies.existingConfigMap=lint-placeholder \
+            --set signalprocessing.policies.existingConfigMap=lint-placeholder
           echo "PASS: values.schema.json is consistent with values.yaml"
 
       - name: Install Podman
