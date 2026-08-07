@@ -1375,6 +1375,34 @@ Usage:
 {{- end }}
 
 {{/*
+Count-based inference for kubernautAgent.llmProfileRef (Issue #1987,
+DD-PLATFORM-006 DA4 Addendum): mirrors kubernaut.tls.certManagerIssuerName's
+count-then-select-or-fail pattern above and the Kubernaut Operator's
+v1alpha2 EffectiveKALLMProfileRef. An explicit non-empty ref always wins
+outright. An empty ref (omitted, or explicitly set to "" -- Helm's schema
+defaulting makes the two indistinguishable once merged) is inferred from
+global.llmProfiles: exactly one entry -> use its name; zero or 2+ entries ->
+fail() naming the candidates, since silent auto-selection among ambiguous
+options would be an input-validation gap (SI-10).
+Usage:
+  {{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $kaV.llmProfileRef) }}
+*/}}
+{{- define "kubernaut.llm.effectiveKALLMProfileRef" -}}
+{{- if .ref -}}
+{{- .ref -}}
+{{- else -}}
+{{- $names := keys (.root.Values.global.llmProfiles | default dict) -}}
+{{- if eq (len $names) 1 -}}
+{{- index $names 0 -}}
+{{- else if eq (len $names) 0 -}}
+{{- fail "kubernautAgent.llmProfileRef is not set and global.llmProfiles defines no profiles -- add exactly one profile under global.llmProfiles, or set kubernautAgent.llmProfileRef explicitly." -}}
+{{- else -}}
+{{- fail (printf "kubernautAgent.llmProfileRef is not set and global.llmProfiles defines %d profiles, so auto-selection is ambiguous. Set kubernautAgent.llmProfileRef to one of: %s" (len $names) (join ", " (sortAlpha $names))) -}}
+{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Credential file name within an LLM profile's mounted Secret volume:
 vertex_ai uses a JSON service-account key ("credentials.json"); every other
 provider uses a flat API key file ("api_key"). Mirrors the Kubernaut

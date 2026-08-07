@@ -487,11 +487,11 @@ kubernautAgent:
       cpu: 1000m
       memory: 1Gi
   # -- Name of an entry in global.llmProfiles used for KA's investigator LLM
-  # calls (DD-PLATFORM-007). Defaults to "primary" (DD-PLATFORM-006 DA4),
-  # matching the universal convention used across this repo's own README/
-  # quickstart/CI examples -- a profile named "primary" must still be defined
-  # under global.llmProfiles (or whatever name this is overridden to); an
-  # undefined profile fails the render with an actionable message either way.
+  # calls (DD-PLATFORM-007). When omitted, inferred automatically if
+  # global.llmProfiles defines exactly one profile (Issue #1987, DD-PLATFORM-006
+  # DA4 Addendum); otherwise (zero or 2+ profiles) set this explicitly, or the
+  # render fails with an actionable message naming the candidates. An
+  # undefined/unresolvable profile name fails the render either way.
   # llmProfileRef: "primary"
   # -- Shadow agent alignment check (#601): parallel audit for prompt injection detection.
   alignmentCheck:
