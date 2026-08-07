@@ -142,6 +142,12 @@ type ServerConfig struct {
 	HealthPort        int             `yaml:"healthPort"`
 	TLS               ServerTLSConfig `yaml:"tls"`
 	MaxSSEConnections int             `yaml:"maxSSEConnections,omitempty"`
+	// DisableProfiling gates the /debug/pprof/* endpoints on the health
+	// mux (#1995). Defaults to true (profiling OFF), mirroring
+	// kubernautagent's ServerConfig.DisableProfiling secure-by-default
+	// posture -- an operator must explicitly set this to false to expose
+	// pprof for live diagnostics.
+	DisableProfiling bool `yaml:"disableProfiling"`
 }
 
 // ServerTLSConfig extends the shared TLS config with a Required flag for FedRAMP compliance.
@@ -243,9 +249,10 @@ type RBACConfig struct {
 func DefaultConfig() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Port:        8443,
-			MetricsPort: 9090,
-			HealthPort:  8081,
+			Port:             8443,
+			MetricsPort:      9090,
+			HealthPort:       8081,
+			DisableProfiling: true,
 		},
 		Agent: AgentConfig{
 			KABaseURL:     "http://localhost:8080",

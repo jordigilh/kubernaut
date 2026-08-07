@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -326,7 +327,7 @@ func run() int {
 	healthAddr := fmt.Sprintf(":%d", cfg.Server.HealthPort)
 	metricsAddr := fmt.Sprintf(":%d", cfg.Server.MetricsPort)
 
-	healthMux := buildHealthMux(handler.AllReady(depsReady, authReady, sessInfra.Healthy.Load), draining)
+	healthMux := buildHealthMux(handler.AllReady(depsReady, authReady, sessInfra.Healthy.Load), draining, cfg.Server.DisableProfiling)
 	healthServer := &http.Server{
 		Addr:              healthAddr,
 		Handler:           healthMux,
@@ -1294,7 +1295,12 @@ func (t *bearerTokenTransport) RoundTrip(req *http.Request) (*http.Response, err
 
 // buildHealthMux constructs the health server mux with dependency-aware readyz.
 // WIRE-01: /readyz must check depsReady, not just draining.
-func buildHealthMux(depsReady handler.ReadyChecker, draining *atomic.Bool) *http.ServeMux {
+// #1995: pprof handlers are gated on disableProfiling and registered only on
+// this internal health mux (never the externally-reachable API router),
+// mirroring kubernautagent's cmd/kubernautagent/health.go pattern -- this
+// adds zero new network exposure since the health port already carries
+// /healthz and /readyz behind the same NetworkPolicy boundary.
+func buildHealthMux(depsReady handler.ReadyChecker, draining *atomic.Bool, disableProfiling bool) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -1305,6 +1311,13 @@ func buildHealthMux(depsReady handler.ReadyChecker, draining *atomic.Bool) *http
 		checker = func() bool { return true }
 	}
 	mux.Handle("/readyz", handler.ReadyzHandlerFunc(checker, draining))
+	if !disableProfiling {
+		mux.HandleFunc("/debug/pprof/", pprof.Index)
+		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	}
 	return mux
 }
 

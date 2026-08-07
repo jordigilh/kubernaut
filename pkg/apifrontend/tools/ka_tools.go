@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/go-logr/logr"
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
@@ -28,6 +29,17 @@ import (
 // verify real end-to-end timeout enforcement in milliseconds, mirroring
 // AwaitSessionTimeout's test-override pattern (crd_tools.go).
 var PooledToolCallTimeout = 60 * time.Second
+
+// logPooledToolTimeoutFired emits a log line when a pooled KA MCP tool call
+// is aborted by PooledToolCallTimeout (or an inherited parent cancellation)
+// rather than completing normally (#1995) -- without this, an operator
+// investigating a stuck interactive session has no signal distinguishing "the
+// tool call is still legitimately in flight" from "AF already gave up on it
+// N seconds ago and downgraded/errored the response".
+func logPooledToolTimeoutFired(ctx context.Context, toolName, rrID string, start time.Time) {
+	logr.FromContextOrDiscard(ctx).Info("pooled KA tool call timed out or was canceled",
+		"tool", toolName, "rr_id", rrID, "elapsed", time.Since(start).String())
+}
 
 // WorkflowParameter describes a single input parameter for a workflow.
 type WorkflowParameter struct {
@@ -87,6 +99,7 @@ func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args D
 
 	toolCtx, cancel := context.WithTimeout(ctx, PooledToolCallTimeout)
 	defer cancel()
+	start := time.Now()
 	kaResult, err := mcpClient.DiscoverWorkflows(toolCtx, ka.DiscoverWorkflowsArgs{
 		RRID:       args.RRID,
 		WorkflowID: args.WorkflowID,
@@ -94,6 +107,7 @@ func HandleDiscoverWorkflows(ctx context.Context, mcpClient ka.MCPClient, args D
 	})
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			logPooledToolTimeoutFired(ctx, "discover_workflows", args.RRID, start)
 			return DiscoverWorkflowsResult{Workflows: []WorkflowDetail{}, Count: 0}, nil
 		}
 		return DiscoverWorkflowsResult{}, fmt.Errorf("discover workflows: %w", err)
@@ -264,6 +278,7 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 	}
 	toolCtx, cancel := context.WithTimeout(ctx, PooledToolCallTimeout)
 	defer cancel()
+	start := time.Now()
 	result, err := mcpClient.SelectWorkflow(toolCtx, ka.SelectWorkflowArgs{
 		RRID:       args.RRID,
 		WorkflowID: args.WorkflowID,
@@ -273,6 +288,9 @@ func HandleSelectWorkflow(ctx context.Context, mcpClient ka.MCPClient, args Sele
 		Parameters: args.Parameters,
 	})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			logPooledToolTimeoutFired(ctx, "select_workflow", args.RRID, start)
+		}
 		return SelectWorkflowResult{}, fmt.Errorf("selecting workflow: %w", err)
 	}
 
@@ -402,12 +420,18 @@ func HandleCompleteNoAction(ctx context.Context, mcpClient ka.MCPClient, args Co
 		}
 	}
 
-	kaResult, err := mcpClient.CompleteNoAction(ctx, ka.CompleteNoActionArgs{
+	toolCtx, cancel := context.WithTimeout(ctx, PooledToolCallTimeout)
+	defer cancel()
+	start := time.Now()
+	kaResult, err := mcpClient.CompleteNoAction(toolCtx, ka.CompleteNoActionArgs{
 		RRID:             args.RRID,
 		Reason:           args.Reason,
 		EscalationReason: args.EscalationReason,
 	})
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			logPooledToolTimeoutFired(ctx, "complete_no_action", args.RRID, start)
+		}
 		return CompleteNoActionResult{}, fmt.Errorf("complete_no_action: %w", err)
 	}
 
