@@ -78,6 +78,8 @@ func (m *itFallbackAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, boo
 	return nil, false
 }
 
+func (m *itFallbackAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
 var _ = Describe("Fix #1440 Integration: KA handleStart fallback session creation", func() {
 
 	Describe("IT-KA-1440-010: MCP action=start with no prior session creates interactive session and returns valid session_id (SC-24)", func() {

@@ -129,6 +129,10 @@ func (m *mockAutoMgrIT) GetSessionLazySink(id string) (*session.LazySink, bool) 
 	return m.mgr.GetSessionLazySink(id)
 }
 
+func (m *mockAutoMgrIT) EmitSessionEndedByRR(rrID, reason string) {
+	m.mgr.EmitSessionEndedByRR(rrID, reason)
+}
+
 type mockWorkflowCatalogIT struct {
 	workflow *tools.CatalogWorkflow
 }

@@ -111,6 +111,8 @@ func (m *goldenPathAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, boo
 	return nil, false
 }
 
+func (m *goldenPathAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
 // sessionIDForwardingAutoMgr tracks whether AF-provided SessionID was used for direct lookup.
 type sessionIDForwardingAutoMgr struct {
 	launchOK           bool
@@ -158,6 +160,8 @@ func (m *sessionIDForwardingAutoMgr) GetLatestRCAResultByRemediationID(_ string)
 func (m *sessionIDForwardingAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false
 }
+
+func (m *sessionIDForwardingAutoMgr) EmitSessionEndedByRR(_, _ string) {}
 
 var _ = Describe("Golden Path Lifecycle — IT-KA-GOLDEN-001 BR-INTERACTIVE-001", func() {
 	var (

@@ -89,6 +89,8 @@ func (m *interactiveAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bo
 	return nil, false
 }
 
+func (m *interactiveAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
 var _ = Describe("BR-INTERACTIVE-010: handleStart with pending interactive session — #1293", func() {
 
 	Describe("UT-KA-1293-013: action=start detects pending session and launches deferred investigation", func() {
@@ -467,6 +469,8 @@ func (m *sessionIDTrackingAutoMgr) GetSessionLazySink(_ string) (*session.LazySi
 	return nil, false
 }
 
+func (m *sessionIDTrackingAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
 // upgradeTrackingAutoMgr tracks calls to UpgradeToInteractive vs TransitionToUserDriving.
 type upgradeTrackingAutoMgr struct {
 	findResult       string
@@ -512,3 +516,5 @@ func (m *upgradeTrackingAutoMgr) Subscribe(_ context.Context, _ string) (<-chan 
 func (m *upgradeTrackingAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false
 }
+
+func (m *upgradeTrackingAutoMgr) EmitSessionEndedByRR(_, _ string) {}

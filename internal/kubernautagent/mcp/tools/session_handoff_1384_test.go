@@ -122,6 +122,8 @@ func (m *mockAutoMgrWithHTTPSession) GetSessionLazySink(_ string) (*session.Lazy
 	return nil, false
 }
 
+func (m *mockAutoMgrWithHTTPSession) EmitSessionEndedByRR(_, _ string) {}
+
 var _ = Describe("Fix #1384 Bug A — Session context propagation (AU-2/AU-3, BR-INTERACTIVE-010 SC-2)", func() {
 
 	Describe("UT-KA-1384-A01: Session context propagated to workflow_discovery (streaming path)", func() {
