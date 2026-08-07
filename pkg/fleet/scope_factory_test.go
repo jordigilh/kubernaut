@@ -246,11 +246,18 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			caFile := filepath.Join(GinkgoT().TempDir(), "ca.crt")
 			Expect(os.WriteFile(caFile, caPEM, 0o600)).To(Succeed())
 
+			// Issue #1993: FMC auth is now mandatory. TokenPath is set here
+			// purely so the (now always-on) auth layer doesn't interfere
+			// with the CA/TLS behavior this test actually exercises.
+			tokenPath := filepath.Join(GinkgoT().TempDir(), "token")
+			Expect(os.WriteFile(tokenPath, []byte("test-token"), 0o600)).To(Succeed())
+
 			cfg := fleet.FleetConfig{
 				Enabled:   true,
 				Backend:   "fleetmetadatacache",
 				Endpoint:  trustedServer.URL,
 				TLSCAFile: caFile,
+				TokenPath: tokenPath,
 			}
 			checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
 			Expect(err).ToNot(HaveOccurred())
@@ -282,6 +289,7 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 				Backend:   "fleetmetadatacache",
 				Endpoint:  untrustedServer.URL,
 				TLSCAFile: caFile,
+				TokenPath: tokenPath,
 			}
 			checkerUntrusted, err := fleet.NewScopeChecker(local, cfgUntrusted, logr.Discard())
 			Expect(err).ToNot(HaveOccurred())
@@ -302,7 +310,13 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			}))
 			defer server.Close()
 
-			cfg := fleet.FleetConfig{Enabled: true, Backend: "fleetmetadatacache", Endpoint: server.URL}
+			// Issue #1993: FMC auth is now mandatory; TokenPath set here so
+			// this test's TLS-independence assertion isn't obscured by the
+			// separate (and separately tested) auth requirement.
+			tokenPath := filepath.Join(GinkgoT().TempDir(), "token")
+			Expect(os.WriteFile(tokenPath, []byte("test-token"), 0o600)).To(Succeed())
+
+			cfg := fleet.FleetConfig{Enabled: true, Backend: "fleetmetadatacache", Endpoint: server.URL, TokenPath: tokenPath}
 			checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
 			Expect(err).ToNot(HaveOccurred())
 
@@ -313,6 +327,77 @@ var _ = Describe("NewScopeChecker factory (BR-INTEGRATION-065)", func() {
 			Expect(managed).To(BeTrue(),
 				"AC-4: without TLSCAFile configured, the FMC branch must remain backward-compatible "+
 					"with plain-HTTP FMC endpoints (no regression for existing non-TLS deployments)")
+		})
+	})
+
+	// Issue #1993: GW/RO -> FMC scope-check calls carried no application-level
+	// credential (ADR-068 originally reasoned "no auth required if same
+	// namespace" for this path -- superseded). Unlike BackendACM (auth
+	// attached only when cfg.TokenPath is explicitly configured, UT-FLEET-FAC-
+	// 008/009), BackendFMC's bearer token is mandatory and always attached:
+	// GW/RO's own ClusterRoleBinding-authorized ServiceAccount identity is
+	// what FMC's server-side TokenReview/SAR middleware validates.
+	Describe("BackendFMC AuthN (#1993)", func() {
+		It("IT-FLEET-1993-010 [IA-2,AC-3]: BackendFMC sends Authorization: Bearer <token> to the FMC endpoint", func() {
+			var gotAuthHeader string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotAuthHeader = r.Header.Get("Authorization")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"managed":true}`))
+			}))
+			defer server.Close()
+
+			tokenPath := filepath.Join(GinkgoT().TempDir(), "token")
+			Expect(os.WriteFile(tokenPath, []byte("test-fmc-sa-token"), 0o600)).To(Succeed())
+
+			cfg := fleet.FleetConfig{
+				Enabled:   true,
+				Backend:   "fleetmetadatacache",
+				Endpoint:  server.URL,
+				TokenPath: tokenPath,
+			}
+			checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
+			Expect(err).ToNot(HaveOccurred())
+
+			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(managed).To(BeTrue())
+
+			Expect(gotAuthHeader).To(Equal("Bearer test-fmc-sa-token"),
+				"IA-2/AC-3: the factory-composed FMC client must authenticate every scope-check "+
+					"request with GW/RO's ServiceAccount bearer token")
+		})
+
+		It("IT-FLEET-1993-011 [IA-2,AC-3]: BackendFMC without a readable SA token never sends an unauthenticated request (fails safe)", func() {
+			sawRequest := false
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				sawRequest = true
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"managed":true}`))
+			}))
+			defer server.Close()
+
+			// TokenPath deliberately left empty: production falls back to
+			// auth.NewDefaultTokenSource()'s fixed in-cluster SA mount path,
+			// which does not exist in this test process. Unlike BackendACM
+			// (UT-FLEET-FAC-009: no header, request still sent), FMC's
+			// bearer token is mandatory -- AuthTransport.RoundTrip must
+			// return an error rather than let the request through, so the
+			// server must never observe an unauthenticated request.
+			cfg := fleet.FleetConfig{Enabled: true, Backend: "fleetmetadatacache", Endpoint: server.URL}
+			checker, err := fleet.NewScopeChecker(local, cfg, logr.Discard())
+			Expect(err).ToNot(HaveOccurred())
+
+			managed, err := checker.IsManagedResource(context.Background(), scope.ResourceIdentity{
+				ClusterID: "prod-east", Kind: "Deployment", Name: "nginx",
+			})
+			Expect(err).ToNot(HaveOccurred(), "fail-safe: transport/auth errors must not propagate to the caller")
+			Expect(managed).To(BeFalse(),
+				"IA-2/AC-3: a missing/unreadable SA token must fail safe to unmanaged, never fall back to an unauthenticated request")
+			Expect(sawRequest).To(BeFalse(),
+				"AC-3: the FMC endpoint must never receive a request with no Authorization header")
 		})
 	})
 })

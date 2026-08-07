@@ -64,6 +64,14 @@ var _ = Describe("BR-FLEET-054/ADR-068: Fleet full-federation validation", func(
 			Enabled:            true,
 			MCPGatewayEndpoint: "http://mcp-gateway:8080/mcp",
 			MCPGatewayType:     fleet.GatewayEAIGW,
+			// OAuth2 configured so this case isolates the backend/endpoint
+			// gap (ADR-068's mandatory-OAuth2 check, pkg/fleet/config.go,
+			// would otherwise fire first and mask the intended assertion).
+			OAuth2: fleet.FleetOAuth2Config{
+				Enabled:              true,
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				CredentialsSecretRef: "fleet-oauth2-creds",
+			},
 		}
 
 		err := cfg.Validate()
@@ -79,6 +87,11 @@ var _ = Describe("BR-FLEET-054/ADR-068: Fleet full-federation validation", func(
 			Endpoint:           "http://fmc:8080",
 			MCPGatewayEndpoint: "http://mcp-gateway:8080/mcp",
 			MCPGatewayType:     fleet.GatewayEAIGW,
+			OAuth2: fleet.FleetOAuth2Config{
+				Enabled:              true,
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				CredentialsSecretRef: "fleet-oauth2-creds",
+			},
 		}
 
 		Expect(cfg.Validate()).ToNot(HaveOccurred())

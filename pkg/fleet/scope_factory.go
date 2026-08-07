@@ -102,18 +102,33 @@ func NewScopeChecker(localChecker scope.ScopeChecker, cfg FleetConfig, logger lo
 		// configured, verify FMC's server cert against it (with hot-reload
 		// support via CAReloader) instead of relying on plaintext or an
 		// unverified TLS connection.
-		var fmcOpts []fmc.ClientOption
+		//
+		// Issue #1993: unlike ACM (auth attached only when cfg.TokenPath is
+		// explicitly set), FMC's bearer token is mandatory and always
+		// attached -- FMC's server-side TokenReview/SAR middleware requires
+		// it on every request (ADR-068's original "no auth required if same
+		// namespace" reasoning for this path is superseded). Prefer
+		// cfg.TokenPath when set (test seam / non-default mount path);
+		// otherwise fall back to the in-cluster SA token auto-mounted at
+		// auth.NewDefaultTokenSource()'s default path -- the same
+		// ServiceAccount identity that GW/RO's ClusterRoleBinding authorizes.
+		transport := http.DefaultTransport
 		fmcTransport, err := caReloaderTransportOrNil("FMC", cfg.TLSCAFile)
 		if err != nil {
 			return nil, err
 		}
 		if fmcTransport != nil {
-			fmcOpts = append(fmcOpts, fmc.WithHTTPClient(&http.Client{
-				Timeout:   5 * time.Second,
-				Transport: fmcTransport,
-			}))
+			transport = fmcTransport
 		}
-		remoteChecker := fmc.NewHTTPClient(endpoint, fmcOpts...)
+		tokenSource := auth.NewDefaultTokenSource()
+		if cfg.TokenPath != "" {
+			tokenSource = auth.NewTokenSource(cfg.TokenPath)
+		}
+		transport = auth.NewAuthTransport(tokenSource, transport)
+		remoteChecker := fmc.NewHTTPClient(endpoint, fmc.WithHTTPClient(&http.Client{
+			Timeout:   5 * time.Second,
+			Transport: transport,
+		}))
 		return NewFederatedScopeChecker(localChecker, remoteChecker, logger, checkerOpts...), nil
 	case BackendACM:
 		// #1556: ACM Search mandatorily requires bearer-token auth.
