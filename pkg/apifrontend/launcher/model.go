@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"iter"
 	"net/http"
 	"os"
 	"strings"
@@ -118,7 +119,11 @@ func newVertexAnthropicModel(ctx context.Context, cfg types.LLMConfig) (m model.
 	if cfg.Endpoint != "" {
 		adkCfg.BaseURL = cfg.Endpoint
 	}
-	return adkanthropic.NewModel(ctx, cfg.Model, adkCfg)
+	llm, err := adkanthropic.NewModel(ctx, cfg.Model, adkCfg)
+	if err != nil {
+		return nil, err
+	}
+	return wrapWithTimeout(llm, cfg), nil
 }
 
 // newVertexGeminiModel constructs an ADK model.LLM for a Gemini model
@@ -257,7 +262,54 @@ func newAnthropicModel(ctx context.Context, cfg types.LLMConfig) (model.LLM, err
 	if cfg.Endpoint != "" {
 		adkCfg.BaseURL = cfg.Endpoint
 	}
-	return adkanthropic.NewModel(ctx, cfg.Model, adkCfg)
+	llm, err := adkanthropic.NewModel(ctx, cfg.Model, adkCfg)
+	if err != nil {
+		return nil, err
+	}
+	return wrapWithTimeout(llm, cfg), nil
+}
+
+// timeoutModel wraps a model.LLM so every GenerateContent call is bounded
+// by a context deadline, working around adk-anthropic-go not exposing
+// HTTP client injection (#1342) — the only two providers (direct Anthropic
+// API and Vertex-hosted Claude) still missing any client-side timeout
+// after #1955's audit. The deadline is applied to the ctx that flows into
+// the (lazily-evaluated) returned iterator, so it bounds the real,
+// deferred SDK call — adk-anthropic-go's own GenerateContent/generateStream
+// return closures that don't touch the network until ranged over, and
+// anthropic-sdk-go builds its HTTP request via http.NewRequestWithContext,
+// which binds connect, header-read, and body/SSE read to ctx — not just
+// this function's own (instant) return.
+type timeoutModel struct {
+	inner   model.LLM
+	timeout time.Duration
+}
+
+func (m *timeoutModel) Name() string { return m.inner.Name() }
+
+func (m *timeoutModel) GenerateContent(ctx context.Context, req *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
+	return func(yield func(*model.LLMResponse, error) bool) {
+		callCtx, cancel := context.WithTimeout(ctx, m.timeout)
+		defer cancel()
+		for resp, err := range m.inner.GenerateContent(callCtx, req, stream) {
+			if !yield(resp, err) {
+				return
+			}
+		}
+	}
+}
+
+// wrapWithTimeout resolves the configured LLM call timeout (falling back
+// to DefaultLLMTimeoutSeconds, mirroring BuildLLMHTTPClient's identical
+// resolution for the Gemini/OpenAI-compatible/Vertex-Gemini paths) and
+// wraps inner with a timeoutModel enforcing it at the context layer
+// instead of the HTTP client layer.
+func wrapWithTimeout(inner model.LLM, cfg types.LLMConfig) model.LLM {
+	timeout := time.Duration(types.DefaultLLMTimeoutSeconds) * time.Second
+	if cfg.TimeoutSeconds > 0 {
+		timeout = time.Duration(cfg.TimeoutSeconds) * time.Second
+	}
+	return &timeoutModel{inner: inner, timeout: timeout}
 }
 
 // BuildLLMHTTPClient constructs an HTTP client with the transport chain
