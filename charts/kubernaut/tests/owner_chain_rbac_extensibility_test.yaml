@@ -17,6 +17,12 @@ set:
         credentialsSecretName: llm-credentials-primary
   kubernautAgent:
     llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
 tests:
   # ---------------------------------------------------------------------
   # Primary fix (IT-HELM-1069-001): Gateway binds to built-in `view`

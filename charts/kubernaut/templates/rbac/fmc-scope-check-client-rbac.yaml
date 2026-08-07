@@ -1,0 +1,105 @@
+{{- /*
+Issue #1993 (ADR-068 gap closure, IA-2/AC-3/AC-17): the GW/RO -> FMC
+scope-check REST API previously carried no application-level auth (only
+NetworkPolicy segmentation plus a documented mTLS fallback that was never
+implemented). This file grants:
+  1. FMC's own auth-middleware permission (TokenReview/SAR) -- mirrors
+     data-storage-auth-middleware (rbac/datastorage-rbac.yaml).
+  2. GW/RO's client permission to call FMC's scope-check API -- structurally
+     mirrors gateway-signal-source-rbac.yaml, but with hardcoded
+     ClusterRoleBinding subjects (not a `range`) since GW/RO are the only
+     two, fixed, in-chart callers of this internal API (unlike Gateway's
+     externally-configurable signal sources).
+
+Deliberately kept in its own file rather than fleetmetadatacache.yaml: that
+template's own (conditional, namespace-scoping) ClusterRole is selected by
+several existing helm-unittest cases via `documentSelector: {path: kind,
+value: ClusterRole}` (charts/kubernaut/tests/fleet_registry_rbac_test.yaml),
+which assumes exactly one ClusterRole document renders there. Adding a
+second, unconditional ClusterRole to that same template would make those
+selectors ambiguous.
+*/}}
+{{- if eq (include "kubernaut.fleetmetadatacache.effectiveEnabled" .) "true" }}
+---
+# FMC auth middleware: TokenReview/SAR for the GW/RO -> FMC scope-check API
+# (Issue #1993). Mirrors data-storage-auth-middleware (datastorage-rbac.yaml).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fleetmetadatacache-auth-middleware
+  labels:
+    app.kubernetes.io/name: fleetmetadatacache
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources: ["subjectaccessreviews"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fleetmetadatacache-auth-middleware
+  labels:
+    app.kubernetes.io/name: fleetmetadatacache
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fleetmetadatacache-auth-middleware
+subjects:
+  - kind: ServiceAccount
+    name: fleetmetadatacache
+    namespace: {{ .Release.Namespace }}
+---
+# GW/RO -> FMC scope-check client: SAR grants get on fleetmetadatacache-service
+# (Issue #1993, ADR-068). Structurally mirrors gateway-signal-source-rbac.yaml.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fmc-scope-check-client
+  labels:
+    app.kubernetes.io/name: fleetmetadatacache
+    {{- include "kubernaut.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["fleetmetadatacache-service"]
+    verbs: ["get"]
+---
+# Gateway (gateway.yaml ServiceAccount "gateway")
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: gateway-fmc-scope-check-client
+  labels:
+    app.kubernetes.io/name: fleetmetadatacache
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fmc-scope-check-client
+subjects:
+  - kind: ServiceAccount
+    name: gateway
+    namespace: {{ .Release.Namespace }}
+---
+# RemediationOrchestrator (remediationorchestrator.yaml ServiceAccount "remediationorchestrator-controller")
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: remediationorchestrator-fmc-scope-check-client
+  labels:
+    app.kubernetes.io/name: fleetmetadatacache
+    {{- include "kubernaut.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fmc-scope-check-client
+subjects:
+  - kind: ServiceAccount
+    name: remediationorchestrator-controller
+    namespace: {{ .Release.Namespace }}
+{{- end }}

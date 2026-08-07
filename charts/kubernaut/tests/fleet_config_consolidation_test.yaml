@@ -26,6 +26,14 @@ set:
   aianalysis:
     policies:
       existingConfigMap: test-cm
+  # Issue #1984 Phase D: workflowexecution.fleet.oauth2.credentialsSecretRef
+  # is schema-required whenever global.fleet.mcpGatewayEndpoint is set (WE's
+  # own dedicated, non-fallback-able field). Set at suite level since most
+  # cases below set mcpGatewayEndpoint and don't care about WE specifically.
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
 tests:
   # ---------------------------------------------------------------------
   # GW/RO: backend + endpoint + tokenSecretRef now come from global only
@@ -39,6 +47,12 @@ tests:
           backend: "acm"
           endpoint: "https://acm-search.example.com/graphql"
           tokenSecretRef: "acm-token"
+          # Issue #1984 Phase D: OAuth2 is now schema-mandatory once
+          # mcpGatewayEndpoint is set.
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
     template: templates/gateway/gateway.yaml
     documentSelector:
       path: metadata.name
@@ -63,6 +77,12 @@ tests:
           backend: "acm"
           endpoint: "https://acm-search.example.com/graphql"
           tokenSecretRef: "acm-token"
+          # Issue #1984 Phase D: OAuth2 is now schema-mandatory once
+          # mcpGatewayEndpoint is set.
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
     template: templates/remediationorchestrator/remediationorchestrator.yaml
     documentSelector:
       path: metadata.name
@@ -86,6 +106,7 @@ tests:
           # fleetmetadatacache.enabled is now derived true too and needs its
           # own required oauth2 fields for the render to succeed.
           oauth2:
+            enabled: true
             tokenURL: "https://dex.example.com/token"
             credentialsSecretRef: fleet-oauth2-creds
     template: templates/gateway/gateway.yaml
@@ -107,6 +128,7 @@ tests:
           enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           oauth2:
+            enabled: true
             tokenURL: "https://dex.example.com/token"
             credentialsSecretRef: fleet-oauth2-creds
     template: templates/remediationorchestrator/remediationorchestrator.yaml
@@ -180,6 +202,12 @@ tests:
       global:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
+          # Issue #1984 Phase D: OAuth2 is now schema-mandatory once
+          # mcpGatewayEndpoint is set.
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
     template: templates/signalprocessing/signalprocessing.yaml
     documentSelector:
       path: metadata.name
@@ -211,8 +239,14 @@ tests:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: "kuadrant"
+          # Issue #1984 Phase D: global.fleet.oauth2.credentialsSecretRef is
+          # unconditionally schema-required once mcpGatewayEndpoint is set,
+          # even though FMC overrides it per-service above -- the schema
+          # doesn't know about the per-service fallback semantics.
           oauth2:
+            enabled: true
             tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "fleet-oauth2-creds"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     documentSelector:
       path: metadata.name
@@ -236,7 +270,9 @@ tests:
           mcpGatewayEndpoint: "http://mcp.example.com"
           mcpGatewayType: "kuadrant"
           oauth2:
+            enabled: true
             tokenURL: "http://oauth.example.com"
+            credentialsSecretRef: "fleet-oauth2-creds"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     documentSelector:
       path: metadata.name

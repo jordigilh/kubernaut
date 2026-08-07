@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	"github.com/jordigilh/kubernaut/internal/version"
@@ -51,8 +52,10 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
@@ -67,6 +70,13 @@ type fmcDeps struct {
 	cacheReader     *scopecache.ValkeyCacheReader
 	clusterRegistry registry.ClusterRegistry
 	syncer          *fmc.Syncer
+
+	// Issue #1993 (ADR-068 gap closure, IA-2/AC-3): TokenReview/SAR auth for
+	// the GW/RO -> FMC scope-check API. k8sClientset backs auth.NewK8sAuthenticator
+	// / auth.NewK8sAuthorizer; releaseNamespace is the SAR target namespace
+	// (where the fleetmetadatacache-service Service lives).
+	k8sClientset     kubernetes.Interface
+	releaseNamespace string
 }
 
 // close releases the resources held by deps, in reverse dependency order.
@@ -101,6 +111,49 @@ func buildValkeyTLSConfig(tlsCfg fmcconfig.ValkeyTLSConfig, logger logr.Logger) 
 	return valkeyTLSConfig
 }
 
+// buildFMCK8sClients constructs the dynamic client (for the cluster
+// registry) and typed clientset (for the #1993 TokenReview/SAR auth
+// middleware), tuned for the concurrency the scope-check API path needs, and
+// resolves the release namespace (the SAR target namespace for the
+// fleetmetadatacache-service Service). Exits the process on failure,
+// matching wireFMCDependencies' fail-fast behavior.
+func buildFMCK8sClients(logger logr.Logger) (dynamic.Interface, kubernetes.Interface, string) {
+	k8sCfg, err := ctrl.GetConfig()
+	if err != nil {
+		logger.Error(err, "Failed to get Kubernetes config")
+		os.Exit(1)
+	}
+
+	// Issue #1993: tune for TokenReview/SAR concurrency on the scope-check
+	// API path, mirroring cmd/datastorage/main.go:409-418. A spike measured
+	// during this issue's planning found client-go's raw QPS=5/Burst=10
+	// default (not TokenReview/SAR itself) responsible for multi-second
+	// waits under concurrent load; this also benefits dynClient below.
+	k8sCfg.Timeout = 30 * time.Second
+	k8sCfg.QPS = 1000.0
+	k8sCfg.Burst = 2000
+
+	dynClient, err := dynamic.NewForConfig(k8sCfg)
+	if err != nil {
+		logger.Error(err, "Failed to create dynamic Kubernetes client")
+		os.Exit(1)
+	}
+
+	k8sClientset, err := kubernetes.NewForConfig(k8sCfg)
+	if err != nil {
+		logger.Error(err, "Failed to create Kubernetes clientset for auth middleware")
+		os.Exit(1)
+	}
+
+	releaseNamespace, err := scope.GetControllerNamespace()
+	if err != nil {
+		logger.Error(err, "Failed to determine release namespace for auth middleware")
+		os.Exit(1)
+	}
+
+	return dynClient, k8sClientset, releaseNamespace
+}
+
 func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logger logr.Logger) *fmcDeps {
 	reg := prometheus.NewRegistry()
 	metrics := fmc.NewMetrics(reg)
@@ -127,16 +180,7 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 		os.Exit(1)
 	}
 
-	k8sCfg, err := ctrl.GetConfig()
-	if err != nil {
-		logger.Error(err, "Failed to get Kubernetes config")
-		os.Exit(1)
-	}
-	dynClient, err := dynamic.NewForConfig(k8sCfg)
-	if err != nil {
-		logger.Error(err, "Failed to create dynamic Kubernetes client")
-		os.Exit(1)
-	}
+	dynClient, k8sClientset, releaseNamespace := buildFMCK8sClients(logger)
 
 	valkeyTLSConfig := buildValkeyTLSConfig(cfg.Valkey.TLS, logger)
 	writer := fmc.NewValkeyWriter(cfg.Valkey.Addr, fmc.WithTLSConfig(valkeyTLSConfig))
@@ -178,13 +222,15 @@ func wireFMCDependencies(ctx context.Context, cfg *fmcconfig.ServiceConfig, logg
 	syncer := fmc.NewSyncerWithReaderFactory(clusterRegistry, readerFactory, writer, syncerConfig, logger, metrics)
 
 	return &fmcDeps{
-		reg:             reg,
-		metrics:         metrics,
-		mcpClient:       mcpClient,
-		writer:          writer,
-		cacheReader:     cacheReader,
-		clusterRegistry: clusterRegistry,
-		syncer:          syncer,
+		reg:              reg,
+		metrics:          metrics,
+		mcpClient:        mcpClient,
+		writer:           writer,
+		cacheReader:      cacheReader,
+		clusterRegistry:  clusterRegistry,
+		syncer:           syncer,
+		k8sClientset:     k8sClientset,
+		releaseNamespace: releaseNamespace,
 	}
 }
 
@@ -222,9 +268,24 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.
 	apiMux := http.NewServeMux()
 	apiHandler.RegisterRoutes(apiMux)
 
+	// Issue #1993 (ADR-068 gap closure, IA-2/AC-3): every GW/RO -> FMC
+	// scope-check/clusters request must carry a valid ServiceAccount bearer
+	// token (TokenReview) and be authorized (SAR) against this Service --
+	// mirrors DataStorage's own inbound-auth precedent (DD-AUTH-014).
+	// /readyz and /healthz are unaffected: DD-FLEET-004 already serves them
+	// exclusively on the separate health port, never on apiMux.
+	authenticator := auth.NewK8sAuthenticator(deps.k8sClientset)
+	authorizer := auth.NewK8sAuthorizer(deps.k8sClientset)
+	authMiddleware := auth.NewMiddleware(authenticator, authorizer, auth.MiddlewareConfig{
+		Namespace:    deps.releaseNamespace,
+		Resource:     "services",
+		ResourceName: "fleetmetadatacache-service",
+		Verb:         "get",
+	}, logger)
+
 	apiServer := &http.Server{
 		Addr:              cfg.Server.APIAddr,
-		Handler:           apiMux,
+		Handler:           authMiddleware.Handler(apiMux),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 

@@ -15,6 +15,12 @@ set:
         credentialsSecretName: llm-credentials-primary
   kubernautAgent:
     llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
 tests:
   # hasDocuments counts all documents in the template's rendered output; it
   # does not apply documentSelector filtering (verified empirically -- see

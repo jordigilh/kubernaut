@@ -458,9 +458,11 @@ global.fleet.backend to "fleetmetadatacache" (see gateway.yaml/remediationorches
 there is no scenario where global.fleet.enabled=true and the resolved backend is
 "fleetmetadatacache" but FMC should stay off. An explicit, contradictory override
 (fleetmetadatacache.enabled: false while the derived default would be true) has no sane
-interpretation and fails loudly instead of silently deploying a fleet that can never reach its
-own scope-check backend -- detected via hasKey (not `default`/`coalesce`, which can't
-distinguish "unset" from "explicitly false").
+interpretation -- detected via hasKey (not `default`/`coalesce`, which can't distinguish "unset"
+from "explicitly false"). Issue #1984 Phase C: this contradictory-override case is now rejected by
+a values.schema.json `not`/`allOf` block (BR-PLATFORM-010) before this helper ever runs, so the
+`hasKey`+false branch below is only reachable for the non-contradictory
+fleetmetadatacache.enabled=false case.
 Usage: {{ include "kubernaut.fleetmetadatacache.effectiveEnabled" . }} -- renders the literal
 string "true" or "false"; compare with `eq (include "kubernaut.fleetmetadatacache.effectiveEnabled" .) "true"`.
 */}}
@@ -468,11 +470,7 @@ string "true" or "false"; compare with `eq (include "kubernaut.fleetmetadatacach
 {{- $backend := default "fleetmetadatacache" .Values.global.fleet.backend -}}
 {{- $derivedDefault := and .Values.global.fleet.enabled (eq $backend "fleetmetadatacache") -}}
 {{- if hasKey .Values.fleetmetadatacache "enabled" -}}
-  {{- if and (not .Values.fleetmetadatacache.enabled) $derivedDefault -}}
-    {{- fail "fleetmetadatacache.enabled=false conflicts with global.fleet.enabled=true + global.fleet.backend resolving to \"fleetmetadatacache\" -- FleetMetadataCache must run when it is the selected fleet scope-check backend. Either remove the fleetmetadatacache.enabled=false override, or point global.fleet.backend at a different backend (e.g. \"acm\")." -}}
-  {{- else -}}
-    {{- printf "%t" .Values.fleetmetadatacache.enabled -}}
-  {{- end -}}
+  {{- printf "%t" .Values.fleetmetadatacache.enabled -}}
 {{- else -}}
   {{- printf "%t" $derivedDefault -}}
 {{- end -}}

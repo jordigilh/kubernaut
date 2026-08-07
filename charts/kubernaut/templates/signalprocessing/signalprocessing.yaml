@@ -4,19 +4,14 @@
 {{- define "kubernaut.signalprocessing.proactiveSignalMappingsYAML" -}}
 {{ .Values.signalprocessing.proactiveSignalMappings.content | default (.Files.Get "files/defaults/proactive-signal-mappings.yaml") }}
 {{- end }}
+{{- /*
+Issue #1984 Phase D: oauth2.tokenURL/credentialsSecretRef required-when-enabled
+guards (and the ADR-068 gap of oauth2.enabled itself being optional) moved to
+values.schema.json if/then blocks gated on global.fleet.mcpGatewayEndpoint
+being set (BR-PLATFORM-010).
+*/}}
 {{- $signalprocessingFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.signalprocessing.fleet "oauth2" .Values.signalprocessing.fleet.oauth2) | fromYaml }}
-{{- if $signalprocessingFleetPreamble.oauth2.enabled }}
-{{- if not $signalprocessingFleetPreamble.oauth2.tokenURL }}
-{{- fail "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true" }}
-{{- end }}
-{{- if not $signalprocessingFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "global.fleet.oauth2.credentialsSecretRef (or signalprocessing.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
-{{- end }}
-{{- end }}
 {{- if not .Values.signalprocessing.policies.existingConfigMap }}
-{{- if not .Values.signalprocessing.policies.content }}
-{{- fail "signalprocessing.policies.content is required (via --set-file signalprocessing.policies.content=policy.rego) or provide signalprocessing.policies.existingConfigMap" }}
-{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap

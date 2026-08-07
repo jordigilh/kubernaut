@@ -2,6 +2,7 @@ suite: "DD-PLATFORM-006 Decision Area 10: fleetmetadatacache.enabled is derived 
 templates:
   - templates/fleetmetadatacache/fleetmetadatacache.yaml
   - templates/pdb.yaml
+  - templates/NOTES.txt
 set:
   postgresql:
     auth:
@@ -37,8 +38,13 @@ tests:
           enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           oauth2:
+            enabled: true
             tokenURL: "https://dex.example.com/token"
             credentialsSecretRef: fleet-oauth2-creds
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: we-oauth2-creds
     documentSelector:
       path: kind
       value: Deployment
@@ -54,6 +60,22 @@ tests:
           enabled: true
           backend: "acm"
           tokenSecretRef: acm-token
+          # Issue #1984 Phase B: global.fleet.enabled=true schema-requires
+          # mcpGatewayEndpoint (GW/RO's pre-existing unconditional
+          # requirement, now schema-enforced) independent of backend --
+          # set here purely to satisfy the schema so this case can isolate
+          # DA10's derivation logic (backend=acm -> FMC stays disabled).
+          # Phase D also requires a complete oauth2 block (+ WE's dedicated
+          # credentialsSecretRef) once mcpGatewayEndpoint is set.
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: we-oauth2-creds
     asserts:
       - hasDocuments:
           count: 0
@@ -67,8 +89,13 @@ tests:
         fleet:
           mcpGatewayEndpoint: "http://mcp.example.com"
           oauth2:
+            enabled: true
             tokenURL: "https://dex.example.com/token"
             credentialsSecretRef: fleet-oauth2-creds
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: we-oauth2-creds
     documentSelector:
       path: kind
       value: Deployment
@@ -76,7 +103,7 @@ tests:
       - isKind:
           of: Deployment
 
-  - it: "global.fleet.enabled=true + backend unset (fleetmetadatacache) + fleetmetadatacache.enabled=false (explicit, contradictory): fails the render instead of silently deploying an unreachable fleet"
+  - it: "global.fleet.enabled=true + backend unset (fleetmetadatacache) + fleetmetadatacache.enabled=false (explicit, contradictory): fails the render instead of silently deploying an unreachable fleet (Phase C: schema-enforced, was a _helpers.tpl fail() guard)"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
     set:
       fleetmetadatacache:
@@ -89,8 +116,19 @@ tests:
             tokenURL: "https://dex.example.com/token"
             credentialsSecretRef: fleet-oauth2-creds
     asserts:
-      - failedTemplate:
-          errorMessage: "fleetmetadatacache.enabled=false conflicts with global.fleet.enabled=true + global.fleet.backend resolving to \"fleetmetadatacache\" -- FleetMetadataCache must run when it is the selected fleet scope-check backend. Either remove the fleetmetadatacache.enabled=false override, or point global.fleet.backend at a different backend (e.g. \"acm\")."
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-206 (Phase C, BR-PLATFORM-010): the same fleetmetadatacache.enabled=false + derived-true conflict is schema-rejected even when only NOTES.txt is rendered, proving schema (not _helpers.tpl's own fail() guard) enforces it -- mcpGatewayEndpoint is set here purely to satisfy Phase B's independent requirement so this case isolates the Phase C conflict"
+    template: templates/NOTES.txt
+    set:
+      fleetmetadatacache:
+        enabled: false
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+    asserts:
+      - failedTemplate: {}
 
   - it: "global.fleet.enabled=false + fleetmetadatacache.enabled=false (explicit, non-contradictory): FMC does not render, no fail"
     template: templates/fleetmetadatacache/fleetmetadatacache.yaml
@@ -109,8 +147,13 @@ tests:
           enabled: true
           mcpGatewayEndpoint: "http://mcp.example.com"
           oauth2:
+            enabled: true
             tokenURL: "https://dex.example.com/token"
             credentialsSecretRef: fleet-oauth2-creds
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: we-oauth2-creds
     documentSelector:
       path: metadata.name
       value: fleetmetadatacache
@@ -133,6 +176,19 @@ tests:
           enabled: true
           backend: "acm"
           tokenSecretRef: acm-token
+          # Issue #1984 Phase B/D: see rationale in the "does not render"
+          # case above -- satisfies the schema-level mcpGatewayEndpoint +
+          # oauth2 requirements so this case isolates DA10's PDB derivation
+          # logic.
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
+      workflowexecution:
+        fleet:
+          oauth2:
+            credentialsSecretRef: we-oauth2-creds
     asserts:
       - hasDocuments:
           count: 0

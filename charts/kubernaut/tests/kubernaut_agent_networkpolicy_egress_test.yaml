@@ -30,6 +30,12 @@ set:
   aianalysis:
     policies:
       existingConfigMap: test-cm
+  # Issue #1984 Phase D: workflowexecution.fleet.oauth2.credentialsSecretRef
+  # is schema-required whenever global.fleet.mcpGatewayEndpoint is set.
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
 tests:
   - it: "declares both Ingress and Egress policyTypes (previously Ingress-only, meaning unrestricted egress)"
     asserts:

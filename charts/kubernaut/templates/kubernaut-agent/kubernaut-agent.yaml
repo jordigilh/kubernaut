@@ -15,14 +15,11 @@ actual (possibly empty) reference.
 DD-PLATFORM-006 Decision Area 11: APIFrontend's ka.NewSDKMCPClient
 (pkg/apifrontend/ka/) is the only MCP client anywhere in the codebase that
 connects to KA's interactive /api/v1/mcp endpoint (verified: zero other
-callers) -- fail fast instead of rendering an interactive endpoint that can
-never be reached.
+callers). Issue #1984 Phase C: this dependency (kubernautAgent.interactive.enabled=true
+requires apifrontend.enabled != false) moved from a fail() guard here to a
+values.schema.json if/then block (BR-PLATFORM-010).
 */}}
 {{- $kaV := include "kubernaut.mergedValues" (dict "root" $ "service" "kubernautAgent") | fromYaml }}
-{{- $afV := include "kubernaut.mergedValues" (dict "root" $ "service" "apifrontend") | fromYaml }}
-{{- if and .Values.kubernautAgent.interactive.enabled (not $afV.enabled) }}
-{{- fail "kubernautAgent.interactive.enabled=true requires apifrontend.enabled=true (APIFrontend's ka.NewSDKMCPClient is the only MCP client that connects to KubernautAgent's interactive endpoint, with no other possible caller)" }}
-{{- end }}
 {{- /*
 Issue #1729: KA's fleet MCP Gateway client (cmd/kubernautagent/toolregistry.go
 registerFleetTools) was fully wired in Go but had no Helm-exposed
@@ -34,14 +31,12 @@ named templates don't inherit file-top variables (see the comment above
 kubernaut.kubernautAgent.configYAML's define).
 */}}
 {{- $kaFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.kubernautAgent.fleet "oauth2" .Values.kubernautAgent.fleet.oauth2) | fromYaml }}
-{{- if and .Values.global.fleet.enabled $kaFleetPreamble.oauth2.enabled }}
-{{- if not $kaFleetPreamble.oauth2.tokenURL }}
-{{- fail "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true" }}
-{{- end }}
-{{- if not $kaFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "global.fleet.oauth2.credentialsSecretRef (or kubernautAgent.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
-{{- end }}
-{{- end }}
+{{- /*
+Issue #1984 Phase D: oauth2.tokenURL/credentialsSecretRef required-when-enabled
+guards (and the ADR-068 gap of oauth2.enabled itself being optional) moved to
+values.schema.json if/then blocks gated on global.fleet.mcpGatewayEndpoint
+being set (BR-PLATFORM-010).
+*/}}
 {{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $kaV.llmProfileRef) }}
 {{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaEffectiveRef) | fromYaml }}
 {{- $validPhases := list "rca" "workflow_discovery" "validation" }}

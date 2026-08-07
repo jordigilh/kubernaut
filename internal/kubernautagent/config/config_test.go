@@ -28,6 +28,15 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
+// Fleet OAuth2/MCP Gateway test fixture values shared across the fleet
+// config test cases below (goconst: each literal recurs 3+ times).
+const (
+	testFleetOAuth2CredentialsSecretRef = "fleet-creds"
+	testFleetOAuth2TokenURL             = "https://dex.local/token"
+	testFleetMCPGatewayEndpoint         = "http://mcp-gateway:1975/mcp"
+	testFleetGatewayTypeKuadrant        = "kuadrant"
+)
+
 var _ = Describe("Kubernaut Agent Configuration — #433", func() {
 
 	Describe("UT-KA-433-001: Kubernaut Agent loads valid YAML configuration", func() {
@@ -901,7 +910,7 @@ var _ = Describe("Config.Validate — GAP-C3 (#954)", func() {
 		It("rejects fleet OAuth2 enabled without tokenURL", func() {
 			cfg := config.DefaultConfig()
 			cfg.Integrations.Fleet.OAuth2.Enabled = true
-			cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef = "fleet-creds"
+			cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef = testFleetOAuth2CredentialsSecretRef
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("tokenURL"))
@@ -910,7 +919,7 @@ var _ = Describe("Config.Validate — GAP-C3 (#954)", func() {
 		It("rejects fleet OAuth2 enabled without credentialsSecretRef", func() {
 			cfg := config.DefaultConfig()
 			cfg.Integrations.Fleet.OAuth2.Enabled = true
-			cfg.Integrations.Fleet.OAuth2.TokenURL = "https://dex.local/token"
+			cfg.Integrations.Fleet.OAuth2.TokenURL = testFleetOAuth2TokenURL
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("credentialsSecretRef"))
@@ -919,8 +928,8 @@ var _ = Describe("Config.Validate — GAP-C3 (#954)", func() {
 		It("accepts fleet OAuth2 enabled with all required fields", func() {
 			cfg := config.DefaultConfig()
 			cfg.Integrations.Fleet.OAuth2.Enabled = true
-			cfg.Integrations.Fleet.OAuth2.TokenURL = "https://dex.local/token"
-			cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef = "fleet-creds"
+			cfg.Integrations.Fleet.OAuth2.TokenURL = testFleetOAuth2TokenURL
+			cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef = testFleetOAuth2CredentialsSecretRef
 			Expect(cfg.Validate()).To(Succeed())
 		})
 
@@ -1006,7 +1015,7 @@ integrations:
 `
 			cfg, err := config.Load([]byte(yamlContent))
 			Expect(err).ToNot(HaveOccurred())
-			Expect(cfg.Integrations.Fleet.GatewayType).To(Equal("kuadrant"),
+			Expect(cfg.Integrations.Fleet.GatewayType).To(Equal(testFleetGatewayTypeKuadrant),
 				"gatewayType must be parsed from YAML")
 		})
 
@@ -1050,7 +1059,7 @@ integrations:
 	Describe("KA FleetConfig Endpoint/GatewayType pairing (#1553)", func() {
 		It("UT-KA-CFG-003: rejects endpoint set without gatewayType", func() {
 			cfg := config.DefaultConfig()
-			cfg.Integrations.Fleet.Endpoint = "http://mcp-gateway:1975/mcp"
+			cfg.Integrations.Fleet.Endpoint = testFleetMCPGatewayEndpoint
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("gatewayType"))
@@ -1058,22 +1067,35 @@ integrations:
 
 		It("UT-KA-CFG-004: rejects gatewayType set without endpoint", func() {
 			cfg := config.DefaultConfig()
-			cfg.Integrations.Fleet.GatewayType = "kuadrant"
+			cfg.Integrations.Fleet.GatewayType = testFleetGatewayTypeKuadrant
 			err := cfg.Validate()
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("endpoint"))
 		})
 
-		It("UT-KA-CFG-005: accepts both endpoint and gatewayType set", func() {
+		It("UT-KA-CFG-005: accepts both endpoint and gatewayType set, plus mandatory OAuth2 (Issue #1984 Phase D)", func() {
 			cfg := config.DefaultConfig()
-			cfg.Integrations.Fleet.Endpoint = "http://mcp-gateway:1975/mcp"
-			cfg.Integrations.Fleet.GatewayType = "kuadrant"
+			cfg.Integrations.Fleet.Endpoint = testFleetMCPGatewayEndpoint
+			cfg.Integrations.Fleet.GatewayType = testFleetGatewayTypeKuadrant
+			cfg.Integrations.Fleet.OAuth2.Enabled = true
+			cfg.Integrations.Fleet.OAuth2.TokenURL = testFleetOAuth2TokenURL
+			cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef = testFleetOAuth2CredentialsSecretRef
 			Expect(cfg.Validate()).To(Succeed())
 		})
 
 		It("UT-KA-CFG-006: accepts neither endpoint nor gatewayType set (fleet disabled)", func() {
 			cfg := config.DefaultConfig()
 			Expect(cfg.Validate()).To(Succeed())
+		})
+
+		It("UT-KA-CFG-007: rejects endpoint+gatewayType set with oauth2.enabled=false (Issue #1984 Phase D, ADR-068: OAuth2 is mandatory for all MCP Gateway connections -- oauth2.enabled=false previously permitted KA to reach the MCP Gateway completely unauthenticated once endpoint was configured)", func() {
+			cfg := config.DefaultConfig()
+			cfg.Integrations.Fleet.Endpoint = testFleetMCPGatewayEndpoint
+			cfg.Integrations.Fleet.GatewayType = testFleetGatewayTypeKuadrant
+			cfg.Integrations.Fleet.OAuth2.Enabled = false
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("oauth2.enabled"))
 		})
 	})
 })

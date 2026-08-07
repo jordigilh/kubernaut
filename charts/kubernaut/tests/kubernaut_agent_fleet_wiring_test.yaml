@@ -21,6 +21,13 @@ set:
   aianalysis:
     policies:
       existingConfigMap: test-cm
+  # Issue #1984 Phase D: workflowexecution.fleet.oauth2.credentialsSecretRef
+  # is schema-required whenever global.fleet.mcpGatewayEndpoint is set,
+  # regardless of which service's template is being tested.
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
 tests:
   # ---------------------------------------------------------------------
   # fleet block presence/absence, gated on global.fleet.enabled
@@ -112,7 +119,11 @@ tests:
   # ---------------------------------------------------------------------
   # Fail-closed guards: KA falls back to the shared global.fleet.oauth2
   # credential, same as GW/RO/AF/EM/SP/FMC (unlike WE's non-fallback-able
-  # write-scoped credential).
+  # write-scoped credential). Issue #1984 Phase D: these guards moved from
+  # kubernaut-agent.yaml's fail() to values.schema.json's if/then block on
+  # global.fleet.mcpGatewayEndpoint (BR-PLATFORM-010) -- the specific
+  # errorMessage strings are now schema validation errors, not Go template
+  # fail() text.
   # ---------------------------------------------------------------------
   - it: "KA fails at render time when global.fleet.oauth2.enabled=true but tokenURL is missing"
     set:
@@ -125,8 +136,7 @@ tests:
             enabled: true
             credentialsSecretRef: "fleet-creds"
     asserts:
-      - failedTemplate:
-          errorMessage: "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true"
+      - failedTemplate: {}
 
   - it: "KA fails at render time when global.fleet.oauth2.enabled=true but credentialsSecretRef is missing anywhere (global or per-service)"
     set:
@@ -139,8 +149,7 @@ tests:
             enabled: true
             tokenURL: "https://dex.example.com/token"
     asserts:
-      - failedTemplate:
-          errorMessage: "global.fleet.oauth2.credentialsSecretRef (or kubernautAgent.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)"
+      - failedTemplate: {}
 
   - it: "KA fleet oauth2 credentialsSecretRef falls back to global.fleet.oauth2.credentialsSecretRef when kubernautAgent.fleet.oauth2.credentialsSecretRef is unset (unlike WE, KA has no write-scoped credential of its own)"
     set:

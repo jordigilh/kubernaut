@@ -107,15 +107,13 @@ global.fleet.mcpGatewayNamespace (via kubernaut.fleet.config) when unset;
 $v.namespace's own schema default ("kubernaut-system") is the final
 fallback when neither is set, preserving pre-#1730 behavior. */}}
 {{- $fmcNamespace := $fmcFleetPreamble.config.namespace | default $v.namespace }}
-{{- if not $fmcFleetPreamble.config.mcpGatewayEndpoint }}
-{{- fail "global.fleet.mcpGatewayEndpoint is required when fleetmetadatacache.enabled=true — FleetMetadataCache polls remote clusters via the MCP Gateway" }}
-{{- end }}
-{{- if not $fmcFleetPreamble.oauth2.tokenURL }}
-{{- fail "global.fleet.oauth2.tokenURL is required when fleetmetadatacache.enabled=true — MCP Gateway requires OAuth2 authentication" }}
-{{- end }}
-{{- if not $fmcFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "global.fleet.oauth2.credentialsSecretRef (or fleetmetadatacache.oauth2.credentialsSecretRef) is required when fleetmetadatacache.enabled=true (Secret must contain keys: client-id, client-secret)" }}
-{{- end }}
+{{- /*
+Issue #1984 Phase B/D: FMC being effectively enabled requires
+global.fleet.mcpGatewayEndpoint (Phase B, values.schema.json), which in turn
+requires global.fleet.oauth2.{enabled,tokenURL,credentialsSecretRef} complete
+(Phase D, values.schema.json) -- jointly subsuming this unconditional
+tokenURL/credentialsSecretRef fail() guard, which is now redundant (BR-PLATFORM-010).
+*/}}
 ---
 apiVersion: v1
 kind: ConfigMap

@@ -228,6 +228,16 @@ func (c *Config) Validate() error {
 		return err
 	}
 
+	// Issue #1984 Phase D (ADR-068 gap closure, IA-2/AC-3/AC-17): ADR-068
+	// mandates OAuth2 authentication for every service-to-MCP-Gateway
+	// connection, but oauth2.enabled defaulted to false with no guard
+	// requiring it true -- WE could reach the MCP Gateway completely
+	// unauthenticated whenever fleet.endpoint was set. Mirrors
+	// FleetMetadataCache's existing unconditional oauth2 requirement.
+	if c.Fleet.Endpoint != "" && !c.Fleet.OAuth2.Enabled {
+		return fmt.Errorf("fleet.oauth2.enabled must be true when fleet.endpoint is set (ADR-068 mandates OAuth2 authentication for all MCP Gateway connections)")
+	}
+
 	if c.Fleet.OAuth2.Enabled {
 		if c.Fleet.OAuth2.TokenURL == "" {
 			return fmt.Errorf("fleet.oauth2.tokenURL is required when oauth2.enabled=true")

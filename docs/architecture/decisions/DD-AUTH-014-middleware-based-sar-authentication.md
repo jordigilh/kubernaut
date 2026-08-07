@@ -1039,7 +1039,75 @@ func (a *CachedAuthenticator) ValidateToken(ctx context.Context, token string) (
 
 ---
 
-**Document Version**: 4.0  
-**Last Updated**: August 3, 2026  
-**Status**: Approved  
+## Addendum: Real TokenReview/SAR Latency Measurements (Issue #1993, August 7, 2026)
+
+**Context**: Section "Critical Concern: API Server Load" above cited "200-500ms per request"
+as the expected TokenReview+SAR overhead, and named a token/SAR caching decorator as the
+mitigation. That figure was a **design-time estimate**, written before any implementation
+existed -- the "Follow-Up Actions" item ("Measure API server impact during E2E tests",
+"Collect latency metrics") was never completed, so no DD addendum with real numbers existed
+until this issue's spike. This addendum supersedes the 200-500ms estimate with measured data
+and records the resulting decision **not** to build a caching layer for the GW/RO -> FMC
+scope-check API's inbound auth (Issue #1993, ADR-068).
+
+**Method**: A throwaway Ginkgo spike against `envtest` (in-memory API server, no real network
+hop) drove `TokenReview` and `SubjectAccessReview` calls directly through
+`pkg/shared/auth.NewK8sAuthenticator`/`NewK8sAuthorizer`, first sequentially (n=50) and then
+under concurrency (20 goroutines x 10 iterations = 200 calls), mirroring the client-go rate
+limiter settings already used in `test/integration/gateway/security_suite_setup_test.go`. The
+spike file was written, run, and deleted in the same session -- it is not part of any diff.
+
+**Results**:
+
+Sequential (1 call at a time, n=50):
+
+| Call | min | p50 | p95 | max | avg |
+|------|-----|-----|-----|-----|-----|
+| TokenReview | 269us | 330us | 508us | 19.9ms* | 804us |
+| SubjectAccessReview | 261us | 318us | 513us | 20.9ms* | 1.13ms |
+| Combined (TR+SAR) | 546us | 656us | 998us | 39.9ms* | 1.94ms |
+
+\* single outlier per run, consistent with a GC pause -- not reflected in p95.
+
+Concurrent (200 calls total), client QPS=50/Burst=100 (client-go's default-adjacent,
+matches `test/integration/gateway/security_suite_setup_test.go:72-73`):
+
+- p50 = 799.9ms, p95 = 800.7ms, total wall-clock = 7.19s
+
+Same 200 concurrent calls, client QPS=400/Burst=500:
+
+- p50 = 2.26ms, p95 = 3.19ms, total wall-clock = 24ms
+
+**Interpretation**:
+
+1. A single TokenReview+SAR round trip is sub-millisecond at p95 against an (unloaded,
+   in-memory) API server -- nowhere near the 200-500ms design-time estimate.
+2. The ~800ms latency observed under concurrency was **not** API server overload -- it
+   disappeared almost entirely (p95 dropped ~250x) purely by raising the *client's own*
+   rate-limiter settings. This confirms the "1-29s waits" / "API server overload" concern in
+   `test/integration/gateway/TOKENREVIEW_OPTIMIZATION_OPTIONS.md` was a **self-inflicted
+   client-side throttling artifact** (client-go's QPS=5/Burst=10 default), not an inherent
+   cost of the TokenReview/SAR primitive itself.
+3. `cmd/datastorage/main.go:409-418` already fixes exactly this failure mode in production
+   today (`QPS=1000, Burst=2000, Timeout=30s`). Issue #1993 has FMC's `wireFMCDependencies`
+   (`cmd/fleetmetadatacache/main.go`) adopt that identical tuning rather than build a new
+   caching layer.
+
+**Caveat**: envtest is a lower bound (in-memory apiserver, loopback, no real network/etcd
+hop, single-tenant). Real production numbers will be higher, but even a 10-20x multiplier
+stays comfortably under ADR-068's p95 < 50ms scope-check budget, given the underlying
+TokenReview+SAR cost is ~1ms, not ~500ms.
+
+**Decision**: Ship FMC's inbound scope-check auth (Issue #1993) uncached, reusing
+`pkg/shared/auth.NewMiddleware`/`NewK8sAuthenticator`/`NewK8sAuthorizer` verbatim plus the
+QPS/Burst tuning above -- no `CachedAuthenticator`/SAR-result cache. **Fast-follow trigger**:
+if `test/e2e/fleet`'s Kind-based (real network, real etcd) timing ever shows this call path
+approaching the ADR-068 p95 < 50ms budget, revisit caching then with that real evidence
+rather than the speculative estimate this addendum retires.
+
+---
+
+**Document Version**: 4.1
+**Last Updated**: August 7, 2026
+**Status**: Approved
 **Author**: AI Assistant + Engineering Team

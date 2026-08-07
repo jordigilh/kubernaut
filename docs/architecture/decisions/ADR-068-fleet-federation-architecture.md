@@ -789,7 +789,7 @@ GET /healthz
 | **FMC service** | FMC must be deployed in the same cluster as GW/RO. Exposes REST API on port 8080. Handles both the write side (MCP polling → Valkey) and the read side (REST API → Valkey EXISTS). |
 | **Valkey** | Internal to FMC — GW/RO do not connect to Valkey. FMC manages its own Valkey connection (co-owned with DataStorage). Configured in FMC's own config. |
 | **MCP Gateway** | FMC polls MCP Gateway for managed cluster resources. Configured via OAuth2 in FMC's config (ReloadableOAuth2Transport). |
-| **Authentication** | GW/RO → FMC: in-cluster Service access (no auth required if same namespace, or mTLS if cross-namespace). FMC → Valkey: password-based or mTLS. **FMC → MCP Gateway: OAuth2 (mandatory)** — there is no unauthenticated fallback. `oauth2.tokenUrl` and `oauth2.credentialsSecretRef` are required when `fmc.enabled=true`. |
+| **Authentication** | **GW/RO → FMC (Issue #1993, closes a gap this ADR originally left open)**: application-level auth via `pkg/shared/auth` — every scope-check/clusters request carries a ServiceAccount bearer token; FMC validates it via `TokenReview` (authentication) then `SubjectAccessReview` (authorization: `get` on `services/fleetmetadatacache-service`), mirroring DataStorage's inbound-auth precedent (DD-AUTH-014). GW/RO attach the token via `auth.NewAuthTransport` (client side); FMC enforces it via `auth.NewMiddleware` (server side). The original "no auth required if same namespace" design (this row, pre-#1993) relied solely on `NetworkPolicy` segmentation and a documented mTLS fallback that was never implemented — a real gap for IA-2/AC-3/AC-17, closed here. No caching layer: DD-AUTH-014's addendum (August 2026) measured real TokenReview+SAR latency at ~1ms p95 (envtest), and FMC's K8s client reuses DataStorage's proven QPS=1000/Burst=2000 tuning (`cmd/datastorage/main.go:409-418`) rather than the naive client-go default that caused an apparent (but self-inflicted) ~800ms p95 under concurrency. FMC → Valkey: password-based or mTLS. **FMC → MCP Gateway: OAuth2 (mandatory)** — there is no unauthenticated fallback. `oauth2.tokenUrl` and `oauth2.credentialsSecretRef` are required when `fmc.enabled=true`. |
 | **Network** | GW/RO pods must reach FMC Service on port 8080. FMC must reach Valkey (6379) and MCP Gateway. A `NetworkPolicy` restricts ingress to GW/RO pods and egress to Valkey + MCP Gateway + DNS. |
 | **Configuration** | FMC uses structured YAML configuration per ADR-030 (not env vars). The Helm chart mounts the config at `/etc/fmc/config.yaml` and OAuth2 credentials at `/etc/fmc/fleet-oauth2/`. Fields use camelCase per CRD_FIELD_NAMING_CONVENTION.md. See `pkg/fleet/fmc/config/config.go`. |
 | **Kubernaut config** | `fleet.backend: "fmc"`, `fleet.fmc.endpoint: "http://fmc.kubernaut-system.svc:8080"`. |
@@ -1296,6 +1296,8 @@ Migration status:
 | RBAC (FMC) | Read-only on MCPRoute / Backend CRDs |
 | RBAC (K8s MCP Server) | Read verbs for investigation/sync, write verbs for remediation; gateway OPA gates which callers can invoke write tools |
 | No credential leakage | Kubernaut services hold gateway OAuth2 credentials only; no per-cluster SA tokens or API keys |
+| Authentication (GW/RO → FMC, Issue #1993) | TokenReview (authenticate ServiceAccount bearer token) + SubjectAccessReview (authorize `get` on `services/fleetmetadatacache-service`) via `pkg/shared/auth`; closes the gap where NetworkPolicy-only segmentation was the sole boundary control |
+| RBAC (GW/RO → FMC client, Issue #1993) | `fmc-scope-check-client` ClusterRole grants only `get` on the named `fleetmetadatacache-service`; bound solely to the `gateway` and `remediationorchestrator-controller` ServiceAccounts (`charts/kubernaut/templates/rbac/fmc-scope-check-client-rbac.yaml`) |
 
 ## FedRAMP Implications
 
@@ -1308,6 +1310,7 @@ Migration status:
 | SC-7 (Boundary protection) | MCP Gateway as single chokepoint for all remote cluster access (read and write) |
 | IA-5 (Authenticator management) | Hot-reloadable credentials, bounded token lifetime |
 | SC-8 (Transmission confidentiality) | OAuth2 + TLS for all MCP connections |
+| IA-2 (Identification and authentication), AC-3 (Access enforcement), AC-17 (Remote access) (Issue #1993) | GW/RO → FMC scope-check API requires an authenticated, RBAC-authorized ServiceAccount identity (TokenReview + SubjectAccessReview) rather than relying solely on NetworkPolicy segmentation for a same-namespace, unauthenticated fallback |
 
 ## SP Remote Enrichment (BR-INTEGRATION-054)
 

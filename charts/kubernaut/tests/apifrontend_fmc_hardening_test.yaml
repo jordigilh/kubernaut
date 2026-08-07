@@ -30,7 +30,13 @@ set:
     fleet:
       mcpGatewayEndpoint: "http://mcp.example.com"
       oauth2:
+        enabled: true
         tokenURL: "http://oauth.example.com"
+        credentialsSecretRef: "fleet-oauth2-creds"
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
 tests:
   - it: "apifrontend Deployment gets default pod securityContext"
     template: templates/apifrontend/apifrontend.yaml

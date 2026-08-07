@@ -19,6 +19,14 @@ set:
         provider: openai
         model: gpt-4
         credentialsSecretName: llm-credentials-primary
+    # Issue #1984 Phase D: OAuth2 is schema-mandatory once mcpGatewayEndpoint
+    # is set. Harmless for the "no IdP egress rule by default" tests since
+    # they don't set mcpGatewayEndpoint at all.
+    fleet:
+      oauth2:
+        enabled: true
+        tokenURL: "https://dex.example.com/token"
+        credentialsSecretRef: fleet-oauth2-creds
   kubernautAgent:
     llmProfileRef: primary
   signalprocessing:
@@ -27,6 +35,10 @@ set:
   aianalysis:
     policies:
       existingConfigMap: test-cm
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
 tests:
   # --- Default (fleet disabled): no IdP egress rule anywhere ---
   - it: "gateway NetworkPolicy has no IdP egress rule by default (global.fleet.enabled unset)"

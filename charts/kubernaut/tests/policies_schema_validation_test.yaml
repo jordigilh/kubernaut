@@ -1,0 +1,120 @@
+suite: "Issue #1984 Phase A: aianalysis/signalprocessing policies.content|existingConfigMap mandatory-ness moves from a template fail() guard to values.schema.json anyOf (SI-10/CM-6)"
+# NOTE on technique: helm-unittest (like `helm template`) only renders the
+# templates listed below, so a template's own fail() guard never fires unless
+# that template is in this list. values.schema.json validation, by contrast,
+# runs once against the *entire* coalesced values object before any template
+# is rendered, regardless of which templates are selected. Cases below that
+# select templates/NOTES.txt (a template with no connection to aianalysis or
+# signalprocessing policies) while violating the policies anyOf prove the
+# constraint is enforced by the schema itself, not by the fail() guards that
+# Phase A removes -- against the current (unpatched) schema these cases fail
+# (no renderer ever touches the invalid fields), and only pass once Phase A's
+# anyOf lands.
+templates:
+  - templates/aianalysis/aianalysis.yaml
+  - templates/signalprocessing/signalprocessing.yaml
+  - templates/NOTES.txt
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  # ---------------------------------------------------------------------
+  # Schema-level proof: violation caught even when the guard-owning
+  # template is never selected for rendering.
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-1984-001: schema rejects aianalysis with neither policies.content nor policies.existingConfigMap set, even when only NOTES.txt is rendered"
+    set:
+      aianalysis:
+        policies:
+          existingConfigMap: ""
+    template: templates/NOTES.txt
+    asserts:
+      - failedTemplate: {}
+
+  - it: "IT-HELM-1984-002: schema rejects signalprocessing with neither policies.content nor policies.existingConfigMap set, even when only NOTES.txt is rendered"
+    set:
+      signalprocessing:
+        policies:
+          existingConfigMap: ""
+    template: templates/NOTES.txt
+    asserts:
+      - failedTemplate: {}
+
+  # ---------------------------------------------------------------------
+  # Happy-path renders: unaffected by the anyOf, confirm no regression.
+  # ---------------------------------------------------------------------
+  - it: "IT-HELM-1984-003: aianalysis renders successfully when policies.content is set"
+    set:
+      aianalysis:
+        policies:
+          content: "package aianalysis\nallow { true }\n"
+          existingConfigMap: ""
+    template: templates/aianalysis/aianalysis.yaml
+    documentSelector:
+      path: metadata.name
+      value: aianalysis-policies
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: data["approval.rego"]
+          value: "package aianalysis\nallow { true }\n"
+
+  - it: "IT-HELM-1984-004: aianalysis Deployment mounts the caller-supplied existingConfigMap (content omitted) instead of the in-chart aianalysis-policies ConfigMap"
+    set:
+      aianalysis:
+        policies:
+          existingConfigMap: my-external-cm
+    template: templates/aianalysis/aianalysis.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[1].configMap.name
+          value: my-external-cm
+
+  - it: "IT-HELM-1984-005: signalprocessing renders successfully when policies.content is set"
+    set:
+      signalprocessing:
+        policies:
+          content: "package signalprocessing\nallow { true }\n"
+          existingConfigMap: ""
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: metadata.name
+      value: signalprocessing-policy
+    asserts:
+      - isKind:
+          of: ConfigMap
+
+  - it: "IT-HELM-1984-006: signalprocessing Deployment mounts the caller-supplied existingConfigMap (content omitted) instead of the in-chart signalprocessing-policy ConfigMap"
+    set:
+      signalprocessing:
+        policies:
+          existingConfigMap: my-external-cm
+    template: templates/signalprocessing/signalprocessing.yaml
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - equal:
+          path: spec.template.spec.volumes[1].configMap.name
+          value: my-external-cm

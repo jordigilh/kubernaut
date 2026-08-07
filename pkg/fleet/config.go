@@ -206,6 +206,17 @@ func (c FleetConfig) Validate() error {
 		return fmt.Errorf("fleet: enabled requires either backend+endpoint or mcpGatewayEndpoint to be configured")
 	}
 
+	// Issue #1984 Phase D (ADR-068 gap closure, IA-2/AC-3/AC-17): ADR-068
+	// mandates OAuth2 authentication for every service-to-MCP-Gateway
+	// connection, but oauth2.enabled defaulted to false with no guard
+	// requiring it true -- GW/RO/AF/EM could reach the MCP Gateway
+	// completely unauthenticated whenever MCPGatewayEndpoint was set.
+	// Mirrors FleetMetadataCache's existing unconditional oauth2
+	// requirement (the correct precedent, pkg/fleet/fmc/config/config.go).
+	if c.MCPGatewayEndpoint != "" && !c.OAuth2.Enabled {
+		return fmt.Errorf("fleet: oauth2.enabled must be true when mcpGatewayEndpoint is set (ADR-068 mandates OAuth2 authentication for all MCP Gateway connections)")
+	}
+
 	// #1553: mirrors the OAuth2 pairing check SP/WE/KA already have locally
 	// (pkg/signalprocessing/config, pkg/workflowexecution/config). Without
 	// this, GW/RO/AF/EM could start with oauth2.enabled=true but a missing
