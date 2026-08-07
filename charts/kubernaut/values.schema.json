@@ -2136,8 +2136,8 @@
         },
         "llmProfileRef": {
           "type": "string",
-          "default": "primary",
-          "description": "Name of an entry in global.llmProfiles used for KA's investigator LLM calls (DD-PLATFORM-007). Defaults to \"primary\" (DD-PLATFORM-006 DA4); an undefined profile still fails the render. Replaces the old kubernautAgent.llm.* literal block."
+          "default": "",
+          "description": "Name of an entry in global.llmProfiles used for KA's investigator LLM calls (DD-PLATFORM-007). When omitted (or set to \"\"), inferred automatically if global.llmProfiles defines exactly one profile; otherwise (zero or 2+ profiles) an explicit value is required and the render fails with an actionable message (Issue #1987, DD-PLATFORM-006 DA4 Addendum). An explicit non-empty value always wins outright; an unresolvable/undefined profile name still fails the render either way. Replaces the old kubernautAgent.llm.* literal block."
         },
         "phaseModels": {
           "type": "object",

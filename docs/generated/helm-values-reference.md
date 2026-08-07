@@ -363,7 +363,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `interactive.sessionTTL` | string | Maximum duration for an interactive session before auto-release. | `"30m"` | No |
 | `investigation.inconclusiveConfidenceThreshold` | number | Confidence below which the LLM classifies an investigation outcome as "inconclusive". Must be less than resolvedConfidenceThreshold. | `0.5` | No |
 | `investigation.resolvedConfidenceThreshold` | number | Minimum confidence for the LLM to classify an investigation outcome as "resolved" (problem self-resolved, no workflow needed). | `0.7` | No |
-| `llmProfileRef` | string | Name of an entry in global.llmProfiles used for KA's investigator LLM calls (DD-PLATFORM-007). Defaults to "primary" (DD-PLATFORM-006 DA4); an undefined profile still fails the render. Replaces the old kubernautAgent.llm.* literal block. | `"primary"` | No |
+| `llmProfileRef` | string | Name of an entry in global.llmProfiles used for KA's investigator LLM calls (DD-PLATFORM-007). When omitted (or set to ""), inferred automatically if global.llmProfiles defines exactly one profile; otherwise (zero or 2+ profiles) an explicit value is required and the render fails with an actionable message (Issue #1987, DD-PLATFORM-006 DA4 Addendum). An explicit non-empty value always wins outright; an unresolvable/undefined profile name still fails the render either way. Replaces the old kubernautAgent.llm.* literal block. | `""` | No |
 | `logging.level` | string | Log level (Issue #875) | `"INFO"` | No |
 | `nodeSelector` | map[string]object | Kubernetes node selector | `` | No |
 | `pdb.enabled` | boolean |  | `true` | No |

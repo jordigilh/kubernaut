@@ -464,11 +464,14 @@ and referenced by name from every consumer — mirroring the Kubernaut Operator'
 `spec.llmProfiles`. This replaces the old `kubernautAgent.llm.*` literal block; there is no
 backward-compat shim, since the chart is pre-GA.
 
-At least one profile is required — `kubernautAgent.llmProfileRef` defaults to `"primary"`
-(matching the convention used throughout this README/`quickstart.sh`), and the chart fails
-fast at render time if the referenced profile (whatever its name) is undefined. See
-`docs/generated/helm-values-reference.md#global` for the full `llmProfiles.<name>.*` field
-list (provider, model, credentials, reasoning knobs, etc.).
+At least one profile is required. If `kubernautAgent.llmProfileRef` is left unset and
+`global.llmProfiles` defines exactly one profile, its name is inferred automatically
+(Issue #1987) — this is why this README's examples, `quickstart.sh`, and `helm-smoke-test.sh`
+can all use a single profile named `"primary"` without ever setting `llmProfileRef` explicitly.
+If `global.llmProfiles` defines zero or 2+ profiles, `kubernautAgent.llmProfileRef` must be
+set explicitly, and the chart fails fast at render time either naming the missing/ambiguous
+profiles or the undefined referenced profile. See `docs/generated/helm-values-reference.md#global`
+for the full `llmProfiles.<name>.*` field list (provider, model, credentials, reasoning knobs, etc.).
 
 `global.llmProfiles.<name>.provider` accepts `openai`, `anthropic`, `gemini`, `vertex_ai`, or
 `openai_compatible`. `vertex_ai` hosts either Claude or Gemini models depending on `model` —

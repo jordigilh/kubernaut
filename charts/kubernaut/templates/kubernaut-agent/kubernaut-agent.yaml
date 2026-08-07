@@ -37,7 +37,8 @@ guards (and the ADR-068 gap of oauth2.enabled itself being optional) moved to
 values.schema.json if/then blocks gated on global.fleet.mcpGatewayEndpoint
 being set (BR-PLATFORM-010).
 */}}
-{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaV.llmProfileRef) | fromYaml }}
+{{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $kaV.llmProfileRef) }}
+{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaEffectiveRef) | fromYaml }}
 {{- $validPhases := list "rca" "workflow_discovery" "validation" }}
 {{- $kaPhaseProfiles := dict }}
 {{- range $phase, $profileName := .Values.kubernautAgent.phaseModels }}
@@ -47,7 +48,7 @@ being set (BR-PLATFORM-010).
 {{- $p := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $profileName) | fromYaml }}
 {{- $_ := set $kaPhaseProfiles $phase $p }}
 {{- end }}
-{{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default $kaV.llmProfileRef }}
+{{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default $kaEffectiveRef }}
 {{- $kaAlignmentProfile := dict }}
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
 {{- $kaAlignmentProfile = include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaAlignmentProfileRef) | fromYaml }}
@@ -83,8 +84,9 @@ declarations.
 {{- define "kubernaut.kubernautAgent.configYAML" -}}
 {{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "kubernautAgent") | fromYaml }}
 {{- $kaFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" . "fleet" .Values.kubernautAgent.fleet "oauth2" .Values.kubernautAgent.fleet.oauth2) | fromYaml }}
-{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $v.llmProfileRef) | fromYaml }}
-{{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default $v.llmProfileRef }}
+{{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $v.llmProfileRef) }}
+{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaEffectiveRef) | fromYaml }}
+{{- $kaAlignmentProfileRef := .Values.kubernautAgent.alignmentCheck.llmProfileRef | default $kaEffectiveRef }}
 {{- $kaAlignmentProfile := dict }}
 {{- if .Values.kubernautAgent.alignmentCheck.enabled }}
 {{- $kaAlignmentProfile = include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaAlignmentProfileRef) | fromYaml }}
@@ -264,7 +266,8 @@ Helm-side behavior.
 {{- end }}
 {{- define "kubernaut.kubernautAgent.llmRuntimeYAML" -}}
 {{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "kubernautAgent") | fromYaml }}
-{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $v.llmProfileRef) | fromYaml }}
+{{- $kaEffectiveRef := include "kubernaut.llm.effectiveKALLMProfileRef" (dict "root" $ "ref" $v.llmProfileRef) }}
+{{- $kaProfile := include "kubernaut.llm.resolveProfile" (dict "root" $ "name" $kaEffectiveRef) | fromYaml }}
 {{- $validPhases := list "rca" "workflow_discovery" "validation" }}
 {{- $kaPhaseProfiles := dict }}
 {{- range $phase, $profileName := .Values.kubernautAgent.phaseModels }}
@@ -508,10 +511,10 @@ data:
 {{- $kaBaseOAuth2 := $kaProfile.oauth2 | default dict }}
 {{- if $kaBaseOAuth2.enabled }}
 {{- if not $kaBaseOAuth2.tokenURL }}
-{{- fail (printf "global.llmProfiles[%q].oauth2.tokenURL is required when oauth2.enabled=true" $kaV.llmProfileRef) }}
+{{- fail (printf "global.llmProfiles[%q].oauth2.tokenURL is required when oauth2.enabled=true" $kaEffectiveRef) }}
 {{- end }}
 {{- if not $kaBaseOAuth2.credentialsSecretRef }}
-{{- fail (printf "global.llmProfiles[%q].oauth2.credentialsSecretRef is required when oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" $kaV.llmProfileRef) }}
+{{- fail (printf "global.llmProfiles[%q].oauth2.credentialsSecretRef is required when oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" $kaEffectiveRef) }}
 {{- end }}
 {{- end }}
 ---

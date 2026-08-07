@@ -279,6 +279,23 @@ existing `fail()` fires instead, with a more actionable message. The guarantee m
 template `fail()` to a schema-level requirement on whichever profile ends up referenced; it isn't
 removed.
 
+**Addendum (Issue #1987)**: the fixed `"primary"` literal default above is superseded by
+count-based inference. `values.schema.json`'s default becomes `""`; a new `_helpers.tpl` helper
+(`kubernaut.llm.effectiveKALLMProfileRef`, mirroring `kubernaut.tls.certManagerIssuerName`'s
+count-then-select-or-fail pattern used elsewhere in this same file) infers the sole
+`global.llmProfiles` entry when `llmProfileRef` is empty and exactly one profile exists; zero or
+2+ profiles with no explicit `llmProfileRef` now `fail()` naming the candidates, instead of
+silently assuming a profile named `"primary"` exists. This generalizes the DA4 guarantee beyond
+installs that happen to name their sole profile `"primary"` — motivated by the Kubernaut
+Operator's `v1alpha2` CRD already implementing the same inference (`EffectiveKALLMProfileRef`),
+which this Helm chart had drifted from. Backward compatible for every existing convention in this
+repo (README/`quickstart.sh`/`helm-smoke-test.sh`/CI/E2E all define exactly one profile named
+`"primary"`, which still infers to `"primary"`) and for any install that already sets
+`kubernautAgent.llmProfileRef` explicitly (explicit always wins outright). An explicit empty-string
+override (`llmProfileRef: ""`) is indistinguishable from omission once merged with the schema
+default and is treated identically — Helm's value-merging has no signal for "the user typed
+this" versus "the schema default supplied this."
+
 **No separate `values-fleet.yaml` overlay (reversed from an earlier draft of this decision, per
 direct user instruction)**: a second overlay file only works cleanly for a *local checkout*
 install (`-f charts/kubernaut/values-fleet.yaml`, a real path on disk). For a pure OCI install
