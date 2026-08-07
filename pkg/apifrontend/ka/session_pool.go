@@ -52,6 +52,45 @@ func extractSessionID(s PoolSession) string {
 	return "unknown"
 }
 
+// closeSessionBoundedTimeout bounds how long closeSessionBounded waits for
+// PoolSession.Close() before abandoning it. A var (not const) so tests can
+// shrink it, mirroring PooledToolCallTimeout's test-override pattern
+// (pkg/apifrontend/tools/ka_tools.go).
+var closeSessionBoundedTimeout = 5 * time.Second
+
+// closeSessionBounded fires session.Close() and its bounding timer entirely
+// in a background goroutine, so this call returns immediately regardless of
+// how long (or whether) Close() ever completes (#1995). go-sdk@v1.7.0's
+// streamableClientConn.Close() sends an HTTP DELETE that can block
+// indefinitely if the server-side session has an in-flight tool handler
+// that never returns (confirmed via a time-boxed spike) -- without this,
+// a single poisoned session wedges EvictIdle's shared ticker (and, via
+// this same helper, DrainAll/injectEntry) for every other (rr_id,
+// username) pool entry forever. If Close() never returns, its innermost
+// goroutine is abandoned (leaked until the underlying transport eventually
+// errors out or the process exits); this is a deliberate, bounded
+// trade-off versus an unbounded pool-wide stall.
+func closeSessionBounded(session PoolSession, logger logr.Logger, sessionID string) {
+	if session == nil {
+		return
+	}
+	go func() {
+		done := make(chan error, 1)
+		go func() {
+			done <- session.Close()
+		}()
+		select {
+		case err := <-done:
+			if err != nil {
+				logger.Info("pooled session close returned error", "mcp_session_id", sessionID, "error", err.Error())
+			}
+		case <-time.After(closeSessionBoundedTimeout):
+			logger.Info("pooled session close did not complete within bound, abandoning wait",
+				"mcp_session_id", sessionID, "timeout", closeSessionBoundedTimeout.String())
+		}
+	}()
+}
+
 // PoolConfig configures the KASessionPool.
 type PoolConfig struct {
 	Factory    SessionFactory
@@ -245,7 +284,7 @@ func (p *KASessionPool) injectEntry(rrID, username string, session PoolSession, 
 			old.onRelease()
 		}
 		if old.session != nil {
-			_ = old.session.Close()
+			closeSessionBounded(old.session, p.logger, old.sessionID)
 		}
 	}
 }
@@ -304,7 +343,7 @@ func (p *KASessionPool) DrainAll(ctx context.Context) error {
 			entry.onRelease()
 		}
 		if entry.session != nil {
-			_ = entry.session.Close()
+			closeSessionBounded(entry.session, p.logger, entry.sessionID)
 		}
 	}
 	return nil
@@ -332,7 +371,7 @@ func (p *KASessionPool) EvictIdle() int {
 			e.onRelease()
 		}
 		if e.session != nil {
-			_ = e.session.Close()
+			closeSessionBounded(e.session, p.logger, e.sessionID)
 		}
 	}
 	return evicted
