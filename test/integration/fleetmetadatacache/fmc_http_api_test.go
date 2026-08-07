@@ -28,10 +28,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/redis/go-redis/v9"
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
@@ -221,3 +223,121 @@ var _ = Describe("FMC HTTP API Integration (BR-INTEGRATION-065)", Ordered, Label
 		})
 	})
 })
+
+// IT-FMC-1993-001/002/003 (ADR-068 gap closure, IA-2/AC-3): unlike the
+// "own mux" Describe block above (constructs a bare fmc.Handler mux, no
+// auth), this block wraps the same handler stack with auth.NewMiddleware --
+// the real production wiring added to buildFMCServers
+// (cmd/fleetmetadatacache/main.go) -- and exercises it with real envtest
+// ServiceAccount tokens (TokenReview + SAR), mirroring
+// test/integration/gateway/security_suite_setup_test.go's SecurityTestTokens
+// pattern.
+//
+// Wiring Manifest: auth.NewMiddleware(...).Handler(apiMux) -> buildFMCServers
+// (cmd/fleetmetadatacache/main.go:265-276) -> IT-FMC-1993-001/002/003.
+var _ = Describe("FMC HTTP API AuthN/Z (Issue #1993, ADR-068)", Ordered, Label("fmc", "integration", "auth"), func() {
+	const (
+		itNamespace     = "default"
+		authorizedSA    = "fmc-it-authorized-caller"
+		unauthorizedSA  = "fmc-it-unauthorized-caller"
+		fmcResourceName = "fleetmetadatacache-service"
+	)
+
+	var (
+		server            *httptest.Server
+		k8sClientset      kubernetes.Interface
+		authorizedToken   string
+		unauthorizedToken string
+	)
+
+	BeforeAll(func() {
+		ctx := context.Background()
+
+		By("Creating a Kubernetes clientset from the envtest admin rest.Config")
+		var err error
+		k8sClientset, err = kubernetes.NewForConfig(restConfig)
+		Expect(err).ToNot(HaveOccurred(), "kubernetes clientset should be created from the shared envtest rest.Config")
+
+		By("Minting an authorized caller ServiceAccount (bound to fmc-scope-check-client-it, mirrors gateway/remediationorchestrator-controller)")
+		authorizedToken = createServiceAccountWithToken(ctx, k8sClientset, itNamespace, authorizedSA)
+		bindServiceAccountToFMCScopeCheckClient(ctx, k8sClientset, itNamespace, authorizedSA)
+
+		By("Minting an unauthorized caller ServiceAccount (no RBAC binding)")
+		unauthorizedToken = createServiceAccountWithToken(ctx, k8sClientset, itNamespace, unauthorizedSA)
+
+		By("Starting httptest.Server with the real FMC handler stack wrapped in auth.NewMiddleware")
+		handler := fmc.NewHandler(scopecache.NewClient(nil), &fakeEmptyRegistry{}, logr.Discard())
+		mux := http.NewServeMux()
+		handler.RegisterRoutes(mux)
+
+		authenticator := auth.NewK8sAuthenticator(k8sClientset)
+		authorizer := auth.NewK8sAuthorizer(k8sClientset)
+		authMiddleware := auth.NewMiddleware(authenticator, authorizer, auth.MiddlewareConfig{
+			Namespace:    itNamespace,
+			Resource:     "services",
+			ResourceName: fmcResourceName,
+			Verb:         "get",
+		}, logr.Discard())
+
+		server = httptest.NewServer(authMiddleware.Handler(mux))
+	})
+
+	AfterAll(func() {
+		if server != nil {
+			server.Close()
+		}
+	})
+
+	It("IT-FMC-1993-001 [IA-2]: a request with no Authorization header is rejected with 401", func() {
+		resp, err := http.Get(server.URL + fmc.ClustersPath) //nolint:gosec,noctx // test-only probe
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+
+		Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized),
+			"IA-2: a token-less GW/RO -> FMC scope-check request must be rejected before reaching the handler")
+	})
+
+	It("IT-FMC-1993-002 [AC-3]: a valid but unauthorized ServiceAccount token is rejected with 403", func() {
+		req, err := http.NewRequest(http.MethodGet, server.URL+fmc.ClustersPath, nil)
+		Expect(err).ToNot(HaveOccurred())
+		req.Header.Set("Authorization", "Bearer "+unauthorizedToken)
+
+		resp, err := http.DefaultClient.Do(req)
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+
+		Expect(resp.StatusCode).To(Equal(http.StatusForbidden),
+			"AC-3: a real, TokenReview-valid ServiceAccount without the fmc-scope-check-client binding "+
+				"must be denied by SAR, not merely by an invalid token")
+	})
+
+	It("IT-FMC-1993-003 [IA-2,AC-3]: an authorized ServiceAccount token (gateway/remediationorchestrator-controller-equivalent) succeeds with 200", func() {
+		req, err := http.NewRequest(http.MethodGet, server.URL+fmc.ClustersPath, nil)
+		Expect(err).ToNot(HaveOccurred())
+		req.Header.Set("Authorization", "Bearer "+authorizedToken)
+
+		resp, err := http.DefaultClient.Do(req)
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+
+		Expect(resp.StatusCode).To(Equal(http.StatusOK),
+			"IA-2/AC-3: a ServiceAccount bound to fmc-scope-check-client (mirrors gateway/"+
+				"remediationorchestrator-controller's production ClusterRoleBinding) must reach the handler")
+	})
+})
+
+// fakeEmptyRegistry is a minimal registry.ClusterRegistry stub for the
+// auth-focused Describe block above -- these tests only prove
+// auth.NewMiddleware's TokenReview/SAR gating in front of the mux, never
+// cluster-list business logic (covered by the "own mux" Describe block
+// above and pkg/fleet/fmc/handler_test.go).
+type fakeEmptyRegistry struct{}
+
+func (f *fakeEmptyRegistry) List() []registry.ClusterInfo { return nil }
+func (f *fakeEmptyRegistry) Get(string) (registry.ClusterInfo, bool) {
+	return registry.ClusterInfo{}, false
+}
+func (f *fakeEmptyRegistry) WatchClusters() <-chan registry.ClusterEvent { return nil }
+func (f *fakeEmptyRegistry) Ready() bool                                 { return true }
+func (f *fakeEmptyRegistry) Start(context.Context) error                 { return nil }
+func (f *fakeEmptyRegistry) Stop()                                       {}

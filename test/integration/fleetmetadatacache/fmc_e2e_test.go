@@ -20,6 +20,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -97,10 +99,19 @@ var _ = Describe("Fleet Federation E2E: Factory -> FMC -> Valkey (BR-INTEGRATION
 		fmcServer = httptest.NewServer(mux)
 
 		By("Creating FederatedScopeChecker via production factory")
+		// Issue #1993: FMC auth is now mandatory client-side. This test's own
+		// fmcServer (built directly from fmc.Handler, no auth middleware)
+		// doesn't check the token, but the factory-composed client requires
+		// a readable one to attempt the request at all -- this test exercises
+		// the Valkey/registry federation path, not auth, so any valid file works.
+		tokenPath := filepath.Join(GinkgoT().TempDir(), "token")
+		Expect(os.WriteFile(tokenPath, []byte("e2e-test-token"), 0o600)).To(Succeed())
+
 		cfg := fleet.FleetConfig{
-			Enabled:  true,
-			Backend:  fleet.BackendFMC,
-			Endpoint: fmcServer.URL,
+			Enabled:   true,
+			Backend:   fleet.BackendFMC,
+			Endpoint:  fmcServer.URL,
+			TokenPath: tokenPath,
 		}
 		var err error
 		fedChecker, err = fleet.NewScopeChecker(&localAlwaysFalse{}, cfg, logr.Discard())

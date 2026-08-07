@@ -29,6 +29,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -57,6 +58,12 @@ var (
 	mcpYAMLURL  string
 	dynClient   dynamic.Interface
 	testEnv     *envtest.Environment
+
+	// restConfig is the envtest admin *rest.Config, exposed at suite level
+	// (Issue #1993) so IT-FMC-1993-* tests can mint per-caller ServiceAccounts/
+	// tokens/RBAC bindings via kubernetes.NewForConfig, mirroring the
+	// SecurityTestTokens pattern in test/integration/gateway/security_suite_setup_test.go.
+	restConfig *rest.Config
 )
 
 var _ = SynchronizedBeforeSuite(func() []byte {
@@ -138,6 +145,7 @@ var _ = SynchronizedBeforeSuite(func() []byte {
 
 	k8sCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	Expect(err).ToNot(HaveOccurred(), "kubeconfig should be loadable")
+	restConfig = k8sCfg
 
 	dynClient, err = dynamic.NewForConfig(k8sCfg)
 	Expect(err).ToNot(HaveOccurred(), "dynamic client should be created")
