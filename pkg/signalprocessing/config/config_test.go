@@ -58,12 +58,22 @@ var _ = Describe("UT-SP-054-CFG-001 [IA-5]: SP FleetOAuth2 config parses, valida
 			Expect(err.Error()).To(ContainSubstring("credentialsSecretRef"))
 		})
 
-		It("accepts config with OAuth2 disabled (no fleet fields required)", func() {
+		It("accepts config with OAuth2 disabled when fleet.endpoint is unset (SP never calls the MCP Gateway, so OAuth2 is irrelevant)", func() {
 			cfg := spconfig.DefaultConfig()
 			cfg.Fleet.OAuth2.Enabled = false
 
 			err := cfg.Validate()
 			Expect(err).ToNot(HaveOccurred())
+		})
+
+		It("rejects OAuth2 disabled when fleet.endpoint is set (Issue #1984 Phase D, ADR-068: OAuth2 is mandatory for all MCP Gateway connections -- oauth2.enabled=false previously permitted SP to reach the MCP Gateway completely unauthenticated once endpoint was configured)", func() {
+			cfg := spconfig.DefaultConfig()
+			cfg.Fleet.Endpoint = "https://mcp-gateway:8443"
+			cfg.Fleet.OAuth2.Enabled = false
+
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("oauth2.enabled"))
 		})
 	})
 

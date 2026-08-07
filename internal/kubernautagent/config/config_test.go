@@ -1064,16 +1064,29 @@ integrations:
 			Expect(err.Error()).To(ContainSubstring("endpoint"))
 		})
 
-		It("UT-KA-CFG-005: accepts both endpoint and gatewayType set", func() {
+		It("UT-KA-CFG-005: accepts both endpoint and gatewayType set, plus mandatory OAuth2 (Issue #1984 Phase D)", func() {
 			cfg := config.DefaultConfig()
 			cfg.Integrations.Fleet.Endpoint = "http://mcp-gateway:1975/mcp"
 			cfg.Integrations.Fleet.GatewayType = "kuadrant"
+			cfg.Integrations.Fleet.OAuth2.Enabled = true
+			cfg.Integrations.Fleet.OAuth2.TokenURL = "https://dex.local/token"
+			cfg.Integrations.Fleet.OAuth2.CredentialsSecretRef = "fleet-creds"
 			Expect(cfg.Validate()).To(Succeed())
 		})
 
 		It("UT-KA-CFG-006: accepts neither endpoint nor gatewayType set (fleet disabled)", func() {
 			cfg := config.DefaultConfig()
 			Expect(cfg.Validate()).To(Succeed())
+		})
+
+		It("UT-KA-CFG-007: rejects endpoint+gatewayType set with oauth2.enabled=false (Issue #1984 Phase D, ADR-068: OAuth2 is mandatory for all MCP Gateway connections -- oauth2.enabled=false previously permitted KA to reach the MCP Gateway completely unauthenticated once endpoint was configured)", func() {
+			cfg := config.DefaultConfig()
+			cfg.Integrations.Fleet.Endpoint = "http://mcp-gateway:1975/mcp"
+			cfg.Integrations.Fleet.GatewayType = "kuadrant"
+			cfg.Integrations.Fleet.OAuth2.Enabled = false
+			err := cfg.Validate()
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("oauth2.enabled"))
 		})
 	})
 })

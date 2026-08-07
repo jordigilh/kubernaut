@@ -251,6 +251,27 @@ func (c *Config) validateLLMOAuth2AndTLS() error {
 // startup error -- KA just ran with fleet silently off instead of failing
 // closed on the misconfiguration.
 func (c *Config) validateFleetIntegration() error {
+	endpoint := c.Integrations.Fleet.Endpoint
+	gatewayType := c.Integrations.Fleet.GatewayType
+
+	if endpoint != "" && gatewayType == "" {
+		return fmt.Errorf("integrations.fleet.gatewayType is required when integrations.fleet.endpoint is set")
+	}
+	if gatewayType != "" && endpoint == "" {
+		return fmt.Errorf("integrations.fleet.endpoint is required when integrations.fleet.gatewayType is set")
+	}
+
+	// Issue #1984 Phase D (ADR-068 gap closure, IA-2/AC-3/AC-17): ADR-068
+	// mandates OAuth2 authentication for every service-to-MCP-Gateway
+	// connection, but oauth2.enabled defaulted to false with no guard
+	// requiring it true -- KA could reach the MCP Gateway completely
+	// unauthenticated whenever integrations.fleet.endpoint was set.
+	// Mirrors FleetMetadataCache's existing unconditional oauth2
+	// requirement.
+	if endpoint != "" && !c.Integrations.Fleet.OAuth2.Enabled {
+		return fmt.Errorf("integrations.fleet.oauth2.enabled must be true when integrations.fleet.endpoint is set (ADR-068 mandates OAuth2 authentication for all MCP Gateway connections)")
+	}
+
 	if c.Integrations.Fleet.OAuth2.Enabled {
 		if c.Integrations.Fleet.OAuth2.TokenURL == "" {
 			return fmt.Errorf("integrations.fleet.oauth2.tokenURL is required when oauth2.enabled=true")
@@ -258,15 +279,6 @@ func (c *Config) validateFleetIntegration() error {
 		if c.Integrations.Fleet.OAuth2.CredentialsSecretRef == "" {
 			return fmt.Errorf("integrations.fleet.oauth2.credentialsSecretRef is required when oauth2.enabled=true")
 		}
-	}
-
-	endpoint := c.Integrations.Fleet.Endpoint
-	gatewayType := c.Integrations.Fleet.GatewayType
-	if endpoint != "" && gatewayType == "" {
-		return fmt.Errorf("integrations.fleet.gatewayType is required when integrations.fleet.endpoint is set")
-	}
-	if gatewayType != "" && endpoint == "" {
-		return fmt.Errorf("integrations.fleet.endpoint is required when integrations.fleet.gatewayType is set")
 	}
 
 	return nil

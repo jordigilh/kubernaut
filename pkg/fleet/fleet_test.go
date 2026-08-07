@@ -264,6 +264,11 @@ var _ = Describe("FleetConfig.Namespace (#1686, BR-RBAC-020)", func() {
 			Enabled:            true,
 			MCPGatewayEndpoint: "http://gw:8080/mcp",
 			MCPGatewayType:     fleet.GatewayKuadrant,
+			OAuth2: fleet.FleetOAuth2Config{
+				Enabled:              true,
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				CredentialsSecretRef: "fleet-oauth2-creds",
+			},
 		}
 		Expect(cfg.Validate()).ToNot(HaveOccurred(),
 			"Namespace is an optional least-privilege scoping knob, not a required field")
@@ -278,6 +283,11 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 			Endpoint:           "http://fmc:8080",
 			MCPGatewayEndpoint: "http://gw:8080/mcp",
 			MCPGatewayType:     fleet.GatewayEAIGW,
+			OAuth2: fleet.FleetOAuth2Config{
+				Enabled:              true,
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				CredentialsSecretRef: "fleet-oauth2-creds",
+			},
 		}
 		Expect(cfg.Validate()).ToNot(HaveOccurred())
 	})
@@ -289,6 +299,11 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 			Endpoint:           "http://fmc:8080",
 			MCPGatewayEndpoint: "http://gw:8080/mcp",
 			MCPGatewayType:     fleet.GatewayKuadrant,
+			OAuth2: fleet.FleetOAuth2Config{
+				Enabled:              true,
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				CredentialsSecretRef: "fleet-oauth2-creds",
+			},
 		}
 		Expect(cfg.Validate()).ToNot(HaveOccurred())
 	})
@@ -347,6 +362,11 @@ var _ = Describe("FleetConfig MCPGatewayType (MCP Gateway Adapter)", func() {
 			Enabled:            true,
 			MCPGatewayEndpoint: "http://gw:8080/mcp",
 			MCPGatewayType:     fleet.GatewayEAIGW,
+			OAuth2: fleet.FleetOAuth2Config{
+				Enabled:              true,
+				TokenURL:             "https://keycloak:8443/realms/kubernaut-fleet/protocol/openid-connect/token",
+				CredentialsSecretRef: "fleet-oauth2-creds",
+			},
 		}
 		Expect(cfg.Validate()).ToNot(HaveOccurred(),
 			"AF/EM only need MCPGatewayEndpoint for remote reads; requiring an unused Backend/Endpoint blocks their startup")
@@ -462,12 +482,25 @@ var _ = Describe("FleetConfig.Validate OAuth2 pairing (BR-INTEGRATION-065, #1553
 		Expect(cfg.Validate()).To(Succeed())
 	})
 
-	It("UT-FLEET-CFG-061: accepts fleet enabled with oauth2.enabled=false regardless of empty OAuth2 fields", func() {
+	It("UT-FLEET-CFG-061: rejects mcpGatewayEndpoint set with oauth2.enabled=false (Issue #1984 Phase D, ADR-068: OAuth2 is mandatory for all MCP Gateway connections -- oauth2.enabled=false previously permitted GW/RO/AF/EM to reach the MCP Gateway completely unauthenticated)", func() {
 		cfg := fleet.FleetConfig{
 			Enabled:            true,
 			MCPGatewayEndpoint: "https://mcp-gateway:8443",
 			MCPGatewayType:     "eaigw",
 			OAuth2:             fleet.FleetOAuth2Config{Enabled: false},
+		}
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("oauth2.enabled"))
+	})
+
+	It("UT-FLEET-CFG-061b: accepts mcpGatewayEndpoint unset with oauth2.enabled=false (fleet enabled for backend+endpoint scope-checking only, e.g. GW/RO with ACM/FMC -- MCP Gateway is never called, so OAuth2 is irrelevant)", func() {
+		cfg := fleet.FleetConfig{
+			Enabled: true,
+			Backend: "acm",
+			Endpoint: "https://acm-search.example.com/graphql",
+			TokenPath: "/etc/gateway/acm-token/token",
+			OAuth2:  fleet.FleetOAuth2Config{Enabled: false},
 		}
 		Expect(cfg.Validate()).To(Succeed())
 	})
