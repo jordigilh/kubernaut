@@ -1630,18 +1630,39 @@ func deployValkeyAndFMC(ctx context.Context, namespace, kubeconfigPath, fmcImage
 	// MCPServerRegistration+Gateway/HTTPRoute, or EAIGW's Backend
 	// (gateway.envoyproxy.io/v1alpha1, eaigw_registry.go BackendGVR --
 	// MCPRoute itself is not watched by FMC, only Backends).
+	//
+	// Issue #1993 (ADR-068 gap closure, IA-2/AC-3): tokenreviews/
+	// subjectaccessreviews are appended unconditionally (gateway-agnostic)
+	// -- FMC's own auth middleware (wireFMCDependencies,
+	// cmd/fleetmetadatacache/main.go) needs these to validate the bearer
+	// token GW/RO present on every scope-check request. Mirrors
+	// charts/kubernaut/templates/rbac/fmc-scope-check-client-rbac.yaml's
+	// fleetmetadatacache-auth-middleware ClusterRole (this lane deploys raw
+	// manifests, not the Helm chart, so that template never renders here).
 	fmcGatewayRBACRules := `
 - apiGroups: ["mcp.kuadrant.io"]
   resources: ["mcpserverregistrations"]
   verbs: ["get", "list", "watch"]
 - apiGroups: ["gateway.networking.k8s.io"]
   resources: ["gateways", "httproutes"]
-  verbs: ["get", "list", "watch"]`
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["subjectaccessreviews"]
+  verbs: ["create"]`
 	if authConfig.GatewayType == registry.GatewayEAIGW {
 		fmcGatewayRBACRules = `
 - apiGroups: ["gateway.envoyproxy.io"]
   resources: ["backends"]
-  verbs: ["get", "list", "watch"]`
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["tokenreviews"]
+  verbs: ["create"]
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["subjectaccessreviews"]
+  verbs: ["create"]`
 	}
 
 	fmcManifest := fmt.Sprintf(`---
@@ -1675,6 +1696,53 @@ roleRef:
 subjects:
 - kind: ServiceAccount
   name: fleetmetadatacache
+  namespace: %[1]s
+---
+# Issue #1993 (ADR-068 gap closure, IA-2/AC-3): dedicated identity for the E2E
+# test harness itself to call FMC's now-authenticated scope-check API as a
+# real, RBAC-authorized caller -- structurally mirrors
+# charts/kubernaut/templates/rbac/fmc-scope-check-client-rbac.yaml's
+# fmc-scope-check-client (gateway/remediationorchestrator-controller
+# bindings), but this lane deploys raw manifests, not the Helm chart, and
+# has no gateway/RO ServiceAccount of its own to reuse (see
+# SetupFMCE2EInfrastructure's doc comment: this lane deploys FMC in
+# isolation). See suite_test.go's SynchronizedBeforeSuite for the
+# TokenRequest + testauth.NewStaticTokenTransport wiring that consumes this
+# identity.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fmc-e2e-scope-check-client
+  namespace: %[1]s
+  labels:
+    app: fleetmetadatacache
+    component: fleet-test-client
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fmc-e2e-scope-check-client
+  labels:
+    app: fleetmetadatacache
+rules:
+- apiGroups: [""]
+  resources: ["services"]
+  resourceNames: ["fleetmetadatacache-service"]
+  verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fmc-e2e-scope-check-client
+  labels:
+    app: fleetmetadatacache
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fmc-e2e-scope-check-client
+subjects:
+- kind: ServiceAccount
+  name: fmc-e2e-scope-check-client
   namespace: %[1]s
 ---
 apiVersion: v1

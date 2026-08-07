@@ -75,6 +75,7 @@ import (
 
 	"github.com/jordigilh/kubernaut/test/e2e/fleetmetadatacache/shared"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -177,8 +178,21 @@ var _ = SynchronizedBeforeSuite(
 		harness.RemoteK8sClient, clientErr = client.New(remoteCfg, client.Options{Scheme: scheme.Scheme})
 		Expect(clientErr).ToNot(HaveOccurred())
 
+		By("Minting a bearer token for FMC's scope-check API (Issue #1993, ADR-068)")
+		// FMC's HTTP API now requires authentication on every request
+		// (wireFMCDependencies, cmd/fleetmetadatacache/main.go); the harness
+		// itself must present the token of an RBAC-authorized caller
+		// (fmc-e2e-scope-check-client, deployed by deployValkeyAndFMC in
+		// fleet_e2e.go) rather than gateway/remediationorchestrator-controller,
+		// which this lane never deploys (FMC is exercised in isolation here).
+		fmcClientToken, tokenErr := infrastructure.GetServiceAccountToken(harness.Ctx, namespace, "fmc-e2e-scope-check-client", harness.KubeconfigPath)
+		Expect(tokenErr).ToNot(HaveOccurred(), "failed to mint fmc-e2e-scope-check-client token")
+
 		By("Setting up FMC HTTP client (NodePort 30150, host 8150 per DD-TEST-001)")
-		harness.FMCHTTPClient = &http.Client{Timeout: 20 * time.Second}
+		harness.FMCHTTPClient = &http.Client{
+			Timeout:   20 * time.Second,
+			Transport: testauth.NewStaticTokenTransport(fmcClientToken),
+		}
 
 		GinkgoWriter.Printf("FMC EAIGW E2E Setup Complete - Process %d ready\n", GinkgoParallelProcess())
 	},
