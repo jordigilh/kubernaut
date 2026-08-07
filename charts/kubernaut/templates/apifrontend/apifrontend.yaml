@@ -247,15 +247,13 @@ scope in the same file, not a nested named-template call.
 */}}
 {{- $v := include "kubernaut.mergedValues" (dict "root" $ "service" "apifrontend") | fromYaml }}
 {{- if $v.enabled }}
+{{- /*
+Issue #1984 Phase D: oauth2.tokenURL/credentialsSecretRef required-when-enabled
+guards (and the ADR-068 gap of oauth2.enabled itself being optional) moved to
+values.schema.json if/then blocks gated on global.fleet.mcpGatewayEndpoint
+being set (BR-PLATFORM-010).
+*/}}
 {{- $apifrontendFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.apifrontend.fleet "oauth2" .Values.apifrontend.fleet.oauth2) | fromYaml }}
-{{- if and .Values.global.fleet.enabled $apifrontendFleetPreamble.oauth2.enabled }}
-{{- if not $apifrontendFleetPreamble.oauth2.tokenURL }}
-{{- fail "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true" }}
-{{- end }}
-{{- if not $apifrontendFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "global.fleet.oauth2.credentialsSecretRef (or apifrontend.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
-{{- end }}
-{{- end }}
 {{- /*
 DD-PLATFORM-007 / BR-PLATFORM-008: resolve AF's own agent.llm profile
 (apifrontend.llmProfileRef, defaulting to kubernautAgent.llmProfileRef) and

@@ -217,6 +217,135 @@
         }
       }
     },
+    "globalFleetEnabledTrueCondition": {
+      "description": "BR-PLATFORM-010 REFACTOR: shared `if`/condition shape for \"global.fleet.enabled == true\", deduped across the Phase B GW/RO guard, the Phase B FMC anyOf, and the Phase C fleetmetadatacache-conflict guard in the top-level allOf.",
+      "properties": {
+        "global": {
+          "properties": {
+            "fleet": {
+              "properties": {
+                "enabled": {
+                  "const": true
+                }
+              },
+              "required": [
+                "enabled"
+              ]
+            }
+          },
+          "required": [
+            "fleet"
+          ]
+        }
+      },
+      "required": [
+        "global"
+      ]
+    },
+    "globalFleetBackendResolvesToFMCCondition": {
+      "description": "BR-PLATFORM-010 REFACTOR: shared condition shape for \"global.fleet.backend is unset (defaults to fleetmetadatacache), or explicitly set to \\\"fleetmetadatacache\\\"\", deduped across the Phase B FMC anyOf and the Phase C fleetmetadatacache-conflict guard. Only reached once a sibling allOf clause has already established global.fleet.enabled=true, so the absent-\"global\"-key edge case is unreachable in practice.",
+      "anyOf": [
+        {
+          "not": {
+            "properties": {
+              "global": {
+                "properties": {
+                  "fleet": {
+                    "required": [
+                      "backend"
+                    ]
+                  }
+                },
+                "required": [
+                  "fleet"
+                ]
+              }
+            },
+            "required": [
+              "global"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "global": {
+              "properties": {
+                "fleet": {
+                  "properties": {
+                    "backend": {
+                      "const": "fleetmetadatacache"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "consoleEnabledTrueCondition": {
+      "description": "BR-PLATFORM-010 REFACTOR: shared `if`/condition shape for \"console.enabled == true\", deduped across the 4 Phase C console guards (apifrontend dependency, auth.secretName, OIDC issuer, ingress.host) in the top-level allOf.",
+      "properties": {
+        "console": {
+          "properties": {
+            "enabled": {
+              "const": true
+            }
+          },
+          "required": [
+            "enabled"
+          ]
+        }
+      },
+      "required": [
+        "console"
+      ]
+    },
+    "apifrontendNotDisabledRequirement": {
+      "description": "BR-PLATFORM-010 REFACTOR: shared `then`/requirement shape for \"apifrontend.enabled must not be explicitly false\", deduped across the Phase C console and kubernautAgent.interactive guards in the top-level allOf.",
+      "not": {
+        "properties": {
+          "apifrontend": {
+            "properties": {
+              "enabled": {
+                "const": false
+              }
+            },
+            "required": [
+              "enabled"
+            ]
+          }
+        },
+        "required": [
+          "apifrontend"
+        ]
+      }
+    },
+    "globalFleetMcpGatewayEndpointSetCondition": {
+      "description": "BR-PLATFORM-010 REFACTOR: shared `if`/condition shape for \"global.fleet.mcpGatewayEndpoint is set\", deduped across the 2 Phase D OAuth2-mandatory guards (shared global.fleet.oauth2 block + WorkflowExecution's dedicated no-fallback block) in the top-level allOf.",
+      "properties": {
+        "global": {
+          "properties": {
+            "fleet": {
+              "properties": {
+                "mcpGatewayEndpoint": {
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "mcpGatewayEndpoint"
+              ]
+            }
+          },
+          "required": [
+            "fleet"
+          ]
+        }
+      },
+      "required": [
+        "global"
+      ]
+    },
     "serviceConfig": {
       "description": "Kubernetes Service configuration",
       "type": "object",
@@ -1233,8 +1362,24 @@
         },
         "policies": {
           "type": "object",
-          "description": "Approval policy externalization. Provide content via --set-file or reference an existing ConfigMap.",
+          "description": "Approval policy externalization. Provide content via --set-file or reference an existing ConfigMap. Exactly one of content/existingConfigMap must be non-empty (BR-PLATFORM-010).",
           "additionalProperties": false,
+          "anyOf": [
+            {
+              "properties": {
+                "content": {
+                  "minLength": 1
+                }
+              }
+            },
+            {
+              "properties": {
+                "existingConfigMap": {
+                  "minLength": 1
+                }
+              }
+            }
+          ],
           "properties": {
             "content": {
               "type": "string",
@@ -1287,8 +1432,24 @@
         },
         "policies": {
           "type": "object",
-          "description": "Classification policy externalization (ADR-060). Provide content via --set-file or reference an existing ConfigMap.",
+          "description": "Classification policy externalization (ADR-060). Provide content via --set-file or reference an existing ConfigMap. Exactly one of content/existingConfigMap must be non-empty (BR-PLATFORM-010).",
           "additionalProperties": false,
+          "anyOf": [
+            {
+              "properties": {
+                "content": {
+                  "minLength": 1
+                }
+              }
+            },
+            {
+              "properties": {
+                "existingConfigMap": {
+                  "minLength": 1
+                }
+              }
+            }
+          ],
           "properties": {
             "content": {
               "type": "string",
@@ -3412,5 +3573,360 @@
         }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "description": "BR-PLATFORM-010 Phase B: global.fleet.mcpGatewayEndpoint is required for Gateway/RemediationOrchestrator whenever global.fleet.enabled=true (was gateway.yaml:4/remediationorchestrator.yaml:4 fail() guards).",
+      "if": {
+        "$ref": "#/definitions/globalFleetEnabledTrueCondition"
+      },
+      "then": {
+        "properties": {
+          "global": {
+            "properties": {
+              "fleet": {
+                "properties": {
+                  "mcpGatewayEndpoint": {
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "BR-PLATFORM-010 Phase B: global.fleet.mcpGatewayEndpoint is required whenever FleetMetadataCache is effectively enabled -- explicit fleetmetadatacache.enabled=true, or (fleetmetadatacache.enabled unset AND global.fleet.enabled=true AND global.fleet.backend unset-or-\"fleetmetadatacache\") -- mirroring kubernaut.fleetmetadatacache.effectiveEnabled (was fleetmetadatacache.yaml:110 fail() guard). The explicit-false-conflicts-with-derived-true case is a separate Phase C guard.",
+      "if": {
+        "anyOf": [
+          {
+            "properties": {
+              "fleetmetadatacache": {
+                "properties": {
+                  "enabled": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            },
+            "required": [
+              "fleetmetadatacache"
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "not": {
+                  "properties": {
+                    "fleetmetadatacache": {
+                      "required": [
+                        "enabled"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "fleetmetadatacache"
+                  ]
+                }
+              },
+              {
+                "$ref": "#/definitions/globalFleetEnabledTrueCondition"
+              },
+              {
+                "$ref": "#/definitions/globalFleetBackendResolvesToFMCCondition"
+              }
+            ]
+          }
+        ]
+      },
+      "then": {
+        "properties": {
+          "global": {
+            "properties": {
+              "fleet": {
+                "properties": {
+                  "mcpGatewayEndpoint": {
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "description": "BR-PLATFORM-010 Phase C: console.enabled=true requires apifrontend.enabled != false -- Console's nginx sidecar reverse-proxies exclusively to APIFrontend, with no other possible backend (was console.yaml:93 fail() guard).",
+      "if": {
+        "$ref": "#/definitions/consoleEnabledTrueCondition"
+      },
+      "then": {
+        "$ref": "#/definitions/apifrontendNotDisabledRequirement"
+      }
+    },
+    {
+      "description": "BR-PLATFORM-010 Phase C: console.auth.secretName is required when console.enabled=true (was console.yaml:96 fail() guard).",
+      "if": {
+        "$ref": "#/definitions/consoleEnabledTrueCondition"
+      },
+      "then": {
+        "properties": {
+          "console": {
+            "properties": {
+              "auth": {
+                "properties": {
+                  "secretName": {
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "secretName"
+                ]
+              }
+            },
+            "required": [
+              "auth"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "BR-PLATFORM-010 Phase C: console.enabled=true requires an OIDC issuer -- either apifrontend.config.auth.issuerURL (legacy single-provider) or apifrontend.config.auth.jwtProviders[0].issuerURL (multi-provider, #1436) -- mirroring kubernaut.console.issuerURL's resolution order (was console.yaml:99 fail() guard).",
+      "if": {
+        "$ref": "#/definitions/consoleEnabledTrueCondition"
+      },
+      "then": {
+        "anyOf": [
+          {
+            "properties": {
+              "apifrontend": {
+                "properties": {
+                  "config": {
+                    "properties": {
+                      "auth": {
+                        "properties": {
+                          "issuerURL": {
+                            "minLength": 1
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "properties": {
+              "apifrontend": {
+                "properties": {
+                  "config": {
+                    "properties": {
+                      "auth": {
+                        "properties": {
+                          "jwtProviders": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": [
+                              {
+                                "properties": {
+                                  "issuerURL": {
+                                    "minLength": 1
+                                  }
+                                },
+                                "required": [
+                                  "issuerURL"
+                                ]
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "jwtProviders"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "description": "BR-PLATFORM-010 Phase C: console.ingress.host is required when console.enabled=true -- the browser-facing hostname is needed for the oauth2-proxy OIDC redirect URL, even when external access is managed by a caller's own Ingress/Route instead of console.ingress.enabled (was console.yaml:102 fail() guard).",
+      "if": {
+        "$ref": "#/definitions/consoleEnabledTrueCondition"
+      },
+      "then": {
+        "properties": {
+          "console": {
+            "properties": {
+              "ingress": {
+                "properties": {
+                  "host": {
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "host"
+                ]
+              }
+            },
+            "required": [
+              "ingress"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "description": "BR-PLATFORM-010 Phase C: kubernautAgent.interactive.enabled=true requires apifrontend.enabled != false -- APIFrontend's ka.NewSDKMCPClient is the only MCP client that connects to KubernautAgent's interactive endpoint, with no other possible caller (was kubernaut-agent.yaml:24 fail() guard).",
+      "if": {
+        "properties": {
+          "kubernautAgent": {
+            "properties": {
+              "interactive": {
+                "properties": {
+                  "enabled": {
+                    "const": true
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            },
+            "required": [
+              "interactive"
+            ]
+          }
+        },
+        "required": [
+          "kubernautAgent"
+        ]
+      },
+      "then": {
+        "$ref": "#/definitions/apifrontendNotDisabledRequirement"
+      }
+    },
+    {
+      "description": "BR-PLATFORM-010 Phase C: fleetmetadatacache.enabled=false conflicts with global.fleet.enabled=true + global.fleet.backend resolving to \"fleetmetadatacache\" -- FleetMetadataCache must run when it is the selected fleet scope-check backend, mirroring kubernaut.fleetmetadatacache.effectiveEnabled's contradictory-override fail() (was _helpers.tpl:472 fail() guard).",
+      "not": {
+        "allOf": [
+          {
+            "properties": {
+              "fleetmetadatacache": {
+                "properties": {
+                  "enabled": {
+                    "const": false
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            },
+            "required": [
+              "fleetmetadatacache"
+            ]
+          },
+          {
+            "$ref": "#/definitions/globalFleetEnabledTrueCondition"
+          },
+          {
+            "$ref": "#/definitions/globalFleetBackendResolvesToFMCCondition"
+          }
+        ]
+      }
+    },
+    {
+      "description": "BR-PLATFORM-010 Phase D (ADR-068 gap closure, IA-2/AC-3/AC-17): global.fleet.mcpGatewayEndpoint being set means at least one fleet-integration-capable service will call the MCP Gateway, so OAuth2 authentication becomes mandatory (was optional -- oauth2.enabled defaulted to false with no guard requiring it true, permitting unauthenticated MCP Gateway access for 7 of 8 fleet-capable services). Mirrors FleetMetadataCache's existing unconditional oauth2 requirement (the correct precedent). Replaces the per-service `if oauth2.enabled { require tokenURL/credentialsSecretRef }` fail() guards in gateway.yaml/remediationorchestrator.yaml/apifrontend.yaml/effectivenessmonitor.yaml/signalprocessing.yaml/workflowexecution.yaml/kubernaut-agent.yaml/fleetmetadatacache.yaml, none of which required oauth2.enabled=true itself.",
+      "if": {
+        "$ref": "#/definitions/globalFleetMcpGatewayEndpointSetCondition"
+      },
+      "then": {
+        "properties": {
+          "global": {
+            "properties": {
+              "fleet": {
+                "properties": {
+                  "oauth2": {
+                    "properties": {
+                      "enabled": {
+                        "const": true
+                      },
+                      "tokenURL": {
+                        "minLength": 1
+                      },
+                      "credentialsSecretRef": {
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "enabled",
+                      "tokenURL",
+                      "credentialsSecretRef"
+                    ]
+                  }
+                },
+                "required": [
+                  "oauth2"
+                ]
+              }
+            },
+            "required": [
+              "fleet"
+            ]
+          }
+        },
+        "required": [
+          "global"
+        ]
+      }
+    },
+    {
+      "description": "BR-PLATFORM-010 Phase D (ADR-068 gap closure): WorkflowExecution's oauth2.credentialsSecretRef does NOT fall back to global.fleet.oauth2.credentialsSecretRef (least privilege, AC-6 -- WE is the only fleet-integration-capable service calling MCP write tools instead of the read-only tools every other service uses), so it needs its own dedicated mandatory-when-mcpGatewayEndpoint-set block alongside the shared one above (was workflowexecution.yaml:18 fail() guard).",
+      "if": {
+        "$ref": "#/definitions/globalFleetMcpGatewayEndpointSetCondition"
+      },
+      "then": {
+        "properties": {
+          "workflowexecution": {
+            "properties": {
+              "fleet": {
+                "properties": {
+                  "oauth2": {
+                    "properties": {
+                      "credentialsSecretRef": {
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "credentialsSecretRef"
+                    ]
+                  }
+                },
+                "required": [
+                  "oauth2"
+                ]
+              }
+            },
+            "required": [
+              "fleet"
+            ]
+          }
+        },
+        "required": [
+          "workflowexecution"
+        ]
+      }
+    }
+  ]
 }

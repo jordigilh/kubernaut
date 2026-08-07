@@ -1,17 +1,10 @@
+{{- /*
+Issue #1984 Phase D: oauth2.tokenURL/credentialsSecretRef required-when-enabled
+guards (and the ADR-068 gap of oauth2.enabled itself being optional) moved to
+values.schema.json if/then blocks gated on global.fleet.mcpGatewayEndpoint
+being set (BR-PLATFORM-010).
+*/}}
 {{- $gatewayFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.gateway.fleet "oauth2" .Values.gateway.fleet.oauth2) | fromYaml }}
-{{- if .Values.global.fleet.enabled }}
-{{- if not $gatewayFleetPreamble.config.mcpGatewayEndpoint }}
-{{- fail "global.fleet.mcpGatewayEndpoint is required when global.fleet.enabled=true" }}
-{{- end }}
-{{- if $gatewayFleetPreamble.oauth2.enabled }}
-{{- if not $gatewayFleetPreamble.oauth2.tokenURL }}
-{{- fail "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true" }}
-{{- end }}
-{{- if not $gatewayFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "global.fleet.oauth2.credentialsSecretRef (or gateway.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
-{{- end }}
-{{- end }}
-{{- end }}
 {{- define "kubernaut.gateway.configYAML" }}
 {{- /* checksum/config (Issue #1737 gap) needs this content reachable from the
 Deployment's pod template annotations, which is a separate `include` call site

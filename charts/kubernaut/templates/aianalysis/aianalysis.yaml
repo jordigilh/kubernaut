@@ -1,7 +1,4 @@
 {{- if not .Values.aianalysis.policies.existingConfigMap }}
-{{- if not .Values.aianalysis.policies.content }}
-{{- fail "aianalysis.policies.content is required (via --set-file aianalysis.policies.content=approval.rego) or provide aianalysis.policies.existingConfigMap" }}
-{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap

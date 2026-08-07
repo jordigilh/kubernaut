@@ -1,17 +1,10 @@
+{{- /*
+Issue #1984 Phase D: oauth2.tokenURL/credentialsSecretRef required-when-enabled
+guards (and the ADR-068 gap of oauth2.enabled itself being optional) moved to
+values.schema.json if/then blocks gated on global.fleet.mcpGatewayEndpoint
+being set (BR-PLATFORM-010).
+*/}}
 {{- $remediationorchestratorFleetPreamble := include "kubernaut.fleet.preamble" (dict "root" $ "fleet" .Values.remediationorchestrator.fleet "oauth2" .Values.remediationorchestrator.fleet.oauth2) | fromYaml }}
-{{- if .Values.global.fleet.enabled }}
-{{- if not $remediationorchestratorFleetPreamble.config.mcpGatewayEndpoint }}
-{{- fail "global.fleet.mcpGatewayEndpoint is required when global.fleet.enabled=true" }}
-{{- end }}
-{{- if $remediationorchestratorFleetPreamble.oauth2.enabled }}
-{{- if not $remediationorchestratorFleetPreamble.oauth2.tokenURL }}
-{{- fail "global.fleet.oauth2.tokenURL is required when global.fleet.oauth2.enabled=true" }}
-{{- end }}
-{{- if not $remediationorchestratorFleetPreamble.oauth2.credentialsSecretRef }}
-{{- fail "global.fleet.oauth2.credentialsSecretRef (or remediationorchestrator.fleet.oauth2.credentialsSecretRef) is required when global.fleet.oauth2.enabled=true (Secret must contain keys: client-id, client-secret)" }}
-{{- end }}
-{{- end }}
-{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap
