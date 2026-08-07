@@ -1,0 +1,101 @@
+suite: "Issue #1988: console oauth2-proxy sidecar must verify the OIDC issuer's TLS certificate, not skip verification"
+templates:
+  - templates/console/console.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  console:
+    enabled: true
+    auth:
+      secretName: console-auth
+    ingress:
+      host: console.apps.example.com
+  apifrontend:
+    config:
+      auth:
+        issuerURL: https://sso.example.com/realms/kubernaut
+tests:
+  - it: "IT-HELM-1988-001: oauth2-proxy args do NOT include --ssl-insecure-skip-verify (regression guard -- SC-8)"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: "--ssl-insecure-skip-verify=true"
+
+  - it: "IT-HELM-1988-002: oauth2-proxy trusts the shared inter-service CA via --provider-ca-file, defaulting to tls.interService.caFile (/etc/tls-ca/ca.crt)"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--provider-ca-file=/etc/tls-ca/ca.crt"
+
+  - it: "IT-HELM-1988-003: oauth2-proxy also keeps the system trust store enabled, so genuinely externally-trusted OIDC issuers (public CA) still verify without needing the inter-service CA"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--use-system-trust-store=true"
+
+  - it: "IT-HELM-1988-004: --provider-ca-file follows a tls.interService.caFile override, same as every other consumer of kubernaut.interServiceTLS.caFile"
+    set:
+      tls:
+        interService:
+          caFile: /custom/tls-ca/bundle.crt
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: "--provider-ca-file=/custom/tls-ca/bundle.crt"
+
+  - it: "IT-HELM-1988-005: oauth2-proxy container mounts the tls-ca volume at /etc/tls-ca so --provider-ca-file's default path actually exists in the container"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tls-ca
+            mountPath: /etc/tls-ca
+            readOnly: true
+
+  - it: "IT-HELM-1988-006: the pod still only mounts one tls-ca volume (shared between the oauth2-proxy and console containers, not duplicated)"
+    documentSelector:
+      path: kind
+      value: Deployment
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tls-ca
+            configMap:
+              name: inter-service-ca
+              optional: true
+      - lengthEqual:
+          path: spec.template.spec.volumes
+          count: 3
