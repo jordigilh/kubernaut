@@ -213,19 +213,22 @@ func loadChartCAFromAuthwebhookTLS(ctx context.Context, kubeconfigPath, namespac
 	return caCert, caKey, nil
 }
 
-// signAndApplyLeafTLSSecret generates an ECDSA P-256 leaf certificate for
-// commonName/dnsNames, signs it with caCert/caKey, and applies it as
-// secretName (type kubernetes.io/tls) in namespace.
-func signAndApplyLeafTLSSecret(ctx context.Context, kubeconfigPath, namespace, secretName, commonName string, dnsNames []string, ipAddrs []net.IP, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, writer io.Writer) error {
+// generateSignedLeafCert generates an ECDSA P-256 leaf certificate for
+// commonName/dnsNames/ipAddrs, valid from 1 hour ago for validity, signed by
+// caCert/caKey, and returns its PEM-encoded certificate and private key.
+// Shared by signAndApplyLeafTLSSecret (dex-tls/keycloak-tls, 24h validity, no
+// IPs) and provisionInterServiceCA's own authwebhook leaf cert (365d
+// validity, no IPs) to avoid duplicating the ECDSA/x509/PEM boilerplate.
+func generateSignedLeafCert(commonName string, dnsNames []string, ipAddrs []net.IP, validity time.Duration, caCert *x509.Certificate, caKey *ecdsa.PrivateKey) (certPEM, keyPEM []byte, err error) {
 	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return fmt.Errorf("failed to generate %s leaf key: %w", secretName, err)
+		return nil, nil, fmt.Errorf("failed to generate %s leaf key: %w", commonName, err)
 	}
 	leafTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
 		Subject:      pkix.Name{CommonName: commonName},
 		NotBefore:    time.Now().Add(-1 * time.Hour),
-		NotAfter:     time.Now().Add(24 * time.Hour),
+		NotAfter:     time.Now().Add(validity),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		DNSNames:     dnsNames,
@@ -233,14 +236,25 @@ func signAndApplyLeafTLSSecret(ctx context.Context, kubeconfigPath, namespace, s
 	}
 	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, caCert, &leafKey.PublicKey, caKey)
 	if err != nil {
-		return fmt.Errorf("failed to create %s leaf certificate: %w", secretName, err)
+		return nil, nil, fmt.Errorf("failed to create %s leaf certificate: %w", commonName, err)
 	}
-	leafCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER})
+	certPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER})
 	leafKeyDER, err := x509.MarshalECPrivateKey(leafKey)
 	if err != nil {
-		return fmt.Errorf("failed to marshal %s leaf key: %w", secretName, err)
+		return nil, nil, fmt.Errorf("failed to marshal %s leaf key: %w", commonName, err)
 	}
-	leafKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: leafKeyDER})
+	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: leafKeyDER})
+	return certPEM, keyPEM, nil
+}
+
+// signAndApplyLeafTLSSecret generates an ECDSA P-256 leaf certificate for
+// commonName/dnsNames, signs it with caCert/caKey, and applies it as
+// secretName (type kubernetes.io/tls) in namespace.
+func signAndApplyLeafTLSSecret(ctx context.Context, kubeconfigPath, namespace, secretName, commonName string, dnsNames []string, ipAddrs []net.IP, caCert *x509.Certificate, caKey *ecdsa.PrivateKey, writer io.Writer) error {
+	leafCertPEM, leafKeyPEM, err := generateSignedLeafCert(commonName, dnsNames, ipAddrs, 24*time.Hour, caCert, caKey)
+	if err != nil {
+		return err
+	}
 
 	secret := fmt.Sprintf(`apiVersion: v1
 kind: Secret
@@ -254,11 +268,7 @@ stringData:
   tls.key: |
 %s`, secretName, namespace, indentPEM(string(leafCertPEM)), indentPEM(string(leafKeyPEM)))
 
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(secret)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, secret); err != nil {
 		return fmt.Errorf("failed to create %s Secret: %w", secretName, err)
 	}
 	_, _ = fmt.Fprintf(writer, "  ✅ %s Secret created (signed by chart's inter-service CA)\n", secretName)
@@ -384,34 +394,18 @@ func provisionInterServiceCA(ctx context.Context, kubeconfigPath, namespace stri
 	}
 	caKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: caKeyDER})
 
-	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return fmt.Errorf("failed to generate authwebhook leaf key: %w", err)
-	}
-	leafTemplate := &x509.Certificate{
-		SerialNumber: big.NewInt(time.Now().UnixNano() + 1),
-		Subject:      pkix.Name{CommonName: fmt.Sprintf("authwebhook.%s.svc", namespace)},
-		NotBefore:    time.Now().Add(-1 * time.Hour),
-		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames: []string{
+	leafCertPEM, leafKeyPEM, err := generateSignedLeafCert(
+		fmt.Sprintf("authwebhook.%s.svc", namespace),
+		[]string{
 			"authwebhook",
 			fmt.Sprintf("authwebhook.%s", namespace),
 			fmt.Sprintf("authwebhook.%s.svc", namespace),
 			fmt.Sprintf("authwebhook.%s.svc.cluster.local", namespace),
 		},
-	}
-	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, caCert, &leafKey.PublicKey, caKey)
+		nil, 365*24*time.Hour, caCert, caKey)
 	if err != nil {
-		return fmt.Errorf("failed to create authwebhook leaf certificate: %w", err)
+		return err
 	}
-	leafCertPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER})
-	leafKeyDER, err := x509.MarshalECPrivateKey(leafKey)
-	if err != nil {
-		return fmt.Errorf("failed to marshal authwebhook leaf key: %w", err)
-	}
-	leafKeyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: leafKeyDER})
 
 	secret := fmt.Sprintf(`apiVersion: v1
 kind: Secret
@@ -431,11 +425,7 @@ stringData:
 		indentPEM(string(leafCertPEM)), indentPEM(string(leafKeyPEM)),
 		indentPEM(string(caCertPEM)), indentPEM(string(caKeyPEM)))
 
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(secret)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, secret); err != nil {
 		return fmt.Errorf("failed to create authwebhook-tls Secret: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ authwebhook-tls Secret created (self-signed CA, will be reused by the chart's tls-cert-gen hook)")
@@ -448,11 +438,7 @@ metadata:
 data:
   ca.crt: |
 %s`, namespace, indentPEM(string(caCertPEM)))
-	cmCmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmCmd.Stdin = strings.NewReader(caConfigMap)
-	cmCmd.Stdout = writer
-	cmCmd.Stderr = writer
-	if err := cmCmd.Run(); err != nil {
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, caConfigMap); err != nil {
 		return fmt.Errorf("failed to create inter-service-ca ConfigMap: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ inter-service-ca ConfigMap created (kube-mcp-server's required tls-ca volume can now mount it)")
@@ -579,11 +565,7 @@ func deployDexOIDCProviderForAF(ctx context.Context, kubeconfigPath string, writ
 	if err != nil {
 		return fmt.Errorf("failed to read dex.yaml: %w", err)
 	}
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(string(dexData))
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, string(dexData)); err != nil {
 		return fmt.Errorf("failed to deploy DEX: %w", err)
 	}
 	return nil
@@ -649,11 +631,7 @@ subjects:
 `, persona, persona, persona)
 	}
 
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(b.String())
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, b.String()); err != nil {
 		return fmt.Errorf("failed to bind AF persona tool ClusterRoles: %w", err)
 	}
 	return nil
@@ -722,11 +700,7 @@ stringData:
   api_key: mock-llm-e2e-key
 `, namespace)
 
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
-	cmd.Stdin = strings.NewReader(manifest)
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
 		return fmt.Errorf("failed to create Helm chart prerequisite secrets: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ Secrets ready")
