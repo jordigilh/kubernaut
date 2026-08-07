@@ -78,7 +78,7 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		Expect(meta).To(HaveKey("block_message"))
 	})
 
-	It("UT-AF-1493-006 (was UT-AF-1460-008a): AwaitingApproval phase returns approval_request_name with namespace prefix", func() {
+	It("UT-AF-1959-001 (was UT-AF-1460-008a/UT-AF-1493-006): AwaitingApproval phase returns bare approval_request_name", func() {
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "rr-approval-test",
@@ -90,10 +90,13 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		}
 		meta := handler.BuildPhaseMetadata(rr, nil)
 		Expect(meta).To(HaveKey("approval_request_name"))
-		Expect(meta["approval_request_name"]).To(Equal("kubernaut-system/rar-rr-approval-test"))
+		Expect(meta["approval_request_name"]).To(Equal("rar-rr-approval-test"),
+			"#1959: approval_request_name is always a bare name — every RAR lives in the "+
+				"controller namespace per ADR-057, so a namespace prefix here is redundant and "+
+				"the console (which passes this straight through as rar_id) never needs it")
 	})
 
-	It("IT-AF-1493-002: namespace prefix flows through BuildPhaseMetadata for AwaitingApproval", func() {
+	It("UT-AF-1959-002: approval_request_name stays bare regardless of RR namespace", func() {
 		rr := &remediationv1.RemediationRequest{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "rr-payment-fix",
@@ -105,7 +108,8 @@ var _ = Describe("BuildPhaseMetadata", func() {
 		}
 		meta := handler.BuildPhaseMetadata(rr, nil)
 		Expect(meta).To(HaveKey("approval_request_name"))
-		Expect(meta["approval_request_name"]).To(Equal("payments/rar-rr-payment-fix"))
+		Expect(meta["approval_request_name"]).To(Equal("rar-rr-payment-fix"),
+			"no namespace prefix regardless of which namespace the RR CRD happens to live in")
 	})
 
 	It("UT-AF-1468-001: metadata contains investigation identity fields from RR spec (AU-3)", func() {

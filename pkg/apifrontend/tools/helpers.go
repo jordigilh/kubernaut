@@ -53,15 +53,13 @@ func ParseRRID(rrID, namespace, name string) (ns, n string, err error) {
 	return namespace, name, nil
 }
 
-// ParseRARID resolves rar_id to namespace and name. It accepts both bare names
-// (paired with the injected namespace) and "namespace/name" format for backward
-// compatibility. If rarID is empty, the explicit namespace and name arguments
-// are used as fallback.
+// ParseRARID resolves rar_id to namespace and name. The rar_id is always a
+// plain resource name (no namespace prefix) — per ADR-057, every RAR lives in
+// the controller namespace, so the namespace always comes from the injected
+// argument, never from rar_id content (#1959). If rarID is empty, the
+// explicit namespace and name arguments are used as fallback.
 func ParseRARID(rarID, namespace, name string) (ns, n string, err error) {
 	if rarID != "" {
-		if parts := strings.SplitN(rarID, "/", 2); len(parts) == 2 && parts[0] != "" && parts[1] != "" {
-			return parts[0], parts[1], nil
-		}
 		return namespace, rarID, nil
 	}
 	if name == "" {
@@ -69,7 +67,6 @@ func ParseRARID(rarID, namespace, name string) (ns, n string, err error) {
 	}
 	return namespace, name, nil
 }
-
 
 // ToUserFriendlyError translates K8s API errors into user-friendly messages.
 // Internal details (namespace paths, resource versions, field paths) are not exposed.
