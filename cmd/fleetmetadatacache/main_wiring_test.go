@@ -37,11 +37,18 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	authenticationv1 "k8s.io/api/authentication/v1"
+	authorizationv1 "k8s.io/api/authorization/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/fmc"
 	fmcconfig "github.com/jordigilh/kubernaut/pkg/fleet/fmc/config"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/fleet/scopecache"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
@@ -79,11 +86,59 @@ func (f *fakeClusterRegistry) Stop()                                       {}
 // buildFMCServers' HTTP/TLS wiring without a real MCP Gateway or Valkey.
 // syncer/mcpClient/writer are deliberately left nil -- buildFMCServers never
 // touches them; only runFMCServers' background syncer goroutine would.
-func testFMCDeps() *fmcDeps {
+//
+// Issue #1993: buildFMCServers now wraps apiMux with auth.NewMiddleware, so
+// every test below needs a k8sClientset (for the middleware's TokenReview/SAR
+// calls) and a releaseNamespace (the SAR check's target namespace). This
+// package has no envtest (unlike test/integration/fleetmetadatacache), so
+// k8sClientset is always the fake clientset from fakeAuthorizedK8sClient/
+// fakeUnauthorizedK8sClient below -- these tests prove buildFMCServers' TLS
+// and routing wiring, not auth.Middleware's own TokenReview/SAR logic
+// (covered by pkg/shared/auth/k8s_auth_test.go and the real envtest-backed
+// IT-FMC-1993-* cases in test/integration/fleetmetadatacache).
+func testFMCDeps(k8sClientset kubernetes.Interface) *fmcDeps {
 	return &fmcDeps{
-		cacheReader:     scopecache.NewValkeyCacheReader("127.0.0.1:1"), // unreachable by design; Ping() failure is fine, these tests don't assert /readyz body content
-		clusterRegistry: &fakeClusterRegistry{},
+		cacheReader:      scopecache.NewValkeyCacheReader("127.0.0.1:1"), // unreachable by design; Ping() failure is fine, these tests don't assert /readyz body content
+		clusterRegistry:  &fakeClusterRegistry{},
+		k8sClientset:     k8sClientset,
+		releaseNamespace: "kubernaut-system",
 	}
+}
+
+// fakeAuthorizedK8sClient returns a fake kubernetes.Interface whose
+// TokenReview always authenticates any non-empty Bearer token as username,
+// and whose SubjectAccessReview always returns Allowed. Mirrors the
+// PrependReactor pattern in pkg/shared/auth/k8s_auth_test.go -- this
+// package has no envtest, so the real TokenReview/SAR API isn't available;
+// the fake clientset instead lets these tests exercise the real
+// auth.NewMiddleware wiring path (buildFMCServers) end-to-end.
+func fakeAuthorizedK8sClient(username string) kubernetes.Interface {
+	client := k8sfake.NewSimpleClientset()
+	client.PrependReactor("create", "tokenreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		review := action.(k8stesting.CreateAction).GetObject().(*authenticationv1.TokenReview) //nolint:forcetypeassert // test-only reactor, type is fixed by the fake clientset's dispatch
+		review.Status = authenticationv1.TokenReviewStatus{
+			Authenticated: true,
+			User:          authenticationv1.UserInfo{Username: username},
+		}
+		return true, review, nil
+	})
+	client.PrependReactor("create", "subjectaccessreviews", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		sar := action.(k8stesting.CreateAction).GetObject().(*authorizationv1.SubjectAccessReview) //nolint:forcetypeassert // test-only reactor, type is fixed by the fake clientset's dispatch
+		sar.Status = authorizationv1.SubjectAccessReviewStatus{Allowed: true}
+		return true, sar, nil
+	})
+	return client
+}
+
+// bearerHTTPClient wraps base with auth.NewAuthTransport so every request
+// carries "Authorization: Bearer <token>" -- mirrors production's
+// BackendFMC client (pkg/fleet/scope_factory.go) and IT-FLEET-1993-010's
+// test pattern (pkg/fleet/scope_factory_test.go), writing token to a
+// GinkgoT().TempDir() file consumed by auth.NewTokenSource.
+func bearerHTTPClient(token string, base http.RoundTripper) *http.Client {
+	tokenPath := filepath.Join(GinkgoT().TempDir(), "token")
+	Expect(os.WriteFile(tokenPath, []byte(token), 0o600)).To(Succeed())
+	return &http.Client{Transport: auth.NewAuthTransport(auth.NewTokenSource(tokenPath), base)}
 }
 
 // generateSelfSignedCert writes a self-signed cert/key pair valid for
@@ -174,7 +229,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		cfg.Server.APIAddr = osAssignedAddr
 		cfg.Server.HealthAddr = osAssignedAddr
 		cfg.Server.MetricsAddr = osAssignedAddr
-		deps = testFMCDeps()
+		deps = testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"))
 		ready.Store(true)
 	})
 
@@ -194,9 +249,9 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		go func() { _ = servers.api.ServeTLS(ln, "", "") }()
 		defer func() { _ = servers.api.Close() }()
 
-		httpsClient := &http.Client{Transport: &http.Transport{
+		httpsClient := bearerHTTPClient("test-caller-token", &http.Transport{
 			TLSClientConfig: &tls.Config{RootCAs: caPoolFromCert(filepath.Join(certDir, "tls.crt"))}, //nolint:gosec // MinVersion inherited from default; test dials with modern Go defaults
-		}}
+		})
 		resp, err := httpsClient.Get("https://" + addr + fmc.ClustersPath)
 		Expect(err).ToNot(HaveOccurred(), "a CA-trusting HTTPS client must complete the handshake")
 		_ = resp.Body.Close()
@@ -231,12 +286,10 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		go func() { _ = servers.api.ServeTLS(ln, "", "") }()
 		defer func() { _ = servers.api.Close() }()
 
-		caTrustingClient := &http.Client{
-			Timeout: 5 * time.Second,
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{RootCAs: caPoolFromCert(filepath.Join(certDir, "tls.crt"))}, //nolint:gosec // test dials with modern Go defaults
-			},
-		}
+		caTrustingClient := bearerHTTPClient("test-caller-token", &http.Transport{
+			TLSClientConfig: &tls.Config{RootCAs: caPoolFromCert(filepath.Join(certDir, "tls.crt"))}, //nolint:gosec // test dials with modern Go defaults
+		})
+		caTrustingClient.Timeout = 5 * time.Second
 		fmcClient := fmc.NewHTTPClient("https://"+addr, fmc.WithHTTPClient(caTrustingClient))
 
 		Expect(fmcClient.Ping(context.Background())).To(Succeed(),
@@ -258,8 +311,14 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		apiResp, err := http.Get("http://" + apiAddr + "/readyz") //nolint:gosec,noctx // test-only probe
 		Expect(err).ToNot(HaveOccurred())
 		defer func() { _ = apiResp.Body.Close() }()
-		Expect(apiResp.StatusCode).To(Equal(http.StatusNotFound),
-			"AC-4: /readyz must no longer be reachable on the API port after the 3-port split")
+		// Issue #1993: auth.NewMiddleware now gates the API mux and rejects
+		// this token-less request (401) before the mux's own "not
+		// registered on this port" 404 is ever reached -- the underlying
+		// property ("/readyz is not served on the API port") still holds,
+		// just observed as 401 instead of 404 now that auth intercepts first.
+		Expect(apiResp.StatusCode).To(Equal(http.StatusUnauthorized),
+			"AC-4: /readyz must no longer be reachable on the API port after the 3-port split "+
+				"(auth middleware intercepts with 401 before the mux's own 404 is reached)")
 
 		healthResp, err := http.Get("http://" + healthAddr + "/readyz") //nolint:gosec,noctx // test-only probe
 		Expect(err).ToNot(HaveOccurred())
@@ -284,9 +343,12 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		apiResp, err := http.Get("http://" + apiAddr + fmc.HealthzPath) //nolint:gosec,noctx // test-only probe
 		Expect(err).ToNot(HaveOccurred())
 		defer func() { _ = apiResp.Body.Close() }()
-		Expect(apiResp.StatusCode).To(Equal(http.StatusNotFound),
+		// Issue #1993: see the matching comment in IT-FMC-1683-A-003 above --
+		// auth middleware now intercepts with 401 before the mux's own 404.
+		Expect(apiResp.StatusCode).To(Equal(http.StatusUnauthorized),
 			"DD-FLEET-004: /healthz must not be registered on the API mux -- only Ping()'s "+
-				"ClustersPath target and the kubelet-only health port serve it")
+				"ClustersPath target and the kubelet-only health port serve it "+
+				"(auth middleware intercepts with 401 before the mux's own 404 is reached)")
 
 		healthResp, err := http.Get("http://" + healthAddr + fmc.HealthzPath) //nolint:gosec,noctx // test-only probe
 		Expect(err).ToNot(HaveOccurred())
@@ -317,9 +379,9 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		Expect(err).To(HaveOccurred(),
 			"SC-13: Intermediate profile floors at TLS 1.2 -- a TLS 1.1-only client must be rejected")
 
-		compliantClient := &http.Client{Transport: &http.Transport{
+		compliantClient := bearerHTTPClient("test-caller-token", &http.Transport{
 			TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
-		}}
+		})
 		resp, err := compliantClient.Get("https://" + addr + fmc.ClustersPath)
 		Expect(err).ToNot(HaveOccurred(),
 			"SC-13: a TLS 1.2+ client with default (AEAD) ciphers must be accepted by the Intermediate profile")
