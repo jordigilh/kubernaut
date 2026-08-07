@@ -2217,12 +2217,27 @@ for d in docs:
   # without a token must still render cleanly at the template layer. Enforcement is done
   # Go-side: FleetConfig.Validate() now hard-rejects backend=acm without TokenPath, so the
   # rendered Pod will fail to start (fail-closed), even though `helm template` succeeds here.
+  #
+  # Issue #1984/#1993: global.fleet.mcpGatewayEndpoint being set now makes
+  # global.fleet.oauth2.{enabled,tokenURL,credentialsSecretRef} schema-mandatory (values.schema.json
+  # allOf/if-then), and workflowexecution's own fleet.oauth2.credentialsSecretRef is required
+  # independently of the global fallback (schema conditionals check raw values presence, not the
+  # Go-template inheritance chain) -- both are now passed on every ACM helm template invocation below
+  # so these renders exercise ACM tokenSecretRef wiring, not the (already-covered) OAuth2 gate itself.
+  local acm_oauth2_flags=(
+    --set global.fleet.oauth2.enabled=true
+    --set global.fleet.oauth2.tokenURL=https://dex.example.com/token
+    --set global.fleet.oauth2.credentialsSecretRef=fleet-oauth2-creds
+    --set workflowexecution.fleet.oauth2.credentialsSecretRef=fleet-oauth2-creds
+  )
+
   local acm_with_token
   acm_with_token=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set global.fleet.enabled=true --set global.fleet.mcpGatewayEndpoint=https://mcp.example.com \
     --set global.fleet.backend=acm \
-    --set global.fleet.tokenSecretRef=acm-token 2>&1)
+    --set global.fleet.tokenSecretRef=acm-token \
+    "${acm_oauth2_flags[@]}" 2>&1)
   if grep -q 'tokenPath: "/etc/gateway/acm-token/token"' <<< "$acm_with_token" && \
      grep -q "fleet-acm-token" <<< "$acm_with_token"; then
     tap_ok "ST-CHART-ACM-001a: global.fleet.tokenSecretRef renders tokenPath + Secret volume/mount (gateway)"
@@ -2235,7 +2250,8 @@ for d in docs:
   acm_without_token=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set global.fleet.enabled=true --set global.fleet.mcpGatewayEndpoint=https://mcp.example.com \
-    --set global.fleet.backend=acm 2>&1)
+    --set global.fleet.backend=acm \
+    "${acm_oauth2_flags[@]}" 2>&1)
   acm_without_token_exit=$?
   if [[ "$acm_without_token_exit" -eq 0 ]] && ! grep -q "fleet-acm-token" <<< "$acm_without_token"; then
     tap_ok "ST-CHART-ACM-001b: backend=acm without tokenSecretRef renders cleanly (fails Go-side Validate() at pod startup, per #1556)"
@@ -2252,7 +2268,8 @@ for d in docs:
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set global.fleet.enabled=true --set global.fleet.mcpGatewayEndpoint=https://mcp.example.com \
     --set global.fleet.backend=acm \
-    --set global.fleet.tokenSecretRef=acm-token 2>&1)
+    --set global.fleet.tokenSecretRef=acm-token \
+    "${acm_oauth2_flags[@]}" 2>&1)
   if grep -q 'tokenPath: "/etc/remediationorchestrator/acm-token/token"' <<< "$ro_acm_with_token" && \
      grep -q "fleet-acm-token" <<< "$ro_acm_with_token"; then
     tap_ok "ST-CHART-ACM-002a: global.fleet.tokenSecretRef renders tokenPath + Secret volume/mount (remediationorchestrator)"
@@ -2265,7 +2282,8 @@ for d in docs:
   ro_acm_without_token=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set global.fleet.enabled=true --set global.fleet.mcpGatewayEndpoint=https://mcp.example.com \
-    --set global.fleet.backend=acm 2>&1)
+    --set global.fleet.backend=acm \
+    "${acm_oauth2_flags[@]}" 2>&1)
   ro_acm_without_token_exit=$?
   if [[ "$ro_acm_without_token_exit" -eq 0 ]] && ! grep -q "fleet-acm-token" <<< "$ro_acm_without_token"; then
     tap_ok "ST-CHART-ACM-002b: RemediationOrchestrator backend=acm without tokenSecretRef renders cleanly (fails Go-side Validate() at pod startup, per #1556)"
@@ -2465,11 +2483,18 @@ for d in docs:
 
   # ST-CHART-CONSOLE-001b: fail-fast validation — console.enabled=true without
   # console.auth.secretName must fail the render, not silently misconfigure OIDC.
+  #
+  # Issue #1984: this mandatory-ness moved from a console.yaml fail() guard to
+  # values.schema.json (BR-PLATFORM-010 Phase C) -- the error text is now the JSON
+  # Schema validator's generic "missing property" wording (schema `description` fields
+  # are documentation only, not surfaced in Helm's validation error output), not the old
+  # custom fail() message. See values.schema.json's console.auth.secretName description
+  # for the historical fail() guard this replaced.
   local console_no_secret
   console_no_secret=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set console.enabled=true 2>&1)
-  if grep -q "console.auth.secretName is required" <<< "$console_no_secret"; then
+  if grep -q "at '/console/auth': missing property 'secretName'" <<< "$console_no_secret"; then
     tap_ok "ST-CHART-CONSOLE-001b: console.enabled=true without auth.secretName fails fast"
   else
     tap_not_ok "ST-CHART-CONSOLE-001b: console auth.secretName validation" \
@@ -2478,13 +2503,18 @@ for d in docs:
 
   # ST-CHART-CONSOLE-001c: fail-fast validation — console.enabled=true without an
   # OIDC issuer resolvable from APIFrontend's auth config must fail the render.
+  #
+  # Issue #1984: schema-enforced via an anyOf of apifrontend.config.auth.issuerURL
+  # (legacy single-provider) vs. .jwtProviders (multi-provider, #1436) -- both
+  # branches' failure lines are asserted since anyOf reports every failed branch.
   local console_no_issuer
   console_no_issuer=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set console.enabled=true \
     --set console.auth.secretName=console-oauth-creds \
     --set console.ingress.host=console.apps.example.com 2>&1)
-  if grep -q "requires an OIDC issuer" <<< "$console_no_issuer"; then
+  if grep -q "at '/apifrontend/config/auth/issuerURL'" <<< "$console_no_issuer" && \
+     grep -q "missing property 'jwtProviders'" <<< "$console_no_issuer"; then
     tap_ok "ST-CHART-CONSOLE-001c: console.enabled=true without a resolvable OIDC issuer fails fast"
   else
     tap_not_ok "ST-CHART-CONSOLE-001c: console OIDC issuer validation" \
@@ -2495,13 +2525,15 @@ for d in docs:
   # console.ingress.host must fail (oauth2-proxy redirect URL requires a hostname
   # even when console.ingress.enabled=false, since it may be fronted by a
   # user-managed Ingress/Route instead).
+  #
+  # Issue #1984: schema-enforced (BR-PLATFORM-010 Phase C) -- see 001b's comment.
   local console_no_host
   console_no_host=$(helm template test "$CHART_PATH" \
     $(template_common_args) $(template_llm_args) $(policy_flags) \
     --set console.enabled=true \
     --set console.auth.secretName=console-oauth-creds \
     --set apifrontend.config.auth.issuerURL=https://issuer.example.com 2>&1)
-  if grep -q "console.ingress.host is required" <<< "$console_no_host"; then
+  if grep -q "at '/console/ingress': missing property 'host'" <<< "$console_no_host"; then
     tap_ok "ST-CHART-CONSOLE-001d: console.enabled=true without ingress.host fails fast"
   else
     tap_not_ok "ST-CHART-CONSOLE-001d: console ingress.host validation" \
