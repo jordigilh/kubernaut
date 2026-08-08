@@ -342,7 +342,7 @@ var _ = Describe("AuditClient RecordRegoEvaluation outcome mapping", func() {
 
 	DescribeTable("should map outcome string to correct EventOutcome enum",
 		func(tc outcomeCase) {
-			auditClient.RecordRegoEvaluation(ctx, analysis, tc.outcome, false, 50, "test reason")
+			auditClient.RecordRegoEvaluation(ctx, analysis, tc.outcome, false, 50, "test reason", "")
 
 			Expect(mockStore.StoredEvents).To(HaveLen(1), "Should store exactly one audit event")
 			event := mockStore.StoredEvents[0]
@@ -387,7 +387,7 @@ var _ = Describe("AuditClient RecordRegoEvaluation outcome mapping", func() {
 	)
 
 	It("should preserve degraded flag in payload", func() {
-		auditClient.RecordRegoEvaluation(ctx, analysis, aianalysis.OutcomeAutoApproved, true, 100, "degraded mode")
+		auditClient.RecordRegoEvaluation(ctx, analysis, aianalysis.OutcomeAutoApproved, true, 100, "degraded mode", "")
 
 		Expect(mockStore.StoredEvents).To(HaveLen(1))
 		payload, ok := mockStore.StoredEvents[0].EventData.GetAIAnalysisRegoEvaluationPayload()
@@ -395,5 +395,30 @@ var _ = Describe("AuditClient RecordRegoEvaluation outcome mapping", func() {
 		Expect(payload.Degraded).To(BeTrue(), "Degraded flag should be preserved")
 		Expect(payload.DurationMs).To(Equal(int32(100)), "Duration should be preserved")
 		Expect(payload.Reason).To(Equal("degraded mode"), "Reason should be preserved")
+	})
+
+	// Issue #2005 (follow-up to #1981): the audit trail must carry the pinned
+	// policy hash so a Rego evaluation event can be attributed to the exact
+	// policy bundle revision from the audit event alone (BR-AI-030).
+	It("UT-AI-2005-001: should include PolicyHash in payload when provided", func() {
+		const expectedHash = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
+		auditClient.RecordRegoEvaluation(ctx, analysis, aianalysis.OutcomeAutoApproved, false, 50, "policy allows", expectedHash)
+
+		Expect(mockStore.StoredEvents).To(HaveLen(1))
+		payload, ok := mockStore.StoredEvents[0].EventData.GetAIAnalysisRegoEvaluationPayload()
+		Expect(ok).To(BeTrue())
+		hash, hasHash := payload.PolicyHash.Get()
+		Expect(hasHash).To(BeTrue(), "BR-AI-030: audit trail must carry the policy hash when provided")
+		Expect(hash).To(Equal(expectedHash))
+	})
+
+	It("UT-AI-2005-002: should omit PolicyHash when no policy was loaded", func() {
+		auditClient.RecordRegoEvaluation(ctx, analysis, "error", true, 50, "no policy loaded", "")
+
+		Expect(mockStore.StoredEvents).To(HaveLen(1))
+		payload, ok := mockStore.StoredEvents[0].EventData.GetAIAnalysisRegoEvaluationPayload()
+		Expect(ok).To(BeTrue())
+		_, hasHash := payload.PolicyHash.Get()
+		Expect(hasHash).To(BeFalse(), "no hash to attribute when no policy was loaded")
 	})
 })

@@ -125,7 +125,8 @@ func (h *AnalyzingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AI
 	h.metrics.RecordRegoEvaluation(outcome, result.Degraded)
 
 	// DD-AUDIT-003: Record Rego evaluation audit event
-	h.auditClient.RecordRegoEvaluation(ctx, analysis, outcome, result.Degraded, int(regoDuration), result.Reason)
+	// BR-AI-030, Issue #1981/#2005: pin the policy hash onto the audit trail
+	h.auditClient.RecordRegoEvaluation(ctx, analysis, outcome, result.Degraded, int(regoDuration), result.Reason, result.PolicyHash)
 
 	// Store evaluation results in status
 	analysis.Status.ApprovalRequired = result.ApprovalRequired
@@ -215,7 +216,8 @@ func (h *AnalyzingHandler) handleRegoEvaluationError(ctx context.Context, analys
 	h.metrics.RecordRegoEvaluation("error", true)
 
 	// DD-AUDIT-003: Record Rego evaluation audit event
-	h.auditClient.RecordRegoEvaluation(ctx, analysis, "error", true, int(regoDuration), "Rego evaluation failed unexpectedly")
+	// No PolicyResult is available on this unexpected-error path, so there is no hash to attribute.
+	h.auditClient.RecordRegoEvaluation(ctx, analysis, "error", true, int(regoDuration), "Rego evaluation failed unexpectedly", "")
 
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
@@ -372,6 +374,8 @@ func (h *AnalyzingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnal
 	ctx.PolicyEvaluation = &aianalysisv1.PolicyEvaluation{
 		PolicyName: "aianalysis.approval",
 		Decision:   aianalysisv1.PolicyDecisionManualReviewRequired,
+		// BR-AI-030, Issue #1981: pin the policy hash for after-the-fact attribution
+		PolicyHash: result.PolicyHash,
 	}
 	if result.Degraded {
 		ctx.PolicyEvaluation.Decision = aianalysisv1.PolicyDecisionDegradedMode
