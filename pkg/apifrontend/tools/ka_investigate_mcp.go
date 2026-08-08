@@ -124,6 +124,12 @@ type InvestigateMCPResult struct {
 	RRID      string          `json:"rr_id,omitempty"`
 	Error     string          `json:"error,omitempty"`
 	RCA       *InvestigateRCA `json:"rca,omitempty"`
+	// Managed reports whether the target resource is within Kubernaut's
+	// management scope (ADR-053). false means no RR was created and no MCP
+	// session was started — Error explains why (#2022). Always true when
+	// scope was never evaluated in this call (rr_id lookup path, or no
+	// ScopeChecker configured), since the call proceeded without a rejection.
+	Managed bool `json:"managed"`
 }
 
 // InvestigateRCA is the structured RCA data extracted from the KA complete event.
@@ -242,16 +248,21 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			return InvestigateMCPResult{}, fmt.Errorf("k8s client unavailable for RR creation")
 		}
 
+		createUser := ""
+		if identity != nil {
+			createUser = identity.Username
+		}
+
+		if managed, msg := checkRRScope(ctx, ScopeCheckerFromContext(ctx), auditor, createUser, args.Namespace, args.Kind, args.Name); !managed {
+			return InvestigateMCPResult{Status: "unmanaged", Error: msg}, nil
+		}
+
 		createArgs := &CreateRRArgs{
 			Namespace:     args.Namespace,
 			Kind:          args.Kind,
 			Name:          args.Name,
 			APIVersion:    args.APIVersion,
 			ClusterScoped: clusterScoped,
-		}
-		createUser := ""
-		if identity != nil {
-			createUser = identity.Username
 		}
 		result, err := HandleCreateRR(ctx, client, nil, namespace, createArgs, createUser, triager, auditor)
 		if err != nil {
@@ -381,8 +392,9 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			}
 
 			return InvestigateMCPResult{
-				Status: "session_active",
-				RRID:   args.RRID,
+				Status:  "session_active",
+				RRID:    args.RRID,
+				Managed: true,
 				Error: fmt.Sprintf(
 					"An investigation for this resource is already in progress, driven by %s. "+
 						"Do not retry kubernaut_investigate. "+
@@ -447,6 +459,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			SessionID: result.SessionID,
 			Status:    result.Status,
 			RRID:      args.RRID,
+			Managed:   true,
 		}, nil
 	}
 
@@ -514,6 +527,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			Summary:   summary,
 			RRID:      args.RRID,
 			RCA:       rca,
+			Managed:   true,
 		}, nil
 	}
 
@@ -535,6 +549,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		SessionID: result.SessionID,
 		Status:    result.Status,
 		RRID:      args.RRID,
+		Managed:   true,
 	}, nil
 }
 
@@ -984,7 +999,10 @@ func (r *MonitorRegistry) StopAll() {
 // pool is optional; when provided, the MCP session is handed off to the pool
 // after the investigation so that discover_workflows / select_workflow reuse
 // the same connection and driver lease.
-func NewInvestigateMCPTool(mcpClient ka.MCPClient, client crclient.Client, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool, signaler ISSignaler, triager *severity.Triager, mapper meta.RESTMapper) (tool.Tool, error) {
+// checker is optional (nil skips scope validation, backward compat) and is
+// threaded into HandleInvestigationMCPWithRegistry via context rather than
+// widening its already-large positional signature (#2022).
+func NewInvestigateMCPTool(mcpClient ka.MCPClient, client crclient.Client, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool, signaler ISSignaler, triager *severity.Triager, mapper meta.RESTMapper, checker scope.ScopeChecker) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name: "kubernaut_investigate",
 		Description: "Investigate an infrastructure incident via MCP. " +
@@ -997,6 +1015,7 @@ func NewInvestigateMCPTool(mcpClient ka.MCPClient, client crclient.Client, names
 	}, func(ctx tool.Context, args InvestigateMCPArgs) (InvestigateMCPResult, error) {
 		user := usernameFromContext(ctx)
 		toolCtx := ContextWithRESTMapper(ctx, mapper)
+		toolCtx = ContextWithScopeChecker(toolCtx, checker)
 		return HandleInvestigationMCPWithRegistry(toolCtx, mcpClient, client, namespace, args, auditor, registry, onStarted, true, pool, user, signaler, triager)
 	})
 }

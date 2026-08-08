@@ -31,9 +31,11 @@ import (
 
 	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 func shortCtx(parent context.Context) context.Context {
@@ -456,6 +458,105 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 				nil, nil, nil, false, nil, "", nil, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Describe("Scope validation before RR creation — #2022 (AC-6, SI-10, AU-3/AU-12, SI-11)", func() {
+		scopeInvestigateArgs := func() tools.InvestigateMCPArgs {
+			return tools.InvestigateMCPArgs{
+				APIVersion: "apps/v1",
+				Namespace:  "unmanaged-ns",
+				Kind:       "Deployment",
+				Name:       "legacy-app",
+			}
+		}
+		identityCtx := func() context.Context {
+			return auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre-carol",
+				Groups:   []string{"sre"},
+			})
+		}
+
+		It("UT-AF-2022-020: rejects an unmanaged resource without creating an RR or starting an MCP session", func() {
+			tc := newTypedClientForInvestigate()
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					Fail("StartInvestigation must not be called for an unmanaged resource")
+					return nil, nil
+				},
+			}
+			ctx := tools.ContextWithScopeChecker(identityCtx(), &mocks.NeverManagedScopeChecker{})
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, mockMCP, tc, "kubernaut-system",
+				scopeInvestigateArgs(),
+				nil, nil, nil, true, nil, "", nil, defaultTestTriager(),
+			)
+
+			Expect(err).NotTo(HaveOccurred(), "SI-11: rejection must be a clear result, not an opaque tool error")
+			Expect(result.Managed).To(BeFalse())
+			Expect(result.Status).To(Equal("unmanaged"))
+			Expect(result.RRID).To(BeEmpty())
+			Expect(result.Error).To(ContainSubstring("not managed by Kubernaut"))
+		})
+
+		It("UT-AF-2022-021: allows a managed resource to proceed to RR creation and MCP start", func() {
+			tc := newTypedClientForInvestigate()
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{SessionID: "sess-2022-021", Status: "started", Events: eventCh, Closer: func() {}}, nil
+				},
+			}
+			ctx := tools.ContextWithScopeChecker(identityCtx(), &mocks.AlwaysManagedScopeChecker{})
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), mockMCP, tc, "kubernaut-system",
+				scopeInvestigateArgs(),
+				nil, nil, nil, true, nil, "", nil, defaultTestTriager(),
+			)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
+		})
+
+		It("UT-AF-2022-022: no ScopeChecker in context gracefully degrades to always-managed (backward compat)", func() {
+			tc := newTypedClientForInvestigate()
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{SessionID: "sess-2022-022", Status: "started", Events: eventCh, Closer: func() {}}, nil
+				},
+			}
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(identityCtx()), mockMCP, tc, "kubernaut-system",
+				scopeInvestigateArgs(),
+				nil, nil, nil, true, nil, "", nil, defaultTestTriager(),
+			)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
+		})
+
+		It("UT-AF-2022-023: emits an EventRRScopeRejected audit event on rejection (AU-3/AU-12)", func() {
+			tc := newTypedClientForInvestigate()
+			mockMCP := &ka.MockMCPClient{}
+			recorder := &auditRecorder{}
+			ctx := tools.ContextWithScopeChecker(identityCtx(), &mocks.NeverManagedScopeChecker{})
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, mockMCP, tc, "kubernaut-system",
+				scopeInvestigateArgs(),
+				recorder, nil, nil, true, nil, "", nil, defaultTestTriager(),
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.events).To(HaveLen(1))
+			Expect(recorder.events[0].Type).To(Equal(audit.EventRRScopeRejected))
+			Expect(recorder.events[0].UserID).To(Equal("sre-carol"))
 		})
 	})
 })

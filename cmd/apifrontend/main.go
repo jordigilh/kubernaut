@@ -43,6 +43,7 @@ import (
 	"google.golang.org/genai"
 
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
@@ -498,6 +499,7 @@ type backendDeps struct {
 	K8sCB                 *resilience.K8sCircuitBreaker
 	InvestigationRegistry *tools.MonitorRegistry
 	Mapper                meta.RESTMapper
+	scopeChecker          scope.ScopeChecker
 }
 
 // K8sClient returns the pod service-account scoped dynamic K8s client,
@@ -512,6 +514,17 @@ func (d *backendDeps) K8sClient() dynamic.Interface {
 // callers must check for nil (#1428).
 func (d *backendDeps) TypedClient() crclient.WithWatch {
 	return d.k8sTypedClient
+}
+
+// ScopeChecker returns the ADR-053 resource-scope validator shared by
+// kubernaut_investigate_alert, kubernaut_remediate, and kubernaut_investigate
+// (both A2A and raw-MCP transports) so an out-of-scope target is rejected
+// before RR creation instead of only being caught downstream by RO (#2022).
+// Returns nil when the K8s typed client was unavailable at startup — callers
+// treat nil as "skip scope validation" (graceful degradation, same convention
+// as Mapper/PromClient).
+func (d *backendDeps) ScopeChecker() scope.ScopeChecker {
+	return d.scopeChecker
 }
 
 func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (*backendDeps, error) {
@@ -678,6 +691,11 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 			} else {
 				deps.k8sTypedClient = typedClient
 				logger.Info("K8s typed client initialized for all kubernaut CRD operations (#1428)")
+				// #2022/ADR-053 Addendum "Point 3": AF's TypedClient is an
+				// uncached crclient.WithWatch (unlike Gateway/RO's informer-backed
+				// cached client) -- an accepted trade-off given AF's low-volume,
+				// interactive-request-driven workload (see plan confidence notes).
+				deps.scopeChecker = scope.NewManager(typedClient)
 			}
 		}
 	}
@@ -920,6 +938,7 @@ func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionIn
 		SessionInitializer:    sessInitializer,
 		InteractiveEnabled:    cfg.Interactive.Enabled,
 		RESTMapper:            deps.Mapper,
+		ScopeChecker:          deps.ScopeChecker(),
 	}
 
 	mcpSessionTimeout := cfg.MCP.SessionIdleTimeout
@@ -1006,6 +1025,7 @@ func buildA2AHandler(ctx context.Context, cfg *config.Config, deps *backendDeps,
 		ActiveContextRegistry: activeCtxRegistry,
 		InteractiveEnabled:    cfg.Interactive.Enabled,
 		PromClient:            deps.PromClient,
+		ScopeChecker:          deps.ScopeChecker(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create root agent: %w", err)

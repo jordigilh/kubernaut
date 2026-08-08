@@ -20,7 +20,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 )
@@ -1055,6 +1059,117 @@ var _ = Describe("IT-AF-1418-005: SessionFinalizer wiring for complete_no_action
 		Expect(finalizer.calls[0].rrNamespace).To(Equal("kubernaut-system"))
 		Expect(finalizer.calls[0].rrName).To(Equal("rr-1418-finalizer"))
 		Expect(finalizer.calls[0].phase).To(Equal(isv1alpha1.SessionPhaseCompleted))
+	})
+})
+
+// bridgeFiringPromClient returns a single cluster-scoped firing alert with no
+// namespace/kind/name labels, so severity.Triager resolves a severity for any
+// target resource — needed so kubernaut_investigate's RR-creation branch
+// (namespace/kind/name, not rr_id) doesn't fail closed on ErrSeverityUndetermined
+// (#1839/DD-AF-010) in the scope-validation tests below (#2022).
+type bridgeFiringPromClient struct{}
+
+func (b *bridgeFiringPromClient) GetAlerts(_ context.Context) ([]prom.Alert, error) {
+	return []prom.Alert{{State: "firing", Labels: map[string]string{"alertname": "BridgeTestAlert", "severity": "warning"}}}, nil
+}
+func (b *bridgeFiringPromClient) GetRules(_ context.Context) ([]prom.RuleGroup, error) {
+	return nil, nil
+}
+func (b *bridgeFiringPromClient) InstantQuery(_ context.Context, _ string) (*prom.QueryResult, error) {
+	return &prom.QueryResult{}, nil
+}
+
+var _ = Describe("kubernaut_investigate scope validation before RR creation — #2022 (AC-6, SI-10, AU-3/AU-12, SI-11)", func() {
+	var (
+		h         http.Handler
+		sessionID string
+		testUser  *auth.UserIdentity
+		auditor   *fakeAuditor
+	)
+
+	var startInvestigationCalls int32
+
+	setupBridgeWithScopeChecker := func(checker scope.ScopeChecker) {
+		auditor = &fakeAuditor{}
+		testUser = &auth.UserIdentity{Username: "sre-dana@kubernaut.ai", Groups: []string{"sre"}}
+		triager := severity.NewTriager(&bridgeFiringPromClient{}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+		startInvestigationCalls = 0
+
+		cfg := handler.MCPConfig{
+			ServerName:    "af-it-scope",
+			ServerVersion: "0.0.1-test",
+			Enabled:       true,
+			Bridge: &handler.MCPBridgeConfig{
+				K8sClient:   newFakeDynamicClient(),
+				TypedClient: newBridgeTypedClient(),
+				KAMCPClient: &ka.MockMCPClient{
+					StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+						atomic.AddInt32(&startInvestigationCalls, 1)
+						ch := make(chan ka.InvestigationEvent, 1)
+						close(ch)
+						return &ka.StartInvestigationResult{SessionID: "sess-2022-scope", Status: "autonomous_started", Events: ch, Closer: func() {}}, nil
+					},
+				},
+				DSClient:           newFakeDSClient(),
+				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
+				Logger:             logr.Discard(),
+				Auditor:            auditor,
+				Metrics:            newBridgeMetrics(),
+				ToolTimeout:        5 * time.Second,
+				MaxConcurrentTools: 10,
+				InteractiveEnabled: true,
+				Namespace:          "kubernaut-system",
+				Triager:            triager,
+				ScopeChecker:       checker,
+			},
+		}
+
+		var err error
+		h, err = handler.NewMCPHandler(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		sessionID = mcpInitialize(h, testUser)
+	}
+
+	It("IT-AF-2022-006: rejects an unmanaged resource without creating an RR or starting an MCP session", func() {
+		setupBridgeWithScopeChecker(&mocks.NeverManagedScopeChecker{})
+
+		status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
+			"api_version": "apps/v1",
+			"namespace":   "unmanaged-ns",
+			"kind":        "Deployment",
+			"name":        "legacy-app",
+		}, testUser)
+
+		Expect(status).To(Equal(http.StatusOK))
+		text := extractTextContent(body)
+		Expect(text).To(ContainSubstring("not managed by Kubernaut"),
+			"SI-11: rejection must be a clear result, not an opaque tool error")
+		Expect(atomic.LoadInt32(&startInvestigationCalls)).To(Equal(int32(0)),
+			"no MCP session should be started for an unmanaged resource")
+
+		foundRejection := false
+		for _, e := range auditor.events {
+			if e.Type == audit.EventRRScopeRejected {
+				foundRejection = true
+			}
+		}
+		Expect(foundRejection).To(BeTrue(), "AU-3/AU-12: rejection must be audited")
+	})
+
+	It("IT-AF-2022-007: allows a managed resource to proceed to RR creation and MCP start", func() {
+		setupBridgeWithScopeChecker(&mocks.AlwaysManagedScopeChecker{})
+
+		status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
+			"api_version": "apps/v1",
+			"namespace":   "managed-ns",
+			"kind":        "Deployment",
+			"name":        "web-app",
+		}, testUser)
+
+		Expect(status).To(Equal(http.StatusOK))
+		text := extractTextContent(body)
+		Expect(text).NotTo(ContainSubstring("not managed by Kubernaut"))
+		Expect(atomic.LoadInt32(&startInvestigationCalls)).To(Equal(int32(1)))
 	})
 })
 

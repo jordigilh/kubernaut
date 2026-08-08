@@ -24,9 +24,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func() {
@@ -131,7 +133,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 	Describe("NewRemediateTool — tool constructor (F-06)", func() {
 		It("UT-AF-1332-009: creates tool with name kubernaut_remediate", func() {
 			tc := newTypedFakeClient()
-			t, err := tools.NewRemediateTool(tc, nil, "kubernaut-system", nil, nil)
+			t, err := tools.NewRemediateTool(tc, nil, "kubernaut-system", nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(t.Name()).To(Equal("kubernaut_remediate"))
 		})
@@ -202,6 +204,63 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 			}
 			Expect(found).To(BeTrue(),
 				"AU-3: status events after HandleRemediate must carry rr_id from RR context")
+		})
+	})
+
+	Describe("Scope validation before RR creation — #2022 (AC-6, SI-10, AU-3/AU-12, SI-11)", func() {
+		remediateArgs := func() *tools.RemediateArgs {
+			return &tools.RemediateArgs{
+				Namespace:  "unmanaged-ns",
+				Kind:       "Deployment",
+				Name:       "legacy-app",
+				APIVersion: "apps/v1",
+			}
+		}
+
+		It("UT-AF-2022-010: rejects an unmanaged resource without creating an RR", func() {
+			tc := newTypedFakeClient()
+			ctx := tools.ContextWithScopeChecker(context.Background(), &mocks.NeverManagedScopeChecker{})
+
+			result, err := tools.HandleRemediate(ctx, tc, nil, "kubernaut-system", remediateArgs(), "sre-bob", defaultTestTriager(), nil)
+
+			Expect(err).NotTo(HaveOccurred(), "SI-11: rejection must be a clear result, not an opaque tool error")
+			Expect(result.Managed).To(BeFalse())
+			Expect(result.RRID).To(BeEmpty())
+			Expect(result.Message).To(ContainSubstring("not managed by Kubernaut"))
+		})
+
+		It("UT-AF-2022-011: allows a managed resource to proceed to RR creation", func() {
+			tc := newTypedFakeClient()
+			ctx := tools.ContextWithScopeChecker(context.Background(), &mocks.AlwaysManagedScopeChecker{})
+
+			result, err := tools.HandleRemediate(ctx, tc, nil, "kubernaut-system", remediateArgs(), "sre-bob", defaultTestTriager(), nil)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Managed).To(BeTrue())
+			Expect(result.RRID).NotTo(BeEmpty())
+		})
+
+		It("UT-AF-2022-012: no ScopeChecker in context gracefully degrades to always-managed (backward compat)", func() {
+			tc := newTypedFakeClient()
+
+			result, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", remediateArgs(), "sre-bob", defaultTestTriager(), nil)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Managed).To(BeTrue())
+			Expect(result.RRID).NotTo(BeEmpty())
+		})
+
+		It("UT-AF-2022-013: emits an EventRRScopeRejected audit event on rejection (AU-3/AU-12)", func() {
+			tc := newTypedFakeClient()
+			recorder := &auditRecorder{}
+			ctx := tools.ContextWithScopeChecker(context.Background(), &mocks.NeverManagedScopeChecker{})
+
+			_, err := tools.HandleRemediate(ctx, tc, nil, "kubernaut-system", remediateArgs(), "sre-bob", defaultTestTriager(), recorder)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.events).To(HaveLen(1))
+			Expect(recorder.events[0].Type).To(Equal(audit.EventRRScopeRejected))
+			Expect(recorder.events[0].UserID).To(Equal("sre-bob"))
 		})
 	})
 })

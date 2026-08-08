@@ -19,6 +19,7 @@ import (
 	apiprom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // AlertISSignaler creates an InvestigationSession CRD to signal interactive
@@ -33,7 +34,9 @@ type AlertISSignaler interface {
 // InvestigateAlertConfig holds dependencies for kubernaut_investigate_alert.
 // All nil-safe: nil PromClient skips alert validation, nil Mapper skips
 // RESTMapper scope checks, nil ValidationFailures skips metric emission,
-// nil Signaler skips IS CRD co-creation (backward compat).
+// nil Signaler skips IS CRD co-creation (backward compat), nil ScopeChecker
+// skips management-scope validation (backward compat; ADR-053 Addendum
+// "Point 3", #2022).
 type InvestigateAlertConfig struct {
 	Client             crclient.Client
 	DynClient          dynamic.Interface
@@ -44,6 +47,7 @@ type InvestigateAlertConfig struct {
 	ValidationFailures *prometheus.CounterVec
 	Mapper             meta.RESTMapper
 	Signaler           AlertISSignaler
+	ScopeChecker       scope.ScopeChecker
 }
 
 // InvestigateAlertArgs defines the LLM-supplied input for kubernaut_investigate_alert.
@@ -67,6 +71,11 @@ type InvestigateAlertResult struct {
 	SignalName     string `json:"signal_name"`
 	Severity       string `json:"severity,omitempty"`
 	SeveritySource string `json:"severity_source,omitempty"`
+	// Managed reports whether the target resource is within Kubernaut's
+	// management scope (ADR-053). false means no RR was created — Message
+	// explains why, so the calling agent gets an actionable signal instead
+	// of a wasted investigation RO would have blocked anyway (#2022).
+	Managed bool `json:"managed"`
 }
 
 // HandleInvestigateAlert creates a RemediationRequest for a specific alert+resource pair.
@@ -156,6 +165,15 @@ func HandleInvestigateAlert(
 		alertValidated = true
 	}
 
+	if managed, msg := checkRRScope(ctx, cfg.ScopeChecker, cfg.Auditor, username, args.Namespace, args.Kind, args.Name); !managed {
+		return InvestigateAlertResult{
+			Managed:        false,
+			Message:        msg,
+			AlertValidated: alertValidated,
+			SignalName:     args.AlertName,
+		}, nil
+	}
+
 	createArgs := &CreateRRArgs{
 		Namespace:          args.Namespace,
 		Kind:               args.Kind,
@@ -200,6 +218,7 @@ func HandleInvestigateAlert(
 		SignalName:     args.AlertName,
 		Severity:       result.Severity,
 		SeveritySource: result.SeveritySource,
+		Managed:        true,
 	}, nil
 }
 

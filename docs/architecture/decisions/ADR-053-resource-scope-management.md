@@ -750,6 +750,77 @@ the fallback eliminates technical debt and simplifies the CRD creation path.
 
 ---
 
-**Document Version**: 1.2
-**Last Updated**: February 8, 2026
+---
+
+## Addendum: Point 3 — AF Tool-Layer Validation (Issue #2022, August 8, 2026)
+
+### Gap Identified
+
+Decision #3 above established defense-in-depth at two points: Gateway (Point 1, fail-fast for
+**signal-initiated** RRs) and RO (Point 2, temporal-drift re-validation for **all** RRs). Neither
+point covers RRs created by API-frontend's agent tools (`kubernaut_investigate_alert`,
+`kubernaut_investigate`, `kubernaut_remediate`) — these are **agent-initiated**, not
+signal-initiated, so they never pass through Gateway's `ProcessSignal()` pipeline at all. The only
+existing protection for this path was Point 2 (RO), which only fires *after* the RemediationRequest
+CRD (and, for the interactive tools, an InvestigationSession CRD) has already been created — wasting
+a tool call, a CRD, and an interactive session, then blocking silently with no signal surfaced back
+to the calling agent (#2022).
+
+### Point 3: AF Tool-Layer Validation (Fail-Fast for Agent-Initiated RRs)
+
+**Chosen**: Apply the same `ScopeChecker.IsManaged()` check (shared `pkg/shared/scope` package,
+Decision #4 "ScopeChecker Interface (DI Pattern)" above) at the AF tool layer, symmetric to
+Gateway's Point 1, before any RR/session is created — not after, as a routing-time re-check.
+
+```
+Tool call arrives (kubernaut_investigate_alert / kubernaut_investigate / kubernaut_remediate)
+  → AF validates scope → Unmanaged? → Reject: Managed=false + explanatory message, no CRD created
+                        → Managed?   → Proceed to HandleCreateRR (existing behavior)
+```
+
+**AF Behavior**:
+- Check target resource/namespace against `kubernaut.ai/managed` before calling `HandleCreateRR`.
+- Reject unmanaged targets with a structured `Managed: false` result field and an explanatory
+  message mirroring RO's own block wording (`routing/blocking.go`), not a generic tool error —
+  the calling agent gets an actionable, non-ambiguous signal instead of an empty session.
+- No RemediationRequest or InvestigationSession CRD created (prevents the exact waste #2022
+  reported: a CRD + interactive session created for a resource RO was always going to block).
+- Audit event: `rr.scope_rejected` (`EventRRScopeRejected`) — parallel to RO's
+  `orchestrator.routing.blocked`, giving agent-initiated rejections the same audit visibility
+  signal-initiated ones lack at Gateway (Decision #7 above explicitly omits Gateway audit events
+  for expected rejections; AF's is a genuinely new event type, not a gap-fill of an existing one).
+
+**Rationale**:
+- **Symmetry with Point 1**: AF's agent-initiated path deserved the same fail-fast treatment
+  Gateway already gives the signal-initiated path; the gap was an omission, not a design choice.
+- **No new validation logic**: reuses the existing `scope.ScopeChecker` interface and `IsManaged`
+  contract unchanged — this is a new *caller*, not a new *validator*.
+- **Client caching accepted as a trade-off**: unlike Gateway's metadata-only cache (Decision #5),
+  AF uses an uncached `crclient.WithWatch` (`TypedClient`), so each check is a live API read. This
+  mirrors RO's V1.0 direct-API approach (before the cache-strategy revision in the addendum above)
+  and is acceptable given AF's low interactive-tool-call volume relative to Gateway's signal volume.
+
+### FedRAMP Controls
+
+| Control | Application | Evidence |
+|---|---|---|
+| AC-6 (Least Privilege) | AF declines to exercise its elevated CRD-creation capability (AF's own ServiceAccount, not the caller's RBAC — see `agent/root.go` SA delegation comment) for resources outside its declared management scope | UT-AF-2022-001, -010, -020; IT-AF-2022-006 |
+| SI-10 (Information Input Validation) | Target namespace/kind/name is validated against declared scope alongside the existing `validate.*` checks already present in these same tool handlers | UT-AF-2022-001, -010, -020; IT-AF-2022-006 |
+| AU-3 / AU-12 (Audit Content / Generation) | New `EventRRScopeRejected` audit event captures namespace/kind/name/user for every rejected attempt — closes an audit gap where nothing previously distinguished "rejected for scope" from silence at this layer | UT-AF-2022-004, -013, -023 |
+| SI-11 (Error Handling) | Rejection returns a structured `Managed: false` + explanatory message instead of a misleading empty/silent session, mirroring RO's own block wording | UT-AF-2022-001, -005, -010, -020; IT-AF-2022-006 |
+
+### Components Affected
+
+- `pkg/apifrontend/tools/scope_helpers.go`: shared `checkRRScope` helper + `ContextWithScopeChecker`/`ScopeCheckerFromContext`.
+- `pkg/apifrontend/tools/af_investigate_alert.go`, `ka_remediate.go`, `ka_investigate_mcp.go`: pre-`HandleCreateRR` scope gate in each handler.
+- `pkg/apifrontend/agent/root.go`, `pkg/apifrontend/handler/mcp_bridge.go`: wiring for both AF transports (A2A/ADK and raw MCP bridge — `kubernaut_investigate` is registered in both, independently).
+- `cmd/apifrontend/main.go`: constructs the shared `scope.NewManager` instance.
+- `pkg/apifrontend/audit/audit.go`: new `EventRRScopeRejected`.
+
+Full test design: [`docs/testing/2022/TEST_PLAN.md`](../../testing/2022/TEST_PLAN.md).
+
+---
+
+**Document Version**: 1.3
+**Last Updated**: August 8, 2026
 **Next Review**: April 20, 2026 (3 months)

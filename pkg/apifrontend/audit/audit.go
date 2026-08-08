@@ -58,6 +58,11 @@ const (
 	EventTriageCompleted  EventType = "triage.completed"
 	EventRRCreated        EventType = "rr.created"
 	EventRRDeduplicated   EventType = "rr.deduplicated"
+	// AU-3/AU-12: AF tool-layer scope rejection (Issue #2022, ADR-053 Addendum
+	// "Point 3"). Parallel to RO's orchestrator.routing.blocked, giving
+	// agent-initiated RR-creation rejections the same audit visibility that
+	// signal-initiated ones (deliberately) lack at Gateway (ADR-053 Decision #7).
+	EventRRScopeRejected EventType = "rr.scope_rejected"
 	EventKADelegated      EventType = "ka.delegated"
 	EventKAResultReceived EventType = "ka.result_received"
 	EventUserDecision     EventType = "user.decision"
