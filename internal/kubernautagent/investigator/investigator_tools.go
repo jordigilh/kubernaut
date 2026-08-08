@@ -19,12 +19,13 @@ package investigator
 import (
 	"context"
 	"encoding/json"
+	"strings"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/summarizer"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 func escalateMaxTokens(completionTokens int) int {
@@ -73,11 +74,23 @@ func truncatePreview(s string, maxLen int) string {
 // calls, because Sonnet 5 puts its narrative in the private, signed thinking
 // block instead of visible Content. Authority: BR-AI-086, FedRAMP CC7.2
 // (#1935 finding #3).
+//
+// #2010: Claude's extended-thinking + tool-use behavior frequently ends the
+// private thinking block with a short one-line plan and then repeats that
+// identical line as the visible Content right before the tool_use block, so
+// Reasoning.Text and Content are genuine, byte-for-byte (or whitespace-only)
+// duplicates on a meaningful fraction of turns. Concatenating both
+// unconditionally in that case produced a single reasoning_delta event whose
+// text was literally "X\n\nX", so the Console's ThinkingPanel showed the
+// same sentence twice separated by a blank line. When the two match (after
+// trimming), only Reasoning.Text is surfaced -- no information is lost
+// since Content is identical modulo whitespace. Authority: BR-AI-086,
+// FedRAMP CC7.2/SI-10.
 func reasoningDeltaText(msg llm.Message) string {
 	if msg.Reasoning == nil || msg.Reasoning.Text == "" {
 		return msg.Content
 	}
-	if msg.Content == "" {
+	if msg.Content == "" || strings.TrimSpace(msg.Content) == strings.TrimSpace(msg.Reasoning.Text) {
 		return msg.Reasoning.Text
 	}
 	return msg.Reasoning.Text + "\n\n" + msg.Content
