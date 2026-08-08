@@ -49,7 +49,9 @@ nodes:
     hostPort: 9190
     protocol: TCP
   # AlertManager - E2E alertmanager tool testing (#1507)
-  - containerPort: 30193
+  # NodePort 30191 per DD-TEST-001 v3.8 (moved from 30193 after a "fleet" E2E
+  # NodePort collision; host port 9193 unchanged)
+  - containerPort: 30191
     hostPort: 9193
     protocol: TCP
   # DEX OIDC Provider - E2E JWT/OIDC testing (#1009)

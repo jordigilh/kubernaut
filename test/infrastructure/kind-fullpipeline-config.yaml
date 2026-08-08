@@ -10,7 +10,9 @@
 #   Data Storage API: hostPort 30081, NodePort 30081
 #   Mock LLM:         ClusterIP only (internal access by KA)
 #   Prometheus:        hostPort 9190,  NodePort 30190 (EM metric comparison)
-#   AlertManager:      hostPort 9193,  NodePort 30193 (EM alert resolution)
+#   AlertManager:      hostPort 9193,  NodePort 30191 (EM alert resolution; moved
+#                       from 30193 per DD-TEST-001 v3.8 after a "fleet" E2E
+#                       NodePort collision)
 #
 # Kubeconfig Convention (per TESTING_GUIDELINES.md):
 #   Pattern: ~/.kube/{service}-e2e-config
@@ -72,7 +74,7 @@ nodes:
     hostPort: 9190        # DD-TEST-001 v2.8: Prometheus
     protocol: TCP
   # AlertManager (for EM alert resolution queries)
-  - containerPort: 30193  # AlertManager NodePort
+  - containerPort: 30191  # AlertManager NodePort (DD-TEST-001 v3.8; moved from 30193)
     hostPort: 9193        # DD-TEST-001 v2.8: AlertManager
     protocol: TCP
   # API Frontend HTTPS (Issue #1189: AF as FP signal source)
