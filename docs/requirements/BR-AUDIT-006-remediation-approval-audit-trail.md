@@ -1,10 +1,20 @@
 # BR-AUDIT-006: Remediation Approval Audit Trail
 
-**Status**: ✅ **APPROVED** - V1.0 Critical Feature
+**Status**: ✅ **APPROVED** - V1.0 Critical Feature (requirement fulfilled; implementation relocated — see note)
 **Date**: February 1, 2026
 **Priority**: P0 (SOC 2 Compliance Mandatory)
 **Version**: 1.0
 **Related**: ADR-040, DD-AUDIT-003 v1.6, DD-WEBHOOK-001
+
+> **Implementation note (2026-08-07)**: The `pkg/remediationapprovalrequest/audit/` package
+> and `RemediationApprovalDecisionPayload` schema originally designed below
+> (see [DD-AUDIT-006](../architecture/decisions/DD-AUDIT-006-remediation-approval-audit-implementation.md),
+> now superseded) were built but never wired into a `cmd/` binary, and were deleted as dead
+> code. This BR's requirement is satisfied by the live `webhook.remediationapprovalrequest.decided`
+> event instead (`RemediationApprovalAuditPayload`, built in
+> `pkg/authwebhook/audit_payload_builder.go`, wired via `cmd/authwebhook/main.go`), which
+> ADR-034 v1.7's "Two-Event Pattern" already used to carry WHO/WHEN/WHAT/WHY attribution for
+> RAR decisions.
 
 ---
 

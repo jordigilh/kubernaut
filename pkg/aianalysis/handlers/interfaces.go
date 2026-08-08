@@ -100,7 +100,10 @@ type AuditClientInterface interface {
 // Note (AA-BUG-008): Phase transitions are recorded by CONTROLLER ONLY (phase_handlers.go:215)
 // Handlers change phase but do NOT record transitions (follows InvestigatingHandler pattern)
 type AnalyzingAuditClientInterface interface {
-	RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome string, degraded bool, durationMs int, reason string)
+	// policyHash pins the SHA-256 hash of the policy that produced this
+	// evaluation onto the audit trail (BR-AI-030, Issue #1981/#2005); empty
+	// when no policy was loaded.
+	RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome string, degraded bool, durationMs int, reason string, policyHash string)
 	RecordApprovalDecision(ctx context.Context, analysis *aianalysisv1.AIAnalysis, decision string, reason string)
 	RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis)
 	// DD-AUDIT-003: Record analysis failure events

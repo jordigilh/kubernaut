@@ -99,6 +99,22 @@ var _ = Describe("RegoEvaluator", func() {
 				Expect(result.Degraded).To(BeFalse(), "Should not be in degraded mode")
 			})
 
+			// BR-AI-030, Issue #1981: PolicyHash must be captured so an approval decision can be
+			// attributed to the exact policy bundle revision that produced it (audit-attribution,
+			// not dispatch-safety - see docs/testing/1981/TEST_PLAN.md).
+			It("UT-AI-1981-001: should populate PolicyHash matching the loaded policy's hash", func() {
+				input := &rego.PolicyInput{
+					SignalContext: rego.SignalContextInput{Environment: "staging"},
+				}
+
+				result, err := evaluator.Evaluate(ctx, input)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.PolicyHash).To(MatchRegexp("^[0-9a-f]{64}$"),
+					"PolicyHash must be a full SHA-256 hex digest (BR-AI-030 audit attribution)")
+				Expect(result.PolicyHash).To(Equal(evaluator.GetPolicyHash()),
+					"PolicyResult.PolicyHash must match the evaluator's currently loaded policy hash")
+			})
 		})
 
 		// BR-AI-013: Approval scenarios using DescribeTable
@@ -380,6 +396,8 @@ var _ = Describe("RegoEvaluator", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result.ApprovalRequired).To(BeTrue())
 				Expect(result.Degraded).To(BeTrue())
+				// Issue #1981: no policy was ever loaded, so there is no hash to attribute
+				Expect(result.PolicyHash).To(BeEmpty(), "no hash available when no policy is loaded")
 			})
 		})
 

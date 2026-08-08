@@ -186,6 +186,14 @@ type ApprovalPolicyEvaluation struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Enum=Approved;ManualReviewRequired;Denied;DegradedMode
 	Decision string `json:"decision"`
+	// PolicyHash is the SHA256 hash of the Rego policy that produced this decision.
+	// Pinned at approval-request creation time so the decision can be attributed,
+	// after the fact, to the exact policy bundle revision that produced it, even if
+	// the policy is later hot-reloaded (BR-AUDIT-006, BR-AI-030, Issue #1981).
+	// Expected format: 64-character hexadecimal string (SHA256 hash); empty if no
+	// policy was loaded when the decision was made.
+	// +optional
+	PolicyHash string `json:"policyHash,omitempty"`
 }
 
 // WorkflowOverride allows operators to override the AI-recommended workflow

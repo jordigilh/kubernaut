@@ -295,6 +295,11 @@ type PolicyEvaluation struct {
 	MatchedRules []string `json:"matchedRules,omitempty"`
 	// Decision from policy evaluation
 	Decision PolicyDecision `json:"decision"`
+	// PolicyHash is the SHA256 hash of the Rego policy that produced this decision
+	// Provides audit trail and policy version attribution for compliance requirements (BR-AI-030)
+	// Expected format: 64-character hexadecimal string (SHA256 hash); empty if no policy was loaded
+	// +optional
+	PolicyHash string `json:"policyHash,omitempty"`
 }
 
 // RecommendedAction describes a remediation action with rationale

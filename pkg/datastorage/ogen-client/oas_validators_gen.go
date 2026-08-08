@@ -3157,11 +3157,6 @@ func (s AuditEventEventData) Validate() error {
 			return err
 		}
 		return nil
-	case RemediationApprovalDecisionPayloadAuditEventEventData:
-		if err := s.RemediationApprovalDecisionPayload.Validate(); err != nil {
-			return err
-		}
-		return nil
 	case AuditEventEventDataWorkflowCatalogActionsListedAuditEventEventData, AuditEventEventDataWorkflowCatalogSelectionValidatedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowRetrievedAuditEventEventData, AuditEventEventDataWorkflowCatalogWorkflowsListedAuditEventEventData:
 		if err := s.WorkflowDiscoveryAuditPayload.Validate(); err != nil {
 			return err
@@ -3817,11 +3812,6 @@ func (s AuditEventRequestEventData) Validate() error {
 		return nil
 	case RemediationApprovalAuditPayloadAuditEventRequestEventData:
 		if err := s.RemediationApprovalAuditPayload.Validate(); err != nil {
-			return err
-		}
-		return nil
-	case RemediationApprovalDecisionPayloadAuditEventRequestEventData:
-		if err := s.RemediationApprovalDecisionPayload.Validate(); err != nil {
 			return err
 		}
 		return nil
@@ -6980,77 +6970,6 @@ func (s RemediationApprovalAuditPayloadDecision) Validate() error {
 func (s RemediationApprovalAuditPayloadEventType) Validate() error {
 	switch s {
 	case "webhook.remediationapprovalrequest.decided":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s *RemediationApprovalDecisionPayload) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if err := s.EventType.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "event_type",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := s.Decision.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "decision",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := (validate.Float{}).Validate(float64(s.Confidence)); err != nil {
-			return errors.Wrap(err, "float")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "confidence",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s RemediationApprovalDecisionPayloadDecision) Validate() error {
-	switch s {
-	case "approved":
-		return nil
-	case "rejected":
-		return nil
-	case "expired":
-		return nil
-	default:
-		return errors.Errorf("invalid value: %v", s)
-	}
-}
-
-func (s RemediationApprovalDecisionPayloadEventType) Validate() error {
-	switch s {
-	case "approval.decision":
-		return nil
-	case "approval.request.created":
-		return nil
-	case "approval.timeout":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)

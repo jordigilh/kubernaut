@@ -84,7 +84,8 @@ func (m *Manager) RecordOperationTiming(ctx context.Context, analysis *aianalysi
 
 	switch operation {
 	case "rego_evaluation":
-		m.client.RecordRegoEvaluation(ctx, analysis, outcome, degraded, durationMs, reason)
+		// No PolicyResult is available at this generic timing-wrapper layer, so no hash to attribute.
+		m.client.RecordRegoEvaluation(ctx, analysis, outcome, degraded, durationMs, reason, "")
 	default:
 		// For other operations, could extend with additional cases
 	}

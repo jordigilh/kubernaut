@@ -68,6 +68,10 @@ type ApprovalPolicyPayload struct {
 	PolicyName   string   `json:"policyName"`
 	MatchedRules []string `json:"matchedRules,omitempty"`
 	Decision     string   `json:"decision"`
+	// PolicyHash is the SHA-256 hash of the policy that produced this decision
+	// (BR-AI-030, Issue #1981/#2005), so operators can see the exact policy
+	// bundle revision pinned on the approval card, not just its name.
+	PolicyHash string `json:"policyHash,omitempty"`
 }
 
 // ApprovalResolvedEventPayload is the structured payload emitted as a
@@ -138,6 +142,7 @@ func MarshalApprovalRequestPayload(rar *remediationv1.RemediationApprovalRequest
 			PolicyName:   rar.Spec.PolicyEvaluation.PolicyName,
 			Decision:     rar.Spec.PolicyEvaluation.Decision,
 			MatchedRules: rar.Spec.PolicyEvaluation.MatchedRules,
+			PolicyHash:   rar.Spec.PolicyEvaluation.PolicyHash,
 		}
 	}
 

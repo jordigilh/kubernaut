@@ -46,6 +46,13 @@ func BuildRARApprovalAuditPayload(rar *remediationv1.RemediationApprovalRequest)
 		payload.DelegatedUser = api.NewOptString(rar.Status.DecidedBy)
 		payload.DelegatedVia = api.NewOptString(rar.Status.DecidedVia)
 	}
+	// BR-AI-030, Issue #1981/#2005: pin the policy hash onto this webhook-complete
+	// audit event (Event 1 of the ADR-034 v1.7 two-event pattern) so the decision
+	// can be attributed to the exact policy bundle revision from the audit trail
+	// alone, not only from the live RAR CRD.
+	if rar.Spec.PolicyEvaluation != nil && rar.Spec.PolicyEvaluation.PolicyHash != "" {
+		payload.PolicyHash = api.NewOptString(rar.Spec.PolicyEvaluation.PolicyHash)
+	}
 	return payload
 }
 

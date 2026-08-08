@@ -148,7 +148,17 @@ spec:
             - --scope=openid email profile
             - --skip-jwt-bearer-tokens=true
             - --cookie-refresh=25m
-            - --ssl-insecure-skip-verify=true
+            {{- /*
+            Issue #1988: verify the OIDC issuer's TLS cert instead of skipping
+            verification outright. --provider-ca-file alone would replace Go's
+            default trust store, breaking issuers with a publicly-trusted cert,
+            so --use-system-trust-store=true keeps that path working while also
+            trusting the chart's own inter-service CA (kubernaut.tlsCaVolume/
+            VolumeMount below) for genuinely self-signed/dev-only issuers --
+            same pattern already fixed for FMC's OAuth2 client in #1755.
+            */}}
+            - --provider-ca-file={{ include "kubernaut.interServiceTLS.caFile" . }}
+            - --use-system-trust-store=true
             - --ping-path=/oauth2/ping
           env:
             - name: OAUTH2_PROXY_CLIENT_ID
@@ -191,6 +201,8 @@ spec:
             limits:
               cpu: 100m
               memory: 128Mi
+          volumeMounts:
+            {{- include "kubernaut.tlsCaVolumeMount" . | nindent 12 }}
         - name: console
           image: {{ include "kubernaut.image" (dict "service" "kubernaut-console" "root" $ "appVersion" .Chart.AppVersion) }}
           imagePullPolicy: {{ include "kubernaut.imagePullPolicy" $ }}

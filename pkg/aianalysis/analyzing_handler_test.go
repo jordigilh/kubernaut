@@ -40,7 +40,7 @@ import (
 // noopAnalyzingAuditClient is a no-op implementation of AnalyzingAuditClientInterface for unit tests.
 type noopAnalyzingAuditClient struct{}
 
-func (n *noopAnalyzingAuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome string, degraded bool, durationMs int, reason string) {
+func (n *noopAnalyzingAuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome string, degraded bool, durationMs int, reason string, policyHash string) {
 	// No-op: Unit tests don't need audit recording
 }
 
@@ -311,6 +311,23 @@ var _ = Describe("AnalyzingHandler", func() {
 					"Decision should be one of the valid policy outcomes when approval is required",
 				)
 			})
+
+			// BR-AI-030, BR-AI-059, Issue #1981: PolicyHash must reach AIAnalysis status so an
+			// approval decision can later be attributed to the exact policy bundle revision.
+			It("UT-AI-1981-002: should surface PolicyHash in ApprovalContext for operator visibility", func() {
+				analysis := createTestAnalysis()
+				// Missing RemediationTarget triggers approval via real policy
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+				Expect(analysis.Status.ApprovalContext.PolicyEvaluation).NotTo(BeNil())
+				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.PolicyHash).To(
+					MatchRegexp("^[0-9a-f]{64}$"),
+					"PolicyHash must be a full SHA-256 hex digest of the policy that produced this decision",
+				)
+			})
 		})
 
 		// BR-AI-012: Successful Rego evaluation with auto-approve
@@ -399,6 +416,9 @@ var _ = Describe("AnalyzingHandler", func() {
 				Expect(analysis.Status.ApprovalContext.PolicyEvaluation).NotTo(BeNil())
 				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.Decision).To(Equal(aianalysisv1.PolicyDecisionDegradedMode),
 					"Operator should see clear degraded-mode policy decision")
+				// Issue #1981: no policy was ever loaded in degraded mode, so there is no hash to attribute
+				Expect(analysis.Status.ApprovalContext.PolicyEvaluation.PolicyHash).To(BeEmpty(),
+					"no hash available when no policy is loaded (degraded mode)")
 			})
 		})
 

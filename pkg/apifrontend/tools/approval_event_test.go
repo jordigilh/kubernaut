@@ -303,4 +303,42 @@ var _ = Describe("Approval Event Payload Marshaling — TP-1398", func() {
 		Expect(parsed.PolicyEvaluation).NotTo(BeNil())
 		Expect(parsed.PolicyEvaluation.MatchedRules).To(HaveLen(2))
 	})
+
+	// Issue #2005 (follow-up to #1981): the console/MCP-facing approval card must
+	// surface the pinned policy hash, not just policyName/matchedRules/decision,
+	// so operators can see which policy bundle revision produced the decision.
+	It("UT-AF-2005-001: PolicyEvaluation.PolicyHash is surfaced in the console-facing payload", func() {
+		const expectedHash = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
+		rar := &remediationv1.RemediationApprovalRequest{
+			ObjectMeta: objMeta("kubernaut-system", "rar-rr-hash-1"),
+			Spec: remediationv1.RemediationApprovalRequestSpec{
+				RemediationRequestRef: corev1.ObjectReference{Name: "rr-hash-1"},
+				Confidence:            0.68,
+				ConfidenceLevel:       "medium",
+				Reason:                "Confidence below auto-approve threshold",
+				WhyApprovalRequired:   "Production namespace requires approval",
+				RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
+					WorkflowID: "restart-v1",
+					Version:    "1.0.0",
+					Rationale:  "Auto-selected",
+				},
+				PolicyEvaluation: &remediationv1.ApprovalPolicyEvaluation{
+					PolicyName:   "approval.rego",
+					MatchedRules: []string{"confidence_below_threshold"},
+					Decision:     "ManualReviewRequired",
+					PolicyHash:   expectedHash,
+				},
+				RequiredBy: metav1.NewTime(time.Date(2026, 6, 11, 16, 0, 0, 0, time.UTC)),
+			},
+		}
+
+		payload, err := tools.MarshalApprovalRequestPayload(rar)
+		Expect(err).NotTo(HaveOccurred())
+
+		var parsed tools.ApprovalRequestEventPayload
+		Expect(json.Unmarshal([]byte(payload), &parsed)).To(Succeed())
+		Expect(parsed.PolicyEvaluation).NotTo(BeNil())
+		Expect(parsed.PolicyEvaluation.PolicyHash).To(Equal(expectedHash),
+			"operator must see the exact policy bundle revision that produced this decision")
+	})
 })

@@ -159,6 +159,13 @@ type PolicyResult struct {
 	Reason string
 	// Degraded indicates if evaluation used fallback due to policy errors
 	Degraded bool
+	// PolicyHash is the SHA-256 hash of the policy that produced this result
+	// (BR-AI-030, Issue #1981). Empty when no policy was loaded (e.g. missing
+	// file, StartHotReload never called). Captured here, at evaluation time,
+	// rather than via a later independent GetPolicyHash() call, to minimize
+	// the window where a concurrent hot-reload could make the reported hash
+	// inconsistent with the policy that actually produced this decision.
+	PolicyHash string
 }
 
 // EvaluatorInterface for dependency injection in tests
@@ -195,6 +202,7 @@ func NewEvaluator(cfg Config, logger logr.Logger) *Evaluator {
 func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyResult, error) {
 	query, degradedResult := e.resolveCompiledQuery(ctx)
 	if degradedResult != nil {
+		degradedResult.PolicyHash = e.GetPolicyHash()
 		return degradedResult, nil
 	}
 
@@ -207,10 +215,16 @@ func (e *Evaluator) Evaluate(ctx context.Context, input *PolicyInput) (*PolicyRe
 			ApprovalRequired: true,
 			Reason:           fmt.Sprintf("Policy evaluation error: %v - defaulting to manual approval", err),
 			Degraded:         true,
+			PolicyHash:       e.GetPolicyHash(),
 		}, nil
 	}
 
-	return extractPolicyResult(results), nil
+	result := extractPolicyResult(results)
+	// BR-AI-030, Issue #1981: captured immediately after the query that produced
+	// this result was resolved, minimizing the window for a concurrent hot-reload
+	// to make the hash inconsistent with the policy that actually ran.
+	result.PolicyHash = e.GetPolicyHash()
+	return result, nil
 }
 
 // resolveCompiledQuery returns the cached compiled policy (per ADR-050),

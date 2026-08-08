@@ -212,6 +212,52 @@ var _ = Describe("BR-AUDIT-006 / BR-WORKFLOW-006 / BR-AUTH-001: AuthWebhook cove
 			Expect(payload.DecidedAt).To(BeTemporally("==", rar.Status.DecidedAt.Time))
 			Expect(string(payload.EventType)).To(Equal(authwebhook.EventTypeRARDecided))
 		})
+
+		// Issue #2005 (follow-up to #1981): the webhook-complete audit event (Event 1
+		// of the ADR-034 v1.7 two-event pattern) is the actual, production-wired audit
+		// trail for RAR decisions, so it must carry the pinned policy hash.
+		It("UT-AW-2005-001: includes PolicyHash when pinned on RAR.Spec.PolicyEvaluation", func() {
+			const expectedHash = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
+			rar := &remediationv1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: "rar-hash-668"},
+				Spec: remediationv1.RemediationApprovalRequestSpec{
+					AIAnalysisRef: remediationv1.ObjectRef{Name: "ai-analysis-668"},
+					PolicyEvaluation: &remediationv1.ApprovalPolicyEvaluation{
+						PolicyName: "production-approval-policy",
+						Decision:   "ManualReviewRequired",
+						PolicyHash: expectedHash,
+					},
+				},
+				Status: remediationv1.RemediationApprovalRequestStatus{
+					Decision:        remediationv1.ApprovalDecisionApproved,
+					DecidedAt:       &metav1.Time{Time: time.Date(2026, 4, 2, 15, 30, 0, 0, time.UTC)},
+					DecisionMessage: "approved for rollout",
+				},
+			}
+
+			payload := authwebhook.BuildRARApprovalAuditPayload(rar)
+			hash, hasHash := payload.PolicyHash.Get()
+			Expect(hasHash).To(BeTrue(), "SOC 2 CC8.1/CC6.8: webhook audit event must carry the pinned policy hash")
+			Expect(hash).To(Equal(expectedHash))
+		})
+
+		It("UT-AW-2005-002: omits PolicyHash when no PolicyEvaluation was pinned on the RAR", func() {
+			rar := &remediationv1.RemediationApprovalRequest{
+				ObjectMeta: metav1.ObjectMeta{Name: "rar-no-hash-668"},
+				Spec: remediationv1.RemediationApprovalRequestSpec{
+					AIAnalysisRef: remediationv1.ObjectRef{Name: "ai-analysis-668"},
+				},
+				Status: remediationv1.RemediationApprovalRequestStatus{
+					Decision:        remediationv1.ApprovalDecisionApproved,
+					DecidedAt:       &metav1.Time{Time: time.Date(2026, 4, 2, 15, 30, 0, 0, time.UTC)},
+					DecisionMessage: "approved for rollout",
+				},
+			}
+
+			payload := authwebhook.BuildRARApprovalAuditPayload(rar)
+			_, hasHash := payload.PolicyHash.Get()
+			Expect(hasHash).To(BeFalse(), "no hash to attribute when PolicyEvaluation was never set")
+		})
 	})
 
 	Describe("BR-WORKFLOW-006 / BR-AUTH-001: NewDSClientAdapter", func() {
