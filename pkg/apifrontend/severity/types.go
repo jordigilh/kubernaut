@@ -25,6 +25,13 @@ const (
 	// The alert has no namespace label, so it is matched to any investigation target.
 	// This is the broadest correlation tier -- the alert represents a cluster-wide
 	// condition that may or may not be related to the specific workload under triage.
+	//
+	// #2018: cluster-scoped tiers are the LAST fallback, checked only after BOTH
+	// firing and pending resource-scoped and namespace-scoped alerts have been
+	// ruled out (bestOverallMatch in triage.go). Specificity always outranks
+	// state -- a merely "pending" resource-specific alert still beats a
+	// continuously "firing" cluster-scoped alert, since the latter carries no
+	// evidence of actually being related to the target workload.
 	SourceClusterFiringAlert Source = "cluster_firing_alert"
 	// SourceClusterPendingAlert is the pending equivalent of SourceClusterFiringAlert.
 	SourceClusterPendingAlert Source = "cluster_pending_alert"

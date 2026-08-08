@@ -329,4 +329,68 @@ var _ = Describe("Session Cancellation Infrastructure — #823", func() {
 				"SC-24: second SetResult must be blocked — first-write-wins protects the original result")
 		})
 	})
+
+	Describe("UT-KA-2019-001/002: SetPendingDecisionResult always overwrites on UserDriving, no-ops elsewhere", func() {
+		It("UT-KA-2019-001: overwrites Result on a UserDriving session even when a prior result is already set", func() {
+			store := session.NewStore(30 * time.Minute)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
+			Expect(store.Update(id, session.StatusUserDriving, nil, nil)).To(Succeed())
+
+			store.SetPendingDecisionResult(id, &katypes.InvestigationResult{WorkflowID: "wf-round-1"})
+			store.SetPendingDecisionResult(id, &katypes.InvestigationResult{WorkflowID: "wf-round-2"})
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Result).NotTo(BeNil())
+			Expect(sess.Result.WorkflowID).To(Equal("wf-round-2"),
+				"#2019: unlike SetResult's first-write-wins guard (#1425, a different concern), "+
+					"SetPendingDecisionResult always overwrites while UserDriving -- discover_workflows may legitimately re-run")
+		})
+
+		It("UT-KA-2019-002: is a no-op on a Completed session (does not resurrect a terminal result)", func() {
+			store := session.NewStore(30 * time.Minute)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
+			Expect(store.Update(id, session.StatusUserDriving, nil, nil)).To(Succeed())
+			Expect(store.CompleteUserDriving(id, &katypes.InvestigationResult{WorkflowID: "wf-selected"})).To(Succeed())
+
+			store.SetPendingDecisionResult(id, &katypes.InvestigationResult{WorkflowID: "wf-stale-preview"})
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Status).To(Equal(session.StatusCompleted))
+			Expect(sess.Result.WorkflowID).To(Equal("wf-selected"),
+				"#2019: must not overwrite an already-completed session's confirmed result")
+		})
+
+		It("UT-KA-2019-003: composition with CompleteUserDriving(id, nil) preserves the pending preview (the actual #2019 bug-fix mechanism)", func() {
+			store := session.NewStore(30 * time.Minute)
+			id, err := store.Create()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(store.Update(id, session.StatusRunning, nil, nil)).To(Succeed())
+			Expect(store.Update(id, session.StatusUserDriving, nil, nil)).To(Succeed())
+
+			preview := &katypes.InvestigationResult{
+				WorkflowID:        "wf-discovered",
+				HumanReviewNeeded: true,
+				HumanReviewReason: katypes.HumanReviewReasonDecisionExpired,
+			}
+			store.SetPendingDecisionResult(id, preview)
+
+			// Simulates cmd/kubernautagent/main.go's inactivity-timeout/disconnect
+			// handlers, which always call CompleteHTTPSession(..., nil, ...).
+			Expect(store.CompleteUserDriving(id, nil)).To(Succeed())
+
+			sess, err := store.Get(id)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sess.Status).To(Equal(session.StatusCompleted))
+			Expect(sess.Result).NotTo(BeNil(),
+				"#2019: inactivity-timeout completion with a nil result must preserve the previously discovered workflow, not discard it")
+			Expect(sess.Result.WorkflowID).To(Equal("wf-discovered"))
+			Expect(sess.Result.HumanReviewReason).To(Equal(katypes.HumanReviewReasonDecisionExpired))
+		})
+	})
 })

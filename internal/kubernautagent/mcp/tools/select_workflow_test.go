@@ -65,6 +65,8 @@ func (m *mockHTTPCompleter) ForceCompleteByRemediationID(_ string, result *katyp
 	return m.completeErr
 }
 
+func (m *mockHTTPCompleter) PersistPendingDecisionResult(_ string, _ *katypes.InvestigationResult) {}
+
 func (m *mockHTTPCompleter) getCompleted() (string, *katypes.InvestigationResult) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

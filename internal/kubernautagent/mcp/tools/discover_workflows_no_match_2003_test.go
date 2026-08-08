@@ -100,12 +100,15 @@ func (m *mockAutoMgrDW2003) getEmitCalls() []emitCall {
 // because this scenario specifically needs to record the completion step
 // into the shared orderRecorder, not just capture the final result value.
 type orderedHTTPCompleter struct {
-	mu          sync.Mutex
-	completedID string
-	completed   *katypes.InvestigationResult
-	found       bool
-	foundID     string
-	order       *orderRecorder
+	mu            sync.Mutex
+	completedID   string
+	completed     *katypes.InvestigationResult
+	found         bool
+	foundID       string
+	order         *orderRecorder
+	pendingID     string
+	pendingResult *katypes.InvestigationResult
+	pendingCalls  int
 }
 
 func (c *orderedHTTPCompleter) FindUserDrivingByRemediationID(_ string) (string, bool) {
@@ -129,10 +132,24 @@ func (c *orderedHTTPCompleter) ForceCompleteByRemediationID(_ string, _ *katypes
 	return nil
 }
 
+func (c *orderedHTTPCompleter) PersistPendingDecisionResult(id string, result *katypes.InvestigationResult) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pendingID = id
+	c.pendingResult = result
+	c.pendingCalls++
+}
+
 func (c *orderedHTTPCompleter) getCompleted() (string, *katypes.InvestigationResult) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.completedID, c.completed
+}
+
+func (c *orderedHTTPCompleter) getPending() (string, *katypes.InvestigationResult, int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.pendingID, c.pendingResult, c.pendingCalls
 }
 
 var _ = Describe("#2003: discover_workflows auto-closes session on no_matching_workflows", func() {
@@ -247,6 +264,108 @@ var _ = Describe("#2003: discover_workflows auto-closes session on no_matching_w
 				id, _ := sessionMgr.getReleased()
 				g.Expect(id).To(BeEmpty(), "session must remain active for the user to select a workflow")
 			}).WithTimeout(300 * time.Millisecond).WithPolling(50 * time.Millisecond).Should(Succeed())
+		})
+	})
+
+	Describe("UT-KA-2019-004: a found workflow is preserved as a pending decision (in case of inactivity timeout)", func() {
+		It("should call PersistPendingDecisionResult with decision_expired marked and the discovered fields intact", func() {
+			autoMgr := &mockAutoMgrDW2003{
+				rcaResult: &katypes.InvestigationResult{RCASummary: "OOM crash"},
+			}
+			completer := &orderedHTTPCompleter{foundID: "http-sess-2019-004", found: true}
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-2019-004",
+					CorrelationID: "rr-2019-004",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{
+				workflowDiscoveryResult: &katypes.InvestigationResult{
+					RCASummary:        "OOM crash",
+					WorkflowID:        "wf-recommended-2019",
+					Confidence:        0.9,
+					WorkflowRationale: "restart the crashlooping pod",
+				},
+			}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
+				mcptools.WithHTTPCompleter(completer),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "wf-recommended-2019", WorkflowName: "Mock Workflow"},
+				}),
+			)
+
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-2019-004",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+
+			id, result, calls := completer.getPending()
+			Expect(calls).To(Equal(1), "#2019: a found workflow must be persisted exactly once as a pending decision")
+			Expect(id).To(Equal("http-sess-2019-004"))
+			Expect(result).NotTo(BeNil())
+			Expect(result.WorkflowID).To(Equal("wf-recommended-2019"),
+				"#2019: the discovered workflow identity must survive into the pending-decision preview")
+			Expect(result.WorkflowRationale).To(Equal("restart the crashlooping pod"))
+			Expect(result.HumanReviewNeeded).To(BeTrue())
+			Expect(result.HumanReviewReason).To(Equal(katypes.HumanReviewReasonDecisionExpired),
+				"#2019: the preview must be marked decision_expired so a later inactivity-timeout completion "+
+					"is distinguishable from a genuine no_matching_workflows outcome")
+		})
+	})
+
+	Describe("UT-KA-2019-005: no_matching_workflows does not also persist a pending decision (regression guard)", func() {
+		It("should not call PersistPendingDecisionResult when the outcome is the #2003 auto-close path", func() {
+			order := &orderRecorder{}
+			completer := &orderedHTTPCompleter{foundID: "http-sess-2019-005", found: true, order: order}
+			autoMgr := &mockAutoMgrDW2003{
+				rcaResult: &katypes.InvestigationResult{RCASummary: "OOM crash"},
+				order:     order,
+			}
+			sessionMgr := &mockSessionManager{
+				isActive: true,
+				getDriverResult: &mcpinternal.InteractiveSession{
+					SessionID:     "sess-2019-005",
+					CorrelationID: "rr-2019-005",
+					ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+				},
+			}
+			runner := &mockInvestigatorRunner{
+				workflowDiscoveryResult: &katypes.InvestigationResult{
+					RCASummary:        "OOM crash",
+					HumanReviewNeeded: true,
+					HumanReviewReason: "no_matching_workflows",
+				},
+			}
+			recon := &mockContextReconstructor{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr,
+				mcptools.WithHTTPCompleter(completer),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{}),
+			)
+
+			output, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-2019-005",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(output.Status).To(Equal("workflows_discovered"))
+
+			Eventually(func(g Gomega) {
+				id, result := completer.getCompleted()
+				g.Expect(id).To(Equal("http-sess-2019-005"))
+				g.Expect(result).NotTo(BeNil())
+			}).WithTimeout(2 * time.Second).WithPolling(50 * time.Millisecond).Should(Succeed())
+
+			_, _, calls := completer.getPending()
+			Expect(calls).To(BeZero(),
+				"#2019: the two branches are mutually exclusive -- no_matching_workflows already auto-closes "+
+					"via CompleteHTTPSession, it must not also persist a decision_expired preview")
 		})
 	})
 })

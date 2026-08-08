@@ -139,6 +139,7 @@ func (c *reattachHTTPCompleter) CompleteUserDriving(_ string, _ *katypes.Investi
 func (c *reattachHTTPCompleter) ForceCompleteByRemediationID(_ string, _ *katypes.InvestigationResult) error {
 	return nil
 }
+func (c *reattachHTTPCompleter) PersistPendingDecisionResult(_ string, _ *katypes.InvestigationResult) {}
 
 var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 

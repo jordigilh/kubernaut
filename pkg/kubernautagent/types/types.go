@@ -34,6 +34,16 @@ const (
 // that must bypass interactive hold.
 const HumanReviewReasonAlignmentCheckFailed = "alignment_check_failed"
 
+// HumanReviewReasonDecisionExpired is the sentinel value for
+// InvestigationResult.HumanReviewReason when kubernaut_discover_workflows
+// found and presented a real workflow recommendation via
+// kubernaut_present_decision, but no response (select_workflow or
+// complete_no_action) arrived before the interactive session's inactivity
+// timeout tore it down. Distinguishes this outcome from the genuine
+// "no_matching_workflows" case (#2003) so the discovered recommendation is
+// preserved in the audit trail/CRD instead of silently discarded (#2019).
+const HumanReviewReasonDecisionExpired = "decision_expired"
+
 // PhaseToolMap defines which tool names are available in each phase (I4).
 type PhaseToolMap map[Phase][]string
 

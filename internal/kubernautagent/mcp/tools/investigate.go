@@ -78,6 +78,14 @@ type HTTPSessionCompleter interface {
 	FindUserDrivingByRemediationID(rrID string) (string, bool)
 	CompleteUserDriving(id string, result *katypes.InvestigationResult) error
 	ForceCompleteByRemediationID(rrID string, result *katypes.InvestigationResult) error
+
+	// PersistPendingDecisionResult attaches a preview InvestigationResult to a
+	// still-UserDriving session so that a later CompleteUserDriving(id, nil)
+	// -- as invoked by the inactivity-timeout/disconnect handlers -- preserves
+	// the discovered-but-unconfirmed recommendation instead of finalizing as
+	// has_workflow:false (#2019). See session.Store.SetPendingDecisionResult
+	// for the full rationale.
+	PersistPendingDecisionResult(id string, result *katypes.InvestigationResult)
 }
 
 // SessionMutexProvider exposes per-rrID mutexes for concurrency control.
@@ -1067,6 +1075,23 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 					}
 				}
 			}()
+		}
+	} else if t.httpCompleter != nil {
+		// #2019: a real workflow was found and is about to be presented via
+		// kubernaut_present_decision. Preserve it as a pending-decision preview
+		// BEFORE returning, so that if nothing (human or automation) answers
+		// before the interactive session's inactivity timeout fires,
+		// CompleteHTTPSession's hardcoded nil result (main.go) preserves this
+		// preview instead of silently finalizing as has_workflow:false. If the
+		// user does respond (select_workflow/complete_no_action), that explicit
+		// CompleteUserDriving(id, result) call overwrites this preview with the
+		// confirmed outcome, since Store.CompleteUserDriving only skips the
+		// overwrite when passed a nil result.
+		if httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID); found {
+			preview := *workflowResult
+			preview.HumanReviewNeeded = true
+			preview.HumanReviewReason = katypes.HumanReviewReasonDecisionExpired
+			t.httpCompleter.PersistPendingDecisionResult(httpSessionID, &preview)
 		}
 	}
 

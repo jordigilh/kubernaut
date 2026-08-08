@@ -213,6 +213,56 @@ var _ = Describe("Triage Orchestrator", func() {
 			Expect(result.Severity).To(Equal("info"))
 			Expect(result.Source).To(Equal(severity.SourceFiringAlert))
 		})
+
+		It("UT-AF-2018-001: pending resource-specific alert wins over firing cluster-scoped alert (specificity beats state)", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					// Cluster-scoped, continuously firing, unrelated to the target (#2018 repro:
+					// CDIDefaultStorageClassDegraded firing throughout the window).
+					{Labels: map[string]string{"alertname": "CDIDefaultStorageClassDegraded", "severity": "warning"}, State: "firing"},
+					// The target's own alert, correlated by resource labels, but only "pending"
+					// (its `for` duration has not elapsed yet) at triage time.
+					{Labels: map[string]string{"alertname": "KubePodCrashLooping", "namespace": "prod", "kind": "Deployment", "name": "web-api", "severity": "critical"}, State: "pending"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlertName).To(Equal("KubePodCrashLooping"),
+				"#2018: resource-specific match must win over cluster-scoped fallback regardless of firing/pending state")
+			Expect(result.Severity).To(Equal("critical"))
+			Expect(result.Source).To(Equal(severity.SourcePendingAlert))
+		})
+
+		It("UT-AF-2018-002: pending namespace-scoped alert wins over firing cluster-scoped alert (specificity beats state)", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "ClusterWideAlert", "severity": "critical"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "NamespaceAlert", "namespace": "prod", "severity": "warning"}, State: "pending"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlertName).To(Equal("NamespaceAlert"),
+				"#2018: namespace-scoped match must win over cluster-scoped fallback regardless of firing/pending state")
+			Expect(result.Source).To(Equal(severity.SourceNSPendingAlert))
+		})
+
+		It("UT-AF-2018-003: cluster-scoped firing still wins over cluster-scoped pending when nothing more specific exists", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "PendingClusterAlert", "severity": "critical"}, State: "pending"},
+					{Labels: map[string]string{"alertname": "FiringClusterAlert", "severity": "warning"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.AlertName).To(Equal("FiringClusterAlert"),
+				"within the same (cluster) tier, firing still beats pending -- only cross-tier priority changed")
+			Expect(result.Source).To(Equal(severity.SourceClusterFiringAlert))
+		})
 	})
 
 	Describe("Tier 1.5: Pending Alert Check", func() {

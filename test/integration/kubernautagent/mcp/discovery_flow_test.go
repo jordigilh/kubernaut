@@ -69,6 +69,7 @@ type discoveryHTTPCompleter struct {
 	mu              sync.Mutex
 	completedID     string
 	completedResult *katypes.InvestigationResult
+	pendingResult   *katypes.InvestigationResult
 }
 
 func (c *discoveryHTTPCompleter) CompleteUserDriving(id string, result *katypes.InvestigationResult) error {
@@ -88,6 +89,12 @@ func (c *discoveryHTTPCompleter) ForceCompleteByRemediationID(_ string, result *
 	defer c.mu.Unlock()
 	c.completedResult = result
 	return nil
+}
+
+func (c *discoveryHTTPCompleter) PersistPendingDecisionResult(_ string, result *katypes.InvestigationResult) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pendingResult = result
 }
 
 func (c *discoveryHTTPCompleter) getCompletedResult() *katypes.InvestigationResult {

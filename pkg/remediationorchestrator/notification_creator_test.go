@@ -708,6 +708,10 @@ var _ = Describe("NotificationCreator", func() {
 			Entry("AC-036-30: MaxRetriesExceeded → High", "MaxRetriesExceeded", notificationv1.NotificationPriorityHigh),
 			Entry("AC-036-31: TransientError → High", "TransientError", notificationv1.NotificationPriorityHigh),
 			Entry("AC-036-32: PermanentError → High", "PermanentError", notificationv1.NotificationPriorityHigh),
+			// #2019: A workflow was already discovered and presented -- unlike NoMatchingWorkflows
+			// (nothing found), a concrete recommendation is sitting unanswered. AC-6/CM-3: route as
+			// High so the pending decision isn't lost in a Medium-priority queue.
+			Entry("UT-RO-2019-001: DecisionExpired → High", "DecisionExpired", notificationv1.NotificationPriorityHigh),
 		)
 		})
 
