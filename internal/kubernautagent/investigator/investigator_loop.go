@@ -102,8 +102,9 @@ func (inv *Investigator) runLoopTurn(ctx context.Context, state *loopTurnState, 
 	})
 	// #1635 / BR-AI-086 AC10: live-stream captured reasoning content via a
 	// dedicated event type, distinct from the orchestration-narration event
-	// above (DD-LLM-009).
-	emitReasoningContentEvent(ctx, resp.Message.Reasoning, turn, string(phase))
+	// above (DD-LLM-009). #2006: pass the untruncated narration text (not
+	// the 200-char preview above) so the dedup guard compares the full text.
+	emitReasoningContentEvent(ctx, resp.Message.Reasoning, resp.Message.Content, turn, string(phase))
 
 	if len(resp.ToolCalls) > 0 {
 		toolMessages, sentinel, budgetExhausted := inv.processToolCalls(ctx, messages, resp, turn, string(phase), correlationID)
