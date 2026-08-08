@@ -74,6 +74,8 @@ func (m *itFallbackAutoMgr) StartInvestigation(_ context.Context, _ session.Inve
 func (m *itFallbackAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
 	return nil, nil
 }
+func (m *itFallbackAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
 func (m *itFallbackAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false
 }

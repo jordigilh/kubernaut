@@ -85,6 +85,8 @@ func (m *interactiveAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (strin
 func (m *interactiveAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false
 }
+func (m *interactiveAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
 func (m *interactiveAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false
 }
@@ -463,6 +465,8 @@ func (m *sessionIDTrackingAutoMgr) GetLatestRCASummaryByRemediationID(_ string) 
 func (m *sessionIDTrackingAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false
 }
+func (m *sessionIDTrackingAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
 func (m *sessionIDTrackingAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false
 }
@@ -509,6 +513,8 @@ func (m *upgradeTrackingAutoMgr) StartInvestigation(_ context.Context, _ session
 func (m *upgradeTrackingAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
 	return nil, nil
 }
+func (m *upgradeTrackingAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
 func (m *upgradeTrackingAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false
 }

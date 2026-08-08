@@ -107,6 +107,8 @@ func (m *goldenPathAutoMgr) Subscribe(_ context.Context, _ string) (<-chan sessi
 	return nil, fmt.Errorf("not implemented in golden path mock")
 }
 
+func (m *goldenPathAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
 func (m *goldenPathAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false
 }
@@ -155,6 +157,8 @@ func (m *sessionIDForwardingAutoMgr) GetLatestRCASummaryByRemediationID(_ string
 func (m *sessionIDForwardingAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false
 }
+func (m *sessionIDForwardingAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
 func (m *sessionIDForwardingAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false
 }

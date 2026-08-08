@@ -125,6 +125,8 @@ func (m *mockAutoMgrIT) GetLatestRCAResultByRemediationID(rrID string) (*katypes
 	return m.mgr.GetLatestRCAResultByRemediationID(rrID)
 }
 
+func (m *mockAutoMgrIT) EmitSessionEndedByRR(_, _ string) {}
+
 func (m *mockAutoMgrIT) GetSessionLazySink(id string) (*session.LazySink, bool) {
 	return m.mgr.GetSessionLazySink(id)
 }
