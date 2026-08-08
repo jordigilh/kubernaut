@@ -18461,6 +18461,8 @@ type IncidentResponseData struct {
 	// True when AI could not produce reliable result.
 	NeedsHumanReview OptBool `json:"needsHumanReview"`
 	// Structured reason when needsHumanReview=true (BR-KA-197, BR-KA-200, BR-KA-212, BR-AI-601).
+	// decision_expired (#2019/#2020) indicates a workflow was discovered and presented but no decision
+	// arrived before the interactive session's inactivity timeout.
 	HumanReviewReason OptIncidentResponseDataHumanReviewReason `json:"humanReviewReason"`
 	// Non-fatal warnings (e.g., OwnerChain validation issues).
 	Warnings []string `json:"warnings"`
@@ -18628,6 +18630,8 @@ func (s *IncidentResponseDataAlternativeWorkflowsItem) SetConfidence(val OptFloa
 }
 
 // Structured reason when needsHumanReview=true (BR-KA-197, BR-KA-200, BR-KA-212, BR-AI-601).
+// decision_expired (#2019/#2020) indicates a workflow was discovered and presented but no decision
+// arrived before the interactive session's inactivity timeout.
 type IncidentResponseDataHumanReviewReason string
 
 const (
@@ -18640,6 +18644,7 @@ const (
 	IncidentResponseDataHumanReviewReasonInvestigationInconclusive IncidentResponseDataHumanReviewReason = "investigation_inconclusive"
 	IncidentResponseDataHumanReviewReasonRcaIncomplete             IncidentResponseDataHumanReviewReason = "rca_incomplete"
 	IncidentResponseDataHumanReviewReasonAlignmentCheckFailed      IncidentResponseDataHumanReviewReason = "alignment_check_failed"
+	IncidentResponseDataHumanReviewReasonDecisionExpired           IncidentResponseDataHumanReviewReason = "decision_expired"
 )
 
 // AllValues returns all IncidentResponseDataHumanReviewReason values.
@@ -18654,6 +18659,7 @@ func (IncidentResponseDataHumanReviewReason) AllValues() []IncidentResponseDataH
 		IncidentResponseDataHumanReviewReasonInvestigationInconclusive,
 		IncidentResponseDataHumanReviewReasonRcaIncomplete,
 		IncidentResponseDataHumanReviewReasonAlignmentCheckFailed,
+		IncidentResponseDataHumanReviewReasonDecisionExpired,
 	}
 }
 
@@ -18677,6 +18683,8 @@ func (s IncidentResponseDataHumanReviewReason) MarshalText() ([]byte, error) {
 	case IncidentResponseDataHumanReviewReasonRcaIncomplete:
 		return []byte(s), nil
 	case IncidentResponseDataHumanReviewReasonAlignmentCheckFailed:
+		return []byte(s), nil
+	case IncidentResponseDataHumanReviewReasonDecisionExpired:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -18712,6 +18720,9 @@ func (s *IncidentResponseDataHumanReviewReason) UnmarshalText(data []byte) error
 		return nil
 	case IncidentResponseDataHumanReviewReasonAlignmentCheckFailed:
 		*s = IncidentResponseDataHumanReviewReasonAlignmentCheckFailed
+		return nil
+	case IncidentResponseDataHumanReviewReasonDecisionExpired:
+		*s = IncidentResponseDataHumanReviewReasonDecisionExpired
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

@@ -5806,6 +5806,8 @@ func (s IncidentResponseDataHumanReviewReason) Validate() error {
 		return nil
 	case "alignment_check_failed":
 		return nil
+	case "decision_expired":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

@@ -294,6 +294,28 @@ func (s *Store) SetResult(id string, result *katypes.InvestigationResult) {
 	}
 }
 
+// SetPendingDecisionResult attaches a preview InvestigationResult to a
+// UserDriving session, always overwriting any previous value while the
+// session remains UserDriving. Used by discover_workflows to preserve a
+// discovered-but-unconfirmed workflow recommendation so that a later
+// CompleteUserDriving(id, nil) -- as invoked by the inactivity-timeout and
+// disconnect handlers in cmd/kubernautagent/routes.go -- preserves it instead
+// of finalizing the session as has_workflow:false (#2019/#2020).
+//
+// Unlike SetResult's first-write-wins guard (which protects a #1425
+// cancelled-goroutine race from being clobbered by a later write),
+// SetPendingDecisionResult intentionally always overwrites: discover_workflows
+// may legitimately re-run within the same session, and each run's finding
+// supersedes the previous preview. It is a no-op outside StatusUserDriving so
+// it can never resurrect or corrupt an already-terminal session's result.
+func (s *Store) SetPendingDecisionResult(id string, result *katypes.InvestigationResult) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if sess, ok := s.sessions[id]; ok && sess.Status == StatusUserDriving {
+		sess.Result = result
+	}
+}
+
 // CompleteUserDriving transitions a session from StatusUserDriving to
 // StatusCompleted with the given InvestigationResult. This is the only path
 // that allows a user-driven session to reach completion (Update blocks this

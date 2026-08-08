@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
@@ -85,8 +86,27 @@ func truncatePreview(s string, maxLen int) string {
 // call: the main LLM loop (investigator_loop.go) and the RCA/workflow-
 // selection parse-retry paths (investigator_rca.go,
 // investigator_workflow_selection.go).
-func emitReasoningContentEvent(ctx context.Context, reasoning *llm.ReasoningBlock, turn int, phase string) {
+//
+// #2006: Claude's extended-thinking + tool-use behavior frequently ends the
+// private thinking block with a short one-line plan and then repeats that
+// identical line as the visible narration (resp.Message.Content) right
+// before the tool_use block. Both were faithfully captured and streamed as
+// two separate events with identical text; the Console renders each live
+// event as its own ThinkingEntry, so the operator saw the same sentence
+// twice. narration is the exact text already emitted via the preceding
+// EventTypeReasoningDelta call at each call site (resp.Message.Content) —
+// when reasoning.Text matches it after trimming whitespace, the dedicated
+// event is skipped since it would add no new information. The redacted
+// signal (empty Text + Redacted=true, #1716) is explicitly exempted from
+// suppression so that transparency behavior is untouched even when
+// narration also happens to be empty. Authority: BR-AI-086, FedRAMP CC7.2
+// (decision audit trails visible to the operator)/SI-10 (input validation
+// before display).
+func emitReasoningContentEvent(ctx context.Context, reasoning *llm.ReasoningBlock, narration string, turn int, phase string) {
 	if reasoning == nil {
+		return
+	}
+	if !reasoning.Redacted && strings.TrimSpace(reasoning.Text) == strings.TrimSpace(narration) {
 		return
 	}
 	emitToSink(ctx, session.EventTypeReasoningContentDelta, turn, phase, map[string]interface{}{

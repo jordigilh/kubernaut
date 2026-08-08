@@ -118,6 +118,7 @@ func (m *fallbackAutoMgr) capturedResult() *katypes.InvestigationResult {
 func (m *fallbackAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
 	return nil, nil
 }
+func (m *fallbackAutoMgr) EmitSessionEndedByRR(_, _ string)                      {}
 func (m *fallbackAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) { return nil, false }
 
 // reattachHTTPCompleter is a minimal HTTPSessionCompleter stub for #1818
@@ -138,6 +139,7 @@ func (c *reattachHTTPCompleter) CompleteUserDriving(_ string, _ *katypes.Investi
 func (c *reattachHTTPCompleter) ForceCompleteByRemediationID(_ string, _ *katypes.InvestigationResult) error {
 	return nil
 }
+func (c *reattachHTTPCompleter) PersistPendingDecisionResult(_ string, _ *katypes.InvestigationResult) {}
 
 var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 

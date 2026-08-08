@@ -535,7 +535,7 @@ Recommend option 2 (leverage existing retry) + ensure migration hook weight < DS
 | DataStorage HTTP | 30081 | host 30081 ✓ |
 | Gateway Metrics | 30090 | NOT mapped in Kind config |
 | Prometheus | 30190 | host 9190 ✓ |
-| AlertManager | 30193 | host 9193 ✓ |
+| AlertManager | 30191 | host 9193 ✓ (moved from 30193 per DD-TEST-001 v3.8) |
 
 ### 16.5 Updated Confidence: 72%
 

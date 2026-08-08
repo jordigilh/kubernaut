@@ -267,6 +267,14 @@ func (m *Manager) GetSignalForRemediation(rrID string) (*katypes.SignalContext, 
 	return nil, ErrSessionNotFound
 }
 
+// PersistPendingDecisionResult exposes Store.SetPendingDecisionResult so
+// discover_workflows (mcp/tools) can preserve a discovered-but-unconfirmed
+// workflow recommendation ahead of a possible inactivity timeout
+// (#2019/#2020). See Store.SetPendingDecisionResult for the full rationale.
+func (m *Manager) PersistPendingDecisionResult(id string, result *katypes.InvestigationResult) {
+	m.store.SetPendingDecisionResult(id, result)
+}
+
 // CompleteUserDriving transitions a user-driven session to completed with the
 // given result. This bridges the MCP tool completion path to the HTTP session
 // store so AA's poll mechanism picks up the result.
@@ -276,11 +284,31 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 	}
 	m.closeEventChan(id)
 
+	// #2020: hasWorkflow/humanReviewReason must be read from sess.Result under
+	// the same lock acquisition as the sess lookup itself -- sess.Result is
+	// mutated concurrently by Store.SetResult from the investigation goroutine
+	// (see manager_events.go storePartialResult), so reading it after
+	// RUnlock() is a genuine data race (caught by `go test -race` in CI).
 	m.store.mu.RLock()
 	sess := m.store.sessions[id]
 	var correlationID string
-	if sess != nil && sess.Metadata != nil {
-		correlationID = sess.Metadata["remediation_id"]
+	var hasWorkflow bool
+	var humanReviewReason string
+	if sess != nil {
+		if sess.Metadata != nil {
+			correlationID = sess.Metadata["remediation_id"]
+		}
+		// #2020: read the final state from the session itself (sess.Result),
+		// not the raw result parameter -- when the inactivity-timeout/
+		// disconnect handlers call this with result=nil,
+		// Store.CompleteUserDriving preserves whatever
+		// SetPendingDecisionResult already attached, so logging the raw
+		// parameter would misreport an actually-preserved discovery as
+		// has_workflow=false.
+		if sess.Result != nil {
+			hasWorkflow = sess.Result.WorkflowID != ""
+			humanReviewReason = sess.Result.HumanReviewReason
+		}
 	}
 	m.store.mu.RUnlock()
 
@@ -289,7 +317,7 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 		Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
 	}, nil, "completion_mode", "user_driving")
 	m.logger.Info("User-driven session completed",
-		"session_id", id, "has_workflow", result != nil && result.WorkflowID != "")
+		"session_id", id, "has_workflow", hasWorkflow, "human_review_reason", humanReviewReason)
 	return nil
 }
 

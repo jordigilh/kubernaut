@@ -484,6 +484,9 @@ func buildMCPHandler(ctx context.Context, p mcpHandlerParams) (http.Handler, *mc
 		EventStore:     core.eventStore,
 		KeepAlive:      mcpKeepAlive,
 		SessionTimeout: mcpSessionTimeout,
+		// #2016: without this, go-sdk-internal log/error events (including
+		// OnInternalError, go-sdk#1147/#1153) are silently discarded.
+		Logger: logger.WithName("mcp-sdk"),
 	})
 
 	drainer := mcpkg.NewSessionDrainer(core.leaseMgr, sessionNotifier, logger.WithName("session-drainer"))

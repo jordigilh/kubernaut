@@ -993,7 +993,12 @@ func (c *NotificationCreator) mapManualReviewPriority(ctx *ManualReviewContext) 
 	case "alignment_check_failed":
 		return notificationv1.NotificationPriorityCritical
 	// Workflow resolution failures
-	case "WorkflowNotFound", "ImageMismatch", "ParameterValidationFailed", "LLMParsingError":
+	// #2019/#2020: DecisionExpired means a concrete workflow was already
+	// discovered and presented -- unlike NoMatchingWorkflows (nothing found),
+	// a recommendation is sitting unanswered, so it is routed at the same
+	// priority as other concrete, actionable failures rather than the "no
+	// candidate" Medium tier.
+	case "WorkflowNotFound", "ImageMismatch", "ParameterValidationFailed", "LLMParsingError", "DecisionExpired":
 		return notificationv1.NotificationPriorityHigh
 	case "NoMatchingWorkflows", "LowConfidence", "InvestigationInconclusive":
 		return notificationv1.NotificationPriorityMedium

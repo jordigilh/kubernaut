@@ -317,6 +317,10 @@ var exactHumanReviewReasons = map[string]agentclient.HumanReviewReason{
 	"llm_parsing_error":           agentclient.HumanReviewReasonLlmParsingError,
 	"alignment_check_failed":      agentclient.HumanReviewReasonAlignmentCheckFailed,
 	"operator_escalation":         agentclient.HumanReviewReasonOperatorEscalation,
+	// #2019/#2020: a workflow was discovered and presented via
+	// kubernaut_present_decision, but no decision arrived before the
+	// interactive session's inactivity timeout finalized it.
+	"decision_expired": agentclient.HumanReviewReasonDecisionExpired,
 }
 
 func mapHumanReviewReason(reason string) (agentclient.HumanReviewReason, bool) {

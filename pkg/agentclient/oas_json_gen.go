@@ -1490,6 +1490,8 @@ func (s *HumanReviewReason) Decode(d *jx.Decoder) error {
 		*s = HumanReviewReasonAlignmentCheckFailed
 	case HumanReviewReasonOperatorEscalation:
 		*s = HumanReviewReasonOperatorEscalation
+	case HumanReviewReasonDecisionExpired:
+		*s = HumanReviewReasonDecisionExpired
 	default:
 		*s = HumanReviewReason(v)
 	}

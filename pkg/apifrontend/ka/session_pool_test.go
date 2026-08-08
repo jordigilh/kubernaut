@@ -18,11 +18,12 @@ import (
 
 // mockPoolSession is a test double for ka.PoolSession.
 type mockPoolSession struct {
-	id       int
-	closed   bool
-	mu       sync.Mutex
-	callFn   func(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error)
-	pingFn   func(ctx context.Context, params *mcp.PingParams) error
+	id      int
+	closed  bool
+	mu      sync.Mutex
+	callFn  func(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error)
+	pingFn  func(ctx context.Context, params *mcp.PingParams) error
+	closeFn func() error
 }
 
 func (s *mockPoolSession) CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error) {
@@ -39,7 +40,17 @@ func (s *mockPoolSession) Ping(ctx context.Context, params *mcp.PingParams) erro
 	return nil
 }
 
+// Close honors closeFn (used by #1995 specs to simulate a Close() that
+// hangs forever) without holding s.mu while it runs, so a hanging closeFn
+// on one instance never blocks IsClosed() calls on that same instance.
 func (s *mockPoolSession) Close() error {
+	if s.closeFn != nil {
+		err := s.closeFn()
+		s.mu.Lock()
+		s.closed = true
+		s.mu.Unlock()
+		return err
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.closed = true
@@ -471,11 +482,12 @@ var _ = Describe("KASessionPool (G2 + G9: Pool + User Isolation)", func() {
 			injected := &mockPoolSession{id: 666}
 			pool.Inject("rr-inject-004", "charlie", injected)
 
-			err := pool.DrainAll(context.Background())
-			Expect(err).NotTo(HaveOccurred())
-			Expect(injected.IsClosed()).To(BeTrue(),
-				"DrainAll should close injected sessions")
-		})
+		err := pool.DrainAll(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		// #1995: DrainAll's Close() call is now bounded/async (closeSessionBounded).
+		Eventually(injected.IsClosed).Should(BeTrue(),
+			"DrainAll should close injected sessions")
+	})
 	})
 })
 
@@ -775,6 +787,60 @@ var _ = Describe("MCP Transport Observability — Audit Logging (#1387)", func()
 		}
 		Expect(found).To(BeTrue(),
 			"SI-4: ping-eviction must log mcp_session_id of dead session alongside error detail for incident correlation")
+	})
+})
+
+// #1995: EvictIdle (and, by the shared closeSessionBounded helper, DrainAll
+// and injectEntry's replace-on-collision) must never let one poisoned
+// session's hanging Close() wedge the entire pool. EvictIdle in particular
+// runs on a single shared 2-minute ticker for every (rr_id, username) in
+// the pool (cmd/apifrontend/main.go) -- a synchronous, unbounded Close()
+// call would starve idle cleanup for every other entry forever.
+var _ = Describe("KASessionPool bounded session close (#1995)", func() {
+	It("IT-AF-1995-007: EvictIdle returns promptly and still closes a healthy sibling entry even when another entry's Close() hangs forever", func() {
+		var healthyClosed atomic.Bool
+		hangingSession := &mockPoolSession{
+			id: 1,
+			closeFn: func() error {
+				select {} // simulates go-sdk's Close() blocking on an in-flight server handler that never returns
+			},
+		}
+		healthySession := &mockPoolSession{
+			id: 2,
+			closeFn: func() error {
+				healthyClosed.Store(true)
+				return nil
+			},
+		}
+
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory:    func(_ context.Context) (ka.PoolSession, error) { return &mockPoolSession{}, nil },
+			MaxEntries: 10,
+			IdleTTL:    1 * time.Millisecond,
+			Logger:     logr.Discard(),
+		})
+		pool.Inject("rr-hang", "alice", hangingSession)
+		pool.Inject("rr-healthy", "bob", healthySession)
+
+		time.Sleep(5 * time.Millisecond)
+
+		var evicted int
+		done := make(chan struct{})
+		go func() {
+			evicted = pool.EvictIdle()
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			Fail("IT-AF-1995-007: EvictIdle did not return within the safety bound — a hanging Close() wedged the shared eviction path")
+		}
+
+		Expect(evicted).To(Equal(2), "both idle entries must be reported evicted")
+		Expect(pool.Size()).To(Equal(0), "both entries must be removed from the pool immediately, independent of Close() completion")
+		Eventually(healthyClosed.Load, 2*time.Second).Should(BeTrue(),
+			"the healthy sibling's Close() must still be invoked even though the hanging entry's Close() never returns")
 	})
 })
 

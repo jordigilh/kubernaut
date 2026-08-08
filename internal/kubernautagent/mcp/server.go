@@ -18,10 +18,12 @@ package mcp
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"sync/atomic"
 	"time"
 
+	"github.com/go-logr/logr"
 	sharedauth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -33,18 +35,36 @@ type MCPServer struct {
 	toolCount atomic.Int32
 }
 
+// MCPServerOption configures optional NewMCPServer behavior. Additive: callers
+// that pass none get the pre-#2016 default (an unset Logger, i.e. go-sdk's
+// discard logger).
+type MCPServerOption func(*mcpsdk.ServerOptions)
+
+// WithMCPLogger threads a logr.Logger into the go-sdk server's ServerOptions
+// via the logr->slog adapter, so SDK-internal log/error events (including
+// OnInternalError -- go-sdk#1147/go-sdk#1153) reach KA's log stream instead
+// of being silently dropped by the SDK's default discard logger (#2016/#2017).
+func WithMCPLogger(logger logr.Logger) MCPServerOption {
+	return func(opts *mcpsdk.ServerOptions) {
+		opts.Logger = slog.New(logr.ToSlogHandler(logger))
+	}
+}
+
 // NewMCPServer creates a new MCP server instance configured for Kubernaut Agent
 // interactive mode. The server starts with zero tools; tools are registered
 // via RegisterTools before the handler is created.
-func NewMCPServer(keepAlive time.Duration) *MCPServer {
+func NewMCPServer(keepAlive time.Duration, options ...MCPServerOption) *MCPServer {
 	impl := &mcpsdk.Implementation{
 		Name:    "kubernaut-agent-interactive",
 		Version: "1.5.0",
 	}
 
-	var opts *mcpsdk.ServerOptions
+	opts := &mcpsdk.ServerOptions{}
 	if keepAlive > 0 {
-		opts = &mcpsdk.ServerOptions{KeepAlive: keepAlive}
+		opts.KeepAlive = keepAlive
+	}
+	for _, option := range options {
+		option(opts)
 	}
 	server := mcpsdk.NewServer(impl, opts)
 
@@ -99,6 +119,10 @@ type MCPDeps struct {
 	// SessionTimeout auto-closes idle MCP HTTP sessions (#1387).
 	// Zero means never.
 	SessionTimeout time.Duration
+	// Logger receives go-sdk-internal log/error events (e.g. OnInternalError)
+	// via the logr->slog adapter. Zero value (unset) preserves the pre-#2016
+	// behavior of a discard logger. #2016/#2017.
+	Logger logr.Logger
 }
 
 // userFromContext extracts the authenticated user identity from the request
@@ -152,7 +176,7 @@ func BootstrapMCP(deps MCPDeps) (http.Handler, *MCPServer) {
 		panic("MCP interactive mode enabled but auth middleware is nil — refusing to start without authentication")
 	}
 
-	srv := NewMCPServer(deps.KeepAlive)
+	srv := NewMCPServer(deps.KeepAlive, WithMCPLogger(deps.Logger))
 	srv.registerTools(deps.Tools)
 
 	var opts *mcpsdk.StreamableHTTPOptions

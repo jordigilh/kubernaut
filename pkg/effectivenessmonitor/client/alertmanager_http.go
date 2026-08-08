@@ -31,7 +31,7 @@ import (
 // Used by the EM controller for alert resolution scoring (BR-EM-002).
 //
 // Integration tests: connects to httptest.NewServer mock (ephemeral port)
-// E2E tests: connects to real AlertManager container (NodePort 30193)
+// E2E tests: connects to real AlertManager container (NodePort 30191, DD-TEST-001 v3.8)
 type alertManagerHTTPClient struct {
 	baseURL    string
 	httpClient *http.Client

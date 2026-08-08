@@ -607,6 +607,7 @@ const (
 	HumanReviewReasonRcaIncomplete             HumanReviewReason = "rca_incomplete"
 	HumanReviewReasonAlignmentCheckFailed      HumanReviewReason = "alignment_check_failed"
 	HumanReviewReasonOperatorEscalation        HumanReviewReason = "operator_escalation"
+	HumanReviewReasonDecisionExpired           HumanReviewReason = "decision_expired"
 )
 
 // AllValues returns all HumanReviewReason values.
@@ -622,6 +623,7 @@ func (HumanReviewReason) AllValues() []HumanReviewReason {
 		HumanReviewReasonRcaIncomplete,
 		HumanReviewReasonAlignmentCheckFailed,
 		HumanReviewReasonOperatorEscalation,
+		HumanReviewReasonDecisionExpired,
 	}
 }
 
@@ -647,6 +649,8 @@ func (s HumanReviewReason) MarshalText() ([]byte, error) {
 	case HumanReviewReasonAlignmentCheckFailed:
 		return []byte(s), nil
 	case HumanReviewReasonOperatorEscalation:
+		return []byte(s), nil
+	case HumanReviewReasonDecisionExpired:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -685,6 +689,9 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 		return nil
 	case HumanReviewReasonOperatorEscalation:
 		*s = HumanReviewReasonOperatorEscalation
+		return nil
+	case HumanReviewReasonDecisionExpired:
+		*s = HumanReviewReasonDecisionExpired
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

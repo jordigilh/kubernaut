@@ -900,6 +900,7 @@ func (p *ResponseProcessor) mapEnumToSubReason(reason string) string {
 		"investigation_inconclusive":                      "InvestigationInconclusive", // BR-KA-200
 		aianalysisv1.HumanReviewReasonRCAIncomplete:       "RcaIncomplete",             // BR-496 v2: root_owner missing from session_state
 		"operator_escalation":                             "OperatorEscalation",        // #1449: KA complete_no_action escalation
+		"decision_expired":                                "DecisionExpired",           // #2019/#2020: presented decision expired via inactivity timeout
 	}
 	if subReason, ok := mapping[reason]; ok {
 		return subReason

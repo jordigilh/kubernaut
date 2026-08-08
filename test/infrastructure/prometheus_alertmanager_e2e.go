@@ -25,9 +25,9 @@ import (
 //   - Metric injection via Prometheus remote write API
 //   - Alert injection via AlertManager REST API
 //
-// Port Allocation (DD-TEST-001 v2.8):
+// Port Allocation (DD-TEST-001 v3.8):
 //   - Prometheus: NodePort 30190, host port 9190
-//   - AlertManager: NodePort 30193, host port 9193
+//   - AlertManager: NodePort 30191, host port 9193
 //
 // References:
 //   - ADR-EM-001: Effectiveness Monitor integration architecture
@@ -40,8 +40,29 @@ const (
 	// PrometheusHostPort is the host port mapped to the Prometheus NodePort
 	PrometheusHostPort = 9190
 
-	// AlertManagerNodePort is the Kind NodePort for AlertManager (DD-TEST-001 v2.8)
-	AlertManagerNodePort = 30193
+	// AlertManagerNodePort is the Kind NodePort for AlertManager (DD-TEST-001 v3.8).
+	// Moved from 30193 (v2.8) after a "fleet" E2E CI failure ("Service
+	// \"alertmanager-svc\" is invalid: spec.ports[0].nodePort: Invalid value:
+	// 30193: provided port is already allocated") -- 30193 sat outside every
+	// other statically-verified allocation, so the collision was never
+	// reproduced from static analysis; relocating to the next verified-free
+	// slot in the same 30180-30199 metrics/EM block removes the recurrence
+	// risk regardless of root cause. Host port intentionally left at 9193
+	// (unchanged) -- NodePort and host port are already decoupled for
+	// Prometheus above (30190 vs 9190), so no test using AlertManagerHostPort
+	// needs updating.
+	//
+	// TRACKING (Issue #2014): root cause of the original 30193 collision was
+	// never confirmed (working hypothesis: an unrelated Service's
+	// dynamically-auto-allocated NodePort, possibly from Istio/Gateway-API
+	// machinery, transiently landed on 30193 by chance). If a
+	// "provided port is already allocated" error recurs on 30191 or any
+	// other statically-pinned NodePort in a Kind-based E2E suite, log it on
+	// #2014 -- a second data point would confirm this as a genuinely
+	// recurring dynamic-allocation problem (see that issue for suggested
+	// next actions: diagnostic Service dump on failure, pinning every
+	// Gateway-API-provisioned Service port, or escalating upstream).
+	AlertManagerNodePort = 30191
 	// AlertManagerHostPort is the host port mapped to the AlertManager NodePort
 	AlertManagerHostPort = 9193
 
@@ -345,6 +366,13 @@ spec:
 //   - Minimal routing config (all alerts go to gateway-webhook receiver)
 //   - Single replica for testing
 //   - BR-GATEWAY-036/037: When gatewayToken is non-empty, adds Bearer auth to webhook requests
+//
+// If this fails with "Service \"alertmanager-svc\" is invalid: ...nodePort:
+// ...provided port is already allocated", see Issue #2014 -- this exact
+// symptom was seen once (2026-08-08, PR #2001, NodePort 30193) with no
+// confirmed root cause. Please add a comment to #2014 with the new
+// AlertManagerNodePort value and CI run link so we can tell whether this is
+// a recurring dynamic-NodePort-allocation problem.
 //
 // Parameters:
 //   - ctx: Context for cancellation

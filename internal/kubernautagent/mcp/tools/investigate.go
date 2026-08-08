@@ -75,6 +75,14 @@ type HTTPSessionCompleter interface {
 	FindUserDrivingByRemediationID(rrID string) (string, bool)
 	CompleteUserDriving(id string, result *katypes.InvestigationResult) error
 	ForceCompleteByRemediationID(rrID string, result *katypes.InvestigationResult) error
+
+	// PersistPendingDecisionResult attaches a preview InvestigationResult to a
+	// still-UserDriving session so that a later CompleteUserDriving(id, nil)
+	// -- as invoked by the inactivity-timeout/disconnect handlers -- preserves
+	// the discovered-but-unconfirmed recommendation instead of finalizing as
+	// has_workflow:false (#2019/#2020). See session.Store.SetPendingDecisionResult
+	// for the full rationale.
+	PersistPendingDecisionResult(id string, result *katypes.InvestigationResult)
 }
 
 // SessionMutexProvider exposes per-rrID mutexes for concurrency control.
@@ -123,6 +131,12 @@ type AutonomousSessionLifecycle interface {
 	StartInvestigation(ctx context.Context, fn session.InvestigateFunc, metadata map[string]string) (string, error)
 	// BR-MCP-003: Subscribe to the event channel for a running investigation, activating the LazySink.
 	Subscribe(ctx context.Context, id string) (<-chan session.InvestigationEvent, error)
+	// #2013: Emit a terminal session_ended event for a remediation ID's
+	// user-driving session BEFORE the session completes, so AF's
+	// WatchTerminalEvents (which has no timer-based safety net, #1438) is
+	// notified promptly instead of relying on the 10-minute inactivity
+	// timeout to eventually surface it.
+	EmitSessionEndedByRR(rrID, reason string)
 }
 
 // AutonomousSessionManager composes the query and lifecycle role interfaces
@@ -217,6 +231,7 @@ func (NopAutonomousManager) Subscribe(context.Context, string) (<-chan session.I
 	return nil, nil
 }
 func (NopAutonomousManager) GetSessionLazySink(string) (*session.LazySink, bool) { return nil, false }
+func (NopAutonomousManager) EmitSessionEndedByRR(string, string)                 {}
 
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
 // start, message, complete, cancel, takeover, discover_workflows.

@@ -657,6 +657,34 @@ var _ = Describe("Tier 5b: Configurable Ports (Issue #1339)", func() {
 	})
 })
 
+var _ = Describe("Tier 5c: pprof/debug profiling gate (Issue #1995)", func() {
+	// DisableProfiling defaults to true (profiling OFF), mirroring
+	// kubernautagent's DefaultConfig() secure-by-default posture
+	// (internal/kubernautagent/config/config.go). Unlike gateway/
+	// datastorage (which default profiling ON), AF and KA both sit behind
+	// the same trust boundary consideration and are kept consistent with
+	// each other; an operator must explicitly opt in via
+	// server.disableProfiling: false to expose /debug/pprof/*.
+	It("UT-AF-1995-001 DefaultConfig disables profiling by default (secure-by-default, mirrors KA)", func() {
+		cfg := config.DefaultConfig()
+		Expect(cfg.Server.DisableProfiling).To(BeTrue())
+	})
+
+	It("UT-AF-1995-002 YAML can opt in to profiling by setting disableProfiling: false", func() {
+		data := []byte("server:\n  disableProfiling: false\n")
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Server.DisableProfiling).To(BeFalse())
+	})
+
+	It("UT-AF-1995-003 omitted disableProfiling in YAML keeps the secure default", func() {
+		data := []byte("server:\n  port: 8443\n")
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Server.DisableProfiling).To(BeTrue())
+	})
+})
+
 var _ = Describe("Tier 6: Extended Validation (v2)", func() {
 	It("UT-AF-039-036 rejects auth issuerURL without scheme", func() {
 		cfg := validConfig()

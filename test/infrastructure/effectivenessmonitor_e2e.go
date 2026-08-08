@@ -39,11 +39,11 @@ import (
 //   - Prometheus (real instance for metric comparison via OTLP)
 //   - AlertManager (real instance for alert resolution queries)
 //
-// Port Allocation (DD-TEST-001 v2.8):
+// Port Allocation (DD-TEST-001 v3.8):
 //   - EM:           NodePort 30089 (API), 30189 (Metrics)
 //   - DataStorage:  NodePort 30081
 //   - Prometheus:   NodePort 30190
-//   - AlertManager: NodePort 30193
+//   - AlertManager: NodePort 30191 (moved from 30193 after a "fleet" E2E collision)
 //
 // References:
 //   - ADR-EM-001: Effectiveness Monitor Service Integration
@@ -98,7 +98,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 	_, _ = fmt.Fprintln(writer, "  EffectivenessMonitor E2E Infrastructure (HYBRID PARALLEL)")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 	_, _ = fmt.Fprintln(writer, "  Strategy: Build parallel -> Create cluster -> Load -> Deploy")
-	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-001 v2.8: EM 30089, DS 30081, Prom 30190, AM 30193")
+	_, _ = fmt.Fprintln(writer, "  Per DD-TEST-001 v3.8: EM 30089, DS 30081, Prom 30190, AM 30191")
 	_, _ = fmt.Fprintln(writer, "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	namespace := emE2ENamespace

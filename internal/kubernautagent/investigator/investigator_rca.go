@@ -274,7 +274,7 @@ func (inv *Investigator) attemptRCASubmitRetry(ctx context.Context, p rcaSubmitR
 		"retry_attempt": p.attempt + 1,
 	})
 	// #1635 / BR-AI-086 AC10 (see investigator_loop.go for rationale).
-	emitReasoningContentEvent(ctx, resp.Message.Reasoning, p.attempt+1, string(katypes.PhaseRCA))
+	emitReasoningContentEvent(ctx, resp.Message.Reasoning, resp.Message.Content, p.attempt+1, string(katypes.PhaseRCA))
 
 	if parsed, ok := inv.tryParseRCASubmitToolCall(resp, p.correlationID); ok {
 		return parsed, resp.Message.Reasoning, p.retryMessages, true

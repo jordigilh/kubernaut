@@ -200,6 +200,15 @@ type InvestigationResult struct {
 // coupling this package to the generated OpenAPI client type.
 const HumanReviewReasonRCAIncomplete = "rca_incomplete"
 
+// HumanReviewReasonDecisionExpired is the HumanReviewReason value set when
+// kubernaut_discover_workflows found and presented a workflow via
+// kubernaut_present_decision, but no decision arrived before the interactive
+// session's inactivity timeout finalized it (#2019/#2020). Distinct from
+// "no_matching_workflows" (nothing was found at all): here a concrete
+// recommendation exists and is preserved via Store.SetPendingDecisionResult,
+// not discarded as a false-negative has_workflow:false.
+const HumanReviewReasonDecisionExpired = "decision_expired"
+
 // InvestigationOutcomeProblemResolved is the InvestigationOutcome value
 // indicating the LLM determined the underlying problem self-resolved before
 // remediation was needed. See the InvestigationOutcome field doc above for

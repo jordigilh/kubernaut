@@ -172,6 +172,17 @@ func injectStoredRRID(state adksession.State, args map[string]any, toolName stri
 // ActiveContextRegistry in sync for multi-turn session continuity (BR-SESS-020).
 // DD-AF-011 (#1899): also persists the interaction_mode signal and phase2/3
 // checkpoint flags after kubernaut_investigate/kubernaut_discover_workflows.
+//
+// nolint:nilnil // #1998 (port of #1997): phaseGuardAfter only ever records a
+// side effect (session state, ActiveContextRegistry) -- it never modifies
+// resp/callErr. Every (nil, nil) below is the ADK AfterToolCallback
+// convention for "pass through unchanged" (google.golang.org/adk,
+// internal/llminternal/base_flow.go: invokeAfterToolCallbacks treats a
+// non-nil result as an explicit override that stops the chain, falling back
+// to the original fResult/fErr only once every callback has returned nil).
+// Re-returning the original resp/callErr here looked harmless but silently
+// skipped every AfterToolCallback registered after this one (afterLog) for
+// any tool call at all, not just the ones this guard cares about.
 func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx tool.Context, t tool.Tool, inputArgs, resp map[string]any, callErr error) (map[string]any, error) {
 	toolName := t.Name()
 	isEntry := driverEntryTools[toolName]
@@ -189,15 +200,15 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx tool.Context,
 	}
 
 	if !isEntry && !isTerminal && !isDiscoverWorkflows {
-		return resp, callErr
+		return nil, nil
 	}
 	if !isSuccess {
-		return resp, callErr
+		return nil, nil
 	}
 
 	if isDiscoverWorkflows {
 		recordDiscoverWorkflowsCheckpoint(ctx)
-		return resp, callErr
+		return nil, nil
 	}
 
 	if isEntry {
@@ -208,7 +219,7 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx tool.Context,
 	}
 	syncActiveContextRegistry(registry, ctx, isEntry, isTerminal)
 
-	return resp, callErr
+	return nil, nil
 }
 
 // toolCallSucceeded reports whether a tool call completed without a Go error

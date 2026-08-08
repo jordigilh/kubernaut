@@ -78,6 +78,18 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		return InvestigateOutput{}, fmt.Errorf("workflow discovery failed: %w", err)
 	}
 
+	// #2013: When discovery concludes with no_matching_workflows, nothing
+	// else in the system ever terminates this interactive session unless a
+	// human/agent explicitly calls complete_no_action — it sits "active"
+	// until KA's blunt 10-minute inactivity timeout eventually tears it
+	// down, and that inactivity teardown is the only thing that emits the
+	// session_ended terminal event AF's WatchTerminalEvents (no timer-based
+	// safety net, #1438) is waiting on. Auto-close here so the console's
+	// "Investigating" phase resolves promptly instead of hanging for up to
+	// 10 minutes (BR-INTERACTIVE-010, AU-3, SI-4).
+	t.autoCloseOnNoMatchingWorkflows(input.RRID, sess.SessionID, workflowResult)
+	t.persistPendingDecision(input.RRID, workflowResult)
+
 	// Step 5: Store results on the interactive session.
 	sess.RCAResult = rcaResult
 	sess.DiscoveryResult = extractDiscoveryResult(workflowResult)
@@ -105,6 +117,82 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		Status:    "workflows_discovered",
 		Response:  string(discoveryJSON),
 	}, nil
+}
+
+// autoCloseOnNoMatchingWorkflows releases the interactive session when
+// discovery concludes with no_matching_workflows (#2013). No-op for every
+// other outcome (a legitimate recommendation leaves the session active so
+// the user can select a workflow).
+//
+// Mirrors completeSelectionAsync's (select_workflow.go) fire-and-forget
+// goroutine pattern so the discover_workflows response reaches the caller
+// before session teardown closes the transport, with one addition: the
+// #1438 ordering invariant requires EmitSessionEndedByRR to fire BEFORE
+// CompleteHTTPSession/Release, so EventLogBridge can forward the terminal
+// event to AF before the channel closes -- see cmd/kubernautagent/routes.go's
+// inactivity-timeout and disconnect handlers, the only other two call sites,
+// both carrying the identical ordering comment.
+func (t *InvestigateTool) autoCloseOnNoMatchingWorkflows(rrID, sessionID string, workflowResult *katypes.InvestigationResult) {
+	if workflowResult == nil || !workflowResult.HumanReviewNeeded || workflowResult.HumanReviewReason != "no_matching_workflows" {
+		return
+	}
+	if t.timeoutTracker != nil {
+		t.timeoutTracker.StopTracking(sessionID)
+	}
+	if t.httpCompleter == nil {
+		return
+	}
+	autoMgr := t.autoMgr
+	completer := t.httpCompleter
+	sessions := t.sessions
+	result := workflowResult
+	logger := t.logger
+	go func() {
+		// KA-HIGH-3: re-acquire the session mutex to prevent TOCTOU between
+		// response delivery and HTTP/lease cleanup.
+		mu := t.getSessionMutex(rrID)
+		mu.Lock()
+		defer mu.Unlock()
+
+		autoMgr.EmitSessionEndedByRR(rrID, "no_matching_workflows")
+		CompleteHTTPSession(completer, rrID, result, logger, "no_matching_workflows")
+		if releaseErr := sessions.Release(sessionID, "no_matching_workflows"); releaseErr != nil {
+			if !errors.Is(releaseErr, mcpinternal.ErrSessionNotFound) {
+				logger.Error(releaseErr, "failed to release MCP lease", "session_id", sessionID)
+			}
+		}
+	}()
+}
+
+// persistPendingDecision preserves a discovered-and-about-to-be-presented
+// workflow recommendation as a pending decision (#2019/#2020), so that if
+// the interactive session's inactivity timeout fires before anything (human
+// or automation) answers, CompleteHTTPSession's hardcoded nil result
+// (cmd/kubernautagent/routes.go) preserves this preview instead of silently
+// finalizing as has_workflow:false. If the user does respond
+// (select_workflow/complete_no_action), that explicit
+// CompleteUserDriving(id, result) call overwrites this preview with the
+// confirmed outcome, since Store.CompleteUserDriving only skips the
+// overwrite when passed a nil result.
+//
+// No-op for the no_matching_workflows outcome -- that terminal case is
+// already handled by autoCloseOnNoMatchingWorkflows, which proactively
+// closes the session instead of leaving a decision pending.
+func (t *InvestigateTool) persistPendingDecision(rrID string, workflowResult *katypes.InvestigationResult) {
+	if workflowResult == nil || (workflowResult.HumanReviewNeeded && workflowResult.HumanReviewReason == "no_matching_workflows") {
+		return
+	}
+	if t.httpCompleter == nil {
+		return
+	}
+	httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(rrID)
+	if !found {
+		return
+	}
+	preview := *workflowResult
+	preview.HumanReviewNeeded = true
+	preview.HumanReviewReason = katypes.HumanReviewReasonDecisionExpired
+	t.httpCompleter.PersistPendingDecisionResult(httpSessionID, &preview)
 }
 
 // authorizeActiveDriver verifies the requesting user is the active driver of
