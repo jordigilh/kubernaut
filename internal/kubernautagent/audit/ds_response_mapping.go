@@ -368,6 +368,9 @@ var validHumanReviewReasons = map[string]ogenclient.IncidentResponseDataHumanRev
 	"investigation_inconclusive":  ogenclient.IncidentResponseDataHumanReviewReasonInvestigationInconclusive,
 	"rca_incomplete":              ogenclient.IncidentResponseDataHumanReviewReasonRcaIncomplete,
 	"alignment_check_failed":      ogenclient.IncidentResponseDataHumanReviewReasonAlignmentCheckFailed,
+	// #2019/#2020: preserved decision-expired outcome must not be silently
+	// dropped by ogen client-side OpenAPI validation.
+	"decision_expired": ogenclient.IncidentResponseDataHumanReviewReasonDecisionExpired,
 }
 
 // validHumanReviewReason returns the ogen enum value if the string is a recognised

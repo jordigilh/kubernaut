@@ -71,6 +71,8 @@ func (m *mockHTTPCompleter) getCompleted() (string, *katypes.InvestigationResult
 	return m.completedID, m.completedResult
 }
 
+func (m *mockHTTPCompleter) PersistPendingDecisionResult(_ string, _ *katypes.InvestigationResult) {}
+
 // discoveryWithWorkflow creates a DiscoveryResult with a recommended workflow.
 func discoveryWithWorkflow(wfID string) *mcpinternal.WorkflowDiscoveryResult {
 	return &mcpinternal.WorkflowDiscoveryResult{

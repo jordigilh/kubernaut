@@ -218,19 +218,7 @@ func (t *Triager) runTier1(ctx context.Context, input TriageInput) (TriageResult
 		podNameSet[pn] = struct{}{}
 	}
 
-	// Pass 1: firing alerts (highest priority).
-	if result, ok := t.bestAlertMatch(alerts, input.Labels, podNameSet, input.Namespace, "firing", SourceFiringAlert); ok {
-		return result, true
-	}
-
-	// Pass 2: pending alerts with the same pod correlation (closes the
-	// timing race where an alert condition is met but the `for` duration
-	// has not elapsed yet).
-	if result, ok := t.bestAlertMatch(alerts, input.Labels, podNameSet, input.Namespace, "pending", SourcePendingAlert); ok {
-		return result, true
-	}
-
-	return TriageResult{}, false
+	return t.bestOverallMatch(alerts, input.Labels, podNameSet, input.Namespace)
 }
 
 // matchCandidate tracks the best alert match at a given priority tier.
@@ -256,49 +244,101 @@ func (m *matchCandidate) result(source Source) TriageResult {
 	}
 }
 
-// nsSource maps a resource-level source to its namespace-scoped equivalent.
-func nsSource(base Source) Source {
-	if base == SourcePendingAlert {
-		return SourceNSPendingAlert
+// bestOverallMatch scans all firing/pending alerts once and returns the
+// single best match across both specificity (resource > namespace >
+// cluster) and state (firing > pending), with specificity taking strict
+// priority over state (#2018/#2021): a resource- or namespace-scoped alert
+// -- even only "pending" -- must never lose to a cluster-scoped alert
+// merely because the cluster alert happens to be "firing".
+//
+// Before this fix, runTier1 ran two sequential full-fallback passes (firing
+// first, then pending only if firing found nothing at all). A persistently
+// firing, unrelated cluster-scoped alert (no namespace label) would win the
+// firing pass's cluster slot and return immediately -- before ever reaching
+// the pending pass, where the *actual* target's own alert might have been
+// found via resourceBest/nsBest but simply hadn't started firing yet.
+//
+// Within a single tier (resource, namespace, or cluster), firing still
+// beats pending -- only the cross-tier priority changed.
+// alertTier identifies which specificity bucket an alert was classified into.
+type alertTier int
+
+const (
+	tierNone alertTier = iota
+	tierResource
+	tierNamespace
+	tierCluster
+)
+
+// classifyAlertTier determines the specificity tier and firing/pending state
+// of a single alert, without mutating any shared state. Split out of
+// bestOverallMatch to keep the latter's cyclomatic complexity below the
+// gocyclo threshold (Issue #1532 baseline).
+func classifyAlertTier(alert prom.Alert, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace string) (tier alertTier, firing bool, sev, name string) {
+	switch alert.State {
+	case "firing":
+		firing = true
+	case "pending":
+		firing = false
+	default:
+		return tierNone, false, "", ""
 	}
-	return SourceNSFiringAlert
+	sev = alert.Labels["severity"]
+	name = alert.Labels["alertname"]
+
+	switch {
+	case labelsOverlap(alert.Labels, targetLabels, podNameSet, targetNamespace):
+		tier = tierResource
+	case targetNamespace != "" && alert.Labels["namespace"] == targetNamespace:
+		tier = tierNamespace
+	case alert.Labels["namespace"] == "":
+		tier = tierCluster
+	default:
+		tier = tierNone
+	}
+	return tier, firing, sev, name
 }
 
-// clusterSource maps a resource-level source to its cluster-scoped equivalent.
-func clusterSource(base Source) Source {
-	if base == SourcePendingAlert {
-		return SourceClusterPendingAlert
+// updateTierCandidate records sev/name into the firing or pending candidate
+// for a tier, keeping the highest-severity match seen so far (matchCandidate.update).
+func updateTierCandidate(firing bool, sev, name string, firingCand, pendingCand *matchCandidate) {
+	if firing {
+		firingCand.update(sev, name)
+	} else {
+		pendingCand.update(sev, name)
 	}
-	return SourceClusterFiringAlert
 }
 
-func (t *Triager) bestAlertMatch(alerts []prom.Alert, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace, state string, source Source) (TriageResult, bool) {
-	var resourceBest, nsBest, clusterBest matchCandidate
+func (t *Triager) bestOverallMatch(alerts []prom.Alert, targetLabels map[string]string, podNameSet map[string]struct{}, targetNamespace string) (TriageResult, bool) {
+	var resourceFiring, resourcePending, nsFiring, nsPending, clusterFiring, clusterPending matchCandidate
 
 	for _, alert := range alerts {
-		if alert.State != state {
-			continue
-		}
-		sev := alert.Labels["severity"]
-
-		switch {
-		case labelsOverlap(alert.Labels, targetLabels, podNameSet, targetNamespace):
-			resourceBest.update(sev, alert.Labels["alertname"])
-		case targetNamespace != "" && alert.Labels["namespace"] == targetNamespace:
-			nsBest.update(sev, alert.Labels["alertname"])
-		case alert.Labels["namespace"] == "":
-			clusterBest.update(sev, alert.Labels["alertname"])
+		tier, firing, sev, name := classifyAlertTier(alert, targetLabels, podNameSet, targetNamespace)
+		switch tier {
+		case tierResource:
+			updateTierCandidate(firing, sev, name, &resourceFiring, &resourcePending)
+		case tierNamespace:
+			updateTierCandidate(firing, sev, name, &nsFiring, &nsPending)
+		case tierCluster:
+			updateTierCandidate(firing, sev, name, &clusterFiring, &clusterPending)
+		case tierNone:
+			// Alert matched no tier (or an unrecognized state) -- ignored.
 		}
 	}
 
-	if resourceBest.found {
-		return resourceBest.result(source), true
-	}
-	if nsBest.found {
-		return nsBest.result(nsSource(source)), true
-	}
-	if clusterBest.found {
-		return clusterBest.result(clusterSource(source)), true
+	switch {
+	case resourceFiring.found:
+		return resourceFiring.result(SourceFiringAlert), true
+	case resourcePending.found:
+		return resourcePending.result(SourcePendingAlert), true
+	case nsFiring.found:
+		return nsFiring.result(SourceNSFiringAlert), true
+	case nsPending.found:
+		return nsPending.result(SourceNSPendingAlert), true
+	case clusterFiring.found:
+		return clusterFiring.result(SourceClusterFiringAlert), true
+	case clusterPending.found:
+		return clusterPending.result(SourceClusterPendingAlert), true
 	}
 	return TriageResult{}, false
 }

@@ -385,7 +385,7 @@ type AIAnalysisStatus struct {
 	// SubReason provides specific failure cause within the Reason category
 	// BR-KA-197: Maps to needs_human_review triggers from KA
 	// BR-KA-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
-	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;NotActionable;MaxRetriesExceeded;SessionRegenerationExceeded;RcaIncomplete;InvestigationFailed;OperatorEscalation
+	// +kubebuilder:validation:Enum=WorkflowNotFound;ImageMismatch;ParameterValidationFailed;NoMatchingWorkflows;LowConfidence;LLMParsingError;ValidationError;TransientError;PermanentError;InvestigationInconclusive;ProblemResolved;NotActionable;MaxRetriesExceeded;SessionRegenerationExceeded;RcaIncomplete;InvestigationFailed;OperatorEscalation;DecisionExpired
 	// +optional
 	SubReason string `json:"subReason,omitempty"`
 
@@ -438,7 +438,10 @@ type AIAnalysisStatus struct {
 	// Reason why human review needed (when NeedsHumanReview=true)
 	// BR-KA-197: Maps to KA's human_review_reason enum values
 	// BR-AI-601: alignment_check_failed added for shadow agent alignment verdicts
-	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete;alignment_check_failed;operator_escalation
+	// #2019/#2020: decision_expired added for a discovered-and-presented
+	// workflow whose decision was not answered before the interactive
+	// session's inactivity timeout (distinct from no_matching_workflows).
+	// +kubebuilder:validation:Enum=workflow_not_found;image_mismatch;parameter_validation_failed;no_matching_workflows;low_confidence;llm_parsing_error;investigation_inconclusive;rca_incomplete;alignment_check_failed;operator_escalation;decision_expired
 	// +optional
 	HumanReviewReason string `json:"humanReviewReason,omitempty"`
 

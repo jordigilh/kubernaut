@@ -88,6 +88,7 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	// "Investigating" phase resolves promptly instead of hanging for up to
 	// 10 minutes (BR-INTERACTIVE-010, AU-3, SI-4).
 	t.autoCloseOnNoMatchingWorkflows(input.RRID, sess.SessionID, workflowResult)
+	t.persistPendingDecision(input.RRID, workflowResult)
 
 	// Step 5: Store results on the interactive session.
 	sess.RCAResult = rcaResult
@@ -161,6 +162,37 @@ func (t *InvestigateTool) autoCloseOnNoMatchingWorkflows(rrID, sessionID string,
 			}
 		}
 	}()
+}
+
+// persistPendingDecision preserves a discovered-and-about-to-be-presented
+// workflow recommendation as a pending decision (#2019/#2020), so that if
+// the interactive session's inactivity timeout fires before anything (human
+// or automation) answers, CompleteHTTPSession's hardcoded nil result
+// (cmd/kubernautagent/routes.go) preserves this preview instead of silently
+// finalizing as has_workflow:false. If the user does respond
+// (select_workflow/complete_no_action), that explicit
+// CompleteUserDriving(id, result) call overwrites this preview with the
+// confirmed outcome, since Store.CompleteUserDriving only skips the
+// overwrite when passed a nil result.
+//
+// No-op for the no_matching_workflows outcome -- that terminal case is
+// already handled by autoCloseOnNoMatchingWorkflows, which proactively
+// closes the session instead of leaving a decision pending.
+func (t *InvestigateTool) persistPendingDecision(rrID string, workflowResult *katypes.InvestigationResult) {
+	if workflowResult == nil || (workflowResult.HumanReviewNeeded && workflowResult.HumanReviewReason == "no_matching_workflows") {
+		return
+	}
+	if t.httpCompleter == nil {
+		return
+	}
+	httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(rrID)
+	if !found {
+		return
+	}
+	preview := *workflowResult
+	preview.HumanReviewNeeded = true
+	preview.HumanReviewReason = katypes.HumanReviewReasonDecisionExpired
+	t.httpCompleter.PersistPendingDecisionResult(httpSessionID, &preview)
 }
 
 // authorizeActiveDriver verifies the requesting user is the active driver of

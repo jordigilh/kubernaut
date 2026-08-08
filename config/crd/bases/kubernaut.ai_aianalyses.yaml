@@ -739,6 +739,9 @@ spec:
                   Reason why human review needed (when NeedsHumanReview=true)
                   BR-KA-197: Maps to KA's human_review_reason enum values
                   BR-AI-601: alignment_check_failed added for shadow agent alignment verdicts
+                  #2019/#2020: decision_expired added for a discovered-and-presented
+                  workflow whose decision was not answered before the interactive
+                  session's inactivity timeout (distinct from no_matching_workflows).
                 enum:
                 - workflow_not_found
                 - image_mismatch
@@ -750,6 +753,7 @@ spec:
                 - rca_incomplete
                 - alignment_check_failed
                 - operator_escalation
+                - decision_expired
                 type: string
               interactiveSession:
                 description: |-
@@ -1357,6 +1361,7 @@ spec:
                 - RcaIncomplete
                 - InvestigationFailed
                 - OperatorEscalation
+                - DecisionExpired
                 type: string
               totalAnalysisTime:
                 description: TotalAnalysisTime is the total duration of the analysis
