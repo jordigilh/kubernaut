@@ -940,7 +940,7 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 		if len(messages) == 0 {
 			t.logger.Info("discover_workflows: no conversation context available after reconstruction",
 				"rr_id", input.RRID)
-			return InvestigateOutput{}, fmt.Errorf("rca extraction failed: no conversation context available — investigation audit traces not found in data storage")
+			return InvestigateOutput{}, ErrCodeNoConversationContext.WithDetail("rr_id", input.RRID)
 		}
 
 		var err error

@@ -121,6 +121,19 @@ var (
 		Code:    "tool_budget_exhausted",
 		Message: "Investigation exceeded the maximum number of tool calls allowed",
 	}
+	// ErrCodeNoConversationContext is returned by discover_workflows when
+	// neither the session's stored RCA result, the live conversation, nor
+	// audit-trail reconstruction produced any content to extract an RCA
+	// from (#2023). Before this fix, this case returned a plain fmt.Errorf,
+	// which ErrorBoundary redacted to the generic ErrCodeInternalError —
+	// leaving the calling agent unable to distinguish "there is genuinely
+	// nothing to analyze" from "server bug", which in turn left room for
+	// the LLM to fabricate a plausible-sounding RCA/audit-trail narrative
+	// rather than surfacing the gap (SI-11).
+	ErrCodeNoConversationContext = &MCPError{
+		Code:    "no_conversation_context",
+		Message: "No investigation content available: no stored RCA, live conversation, or audit trail was found for this remediation",
+	}
 )
 
 // ErrorBoundary wraps a tool handler error: if the error is already an MCPError
