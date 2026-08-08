@@ -667,6 +667,54 @@ var _ = Describe("ApprovalOrchestration", func() {
 			Expect(rar.Spec.PolicyEvaluation.Decision).To(Equal(string(aianalysisv1.PolicyDecisionManualReviewRequired)))
 		})
 
+		// BR-AUDIT-006, BR-AI-076, Issue #1981: PolicyHash must reach RAR spec so an approval
+		// decision can be attributed, after the fact, to the exact policy bundle revision that
+		// produced it (tamper-evident approval decisions).
+		It("UT-RAR-1981-001: should map PolicyHash from ApprovalContext to RAR spec", func() {
+			const expectedHash = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
+			ai := &aianalysisv1.AIAnalysis{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "ai-test-rr-1981-001",
+					Namespace: "default",
+				},
+				Status: aianalysisv1.AIAnalysisStatus{
+					Phase: "Completed",
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:      "wf-restart-pods",
+							WorkflowName:    "wf-restart-pods",
+							ActionType:      "RestartPod",
+							Version:         "v1.0.0",
+							ExecutionBundle: "kubernaut/workflows:latest",
+						},
+						Confidence: 0.85,
+						Rationale:  "Pod restart recommended",
+					},
+					ApprovalReason: "Production environment requires manual approval",
+					ApprovalContext: &aianalysisv1.ApprovalContext{
+						PolicyEvaluation: &aianalysisv1.PolicyEvaluation{
+							PolicyName:   "production-approval-policy",
+							MatchedRules: []string{"require_approval_for_production"},
+							Decision:     aianalysisv1.PolicyDecisionManualReviewRequired,
+							PolicyHash:   expectedHash,
+						},
+					},
+				},
+			}
+			Expect(fakeClient.Create(ctx, ai)).To(Succeed())
+
+			name, err := ac.Create(ctx, rr, ai)
+			Expect(err).ToNot(HaveOccurred())
+
+			rar := &remediationv1.RemediationApprovalRequest{}
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: "default"}, rar)).To(Succeed())
+
+			Expect(rar.Spec.PolicyEvaluation).ToNot(BeNil(),
+				"BR-AI-059: PolicyEvaluation must be mapped from ApprovalContext")
+			Expect(rar.Spec.PolicyEvaluation.PolicyHash).To(Equal(expectedHash),
+				"BR-AUDIT-006, Issue #1981: PolicyHash must be pinned onto the immutable RAR spec for tamper-evident attribution")
+		})
+
 		It("UT-RAR-307-004: should handle nil ApprovalContext gracefully", func() {
 			ai := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{

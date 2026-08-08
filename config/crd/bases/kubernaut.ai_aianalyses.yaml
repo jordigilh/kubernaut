@@ -603,6 +603,12 @@ spec:
                         items:
                           type: string
                         type: array
+                      policyHash:
+                        description: |-
+                          PolicyHash is the SHA256 hash of the Rego policy that produced this decision
+                          Provides audit trail and policy version attribution for compliance requirements (BR-AI-030)
+                          Expected format: 64-character hexadecimal string (SHA256 hash); empty if no policy was loaded
+                        type: string
                       policyName:
                         description: Policy name that was evaluated
                         type: string

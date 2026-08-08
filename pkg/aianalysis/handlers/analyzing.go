@@ -372,6 +372,8 @@ func (h *AnalyzingHandler) populateApprovalContext(analysis *aianalysisv1.AIAnal
 	ctx.PolicyEvaluation = &aianalysisv1.PolicyEvaluation{
 		PolicyName: "aianalysis.approval",
 		Decision:   aianalysisv1.PolicyDecisionManualReviewRequired,
+		// BR-AI-030, Issue #1981: pin the policy hash for after-the-fact attribution
+		PolicyHash: result.PolicyHash,
 	}
 	if result.Degraded {
 		ctx.PolicyEvaluation.Decision = aianalysisv1.PolicyDecisionDegradedMode

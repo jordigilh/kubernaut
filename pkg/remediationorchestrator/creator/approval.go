@@ -220,6 +220,8 @@ func applyApprovalContext(rar *remediationv1.RemediationApprovalRequest, ac *aia
 			PolicyName:   ac.PolicyEvaluation.PolicyName,
 			MatchedRules: ac.PolicyEvaluation.MatchedRules,
 			Decision:     string(ac.PolicyEvaluation.Decision),
+			// BR-AUDIT-006, Issue #1981: pin the policy hash onto the immutable RAR spec
+			PolicyHash: ac.PolicyEvaluation.PolicyHash,
 		}
 	}
 }
