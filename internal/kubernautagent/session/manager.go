@@ -766,11 +766,31 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 	}
 	m.closeEventChan(id)
 
+	// #2019: hasWorkflow/humanReviewReason must be read from sess.Result under
+	// the same lock acquisition as the sess lookup itself -- sess.Result is
+	// mutated concurrently by Store.SetResult from the investigation goroutine
+	// (see storePartialResult), so reading it after RUnlock() is a genuine
+	// data race (caught by `go test -race`).
 	m.store.mu.RLock()
 	sess := m.store.sessions[id]
 	var correlationID string
-	if sess != nil && sess.Metadata != nil {
-		correlationID = sess.Metadata["remediation_id"]
+	var hasWorkflow bool
+	var humanReviewReason string
+	if sess != nil {
+		if sess.Metadata != nil {
+			correlationID = sess.Metadata["remediation_id"]
+		}
+		// #2019: read the final state from the session itself (sess.Result),
+		// not the raw result parameter -- when the inactivity-timeout/
+		// disconnect handlers call this with result=nil,
+		// Store.CompleteUserDriving preserves whatever
+		// SetPendingDecisionResult already attached, so logging the raw
+		// parameter would misreport an actually-preserved discovery as
+		// has_workflow=false.
+		if sess.Result != nil {
+			hasWorkflow = sess.Result.WorkflowID != ""
+			humanReviewReason = sess.Result.HumanReviewReason
+		}
 	}
 	m.store.mu.RUnlock()
 
@@ -778,18 +798,6 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 		audit.EventTypeSessionCompleted, audit.ActionSessionCompleted,
 		audit.OutcomeSuccess, id, correlationID, nil,
 		"completion_mode", "user_driving")
-	// #2019: read the final state from the session itself (sess.Result), not
-	// the raw result parameter -- when the inactivity-timeout/disconnect
-	// handlers call this with result=nil, Store.CompleteUserDriving preserves
-	// whatever SetPendingDecisionResult already attached, so logging the raw
-	// parameter would misreport an actually-preserved discovery as
-	// has_workflow=false.
-	var hasWorkflow bool
-	var humanReviewReason string
-	if sess != nil && sess.Result != nil {
-		hasWorkflow = sess.Result.WorkflowID != ""
-		humanReviewReason = sess.Result.HumanReviewReason
-	}
 	m.logger.Info("User-driven session completed",
 		"session_id", id, "has_workflow", hasWorkflow, "human_review_reason", humanReviewReason)
 	return nil
