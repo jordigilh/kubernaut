@@ -2,12 +2,17 @@
 
 **Version**: 1.0.0
 **Created**: February 1, 2026
-**Status**: ✅ READY FOR EXECUTION
+**Status**: ⚠️ **SUPERSEDED** (2026-08-07) — package under test was deleted as dead code
 **Priority**: P0 (SOC 2 Compliance Mandatory)
 
 **Business Requirements**: [BR-AUDIT-006](./BR-AUDIT-006-remediation-approval-audit-trail.md)
-**Design Decisions**: [DD-AUDIT-006](../architecture/decisions/DD-AUDIT-006-remediation-approval-audit-implementation.md)
+**Design Decisions**: [DD-AUDIT-006](../architecture/decisions/DD-AUDIT-006-remediation-approval-audit-implementation.md) (superseded)
 **Authority**: DD-TEST-001 (Test Plan Standards)
+
+> **SUPERSEDED**: `pkg/remediationapprovalrequest/audit/` (the package this plan tests) had
+> no `cmd/` caller and was deleted as dead code on 2026-08-07. The BR-AUDIT-006 requirement
+> is fulfilled by the live `RemediationApprovalAuditPayload` event in `pkg/authwebhook`
+> instead. Retained for historical context only.
 
 ---
 

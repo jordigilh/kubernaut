@@ -347,13 +347,19 @@ func (c *AuditClient) RecordApprovalDecision(ctx context.Context, analysis *aian
 // RecordRegoEvaluation records a Rego policy evaluation event
 //
 // Uses OpenAPI-generated types (DD-AUDIT-004 V2.0).
-func (c *AuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome string, degraded bool, durationMs int, reason string) {
+// policyHash pins the SHA-256 hash of the policy that produced this evaluation
+// onto the audit trail (BR-AI-030, Issue #1981/#2005); pass "" when no policy
+// was loaded (degraded mode) or evaluation failed before a policy was resolved.
+func (c *AuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome string, degraded bool, durationMs int, reason string, policyHash string) {
 	// Build structured payload using OpenAPI-generated type
 	payload := &ogenclient.AIAnalysisRegoEvaluationPayload{
 		Outcome:    outcome,
 		Degraded:   degraded,
 		DurationMs: int32(durationMs),
 		Reason:     reason,
+	}
+	if policyHash != "" {
+		payload.PolicyHash.SetTo(policyHash)
 	}
 
 	// Map outcome to OpenAPI enum

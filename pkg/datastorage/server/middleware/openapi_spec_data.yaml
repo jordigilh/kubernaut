@@ -1852,7 +1852,6 @@ components:
             - $ref: '#/components/schemas/NotificationAuditPayload'
             - $ref: '#/components/schemas/WorkflowExecutionWebhookAuditPayload'
             - $ref: '#/components/schemas/RemediationApprovalAuditPayload'
-            - $ref: '#/components/schemas/RemediationApprovalDecisionPayload'
             - $ref: '#/components/schemas/WorkflowDiscoveryAuditPayload'
             - $ref: '#/components/schemas/WorkflowCatalogCreatedPayload'
             - $ref: '#/components/schemas/WorkflowCatalogUpdatedPayload'
@@ -3331,89 +3330,15 @@ components:
           type: string
           description: Trusted intermediary SA that facilitated the decision (empty for direct decisions). Enables forensic reconstruction of delegation chain.
           default: ""
-
-    # ========================================
-    # RemediationApprovalRequest Controller Audit Payloads
-    # From: pkg/remediationapprovalrequest/audit/
-    # BR-AUDIT-006: Approval decision audit trail (SOC 2 CC8.1)
-    # ========================================
-
-    RemediationApprovalDecisionPayload:
-      type: object
-      required: [event_type, remediation_request_name, ai_analysis_name, decision, decided_by, confidence, workflow_id]
-      description: |
-        Audit payload for approval decision event (approval.decision).
-        Captures WHO, WHEN, WHAT, WHY for SOC 2 CC8.1 (User Attribution) compliance.
-        Emitted by RemediationApprovalRequest controller when decision is made.
-      properties:
-        event_type:
+        policy_hash:
           type: string
-          enum: [approval.decision, approval.request.created, approval.timeout]
-          description: Event type for discriminator (matches parent event_type)
-        remediation_request_name:
-          type: string
-          description: Parent RemediationRequest name (correlation ID)
-          example: "rr-oomkilled-abc123"
-        ai_analysis_name:
-          type: string
-          description: AIAnalysis CRD that required approval
-          example: "ai-rr-oomkilled-abc123"
-        decision:
-          type: string
-          enum: [approved, rejected, expired]
-          description: Final approval decision
-          example: "approved"
-        decided_by:
-          type: string
-          description: Authenticated username from webhook (SOC 2 CC8.1)
-          example: "alice@example.com"
-        decided_at:
-          type: string
-          format: date-time
-          description: When decision was made
-          example: "2026-01-15T10:30:00Z"
-        decision_message:
-          type: string
-          description: Optional rationale from operator
-          example: "Root cause accurate. Safe to proceed with memory increase."
-        confidence:
-          type: number
-          format: float
-          description: AI confidence score that triggered approval
-          example: 0.75
-        workflow_id:
-          type: string
-          description: Workflow being approved
-          example: "oomkill-increase-memory-limits"
-        workflow_version:
-          type: string
-          description: Workflow version
-          example: "v1.2.0"
-        target_resource:
-          type: string
-          description: Target resource being remediated
-          example: "payment/deployment/payment-api"
-        timeout_deadline:
-          type: string
-          format: date-time
-          description: Approval deadline
-          example: "2026-01-15T10:45:00Z"
-        decision_duration_seconds:
-          type: integer
-          description: Time to decision (seconds)
-          example: 180
-        approval_reason:
-          type: string
-          description: Reason for requiring approval (for request.created event)
-          example: "Confidence below 80% auto-approve threshold"
-        timeout_reason:
-          type: string
-          description: Reason for timeout (for timeout event)
-          example: "No operator response within deadline"
-        timeout_duration_seconds:
-          type: integer
-          description: Timeout duration in seconds (for timeout event)
-          example: 900
+          description: |
+            SHA-256 hash of the Rego policy that produced the approval requirement
+            (issue #1981/#2005). Pinned onto the RemediationApprovalRequest spec at
+            creation time; provides after-the-fact attribution to the exact policy
+            bundle revision from this webhook-complete audit event (SOC 2 CC8.1,
+            CC6.8). Empty if no policy was loaded when the decision was required.
+          example: "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
 
     RemediationRequestWebhookAuditPayload:
       type: object
@@ -4420,6 +4345,14 @@ components:
           type: string
           description: Reason for the evaluation outcome
           example: "Policy allows auto-approval for non-production"
+        policy_hash:
+          type: string
+          description: |
+            SHA-256 hash of the Rego policy that produced this evaluation
+            (issue #1981). Provides after-the-fact attribution to the exact
+            policy bundle revision (BR-AI-030). Empty if no policy was loaded
+            (degraded mode) or evaluation failed before a policy was resolved.
+          example: "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9"
 
     AIAnalysisErrorPayload:
       type: object

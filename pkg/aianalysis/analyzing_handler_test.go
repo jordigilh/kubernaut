@@ -40,7 +40,7 @@ import (
 // noopAnalyzingAuditClient is a no-op implementation of AnalyzingAuditClientInterface for unit tests.
 type noopAnalyzingAuditClient struct{}
 
-func (n *noopAnalyzingAuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome string, degraded bool, durationMs int, reason string) {
+func (n *noopAnalyzingAuditClient) RecordRegoEvaluation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, outcome string, degraded bool, durationMs int, reason string, policyHash string) {
 	// No-op: Unit tests don't need audit recording
 }
 
