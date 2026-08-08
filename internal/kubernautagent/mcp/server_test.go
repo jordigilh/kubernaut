@@ -25,8 +25,10 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
@@ -184,6 +186,50 @@ var _ = Describe("BootstrapMCP Auth Architecture — #895/#896", func() {
 
 			Expect(authCallCount.Load()).To(Equal(int32(0)),
 				"BootstrapMCP must NOT apply auth internally; auth should be applied at router level")
+		})
+	})
+})
+
+// #2012/#2016 (main companion of #2011/#2017): without a wired logger,
+// go-sdk's ensureLogger(nil) defaults to a discard *slog.Logger
+// (go-sdk@v1.7.0/mcp/logging.go:104), silently dropping OnInternalError and
+// all other SDK-internal log paths -- this is exactly the diagnosability gap
+// that slowed #1949's triage. Authority: AU-2/AU-3 (Audit Events / Content of
+// Audit Records), SI-4 (System Monitoring) -- no numbered BR exists for this
+// observability enhancement (confirmed absent from docs/requirements/ during
+// planning).
+var _ = Describe("MCP Server Logger Wiring — #2016/#2017", func() {
+
+	Describe("UT-KA-2016-001: WithMCPLogger forwards SDK-internal log/error events", func() {
+		It("should route ServerOptions.Logger.Error calls through to the provided logr.Logger sink", func() {
+			var captured []string
+			captureLogger := funcr.New(func(prefix, args string) {
+				captured = append(captured, args)
+			}, funcr.Options{})
+
+			opts := &mcpsdk.ServerOptions{}
+			mcpinternal.WithMCPLogger(captureLogger)(opts)
+
+			Expect(opts.Logger).NotTo(BeNil(),
+				"WithMCPLogger must set ServerOptions.Logger instead of leaving it nil (go-sdk's discard default)")
+
+			opts.Logger.Error("jsonrpc2 internal error", "error", "simulated write failure")
+			Expect(captured).NotTo(BeEmpty(),
+				"the forwarded slog record must reach the underlying logr.Logger sink, not be silently discarded")
+		})
+	})
+
+	Describe("UT-KA-2016-002: zero-value Logger in MCPDeps remains a safe no-op", func() {
+		It("should not panic when MCPDeps.Logger is the zero value (pre-#2016 default behavior)", func() {
+			Expect(func() {
+				handler, srv := mcpinternal.BootstrapMCP(mcpinternal.MCPDeps{
+					AuthMiddleware: func(next http.Handler) http.Handler { return next },
+					Logger:         logr.Logger{}, // explicit zero value
+				})
+				Expect(handler).NotTo(BeNil())
+				Expect(srv).NotTo(BeNil())
+			}).NotTo(Panic(),
+				"logr.Logger's zero value guards on sink == nil (go-logr@v1.4.4), so BootstrapMCP must tolerate it safely")
 		})
 	})
 })

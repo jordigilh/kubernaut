@@ -44,6 +44,7 @@ import (
 	workflowexecutionv1 "github.com/jordigilh/kubernaut/api/workflowexecution/v1alpha1"
 	prodcontroller "github.com/jordigilh/kubernaut/internal/controller/remediationorchestrator"
 	rometrics "github.com/jordigilh/kubernaut/pkg/remediationorchestrator/metrics"
+	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
 // ========================================
@@ -206,6 +207,91 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 			Expect(c.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updated)).To(Succeed())
 			Expect(updated.Status.OverallPhase).To(Equal(remediationv1.PhaseTimedOut),
 				"RR should timeout at default when interactive session is completed")
+		})
+	})
+
+	// UT-RO-2012-001: reproduces #2012 (main companion of #2011) -- AIAnalysis
+	// reaches Completed (CompletedAt set on InteractiveSession in the same
+	// instant) past the base 10m timeout but within the 45m extension window.
+	// checkPhaseTimeouts recomputes the DD-INTERACTIVE-002 extension fresh on
+	// every reconcile, so it is revoked in the exact same reconcile a
+	// same-tick completion needs it most, discarding a valid, policy-
+	// evaluated AutoApproved remediation decision (BR-ORCH-028; ties to
+	// IR-4/SI-4 -- an incident's remediation decision must survive to the
+	// point of use and phase-timeout logic must not misclassify a completed
+	// analysis as timed out).
+	Context("UT-RO-2012-001: AIAnalysis Completed races the extension revocation", func() {
+		It("should NOT timeout when AIAnalysis is Completed even though CompletedAt just revoked the extension", func() {
+			startedAt := metav1.NewTime(time.Now().Add(-9 * time.Minute))
+			completedAt := metav1.NewTime(time.Now().Add(-1 * time.Second))
+			ai := aiWithInteractiveSession("ai-race-completed", &startedAt, &completedAt)
+			ai.Status.Phase = "Completed"
+			ai.Status.ApprovalRequired = false
+			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+					WorkflowID:      "wf-2012-completed",
+					WorkflowName:    "wf-2012-completed",
+					ActionType:      "RestartPod",
+					Version:         "1.0.0",
+					ExecutionBundle: "oci://example/bundle@sha256:deadbeef",
+				},
+				Confidence: 0.95,
+			}
+			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+				RemediationTarget: &aianalysisv1.RemediationTarget{
+					Kind: "Deployment", Name: "target-completed", Namespace: "default",
+				},
+			}
+			// Elapsed 10m47s: past base 10m timeout, well within 45m extension.
+			rr := analyzingRR("rr-race-completed", ai.Name, 10*time.Minute+47*time.Second)
+
+			c := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(rr, ai).
+				WithStatusSubresource(rr, ai).
+				Build()
+
+			reconciler := makeReconciler(c, prodcontroller.TimeoutConfig{})
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &remediationv1.RemediationRequest{}
+			Expect(c.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updated)).To(Succeed())
+			Expect(updated.Status.OverallPhase).NotTo(Equal(remediationv1.PhaseTimedOut),
+				"#2012: a Completed AIAnalysis result must not be discarded by the same-reconcile timeout race")
+		})
+	})
+
+	// UT-RO-2012-002: symmetric case for a Failed AIAnalysis -- AnalyzingHandler.Handle
+	// is equally prepared to finalize a Failed AIAnalysis, so the same
+	// same-tick race must not discard a Failed result into TimedOut either
+	// (BR-ORCH-028).
+	Context("UT-RO-2012-002: AIAnalysis Failed races the extension revocation", func() {
+		It("should NOT timeout when AIAnalysis is Failed even though CompletedAt just revoked the extension", func() {
+			startedAt := metav1.NewTime(time.Now().Add(-9 * time.Minute))
+			completedAt := metav1.NewTime(time.Now().Add(-1 * time.Second))
+			ai := aiWithInteractiveSession("ai-race-failed", &startedAt, &completedAt)
+			ai.Status.Phase = "Failed"
+			ai.Status.Message = "LLM investigation exhausted retries"
+			// Elapsed 10m47s: past base 10m timeout, well within 45m extension.
+			rr := analyzingRR("rr-race-failed", ai.Name, 10*time.Minute+47*time.Second)
+			// handleFailed's manual-review notification path sets an owner
+			// reference on the RR, which requires a non-empty UID (the fake
+			// client does not auto-assign one for pre-supplied objects).
+			rr.UID = types.UID("rr-race-failed-uid")
+
+			c := fake.NewClientBuilder().WithScheme(scheme).
+				WithObjects(rr, ai).
+				WithStatusSubresource(rr, ai).
+				Build()
+
+			reconciler := makeReconciler(c, prodcontroller.TimeoutConfig{})
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}})
+			Expect(err).NotTo(HaveOccurred())
+
+			updated := &remediationv1.RemediationRequest{}
+			Expect(c.Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: rr.Namespace}, updated)).To(Succeed())
+			Expect(updated.Status.OverallPhase).NotTo(Equal(remediationv1.PhaseTimedOut),
+				"#2012: a Failed AIAnalysis result must not be discarded by the same-reconcile timeout race")
 		})
 	})
 
