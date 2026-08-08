@@ -79,3 +79,48 @@ var _ = Describe("UT-KA-1935-011: reasoningDeltaText combines Reasoning.Text wit
 		Expect(reasoningDeltaText(msg)).To(Equal(""))
 	})
 })
+
+// #2010 (BR-AI-086, FedRAMP CC7.2/SI-10): Claude's extended-thinking +
+// tool-use behavior frequently ends the private "thinking" block with a
+// short one-line plan and then repeats that identical line as the visible
+// "text" block immediately before the tool_use block (the same underlying
+// LLM behavior documented for #2006 on main, via DD-LLM-009). Before this
+// fix, reasoningDeltaText's unconditional concatenation produced a single
+// reasoning_delta event whose text was literally "X\n\nX", so the Console's
+// ThinkingPanel showed the same sentence twice, separated by a blank line.
+// Observed live in the PR #2000 dev environment (console-e2e-approval run).
+var _ = Describe("UT-KA-2010-001: reasoningDeltaText does not repeat identical Reasoning.Text and Content", func() {
+	It("returns a single copy when Reasoning.Text and Content are byte-for-byte identical", func() {
+		msg := llm.Message{
+			Role:      "assistant",
+			Content:   "Let me now gather the pod logs and events for complete evidence.",
+			Reasoning: &llm.ReasoningBlock{Text: "Let me now gather the pod logs and events for complete evidence."},
+		}
+		Expect(reasoningDeltaText(msg)).To(Equal("Let me now gather the pod logs and events for complete evidence."),
+			"UT-KA-2010-001: identical Reasoning.Text and Content must not be concatenated into a "+
+				"self-duplicated \"X\\n\\nX\" ThinkingPanel entry")
+	})
+
+	It("returns a single copy when Reasoning.Text and Content differ only by surrounding whitespace", func() {
+		msg := llm.Message{
+			Role:      "assistant",
+			Content:   "  Checking the ConfigMap as well.\n",
+			Reasoning: &llm.ReasoningBlock{Text: "Checking the ConfigMap as well."},
+		}
+		Expect(reasoningDeltaText(msg)).To(Equal("Checking the ConfigMap as well."),
+			"UT-KA-2010-001: a whitespace-only difference is still the same sentence to the operator "+
+				"and must not be shown twice")
+	})
+
+	It("still concatenates when Reasoning.Text and Content genuinely differ (no false-positive suppression)", func() {
+		msg := llm.Message{
+			Role:      "assistant",
+			Content:   "Calling kubectl_describe now.",
+			Reasoning: &llm.ReasoningBlock{Text: "The pod is crash-looping; I should inspect the spec first."},
+		}
+		Expect(reasoningDeltaText(msg)).To(Equal(
+			"The pod is crash-looping; I should inspect the spec first.\n\nCalling kubectl_describe now."),
+			"UT-KA-2010-001: distinct reasoning and content must both still reach the operator, "+
+				"exactly as UT-KA-1935-011 already proves")
+	})
+})

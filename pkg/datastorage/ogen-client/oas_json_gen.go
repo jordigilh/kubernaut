@@ -32183,6 +32183,8 @@ func (s *IncidentResponseDataHumanReviewReason) Decode(d *jx.Decoder) error {
 		*s = IncidentResponseDataHumanReviewReasonRcaIncomplete
 	case IncidentResponseDataHumanReviewReasonAlignmentCheckFailed:
 		*s = IncidentResponseDataHumanReviewReasonAlignmentCheckFailed
+	case IncidentResponseDataHumanReviewReasonDecisionExpired:
+		*s = IncidentResponseDataHumanReviewReasonDecisionExpired
 	default:
 		*s = IncidentResponseDataHumanReviewReason(v)
 	}

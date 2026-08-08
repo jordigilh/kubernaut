@@ -78,6 +78,14 @@ type HTTPSessionCompleter interface {
 	FindUserDrivingByRemediationID(rrID string) (string, bool)
 	CompleteUserDriving(id string, result *katypes.InvestigationResult) error
 	ForceCompleteByRemediationID(rrID string, result *katypes.InvestigationResult) error
+
+	// PersistPendingDecisionResult attaches a preview InvestigationResult to a
+	// still-UserDriving session so that a later CompleteUserDriving(id, nil)
+	// -- as invoked by the inactivity-timeout/disconnect handlers -- preserves
+	// the discovered-but-unconfirmed recommendation instead of finalizing as
+	// has_workflow:false (#2019). See session.Store.SetPendingDecisionResult
+	// for the full rationale.
+	PersistPendingDecisionResult(id string, result *katypes.InvestigationResult)
 }
 
 // SessionMutexProvider exposes per-rrID mutexes for concurrency control.
@@ -120,6 +128,13 @@ type AutonomousSessionManager interface {
 	Subscribe(ctx context.Context, id string) (<-chan session.InvestigationEvent, error)
 	// #1384: Get the LazySink for a session so workflow_discovery can stream events.
 	GetSessionLazySink(id string) (*session.LazySink, bool)
+
+	// #2003: Emit a terminal session_ended event for a remediation ID's
+	// user-driving session BEFORE the session completes, so AF's
+	// WatchTerminalEvents (which has no timer-based safety net, #1438) is
+	// notified promptly instead of relying on the 10-minute inactivity
+	// timeout to eventually surface it.
+	EmitSessionEndedByRR(rrID, reason string)
 }
 
 // RRExistenceChecker validates that a RemediationRequest exists before
@@ -199,6 +214,7 @@ func (NopAutonomousManager) Subscribe(context.Context, string) (<-chan session.I
 	return nil, nil
 }
 func (NopAutonomousManager) GetSessionLazySink(string) (*session.LazySink, bool) { return nil, false }
+func (NopAutonomousManager) EmitSessionEndedByRR(string, string)                 {}
 
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
 // start, message, complete, cancel, takeover, discover_workflows.
@@ -1014,6 +1030,69 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 	t.sessions.TouchActivity(input.RRID)
 	if t.timeoutTracker != nil {
 		t.timeoutTracker.ResetInactivity(sess.SessionID)
+	}
+
+	// #2003: no_matching_workflows is a terminal outcome — HumanReviewReason
+	// is only ever set to this value on paths that leave WorkflowID and
+	// AlternativeWorkflows empty (investigator.go), so there is nothing left
+	// for the user to browse or select. Without this, the session lingered
+	// until KA's blunt 10-minute inactivity timeout eventually released it,
+	// which was the only thing that emitted session_ended — the terminal
+	// signal AF's WatchTerminalEvents blocks on (no timer-based safety net,
+	// #1438). Mirrors select_workflow.go's auto-close pattern (goroutine
+	// deferred past the MCP response reaching the caller, mutex re-acquired
+	// to avoid a TOCTOU race), but additionally emits session_ended BEFORE
+	// completing — the #1438 ordering that select_workflow's own pattern
+	// omits (safe there only because a workflow's execution start triggers a
+	// separate CRD-phase watch; there is no equivalent for "no match").
+	if workflowResult.HumanReviewNeeded && workflowResult.HumanReviewReason == "no_matching_workflows" {
+		if t.timeoutTracker != nil {
+			t.timeoutTracker.StopTracking(sess.SessionID)
+		}
+		if t.httpCompleter != nil {
+			autoMgr := t.autoMgr
+			completer := t.httpCompleter
+			sessions := t.sessions
+			rrID := input.RRID
+			sessionID := sess.SessionID
+			result := workflowResult
+			logger := t.logger
+			go func() {
+				// KA-HIGH-3: re-acquire the session mutex to prevent TOCTOU
+				// between response delivery and HTTP/lease cleanup.
+				mu := t.getSessionMutex(rrID)
+				mu.Lock()
+				defer mu.Unlock()
+
+				// #1438 ordering: emit BEFORE completing, so EventLogBridge
+				// can forward the terminal event to AF before the channel
+				// closes.
+				autoMgr.EmitSessionEndedByRR(rrID, "no_matching_workflows")
+				CompleteHTTPSession(completer, rrID, result, logger, "no_matching_workflows")
+				if releaseErr := sessions.Release(sessionID, "no_matching_workflows"); releaseErr != nil {
+					if !errors.Is(releaseErr, mcpinternal.ErrSessionNotFound) {
+						logger.Error(releaseErr, "failed to release MCP lease", "session_id", sessionID)
+					}
+				}
+			}()
+		}
+	} else if t.httpCompleter != nil {
+		// #2019: a real workflow was found and is about to be presented via
+		// kubernaut_present_decision. Preserve it as a pending-decision preview
+		// BEFORE returning, so that if nothing (human or automation) answers
+		// before the interactive session's inactivity timeout fires,
+		// CompleteHTTPSession's hardcoded nil result (main.go) preserves this
+		// preview instead of silently finalizing as has_workflow:false. If the
+		// user does respond (select_workflow/complete_no_action), that explicit
+		// CompleteUserDriving(id, result) call overwrites this preview with the
+		// confirmed outcome, since Store.CompleteUserDriving only skips the
+		// overwrite when passed a nil result.
+		if httpSessionID, found := t.httpCompleter.FindUserDrivingByRemediationID(input.RRID); found {
+			preview := *workflowResult
+			preview.HumanReviewNeeded = true
+			preview.HumanReviewReason = katypes.HumanReviewReasonDecisionExpired
+			t.httpCompleter.PersistPendingDecisionResult(httpSessionID, &preview)
+		}
 	}
 
 	// Build the JSON response for the user.

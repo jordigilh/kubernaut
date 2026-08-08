@@ -694,6 +694,10 @@ spec:
                   Reason why human review needed (when NeedsHumanReview=true)
                   BR-HAPI-197: Maps to KA's human_review_reason enum values
                   BR-AI-601: alignment_check_failed added for shadow agent alignment verdicts
+                  #2019: decision_expired added -- a workflow was found and presented via
+                  kubernaut_present_decision, but no response arrived before the interactive
+                  session's inactivity timeout. Distinguishes this from no_matching_workflows
+                  so the discovered SelectedWorkflow is preserved instead of discarded.
                 enum:
                 - workflow_not_found
                 - image_mismatch
@@ -705,6 +709,7 @@ spec:
                 - rca_incomplete
                 - alignment_check_failed
                 - operator_escalation
+                - decision_expired
                 type: string
               interactiveSession:
                 description: |-
@@ -1142,6 +1147,7 @@ spec:
                   SubReason provides specific failure cause within the Reason category
                   BR-HAPI-197: Maps to needs_human_review triggers from KA
                   BR-HAPI-200: Added InvestigationInconclusive, ProblemResolved for new investigation outcomes
+                  #2019: Added DecisionExpired for a presented-but-unanswered workflow decision
                 enum:
                 - WorkflowNotFound
                 - ImageMismatch
@@ -1160,6 +1166,7 @@ spec:
                 - RcaIncomplete
                 - InvestigationFailed
                 - OperatorEscalation
+                - DecisionExpired
                 type: string
               totalAnalysisTime:
                 description: TotalAnalysisTime is the total duration of the analysis

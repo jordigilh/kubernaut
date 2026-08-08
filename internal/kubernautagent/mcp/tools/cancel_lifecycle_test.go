@@ -268,6 +268,8 @@ func (c *cancelLifecycleHTTPCompleter) ForceCompleteByRemediationID(_ string, re
 	return nil
 }
 
+func (c *cancelLifecycleHTTPCompleter) PersistPendingDecisionResult(_ string, _ *katypes.InvestigationResult) {}
+
 func (c *cancelLifecycleHTTPCompleter) getCompleted() (string, *katypes.InvestigationResult) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

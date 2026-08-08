@@ -2723,7 +2723,18 @@ func (r *Reconciler) checkPhaseTimeouts(ctx context.Context, rr *remediationv1.R
 
 	// DD-INTERACTIVE-002: Extend Analyzing timeout when interactive session is active
 	if currentPhase == remediationv1.PhaseAnalyzing {
-		phaseTimeout = r.applyInteractiveTimeoutExtension(ctx, rr, phaseTimeout)
+		extended, aiTerminal := r.applyInteractiveTimeoutExtension(ctx, rr, phaseTimeout)
+		if aiTerminal {
+			// #2011: AIAnalysis already reached Completed/Failed. The extension
+			// above is computed fresh from AIAnalysis's *current* state on every
+			// reconcile, so it is revoked in the exact same reconcile that a
+			// same-tick completion needs it most (CompletedAt is set the instant
+			// Phase becomes terminal). Skip the timeout comparison entirely here
+			// and let the Analyzing phase handler (below, same reconcile) consume
+			// the result instead of racing it into TimedOut.
+			return nil
+		}
+		phaseTimeout = extended
 	}
 
 	// Check if phase has exceeded timeout
@@ -2742,12 +2753,14 @@ func (r *Reconciler) checkPhaseTimeouts(ctx context.Context, rr *remediationv1.R
 }
 
 // applyInteractiveTimeoutExtension checks if the associated AIAnalysis has an active
-// interactive session and extends the timeout to MaxAnalyzing if so.
-// Falls back gracefully to the original timeout on AA fetch errors.
-// Reference: DD-INTERACTIVE-002 (dynamic timeout extension)
-func (r *Reconciler) applyInteractiveTimeoutExtension(ctx context.Context, rr *remediationv1.RemediationRequest, defaultTimeout time.Duration) time.Duration {
+// interactive session and extends the timeout to MaxAnalyzing if so. It also reports
+// whether AIAnalysis has already reached a terminal phase (Completed/Failed) via the
+// second return value (#2011) -- see checkPhaseTimeouts's caller for why that matters.
+// Falls back gracefully to the original timeout (and aiTerminal=false) on AA fetch errors.
+// Reference: DD-INTERACTIVE-002 (dynamic timeout extension), #2011
+func (r *Reconciler) applyInteractiveTimeoutExtension(ctx context.Context, rr *remediationv1.RemediationRequest, defaultTimeout time.Duration) (extendedTimeout time.Duration, aiTerminal bool) {
 	if rr.Status.AIAnalysisRef == nil {
-		return defaultTimeout
+		return defaultTimeout, false
 	}
 
 	logger := log.FromContext(ctx)
@@ -2763,11 +2776,21 @@ func (r *Reconciler) applyInteractiveTimeoutExtension(ctx context.Context, rr *r
 	if err := r.client.Get(ctx, key, ai); err != nil {
 		logger.V(1).Info("Failed to fetch AIAnalysis for interactive timeout check, using default",
 			"aiAnalysis", key, "error", err)
-		return defaultTimeout
+		return defaultTimeout, false
+	}
+
+	// #2011: A terminal AIAnalysis (Completed/Failed) is exactly what
+	// AnalyzingHandler.Handle is waiting to consume -- regardless of whether the
+	// interactive-session extension below is still active. Report it so the
+	// caller can skip the timeout comparison entirely rather than risk
+	// discarding a result that exists only because the (now-revoked) extension
+	// gave it the time to finish.
+	if ai.Status.Phase == "Completed" || ai.Status.Phase == "Failed" {
+		return defaultTimeout, true
 	}
 
 	if ai.Status.InteractiveSession == nil {
-		return defaultTimeout
+		return defaultTimeout, false
 	}
 
 	// Active session: StartedAt set, CompletedAt nil
@@ -2779,11 +2802,11 @@ func (r *Reconciler) applyInteractiveTimeoutExtension(ctx context.Context, rr *r
 				"actingUser", ai.Status.InteractiveSession.ActingUser,
 				"defaultTimeout", defaultTimeout,
 				"extendedTimeout", extended)
-			return extended
+			return extended, false
 		}
 	}
 
-	return defaultTimeout
+	return defaultTimeout, false
 }
 
 // handlePhaseTimeout handles phase timeout by transitioning to TimedOut phase.

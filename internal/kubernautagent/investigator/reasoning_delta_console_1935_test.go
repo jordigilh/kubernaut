@@ -29,6 +29,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	afka "github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	aftools "github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -226,5 +228,79 @@ var _ = Describe("#1935 finding #3: console ThinkingPanel must not go blank on S
 				"IT-KA-1935-014: retryWorkflowSubmit's reasoning_delta event must fall back to Reasoning.Text "+
 					"when the retry turn's Content is empty (#1935 finding #3)")
 		})
+	})
+})
+
+// #2010 (BR-AI-086, FedRAMP CC7.2/SI-10): drives a real Investigator through
+// its real production event-sink wiring with an LLM turn shaped exactly like
+// the live PR #2000 dev-environment observation -- Claude repeats the same
+// one-line plan in both Reasoning.Text and Content immediately before a tool
+// call -- and proves the resulting reasoning_delta event (as it will
+// actually reach the Console via AF's real FormatEventForUser) shows the
+// sentence exactly once, not as a self-duplicated "X\n\nX" entry.
+var _ = Describe("IT-KA-2010-002: reasoning_delta does not self-duplicate identical Reasoning.Text and Content on the wire", func() {
+	It("emits a single, non-duplicated sentence when Claude repeats its plan in both blocks", func() {
+		eventCh := make(chan session.InvestigationEvent, 64)
+		ctx := session.WithEventSink(context.Background(), eventCh)
+
+		duplicateText := "Let me now gather the pod logs and events for complete evidence."
+		mockClient := &cancelAwareMockClient{
+			responses: []llm.ChatResponse{
+				{
+					Message: llm.Message{
+						Role:      "assistant",
+						Content:   duplicateText,
+						Reasoning: &llm.ReasoningBlock{Text: duplicateText},
+					},
+					ToolCalls: []llm.ToolCall{
+						{ID: "tc_1", Name: "kubectl_get_logs", Arguments: `{"kind":"Pod","name":"test","namespace":"default"}`},
+					},
+					Usage: llm.TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
+				},
+				{
+					Message: llm.Message{
+						Role:    "assistant",
+						Content: `{"rca_summary":"pod OOM killed","confidence":0.9}`,
+					},
+					Usage: llm.TokenUsage{PromptTokens: 200, CompletionTokens: 100, TotalTokens: 300},
+				},
+			},
+		}
+
+		inv := streamTestInvestigator(mockClient)
+		go func() {
+			_, _ = inv.Investigate(ctx, streamSignal)
+			close(eventCh)
+		}()
+
+		events := collectEvents(eventCh)
+
+		var kaEvent *session.InvestigationEvent
+		for i := range events {
+			if events[i].Type == session.EventTypeReasoningDelta {
+				kaEvent = &events[i]
+				break
+			}
+		}
+		Expect(kaEvent).NotTo(BeNil(), "IT-KA-2010-002: must emit a reasoning_delta event for the turn")
+
+		var data map[string]interface{}
+		Expect(json.Unmarshal(kaEvent.Data, &data)).To(Succeed())
+		text, _ := data["text"].(string)
+		Expect(text).To(Equal(duplicateText),
+			"IT-KA-2010-002: KA's own emitted event must not concatenate identical Reasoning.Text and "+
+				"Content into a self-duplicated entry")
+
+		// Full KA/AF wire-contract proof (mirrors IT-KA-1771-001): the same
+		// wire hop AF actually performs (MCP JSON transport -> ka.InvestigationEvent
+		// -> production FormatEventForUser) must not reintroduce duplication.
+		wireBytes, err := json.Marshal(kaEvent)
+		Expect(err).NotTo(HaveOccurred())
+		var afEvent afka.InvestigationEvent
+		Expect(json.Unmarshal(wireBytes, &afEvent)).To(Succeed())
+		displayText := aftools.FormatEventForUser(afEvent)
+		Expect(displayText).To(Equal(duplicateText),
+			"IT-KA-2010-002: the operator-observable Console text (AF's production FormatEventForUser "+
+				"output) must show the duplicate-prone sentence exactly once")
 	})
 })

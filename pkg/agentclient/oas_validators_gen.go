@@ -290,6 +290,8 @@ func (s HumanReviewReason) Validate() error {
 		return nil
 	case "operator_escalation":
 		return nil
+	case "decision_expired":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}

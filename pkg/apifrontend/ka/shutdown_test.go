@@ -52,7 +52,11 @@ var _ = Describe("Graceful Shutdown (G14)", func() {
 		err = pool.DrainAll(ctx)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(pool.Size()).To(Equal(0))
-		Expect(atomic.LoadInt32(&closeCount)).To(Equal(int32(2)))
+		// #1995: DrainAll's session.Close() calls are now bounded/async
+		// (closeSessionBounded) so a poisoned session can't wedge shutdown
+		// forever -- Close() completion is observed via Eventually rather
+		// than assumed synchronous with DrainAll's return.
+		Eventually(func() int32 { return atomic.LoadInt32(&closeCount) }).Should(Equal(int32(2)))
 	})
 
 	It("UT-AF-1234-141: DrainAll respects context deadline", func() {

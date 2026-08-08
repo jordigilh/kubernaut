@@ -256,6 +256,8 @@ var _ = Describe("Response Mapper — #433", func() {
 			{"low_confidence", "low_confidence", "exact match"},
 			{"llm_parsing_error", "llm_parsing_error", "exact match"},
 			{"alignment_check_failed", "alignment_check_failed", "exact match"},
+			{"operator_escalation", "operator_escalation", "exact match"},
+			{"decision_expired", "decision_expired", "exact match (#2019: workflow found and presented, decision unanswered before timeout)"},
 			{"turns exhausted during RCA phase", "rca_incomplete", "contains 'exhausted during RCA'"},
 			{"turns exhausted during workflow selection", "investigation_inconclusive", "contains 'exhausted during workflow selection'"},
 			{"workflow not found in catalog", "workflow_not_found", "contains 'not found' + 'catalog'"},

@@ -45,7 +45,7 @@ import (
 func TestHealthMuxReadyz_DepsHealthy(t *testing.T) {
 	draining := &atomic.Bool{}
 	depsReady := handler.ReadyChecker(func() bool { return true })
-	mux := buildHealthMux(depsReady, draining)
+	mux := buildHealthMux(depsReady, draining, false)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
@@ -57,7 +57,7 @@ func TestHealthMuxReadyz_DepsHealthy(t *testing.T) {
 func TestHealthMuxReadyz_DepsUnhealthy(t *testing.T) {
 	draining := &atomic.Bool{}
 	depsReady := handler.ReadyChecker(func() bool { return false })
-	mux := buildHealthMux(depsReady, draining)
+	mux := buildHealthMux(depsReady, draining, false)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
@@ -70,7 +70,7 @@ func TestHealthMuxReadyz_Draining(t *testing.T) {
 	draining := &atomic.Bool{}
 	draining.Store(true)
 	depsReady := handler.ReadyChecker(func() bool { return true })
-	mux := buildHealthMux(depsReady, draining)
+	mux := buildHealthMux(depsReady, draining, false)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
@@ -81,7 +81,7 @@ func TestHealthMuxReadyz_Draining(t *testing.T) {
 
 func TestHealthMuxReadyz_NilDepsReady(t *testing.T) {
 	draining := &atomic.Bool{}
-	mux := buildHealthMux(nil, draining)
+	mux := buildHealthMux(nil, draining, false)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
@@ -91,11 +91,67 @@ func TestHealthMuxReadyz_NilDepsReady(t *testing.T) {
 }
 
 func TestHealthMuxHealthz_AlwaysOK(t *testing.T) {
-	mux := buildHealthMux(nil, &atomic.Bool{})
+	mux := buildHealthMux(nil, &atomic.Bool{}, false)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", http.NoBody))
 	if rec.Code != http.StatusOK {
 		t.Errorf("TC-A-01c: healthz should always return 200, got %d", rec.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// #1995: pprof/debug-endpoint parity with kubernautagent, gated on the
+// internal health mux only. AC-6/SC-8: pprof must never expand the
+// externally-reachable attack surface -- it shares the health port's
+// existing NetworkPolicy boundary (same as /healthz, /readyz today), and
+// must be entirely absent from the main API router.
+// ---------------------------------------------------------------------------
+
+func TestHealthMuxPprof_EnabledWhenProfilingNotDisabled(t *testing.T) {
+	mux := buildHealthMux(nil, &atomic.Bool{}, false)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/debug/pprof/", http.NoBody))
+	if rec.Code != http.StatusOK {
+		t.Errorf("UT-AF-1995-004: expected 200 from /debug/pprof/ when profiling enabled, got %d", rec.Code)
+	}
+}
+
+func TestHealthMuxPprof_AbsentWhenProfilingDisabled(t *testing.T) {
+	mux := buildHealthMux(nil, &atomic.Bool{}, true)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/debug/pprof/", http.NoBody))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("UT-AF-1995-005: expected 404 from /debug/pprof/ when DisableProfiling=true, got %d", rec.Code)
+	}
+}
+
+// IT-AF-1995-006 [AC-6, SC-8]: the main externally-reachable API router
+// (handler.NewRouter) must never register /debug/pprof/* regardless of the
+// health mux's profiling setting -- pprof is wired exclusively onto the
+// internal health mux/port (see Wiring Manifest in the #1995 plan).
+func TestMainAPIRouter_NeverRegistersPprof(t *testing.T) {
+	t.Parallel()
+
+	reg := metrics.NewRegistry()
+	stubHandler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	router, err := handler.NewRouter(handler.RouterConfig{
+		MetricsRegistry:  reg,
+		A2AHandler:       stubHandler,
+		MCPHandler:       stubHandler,
+		AgentCardHandler: stubHandler,
+		AuthMiddleware:   func(h http.Handler) http.Handler { return h },
+		ReadyChecker:     func() bool { return true },
+		Draining:         &atomic.Bool{},
+	})
+	if err != nil {
+		t.Fatalf("IT-AF-1995-006: unexpected error building router config: %v", err)
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/debug/pprof/", http.NoBody)
+	router.ServeHTTP(rec, req)
+	if rec.Code == http.StatusOK {
+		t.Fatal("IT-AF-1995-006 AC-6/SC-8: main API router must never expose /debug/pprof/ -- pprof must be health-mux-only")
 	}
 }
 

@@ -1058,10 +1058,11 @@
           "investigation_inconclusive",
           "rca_incomplete",
           "alignment_check_failed",
-          "operator_escalation"
+          "operator_escalation",
+          "decision_expired"
         ],
         "title": "HumanReviewReason",
-        "description": "Structured reason for needs_human_review=true.\n\nBusiness Requirements: BR-HAPI-197, BR-HAPI-200, BR-496, BR-AI-601, BR-WORKFLOW-1418\nDesign Decision: DD-HAPI-002 v1.2, DD-HAPI-006 v1.3, DD-AF-007\n\nAIAnalysis uses this for reliable subReason mapping instead of parsing warnings."
+        "description": "Structured reason for needs_human_review=true.\n\nBusiness Requirements: BR-HAPI-197, BR-HAPI-200, BR-496, BR-AI-601, BR-WORKFLOW-1418\nDesign Decision: DD-HAPI-002 v1.2, DD-HAPI-006 v1.3, DD-AF-007\n\nAIAnalysis uses this for reliable subReason mapping instead of parsing warnings. #2019: decision_expired covers a presented-but-unanswered kubernaut_present_decision that expired via interactive inactivity timeout."
       },
       "IncidentRequest": {
         "properties": {

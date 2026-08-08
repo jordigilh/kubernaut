@@ -856,6 +856,10 @@ func mapHumanReviewReason(reason string) (agentclient.HumanReviewReason, bool) {
 		return agentclient.HumanReviewReasonAlignmentCheckFailed, false
 	case "operator_escalation":
 		return agentclient.HumanReviewReasonOperatorEscalation, false
+	case "decision_expired":
+		// #2019: a workflow was discovered and presented via kubernaut_present_decision,
+		// but no response arrived before the interactive session's inactivity timeout.
+		return agentclient.HumanReviewReasonDecisionExpired, false
 	}
 
 	switch {

@@ -592,7 +592,9 @@ func (*HTTPValidationError) incidentSessionStatusEndpointAPIV1IncidentSessionSes
 // Structured reason for needs_human_review=true.
 // Business Requirements: BR-HAPI-197, BR-HAPI-200, BR-496, BR-AI-601, BR-WORKFLOW-1418
 // Design Decision: DD-HAPI-002 v1.2, DD-HAPI-006 v1.3, DD-AF-007
-// AIAnalysis uses this for reliable subReason mapping instead of parsing warnings.
+// AIAnalysis uses this for reliable subReason mapping instead of parsing warnings. #2019:
+// decision_expired covers a presented-but-unanswered kubernaut_present_decision that expired via
+// interactive inactivity timeout.
 // Ref: #/components/schemas/HumanReviewReason
 type HumanReviewReason string
 
@@ -607,6 +609,7 @@ const (
 	HumanReviewReasonRcaIncomplete             HumanReviewReason = "rca_incomplete"
 	HumanReviewReasonAlignmentCheckFailed      HumanReviewReason = "alignment_check_failed"
 	HumanReviewReasonOperatorEscalation        HumanReviewReason = "operator_escalation"
+	HumanReviewReasonDecisionExpired           HumanReviewReason = "decision_expired"
 )
 
 // AllValues returns all HumanReviewReason values.
@@ -622,6 +625,7 @@ func (HumanReviewReason) AllValues() []HumanReviewReason {
 		HumanReviewReasonRcaIncomplete,
 		HumanReviewReasonAlignmentCheckFailed,
 		HumanReviewReasonOperatorEscalation,
+		HumanReviewReasonDecisionExpired,
 	}
 }
 
@@ -647,6 +651,8 @@ func (s HumanReviewReason) MarshalText() ([]byte, error) {
 	case HumanReviewReasonAlignmentCheckFailed:
 		return []byte(s), nil
 	case HumanReviewReasonOperatorEscalation:
+		return []byte(s), nil
+	case HumanReviewReasonDecisionExpired:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -685,6 +691,9 @@ func (s *HumanReviewReason) UnmarshalText(data []byte) error {
 		return nil
 	case HumanReviewReasonOperatorEscalation:
 		*s = HumanReviewReasonOperatorEscalation
+		return nil
+	case HumanReviewReasonDecisionExpired:
+		*s = HumanReviewReasonDecisionExpired
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

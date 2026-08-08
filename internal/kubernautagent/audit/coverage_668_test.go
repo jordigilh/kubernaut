@@ -85,6 +85,37 @@ var _ = Describe("Kubernaut Agent audit coverage 668 (BR-HAPI-197 DD-AUDIT-002)"
 			Expect(payload.ResponseData.HumanReviewReason.Value).To(Equal(ogenclient.IncidentResponseDataHumanReviewReasonRcaIncomplete))
 		})
 
+		It("UT-KA-2019-010: maps decision_expired onto the ogen enum value (#2019 audit whitelist)", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			rd, err := json.Marshal(map[string]interface{}{
+				"rca_summary":         "workflow found and presented, decision not received before timeout",
+				"severity":            "high",
+				"confidence":          0.9,
+				"needs_human_review":  true,
+				"human_review_reason": "decision_expired",
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			event := audit.NewEvent(audit.EventTypeResponseComplete, "corr-hr-decision-expired")
+			event.EventAction = audit.ActionResponseSent
+			event.EventOutcome = audit.OutcomeSuccess
+			event.Data["response_data"] = string(rd)
+			event.Data["total_prompt_tokens"] = 10
+			event.Data["total_completion_tokens"] = 5
+
+			Expect(store.StoreAudit(context.Background(), event)).To(Succeed())
+			req := recorder.calls[0]
+			payload, ok := req.EventData.GetAIAgentResponsePayload()
+			Expect(ok).To(BeTrue())
+			Expect(payload.ResponseData.NeedsHumanReview.Set).To(BeTrue())
+			Expect(payload.ResponseData.NeedsHumanReview.Value).To(BeTrue())
+			Expect(payload.ResponseData.HumanReviewReason.Set).To(BeTrue(),
+				"AU-2/AU-3: decision_expired must not be silently dropped from the audit record (#2019)")
+			Expect(payload.ResponseData.HumanReviewReason.Value).To(Equal(ogenclient.IncidentResponseDataHumanReviewReasonDecisionExpired))
+		})
+
 		It("drops unrecognised human_review_reason strings so OpenAPI validation keeps the event", func() {
 			recorder := &fakeOgenClient{}
 			store := audit.NewDSAuditStore(recorder)
