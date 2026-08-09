@@ -141,6 +141,15 @@ type InvestigateMCPResult struct {
 	Ambiguous           bool   `json:"ambiguous,omitempty"`
 	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
 	CandidateSeverity   string `json:"candidate_severity,omitempty"`
+	// AlignmentVerdict carries KA's #1096 shadow-agent full-context grounding
+	// review verdict for this investigation, when ai.alignmentCheck is
+	// enabled on KA. Hardening beyond the original #2023 QE report: AF's
+	// present_decision grounding guard (phase_guard.go,
+	// investigateHasGroundedContent) treats a non-"aligned" Result here as
+	// ungrounded even when Summary/RCA are otherwise present, since KA's own
+	// reviewer already found the conclusions weren't well-supported by tool
+	// evidence. Always nil when alignment checking is disabled (the default).
+	AlignmentVerdict *katypes.AlignmentVerdictResult `json:"alignment_verdict,omitempty"`
 }
 
 // InvestigateRCA is the structured RCA data extracted from the KA complete event.
@@ -488,7 +497,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
 			"rr_id", args.RRID, "session_id", result.SessionID, "ctx_err", ctx.Err())
 		bridgeCtx := WithRRID(ctx, args.RRID)
-		summary, rca := bridgeEventsCollectSummary(bridgeCtx, result.Events, BridgeInactivityTimeout)
+		summary, rca, alignmentVerdict := bridgeEventsCollectSummary(bridgeCtx, result.Events, BridgeInactivityTimeout)
 		status := "completed"
 		if ctx.Err() != nil {
 			status = "timeout"
@@ -543,12 +552,13 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		}
 
 		return InvestigateMCPResult{
-			SessionID: result.SessionID,
-			Status:    status,
-			Summary:   summary,
-			RRID:      args.RRID,
-			RCA:       rca,
-			Managed:   true,
+			SessionID:        result.SessionID,
+			Status:           status,
+			Summary:          summary,
+			RRID:             args.RRID,
+			RCA:              rca,
+			Managed:          true,
+			AlignmentVerdict: alignmentVerdict,
 		}, nil
 	}
 
@@ -650,17 +660,23 @@ var BridgeInactivityTimeout = 60 * time.Second
 
 // BridgeEventsCollectSummary is the exported entry point for bridgeEventsCollectSummary.
 // It is used by integration tests and the blocking MCP investigation path.
-func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA) {
+func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, *katypes.AlignmentVerdictResult) {
 	return bridgeEventsCollectSummary(ctx, events, inactivityTimeout)
 }
 
 // bridgeEventsCollectSummary bridges events (same as BridgeEventsToA2A) and
 // accumulates reasoning_delta text into a summary returned when the channel
 // closes, the context is cancelled, or no events arrive within
-// inactivityTimeout (hang detection).
-func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA) {
+// inactivityTimeout (hang detection). The returned *AlignmentVerdictResult
+// (the last EventTypeAlignmentVerdict seen, nil if none arrived) lets the
+// caller wire KA's #1096 shadow-agent verdict into InvestigateMCPResult --
+// previously this was only used locally to fire the human-facing SSE
+// alignment_check_failed notification and then discarded, leaving the #2023
+// grounding guard with no way to consult it.
+func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, *katypes.AlignmentVerdictResult) {
 	var summary strings.Builder
 	var rcaResult *InvestigateRCA
+	var verdictResult *katypes.AlignmentVerdictResult
 	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()
 	inactivity := time.NewTimer(inactivityTimeout)
@@ -668,14 +684,14 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 	for {
 		select {
 		case <-ctx.Done():
-			return summary.String(), rcaResult
+			return summary.String(), rcaResult, verdictResult
 		case <-inactivity.C:
-			return summary.String(), rcaResult
+			return summary.String(), rcaResult, verdictResult
 		case <-keepalive.C:
 			_ = launcher.EmitKeepaliveDotSafe(ctx)
 		case evt, ok := <-events:
 			if !ok {
-				return summary.String(), rcaResult
+				return summary.String(), rcaResult, verdictResult
 			}
 			inactivity.Reset(inactivityTimeout)
 			// #1438: Handle session_ended before generic emit to avoid double-emit.
@@ -689,7 +705,7 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 						"reason":   evt.Phase,
 						"terminal": true,
 					})
-				return summary.String(), rcaResult
+				return summary.String(), rcaResult, verdictResult
 			}
 			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
 			switch evt.Type {
@@ -704,12 +720,15 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 			case ka.EventTypeAlignmentVerdict:
 				if len(evt.Data) > 0 {
 					var avr katypes.AlignmentVerdictResult
-					if json.Unmarshal(evt.Data, &avr) == nil && avr.Result != "aligned" {
-						meta := map[string]any{
-							"type":  launcher.MetaTypeAlignmentCheckFailed,
-							"rr_id": extractRRIDFromContext(ctx),
+					if json.Unmarshal(evt.Data, &avr) == nil {
+						verdictResult = &avr
+						if avr.Result != "aligned" {
+							meta := map[string]any{
+								"type":  launcher.MetaTypeAlignmentCheckFailed,
+								"rr_id": extractRRIDFromContext(ctx),
+							}
+							_ = launcher.EmitStructuredMetaSafe(ctx, string(evt.Data), meta)
 						}
-						_ = launcher.EmitStructuredMetaSafe(ctx, string(evt.Data), meta)
 					}
 				}
 			case ka.EventTypeComplete:
@@ -723,9 +742,9 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 						emitEarlyRCA(ctx, &rca)
 					}
 				}
-				return summary.String(), rcaResult
+				return summary.String(), rcaResult, verdictResult
 			case ka.EventTypeCancelled:
-				return summary.String(), rcaResult
+				return summary.String(), rcaResult, verdictResult
 			}
 		}
 	}
