@@ -388,7 +388,13 @@ jobs:
           image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-amd64
           format: cyclonedx-json
           output-file: sbom-${{ matrix.service }}-amd64.cdx.json
-          artifact-name: sbom-${{ matrix.service }}-amd64
+          # anchore/sbom-action uploads the workflow artifact's file under
+          # this exact name -- output-file only controls a local runner-disk
+          # copy, it does NOT determine the uploaded artifact's filename (see
+          # https://github.com/anchore/sbom-action/blob/main/src/github/SyftGithubAction.ts).
+          # Must match the .cdx.json suffix sign-and-attest's
+          # `cosign attest --predicate` expects after download (#2038).
+          artifact-name: sbom-${{ matrix.service }}-amd64.cdx.json
 
   # ========================================
   # STAGE 1e: SECURITY SCAN (arm64)
@@ -437,7 +443,8 @@ jobs:
           image: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ needs.prepare.outputs.version }}-arm64
           format: cyclonedx-json
           output-file: sbom-${{ matrix.service }}-arm64.cdx.json
-          artifact-name: sbom-${{ matrix.service }}-arm64
+          # See the amd64 job's identical comment above (#2038).
+          artifact-name: sbom-${{ matrix.service }}-arm64.cdx.json
 
   # ========================================
   # STAGE 2: HELM SMOKE TESTS (Issue #569)
