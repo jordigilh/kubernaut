@@ -177,6 +177,25 @@ data:
                 name: "Rollback"
                 description: "Rollback to previous revision"
 
+      - name: "af_structured_decision_ground"
+        # Dedicated grounding call for structured_decision_e2e_test.go's
+        # groundSession helper. Deliberately does NOT reuse af_investigate's
+        # keywords/target (af-investigate-e2e/af-investigate-target): that
+        # fixture is shared by 3 other scenarios above, and under Ginkgo
+        # --procs>1 a concurrent spec can already hold its interactive KA
+        # session open when this one calls in, hitting KA's session_active
+        # fallback instead of a clean grounded result (CI run 31320575553,
+        # E2E-AF-1395-001). This keyword/target pair is used nowhere else.
+        keywords: ["seed grounding context"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            api_version: "v1"
+            namespace: "af-structured-decision-e2e"
+            name: "structured-decision-target"
+            kind: "Pod"
+
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]
         match_last_only: true

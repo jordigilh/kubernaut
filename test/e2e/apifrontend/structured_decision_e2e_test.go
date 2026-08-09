@@ -141,13 +141,23 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 	// (enforceGroundingGuard, phase_guard.go) finds
 	// session.StateKeyGroundedContentAvailable=true and lets the mock-LLM's
 	// scripted RCA/options through instead of overwriting them with the
-	// fail-closed "no investigation content" fallback. Targets the
-	// af-investigate-e2e/af-investigate-target fixture (managed namespace,
-	// synthetic grounding alert) that other AF E2E suites already rely on
-	// for a deterministic, successful investigation.
+	// fail-closed "no investigation content" fallback. Targets a dedicated
+	// af-structured-decision-e2e/structured-decision-target fixture (managed
+	// namespace, StructuredDecisionGrounding synthetic alert,
+	// apifrontend_prometheus_e2e.go) rather than the shared
+	// af-investigate-e2e/af-investigate-target fixture used by
+	// af_investigate/af_progressive_investigate/af_investigate_resume: with
+	// Ginkgo --procs>1 those scenarios' concurrently-running specs can hold
+	// that fixture's KA session open when this call lands, and
+	// af_create_rr.go's checkExistingRRByFingerprint dedups by target, so
+	// this call would nondeterministically inherit their in-flight session
+	// and hit KA's session_active/early_rca fallback instead of a clean
+	// grounded result -- silently starving present_decision of grounding
+	// and emitting no SSE decision event at all (CI run 31320575553,
+	// this test, "not to be empty").
 	groundSession := func(ctx context.Context, contextID string) {
 		resp, err := a2aSSEPost(ctx, a2aMessageStreamWithContext(contextID+"-ground", contextID,
-			"start investigation for pod af-investigate-target in af-investigate-e2e"))
+			"seed grounding context for pod structured-decision-target in af-structured-decision-e2e"))
 		Expect(err).NotTo(HaveOccurred(), "grounding kubernaut_investigate call must succeed")
 		defer func() { _ = resp.Body.Close() }()
 		_, _ = scanDecisionEvent(resp) // drain to EOF; no decision event expected here

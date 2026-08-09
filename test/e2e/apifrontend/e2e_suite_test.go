@@ -137,6 +137,14 @@ var _ = SynchronizedBeforeSuite(
 		Expect(kinfra.EnsureManagedNamespace(context.Background(), k8sClient, "af-investigate-e2e")).
 			To(Succeed(), "af-investigate-e2e namespace must exist and be labeled managed")
 
+		// structured_decision_e2e_test.go's groundSession helper uses its own
+		// dedicated namespace/target (StructuredDecisionGrounding alert,
+		// apifrontend_prometheus_e2e.go) rather than reusing af-investigate-e2e
+		// above, to avoid fixture contention with concurrent specs under
+		// Ginkgo --procs>1 (CI run 31320575553, E2E-AF-1395-001).
+		Expect(kinfra.EnsureManagedNamespace(context.Background(), k8sClient, "af-structured-decision-e2e")).
+			To(Succeed(), "af-structured-decision-e2e namespace must exist and be labeled managed")
+
 		healthURL := "http://localhost:18081"
 		Eventually(func() error {
 			resp, err := http.Get(healthURL + "/healthz") //nolint:gosec,noctx // E2E health probe

@@ -222,6 +222,22 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 //     grounds severity_triage_test.go's TC-E2E-SEV-06 "user hint does not
 //     bypass triage" fixture (dedicated namespace="sev-userhint-ns",
 //     kind=Deployment, name="test-user-severity-bypass")
+//   - StructuredDecisionGrounding: for:0s + vector(1) (never stale) -> tier 1,
+//     grounds structured_decision_e2e_test.go's groundSession helper
+//     (dedicated namespace="af-structured-decision-e2e", kind=Pod,
+//     name="structured-decision-target"). Deliberately NOT the same
+//     fixture as AFInvestigateGrounding above: with --procs>1, Ginkgo runs
+//     this suite's Ordered container concurrently with every other spec
+//     that also drives kubernaut_investigate against af-investigate-target
+//     (af_investigate/af_progressive_investigate/af_investigate_resume,
+//     #1839), and af_create_rr.go's checkExistingRRByFingerprint dedups by
+//     target -- so groundSession's investigate call would nondeterministically
+//     inherit an unrelated concurrent test's still-open KA session and hit
+//     the session_active/early_rca fallback path instead of a clean grounded
+//     result, starving present_decision of grounding and emitting no SSE
+//     decision event at all (CI run 31320575553, E2E-AF-1395-001). A
+//     dedicated target closes this the same way test-firing-target et al.
+//     already do for the severity tiers above.
 //
 // #1839 follow-up (no fixtures in "default"): HighCPU and HighMemory used to
 // target namespace="default" (unlike DiskPressure/NetworkLatency, which
@@ -334,4 +350,15 @@ groups:
           name: test-user-severity-bypass
         annotations:
           summary: "Synthetic grounding alert for TC-E2E-SEV-06 (dedicated namespace/name, #1839)"
+      - alert: StructuredDecisionGrounding
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          namespace: af-structured-decision-e2e
+          kind: Pod
+          name: structured-decision-target
+        annotations:
+          summary: "Synthetic grounding alert for structured_decision_e2e_test.go's groundSession (dedicated namespace/name, avoids af-investigate-target fixture contention)"
 `
