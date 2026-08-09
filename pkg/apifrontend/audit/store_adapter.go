@@ -481,7 +481,17 @@ func buildRRCreatedPayload(e *Event) ogenclient.AuditEventRequestEventData {
 		SessionID:   detailStr(d, "session_id"),
 		RrName:      detailStr(d, "rr_name"),
 		RrNamespace: detailStr(d, "rr_namespace"),
+		// TargetKind/TargetName/SignalName (Issue #2043): previously never
+		// populated even though the schema has required them since Issue
+		// #1021 -- af_create_rr.go's Detail map used different key names
+		// (kind/name, no signal_name at all), so these always persisted as
+		// "" in event_data. SignalName specifically is what DataStorage's
+		// reconstruction mapper needs for genesis-event parity with
+		// gateway.signal.received.
+		TargetKind:  detailStr(d, "target_kind"),
+		TargetName:  detailStr(d, "target_name"),
 		Fingerprint: detailStr(d, "fingerprint"),
+		SignalName:  detailStr(d, "signal_name"),
 	})
 }
 

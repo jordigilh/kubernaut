@@ -73,6 +73,12 @@ type CreateRRResult struct {
 	// branch it is read from the *existing* RR object (not the caller's
 	// args) to avoid misattributing audit provenance under a create race.
 	ClusterID string `json:"cluster_id,omitempty"`
+	// Fingerprint is the dedup fingerprint matched/assigned for this RR
+	// (#2043). Threaded through to emitCreateRRAudit so the
+	// apifrontend.rr.created/rr.deduplicated audit payloads can carry it
+	// without recomputing -- both the create and dedup branches already know
+	// it via req.Fingerprint at construction time.
+	Fingerprint string `json:"-"`
 }
 
 // rrCreateGroup provides singleflight deduplication per fingerprint.
@@ -260,6 +266,7 @@ func createOrReuseRR(ctx context.Context, d *ToolDeps, req createRRRequest) (*Cr
 			AlreadyExists: true,
 			Severity:      existing.Severity,
 			ClusterID:     existing.ClusterID,
+			Fingerprint:   req.Fingerprint,
 		}, nil
 	}
 
@@ -269,10 +276,11 @@ func createOrReuseRR(ctx context.Context, d *ToolDeps, req createRRRequest) (*Cr
 	}
 
 	out := &CreateRRResult{
-		RRID:       rrObj.Name,
-		Message:    fmt.Sprintf("RemediationRequest created for %s/%s by %s", req.Args.Kind, req.Args.Name, req.Username),
-		SignalName: req.SignalName,
-		ClusterID:  req.Args.ClusterID,
+		RRID:        rrObj.Name,
+		Message:     fmt.Sprintf("RemediationRequest created for %s/%s by %s", req.Args.Kind, req.Args.Name, req.Username),
+		SignalName:  req.SignalName,
+		ClusterID:   req.Args.ClusterID,
+		Fingerprint: req.Fingerprint,
 	}
 	if req.TriageResult != nil {
 		out.Severity = req.TriageResult.Severity
@@ -328,36 +336,52 @@ func buildRRObject(controllerNS string, args *CreateRRArgs, fingerprint, signalN
 
 // emitCreateRRAudit emits the RR-created or RR-deduplicated audit event, when
 // an auditor is configured.
+//
+// #2043: CorrelationID is set to the RR's own name (res.RRID) so DataStorage's
+// reconstruction endpoint can look this event up by correlation_id -- an
+// unset CorrelationID previously fell back to a random UUID
+// (store_adapter.go's correlationID() helper), making this event permanently
+// unqueryable by the RR it describes. Detail keys use the
+// ApifrontendRRCreatedPayload/ApifrontendRRDeduplicatedPayload schema's own
+// field names (rr_name/rr_namespace/target_kind/target_name/fingerprint)
+// rather than ad hoc ones, since buildRRCreatedPayload in
+// pkg/apifrontend/audit/store_adapter.go reads Detail by those exact keys.
 func emitCreateRRAudit(ctx context.Context, d *ToolDeps, args *CreateRRArgs, username string, res *CreateRRResult, resolvedSeverity string) {
 	if d.Auditor == nil {
 		return
 	}
 	if res.AlreadyExists {
 		d.Auditor.Emit(ctx, &audit.Event{
-			Type:      audit.EventRRDeduplicated,
-			UserID:    username,
-			ClusterID: args.ClusterID,
+			Type:          audit.EventRRDeduplicated,
+			CorrelationID: res.RRID,
+			UserID:        username,
+			ClusterID:     args.ClusterID,
 			Detail: map[string]string{
-				"namespace":   d.ControllerNS,
-				"kind":        args.Kind,
-				"name":        args.Name,
-				"existing_rr": res.RRID,
-				"cluster_id":  res.ClusterID,
+				"rr_namespace":     d.ControllerNS,
+				"target_kind":      args.Kind,
+				"target_name":      args.Name,
+				"existing_rr":      res.RRID,
+				"existing_rr_name": res.RRID,
+				"cluster_id":       res.ClusterID,
+				"fingerprint":      res.Fingerprint,
 			},
 		})
 		return
 	}
 	d.Auditor.Emit(ctx, &audit.Event{
-		Type:      audit.EventRRCreated,
-		UserID:    username,
-		ClusterID: args.ClusterID,
+		Type:          audit.EventRRCreated,
+		CorrelationID: res.RRID,
+		UserID:        username,
+		ClusterID:     args.ClusterID,
 		Detail: map[string]string{
-			"namespace":  d.ControllerNS,
-			"kind":       args.Kind,
-			"name":       args.Name,
-			"rr_id":      res.RRID,
-			"severity":   resolvedSeverity,
-			"cluster_id": res.ClusterID,
+			"rr_namespace": d.ControllerNS,
+			"target_kind":  args.Kind,
+			"target_name":  args.Name,
+			"rr_name":      res.RRID,
+			"severity":     resolvedSeverity,
+			"cluster_id":   res.ClusterID,
+			"fingerprint":  res.Fingerprint,
+			"signal_name":  res.SignalName,
 		},
 	})
 }
