@@ -92,6 +92,17 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 		// unrelated, already-tracked #1985 cold-start audit-write race --
 		// that failure mode should keep surfacing on its own merits if it
 		// recurs, not be silently absorbed here.
+		//
+		// Further hardening: "reconstructed" alone was too weak a success
+		// criterion for picking a candidate to `return` on -- a candidate
+		// could get a 200 ReconstructionResponse back with cluster_id still
+		// unset/empty (e.g. a genuine cluster_id-mapping bug affecting only
+		// some RRs), and the loop would still latch onto it, return, and let
+		// the *outer*, non-retried assertions below fail immediately on the
+		// real business check -- with no chance for the loop to move on to
+		// another, possibly-conformant candidate. The cluster_id check is
+		// now part of the loop's own success predicate, so only a candidate
+		// that fully satisfies the business contract can end the retry.
 		By("Finding a completed fleet RemediationRequest whose audit trail is actually reconstructable")
 		var resp *ogenclient.ReconstructionResponse
 		Eventually(func(g Gomega) {
@@ -118,6 +129,10 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 					errs = append(errs, fmt.Errorf("RR %s: expected ReconstructionResponse, got %T", rr.Name, result))
 					continue
 				}
+				if !reconResp.ClusterID.Set || reconResp.ClusterID.Value == "" {
+					errs = append(errs, fmt.Errorf("RR %s: reconstructed but cluster_id not set (CC8.1 violation for this candidate)", rr.Name))
+					continue
+				}
 
 				rrName = rr.Name
 				correlationID = rr.Name
@@ -127,7 +142,7 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 
 			g.Expect(candidateCount).To(BeNumerically(">", 0), "no completed fleet RemediationRequest with ClusterID found yet")
 			g.Expect(resp).ToNot(BeNil(),
-				"none of the %d completed fleet RemediationRequest candidate(s) could be reconstructed yet: %v",
+				"none of the %d completed fleet RemediationRequest candidate(s) reconstructed with cluster_id set yet: %v",
 				candidateCount, errors.Join(errs...))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
@@ -226,10 +241,15 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 					"RR must have entered a known reconciliation phase, got %q", rr.Status.OverallPhase)
 			}, timeout, interval).Should(Succeed())
 
-			By("Waiting for audit events to be persisted (async pipeline)")
-			time.Sleep(10 * time.Second)
-
-			By(fmt.Sprintf("Reconstructing hub-only RR: %s", hubRRName))
+			// AGENTS.md testing standard: no fixed time.Sleep() in tests --
+			// poll for the actual condition instead. The async audit
+			// pipeline's persistence delay is absorbed entirely by this
+			// Eventually's own retry loop (it already treats a query error,
+			// e.g. audit events not yet persisted, as a retryable failure),
+			// so a separate blind sleep before it added nothing but wasted
+			// wall-clock time on every run. Budget bumped from 30s to 40s to
+			// preserve the same total wait headroom the sleep+30s poll gave.
+			By(fmt.Sprintf("Reconstructing hub-only RR: %s (polling for async audit-event persistence)", hubRRName))
 			var resp *ogenclient.ReconstructionResponse
 			Eventually(func(g Gomega) {
 				result, err := dataStorageClient.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
@@ -239,7 +259,7 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 				reconResp, ok := result.(*ogenclient.ReconstructionResponse)
 				g.Expect(ok).To(BeTrue(), "expected ReconstructionResponse, got %T", result)
 				resp = reconResp
-			}, 30*time.Second, 2*time.Second).Should(Succeed())
+			}, 40*time.Second, 2*time.Second).Should(Succeed())
 
 			Expect(resp.ClusterID.Set).To(BeFalse(),
 				"hub-only RR should not have cluster_id set")
