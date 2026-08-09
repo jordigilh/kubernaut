@@ -5621,6 +5621,11 @@ type ApifrontendRRCreatedPayload struct {
 	TargetName string `json:"target_name"`
 	// Dedup fingerprint hash.
 	Fingerprint string `json:"fingerprint"`
+	// Grounded signal name driving investigation behavior (Prometheus alert/rule name, dominant K8s
+	// event reason, or "unknown"); mirrors the RR CRD's own spec.signalName field verbatim (Issue #2043
+	// -- BR-AUDIT-005 v2.0 CC8.1 genesis-event parity with gateway.signal.received's own signal_name,
+	// required for RR reconstruction).
+	SignalName string `json:"signal_name"`
 	// How the signal was received (nl_query, alert_forward, etc.).
 	SignalSource OptString `json:"signal_source"`
 }
@@ -5658,6 +5663,11 @@ func (s *ApifrontendRRCreatedPayload) GetTargetName() string {
 // GetFingerprint returns the value of Fingerprint.
 func (s *ApifrontendRRCreatedPayload) GetFingerprint() string {
 	return s.Fingerprint
+}
+
+// GetSignalName returns the value of SignalName.
+func (s *ApifrontendRRCreatedPayload) GetSignalName() string {
+	return s.SignalName
 }
 
 // GetSignalSource returns the value of SignalSource.
@@ -5698,6 +5708,11 @@ func (s *ApifrontendRRCreatedPayload) SetTargetName(val string) {
 // SetFingerprint sets the value of Fingerprint.
 func (s *ApifrontendRRCreatedPayload) SetFingerprint(val string) {
 	s.Fingerprint = val
+}
+
+// SetSignalName sets the value of SignalName.
+func (s *ApifrontendRRCreatedPayload) SetSignalName(val string) {
+	s.SignalName = val
 }
 
 // SetSignalSource sets the value of SignalSource.
