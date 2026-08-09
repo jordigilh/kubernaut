@@ -781,7 +781,16 @@ run_tls_001() {
     tap_ok "ST-CHART-TLS-001c: Webhook caBundle is non-empty"
   else
     tap_not_ok "ST-CHART-TLS-001c: Webhook caBundle is non-empty" "caBundle is empty or webhook not found"
+    pass=false
   fi
+
+  # Same class of error-propagation bug as run_console_live_001/
+  # run_audithmac_001 (RCA via run 31320013714): this check's failure was
+  # not even recorded into $pass, and the function never returned $pass at
+  # all -- so run_tls_001 always exited 0 regardless of any of its 3 checks,
+  # silently defeating the caller's `run_tls_001 || flow_failed=true`
+  # must_gather trigger in Flow C.
+  $pass
 }
 
 # Issue #753: Inter-service TLS assertions (mandatory TLS).
@@ -873,6 +882,13 @@ run_audithmac_001() {
     tap_not_ok "ST-AUDITHMAC-002: datastorage-audit-hmac-key has audit-hmac-key.yaml key" "key missing"
     pass=false
   fi
+
+  # This used to fall off the end without returning $pass, so the function
+  # always exited 0 (the last executed command's status) regardless of
+  # either check above -- silently defeating the caller's
+  # `run_audithmac_001 || flow_failed=true` must_gather trigger. Same class
+  # of bug as run_console_live_001 (see its comment, RCA via run 31320013714).
+  $pass
 }
 
 # Proves the "never-rotate" guarantee: a second Helm operation on the same
@@ -1135,6 +1151,16 @@ run_console_live_001() {
     tap_ok "$desc"
   else
     tap_not_ok "$desc" "oauth2-proxy not Ready/stable via real OIDC discovery (ready=${ready:-unknown}, restarts=${restarts:-unknown})"
+    # RCA gap found via run 31320013714 (PR #2039): this bare `tap_not_ok` used
+    # to be the function's last statement, so it returned tap_not_ok's own exit
+    # status (0, from `echo`) instead of failure. The caller's
+    # `run_console_live_001 || flow_failed=true` never fired, so
+    # must_gather("flow-a-verification-failure") never ran, and by the time
+    # the (unconditional) end-of-suite diagnostics collection saw this
+    # failure, Flow A had already been helm-uninstalled -- destroying the
+    # only pod (console/oauth2-proxy) whose logs could explain the restarts.
+    # Explicit `return 1` restores the intended fail-fast diagnostic capture.
+    return 1
   fi
 }
 
