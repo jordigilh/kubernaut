@@ -15,11 +15,14 @@ name: "[SPIKE] SLSA3 isolation validation (throwaway - do not merge)"
 # image's attestation is signed by the expected workflow file, and NOT by
 # the other one.
 #
-# Manual trigger only. Not part of the real release pipeline. Delete this
-# file once the spike is validated.
+# Triggers on push to its own spike branch only (workflow_dispatch requires
+# the workflow file to already exist on the default branch to be dispatchable
+# via API/CLI, which defeats the point of a throwaway feature-branch spike).
+# Not part of the real release pipeline. Delete this file once validated.
 
 on:
-  workflow_dispatch:
+  push:
+    branches: ['spike/1109-slsa3-provenance']
 
 permissions:
   contents: read
