@@ -120,6 +120,65 @@ teardown() {
 }
 
 # ========================================
+# UT-MG-2037-002: Configurable release/workflow namespaces (Issue #2037)
+# ========================================
+
+@test "UT-MG-2037-002: --namespace and --workflow-namespace are documented in --help" {
+    # Business Outcome: BR-PLATFORM-001 -- support engineer running against a
+    # non-default install (custom Helm release namespace) can discover the flag
+    run bash "${GATHER_SCRIPT}" --help
+
+    assert_success
+    [[ "$output" =~ "--namespace" ]]
+    [[ "$output" =~ "--workflow-namespace" ]]
+}
+
+@test "UT-MG-2037-002: Default namespaces match the current single-release deployment model, not the obsolete 3-namespace list" {
+    # Business Outcome: no more silent collection against a namespace
+    # (kubernaut-notifications) nothing is ever deployed into.
+    create_mock_crd_response
+    create_mock_crd_list
+    create_mock_pod_names_list
+    create_mock_events
+    mock_kubectl "${TEST_TEMP_DIR}/crd-response.yaml"
+
+    run timeout 30 bash "${GATHER_SCRIPT}" \
+        --dest-dir="${TEST_TEMP_DIR}" \
+        --no-sanitize
+
+    assert_success
+    local collection_dir
+    collection_dir=$(find "${TEST_TEMP_DIR}" -maxdepth 1 -type d -name "kubernaut-must-gather-*" | head -n 1)
+    run jq -r '.namespaces_collected | length' "${collection_dir}/collection-metadata.json"
+    [ "$output" -eq 2 ]
+    run jq -r '.namespaces_collected[]' "${collection_dir}/collection-metadata.json"
+    [[ "$output" =~ "kubernaut-system" ]]
+    [[ "$output" =~ "kubernaut-workflows" ]]
+    [[ ! "$output" =~ "kubernaut-notifications" ]]
+}
+
+@test "UT-MG-2037-002: --namespace override is honored end-to-end" {
+    # Business Outcome: support engineer collecting against a non-default
+    # Helm release namespace gets the RIGHT namespace, not a hardcoded one.
+    create_mock_crd_response
+    create_mock_crd_list
+    create_mock_pod_names_list
+    create_mock_events
+    mock_kubectl "${TEST_TEMP_DIR}/crd-response.yaml"
+
+    run timeout 30 bash "${GATHER_SCRIPT}" \
+        --dest-dir="${TEST_TEMP_DIR}" \
+        --namespace=custom-kubernaut-ns \
+        --no-sanitize
+
+    assert_success
+    local collection_dir
+    collection_dir=$(find "${TEST_TEMP_DIR}" -maxdepth 1 -type d -name "kubernaut-must-gather-*" | head -n 1)
+    run jq -r '.namespaces_collected[]' "${collection_dir}/collection-metadata.json"
+    [[ "$output" =~ "custom-kubernaut-ns" ]]
+}
+
+# ========================================
 # Business Outcome: Structured Output
 # ========================================
 
