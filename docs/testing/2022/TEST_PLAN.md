@@ -284,6 +284,64 @@ when there is genuinely nothing to present (vs. simply reporting "no data" and s
 product/UX judgment call, not resolved by this fix. This fix only guarantees the *content* of
 whatever gets presented is truthful — it does not change whether/when `present_decision` is called.
 
+### 8.4 Stage 3 — Embellishment Hardening (Beyond the Original QE Report)
+
+Stage 2's grounding guard is intentionally binary: grounded or not. It does not fact-check
+whether a *technically grounded* session still embellishes beyond what
+`kubernaut_investigate` actually returned — e.g. the model transcribing a different severity,
+confidence, or causal chain into `present_decision` than KA reported, while a real
+investigation genuinely happened. Two deterministic, no-new-cost hardenings close most of that
+narrower gap:
+
+1. **Structured RCA field pass-through.** `RCAData` (`ka_tools.go:330-337`) was always documented
+   as "the structured root cause analysis data the LLM passes through from the
+   `kubernaut_investigate` response" (#1396), but nothing enforced that. `enforceGroundingGuard`
+   now caches the exact `rca` payload from the most recent grounded `kubernaut_investigate` call
+   (`session.StateKeyGroundedRCA`) and overwrites `present_decision`'s `rca` argument with it
+   (severity/confidence/causal_chain/target/tool_calls_count/llm_turns), discarding whatever the
+   model transcribed. The free-text `summary` argument is deliberately left model-authored once
+   grounded — it may legitimately synthesize reasoning the structured facts alone don't capture.
+2. **Shadow-agent alignment verdict consulted by the guard.** KA already runs an optional
+   full-context grounding review (#1096,
+   `internal/kubernautagent/alignment/prompt/grounding.go`) that evaluates an entire RCA
+   conversation and flags reasoning drift, unsupported conclusions, or distributed
+   prompt-injection influence. That verdict was already streamed to AF
+   (`ka.EventTypeAlignmentVerdict`) but was previously only used to fire a human-facing SSE
+   notification (`launcher.MetaTypeAlignmentCheckFailed`) and then discarded.
+   `bridgeEventsCollectSummary` now also returns it to its caller, `InvestigateMCPResult` carries
+   it (`alignment_verdict`), and `investigateHasGroundedContent` treats a non-`"aligned"` verdict
+   as ungrounded even when `summary`/`rca` are present. Only takes effect when a deployment has
+   `ai.alignmentCheck` enabled (off by default) — additive, no behavior change otherwise.
+
+A residual gap remains and is out of scope here: neither hardening fact-checks the model's
+free-text `summary` narrative itself, and (2) only covers KA's own RCA reasoning, not AF's
+paraphrase of an already-grounded KA response. Closing that fully would require a dedicated
+shadow-review pass over AF's own `present_decision` content (new LLM call, new cost) — a
+separate, explicitly-scoped follow-up, not implicit in this change.
+
+| Test ID | Type | Scenario | FedRAMP Control | Location |
+|---|---|---|---|---|
+| UT-AF-2023-010 | Unit | `present_decision`'s `rca` argument is overwritten with KA's own reported RCA fields (with `total_tool_calls`→`tool_calls_count`, `total_llm_turns`→`llm_turns` renamed), discarding the model's transcription | AU-3, SI-10 | `pkg/apifrontend/agent/phase_guard_test.go` |
+| UT-AF-2023-011 | Unit | `rca` argument left untouched when `kubernaut_investigate` reported no structured `rca` (summary-only grounding) — nothing authoritative to substitute | SI-10 | `pkg/apifrontend/agent/phase_guard_test.go` |
+| UT-AF-2023-012 | Unit | A stale `rca` from an earlier grounded investigate call does not leak into `present_decision` after a later, rca-less investigate call in the same session | SI-10, SI-11 | `pkg/apifrontend/agent/phase_guard_test.go` |
+| UT-AF-2023-013 | Unit | `present_decision` content is overridden when `kubernaut_investigate`'s shadow-agent alignment verdict is not `"aligned"`, even though `summary`/`rca` are present | AU-3, SI-10 | `pkg/apifrontend/agent/phase_guard_test.go` |
+| UT-AF-2023-014 | Unit | An `"aligned"` shadow-agent verdict does not itself trigger the override (regression guard) | SI-11 | `pkg/apifrontend/agent/phase_guard_test.go` |
+| IT-AF-1420-004 | Integration | `BridgeEventsCollectSummary`'s third return value surfaces the alignment verdict to its caller (not just the SSE side channel) | AU-3 | `pkg/apifrontend/tools/ka_investigate_verdict_1420_test.go` |
+| IT-AF-1420-005 | Integration | `BridgeEventsCollectSummary` returns a `nil` verdict when no `alignment_verdict` event arrives (alignment checking disabled/not run) | SI-11 (fail-safe default) | `pkg/apifrontend/tools/ka_investigate_verdict_1420_test.go` |
+
+### Wiring Manifest (#2023 Stage 3)
+
+| Component | Production Entry Point | Wiring Code Location | Test ID |
+|---|---|---|---|
+| `canonicalGroundedRCA` / `session.StateKeyGroundedRCA` pass-through | `newPhaseGuard`'s `before`/`after` (pre-existing registration, extended — see Stage 2 manifest) | `pkg/apifrontend/agent/phase_guard.go` | UT-AF-2023-010..012 |
+| `investigateHasGroundedContent` alignment-verdict check | `newPhaseGuard`'s `after` (pre-existing registration, extended) | `pkg/apifrontend/agent/phase_guard.go` | UT-AF-2023-013/014 |
+| `bridgeEventsCollectSummary` third return value | `HandleInvestigationMCPWithRegistry`'s blocking path (pre-existing production call site, extended) | `pkg/apifrontend/tools/ka_investigate_mcp.go:491` | IT-AF-1420-004/005 |
+| `InvestigateMCPResult.AlignmentVerdict` field | Same call site — becomes `resp["alignment_verdict"]` for every `kubernaut_investigate` tool response once populated | `pkg/apifrontend/tools/ka_investigate_mcp.go:545-552` | Exercised transitively by every IT that drives a real `kubernaut_investigate` call through the MCP bridge (e.g. IT-AF-2022-007, IT-AF-2027-009); IT-AF-1420-004 proves the value is available to populate it |
+
+**No new wiring points**: this stage extends the same `before`/`after` closures and the same
+`kubernaut_investigate` blocking-path call site already wired for #1307/#1899/#1918/#2023
+Stage 2 — no new callback or tool registration was required.
+
 ## 9. Prompt Accuracy Fixes (`prompt.txt`, same branch)
 
 A line-by-line cross-check of `prompt.txt` against the actual implementation surfaced two
@@ -400,6 +458,7 @@ specs) and `pkg/apifrontend/handler/...` suite (223 specs) pass with zero failur
 | CHECKPOINT W (no orphaned `pkg/` code, no orphaned callback registration) | Pass | ✅ (Section 6, 8.2, 11) |
 | Build (`go build ./...`, `go vet ./...`) | Pass | ✅ (Section 7, 11) |
 | #2023 fix coverage (opaque-error removal + harness grounding guard) | 100% | ✅ (Section 8) |
+| #2023 Stage 3 embellishment hardening (structured RCA pass-through + shadow-agent verdict) | 100% | ✅ (Section 8.4) |
 | E2E fixture fix (PR #2026 CI) | Fixed | ✅ (Section 10) |
 | #2027 fix coverage (confidence-gated ambiguity surfacing, DD-AF-012) | 100% | ✅ (Section 11) |
 
@@ -413,6 +472,12 @@ specs) and `pkg/apifrontend/handler/...` suite (223 specs) pass with zero failur
   flagged, not resolved by this fix.
 - **Broader cluster-scoped-alert-as-legitimate-evidence support** (DD-AF-012): tracked as a separate,
   not-yet-scoped issue; #2027's fix is intentionally durable against that future work.
+- **Free-text narrative fact-checking / AF-side paraphrase drift** (Section 8.4): Stage 3 closes the
+  *structured*-field embellishment risk deterministically and consults KA's existing shadow-agent
+  verdict for KA's own RCA reasoning; it does not fact-check the model's free-text `summary`
+  narrative, nor detect AF's own paraphrase drift on top of an already-grounded KA response. Closing
+  that would require a dedicated shadow-review pass over AF's `present_decision` content — a
+  separate, explicitly-scoped follow-up.
 
 ## 14. Sign-off
 
