@@ -322,6 +322,158 @@ var _ = Describe("Reconstruction Business Logic Integration Tests (BR-AUDIT-006)
 		})
 	})
 
+	// ========================================
+	// AF-GENESIS EVENT INTEGRATION TESTS (Issue #2043)
+	// ========================================
+	// AF-created RRs (via kubernaut_remediate) bypass Gateway entirely and
+	// never emit gateway.signal.received; apifrontend.rr.created is their
+	// sole genesis event. These tests prove the full production dispatch
+	// path -- query allowlist, decoder registration, parser dispatch, and
+	// mapper genesis-event acceptance -- against a real PostgreSQL database.
+	Context("INTEGRATION-AF-01: Reconstruct RR from apifrontend.rr.created genesis event only", func() {
+		It("should reconstruct RR spec from an AF-created RR's audit trail", func() {
+			// ARRANGE: Seed only an apifrontend.rr.created event (no gateway.signal.received)
+			afPayload := ogenclient.ApifrontendRRCreatedPayload{
+				EventType:   ogenclient.ApifrontendRRCreatedPayloadEventTypeApifrontendRrCreated,
+				SessionID:   "sess-oom-1",
+				RrName:      "rr-oom-web",
+				RrNamespace: "kubernaut-system",
+				TargetKind:  "Deployment",
+				TargetName:  "web",
+				Fingerprint: "fp-af-integration-001",
+				SignalName:  "OOMKilled",
+			}
+			afEvent, err := CreateApifrontendRRCreatedEvent(correlationID, afPayload)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = auditRepo.Create(ctx, afEvent)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ACT: Full reconstruction pipeline via the production dispatch path
+
+			// Step 1: Query events from real database (proves query.go allowlist + decoder)
+			events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, db.DB, logger, correlationID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(events).To(HaveLen(1))
+			Expect(events[0].EventType).To(Equal("apifrontend.rr.created"))
+
+			// Step 2: Parse events (proves parser.go dispatch case)
+			parsedData := make([]reconstruction.ParsedAuditData, 0, len(events))
+			for _, event := range events {
+				parsed, err := reconstruction.ParseAuditEvent(event)
+				Expect(err).ToNot(HaveOccurred())
+				parsedData = append(parsedData, *parsed)
+			}
+			Expect(parsedData).To(HaveLen(1))
+
+			// Step 3: Map + merge (proves mapper.go genesis-event acceptance)
+			rrFields, err := reconstruction.MergeAuditData(parsedData)
+			Expect(err).ToNot(HaveOccurred(),
+				"Issue #2043: apifrontend.rr.created must satisfy MergeAuditData's genesis-event requirement")
+			Expect(rrFields).ToNot(BeNil())
+
+			// Step 4: Build complete RemediationRequest CRD
+			rr, err := reconstruction.BuildRemediationRequest(correlationID, rrFields)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rr).ToNot(BeNil())
+
+			// ASSERT: Reconstructed fields match seeded AF-genesis data
+			Expect(rr.Spec.SignalName).To(Equal("OOMKilled"))
+			Expect(rr.Spec.SignalType).To(Equal("alert"),
+				"AF-created RRs always hardcode SignalType=alert (buildRRObject, af_create_rr.go)")
+			Expect(rr.Spec.SignalFingerprint).To(Equal("fp-af-integration-001"),
+				"BR-AUDIT-005: SignalFingerprint required for deduplication identity")
+		})
+
+		It("should reconstruct with ClusterID for fleet AF-created RRs [CC8.1]", func() {
+			// ARRANGE: Seed an apifrontend.rr.created event with a fleet ClusterID envelope field
+			afPayload := ogenclient.ApifrontendRRCreatedPayload{
+				EventType:   ogenclient.ApifrontendRRCreatedPayloadEventTypeApifrontendRrCreated,
+				SessionID:   "sess-oom-2",
+				RrName:      "rr-oom-web-fleet",
+				RrNamespace: "kubernaut-system",
+				TargetKind:  "Deployment",
+				TargetName:  "web",
+				Fingerprint: "fp-af-integration-002",
+				SignalName:  "OOMKilled",
+			}
+			afEvent, err := CreateApifrontendRRCreatedEvent(correlationID, afPayload)
+			Expect(err).ToNot(HaveOccurred())
+			afEvent.ClusterID = "remote-cluster"
+			_, err = auditRepo.Create(ctx, afEvent)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ACT
+			events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, db.DB, logger, correlationID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(events).To(HaveLen(1))
+
+			parsedData := make([]reconstruction.ParsedAuditData, 0, len(events))
+			for _, event := range events {
+				parsed, err := reconstruction.ParseAuditEvent(event)
+				Expect(err).ToNot(HaveOccurred())
+				parsedData = append(parsedData, *parsed)
+			}
+
+			rrFields, err := reconstruction.MergeAuditData(parsedData)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ASSERT: CC8.1 -- ClusterID propagated from envelope through parse+map
+			Expect(rrFields.Spec.ClusterID).To(Equal("remote-cluster"))
+		})
+
+		It("should merge apifrontend.rr.created with downstream orchestrator status data", func() {
+			// ARRANGE: AF genesis event + orchestrator completion event (mixed pipeline)
+			afPayload := ogenclient.ApifrontendRRCreatedPayload{
+				EventType:   ogenclient.ApifrontendRRCreatedPayloadEventTypeApifrontendRrCreated,
+				SessionID:   "sess-oom-3",
+				RrName:      "rr-oom-web-mixed",
+				RrNamespace: "kubernaut-system",
+				TargetKind:  "Deployment",
+				TargetName:  "web",
+				Fingerprint: "fp-af-integration-003",
+				SignalName:  "OOMKilled",
+			}
+			afEvent, err := CreateApifrontendRRCreatedEvent(correlationID, afPayload)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = auditRepo.Create(ctx, afEvent)
+			Expect(err).ToNot(HaveOccurred())
+
+			orchestratorPayload := ogenclient.RemediationOrchestratorAuditPayload{
+				EventType: ogenclient.RemediationOrchestratorAuditPayloadEventTypeOrchestratorLifecycleCreated,
+				RrName:    "rr-oom-web-mixed",
+				Namespace: "kubernaut-system",
+				TimeoutConfig: ogenclient.NewOptTimeoutConfig(
+					ogenclient.TimeoutConfig{
+						Global: ogenclient.NewOptString("1h"),
+					},
+				),
+			}
+			orchestratorEvent, err := CreateOrchestratorLifecycleCreatedEvent(correlationID, orchestratorPayload)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = auditRepo.Create(ctx, orchestratorEvent)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ACT
+			events, err := reconstruction.QueryAuditEventsForReconstruction(ctx, db.DB, logger, correlationID)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(events).To(HaveLen(2))
+
+			parsedData := make([]reconstruction.ParsedAuditData, 0, len(events))
+			for _, event := range events {
+				parsed, err := reconstruction.ParseAuditEvent(event)
+				Expect(err).ToNot(HaveOccurred())
+				parsedData = append(parsedData, *parsed)
+			}
+
+			rrFields, err := reconstruction.MergeAuditData(parsedData)
+			Expect(err).ToNot(HaveOccurred())
+
+			// ASSERT: AF-genesis spec fields + orchestrator status fields both present
+			Expect(rrFields.Spec.SignalName).To(Equal("OOMKilled"))
+			Expect(rrFields.Status.TimeoutConfig.Global).ToNot(BeNil())
+		})
+	})
+
 	// NOTE: Additional integration tests for database constraints,
 	// concurrent access, and transaction handling can be added here
 })

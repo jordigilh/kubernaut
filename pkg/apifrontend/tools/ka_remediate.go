@@ -41,10 +41,13 @@ type RemediateResult struct {
 	Severity       string `json:"severity,omitempty"`
 	SeveritySource string `json:"severity_source,omitempty"`
 	SignalName     string `json:"signal_name,omitempty"`
-	// ClusterID attributes the RR to its cluster of origin (#1409). Kept as
-	// the trailing field, matching CreateRRResult's field order, so the
-	// RemediateResult(result) conversion below stays valid.
+	// ClusterID attributes the RR to its cluster of origin (#1409).
 	ClusterID string `json:"cluster_id,omitempty"`
+	// Fingerprint (#2043) and ClusterID above must stay the two trailing
+	// fields, matching CreateRRResult's field order/types exactly, so the
+	// RemediateResult(result) conversion below stays valid (Go struct
+	// conversion requires identical field sequences; tags may differ).
+	Fingerprint string `json:"-"`
 }
 
 // HandleRemediate creates a RemediationRequest CRD without creating an

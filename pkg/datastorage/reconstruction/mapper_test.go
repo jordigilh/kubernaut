@@ -135,6 +135,117 @@ var _ = Describe("Audit Event Mapper", func() {
 		})
 	})
 
+	// ========================================
+	// MAPPER-AF-01: Map apifrontend.rr.created audit data to RR Spec (Issue #2043)
+	// BR-AUDIT-005 v2.0 CC8.1: AF-genesis event parity with gateway.signal.received
+	// ========================================
+	Context("MAPPER-AF-01: Map apifrontend.rr.created audit data to RR Spec (Issue #2043)", func() {
+		It("should map SignalName, SignalType, and SignalFingerprint to RR spec", func() {
+			parsedData := &reconstructionpkg.ParsedAuditData{
+				EventType:         "apifrontend.rr.created",
+				SignalName:        "OOMKilled",
+				SignalType:        "alert",
+				SignalFingerprint: "fp-abc123def456",
+			}
+
+			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields).ToNot(BeNil())
+			Expect(rrFields.Spec.SignalName).To(Equal("OOMKilled"),
+				"Issue #2043: AF-genesis event must map SignalName for RR reconstruction")
+			Expect(rrFields.Spec.SignalType).To(Equal("alert"))
+			Expect(rrFields.Spec.SignalFingerprint).To(Equal("fp-abc123def456"),
+				"BR-AUDIT-005: SignalFingerprint is required for deduplication identity")
+		})
+
+		It("should map ClusterID to Spec.ClusterID for fleet AF-created RRs [CC8.1]", func() {
+			parsedData := &reconstructionpkg.ParsedAuditData{
+				EventType:         "apifrontend.rr.created",
+				SignalName:        "OOMKilled",
+				SignalType:        "alert",
+				SignalFingerprint: "fp-abc123def456",
+				ClusterID:         "remote-cluster",
+			}
+
+			rrFields, err := reconstructionpkg.MapToRRFields(parsedData)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields.Spec.ClusterID).To(Equal("remote-cluster"),
+				"CC8.1: Mapper must set Spec.ClusterID for AF-genesis events too")
+		})
+
+		It("should return error for missing required signal name", func() {
+			parsedData := &reconstructionpkg.ParsedAuditData{
+				EventType:  "apifrontend.rr.created",
+				SignalType: "alert",
+				// SignalName is missing - should error
+			}
+
+			_, err := reconstructionpkg.MapToRRFields(parsedData)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("signal name is required"))
+		})
+	})
+
+	// ========================================
+	// MAPPER-MERGE-AF-01: apifrontend.rr.created satisfies the genesis-event
+	// requirement for MergeAuditData (Issue #2043)
+	// ========================================
+	Context("MAPPER-MERGE-AF-01: apifrontend.rr.created as genesis event (Issue #2043)", func() {
+		It("should successfully merge when only an apifrontend.rr.created genesis event is present", func() {
+			afData := &reconstructionpkg.ParsedAuditData{
+				EventType:         "apifrontend.rr.created",
+				SignalName:        "OOMKilled",
+				SignalType:        "alert",
+				SignalFingerprint: "fp-abc123def456",
+			}
+
+			rrFields, err := reconstructionpkg.MergeAuditData([]reconstructionpkg.ParsedAuditData{*afData})
+
+			Expect(err).ToNot(HaveOccurred(),
+				"Issue #2043: apifrontend.rr.created must satisfy MergeAuditData's genesis-event requirement (AF-created RRs never emit gateway.signal.received)")
+			Expect(rrFields.Spec.SignalName).To(Equal("OOMKilled"))
+		})
+
+		It("should merge apifrontend.rr.created with orchestrator status data", func() {
+			afData := &reconstructionpkg.ParsedAuditData{
+				EventType:         "apifrontend.rr.created",
+				SignalName:        "OOMKilled",
+				SignalType:        "alert",
+				SignalFingerprint: "fp-abc123def456",
+			}
+			orchestratorData := &reconstructionpkg.ParsedAuditData{
+				EventType: "orchestrator.lifecycle.completed",
+				Outcome:   "success",
+			}
+
+			rrFields, err := reconstructionpkg.MergeAuditData(
+				[]reconstructionpkg.ParsedAuditData{*afData, *orchestratorData},
+			)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rrFields.Spec.SignalName).To(Equal("OOMKilled"))
+			Expect(rrFields.Status.Outcome).To(Equal("success"))
+		})
+
+		It("should still return error when neither gateway.signal.received nor apifrontend.rr.created is present", func() {
+			orchestratorData := &reconstructionpkg.ParsedAuditData{
+				EventType: "orchestrator.lifecycle.created",
+				TimeoutConfig: &reconstructionpkg.TimeoutConfigData{
+					Global: "1h0m0s",
+				},
+			}
+
+			_, err := reconstructionpkg.MergeAuditData([]reconstructionpkg.ParsedAuditData{*orchestratorData})
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("gateway.signal.received"))
+			Expect(err.Error()).To(ContainSubstring("apifrontend.rr.created"))
+		})
+	})
+
 	Context("MAPPER-MERGE-01: Merge multiple audit events", func() {
 		It("should merge gateway and orchestrator data into single RR", func() {
 			// Validates merging multiple audit events into complete RR
@@ -173,8 +284,12 @@ var _ = Describe("Audit Event Mapper", func() {
 			Expect(rrFields.Status.TimeoutConfig.Global.Duration.String()).To(Equal("2h0m0s"))
 		})
 
-		It("should return error when gateway event is missing", func() {
-			// Validates that gateway event is mandatory for reconstruction
+		It("should return error when no genesis event (gateway or apifrontend) is present", func() {
+			// Validates that a genesis event is mandatory for reconstruction.
+			// Issue #2043: this used to require gateway.signal.received
+			// specifically; apifrontend.rr.created now also satisfies this
+			// requirement (see MAPPER-MERGE-AF-01), so this test only proves
+			// the "neither is present" failure path.
 			orchestratorData := &reconstructionpkg.ParsedAuditData{
 				EventType: "orchestrator.lifecycle.created",
 				TimeoutConfig: &reconstructionpkg.TimeoutConfigData{
@@ -185,7 +300,8 @@ var _ = Describe("Audit Event Mapper", func() {
 			_, err := reconstructionpkg.MergeAuditData([]reconstructionpkg.ParsedAuditData{*orchestratorData})
 
 			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("gateway.signal.received event is required"))
+			Expect(err.Error()).To(ContainSubstring("gateway.signal.received"))
+			Expect(err.Error()).To(ContainSubstring("apifrontend.rr.created"))
 		})
 	})
 

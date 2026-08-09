@@ -82,8 +82,8 @@ type Event struct {
 | `triage.completed` | `EventTriageCompleted` | AU-2, AU-12 | Triage pipeline completes | `session_id`, `triage_outcome`, `triage_duration_ms` |
 | `severity_triage.completed` | `EventSeverityTriageCompleted` | AU-2, AU-12 | Severity triage pipeline determines severity | `tier`, `severity`, `source`, `duration_ms`, `alert_name` (if Tier 1), `rule_name` (if Tier 1.5/2/2.5) |
 | `severity_triage.failed` | `EventSeverityTriageFailed` | AU-2 | All severity triage tiers fail or LLM error | `error` (redacted), `tier` (last attempted), `namespace`, `kind`, `name` |
-| `rr.created` | `EventRRCreated` | AU-2 | RemediationRequest CRD created | `session_id`, `rr_name`, `rr_namespace`, `fingerprint` |
-| `rr.deduplicated` | `EventRRDeduplicated` | AU-2 | Duplicate RemediationRequest detected, creation skipped | `session_id`, `fingerprint`, `existing_rr_name` |
+| `rr.created` | `EventRRCreated` | AU-2, CC8.1 | RemediationRequest CRD created -- sole reconstruction genesis event for AF-created RRs (Issue #2043: AF bypasses Gateway, never emits `gateway.signal.received`) | `session_id`, `rr_name`, `rr_namespace`, `target_kind`, `target_name`, `fingerprint`, `signal_name` |
+| `rr.deduplicated` | `EventRRDeduplicated` | AU-2 | Duplicate RemediationRequest detected, creation skipped | `session_id`, `rr_namespace`, `target_kind`, `target_name`, `fingerprint`, `existing_rr_name` |
 
 **Emitted from:** `pkg/apifrontend/launcher/launcher.go`, `pkg/apifrontend/tools/af_create_rr.go`
 

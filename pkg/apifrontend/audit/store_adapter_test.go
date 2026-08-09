@@ -86,7 +86,7 @@ var _ = Describe("StoreAdapter", func() {
 		{"UT-AF-1156-021", audit.EventSeverityTriageFailed, map[string]string{"error": "llm timeout"}, "apifrontend.severity_triage.failed"},
 		{"UT-AF-1156-022", audit.EventTriageStarted, map[string]string{"session_id": "sess-1", "persona": "sre"}, "apifrontend.triage.started"},
 		{"UT-AF-1156-023", audit.EventTriageCompleted, map[string]string{"session_id": "sess-1", "triage_outcome": "delegated", "triage_duration_ms": "500"}, "apifrontend.triage.completed"},
-		{"UT-AF-1156-024", audit.EventRRCreated, map[string]string{"session_id": "sess-1", "rr_name": "rr-1", "rr_namespace": "default", "fingerprint": "fp1"}, "apifrontend.rr.created"},
+		{"UT-AF-1156-024", audit.EventRRCreated, map[string]string{"session_id": "sess-1", "rr_name": "rr-1", "rr_namespace": "default", "target_kind": "Deployment", "target_name": "web", "fingerprint": "fp1", "signal_name": "HighCPU"}, "apifrontend.rr.created"},
 		{"UT-AF-1156-025", audit.EventRRDeduplicated, map[string]string{"session_id": "sess-1", "fingerprint": "abc123", "existing_rr_name": "rr-1"}, "apifrontend.rr.deduplicated"},
 		{"UT-AF-1156-026", audit.EventKADelegated, map[string]string{"session_id": "sess-1", "ka_correlation_id": "ka-1", "delegation_type": "autonomous"}, "apifrontend.ka.delegated"},
 		{"UT-AF-1156-027", audit.EventKAResultReceived, map[string]string{"session_id": "sess-1", "ka_correlation_id": "ka-1", "result_type": "rca_complete"}, "apifrontend.ka.result_received"},
@@ -321,6 +321,36 @@ var _ = Describe("StoreAdapter", func() {
 			"StoreAdapter must propagate Event.CorrelationID to AuditEventRequest.CorrelationID without modification")
 		Expect(evt.CorrelationID).NotTo(HaveLen(36),
 			"CorrelationID should be the RR name, not a synthetic UUID")
+	})
+
+	Describe("Issue #2043: full field wiring in ApifrontendRRCreatedPayload (RR reconstruction genesis event)", func() {
+		It("UT-AF-2043-001: EventRRCreated populates TargetKind/TargetName/SignalName from Detail", func() {
+			adapter.Emit(context.Background(), &audit.Event{
+				Type: audit.EventRRCreated,
+				Detail: map[string]string{
+					"session_id":   "sess-1",
+					"rr_name":      "rr-oom-web",
+					"rr_namespace": "kubernaut-system",
+					"target_kind":  "Deployment",
+					"target_name":  "web",
+					"fingerprint":  "fp-abc123",
+					"signal_name":  "OOMKilled",
+				},
+			})
+			evt := store.lastEvent()
+			Expect(evt).NotTo(BeNil())
+			payload, ok := evt.EventData.GetApifrontendRRCreatedPayload()
+			Expect(ok).To(BeTrue(), "expected ApifrontendRRCreatedPayload variant")
+			Expect(payload.RrName).To(Equal("rr-oom-web"))
+			Expect(payload.RrNamespace).To(Equal("kubernaut-system"))
+			Expect(payload.TargetKind).To(Equal("Deployment"),
+				"Issue #2043: TargetKind was never populated despite the schema requiring it")
+			Expect(payload.TargetName).To(Equal("web"),
+				"Issue #2043: TargetName was never populated despite the schema requiring it")
+			Expect(payload.Fingerprint).To(Equal("fp-abc123"))
+			Expect(payload.SignalName).To(Equal("OOMKilled"),
+				"Issue #2043: SignalName is required for RR reconstruction parity with gateway.signal.received")
+		})
 	})
 
 	Describe("Issue #1199: rr_name/rr_namespace wiring in A2A task payloads", func() {

@@ -410,7 +410,21 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 		events := auditRecorder.EventsOfType(audit.EventRRCreated)
 		Expect(events).To(HaveLen(1))
 		Expect(events[0].UserID).To(Equal("audit-user"))
-		Expect(events[0].Detail).To(HaveKeyWithValue("namespace", defaultFixture))
+		// Issue #2043: CorrelationID must be the RR's own name (not a random
+		// UUID) so DataStorage's reconstruction endpoint can look it up by
+		// correlation_id.
+		Expect(events[0].CorrelationID).To(Equal(result.RRID))
+		// Issue #2043: Detail keys renamed from namespace/kind/name to the
+		// schema-aligned rr_namespace/target_kind/target_name that
+		// buildRRCreatedPayload has always read.
+		Expect(events[0].Detail).To(HaveKeyWithValue("rr_namespace", defaultFixture))
+		Expect(events[0].Detail).To(HaveKeyWithValue("target_kind", "Deployment"))
+		Expect(events[0].Detail).To(HaveKeyWithValue("target_name", "web-w06"))
+		Expect(events[0].Detail).To(HaveKeyWithValue("rr_name", result.RRID))
+		Expect(events[0].Detail["fingerprint"]).ToNot(BeEmpty(),
+			"BR-AUDIT-005: fingerprint is required in ApifrontendRRCreatedPayload for dedup identity")
+		Expect(events[0].Detail["signal_name"]).ToNot(BeEmpty(),
+			"Issue #2043: signal_name is required for DataStorage to reconstruct RemediationRequestSpec.SignalName for AF-genesis RRs")
 
 		DeferCleanup(func() {
 			_ = dynamicClient.Resource(rrGVR).Namespace(defaultFixture).Delete(ctx, result.RRID, metav1.DeleteOptions{})

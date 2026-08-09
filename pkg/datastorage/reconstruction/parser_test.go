@@ -159,6 +159,48 @@ var _ = Describe("Audit Event Parser", func() {
 	})
 
 	// ========================================
+	// PARSER-AF-01: Parse apifrontend.rr.created events (Issue #2043)
+	// BR-AUDIT-005 v2.0 CC8.1: AF-created RRs (via kubernaut_remediate) bypass
+	// Gateway entirely and never emit gateway.signal.received; this is their
+	// sole genesis event for reconstruction.
+	// ========================================
+	Context("PARSER-AF-01: Parse apifrontend.rr.created events (Issue #2043)", func() {
+		It("should extract signal name, signal type, and fingerprint from the AF genesis event", func() {
+			event := createApifrontendRRCreatedEvent(testTimestamp)
+
+			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedData.SignalName).To(Equal("OOMKilled"),
+				"Issue #2043: signal_name must be extracted for genesis-event parity with gateway.signal.received")
+			Expect(parsedData.SignalType).To(Equal("alert"),
+				"AF-created RRs always hardcode SignalType=alert (buildRRObject, af_create_rr.go)")
+			Expect(parsedData.SignalFingerprint).To(Equal("fp-abc123def456"),
+				"BR-AUDIT-005: fingerprint is required for RR.Spec.SignalFingerprint deduplication identity")
+		})
+
+		It("should return error for missing signal name", func() {
+			event := createInvalidApifrontendRRCreatedEvent(testTimestamp)
+
+			_, err := reconstructionpkg.ParseAuditEvent(event)
+
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("missing signal_name"))
+		})
+
+		It("should extract ClusterID from event envelope [CC8.1]", func() {
+			event := createApifrontendRRCreatedEvent(testTimestamp)
+			event.ClusterID.SetTo("remote-cluster")
+
+			parsedData, err := reconstructionpkg.ParseAuditEvent(event)
+
+			Expect(err).ToNot(HaveOccurred())
+			Expect(parsedData.ClusterID).To(Equal("remote-cluster"),
+				"CC8.1: Parser must extract cluster_id from event envelope for AF-genesis events too")
+		})
+	})
+
+	// ========================================
 	// PARSER-CLUSTER-01: ClusterID extraction from event envelope [AU-2, CC8.1]
 	// BR-AUDIT-005 v2.0 / DD-AUDIT-003 v2.2: Fleet cluster-scoped audit
 	// ========================================
@@ -231,6 +273,43 @@ func createInvalidGatewayEvent(timestamp time.Time) ogenclient.AuditEvent {
 			GatewayAuditPayload: ogenclient.GatewayAuditPayload{
 				SignalType: ogenclient.GatewayAuditPayloadSignalTypeAlert,
 				SignalName: "", // Missing - should cause error in our parser
+			},
+		},
+	}
+}
+
+func createApifrontendRRCreatedEvent(timestamp time.Time) ogenclient.AuditEvent {
+	// Minimal: only fields OUR parser logic needs (Issue #2043)
+	return ogenclient.AuditEvent{
+		EventType:      "apifrontend.rr.created",
+		EventTimestamp: timestamp,
+		CorrelationID:  "rr-oom-web",
+		EventData: ogenclient.AuditEventEventData{
+			ApifrontendRRCreatedPayload: ogenclient.ApifrontendRRCreatedPayload{
+				EventType:   ogenclient.ApifrontendRRCreatedPayloadEventTypeApifrontendRrCreated,
+				SessionID:   "sess-1",
+				RrName:      "rr-oom-web",
+				RrNamespace: "kubernaut-system",
+				TargetKind:  "Deployment",
+				TargetName:  "web",
+				Fingerprint: "fp-abc123def456",
+				SignalName:  "OOMKilled",
+			},
+		},
+	}
+}
+
+func createInvalidApifrontendRRCreatedEvent(timestamp time.Time) ogenclient.AuditEvent {
+	// Minimal invalid: missing signal_name to test error handling
+	return ogenclient.AuditEvent{
+		EventType:      "apifrontend.rr.created",
+		EventTimestamp: timestamp,
+		EventData: ogenclient.AuditEventEventData{
+			ApifrontendRRCreatedPayload: ogenclient.ApifrontendRRCreatedPayload{
+				EventType:   ogenclient.ApifrontendRRCreatedPayloadEventTypeApifrontendRrCreated,
+				RrName:      "rr-oom-web",
+				Fingerprint: "fp-abc123def456",
+				SignalName:  "", // Missing - should cause error in our parser
 			},
 		},
 	}

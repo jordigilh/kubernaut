@@ -132,6 +132,56 @@ func CreateOrchestratorLifecycleCreatedEvent(
 	}, nil
 }
 
+// CreateApifrontendRRCreatedEvent creates a typed apifrontend.rr.created audit event.
+//
+// Required fields in payload:
+// - EventType (must be apifrontend.rr.created)
+// - SessionID
+// - RrName
+// - RrNamespace
+// - TargetKind
+// - TargetName
+// - Fingerprint
+// - SignalName
+//
+// Issue #2043: this is the sole genesis event for RRs created directly via
+// AF's kubernaut_remediate tool -- these bypass Gateway entirely and never
+// emit gateway.signal.received.
+func CreateApifrontendRRCreatedEvent(
+	correlationID string,
+	payload ogenclient.ApifrontendRRCreatedPayload,
+) (*repository.AuditEvent, error) {
+	// Validate required discriminator
+	if payload.EventType != ogenclient.ApifrontendRRCreatedPayloadEventTypeApifrontendRrCreated {
+		payload.EventType = ogenclient.ApifrontendRRCreatedPayloadEventTypeApifrontendRrCreated
+	}
+
+	// Use ogen's encoder to properly handle Opt types
+	encoder := &jx.Encoder{}
+	payload.Encode(encoder)
+	payloadJSON := encoder.Bytes()
+
+	// Convert JSON to map for repository layer
+	var eventDataMap map[string]interface{}
+	if err := json.Unmarshal(payloadJSON, &eventDataMap); err != nil {
+		return nil, err
+	}
+
+	return &repository.AuditEvent{
+		EventID:        uuid.New(),
+		Version:        "1.0",
+		EventTimestamp: time.Now().UTC(),
+		EventType:      "apifrontend.rr.created",
+		EventCategory:  "apifrontend",
+		EventAction:    "created",
+		EventOutcome:   "success",
+		CorrelationID:  correlationID,
+		ResourceType:   "RemediationRequest",
+		ResourceID:     payload.RrName,
+		EventData:      eventDataMap,
+	}, nil
+}
+
 // CreateAIAnalysisCompletedEvent creates a typed aianalysis.analysis.completed audit event.
 //
 // Required fields in payload:

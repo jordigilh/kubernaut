@@ -588,6 +588,80 @@ deleted (DD-WORKFLOW-018's deletion-semantics decision: CRD DELETE never mutates
 
 ---
 
+## Extension: `apifrontend.rr.created` as an Alternate Genesis Event (Issue #2043, 2026-08-09)
+
+> **Scope note**: this extension does not add a new RR field to the mapping matrix above -- the
+> fields it covers (`signal_name`/`signal_type`/`signal_fingerprint`, plus `cluster_id`) were
+> already implicitly assumed to live solely on `gateway.signal.received` (see the Reconstruction
+> Algorithm's STEP 1, which historically hard-failed reconstruction when that event was absent).
+> It is documented here because it changes the mandatory precondition of STEP 1 for a real,
+> shipped ingestion path that never emits a Gateway event at all.
+
+### Problem
+
+`RemediationRequest`s created directly via APIFrontend's `kubernaut_remediate` MCP tool
+(`pkg/apifrontend/tools/af_create_rr.go`) bypass the Gateway service entirely -- there is no
+signal ingestion, webhook, or Prometheus alert involved. These RRs therefore **never** emit a
+`gateway.signal.received` event. Before this fix, `MergeAuditData` unconditionally required
+`gateway.signal.received` to be present (`pkg/datastorage/reconstruction/mapper.go`), which made
+reconstruction of every AF-created RR's genesis data **architecturally impossible** -- not a
+missing-data gap, but a hard `return nil, error` for a real, shipped ingestion path.
+
+### Decision
+
+`apifrontend.rr.created` (`ApifrontendRRCreatedPayload` in `api/openapi/data-storage-v1.yaml`) is
+now a second, equally-valid **genesis event** for RR reconstruction. Exactly one of the two
+genesis event types must be present; either satisfies the requirement:
+
+| RR CRD Field Path | Audit Event Field | Service | Event Type (either satisfies) |
+|---|---|---|---|
+| `.spec.signalName` | `event_data.signal_name` | Gateway **or** APIFrontend | `gateway.signal.received` **or** `apifrontend.rr.created` |
+| `.spec.signalType` | *(Gateway: explicit field; APIFrontend: hardcoded `"alert"`)* | Gateway **or** APIFrontend | `gateway.signal.received` **or** `apifrontend.rr.created` |
+| `.spec.signalFingerprint` | `event_data.fingerprint` | Gateway **or** APIFrontend | `gateway.signal.received` **or** `apifrontend.rr.created` |
+| `.spec.clusterID` | envelope `cluster_id` | Gateway **or** APIFrontend | `gateway.signal.received` **or** `apifrontend.rr.created` |
+
+`signal_type` is not carried as an explicit field on `ApifrontendRRCreatedPayload` because
+AF-created RRs always hardcode it to `"alert"` in production (`buildRRObject`,
+`pkg/apifrontend/tools/af_create_rr.go`); the parser mirrors this constant rather than inferring
+it, so there is nothing ambiguous to reconstruct.
+
+**Implementation**:
+- `pkg/datastorage/reconstruction/query.go`: `apifrontend.rr.created` added to the reconstruction
+  query allowlist, `eventDataDecoders` (via `decodeApifrontendRRCreatedPayload`), and
+  `IsReconstructionRelevant`.
+- `pkg/datastorage/reconstruction/parser.go`: `parseApifrontendRRCreated` dispatch case --
+  extracts `SignalName`/`SignalFingerprint` from the payload, hardcodes `SignalType: "alert"`, and
+  returns an error if `signal_name` is missing (mirrors the Gateway parser's required-field
+  contract).
+- `pkg/datastorage/reconstruction/mapper.go`: `mapApifrontendRRCreatedFields` (mirrors
+  `mapGatewaySignalFields`'s Spec assignments); `genesisEventTypes`/`hasGenesisEvent` replace the
+  single-event-type check in `MergeAuditData`.
+- **Emission-side prerequisite** (same issue, same PR): `pkg/apifrontend/tools/af_create_rr.go`
+  and `pkg/apifrontend/audit/store_adapter.go` were also fixed to actually populate
+  `CorrelationID`, `target_kind`/`target_name`/`rr_name`/`fingerprint`/`signal_name` in the emitted
+  event -- these fields were schema-required since Issue #1021 but silently persisted as `""`
+  because the `Detail` map's key names never matched what `buildRRCreatedPayload` read. Without
+  this emission-side fix, the reconstruction-side dispatch above would successfully parse an event
+  whose `signal_name` was always empty, and immediately fail the "missing signal_name" check.
+
+**Reconstruction Logic** (STEP 1 replacement, mapper.go's `MergeAuditData`):
+```go
+// Previously: unconditionally required gateway.signal.received, hard-failing
+// reconstruction for every AF-created RR.
+if !hasGenesisEvent(events) {  // gateway.signal.received OR apifrontend.rr.created
+    return nil, fmt.Errorf("gateway.signal.received or apifrontend.rr.created event is required for reconstruction")
+}
+```
+
+**Tests**:
+- Unit: `pkg/datastorage/reconstruction/parser_test.go` (`PARSER-AF-01`),
+  `pkg/datastorage/reconstruction/mapper_test.go` (`MAPPER-AF-01`, `MAPPER-MERGE-AF-01`)
+- Integration (real PostgreSQL, full production dispatch path -- query allowlist → decoder →
+  parser dispatch → mapper genesis-event acceptance):
+  `test/integration/datastorage/reconstruction_integration_test.go` (`INTEGRATION-AF-01`)
+
+---
+
 ## Related Decisions
 
 - **ADR-034 v1.3**: [Unified Audit Table Design](./ADR-034-unified-audit-table-design.md) - Parent ADR establishing this as authoritative subdocument

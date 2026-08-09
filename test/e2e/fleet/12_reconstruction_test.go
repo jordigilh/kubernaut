@@ -19,6 +19,7 @@ package fleet
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -54,39 +55,108 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 	)
 
 	It("should include cluster_id in reconstruction response for fleet RRs", func() {
-		By("Finding a completed RemediationRequest with ClusterID set")
-		rrList := &remediationv1.RemediationRequestList{}
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.List(ctx, rrList, client.InNamespace(namespace))).To(Succeed())
-			var found bool
-			for _, rr := range rrList.Items {
-				if rr.Spec.ClusterID != "" && rr.Status.OverallPhase != "" {
-					rrName = rr.Name
-					correlationID = rr.Name
-					found = true
-					break
-				}
-			}
-			g.Expect(found).To(BeTrue(), "no RemediationRequest with ClusterID found")
-		}, 2*time.Minute, 5*time.Second).Should(Succeed())
-
-		GinkgoWriter.Printf("Found fleet RR: %s (correlationID: %s)\n", rrName, correlationID)
-
-		By("Waiting for audit events to be persisted (async pipeline)")
-		time.Sleep(10 * time.Second)
-
-		By("Calling ReconstructRemediationRequest API")
+		// Issue #2043: this suite has multiple RR-creation paths sharing the
+		// same namespace -- most go through Gateway's normal webhook ingestion
+		// (which emits the mandatory `gateway.signal.received` audit event
+		// reconstruction requires), but E2E-FLEET-018 creates its RR directly
+		// via APIFrontend's kubernaut_remediate A2A/MCP tool
+		// (pkg/apifrontend/tools/af_create_rr.go), bypassing Gateway entirely
+		// and emitting a different (equally valid, but reconstruction-mapper-
+		// unsupported) `apifrontend.rr.created` event instead. Locking onto
+		// the FIRST RR matching the spec-level condition below is a race
+		// against Ginkgo's spec ordering: if that first match happens to be
+		// the APIFrontend-created one, reconstruction is *permanently*
+		// impossible for it (not a timing issue -- confirmed via must-gather
+		// RCA in #2043), and the old single-candidate retry loop had no way
+		// to recover.
+		//
+		// Fixed by trying EVERY currently-listed candidate RR on each poll,
+		// not just the first: this test's actual business intent (BR-AUDIT-005
+		// v2.0 CC8.1: cluster_id survives reconstruction for fleet RRs) only
+		// needs ONE successfully-reconstructable fleet RR to prove the
+		// contract, not a specific one -- so falling through to the next
+		// candidate is correct, not a weaker assertion.
+		//
+		// Follow-up hardening: the candidate filter now requires
+		// PhaseCompleted explicitly (previously `OverallPhase != ""`, which
+		// matched all 10 non-terminal/failure phases too -- e.g. Pending,
+		// Processing, Blocked -- and is exactly how the AF-created RR above,
+		// permanently stuck in Blocked, was being swept into candidacy in
+		// the first place). This keeps the multi-candidate loop as
+		// defense-in-depth for legitimately concurrent completed fleet RRs,
+		// without silently accepting non-terminal ones as proof of anything.
+		// Per-candidate failures are now joined (not just the last one kept)
+		// so a systemic regression across every completed candidate is loud
+		// in the failure output, rather than reporting only the final
+		// candidate's error. This intentionally does NOT special-case the
+		// unrelated, already-tracked #1985 cold-start audit-write race --
+		// that failure mode should keep surfacing on its own merits if it
+		// recurs, not be silently absorbed here.
+		//
+		// Further hardening: "reconstructed" alone was too weak a success
+		// criterion for picking a candidate to `return` on -- a candidate
+		// could get a 200 ReconstructionResponse back with cluster_id still
+		// unset/empty (e.g. a genuine cluster_id-mapping bug affecting only
+		// some RRs), and the loop would still latch onto it, return, and let
+		// the *outer*, non-retried assertions below fail immediately on the
+		// real business check -- with no chance for the loop to move on to
+		// another, possibly-conformant candidate. The cluster_id check is
+		// now part of the loop's own success predicate, so only a candidate
+		// that fully satisfies the business contract can end the retry.
+		//
+		// Review follow-up: the loop used to end with TWO sequential
+		// g.Expect calls -- `candidateCount > 0` then `resp != nil` -- but
+		// the only place `resp` is ever assigned is the `return` above, so
+		// reaching the second check at all already means this tick's loop
+		// ran to completion without returning, i.e. `resp` is unconditionally
+		// nil there regardless of `candidateCount`. The first check couldn't
+		// actually gate anything: whenever it passed (candidateCount > 0),
+		// the second check was guaranteed to fail anyway, making it dead
+		// code wearing a real-looking assertion. Collapsed into one
+		// assertion that always carries both diagnostics (candidateCount and
+		// errs) in its failure message, whether zero candidates existed yet
+		// or some existed and all failed.
+		By("Finding a completed fleet RemediationRequest whose audit trail is actually reconstructable")
 		var resp *ogenclient.ReconstructionResponse
 		Eventually(func(g Gomega) {
-			result, err := dataStorageClient.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
-				CorrelationID: correlationID,
-			})
-			g.Expect(err).ToNot(HaveOccurred())
+			rrList := &remediationv1.RemediationRequestList{}
+			g.Expect(k8sClient.List(ctx, rrList, client.InNamespace(namespace))).To(Succeed())
 
-			reconResp, ok := result.(*ogenclient.ReconstructionResponse)
-			g.Expect(ok).To(BeTrue(), "expected ReconstructionResponse, got %T", result)
-			resp = reconResp
-		}, 30*time.Second, 2*time.Second).Should(Succeed())
+			var candidateCount int
+			var errs []error
+			for _, rr := range rrList.Items {
+				if rr.Spec.ClusterID == "" || rr.Status.OverallPhase != remediationv1.PhaseCompleted {
+					continue
+				}
+				candidateCount++
+
+				result, err := dataStorageClient.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
+					CorrelationID: rr.Name,
+				})
+				if err != nil {
+					errs = append(errs, fmt.Errorf("RR %s: %w", rr.Name, err))
+					continue
+				}
+				reconResp, ok := result.(*ogenclient.ReconstructionResponse)
+				if !ok {
+					errs = append(errs, fmt.Errorf("RR %s: expected ReconstructionResponse, got %T", rr.Name, result))
+					continue
+				}
+				if !reconResp.ClusterID.Set || reconResp.ClusterID.Value == "" {
+					errs = append(errs, fmt.Errorf("RR %s: reconstructed but cluster_id not set (CC8.1 violation for this candidate)", rr.Name))
+					continue
+				}
+
+				rrName = rr.Name
+				correlationID = rr.Name
+				resp = reconResp
+				return
+			}
+
+			g.Expect(resp).ToNot(BeNil(),
+				"no completed fleet RemediationRequest reconstructed with cluster_id set yet (%d candidate(s) tried): %v",
+				candidateCount, errors.Join(errs...))
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("Verifying cluster_id is present in reconstruction response")
 		Expect(resp.ClusterID.Set).To(BeTrue(),
@@ -183,10 +253,15 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 					"RR must have entered a known reconciliation phase, got %q", rr.Status.OverallPhase)
 			}, timeout, interval).Should(Succeed())
 
-			By("Waiting for audit events to be persisted (async pipeline)")
-			time.Sleep(10 * time.Second)
-
-			By(fmt.Sprintf("Reconstructing hub-only RR: %s", hubRRName))
+			// AGENTS.md testing standard: no fixed time.Sleep() in tests --
+			// poll for the actual condition instead. The async audit
+			// pipeline's persistence delay is absorbed entirely by this
+			// Eventually's own retry loop (it already treats a query error,
+			// e.g. audit events not yet persisted, as a retryable failure),
+			// so a separate blind sleep before it added nothing but wasted
+			// wall-clock time on every run. Budget bumped from 30s to 40s to
+			// preserve the same total wait headroom the sleep+30s poll gave.
+			By(fmt.Sprintf("Reconstructing hub-only RR: %s (polling for async audit-event persistence)", hubRRName))
 			var resp *ogenclient.ReconstructionResponse
 			Eventually(func(g Gomega) {
 				result, err := dataStorageClient.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
@@ -196,7 +271,7 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 				reconResp, ok := result.(*ogenclient.ReconstructionResponse)
 				g.Expect(ok).To(BeTrue(), "expected ReconstructionResponse, got %T", result)
 				resp = reconResp
-			}, 30*time.Second, 2*time.Second).Should(Succeed())
+			}, 40*time.Second, 2*time.Second).Should(Succeed())
 
 			Expect(resp.ClusterID.Set).To(BeFalse(),
 				"hub-only RR should not have cluster_id set")

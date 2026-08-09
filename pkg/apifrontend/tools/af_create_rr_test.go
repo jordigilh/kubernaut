@@ -820,10 +820,26 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			ev := rec.events[0]
 			Expect(ev.Type).To(Equal(audit.EventRRCreated))
 			Expect(ev.UserID).To(Equal("alice"))
-			Expect(ev.Detail["rr_id"]).To(Equal(extractRRName(result.RRID)))
+			// Issue #2043: CorrelationID must be the RR's own name so DataStorage's
+			// reconstruction endpoint can look up this event by correlation_id --
+			// previously unset, silently falling back to a random UUID
+			// (store_adapter.go's correlationID() helper), making every AF-created
+			// RR's genesis event permanently unqueryable by its own RR name.
+			Expect(ev.CorrelationID).To(Equal(extractRRName(result.RRID)))
+			// Issue #2043: Detail keys renamed to match the already-schema-aligned
+			// ApifrontendRRCreatedPayload contract (rr_name/target_kind/target_name)
+			// that buildRRCreatedPayload has always read -- af_create_rr.go was
+			// supplying the wrong key names (rr_id/kind/name), so every field except
+			// severity/cluster_id/session_id silently persisted as "" in event_data.
+			Expect(ev.Detail["rr_name"]).To(Equal(extractRRName(result.RRID)))
 			Expect(ev.Detail["severity"]).To(Equal("warning"))
-			Expect(ev.Detail["kind"]).To(Equal("Deployment"))
-			Expect(ev.Detail["name"]).To(Equal("web"))
+			Expect(ev.Detail["target_kind"]).To(Equal("Deployment"))
+			Expect(ev.Detail["target_name"]).To(Equal("web"))
+			Expect(ev.Detail["rr_namespace"]).To(Equal(kubernautSystem))
+			Expect(ev.Detail["fingerprint"]).ToNot(BeEmpty(),
+				"BR-AUDIT-005: fingerprint is required in ApifrontendRRCreatedPayload for dedup identity")
+			Expect(ev.Detail["signal_name"]).To(Equal(result.SignalName),
+				"Issue #2043: signal_name must be audited so DataStorage can reconstruct RemediationRequestSpec.SignalName for AF-genesis RRs")
 		})
 
 		It("emits EventRRDeduplicated with existing_rr detail when a non-terminal RR already exists", func() {
