@@ -3,7 +3,13 @@
 # BR-PLATFORM-001.3.4: Testing framework utilities
 
 # Test directories
-export MUST_GATHER_ROOT="${BATS_TEST_DIRNAME}/.."
+# Anchored to this file's own location (not BATS_TEST_DIRNAME, which is the
+# CALLING test file's directory and varies by nesting depth -- e.g.
+# test/integration/test_e2e.bats sits one level deeper than test/*.bats,
+# which silently resolved MUST_GATHER_ROOT to test/ instead of the actual
+# cmd/must-gather/ root there, breaking every ${MUST_GATHER_ROOT}/gather.sh
+# call in that file with "No such file or directory").
+export MUST_GATHER_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export TEST_TEMP_DIR="${BATS_TEST_TMPDIR}/must-gather-test"
 export MOCK_COLLECTION_DIR="${TEST_TEMP_DIR}/collection"
 
