@@ -27,8 +27,13 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/namespace.sh"
 # DataStorage API configuration
 # Issue #2037: build the URL from RELEASE_NAMESPACE instead of a hardcoded
 # "kubernaut-system" literal, so collection still reaches DataStorage when the
-# chart is installed into a non-default Helm release namespace.
-DATASTORAGE_URL="${DATASTORAGE_URL:-http://datastorage.${RELEASE_NAMESPACE}.svc.cluster.local:8080}"
+# chart is installed into a non-default Helm release namespace. The Service
+# name itself is "data-storage-service" (charts/kubernaut/templates/
+# datastorage/datastorage.yaml), NOT "datastorage" -- confirmed against a
+# real live-cluster install during this issue's own e2e-tests CI validation,
+# where the old "datastorage" name silently resolved to nothing and every
+# collection silently produced an empty error.json instead of real data.
+DATASTORAGE_URL="${DATASTORAGE_URL:-http://data-storage-service.${RELEASE_NAMESPACE}.svc.cluster.local:8080}"
 WORKFLOW_LIMIT="${WORKFLOW_LIMIT:-50}"
 AUDIT_LIMIT="${AUDIT_LIMIT:-1000}"
 AUDIT_TIMEFRAME="${AUDIT_TIMEFRAME:-24h}"

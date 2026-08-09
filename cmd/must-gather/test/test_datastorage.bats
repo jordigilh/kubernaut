@@ -174,7 +174,7 @@ EOF
     run env RELEASE_NAMESPACE="custom-kubernaut-ns" bash "${COLLECTORS_DIR}/datastorage.sh" "${MOCK_COLLECTION_DIR}"
 
     assert_success
-    assert_file_contains "${TEST_TEMP_DIR}/curl-calls.log" "datastorage.custom-kubernaut-ns.svc.cluster.local"
+    assert_file_contains "${TEST_TEMP_DIR}/curl-calls.log" "data-storage-service.custom-kubernaut-ns.svc.cluster.local"
 }
 
 @test "UT-MG-2037-004: DataStorage URL defaults to kubernaut-system when RELEASE_NAMESPACE is unset" {
@@ -186,7 +186,7 @@ EOF
     run env -u RELEASE_NAMESPACE bash "${COLLECTORS_DIR}/datastorage.sh" "${MOCK_COLLECTION_DIR}"
 
     assert_success
-    assert_file_contains "${TEST_TEMP_DIR}/curl-calls.log" "datastorage.kubernaut-system.svc.cluster.local"
+    assert_file_contains "${TEST_TEMP_DIR}/curl-calls.log" "data-storage-service.kubernaut-system.svc.cluster.local"
 }
 
 @test "BR-PLATFORM-001.6a: Support engineer can identify DataStorage network timeouts" {
