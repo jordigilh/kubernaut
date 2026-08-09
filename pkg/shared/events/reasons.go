@@ -70,6 +70,18 @@ const (
 	// The KA investigation pauses while the user drives.
 	EventReasonUserDriving = "UserDriving"
 
+	// EventReasonSessionAdopted is emitted when AA adopts a KA session that
+	// AF correlated onto this RR's InvestigationSession after AA's own
+	// tracked session went stale (e.g. a reconnect/takeover following a
+	// timeout) (issue #2029 Part B).
+	// FedRAMP SI-4 (System Monitoring): surfaces the correlation change as an
+	// observable event rather than a silent internal state swap.
+	// FedRAMP AU-2/AU-3 (Audit Events / Content): paired with the durable
+	// RecordAIAgentCall("session_adopted") audit record so the adoption --
+	// and the fact that a real, completed investigation was not discarded --
+	// is traceable after the fact, not just visible in logs.
+	EventReasonSessionAdopted = "SessionAdopted"
+
 	// EventReasonApprovalRequired is emitted when human approval is required
 	// for workflow execution (low confidence or policy mandate).
 	EventReasonApprovalRequired = "ApprovalRequired"

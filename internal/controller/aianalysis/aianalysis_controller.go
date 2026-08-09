@@ -310,9 +310,13 @@ func (r *AIAnalysisReconciler) mapISToAIAnalysis(ctx context.Context, is *isv1al
 }
 
 // ISEventPredicate filters IS events: passes create, delete, and update events
-// where the new phase is terminal (Completed, Cancelled, Failed). Non-terminal
-// updates are dropped to avoid unnecessary reconciles.
+// where the new phase is terminal (Completed, Cancelled, Failed), or where
+// status.kaCorrelationID changed. Other non-terminal updates are dropped to
+// avoid unnecessary reconciles.
 // #1449/SI-4: Terminal transitions must wake the AA controller immediately.
+// #2029 Part B: a takeover's correlation write only changes KACorrelationID,
+// not Phase — without this, AA would only learn about it on its next
+// scheduled poll instead of near-instantly.
 func ISEventPredicate() predicate.TypedPredicate[*isv1alpha1.InvestigationSession] {
 	return predicate.TypedFuncs[*isv1alpha1.InvestigationSession]{
 		CreateFunc: func(e event.TypedCreateEvent[*isv1alpha1.InvestigationSession]) bool {
@@ -326,9 +330,12 @@ func ISEventPredicate() predicate.TypedPredicate[*isv1alpha1.InvestigationSessio
 				return false
 			}
 			newPhase := e.ObjectNew.Status.Phase
-			return newPhase == isv1alpha1.SessionPhaseCompleted ||
+			if newPhase == isv1alpha1.SessionPhaseCompleted ||
 				newPhase == isv1alpha1.SessionPhaseCancelled ||
-				newPhase == isv1alpha1.SessionPhaseFailed
+				newPhase == isv1alpha1.SessionPhaseFailed {
+				return true
+			}
+			return e.ObjectNew.Status.KACorrelationID != e.ObjectOld.Status.KACorrelationID
 		},
 		GenericFunc: func(e event.TypedGenericEvent[*isv1alpha1.InvestigationSession]) bool {
 			return false

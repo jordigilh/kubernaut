@@ -434,7 +434,85 @@ func (h *InvestigatingHandler) checkISMismatchAndCancel(ctx context.Context, ana
 		return ctrl.Result{Requeue: true}, true
 	}
 
+	// #2029 Part B: hasIS && session.Interactive is the common "everything
+	// looks normal" steady state — neither case above fires. But AF may have
+	// correlated a newer, different KA session onto this IS since our last
+	// check (e.g. a reconnect/takeover after our tracked session went stale).
+	// Adopt it instead of silently continuing to poll a session AF has moved
+	// on from.
+	if hasIS && session.Interactive {
+		if newID, active, corrErr := h.isChecker.CorrelatedSessionID(ctx, rrName); corrErr != nil {
+			h.log.Error(corrErr, "CorrelatedSessionID check failed, proceeding with normal poll", "rrName", rrName)
+		} else if active && newID != "" && newID != session.ID {
+			h.log.Info("AF correlated a newer KA session onto this IS — adopting",
+				"oldSessionID", session.ID, "newSessionID", newID, "rrName", rrName)
+			h.adoptCorrelatedSession(ctx, analysis, newID)
+			return ctrl.Result{Requeue: true}, true
+		}
+	}
+
 	return ctrl.Result{}, false
+}
+
+// adoptCorrelatedSession swaps the AA-tracked KA session onto a session ID
+// AF has correlated for this RR's InvestigationSession (#2029 Part B). This
+// is deliberately NOT a regeneration: KA already ran (or is actively
+// running) this session — AA is catching up to work that already exists,
+// not starting a new investigation — so Generation is left unchanged (unlike
+// handleSessionLost's 404-triggered regeneration, or handleSessionPollCancelled's
+// takeover-resubmit branch, both of which intentionally start a fresh session).
+//
+// FedRAMP SI-4/AU-2/AU-3: emits a K8s event (observability) and a durable
+// audit record (traceability) so this is never a silent state change — the
+// business-relevant fact being preserved is that a real, possibly-completed
+// investigation is not discarded.
+func (h *InvestigatingHandler) adoptCorrelatedSession(ctx context.Context, analysis *aianalysisv1.AIAnalysis, newSessionID string) {
+	session := analysis.Status.KASession
+	oldSessionID := session.ID
+	now := metav1.Now()
+	session.ID = newSessionID
+	session.Interactive = true
+	session.PollCount = 0
+	session.LastPolled = nil
+	session.CreatedAt = &now
+	session.ConsecutiveGetResultErrors = 0
+
+	if h.recorder != nil {
+		h.recorder.Eventf(analysis, corev1.EventTypeNormal, events.EventReasonSessionAdopted,
+			"Adopted KA session %s correlated by API Frontend (previously tracking %s)", newSessionID, oldSessionID)
+	}
+	h.auditClient.RecordAIAgentCall(ctx, analysis, "session_adopted", 200, 0)
+}
+
+// checkCorrelatedSessionBeforeFinalizing re-checks IS correlation immediately
+// before finalizing a terminal poll result (completed/failed). Closes the
+// race where AF's correlation write lands between the general mismatch check
+// at the top of handleSessionBased and the poll result arriving from KA
+// (#2029 Part B): the old session can report completed/failed at the exact
+// moment a takeover has already moved AA's true session elsewhere. Returns
+// true if adoption occurred — the caller must skip finalizing this poll
+// result so the newly adopted session is never wrongly marked terminal.
+func (h *InvestigatingHandler) checkCorrelatedSessionBeforeFinalizing(ctx context.Context, analysis *aianalysisv1.AIAnalysis) bool {
+	if h.isChecker == nil {
+		return false
+	}
+	rrName := analysis.Spec.RemediationRequestRef.Name
+	if rrName == "" {
+		return false
+	}
+	session := analysis.Status.KASession
+	newID, active, err := h.isChecker.CorrelatedSessionID(ctx, rrName)
+	if err != nil {
+		h.log.Error(err, "CorrelatedSessionID re-check failed, proceeding to finalize poll result", "rrName", rrName)
+		return false
+	}
+	if !active || newID == "" || newID == session.ID {
+		return false
+	}
+	h.log.Info("AF correlated a newer KA session while finalizing poll result — adopting instead of finalizing",
+		"oldSessionID", session.ID, "newSessionID", newID, "rrName", rrName)
+	h.adoptCorrelatedSession(ctx, analysis, newID)
+	return true
 }
 
 // handleSessionSubmit submits a new investigation to KA and records the session ID.
@@ -695,6 +773,13 @@ func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, ana
 // handleSessionPollCompleted handles poll results where investigation has completed.
 // BR-AA-HAPI-064.3: Fetch result and process through ResponseProcessor
 func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+	// #2029 Part B: re-check correlation before finalizing — closes the race
+	// where AF adopts a takeover session between our last mismatch check and
+	// this (now-stale) session's poll reporting completed.
+	if h.checkCorrelatedSessionBeforeFinalizing(ctx, analysis) {
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	session := analysis.Status.KASession
 
 	// Track that a poll occurred even on terminal status — the poll that discovered
@@ -764,6 +849,11 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 // BR-AA-HAPI-064: Surface KA-side failure to operators via CRD status
 // AA-MED-1: Ensure Reason and SubReason are set for structured failure reporting.
 func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
+	// #2029 Part B: symmetric race-closing check (see handleSessionPollCompleted).
+	if h.checkCorrelatedSessionBeforeFinalizing(ctx, analysis) {
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	session := analysis.Status.KASession
 	session.PollCount++
 	now := metav1.Now()
