@@ -6210,7 +6210,7 @@ components:
 
     ApifrontendRRCreatedPayload:
       type: object
-      required: [event_type, session_id, rr_name, rr_namespace, target_kind, target_name, fingerprint]
+      required: [event_type, session_id, rr_name, rr_namespace, target_kind, target_name, fingerprint, signal_name]
       description: RemediationRequest created event payload (apifrontend.rr.created) — AF created an RR (SOC2 CC7.2, Issue #1021)
       properties:
         event_type:
@@ -6235,6 +6235,13 @@ components:
         fingerprint:
           type: string
           description: Dedup fingerprint hash
+        signal_name:
+          type: string
+          description: >-
+            Grounded signal name driving investigation behavior (Prometheus alert/rule name,
+            dominant K8s event reason, or "unknown"); mirrors the RR CRD's own spec.signalName
+            field verbatim (Issue #2043 -- BR-AUDIT-005 v2.0 CC8.1 genesis-event parity with
+            gateway.signal.received's own signal_name, required for RR reconstruction)
         signal_source:
           type: string
           description: How the signal was received (nl_query, alert_forward, etc.)
