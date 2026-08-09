@@ -267,6 +267,48 @@ jobs:
           kubectl cluster-info
           kubectl get nodes -o wide
 
+      - name: Create Helm chart prerequisite secrets (chart deliberately does not generate credential material)
+        run: |
+          # charts/kubernaut/templates/infrastructure/secrets.yaml expects these
+          # to already exist -- same minimal contract the fullpipeline E2E suite
+          # uses (test/infrastructure/fullpipeline_e2e_helm.go
+          # createFullPipelineHelmSecrets). llm-credentials-primary is a
+          # placeholder: no test here actually triggers an LLM call, it just
+          # needs to exist for KubernautAgent's volume mount / profile
+          # validation to succeed at pod startup.
+          kubectl create namespace "$RELEASE_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -n "$RELEASE_NAMESPACE" -f - <<'EOF'
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: postgresql-secret
+          type: Opaque
+          stringData:
+            POSTGRES_USER: slm_user
+            POSTGRES_PASSWORD: kubernaut-e2e-password
+            POSTGRES_DB: action_history
+            db-secrets.yaml: |
+              username: slm_user
+              password: kubernaut-e2e-password
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: valkey-secret
+          type: Opaque
+          stringData:
+            valkey-secrets.yaml: |
+              password: ""
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: llm-credentials-primary
+          type: Opaque
+          stringData:
+            api_key: mock-llm-e2e-key
+          EOF
+
       - name: "Write minimal OPA policy files (BR-PLATFORM-010: policies.content is mandatory)"
         run: |
           # charts/kubernaut/values.schema.json requires exactly one of
@@ -301,6 +343,10 @@ jobs:
             --set global.image.tag="${CHART_IMAGE_TAG}-amd64" \
             --set-file signalprocessing.policies.content=/tmp/must-gather-e2e-policies/sp-policy.rego \
             --set-file aianalysis.policies.content=/tmp/must-gather-e2e-policies/aa-policy.rego \
+            --set global.llmProfiles.primary.provider=openai_compatible \
+            --set global.llmProfiles.primary.model=mock-model \
+            --set global.llmProfiles.primary.endpoint="http://mock-llm.${RELEASE_NAMESPACE}.svc.cluster.local:8080" \
+            --set global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary \
             --wait --timeout 300s
 
       - name: Install kubernaut-operator (real controller-manager, for optional-namespace log collection coverage)
