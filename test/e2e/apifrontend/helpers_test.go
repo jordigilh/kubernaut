@@ -99,10 +99,20 @@ func a2aTasksSendWithContext(id, contextID, text string) string {
 // SessionInterceptor from routing independent SSE streams to a shared session,
 // which causes phantom connections that never drain.
 func a2aMessageStream(id, text string) string {
+	return a2aMessageStreamWithContext(id, "ctx-"+id, text)
+}
+
+// a2aMessageStreamWithContext builds a message/stream JSON-RPC payload (SSE
+// variant) with an explicit contextId, letting a test drive multiple
+// sequential turns (each with its own unique messageId) through the same ADK
+// session/state -- e.g. to establish #2023's grounding-guard prerequisite
+// (kubernaut_investigate) before a later kubernaut_present_decision turn in
+// the same session.
+func a2aMessageStreamWithContext(id, contextID, text string) string {
 	return buildJSONRPC(id, "message/stream", map[string]interface{}{
 		"message": map[string]interface{}{
 			"messageId": "msg-" + id,
-			"contextId": "ctx-" + id,
+			"contextId": contextID,
 			"role":      "user",
 			"parts": []map[string]interface{}{
 				{"kind": "text", "text": text},
@@ -440,12 +450,12 @@ func buildRAR(namespace, rarName, rrName string) *remediationv1alpha1.Remediatio
 			AIAnalysisRef: remediationv1alpha1.ObjectRef{
 				Name: "e2e-analysis-" + rarName,
 			},
-			Confidence:             0.65,
-			ConfidenceLevel:        "medium",
-			InvestigationSummary:   fmt.Sprintf("E2E RAR flow — RR %s", rrName),
-			Reason:                 "E2E approval gate",
-			WhyApprovalRequired:    "E2E coverage G5",
-			RequiredBy:             metav1.NewTime(time.Now().UTC()),
+			Confidence:           0.65,
+			ConfidenceLevel:      "medium",
+			InvestigationSummary: fmt.Sprintf("E2E RAR flow — RR %s", rrName),
+			Reason:               "E2E approval gate",
+			WhyApprovalRequired:  "E2E coverage G5",
+			RequiredBy:           metav1.NewTime(time.Now().UTC()),
 			RecommendedActions: []remediationv1alpha1.ApprovalRecommendedAction{
 				{
 					Action:    "RestartPod",

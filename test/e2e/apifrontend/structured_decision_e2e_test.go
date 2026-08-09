@@ -135,11 +135,32 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		return "", nil
 	}
 
+	// groundSession establishes #2023's grounding-guard prerequisite: a
+	// successful kubernaut_investigate turn in the same A2A session
+	// (contextID), so the later present_decision turn's before-callback
+	// (enforceGroundingGuard, phase_guard.go) finds
+	// session.StateKeyGroundedContentAvailable=true and lets the mock-LLM's
+	// scripted RCA/options through instead of overwriting them with the
+	// fail-closed "no investigation content" fallback. Targets the
+	// af-investigate-e2e/af-investigate-target fixture (managed namespace,
+	// synthetic grounding alert) that other AF E2E suites already rely on
+	// for a deterministic, successful investigation.
+	groundSession := func(ctx context.Context, contextID string) {
+		resp, err := a2aSSEPost(ctx, a2aMessageStreamWithContext(contextID+"-ground", contextID,
+			"start investigation for pod af-investigate-target in af-investigate-e2e"))
+		Expect(err).NotTo(HaveOccurred(), "grounding kubernaut_investigate call must succeed")
+		defer func() { _ = resp.Body.Close() }()
+		_, _ = scanDecisionEvent(resp) // drain to EOF; no decision event expected here
+	}
+
 	It("E2E-AF-1395-001: SI-10 — structured decision payload > 512 chars arrives intact via SSE", func() {
 		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 
-		resp, err := a2aSSEPost(readCtx, a2aMessageStream("e2e-structured-001", "present structured rca decision"))
+		const ctxID = "ctx-e2e-structured-001"
+		groundSession(readCtx, ctxID)
+
+		resp, err := a2aSSEPost(readCtx, a2aMessageStreamWithContext("e2e-structured-001-decision", ctxID, "present structured rca decision"))
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 
@@ -165,7 +186,10 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 
-		resp, err := a2aSSEPost(readCtx, a2aMessageStream("e2e-structured-002", "present structured rca decision"))
+		const ctxID = "ctx-e2e-structured-002"
+		groundSession(readCtx, ctxID)
+
+		resp, err := a2aSSEPost(readCtx, a2aMessageStreamWithContext("e2e-structured-002-decision", ctxID, "present structured rca decision"))
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 
@@ -219,7 +243,10 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
 
-		resp, err := a2aSSEPost(readCtx, a2aMessageStream("e2e-structured-003", "present structured rca decision"))
+		const ctxID = "ctx-e2e-structured-003"
+		groundSession(readCtx, ctxID)
+
+		resp, err := a2aSSEPost(readCtx, a2aMessageStreamWithContext("e2e-structured-003-decision", ctxID, "present structured rca decision"))
 		Expect(err).NotTo(HaveOccurred())
 		defer func() { _ = resp.Body.Close() }()
 
