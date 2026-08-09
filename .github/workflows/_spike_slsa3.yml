@@ -186,3 +186,24 @@ jobs:
           else
             echo "SPIKE RESULT: CONFIRMED -- workflow_call isolates the attestation signer identity as expected"
           fi
+
+  cleanup:
+    name: Delete throwaway spike images from Quay
+    needs: verify
+    if: always() && needs.verify.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Login to Quay.io
+        run: |
+          podman login -u "${{ secrets.QUAY_ROBOT_USERNAME }}" \
+                       -p "${{ secrets.QUAY_ROBOT_TOKEN }}" \
+                       quay.io
+
+      - name: Delete every tag under the slsa3-spike repo
+        run: |
+          for tag in $(skopeo list-tags "docker://${IMAGE_REGISTRY}/${IMAGE_NAME}" | jq -r '.Tags[]'); do
+            echo "Deleting ${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}..."
+            skopeo delete "docker://${IMAGE_REGISTRY}/${IMAGE_NAME}:${tag}" || \
+              echo "::warning::Could not delete ${tag} (robot account may lack delete permission -- needs manual cleanup)"
+          done
