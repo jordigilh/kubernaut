@@ -47,6 +47,16 @@ on:
         required: false
         default: 'false'
         type: boolean
+      chart-image-tag:
+        description: 'Pre-built quay.io/kubernaut-ai/* chart image tag to install for the e2e-tests job (override the pinned default below)'
+        required: false
+        default: ''
+        type: string
+      operator-version:
+        description: 'jordigilh/kubernaut-operator release tag to install for the e2e-tests job (override the pinned default below)'
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -197,30 +207,43 @@ jobs:
   # installed, asserting collected CRD/log counts match live-cluster truth
   # exactly (not a hardcoded number) -- this is the CI gate that catches
   # collector-script drift (stale CRD/service/namespace lists) going forward.
-  # Duration: ~15-20 minutes
+  #
+  # Chart images are PULLED pre-built from quay.io/kubernaut-ai (a public
+  # release, not built from source): this job validates must-gather's
+  # collection logic, not each service's business logic -- it only needs
+  # *some* running pods with *some* logs/CRDs to scrape, so building all ~12
+  # service images from source on every PR (the previous approach) was pure
+  # CI cost with no corresponding correctness signal. The must-gather image
+  # itself IS built from source below, since that's the actual subject under
+  # test. Trade-off: CHART_IMAGE_TAG can drift from current main's CRD/API
+  # schema over time -- bump it (or override via workflow_dispatch
+  # chart-image-tag) if the Helm install step starts failing.
+  # Duration: ~5-8 minutes (was ~15-20 minutes when building images)
   # ========================================
   e2e-tests:
     name: E2E Tests (Live Cluster)
     runs-on: ubuntu-latest
-    timeout-minutes: 25 # Generous timeout for Kind setup + Helm install + tests
+    timeout-minutes: 15 # Generous timeout for Kind setup + Helm install + tests
     if: ${{ !inputs.skip-tests }}
     env:
       KIND_EXPERIMENTAL_PROVIDER: podman
       KIND_CLUSTER_NAME: must-gather-e2e
       RELEASE_NAMESPACE: kubernaut-system
       WORKFLOW_NAMESPACE: kubernaut-workflows
-      IMAGE_TAG: must-gather-e2e
+      OPERATOR_NAMESPACE: kubernaut-operator-system
+      # Pinned pre-built quay.io/kubernaut-ai/* release tag -- see job comment above.
+      CHART_IMAGE_TAG: ${{ inputs.chart-image-tag != '' && inputs.chart-image-tag || '1.6.0-rc1' }}
+      # Pinned jordigilh/kubernaut-operator release tag -- installs the real,
+      # standalone operator (distinct from this Helm chart) so the e2e suite
+      # can prove the optional kubernaut-operator-system log-collection path
+      # (Issue #2037) against a genuine controller-manager pod, not a stub.
+      OPERATOR_VERSION: ${{ inputs.operator-version != '' && inputs.operator-version || 'v1.5.7' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           submodules: recursive
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version: '1.26.5'
 
       - name: Install Podman
         uses: ./.github/actions/install-podman
@@ -244,29 +267,22 @@ jobs:
           kubectl cluster-info
           kubectl get nodes -o wide
 
-      - name: Build chart images from source
-        run: |
-          make generate
-          make image-build \
-            IMAGE_TAG="${IMAGE_TAG}" \
-            IMAGE_TARGET=production \
-            IMAGE_ARCH=amd64 \
-            CONTAINER_TOOL=podman \
-            APP_VERSION="${IMAGE_TAG}"
-
-      - name: Load chart images into Kind
-        run: |
-          for img in $(podman images --filter "reference=quay.io/kubernaut-ai/*:${IMAGE_TAG}*" --format "{{.Repository}}:{{.Tag}}"); do
-            echo "Loading ${img}..."
-            podman save "$img" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
-          done
-
-      - name: Install Kubernaut Helm chart
+      - name: Install Kubernaut Helm chart (pre-built images, pulled by Kind's nodes directly)
         run: |
           helm install kubernaut charts/kubernaut/ \
             --namespace "$RELEASE_NAMESPACE" --create-namespace \
-            --set global.image.tag="${IMAGE_TAG}-amd64" \
+            --set global.image.tag="${CHART_IMAGE_TAG}-amd64" \
             --wait --timeout 300s
+
+      - name: Install kubernaut-operator (real controller-manager, for optional-namespace log collection coverage)
+        run: |
+          # The kubernaut-operator's controller-manager needs no external
+          # deps (Postgres/Valkey/LLM) to become Ready -- those only matter
+          # once a Kubernaut CR is reconciled, which this job never creates.
+          # dist/install.yaml is a self-contained kubebuilder bundle
+          # (Namespace, CRD, RBAC, Deployment) -- pulled directly, no OLM.
+          kubectl apply -f "https://raw.githubusercontent.com/jordigilh/kubernaut-operator/${OPERATOR_VERSION}/dist/install.yaml"
+          kubectl -n "$OPERATOR_NAMESPACE" rollout status deployment/kubernaut-operator-controller-manager --timeout=120s
 
       - name: Build must-gather image
         working-directory: cmd/must-gather
@@ -286,7 +302,8 @@ jobs:
             KUBECONFIG_PATH=/tmp/kubeconfig-e2e \
             KIND_NETWORK=kind \
             RELEASE_NAMESPACE="$RELEASE_NAMESPACE" \
-            WORKFLOW_NAMESPACE="$WORKFLOW_NAMESPACE"
+            WORKFLOW_NAMESPACE="$WORKFLOW_NAMESPACE" \
+            OPERATOR_NAMESPACE="$OPERATOR_NAMESPACE"
 
       - name: Collect diagnostics on failure
         if: failure()
@@ -297,6 +314,9 @@ jobs:
           kubectl get crd -o name 2>/dev/null | grep kubernaut.ai || true
           echo "=== Events ==="
           kubectl get events -n "$RELEASE_NAMESPACE" --sort-by='.lastTimestamp' 2>/dev/null | tail -30 || true
+          echo "=== kubernaut-operator status ==="
+          kubectl get pods -n "$OPERATOR_NAMESPACE" 2>/dev/null || true
+          kubectl get events -n "$OPERATOR_NAMESPACE" --sort-by='.lastTimestamp' 2>/dev/null | tail -20 || true
           echo "=== Kind logs ==="
           kind export logs /tmp/kind-e2e-logs --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
 
