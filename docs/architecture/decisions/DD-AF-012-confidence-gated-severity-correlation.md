@@ -1,7 +1,7 @@
 # DD-AF-012: Confidence-Gated Severity Correlation with Agent Clarification
 
-**Status**: 📋 PROPOSED — design agreed, implementation plan (Wiring Manifest + confidence score) not yet written. Root-cause margin corrected 2026-08-09 (see "Correction" subsection below) after two additional live reproductions (one mine, two QE's); the decision and scope are unaffected.
-**Date**: 2026-08-08 (root-cause correction: 2026-08-09)
+**Status**: ✅ IMPLEMENTED (2026-08-09) — see "Next Steps" for the completed Wiring Manifest, TDD results, and test IDs. Root-cause margin corrected 2026-08-09 (see "Correction" subsection below) after two additional live reproductions (one mine, two QE's); the decision and scope are unaffected.
+**Date**: 2026-08-08 (root-cause correction: 2026-08-09, implemented: 2026-08-09)
 **Issue**: [#2027](https://github.com/jordigilh/kubernaut/issues/2027) (`release/v1.5`), [#2028](https://github.com/jordigilh/kubernaut/issues/2028) (`main`/v1.6 clone)
 **Related**: [DD-AF-001](DD-AF-001-pod-based-alert-correlation.md) (Tier 1 correlation this decision extends), DD-AF-010 (referenced in `pkg/apifrontend/severity/triage.go`/`af_create_rr.go` for the fail-closed-over-guessing philosophy this decision continues, no standalone doc file exists yet), [#2018](https://github.com/jordigilh/kubernaut/issues/2018)/[#2021](https://github.com/jordigilh/kubernaut/issues/2021) (specificity-vs-state ranking fix — confirmed correct, not the cause of this recurrence), [#2022](https://github.com/jordigilh/kubernaut/issues/2022) (`kubernaut.ai/managed` scope pattern referenced below), [#2023](https://github.com/jordigilh/kubernaut/issues/2023) (harness-signal + prompt-instruction dual pattern this decision reuses)
 
@@ -173,13 +173,54 @@ Key clarifying facts established during discussion:
 
 ## Next Steps
 
-- [ ] Write the ephemeral implementation plan: exact field/type changes to `TriageResult`,
+- [x] Write the ephemeral implementation plan: exact field/type changes to `TriageResult`,
       `CreateRRArgs`, `InvestigateMCPArgs`/`RemediateArgs`/`InvestigateAlertArgs`, the three tool
       Result types, and the new `prompt.txt` instruction — with a Wiring Manifest table and
       confidence score, per project methodology, before implementation begins.
-- [ ] TDD RED/GREEN/REFACTOR per the pyramid invariant (UT for `bestOverallMatch` confidence + the
+- [x] TDD RED/GREEN/REFACTOR per the pyramid invariant (UT for `bestOverallMatch` confidence + the
       ambiguous-result path; IT for the full tool-call → ambiguous-result → re-call-with-confirmation
       round trip).
+
+### Implementation results (2026-08-09)
+
+All Go-side changes and the `prompt.txt` Behavioral Constraint 7 described above were implemented
+on branch `fix/2022-af-scope-validation` (same branch as #2022/#2023/PR #2026, per the
+resource-constraint decision to consolidate into one PR).
+
+**Wiring Manifest — final state:**
+
+| Component | Production Entry Point | Wiring Code Location | Test ID | Result |
+|---|---|---|---|---|
+| `TriageResult.Ambiguous` / `AmbiguousSeverityError` | `severity.Triager.Triage` (called from `HandleCreateRR`) | [pkg/apifrontend/severity/triage.go](../../../pkg/apifrontend/severity/triage.go) | `UT-AF-2027-001`..`003` | ✅ PASS |
+| `CreateRRResult.Ambiguous` translation | `HandleCreateRR` | [pkg/apifrontend/tools/af_create_rr.go](../../../pkg/apifrontend/tools/af_create_rr.go) | `UT-AF-2027-004`, `004b` | ✅ PASS |
+| `RemediateResult.Ambiguous` + `confirmed_signal_name` round trip | `kubernaut_remediate` tool call | [pkg/apifrontend/tools/ka_remediate.go](../../../pkg/apifrontend/tools/ka_remediate.go), wired in `agent/root.go` | `UT-AF-2027-005` | ✅ PASS |
+| `InvestigateMCPResult.Ambiguous` + `confirmed_signal_name` round trip | `kubernaut_investigate` tool call | [pkg/apifrontend/tools/ka_investigate_mcp.go](../../../pkg/apifrontend/tools/ka_investigate_mcp.go), wired in `agent/root.go` and `handler/mcp_bridge.go` | `UT-AF-2027-006`, `IT-AF-2027-009` | ✅ PASS |
+| `InvestigateAlertResult.Ambiguous` | `kubernaut_investigate_alert` tool call | [pkg/apifrontend/tools/af_investigate_alert.go](../../../pkg/apifrontend/tools/af_investigate_alert.go), wired in `agent/root.go` | `UT-AF-2027-007` | ✅ PASS |
+| `EventSeverityTriageAmbiguous` audit emission | `Triager.Triage` | [pkg/apifrontend/audit/audit.go](../../../pkg/apifrontend/audit/audit.go) constant + emission in `triage.go` | `UT-AF-2027-008` | ✅ PASS |
+| Behavioral Constraint 7 prompt text | `BuildInstruction` (embeds `prompt.txt`) | [pkg/apifrontend/agent/prompt.txt](../../../pkg/apifrontend/agent/prompt.txt) | `UT-AF-2027-010`..`014` | ✅ PASS |
+
+`IT-AF-2027-009` proves the full round trip through `mcp_bridge_integration_test.go`'s real MCP
+dispatch path (`tools/call` over the same router/handler stack as production): first call with an
+ambiguous-only correlation returns `ambiguous: true` and does **not** start an MCP session or create
+an RR (`startInvestigationCalls == 0`); the re-call with `confirmed_signal_name` matching the
+candidate proceeds to RR creation and MCP session start (`startInvestigationCalls == 1`).
+
+CHECKPOINT W verified: all seven rows above have a production caller (confirmed via `grep` against
+`cmd/`/`agent/root.go`/`handler/mcp_bridge.go`, none of it new wiring — this change modifies
+existing Args/Result shapes on already-wired tools) and a passing IT/UT proving the field is
+reachable through that production entry point, not just via direct Go function calls in unit tests.
+
+**Test blast-radius note**: `defaultTestTriager()` — a shared fixture used by ~46 pre-existing,
+unrelated test cases across 7 files to get *any* successful (non-ambiguous) `Triager` result — was
+reworked to accept `(namespace, kind, name string)` and return a resource-scoped alert with a
+verified relationship to that specific target, so it continues to resolve confidently under the new
+ambiguity gate. A separate `ambiguousTestTriager()` (cluster-scoped-only, no verified relationship)
+was introduced for the tests that specifically exercise DD-AF-012's ambiguous path. All ~46
+call sites were updated to pass the target's own `namespace`/`kind`/`name`; no test behavior outside
+the new ambiguity assertions changed.
+
+**Full validation**: `go build ./...`, `go vet ./...`, and the full `pkg/apifrontend/...` test suite
+(agent, audit, handler, severity, tools, and all other subpackages) pass with zero failures.
 
 ## References
 

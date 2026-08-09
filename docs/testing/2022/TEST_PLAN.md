@@ -6,6 +6,7 @@
 - [#2023](https://github.com/jordigilh/kubernaut/issues/2023) — LLM content fabrication in `present_decision`; opaque-error removal + harness-enforced grounding guard — see Section 8
 - `prompt.txt` accuracy fixes (terminal-phase list, tool-naming consistency) — see Section 9
 - E2E fixture fix for PR [#2026](https://github.com/jordigilh/kubernaut/pull/2026) CI failure (`kubernaut.ai/managed` labeling gaps) — see Section 10
+- [#2027](https://github.com/jordigilh/kubernaut/issues/2027) — `severity.Triager` cluster-scoped alert mis-correlation recurrence; confidence-gated ambiguity surfacing per [DD-AF-012](../../architecture/decisions/DD-AF-012-confidence-gated-severity-correlation.md) — see Section 11
 **Branch**: `fix/2022-af-scope-validation` (off `release/v1.5`)
 **Created**: 2026-08-08
 **Status**: Implementation complete — build/vet/full test suites green
@@ -324,18 +325,85 @@ client is built.
 This is a test-fixture correction, not a change to Point 3's validation logic — a real Kubernaut
 deployment would already have these namespaces labeled, matching every other managed namespace.
 
-## 11. Coverage Summary
+## 11. Issue #2027 (QE-reported, same branch): Confidence-Gated Severity Correlation (DD-AF-012)
+
+QE reported a recurrence of #2018's symptom: `severity.Triager` bound an RR's `severity`/`signalName`
+to an unrelated, persistently-firing cluster-scoped alert instead of the target resource's own
+signal. Root cause, decision rationale, and FedRAMP mapping are documented in full in
+[DD-AF-012](../../architecture/decisions/DD-AF-012-confidence-gated-severity-correlation.md); this
+section covers only the test-plan/coverage view.
+
+**Fix summary**: `bestOverallMatch` now marks a cluster-tier-only match `Ambiguous: true` (no
+verified relationship to the target resource — resource/namespace-tier matches are never
+ambiguous). `Triage()` returns a new `*AmbiguousSeverityError` for an unconfirmed ambiguous result
+instead of silently trusting it. `HandleCreateRR` translates that error into a normal (non-error)
+`CreateRRResult{Ambiguous: true, CandidateSignalName, CandidateSeverity}` — a typed signal, not a Go
+error — mirroring #2022's `Managed: false` shape. All three RR-creating tools
+(`kubernaut_remediate`, `kubernaut_investigate`, `kubernaut_investigate_alert`) gained a
+`ConfirmedSignalName` input field and `Ambiguous`/`CandidateSignalName`/`CandidateSeverity` result
+fields, so the calling agent can ask the user to confirm the weak candidate and re-call with
+`confirmed_signal_name` set to bypass the gate for that exact candidate (fail-closed: a *different*
+candidate name does not bypass it). `prompt.txt` gained Behavioral Constraint 7, spike-validated
+against a live model, instructing the agent to ask for confirmation, never guess or retry blindly,
+and always close out via `kubernaut_present_decision` if no signal is confirmed.
+
+| ID | Tier | Business-Level Behavior Description | Control / BR | Test File |
+|---|---|---|---|---|
+| UT-AF-2027-001 | Unit | `bestOverallMatch` sets `Ambiguous: true` only when the winning candidate is cluster-scoped; resource/namespace-tier wins stay `Ambiguous: false` even when a cluster-scoped alert also exists | SI-10 | `pkg/apifrontend/severity/triage_test.go` |
+| UT-AF-2027-002 | Unit | `Triage()` returns `*AmbiguousSeverityError` with the candidate populated when `Ambiguous: true` and no matching `ConfirmedSignalName` | SI-10, SI-11 | `pkg/apifrontend/severity/triage_test.go` |
+| UT-AF-2027-003 | Unit | `Triage()` bypasses the ambiguity gate and returns normally when `ConfirmedSignalName` exactly matches the candidate's `AlertName`; a *different* candidate name does not bypass (fail-closed) | AC-6, CM-3 | `pkg/apifrontend/severity/triage_test.go` |
+| UT-AF-2027-004 | Unit | `HandleCreateRR` translates `*AmbiguousSeverityError` into `CreateRRResult{Ambiguous: true, ...}` with no Go error and no RR created | SI-11 | `pkg/apifrontend/tools/af_create_rr_test.go` |
+| UT-AF-2027-004b | Unit | A matching `ConfirmedAmbiguousSignalName` proceeds to RR creation | AC-6, CM-3 | `pkg/apifrontend/tools/af_create_rr_test.go` |
+| UT-AF-2027-005 | Unit | `kubernaut_remediate` surfaces `Ambiguous`/`CandidateSignalName`/`CandidateSeverity`, then proceeds to RR creation once `confirmed_signal_name` matches | AC-6, SI-10, SI-11 | `pkg/apifrontend/tools/ka_remediate_test.go` |
+| UT-AF-2027-006 | Unit | `kubernaut_investigate` (A2A path) surfaces the same fields, then proceeds to RR creation and MCP session start once confirmed | AC-6, SI-10, SI-11 | `pkg/apifrontend/tools/ka_investigate_intent_test.go` |
+| UT-AF-2027-007 | Unit | `kubernaut_investigate_alert` surfaces the same fields for the severity-only ambiguity case (the RR's `signalName` is already fixed by the user-supplied `alert_name`) | AC-6, SI-10, SI-11 | `pkg/apifrontend/tools/af_investigate_alert_test.go` |
+| UT-AF-2027-008 | Unit | `EventSeverityTriageAmbiguous` is emitted exactly once per ambiguous (unconfirmed) `Triage()` call | AU-3, AU-12 | `pkg/apifrontend/severity/triage_test.go` |
+| IT-AF-2027-009 | Integration | Full round trip through `mcp_bridge_integration_test.go`'s real MCP dispatch path (`httptest` server → `NewMCPHandler` → tool registration closure): first call with an ambiguous-only correlation returns `ambiguous: true` and starts no MCP session; the re-call with `confirmed_signal_name` proceeds to RR creation and MCP session start | AC-6, SI-10, AU-3/AU-12, SI-11 | `pkg/apifrontend/handler/mcp_bridge_integration_test.go` |
+| UT-AF-2027-010..014 | Unit | `prompt.txt` contains the spike-validated ambiguous-signal instruction (asks for confirmation, forbids guessing, forbids blind retry, mandates a `kubernaut_present_decision` close-out) and leaks no internal issue numbers | AU-3 (model-side contract) | `pkg/apifrontend/agent/prompt_test.go` |
+
+### Wiring Manifest (#2027)
+
+This change modifies existing Args/Result shapes on tools already wired in production (per Section
+5's #2022 Wiring Manifest) — it introduces no new wiring points, only new fields/branches reachable
+through those same entry points.
+
+| Component | Production Entry Point | Wiring Code Location | Test ID |
+|---|---|---|---|
+| `TriageResult.Ambiguous` / `AmbiguousSeverityError` | `severity.Triager.Triage` (called from `HandleCreateRR`) | `pkg/apifrontend/severity/triage.go` | UT-AF-2027-001..003 |
+| `CreateRRResult.Ambiguous` translation | `HandleCreateRR` | `pkg/apifrontend/tools/af_create_rr.go` | UT-AF-2027-004, -004b |
+| `RemediateResult.Ambiguous` + `confirmed_signal_name` round trip | `kubernaut_remediate` tool call | `pkg/apifrontend/tools/ka_remediate.go`, wired in `agent/root.go` | UT-AF-2027-005 |
+| `InvestigateMCPResult.Ambiguous` + `confirmed_signal_name` round trip | `kubernaut_investigate` tool call | `pkg/apifrontend/tools/ka_investigate_mcp.go`, wired in `agent/root.go` and `handler/mcp_bridge.go` | UT-AF-2027-006, IT-AF-2027-009 |
+| `InvestigateAlertResult.Ambiguous` | `kubernaut_investigate_alert` tool call | `pkg/apifrontend/tools/af_investigate_alert.go`, wired in `agent/root.go` | UT-AF-2027-007 |
+| `EventSeverityTriageAmbiguous` audit emission | `Triager.Triage` | `pkg/apifrontend/audit/audit.go` (constant) + emission in `triage.go` | UT-AF-2027-008 |
+| Behavioral Constraint 7 prompt text | `BuildInstruction` (embeds `prompt.txt`) | `pkg/apifrontend/agent/prompt.txt` | UT-AF-2027-010..014 |
+
+**CHECKPOINT W**: verified via `grep -rn "NewInvestigateMCPTool\|NewRemediateTool\|NewInvestigateAlertTool" pkg/apifrontend/agent/root.go` (all three tools still constructed there, unchanged call sites — no new construction needed since only the Args/Result shapes changed) and by the full test suite passing end-to-end through each production entry point, including the raw MCP bridge dispatch path (`IT-AF-2027-009`).
+
+**Test blast-radius note**: `defaultTestTriager()` — a shared fixture used by ~46 pre-existing,
+unrelated test cases across 7 files (`af_create_rr_test.go`, `ka_remediate_test.go`,
+`ka_investigate_intent_test.go`, `af_investigate_alert_test.go`,
+`af_investigate_alert_1440_test.go`, `af_investigate_alert_1440_it_test.go`,
+`cluster_scope_1477_test.go`) to obtain *any* successful (non-ambiguous) `Triager` result — was
+reworked to accept `(namespace, kind, name string)` and return a resource-scoped alert with a
+verified relationship to that specific target, so it continues to resolve confidently under the new
+ambiguity gate. A separate `ambiguousTestTriager()` (cluster-scoped-only, no verified relationship)
+was introduced for tests that specifically exercise the ambiguous path. All call sites were updated
+to pass the target's own `namespace`/`kind`/`name`; the full `pkg/apifrontend/tools/...` suite (602
+specs) and `pkg/apifrontend/handler/...` suite (223 specs) pass with zero failures.
+
+## 12. Coverage Summary
 
 | Metric | Target | Actual |
 |---|---|---|
-| BR/Control coverage (AC-6, SI-10, AU-3/AU-12, SI-11) | 100% | ✅ (Sections 3, 8.2) |
-| Wiring Manifest rows with passing IT/UT evidence | 100% | ✅ (Sections 5, 8.2) |
-| CHECKPOINT W (no orphaned `pkg/` code, no orphaned callback registration) | Pass | ✅ (Section 6, 8.2) |
-| Build (`go build ./...`, `go vet ./...`) | Pass | ✅ (Section 7) |
+| BR/Control coverage (AC-6, SI-10, AU-3/AU-12, SI-11) | 100% | ✅ (Sections 3, 8.2, 11) |
+| Wiring Manifest rows with passing IT/UT evidence | 100% | ✅ (Sections 5, 8.2, 11) |
+| CHECKPOINT W (no orphaned `pkg/` code, no orphaned callback registration) | Pass | ✅ (Section 6, 8.2, 11) |
+| Build (`go build ./...`, `go vet ./...`) | Pass | ✅ (Section 7, 11) |
 | #2023 fix coverage (opaque-error removal + harness grounding guard) | 100% | ✅ (Section 8) |
 | E2E fixture fix (PR #2026 CI) | Fixed | ✅ (Section 10) |
+| #2027 fix coverage (confidence-gated ambiguity surfacing, DD-AF-012) | 100% | ✅ (Section 11) |
 
-## 12. Out of Scope
+## 13. Out of Scope
 
 - **`RemediationScope` CRD, dynamic (Rego) scope policies**: deferred to V2.0 per ADR-053; this fix
   only adds a new *caller* of the existing static-label `IsManaged()` contract.
@@ -343,8 +411,10 @@ deployment would already have these namespaces labeled, matching every other man
 - **Gateway (Point 1) / RO (Point 2) changes**: unaffected; this fix adds Point 3 only.
 - **Product/UX judgment call on when to nudge continued investigation** (Section 8.3): explicitly
   flagged, not resolved by this fix.
+- **Broader cluster-scoped-alert-as-legitimate-evidence support** (DD-AF-012): tracked as a separate,
+  not-yet-scoped issue; #2027's fix is intentionally durable against that future work.
 
-## 13. Sign-off
+## 14. Sign-off
 
 | Role | Name | Date | Signature |
 |---|---|---|---|
