@@ -1,7 +1,7 @@
 # DD-AF-012: Confidence-Gated Severity Correlation with Agent Clarification
 
-**Status**: 📋 PROPOSED — design agreed, implementation plan (Wiring Manifest + confidence score) not yet written
-**Date**: 2026-08-08
+**Status**: 📋 PROPOSED — design agreed, implementation plan (Wiring Manifest + confidence score) not yet written. Root-cause margin corrected 2026-08-09 (see "Correction" subsection below) after two additional live reproductions (one mine, two QE's); the decision and scope are unaffected.
+**Date**: 2026-08-08 (root-cause correction: 2026-08-09)
 **Issue**: [#2027](https://github.com/jordigilh/kubernaut/issues/2027) (`release/v1.5`), [#2028](https://github.com/jordigilh/kubernaut/issues/2028) (`main`/v1.6 clone)
 **Related**: [DD-AF-001](DD-AF-001-pod-based-alert-correlation.md) (Tier 1 correlation this decision extends), DD-AF-010 (referenced in `pkg/apifrontend/severity/triage.go`/`af_create_rr.go` for the fail-closed-over-guessing philosophy this decision continues, no standalone doc file exists yet), [#2018](https://github.com/jordigilh/kubernaut/issues/2018)/[#2021](https://github.com/jordigilh/kubernaut/issues/2021) (specificity-vs-state ranking fix — confirmed correct, not the cause of this recurrence), [#2022](https://github.com/jordigilh/kubernaut/issues/2022) (`kubernaut.ai/managed` scope pattern referenced below), [#2023](https://github.com/jordigilh/kubernaut/issues/2023) (harness-signal + prompt-instruction dual pattern this decision reuses)
 
@@ -37,9 +37,12 @@ already-passing tests assert exactly the scenario the reporter believed should h
 `pkg/apifrontend/severity/triage_test.go`. **This refutes the issue's original hypothesis** that
 pending alerts are still filtered out of candidacy before ranking runs.
 
-The actual root cause was confirmed against **live Prometheus data**, not inference. Querying
-`prometheus-k8s` (`openshift-monitoring` — the `console-e2e-alerts` `PrometheusRule` is evaluated
-there, not by `prometheus-user-workload`) for the historical `ALERTS` series:
+The root cause was confirmed against **live Prometheus data**, not inference — but the first pass
+below (RR `rr-9307edea5938-57afb3e7`) **understated the effective margin**, corrected in the next
+subsection using three more live-cluster-verified reproductions.
+
+Querying `prometheus-k8s` (`openshift-monitoring` — the `console-e2e-alerts` `PrometheusRule` is
+evaluated there, not by `prometheus-user-workload`) for the historical `ALERTS` series:
 
 | Event | Timestamp (UTC) | Delta from trigger |
 |---|---|---|
@@ -66,24 +69,53 @@ The alert identity is invented entirely by `severity.Triager` — **deterministi
 resource. (Minor, unrelated observation: the agent's first tool-call attempt omitted `api_version`
 and failed validation, self-corrected 2.6s later — not connected to the mis-correlation.)
 
-**Root cause**: Tier 1 takes a single, non-retrying Prometheus snapshot with no tolerance for the
-inherent latency of Prometheus's own alerting pipeline (metric scrape interval + rule evaluation
-interval + the rule's `for` duration — ~33-63s in this fixture). When an agent-initiated
-investigation is triggered near-instantly after a failure begins, Tier 1 has zero resource/
-namespace-scoped candidates and, under the current design, treats a completely unrelated
-cluster-scoped alert as equally valid evidence — with no notion of confidence to say otherwise. This
-is a **new, distinct bug class from #2018**: an absence of a candidate at correlation time, not a
-misranking of candidates that do exist. #2021's own original triage had already flagged the
-alternative not chosen at the time ("gate the cluster-scoped fallback out of the automatic/
+From this first pass alone, the apparent root cause was: Tier 1 takes a single, non-retrying
+Prometheus snapshot with no tolerance for the inherent latency of Prometheus's own alerting pipeline
+(metric scrape interval + rule evaluation interval + the rule's `for` duration — ~33-63s in this
+fixture). This is a **new, distinct bug class from #2018**: an absence of a candidate at correlation
+time, not a misranking of candidates that do exist. #2021's own original triage had already flagged
+the alternative not chosen at the time ("gate the cluster-scoped fallback out of the automatic/
 interactive investigation path entirely, pending a product decision") — #2027 is the evidence that
 deferred decision needs resolving now.
+
+### Correction: the effective margin is larger and more variable than ~33-63s
+
+Three additional live-cluster-verified reproductions (one of my own follow-up, two from QE, all
+re-checked directly against `prometheus-k8s`'s historical `ALERTS` series on 2026-08-09) show the
+~33-63s figure above is not a reliable upper bound:
+
+| Case | Margin between the resource's own alert firing and RR creation | Outcome |
+|---|---|---|
+| Original (`rr-9307edea5938-57afb3e7`) | negative (alert didn't exist yet) | misattributed |
+| `rr-a435f12273dd-6779aee4` | **+45s** (alert already firing) | **misattributed** |
+| QE: `rr-00dd9198c6a5-89a9e536` / `rr-e2d75f86f062-7422e2e3` | negative (alert pending/firing 33-63s *after* RR creation) | misattributed |
+| `rr-003721461ed4-ae9f674f` (correctly-attributed RR from the same test run, for contrast) | **+165s** | correctly attributed to `KubePodCrashLooping` |
+
+A 45-second head start on the resource's own alert was **not enough**; roughly 165 seconds was. AF
+queries Thanos Querier (`thanos-querier.openshift-monitoring.svc:9091`), not Prometheus directly, for
+both Tier 1 (`GetAlerts`) and Tier 1.5 (`GetRules`) — how much of this larger, variable margin is the
+underlying rule's own evaluation latency versus additional lag in Thanos's alert/rule federation view
+has not been isolated. The practical conclusion holds regardless: the safe margin is meaningfully
+larger than a single rule's `for:` duration and is not a fixed constant, which only strengthens the
+case against Option 2 below (bounded wait) and for Option 4 (surface ambiguity, ask the user).
+
+This is also confirmed broader than the original report, per QE's two follow-up reproductions:
+- **Not model-specific**: reproduced under `claude-sonnet-4-6` in addition to the original
+  `claude-sonnet-5` evidence.
+- **Not fixture-specific**: reproduced against the `memory-eater`/OOMKilled fixture in addition to
+  the original `worker`/bad-release-command fixture — same `severity_source: cluster_firing_alert`
+  mechanism, different underlying fault type.
+- Separately worth flagging (not this decision's scope): the two contract-compliance E2E specs that
+  hit this didn't fail, because they only assert an investigation started against the right resource,
+  not that the attributed alert/severity was correct — a real user hitting this gets a
+  plausible-looking but factually wrong RCA with no visible failure signal today.
 
 ### Options considered
 
 | # | Option | Why superseded |
 |---|---|---|
 | 1 | Gate cluster-scoped-only matches as unconditionally insufficient (fail through Tier 1.5/2/2.5 → `ErrSeverityUndetermined`) | Would need to be ripped out once a planned (not-yet-scoped) proper cluster-scoped-alert-handling feature ships — a throwaway patch, not a durable mechanism |
-| 2 | Bounded retry/wait in Tier 1 before accepting a cluster-scoped-only match | Adds latency to every cluster-scoped-only case (not just buggy ones); the observed gap (33-63s) is too large for a cheap bounded wait to reliably close |
+| 2 | Bounded retry/wait in Tier 1 before accepting a cluster-scoped-only match | Adds latency to every cluster-scoped-only case (not just buggy ones); the observed gap is larger and more variable than first measured (45s insufficient, ~165s sufficient in live reproductions) — too large and unpredictable for a cheap bounded wait to reliably close |
 | 3 | Confidence-score the match tiers, route low-confidence to the existing `ManualReviewRequired`/`HumanReviewReason` mechanism | Correct direction, but discovery happens too late — a *different* human (a reviewer, asynchronously) resolves the ambiguity instead of the actual user who is live, mid-conversation, right now |
 | 4 | **Chosen**: surface the ambiguity back through the tool result to the calling agent, in the same conversational turn, and instruct it to ask the live user for clarification | Reuses the existing conversational session (no new synchronous-pause plumbing); asks the person who actually has the context, in real time; naturally extensible as future correlation signals are added |
 
