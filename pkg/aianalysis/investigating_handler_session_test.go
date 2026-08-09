@@ -32,9 +32,9 @@ import (
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -58,6 +58,17 @@ type sessionAuditSpy struct {
 	resultEvents      []sessionResultEvent
 	sessionLostEvents []sessionLostEvent
 	failedEvents      []failedAnalysisEvent
+	// agentCallEvents tracks generic RecordAIAgentCall invocations, including
+	// #2029 Part B's "session_adopted" endpoint (FedRAMP AU-2/AU-3: durable
+	// audit trail proving an adoption was recorded, not just logged).
+	agentCallEvents []agentCallEvent
+}
+
+type agentCallEvent struct {
+	analysis   *aianalysisv1.AIAnalysis
+	endpoint   string
+	statusCode int
+	durationMs int
 }
 
 type sessionSubmitEvent struct {
@@ -76,6 +87,11 @@ type sessionLostEvent struct {
 }
 
 func (s *sessionAuditSpy) RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.agentCallEvents = append(s.agentCallEvents, agentCallEvent{
+		analysis: analysis, endpoint: endpoint, statusCode: statusCode, durationMs: durationMs,
+	})
 }
 func (s *sessionAuditSpy) RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string) {
 }
@@ -740,7 +756,7 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				}
 
 				// BR-AA-HAPI-064.10: Timeout removal - verify config value
-				Expect(cfg.Timeout).To(Equal(30 * time.Second), "Async client should use 30s timeout, not 10m workaround")
+				Expect(cfg.Timeout).To(Equal(30*time.Second), "Async client should use 30s timeout, not 10m workaround")
 			})
 		})
 	})
@@ -1109,10 +1125,10 @@ var _ = Describe("InvestigatingHandler Canonical Plan Tests [BR-INTERACTIVE-010]
 				Status: aianalysisv1.AIAnalysisStatus{
 					Phase: aianalysis.PhaseInvestigating,
 					KASession: &aianalysisv1.KASession{
-						ID:        "session-terminal",
+						ID:          "session-terminal",
 						Interactive: false, // already cleared by prior mismatch check reconcile
-						CreatedAt: &now,
-						PollCount: 5,
+						CreatedAt:   &now,
+						PollCount:   5,
 					},
 				},
 			}
@@ -1250,6 +1266,31 @@ type mockISChecker struct {
 	sessionPhase  isv1alpha1.SessionPhase
 	sessionExists bool
 	findPhaseErr  error
+
+	// #2029 Part B: CorrelatedSessionID stubbing.
+	//
+	// correlatedID/correlatedActive/correlatedErr are returned for every call
+	// when correlatedSequence is empty (the common case: a single, constant
+	// correlation state for the whole test).
+	//
+	// correlatedSequence, when non-empty, lets a test model correlation
+	// LANDING mid-reconcile: successive calls pop the next entry (simulating
+	// e.g. the general mismatch check seeing no correlation yet, while the
+	// race-closing check moments later in the same reconcile sees the new
+	// one). The last entry repeats once the sequence is exhausted.
+	correlatedID        string
+	correlatedActive    bool
+	correlatedErr       error
+	correlatedSequence  []correlatedSessionStub
+	correlatedCallCount int
+}
+
+// correlatedSessionStub is one canned CorrelatedSessionID return value in a
+// mockISChecker.correlatedSequence.
+type correlatedSessionStub struct {
+	id     string
+	active bool
+	err    error
 }
 
 func (m *mockISChecker) HasActiveSession(_ context.Context, _ string) (bool, error) {
@@ -1261,6 +1302,19 @@ func (m *mockISChecker) FindSessionPhase(_ context.Context, _ string) (isv1alpha
 		return "", false, m.findPhaseErr
 	}
 	return m.sessionPhase, m.sessionExists, m.err
+}
+
+func (m *mockISChecker) CorrelatedSessionID(_ context.Context, _ string) (string, bool, error) {
+	if len(m.correlatedSequence) == 0 {
+		return m.correlatedID, m.correlatedActive, m.correlatedErr
+	}
+	idx := m.correlatedCallCount
+	if idx >= len(m.correlatedSequence) {
+		idx = len(m.correlatedSequence) - 1
+	}
+	m.correlatedCallCount++
+	s := m.correlatedSequence[idx]
+	return s.id, s.active, s.err
 }
 
 // ========================================
@@ -1425,9 +1479,9 @@ var _ = Describe("Fix #1390: AA Takeover Simplification — BR-INTERACTIVE-004",
 
 // mockISPhaseUpdater1390 tracks SetActivePhase calls for #1390 tests.
 type mockISPhaseUpdater1390 struct {
-	activePhaseCount  int
-	lastActiveRRName  string
-	setActiveErr      error
+	activePhaseCount int
+	lastActiveRRName string
+	setActiveErr     error
 }
 
 func (m *mockISPhaseUpdater1390) SetActivePhase(_ context.Context, rrName string) error {

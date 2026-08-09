@@ -79,11 +79,11 @@ func (m *mockSessionManager) getReleased() (string, string) {
 }
 
 type mockInvestigatorRunner struct {
-	response               string
-	err                    error
-	rcaResult              *katypes.InvestigationResult
+	response                string
+	err                     error
+	rcaResult               *katypes.InvestigationResult
 	workflowDiscoveryResult *katypes.InvestigationResult
-	capturedCtx            context.Context
+	capturedCtx             context.Context
 }
 
 func (m *mockInvestigatorRunner) RunInteractiveTurn(ctx context.Context, _ []mcptools.LLMMessage, _ string) (string, error) {
@@ -972,6 +972,47 @@ var _ = Describe("kubernaut_investigate — catalog name enrichment", func() {
 			}, mcpinternal.UserInfo{Username: "alice"})
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("workflow catalog"))
+		})
+	})
+
+	Describe("UT-KA-DW-016: discover_workflows returns a structured error when no conversation context exists (#2023)", func() {
+		It("returns ErrCodeNoConversationContext instead of an opaque internal error", func() {
+			sess := &mcpinternal.InteractiveSession{
+				SessionID:     "sess-dw-013",
+				CorrelationID: "rr-dw-013",
+				ActingUser:    mcpinternal.UserInfo{Username: "alice"},
+			}
+			sessionMgr := &mockSessionManager{
+				isActive:        true,
+				getDriverResult: sess,
+			}
+			runner := &mockInvestigatorRunner{}
+			// No turns to reconstruct and NopAutonomousManager has no stored
+			// RCA/audit trail — messages remain empty after reconstruction
+			// (#2022's unmanaged-resource block is one concrete way this
+			// happens, but the gap is general: any empty/errored upstream
+			// tool response can leave discover_workflows with nothing to
+			// extract an RCA from).
+			recon := &mockContextReconstructor{}
+			resolver := &mockSignalResolver{}
+
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mcptools.NopAutonomousManager{},
+				mcptools.WithSignalContextResolver(resolver),
+				mcptools.WithWorkflowCatalog(&mockWorkflowCatalog{
+					workflow: &mcptools.CatalogWorkflow{WorkflowID: "mock-workflow", WorkflowName: "Mock Workflow"},
+				}))
+			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   "rr-dw-013",
+				Action: mcptools.ActionDiscoverWorkflows,
+			}, mcpinternal.UserInfo{Username: "alice"})
+
+			Expect(err).To(HaveOccurred())
+			var mcpErr *mcptools.MCPError
+			Expect(errors.As(err, &mcpErr)).To(BeTrue(),
+				"#2023: must be a structured MCPError, not an opaque fmt.Errorf that ErrorBoundary "+
+					"would otherwise redact to the generic internal_error, hiding the real cause "+
+					"from the client and inviting the LLM to fabricate a substitute narrative")
+			Expect(mcpErr.Code).To(Equal("no_conversation_context"))
 		})
 	})
 })

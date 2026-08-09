@@ -62,7 +62,7 @@ var _ = Describe("Issue #1420: AF Bridge Alignment Verdict Handling (SC-7)", fun
 		ctx := launcher.WithEventBridge(context.Background(), q, taskID, "ctx-1420", nil)
 		ctx = tools.WithRRID(ctx, "rr-1420-001")
 
-		summary, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+		summary, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 		_ = summary
 
 		found := false
@@ -137,5 +137,49 @@ var _ = Describe("Issue #1420: AF Bridge Alignment Verdict Handling (SC-7)", fun
 	It("IT-AF-1420-003: MetaTypeAlignmentCheckFailed constant matches console contract", func() {
 		Expect(launcher.MetaTypeAlignmentCheckFailed).To(Equal("alignment_check_failed"),
 			"SC-7.a: constant must match the value agreed with console team in issue #1420")
+	})
+
+	It("IT-AF-1420-004: BridgeEventsCollectSummary surfaces the alignment verdict to its caller, not just the SSE side channel", func() {
+		events := make(chan ka.InvestigationEvent, 5)
+
+		verdictPayload := katypes.AlignmentVerdictResult{
+			Result:  "suspicious",
+			Summary: "reasoning drift detected",
+			Flagged: 1,
+			Total:   4,
+			GroundingReview: &katypes.AlignmentGroundingResult{
+				Grounded:    false,
+				Explanation: "conclusion not supported by tool evidence",
+			},
+		}
+		verdictJSON, err := json.Marshal(verdictPayload)
+		Expect(err).NotTo(HaveOccurred())
+
+		events <- ka.InvestigationEvent{Type: ka.EventTypeAlignmentVerdict, Data: verdictJSON}
+		events <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+
+		q := &bridgeQueue{}
+		taskID := a2a.NewTaskID()
+		ctx := launcher.WithEventBridge(context.Background(), q, taskID, "ctx-1420-004", nil)
+		ctx = tools.WithRRID(ctx, "rr-1420-004")
+
+		_, _, verdict := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+
+		Expect(verdict).NotTo(BeNil(),
+			"the caller (HandleInvestigationMCPWithRegistry) needs the verdict to populate InvestigateMCPResult.AlignmentVerdict, "+
+				"so the #2023 grounding guard can consult it -- not just the human-facing SSE notification")
+		Expect(verdict.Result).To(Equal("suspicious"))
+		Expect(verdict.GroundingReview).NotTo(BeNil())
+		Expect(verdict.GroundingReview.Grounded).To(BeFalse())
+	})
+
+	It("IT-AF-1420-005: BridgeEventsCollectSummary returns a nil verdict when no alignment_verdict event arrives", func() {
+		events := make(chan ka.InvestigationEvent, 2)
+		events <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
+
+		ctx := context.Background()
+		_, _, verdict := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+
+		Expect(verdict).To(BeNil(), "no alignment check ran (or is disabled) -- must not fabricate a verdict")
 	})
 })

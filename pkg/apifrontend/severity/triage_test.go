@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 )
@@ -114,7 +115,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			Expect(result.Source).To(Equal(severity.SourceNSFiringAlert))
 		})
 
-		It("UT-AF-1369-003: cluster-scoped alert matches when no resource or namespace match exists", func() {
+		It("UT-AF-1369-003/UT-AF-2027-001a: cluster-scoped alert is the only candidate — surfaced as ambiguous, not silently trusted (DD-AF-012)", func() {
 			mockProm := &mockPromClient{
 				alerts: []prom.Alert{
 					{Labels: map[string]string{"alertname": "etcdHighCommitDurations", "severity": "warning"}, State: "firing"},
@@ -122,10 +123,13 @@ var _ = Describe("Triage Orchestrator", func() {
 			}
 			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), defaultInput)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Severity).To(Equal("warning"))
-			Expect(result.AlertName).To(Equal("etcdHighCommitDurations"))
-			Expect(result.Source).To(Equal(severity.SourceClusterFiringAlert))
+			var ambErr *severity.AmbiguousSeverityError
+			Expect(errors.As(err, &ambErr)).To(BeTrue(),
+				"DD-AF-012: a cluster-scoped-only match must never be silently trusted -- it has no verified relationship to the target")
+			Expect(ambErr.Candidate.Severity).To(Equal("warning"))
+			Expect(ambErr.Candidate.AlertName).To(Equal("etcdHighCommitDurations"))
+			Expect(ambErr.Candidate.Source).To(Equal(severity.SourceClusterFiringAlert))
+			Expect(result.Ambiguous).To(BeTrue())
 		})
 
 		It("UT-AF-1369-004: namespace-scoped alert returns ns_firing_alert source", func() {
@@ -140,7 +144,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			Expect(result.Source).To(Equal(severity.SourceNSFiringAlert))
 		})
 
-		It("UT-AF-1369-005: cluster-scoped alert returns cluster_firing_alert source", func() {
+		It("UT-AF-1369-005: cluster-scoped-only match still carries cluster_firing_alert source on its ambiguous candidate (DD-AF-012)", func() {
 			mockProm := &mockPromClient{
 				alerts: []prom.Alert{
 					{Labels: map[string]string{"alertname": "KubeAPIErrorBudgetBurn", "severity": "critical"}, State: "firing"},
@@ -148,8 +152,10 @@ var _ = Describe("Triage Orchestrator", func() {
 			}
 			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), defaultInput)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Source).To(Equal(severity.SourceClusterFiringAlert))
+			var ambErr *severity.AmbiguousSeverityError
+			Expect(errors.As(err, &ambErr)).To(BeTrue())
+			Expect(ambErr.Candidate.Source).To(Equal(severity.SourceClusterFiringAlert))
+			Expect(result.Ambiguous).To(BeTrue())
 		})
 
 		It("UT-AF-1369-006: multiple namespace-scoped alerts return highest severity", func() {
@@ -249,7 +255,7 @@ var _ = Describe("Triage Orchestrator", func() {
 			Expect(result.Source).To(Equal(severity.SourceNSPendingAlert))
 		})
 
-		It("UT-AF-2018-003: cluster-scoped firing still wins over cluster-scoped pending when nothing more specific exists", func() {
+		It("UT-AF-2018-003: cluster-scoped firing still wins over cluster-scoped pending when nothing more specific exists (both remain ambiguous, DD-AF-012)", func() {
 			mockProm := &mockPromClient{
 				alerts: []prom.Alert{
 					{Labels: map[string]string{"alertname": "PendingClusterAlert", "severity": "critical"}, State: "pending"},
@@ -258,10 +264,91 @@ var _ = Describe("Triage Orchestrator", func() {
 			}
 			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
 			result, err := triager.Triage(context.Background(), defaultInput)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.AlertName).To(Equal("FiringClusterAlert"),
+			var ambErr *severity.AmbiguousSeverityError
+			Expect(errors.As(err, &ambErr)).To(BeTrue())
+			Expect(ambErr.Candidate.AlertName).To(Equal("FiringClusterAlert"),
 				"within the same (cluster) tier, firing still beats pending -- only cross-tier priority changed")
-			Expect(result.Source).To(Equal(severity.SourceClusterFiringAlert))
+			Expect(ambErr.Candidate.Source).To(Equal(severity.SourceClusterFiringAlert))
+			Expect(result.Ambiguous).To(BeTrue())
+		})
+
+		It("UT-AF-2027-001: resource- and namespace-tier wins are never ambiguous, even when a cluster-scoped alert also exists", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "ClusterWideAlert", "severity": "critical"}, State: "firing"},
+					{Labels: map[string]string{"alertname": "HighCPU", "namespace": "prod", "kind": "Deployment", "name": "web-api", "severity": "warning"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			result, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Ambiguous).To(BeFalse(),
+				"a resource-scoped match has a verified relationship to the target and must never be flagged ambiguous")
+			Expect(result.AlertName).To(Equal("HighCPU"))
+		})
+
+		It("UT-AF-2027-002: Triage() returns *AmbiguousSeverityError with the candidate populated when Ambiguous and unconfirmed", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "CDIDefaultStorageClassDegraded", "severity": "warning"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+			_, err := triager.Triage(context.Background(), defaultInput)
+			var ambErr *severity.AmbiguousSeverityError
+			Expect(errors.As(err, &ambErr)).To(BeTrue())
+			Expect(ambErr.Candidate.AlertName).To(Equal("CDIDefaultStorageClassDegraded"))
+			Expect(ambErr.Candidate.Severity).To(Equal("warning"))
+			Expect(ambErr.Candidate.Ambiguous).To(BeTrue())
+		})
+
+		It("UT-AF-2027-003: a matching ConfirmedSignalName bypasses the ambiguity gate; a different candidate does not (fail-closed)", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "CDIDefaultStorageClassDegraded", "severity": "warning"}, State: "firing"},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard())
+
+			confirmedInput := defaultInput
+			confirmedInput.ConfirmedSignalName = "CDIDefaultStorageClassDegraded"
+			result, err := triager.Triage(context.Background(), confirmedInput)
+			Expect(err).NotTo(HaveOccurred(),
+				"an exact-matching confirmation for this specific candidate must bypass the gate")
+			Expect(result.Severity).To(Equal("warning"))
+			Expect(result.AlertName).To(Equal("CDIDefaultStorageClassDegraded"))
+
+			staleConfirmationInput := defaultInput
+			staleConfirmationInput.ConfirmedSignalName = "SomeOtherAlert"
+			_, err = triager.Triage(context.Background(), staleConfirmationInput)
+			var ambErr *severity.AmbiguousSeverityError
+			Expect(errors.As(err, &ambErr)).To(BeTrue(),
+				"a confirmation for a *different* candidate must not bypass the gate for this one (fail-closed)")
+		})
+
+		It("UT-AF-2027-008: EventSeverityTriageAmbiguous is emitted exactly once per ambiguous (unconfirmed) Triage() call", func() {
+			mockProm := &mockPromClient{
+				alerts: []prom.Alert{
+					{Labels: map[string]string{"alertname": "CDIDefaultStorageClassDegraded", "severity": "warning"}, State: "firing"},
+				},
+			}
+			spy := &triageAuditSpy{}
+			triager := severity.NewTriager(mockProm, &mockLLM{}, defaultCfg, logr.Discard(), severity.WithAuditor(spy))
+
+			_, err := triager.Triage(context.Background(), defaultInput)
+			Expect(err).To(HaveOccurred())
+
+			events := spy.eventsByType(audit.EventSeverityTriageAmbiguous)
+			Expect(events).To(HaveLen(1))
+			Expect(events[0].Detail["candidate_alert"]).To(Equal("CDIDefaultStorageClassDegraded"))
+			Expect(events[0].Detail["candidate_severity"]).To(Equal("warning"))
+
+			confirmedInput := defaultInput
+			confirmedInput.ConfirmedSignalName = "CDIDefaultStorageClassDegraded"
+			_, err = triager.Triage(context.Background(), confirmedInput)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(spy.eventsByType(audit.EventSeverityTriageAmbiguous)).To(HaveLen(1),
+				"a confirmed re-call must not emit a second ambiguous event")
 		})
 	})
 

@@ -44,6 +44,23 @@ var _ = Describe("ErrorBoundary", func() {
 		})
 	})
 
+	Describe("IT-KA-2023-001: discover_workflows' no-conversation-context result survives registration.go's dispatch wrap (#2023)", func() {
+		It("reaches ErrorBoundary as no_conversation_context, not internal_error, through the exact production call chain (registration.go:47-49)", func() {
+			// tool.Handle returns ErrCodeNoConversationContext directly (investigate.go);
+			// registration.go's dispatch wraps every kubernaut_investigate call with
+			// exactly this ErrorBoundary call, unwrapped, so this is the real chain.
+			boundaryErr := tools.ErrorBoundary(logr.Discard(), "kubernaut_investigate",
+				tools.ErrCodeNoConversationContext.WithDetail("rr_id", "rr-2023-001"))
+
+			var mcpErr *tools.MCPError
+			Expect(errors.As(boundaryErr, &mcpErr)).To(BeTrue(),
+				"no_conversation_context must survive ErrorBoundary as a typed MCPError, not be redacted to internal_error")
+			Expect(mcpErr.Code).To(Equal("no_conversation_context"))
+			Expect(boundaryErr).NotTo(Equal(tools.ErrCodeInternalError),
+				"this is exactly the #2023 regression: redaction to a generic, undiagnosable error invites LLM fabrication")
+		})
+	})
+
 	Describe("IT-KA-1889-001: tool budget exhaustion survives the full production wrap chain (#1889 gap 1)", func() {
 		It("reaches ErrorBoundary as tool_budget_exhausted, not internal_error, through the exact wraps production applies", func() {
 			// Step 1: adapters.ExtractContent, exactly as InvestigatorRunnerAdapter.RunInteractiveTurn calls it.

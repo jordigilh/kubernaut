@@ -54,6 +54,27 @@ const (
 	// Format: "kubernaut.ai/retry-count"
 	// Used to persist retry state across reconciliation loops
 	RetryCountAnnotation = "kubernaut.ai/retry-count"
+
+	// SchemaRejectionRetryCountAnnotation persists the count of consecutive
+	// apierrors.IsInvalid rejections of a Status().Update() call (#2029 Part
+	// A: e.g. the live cluster's installed CRD lagging behind a new enum
+	// value the Go source already defines). Written via a plain Update()
+	// rather than Status().Update(): the whole point is that the status
+	// subresource write is being rejected, and a CRD with
+	// subresources.status enabled silently drops any .status diff on a
+	// non-status Update, so that write still succeeds even though
+	// Status().Update() doesn't.
+	SchemaRejectionRetryCountAnnotation = "kubernaut.ai/schema-rejection-retry-count"
+)
+
+const (
+	// MaxSchemaRejectionRetries caps how many times reconcileInvestigating/
+	// reconcileAnalyzing retry a Status().Update() rejected by CRD schema
+	// validation (#2029 Part A) before escalating to a terminal Failed
+	// phase. Previously there was no cap at all -- the controller fail-
+	// closed forever on the first rejection (return ctrl.Result{}, nil, no
+	// requeue), permanently abandoning the AIAnalysis.
+	MaxSchemaRejectionRetries = 5
 )
 
 // ========================================
@@ -83,17 +104,3 @@ const (
 	// with Reason=TransientError to prevent unbounded resource consumption.
 	DefaultMaxInvestigationDuration = 25 * time.Minute
 )
-
-
-
-
-
-
-
-
-
-
-
-
-
-

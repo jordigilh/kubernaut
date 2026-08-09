@@ -21,6 +21,7 @@ import (
 	sessionpkg "github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // AgentConfig holds the configuration for creating the ADK root agent.
@@ -99,6 +100,11 @@ type AgentConfig struct {
 	// input validation failures (#1372). When nil, validation failures are
 	// not tracked in metrics (test-safe).
 	AlertValidationFailures *prometheus.CounterVec
+	// ScopeChecker validates target resources against Kubernaut's management
+	// scope (ADR-053) before kubernaut_investigate_alert, kubernaut_remediate,
+	// and kubernaut_investigate create an RR. When nil, scope validation is
+	// skipped (graceful degradation, backward compat; #2022).
+	ScopeChecker scope.ScopeChecker
 }
 
 // Option applies a configuration override to AgentConfig.

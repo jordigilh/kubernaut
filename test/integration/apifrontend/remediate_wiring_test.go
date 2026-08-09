@@ -30,7 +30,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 			Name:        "web-1332-w01",
 			Description: "kubernaut_remediate wiring IT",
 			APIVersion:  "apps/v1",
-		}, "it-user", defaultTestTriagerIT(), nil)
+		}, "it-user", defaultTestTriagerIT(ns, "Deployment", "web-1332-w01"), nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 		Expect(result.AlreadyExists).To(BeFalse())
@@ -54,7 +54,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 			Name:        "web-1332-w02",
 			Description: "no IS expected",
 			APIVersion:  "apps/v1",
-		}, "it-user", defaultTestTriagerIT(), nil)
+		}, "it-user", defaultTestTriagerIT(ns, "Deployment", "web-1332-w02"), nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 
@@ -89,13 +89,13 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 					"namespace": ns,
 				},
 				"spec": map[string]interface{}{
-					"signalName":      "test-signal-w03",
-					"signalType":      "alert",
+					"signalName":        "test-signal-w03",
+					"signalType":        "alert",
 					"signalFingerprint": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
-					"severity":        "warning",
-					"firingTime":      now,
-					"receivedTime":    now,
-					"targetType":      "kubernetes",
+					"severity":          "warning",
+					"firingTime":        now,
+					"receivedTime":      now,
+					"targetType":        "kubernetes",
 					"targetResource": map[string]interface{}{
 						"kind":      "Deployment",
 						"name":      "web-existing",
@@ -154,7 +154,7 @@ var _ = Describe("kubernaut_remediate wiring (#1332)", func() {
 			Name:        "web-1332-w06",
 			Description: "audit wiring IT",
 			APIVersion:  "apps/v1",
-		}, "audit-user-1332", defaultTestTriagerIT(), auditRecorder)
+		}, "audit-user-1332", defaultTestTriagerIT(ns, "Deployment", "web-1332-w06"), auditRecorder)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).NotTo(BeEmpty())
 

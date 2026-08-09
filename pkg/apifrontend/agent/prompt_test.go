@@ -46,7 +46,7 @@ var _ = Describe("System Prompt", func() {
 
 	It("UT-AF-131-003: prompt contains present_decision handoff instruction", func() {
 		Expect(instruction).To(ContainSubstring("present_decision"))
-		Expect(instruction).To(ContainSubstring("MUST call present_decision"))
+		Expect(instruction).To(ContainSubstring("MUST call kubernaut_present_decision"))
 	})
 
 	It("UT-AF-131-004: prompt does not contain internal system names outside the constraint rule", func() {
@@ -673,5 +673,45 @@ var _ = Describe("Prompt — Plain Investigate Defaults to full_remediation (#19
 	It("UT-AF-1915-004: the autonomous-interactive sub-case is unambiguously distinct from the new full_remediation default", func() {
 		Expect(instruction).To(ContainSubstring("Autonomous Selection"),
 			"#1915: full_remediation_autonomous's own sub-case must be clearly named apart from the new full_remediation default, so the model does not conflate 'investigate' with 'investigate and fix'")
+	})
+})
+
+// =============================================================================
+// DD-AF-012 (#2027): ambiguous severity/signal correlation must never be used
+// silently. When a tool result carries ambiguous: true, the model must ask
+// the user to confirm the weak candidate before retrying with
+// confirmed_signal_name, and must never guess, retry blindly, or leave the
+// conversation without a structured kubernaut_present_decision artifact.
+// =============================================================================
+
+var _ = Describe("Prompt — Ambiguous Signal/Severity Correlation (DD-AF-012, #2027)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-2027-010: prompt instructs the model to ask the user before using an ambiguous candidate", func() {
+		Expect(instruction).To(ContainSubstring("ambiguous"))
+		Expect(instruction).To(ContainSubstring("candidate_signal_name"))
+		Expect(instruction).To(ContainSubstring("confirmed_signal_name"))
+	})
+
+	It("UT-AF-2027-011: prompt forbids guessing or silently filling in the confirmed signal", func() {
+		Expect(instruction).To(ContainSubstring("do NOT guess"))
+	})
+
+	It("UT-AF-2027-012: prompt forbids retrying the same ambiguous call without a confirmation", func() {
+		Expect(instruction).To(ContainSubstring("do NOT retry the same call without it"))
+	})
+
+	It("UT-AF-2027-013: prompt mandates a structured kubernaut_present_decision close-out when no signal is confirmed", func() {
+		Expect(instruction).To(ContainSubstring("call kubernaut_present_decision with options: []"))
+	})
+
+	It("UT-AF-2027-014: prompt does not leak internal issue numbers", func() {
+		Expect(instruction).NotTo(MatchRegexp(`#\d{3,4}`),
+			"internal issue numbers must never appear in the model-facing prompt (leakage risk)")
 	})
 })

@@ -34,17 +34,26 @@ func (n *noopPromClientIT) InstantQuery(_ context.Context, _ string) (*prom.Quer
 	return &prom.QueryResult{}, nil
 }
 
-// alwaysFiringPromClientIT returns a single cluster-scoped firing alert (no
-// namespace/kind/name labels), so it label-matches any target resource. See
-// the tools_test package's alwaysFiringPromClient for the full rationale.
+// alwaysFiringPromClientIT returns a single firing alert scoped to the given
+// target (namespace/kind/name labels), carrying a fixed alertname
+// ("TestDefaultAlert") for IT tests that don't care about the specific
+// severity value but need HandleCreateRR/HandleRemediate to succeed. See the
+// tools_test package's alwaysFiringPromClient for the full rationale.
 //
-// #1839/DD-AF-010: a nil Triager now fails closed. IT tests that don't care
-// about the specific severity value but need HandleCreateRR to succeed use
-// this fixture via defaultTestTriagerIT().
-type alwaysFiringPromClientIT struct{}
+// #1839/DD-AF-010: a nil Triager now fails closed.
+// DD-AF-012/#2027: the alert must be resource-scoped (not cluster-scoped) to
+// unambiguously correlate to the target -- a cluster-scoped alert now
+// correctly resolves as Ambiguous for any namespaced target, which would
+// make HandleCreateRR/HandleRemediate return early without creating an RR.
+type alwaysFiringPromClientIT struct {
+	namespace, kind, name string
+}
 
 func (a *alwaysFiringPromClientIT) GetAlerts(_ context.Context) ([]prom.Alert, error) {
-	return []prom.Alert{{State: "firing", Labels: map[string]string{"alertname": "TestDefaultAlert", "severity": "warning"}}}, nil
+	return []prom.Alert{{State: "firing", Labels: map[string]string{
+		"alertname": "TestDefaultAlert", "severity": "warning",
+		"namespace": a.namespace, "kind": a.kind, "name": a.name,
+	}}}, nil
 }
 func (a *alwaysFiringPromClientIT) GetRules(_ context.Context) ([]prom.RuleGroup, error) {
 	return nil, nil
@@ -53,8 +62,8 @@ func (a *alwaysFiringPromClientIT) InstantQuery(_ context.Context, _ string) (*p
 	return &prom.QueryResult{}, nil
 }
 
-func defaultTestTriagerIT() *severity.Triager {
-	return severity.NewTriager(&alwaysFiringPromClientIT{}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+func defaultTestTriagerIT(namespace, kind, name string) *severity.Triager {
+	return severity.NewTriager(&alwaysFiringPromClientIT{namespace: namespace, kind: kind, name: name}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
 }
 
 // unnamedAlertTestTriagerIT resolves a severity from a resource-matching
@@ -95,7 +104,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-w01",
 			Description: "IT wiring test",
-		}, "it-user", defaultTestTriagerIT(), nil)
+		}, "it-user", defaultTestTriagerIT(ns, "Deployment", "web-w01"), nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 		Expect(result.AlreadyExists).To(BeFalse())
@@ -122,7 +131,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-w02",
 			Description: "signal source check",
-		}, "it-user", defaultTestTriagerIT(), nil)
+		}, "it-user", defaultTestTriagerIT("default", "Deployment", "web-w02"), nil)
 		Expect(err).NotTo(HaveOccurred())
 
 		created, getErr := dynamicClient.Resource(rrGVR).Namespace("default").Get(ctx, result.RRID, metav1.GetOptions{})
@@ -285,7 +294,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-1292-w01",
 			Description: "ADR-057 namespace split IT",
-		}, "it-user", defaultTestTriagerIT(), nil)
+		}, "it-user", defaultTestTriagerIT(workloadNS, "Deployment", "web-1292-w01"), nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.RRID).To(HavePrefix("rr-"))
 
@@ -342,7 +351,7 @@ var _ = Describe("kubernaut_remediate wiring (#1282, #1332)", func() {
 			Kind:        "Deployment",
 			Name:        "web-w06",
 			Description: "audit IT",
-		}, "audit-user", defaultTestTriagerIT(), auditRecorder)
+		}, "audit-user", defaultTestTriagerIT("default", "Deployment", "web-w06"), auditRecorder)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.AlreadyExists).To(BeFalse())
 

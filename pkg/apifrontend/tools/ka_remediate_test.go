@@ -24,9 +24,11 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func() {
@@ -40,7 +42,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 				Name:        "web",
 				Description: "Pod CrashLoopBackOff detected",
 				APIVersion:  "apps/v1",
-			}, "sre-user", defaultTestTriager(), nil)
+			}, "sre-user", defaultTestTriager("prod", "Deployment", "web"), nil)
 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
@@ -54,13 +56,13 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 
 			result1, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "first", APIVersion: "apps/v1",
-			}, "user-a", defaultTestTriager(), nil)
+			}, "user-a", defaultTestTriager("prod", "Deployment", "web"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result1.AlreadyExists).To(BeFalse())
 
 			result2, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "second", APIVersion: "apps/v1",
-			}, "user-b", defaultTestTriager(), nil)
+			}, "user-b", defaultTestTriager("prod", "Deployment", "web"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result2.AlreadyExists).To(BeTrue())
 			Expect(result2.RRID).To(Equal(result1.RRID))
@@ -70,7 +72,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 			tc := newTypedFakeClient()
 			result, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
 				Namespace: "", Kind: "Node", Name: "worker-1", APIVersion: "v1",
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager("", "Node", "worker-1"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 		})
@@ -116,22 +118,45 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 
 			createResult, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "existing-target", APIVersion: "apps/v1",
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager("prod", "Deployment", "existing-target"), nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			lookupResult, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
 				RRID: createResult.RRID,
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager("", "", ""), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(lookupResult.RRID).To(Equal(createResult.RRID))
 			Expect(lookupResult.AlreadyExists).To(BeTrue())
 		})
 	})
 
+	Describe("Ambiguous severity/signal correlation — DD-AF-012 (#2027)", func() {
+		It("UT-AF-2027-005: surfaces Ambiguous/CandidateSignalName/CandidateSeverity when only a cluster-scoped alert correlates, then proceeds once confirmed", func() {
+			tc := newTypedFakeClient()
+
+			result, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web-ambiguous", APIVersion: "apps/v1",
+			}, "user", ambiguousTestTriager(), nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Ambiguous).To(BeTrue())
+			Expect(result.CandidateSignalName).To(Equal("TestDefaultAlert"))
+			Expect(result.CandidateSeverity).To(Equal("warning"))
+			Expect(result.RRID).To(BeEmpty())
+
+			confirmed, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", &tools.RemediateArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web-ambiguous", APIVersion: "apps/v1",
+				ConfirmedSignalName: "TestDefaultAlert",
+			}, "user", ambiguousTestTriager(), nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(confirmed.Ambiguous).To(BeFalse())
+			Expect(confirmed.RRID).NotTo(BeEmpty())
+		})
+	})
+
 	Describe("NewRemediateTool — tool constructor (F-06)", func() {
 		It("UT-AF-1332-009: creates tool with name kubernaut_remediate", func() {
 			tc := newTypedFakeClient()
-			t, err := tools.NewRemediateTool(tc, nil, "kubernaut-system", nil, nil)
+			t, err := tools.NewRemediateTool(tc, nil, "kubernaut-system", nil, nil, nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(t.Name()).To(Equal("kubernaut_remediate"))
 		})
@@ -145,7 +170,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 				Kind:       "Deployment",
 				Name:       "web-apiver",
 				APIVersion: "apps/v1",
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager("prod", "Deployment", "web-apiver"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 		})
@@ -174,7 +199,7 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 				Kind:       "Deployment",
 				Name:       "web-enriched",
 				APIVersion: "apps/v1",
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager("prod", "Deployment", "web-enriched"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 
@@ -202,6 +227,63 @@ var _ = Describe("kubernaut_remediate (#1332 Intent-Based Tool Redesign)", func(
 			}
 			Expect(found).To(BeTrue(),
 				"AU-3: status events after HandleRemediate must carry rr_id from RR context")
+		})
+	})
+
+	Describe("Scope validation before RR creation — #2022 (AC-6, SI-10, AU-3/AU-12, SI-11)", func() {
+		remediateArgs := func() *tools.RemediateArgs {
+			return &tools.RemediateArgs{
+				Namespace:  "unmanaged-ns",
+				Kind:       "Deployment",
+				Name:       "legacy-app",
+				APIVersion: "apps/v1",
+			}
+		}
+
+		It("UT-AF-2022-010: rejects an unmanaged resource without creating an RR", func() {
+			tc := newTypedFakeClient()
+			ctx := tools.ContextWithScopeChecker(context.Background(), &mocks.NeverManagedScopeChecker{})
+
+			result, err := tools.HandleRemediate(ctx, tc, nil, "kubernaut-system", remediateArgs(), "sre-bob", defaultTestTriager("unmanaged-ns", "Deployment", "legacy-app"), nil)
+
+			Expect(err).NotTo(HaveOccurred(), "SI-11: rejection must be a clear result, not an opaque tool error")
+			Expect(result.Managed).To(BeFalse())
+			Expect(result.RRID).To(BeEmpty())
+			Expect(result.Message).To(ContainSubstring("not managed by Kubernaut"))
+		})
+
+		It("UT-AF-2022-011: allows a managed resource to proceed to RR creation", func() {
+			tc := newTypedFakeClient()
+			ctx := tools.ContextWithScopeChecker(context.Background(), &mocks.AlwaysManagedScopeChecker{})
+
+			result, err := tools.HandleRemediate(ctx, tc, nil, "kubernaut-system", remediateArgs(), "sre-bob", defaultTestTriager("unmanaged-ns", "Deployment", "legacy-app"), nil)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Managed).To(BeTrue())
+			Expect(result.RRID).NotTo(BeEmpty())
+		})
+
+		It("UT-AF-2022-012: no ScopeChecker in context gracefully degrades to always-managed (backward compat)", func() {
+			tc := newTypedFakeClient()
+
+			result, err := tools.HandleRemediate(context.Background(), tc, nil, "kubernaut-system", remediateArgs(), "sre-bob", defaultTestTriager("unmanaged-ns", "Deployment", "legacy-app"), nil)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Managed).To(BeTrue())
+			Expect(result.RRID).NotTo(BeEmpty())
+		})
+
+		It("UT-AF-2022-013: emits an EventRRScopeRejected audit event on rejection (AU-3/AU-12)", func() {
+			tc := newTypedFakeClient()
+			recorder := &auditRecorder{}
+			ctx := tools.ContextWithScopeChecker(context.Background(), &mocks.NeverManagedScopeChecker{})
+
+			_, err := tools.HandleRemediate(ctx, tc, nil, "kubernaut-system", remediateArgs(), "sre-bob", defaultTestTriager("unmanaged-ns", "Deployment", "legacy-app"), recorder)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.events).To(HaveLen(1))
+			Expect(recorder.events[0].Type).To(Equal(audit.EventRRScopeRejected))
+			Expect(recorder.events[0].UserID).To(Equal("sre-bob"))
 		})
 	})
 })

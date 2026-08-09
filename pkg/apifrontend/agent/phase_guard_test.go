@@ -555,6 +555,279 @@ var _ = Describe("Phase Guard (#1307)", func() {
 	})
 })
 
+// --- #2023: harness-enforced content-grounding guard for present_decision ---
+//
+// QE reported the model fabricating a plausible-sounding RCA/audit narrative
+// in kubernaut_present_decision's summary/rca fields when the underlying
+// kubernaut_investigate call produced no real content (rejected for scope,
+// a tool error, session_active, or -- pre-#2022-secondary-fix -- an empty
+// conversation). This guard tracks whether the most recent kubernaut_
+// investigate call actually produced groundable content and, if not,
+// forcibly overwrites present_decision's summary/rca/options with a fixed,
+// honest "no data" payload before the tool executes -- present_decision
+// itself still runs afterward, so the AU-3 structured-artifact mandate
+// (#1408) is preserved; only a fabricated narrative is blocked, never the
+// artifact. Absence of any prior recorded state fails closed to "not
+// grounded", mirroring #2022's own safe-default posture.
+var _ = Describe("Phase Guard — Content Grounding Guard (#2023)", func() {
+	var (
+		state   *mapState
+		toolCtx tool.Context
+		before  func(tool.Context, tool.Tool, map[string]any) (map[string]any, error)
+		after   func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error)
+	)
+
+	BeforeEach(func() {
+		state = newMapState()
+		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+			Username: "alice", Groups: []string{"sre"},
+		})
+		toolCtx = statefulToolContext{
+			fakeToolContext: fakeToolContext{Context: ctx},
+			state:           state,
+		}
+		before, after = NewPhaseGuardForTest()
+	})
+
+	fabricatedArgs := func() map[string]any {
+		return map[string]any{
+			"session_id": "sess-2023",
+			"summary":    "The Deployment was rolled back at 14:32 after three consecutive OOMKills.",
+			"rca": map[string]any{
+				"severity": "critical", "confidence": 0.92,
+				"causal_chain": []any{"OOMKill", "CrashLoopBackOff"},
+			},
+			"options": []any{map[string]any{"workflow_id": "wf-rollback", "name": "Rollback"}},
+		}
+	}
+
+	It("UT-AF-2023-001: overrides present_decision content when kubernaut_investigate was never called (fail-closed default)", func() {
+		args := fabricatedArgs()
+		result, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil(), "present_decision must still be allowed to execute (AU-3 artifact mandate)")
+
+		summary, _ := args["summary"].(string)
+		Expect(summary).NotTo(ContainSubstring("OOMKill"),
+			"fabricated narrative must be replaced when no investigation ever ran")
+		Expect(summary).To(ContainSubstring("No investigation content is available"))
+		Expect(args["options"]).To(BeEmpty(), "options must be forced empty alongside the overridden summary")
+	})
+
+	It("UT-AF-2023-002: overrides present_decision content when kubernaut_investigate was rejected for scope (#2022)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"status": "unmanaged", "error": "resource is outside Kubernaut's management scope",
+		}, nil)
+
+		args := fabricatedArgs()
+		result, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil())
+
+		summary, _ := args["summary"].(string)
+		Expect(summary).To(ContainSubstring("No investigation content is available"),
+			"a scope-rejected investigation has no RCA to ground a summary in")
+	})
+
+	It("UT-AF-2023-003: overrides present_decision content when kubernaut_investigate returned a generic tool error", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"error": "no_conversation_context: session had no conversation history",
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		summary, _ := args["summary"].(string)
+		Expect(summary).To(ContainSubstring("No investigation content is available"))
+		rca, ok := args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue(),
+			"rca must remain present (not deleted) -- it is a required property in present_decision's "+
+				"ADK schema (#1396); deleting it makes ADK's own validation reject the call before the "+
+				"AU-3 artifact can ever be emitted")
+		Expect(rca["severity"]).To(BeEmpty(), "rca payload must be cleared, not left carrying invented fields")
+		Expect(rca["target"]).To(BeEmpty())
+	})
+
+	It("UT-AF-2023-004: overrides present_decision content when kubernaut_investigate returned session_active", func() {
+		// session_active means a DIFFERENT user is already driving; this
+		// caller has no fresh RCA of its own to report even though
+		// session_active has its own dedicated fallback card (#1922).
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"status": "session_active", "error": "investigation already in progress, driven by bob",
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		summary, _ := args["summary"].(string)
+		Expect(summary).To(ContainSubstring("No investigation content is available"))
+	})
+
+	It("UT-AF-2023-005: does NOT override present_decision content after a successful investigate with a real summary", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2023-g", "status": "completed",
+			"summary": "OOMKilled 3 times in the last 10 minutes; memory limit is too low for observed usage.",
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(args["summary"]).To(Equal(fabricatedArgs()["summary"]),
+			"a genuinely grounded summary must pass through untouched")
+		Expect(args["options"]).To(HaveLen(1), "options must pass through untouched when content is grounded")
+	})
+
+	It("UT-AF-2023-006: does NOT override present_decision content after a successful investigate with only an rca payload (no summary)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2023-h", "status": "completed",
+			"rca": map[string]any{"severity": "warning", "is_actionable": false},
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(args["summary"]).To(Equal(fabricatedArgs()["summary"]),
+			"a non-nil rca payload counts as grounded content even without a summary string")
+	})
+
+	It("UT-AF-2023-007: handles a nil args map without panicking", func() {
+		Expect(func() {
+			_, _ = before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, nil)
+		}).NotTo(Panic())
+	})
+
+	It("UT-AF-2023-008: present_decision is never hard-rejected by this guard, even when overriding content", func() {
+		args := fabricatedArgs()
+		result, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(BeNil(),
+			"the guard must mutate args in place, never short-circuit the call -- the AU-3 artifact must still be emitted")
+	})
+
+	It("UT-AF-2023-010: overwrites present_decision's rca argument with KA's own reported RCA, discarding the LLM's transcription", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2023-rca-1", "status": "completed",
+			"summary": "Real investigation summary.",
+			"rca": map[string]any{
+				"severity": "warning", "confidence": 0.55,
+				"causal_chain":     []any{"MemoryPressure", "Evicted"},
+				"target":           "pod/real-target",
+				"total_tool_calls": 7, "total_llm_turns": 3,
+			},
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		rca, ok := args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue(), "rca must be overwritten with a map, not left as the LLM's own value")
+		Expect(rca["severity"]).To(Equal("warning"), "severity must come from KA's own report, not the LLM's fabricated 'critical'")
+		Expect(rca["confidence"]).To(Equal(0.55))
+		Expect(rca["target"]).To(Equal("pod/real-target"))
+		Expect(rca["causal_chain"]).To(Equal([]any{"MemoryPressure", "Evicted"}))
+		Expect(rca["tool_calls_count"]).To(Equal(7), "total_tool_calls must be renamed to RCAData's tool_calls_count field")
+		Expect(rca["llm_turns"]).To(Equal(3), "total_llm_turns must be renamed to RCAData's llm_turns field")
+	})
+
+	It("UT-AF-2023-011: leaves the rca argument untouched when investigate reported no structured rca payload (summary-only grounding)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2023-rca-2", "status": "completed",
+			"summary": "OOMKilled 3 times in the last 10 minutes; memory limit is too low for observed usage.",
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(args["rca"]).To(Equal(fabricatedArgs()["rca"]),
+			"with no structured rca to pass through, the harness has nothing authoritative to substitute")
+	})
+
+	It("UT-AF-2023-012: clears a stale rca pass-through after a later investigate call that reported no rca", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2023-rca-3a", "status": "completed",
+			"summary": "First investigation.",
+			"rca":     map[string]any{"severity": "critical", "confidence": 0.9},
+		}, nil)
+
+		// A second, re-checked investigate call is grounded via summary only.
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2023-rca-3b", "status": "completed",
+			"summary": "Second investigation, no structured RCA this time.",
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(args["rca"]).To(Equal(fabricatedArgs()["rca"]),
+			"the first call's rca must not leak into a present_decision grounded by the second, rca-less call")
+	})
+
+	It("UT-AF-2023-013: overrides present_decision content when kubernaut_investigate's shadow-agent alignment verdict is not aligned, even with summary/rca present", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2023-align-1", "status": "completed",
+			"summary": "Looks like a real investigation summary.",
+			"rca":     map[string]any{"severity": "critical", "confidence": 0.9},
+			"alignment_verdict": map[string]any{
+				"result": "suspicious", "circuit_breaker_activated": true,
+			},
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		summary, _ := args["summary"].(string)
+		Expect(summary).To(ContainSubstring("No investigation content is available"),
+			"KA's own shadow-agent flagging the RCA as ungrounded must override present_decision content, "+
+				"even though summary/rca look superficially legitimate")
+	})
+
+	It("UT-AF-2023-014: does NOT override present_decision content when the shadow-agent alignment verdict is aligned", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2023-align-2", "status": "completed",
+			"summary":           "A genuinely grounded summary.",
+			"alignment_verdict": map[string]any{"result": "aligned"},
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(args["summary"]).To(Equal(fabricatedArgs()["summary"]),
+			"an aligned shadow-agent verdict must not itself trigger the override")
+	})
+
+	It("IT-AF-2023-009: grounded state correctly flips to false after a second, failed investigate call following an earlier successful one", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2023-i-1", "status": "completed",
+			"summary": "First investigation found a real root cause.",
+		}, nil)
+
+		argsFirst := fabricatedArgs()
+		_, _ = before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, argsFirst)
+		Expect(argsFirst["summary"]).To(Equal(fabricatedArgs()["summary"]),
+			"sanity check: first present_decision call must have passed through ungrounded")
+
+		// A second investigate call for a different/re-checked target fails.
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"status": "unmanaged", "error": "resource is outside Kubernaut's management scope",
+		}, nil)
+
+		argsSecond := fabricatedArgs()
+		_, _ = before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, argsSecond)
+		summary, _ := argsSecond["summary"].(string)
+		Expect(summary).To(ContainSubstring("No investigation content is available"),
+			"stale grounded=true from the FIRST investigate must not leak into the SECOND, failed attempt")
+	})
+})
+
 var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020, BR-SESS-022)", func() {
 	var (
 		registry *launcher.ActiveContextRegistry

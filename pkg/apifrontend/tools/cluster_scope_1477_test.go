@@ -23,11 +23,11 @@ type logCaptureSink struct {
 	kvPairs  []map[string]interface{}
 }
 
-func (s *logCaptureSink) Init(logr.RuntimeInfo)                    {}
-func (s *logCaptureSink) Enabled(int) bool                         { return true }
-func (s *logCaptureSink) WithValues(...interface{}) logr.LogSink   { return s }
-func (s *logCaptureSink) WithName(string) logr.LogSink             { return s }
-func (s *logCaptureSink) Error(error, string, ...interface{})      {}
+func (s *logCaptureSink) Init(logr.RuntimeInfo)                  {}
+func (s *logCaptureSink) Enabled(int) bool                       { return true }
+func (s *logCaptureSink) WithValues(...interface{}) logr.LogSink { return s }
+func (s *logCaptureSink) WithName(string) logr.LogSink           { return s }
+func (s *logCaptureSink) Error(error, string, ...interface{})    {}
 func (s *logCaptureSink) Info(_ int, msg string, keysAndValues ...interface{}) {
 	s.messages = append(s.messages, msg)
 	kv := make(map[string]interface{})
@@ -97,7 +97,7 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 				Client:       newTypedFakeClient(),
 				ControllerNS: "kubernaut-system",
 				Mapper:       newScopeAwareMapper(),
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("", "Node", "worker-1"),
 			}
 			result, err := tools.HandleInvestigateAlert(ctx, cfg,
 				&tools.InvestigateAlertArgs{
@@ -210,7 +210,7 @@ var _ = Describe("Cluster-scoped namespace stripping (#1477)", func() {
 					Kind:       "Node",
 					Name:       "worker-1",
 					Namespace:  "kube-system",
-				}, nil, nil, nil, false, nil, "", nil, defaultTestTriager())
+				}, nil, nil, nil, false, nil, "", nil, defaultTestTriager("", "Node", "worker-1"))
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).NotTo(BeEmpty())
 			Expect(sink.messages).To(ContainElement("stripping namespace for cluster-scoped resource"))

@@ -116,6 +116,33 @@ func (k *K8sInvestigationSessionChecker) FindSessionPhase(ctx context.Context, r
 	return list.Items[0].Status.Phase, true, nil
 }
 
+// CorrelatedSessionID returns the KA session ID AF has most recently
+// correlated onto this RR's InvestigationSession (status.kaCorrelationID) via
+// CRDSessionService.UpdateISCorrelation, and whether that IS is still
+// non-terminal. Returns ("", false, nil) if no IS exists or no correlation
+// has been written yet. #2029 Part B.
+func (k *K8sInvestigationSessionChecker) CorrelatedSessionID(ctx context.Context, rrName string) (string, bool, error) {
+	if rrName == "" {
+		return "", false, nil
+	}
+
+	var list isv1alpha1.InvestigationSessionList
+	if err := k.reader.List(ctx, &list,
+		client.InNamespace(k.namespace),
+		client.MatchingFields{ISFieldIndexRRName: rrName},
+	); err != nil {
+		return "", false, fmt.Errorf("list InvestigationSessions for RR %s: %w", rrName, err)
+	}
+
+	for i := range list.Items {
+		is := &list.Items[i]
+		if is.Status.KACorrelationID != "" {
+			return is.Status.KACorrelationID, !terminalPhases[is.Status.Phase], nil
+		}
+	}
+	return "", false, nil
+}
+
 // K8sISPhaseUpdater implements ISPhaseUpdater by updating InvestigationSession
 // CRD status via the controller-runtime client. AA calls SetActivePhase after
 // submitting to KA with interactive=true to signal AF that the session is ready.

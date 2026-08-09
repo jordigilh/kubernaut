@@ -14,6 +14,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // RemediateArgs defines the LLM-supplied input for kubernaut_remediate.
@@ -27,6 +28,10 @@ type RemediateArgs struct {
 	// APIVersion is the Kubernetes API group/version (e.g., "apps/v1", "v1").
 	// Required when providing namespace/kind/name (#1372).
 	APIVersion string `json:"api_version"`
+	// ConfirmedSignalName re-supplies a previously-surfaced ambiguous
+	// candidate's alert name after the user has explicitly confirmed it
+	// (DD-AF-012, #2027). Leave empty on the first call.
+	ConfirmedSignalName string `json:"confirmed_signal_name,omitempty"`
 }
 
 // RemediateResult is the output of kubernaut_remediate.
@@ -37,6 +42,17 @@ type RemediateResult struct {
 	Severity       string `json:"severity,omitempty"`
 	SeveritySource string `json:"severity_source,omitempty"`
 	SignalName     string `json:"signal_name,omitempty"`
+	// Managed reports whether the target resource is within Kubernaut's
+	// management scope (ADR-053). false means no RR was created — Message
+	// explains why (#2022). true for the rr_id lookup path too, since no
+	// scope check applies there (the RR already exists).
+	Managed bool `json:"managed"`
+	// Ambiguous/CandidateSignalName/CandidateSeverity: see CreateRRResult
+	// (DD-AF-012, #2027). Re-call with ConfirmedSignalName set to
+	// CandidateSignalName once the user has confirmed it.
+	Ambiguous           bool   `json:"ambiguous,omitempty"`
+	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
+	CandidateSeverity   string `json:"candidate_severity,omitempty"`
 }
 
 // HandleRemediate creates a RemediationRequest CRD without creating an
@@ -61,12 +77,14 @@ func HandleRemediate(ctx context.Context, client crclient.Client, dynClient dyna
 				RRID:          args.RRID,
 				Message:       "RemediationRequest not found",
 				AlreadyExists: false,
+				Managed:       true,
 			}, nil
 		}
 		return RemediateResult{
 			RRID:          rr.Name,
 			Message:       fmt.Sprintf("RemediationRequest already exists (%s)", rr.Status.OverallPhase),
 			AlreadyExists: true,
+			Managed:       true,
 		}, nil
 	}
 
@@ -74,18 +92,33 @@ func HandleRemediate(ctx context.Context, client crclient.Client, dynClient dyna
 		return RemediateResult{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
 
+	if managed, msg := checkRRScope(ctx, ScopeCheckerFromContext(ctx), auditor, username, args.Namespace, args.Kind, args.Name); !managed {
+		return RemediateResult{Managed: false, Message: msg}, nil
+	}
+
 	createArgs := &CreateRRArgs{
-		Namespace:     args.Namespace,
-		Kind:          args.Kind,
-		Name:          args.Name,
-		Description:   args.Description,
-		APIVersion:    args.APIVersion,
-		ClusterScoped: args.Namespace == "",
+		Namespace:                    args.Namespace,
+		Kind:                         args.Kind,
+		Name:                         args.Name,
+		Description:                  args.Description,
+		APIVersion:                   args.APIVersion,
+		ClusterScoped:                args.Namespace == "",
+		ConfirmedAmbiguousSignalName: args.ConfirmedSignalName,
 	}
 
 	result, err := HandleCreateRR(ctx, client, dynClient, controllerNS, createArgs, username, triager, auditor)
 	if err != nil {
 		return RemediateResult{}, err
+	}
+
+	if result.Ambiguous {
+		return RemediateResult{
+			Managed:             true,
+			Ambiguous:           true,
+			CandidateSignalName: result.CandidateSignalName,
+			CandidateSeverity:   result.CandidateSeverity,
+			Message:             result.Message,
+		}, nil
 	}
 
 	launcher.SetRRContextSafe(ctx, &launcher.RRContext{
@@ -97,17 +130,28 @@ func HandleRemediate(ctx context.Context, client crclient.Client, dynClient dyna
 		Phase:     "Investigating",
 	})
 
-	return RemediateResult(result), nil
+	return RemediateResult{
+		RRID:           result.RRID,
+		Message:        result.Message,
+		AlreadyExists:  result.AlreadyExists,
+		Severity:       result.Severity,
+		SeveritySource: result.SeveritySource,
+		SignalName:     result.SignalName,
+		Managed:        true,
+	}, nil
 }
 
 // NewRemediateTool creates the kubernaut_remediate tool for autonomous remediation.
 // It creates RRs without InvestigationSessions — the pipeline handles analysis
-// autonomously without user interaction.
-func NewRemediateTool(client crclient.Client, dynClient dynamic.Interface, controllerNS string, triager *severity.Triager, auditor audit.Emitter) (tool.Tool, error) {
+// autonomously without user interaction. checker is optional (nil skips scope
+// validation, backward compat) and is threaded into HandleRemediate via context
+// rather than widening its already-large positional signature (#2022).
+func NewRemediateTool(client crclient.Client, dynClient dynamic.Interface, controllerNS string, triager *severity.Triager, auditor audit.Emitter, checker scope.ScopeChecker) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_remediate",
 		Description: "Create a RemediationRequest for autonomous remediation. Use when fixing issues without interactive investigation. The pipeline will analyze and remediate automatically.",
 	}, func(ctx tool.Context, args RemediateArgs) (RemediateResult, error) {
-		return HandleRemediate(ctx, client, dynClient, controllerNS, &args, usernameFromContext(ctx), triager, auditor)
+		toolCtx := ContextWithScopeChecker(ctx, checker)
+		return HandleRemediate(toolCtx, client, dynClient, controllerNS, &args, usernameFromContext(ctx), triager, auditor)
 	})
 }

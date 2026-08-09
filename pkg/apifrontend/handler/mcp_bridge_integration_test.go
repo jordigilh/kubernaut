@@ -20,7 +20,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ds"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/handler"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
+	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 )
@@ -47,22 +51,22 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			ServerVersion: "0.0.1-test",
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
-				K8sClient: fakeK8s,
-				TypedClient:        newBridgeTypedClient(),
-			KAMCPClient: &ka.MockMCPClient{
-				SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
-					return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
+				K8sClient:   fakeK8s,
+				TypedClient: newBridgeTypedClient(),
+				KAMCPClient: &ka.MockMCPClient{
+					SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+						return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
+					},
+					StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+						ch := make(chan ka.InvestigationEvent, 10)
+						return &ka.StartInvestigationResult{
+							SessionID: "mcp-sess-" + args.RRID,
+							Status:    "autonomous_started",
+							Events:    ch,
+							Closer:    func() { close(ch) },
+						}, nil
+					},
 				},
-				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
-					ch := make(chan ka.InvestigationEvent, 10)
-					return &ka.StartInvestigationResult{
-						SessionID: "mcp-sess-" + args.RRID,
-						Status:    "autonomous_started",
-						Events:    ch,
-						Closer:    func() { close(ch) },
-					}, nil
-				},
-			},
 				DSClient:           dsClient,
 				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 				Logger:             logr.Discard(),
@@ -436,8 +440,8 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				ServerVersion: "0.0.1-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient: fakeK8s,
-					TypedClient:        newBridgeTypedClient(),
+					K8sClient:   fakeK8s,
+					TypedClient: newBridgeTypedClient(),
 					KAMCPClient: &ka.MockMCPClient{
 						SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
 							return nil, ka.ErrMCPUnavailable
@@ -851,7 +855,6 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 	})
 })
 
-
 var _ = Describe("kubernaut_complete_no_action — AF MCP bridge proxy (#1418)", func() {
 
 	var (
@@ -1058,6 +1061,210 @@ var _ = Describe("IT-AF-1418-005: SessionFinalizer wiring for complete_no_action
 	})
 })
 
+// bridgeFiringPromClient returns a single resource-scoped firing alert with a
+// verified relationship to the "managed-ns"/"Deployment"/"web-app" target
+// used by the IT-AF-2022-007 managed-resource case below, so
+// severity.Triager resolves a confident (non-ambiguous) severity — needed so
+// kubernaut_investigate's RR-creation branch (namespace/kind/name, not
+// rr_id) doesn't fail closed on ErrSeverityUndetermined (#1839/DD-AF-010) or
+// on the DD-AF-012/#2027 ambiguity gate (a cluster-scoped-only alert with no
+// verified relationship to the target is now surfaced as ambiguous rather
+// than silently trusted). IT-AF-2022-006's unmanaged-resource case never
+// reaches Triage() at all — it is rejected by the scope check first.
+type bridgeFiringPromClient struct{}
+
+func (b *bridgeFiringPromClient) GetAlerts(_ context.Context) ([]prom.Alert, error) {
+	return []prom.Alert{{State: "firing", Labels: map[string]string{
+		"alertname": "BridgeTestAlert", "severity": "warning",
+		"namespace": "managed-ns", "kind": "Deployment", "name": "web-app",
+	}}}, nil
+}
+func (b *bridgeFiringPromClient) GetRules(_ context.Context) ([]prom.RuleGroup, error) {
+	return nil, nil
+}
+func (b *bridgeFiringPromClient) InstantQuery(_ context.Context, _ string) (*prom.QueryResult, error) {
+	return &prom.QueryResult{}, nil
+}
+
+// bridgeAmbiguousPromClient returns a single cluster-scoped firing alert
+// with no namespace/kind/name labels, so it label-matches any target
+// resource at the cluster tier only — no verified relationship to the
+// specific target — the DD-AF-012/#2027 "ambiguous" scenario, used by
+// IT-AF-2027-009 below.
+type bridgeAmbiguousPromClient struct{}
+
+func (b *bridgeAmbiguousPromClient) GetAlerts(_ context.Context) ([]prom.Alert, error) {
+	return []prom.Alert{{State: "firing", Labels: map[string]string{"alertname": "BridgeAmbiguousAlert", "severity": "warning"}}}, nil
+}
+func (b *bridgeAmbiguousPromClient) GetRules(_ context.Context) ([]prom.RuleGroup, error) {
+	return nil, nil
+}
+func (b *bridgeAmbiguousPromClient) InstantQuery(_ context.Context, _ string) (*prom.QueryResult, error) {
+	return &prom.QueryResult{}, nil
+}
+
+var _ = Describe("kubernaut_investigate scope validation before RR creation — #2022 (AC-6, SI-10, AU-3/AU-12, SI-11)", func() {
+	var (
+		h         http.Handler
+		sessionID string
+		testUser  *auth.UserIdentity
+		auditor   *fakeAuditor
+	)
+
+	var startInvestigationCalls int32
+
+	setupBridgeWithScopeChecker := func(checker scope.ScopeChecker) {
+		auditor = &fakeAuditor{}
+		testUser = &auth.UserIdentity{Username: "sre-dana@kubernaut.ai", Groups: []string{"sre"}}
+		triager := severity.NewTriager(&bridgeFiringPromClient{}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+		startInvestigationCalls = 0
+
+		cfg := handler.MCPConfig{
+			ServerName:    "af-it-scope",
+			ServerVersion: "0.0.1-test",
+			Enabled:       true,
+			Bridge: &handler.MCPBridgeConfig{
+				K8sClient:   newFakeDynamicClient(),
+				TypedClient: newBridgeTypedClient(),
+				KAMCPClient: &ka.MockMCPClient{
+					StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+						atomic.AddInt32(&startInvestigationCalls, 1)
+						ch := make(chan ka.InvestigationEvent, 1)
+						close(ch)
+						return &ka.StartInvestigationResult{SessionID: "sess-2022-scope", Status: "autonomous_started", Events: ch, Closer: func() {}}, nil
+					},
+				},
+				DSClient:           newFakeDSClient(),
+				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
+				Logger:             logr.Discard(),
+				Auditor:            auditor,
+				Metrics:            newBridgeMetrics(),
+				ToolTimeout:        5 * time.Second,
+				MaxConcurrentTools: 10,
+				InteractiveEnabled: true,
+				Namespace:          "kubernaut-system",
+				Triager:            triager,
+				ScopeChecker:       checker,
+			},
+		}
+
+		var err error
+		h, err = handler.NewMCPHandler(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		sessionID = mcpInitialize(h, testUser)
+	}
+
+	It("IT-AF-2022-006: rejects an unmanaged resource without creating an RR or starting an MCP session", func() {
+		setupBridgeWithScopeChecker(&mocks.NeverManagedScopeChecker{})
+
+		status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
+			"api_version": "apps/v1",
+			"namespace":   "unmanaged-ns",
+			"kind":        "Deployment",
+			"name":        "legacy-app",
+		}, testUser)
+
+		Expect(status).To(Equal(http.StatusOK))
+		text := extractTextContent(body)
+		Expect(text).To(ContainSubstring("not managed by Kubernaut"),
+			"SI-11: rejection must be a clear result, not an opaque tool error")
+		Expect(atomic.LoadInt32(&startInvestigationCalls)).To(Equal(int32(0)),
+			"no MCP session should be started for an unmanaged resource")
+
+		foundRejection := false
+		for _, e := range auditor.events {
+			if e.Type == audit.EventRRScopeRejected {
+				foundRejection = true
+			}
+		}
+		Expect(foundRejection).To(BeTrue(), "AU-3/AU-12: rejection must be audited")
+	})
+
+	It("IT-AF-2022-007: allows a managed resource to proceed to RR creation and MCP start", func() {
+		setupBridgeWithScopeChecker(&mocks.AlwaysManagedScopeChecker{})
+
+		status, body := mcpCallTool(h, sessionID, "kubernaut_investigate", map[string]any{
+			"api_version": "apps/v1",
+			"namespace":   "managed-ns",
+			"kind":        "Deployment",
+			"name":        "web-app",
+		}, testUser)
+
+		Expect(status).To(Equal(http.StatusOK))
+		text := extractTextContent(body)
+		Expect(text).NotTo(ContainSubstring("not managed by Kubernaut"))
+		Expect(atomic.LoadInt32(&startInvestigationCalls)).To(Equal(int32(1)))
+	})
+
+	It("IT-AF-2027-009: an ambiguous severity/signal correlation surfaces via the real MCP dispatch path, then proceeds once confirmed", func() {
+		// Independent setup (not setupBridgeWithScopeChecker) so this test can
+		// use the dedicated ambiguous-only Triager fixture without disturbing
+		// the managed-resource fixture the two tests above depend on.
+		localAuditor := &fakeAuditor{}
+		localUser := &auth.UserIdentity{Username: "sre-erin@kubernaut.ai", Groups: []string{"sre"}}
+		ambiguousTriager := severity.NewTriager(&bridgeAmbiguousPromClient{}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+		atomic.StoreInt32(&startInvestigationCalls, 0)
+
+		cfg := handler.MCPConfig{
+			ServerName:    "af-it-2027",
+			ServerVersion: "0.0.1-test",
+			Enabled:       true,
+			Bridge: &handler.MCPBridgeConfig{
+				K8sClient:   newFakeDynamicClient(),
+				TypedClient: newBridgeTypedClient(),
+				KAMCPClient: &ka.MockMCPClient{
+					StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+						atomic.AddInt32(&startInvestigationCalls, 1)
+						ch := make(chan ka.InvestigationEvent, 1)
+						close(ch)
+						return &ka.StartInvestigationResult{SessionID: "sess-2027-009", Status: "autonomous_started", Events: ch, Closer: func() {}}, nil
+					},
+				},
+				DSClient:           newFakeDSClient(),
+				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
+				Logger:             logr.Discard(),
+				Auditor:            localAuditor,
+				Metrics:            newBridgeMetrics(),
+				ToolTimeout:        5 * time.Second,
+				MaxConcurrentTools: 10,
+				InteractiveEnabled: true,
+				Namespace:          "kubernaut-system",
+				Triager:            ambiguousTriager,
+				ScopeChecker:       &mocks.AlwaysManagedScopeChecker{},
+			},
+		}
+		localHandler, err := handler.NewMCPHandler(cfg)
+		Expect(err).NotTo(HaveOccurred())
+		localSessionID := mcpInitialize(localHandler, localUser)
+
+		status, body := mcpCallTool(localHandler, localSessionID, "kubernaut_investigate", map[string]any{
+			"api_version": "apps/v1",
+			"namespace":   "prod",
+			"kind":        "Deployment",
+			"name":        "web-ambiguous",
+		}, localUser)
+		Expect(status).To(Equal(http.StatusOK))
+		text := extractTextContent(body)
+		Expect(text).To(ContainSubstring(`"ambiguous":true`))
+		Expect(text).To(ContainSubstring("BridgeAmbiguousAlert"))
+		Expect(atomic.LoadInt32(&startInvestigationCalls)).To(Equal(int32(0)),
+			"no MCP session should start while correlation is ambiguous and unconfirmed")
+
+		status2, body2 := mcpCallTool(localHandler, localSessionID, "kubernaut_investigate", map[string]any{
+			"api_version":           "apps/v1",
+			"namespace":             "prod",
+			"kind":                  "Deployment",
+			"name":                  "web-ambiguous",
+			"confirmed_signal_name": "BridgeAmbiguousAlert",
+		}, localUser)
+		Expect(status2).To(Equal(http.StatusOK))
+		text2 := extractTextContent(body2)
+		Expect(text2).NotTo(ContainSubstring(`"ambiguous":true`))
+		Expect(atomic.LoadInt32(&startInvestigationCalls)).To(Equal(int32(1)),
+			"confirming the candidate should proceed to RR creation and MCP start")
+	})
+})
+
 type recordingSessionInitializer struct {
 	calls        []initCall
 	correlations []correlationCall
@@ -1078,6 +1285,7 @@ func (r *recordingSessionFinalizer) FinalizeSessionByRR(_ context.Context, rrNam
 	r.calls = append(r.calls, finalizeCall{rrNamespace: rrNamespace, rrName: rrName, phase: phase})
 	return nil
 }
+
 type initCall struct {
 	rrNamespace, rrName, sessionID, username string
 	groups                                   []string

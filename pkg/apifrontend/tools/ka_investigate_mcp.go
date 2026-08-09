@@ -114,6 +114,11 @@ type InvestigateMCPArgs struct {
 	// full, unattended remediation). An omitted or unrecognized value fails
 	// safe to "interactive" (AC-6 least privilege, SI-10 input validation).
 	InteractionMode string `json:"interaction_mode,omitempty" jsonschema:"one of interactive (default), full_remediation, full_remediation_autonomous -- declares how much autonomy to grant for post-investigation phase transitions"`
+
+	// ConfirmedSignalName re-supplies a previously-surfaced ambiguous
+	// candidate's alert name after the user has explicitly confirmed it
+	// (DD-AF-012, #2027). Leave empty on the first call.
+	ConfirmedSignalName string `json:"confirmed_signal_name,omitempty"`
 }
 
 // InvestigateMCPResult is the output of the MCP investigate tool.
@@ -124,6 +129,27 @@ type InvestigateMCPResult struct {
 	RRID      string          `json:"rr_id,omitempty"`
 	Error     string          `json:"error,omitempty"`
 	RCA       *InvestigateRCA `json:"rca,omitempty"`
+	// Managed reports whether the target resource is within Kubernaut's
+	// management scope (ADR-053). false means no RR was created and no MCP
+	// session was started — Error explains why (#2022). Always true when
+	// scope was never evaluated in this call (rr_id lookup path, or no
+	// ScopeChecker configured), since the call proceeded without a rejection.
+	Managed bool `json:"managed"`
+	// Ambiguous/CandidateSignalName/CandidateSeverity: see CreateRRResult
+	// (DD-AF-012, #2027). Re-call with ConfirmedSignalName set to
+	// CandidateSignalName once the user has confirmed it.
+	Ambiguous           bool   `json:"ambiguous,omitempty"`
+	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
+	CandidateSeverity   string `json:"candidate_severity,omitempty"`
+	// AlignmentVerdict carries KA's #1096 shadow-agent full-context grounding
+	// review verdict for this investigation, when ai.alignmentCheck is
+	// enabled on KA. Hardening beyond the original #2023 QE report: AF's
+	// present_decision grounding guard (phase_guard.go,
+	// investigateHasGroundedContent) treats a non-"aligned" Result here as
+	// ungrounded even when Summary/RCA are otherwise present, since KA's own
+	// reviewer already found the conclusions weren't well-supported by tool
+	// evidence. Always nil when alignment checking is disabled (the default).
+	AlignmentVerdict *katypes.AlignmentVerdictResult `json:"alignment_verdict,omitempty"`
 }
 
 // InvestigateRCA is the structured RCA data extracted from the KA complete event.
@@ -184,7 +210,10 @@ func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, client 
 // signaler (optional): When provided, creates the IS CRD BEFORE the await loop
 // (pure CRD-driven coordination per DD-INTERACTIVE-002). This enables AA to detect
 // interactive intent via IS watch and resubmit with interactive=true. After successful
-// MCP connect, UpdateCorrelation writes the KA session ID to the IS status.
+// MCP connect, UpdateCorrelation writes the pollable investigation-analysis session ID
+// (result.InvestigationSessionID, NOT the MCP driver-lease result.SessionID) to the IS
+// status, so AA's session-adoption logic (#2029) can poll the correlated session
+// successfully instead of 404-looping against an unpollable driver-lease ID.
 func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, client crclient.Client, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, blocking bool, pool *ka.KASessionPool, username string, signaler ISSignaler, triager *severity.Triager) (InvestigateMCPResult, error) {
 	if mcpClient == nil {
 		return InvestigateMCPResult{}, fmt.Errorf("KA MCP client unavailable")
@@ -242,20 +271,35 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			return InvestigateMCPResult{}, fmt.Errorf("k8s client unavailable for RR creation")
 		}
 
-		createArgs := &CreateRRArgs{
-			Namespace:     args.Namespace,
-			Kind:          args.Kind,
-			Name:          args.Name,
-			APIVersion:    args.APIVersion,
-			ClusterScoped: clusterScoped,
-		}
 		createUser := ""
 		if identity != nil {
 			createUser = identity.Username
 		}
+
+		if managed, msg := checkRRScope(ctx, ScopeCheckerFromContext(ctx), auditor, createUser, args.Namespace, args.Kind, args.Name); !managed {
+			return InvestigateMCPResult{Status: "unmanaged", Error: msg}, nil
+		}
+
+		createArgs := &CreateRRArgs{
+			Namespace:                    args.Namespace,
+			Kind:                         args.Kind,
+			Name:                         args.Name,
+			APIVersion:                   args.APIVersion,
+			ClusterScoped:                clusterScoped,
+			ConfirmedAmbiguousSignalName: args.ConfirmedSignalName,
+		}
 		result, err := HandleCreateRR(ctx, client, nil, namespace, createArgs, createUser, triager, auditor)
 		if err != nil {
 			return InvestigateMCPResult{}, fmt.Errorf("create RR for investigation: %w", err)
+		}
+		if result.Ambiguous {
+			return InvestigateMCPResult{
+				Managed:             true,
+				Ambiguous:           true,
+				CandidateSignalName: result.CandidateSignalName,
+				CandidateSeverity:   result.CandidateSeverity,
+				Error:               result.Message,
+			}, nil
 		}
 		args.RRID = result.RRID
 		rrSeverity = result.Severity
@@ -381,8 +425,9 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			}
 
 			return InvestigateMCPResult{
-				Status: "session_active",
-				RRID:   args.RRID,
+				Status:  "session_active",
+				RRID:    args.RRID,
+				Managed: true,
 				Error: fmt.Sprintf(
 					"An investigation for this resource is already in progress, driven by %s. "+
 						"Do not retry kubernaut_investigate. "+
@@ -396,13 +441,23 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		"rr_id", args.RRID, "session_id", result.SessionID,
 		"status", result.Status, "events_nil", result.Events == nil)
 
+	// correlationSessionID is the pollable investigation-analysis session ID, NOT
+	// the MCP driver-lease SessionID. KA's "start" action returns both (#2029);
+	// correlating the driver-lease ID instead causes AA's session-adoption logic
+	// to poll a session that always 404s, looping until regeneration is exhausted.
+	// Fall back to SessionID only when KA omits InvestigationSessionID (back-compat).
+	correlationSessionID := result.InvestigationSessionID
+	if correlationSessionID == "" {
+		correlationSessionID = result.SessionID
+	}
+
 	if auditor != nil {
 		auditor.Emit(ctx, &audit.Event{
 			Type: audit.EventKADelegated,
 			Detail: map[string]string{
 				"rr_id":             args.RRID,
 				"session_id":        result.SessionID,
-				"ka_correlation_id": result.SessionID,
+				"ka_correlation_id": correlationSessionID,
 				"delegation_type":   "interactive",
 			},
 		})
@@ -419,10 +474,10 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		}
 	}
 
-	if signaler != nil && isCRDName != "" && result.SessionID != "" {
-		if corrErr := signaler.UpdateCorrelation(ctx, isCRDName, result.SessionID); corrErr != nil {
+	if signaler != nil && isCRDName != "" && correlationSessionID != "" {
+		if corrErr := signaler.UpdateCorrelation(ctx, isCRDName, correlationSessionID); corrErr != nil {
 			logger.Error(corrErr, "IS CRD correlation update failed (non-fatal)",
-				"crd_name", isCRDName, "session_id", result.SessionID)
+				"crd_name", isCRDName, "session_id", correlationSessionID)
 		}
 	}
 
@@ -447,6 +502,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			SessionID: result.SessionID,
 			Status:    result.Status,
 			RRID:      args.RRID,
+			Managed:   true,
 		}, nil
 	}
 
@@ -454,7 +510,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
 			"rr_id", args.RRID, "session_id", result.SessionID, "ctx_err", ctx.Err())
 		bridgeCtx := WithRRID(ctx, args.RRID)
-		summary, rca := bridgeEventsCollectSummary(bridgeCtx, result.Events, BridgeInactivityTimeout)
+		summary, rca, alignmentVerdict := bridgeEventsCollectSummary(bridgeCtx, result.Events, BridgeInactivityTimeout)
 		status := "completed"
 		if ctx.Err() != nil {
 			status = "timeout"
@@ -509,11 +565,13 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		}
 
 		return InvestigateMCPResult{
-			SessionID: result.SessionID,
-			Status:    status,
-			Summary:   summary,
-			RRID:      args.RRID,
-			RCA:       rca,
+			SessionID:        result.SessionID,
+			Status:           status,
+			Summary:          summary,
+			RRID:             args.RRID,
+			RCA:              rca,
+			Managed:          true,
+			AlignmentVerdict: alignmentVerdict,
 		}, nil
 	}
 
@@ -535,6 +593,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		SessionID: result.SessionID,
 		Status:    result.Status,
 		RRID:      args.RRID,
+		Managed:   true,
 	}, nil
 }
 
@@ -614,17 +673,23 @@ var BridgeInactivityTimeout = 60 * time.Second
 
 // BridgeEventsCollectSummary is the exported entry point for bridgeEventsCollectSummary.
 // It is used by integration tests and the blocking MCP investigation path.
-func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA) {
+func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, *katypes.AlignmentVerdictResult) {
 	return bridgeEventsCollectSummary(ctx, events, inactivityTimeout)
 }
 
 // bridgeEventsCollectSummary bridges events (same as BridgeEventsToA2A) and
 // accumulates reasoning_delta text into a summary returned when the channel
 // closes, the context is cancelled, or no events arrive within
-// inactivityTimeout (hang detection).
-func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA) {
+// inactivityTimeout (hang detection). The returned *AlignmentVerdictResult
+// (the last EventTypeAlignmentVerdict seen, nil if none arrived) lets the
+// caller wire KA's #1096 shadow-agent verdict into InvestigateMCPResult --
+// previously this was only used locally to fire the human-facing SSE
+// alignment_check_failed notification and then discarded, leaving the #2023
+// grounding guard with no way to consult it.
+func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, *katypes.AlignmentVerdictResult) {
 	var summary strings.Builder
 	var rcaResult *InvestigateRCA
+	var verdictResult *katypes.AlignmentVerdictResult
 	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()
 	inactivity := time.NewTimer(inactivityTimeout)
@@ -632,14 +697,14 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 	for {
 		select {
 		case <-ctx.Done():
-			return summary.String(), rcaResult
+			return summary.String(), rcaResult, verdictResult
 		case <-inactivity.C:
-			return summary.String(), rcaResult
+			return summary.String(), rcaResult, verdictResult
 		case <-keepalive.C:
 			_ = launcher.EmitKeepaliveDotSafe(ctx)
 		case evt, ok := <-events:
 			if !ok {
-				return summary.String(), rcaResult
+				return summary.String(), rcaResult, verdictResult
 			}
 			inactivity.Reset(inactivityTimeout)
 			// #1438: Handle session_ended before generic emit to avoid double-emit.
@@ -653,7 +718,7 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 						"reason":   evt.Phase,
 						"terminal": true,
 					})
-				return summary.String(), rcaResult
+				return summary.String(), rcaResult, verdictResult
 			}
 			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
 			switch evt.Type {
@@ -668,12 +733,15 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 			case ka.EventTypeAlignmentVerdict:
 				if len(evt.Data) > 0 {
 					var avr katypes.AlignmentVerdictResult
-					if json.Unmarshal(evt.Data, &avr) == nil && avr.Result != "aligned" {
-						meta := map[string]any{
-							"type":  launcher.MetaTypeAlignmentCheckFailed,
-							"rr_id": extractRRIDFromContext(ctx),
+					if json.Unmarshal(evt.Data, &avr) == nil {
+						verdictResult = &avr
+						if avr.Result != "aligned" {
+							meta := map[string]any{
+								"type":  launcher.MetaTypeAlignmentCheckFailed,
+								"rr_id": extractRRIDFromContext(ctx),
+							}
+							_ = launcher.EmitStructuredMetaSafe(ctx, string(evt.Data), meta)
 						}
-						_ = launcher.EmitStructuredMetaSafe(ctx, string(evt.Data), meta)
 					}
 				}
 			case ka.EventTypeComplete:
@@ -687,9 +755,9 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 						emitEarlyRCA(ctx, &rca)
 					}
 				}
-				return summary.String(), rcaResult
+				return summary.String(), rcaResult, verdictResult
 			case ka.EventTypeCancelled:
-				return summary.String(), rcaResult
+				return summary.String(), rcaResult, verdictResult
 			}
 		}
 	}
@@ -984,7 +1052,10 @@ func (r *MonitorRegistry) StopAll() {
 // pool is optional; when provided, the MCP session is handed off to the pool
 // after the investigation so that discover_workflows / select_workflow reuse
 // the same connection and driver lease.
-func NewInvestigateMCPTool(mcpClient ka.MCPClient, client crclient.Client, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool, signaler ISSignaler, triager *severity.Triager, mapper meta.RESTMapper) (tool.Tool, error) {
+// checker is optional (nil skips scope validation, backward compat) and is
+// threaded into HandleInvestigationMCPWithRegistry via context rather than
+// widening its already-large positional signature (#2022).
+func NewInvestigateMCPTool(mcpClient ka.MCPClient, client crclient.Client, namespace string, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, pool *ka.KASessionPool, signaler ISSignaler, triager *severity.Triager, mapper meta.RESTMapper, checker scope.ScopeChecker) (tool.Tool, error) {
 	return functiontool.New(functiontool.Config{
 		Name: "kubernaut_investigate",
 		Description: "Investigate an infrastructure incident via MCP. " +
@@ -997,6 +1068,7 @@ func NewInvestigateMCPTool(mcpClient ka.MCPClient, client crclient.Client, names
 	}, func(ctx tool.Context, args InvestigateMCPArgs) (InvestigateMCPResult, error) {
 		user := usernameFromContext(ctx)
 		toolCtx := ContextWithRESTMapper(ctx, mapper)
+		toolCtx = ContextWithScopeChecker(toolCtx, checker)
 		return HandleInvestigationMCPWithRegistry(toolCtx, mcpClient, client, namespace, args, auditor, registry, onStarted, true, pool, user, signaler, triager)
 	})
 }

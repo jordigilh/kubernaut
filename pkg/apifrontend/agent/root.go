@@ -129,7 +129,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 		{"cancel_remediation", func() (tool.Tool, error) { return tools.NewCancelRemediationTool(cfg.TypedClient, cfg.Namespace) }},
 		{"watch", func() (tool.Tool, error) { return tools.NewWatchTool(cfg.TypedClient, cfg.Namespace) }},
 		{"investigate", func() (tool.Tool, error) {
-			return tools.NewInvestigateMCPTool(dedicatedC, cfg.TypedClient, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil, cfg.Pool, buildAgentISSignaler(cfg), cfg.Triager, cfg.RESTMapper)
+			return tools.NewInvestigateMCPTool(dedicatedC, cfg.TypedClient, cfg.Namespace, cfg.Auditor, cfg.InvestigationRegistry, nil, cfg.Pool, buildAgentISSignaler(cfg), cfg.Triager, cfg.RESTMapper, cfg.ScopeChecker)
 		}},
 		{"discover_workflows", func() (tool.Tool, error) { return tools.NewDiscoverWorkflowsTool(mcpC) }},
 		{"select_workflow", func() (tool.Tool, error) { return tools.NewSelectWorkflowTool(mcpC, cfg.Auditor) }},
@@ -154,7 +154,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 			return tools.NewCheckExistingRemediationTool(cfg.TypedClient, cfg.Namespace)
 		}},
 		{"remediate", func() (tool.Tool, error) {
-			return tools.NewRemediateTool(cfg.TypedClient, k8s, cfg.Namespace, cfg.Triager, cfg.Auditor)
+			return tools.NewRemediateTool(cfg.TypedClient, k8s, cfg.Namespace, cfg.Triager, cfg.Auditor, cfg.ScopeChecker)
 		}},
 	}
 
@@ -179,6 +179,7 @@ func buildToolList(cfg AgentConfig) ([]tool.Tool, error) {
 					ValidationFailures: cfg.AlertValidationFailures,
 					Mapper:             cfg.RESTMapper,
 					Signaler:           buildAlertISSignaler(cfg),
+					ScopeChecker:       cfg.ScopeChecker,
 				})
 			}},
 		)

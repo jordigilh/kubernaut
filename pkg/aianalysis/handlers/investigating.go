@@ -51,19 +51,19 @@ import (
 // Refactoring P1.2: Uses RequestBuilder for request construction
 // Refactoring P2.1: Uses ErrorClassifier for error classification and retry logic
 type InvestigatingHandler struct {
-	log                 logr.Logger
-	kaClient            AgentClientInterface
-	metrics             *metrics.Metrics     // DD-METRICS-001: Injected metrics
-	auditClient         AuditClientInterface // DD-AUDIT-003: Injected audit client
-	processor           *ResponseProcessor   // P1.1: Response processing logic
-	builder             *RequestBuilder      // P1.2: Request construction logic
-	errorClassifier     *ErrorClassifier     // P2.1: Error classification and retry logic
-	useSessionMode           bool                         // BR-AA-HAPI-064: Enable async session-based flow
-	sessionPollInterval      time.Duration                // BR-AA-HAPI-064.8: Constant interval between session polls
-	maxInvestigationDuration time.Duration                // #1078: Wall-clock cap on investigation before PhaseFailed
-	recorder                 record.EventRecorder         // DD-EVENT-001: K8s event recorder for session lifecycle events
-	isChecker                InvestigationSessionChecker  // BR-INTERACTIVE-010: Check IS CRD before submit
-	isPhaseUpdater           ISPhaseUpdater               // BR-INTERACTIVE-010: Set IS Phase=Active after submit
+	log                      logr.Logger
+	kaClient                 AgentClientInterface
+	metrics                  *metrics.Metrics            // DD-METRICS-001: Injected metrics
+	auditClient              AuditClientInterface        // DD-AUDIT-003: Injected audit client
+	processor                *ResponseProcessor          // P1.1: Response processing logic
+	builder                  *RequestBuilder             // P1.2: Request construction logic
+	errorClassifier          *ErrorClassifier            // P2.1: Error classification and retry logic
+	useSessionMode           bool                        // BR-AA-HAPI-064: Enable async session-based flow
+	sessionPollInterval      time.Duration               // BR-AA-HAPI-064.8: Constant interval between session polls
+	maxInvestigationDuration time.Duration               // #1078: Wall-clock cap on investigation before PhaseFailed
+	recorder                 record.EventRecorder        // DD-EVENT-001: K8s event recorder for session lifecycle events
+	isChecker                InvestigationSessionChecker // BR-INTERACTIVE-010: Check IS CRD before submit
+	isPhaseUpdater           ISPhaseUpdater              // BR-INTERACTIVE-010: Set IS Phase=Active after submit
 }
 
 // InvestigatingHandlerOption is a functional option for InvestigatingHandler configuration.
@@ -138,12 +138,12 @@ func NewInvestigatingHandler(hgClient AgentClientInterface, log logr.Logger, m *
 	}
 	handlerLog := log.WithName("investigating-handler")
 	h := &InvestigatingHandler{
-		kaClient:            hgClient,
-		metrics:             m,
-		auditClient:         auditClient,
-		log:                 handlerLog,
-		sessionPollInterval:      DefaultSessionPollInterval,            // BR-AA-HAPI-064.8: Constant poll interval
-		maxInvestigationDuration: DefaultMaxInvestigationDuration,       // #1078: Wall-clock cap
+		kaClient:                 hgClient,
+		metrics:                  m,
+		auditClient:              auditClient,
+		log:                      handlerLog,
+		sessionPollInterval:      DefaultSessionPollInterval,      // BR-AA-HAPI-064.8: Constant poll interval
+		maxInvestigationDuration: DefaultMaxInvestigationDuration, // #1078: Wall-clock cap
 		processor:                NewResponseProcessor(log, m, auditClient),
 		builder:                  NewRequestBuilder(log),
 		errorClassifier:          NewErrorClassifier(handlerLog),
@@ -278,8 +278,8 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 		analysis.Status.CompletedAt = &now
 		analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
 			analysis.Status.ConsecutiveFailures, err)
-	analysis.Status.Reason = aianalysisv1.ReasonAPIError
-	analysis.Status.SubReason = "MaxRetriesExceeded"
+		analysis.Status.Reason = aianalysisv1.ReasonAPIError
+		analysis.Status.SubReason = "MaxRetriesExceeded"
 
 		// Record metric for max retries exceeded
 		h.metrics.RecordFailure("APIError", "MaxRetriesExceeded")
@@ -317,6 +317,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("Permanent error: %v", err))
 	return ctrl.Result{}, nil
 }
+
 // setRetryCount writes retry count to annotations
 func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, count int) {
 	if analysis.Annotations == nil {
@@ -434,7 +435,89 @@ func (h *InvestigatingHandler) checkISMismatchAndCancel(ctx context.Context, ana
 		return ctrl.Result{Requeue: true}, true
 	}
 
+	// #2029 Part B: hasIS && session.Interactive is the common "everything
+	// looks normal" steady state — neither case above fires. But AF may have
+	// correlated a newer, different KA session onto this IS since our last
+	// check (e.g. a reconnect/takeover after our tracked session went stale).
+	// Adopt it instead of silently continuing to poll a session AF has moved
+	// on from.
+	if hasIS && session.Interactive && h.tryAdoptCorrelatedSession(ctx, analysis, rrName, "mismatch-check") {
+		return ctrl.Result{Requeue: true}, true
+	}
+
 	return ctrl.Result{}, false
+}
+
+// adoptCorrelatedSession swaps the AA-tracked KA session onto a session ID
+// AF has correlated for this RR's InvestigationSession (#2029 Part B). This
+// is deliberately NOT a regeneration: KA already ran (or is actively
+// running) this session — AA is catching up to work that already exists,
+// not starting a new investigation — so Generation is left unchanged (unlike
+// handleSessionLost's 404-triggered regeneration, or handleSessionPollCancelled's
+// takeover-resubmit branch, both of which intentionally start a fresh session).
+//
+// FedRAMP SI-4/AU-2/AU-3: emits a K8s event (observability) and a durable
+// audit record (traceability) so this is never a silent state change — the
+// business-relevant fact being preserved is that a real, possibly-completed
+// investigation is not discarded.
+func (h *InvestigatingHandler) adoptCorrelatedSession(ctx context.Context, analysis *aianalysisv1.AIAnalysis, newSessionID string) {
+	session := analysis.Status.KASession
+	oldSessionID := session.ID
+	now := metav1.Now()
+	session.ID = newSessionID
+	session.Interactive = true
+	session.PollCount = 0
+	session.LastPolled = nil
+	session.CreatedAt = &now
+	session.ConsecutiveGetResultErrors = 0
+
+	if h.recorder != nil {
+		h.recorder.Eventf(analysis, corev1.EventTypeNormal, events.EventReasonSessionAdopted,
+			"Adopted KA session %s correlated by API Frontend (previously tracking %s)", newSessionID, oldSessionID)
+	}
+	h.auditClient.RecordAIAgentCall(ctx, analysis, "session_adopted", 200, 0)
+}
+
+// tryAdoptCorrelatedSession checks whether AF has correlated a newer, active
+// KA session onto rrName's InvestigationSession and, if so, adopts it
+// (#2029 Part B). Shared by both adoption call sites -- the general
+// IS-mismatch check in checkISMismatchAndCancel and the race-closing
+// re-check in checkCorrelatedSessionBeforeFinalizing -- which differ only in
+// when they call this and what logCtx they pass for log correlation.
+// Returns true if adoption occurred.
+func (h *InvestigatingHandler) tryAdoptCorrelatedSession(ctx context.Context, analysis *aianalysisv1.AIAnalysis, rrName, logCtx string) bool {
+	session := analysis.Status.KASession
+	newID, active, err := h.isChecker.CorrelatedSessionID(ctx, rrName)
+	if err != nil {
+		h.log.Error(err, "CorrelatedSessionID check failed, proceeding without adoption", "context", logCtx, "rrName", rrName)
+		return false
+	}
+	if !active || newID == "" || newID == session.ID {
+		return false
+	}
+	h.log.Info("AF correlated a newer KA session — adopting",
+		"context", logCtx, "oldSessionID", session.ID, "newSessionID", newID, "rrName", rrName)
+	h.adoptCorrelatedSession(ctx, analysis, newID)
+	return true
+}
+
+// checkCorrelatedSessionBeforeFinalizing re-checks IS correlation immediately
+// before finalizing a terminal poll result (completed/failed). Closes the
+// race where AF's correlation write lands between the general mismatch check
+// at the top of handleSessionBased and the poll result arriving from KA
+// (#2029 Part B): the old session can report completed/failed at the exact
+// moment a takeover has already moved AA's true session elsewhere. Returns
+// true if adoption occurred — the caller must skip finalizing this poll
+// result so the newly adopted session is never wrongly marked terminal.
+func (h *InvestigatingHandler) checkCorrelatedSessionBeforeFinalizing(ctx context.Context, analysis *aianalysisv1.AIAnalysis) bool {
+	if h.isChecker == nil {
+		return false
+	}
+	rrName := analysis.Spec.RemediationRequestRef.Name
+	if rrName == "" {
+		return false
+	}
+	return h.tryAdoptCorrelatedSession(ctx, analysis, rrName, "finalize-recheck")
 }
 
 // handleSessionSubmit submits a new investigation to KA and records the session ID.
@@ -695,6 +778,13 @@ func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, ana
 // handleSessionPollCompleted handles poll results where investigation has completed.
 // BR-AA-HAPI-064.3: Fetch result and process through ResponseProcessor
 func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+	// #2029 Part B: re-check correlation before finalizing — closes the race
+	// where AF adopts a takeover session between our last mismatch check and
+	// this (now-stale) session's poll reporting completed.
+	if h.checkCorrelatedSessionBeforeFinalizing(ctx, analysis) {
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	session := analysis.Status.KASession
 
 	// Track that a poll occurred even on terminal status — the poll that discovered
@@ -764,6 +854,11 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 // BR-AA-HAPI-064: Surface KA-side failure to operators via CRD status
 // AA-MED-1: Ensure Reason and SubReason are set for structured failure reporting.
 func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
+	// #2029 Part B: symmetric race-closing check (see handleSessionPollCompleted).
+	if h.checkCorrelatedSessionBeforeFinalizing(ctx, analysis) {
+		return ctrl.Result{Requeue: true}, nil
+	}
+
 	session := analysis.Status.KASession
 	session.PollCount++
 	now := metav1.Now()

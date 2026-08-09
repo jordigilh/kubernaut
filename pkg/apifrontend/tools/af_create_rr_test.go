@@ -55,14 +55,15 @@ func (a *alertOverridePromClient) InstantQuery(_ context.Context, _ string) (*pr
 
 // alwaysFiringPromClient returns a single cluster-scoped firing alert with no
 // namespace/kind/name labels, so it label-matches (at the cluster level, see
-// triage.go bestAlertMatch) any target resource regardless of test fixture
-// identity.
+// triage.go bestOverallMatch) any target resource regardless of test fixture
+// identity, but carries no verified relationship to it.
 //
-// #1839/DD-AF-010: a nil Triager now fails closed (ErrSeverityUndetermined)
-// instead of silently defaulting to "warning". Tests that don't care about
-// the specific severity value but need HandleCreateRR/HandleRemediate to
-// succeed (e.g. to exercise dedup, audit, cluster-ID plumbing) must supply a
-// Triager that actually resolves one -- this is that shared fixture.
+// DD-AF-012/#2027: because it has no verified relationship, a Triager built
+// on this fixture now resolves as *ambiguous* (Triage returns
+// *severity.AmbiguousSeverityError), not a confident success. Used
+// deliberately by ambiguity tests (e.g. UT-AF-2027-004) that want exactly
+// that "only a cluster-scoped candidate exists" scenario -- callers that
+// just want a Triager to succeed should use defaultTestTriager instead.
 type alwaysFiringPromClient struct{}
 
 func (a *alwaysFiringPromClient) GetAlerts(_ context.Context) ([]prom.Alert, error) {
@@ -75,10 +76,30 @@ func (a *alwaysFiringPromClient) InstantQuery(_ context.Context, _ string) (*pro
 	return &prom.QueryResult{}, nil
 }
 
-// defaultTestTriager returns a Triager that always resolves "warning" via a
-// cluster-scoped alert. See alwaysFiringPromClient.
-func defaultTestTriager() *severity.Triager {
+// ambiguousTestTriager returns a Triager whose only correlating evidence is
+// a cluster-scoped alert with no verified relationship to any target -- the
+// DD-AF-012/#2027 "ambiguous" scenario. See alwaysFiringPromClient.
+func ambiguousTestTriager() *severity.Triager {
 	return severity.NewTriager(&alwaysFiringPromClient{}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+}
+
+// defaultTestTriager returns a Triager that resolves "warning" via a
+// resource-scoped alert with a verified relationship to the given
+// namespace/kind/name (namespace may be "" for cluster-scoped targets, e.g.
+// Node). Tests that don't care about the specific severity value but need
+// HandleCreateRR/HandleRemediate to succeed (e.g. to exercise dedup, audit,
+// cluster-ID plumbing) use this to get a confident, non-ambiguous result --
+// DD-AF-012/#2027's ambiguity gate is reserved for alerts with no such
+// relationship (see ambiguousTestTriager).
+func defaultTestTriager(namespace, kind, name string) *severity.Triager {
+	mockProm := &alertOverridePromClient{
+		alerts: []prom.Alert{
+			{State: "firing", Labels: map[string]string{
+				"alertname": "TestDefaultAlert", "namespace": namespace, "kind": kind, "name": name, "severity": "warning",
+			}},
+		},
+	}
+	return severity.NewTriager(mockProm, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
 }
 
 // unnamedAlertTestTriager returns a Triager that resolves a severity from a
@@ -133,7 +154,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Name:        "web",
 				Description: "Pod CrashLoopBackOff detected",
 				APIVersion:  "apps/v1",
-			}, "sre-user", defaultTestTriager(), nil)
+			}, "sre-user", defaultTestTriager("prod", "Deployment", "web"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 			Expect(result.AlreadyExists).To(BeFalse())
@@ -165,7 +186,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: string(longDesc), APIVersion: "apps/v1",
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager("prod", "Deployment", "web"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 		})
@@ -183,7 +204,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 					defer wg.Done()
 					results[idx], errs[idx] = tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
 						Namespace: "prod", Kind: "Deployment", Name: "dedup-target", Description: "concurrent test", APIVersion: "apps/v1",
-					}, "user", defaultTestTriager(), nil)
+					}, "user", defaultTestTriager("prod", "Deployment", "dedup-target"), nil)
 				}(i)
 			}
 			wg.Wait()
@@ -239,6 +260,38 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(rrList.Items).To(BeEmpty(), "no RemediationRequest should be created when severity cannot be determined")
 		})
 
+		It("UT-AF-2027-004: HandleCreateRR translates *AmbiguousSeverityError into CreateRRResult{Ambiguous: true} with no Go error and no RR created", func() {
+			tc := newTypedFakeClient()
+
+			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "only a cluster alert exists", APIVersion: "apps/v1",
+			}, "alice", ambiguousTestTriager(), nil)
+			Expect(err).NotTo(HaveOccurred(),
+				"DD-AF-012/#2027: ambiguity is a typed result, not a Go error, mirroring #2022's Managed: false shape")
+			Expect(result.Ambiguous).To(BeTrue())
+			Expect(result.CandidateSignalName).To(Equal("TestDefaultAlert"))
+			Expect(result.CandidateSeverity).To(Equal("warning"))
+			Expect(result.RRID).To(BeEmpty())
+
+			var rrList remediationv1.RemediationRequestList
+			Expect(tc.List(context.Background(), &rrList, crclient.InNamespace("prod"))).To(Succeed())
+			Expect(rrList.Items).To(BeEmpty(), "no RemediationRequest should be created for an ambiguous, unconfirmed candidate")
+		})
+
+		It("UT-AF-2027-004b: a matching ConfirmedAmbiguousSignalName proceeds to RR creation", func() {
+			tc := newTypedFakeClient()
+
+			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "confirmed by user",
+				APIVersion:                   "apps/v1",
+				ConfirmedAmbiguousSignalName: "TestDefaultAlert",
+			}, "alice", ambiguousTestTriager(), nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Ambiguous).To(BeFalse())
+			Expect(result.RRID).NotTo(BeEmpty())
+			Expect(result.Severity).To(Equal("warning"))
+		})
+
 		It("UT-AF-1282-MIN-007 / UT-AF-1839-010: nil Triager (severityTriage.enabled=false) fails closed instead of fabricating a severity", func() {
 			tc := newTypedFakeClient()
 
@@ -261,7 +314,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "kubernaut-system", &tools.CreateRRArgs{
 				Namespace: "kubernaut-system", Kind: "Deployment", Name: "web", Description: "ns from AF", APIVersion: "apps/v1",
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager("kubernaut-system", "Deployment", "web"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).To(HavePrefix("rr-"))
 		})
@@ -289,7 +342,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "check source", APIVersion: "apps/v1",
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager("prod", "Deployment", "web"), nil)
 			Expect(err).NotTo(HaveOccurred())
 
 			created := verifyTypedRR(tc, "prod", extractRRName(result.RRID))
@@ -302,7 +355,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 			result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "dup", APIVersion: "apps/v1",
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager("prod", "Deployment", "web"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.AlreadyExists).To(BeTrue())
 		})
@@ -498,7 +551,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Name:        "web",
 				Description: "cross-namespace RR creation",
 				APIVersion:  "apps/v1",
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager(workloadNS, "Deployment", "web"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).To(HavePrefix("rr-"))
 
@@ -533,7 +586,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Name:        "web",
 				Description: "should dedup on workload NS fingerprint",
 				APIVersion:  "apps/v1",
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager(workloadNS, "Deployment", "web"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.AlreadyExists).To(BeTrue(),
 				"fingerprint(production/Deployment/web) should match the pre-seeded RR")
@@ -626,7 +679,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 		result, err := tools.HandleCreateRR(context.Background(), tc, nil, "prod", &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web", Description: "duplicate", APIVersion: "apps/v1",
-		}, "sre-user", defaultTestTriager(), nil)
+		}, "sre-user", defaultTestTriager("prod", "Deployment", "web"), nil)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.AlreadyExists).To(BeTrue())
 		Expect(result.RRID).To(Equal("rr-deploy-web-existing"))
@@ -640,7 +693,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Kind:       "Deployment",
 				Name:       "web",
 				APIVersion: "apps/v1",
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager("prod", "Deployment", "web"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 
@@ -655,7 +708,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Name:          "worker-03",
 				APIVersion:    "v1",
 				ClusterScoped: true,
-			}, "user", defaultTestTriager(), nil)
+			}, "user", defaultTestTriager("", "Node", "worker-03"), nil)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).NotTo(BeEmpty())
 		})

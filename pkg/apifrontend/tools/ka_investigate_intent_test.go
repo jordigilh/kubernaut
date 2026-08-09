@@ -31,9 +31,11 @@ import (
 
 	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 func shortCtx(parent context.Context) context.Context {
@@ -151,7 +153,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					Kind:       "Deployment",
 					Name:       "web-app",
 				},
-				nil, nil, nil, true, nil, "", nil, defaultTestTriager(),
+				nil, nil, nil, true, nil, "", nil, defaultTestTriager("prod", "Deployment", "web-app"),
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-int-001"))
@@ -432,6 +434,74 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			Expect(recorder.correlationCalls[0].kaSessionID).To(Equal("ka-corr-sess-001"))
 		})
 
+		It("UT-AF-2029-101: UpdateCorrelation uses InvestigationSessionID (pollable analysis session), not the driver-lease SessionID, when KA returns both (#2029 regression)", func() {
+			// KA's kubernaut_investigate tool returns two distinct IDs: SessionID is the
+			// MCP driver-lease ID (exclusive-control lock, never pollable via REST), while
+			// InvestigationSessionID is the actual analysis session AA polls for RCA/workflow
+			// results. Correlating the driver-lease ID into IS.Status.KACorrelationID causes
+			// AA's handleSessionLost to 404-loop forever (see #2029 must-gather RCA).
+			tc := newTypedClientForInvestigate()
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID:              "ka-driver-lease-001",
+						InvestigationSessionID: "ka-analysis-sess-001",
+						Status:                 "investigation_started",
+						Closer:                 func() {},
+					}, nil
+				},
+			}
+
+			recorder := &recordingISSignaler{}
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre@kubernaut.ai",
+				Groups:   []string{"sre"},
+			})
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), mockMCP, tc, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-corr-002"},
+				nil, nil, nil, false, nil, "", recorder, nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.correlationCalls).To(HaveLen(1))
+			Expect(recorder.correlationCalls[0].crdName).To(Equal("is-rr-corr-002"))
+			Expect(recorder.correlationCalls[0].kaSessionID).To(Equal("ka-analysis-sess-001"),
+				"must correlate the pollable analysis session ID, not the driver-lease ID, or AA's session adoption (#2029 Part B) 404-loops forever")
+		})
+
+		It("UT-AF-2029-102: UpdateCorrelation falls back to SessionID when KA omits InvestigationSessionID (back-compat)", func() {
+			tc := newTypedClientForInvestigate()
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "ka-driver-lease-002",
+						Status:    "investigation_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			recorder := &recordingISSignaler{}
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre@kubernaut.ai",
+				Groups:   []string{"sre"},
+			})
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), mockMCP, tc, "kubernaut-system",
+				tools.InvestigateMCPArgs{RRID: "rr-corr-003"},
+				nil, nil, nil, false, nil, "", recorder, nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.correlationCalls).To(HaveLen(1))
+			Expect(recorder.correlationCalls[0].kaSessionID).To(Equal("ka-driver-lease-002"))
+		})
+
 		It("UT-AF-1332-074: signaler not called when signaler is nil (backward compat)", func() {
 			tc := newTypedClientForInvestigate()
 
@@ -456,6 +526,139 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 				nil, nil, nil, false, nil, "", nil, nil,
 			)
 			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Describe("Scope validation before RR creation — #2022 (AC-6, SI-10, AU-3/AU-12, SI-11)", func() {
+		scopeInvestigateArgs := func() tools.InvestigateMCPArgs {
+			return tools.InvestigateMCPArgs{
+				APIVersion: "apps/v1",
+				Namespace:  "unmanaged-ns",
+				Kind:       "Deployment",
+				Name:       "legacy-app",
+			}
+		}
+		identityCtx := func() context.Context {
+			return auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre-carol",
+				Groups:   []string{"sre"},
+			})
+		}
+
+		It("UT-AF-2022-020: rejects an unmanaged resource without creating an RR or starting an MCP session", func() {
+			tc := newTypedClientForInvestigate()
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					Fail("StartInvestigation must not be called for an unmanaged resource")
+					return nil, nil
+				},
+			}
+			ctx := tools.ContextWithScopeChecker(identityCtx(), &mocks.NeverManagedScopeChecker{})
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, mockMCP, tc, "kubernaut-system",
+				scopeInvestigateArgs(),
+				nil, nil, nil, true, nil, "", nil, defaultTestTriager("unmanaged-ns", "Deployment", "legacy-app"),
+			)
+
+			Expect(err).NotTo(HaveOccurred(), "SI-11: rejection must be a clear result, not an opaque tool error")
+			Expect(result.Managed).To(BeFalse())
+			Expect(result.Status).To(Equal("unmanaged"))
+			Expect(result.RRID).To(BeEmpty())
+			Expect(result.Error).To(ContainSubstring("not managed by Kubernaut"))
+		})
+
+		It("UT-AF-2022-021: allows a managed resource to proceed to RR creation and MCP start", func() {
+			tc := newTypedClientForInvestigate()
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{SessionID: "sess-2022-021", Status: "started", Events: eventCh, Closer: func() {}}, nil
+				},
+			}
+			ctx := tools.ContextWithScopeChecker(identityCtx(), &mocks.AlwaysManagedScopeChecker{})
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), mockMCP, tc, "kubernaut-system",
+				scopeInvestigateArgs(),
+				nil, nil, nil, true, nil, "", nil, defaultTestTriager("unmanaged-ns", "Deployment", "legacy-app"),
+			)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
+		})
+
+		It("UT-AF-2022-022: no ScopeChecker in context gracefully degrades to always-managed (backward compat)", func() {
+			tc := newTypedClientForInvestigate()
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{SessionID: "sess-2022-022", Status: "started", Events: eventCh, Closer: func() {}}, nil
+				},
+			}
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(identityCtx()), mockMCP, tc, "kubernaut-system",
+				scopeInvestigateArgs(),
+				nil, nil, nil, true, nil, "", nil, defaultTestTriager("unmanaged-ns", "Deployment", "legacy-app"),
+			)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
+		})
+
+		It("UT-AF-2022-023: emits an EventRRScopeRejected audit event on rejection (AU-3/AU-12)", func() {
+			tc := newTypedClientForInvestigate()
+			mockMCP := &ka.MockMCPClient{}
+			recorder := &auditRecorder{}
+			ctx := tools.ContextWithScopeChecker(identityCtx(), &mocks.NeverManagedScopeChecker{})
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, mockMCP, tc, "kubernaut-system",
+				scopeInvestigateArgs(),
+				recorder, nil, nil, true, nil, "", nil, defaultTestTriager("unmanaged-ns", "Deployment", "legacy-app"),
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.events).To(HaveLen(1))
+			Expect(recorder.events[0].Type).To(Equal(audit.EventRRScopeRejected))
+			Expect(recorder.events[0].UserID).To(Equal("sre-carol"))
+		})
+	})
+
+	Describe("Ambiguous severity/signal correlation — DD-AF-012 (#2027)", func() {
+		It("UT-AF-2027-006: surfaces Ambiguous/CandidateSignalName/CandidateSeverity when only a cluster-scoped alert correlates, then proceeds once confirmed", func() {
+			tc := newTypedClientForInvestigate()
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "sre-erin", Groups: []string{"sre"}})
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, &ka.MockMCPClient{}, tc, "kubernaut-system",
+				tools.InvestigateMCPArgs{APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-ambiguous"},
+				nil, nil, nil, true, nil, "", nil, ambiguousTestTriager(),
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Ambiguous).To(BeTrue())
+			Expect(result.CandidateSignalName).To(Equal("TestDefaultAlert"))
+			Expect(result.CandidateSeverity).To(Equal("warning"))
+			Expect(result.RRID).To(BeEmpty())
+
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{SessionID: "sess-2027-006", Status: "started", Events: eventCh, Closer: func() {}}, nil
+				},
+			}
+			confirmed, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), mockMCP, tc, "kubernaut-system",
+				tools.InvestigateMCPArgs{APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-ambiguous", ConfirmedSignalName: "TestDefaultAlert"},
+				nil, nil, nil, true, nil, "", nil, ambiguousTestTriager(),
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(confirmed.Ambiguous).To(BeFalse())
+			Expect(confirmed.RRID).NotTo(BeEmpty())
 		})
 	})
 })
