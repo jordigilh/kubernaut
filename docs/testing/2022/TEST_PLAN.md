@@ -284,7 +284,7 @@ when there is genuinely nothing to present (vs. simply reporting "no data" and s
 product/UX judgment call, not resolved by this fix. This fix only guarantees the *content* of
 whatever gets presented is truthful — it does not change whether/when `present_decision` is called.
 
-### 8.4 Stage 3 — Embellishment Hardening (Beyond the Original QE Report)
+### 8.4 Stage 3 — Embellishment Hardening (Beyond the Original QE Report, [#2034](https://github.com/jordigilh/kubernaut/issues/2034))
 
 Stage 2's grounding guard is intentionally binary: grounded or not. It does not fact-check
 whether a *technically grounded* session still embellishes beyond what
