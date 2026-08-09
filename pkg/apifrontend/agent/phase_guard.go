@@ -196,6 +196,19 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 				if err := state.Set(session.StateKeyGroundedContentAvailable, grounded); err != nil {
 					logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to persist grounded_content_available state")
 				}
+
+				// Unconditional, mirroring the grounded flag above: a
+				// rejected/rca-less call must clear a stale rca left by an
+				// earlier successful one in the same session (hardening
+				// beyond #2023's original binary gate -- see
+				// enforceGroundingGuard).
+				var rawRCA map[string]any
+				if isSuccess {
+					rawRCA, _ = resp["rca"].(map[string]any)
+				}
+				if err := state.Set(session.StateKeyGroundedRCA, rawRCA); err != nil {
+					logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to persist grounded_rca state")
+				}
 			}
 		}
 
@@ -413,12 +426,31 @@ func rcaConcludedNotActionable(resp map[string]any) bool {
 // it is a legitimate different-user state with its own dedicated fallback
 // card (#1922): the CALLING agent still has no fresh RCA of its own to
 // report, so present_decision must not fabricate one on its behalf.
+//
+// Hardening beyond the original QE report: a summary/rca can be
+// syntactically present yet still not trustworthy when KA's own #1096
+// shadow-agent full-context grounding review flagged this investigation as
+// not aligned (reasoning drift, unsupported conclusions, or distributed
+// prompt-injection influence -- see
+// internal/kubernautagent/alignment/prompt/grounding.go). That verdict is
+// already computed and streamed to AF today (EventTypeAlignmentVerdict) but
+// was previously only surfaced as a human-facing SSE notification
+// (launcher.MetaTypeAlignmentCheckFailed); this treats it as a groundedness
+// input too, closing embellishment cases KA's own reviewer already caught.
+// Only takes effect when a deployment has ai.alignmentCheck enabled --
+// alignment_verdict is absent otherwise, so this is additive, never a
+// behavior change for deployments that leave the shadow review off.
 func investigateHasGroundedContent(resp map[string]any, isSuccess bool) bool {
 	if !isSuccess || resp == nil {
 		return false
 	}
 	if status, _ := resp["status"].(string); status == "unmanaged" || status == "session_active" {
 		return false
+	}
+	if verdict, ok := resp["alignment_verdict"].(map[string]any); ok {
+		if result, _ := verdict["result"].(string); result != "" && result != "aligned" {
+			return false
+		}
 	}
 	if summary, _ := resp["summary"].(string); strings.TrimSpace(summary) != "" {
 		return true
@@ -427,6 +459,39 @@ func investigateHasGroundedContent(resp map[string]any, isSuccess bool) bool {
 		return true
 	}
 	return false
+}
+
+// rcaFieldRename maps InvestigateRCA's JSON field names (tools.InvestigateRCA)
+// to RCAData's JSON field names (tools.RCAData) where they differ --
+// canonicalGroundedRCA's pass-through target. severity/confidence/
+// causal_chain/target are identical in both and need no rename.
+var rcaFieldRename = map[string]string{
+	"total_tool_calls": "tool_calls_count",
+	"total_llm_turns":  "llm_turns",
+}
+
+// canonicalGroundedRCA converts a raw kubernaut_investigate "rca" payload
+// (tools.InvestigateRCA field names) into present_decision's RCAData shape,
+// renaming the two fields that differ and dropping the free-text
+// rca_summary/is_actionable/has_workflow keys that RCAData has no slot for.
+// Returns nil when raw is empty, so callers can distinguish "nothing to pass
+// through" from "pass through an empty object".
+func canonicalGroundedRCA(raw map[string]any) map[string]any {
+	if len(raw) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(raw))
+	for k, v := range raw {
+		if k == "rca_summary" || k == "is_actionable" || k == "has_workflow" {
+			continue
+		}
+		if renamed, ok := rcaFieldRename[k]; ok {
+			out[renamed] = v
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 // enforceGroundingGuard implements #2023's harness-side fabrication guard.
@@ -443,6 +508,19 @@ func investigateHasGroundedContent(resp map[string]any, isSuccess bool) bool {
 // AU-3 structured-artifact mandate (#1408) requires present_decision to
 // still run and emit an investigation_summary artifact in every scenario --
 // only a fabricated narrative is blocked here, never the artifact itself.
+//
+// Hardening beyond the original QE report: even when grounded, args["rca"]
+// is deterministically overwritten with the exact structured facts
+// (severity/confidence/causal_chain/target/tool_calls_count/llm_turns) KA's
+// kubernaut_investigate response reported (session.StateKeyGroundedRCA),
+// rather than trusting the LLM's own transcription of those same facts into
+// present_decision. This closes a narrower gap than the grounded/ungrounded
+// gate above: a technically-grounded session where the model still alters a
+// number or claim while copying it. The free-text args["summary"] is
+// deliberately left model-authored once grounded -- it may legitimately
+// synthesize reasoning the pure structured facts don't capture -- and
+// args["rca"] is left untouched when KA reported no structured rca at all
+// (nothing authoritative to substitute).
 func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
 	if args == nil {
 		return
@@ -457,6 +535,13 @@ func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
 		grounded, _ = v.(bool)
 	}
 	if grounded {
+		if v, err := state.Get(session.StateKeyGroundedRCA); err == nil {
+			if raw, ok := v.(map[string]any); ok {
+				if canonical := canonicalGroundedRCA(raw); canonical != nil {
+					args["rca"] = canonical
+				}
+			}
+		}
 		return
 	}
 

@@ -67,6 +67,25 @@ const (
 	// is preserved; only a fabricated narrative is blocked, never the
 	// artifact.
 	StateKeyGroundedContentAvailable = "af_grounded_content_available"
+
+	// StateKeyGroundedRCA records the exact "rca" payload (severity,
+	// confidence, causal_chain, target, total_tool_calls, total_llm_turns)
+	// carried by the most recent kubernaut_investigate response, keyed
+	// unconditionally on every investigate call (present or nil) so a
+	// later call without a structured RCA correctly clears a stale value
+	// left by an earlier one -- mirroring
+	// StateKeyGroundedContentAvailable's own unconditional-overwrite
+	// semantics. present_decision's before-callback (enforceGroundingGuard,
+	// phase_guard.go) uses this to overwrite whatever the LLM transcribed
+	// into present_decision's own "rca" argument with KA's actual reported
+	// values, closing the risk of the model silently altering facts (e.g.
+	// severity, confidence, causal chain) while otherwise staying inside
+	// #2023's grounded/ungrounded gate. Deliberately holds only the
+	// structured facts, not the free-text summary -- that narrative field
+	// stays model-authored once grounded, since it may legitimately
+	// synthesize reasoning across a session that a pure pass-through would
+	// lose.
+	StateKeyGroundedRCA = "af_grounded_rca"
 )
 
 // Interaction mode values for InteractionMode / StateKeyInteractionMode.
