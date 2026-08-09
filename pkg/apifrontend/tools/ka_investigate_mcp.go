@@ -210,7 +210,10 @@ func HandleInvestigationMCP(ctx context.Context, mcpClient ka.MCPClient, client 
 // signaler (optional): When provided, creates the IS CRD BEFORE the await loop
 // (pure CRD-driven coordination per DD-INTERACTIVE-002). This enables AA to detect
 // interactive intent via IS watch and resubmit with interactive=true. After successful
-// MCP connect, UpdateCorrelation writes the KA session ID to the IS status.
+// MCP connect, UpdateCorrelation writes the pollable investigation-analysis session ID
+// (result.InvestigationSessionID, NOT the MCP driver-lease result.SessionID) to the IS
+// status, so AA's session-adoption logic (#2029) can poll the correlated session
+// successfully instead of 404-looping against an unpollable driver-lease ID.
 func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPClient, client crclient.Client, namespace string, args InvestigateMCPArgs, auditor audit.Emitter, registry *MonitorRegistry, onStarted SessionStartedHook, blocking bool, pool *ka.KASessionPool, username string, signaler ISSignaler, triager *severity.Triager) (InvestigateMCPResult, error) {
 	if mcpClient == nil {
 		return InvestigateMCPResult{}, fmt.Errorf("KA MCP client unavailable")
@@ -438,13 +441,23 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		"rr_id", args.RRID, "session_id", result.SessionID,
 		"status", result.Status, "events_nil", result.Events == nil)
 
+	// correlationSessionID is the pollable investigation-analysis session ID, NOT
+	// the MCP driver-lease SessionID. KA's "start" action returns both (#2029);
+	// correlating the driver-lease ID instead causes AA's session-adoption logic
+	// to poll a session that always 404s, looping until regeneration is exhausted.
+	// Fall back to SessionID only when KA omits InvestigationSessionID (back-compat).
+	correlationSessionID := result.InvestigationSessionID
+	if correlationSessionID == "" {
+		correlationSessionID = result.SessionID
+	}
+
 	if auditor != nil {
 		auditor.Emit(ctx, &audit.Event{
 			Type: audit.EventKADelegated,
 			Detail: map[string]string{
 				"rr_id":             args.RRID,
 				"session_id":        result.SessionID,
-				"ka_correlation_id": result.SessionID,
+				"ka_correlation_id": correlationSessionID,
 				"delegation_type":   "interactive",
 			},
 		})
@@ -461,10 +474,10 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		}
 	}
 
-	if signaler != nil && isCRDName != "" && result.SessionID != "" {
-		if corrErr := signaler.UpdateCorrelation(ctx, isCRDName, result.SessionID); corrErr != nil {
+	if signaler != nil && isCRDName != "" && correlationSessionID != "" {
+		if corrErr := signaler.UpdateCorrelation(ctx, isCRDName, correlationSessionID); corrErr != nil {
 			logger.Error(corrErr, "IS CRD correlation update failed (non-fatal)",
-				"crd_name", isCRDName, "session_id", result.SessionID)
+				"crd_name", isCRDName, "session_id", correlationSessionID)
 		}
 	}
 

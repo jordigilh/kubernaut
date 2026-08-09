@@ -341,9 +341,15 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 		return nil, fmt.Errorf("kubernaut_investigate start_autonomous: %s", msg)
 	}
 
+	// KA's InvestigateOutput (internal/kubernautagent/mcp/tools/investigate_types.go)
+	// returns two distinct session IDs: SessionID is the driver-lease ID (exclusive
+	// control, not pollable via REST); InvestigationSessionID is the pollable
+	// analysis session where RCA/workflow results live. Both must be captured —
+	// discarding InvestigationSessionID caused #2029's session-adoption 404-loop.
 	var invResult struct {
-		SessionID string `json:"session_id"`
-		Status    string `json:"status"`
+		SessionID              string `json:"session_id"`
+		Status                 string `json:"status"`
+		InvestigationSessionID string `json:"investigation_session_id"`
 	}
 	if len(result.Content) > 0 {
 		if tc, ok := result.Content[0].(*mcp.TextContent); ok {
@@ -361,11 +367,12 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 	}
 
 	return &StartInvestigationResult{
-		SessionID: invResult.SessionID,
-		Status:    invResult.Status,
-		Events:    eventCh,
-		Closer:    closer,
-		Session:   session,
+		SessionID:              invResult.SessionID,
+		InvestigationSessionID: invResult.InvestigationSessionID,
+		Status:                 invResult.Status,
+		Events:                 eventCh,
+		Closer:                 closer,
+		Session:                session,
 	}, nil
 }
 
