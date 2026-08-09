@@ -19,6 +19,7 @@ package fleet
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -74,22 +75,33 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 		// v2.0 CC8.1: cluster_id survives reconstruction for fleet RRs) only
 		// needs ONE successfully-reconstructable fleet RR to prove the
 		// contract, not a specific one -- so falling through to the next
-		// candidate is correct, not a weaker assertion. This also
-		// incidentally tolerates the unrelated, already-tracked #1985/#2043
-		// cold-start audit-write race (a transient loss of a legitimately
-		// Gateway-created RR's own audit event), since a poll that catches a
-		// transiently-broken candidate will simply retry it (or move to
-		// another) on the next 5s tick.
-		By("Finding a fleet RemediationRequest whose audit trail is actually reconstructable")
+		// candidate is correct, not a weaker assertion.
+		//
+		// Follow-up hardening: the candidate filter now requires
+		// PhaseCompleted explicitly (previously `OverallPhase != ""`, which
+		// matched all 10 non-terminal/failure phases too -- e.g. Pending,
+		// Processing, Blocked -- and is exactly how the AF-created RR above,
+		// permanently stuck in Blocked, was being swept into candidacy in
+		// the first place). This keeps the multi-candidate loop as
+		// defense-in-depth for legitimately concurrent completed fleet RRs,
+		// without silently accepting non-terminal ones as proof of anything.
+		// Per-candidate failures are now joined (not just the last one kept)
+		// so a systemic regression across every completed candidate is loud
+		// in the failure output, rather than reporting only the final
+		// candidate's error. This intentionally does NOT special-case the
+		// unrelated, already-tracked #1985 cold-start audit-write race --
+		// that failure mode should keep surfacing on its own merits if it
+		// recurs, not be silently absorbed here.
+		By("Finding a completed fleet RemediationRequest whose audit trail is actually reconstructable")
 		var resp *ogenclient.ReconstructionResponse
 		Eventually(func(g Gomega) {
 			rrList := &remediationv1.RemediationRequestList{}
 			g.Expect(k8sClient.List(ctx, rrList, client.InNamespace(namespace))).To(Succeed())
 
 			var candidateCount int
-			var lastErr error
+			var errs []error
 			for _, rr := range rrList.Items {
-				if rr.Spec.ClusterID == "" || rr.Status.OverallPhase == "" {
+				if rr.Spec.ClusterID == "" || rr.Status.OverallPhase != remediationv1.PhaseCompleted {
 					continue
 				}
 				candidateCount++
@@ -98,12 +110,12 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 					CorrelationID: rr.Name,
 				})
 				if err != nil {
-					lastErr = fmt.Errorf("RR %s: %w", rr.Name, err)
+					errs = append(errs, fmt.Errorf("RR %s: %w", rr.Name, err))
 					continue
 				}
 				reconResp, ok := result.(*ogenclient.ReconstructionResponse)
 				if !ok {
-					lastErr = fmt.Errorf("RR %s: expected ReconstructionResponse, got %T", rr.Name, result)
+					errs = append(errs, fmt.Errorf("RR %s: expected ReconstructionResponse, got %T", rr.Name, result))
 					continue
 				}
 
@@ -113,10 +125,10 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 				return
 			}
 
-			g.Expect(candidateCount).To(BeNumerically(">", 0), "no RemediationRequest with ClusterID found yet")
+			g.Expect(candidateCount).To(BeNumerically(">", 0), "no completed fleet RemediationRequest with ClusterID found yet")
 			g.Expect(resp).ToNot(BeNil(),
-				"no fleet RemediationRequest could be reconstructed yet out of %d candidate(s), last error: %v",
-				candidateCount, lastErr)
+				"none of the %d completed fleet RemediationRequest candidate(s) could be reconstructed yet: %v",
+				candidateCount, errors.Join(errs...))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("Verifying cluster_id is present in reconstruction response")
