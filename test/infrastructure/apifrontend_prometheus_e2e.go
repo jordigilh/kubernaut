@@ -238,6 +238,23 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 //     decision event at all (CI run 31320575553, E2E-AF-1395-001). A
 //     dedicated target closes this the same way test-firing-target et al.
 //     already do for the severity tiers above.
+//   - StructuredDecisionGrounding2: same shape as StructuredDecisionGrounding
+//     (namespace="af-structured-decision-e2e", kind=Pod,
+//     name="structured-decision-target-2"), dedicated to
+//     structured_decision_e2e_test.go's E2E-AF-1396-002 alone. That
+//     Describe block is Ordered, and all three of its Its previously shared
+//     ONE grounding fixture -- fine for #1395-001 and #1396-001, but by the
+//     third call af_create_rr.go's checkExistingRRByFingerprint dedups to
+//     the SAME RR the first two tests already opened a KA interactive
+//     session against, so E2E-AF-1396-002's own groundSession call
+//     nondeterministically observes "session_active" instead of a clean
+//     result -- which per investigateHasGroundedContent (phase_guard.go)
+//     and its own UT-AF-2023-004 deterministically fails present_decision's
+//     grounding guard closed, clearing options to [] (CI run 31335085795,
+//     "AC-6: ALL options must be presented"). A second dedicated target
+//     gives this one test its own RR so it never contends with #1395-001/
+//     #1396-001's still-open sessions, matching the fix already applied
+//     once above for cross-Describe-block contention.
 //
 // #1839 follow-up (no fixtures in "default"): HighCPU and HighMemory used to
 // target namespace="default" (unlike DiskPressure/NetworkLatency, which
@@ -361,4 +378,15 @@ groups:
           name: structured-decision-target
         annotations:
           summary: "Synthetic grounding alert for structured_decision_e2e_test.go's groundSession (dedicated namespace/name, avoids af-investigate-target fixture contention)"
+      - alert: StructuredDecisionGrounding2
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          namespace: af-structured-decision-e2e
+          kind: Pod
+          name: structured-decision-target-2
+        annotations:
+          summary: "Synthetic grounding alert for structured_decision_e2e_test.go's E2E-AF-1396-002 (dedicated target, avoids intra-suite session_active contention with #1395-001/#1396-001)"
 `

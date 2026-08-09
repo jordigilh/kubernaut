@@ -196,6 +196,33 @@ data:
             name: "structured-decision-target"
             kind: "Pod"
 
+      - name: "af_structured_decision_ground_2"
+        # Dedicated grounding call for structured_decision_e2e_test.go's
+        # E2E-AF-1396-002 alone (its own target, not shared with
+        # af_structured_decision_ground above): that Describe block is
+        # Ordered, and by its 3rd It, af_create_rr.go's
+        # checkExistingRRByFingerprint would otherwise dedup onto the SAME
+        # RR the first two Its already opened a KA interactive session
+        # against, nondeterministically hitting session_active instead of a
+        # clean grounded result (CI run 31335085795, E2E-AF-1396-002, "AC-6:
+        # ALL options must be presented"). See
+        # StructuredDecisionGrounding2 (apifrontend_prometheus_e2e.go).
+        #
+        # Keyword deliberately shares no substring with any other keyword in
+        # this file (mock-llm's match is strings.Contains and picks the
+        # first-registered tie among equal-confidence matches, registry.go
+        # Detect) -- e.g. "seed grounding context v2" would also match
+        # af_structured_decision_ground's "seed grounding context" keyword.
+        keywords: ["seed alt fixture context 1396 002"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            api_version: "v1"
+            namespace: "af-structured-decision-e2e"
+            name: "structured-decision-target-2"
+            kind: "Pod"
+
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]
         match_last_only: true
