@@ -267,11 +267,40 @@ jobs:
           kubectl cluster-info
           kubectl get nodes -o wide
 
+      - name: "Write minimal OPA policy files (BR-PLATFORM-010: policies.content is mandatory)"
+        run: |
+          # charts/kubernaut/values.schema.json requires exactly one of
+          # policies.content/existingConfigMap for both services -- this
+          # job only needs *some* valid policy so the chart installs and
+          # the controllers start cleanly (not exercising policy business
+          # logic), so reuse the same proven-valid content the fullpipeline
+          # E2E suite injects (test/infrastructure/fullpipeline_e2e_helm.go).
+          mkdir -p /tmp/must-gather-e2e-policies
+          cat > /tmp/must-gather-e2e-policies/sp-policy.rego <<'EOF'
+          package signalprocessing
+
+          import rego.v1
+
+          default environment := {"environment": "unknown", "source": "default"}
+          default severity := "unknown"
+          default priority := {"priority": "P3", "policy_name": "default"}
+          EOF
+          cat > /tmp/must-gather-e2e-policies/aa-policy.rego <<'EOF'
+          package aianalysis.approval
+
+          import rego.v1
+
+          default require_approval := false
+          default reason := "Auto-approved"
+          EOF
+
       - name: Install Kubernaut Helm chart (pre-built images, pulled by Kind's nodes directly)
         run: |
           helm install kubernaut charts/kubernaut/ \
             --namespace "$RELEASE_NAMESPACE" --create-namespace \
             --set global.image.tag="${CHART_IMAGE_TAG}-amd64" \
+            --set-file signalprocessing.policies.content=/tmp/must-gather-e2e-policies/sp-policy.rego \
+            --set-file aianalysis.policies.content=/tmp/must-gather-e2e-policies/aa-policy.rego \
             --wait --timeout 300s
 
       - name: Install kubernaut-operator (real controller-manager, for optional-namespace log collection coverage)
