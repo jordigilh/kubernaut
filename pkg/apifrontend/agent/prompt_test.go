@@ -46,7 +46,7 @@ var _ = Describe("System Prompt", func() {
 
 	It("UT-AF-131-003: prompt contains present_decision handoff instruction", func() {
 		Expect(instruction).To(ContainSubstring("present_decision"))
-		Expect(instruction).To(ContainSubstring("MUST call present_decision"))
+		Expect(instruction).To(ContainSubstring("MUST call kubernaut_present_decision"))
 	})
 
 	It("UT-AF-131-004: prompt does not contain internal system names outside the constraint rule", func() {

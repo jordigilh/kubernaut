@@ -17,6 +17,8 @@ limitations under the License.
 package agent
 
 import (
+	"strings"
+
 	"github.com/go-logr/logr"
 	"google.golang.org/adk/agent/llmagent"
 	adksession "google.golang.org/adk/session"
@@ -45,6 +47,26 @@ const errNoActiveDriver = "interactive session not active — you must call kube
 // primary layer that keeps the model from even seeing the tool as an
 // option; this is defense-in-depth for the rare case a call slips through.
 const errCheckpointBlocked = "this action requires explicit user confirmation first -- wait for the user's next message before proceeding"
+
+// noGroundedContentSummary is the fixed, honest payload #2023's grounding
+// guard substitutes for present_decision's summary when the most recent
+// kubernaut_investigate produced no real content to report. It deliberately
+// names the possible reasons in generic, model-agnostic terms rather than
+// echoing the specific error string, since the override applies uniformly
+// across scope rejections (#2022), tool errors, session_active, and the
+// fail-closed "investigate never called" default -- so it must never imply
+// a diagnosis more specific than "nothing was found."
+const noGroundedContentSummary = "No investigation content is available for this remediation. " +
+	"The prior investigation attempt did not produce any root-cause findings to report " +
+	"(the target may be outside Kubernaut's management scope, a required tool call may have " +
+	"failed, or no investigation has actually completed yet)."
+
+// presentDecisionTool is the name registered by ka_tools.go's
+// NewPresentDecisionTool -- kept as a named constant here (rather than a
+// literal) since #2023's grounding guard and prompt.txt's naming-accuracy
+// fix both depend on this exact string staying in sync with the tool
+// registration.
+const presentDecisionTool = "kubernaut_present_decision"
 
 // checkpointGatedTools maps each phase-gated tool to the checkpoint flag
 // that, when set, must hard-reject it (DD-AF-011, #1899).
@@ -88,6 +110,14 @@ var sessionTerminalTools = map[string]bool{
 // ActiveContextRegistry for multi-turn session continuity (BR-SESS-020).
 func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToolCallback, llmagent.AfterToolCallback) {
 	before := func(ctx tool.Context, t tool.Tool, args map[string]any) (map[string]any, error) {
+		// #2023: mutates args in place (never short-circuits the call) so
+		// present_decision still executes and the AU-3 structured artifact
+		// is always emitted -- only a fabricated narrative is blocked.
+		if t.Name() == presentDecisionTool {
+			enforceGroundingGuard(ctx, args)
+			return nil, nil
+		}
+
 		if !mcpDependentTools[t.Name()] {
 			return nil, nil
 		}
@@ -149,6 +179,23 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 		if isSuccess {
 			if errVal, ok := resp["error"]; ok && errVal != nil {
 				isSuccess = false
+			}
+		}
+
+		// #2023: track whether THIS kubernaut_investigate call produced
+		// real, groundable RCA content -- regardless of success/failure, so
+		// a failed/rejected call correctly overwrites a stale grounded=true
+		// left by an earlier one in the same session. present_decision's
+		// before-callback (enforceGroundingGuard) reads this immediately
+		// before it runs. Computed unconditionally here (ahead of the
+		// isSuccess/isEntry early-returns below) precisely because a hard
+		// failure must still be recorded, not skipped.
+		if toolName == "kubernaut_investigate" {
+			if state := ctx.State(); state != nil {
+				grounded := investigateHasGroundedContent(resp, isSuccess)
+				if err := state.Set(session.StateKeyGroundedContentAvailable, grounded); err != nil {
+					logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to persist grounded_content_available state")
+				}
 			}
 		}
 
@@ -353,4 +400,69 @@ func rcaConcludedNotActionable(resp map[string]any) bool {
 	}
 	hasWorkflow, _ := rca["has_workflow"].(bool)
 	return !hasWorkflow
+}
+
+// investigateHasGroundedContent reports whether a kubernaut_investigate
+// response carries real RCA content the model may legitimately summarize in
+// present_decision, as opposed to a rejection, failure, or empty result that
+// must never be dressed up with invented findings (#2023). isSuccess is
+// passed in (rather than recomputed) so this matches the exact success
+// determination already made above in the caller.
+//
+// "session_active" is deliberately excluded from groundedness even though
+// it is a legitimate different-user state with its own dedicated fallback
+// card (#1922): the CALLING agent still has no fresh RCA of its own to
+// report, so present_decision must not fabricate one on its behalf.
+func investigateHasGroundedContent(resp map[string]any, isSuccess bool) bool {
+	if !isSuccess || resp == nil {
+		return false
+	}
+	if status, _ := resp["status"].(string); status == "unmanaged" || status == "session_active" {
+		return false
+	}
+	if summary, _ := resp["summary"].(string); strings.TrimSpace(summary) != "" {
+		return true
+	}
+	if rca, ok := resp["rca"]; ok && rca != nil {
+		return true
+	}
+	return false
+}
+
+// enforceGroundingGuard implements #2023's harness-side fabrication guard.
+// Immediately before kubernaut_present_decision executes, it checks whether
+// the most recent kubernaut_investigate call (tracked via
+// session.StateKeyGroundedContentAvailable in the after-callback above)
+// produced real, groundable content. When it did not -- including the
+// fail-closed default when the state key was never set at all, e.g.
+// present_decision called without any prior investigate -- this overwrites
+// args["summary"], args["rca"], and args["options"] in place with a fixed,
+// honest "no data" payload, mirroring #2022's own safe-default posture.
+//
+// This deliberately mutates args rather than short-circuiting the call: the
+// AU-3 structured-artifact mandate (#1408) requires present_decision to
+// still run and emit an investigation_summary artifact in every scenario --
+// only a fabricated narrative is blocked here, never the artifact itself.
+func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
+	if args == nil {
+		return
+	}
+	state := ctx.State()
+	if state == nil {
+		return
+	}
+
+	grounded := false
+	if v, err := state.Get(session.StateKeyGroundedContentAvailable); err == nil {
+		grounded, _ = v.(bool)
+	}
+	if grounded {
+		return
+	}
+
+	logr.FromContextOrDiscard(ctx).Info("grounding-guard overriding present_decision content: no groundable investigation content available")
+
+	args["summary"] = noGroundedContentSummary
+	delete(args, "rca")
+	args["options"] = []any{}
 }

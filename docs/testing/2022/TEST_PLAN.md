@@ -2,10 +2,13 @@
 
 **Issue**: [#2022](https://github.com/jordigilh/kubernaut/issues/2022) (`release/v1.5`)
 **Authority**: ADR-053 (Resource Scope Management) — [Addendum: Point 3 — AF Tool-Layer Validation](../../architecture/decisions/ADR-053-resource-scope-management.md#addendum-point-3--af-tool-layer-validation-issue-2022-august-8-2026)
-**Secondary fix (same branch)**: [#2023](https://github.com/jordigilh/kubernaut/issues/2023) internal-error opacity for `discover_workflows` — see Section 8
+**Same-branch fixes**:
+- [#2023](https://github.com/jordigilh/kubernaut/issues/2023) — LLM content fabrication in `present_decision`; opaque-error removal + harness-enforced grounding guard — see Section 8
+- `prompt.txt` accuracy fixes (terminal-phase list, tool-naming consistency) — see Section 9
+- E2E fixture fix for PR [#2026](https://github.com/jordigilh/kubernaut/pull/2026) CI failure (`kubernaut.ai/managed` labeling gaps) — see Section 10
 **Branch**: `fix/2022-af-scope-validation` (off `release/v1.5`)
 **Created**: 2026-08-08
-**Status**: Implementation complete — verification in progress
+**Status**: Implementation complete — build/vet/full test suites green
 
 ---
 
@@ -179,27 +182,24 @@ $ go vet ./...           # exit 0
 $ go test ./pkg/apifrontend/... ./internal/kubernautagent/...   # all packages ok
 ```
 
-## 8. Partial Mitigation for Issue #2023 (QE-reported, same branch)
+## 8. Issue #2023 (QE-reported, same branch): Content-Grounding Fix
 
-**This section does NOT close #2023.** #2023's core ask — a deterministic grounding check (or
-prompt-level guardrail) preventing `kubernaut_present_decision` from rendering a fabricated
-RCA/audit-trail narrative when no real investigation content exists — is a separate, larger design
-task, explicitly flagged in the issue as needing product/design input before implementation. That
-design has **not yet been approved or implemented** and is tracked separately (a design plan is
-pending user approval as of this writing). This section documents only the one concrete
-contributing factor identified and fixed during #2022 triage.
+#2023's core ask is a deterministic mechanism preventing `kubernaut_present_decision` from
+rendering a fabricated RCA/audit-trail narrative when no real investigation content exists. This
+was addressed in two stages within this branch:
+
+### 8.1 Stage 1 — Opaque Error Removal (Partial Mitigation)
 
 **Symptom**: When `discover_workflows` finds no conversation content to extract an RCA from
 (stored RCA absent, live conversation empty, audit-trail reconstruction empty — the case
 `len(messages) == 0` at `internal/kubernautagent/mcp/tools/investigate.go:927`), it previously
 returned a plain `fmt.Errorf(...)`. `ErrorBoundary` (`internal/kubernautagent/mcp/tools/errors.go`)
 redacts unrecognized error types to the generic `ErrCodeInternalError` before they reach the
-client — indistinguishable from an actual server bug. #2023 identifies this as *one* condition
-that leaves the calling LLM with an ambiguous signal instead of a clear "no data" fact, which is
-part of the room the LLM used to fabricate a narrative in the reported repro. Fixing this
-opaqueness is necessary-but-not-sufficient: it removes one ambiguous-error trigger, but does not
-add the grounding check #2023 actually asks for (a fabrication is possible from a *successful*
-sparse response too, not only from an error path).
+client — indistinguishable from an actual server bug. This was *one* condition that left the
+calling LLM with an ambiguous signal instead of a clear "no data" fact — part of the room the LLM
+used to fabricate a narrative in the reported repro. On its own this was necessary-but-not-sufficient:
+it removes one ambiguous-error trigger, but a fabrication is also possible from a *successful*
+sparse response, not only from an error path — which Stage 2 below closes.
 
 **Fix**: Added `ErrCodeNoConversationContext` (`internal/kubernautagent/mcp/tools/errors.go`),
 following the existing `MCPError` pattern (precedent: `ErrCodeToolBudgetExhausted`). Replaced the
@@ -213,45 +213,138 @@ unmodified, so the client now receives a distinguishable `no_conversation_contex
 | UT-KA-DW-016 | Unit | `discover_workflows` returns `ErrCodeNoConversationContext` (not an opaque `fmt.Errorf`) when no stored RCA, live conversation, or audit-trail reconstruction produced any content | SI-11 | `internal/kubernautagent/mcp/tools/investigate_test.go` |
 | IT-KA-2023-001 | Integration | `ErrCodeNoConversationContext`, once returned by `Handle()`, survives `registration.go`'s production dispatch wrap (`tool.Handle(...)` → `ErrorBoundary(...)`, the exact unwrapped call at `registration.go:47-49`) as `no_conversation_context`, not redacted to `internal_error` | SI-11 | `internal/kubernautagent/mcp/tools/errors_test.go` |
 
-### Wiring Manifest (#2023)
-
-| Component | Production Entry Point | Wiring Code Location | Test ID |
-|---|---|---|---|
-| `ErrCodeNoConversationContext` | `discover_workflows` action handler | `internal/kubernautagent/mcp/tools/investigate.go:927` | UT-KA-DW-016 |
-| `ErrorBoundary` pass-through for the new code | `kubernaut_investigate` MCP tool dispatch | `internal/kubernautagent/mcp/tools/registration.go:47-49` | IT-KA-2023-001 |
-
 **No new wiring points**: this fix reuses the existing `ErrorBoundary`/`MCPError` mechanism
 end-to-end; only a new error value and its one call site changed. `registration.go`'s dispatch
 (`tool.Handle` → `ErrorBoundary`, unwrapped) has no intermediate layer to independently wire.
 
-### Remaining Design Work for #2023 (Not Yet Implemented)
+### 8.2 Stage 2 — Harness-Enforced Content-Grounding Guard (Closes #2023's Core Ask)
 
-- A deterministic grounding check before `kubernaut_present_decision` fires, rejecting/short-circuiting
-  when there is no real summary/RCA content in the session to attribute a decision card to.
-- And/or a prompt-level guardrail instructing the model that RCA narration must only include facts
-  traceable to actual tool response fields.
-- Per the issue, this needs product/design discussion on where "helpful synthesis" ends and
-  "invention of content no tool ever returned" begins — a short design plan will be presented for
-  approval separately before any implementation.
+**Design conflict resolved**: an initial design considered *blocking* `kubernaut_present_decision`
+outright when no content is available, but `prompt.txt`'s existing "Edge Scenarios — Always Call
+kubernaut_present_decision" contract (#1408, AU-3) mandates the model call it in every scenario,
+including tool failures, so a structured `investigation_summary` artifact is always emitted for
+audit traceability. Blocking the tool would violate that mandate. The resolution: never block the
+call — **override its content in place** when it would otherwise be fabricated, so the tool always
+executes and the AU-3 artifact is always emitted, but the artifact's content is forced truthful.
 
-## 9. Coverage Summary
+**Chosen mechanism**: a harness-side `BeforeToolCallback` guard (`enforceGroundingGuard`,
+`pkg/apifrontend/agent/phase_guard.go`), extending the existing, already-wired `newPhaseGuard`
+(#1307/#1899/#1918) rather than introducing a new callback registration:
+
+1. `newPhaseGuard`'s `after` callback now also records, on every `kubernaut_investigate` call
+   (success **or** failure), whether the response carried real, groundable RCA content
+   (`investigateHasGroundedContent`) into `session.StateKeyGroundedContentAvailable`. A `status`
+   of `unmanaged` (#2022) or `session_active` (#1922, a different-user state with its own fallback
+   card) is never treated as grounded; an empty `summary` with no `rca` payload is never treated as
+   grounded.
+2. `newPhaseGuard`'s `before` callback now intercepts `kubernaut_present_decision` specifically:
+   if the state key is `false` — **including the fail-safe default when it was never set at all**,
+   mirroring #2022's own safe-default posture — it overwrites `args["summary"]`, deletes
+   `args["rca"]`, and forces `args["options"] = []` in place with a fixed, honest
+   `noGroundedContentSummary` payload, then returns `(nil, nil)` so the (now-truthful) call proceeds
+   normally. A genuinely grounded call passes through completely untouched.
+3. `prompt.txt` gained a complementary model-side instruction (Behavioral Constraints item 6, and
+   Edge Scenarios item 4) telling the model itself never to fabricate ungrounded findings — the
+   harness guard is a backstop the model must not rely on, not a substitute for the model's own
+   discipline.
+
+| ID | Tier | Business-Level Behavior Description | Control / BR | Test File |
+|---|---|---|---|---|
+| UT-AF-2023-001 | Unit | `present_decision` content is overridden to the honest "no data" payload when `kubernaut_investigate` was never called (fail-closed default) | SI-10, SI-11 | `pkg/apifrontend/agent/phase_guard_test.go` |
+| UT-AF-2023-002 | Unit | `present_decision` content is overridden when the prior `kubernaut_investigate` was rejected for scope (`status: unmanaged`, #2022) | SI-10, SI-11 | `pkg/apifrontend/agent/phase_guard_test.go` |
+| UT-AF-2023-003 | Unit | `present_decision` content is overridden when the prior `kubernaut_investigate` returned a generic tool error; `rca` is deleted, not left carrying invented fields | SI-10, SI-11 | `pkg/apifrontend/agent/phase_guard_test.go` |
+| UT-AF-2023-004 | Unit | `present_decision` content is overridden when the prior `kubernaut_investigate` returned `status: session_active` | SI-10, SI-11 | `pkg/apifrontend/agent/phase_guard_test.go` |
+| UT-AF-2023-005 | Unit | `present_decision` content passes through **untouched** after a successful `kubernaut_investigate` with a real `summary` | SI-10 (negative case) | `pkg/apifrontend/agent/phase_guard_test.go` |
+| UT-AF-2023-006 | Unit | `present_decision` content passes through untouched when `kubernaut_investigate` succeeded with only an `rca` payload (no `summary` string) | SI-10 (negative case) | `pkg/apifrontend/agent/phase_guard_test.go` |
+| UT-AF-2023-007 | Unit | `enforceGroundingGuard` handles a `nil` args map without panicking | SI-11 (defensive) | `pkg/apifrontend/agent/phase_guard_test.go` |
+| UT-AF-2023-008 | Unit | The guard mutates args in place and never hard-rejects `present_decision` — `before` always returns `(nil, nil)` for this tool | AU-3 (artifact mandate preserved) | `pkg/apifrontend/agent/phase_guard_test.go` |
+| IT-AF-2023-009 | Integration | Grounded state correctly flips `false` after a second, failed `kubernaut_investigate` call following an earlier successful one — no stale `grounded=true` leak across investigations in the same session | SI-10, SI-11 | `pkg/apifrontend/agent/phase_guard_test.go` |
+
+### Wiring Manifest (#2023 Stage 2)
+
+| Component | Production Entry Point | Wiring Code Location | Test ID |
+|---|---|---|---|
+| `enforceGroundingGuard` | `newPhaseGuard`'s `before` (`llmagent.BeforeToolCallback`) | `pkg/apifrontend/agent/phase_guard.go`; registered in `pkg/apifrontend/agent/root.go:74-75` (`beforeCallbacks = append(beforeCallbacks, beforePhase)`) — pre-existing wiring, extended, not newly added | UT-AF-2023-001..008 |
+| `investigateHasGroundedContent` / `session.StateKeyGroundedContentAvailable` | `newPhaseGuard`'s `after` (`llmagent.AfterToolCallback`) | `pkg/apifrontend/agent/phase_guard.go`; registered in `pkg/apifrontend/agent/root.go:89` (`AfterToolCallbacks: [...afterPhase...]`) — pre-existing wiring, extended | IT-AF-2023-009 |
+| `session.StateKeyGroundedContentAvailable` constant | Shared session-state key | `pkg/apifrontend/session/consent.go` | Covered transitively by all rows above |
+| `kubernaut_present_decision` prompt grounding instructions | Model-side behavioral contract | `pkg/apifrontend/agent/prompt.txt` (Behavioral Constraints item 6; Edge Scenarios item 4) | `pkg/apifrontend/agent/prompt_test.go` (existing `ContainSubstring` assertions cover retention; no new prompt-content UT added since the harness guard is the enforceable, testable half of this fix) |
+
+**No new wiring points**: `newPhaseGuard` was already registered as both a `BeforeToolCallback`
+and `AfterToolCallback` on the LLM agent (`root.go:74-75, 89`) before this fix, covering #1307,
+#1899, and #1918. This fix extends the existing `before`/`after` closures with new branches for
+`kubernaut_present_decision`/`kubernaut_investigate` respectively — CHECKPOINT W confirmed via the
+same production registration already in place; no new callback registration was required. `kubernaut_present_decision` itself was already registered as a tool (`root.go:136`) prior to this
+fix.
+
+### 8.3 Remaining Judgment Call (Explicitly Flagged, Not Resolved Here)
+
+Per earlier discussion: whether the harness should ever *nudge* the model to keep investigating
+when there is genuinely nothing to present (vs. simply reporting "no data" and stopping) is a
+product/UX judgment call, not resolved by this fix. This fix only guarantees the *content* of
+whatever gets presented is truthful — it does not change whether/when `present_decision` is called.
+
+## 9. Prompt Accuracy Fixes (`prompt.txt`, same branch)
+
+A line-by-line cross-check of `prompt.txt` against the actual implementation surfaced two
+inaccuracies, unrelated to #2022/#2023's core fixes but corrected in the same change since both
+touch `prompt.txt`:
+
+1. **Incomplete terminal-phase list**: Phase 4's watch-loop description listed only "Completed,
+   Failed, Cancelled" as terminal states, but `tools.IsTerminalPhase`
+   (`pkg/apifrontend/tools/helpers.go:104-110`) also treats `TimedOut` and `Skipped` as terminal.
+   Fixed to list all five.
+2. **Inconsistent tool naming**: several sections referred to the bare `present_decision` while the
+   tool is registered as `kubernaut_present_decision` (`ka_tools.go:387`). Fixed all bare
+   references for consistency; `prompt_test.go`'s `UT-AF-131-003` substring assertion updated to
+   match (`MUST call kubernaut_present_decision`).
+
+No new test IDs: these are prompt-text corrections covered by existing `prompt_test.go`
+`ContainSubstring` assertions (plain-substring matches on `"present_decision"` continue to match
+the now-prefixed name unchanged).
+
+## 10. E2E Fixture Fix (PR #2026 CI Failure)
+
+Merging #2022's scope-check fix caused PR #2026's `E2E (apifrontend)` CI job to fail
+deterministically (9 specs) because several E2E fixture namespaces created before this check
+existed were never labeled `kubernaut.ai/managed=true`:
+
+- `test/e2e/apifrontend/severity_triage_test.go`'s `BeforeEach` creates `sev-tier1-ns`,
+  `sev-tier15-ns`, `sev-tier2-ns`, `no-data-ns`, `no-rules-ns`, `sev-userhint-ns` unlabeled.
+- `af-investigate-e2e` (targeted by the mock-LLM's `af_investigate`/`af_progressive_investigate`
+  scenarios, `deploy/apifrontend/overlays/e2e/mock-llm.yaml`) was never created as a real
+  `Namespace` object at all — only referenced as a string in RR specs and Prometheus alert labels.
+
+**Fix**: added `infrastructure.EnsureManagedNamespace(ctx, client, name)`
+(`test/infrastructure/apifrontend_scope_e2e.go`) — idempotent create-or-relabel, safe under Ginkgo
+parallel-process races. `severity_triage_test.go`'s `BeforeEach` now calls it per-namespace instead
+of duplicating raw `client.Create`/`IsAlreadyExists` handling; `e2e_suite_test.go`'s
+`SynchronizedBeforeSuite` calls it once for `af-investigate-e2e` right after the controller-runtime
+client is built.
+
+This is a test-fixture correction, not a change to Point 3's validation logic — a real Kubernaut
+deployment would already have these namespaces labeled, matching every other managed namespace.
+
+## 11. Coverage Summary
 
 | Metric | Target | Actual |
 |---|---|---|
-| BR/Control coverage (AC-6, SI-10, AU-3/AU-12, SI-11) | 100% | ✅ (Section 4) |
-| Wiring Manifest rows with passing IT/UT evidence | 100% | ✅ (Section 5) |
-| CHECKPOINT W (no orphaned `pkg/` code) | Pass | ✅ (Section 6) |
+| BR/Control coverage (AC-6, SI-10, AU-3/AU-12, SI-11) | 100% | ✅ (Sections 3, 8.2) |
+| Wiring Manifest rows with passing IT/UT evidence | 100% | ✅ (Sections 5, 8.2) |
+| CHECKPOINT W (no orphaned `pkg/` code, no orphaned callback registration) | Pass | ✅ (Section 6, 8.2) |
 | Build (`go build ./...`, `go vet ./...`) | Pass | ✅ (Section 7) |
-| #2023 secondary fix coverage | 100% | ✅ (Section 8) |
+| #2023 fix coverage (opaque-error removal + harness grounding guard) | 100% | ✅ (Section 8) |
+| E2E fixture fix (PR #2026 CI) | Fixed | ✅ (Section 10) |
 
-## 10. Out of Scope
+## 12. Out of Scope
 
 - **`RemediationScope` CRD, dynamic (Rego) scope policies**: deferred to V2.0 per ADR-053; this fix
   only adds a new *caller* of the existing static-label `IsManaged()` contract.
 - **AF client caching**: accepted trade-off (Section 2) — not addressed by this fix.
 - **Gateway (Point 1) / RO (Point 2) changes**: unaffected; this fix adds Point 3 only.
+- **Product/UX judgment call on when to nudge continued investigation** (Section 8.3): explicitly
+  flagged, not resolved by this fix.
 
-## 11. Sign-off
+## 13. Sign-off
 
 | Role | Name | Date | Signature |
 |---|---|---|---|

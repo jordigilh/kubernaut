@@ -819,8 +819,18 @@ Tool call arrives (kubernaut_investigate_alert / kubernaut_investigate / kuberna
 
 Full test design: [`docs/testing/2022/TEST_PLAN.md`](../../testing/2022/TEST_PLAN.md).
 
+**E2E fixture follow-up (PR CI failure, same day)**: enforcing this check surfaced that several
+pre-existing AF E2E fixture namespaces (`sev-tier1-ns` and 5 siblings in
+`test/e2e/apifrontend/severity_triage_test.go`; `af-investigate-e2e`, referenced only as a string in
+mock-LLM/Prometheus fixtures but never created as a real `Namespace` object) predate this scope gate
+and were never labeled `kubernaut.ai/managed=true`. Point 3 correctly rejected `kubernaut_investigate`/
+`kubernaut_remediate` calls against them, failing 9 E2E specs. Fixed by adding a shared
+`test/infrastructure.EnsureManagedNamespace` helper (idempotent create-or-relabel) and calling it from
+both fixtures — this is a test-fixture gap, not a Point 3 design defect; a real Kubernaut deployment
+would already have these namespaces labeled.
+
 ---
 
-**Document Version**: 1.3
+**Document Version**: 1.4
 **Last Updated**: August 8, 2026
 **Next Review**: April 20, 2026 (3 months)

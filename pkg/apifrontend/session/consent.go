@@ -54,6 +54,19 @@ const (
 	// requires waiting for genuine user confirmation before
 	// kubernaut_select_workflow may run.
 	StateKeyPhase3Blocked = "af_phase3_blocked"
+
+	// StateKeyGroundedContentAvailable records whether the most recent
+	// kubernaut_investigate call produced real, groundable RCA content
+	// (#2023). phase_guard.go's harness-enforced grounding guard reads this
+	// immediately before kubernaut_present_decision executes: when false --
+	// including the fail-safe default when this key was never set -- the
+	// model's summary/rca/options are overwritten with a fixed, honest
+	// "no data" payload instead of trusted as-is, preventing a fabricated
+	// narrative from ever reaching the audit trail. present_decision itself
+	// still runs afterward, so the AU-3 structured-artifact mandate (#1408)
+	// is preserved; only a fabricated narrative is blocked, never the
+	// artifact.
+	StateKeyGroundedContentAvailable = "af_grounded_content_available"
 )
 
 // Interaction mode values for InteractionMode / StateKeyInteractionMode.
