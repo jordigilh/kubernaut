@@ -23,15 +23,18 @@ CRD_DIR="${COLLECTION_DIR}/crds"
 
 echo "Collecting Kubernaut CRDs..."
 
-# Kubernaut CRD types (V1.0 - 6 types)
-CRD_TYPES=(
-    "remediationrequests.kubernaut.ai"
-    "remediationapprovalrequests.kubernaut.ai"
-    "signalprocessings.kubernaut.ai"
-    "aianalyses.kubernaut.ai"
-    "workflowexecutions.kubernaut.ai"
-    "notificationrequests.kubernaut.ai"
-)
+# Issue #2037: dynamic discovery of every Kubernaut CRD registered in the
+# cluster, instead of a maintained allowlist. A static list silently rotted as
+# the project grew from 6 to 10+ CRD types (support engineers received
+# incomplete collections with no signal collection was partial). This
+# self-heals as CRDs are added/removed -- no code change needed going forward.
+mapfile -t CRD_TYPES < <(kubectl get crd -o name 2>/dev/null \
+    | sed 's#^customresourcedefinition\.apiextensions\.k8s\.io/##' \
+    | grep -E '\.kubernaut\.ai$' || true)
+
+if [ ${#CRD_TYPES[@]} -eq 0 ]; then
+    echo "Warning: no *.kubernaut.ai CRDs found in cluster (CRDs may not be installed, or kubectl could not reach the API server)"
+fi
 
 for crd_type in "${CRD_TYPES[@]}"; do
     crd_name="${crd_type%%.*}"  # Extract name before first dot

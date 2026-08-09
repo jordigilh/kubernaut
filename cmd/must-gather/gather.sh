@@ -30,6 +30,21 @@ SINCE_DURATION="24h"
 DEST_DIR="/must-gather"
 SANITIZE_ENABLED="true"
 MAX_SIZE_MB=500
+# Issue #2037: single-release-namespace deployment model (all chart-managed
+# services, including notification-controller, render into
+# {{ .Release.Namespace }} -- the old separate kubernaut-notifications
+# namespace is obsolete). kubernaut-workflows remains distinct: it's where
+# Tekton PipelineRuns execute (DD-WE-002), not a service-pod namespace.
+RELEASE_NAMESPACE="kubernaut-system"
+WORKFLOW_NAMESPACE="kubernaut-workflows"
+# Issue #2037: the kubernaut-operator (a separate OLM-style component,
+# quay.io/kubernaut-ai/kubernaut-operator, distinct from this Helm chart)
+# deploys its own controller-manager into this namespace when installed.
+# Unlike RELEASE_NAMESPACE/WORKFLOW_NAMESPACE, this is OPTIONAL -- most
+# installs are Helm-chart-only and never have it -- so logs.sh collects from
+# it only if it actually exists on the cluster (mirrors crds.sh's dynamic,
+# self-healing discovery pattern rather than assuming presence).
+OPERATOR_NAMESPACE="kubernaut-operator-system"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 COLLECTION_NAME="kubernaut-must-gather-${TIMESTAMP}"
 
@@ -52,22 +67,38 @@ while [[ $# -gt 0 ]]; do
             MAX_SIZE_MB="${1#*=}"
             shift
             ;;
+        --namespace=*)
+            RELEASE_NAMESPACE="${1#*=}"
+            shift
+            ;;
+        --workflow-namespace=*)
+            WORKFLOW_NAMESPACE="${1#*=}"
+            shift
+            ;;
+        --operator-namespace=*)
+            OPERATOR_NAMESPACE="${1#*=}"
+            shift
+            ;;
         --help|-h)
             echo "Kubernaut Must-Gather Diagnostic Collection Tool"
             echo ""
             echo "Usage: gather [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --since=DURATION      Log collection timeframe (default: 24h)"
-            echo "  --dest-dir=PATH       Output directory (default: /must-gather)"
-            echo "  --no-sanitize         Disable automatic sanitization (internal use only)"
-            echo "  --max-size=MB         Maximum collection size in MB (default: 500)"
-            echo "  --help, -h            Show this help message"
+            echo "  --since=DURATION          Log collection timeframe (default: 24h)"
+            echo "  --dest-dir=PATH           Output directory (default: /must-gather)"
+            echo "  --no-sanitize             Disable automatic sanitization (internal use only)"
+            echo "  --max-size=MB             Maximum collection size in MB (default: 500)"
+            echo "  --namespace=NS            Kubernaut Helm release namespace (default: kubernaut-system)"
+            echo "  --workflow-namespace=NS   Tekton PipelineRun execution namespace (default: kubernaut-workflows)"
+            echo "  --operator-namespace=NS   Optional kubernaut-operator namespace, collected if present (default: kubernaut-operator-system)"
+            echo "  --help, -h                Show this help message"
             echo ""
             echo "Examples:"
             echo "  gather                           # Default collection (24h logs)"
             echo "  gather --since=48h               # Collect last 48 hours"
             echo "  gather --dest-dir=/tmp/diagnostics"
+            echo "  gather --namespace=my-kubernaut  # Non-default Helm release namespace"
             exit 0
             ;;
         *)
@@ -78,12 +109,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Kubernaut namespaces (authoritative list - 3 namespaces in V1.0)
-# Source: DD-INFRA-001, DD-WE-002
+# KUBERNAUT_NAMESPACES stays exported in this same shape (events.sh, metrics.sh,
+# cluster-state.sh all consume it unchanged) -- only its contents changed, from
+# 3 hardcoded literals to these 2 configurable namespaces.
 KUBERNAUT_NAMESPACES=(
-    "kubernaut-system"        # Core services + CRD controllers
-    "kubernaut-notifications" # Notification controller (isolated)
-    "kubernaut-workflows"     # Tekton PipelineRuns execution
+    "${RELEASE_NAMESPACE}"
+    "${WORKFLOW_NAMESPACE}"
 )
 
 # Export configuration for collectors
@@ -91,6 +122,9 @@ export SINCE_DURATION
 export DEST_DIR
 export SANITIZE_ENABLED
 export MAX_SIZE_MB
+export RELEASE_NAMESPACE
+export WORKFLOW_NAMESPACE
+export OPERATOR_NAMESPACE
 export KUBERNAUT_NAMESPACES
 export COLLECTION_NAME
 
@@ -122,11 +156,11 @@ kubectl version --output=yaml > "${COLLECTION_DIR}/version-info.yaml" 2>/dev/nul
 # BR-PLATFORM-001: Collection order optimized for diagnostics
 
 echo ""
-echo "Phase 1: CRD Collection (6 types)..."
+echo "Phase 1: CRD Collection (dynamic discovery)..."
 bash "${COLLECTORS_DIR}/crds.sh" "${COLLECTION_DIR}" || echo "Warning: CRD collection had errors"
 
 echo ""
-echo "Phase 2: Service Logs Collection (8 services)..."
+echo "Phase 2: Service Logs Collection (all pods in ${RELEASE_NAMESPACE})..."
 bash "${COLLECTORS_DIR}/logs.sh" "${COLLECTION_DIR}" || echo "Warning: Log collection had errors"
 
 echo ""
