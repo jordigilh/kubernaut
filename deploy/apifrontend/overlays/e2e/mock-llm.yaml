@@ -199,6 +199,22 @@ data:
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]
         match_last_only: true
+        # repeat_tool_call is required, not optional, here: the mock-LLM's
+        # hasFunctionResults gate (handlers/gemini.go) is computed over the
+        # WHOLE session's conversation history, not scoped to this scenario.
+        # structured_decision_e2e_test.go's groundSession helper (#2023) runs
+        # a kubernaut_investigate call first in the same A2A session to
+        # satisfy the grounding guard, which leaves that tool's
+        # FunctionResponse in history. Without repeat_tool_call, this
+        # scenario's own first match would see hasFunctionResults=true (from
+        # groundSession's unrelated call) and fall straight to a text-only
+        # response, never invoking kubernaut_present_decision at all --
+        # silently producing no decision SSE event (CI run 31325053872,
+        # E2E-AF-1395-001, "not to be empty"). repeat_tool_call switches the
+        # re-fire guard to LastContentIsFunctionResponse (scoped to this
+        # scenario's own last turn), which still correctly falls through to
+        # text once present_decision's own result lands.
+        repeat_tool_call: true
         thought_text: "Let me analyze the investigation findings. The data-processor pod has been OOMKilled repeatedly, which correlates with the memory leak pattern in the worker goroutine. I should present the decision options to the operator."
         tool_call:
           name: "kubernaut_present_decision"
