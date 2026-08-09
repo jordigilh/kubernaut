@@ -19,15 +19,20 @@ package aianalysis
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	aaconditions "github.com/jordigilh/kubernaut/pkg/aianalysis"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
+	"github.com/jordigilh/kubernaut/pkg/shared/backoff"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
 )
 
@@ -152,15 +157,14 @@ func (r *AIAnalysisReconciler) reconcileInvestigating(ctx context.Context, analy
 			return nil
 		}); err != nil {
 			if apierrors.IsInvalid(err) {
-				log.Error(err, "CRD schema rejected status update — fail-close, will not retry",
-					"name", analysis.Name)
-				r.Recorder.Event(analysis, corev1.EventTypeWarning, "SchemaValidationFailed",
-					fmt.Sprintf("Status update permanently rejected by CRD schema: %v", err))
-				return ctrl.Result{}, nil
+				// #2029 Part A: retry-then-escalate instead of fail-closing
+				// forever on the first CRD schema rejection.
+				return r.handleSchemaRejectedStatusUpdate(ctx, analysis, log, err)
 			}
 			log.Error(err, "Failed to atomically update status after Investigating phase")
 			return ctrl.Result{}, err
 		}
+		r.clearSchemaRejectionRetryAnnotation(ctx, analysis, log)
 
 		// Only requeue if handler actually executed and changed phase
 		if handlerExecuted && analysis.Status.Phase != phaseBefore {
@@ -242,15 +246,14 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 			return nil
 		}); err != nil {
 			if apierrors.IsInvalid(err) {
-				log.Error(err, "CRD schema rejected status update — fail-close, will not retry",
-					"name", analysis.Name)
-				r.Recorder.Event(analysis, corev1.EventTypeWarning, "SchemaValidationFailed",
-					fmt.Sprintf("Status update permanently rejected by CRD schema: %v", err))
-				return ctrl.Result{}, nil
+				// #2029 Part A: retry-then-escalate instead of fail-closing
+				// forever on the first CRD schema rejection.
+				return r.handleSchemaRejectedStatusUpdate(ctx, analysis, log, err)
 			}
 			log.Error(err, "Failed to atomically update status after Analyzing phase")
 			return ctrl.Result{}, err
 		}
+		r.clearSchemaRejectionRetryAnnotation(ctx, analysis, log)
 
 		// Only requeue if handler actually executed and changed phase
 		if handlerExecuted && analysis.Status.Phase != phaseBefore {
@@ -274,6 +277,103 @@ func (r *AIAnalysisReconciler) reconcileAnalyzing(ctx context.Context, analysis 
 	// in depth prevents silent data loss.
 	log.Error(nil, "AnalyzingHandler is nil — Rego evaluation cannot execute (BR-AI-012, BR-AI-030)")
 	return ctrl.Result{}, fmt.Errorf("analyzingHandler is nil: cannot execute analyzing phase")
+}
+
+// handleSchemaRejectedStatusUpdate handles a Status().Update() rejection
+// caused by CRD schema drift (apierrors.IsInvalid) -- e.g. the live
+// cluster's installed CRD lagging behind a new enum value the Go source
+// already defines (#2029 Part A). Previously both call sites fail-closed
+// forever on the first rejection (return ctrl.Result{}, nil, no requeue),
+// silently abandoning the AIAnalysis with the controller never touching it
+// again.
+//
+// Retries a bounded number of times with backoff. The retry counter is
+// persisted via a plain Update() (metadata annotation only), not
+// Status().Update(): a CRD with the status subresource enabled silently
+// drops any .status diff on a non-status Update, so that write still
+// succeeds even though Status().Update() is being rejected. If the cap is
+// exceeded, escalates to a terminal Failed phase using valid enum values
+// (Reason=APIError/SubReason=TransientError) instead of retrying forever.
+func (r *AIAnalysisReconciler) handleSchemaRejectedStatusUpdate(ctx context.Context, analysis *aianalysisv1.AIAnalysis, log logr.Logger, rejectionErr error) (ctrl.Result, error) {
+	count := 0
+	if v := analysis.Annotations[handlers.SchemaRejectionRetryCountAnnotation]; v != "" {
+		if parsed, parseErr := strconv.Atoi(v); parseErr == nil {
+			count = parsed
+		}
+	}
+	count++
+
+	if count <= handlers.MaxSchemaRejectionRetries {
+		if analysis.Annotations == nil {
+			analysis.Annotations = map[string]string{}
+		}
+		analysis.Annotations[handlers.SchemaRejectionRetryCountAnnotation] = strconv.Itoa(count)
+
+		if updErr := r.Update(ctx, analysis); updErr != nil {
+			log.Error(updErr, "Failed to persist schema-rejection retry count annotation; will retry same attempt next reconcile",
+				"name", analysis.Name)
+		}
+
+		delay := backoff.CalculateWithDefaults(int32(count))
+		log.Error(rejectionErr, "CRD schema rejected status update — retrying with backoff",
+			"name", analysis.Name, "attempt", count, "maxAttempts", handlers.MaxSchemaRejectionRetries, "backoff", delay)
+		r.Recorder.Event(analysis, corev1.EventTypeWarning, "SchemaValidationFailed",
+			fmt.Sprintf("Status update rejected by CRD schema (attempt %d/%d), retrying in %s: %v",
+				count, handlers.MaxSchemaRejectionRetries, delay, rejectionErr))
+		return ctrl.Result{RequeueAfter: delay}, nil
+	}
+
+	log.Error(rejectionErr, "CRD schema rejected status update — retries exhausted, escalating to Failed",
+		"name", analysis.Name, "attempts", count-1)
+	r.Recorder.Event(analysis, corev1.EventTypeWarning, "SchemaValidationFailed",
+		fmt.Sprintf("Status update permanently rejected by CRD schema after %d attempts, escalating to Failed: %v",
+			count-1, rejectionErr))
+
+	// Refetch fresh rather than reusing the in-memory analysis: the failed
+	// handler run may have left other in-memory-only status fields in a
+	// state we don't want to carry into the escalation write.
+	fresh := &aianalysisv1.AIAnalysis{}
+	if getErr := r.Get(ctx, client.ObjectKeyFromObject(analysis), fresh); getErr != nil {
+		log.Error(getErr, "Failed to refetch AIAnalysis for schema-rejection escalation", "name", analysis.Name)
+		return ctrl.Result{}, nil
+	}
+	now := metav1.Now()
+	fresh.Status.Phase = PhaseFailed
+	fresh.Status.Reason = aianalysisv1.ReasonAPIError
+	fresh.Status.SubReason = "TransientError"
+	fresh.Status.Message = fmt.Sprintf("CRD schema permanently rejected status update after %d attempts: %v", count-1, rejectionErr)
+	fresh.Status.CompletedAt = &now
+	fresh.Status.ObservedGeneration = fresh.Generation
+
+	if updErr := r.Status().Update(ctx, fresh); updErr != nil {
+		log.Error(updErr, "Failed to escalate to Failed phase after schema-rejection retries exhausted", "name", analysis.Name)
+		return ctrl.Result{}, nil
+	}
+	*analysis = *fresh
+	return ctrl.Result{}, nil
+}
+
+// clearSchemaRejectionRetryAnnotation removes the #2029 Part A retry-count
+// annotation once a Status().Update() succeeds again after one or more
+// prior CRD-schema rejections. Without this, a leftover non-zero count from
+// an earlier, resolved schema-lag episode would make handleSchemaRejectedStatusUpdate
+// start counting from that stale value on some later, unrelated rejection
+// episode, tripping handlers.MaxSchemaRejectionRetries prematurely.
+//
+// Called only from the success path (after AtomicStatusUpdate returns nil),
+// so analysis already reflects the just-committed state. Best-effort: a
+// failure here is logged but does not affect the reconcile result, since the
+// stale annotation is merely a minor inefficiency, not a correctness hazard,
+// until another unrelated rejection episode occurs.
+func (r *AIAnalysisReconciler) clearSchemaRejectionRetryAnnotation(ctx context.Context, analysis *aianalysisv1.AIAnalysis, log logr.Logger) {
+	if _, present := analysis.Annotations[handlers.SchemaRejectionRetryCountAnnotation]; !present {
+		return
+	}
+	delete(analysis.Annotations, handlers.SchemaRejectionRetryCountAnnotation)
+	if err := r.Update(ctx, analysis); err != nil {
+		log.Error(err, "Failed to clear stale schema-rejection retry-count annotation (best-effort)",
+			"name", analysis.Name)
+	}
 }
 
 // ========================================
