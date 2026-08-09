@@ -987,13 +987,19 @@ func PatchWEControllerWithAnsibleConfig(ctx context.Context, namespace, kubeconf
 	}
 
 	currentConfig := cm.Data["workflowexecution.yaml"]
+	// #2040: organizationID must be threaded through explicitly. Without it,
+	// the controller parses Ansible.OrganizationID as the Go zero-value and
+	// main.go falls back to a hardcoded default of 1, which does not
+	// correspond to the dynamically-created E2E organization (awxCfg.OrganizationID)
+	// and AWX rejects ephemeral credential creation with "Invalid pk \"1\"".
 	ansibleSection := fmt.Sprintf(`
 ansible:
   apiURL: "http://%s.%s:%d"
+  organizationID: %d
   tokenSecretRef:
     name: "%s"
     namespace: "%s"
-    key: "token"`, AWXServiceName, namespace, AWXServicePort, AWXTokenSecretName, namespace)
+    key: "token"`, AWXServiceName, namespace, AWXServicePort, awxCfg.OrganizationID, AWXTokenSecretName, namespace)
 
 	cm.Data["workflowexecution.yaml"] = currentConfig + ansibleSection
 
