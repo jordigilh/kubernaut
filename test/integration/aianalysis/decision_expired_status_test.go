@@ -75,9 +75,17 @@ var _ = Describe("Decision Expired Status Write (#2019/#2020)", Label("integrati
 					RemediationID: rrName,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      "test-fingerprint-decision-expired",
-							Severity:         "critical",
-							SignalName:       "KubePodCrashLooping",
+							Fingerprint: "test-fingerprint-decision-expired",
+							Severity:    "critical",
+							// MOCK_NO_WORKFLOW_FOUND (test/services/mock-llm/scenarios/scenario_mock_keywords.go)
+							// keeps the live envtest AIAnalysis controller's own real reconcile from ever
+							// populating Status.SelectedWorkflow (handleNoMatchingWorkflowsCompleted never
+							// touches it). Without this, the controller races ahead of this test's manual
+							// status write below with its own real KA-driven selection, and the CEL
+							// write-once guard correctly (if confusingly) rejects the test's differing
+							// content as a second writer -- not a CEL bug, a fixture race (Issue #2032).
+							// Precedent: selectedworkflow_immutability_test.go IT-AA-344-001.
+							SignalName:       "MOCK_NO_WORKFLOW_FOUND",
 							Environment:      "production",
 							BusinessPriority: "P1",
 							TargetResource: aianalysisv1.TargetResource{
