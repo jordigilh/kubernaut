@@ -115,6 +115,19 @@ data:
         tool_call:
           name: "kubernaut_investigate"
           arguments:
+            # api_version was missing here (unlike af_progressive_investigate
+            # above, its sibling scenario targeting the identical fixture):
+            # kubernaut_investigate's args validation rejects any call
+            # without it ("api_version must not be empty",
+            # pkg/apifrontend/validate/k8s.go), so every call matching this
+            # scenario unconditionally failed before ever reaching KA. A
+            # real LLM self-corrects and retries within ~2-3s (see
+            # DD-AF-012's forensic log excerpt), but mock-llm is
+            # deterministic and never retries, so any test relying on this
+            # scenario actually succeeding (e.g. structured_decision_e2e_
+            # test.go's groundSession helper, #2023 Stage 3) silently never
+            # got real grounding.
+            api_version: "v1"
             namespace: "af-investigate-e2e"
             name: "af-investigate-target"
             kind: "Pod"
