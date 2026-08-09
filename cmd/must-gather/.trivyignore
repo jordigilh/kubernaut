@@ -2,7 +2,7 @@
 #
 # DD-PLATFORM-003: kubectl was bumped v1.31.0 -> v1.36.2 (Issue #1663), which
 # resolved 18 of 23 CVEs flagged in GH Actions run 29058480982 (job
-# 86711219020), including the sole CRITICAL. The 5 entries below have no fix
+# 86711219020), including the sole CRITICAL. The entries below have no fix
 # available in ANY currently published kubectl release: Kubernetes has not
 # yet adopted the golang.org/x/net >= 0.55.0 or Go >= 1.25.12/1.26.5 patch
 # versions that carry the actual upstream fix (verified 2026-07-13 against
@@ -30,3 +30,18 @@ CVE-2026-39821 exp:2026-10-11
 
 # stdlib os.Root: Symlink following vulnerability allows directory traversal (fixed 1.25.12/1.26.5; kubectl v1.36.2 built with Go 1.26.4)
 CVE-2026-39822 exp:2026-10-11
+
+# golang.org/x/text: Denial of Service via invalid UTF-8 input (fixed 0.39.0;
+# latest published kubectl release, v1.36.3, still ships 0.33.0). Newly
+# published; not part of the original 23-CVE set in DD-PLATFORM-003. The fix
+# has already landed on the upstream release-1.36 branch (confirmed via
+# release-1.36's go.mod and a `go version -m` check of Kubernetes CI's
+# release-1.36 branch build, v1.36.3-17+e460e27c50dd60) but has not yet been
+# cut into a tagged release -- so, per the same policy, there is still no
+# stable kubectl binary to bump to. Deliberately not pinning to the CI/alpha
+# build: it is not a permanent, checksummed release artifact (dl.k8s.io/ci
+# builds are subject to garbage collection) and pushes further outside the
+# already-stretched version-skew exception without new kind-cluster
+# validation. Re-triage alongside the batch below once v1.36.4 (or later)
+# ships. Tracked in Issue #1662.
+CVE-2026-56852 exp:2026-10-11
