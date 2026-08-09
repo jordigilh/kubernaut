@@ -54,39 +54,70 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 	)
 
 	It("should include cluster_id in reconstruction response for fleet RRs", func() {
-		By("Finding a completed RemediationRequest with ClusterID set")
-		rrList := &remediationv1.RemediationRequestList{}
-		Eventually(func(g Gomega) {
-			g.Expect(k8sClient.List(ctx, rrList, client.InNamespace(namespace))).To(Succeed())
-			var found bool
-			for _, rr := range rrList.Items {
-				if rr.Spec.ClusterID != "" && rr.Status.OverallPhase != "" {
-					rrName = rr.Name
-					correlationID = rr.Name
-					found = true
-					break
-				}
-			}
-			g.Expect(found).To(BeTrue(), "no RemediationRequest with ClusterID found")
-		}, 2*time.Minute, 5*time.Second).Should(Succeed())
-
-		GinkgoWriter.Printf("Found fleet RR: %s (correlationID: %s)\n", rrName, correlationID)
-
-		By("Waiting for audit events to be persisted (async pipeline)")
-		time.Sleep(10 * time.Second)
-
-		By("Calling ReconstructRemediationRequest API")
+		// Issue #2043: this suite has multiple RR-creation paths sharing the
+		// same namespace -- most go through Gateway's normal webhook ingestion
+		// (which emits the mandatory `gateway.signal.received` audit event
+		// reconstruction requires), but E2E-FLEET-018 creates its RR directly
+		// via APIFrontend's kubernaut_remediate A2A/MCP tool
+		// (pkg/apifrontend/tools/af_create_rr.go), bypassing Gateway entirely
+		// and emitting a different (equally valid, but reconstruction-mapper-
+		// unsupported) `apifrontend.rr.created` event instead. Locking onto
+		// the FIRST RR matching the spec-level condition below is a race
+		// against Ginkgo's spec ordering: if that first match happens to be
+		// the APIFrontend-created one, reconstruction is *permanently*
+		// impossible for it (not a timing issue -- confirmed via must-gather
+		// RCA in #2043), and the old single-candidate retry loop had no way
+		// to recover.
+		//
+		// Fixed by trying EVERY currently-listed candidate RR on each poll,
+		// not just the first: this test's actual business intent (BR-AUDIT-005
+		// v2.0 CC8.1: cluster_id survives reconstruction for fleet RRs) only
+		// needs ONE successfully-reconstructable fleet RR to prove the
+		// contract, not a specific one -- so falling through to the next
+		// candidate is correct, not a weaker assertion. This also
+		// incidentally tolerates the unrelated, already-tracked #1985/#2043
+		// cold-start audit-write race (a transient loss of a legitimately
+		// Gateway-created RR's own audit event), since a poll that catches a
+		// transiently-broken candidate will simply retry it (or move to
+		// another) on the next 5s tick.
+		By("Finding a fleet RemediationRequest whose audit trail is actually reconstructable")
 		var resp *ogenclient.ReconstructionResponse
 		Eventually(func(g Gomega) {
-			result, err := dataStorageClient.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
-				CorrelationID: correlationID,
-			})
-			g.Expect(err).ToNot(HaveOccurred())
+			rrList := &remediationv1.RemediationRequestList{}
+			g.Expect(k8sClient.List(ctx, rrList, client.InNamespace(namespace))).To(Succeed())
 
-			reconResp, ok := result.(*ogenclient.ReconstructionResponse)
-			g.Expect(ok).To(BeTrue(), "expected ReconstructionResponse, got %T", result)
-			resp = reconResp
-		}, 30*time.Second, 2*time.Second).Should(Succeed())
+			var candidateCount int
+			var lastErr error
+			for _, rr := range rrList.Items {
+				if rr.Spec.ClusterID == "" || rr.Status.OverallPhase == "" {
+					continue
+				}
+				candidateCount++
+
+				result, err := dataStorageClient.ReconstructRemediationRequest(ctx, ogenclient.ReconstructRemediationRequestParams{
+					CorrelationID: rr.Name,
+				})
+				if err != nil {
+					lastErr = fmt.Errorf("RR %s: %w", rr.Name, err)
+					continue
+				}
+				reconResp, ok := result.(*ogenclient.ReconstructionResponse)
+				if !ok {
+					lastErr = fmt.Errorf("RR %s: expected ReconstructionResponse, got %T", rr.Name, result)
+					continue
+				}
+
+				rrName = rr.Name
+				correlationID = rr.Name
+				resp = reconResp
+				return
+			}
+
+			g.Expect(candidateCount).To(BeNumerically(">", 0), "no RemediationRequest with ClusterID found yet")
+			g.Expect(resp).ToNot(BeNil(),
+				"no fleet RemediationRequest could be reconstructed yet out of %d candidate(s), last error: %v",
+				candidateCount, lastErr)
+		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
 		By("Verifying cluster_id is present in reconstruction response")
 		Expect(resp.ClusterID.Set).To(BeTrue(),
