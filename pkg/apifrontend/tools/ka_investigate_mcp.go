@@ -114,6 +114,11 @@ type InvestigateMCPArgs struct {
 	// full, unattended remediation). An omitted or unrecognized value fails
 	// safe to "interactive" (AC-6 least privilege, SI-10 input validation).
 	InteractionMode string `json:"interaction_mode,omitempty" jsonschema:"one of interactive (default), full_remediation, full_remediation_autonomous -- declares how much autonomy to grant for post-investigation phase transitions"`
+
+	// ConfirmedSignalName re-supplies a previously-surfaced ambiguous
+	// candidate's alert name after the user has explicitly confirmed it
+	// (DD-AF-012, #2027). Leave empty on the first call.
+	ConfirmedSignalName string `json:"confirmed_signal_name,omitempty"`
 }
 
 // InvestigateMCPResult is the output of the MCP investigate tool.
@@ -130,6 +135,12 @@ type InvestigateMCPResult struct {
 	// scope was never evaluated in this call (rr_id lookup path, or no
 	// ScopeChecker configured), since the call proceeded without a rejection.
 	Managed bool `json:"managed"`
+	// Ambiguous/CandidateSignalName/CandidateSeverity: see CreateRRResult
+	// (DD-AF-012, #2027). Re-call with ConfirmedSignalName set to
+	// CandidateSignalName once the user has confirmed it.
+	Ambiguous           bool   `json:"ambiguous,omitempty"`
+	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
+	CandidateSeverity   string `json:"candidate_severity,omitempty"`
 }
 
 // InvestigateRCA is the structured RCA data extracted from the KA complete event.
@@ -258,15 +269,25 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		}
 
 		createArgs := &CreateRRArgs{
-			Namespace:     args.Namespace,
-			Kind:          args.Kind,
-			Name:          args.Name,
-			APIVersion:    args.APIVersion,
-			ClusterScoped: clusterScoped,
+			Namespace:                    args.Namespace,
+			Kind:                         args.Kind,
+			Name:                         args.Name,
+			APIVersion:                   args.APIVersion,
+			ClusterScoped:                clusterScoped,
+			ConfirmedAmbiguousSignalName: args.ConfirmedSignalName,
 		}
 		result, err := HandleCreateRR(ctx, client, nil, namespace, createArgs, createUser, triager, auditor)
 		if err != nil {
 			return InvestigateMCPResult{}, fmt.Errorf("create RR for investigation: %w", err)
+		}
+		if result.Ambiguous {
+			return InvestigateMCPResult{
+				Managed:             true,
+				Ambiguous:           true,
+				CandidateSignalName: result.CandidateSignalName,
+				CandidateSeverity:   result.CandidateSeverity,
+				Error:               result.Message,
+			}, nil
 		}
 		args.RRID = result.RRID
 		rrSeverity = result.Severity

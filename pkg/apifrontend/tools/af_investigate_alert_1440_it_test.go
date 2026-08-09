@@ -71,7 +71,7 @@ var _ = Describe("Fix #1440 Integration: IS CRD co-creation wiring", func() {
 				Client:       newTypedFakeClient(),
 				ControllerNS: "kubernaut-system",
 				Signaler:     signaler,
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
 			}
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
@@ -115,7 +115,7 @@ var _ = Describe("Fix #1440 Integration: IS CRD co-creation wiring", func() {
 				Client:       newTypedFakeClient(),
 				ControllerNS: "kubernaut-system",
 				Signaler:     signaler,
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("production", "Deployment", "api-server"),
 			}
 
 			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{

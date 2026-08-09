@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -40,6 +41,13 @@ type CreateRRArgs struct {
 	// directly as the RR spec.signalName. Used by kubernaut_investigate_alert
 	// where the alert name is the definitive signal (#1372).
 	SignalNameOverride string `json:"-"`
+	// ConfirmedAmbiguousSignalName, when non-empty and it exactly matches a
+	// previously-surfaced ambiguous candidate's alert name, indicates the
+	// user has already confirmed that specific weak candidate (DD-AF-012,
+	// #2027). Populated internally by each tool handler from its own
+	// LLM-visible confirmed_signal_name field, not set by the LLM directly
+	// on this struct.
+	ConfirmedAmbiguousSignalName string `json:"-"`
 }
 
 // CreateRRResult is the output of RR creation.
@@ -50,6 +58,15 @@ type CreateRRResult struct {
 	Severity       string `json:"severity,omitempty"`
 	SeveritySource string `json:"severity_source,omitempty"`
 	SignalName     string `json:"signal_name,omitempty"`
+	// Ambiguous is true when severity triage found only a cluster-scoped
+	// alert with no verified relationship to the target resource -- no RR
+	// is created and the caller must ask the user to confirm CandidateSignalName
+	// before retrying (DD-AF-012, #2027).
+	Ambiguous bool `json:"ambiguous,omitempty"`
+	// CandidateSignalName/CandidateSeverity carry the unverified candidate
+	// so the calling agent can present it to the user for confirmation.
+	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
+	CandidateSeverity   string `json:"candidate_severity,omitempty"`
 }
 
 // rrCreateGroup provides singleflight deduplication per fingerprint.
@@ -147,14 +164,28 @@ func HandleCreateRR(ctx context.Context, client crclient.Client, dynClient dynam
 		return CreateRRResult{}, fmt.Errorf("severity triage not configured: %w", severity.ErrSeverityUndetermined)
 	}
 	input := severity.TriageInput{
-		Namespace:   args.Namespace,
-		Kind:        args.Kind,
-		Name:        args.Name,
-		Description: args.Description,
-		Labels:      map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
+		Namespace:           args.Namespace,
+		Kind:                args.Kind,
+		Name:                args.Name,
+		Description:         args.Description,
+		Labels:              map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
+		ConfirmedSignalName: args.ConfirmedAmbiguousSignalName,
 	}
 	triageOutcome, err := triager.Triage(ctx, input)
 	if err != nil {
+		// DD-AF-012/#2027: an ambiguous match is a typed signal, not a
+		// generic error -- no RR is created, but the caller gets a normal
+		// result carrying the weak candidate so the agent can ask the user
+		// to confirm before retrying (mirrors #2022's Managed: false shape).
+		var ambErr *severity.AmbiguousSeverityError
+		if errors.As(err, &ambErr) {
+			return CreateRRResult{
+				Ambiguous:           true,
+				CandidateSignalName: ambErr.Candidate.AlertName,
+				CandidateSeverity:   ambErr.Candidate.Severity,
+				Message:             fmt.Sprintf("severity/signal correlation is ambiguous for %s/%s: only a cluster-scoped alert (%s) was found, with no verified relationship to this resource", args.Kind, args.Name, ambErr.Candidate.AlertName),
+			}, nil
+		}
 		return CreateRRResult{}, fmt.Errorf("severity triage failed: %w", err)
 	}
 	if triageOutcome.Severity == "" {
@@ -296,8 +327,8 @@ func buildTypedTargetResource(args *CreateRRArgs) remediationv1.ResourceIdentifi
 // deriveSignalName selects a grounded signal name using a priority cascade:
 //  1. Triager AlertName (from Prometheus firing/pending alert — most specific)
 //  2. Triager RuleName (from inactive rule match — known rule, not yet firing)
-//  3a. Dominant K8s event reason on the target resource (e.g., Deployment)
-//  3b. Dominant K8s event reason on Pods owned by the target (name-prefix match)
+//     3a. Dominant K8s event reason on the target resource (e.g., Deployment)
+//     3b. Dominant K8s event reason on Pods owned by the target (name-prefix match)
 //  4. Fallback: "unknown" (no grounded infrastructure signal found)
 //
 // The signal name is critical: KA uses it to drive investigation behavior.
@@ -359,4 +390,3 @@ func deriveSignalName(ctx context.Context, client dynamic.Interface, namespace s
 
 	return "unknown"
 }
-

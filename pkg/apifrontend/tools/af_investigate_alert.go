@@ -60,6 +60,12 @@ type InvestigateAlertArgs struct {
 	Kind       string `json:"kind"`
 	Name       string `json:"name"`
 	Namespace  string `json:"namespace,omitempty"`
+	// ConfirmedSignalName re-supplies a previously-surfaced ambiguous
+	// severity candidate's alert name after the user has explicitly
+	// confirmed it (DD-AF-012, #2027). Leave empty on the first call. Note
+	// AlertName above is always the RR's signalName here (already
+	// user-confirmed) — this field only affects severity resolution.
+	ConfirmedSignalName string `json:"confirmed_signal_name,omitempty"`
 }
 
 // InvestigateAlertResult is the output of kubernaut_investigate_alert.
@@ -76,6 +82,12 @@ type InvestigateAlertResult struct {
 	// explains why, so the calling agent gets an actionable signal instead
 	// of a wasted investigation RO would have blocked anyway (#2022).
 	Managed bool `json:"managed"`
+	// Ambiguous/CandidateSignalName/CandidateSeverity: see CreateRRResult
+	// (DD-AF-012, #2027). Re-call with ConfirmedSignalName set to
+	// CandidateSignalName once the user has confirmed it.
+	Ambiguous           bool   `json:"ambiguous,omitempty"`
+	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
+	CandidateSeverity   string `json:"candidate_severity,omitempty"`
 }
 
 // HandleInvestigateAlert creates a RemediationRequest for a specific alert+resource pair.
@@ -175,18 +187,31 @@ func HandleInvestigateAlert(
 	}
 
 	createArgs := &CreateRRArgs{
-		Namespace:          args.Namespace,
-		Kind:               args.Kind,
-		Name:               args.Name,
-		APIVersion:         args.APIVersion,
-		ClusterScoped:      clusterScoped,
-		Description:        fmt.Sprintf("Alert-driven investigation: %s", args.AlertName),
-		SignalNameOverride: args.AlertName,
+		Namespace:                    args.Namespace,
+		Kind:                         args.Kind,
+		Name:                         args.Name,
+		APIVersion:                   args.APIVersion,
+		ClusterScoped:                clusterScoped,
+		Description:                  fmt.Sprintf("Alert-driven investigation: %s", args.AlertName),
+		SignalNameOverride:           args.AlertName,
+		ConfirmedAmbiguousSignalName: args.ConfirmedSignalName,
 	}
 
 	result, err := HandleCreateRR(ctx, cfg.Client, cfg.DynClient, cfg.ControllerNS, createArgs, username, cfg.Triager, cfg.Auditor)
 	if err != nil {
 		return InvestigateAlertResult{}, fmt.Errorf("create RR for alert investigation: %w", err)
+	}
+
+	if result.Ambiguous {
+		return InvestigateAlertResult{
+			Managed:             true,
+			AlertValidated:      alertValidated,
+			SignalName:          args.AlertName,
+			Ambiguous:           true,
+			CandidateSignalName: result.CandidateSignalName,
+			CandidateSeverity:   result.CandidateSeverity,
+			Message:             result.Message,
+		}, nil
 	}
 
 	if cfg.Signaler != nil {

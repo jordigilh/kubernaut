@@ -28,6 +28,10 @@ type RemediateArgs struct {
 	// APIVersion is the Kubernetes API group/version (e.g., "apps/v1", "v1").
 	// Required when providing namespace/kind/name (#1372).
 	APIVersion string `json:"api_version"`
+	// ConfirmedSignalName re-supplies a previously-surfaced ambiguous
+	// candidate's alert name after the user has explicitly confirmed it
+	// (DD-AF-012, #2027). Leave empty on the first call.
+	ConfirmedSignalName string `json:"confirmed_signal_name,omitempty"`
 }
 
 // RemediateResult is the output of kubernaut_remediate.
@@ -43,6 +47,12 @@ type RemediateResult struct {
 	// explains why (#2022). true for the rr_id lookup path too, since no
 	// scope check applies there (the RR already exists).
 	Managed bool `json:"managed"`
+	// Ambiguous/CandidateSignalName/CandidateSeverity: see CreateRRResult
+	// (DD-AF-012, #2027). Re-call with ConfirmedSignalName set to
+	// CandidateSignalName once the user has confirmed it.
+	Ambiguous           bool   `json:"ambiguous,omitempty"`
+	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
+	CandidateSeverity   string `json:"candidate_severity,omitempty"`
 }
 
 // HandleRemediate creates a RemediationRequest CRD without creating an
@@ -87,17 +97,28 @@ func HandleRemediate(ctx context.Context, client crclient.Client, dynClient dyna
 	}
 
 	createArgs := &CreateRRArgs{
-		Namespace:     args.Namespace,
-		Kind:          args.Kind,
-		Name:          args.Name,
-		Description:   args.Description,
-		APIVersion:    args.APIVersion,
-		ClusterScoped: args.Namespace == "",
+		Namespace:                    args.Namespace,
+		Kind:                         args.Kind,
+		Name:                         args.Name,
+		Description:                  args.Description,
+		APIVersion:                   args.APIVersion,
+		ClusterScoped:                args.Namespace == "",
+		ConfirmedAmbiguousSignalName: args.ConfirmedSignalName,
 	}
 
 	result, err := HandleCreateRR(ctx, client, dynClient, controllerNS, createArgs, username, triager, auditor)
 	if err != nil {
 		return RemediateResult{}, err
+	}
+
+	if result.Ambiguous {
+		return RemediateResult{
+			Managed:             true,
+			Ambiguous:           true,
+			CandidateSignalName: result.CandidateSignalName,
+			CandidateSeverity:   result.CandidateSeverity,
+			Message:             result.Message,
+		}, nil
 	}
 
 	launcher.SetRRContextSafe(ctx, &launcher.RRContext{

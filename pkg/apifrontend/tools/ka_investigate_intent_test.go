@@ -153,7 +153,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					Kind:       "Deployment",
 					Name:       "web-app",
 				},
-				nil, nil, nil, true, nil, "", nil, defaultTestTriager(),
+				nil, nil, nil, true, nil, "", nil, defaultTestTriager("prod", "Deployment", "web-app"),
 			)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.SessionID).To(Equal("sess-int-001"))
@@ -490,7 +490,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, tc, "kubernaut-system",
 				scopeInvestigateArgs(),
-				nil, nil, nil, true, nil, "", nil, defaultTestTriager(),
+				nil, nil, nil, true, nil, "", nil, defaultTestTriager("unmanaged-ns", "Deployment", "legacy-app"),
 			)
 
 			Expect(err).NotTo(HaveOccurred(), "SI-11: rejection must be a clear result, not an opaque tool error")
@@ -514,7 +514,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				shortCtx(ctx), mockMCP, tc, "kubernaut-system",
 				scopeInvestigateArgs(),
-				nil, nil, nil, true, nil, "", nil, defaultTestTriager(),
+				nil, nil, nil, true, nil, "", nil, defaultTestTriager("unmanaged-ns", "Deployment", "legacy-app"),
 			)
 
 			Expect(err).NotTo(HaveOccurred())
@@ -534,7 +534,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			result, err := tools.HandleInvestigationMCPWithRegistry(
 				shortCtx(identityCtx()), mockMCP, tc, "kubernaut-system",
 				scopeInvestigateArgs(),
-				nil, nil, nil, true, nil, "", nil, defaultTestTriager(),
+				nil, nil, nil, true, nil, "", nil, defaultTestTriager("unmanaged-ns", "Deployment", "legacy-app"),
 			)
 
 			Expect(err).NotTo(HaveOccurred())
@@ -550,13 +550,47 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			_, err := tools.HandleInvestigationMCPWithRegistry(
 				ctx, mockMCP, tc, "kubernaut-system",
 				scopeInvestigateArgs(),
-				recorder, nil, nil, true, nil, "", nil, defaultTestTriager(),
+				recorder, nil, nil, true, nil, "", nil, defaultTestTriager("unmanaged-ns", "Deployment", "legacy-app"),
 			)
 			Expect(err).NotTo(HaveOccurred())
 
 			Expect(recorder.events).To(HaveLen(1))
 			Expect(recorder.events[0].Type).To(Equal(audit.EventRRScopeRejected))
 			Expect(recorder.events[0].UserID).To(Equal("sre-carol"))
+		})
+	})
+
+	Describe("Ambiguous severity/signal correlation — DD-AF-012 (#2027)", func() {
+		It("UT-AF-2027-006: surfaces Ambiguous/CandidateSignalName/CandidateSeverity when only a cluster-scoped alert correlates, then proceeds once confirmed", func() {
+			tc := newTypedClientForInvestigate()
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "sre-erin", Groups: []string{"sre"}})
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, &ka.MockMCPClient{}, tc, "kubernaut-system",
+				tools.InvestigateMCPArgs{APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-ambiguous"},
+				nil, nil, nil, true, nil, "", nil, ambiguousTestTriager(),
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Ambiguous).To(BeTrue())
+			Expect(result.CandidateSignalName).To(Equal("TestDefaultAlert"))
+			Expect(result.CandidateSeverity).To(Equal("warning"))
+			Expect(result.RRID).To(BeEmpty())
+
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{SessionID: "sess-2027-006", Status: "started", Events: eventCh, Closer: func() {}}, nil
+				},
+			}
+			confirmed, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), mockMCP, tc, "kubernaut-system",
+				tools.InvestigateMCPArgs{APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-ambiguous", ConfirmedSignalName: "TestDefaultAlert"},
+				nil, nil, nil, true, nil, "", nil, ambiguousTestTriager(),
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(confirmed.Ambiguous).To(BeFalse())
+			Expect(confirmed.RRID).NotTo(BeEmpty())
 		})
 	})
 })
