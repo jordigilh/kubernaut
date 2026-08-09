@@ -118,6 +118,39 @@ teardown() {
 @test "IT-MG-2037-003: Must-gather collects logs from EVERY pod in the release namespace, not a stale service allowlist" {
     # Business Outcome: BR-PLATFORM-001.3 -- support engineers must never
     # silently miss a service's logs because the tool predates that service.
+    #
+    # Content correctness, not just existence: `assert_file_exists` alone
+    # cannot catch a `kubectl logs` failure, since logs.sh redirects stderr
+    # into the same file (`> "${pod_dir}/current.log" 2>&1`) -- a failed
+    # collection still produces a non-empty, existing file (kubectl's own
+    # "Error from server (...)" text), which would silently pass a
+    # presence-only check. Proven here two ways: (1) the file must be
+    # non-empty and must not contain that error signature, and (2) a subset
+    # proof -- a real log line fetched independently via `kubectl logs
+    # --tail=1` immediately BEFORE gather.sh runs must appear verbatim in the
+    # collected file. Log streams are append-only, so that line is guaranteed
+    # to still be present in gather.sh's later, fuller
+    # --since=1h/--tail=10000 capture -- this is what proves the collected
+    # content is a genuine (not necessarily exact, but verifiably contained)
+    # subset of the pod's real log stream, not just any non-empty file.
+    local live_pods=$(kubectl get pods -n "${RELEASE_NAMESPACE}" --no-headers 2>/dev/null | awk '{print $1}')
+    [ -n "${live_pods}" ]  # sanity: the test cluster must actually have pods running
+
+    local ref_dir="${TEST_TEMP_DIR}/ref-logs"
+    mkdir -p "${ref_dir}"
+    local checked_count=0
+    while IFS= read -r pod; do
+        # `tail -n 1` on the kubectl output (not just kubectl's own --tail=1)
+        # guarantees a single line even for multi-container pods, where
+        # --all-containers can return one line per container.
+        local line=$(kubectl logs "${pod}" -n "${RELEASE_NAMESPACE}" --tail=1 --timestamps --all-containers 2>/dev/null | tail -n 1)
+        if [ -n "${line}" ]; then
+            printf '%s' "${line}" > "${ref_dir}/${pod}"
+            checked_count=$((checked_count + 1))
+        fi
+    done <<< "${live_pods}"
+    [ "${checked_count}" -gt 0 ]  # sanity: at least one pod must have real log content, or the subset check below is vacuous
+
     bash "${GATHER_SCRIPT}" \
         --dest-dir="${TEST_TEMP_DIR}" \
         --namespace="${RELEASE_NAMESPACE}" \
@@ -127,12 +160,17 @@ teardown() {
 
     assert_directory_exists "${collection_dir}/logs"
 
-    # Live-cluster truth: every pod actually running in the release namespace.
-    local live_pods=$(kubectl get pods -n "${RELEASE_NAMESPACE}" --no-headers 2>/dev/null | awk '{print $1}')
-    [ -n "${live_pods}" ]  # sanity: the test cluster must actually have pods running
-
     while IFS= read -r pod; do
-        assert_file_exists "${collection_dir}/logs/${RELEASE_NAMESPACE}/${pod}/current.log"
+        local collected_file="${collection_dir}/logs/${RELEASE_NAMESPACE}/${pod}/current.log"
+        assert_file_exists "${collected_file}"
+        [ -s "${collected_file}" ]  # non-empty: catches a silently-collected-nothing regression
+
+        run grep -q "^Error from server" "${collected_file}"
+        assert_failure  # must NOT contain kubectl's own error envelope
+
+        if [ -f "${ref_dir}/${pod}" ]; then
+            assert_file_contains "${collected_file}" "$(cat "${ref_dir}/${pod}")"
+        fi
     done <<< "${live_pods}"
 }
 
@@ -254,9 +292,30 @@ teardown() {
     # Business Outcome: BR-PLATFORM-001.3 -- operator-path deployments need
     # the operator's own reconciliation logs, not just the Helm chart's
     # service logs, to diagnose install/upgrade failures.
+    #
+    # Same content-correctness proof as IT-MG-2037-003 (see its comment for
+    # the full rationale): file existence alone can't distinguish a genuine
+    # collection from a swallowed `kubectl logs` error, since logs.sh
+    # redirects stderr into the same file.
     if ! kubectl get namespace "${OPERATOR_NAMESPACE}" &> /dev/null; then
         skip "kubernaut-operator not installed on this cluster (${OPERATOR_NAMESPACE} namespace absent)"
     fi
+
+    # Live-cluster truth: every pod actually running in the operator namespace.
+    local live_pods=$(kubectl get pods -n "${OPERATOR_NAMESPACE}" --no-headers 2>/dev/null | awk '{print $1}')
+    [ -n "${live_pods}" ]  # sanity: the operator's controller-manager must actually be running
+
+    local ref_dir="${TEST_TEMP_DIR}/ref-operator-logs"
+    mkdir -p "${ref_dir}"
+    local checked_count=0
+    while IFS= read -r pod; do
+        local line=$(kubectl logs "${pod}" -n "${OPERATOR_NAMESPACE}" --tail=1 --timestamps --all-containers 2>/dev/null | tail -n 1)
+        if [ -n "${line}" ]; then
+            printf '%s' "${line}" > "${ref_dir}/${pod}"
+            checked_count=$((checked_count + 1))
+        fi
+    done <<< "${live_pods}"
+    [ "${checked_count}" -gt 0 ]  # sanity: the operator's controller-manager must have real log content
 
     bash "${GATHER_SCRIPT}" \
         --dest-dir="${TEST_TEMP_DIR}" \
@@ -264,12 +323,17 @@ teardown() {
 
     local collection_dir=$(find "${TEST_TEMP_DIR}" -maxdepth 1 -type d -name "kubernaut-must-gather-*" | head -n 1)
 
-    # Live-cluster truth: every pod actually running in the operator namespace.
-    local live_pods=$(kubectl get pods -n "${OPERATOR_NAMESPACE}" --no-headers 2>/dev/null | awk '{print $1}')
-    [ -n "${live_pods}" ]  # sanity: the operator's controller-manager must actually be running
-
     while IFS= read -r pod; do
-        assert_file_exists "${collection_dir}/logs/${OPERATOR_NAMESPACE}/${pod}/current.log"
+        local collected_file="${collection_dir}/logs/${OPERATOR_NAMESPACE}/${pod}/current.log"
+        assert_file_exists "${collected_file}"
+        [ -s "${collected_file}" ]
+
+        run grep -q "^Error from server" "${collected_file}"
+        assert_failure
+
+        if [ -f "${ref_dir}/${pod}" ]; then
+            assert_file_contains "${collected_file}" "$(cat "${ref_dir}/${pod}")"
+        fi
     done <<< "${live_pods}"
 }
 
