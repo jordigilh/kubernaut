@@ -72,6 +72,7 @@ const reconstructionEventsQuery = `
 	WHERE correlation_id = $1
 	  AND event_type IN (
 		  'gateway.signal.received',
+		  'apifrontend.rr.created',
 		  'aianalysis.analysis.completed',
 		  'workflowexecution.selection.completed',
 		  'workflowexecution.execution.started',
@@ -299,6 +300,7 @@ type eventDataDecoder func(eventDataJSON []byte) (ogenclient.AuditEventEventData
 // function's cyclomatic complexity.
 var eventDataDecoders = map[string]eventDataDecoder{
 	"gateway.signal.received": decodeGatewayAuditPayload,
+	"apifrontend.rr.created":  decodeApifrontendRRCreatedPayload,
 	"orchestrator.lifecycle.created": decodeOrchestratorAuditPayload(
 		ogenclient.AuditEventEventDataOrchestratorLifecycleCreatedAuditEventEventData),
 	"orchestrator.lifecycle.completed": decodeOrchestratorAuditPayload(
@@ -319,6 +321,18 @@ func decodeGatewayAuditPayload(eventDataJSON []byte) (ogenclient.AuditEventEvent
 	}
 	var data ogenclient.AuditEventEventData
 	data.SetGatewayAuditPayload(ogenclient.AuditEventEventDataGatewaySignalReceivedAuditEventEventData, payload)
+	return data, nil
+}
+
+// decodeApifrontendRRCreatedPayload decodes the apifrontend.rr.created
+// event_data JSON into its typed discriminated-union variant (Issue #2043).
+func decodeApifrontendRRCreatedPayload(eventDataJSON []byte) (ogenclient.AuditEventEventData, error) {
+	var payload ogenclient.ApifrontendRRCreatedPayload
+	if err := json.Unmarshal(eventDataJSON, &payload); err != nil {
+		return ogenclient.AuditEventEventData{}, err
+	}
+	var data ogenclient.AuditEventEventData
+	data.SetApifrontendRRCreatedPayload(payload)
 	return data, nil
 }
 
@@ -362,6 +376,7 @@ func decodeWorkflowExecutionAuditPayload(discriminator ogenclient.AuditEventEven
 func IsReconstructionRelevant(eventType string) bool {
 	relevantTypes := map[string]bool{
 		"gateway.signal.received":               true, // Gap #1, #3, #4
+		"apifrontend.rr.created":                true, // Issue #2043: AF-genesis event (no gateway.signal.received for AF-created RRs)
 		"aianalysis.analysis.completed":         true, // Gap #2
 		"workflowexecution.selection.completed": true, // Gap #5
 		"workflowexecution.execution.started":   true, // Gap #6

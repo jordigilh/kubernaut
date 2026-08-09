@@ -39,6 +39,7 @@ type ReconstructedRRFields struct {
 // are silently ignored, keeping reconstruction tolerant of irrelevant events.
 var rrFieldMappers = map[string]func(*ParsedAuditData, *ReconstructedRRFields) error{
 	"gateway.signal.received":               mapGatewaySignalFields,
+	"apifrontend.rr.created":                mapApifrontendRRCreatedFields,
 	"orchestrator.lifecycle.created":        mapOrchestratorCreatedFields,
 	"aianalysis.analysis.completed":         mapAIAnalysisCompletedFields,
 	"workflowexecution.selection.completed": mapWorkflowSelectionCompletedFields,
@@ -84,6 +85,27 @@ func mapGatewaySignalFields(parsedData *ParsedAuditData, result *ReconstructedRR
 	if len(parsedData.OriginalPayload) > 0 {
 		result.Spec.OriginalPayload = parsedData.OriginalPayload
 	}
+
+	// DD-AUDIT-003 v2.2: Map cluster_id to Spec.ClusterID for fleet reconstruction (CC8.1)
+	if parsedData.ClusterID != "" {
+		result.Spec.ClusterID = parsedData.ClusterID
+	}
+
+	return nil
+}
+
+// mapApifrontendRRCreatedFields maps AF-genesis audit data to RR Spec (Issue #2043).
+// AF-created RRs (via kubernaut_remediate) bypass Gateway and never emit
+// gateway.signal.received; this is their sole source of Spec.SignalName/
+// SignalType/SignalFingerprint for reconstruction (CC8.1 parity).
+func mapApifrontendRRCreatedFields(parsedData *ParsedAuditData, result *ReconstructedRRFields) error {
+	if parsedData.SignalName == "" {
+		return fmt.Errorf("signal name is required for apifrontend.rr.created event")
+	}
+
+	result.Spec.SignalName = parsedData.SignalName
+	result.Spec.SignalType = parsedData.SignalType
+	result.Spec.SignalFingerprint = parsedData.SignalFingerprint // BR-AUDIT-005: deduplication identity
 
 	// DD-AUDIT-003 v2.2: Map cluster_id to Spec.ClusterID for fleet reconstruction (CC8.1)
 	if parsedData.ClusterID != "" {
@@ -195,24 +217,40 @@ func mapOrchestratorTerminalFields(parsedData *ParsedAuditData, result *Reconstr
 	return nil
 }
 
+// genesisEventTypes are the event types that establish RR.Spec's foundational
+// identity (SignalName/SignalType/SignalFingerprint). Exactly one MUST be
+// present for reconstruction: gateway.signal.received for Gateway-ingested
+// RRs, or apifrontend.rr.created for RRs created directly via AF's
+// kubernaut_remediate tool (Issue #2043 -- these never emit a Gateway event,
+// so requiring gateway.signal.received unconditionally made reconstruction
+// architecturally impossible for a real, shipped ingestion path).
+var genesisEventTypes = map[string]bool{
+	"gateway.signal.received": true,
+	"apifrontend.rr.created":  true,
+}
+
+// hasGenesisEvent reports whether events contains at least one genesis event
+// (see genesisEventTypes) -- the minimum required for MergeAuditData to
+// produce a valid RR.Spec.
+func hasGenesisEvent(events []ParsedAuditData) bool {
+	for _, event := range events {
+		if genesisEventTypes[event.EventType] {
+			return true
+		}
+	}
+	return false
+}
+
 // MergeAuditData merges multiple parsed audit events into a single ReconstructedRRFields.
-// The gateway.signal.received event is required as it contains the foundational RR spec.
+// A genesis event (see genesisEventTypes) is required as it contains the foundational RR spec.
 // TDD GREEN: Minimal implementation to pass current merge tests.
 func MergeAuditData(events []ParsedAuditData) (*ReconstructedRRFields, error) {
 	if len(events) == 0 {
 		return nil, fmt.Errorf("no audit events provided for merging")
 	}
 
-	// Ensure gateway.signal.received event exists (mandatory for reconstruction)
-	hasGatewayEvent := false
-	for _, event := range events {
-		if event.EventType == "gateway.signal.received" {
-			hasGatewayEvent = true
-			break
-		}
-	}
-	if !hasGatewayEvent {
-		return nil, fmt.Errorf("gateway.signal.received event is required for reconstruction")
+	if !hasGenesisEvent(events) {
+		return nil, fmt.Errorf("gateway.signal.received or apifrontend.rr.created event is required for reconstruction")
 	}
 
 	// Initialize result with empty spec and status

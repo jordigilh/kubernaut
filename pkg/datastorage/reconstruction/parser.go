@@ -98,6 +98,8 @@ func ParseAuditEvent(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
 	switch event.EventType {
 	case "gateway.signal.received":
 		parsed, err = parseGatewaySignalReceived(event)
+	case "apifrontend.rr.created":
+		parsed, err = parseApifrontendRRCreated(event)
 	case "orchestrator.lifecycle.created":
 		parsed, err = parseOrchestratorLifecycleCreated(event)
 	case "orchestrator.lifecycle.completed":
@@ -241,6 +243,29 @@ func parseOrchestratorLifecycleFailed(event ogenclient.AuditEvent) (*ParsedAudit
 	}
 
 	return data, nil
+}
+
+// parseApifrontendRRCreated extracts genesis fields from an apifrontend.rr.created
+// event (Issue #2043). AF-created RRs (via kubernaut_remediate) bypass Gateway
+// entirely and never emit gateway.signal.received; this is their sole source of
+// Spec.SignalName/SignalType/SignalFingerprint for reconstruction (CC8.1 parity).
+func parseApifrontendRRCreated(event ogenclient.AuditEvent) (*ParsedAuditData, error) {
+	payload := event.EventData.ApifrontendRRCreatedPayload
+
+	if payload.SignalName == "" {
+		return nil, fmt.Errorf("missing signal_name in apifrontend.rr.created event")
+	}
+
+	return &ParsedAuditData{
+		EventType:     event.EventType,
+		CorrelationID: event.CorrelationID,
+		SignalName:    payload.SignalName,
+		// SignalType is not carried by ApifrontendRRCreatedPayload; AF-created
+		// RRs always hardcode it to "alert" (buildRRObject, af_create_rr.go),
+		// so this mirrors production rather than guessing.
+		SignalType:        "alert",
+		SignalFingerprint: payload.Fingerprint,
+	}, nil
 }
 
 // getOptString extracts the value from an OptString, returning empty string if not set.
