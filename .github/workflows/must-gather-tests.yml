@@ -338,6 +338,18 @@ jobs:
 
       - name: Install Kubernaut Helm chart (pre-built images, pulled by Kind's nodes directly)
         run: |
+          # Deliberately NO --wait: charts/kubernaut/templates/hooks/migration-job.yaml
+          # is a post-install hook, and DataStorage's own readiness depends on
+          # that migration having already run (DD-PLATFORM-002 documents this
+          # exact deadlock for ArgoCD's PostSync hooks; `--wait` reproduces the
+          # same deadlock for the Helm CLI, since it blocks the main-resource
+          # wait BEFORE post-install hooks run at all -- confirmed by hitting it
+          # here: DataStorage crash-loops forever on a missing table with no
+          # migration Job ever created). Helm still waits for the hook Job
+          # itself synchronously (that's the whole point of a hook) before this
+          # command returns, so by the time we get here the schema already
+          # exists and the explicit rollout-status wait below just lets
+          # DataStorage's own crash-loop backoff recover the pod.
           helm install kubernaut charts/kubernaut/ \
             --namespace "$RELEASE_NAMESPACE" --create-namespace \
             --set global.image.tag="${CHART_IMAGE_TAG}-amd64" \
@@ -347,7 +359,11 @@ jobs:
             --set global.llmProfiles.primary.model=mock-model \
             --set global.llmProfiles.primary.endpoint="http://mock-llm.${RELEASE_NAMESPACE}.svc.cluster.local:8080" \
             --set global.llmProfiles.primary.credentialsSecretName=llm-credentials-primary \
-            --wait --timeout 300s
+            --timeout 180s
+
+      - name: Wait for all chart-managed Deployments to become Available
+        run: |
+          kubectl wait --for=condition=Available deployment --all -n "$RELEASE_NAMESPACE" --timeout=180s
 
       - name: Install kubernaut-operator (real controller-manager, for optional-namespace log collection coverage)
         run: |
