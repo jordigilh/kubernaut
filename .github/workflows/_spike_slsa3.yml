@@ -50,18 +50,23 @@ jobs:
                        quay.io
 
       - name: Build & push spike image (both tags)
+        # NOTE: content must differ between the two images (tag name baked
+        # into the file), not just the tag -- `podman tag` on identical
+        # content produces the SAME digest, which would make both tags
+        # resolve to one shared attestation set and defeat the comparison.
         run: |
           RUNID="${{ github.run_id }}"
-          echo "slsa3 isolation spike run=${RUNID} $(date -u '+%Y-%m-%dT%H:%M:%SZ')" > spike.txt
           cat > Containerfile.spike <<'DOCKERFILE'
           FROM scratch
           COPY spike.txt /spike.txt
           DOCKERFILE
 
+          echo "slsa3 isolation spike run=${RUNID} variant=control $(date -u '+%Y-%m-%dT%H:%M:%SZ')" > spike.txt
           podman build -f Containerfile.spike -t "${IMAGE_REGISTRY}/${IMAGE_NAME}:${RUNID}-control" .
           podman push "${IMAGE_REGISTRY}/${IMAGE_NAME}:${RUNID}-control"
 
-          podman tag "${IMAGE_REGISTRY}/${IMAGE_NAME}:${RUNID}-control" "${IMAGE_REGISTRY}/${IMAGE_NAME}:${RUNID}-isolated"
+          echo "slsa3 isolation spike run=${RUNID} variant=isolated $(date -u '+%Y-%m-%dT%H:%M:%SZ')" > spike.txt
+          podman build -f Containerfile.spike -t "${IMAGE_REGISTRY}/${IMAGE_NAME}:${RUNID}-isolated" .
           podman push "${IMAGE_REGISTRY}/${IMAGE_NAME}:${RUNID}-isolated"
 
       - name: Resolve digests
