@@ -74,6 +74,8 @@ kubectl run kubernaut-must-gather \
 | `--dest-dir=PATH` | `/must-gather` | Output directory path |
 | `--no-sanitize` | (sanitization enabled) | **Internal use only** - Disable automatic sanitization |
 | `--max-size=MB` | `500` | Maximum collection size in MB |
+| `--namespace=NS` | `kubernaut-system` | Kubernaut Helm release namespace (CRDs, service pods, DataStorage API) |
+| `--workflow-namespace=NS` | `kubernaut-workflows` | Tekton PipelineRun execution namespace |
 | `--help`, `-h` | - | Show usage information |
 
 ### Examples
@@ -90,6 +92,9 @@ kubectl run kubernaut-must-gather \
 
 # Custom output directory
 /usr/bin/gather --dest-dir=/tmp/diagnostics
+
+# Kubernaut installed into a non-default Helm release namespace
+/usr/bin/gather --namespace=my-kubernaut
 ```
 
 ---

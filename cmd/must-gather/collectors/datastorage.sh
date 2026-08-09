@@ -21,8 +21,14 @@ set -euo pipefail
 COLLECTION_DIR="${1:-}"
 OUTPUT_DIR="${COLLECTION_DIR}/datastorage"
 
+# shellcheck source=../utils/namespace.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/namespace.sh"
+
 # DataStorage API configuration
-DATASTORAGE_URL="${DATASTORAGE_URL:-http://datastorage.kubernaut-system.svc.cluster.local:8080}"
+# Issue #2037: build the URL from RELEASE_NAMESPACE instead of a hardcoded
+# "kubernaut-system" literal, so collection still reaches DataStorage when the
+# chart is installed into a non-default Helm release namespace.
+DATASTORAGE_URL="${DATASTORAGE_URL:-http://datastorage.${RELEASE_NAMESPACE}.svc.cluster.local:8080}"
 WORKFLOW_LIMIT="${WORKFLOW_LIMIT:-50}"
 AUDIT_LIMIT="${AUDIT_LIMIT:-1000}"
 AUDIT_TIMEFRAME="${AUDIT_TIMEFRAME:-24h}"

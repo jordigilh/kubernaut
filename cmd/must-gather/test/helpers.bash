@@ -32,8 +32,11 @@ setup_test_environment() {
     mkdir -p "${MOCK_COLLECTION_DIR}"
     mkdir -p "${TEST_TEMP_DIR}/bin"
 
-    # Set test namespace list
-    export KUBERNAUT_NAMESPACES=("kubernaut-system" "kubernaut-notifications" "kubernaut-workflows")
+    # Set test namespaces (Issue #2037: single-release-namespace model, no more
+    # obsolete kubernaut-notifications entry -- see gather.sh RELEASE_NAMESPACE/
+    # WORKFLOW_NAMESPACE)
+    export RELEASE_NAMESPACE="kubernaut-system"
+    export WORKFLOW_NAMESPACE="kubernaut-workflows"
 
     # Set test configuration
     export SINCE_DURATION="24h"
@@ -60,6 +63,18 @@ mock_kubectl() {
 
 # Debug: Write all calls to a log file
 echo "\$(date +%H:%M:%S) kubectl \$@" >> ${TEST_TEMP_DIR}/kubectl-calls.log
+
+# Check for dynamic CRD discovery query (Issue #2037: "kubectl get crd -o name",
+# no specific CRD name in the args -- must be checked before the single-CRD
+# definition branch below, which always includes a specific ".kubernaut.ai" name)
+if [[ "\$*" == "get crd -o name"* ]]; then
+    if [ -f "${TEST_TEMP_DIR}/crd-list.txt" ]; then
+        cat "${TEST_TEMP_DIR}/crd-list.txt"
+        exit 0
+    else
+        exit 0
+    fi
+fi
 
 # Check for CRD definition query
 if [[ "\$*" == *"get crd"* ]] && [[ "\$*" == *".kubernaut.ai"* ]]; then
@@ -89,7 +104,27 @@ if [[ "\$*" == "get "* ]] && [[ "\$*" == *".kubernaut.ai --all-namespaces --no-h
     exit 0
 fi
 
-# Check for pods
+# Check for namespace existence (used by logs.sh before listing pods).
+# Defaults to "exists" for any namespace name -- tests that need a "missing
+# namespace" scenario override this via a dedicated non-matching kubectl mock.
+if [[ "\$*" == "get namespace "* ]]; then
+    echo "Active"
+    exit 0
+fi
+
+# Check for pod-name listing (Issue #2037: "kubectl get pods -n NS --no-headers",
+# used by logs.sh's all-pod discovery -- must be checked before the general
+# "get pods" YAML branch below, which is a different output shape)
+if [[ "\$*" == *"get pods"* ]] && [[ "\$*" == *"--no-headers"* ]]; then
+    if [ -f "${TEST_TEMP_DIR}/pod-names.txt" ]; then
+        cat "${TEST_TEMP_DIR}/pod-names.txt"
+        exit 0
+    else
+        exit 0
+    fi
+fi
+
+# Check for pods (full YAML PodList)
 if [[ "\$*" == *"get pods"* ]]; then
     cat "${TEST_TEMP_DIR}/pod-list.yaml"
     exit 0
@@ -113,6 +148,15 @@ if [[ "\$*" == *"version"* ]]; then
     exit 0
 fi
 
+# Check for current context (used by gather.sh's collection-metadata.json
+# cluster_name field). Must return a clean single-line value on success --
+# falling through to the generic "---"+exit1 default below would embed a
+# literal newline in the JSON string ("---\nunknown"), corrupting it.
+if [[ "\$*" == *"current-context"* ]]; then
+    echo "test-cluster"
+    exit 0
+fi
+
 # Default: return empty for other commands
 echo "---"
 exit 1
@@ -124,6 +168,16 @@ EOF
 
 # Create mock CRD response
 create_mock_crd_response() {
+    # Issue #2037: crds.sh now discovers CRD types dynamically via
+    # "kubectl get crd -o name" before collecting each one's definition/
+    # instances -- register this fixture's own CRD in that discovery list by
+    # default so existing single-CRD-focused tests keep working unless they
+    # explicitly override the list via create_mock_crd_list.
+    if [ ! -f "${TEST_TEMP_DIR}/crd-list.txt" ]; then
+        echo "customresourcedefinition.apiextensions.k8s.io/remediationrequests.kubernaut.ai" \
+            > "${TEST_TEMP_DIR}/crd-list.txt"
+    fi
+
     # Create CRD definition response (for kubectl get crd)
     cat > "${TEST_TEMP_DIR}/crd-def.yaml" <<'EOF'
 apiVersion: apiextensions.k8s.io/v1
@@ -167,6 +221,20 @@ spec:
 EOF
 }
 
+# Create mock "kubectl get crd -o name" response (Issue #2037: dynamic CRD
+# discovery). Includes types absent from the old static 6-entry allowlist
+# (actiontypes, effectivenessassessments) plus one unrelated non-kubernaut CRD,
+# to prove both completeness (UT-MG-2037-001) and regex precision (R3).
+create_mock_crd_list() {
+    cat > "${TEST_TEMP_DIR}/crd-list.txt" <<'EOF'
+customresourcedefinition.apiextensions.k8s.io/remediationrequests.kubernaut.ai
+customresourcedefinition.apiextensions.k8s.io/aianalyses.kubernaut.ai
+customresourcedefinition.apiextensions.k8s.io/actiontypes.kubernaut.ai
+customresourcedefinition.apiextensions.k8s.io/effectivenessassessments.kubernaut.ai
+customresourcedefinition.apiextensions.k8s.io/widgets.example.com
+EOF
+}
+
 # Create mock pod list response
 create_mock_pod_list() {
     cat > "${TEST_TEMP_DIR}/pod-list.yaml" <<'EOF'
@@ -183,6 +251,19 @@ items:
     namespace: kubernaut-system
   status:
     phase: Running
+EOF
+}
+
+# Create mock "kubectl get pods -n NS --no-headers" plain-text response
+# (Issue #2037: logs.sh all-pod discovery). Includes pods for services absent
+# from the old SERVICE_PATTERNS allowlist (authwebhook, apifrontend) to prove
+# the allowlist removal actually took effect (UT-MG-2037-003).
+create_mock_pod_names_list() {
+    cat > "${TEST_TEMP_DIR}/pod-names.txt" <<'EOF'
+gateway-abc123   1/1   Running   0   5m
+datastorage-xyz789   1/1   Running   0   5m
+authwebhook-abc123   1/1   Running   0   5m
+apifrontend-xyz789   1/1   Running   0   5m
 EOF
 }
 
@@ -269,6 +350,9 @@ mock_curl() {
     cat > "${TEST_TEMP_DIR}/bin/curl" <<EOF
 #!/bin/bash
 # Mock curl for testing
+# Issue #2037: record the invoked URL so tests can assert DATASTORAGE_URL
+# was built from the configured RELEASE_NAMESPACE (last arg is the URL).
+echo "\${@: -1}" >> "${TEST_TEMP_DIR}/curl-calls.log"
 cat "${response_file}"
 exit 0
 EOF

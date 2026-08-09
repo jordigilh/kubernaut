@@ -145,32 +145,28 @@ EOF
 }
 
 # ========================================
-# Edge Case: All Services Collected
+# UT-MG-2037-003: All-pod log collection, no allowlist (Issue #2037)
 # ========================================
 
-@test "BR-PLATFORM-001.3: Support engineer has logs from all 8 V1.0 services for complete diagnosis" {
-    # Business Outcome: No service logs are missing from collection
-    # Edge Case: Ensure all services are actually collected (no typos in patterns)
-    create_mock_pod_list
+@test "UT-MG-2037-003: Support engineer has logs from every service pod, not a stale allowlist" {
+    # Business Outcome: BR-PLATFORM-001.3 -- log collection must not silently
+    # omit services added after the tool was last updated (drift).
+    # This proves ACTUAL collection (via the mocked "kubectl logs" call), unlike
+    # the old "all 8 V1.0 services" test it replaces, which only asserted that
+    # pre-created destination files survived the run -- it never proved logs.sh
+    # itself wrote anything (see TEST_PLAN.md Section 15).
+    create_mock_pod_names_list
     mock_kubectl "${TEST_TEMP_DIR}/pod-list.yaml"
 
-    # Create mock logs for all 8 V1.0 services
-    declare -a services=("gateway" "datastorage" "kubernaut-agent"
-                        "notification-controller" "signalprocessing-controller"
-                        "aianalysis-controller" "workflowexecution-controller"
-                        "remediationorchestrator-controller")
+    run env RELEASE_NAMESPACE="kubernaut-system" bash "${COLLECTORS_DIR}/logs.sh" "${MOCK_COLLECTION_DIR}"
 
-    for service in "${services[@]}"; do
-        mkdir -p "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/${service}-test123"
-        echo "2026-01-04T12:00:00Z INFO ${service} operational" > \
-            "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/${service}-test123/current.log"
-    done
-
-    run bash "${COLLECTORS_DIR}/logs.sh" "${MOCK_COLLECTION_DIR}"
-
-    # Verify all 8 services have logs collected
-    for service in "${services[@]}"; do
-        assert_file_exists "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/${service}-test123/current.log"
-    done
+    assert_success
+    # Services present in the old SERVICE_PATTERNS allowlist
+    assert_file_exists "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/gateway-abc123/current.log"
+    assert_file_exists "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/datastorage-xyz789/current.log"
+    # Services ABSENT from the old SERVICE_PATTERNS allowlist -- these prove the
+    # allowlist removal actually took effect, not just that pre-existing files survive
+    assert_file_exists "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/authwebhook-abc123/current.log"
+    assert_file_exists "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/apifrontend-xyz789/current.log"
 }
 

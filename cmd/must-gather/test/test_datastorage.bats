@@ -161,6 +161,34 @@ EOF
 # Edge Case: Network Timeout
 # ========================================
 
+# ========================================
+# UT-MG-2037-004: DataStorage URL built from configurable namespace (Issue #2037)
+# ========================================
+
+@test "UT-MG-2037-004: DataStorage URL targets the configured RELEASE_NAMESPACE, not a hardcoded literal" {
+    # Business Outcome: BR-PLATFORM-001.6a -- collection must reach DataStorage
+    # even when the chart is installed into a non-default release namespace.
+    create_mock_datastorage_workflows
+    mock_curl "${TEST_TEMP_DIR}/workflows.json"
+
+    run env RELEASE_NAMESPACE="custom-kubernaut-ns" bash "${COLLECTORS_DIR}/datastorage.sh" "${MOCK_COLLECTION_DIR}"
+
+    assert_success
+    assert_file_contains "${TEST_TEMP_DIR}/curl-calls.log" "datastorage.custom-kubernaut-ns.svc.cluster.local"
+}
+
+@test "UT-MG-2037-004: DataStorage URL defaults to kubernaut-system when RELEASE_NAMESPACE is unset" {
+    # Business Outcome: standalone invocation (e.g. direct script debugging)
+    # still targets the common default install namespace.
+    create_mock_datastorage_workflows
+    mock_curl "${TEST_TEMP_DIR}/workflows.json"
+
+    run env -u RELEASE_NAMESPACE bash "${COLLECTORS_DIR}/datastorage.sh" "${MOCK_COLLECTION_DIR}"
+
+    assert_success
+    assert_file_contains "${TEST_TEMP_DIR}/curl-calls.log" "datastorage.kubernaut-system.svc.cluster.local"
+}
+
 @test "BR-PLATFORM-001.6a: Support engineer can identify DataStorage network timeouts" {
     # Edge Case: API request times out (slow network, overloaded service)
     # Business Outcome: Timeout is documented as diagnostic clue
