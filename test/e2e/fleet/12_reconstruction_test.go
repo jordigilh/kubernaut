@@ -103,6 +103,19 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 		// another, possibly-conformant candidate. The cluster_id check is
 		// now part of the loop's own success predicate, so only a candidate
 		// that fully satisfies the business contract can end the retry.
+		//
+		// Review follow-up: the loop used to end with TWO sequential
+		// g.Expect calls -- `candidateCount > 0` then `resp != nil` -- but
+		// the only place `resp` is ever assigned is the `return` above, so
+		// reaching the second check at all already means this tick's loop
+		// ran to completion without returning, i.e. `resp` is unconditionally
+		// nil there regardless of `candidateCount`. The first check couldn't
+		// actually gate anything: whenever it passed (candidateCount > 0),
+		// the second check was guaranteed to fail anyway, making it dead
+		// code wearing a real-looking assertion. Collapsed into one
+		// assertion that always carries both diagnostics (candidateCount and
+		// errs) in its failure message, whether zero candidates existed yet
+		// or some existed and all failed.
 		By("Finding a completed fleet RemediationRequest whose audit trail is actually reconstructable")
 		var resp *ogenclient.ReconstructionResponse
 		Eventually(func(g Gomega) {
@@ -140,9 +153,8 @@ var _ = Describe("E2E-FLEET-CC81-001: Fleet Reconstruction Compliance [CC8.1]", 
 				return
 			}
 
-			g.Expect(candidateCount).To(BeNumerically(">", 0), "no completed fleet RemediationRequest with ClusterID found yet")
 			g.Expect(resp).ToNot(BeNil(),
-				"none of the %d completed fleet RemediationRequest candidate(s) reconstructed with cluster_id set yet: %v",
+				"no completed fleet RemediationRequest reconstructed with cluster_id set yet (%d candidate(s) tried): %v",
 				candidateCount, errors.Join(errs...))
 		}, 2*time.Minute, 5*time.Second).Should(Succeed())
 
