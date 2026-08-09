@@ -208,7 +208,7 @@ var _ = Describe("Interactive Action Handlers (G1)", func() {
 				name string
 				fn   func() (interface{ Name() string }, error)
 			}{
-			{"kubernaut_message", func() (interface{ Name() string }, error) { return tools.NewMessageTool(nil, nil) }},
+				{"kubernaut_message", func() (interface{ Name() string }, error) { return tools.NewMessageTool(nil, nil) }},
 				{"kubernaut_complete", func() (interface{ Name() string }, error) { return tools.NewCompleteTool(nil, nil) }},
 				{"kubernaut_cancel", func() (interface{ Name() string }, error) { return tools.NewCancelInvestigationTool(nil, nil) }},
 				{"kubernaut_status", func() (interface{ Name() string }, error) { return tools.NewStatusTool(nil, nil) }},

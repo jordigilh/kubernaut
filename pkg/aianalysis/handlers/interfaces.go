@@ -25,8 +25,8 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 )
 
 // ========================================

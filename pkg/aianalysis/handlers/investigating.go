@@ -51,19 +51,19 @@ import (
 // Refactoring P1.2: Uses RequestBuilder for request construction
 // Refactoring P2.1: Uses ErrorClassifier for error classification and retry logic
 type InvestigatingHandler struct {
-	log                 logr.Logger
-	kaClient            AgentClientInterface
-	metrics             *metrics.Metrics     // DD-METRICS-001: Injected metrics
-	auditClient         AuditClientInterface // DD-AUDIT-003: Injected audit client
-	processor           *ResponseProcessor   // P1.1: Response processing logic
-	builder             *RequestBuilder      // P1.2: Request construction logic
-	errorClassifier     *ErrorClassifier     // P2.1: Error classification and retry logic
-	useSessionMode           bool                         // BR-AA-HAPI-064: Enable async session-based flow
-	sessionPollInterval      time.Duration                // BR-AA-HAPI-064.8: Constant interval between session polls
-	maxInvestigationDuration time.Duration                // #1078: Wall-clock cap on investigation before PhaseFailed
-	recorder                 record.EventRecorder         // DD-EVENT-001: K8s event recorder for session lifecycle events
-	isChecker                InvestigationSessionChecker  // BR-INTERACTIVE-010: Check IS CRD before submit
-	isPhaseUpdater           ISPhaseUpdater               // BR-INTERACTIVE-010: Set IS Phase=Active after submit
+	log                      logr.Logger
+	kaClient                 AgentClientInterface
+	metrics                  *metrics.Metrics            // DD-METRICS-001: Injected metrics
+	auditClient              AuditClientInterface        // DD-AUDIT-003: Injected audit client
+	processor                *ResponseProcessor          // P1.1: Response processing logic
+	builder                  *RequestBuilder             // P1.2: Request construction logic
+	errorClassifier          *ErrorClassifier            // P2.1: Error classification and retry logic
+	useSessionMode           bool                        // BR-AA-HAPI-064: Enable async session-based flow
+	sessionPollInterval      time.Duration               // BR-AA-HAPI-064.8: Constant interval between session polls
+	maxInvestigationDuration time.Duration               // #1078: Wall-clock cap on investigation before PhaseFailed
+	recorder                 record.EventRecorder        // DD-EVENT-001: K8s event recorder for session lifecycle events
+	isChecker                InvestigationSessionChecker // BR-INTERACTIVE-010: Check IS CRD before submit
+	isPhaseUpdater           ISPhaseUpdater              // BR-INTERACTIVE-010: Set IS Phase=Active after submit
 }
 
 // InvestigatingHandlerOption is a functional option for InvestigatingHandler configuration.
@@ -138,12 +138,12 @@ func NewInvestigatingHandler(hgClient AgentClientInterface, log logr.Logger, m *
 	}
 	handlerLog := log.WithName("investigating-handler")
 	h := &InvestigatingHandler{
-		kaClient:            hgClient,
-		metrics:             m,
-		auditClient:         auditClient,
-		log:                 handlerLog,
-		sessionPollInterval:      DefaultSessionPollInterval,            // BR-AA-HAPI-064.8: Constant poll interval
-		maxInvestigationDuration: DefaultMaxInvestigationDuration,       // #1078: Wall-clock cap
+		kaClient:                 hgClient,
+		metrics:                  m,
+		auditClient:              auditClient,
+		log:                      handlerLog,
+		sessionPollInterval:      DefaultSessionPollInterval,      // BR-AA-HAPI-064.8: Constant poll interval
+		maxInvestigationDuration: DefaultMaxInvestigationDuration, // #1078: Wall-clock cap
 		processor:                NewResponseProcessor(log, m, auditClient),
 		builder:                  NewRequestBuilder(log),
 		errorClassifier:          NewErrorClassifier(handlerLog),
@@ -278,8 +278,8 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 		analysis.Status.CompletedAt = &now
 		analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
 			analysis.Status.ConsecutiveFailures, err)
-	analysis.Status.Reason = aianalysisv1.ReasonAPIError
-	analysis.Status.SubReason = "MaxRetriesExceeded"
+		analysis.Status.Reason = aianalysisv1.ReasonAPIError
+		analysis.Status.SubReason = "MaxRetriesExceeded"
 
 		// Record metric for max retries exceeded
 		h.metrics.RecordFailure("APIError", "MaxRetriesExceeded")
@@ -317,6 +317,7 @@ func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianal
 	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("Permanent error: %v", err))
 	return ctrl.Result{}, nil
 }
+
 // setRetryCount writes retry count to annotations
 func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, count int) {
 	if analysis.Annotations == nil {

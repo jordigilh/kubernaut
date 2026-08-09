@@ -198,8 +198,8 @@ var _ = Describe("InvestigatingHandler Session Correlation Adoption (#2029 Part 
 			isChecker := &mockISChecker{
 				hasSession: true,
 				correlatedSequence: []correlatedSessionStub{
-					{id: "", active: false},                          // general check: correlation not landed yet
-					{id: "ka-session-new-010", active: true},         // race-closing check: it has landed now
+					{id: "", active: false},                  // general check: correlation not landed yet
+					{id: "ka-session-new-010", active: true}, // race-closing check: it has landed now
 				},
 			}
 			phaseUpdater := &mockISPhaseUpdater{}
