@@ -6,7 +6,7 @@
 #   - Local dev: ARM64-only builds (Apple Silicon compatible)
 #   - CI/Production: Multi-arch builds (AMD64 + ARM64)
 
-.PHONY: help build build-local build-multiarch push test test-container test-e2e deploy-rbac clean
+.PHONY: help build build-local build-multiarch push test test-container test-e2e test-e2e-container deploy-rbac clean
 
 # Configuration
 IMAGE_REGISTRY ?= quay.io/kubernaut
@@ -87,7 +87,7 @@ test-verbose: build-local ## Run container tests with verbose output (native pla
 		    cd bats-core-1.11.0 && ./install.sh /usr/local && cd .. && rm -rf bats-core-1.11.0 && \
 		    bats --trace /must-gather/test/test_*.bats"
 
-test-e2e: ## Run E2E tests (requires cluster)
+test-e2e: ## Run E2E tests (requires cluster, uncontainerized host kubectl)
 	@echo "Running E2E tests..."
 	@if ! command -v kubectl &> /dev/null; then \
 		echo "❌ Error: kubectl not found"; \
@@ -99,6 +99,42 @@ test-e2e: ## Run E2E tests (requires cluster)
 	fi
 	KUBERNAUT_E2E_TESTS=1 bats $(TEST_DIR)/integration/test_e2e.bats
 	@echo "✅ E2E tests complete!"
+
+# Issue #2037: containerized E2E harness -- exercises the actual built
+# must-gather image's /usr/bin/gather entrypoint (not raw host scripts)
+# against a live cluster, joined to the cluster's container network.
+# Fallback: if the container-network join proves flaky, `make test-e2e`
+# (above) already works uncontainerized against any reachable cluster.
+KIND_NETWORK ?= kind
+RELEASE_NAMESPACE ?= kubernaut-system
+WORKFLOW_NAMESPACE ?= kubernaut-workflows
+
+test-e2e-container: build-local ## Run E2E tests in container against a live cluster (requires KUBECONFIG_PATH, e.g. from 'kind get kubeconfig --internal')
+	@echo "Running E2E tests in $(PLATFORM) container against live cluster..."
+	@if [ -z "$(KUBECONFIG_PATH)" ]; then \
+		echo "❌ Error: KUBECONFIG_PATH must be set (e.g. from 'kind get kubeconfig --internal --name <cluster>')"; \
+		exit 1; \
+	fi
+	podman run --rm \
+		--platform linux/$(PLATFORM) \
+		--network $(KIND_NETWORK) \
+		-v $(PWD)/test:/must-gather/test:ro \
+		-v $(PWD)/collectors:/usr/share/must-gather/collectors:ro \
+		-v $(PWD)/sanitizers:/usr/share/must-gather/sanitizers:ro \
+		-v $(PWD)/utils:/usr/share/must-gather/utils:ro \
+		-v $(PWD)/gather.sh:/usr/bin/gather:ro \
+		-v $(KUBECONFIG_PATH):/tmp/kubeconfig:ro \
+		-e KUBECONFIG=/tmp/kubeconfig \
+		-e KUBERNAUT_E2E_TESTS=1 \
+		-e RELEASE_NAMESPACE=$(RELEASE_NAMESPACE) \
+		-e WORKFLOW_NAMESPACE=$(WORKFLOW_NAMESPACE) \
+		-w /must-gather \
+		--entrypoint bash \
+		$(LOCAL_IMAGE_NAME):test \
+		-c "curl -sSL https://github.com/bats-core/bats-core/archive/refs/tags/v1.11.0.tar.gz | tar -xz && \
+		    cd bats-core-1.11.0 && ./install.sh /usr/local && cd .. && rm -rf bats-core-1.11.0 && \
+		    bats /must-gather/test/integration/test_e2e.bats"
+	@echo "✅ E2E container tests complete!"
 
 deploy-rbac: ## Deploy RBAC resources to cluster
 	@echo "Deploying RBAC resources..."

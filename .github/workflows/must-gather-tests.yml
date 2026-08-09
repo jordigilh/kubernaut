@@ -54,11 +54,11 @@ permissions:
 jobs:
   # ========================================
   # UNIT TESTS: Containerized Bats Tests
-  # 45 tests validating business outcomes
+  # 52 tests validating business outcomes
   # Duration: ~3-5 minutes
   # ========================================
   unit-tests:
-    name: Unit Tests (45 bats tests)
+    name: Unit Tests (52 bats tests)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     if: ${{ !inputs.skip-tests }}
@@ -75,11 +75,11 @@ jobs:
       - name: Run unit tests
         working-directory: cmd/must-gather
         run: |
-          echo "🧪 Running 45 containerized unit tests..."
+          echo "🧪 Running 52 containerized unit tests..."
           echo "   - Checksum integrity: 8 tests"
-          echo "   - CRD collection: 3 tests"
-          echo "   - DataStorage API: 9 tests"
-          echo "   - Orchestration: 9 tests"
+          echo "   - CRD collection: 5 tests"
+          echo "   - DataStorage API: 11 tests"
+          echo "   - Orchestration: 12 tests"
           echo "   - Logs: 7 tests"
           echo "   - Sanitization: 9 tests"
           echo ""
@@ -89,7 +89,7 @@ jobs:
         if: always()
         run: |
           if [ $? -eq 0 ]; then
-            echo "✅ All 45 unit tests passed!"
+            echo "✅ All 52 unit tests passed!"
           else
             echo "❌ Unit tests failed"
             exit 1
@@ -191,12 +191,141 @@ jobs:
           fi
 
   # ========================================
+  # E2E TESTS: Deterministic Live-Cluster Drift Detection (Issue #2037)
+  # Runs the containerized must-gather image's actual /usr/bin/gather
+  # entrypoint against a real Kind cluster with the Kubernaut Helm chart
+  # installed, asserting collected CRD/log counts match live-cluster truth
+  # exactly (not a hardcoded number) -- this is the CI gate that catches
+  # collector-script drift (stale CRD/service/namespace lists) going forward.
+  # Duration: ~15-20 minutes
+  # ========================================
+  e2e-tests:
+    name: E2E Tests (Live Cluster)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25 # Generous timeout for Kind setup + Helm install + tests
+    if: ${{ !inputs.skip-tests }}
+    env:
+      KIND_EXPERIMENTAL_PROVIDER: podman
+      KIND_CLUSTER_NAME: must-gather-e2e
+      RELEASE_NAMESPACE: kubernaut-system
+      WORKFLOW_NAMESPACE: kubernaut-workflows
+      IMAGE_TAG: must-gather-e2e
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.5'
+
+      - name: Install Podman
+        uses: ./.github/actions/install-podman
+
+      - name: Install Kind
+        run: |
+          KIND_VERSION="v0.32.0"
+          curl -Lo ./kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64"
+          chmod +x ./kind
+          sudo mv ./kind /usr/local/bin/kind
+          kind version
+
+      - name: Install Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: latest
+
+      - name: Create Kind cluster
+        run: |
+          kind create cluster --name "$KIND_CLUSTER_NAME" --wait 120s
+          kubectl cluster-info
+          kubectl get nodes -o wide
+
+      - name: Build chart images from source
+        run: |
+          make generate
+          make image-build \
+            IMAGE_TAG="${IMAGE_TAG}" \
+            IMAGE_TARGET=production \
+            IMAGE_ARCH=amd64 \
+            CONTAINER_TOOL=podman \
+            APP_VERSION="${IMAGE_TAG}"
+
+      - name: Load chart images into Kind
+        run: |
+          for img in $(podman images --filter "reference=quay.io/kubernaut-ai/*:${IMAGE_TAG}*" --format "{{.Repository}}:{{.Tag}}"); do
+            echo "Loading ${img}..."
+            podman save "$img" | kind load image-archive /dev/stdin --name "$KIND_CLUSTER_NAME"
+          done
+
+      - name: Install Kubernaut Helm chart
+        run: |
+          helm install kubernaut charts/kubernaut/ \
+            --namespace "$RELEASE_NAMESPACE" --create-namespace \
+            --set global.image.tag="${IMAGE_TAG}-amd64" \
+            --wait --timeout 300s
+
+      - name: Build must-gather image
+        working-directory: cmd/must-gather
+        run: make build-local
+
+      - name: Generate in-cluster kubeconfig for containerized bats
+        run: |
+          # Issue #2037: --internal produces the in-Kind-network API server
+          # address (not the host-mapped 127.0.0.1 one), so the containerized
+          # bats suite -- joined to the Kind podman network below -- can reach it.
+          kind get kubeconfig --internal --name "$KIND_CLUSTER_NAME" > /tmp/kubeconfig-e2e
+
+      - name: Run must-gather E2E bats suite (containerized, against live cluster)
+        working-directory: cmd/must-gather
+        run: |
+          make test-e2e-container \
+            KUBECONFIG_PATH=/tmp/kubeconfig-e2e \
+            KIND_NETWORK=kind \
+            RELEASE_NAMESPACE="$RELEASE_NAMESPACE" \
+            WORKFLOW_NAMESPACE="$WORKFLOW_NAMESPACE"
+
+      - name: Collect diagnostics on failure
+        if: failure()
+        run: |
+          echo "=== Pod status ==="
+          kubectl get pods -A --no-headers 2>/dev/null || true
+          echo "=== CRDs ==="
+          kubectl get crd -o name 2>/dev/null | grep kubernaut.ai || true
+          echo "=== Events ==="
+          kubectl get events -n "$RELEASE_NAMESPACE" --sort-by='.lastTimestamp' 2>/dev/null | tail -30 || true
+          echo "=== Kind logs ==="
+          kind export logs /tmp/kind-e2e-logs --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
+
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: must-gather-e2e-diagnostics-${{ github.run_id }}
+          path: /tmp/kind-e2e-logs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Cleanup Kind cluster
+        if: always()
+        run: |
+          kind delete cluster --name "$KIND_CLUSTER_NAME" 2>/dev/null || true
+
+      - name: Cleanup Podman
+        if: always()
+        run: |
+          podman system prune -a -f 2>/dev/null || true
+
+  # ========================================
   # FINAL STATUS: Overall test summary
   # ========================================
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [unit-tests, container-build]
+    needs: [unit-tests, container-build, e2e-tests]
     if: always()
 
     steps:
@@ -217,6 +346,13 @@ jobs:
             echo "✅ Container Build: ${{ needs.container-build.result }}"
           else
             echo "❌ Container Build: ${{ needs.container-build.result }}"
+            FAILED=true
+          fi
+
+          if [ "${{ needs.e2e-tests.result }}" == "success" ] || [ "${{ needs.e2e-tests.result }}" == "skipped" ]; then
+            echo "✅ E2E Tests: ${{ needs.e2e-tests.result }}"
+          else
+            echo "❌ E2E Tests: ${{ needs.e2e-tests.result }}"
             FAILED=true
           fi
 
