@@ -76,6 +76,7 @@ kubectl run kubernaut-must-gather \
 | `--max-size=MB` | `500` | Maximum collection size in MB |
 | `--namespace=NS` | `kubernaut-system` | Kubernaut Helm release namespace (CRDs, service pods, DataStorage API) |
 | `--workflow-namespace=NS` | `kubernaut-workflows` | Tekton PipelineRun execution namespace |
+| `--operator-namespace=NS` | `kubernaut-operator-system` | Optional: namespace of the separate [kubernaut-operator](https://github.com/jordigilh/kubernaut-operator) component. Its controller-manager logs are collected only if the namespace actually exists on the cluster -- most installs are Helm-chart-only and won't have it, which is not an error. |
 | `--help`, `-h` | - | Show usage information |
 
 ### Examples
@@ -95,6 +96,9 @@ kubectl run kubernaut-must-gather \
 
 # Kubernaut installed into a non-default Helm release namespace
 /usr/bin/gather --namespace=my-kubernaut
+
+# kubernaut-operator installed into a non-default namespace
+/usr/bin/gather --operator-namespace=my-kubernaut-operator
 ```
 
 ---
@@ -141,8 +145,10 @@ kubernaut-must-gather-20260104-123456/
 │   │   ├── aianalysis-controller-*/
 │   │   ├── workflowexecution-controller-*/
 │   │   └── remediationorchestrator-controller-*/
-│   └── kubernaut-notifications/
-│       └── notification-controller-*/
+│   ├── kubernaut-notifications/
+│   │   └── notification-controller-*/
+│   └── kubernaut-operator-system/         (optional -- only if the separate
+│       └── kubernaut-operator-controller-manager-*/   kubernaut-operator is installed)
 ├── tekton/
 │   ├── pipelineruns/
 │   │   ├── all-pipelineruns.yaml

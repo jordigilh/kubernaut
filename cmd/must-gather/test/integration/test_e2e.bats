@@ -35,6 +35,9 @@ setup() {
     # when running against a non-default install.
     export RELEASE_NAMESPACE="${RELEASE_NAMESPACE:-kubernaut-system}"
     export WORKFLOW_NAMESPACE="${WORKFLOW_NAMESPACE:-kubernaut-workflows}"
+    # Optional: only set when the CI job installs the separate
+    # kubernaut-operator component (see .github/workflows/must-gather-tests.yml).
+    export OPERATOR_NAMESPACE="${OPERATOR_NAMESPACE:-kubernaut-operator-system}"
 }
 
 teardown() {
@@ -202,6 +205,49 @@ teardown() {
 
     run jq -r '.kubernaut_version' "${collection_dir}/collection-metadata.json"
     [ -n "$output" ]
+}
+
+@test "IT-MG-2037-006: Must-gather discovers the kubernaut-operator's CRD, not just this Helm chart's own CRDs" {
+    # Business Outcome: BR-PLATFORM-001.2 -- dynamic CRD discovery (crds.sh)
+    # must work across component boundaries too: kubernauts.kubernaut.ai is
+    # registered by the SEPARATE kubernaut-operator, not this Helm chart, so
+    # this proves the discovery mechanism isn't secretly scoped to
+    # chart-owned CRDs only.
+    if ! kubectl get crd kubernauts.kubernaut.ai &> /dev/null; then
+        skip "kubernaut-operator not installed on this cluster (kubernauts.kubernaut.ai CRD absent)"
+    fi
+
+    bash "${MUST_GATHER_ROOT}/gather.sh" \
+        --dest-dir="${TEST_TEMP_DIR}" \
+        --since=1h
+
+    local collection_dir=$(find "${TEST_TEMP_DIR}" -maxdepth 1 -type d -name "kubernaut-must-gather-*" | head -n 1)
+
+    assert_file_exists "${collection_dir}/crds/kubernauts/crd-definition.yaml"
+    assert_file_contains "${collection_dir}/crds/kubernauts/crd-definition.yaml" "kubernauts.kubernaut.ai"
+}
+
+@test "IT-MG-2037-007: Must-gather collects the kubernaut-operator's own controller-manager logs when the operator is installed" {
+    # Business Outcome: BR-PLATFORM-001.3 -- operator-path deployments need
+    # the operator's own reconciliation logs, not just the Helm chart's
+    # service logs, to diagnose install/upgrade failures.
+    if ! kubectl get namespace "${OPERATOR_NAMESPACE}" &> /dev/null; then
+        skip "kubernaut-operator not installed on this cluster (${OPERATOR_NAMESPACE} namespace absent)"
+    fi
+
+    bash "${MUST_GATHER_ROOT}/gather.sh" \
+        --dest-dir="${TEST_TEMP_DIR}" \
+        --since=1h
+
+    local collection_dir=$(find "${TEST_TEMP_DIR}" -maxdepth 1 -type d -name "kubernaut-must-gather-*" | head -n 1)
+
+    # Live-cluster truth: every pod actually running in the operator namespace.
+    local live_pods=$(kubectl get pods -n "${OPERATOR_NAMESPACE}" --no-headers 2>/dev/null | awk '{print $1}')
+    [ -n "${live_pods}" ]  # sanity: the operator's controller-manager must actually be running
+
+    while IFS= read -r pod; do
+        assert_file_exists "${collection_dir}/logs/${OPERATOR_NAMESPACE}/${pod}/current.log"
+    done <<< "${live_pods}"
 }
 
 @test "E2E: Must-gather respects size limits" {

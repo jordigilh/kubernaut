@@ -37,6 +37,14 @@ MAX_SIZE_MB=500
 # Tekton PipelineRuns execute (DD-WE-002), not a service-pod namespace.
 RELEASE_NAMESPACE="kubernaut-system"
 WORKFLOW_NAMESPACE="kubernaut-workflows"
+# Issue #2037: the kubernaut-operator (a separate OLM-style component,
+# quay.io/kubernaut-ai/kubernaut-operator, distinct from this Helm chart)
+# deploys its own controller-manager into this namespace when installed.
+# Unlike RELEASE_NAMESPACE/WORKFLOW_NAMESPACE, this is OPTIONAL -- most
+# installs are Helm-chart-only and never have it -- so logs.sh collects from
+# it only if it actually exists on the cluster (mirrors crds.sh's dynamic,
+# self-healing discovery pattern rather than assuming presence).
+OPERATOR_NAMESPACE="kubernaut-operator-system"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 COLLECTION_NAME="kubernaut-must-gather-${TIMESTAMP}"
 
@@ -67,6 +75,10 @@ while [[ $# -gt 0 ]]; do
             WORKFLOW_NAMESPACE="${1#*=}"
             shift
             ;;
+        --operator-namespace=*)
+            OPERATOR_NAMESPACE="${1#*=}"
+            shift
+            ;;
         --help|-h)
             echo "Kubernaut Must-Gather Diagnostic Collection Tool"
             echo ""
@@ -79,6 +91,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --max-size=MB             Maximum collection size in MB (default: 500)"
             echo "  --namespace=NS            Kubernaut Helm release namespace (default: kubernaut-system)"
             echo "  --workflow-namespace=NS   Tekton PipelineRun execution namespace (default: kubernaut-workflows)"
+            echo "  --operator-namespace=NS   Optional kubernaut-operator namespace, collected if present (default: kubernaut-operator-system)"
             echo "  --help, -h                Show this help message"
             echo ""
             echo "Examples:"
@@ -111,6 +124,7 @@ export SANITIZE_ENABLED
 export MAX_SIZE_MB
 export RELEASE_NAMESPACE
 export WORKFLOW_NAMESPACE
+export OPERATOR_NAMESPACE
 export KUBERNAUT_NAMESPACES
 export COLLECTION_NAME
 

@@ -14,12 +14,14 @@
 # limitations under the License.
 
 # Kubernaut Must-Gather - Namespace Resolution Helper
-# Issue #2037: single source of truth for the RELEASE_NAMESPACE default.
+# Issue #2037: single source of truth for the RELEASE_NAMESPACE and
+# OPERATOR_NAMESPACE defaults.
 #
-# gather.sh always exports RELEASE_NAMESPACE (from --namespace= or its own
-# default) before invoking collectors, so this default only matters when a
-# collector is run standalone (direct debugging, or a unit test that doesn't
-# go through gather.sh). Without this shared helper, that same
+# gather.sh always exports RELEASE_NAMESPACE/OPERATOR_NAMESPACE (from their
+# --namespace=/--operator-namespace= flags or its own defaults) before
+# invoking collectors, so these defaults only matter when a collector is run
+# standalone (direct debugging, or a unit test that doesn't go through
+# gather.sh). Without this shared helper, the same
 # ": ${RELEASE_NAMESPACE:=kubernaut-system}" fallback line was duplicated
 # across logs.sh and datastorage.sh -- exactly the kind of copy-pasted
 # constant that caused the original drift this issue fixes.
@@ -30,4 +32,9 @@ resolve_release_namespace() {
     : "${RELEASE_NAMESPACE:=kubernaut-system}"
 }
 
+resolve_operator_namespace() {
+    : "${OPERATOR_NAMESPACE:=kubernaut-operator-system}"
+}
+
 resolve_release_namespace
+resolve_operator_namespace

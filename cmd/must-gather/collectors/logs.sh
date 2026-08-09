@@ -34,57 +34,78 @@ echo "Collecting service logs..."
 # This mirrors the drift-proof precedent already established by
 # test/infrastructure/datastorage.go's MustGatherPodLogs.
 #
-# Scoped to RELEASE_NAMESPACE only (not WORKFLOW_NAMESPACE): Tekton job-pod
-# logs in the workflow namespace are already collected more precisely by
-# tekton.sh's PipelineRun-label-selector-based `kubectl logs`.
+# RELEASE_NAMESPACE is mandatory (this Helm chart always deploys into it).
+# OPERATOR_NAMESPACE is OPTIONAL: the separate kubernaut-operator component
+# (quay.io/kubernaut-ai/kubernaut-operator) is not deployed by this Helm
+# chart at all -- it's an independent install that most clusters won't have.
+# When present, its controller-manager pod's logs matter just as much for
+# operator-path deployments, so it's collected the same way, but its absence
+# is the expected common case and must never produce a warning.
+#
+# Neither includes WORKFLOW_NAMESPACE: Tekton job-pod logs there are already
+# collected more precisely by tekton.sh's PipelineRun-label-selector-based
+# `kubectl logs`.
 
-echo "  - Namespace: ${RELEASE_NAMESPACE}"
+collect_namespace_pod_logs() {
+    local namespace="$1"
+    local optional="$2" # "true" -> silent skip if namespace absent
 
-if ! kubectl get namespace "${RELEASE_NAMESPACE}" > /dev/null 2>&1; then
-    echo "    Warning: Namespace ${RELEASE_NAMESPACE} not found, skipping"
-    exit 0
-fi
+    if ! kubectl get namespace "${namespace}" > /dev/null 2>&1; then
+        if [ "${optional}" = "true" ]; then
+            return 0
+        fi
+        echo "    Warning: Namespace ${namespace} not found, skipping"
+        return 0
+    fi
 
-# Get all pods in the release namespace -- no per-service allowlist
-PODS=$(kubectl get pods -n "${RELEASE_NAMESPACE}" --no-headers 2>/dev/null | awk '{print $1}' || echo "")
+    echo "  - Namespace: ${namespace}"
 
-if [ -z "${PODS}" ]; then
-    echo "    No pods found in namespace ${RELEASE_NAMESPACE}"
-else
+    # Get all pods in the namespace -- no per-service allowlist
+    local pods
+    pods=$(kubectl get pods -n "${namespace}" --no-headers 2>/dev/null | awk '{print $1}' || echo "")
+
+    if [ -z "${pods}" ]; then
+        echo "    No pods found in namespace ${namespace}"
+        return 0
+    fi
+
     while IFS= read -r pod; do
         [ -z "${pod}" ] && continue
 
         echo "    Collecting logs from pod: ${pod}"
 
-        POD_DIR="${LOGS_DIR}/${RELEASE_NAMESPACE}/${pod}"
-        mkdir -p "${POD_DIR}"
+        local pod_dir="${LOGS_DIR}/${namespace}/${pod}"
+        mkdir -p "${pod_dir}"
 
         # Collect current logs
-        kubectl logs "${pod}" -n "${RELEASE_NAMESPACE}" \
+        kubectl logs "${pod}" -n "${namespace}" \
             --since="${SINCE_DURATION}" \
             --tail=10000 \
             --timestamps \
             --all-containers \
-            > "${POD_DIR}/current.log" 2>&1 || {
+            > "${pod_dir}/current.log" 2>&1 || {
             echo "      Warning: Failed to collect current logs from ${pod}"
         }
 
         # Collect previous logs (if pod has restarted)
-        kubectl logs "${pod}" -n "${RELEASE_NAMESPACE}" \
+        kubectl logs "${pod}" -n "${namespace}" \
             --previous \
             --tail=10000 \
             --timestamps \
             --all-containers \
-            > "${POD_DIR}/previous.log" 2>/dev/null || {
+            > "${pod_dir}/previous.log" 2>/dev/null || {
             # No previous logs (pod hasn't restarted) - this is normal
-            rm -f "${POD_DIR}/previous.log"
+            rm -f "${pod_dir}/previous.log"
         }
 
         # Collect pod description
-        kubectl describe pod "${pod}" -n "${RELEASE_NAMESPACE}" > "${POD_DIR}/describe.txt" 2>&1 || true
+        kubectl describe pod "${pod}" -n "${namespace}" > "${pod_dir}/describe.txt" 2>&1 || true
 
-    done <<< "${PODS}"
-fi
+    done <<< "${pods}"
+}
+
+collect_namespace_pod_logs "${RELEASE_NAMESPACE}" "false"
+collect_namespace_pod_logs "${OPERATOR_NAMESPACE}" "true"
 
 # Count total logs collected
 TOTAL_LOGS=$(find "${LOGS_DIR}" -name "*.log" 2>/dev/null | wc -l || echo "0")

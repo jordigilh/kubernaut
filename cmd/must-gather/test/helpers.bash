@@ -104,12 +104,37 @@ if [[ "\$*" == "get "* ]] && [[ "\$*" == *".kubernaut.ai --all-namespaces --no-h
     exit 0
 fi
 
+# Check for the optional kubernaut-operator-system namespace (Issue #2037:
+# the separate kubernaut-operator component's namespace -- absent unless a
+# test explicitly marks it present via create_mock_operator_pod_names_list).
+# Must be checked before the generic "get namespace "* branch below.
+if [[ "\$*" == "get namespace kubernaut-operator-system"* ]]; then
+    if [ -f "${TEST_TEMP_DIR}/operator-ns-present" ]; then
+        echo "Active"
+        exit 0
+    else
+        exit 1
+    fi
+fi
+
 # Check for namespace existence (used by logs.sh before listing pods).
 # Defaults to "exists" for any namespace name -- tests that need a "missing
 # namespace" scenario override this via a dedicated non-matching kubectl mock.
 if [[ "\$*" == "get namespace "* ]]; then
     echo "Active"
     exit 0
+fi
+
+# Check for operator-namespace pod-name listing (Issue #2037: kubectl get
+# pods -n kubernaut-operator-system --no-headers -- must be checked before
+# the generic pod-name branch below, which serves RELEASE_NAMESPACE's fixture).
+if [[ "\$*" == *"get pods -n kubernaut-operator-system --no-headers"* ]]; then
+    if [ -f "${TEST_TEMP_DIR}/operator-pod-names.txt" ]; then
+        cat "${TEST_TEMP_DIR}/operator-pod-names.txt"
+        exit 0
+    else
+        exit 0
+    fi
 fi
 
 # Check for pod-name listing (Issue #2037: "kubectl get pods -n NS --no-headers",
@@ -264,6 +289,17 @@ gateway-abc123   1/1   Running   0   5m
 datastorage-xyz789   1/1   Running   0   5m
 authwebhook-abc123   1/1   Running   0   5m
 apifrontend-xyz789   1/1   Running   0   5m
+EOF
+}
+
+# Mark the optional kubernaut-operator-system namespace as present on the
+# (mocked) cluster and seed its pod list (Issue #2037: the separate
+# kubernaut-operator component's controller-manager pod, a THIRD namespace
+# outside RELEASE_NAMESPACE/WORKFLOW_NAMESPACE -- see UT-MG-2037-005).
+create_mock_operator_pod_names_list() {
+    touch "${TEST_TEMP_DIR}/operator-ns-present"
+    cat > "${TEST_TEMP_DIR}/operator-pod-names.txt" <<'EOF'
+kubernaut-operator-controller-manager-abc123   1/1   Running   0   5m
 EOF
 }
 

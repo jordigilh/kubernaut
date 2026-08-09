@@ -108,6 +108,7 @@ test-e2e: ## Run E2E tests (requires cluster, uncontainerized host kubectl)
 KIND_NETWORK ?= kind
 RELEASE_NAMESPACE ?= kubernaut-system
 WORKFLOW_NAMESPACE ?= kubernaut-workflows
+OPERATOR_NAMESPACE ?= kubernaut-operator-system
 
 test-e2e-container: build-local ## Run E2E tests in container against a live cluster (requires KUBECONFIG_PATH, e.g. from 'kind get kubeconfig --internal')
 	@echo "Running E2E tests in $(PLATFORM) container against live cluster..."
@@ -128,6 +129,7 @@ test-e2e-container: build-local ## Run E2E tests in container against a live clu
 		-e KUBERNAUT_E2E_TESTS=1 \
 		-e RELEASE_NAMESPACE=$(RELEASE_NAMESPACE) \
 		-e WORKFLOW_NAMESPACE=$(WORKFLOW_NAMESPACE) \
+		-e OPERATOR_NAMESPACE=$(OPERATOR_NAMESPACE) \
 		-w /must-gather \
 		--entrypoint bash \
 		$(LOCAL_IMAGE_NAME):test \

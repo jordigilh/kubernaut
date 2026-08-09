@@ -170,3 +170,40 @@ EOF
     assert_file_exists "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/apifrontend-xyz789/current.log"
 }
 
+# ========================================
+# UT-MG-2037-005: Optional kubernaut-operator-system collection (Issue #2037)
+# ========================================
+
+@test "UT-MG-2037-005: Support engineer gets operator controller-manager logs when the separate kubernaut-operator is installed" {
+    # Business Outcome: BR-PLATFORM-001.3 -- the standalone kubernaut-operator
+    # (quay.io/kubernaut-ai/kubernaut-operator, a distinct component from the
+    # Helm chart) deploys its own controller-manager pod into
+    # kubernaut-operator-system, a THIRD namespace outside
+    # RELEASE_NAMESPACE/WORKFLOW_NAMESPACE. When present on the cluster, its
+    # logs must be collected too so operator-path deployments get complete
+    # diagnostics, not just Helm-path ones.
+    create_mock_pod_names_list
+    create_mock_operator_pod_names_list
+    mock_kubectl "${TEST_TEMP_DIR}/pod-list.yaml"
+
+    run env RELEASE_NAMESPACE="kubernaut-system" bash "${COLLECTORS_DIR}/logs.sh" "${MOCK_COLLECTION_DIR}"
+
+    assert_success
+    assert_file_exists "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/gateway-abc123/current.log"
+    assert_file_exists "${MOCK_COLLECTION_DIR}/logs/kubernaut-operator-system/kubernaut-operator-controller-manager-abc123/current.log"
+}
+
+@test "UT-MG-2037-005: Collection succeeds without the optional kubernaut-operator-system namespace present" {
+    # Edge Case: the vast majority of installs use the Helm chart only, with
+    # no separate operator installed. Must be a silent, graceful skip -- not
+    # a warning or failure -- since absence is the expected common case.
+    create_mock_pod_names_list
+    mock_kubectl "${TEST_TEMP_DIR}/pod-list.yaml"
+
+    run env RELEASE_NAMESPACE="kubernaut-system" bash "${COLLECTORS_DIR}/logs.sh" "${MOCK_COLLECTION_DIR}"
+
+    assert_success
+    assert_file_exists "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/gateway-abc123/current.log"
+    [ ! -d "${MOCK_COLLECTION_DIR}/logs/kubernaut-operator-system" ]
+}
+

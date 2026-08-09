@@ -9,7 +9,7 @@ CI-gated, deterministic drift detector.
 **Version**: 1.0
 **Created**: 2026-08-09
 **Author**: AI Agent (Cursor)
-**Status**: Implementation Complete (local unit/lint validation green; live-cluster `e2e-tests` CI job validated on PR push)
+**Status**: Implementation Complete (local unit/lint validation green; live-cluster `e2e-tests` CI job validated on PR push). Addendum in Section 16 (v1.1): optional kubernaut-operator-system log collection + CI image-pull optimization, added post-review during the same PR.
 **Branch**: `fix/2037-must-gather-drift`
 
 ---
@@ -44,6 +44,10 @@ collection was incomplete).
    truth, not a second hardcoded number that can itself drift), and wire it into CI as a new
    `e2e-tests` job so this class of drift is caught automatically going forward.
 6. Zero regression in the existing 45 mocked-`kubectl` unit bats tests.
+7. *(Addendum, v1.1)* `logs.sh`: optionally collect logs from `OPERATOR_NAMESPACE`
+   (default `kubernaut-operator-system`, flag `--operator-namespace=`) when the separate
+   [kubernaut-operator](https://github.com/jordigilh/kubernaut-operator) component is installed on
+   the cluster — silent skip if absent, since most installs are Helm-chart-only.
 
 ### 1.3 Success Metrics
 
@@ -115,6 +119,8 @@ the user in this issue's closing summary rather than silently expanded or silent
 | R4 | `logs.sh` no longer iterates `WORKFLOW_NAMESPACE` — could be perceived as losing coverage | Low — that namespace's pod logs (Tekton job pods) are already collected more precisely by `tekton.sh`'s `-l tekton.dev/pipelineRun=` label-selector logic | Certain (intentional) | IT-MG-2037-003 | Documented explicitly in Section 1.4; no duplicate/competing collection path introduced |
 | R5 | `KUBERNAUT_NAMESPACES` has a wider blast radius (events.sh/metrics.sh/cluster-state.sh) than the original 4-file scope | Low if mishandled: could silently break 3 untouched collectors | N/A (caught during RED, before GREEN) | UT-MG-2037-002 | `gather.sh` keeps computing/exporting the same-shaped `KUBERNAUT_NAMESPACES` array (now 2 correct entries, not 3 stale ones) — zero changes required in events.sh/metrics.sh/cluster-state.sh |
 | R6 (out of scope) | `metrics.sh` has its own separate hardcoded-endpoint drift (wrong service name, obsolete namespace) | Low — metrics collection is best-effort/non-blocking already | Certain (pre-existing) | N/A | Flagged to user in closing summary; not fixed in this issue (not in approved scope) |
+| R7 *(addendum)* | Pinned `CHART_IMAGE_TAG`/`OPERATOR_VERSION` release tags can drift from current `main`'s CRD/API schema over time (unlike the previous build-from-source approach, which was always in sync) | Low-Medium — could eventually cause `helm install --wait` or the operator rollout to time out | Low near-term (both pinned tags are recent), grows over months | IT-MG-2037-001..007 (would fail loudly, not silently) | Both tags are `workflow_dispatch` inputs for quick manual override; bump periodically or when the Helm/operator install step starts failing |
+| R8 *(addendum)* | `fleetmetadatacache`/`console` chart images are not published at some older tags (confirmed absent at `1.5.5`) | None for the default install used here | N/A (verified, not a live risk) | N/A | Both are disabled by default (`global.fleet.enabled: false`, `console.enabled: false`) so are never scheduled by this job's `helm install`; confirmed present at the chosen `1.6.0-rc1` tag regardless |
 
 ### 3.1 Risk-to-Test Traceability
 
@@ -223,6 +229,7 @@ collection output (existing `|| echo "Warning: ..."` pattern must be preserved).
 | BR-PLATFORM-001 | Collection targets the correct, configurable release/workflow namespaces matching the current single-namespace deployment model | P1 | Unit | UT-MG-2037-002 | Done |
 | BR-PLATFORM-001.6a | DataStorage API collection targets the correct release namespace | P1 | Unit | UT-MG-2037-004 | Done |
 | BR-PLATFORM-001.3.4 | End-to-end must-gather run against a live cluster is deterministically verified complete, gating every PR touching `cmd/must-gather` | P0 | Integration | IT-MG-2037-001..005 | Done |
+| BR-PLATFORM-001.3 *(addendum)* | Support engineer gets the kubernaut-operator's own controller-manager logs when that separate component is installed, without a warning/failure when it is not | P1 | Unit + Integration | UT-MG-2037-005, IT-MG-2037-006, IT-MG-2037-007 | Done |
 
 ---
 
@@ -236,6 +243,7 @@ collection output (existing `|| echo "Warning: ..."` pattern must be preserved).
 | UT-MG-2037-002 | `gather.sh` resolves `RELEASE_NAMESPACE`/`WORKFLOW_NAMESPACE` from `--namespace=`/`--workflow-namespace=` flags (overridden) and from defaults (unset), and `KUBERNAUT_NAMESPACES` contains exactly those 2 values (no `kubernaut-notifications`) | RED/GREEN |
 | UT-MG-2037-003 | `logs.sh` collects logs from every pod in `RELEASE_NAMESPACE` regardless of name, including services absent from the old `SERVICE_PATTERNS` allowlist (e.g. `authwebhook-*`, `apifrontend-*`) | RED/GREEN |
 | UT-MG-2037-004 | `datastorage.sh` builds `DATASTORAGE_URL` using the configured `RELEASE_NAMESPACE`, not a hardcoded `kubernaut-system` literal | RED/GREEN |
+| UT-MG-2037-005 *(addendum)* | `logs.sh` collects logs from `OPERATOR_NAMESPACE` when it exists, and silently (no warning) skips it when absent, while `RELEASE_NAMESPACE` collection is unaffected either way | RED/GREEN |
 
 ### Tier 2: Integration Tests (live Kind cluster, real Helm-installed chart, containerized must-gather image)
 
@@ -246,6 +254,8 @@ collection output (existing `|| echo "Warning: ..."` pattern must be preserved).
 | IT-MG-2037-003 | Every live pod in the release namespace has a corresponding collected `logs/<ns>/<pod>/current.log` | RED/GREEN |
 | IT-MG-2037-004 | DataStorage API collection succeeds against the live in-cluster service (URL correctly resolves) | RED/GREEN |
 | IT-MG-2037-005 | Full containerized `/usr/bin/gather` run (the actual shipped image, not raw host scripts) completes successfully against the live cluster via the new `e2e-tests` CI job | RED/GREEN |
+| IT-MG-2037-006 *(addendum)* | Dynamic CRD discovery collects `kubernauts.kubernaut.ai` (registered by the real, separately-installed kubernaut-operator, not this Helm chart) — proves discovery isn't secretly scoped to chart-owned CRDs. Skips gracefully if the operator isn't installed. | RED/GREEN |
+| IT-MG-2037-007 *(addendum)* | Every live pod in the real kubernaut-operator's `kubernaut-operator-system` namespace has a corresponding collected `logs/kubernaut-operator-system/<pod>/current.log`. Skips gracefully if the operator isn't installed. | RED/GREEN |
 
 ### Tier Skip Rationale
 
@@ -317,8 +327,13 @@ added/removed in future releases).
 - **Unit**: bats-core 1.11.0 (existing container-based `make test-container` harness), mocked
   `kubectl`/`curl`, no external infra.
 - **Integration**: Kind cluster (podman provider, `KIND_EXPERIMENTAL_PROVIDER=podman`), Helm 3,
-  `charts/kubernaut` installed with default values, must-gather image built locally
+  `charts/kubernaut` installed with pinned pre-built `quay.io/kubernaut-ai/*` images (default tag
+  `1.6.0-rc1`, no local image build), must-gather image built locally
   (`make -C cmd/must-gather build-local`), `kind get kubeconfig --internal` for in-network access.
+  *(Addendum)* the real `jordigilh/kubernaut-operator` (pinned `v1.5.7`, public
+  `quay.io/kubernaut-ai/kubernaut-operator` image, no external deps needed for its
+  controller-manager to become Ready) installed via its published `dist/install.yaml` bundle for
+  IT-MG-2037-006/007 coverage.
 
 ---
 
@@ -344,6 +359,11 @@ validation.
 | New CI job | `.github/workflows/must-gather-tests.yml` (`e2e-tests`) |
 | New Makefile target | `cmd/must-gather/Makefile` (`test-e2e-container`) |
 | Updated docs | `cmd/must-gather/README.md` (flags table) |
+| *(Addendum)* Optional operator log collection | `cmd/must-gather/gather.sh`, `cmd/must-gather/collectors/logs.sh`, `cmd/must-gather/utils/namespace.sh` |
+| *(Addendum)* Updated unit bats | `cmd/must-gather/test/test_logs.bats`, `helpers.bash` (UT-MG-2037-005) |
+| *(Addendum)* Strengthened live-cluster bats | `cmd/must-gather/test/integration/test_e2e.bats` (IT-MG-2037-006, IT-MG-2037-007) |
+| *(Addendum)* CI: real kubernaut-operator install + image-pull optimization | `.github/workflows/must-gather-tests.yml` (`e2e-tests` job) |
+| *(Addendum)* Updated Makefile | `cmd/must-gather/Makefile` (`OPERATOR_NAMESPACE` passthrough) |
 
 ---
 
@@ -371,6 +391,8 @@ KUBERNAUT_E2E_TESTS=1 make -C cmd/must-gather test-e2e-container
 | All-pod log collection | `/usr/bin/gather` | `cmd/must-gather/collectors/logs.sh` | UT-MG-2037-003, IT-MG-2037-003 |
 | DataStorage URL namespace parameterization | `/usr/bin/gather` | `cmd/must-gather/collectors/datastorage.sh` | UT-MG-2037-004, IT-MG-2037-004 |
 | Live-cluster drift-detection CI gate | `.github/workflows/must-gather-tests.yml` (`e2e-tests` job, every PR touching `cmd/must-gather/**`) | `cmd/must-gather/test/integration/test_e2e.bats` + `cmd/must-gather/Makefile` `test-e2e-container` | IT-MG-2037-005 |
+| Optional operator-namespace log collection *(addendum)* | `/usr/bin/gather` | `cmd/must-gather/collectors/logs.sh` (`collect_namespace_pod_logs`), `cmd/must-gather/gather.sh` (`OPERATOR_NAMESPACE`) | UT-MG-2037-005, IT-MG-2037-007 |
+| Real kubernaut-operator installed in CI for genuine (not stubbed) coverage *(addendum)* | `e2e-tests` CI job | `.github/workflows/must-gather-tests.yml` (`Install kubernaut-operator` step, `jordigilh/kubernaut-operator` `dist/install.yaml`) | IT-MG-2037-006, IT-MG-2037-007 |
 
 ---
 
@@ -400,3 +422,4 @@ demonstrated false-positive in the existing suite (see `test_logs.bats` note abo
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-08-09 | Initial test plan, written before RED phase begins. |
+| 1.1 | 2026-08-09 | Addendum, added during the same PR after initial implementation review: (1) `logs.sh` optionally collects `OPERATOR_NAMESPACE` (default `kubernaut-operator-system`) logs from the separate kubernaut-operator component when present, silently skipping when absent (UT-MG-2037-005, IT-MG-2037-006, IT-MG-2037-007); the `e2e-tests` CI job now installs the real `jordigilh/kubernaut-operator` (pinned `v1.5.7` `dist/install.yaml`) for genuine coverage, not a stub. (2) `e2e-tests` CI job no longer builds all ~12 chart-managed service images from source (`make image-build`) -- it pulls a pinned pre-built `quay.io/kubernaut-ai/*` release tag instead (default `1.6.0-rc1`, overridable via `workflow_dispatch`), since this job validates must-gather's *collection* logic, not each service's business logic. The must-gather image itself is still built from source (it's the actual subject under test). Cuts job duration from ~15-20 min to an estimated ~5-8 min. |
