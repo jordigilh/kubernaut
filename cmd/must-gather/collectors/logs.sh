@@ -21,67 +21,61 @@ set -euo pipefail
 COLLECTION_DIR="${1}"
 LOGS_DIR="${COLLECTION_DIR}/logs"
 
+# shellcheck source=../utils/namespace.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../utils/namespace.sh"
+
 echo "Collecting service logs..."
 
-# V1.0 Services (8 total)
-# Stateless HTTP Services (3): gateway, datastorage, kubernaut-agent
-# CRD Controllers (5): notification-controller, signalprocessing-controller,
-#                      aianalysis-controller, workflowexecution-controller,
-#                      remediationorchestrator-controller
+# Issue #2037: collect logs from EVERY pod in the release namespace, instead
+# of matching pod names against a maintained per-service prefix allowlist.
+# That allowlist silently rotted as services were added (12 chart-managed
+# services today vs. 8 when the list was last updated) -- support engineers
+# received incomplete log collections with no signal collection was partial.
+# This mirrors the drift-proof precedent already established by
+# test/infrastructure/datastorage.go's MustGatherPodLogs.
+#
+# RELEASE_NAMESPACE is mandatory (this Helm chart always deploys into it).
+# OPERATOR_NAMESPACE is OPTIONAL: the separate kubernaut-operator component
+# (quay.io/kubernaut-ai/kubernaut-operator) is not deployed by this Helm
+# chart at all -- it's an independent install that most clusters won't have.
+# When present, its controller-manager pod's logs matter just as much for
+# operator-path deployments, so it's collected the same way, but its absence
+# is the expected common case and must never produce a warning.
+#
+# Neither includes WORKFLOW_NAMESPACE: Tekton job-pod logs there are already
+# collected more precisely by tekton.sh's PipelineRun-label-selector-based
+# `kubectl logs`.
 
-SERVICE_PATTERNS=(
-    "gateway-"
-    "datastorage-"
-    "kubernaut-agent-"
-    "notification-controller-"
-    "signalprocessing-controller-"
-    "aianalysis-controller-"
-    "workflowexecution-controller-"
-    "remediationorchestrator-controller-"
-)
+collect_namespace_pod_logs() {
+    local namespace="$1"
+    local optional="$2" # "true" -> silent skip if namespace absent
 
-# Default namespaces if not set
-if [ -z "${KUBERNAUT_NAMESPACES+x}" ]; then
-    KUBERNAUT_NAMESPACES=("kubernaut-system" "kubernaut-notifications" "kubernaut-workflows")
-fi
+    if ! kubectl get namespace "${namespace}" > /dev/null 2>&1; then
+        if [ "${optional}" = "true" ]; then
+            return 0
+        fi
+        echo "    Warning: Namespace ${namespace} not found, skipping"
+        return 0
+    fi
 
-# Iterate through Kubernaut namespaces
-for namespace in "${KUBERNAUT_NAMESPACES[@]}"; do
     echo "  - Namespace: ${namespace}"
 
-    # Check if namespace exists
-    if ! kubectl get namespace "${namespace}" > /dev/null 2>&1; then
-        echo "    Warning: Namespace ${namespace} not found, skipping"
-        continue
-    fi
+    # Get all pods in the namespace -- no per-service allowlist
+    local pods
+    pods=$(kubectl get pods -n "${namespace}" --no-headers 2>/dev/null | awk '{print $1}' || echo "")
 
-    # Get all pods in namespace
-    PODS=$(kubectl get pods -n "${namespace}" --no-headers 2>/dev/null | awk '{print $1}' || echo "")
-
-    if [ -z "${PODS}" ]; then
+    if [ -z "${pods}" ]; then
         echo "    No pods found in namespace ${namespace}"
-        continue
+        return 0
     fi
 
-    # Collect logs for each pod matching service patterns
     while IFS= read -r pod; do
-        # Check if pod matches any service pattern
-        MATCHED=false
-        for pattern in "${SERVICE_PATTERNS[@]}"; do
-            if [[ "${pod}" == ${pattern}* ]]; then
-                MATCHED=true
-                break
-            fi
-        done
-
-        if [ "${MATCHED}" = false ]; then
-            continue  # Skip non-Kubernaut pods
-        fi
+        [ -z "${pod}" ] && continue
 
         echo "    Collecting logs from pod: ${pod}"
 
-        POD_DIR="${LOGS_DIR}/${namespace}/${pod}"
-        mkdir -p "${POD_DIR}"
+        local pod_dir="${LOGS_DIR}/${namespace}/${pod}"
+        mkdir -p "${pod_dir}"
 
         # Collect current logs
         kubectl logs "${pod}" -n "${namespace}" \
@@ -89,7 +83,7 @@ for namespace in "${KUBERNAUT_NAMESPACES[@]}"; do
             --tail=10000 \
             --timestamps \
             --all-containers \
-            > "${POD_DIR}/current.log" 2>&1 || {
+            > "${pod_dir}/current.log" 2>&1 || {
             echo "      Warning: Failed to collect current logs from ${pod}"
         }
 
@@ -99,16 +93,19 @@ for namespace in "${KUBERNAUT_NAMESPACES[@]}"; do
             --tail=10000 \
             --timestamps \
             --all-containers \
-            > "${POD_DIR}/previous.log" 2>/dev/null || {
+            > "${pod_dir}/previous.log" 2>/dev/null || {
             # No previous logs (pod hasn't restarted) - this is normal
-            rm -f "${POD_DIR}/previous.log"
+            rm -f "${pod_dir}/previous.log"
         }
 
         # Collect pod description
-        kubectl describe pod "${pod}" -n "${namespace}" > "${POD_DIR}/describe.txt" 2>&1 || true
+        kubectl describe pod "${pod}" -n "${namespace}" > "${pod_dir}/describe.txt" 2>&1 || true
 
-    done <<< "${PODS}"
-done
+    done <<< "${pods}"
+}
+
+collect_namespace_pod_logs "${RELEASE_NAMESPACE}" "false"
+collect_namespace_pod_logs "${OPERATOR_NAMESPACE}" "true"
 
 # Count total logs collected
 TOTAL_LOGS=$(find "${LOGS_DIR}" -name "*.log" 2>/dev/null | wc -l || echo "0")

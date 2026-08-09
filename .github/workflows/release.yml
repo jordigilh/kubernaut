@@ -4,15 +4,17 @@ name: Release
 # Builds multi-arch images (amd64 + arm64) for all 13 services in parallel,
 # runs Helm smoke tests against the amd64 images, scans all images for CVEs
 # (Trivy) and generates SBOMs (CycloneDX), signs images with Cosign (keyless),
-# generates SLSA build provenance, publishes Helm chart to OCI registry,
-# and creates a GitHub Release gated on smoke test + security scan success.
+# generates SLSA v1.0 Build L3 provenance (via an isolated reusable workflow,
+# slsa-provenance.yml), publishes Helm chart to OCI registry, and creates a
+# GitHub Release gated on smoke test + security scan success.
 # Pre-release tags (-rc*, -alpha*, -beta*) create a pre-release and skip :latest tagging.
 #
 # Prerequisites:
 #   - Quay.io robot account with Creator role in kubernaut-ai org
 #   - GitHub Actions secrets: QUAY_ROBOT_USERNAME, QUAY_ROBOT_TOKEN
 #
-# Authority: Issue #257 (sub-issue of #80), Issue #569, Issue #1315, Issue #1319
+# Authority: Issue #257 (sub-issue of #80), Issue #569, Issue #1315, Issue #1319,
+#            Issue #1109 (SLSA Build L3)
 # Business Requirement: BR-PLATFORM-RELEASE-001
 # FedRAMP Controls: SA-12 (Supply Chain), RA-5 (Vulnerability Scanning),
 #                   CM-14 (Signed Components), AU-3 (Audit Content)
@@ -24,10 +26,11 @@ on:
 
 # Least-privilege default for every job. All image push/pull in this workflow
 # goes to Quay.io via QUAY_ROBOT_* secrets, not GITHUB_TOKEN, so no job needs
-# a `packages` scope. Only sign-and-attest (Cosign OIDC + SLSA provenance) and
-# release (gh release create/upload) need elevated GITHUB_TOKEN scopes; they
-# declare their own job-level `permissions:` below, which fully replaces
-# (not merges with) this default for that job.
+# a `packages` scope. Only sign-and-attest (Cosign OIDC), provenance (isolated
+# SLSA Build L3 attestation via slsa-provenance.yml), and release (gh release
+# create/upload) need elevated GITHUB_TOKEN scopes; they declare their own
+# job-level `permissions:` below, which fully replaces (not merges with) this
+# default for that job.
 permissions:
   contents: read
 
@@ -619,21 +622,22 @@ jobs:
           echo "All images tagged as latest"
 
   # ========================================
-  # STAGE 3b: COSIGN SIGNING & SLSA ATTESTATION
+  # STAGE 3b: COSIGN SIGNING & SBOM ATTESTATION
   # Signs all arch-tagged images and manifest lists with Cosign (keyless),
-  # then generates SLSA v1.0 build provenance for each manifest list.
+  # and attests each arch's SBOM. SLSA build provenance is generated
+  # separately by the `provenance` job below, via an isolated reusable
+  # workflow (Build L3) -- see #1109.
   # Authority: Issue #1315, #1319 | FedRAMP CM-14, AU-3, SA-12
   # ========================================
 
   sign-and-attest:
-    name: "Sign & Attest ${{ matrix.service }}"
+    name: "Sign & Attest SBOM ${{ matrix.service }}"
     needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
-      id-token: write       # Cosign keyless signing + SLSA provenance via GitHub OIDC
-      attestations: write   # SLSA build provenance attestation
+      id-token: write       # Cosign keyless signing via GitHub OIDC
     strategy:
       fail-fast: false
       matrix:
@@ -700,30 +704,6 @@ jobs:
           cosign sign --yes "${IMAGE_REGISTRY}/${SVC}@${{ steps.digests.outputs.manifest }}"
           echo "  Signed ${SVC} manifest list"
 
-      - name: SLSA build provenance attestation
-        id: attest
-        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4
-        with:
-          subject-name: ${{ env.IMAGE_REGISTRY }}/${{ matrix.service }}
-          subject-digest: ${{ steps.digests.outputs.manifest }}
-          push-to-registry: true
-
-      - name: Stage provenance bundle for release upload
-        # Scorecard's Signed-Releases check looks for signature/provenance files
-        # attached directly to GitHub Release assets — registry-level attestation
-        # (push-to-registry above) isn't visible to it. Renaming and uploading the
-        # bundle as an artifact here lets the release job attach it alongside SBOMs.
-        run: |
-          cp "${{ steps.attest.outputs.bundle-path }}" \
-             "provenance-${{ matrix.service }}.sigstore.json"
-
-      - name: Upload provenance bundle artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: provenance-${{ matrix.service }}
-          path: provenance-${{ matrix.service }}.sigstore.json
-          retention-days: 1
-
       - name: Download SBOM artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -746,6 +726,68 @@ jobs:
             --type cyclonedx \
             "${IMAGE_REGISTRY}/${{ matrix.service }}@${{ steps.digests.outputs.arm64 }}"
           echo "  Attested ${{ matrix.service }} arm64 SBOM"
+
+  # ========================================
+  # STAGE 3c: SLSA BUILD L3 PROVENANCE
+  # Generates SLSA v1.0 build provenance for each manifest list via an
+  # isolated same-repo reusable workflow (slsa-provenance.yml). Running the
+  # attestation step in a separate workflow_call job -- rather than inline,
+  # as sign-and-attest did before -- gives it its own OIDC/Sigstore signer
+  # identity that this job cannot influence or forge, which is what
+  # upgrades provenance from Build L2 (self-asserted) to Build L3
+  # (non-falsifiable). Verified empirically pre-merge (see #1109).
+  #
+  # Deliberately not slsa-framework/slsa-github-generator: that project is
+  # no longer actively maintained (frozen at v2.1.0, Feb 2025) and its own
+  # docs now point to this native-attestation + isolated-workflow pattern
+  # instead. It also uploads its bundle as a GitHub Release asset, which
+  # risks the "Cannot upload assets to an immutable release" failure mode
+  # against our release job's own late asset uploads -- this approach
+  # doesn't upload anything until the dedicated `release` job step below.
+  #
+  # Independently resolves the manifest digest (rather than reading it from
+  # sign-and-attest's matrix outputs) because GitHub Actions does not
+  # reliably scope a matrix job's outputs per matrix key to a downstream
+  # matrix consumer.
+  #
+  # Authority: Issue #1109 | FedRAMP SA-12, CM-14, AU-3
+  # ========================================
+
+  provenance:
+    name: "Attest ${{ matrix.service }}"
+    needs: [prepare, create-manifests, security-scan-amd64, security-scan-arm64]
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - gateway
+          - signalprocessing
+          - aianalysis
+          - authwebhook
+          - remediationorchestrator
+          - workflowexecution
+          - notification
+          - datastorage
+          - effectivenessmonitor
+          - kubernautagent
+          - apifrontend
+          - fleetmetadatacache
+          - must-gather
+          - db-migrate
+    uses: ./.github/workflows/slsa-provenance.yml
+    with:
+      service: ${{ matrix.service }}
+      # The `env` context (IMAGE_REGISTRY) is not available to the inputs of
+      # a reusable workflow call, so the registry is spelled out here.
+      image: quay.io/kubernaut-ai/${{ matrix.service }}
+      version: ${{ needs.prepare.outputs.version }}
+    secrets: inherit
 
   # ========================================
   # STAGE 4: HELM CHART PUBLISH
@@ -801,7 +843,7 @@ jobs:
 
   release:
     name: Create GitHub Release
-    needs: [prepare, helm-smoke-test, create-manifests, helm-publish, security-scan-amd64, security-scan-arm64, sign-and-attest]
+    needs: [prepare, helm-smoke-test, create-manifests, helm-publish, security-scan-amd64, security-scan-arm64, sign-and-attest, provenance]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
