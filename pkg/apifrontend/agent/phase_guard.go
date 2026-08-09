@@ -548,6 +548,25 @@ func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
 	logr.FromContextOrDiscard(ctx).Info("grounding-guard overriding present_decision content: no groundable investigation content available")
 
 	args["summary"] = noGroundedContentSummary
-	delete(args, "rca")
+	// #1396 (ka_tools.go PresentDecisionArgs): rca is a required property in
+	// present_decision's ADK-generated JSON schema -- deleting the key
+	// entirely (rather than zeroing it) makes ADK's own schema validation
+	// reject the call with "required: missing properties: [rca]" before it
+	// ever reaches this tool's handler, silently defeating the AU-3
+	// mandate this guard exists to preserve (present_decision must still
+	// execute and emit its structured artifact even when ungrounded).
+	args["rca"] = emptyRCAPayload
 	args["options"] = []any{}
+}
+
+// emptyRCAPayload is the zero-value RCAData (tools.RCAData) shape,
+// satisfying present_decision's required "rca" property while carrying no
+// fabricated findings. CausalChain is omitted (its json tag carries
+// omitempty) rather than an empty slice, matching RCAData's own zero value.
+var emptyRCAPayload = map[string]any{
+	"severity":         "",
+	"confidence":       0,
+	"target":           "",
+	"tool_calls_count": 0,
+	"llm_turns":        0,
 }

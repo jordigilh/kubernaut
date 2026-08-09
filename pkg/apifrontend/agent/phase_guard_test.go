@@ -640,7 +640,13 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2023)", func() {
 
 		summary, _ := args["summary"].(string)
 		Expect(summary).To(ContainSubstring("No investigation content is available"))
-		Expect(args["rca"]).To(BeNil(), "rca payload must be cleared, not left carrying invented fields")
+		rca, ok := args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue(),
+			"rca must remain present (not deleted) -- it is a required property in present_decision's "+
+				"ADK schema (#1396); deleting it makes ADK's own validation reject the call before the "+
+				"AU-3 artifact can ever be emitted")
+		Expect(rca["severity"]).To(BeEmpty(), "rca payload must be cleared, not left carrying invented fields")
+		Expect(rca["target"]).To(BeEmpty())
 	})
 
 	It("UT-AF-2023-004: overrides present_decision content when kubernaut_investigate returned session_active", func() {
