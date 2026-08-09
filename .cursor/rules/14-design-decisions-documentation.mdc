@@ -89,9 +89,15 @@ When user requests or AI proposes a significant architectural change, AI MUST:
 #### **Validation Steps**
 
 **Step 1: Discovery (REQUIRED)**
+
+Prefer MCP tools over grep (see [AGENTS.md Detection Commands](../../AGENTS.md#detection-commands)):
+```
+cocoindex_search(query="existing [ArchitecturalPattern] implementations", limit=10)
+```
 ```bash
 # AI must search for existing patterns
 codebase_search "existing [pattern] implementations"
+# Fallback only if cocoindex_search is unavailable:
 grep -r "[ArchitecturalPattern]" docs/architecture/ docs/services/
 ```
 

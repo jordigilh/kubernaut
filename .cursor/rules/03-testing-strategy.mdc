@@ -191,18 +191,33 @@ url = config['data_storage']['url']
 
 ### Validation Sequence
 
+Prefer MCP tools over grep for Steps 1-3 (see
+[AGENTS.md Detection Commands](../../AGENTS.md#detection-commands)): gopls gives a type-safe
+definition + method set directly; cocoindex_search finds mocks by meaning when the exact name
+is unknown.
+
 **Step 1 - Interface Discovery**:
+```
+go_search(query="[InterfaceName]")
+```
 ```bash
+# Fallback only if gopls is unavailable:
 grep -r "type.*[InterfaceName].*interface" pkg/ --include="*.go"
 ```
 
 **Step 2 - Method Signature Validation**:
+
+`go_search`/`gopls definition` returns the full interface body directly. Fallback:
 ```bash
 grep -A 20 "type.*[InterfaceName].*interface" [interface_file.go]
 ```
 
 **Step 3 - Mock Reuse Check**:
+```
+cocoindex_search(query="existing Mock[ComponentName] implementation", limit=10)
+```
 ```bash
+# Fallback only if cocoindex_search is unavailable:
 find pkg/testutil/mocks/ -name "*[ComponentName]*" -type f
 grep -r "Mock[ComponentName]" pkg/testutil/ --include="*.go"
 ```

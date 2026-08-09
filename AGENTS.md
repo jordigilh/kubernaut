@@ -223,9 +223,27 @@ REFACTOR: Clean up (name what's being cleaned up; N/A if GREEN left nothing to c
 
 ### Detection Commands
 
-**Preference hierarchy**: gopls MCP > gopls CLI > grep
+**Preference hierarchy**: MCP tools (gopls / cocoindex_search) > gopls CLI > grep
 
-#### gopls (preferred -- type-safe, import-aware)
+Use the right tool for the question:
+
+- **gopls** -- precise, type-safe answers about Go code: symbol references, callers,
+  definitions, "does this have a production caller". Use when you know (or can guess) the
+  exact identifier.
+- **cocoindex_search** -- semantic code search across the whole repo. Use when you don't know
+  the exact symbol name, or are exploring how a feature/subsystem works conceptually (e.g.
+  "how does workflow selection scoring work", "where do we handle rate limiting for LLM
+  calls"). More effective than grep for this because it ranks by meaning, not literal text.
+- **grep/rg** -- fallback only: literal string/regex matching MCP tools can't do (e.g.
+  anti-pattern detection like `grep "ToNot(BeNil())"`), or when the MCP servers above are
+  unavailable/misconfigured for this workspace.
+
+Both MCP servers are unavailable on a Go-symbol-refactor from the CLI (rename, extract,
+inline) -- see [`.cursor/skills/go-refactor-with-gopls/`](.cursor/skills/go-refactor-with-gopls/)
+for that workflow, which legitimately uses `rg` only to locate `line:col` coordinates to feed
+into `gopls`'s CLI mode.
+
+#### gopls (preferred for precise Go lookups -- type-safe, import-aware)
 
 gopls provides precise reference lookups using the Go type system. Results are identical
 regardless of interface; MCP is preferred for AI agents because it avoids shell parsing.
@@ -265,7 +283,23 @@ gopls symbols -query="NewComponent"
 Verify that each new exported function/type has at least one caller in production code
 (`cmd/` or `handler/` paths, excluding `_test.go`).
 
-#### grep (fallback -- when gopls is unavailable)
+#### cocoindex_search (preferred for semantic/conceptual exploration)
+
+cocoindex_search performs semantic code search over the whole repository. Use it instead of
+grep when you don't know the exact symbol name, or want to understand how a subsystem works
+before modifying it, or need to find likely callers/dependents of a function by meaning
+rather than exact text match.
+
+**MCP usage** (AI agents):
+```
+cocoindex_search(query="how does workflow selection scoring work", limit=10)
+cocoindex_search(query="where do we handle rate limiting for LLM calls", limit=10)
+```
+
+Pre-configured in Cursor as `cocoindex-code`. For other MCP-compatible agents, add the same
+server (`~/.hindsight/cocoindex-search.py`) to your MCP configuration.
+
+#### grep (fallback -- when MCP tools are unavailable or don't apply)
 
 ```bash
 # Verify new components have production callers

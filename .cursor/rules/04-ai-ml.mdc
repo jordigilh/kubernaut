@@ -63,9 +63,15 @@ if err != nil {
 
 ### AI Discovery Phase (5-10 min)
 
-Search existing AI interfaces BEFORE creating new.
+Search existing AI interfaces BEFORE creating new. Prefer MCP tools over grep (see
+[AGENTS.md Detection Commands](../../AGENTS.md#detection-commands)):
+
+```
+cocoindex_search(query="existing AI/LLM client interfaces in pkg/ai", limit=10)
+```
 
 ```bash
+# Fallback only if cocoindex_search is unavailable:
 grep -r "Client.*interface" pkg/ai/ --include="*.go"
 grep -r "AI\|LLM\|Holmes" cmd/ --include="*.go"
 ```
