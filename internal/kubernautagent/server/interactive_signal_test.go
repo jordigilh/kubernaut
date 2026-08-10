@@ -207,6 +207,56 @@ var _ = Describe("BR-INTERACTIVE-010: Interactive Signal Mapping — #1293", fun
 		})
 	})
 
+	Describe("UT-KA-2064-001: MapIncidentRequestToSignal maps resource_api_version to SignalContext (#2064)", func() {
+		It("should set ResourceAPIVersion on SignalContext when request carries resource_api_version", func() {
+			req := &agentclient.IncidentRequest{
+				IncidentID:         "int-test-2064-001",
+				RemediationID:      "rem-2064-001",
+				SignalName:         "OOMKilled",
+				Severity:           agentclient.SeverityCritical,
+				ResourceNamespace:  "prod",
+				ResourceKind:       "Deployment",
+				ResourceName:       "api-server",
+				ResourceAPIVersion: "apps/v1",
+				ErrorMessage:       "OOMKilled",
+				Environment:        "production",
+				Priority:           "high",
+				RiskTolerance:      "medium",
+				BusinessCategory:   "core",
+				ClusterName:        "prod-1",
+				SignalSource:       "kubernetes",
+			}
+
+			signal := server.MapIncidentRequestToSignal(req)
+			Expect(signal.ResourceAPIVersion).To(Equal("apps/v1"),
+				"#2064: MapIncidentRequestToSignal must forward resource_api_version from the wire request so KA's SignalContext isn't starved of it at ingestion")
+		})
+
+		It("should leave ResourceAPIVersion empty when request carries an empty resource_api_version", func() {
+			req := &agentclient.IncidentRequest{
+				IncidentID:        "int-test-2064-002",
+				RemediationID:     "rem-2064-002",
+				SignalName:        "CrashLoopBackOff",
+				Severity:          agentclient.SeverityHigh,
+				ResourceNamespace: "default",
+				ResourceKind:      "Widget",
+				ResourceName:      "worker",
+				// ResourceAPIVersion intentionally left empty (upstream unknown)
+				ErrorMessage:     "CrashLoopBackOff",
+				Environment:      "staging",
+				Priority:         "medium",
+				RiskTolerance:    "medium",
+				BusinessCategory: "platform",
+				ClusterName:      "staging-1",
+				SignalSource:     "kubernetes",
+			}
+
+			signal := server.MapIncidentRequestToSignal(req)
+			Expect(signal.ResourceAPIVersion).To(Equal(""),
+				"ResourceAPIVersion must remain empty (not panic/default to garbage) when the wire field is an empty string")
+		})
+	})
+
 	Describe("UT-KA-1293-012: mapSessionStatusToAPI returns pending for StatusPending", func() {
 		It("should return status 'pending' from the session status endpoint", func() {
 			store := session.NewStore(5 * time.Minute)
