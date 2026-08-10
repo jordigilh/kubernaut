@@ -504,12 +504,12 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 						fmt.Sprintf("BR-GATEWAY-005: %s should cause validation failure", tc.description))
 					Expect(signal).To(BeNil(),
 						"BR-GATEWAY-005: Signal must be nil when required field is empty")
-			} else {
-				Expect(err).ToNot(HaveOccurred(),
-					"BR-GATEWAY-005: Valid fields should parse without error")
-				Expect(signal.Resource.Kind).ToNot(BeEmpty(),
-					"BR-GATEWAY-005: Parsed signal must have a resource kind")
-			}
+				} else {
+					Expect(err).ToNot(HaveOccurred(),
+						"BR-GATEWAY-005: Valid fields should parse without error")
+					Expect(signal.Resource.Kind).ToNot(BeEmpty(),
+						"BR-GATEWAY-005: Parsed signal must have a resource kind")
+				}
 
 				GinkgoWriter.Printf("✅ Empty field handling validated: %s (fail=%v)\n",
 					tc.description, tc.shouldFail)
@@ -906,6 +906,113 @@ var _ = Describe("Gateway Adapter Logic", Label("integration", "adapters"), func
 
 			GinkgoWriter.Printf("✅ IT-GW-1067-002: Namespace excluded, correct target: %s/%s\n",
 				signal.Resource.Kind, signal.Resource.Name)
+		})
+	})
+
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	// BR-GATEWAY-001/BR-GATEWAY-005: apiVersion Propagation to RemediationRequest CRD (#2066)
+	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+	//
+	// These tests prove the end-to-end wiring (not just adapter-level unit
+	// behavior) for both signal sources: adapter.Parse() -> ProcessSignal() ->
+	// CreateRemediationRequest() -> buildTargetResource() -> the persisted
+	// RemediationRequest.Spec.TargetResource.APIVersion field. Genuine
+	// cross-group ambiguity resolution itself is unit-tested in
+	// resource_extraction_test.go (Pyramid Invariant: IT proves wiring for the
+	// representative case, not every UT branch).
+	Context("BR-GATEWAY-001/BR-GATEWAY-005: apiVersion Propagation to RemediationRequest CRD (#2066)", func() {
+		It("[IT-GW-2066-001] should propagate involvedObject.apiVersion from a K8s Event into the created CRD (Track 3a)", func() {
+			By("1. Create Gateway server")
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("2. Create K8s Event with explicit involvedObject.apiVersion")
+			k8sEvent := []byte(fmt.Sprintf(`{
+				"type": "Warning",
+				"reason": "BackOff",
+				"involvedObject": {
+					"kind": "Pod",
+					"name": "apiversion-track3a-pod",
+					"namespace": "%s",
+					"apiVersion": "v1"
+				},
+				"message": "Test K8s event",
+				"firstTimestamp": "2026-01-16T12:00:00Z",
+				"lastTimestamp": "2026-01-16T12:00:00Z"
+			}`, testNamespace))
+
+			By("3. Parse event through K8s Event adapter")
+			k8sAdapter := adapters.NewKubernetesEventAdapter()
+			signal, err := k8sAdapter.Parse(ctx, k8sEvent)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(signal.Resource.APIVersion).To(Equal("v1"),
+				"#2066 Track 3a: involvedObject.apiVersion must be captured by the adapter")
+
+			By("4. Process signal through the full Gateway pipeline")
+			response, err := gwServer.ProcessSignal(ctx, signal)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response.Status).To(Equal("created"))
+
+			By("5. Verify the persisted CRD carries the apiVersion through")
+			rr := &remediationv1alpha1.RemediationRequest{}
+			err = k8sClient.Get(ctx, client.ObjectKey{
+				Name:      response.RemediationRequestName,
+				Namespace: controllerNamespace,
+			}, rr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rr.Spec.TargetResource.APIVersion).To(Equal("v1"),
+				"#2066 Track 3a: RemediationRequest.Spec.TargetResource.APIVersion must be populated end-to-end from a K8s Event source")
+
+			GinkgoWriter.Printf("✅ IT-GW-2066-001: K8s Event apiVersion propagated to CRD: %s\n",
+				rr.Spec.TargetResource.APIVersion)
+		})
+
+		It("[IT-GW-2066-002] should propagate discovery-resolved apiVersion from a Prometheus alert into the created CRD (Track 3b, unambiguous kind)", func() {
+			By("1. Create Gateway server")
+			gatewayConfig := createGatewayConfig(fmt.Sprintf("http://127.0.0.1:%d", gatewayDataStoragePort))
+			gwServer, err := createGatewayServer(gatewayConfig, logger, k8sClient, sharedAuditStore)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("2. Parse a Prometheus alert for an unambiguous Deployment kind")
+			prometheusAdapter := adapters.NewPrometheusAdapter(nil, adapters.NewTestAPIResourceRegistry())
+			payload := []byte(fmt.Sprintf(`{
+				"alerts": [{
+					"labels": {
+						"alertname": "DeploymentReplicasMismatch",
+						"namespace": "%s",
+						"severity": "warning",
+						"deployment": "apiversion-track3b-deploy"
+					},
+					"annotations": {
+						"summary": "Deployment replicas mismatch"
+					},
+					"startsAt": "2026-01-16T12:00:00Z"
+				}]
+			}`, testNamespace))
+
+			signal, err := prometheusAdapter.Parse(ctx, payload)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(signal.Resource.APIVersion).To(Equal("apps/v1"),
+				"#2066 Track 3b: unambiguous Deployment kind must resolve apiVersion deterministically from discovery")
+
+			By("3. Process signal through the full Gateway pipeline")
+			response, err := gwServer.ProcessSignal(ctx, signal)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(response.Status).To(Equal("created"))
+
+			By("4. Verify the persisted CRD carries the discovery-resolved apiVersion through")
+			rr := &remediationv1alpha1.RemediationRequest{}
+			err = k8sClient.Get(ctx, client.ObjectKey{
+				Name:      response.RemediationRequestName,
+				Namespace: controllerNamespace,
+			}, rr)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rr.Spec.TargetResource.APIVersion).To(Equal("apps/v1"),
+				"#2066 Track 3b: RemediationRequest.Spec.TargetResource.APIVersion must be populated end-to-end from a discovery-resolved Prometheus source")
+
+			GinkgoWriter.Printf("✅ IT-GW-2066-002: Prometheus alert apiVersion propagated to CRD: %s\n",
+				rr.Spec.TargetResource.APIVersion)
 		})
 	})
 })
