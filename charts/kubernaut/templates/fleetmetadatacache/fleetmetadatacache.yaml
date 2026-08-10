@@ -357,7 +357,28 @@ spec:
        once the egress fix above was applied, isolating this as a distinct,
        second bug on the ingress side. Matches both conventions per pod, as
        kubernaut.np.fleetmetadatacacheEgress already does for the reciprocal
-       egress rule on the caller side. */}}
+       egress rule on the caller side.
+
+       Issue #2059/E2E-FLEET-018 RCA (helios08 live repro, on top of the
+       apifrontend.yaml backend/endpoint chart fix + suite_test.go's
+       fmcSyncTimeout retry, both elsewhere in this PR): AF's own
+       FederatedScopeChecker (#2025/ADR-068, apifrontend/backend_deps.go)
+       calls this same /api/v1/scope/check endpoint directly -- but AF was
+       never added to this allow-list when that feature landed, because
+       this rule's scope was fixed once (above) for Gateway/RO and never
+       revisited for AF's later, independent caller. Confirmed live: a raw
+       `curl --max-time 5` from inside the apifrontend pod straight to
+       FMC's pod IP on :8080 timed out (exit 28, silently dropped SYN,
+       zero FMC-side log entries for the attempt) while the IDENTICAL call
+       from remediationorchestrator's pod returned a real 401 in ~20ms --
+       isolating the block to this ingress policy, not AF's egress (which
+       already has an unconditional 0.0.0.0/0:8080 rule from
+       kubernaut.np.llmEgress/mcpGatewayEgress) nor FMC's own readiness.
+       Live-patching just this one NetworkPolicy (kubectl patch, adding an
+       `app: apifrontend` podSelector) turned that same curl into the
+       20ms 401 and made E2E-FLEET-018 pass end-to-end with zero other
+       changes -- proving this ingress gap, not FMC sync lag, was the
+       actual blocker CI was retrying against for 45s on every run. */}}
     - from:
         - podSelector:
             matchLabels:
@@ -371,6 +392,12 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: remediationorchestrator
+        - podSelector:
+            matchLabels:
+              app: apifrontend
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: apifrontend
       ports:
         - protocol: TCP
           port: 8080
