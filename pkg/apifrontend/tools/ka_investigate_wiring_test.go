@@ -107,6 +107,77 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — wiring audit (WIRE-C01/
 		})
 	})
 
+	Describe("WIRE-C02 / #2068: blocking-path severity-triage fallback RCA is marked Provisional", func() {
+		It("UT-AF-2068-002: HandleInvestigationMCPWithRegistry's InvestigateMCPResult.RCA carries Provisional=true when the bridge produced no structured RCA", func() {
+			// Same closed-empty-channel setup as WIRE-C01: bridgeEventsCollectSummary
+			// observes zero events, so its own rca return is nil and only the
+			// triager's severity is available -- exactly the "full investigation
+			// pending" fallback at ka_investigate_mcp.go's rca==nil && rrSeverity!=""
+			// site (the one whose Provisional=false value, before #2068, let a
+			// severity-triage guess get cached by phase_guard.go and clobber a
+			// genuinely investigated present_decision RCA -- see UT-AF-2068-001).
+			origTimeout := tools.AwaitSessionTimeout
+			tools.AwaitSessionTimeout = 10 * time.Millisecond
+			defer func() { tools.AwaitSessionTimeout = origTimeout }()
+
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-wire-c02",
+						Status:    "started",
+						Events:    eventCh,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			mockProm := &mockPromClientForWiring{
+				alerts: []prom.Alert{
+					{
+						State: "firing",
+						Labels: map[string]string{
+							"alertname": "KubePodCrashLooping",
+							"severity":  "warning",
+							"namespace": "prod",
+							"kind":      "Deployment",
+							"name":      "web-app-2068",
+						},
+					},
+				},
+			}
+			triager := severity.NewTriager(mockProm, &noopLLMForWiring{}, severity.DefaultConfig(), logr.Discard())
+
+			ctx, cancel := context.WithTimeout(
+				auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+					Username: "alice",
+					Groups:   []string{"sre"},
+				}),
+				10*time.Second,
+			)
+			defer cancel()
+
+			tc := newTypedClientForInvestigate()
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, mockMCP, tc, "kubernaut-system",
+				tools.InvestigateMCPArgs{
+					APIVersion: "apps/v1",
+					Namespace:  "prod",
+					Kind:       "Deployment",
+					Name:       "web-app-2068",
+				},
+				nil, nil, nil, true, nil, "", nil, triager,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RCA).NotTo(BeNil(), "fallback must populate RCA when the bridge produced no structured result but severity triage succeeded")
+			Expect(result.RCA.Severity).To(Equal("warning"), "fallback RCA must carry the triaged severity")
+			Expect(result.RCA.Provisional).To(BeTrue(),
+				"#2068: a severity-triage-only guess (no genuine KA investigation) must be marked Provisional so phase_guard.go's #2023 anti-fabrication cache never treats it as a verified finding")
+		})
+	})
+
 	Describe("WIRE-C03: triager audit event emission", func() {
 		It("UT-AF-WIRE-C03: triager constructed with WithAuditor emits severity event", func() {
 			spy := &auditSpy{}
