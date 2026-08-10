@@ -302,8 +302,17 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		Expect(payload.RCA.Confidence).To(BeNumerically("~", 0.92, 0.01))
 		Expect(payload.RCA.CausalChain).To(HaveLen(3))
 		Expect(payload.RCA.Target).To(Equal("Deployment/data-processor in production"))
-		Expect(payload.RCA.ToolCallsCount).To(Equal(19))
-		Expect(payload.RCA.LLMTurns).To(Equal(17))
+		// #2073: tool_calls_count/llm_turns are mock-LLM-scripted values in
+		// af_structured_decision's present_decision tool_call (mock-llm.yaml)
+		// -- exactly the LLM-invented bookkeeping enforceGroundingGuard's
+		// backfill now overrides with an honest 0, since groundSessionAlt2's
+		// seed-only investigate call never populates
+		// session.StateKeyGroundedRCA with authoritative total_tool_calls/
+		// total_llm_turns to substitute instead (phase_guard.go
+		// canonicalGroundedRCA). severity/confidence/causal_chain/target
+		// above remain LLM-authored pass-through and are unaffected.
+		Expect(payload.RCA.ToolCallsCount).To(Equal(0))
+		Expect(payload.RCA.LLMTurns).To(Equal(0))
 
 		By("Verifying extended workflow options")
 		Expect(payload.Options).To(HaveLen(3))

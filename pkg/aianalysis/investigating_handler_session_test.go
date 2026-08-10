@@ -443,8 +443,14 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(string(cond.Status)).To(Equal("False"))
 				Expect(cond.Reason).To(Equal("SessionLost"))
 
-				// Result: immediate resubmit (no delay)
-				Expect(result.RequeueAfter).To(Equal(time.Duration(0)), "Should requeue immediately for resubmit")
+				// #2080: regeneration retry now backs off (RequeueAfter) instead of
+				// an immediate tight-loop requeue, giving a legitimate multi-hop
+				// session hand-off room to settle before the next attempt (reuses
+				// the same DD-SHARED-001 ErrorClassifier.GetRetryDelay as BR-AI-009's
+				// transient-error backoff, keyed on Generation instead of
+				// ConsecutiveFailures).
+				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Should back off before resubmit, not requeue immediately")
 
 				// Audit side effect: exactly 1 aiagent.session_lost event
 				Expect(auditSpy.sessionLostEvents).To(HaveLen(1), "Should record exactly 1 session_lost audit event")
@@ -476,7 +482,9 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-HAPI-064)", fun
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.KASession.Generation).To(Equal(int32(4)), "Generation should increment to 4")
 				Expect(analysis.Status.KASession.ID).To(BeEmpty(), "ID should be cleared")
-				Expect(result.RequeueAfter).To(Equal(time.Duration(0)), "Should requeue immediately for resubmit")
+				// #2080: backs off instead of requeuing immediately (see UT-AA-064-008).
+				Expect(result.Requeue).To(BeFalse())
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Should back off before resubmit, not requeue immediately")
 				// Phase should NOT be Failed (still under cap)
 				Expect(analysis.Status.Phase).NotTo(Equal(aianalysis.PhaseFailed), "Should NOT fail while under regeneration cap")
 			})

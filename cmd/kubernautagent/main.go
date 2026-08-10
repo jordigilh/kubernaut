@@ -1345,6 +1345,13 @@ func buildMCPHandler(
 		},
 	)
 
+	// AutoCloseTombstone: records interactive sessions InvestigateTool's
+	// no_matching_workflows handling auto-closes on its own, so a racing
+	// kubernaut_complete_no_action call resolves as "already_resolved"
+	// instead of erroring (#2075). TTL matches disconnectGracePeriod's order
+	// of magnitude below.
+	autoCloseTombstone := mcpkg.NewAutoCloseTombstone(60 * time.Second)
+
 	// ReconstructionSpawner: rebuilds context and spawns autonomous investigation
 	// after an interactive session ends (INT-06, BR-INTERACTIVE-008).
 	reconRunner := mcpadapters.NewReconRunnerAdapter(inv)
@@ -1455,6 +1462,7 @@ func buildMCPHandler(
 		mcptools.WithAuditStore(auditStore, logger.WithName("mcp-audit")),
 		mcptools.WithSignalContextResolver(signalResolver),
 		mcptools.WithWorkflowCatalog(catalogAdapter),
+		mcptools.WithInvestigateAutoCloseTombstone(autoCloseTombstone),
 	}
 	investigateTool := mcptools.NewInvestigateTool(leaseMgr, investigatorRunner, recon, autoMgr, investigateOpts...)
 
@@ -1484,6 +1492,7 @@ func buildMCPHandler(
 		// wired here, leaving the inactivity timer running past session
 		// completion (same root cause as select_workflow above).
 		mcptools.WithCompleteNoActionTimeoutTracker(timeoutMgr),
+		mcptools.WithCompleteNoActionAutoCloseTombstone(autoCloseTombstone),
 	)
 
 	// Register tools with the MCP SDK server.
