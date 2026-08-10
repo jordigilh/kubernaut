@@ -19,6 +19,7 @@ package mcp_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"sync"
 	"time"
@@ -27,8 +28,10 @@ import (
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
@@ -701,6 +704,59 @@ var _ = Describe("Interactive Workflow Discovery — IT flows", Label("integrati
 				"same-resource RCA: apiVersion should remain apps/v1")
 		})
 	})
+
+	Describe("IT-KA-DISC-011: CRD-fallback resolver round-trips apiVersion through real envtest schema (#2061)", func() {
+		It("should populate ResourceAPIVersion from a real RemediationRequest CRD when no session signal exists", func() {
+			// Note: this IT deliberately calls SessionSignalContextResolver directly
+			// rather than driving the full MCP session -> RCA -> discover_workflows
+			// flow. Going through the full flow would not isolate this defect: the
+			// apiVersionValidationGate (#1044/#1051) already auto-resolves
+			// TARGET_RESOURCE_API_VERSION independently via the live RESTMapper for
+			// unambiguous kinds like "Deployment", regardless of whether
+			// SignalContext.ResourceAPIVersion was populated at session start. That
+			// safety net would mask this bug in an end-to-end assertion. What only
+			// this IT can catch — and what the UT (fake client) cannot — is whether
+			// the *real*, envtest-installed CRD's structural OpenAPI schema prunes
+			// spec.targetResource.apiVersion on the round trip through the actual
+			// Kubernetes API server.
+			By("creating a RemediationRequest CRD via envtest with TargetResource.APIVersion set")
+			rr := &remediationv1.RemediationRequest{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "rr-disc-011",
+					Namespace: nsName,
+				},
+				Spec: remediationv1.RemediationRequestSpec{
+					SignalFingerprint: "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
+					SignalName:        "OOMKilled",
+					Severity:          "critical",
+					SignalType:        "alert",
+					TargetType:        "kubernetes",
+					TargetResource: remediationv1.ResourceIdentifier{
+						Kind:       "Deployment",
+						Name:       "api-server",
+						Namespace:  "production",
+						APIVersion: "apps/v1",
+					},
+					FiringTime:   metav1.Now(),
+					ReceivedTime: metav1.Now(),
+				},
+			}
+			Expect(sharedK8sClient.Create(context.Background(), rr)).To(Succeed())
+
+			By("resolving via the real production SessionSignalContextResolver, forced into the CRD-fallback branch")
+			resolver := mcpadapters.NewSessionSignalContextResolver(&alwaysMissSignalProvider{}, sharedK8sClient, nsName)
+
+			sc, err := resolver.ResolveSignalContext(context.Background(), "rr-disc-011")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sc).NotTo(BeNil())
+
+			By("verifying ResourceAPIVersion survived the real K8s API round trip (#2061)")
+			Expect(sc.ResourceAPIVersion).To(Equal("apps/v1"),
+				"#2061: signal_resolver.go's CRD fallback must carry ResourceAPIVersion through, "+
+					"and envtest's real structural CRD schema must not prune spec.targetResource.apiVersion "+
+					"(a risk a fake client in the UT cannot detect)")
+		})
+	})
 })
 
 // crossResourceSignalResolver returns a signal with ResourceKind "Pod" to
@@ -718,6 +774,15 @@ func (d *crossResourceSignalResolver) ResolveSignalContext(_ context.Context, _ 
 		Namespace:    "production",
 		ResourceName: "api-server-pod-xyz",
 	}, nil
+}
+
+// alwaysMissSignalProvider simulates an interactive session with no stored
+// AA signal payload, forcing SessionSignalContextResolver's CRD-fallback
+// branch to run (#2061, IT-KA-DISC-011).
+type alwaysMissSignalProvider struct{}
+
+func (alwaysMissSignalProvider) GetSignalForRemediation(_ string) (*katypes.SignalContext, error) {
+	return nil, fmt.Errorf("no session signal stored")
 }
 
 // newRealMCPTestStackWithDiscoveryAndResolver is a variant of
@@ -916,4 +981,3 @@ func newRealMCPTestStackWithDiscovery(k8sClient client.Client, namespace string,
 
 	return stack
 }
-
