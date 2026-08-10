@@ -1148,6 +1148,10 @@ type IncidentRequest struct {
 	ResourceKind string `json:"resource_kind"`
 	// Resource name.
 	ResourceName string `json:"resource_name"`
+	// Kubernetes apiVersion of the target resource (e.g. 'apps/v1'), disambiguating the API group when
+	// the kind exists in more than one. Empty string when the upstream source could not determine it.
+	// #2064.
+	ResourceAPIVersion string `json:"resource_api_version"`
 	// Error message.
 	ErrorMessage string `json:"error_message"`
 	// Additional description.
@@ -1232,6 +1236,11 @@ func (s *IncidentRequest) GetResourceKind() string {
 // GetResourceName returns the value of ResourceName.
 func (s *IncidentRequest) GetResourceName() string {
 	return s.ResourceName
+}
+
+// GetResourceAPIVersion returns the value of ResourceAPIVersion.
+func (s *IncidentRequest) GetResourceAPIVersion() string {
+	return s.ResourceAPIVersion
 }
 
 // GetErrorMessage returns the value of ErrorMessage.
@@ -1372,6 +1381,11 @@ func (s *IncidentRequest) SetResourceKind(val string) {
 // SetResourceName sets the value of ResourceName.
 func (s *IncidentRequest) SetResourceName(val string) {
 	s.ResourceName = val
+}
+
+// SetResourceAPIVersion sets the value of ResourceAPIVersion.
+func (s *IncidentRequest) SetResourceAPIVersion(val string) {
+	s.ResourceAPIVersion = val
 }
 
 // SetErrorMessage sets the value of ErrorMessage.
