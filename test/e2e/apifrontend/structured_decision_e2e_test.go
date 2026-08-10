@@ -155,9 +155,47 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 	// grounded result -- silently starving present_decision of grounding
 	// and emitting no SSE decision event at all (CI run 31320575553,
 	// this test, "not to be empty").
+	//
+	// Used by E2E-AF-1395-001 ALONE. It used to also be shared with
+	// E2E-AF-1396-001 below, on the (wrong -- see groundSessionAlt2, #2057)
+	// assumption that two sequential Its in the same Ordered block never
+	// contend for this fixture the way concurrently-running Describe blocks
+	// do.
 	groundSession := func(ctx context.Context, contextID string) {
 		resp, err := a2aSSEPost(ctx, a2aMessageStreamWithContext(contextID+"-ground", contextID,
 			"seed grounding context for pod structured-decision-target in af-structured-decision-e2e"))
+		Expect(err).NotTo(HaveOccurred(), "grounding kubernaut_investigate call must succeed")
+		defer func() { _ = resp.Body.Close() }()
+		_, _ = scanDecisionEvent(resp) // drain to EOF; no decision event expected here
+	}
+
+	// groundSessionAlt2 is groundSession's twin for E2E-AF-1396-001 alone,
+	// targeting a THIRD dedicated fixture (structured-decision-target-3,
+	// StructuredDecisionGrounding3 in apifrontend_prometheus_e2e.go / the
+	// "seed alt fixture context 1396 001" mock-LLM keyword). #2057: this
+	// Describe block is Ordered and its 3 Its run sequentially;
+	// E2E-AF-1395-001 and E2E-AF-1396-001 used to both call groundSession
+	// against the SAME structured-decision-target fixture on the assumption
+	// that sequential-in-block execution made that safe ("fine for
+	// #1395-001 and #1396-001" -- the comment on groundSessionAlt below,
+	// written when only the 2nd-vs-3rd-It contention had been diagnosed).
+	// That assumption was wrong: af_create_rr.go's
+	// checkExistingRRByFingerprint dedups by target regardless of which It
+	// calls it, so E2E-AF-1396-001's groundSession call dedups onto
+	// E2E-AF-1395-001's still-open RR/session (that session isn't torn down
+	// just because the Ordered container moved on to the next It) and
+	// nondeterministically observes "session_active" instead of a clean
+	// grounded result -- which per investigateHasGroundedContent
+	// (phase_guard.go, UT-AF-2023-004) deterministically fails
+	// present_decision's grounding guard closed, substituting the empty RCA
+	// payload (severity:"") for the mock-LLM's scripted "critical" (CI run
+	// 31341614213, "AU-3: severity must flow from mock-LLM through AF to
+	// SSE"). A fixture E2E-AF-1396-001 alone uses eliminates the contention
+	// outright, matching the fix already applied below for
+	// E2E-AF-1396-002's identical exposure to both of its predecessors.
+	groundSessionAlt2 := func(ctx context.Context, contextID string) {
+		resp, err := a2aSSEPost(ctx, a2aMessageStreamWithContext(contextID+"-ground", contextID,
+			"seed alt fixture context 1396 001 for pod structured-decision-target-3 in af-structured-decision-e2e"))
 		Expect(err).NotTo(HaveOccurred(), "grounding kubernaut_investigate call must succeed")
 		defer func() { _ = resp.Body.Close() }()
 		_, _ = scanDecisionEvent(resp) // drain to EOF; no decision event expected here
@@ -168,17 +206,19 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 	// StructuredDecisionGrounding2 in apifrontend_prometheus_e2e.go / the
 	// "seed alt fixture context 1396 002" mock-LLM keyword). This Describe
 	// block is Ordered and its 3 Its run sequentially; #1395-001 and
-	// #1396-001 above both call groundSession against the SAME
-	// structured-decision-target fixture, and af_create_rr.go's
-	// checkExistingRRByFingerprint dedups by target, so by this 3rd call
-	// the RR already has a KA interactive session opened by one of the
-	// prior two Its. That nondeterministically surfaces as "session_active"
-	// instead of a clean grounded result, which per
-	// investigateHasGroundedContent (phase_guard.go, UT-AF-2023-004)
-	// deterministically fails present_decision's grounding guard closed --
-	// clearing options to [] (CI run 31335085795, "AC-6: ALL options must
-	// be presented"). A fixture this test alone uses eliminates the
-	// contention outright rather than relying on lease timing.
+	// #1396-001 above used to both call groundSession against the SAME
+	// structured-decision-target fixture -- WRONGLY assumed "fine" at the
+	// time this helper was written (corrected by groundSessionAlt2 above,
+	// #2057) -- and af_create_rr.go's checkExistingRRByFingerprint dedups
+	// by target, so by this 3rd call the RR already has a KA interactive
+	// session opened by one of the prior two Its. That nondeterministically
+	// surfaces as "session_active" instead of a clean grounded result,
+	// which per investigateHasGroundedContent (phase_guard.go,
+	// UT-AF-2023-004) deterministically fails present_decision's grounding
+	// guard closed -- clearing options to [] (CI run 31335085795, "AC-6:
+	// ALL options must be presented"). A fixture this test alone uses
+	// eliminates the contention outright rather than relying on lease
+	// timing.
 	groundSessionAlt := func(ctx context.Context, contextID string) {
 		resp, err := a2aSSEPost(ctx, a2aMessageStreamWithContext(contextID+"-ground", contextID,
 			"seed alt fixture context 1396 002 for pod structured-decision-target-2 in af-structured-decision-e2e"))
@@ -221,7 +261,7 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		defer cancel()
 
 		const ctxID = "ctx-e2e-structured-002"
-		groundSession(readCtx, ctxID)
+		groundSessionAlt2(readCtx, ctxID)
 
 		resp, err := a2aSSEPost(readCtx, a2aMessageStreamWithContext("e2e-structured-002-decision", ctxID, "present structured rca decision"))
 		Expect(err).NotTo(HaveOccurred())

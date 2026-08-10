@@ -223,6 +223,35 @@ data:
             name: "structured-decision-target-2"
             kind: "Pod"
 
+      - name: "af_structured_decision_ground_3"
+        # #2057: dedicated grounding call for E2E-AF-1396-001 alone.
+        # af_structured_decision_ground above was WRONGLY assumed safe to
+        # share between E2E-AF-1395-001 and E2E-AF-1396-001 ("fine for
+        # #1395-001 and #1396-001" per the comment on
+        # StructuredDecisionGrounding2/apifrontend_prometheus_e2e.go) --
+        # but those two Its hit the exact same
+        # checkExistingRRByFingerprint-dedup-onto-still-open-session
+        # contention that af_structured_decision_ground_2 was created to
+        # fix for E2E-AF-1396-002: E2E-AF-1396-001's own groundSession call
+        # dedups onto E2E-AF-1395-001's still-open RR/session, KA returns
+        # session_active, and present_decision's grounding guard fails
+        # closed to the empty RCA payload (severity:"", CI run 31341614213,
+        # "AU-3: severity must flow from mock-LLM through AF to SSE"). See
+        # StructuredDecisionGrounding3 (apifrontend_prometheus_e2e.go).
+        #
+        # Keyword deliberately shares no substring with any other keyword in
+        # this file (see af_structured_decision_ground_2's comment above for
+        # why that matters).
+        keywords: ["seed alt fixture context 1396 001"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            api_version: "v1"
+            namespace: "af-structured-decision-e2e"
+            name: "structured-decision-target-3"
+            kind: "Pod"
+
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]
         match_last_only: true
