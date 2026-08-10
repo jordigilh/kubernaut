@@ -39,8 +39,8 @@ import (
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	kaopenai "github.com/jordigilh/kubernaut/pkg/kubernautagent/llm/openai"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
