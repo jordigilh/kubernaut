@@ -58,6 +58,17 @@ type sessionAuditSpy struct {
 	resultEvents      []sessionResultEvent
 	sessionLostEvents []sessionLostEvent
 	failedEvents      []failedAnalysisEvent
+	// agentCallEvents tracks generic RecordAIAgentCall invocations, including
+	// #2030 Part B's "session_adopted" endpoint (FedRAMP AU-2/AU-3: durable
+	// audit trail proving an adoption was recorded, not just logged).
+	agentCallEvents []agentCallEvent
+}
+
+type agentCallEvent struct {
+	analysis   *aianalysisv1.AIAnalysis
+	endpoint   string
+	statusCode int
+	durationMs int
 }
 
 type sessionSubmitEvent struct {
@@ -76,6 +87,11 @@ type sessionLostEvent struct {
 }
 
 func (s *sessionAuditSpy) RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.agentCallEvents = append(s.agentCallEvents, agentCallEvent{
+		analysis: analysis, endpoint: endpoint, statusCode: statusCode, durationMs: durationMs,
+	})
 }
 func (s *sessionAuditSpy) RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string) {
 }
@@ -1250,6 +1266,31 @@ type mockISChecker struct {
 	sessionPhase  isv1alpha1.SessionPhase
 	sessionExists bool
 	findPhaseErr  error
+
+	// #2030 Part B: CorrelatedSessionID stubbing.
+	//
+	// correlatedID/correlatedActive/correlatedErr are returned for every call
+	// when correlatedSequence is empty (the common case: a single, constant
+	// correlation state for the whole test).
+	//
+	// correlatedSequence, when non-empty, lets a test model correlation
+	// LANDING mid-reconcile: successive calls pop the next entry (simulating
+	// e.g. the general mismatch check seeing no correlation yet, while the
+	// race-closing check moments later in the same reconcile sees the new
+	// one). The last entry repeats once the sequence is exhausted.
+	correlatedID        string
+	correlatedActive    bool
+	correlatedErr       error
+	correlatedSequence  []correlatedSessionStub
+	correlatedCallCount int
+}
+
+// correlatedSessionStub is one canned CorrelatedSessionID return value in a
+// mockISChecker.correlatedSequence.
+type correlatedSessionStub struct {
+	id     string
+	active bool
+	err    error
 }
 
 func (m *mockISChecker) HasActiveSession(_ context.Context, _ string) (bool, error) {
@@ -1261,6 +1302,19 @@ func (m *mockISChecker) FindSessionPhase(_ context.Context, _ string) (isv1alpha
 		return "", false, m.findPhaseErr
 	}
 	return m.sessionPhase, m.sessionExists, m.err
+}
+
+func (m *mockISChecker) CorrelatedSessionID(_ context.Context, _ string) (string, bool, error) {
+	if len(m.correlatedSequence) == 0 {
+		return m.correlatedID, m.correlatedActive, m.correlatedErr
+	}
+	idx := m.correlatedCallCount
+	if idx >= len(m.correlatedSequence) {
+		idx = len(m.correlatedSequence) - 1
+	}
+	m.correlatedCallCount++
+	s := m.correlatedSequence[idx]
+	return s.id, s.active, s.err
 }
 
 // ========================================

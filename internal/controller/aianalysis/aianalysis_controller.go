@@ -348,9 +348,15 @@ func ISEventPredicate() predicate.TypedPredicate[*isv1alpha1.InvestigationSessio
 				return false
 			}
 			newPhase := e.ObjectNew.Status.Phase
-			return newPhase == isv1alpha1.SessionPhaseCompleted ||
+			if newPhase == isv1alpha1.SessionPhaseCompleted ||
 				newPhase == isv1alpha1.SessionPhaseCancelled ||
-				newPhase == isv1alpha1.SessionPhaseFailed
+				newPhase == isv1alpha1.SessionPhaseFailed {
+				return true
+			}
+			// #2030 Part B / FedRAMP SI-4: a takeover's correlation write only
+			// changes KACorrelationID (not Phase), so without this the
+			// controller would silently miss it until the next scheduled poll.
+			return e.ObjectNew.Status.KACorrelationID != e.ObjectOld.Status.KACorrelationID
 		},
 		GenericFunc: func(e event.TypedGenericEvent[*isv1alpha1.InvestigationSession]) bool {
 			return false

@@ -106,6 +106,65 @@ var _ = Describe("isEventPredicate (#1449)", func() {
 		})
 	})
 
+	// ═══════════════════════════════════════════════════════════════════════
+	// Issue #2030 (main-tracking clone of #2029) Part B / FedRAMP SI-4:
+	// KACorrelationID-only changes must also wake the controller immediately,
+	// not just terminal transitions. Without this, a takeover's correlation
+	// write (which only changes KACorrelationID, not Phase) is silently
+	// dropped and AA only learns about it on its next scheduled poll (up to
+	// sessionPollInterval later) instead of near-instantly.
+	// ═══════════════════════════════════════════════════════════════════════
+
+	makeISWithCorrelation := func(phase isv1alpha1.SessionPhase, correlationID string) *isv1alpha1.InvestigationSession {
+		is := makeIS(phase)
+		is.Status.KACorrelationID = correlationID
+		return is
+	}
+
+	Context("#2030 SI-4: KACorrelationID changes trigger reconciliation", func() {
+		It("UT-AA-2030-013: passes Update events when only KACorrelationID changes (Phase stays non-terminal)", func() {
+			pred := controller.ISEventPredicate()
+			oldIS := makeISWithCorrelation(isv1alpha1.SessionPhaseActive, "ka-session-old")
+			newIS := makeISWithCorrelation(isv1alpha1.SessionPhaseActive, "ka-session-new")
+
+			updateEvent := event.TypedUpdateEvent[*isv1alpha1.InvestigationSession]{
+				ObjectOld: oldIS,
+				ObjectNew: newIS,
+			}
+
+			Expect(pred.Update(updateEvent)).To(BeTrue(),
+				"#2030 Part B: a KACorrelationID change must pass the predicate even when Phase doesn't change")
+		})
+
+		It("UT-AA-2030-013b: drops Update events when KACorrelationID and Phase are both unchanged (no regression)", func() {
+			pred := controller.ISEventPredicate()
+			oldIS := makeISWithCorrelation(isv1alpha1.SessionPhaseActive, "ka-session-same")
+			newIS := makeISWithCorrelation(isv1alpha1.SessionPhaseActive, "ka-session-same")
+
+			updateEvent := event.TypedUpdateEvent[*isv1alpha1.InvestigationSession]{
+				ObjectOld: oldIS,
+				ObjectNew: newIS,
+			}
+
+			Expect(pred.Update(updateEvent)).To(BeFalse(),
+				"no-op updates (e.g. resync) must still be filtered to avoid unnecessary reconciles")
+		})
+
+		It("UT-AA-2030-013c: existing terminal-phase cases still pass when KACorrelationID is held at its zero value (no regression)", func() {
+			pred := controller.ISEventPredicate()
+			oldIS := makeIS(isv1alpha1.SessionPhaseActive)
+			newIS := makeIS(isv1alpha1.SessionPhaseCompleted)
+
+			updateEvent := event.TypedUpdateEvent[*isv1alpha1.InvestigationSession]{
+				ObjectOld: oldIS,
+				ObjectNew: newIS,
+			}
+
+			Expect(pred.Update(updateEvent)).To(BeTrue(),
+				"UT-AA-1449-010's terminal-phase case must be unaffected by the #2030 widening")
+		})
+	})
+
 	Context("Create and Delete events still pass through", func() {
 		It("UT-AA-1449-014: passes Create events", func() {
 			pred := controller.ISEventPredicate()
