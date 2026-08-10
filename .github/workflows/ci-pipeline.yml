@@ -662,7 +662,14 @@ jobs:
             timeout: 30
           - service: apifrontend
             service_name: "API Frontend"
-            timeout: 25
+            # #2060: was 25 (last bumped 2026-06-04); the suite now
+            # routinely runs right at/past 25min and gets cancelled by the
+            # job timeout before Ginkgo can report a result (confirmed on
+            # two separate runs, both cut off within seconds of the
+            # 25-minute mark). 35 gives ~40% headroom, matching the buffer
+            # already given to kubernautagent (30min) for a comparably
+            # long-running suite.
+            timeout: 35
           - service: fullpipeline
             service_name: "Full Pipeline"
             timeout: 20
