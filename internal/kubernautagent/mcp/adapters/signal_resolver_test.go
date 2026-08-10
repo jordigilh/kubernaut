@@ -50,13 +50,13 @@ var _ = Describe("SessionSignalContextResolver", func() {
 		It("should populate all fields from the stored AA payload", func() {
 			provider := &stubSignalProvider{
 				signal: &katypes.SignalContext{
-					Name:         "OOMKilled",
-					Severity:     "critical",
-					Environment:  "production",
-					Priority:     "P1",
-					ResourceKind: "Deployment",
-					ResourceName: "api-server",
-					Namespace:    "production",
+					Name:          "OOMKilled",
+					Severity:      "critical",
+					Environment:   "production",
+					Priority:      "P1",
+					ResourceKind:  "Deployment",
+					ResourceName:  "api-server",
+					Namespace:     "production",
 					RemediationID: "rr-oom-001",
 				},
 			}
@@ -116,9 +116,10 @@ var _ = Describe("SessionSignalContextResolver", func() {
 					SignalType:        "alert",
 					TargetType:        "kubernetes",
 					TargetResource: remediationv1.ResourceIdentifier{
-						Kind:      "Deployment",
-						Name:      "api-server",
-						Namespace: "production",
+						Kind:       "Deployment",
+						Name:       "api-server",
+						Namespace:  "production",
+						APIVersion: "apps/v1",
 					},
 					FiringTime:   metav1.Now(),
 					ReceivedTime: metav1.Now(),
@@ -141,6 +142,10 @@ var _ = Describe("SessionSignalContextResolver", func() {
 			Expect(sc.ResourceName).To(Equal("api-server"))
 			Expect(sc.Namespace).To(Equal("production"))
 			Expect(sc.RemediationID).To(Equal("rr-fallback-001"))
+			// #2061: CRD fallback must carry ResourceAPIVersion through so
+			// discover_workflows can build an exact GVK component filter
+			// instead of falling back to a bare lowercase kind.
+			Expect(sc.ResourceAPIVersion).To(Equal("apps/v1"))
 		})
 	})
 })

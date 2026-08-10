@@ -2649,6 +2649,10 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 		e.Str(s.ResourceName)
 	}
 	{
+		e.FieldStart("resource_api_version")
+		e.Str(s.ResourceAPIVersion)
+	}
+	{
 		e.FieldStart("error_message")
 		e.Str(s.ErrorMessage)
 	}
@@ -2758,7 +2762,7 @@ func (s *IncidentRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfIncidentRequest = [28]string{
+var jsonFieldsNameOfIncidentRequest = [29]string{
 	0:  "incident_id",
 	1:  "remediation_id",
 	2:  "signal_name",
@@ -2767,26 +2771,27 @@ var jsonFieldsNameOfIncidentRequest = [28]string{
 	5:  "resource_namespace",
 	6:  "resource_kind",
 	7:  "resource_name",
-	8:  "error_message",
-	9:  "description",
-	10: "environment",
-	11: "priority",
-	12: "risk_tolerance",
-	13: "business_category",
-	14: "cluster_name",
-	15: "cluster",
-	16: "is_duplicate",
-	17: "occurrence_count",
-	18: "deduplication_window_minutes",
-	19: "firing_time",
-	20: "received_time",
-	21: "first_seen",
-	22: "last_seen",
-	23: "signal_labels",
-	24: "signal_annotations",
-	25: "enrichment_results",
-	26: "signal_mode",
-	27: "interactive",
+	8:  "resource_api_version",
+	9:  "error_message",
+	10: "description",
+	11: "environment",
+	12: "priority",
+	13: "risk_tolerance",
+	14: "business_category",
+	15: "cluster_name",
+	16: "cluster",
+	17: "is_duplicate",
+	18: "occurrence_count",
+	19: "deduplication_window_minutes",
+	20: "firing_time",
+	21: "received_time",
+	22: "first_seen",
+	23: "last_seen",
+	24: "signal_labels",
+	25: "signal_annotations",
+	26: "enrichment_results",
+	27: "signal_mode",
+	28: "interactive",
 }
 
 // Decode decodes IncidentRequest from json.
@@ -2893,8 +2898,20 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"resource_name\"")
 			}
-		case "error_message":
+		case "resource_api_version":
 			requiredBitSet[1] |= 1 << 0
+			if err := func() error {
+				v, err := d.Str()
+				s.ResourceAPIVersion = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"resource_api_version\"")
+			}
+		case "error_message":
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ErrorMessage = string(v)
@@ -2916,7 +2933,7 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"description\"")
 			}
 		case "environment":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.Environment = string(v)
@@ -2928,7 +2945,7 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"environment\"")
 			}
 		case "priority":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Priority = string(v)
@@ -2940,7 +2957,7 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"priority\"")
 			}
 		case "risk_tolerance":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.RiskTolerance = string(v)
@@ -2952,7 +2969,7 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"risk_tolerance\"")
 			}
 		case "business_category":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.BusinessCategory = string(v)
@@ -2964,7 +2981,7 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"business_category\"")
 			}
 		case "cluster_name":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.ClusterName = string(v)
@@ -3116,7 +3133,7 @@ func (s *IncidentRequest) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [4]uint8{
 		0b11111111,
-		0b01111101,
+		0b11111011,
 		0b00000000,
 		0b00000000,
 	} {

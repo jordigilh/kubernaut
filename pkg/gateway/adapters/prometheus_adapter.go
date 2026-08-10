@@ -28,6 +28,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/jordigilh/kubernaut/pkg/gateway/middleware"
@@ -92,7 +93,6 @@ type PrometheusAdapter struct {
 type readerFactory interface {
 	ReaderFor(ctx context.Context, clusterID string) (client.Reader, error)
 }
-
 
 // NewPrometheusAdapter creates a new Prometheus adapter.
 //
@@ -265,7 +265,7 @@ func (a *PrometheusAdapter) Parse(ctx context.Context, rawData []byte) (*types.N
 		return &types.NormalizedSignal{
 			Fingerprint:  fingerprint,
 			ClusterID:    clusterID,
-			SignalName:    alert.Labels["alertname"],
+			SignalName:   alert.Labels["alertname"],
 			Severity:     severity,
 			Namespace:    resolvedResource.Namespace,
 			Resource:     resolvedResource,
@@ -321,11 +321,11 @@ func (a *PrometheusAdapter) ParseBatch(ctx context.Context, rawData []byte) ([]*
 // ok=false when owner resolution fails for this alert, so the caller can skip
 // it without affecting other alerts in the batch. Extracted from ParseBatch
 // to keep its cognitive complexity low.
-// extractAlertResource resolves the target ResourceIdentifier (kind/name/namespace)
-// for a single alert. Extracted from parseOneAlertInBatch (funlen).
+// extractAlertResource resolves the target ResourceIdentifier (kind/name/namespace/
+// apiVersion) for a single alert. Extracted from parseOneAlertInBatch (funlen).
 func (a *PrometheusAdapter) extractAlertResource(ctx context.Context, alert AlertManagerAlert) types.ResourceIdentifier {
 	ns, nsFound := extractNamespace(alert.Labels)
-	kind, name := extractTargetResource(ctx, alert.Labels, ns, a.registry)
+	kind, name, apiVersion := extractTargetResource(ctx, alert.Labels, ns, a.registry, a.logger)
 	if !nsFound {
 		if a.registry != nil && !a.registry.IsNamespacedKind(kind) {
 			ns = ""
@@ -334,9 +334,10 @@ func (a *PrometheusAdapter) extractAlertResource(ctx context.Context, alert Aler
 		}
 	}
 	return types.ResourceIdentifier{
-		Kind:      kind,
-		Name:      name,
-		Namespace: ns,
+		Kind:       kind,
+		Name:       name,
+		Namespace:  ns,
+		APIVersion: apiVersion,
 	}
 }
 
@@ -509,9 +510,15 @@ func (a *PrometheusAdapter) GetMetadata() AdapterMetadata {
 //
 // A non-nil registry is required. Production code always provides one via
 // NewAPIResourceRegistry; tests should use NewTestAPIResourceRegistry.
-func extractTargetResource(ctx context.Context, labels map[string]string, namespace string, registry *APIResourceRegistry) (kind, name string) {
+//
+// apiVersion resolution (#2066): once the winning Kind/Name candidate is
+// selected (either via an existence-verified match or the tier-priority
+// fallback), resolveCandidateGVR determines its apiVersion from the same
+// registry — deterministically when the Kind is discovered in exactly one
+// API group, or via a cross-group existence check when genuinely ambiguous.
+func extractTargetResource(ctx context.Context, labels map[string]string, namespace string, registry *APIResourceRegistry, logger logr.Logger) (kind, name, apiVersion string) {
 	if registry == nil {
-		return "Unknown", "unknown"
+		return "Unknown", "unknown", ""
 	}
 
 	type candidate struct {
@@ -551,14 +558,67 @@ func extractTargetResource(ctx context.Context, labels map[string]string, namesp
 			continue
 		}
 		if registry.CheckExistence(ctx, gvr, namespace, c.name) {
-			return c.kind, c.name
+			return c.kind, c.name, resolveCandidateGVR(ctx, c.kind, c.name, namespace, registry, logger)
 		}
 	}
 
 	if len(candidates) > 0 {
-		return candidates[0].kind, candidates[0].name
+		winner := candidates[0]
+		return winner.kind, winner.name, resolveCandidateGVR(ctx, winner.kind, winner.name, namespace, registry, logger)
 	}
-	return "Unknown", "unknown"
+	return "Unknown", "unknown", ""
+}
+
+// resolveCandidateGVR determines the apiVersion for a resolved Kind/Name/Namespace
+// (#2066). When the Kind is discovered in exactly one API group, apiVersion is
+// resolved deterministically — no existence check needed, mirroring KA's own
+// #1051 pattern for the RCA-phase equivalent, and avoiding a silent revert to
+// empty on a transient existence-check failure for the overwhelmingly common
+// unambiguous case. When the Kind exists in more than one group, an existence
+// check across all candidate groups picks the one the resource actually lives
+// in. Zero or more than one matching group leaves apiVersion empty (safe, no
+// guess, consistent with DD-KA-006's "absence is not an error" contract) — the
+// >1 case is additionally audit-logged (FedRAMP AU-2/AU-12) since it reflects
+// genuine cross-group ambiguity that could otherwise mistarget remediation.
+func resolveCandidateGVR(ctx context.Context, kind, name, namespace string, registry *APIResourceRegistry, logger logr.Logger) string {
+	candidates, ok := registry.KindToGVRCandidates(kind)
+	if !ok || len(candidates) == 0 {
+		return ""
+	}
+	if len(candidates) == 1 {
+		return formatAPIVersion(candidates[0])
+	}
+
+	var matched []schema.GroupVersionResource
+	for _, gvr := range candidates {
+		if registry.CheckExistence(ctx, gvr, namespace, name) {
+			matched = append(matched, gvr)
+		}
+	}
+
+	switch len(matched) {
+	case 1:
+		return formatAPIVersion(matched[0])
+	case 0:
+		return ""
+	default:
+		groups := make([]string, 0, len(matched))
+		for _, gvr := range matched {
+			groups = append(groups, gvr.GroupVersion().String())
+		}
+		logger.Info("Ambiguous apiVersion: resource exists in multiple API groups, leaving apiVersion empty (#2066)",
+			"kind", kind, "name", name, "namespace", namespace, "matchedGroups", groups)
+		return ""
+	}
+}
+
+// formatAPIVersion renders a GroupVersionResource as a Kubernetes apiVersion
+// string: "group/version", or just "version" for the core (empty-group) API.
+func formatAPIVersion(gvr schema.GroupVersionResource) string {
+	if gvr.Group == "" {
+		return gvr.Version
+	}
+	return gvr.Group + "/" + gvr.Version
 }
 
 // extractNamespace gets the Kubernetes namespace from labels.

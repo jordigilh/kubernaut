@@ -117,6 +117,38 @@ var _ = Describe("RequestBuilder", func() {
 		})
 	})
 
+	Describe("#2064: ResourceAPIVersion mapping to KA IncidentRequest wire contract", func() {
+		It("UT-AA-2064-001: should map TargetResource.APIVersion to ResourceAPIVersion", func() {
+			analysis := helpers.NewAIAnalysis("ai-apiversion-test", "default")
+			analysis.Spec.AnalysisRequest.SignalContext.TargetResource = aianalysisv1.TargetResource{
+				Kind:       "Deployment",
+				Name:       "api-server",
+				Namespace:  "production",
+				APIVersion: "apps/v1",
+			}
+
+			req := builder.BuildIncidentRequest(analysis)
+
+			Expect(req.ResourceAPIVersion).To(Equal("apps/v1"),
+				"#2064: BuildIncidentRequest must forward TargetResource.APIVersion so KA's SignalContext isn't starved of it at ingestion")
+		})
+
+		It("UT-AA-2064-002: should send an empty string, not omit the field, when APIVersion is unknown", func() {
+			analysis := helpers.NewAIAnalysis("ai-apiversion-unknown", "default")
+			analysis.Spec.AnalysisRequest.SignalContext.TargetResource = aianalysisv1.TargetResource{
+				Kind:      "Widget",
+				Name:      "some-widget",
+				Namespace: "default",
+				// APIVersion intentionally left empty (upstream never resolved it)
+			}
+
+			req := builder.BuildIncidentRequest(analysis)
+
+			Expect(req.ResourceAPIVersion).To(Equal(""),
+				"resource_api_version is a required (not optional) wire field; absence upstream must serialize as empty string, not be omitted")
+		})
+	})
+
 	Describe("BuildIncidentRequest - BusinessClassification mapping (BR-SP-002)", func() {
 		It("should map all BusinessClassification fields to KA client types", func() {
 			analysis := helpers.NewAIAnalysis("ai-bizclass", "default")

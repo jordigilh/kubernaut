@@ -42,6 +42,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
@@ -57,10 +58,10 @@ const mcpSeedNamespace = "default"
 // phase1Payload is the JSON struct passed between Ginkgo processes via
 // SynchronizedBeforeSuite. Uses the same pattern as the AIAnalysis IT suite.
 type phase1Payload struct {
-	Token            string            `json:"token"`
-	KubeconfigPath   string            `json:"kubeconfig_path"`
-	MockLLMEndpoint  string            `json:"mock_llm_endpoint"`
-	WorkflowUUIDs    map[string]string `json:"workflow_uuids"`
+	Token           string            `json:"token"`
+	KubeconfigPath  string            `json:"kubeconfig_path"`
+	MockLLMEndpoint string            `json:"mock_llm_endpoint"`
+	WorkflowUUIDs   map[string]string `json:"workflow_uuids"`
 }
 
 // Port allocation per DD-TEST-001 v2.5 — MCP IT (Phase 7A)
@@ -113,7 +114,8 @@ var _ = SynchronizedBeforeSuite(
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		ctx := context.Background()
 
-		// ── Step 1: envtest (Leases are core K8s — no CRDs needed) ──
+		// ── Step 1: envtest (Leases are core K8s; RemediationRequest CRD needed
+		// for IT-KA-DISC-011's CRD-fallback signal resolution, #2061) ──
 		By("Starting envtest")
 		assetsDir := os.Getenv("KUBEBUILDER_ASSETS")
 		if assetsDir == "" {
@@ -129,7 +131,8 @@ var _ = SynchronizedBeforeSuite(
 			// NewDSBootstrapConfigWithAuth below), and cache construction fails
 			// fast if the RemediationWorkflow/ActionType CRDs aren't installed
 			// in the target API server -- so this suite's envtest must load them
-			// even though it seeds no AuthWebhook.
+			// even though it seeds no AuthWebhook. Also required for the
+			// RemediationRequest CRD (#2061's IT-KA-DISC-011 CRD-fallback test).
 			CRDDirectoryPaths:     []string{"../../../../config/crd/bases"},
 			ErrorIfCRDPathMissing: true,
 		}
@@ -142,6 +145,7 @@ var _ = SynchronizedBeforeSuite(
 		Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
 		Expect(rwv1alpha1.AddToScheme(scheme)).To(Succeed())
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 
 		k8sClient, err := client.New(cfg, client.Options{Scheme: scheme})
 		Expect(err).ToNot(HaveOccurred(), "controller-runtime client should build")
@@ -257,6 +261,7 @@ var _ = SynchronizedBeforeSuite(
 			scheme := runtime.NewScheme()
 			Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
 			Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 
 			var err error
 			sharedK8sClient, err = client.New(sharedK8sConfig, client.Options{Scheme: scheme})

@@ -107,6 +107,12 @@ type ResourceIdentifier struct {
 
 	// Namespace is the resource's namespace (empty for cluster-scoped resources like Node)
 	Namespace string
+
+	// APIVersion disambiguates the resource's API group when the Kind exists in
+	// multiple groups (e.g. Route in route.openshift.io vs serving.knative.dev).
+	// Format: "group/version" (e.g. "apps/v1") or just "v1" for core resources.
+	// Empty when the source adapter could not determine it (issues #1040, #2066).
+	APIVersion string
 }
 
 // String returns a human-readable representation of the resource

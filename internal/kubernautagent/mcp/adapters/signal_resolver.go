@@ -81,12 +81,13 @@ func (r *SessionSignalContextResolver) ResolveSignalContext(ctx context.Context,
 	}
 
 	return &katypes.SignalContext{
-		Name:          rr.Spec.SignalName,
-		Severity:      rr.Spec.Severity,
-		RemediationID: rrID,
-		ResourceKind:  rr.Spec.TargetResource.Kind,
-		ResourceName:  rr.Spec.TargetResource.Name,
-		Namespace:     rr.Spec.TargetResource.Namespace,
-		ClusterID:     rr.Spec.ClusterID,
+		Name:               rr.Spec.SignalName,
+		Severity:           rr.Spec.Severity,
+		RemediationID:      rrID,
+		ResourceKind:       rr.Spec.TargetResource.Kind,
+		ResourceName:       rr.Spec.TargetResource.Name,
+		Namespace:          rr.Spec.TargetResource.Namespace,
+		ClusterID:          rr.Spec.ClusterID,
+		ResourceAPIVersion: rr.Spec.TargetResource.APIVersion,
 	}, nil
 }
