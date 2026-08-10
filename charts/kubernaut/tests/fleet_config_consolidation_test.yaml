@@ -143,6 +143,70 @@ tests:
           path: data["remediationorchestrator.yaml"]
           pattern: "(?m)^\\s*endpoint: \"https://fleetmetadatacache-service"
 
+  # ---------------------------------------------------------------------
+  # AF: backend + endpoint (Issue #2059/E2E-FLEET-018 RCA) -- unlike
+  # GW/RO above, AF's ConfigMap block never rendered these two keys at
+  # all (chart gap, not a per-service-vs-global naming issue): AF's
+  # fleet.enabled: true with no backend/endpoint means
+  # pkg/fleet/config.go's EffectiveEndpoint() returns "" (auto-derivation
+  # is itself gated on Backend==BackendFMC, which is never true for an
+  # empty Backend), so pkg/fleet/scope_factory.go's NewScopeChecker hits
+  # its "endpoint == ''" early-return and silently hands back the bare
+  # local scope.Manager instead of a FederatedScopeChecker -- identical
+  # in shape to the already-fixed GW/RO gap this same file's "defaults
+  # backend to fleetmetadatacache" tests above guard against. Confirmed
+  # via CI must-gather (run 31354092177): AF's own apifrontend log showed
+  # "scope: local Manager cannot resolve remote cluster \"remote-cluster\";
+  # use a fleet adapter" for a kubernaut_remediate call carrying a
+  # non-empty ClusterID, which only scope.Manager (never
+  # FederatedScopeChecker.IsManagedResource) can emit.
+  # ---------------------------------------------------------------------
+  - it: "AF renders backend/endpoint from global.fleet.backend/endpoint (Issue #2059: chart never wired these, so AF's ScopeChecker silently degraded to local-only even with fleet enabled)"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          backend: "acm"
+          endpoint: "https://acm-search.example.com/graphql"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*backend: \"acm\""
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*endpoint: \"https://acm-search\\.example\\.com/graphql\""
+
+  - it: "AF defaults backend to fleetmetadatacache when global.fleet.backend is unset (same Issue #1737 DD-TEST-015 regression as GW/RO above, plus Issue #2059)"
+    set:
+      global:
+        fleet:
+          enabled: true
+          mcpGatewayEndpoint: "http://mcp.example.com"
+          oauth2:
+            enabled: true
+            tokenURL: "https://dex.example.com/token"
+            credentialsSecretRef: fleet-oauth2-creds
+    template: templates/apifrontend/apifrontend.yaml
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*backend: \"fleetmetadatacache\""
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^\\s*endpoint: \"https://fleetmetadatacache-service"
+
   - it: "the old per-service gateway.fleet.backend key is no longer recognized (schema rejects it)"
     set:
       gateway:
