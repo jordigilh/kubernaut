@@ -45,6 +45,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	"github.com/jordigilh/kubernaut/pkg/shared/llm/openaicompat"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 	"github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -84,6 +85,15 @@ type backendDeps struct {
 	// dependencies (ADR-068, BR-FLEET-054); nil when fleet is disabled.
 	// Stopped on shutdown by stopBackendDeps.
 	fleetReadinessGate *readiness.Gate
+	// ScopeChecker validates target resources against Kubernaut's
+	// management scope (ADR-053) before kubernaut_remediate/
+	// kubernaut_investigate_alert/kubernaut_investigate create an RR
+	// (#2025, main-tracking clone of #2022). Wired via fleet.NewScopeChecker
+	// (ADR-068), same factory RO/Gateway use, so a fleet-enabled deployment
+	// gets federated (local+remote) checks for free. Nil when the K8s typed
+	// client is unavailable (graceful degradation, matches every other
+	// backendDeps field's nil-safe convention).
+	ScopeChecker scope.ScopeChecker
 }
 
 // FleetResilientClient returns the MCP Gateway connection backing
@@ -142,7 +152,38 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 		return nil, fmt.Errorf("fleet reader wiring: %w", err)
 	}
 
+	if err := buildScopeCheckerDeps(cfg, deps, logger); err != nil {
+		return nil, fmt.Errorf("scope checker wiring: %w", err)
+	}
+
 	return deps, nil
+}
+
+// buildScopeCheckerDeps wires the ADR-053/#2025 scope checker used by
+// kubernaut_remediate/kubernaut_investigate_alert/kubernaut_investigate to
+// reject out-of-scope resources before RR creation. Runs after
+// buildFleetReaderDeps so cfg.Fleet is fully resolved; fleet.NewScopeChecker
+// itself returns the local-only checker unchanged when Fleet is disabled
+// (ADR-068), so this wiring is safe regardless of Fleet config.
+// Degrades to a nil ScopeChecker (scope validation skipped, matching the
+// tool layer's nil-safe convention) when the K8s typed client failed to
+// initialize — mirrors every other best-effort backendDeps field.
+func buildScopeCheckerDeps(cfg *config.Config, deps *backendDeps, logger logr.Logger) error {
+	if deps.k8sTypedClient == nil {
+		logger.Info("K8s typed client unavailable, scope validation disabled (#2025)")
+		return nil
+	}
+	scopeMgr := scope.NewManager(deps.k8sTypedClient)
+	scopeChecker, err := fleet.NewScopeChecker(scopeMgr, cfg.Fleet, logger.WithName("scope"))
+	if err != nil {
+		return fmt.Errorf("create fleet scope checker: %w", err)
+	}
+	deps.ScopeChecker = scopeChecker
+	if cfg.Fleet.Enabled && cfg.Fleet.EffectiveEndpoint() != "" {
+		logger.Info("ADR-068: federated scope checker enabled for AF tool layer (#2025)",
+			"backend", cfg.Fleet.Backend, "endpoint", cfg.Fleet.EffectiveEndpoint())
+	}
+	return nil
 }
 
 // buildDSClientDeps wires the DataStorage ogen client behind a CA-reloadable,

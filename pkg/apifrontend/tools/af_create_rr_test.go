@@ -23,6 +23,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -64,14 +65,15 @@ func (a *alertOverridePromClient) InstantQuery(_ context.Context, _ string) (*pr
 
 // alwaysFiringPromClient returns a single cluster-scoped firing alert with no
 // namespace/kind/name labels, so it label-matches (at the cluster level, see
-// triage.go bestAlertMatch) any target resource regardless of test fixture
-// identity.
+// triage.go bestOverallMatch) any target resource regardless of test fixture
+// identity, but carries no verified relationship to it.
 //
-// #1839/DD-AF-010: a nil Triager now fails closed (ErrSeverityUndetermined)
-// instead of silently defaulting to "warning". Tests that don't care about
-// the specific severity value but need HandleCreateRR/HandleRemediate to
-// succeed (e.g. to exercise dedup, audit, cluster-ID plumbing) must supply a
-// Triager that actually resolves one -- this is that shared fixture.
+// DD-AF-012/#2027/#2028: because it has no verified relationship, a Triager
+// built on this fixture now resolves as *ambiguous* (Triage returns
+// *severity.AmbiguousSeverityError), not a confident success. Used
+// deliberately by ambiguity tests (e.g. UT-AF-2027-004) that want exactly
+// that "only a cluster-scoped candidate exists" scenario -- callers that
+// just want a Triager to succeed should use defaultTestTriager instead.
 type alwaysFiringPromClient struct{}
 
 func (a *alwaysFiringPromClient) GetAlerts(_ context.Context) ([]prom.Alert, error) {
@@ -84,10 +86,30 @@ func (a *alwaysFiringPromClient) InstantQuery(_ context.Context, _ string) (*pro
 	return &prom.QueryResult{}, nil
 }
 
-// defaultTestTriager returns a Triager that always resolves "warning" via a
-// cluster-scoped alert. See alwaysFiringPromClient.
-func defaultTestTriager() *severity.Triager {
+// ambiguousTestTriager returns a Triager whose only correlating evidence is
+// a cluster-scoped alert with no verified relationship to any target -- the
+// DD-AF-012/#2027/#2028 "ambiguous" scenario. See alwaysFiringPromClient.
+func ambiguousTestTriager() *severity.Triager {
 	return severity.NewTriager(&alwaysFiringPromClient{}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
+}
+
+// defaultTestTriager returns a Triager that resolves "warning" via a
+// resource-scoped alert with a verified relationship to the given
+// namespace/kind/name (namespace may be "" for cluster-scoped targets, e.g.
+// Node). Tests that don't care about the specific severity value but need
+// HandleCreateRR/HandleRemediate to succeed (e.g. to exercise dedup, audit,
+// cluster-ID plumbing) use this to get a confident, non-ambiguous result --
+// DD-AF-012/#2027/#2028's ambiguity gate is reserved for alerts with no such
+// relationship (see ambiguousTestTriager).
+func defaultTestTriager(namespace, kind, name string) *severity.Triager {
+	mockProm := &alertOverridePromClient{
+		alerts: []prom.Alert{
+			{State: "firing", Labels: map[string]string{
+				"alertname": "TestDefaultAlert", "namespace": namespace, "kind": kind, "name": name, "severity": "warning",
+			}},
+		},
+	}
+	return severity.NewTriager(mockProm, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
 }
 
 // unnamedAlertTestTriager returns a Triager that resolves a severity from a
@@ -136,7 +158,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		It("UT-AF-1282-MIN-001: creates RR with only Kind, Name, Description", func() {
 			tc := newTypedFakeClient()
 
-			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "web")}, &tools.CreateRRArgs{
 				Namespace:   "prod",
 				Kind:        "Deployment",
 				Name:        "web",
@@ -151,7 +173,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 		It("UT-AF-1282-MIN-002: empty kind rejected", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "web")}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "", Name: "web", Description: "x", APIVersion: "apps/v1",
 			}, "user")
 			Expect(err).To(MatchError(ContainSubstring("invalid input")))
@@ -159,7 +181,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 		It("UT-AF-1282-MIN-003: empty name rejected", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "web")}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "", Description: "x", APIVersion: "apps/v1",
 			}, "user")
 			Expect(err).To(MatchError(ContainSubstring("invalid input")))
@@ -172,7 +194,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				longDesc[i] = 'a'
 			}
 
-			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "web")}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: string(longDesc), APIVersion: "apps/v1",
 			}, "user")
 			Expect(err).NotTo(HaveOccurred())
@@ -190,7 +212,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				wg.Add(1)
 				go func(idx int) {
 					defer wg.Done()
-					results[idx], errs[idx] = tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+					results[idx], errs[idx] = tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "dedup-target")}, &tools.CreateRRArgs{
 						Namespace: "prod", Kind: "Deployment", Name: "dedup-target", Description: "concurrent test", APIVersion: "apps/v1",
 					}, "user")
 				}(i)
@@ -248,6 +270,42 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			Expect(rrList.Items).To(BeEmpty(), "no RemediationRequest should be created when severity cannot be determined")
 		})
 
+		// DD-AF-012 (#2027/#2028): a cluster-scoped-only match is ambiguous,
+		// not a confident fact -- HandleCreateRR must translate it into a
+		// typed CreateRRResult{Ambiguous: true} with no RR created, mirroring
+		// #2022's Managed: false shape, rather than a generic Go error.
+		It("UT-AF-2028-004: HandleCreateRR translates *AmbiguousSeverityError into CreateRRResult{Ambiguous: true} with no Go error and no RR created", func() {
+			tc := newTypedFakeClient()
+
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: ambiguousTestTriager()}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "only a cluster alert exists", APIVersion: "apps/v1",
+			}, "alice")
+			Expect(err).NotTo(HaveOccurred(),
+				"DD-AF-012/#2027/#2028: ambiguity is a typed result, not a Go error, mirroring #2022's Managed: false shape")
+			Expect(result.Ambiguous).To(BeTrue())
+			Expect(result.CandidateSignalName).To(Equal("TestDefaultAlert"))
+			Expect(result.CandidateSeverity).To(Equal("warning"))
+			Expect(result.RRID).To(BeEmpty())
+
+			var rrList remediationv1.RemediationRequestList
+			Expect(tc.List(context.Background(), &rrList, crclient.InNamespace("prod"))).To(Succeed())
+			Expect(rrList.Items).To(BeEmpty(), "no RemediationRequest should be created for an ambiguous, unconfirmed candidate")
+		})
+
+		It("UT-AF-2028-004b: a matching ConfirmedAmbiguousSignalName proceeds to RR creation", func() {
+			tc := newTypedFakeClient()
+
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: ambiguousTestTriager()}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "confirmed by user",
+				APIVersion:                   "apps/v1",
+				ConfirmedAmbiguousSignalName: "TestDefaultAlert",
+			}, "alice")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Ambiguous).To(BeFalse())
+			Expect(result.RRID).NotTo(BeEmpty())
+			Expect(result.Severity).To(Equal("warning"))
+		})
+
 		It("UT-AF-1282-MIN-007 / UT-AF-1839-010: nil Triager (severityTriage.enabled=false) fails closed instead of fabricating a severity", func() {
 			tc := newTypedFakeClient()
 
@@ -268,7 +326,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		It("UT-AF-1282-NS-005: namespace comes from AF, not LLM args", func() {
 			tc := newTypedFakeClient()
 
-			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem, Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem, Triager: defaultTestTriager("kubernaut-system", "Deployment", "web")}, &tools.CreateRRArgs{
 				Namespace: kubernautSystem, Kind: "Deployment", Name: "web", Description: "ns from AF", APIVersion: "apps/v1",
 			}, "user")
 			Expect(err).NotTo(HaveOccurred())
@@ -296,7 +354,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		It("UT-AF-1282-SRC-001: created RR has signalSource=a2a-agent", func() {
 			tc := newTypedFakeClient()
 
-			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "web")}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "check source", APIVersion: "apps/v1",
 			}, "user")
 			Expect(err).NotTo(HaveOccurred())
@@ -309,7 +367,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			rr := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 			tc := newTypedFakeClient(rr)
 
-			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "web")}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web", Description: "dup", APIVersion: "apps/v1",
 			}, "user")
 			Expect(err).NotTo(HaveOccurred())
@@ -501,7 +559,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			controllerNS := kubernautSystem
 			workloadNS := production
 
-			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: controllerNS, Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: controllerNS, Triager: defaultTestTriager("production", "Deployment", "web")}, &tools.CreateRRArgs{
 				Namespace:   workloadNS,
 				Kind:        "Deployment",
 				Name:        "web",
@@ -536,7 +594,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			}
 			tc := newTypedFakeClient(existingRR)
 
-			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: controllerNS, Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: controllerNS, Triager: defaultTestTriager("production", "Deployment", "web")}, &tools.CreateRRArgs{
 				Namespace:   workloadNS,
 				Kind:        "Deployment",
 				Name:        "web",
@@ -572,7 +630,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		It("UT-AF-1292-NS-004: empty workload namespace rejected (BR-SAFETY-002)", func() {
 			tc := newTypedFakeClient()
 
-			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem, Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem, Triager: defaultTestTriager("", "Deployment", "web")}, &tools.CreateRRArgs{
 				Namespace:   "",
 				Kind:        "Deployment",
 				Name:        "web",
@@ -633,7 +691,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 		rr := newTypedRRWithFingerprint("rr-deploy-web-existing", "Executing")
 		tc := newTypedFakeClient(rr)
 
-		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+		result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: "prod", Triager: defaultTestTriager("prod", "Deployment", "web")}, &tools.CreateRRArgs{
 			Namespace: "prod", Kind: "Deployment", Name: "web", Description: "duplicate", APIVersion: "apps/v1",
 		}, "sre-user")
 		Expect(err).NotTo(HaveOccurred())
@@ -644,7 +702,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 	Describe("APIVersion and ClusterScoped (#1372)", func() {
 		It("UT-AF-1372-060: RR created with targetResource.apiVersion populated", func() {
 			tc := newTypedFakeClient()
-			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem, Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem, Triager: defaultTestTriager("prod", "Deployment", "web")}, &tools.CreateRRArgs{
 				Namespace:  "prod",
 				Kind:       "Deployment",
 				Name:       "web",
@@ -659,7 +717,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 		It("UT-AF-1372-061: cluster-scoped RR (Node) with empty namespace creates successfully", func() {
 			tc := newTypedFakeClient()
-			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem, Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem, Triager: defaultTestTriager("", "Node", "worker-03")}, &tools.CreateRRArgs{
 				Kind:          "Node",
 				Name:          "worker-03",
 				APIVersion:    "v1",
@@ -671,7 +729,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 
 		It("UT-AF-1372-062: namespaced RR with empty namespace rejects", func() {
 			tc := newTypedFakeClient()
-			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem, Triager: defaultTestTriager()}, &tools.CreateRRArgs{
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{Client: tc, ControllerNS: kubernautSystem, Triager: defaultTestTriager("", "Deployment", "web")}, &tools.CreateRRArgs{
 				Kind:          "Deployment",
 				Name:          "web",
 				APIVersion:    "apps/v1",
@@ -695,7 +753,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: kubernautSystem,
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "nginx"),
 			}, &tools.CreateRRArgs{
 				Namespace:   "prod",
 				Kind:        "Deployment",
@@ -716,7 +774,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: kubernautSystem,
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "redis"),
 			}, &tools.CreateRRArgs{
 				Namespace:   "prod",
 				Kind:        "Deployment",
@@ -736,7 +794,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			result1, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: kubernautSystem,
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "east", APIVersion: "apps/v1", ClusterID: "cluster-east",
@@ -747,7 +805,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			result2, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: kubernautSystem,
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "west", APIVersion: "apps/v1", ClusterID: "cluster-west",
@@ -765,7 +823,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: "kubernaut-system",
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "nginx"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "nginx",
 				Description: "test", APIVersion: "apps/v1", ClusterID: "cluster-east-1",
@@ -787,7 +845,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: "prod",
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "race", APIVersion: "apps/v1", ClusterID: "cluster-original",
@@ -808,7 +866,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Client:       tc,
 				ControllerNS: kubernautSystem,
 				Auditor:      rec,
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "audit created", APIVersion: "apps/v1",
@@ -851,7 +909,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Client:       tc,
 				ControllerNS: "prod",
 				Auditor:      rec,
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "audit dedup", APIVersion: "apps/v1",
@@ -874,7 +932,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Client:       tc,
 				ControllerNS: "kubernaut-system",
 				Auditor:      rec,
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "fleet audit", APIVersion: "apps/v1", ClusterID: "cluster-east-1",
@@ -899,7 +957,7 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 				Client:       tc,
 				ControllerNS: "prod",
 				Auditor:      rec,
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "fleet audit dedup", APIVersion: "apps/v1", ClusterID: "cluster-east-1",
@@ -916,13 +974,118 @@ var _ = Describe("HandleCreateRR (#1282 refactor)", func() {
 			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
 				Client:       tc,
 				ControllerNS: kubernautSystem,
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
 			}, &tools.CreateRRArgs{
 				Namespace: "prod", Kind: "Deployment", Name: "web",
 				Description: "no auditor", APIVersion: "apps/v1",
 			}, "carol")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result.RRID).To(HavePrefix("rr-"))
+		})
+	})
+
+	// #2025 (main-tracking clone of #2022): reject out-of-scope resources
+	// before the Triager call/RR create that follow, instead of only being
+	// caught downstream by RO's CheckUnmanagedResource after the waste
+	// #2022 reported (ADR-053 Addendum "Point 3").
+	Describe("ScopeChecker pre-check (#2025)", func() {
+		It("UT-AF-2025-001: rejects RR creation for an unmanaged resource and returns ErrResourceNotManaged", func() {
+			tc := newTypedFakeClient()
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: kubernautSystem,
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				ScopeChecker: &mocks.NeverManagedScopeChecker{},
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "unmanaged", APIVersion: "apps/v1",
+			}, "carol")
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+		})
+
+		It("UT-AF-2025-002: does not create an RR for an unmanaged resource", func() {
+			tc := newTypedFakeClient()
+			_, _ = tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: kubernautSystem,
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				ScopeChecker: &mocks.NeverManagedScopeChecker{},
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "unmanaged", APIVersion: "apps/v1",
+			}, "carol")
+
+			var list remediationv1.RemediationRequestList
+			Expect(tc.List(context.Background(), &list, crclient.InNamespace(kubernautSystem))).To(Succeed())
+			Expect(list.Items).To(BeEmpty(), "no RR must be created for an out-of-scope resource")
+		})
+
+		It("UT-AF-2025-003: allows RR creation for a managed resource", func() {
+			tc := newTypedFakeClient()
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: kubernautSystem,
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				ScopeChecker: &mocks.AlwaysManagedScopeChecker{},
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "managed", APIVersion: "apps/v1",
+			}, "carol")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).To(HavePrefix("rr-"))
+		})
+
+		It("UT-AF-2025-004: fails closed (rejects) when the scope checker itself errors", func() {
+			tc := newTypedFakeClient()
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: kubernautSystem,
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				ScopeChecker: &mocks.ErrorScopeChecker{Err: errors.New("scope backend unreachable")},
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "scope infra error", APIVersion: "apps/v1",
+			}, "carol")
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue(),
+				"a scope-infrastructure error must fail closed, not silently allow RR creation")
+		})
+
+		It("UT-AF-2025-005: skips scope validation (backward compat) when ScopeChecker is nil", func() {
+			tc := newTypedFakeClient()
+			result, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: kubernautSystem,
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				ScopeChecker: nil,
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "no scope checker configured", APIVersion: "apps/v1",
+			}, "carol")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).To(HavePrefix("rr-"))
+		})
+
+		It("UT-AF-2025-006: emits EventRRScopeRejected audit event on rejection (AU-3/AU-12)", func() {
+			tc := newTypedFakeClient()
+			rec := &auditRecorder{}
+			_, err := tools.HandleCreateRR(context.Background(), &tools.ToolDeps{
+				Client:       tc,
+				ControllerNS: kubernautSystem,
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
+				Auditor:      rec,
+				ScopeChecker: &mocks.NeverManagedScopeChecker{},
+			}, &tools.CreateRRArgs{
+				Namespace: "prod", Kind: "Deployment", Name: "web",
+				Description: "unmanaged with auditor", APIVersion: "apps/v1",
+			}, "carol")
+			Expect(err).To(HaveOccurred())
+			Expect(rec.events).To(HaveLen(1))
+			Expect(rec.events[0].Type).To(Equal(audit.EventRRScopeRejected))
+			Expect(rec.events[0].Detail["namespace"]).To(Equal("prod"))
+			Expect(rec.events[0].Detail["kind"]).To(Equal("Deployment"))
+			Expect(rec.events[0].Detail["name"]).To(Equal("web"))
 		})
 	})
 })

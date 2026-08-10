@@ -34,6 +34,11 @@ const (
 
 	EventSeverityTriageCompleted EventType = "severity_triage.completed"
 	EventSeverityTriageFailed    EventType = "severity_triage.failed"
+	// EventSeverityTriageAmbiguous fires when Tier 1's only correlating
+	// evidence is a cluster-scoped alert with no verified relationship to
+	// the target resource -- the agent must ask the user to confirm before
+	// a RemediationRequest is created (DD-AF-012, #2027/#2028).
+	EventSeverityTriageAmbiguous EventType = "severity_triage.ambiguous"
 
 	EventWorkflowDiscovery EventType = "workflow.discovery"
 
@@ -58,6 +63,12 @@ const (
 	EventTriageCompleted      EventType = "triage.completed"
 	EventRRCreated            EventType = "rr.created"
 	EventRRDeduplicated       EventType = "rr.deduplicated"
+	// AU-3/AU-12: AF tool-layer scope rejection (Issue #2025/#2022, ADR-053
+	// Addendum "Point 3"). Parallel to RO's orchestrator.routing.blocked,
+	// giving agent-initiated RR-creation rejections the same audit visibility
+	// that signal-initiated ones (deliberately) lack at Gateway (ADR-053
+	// Decision #7).
+	EventRRScopeRejected      EventType = "rr.scope_rejected"
 	EventKADelegated          EventType = "ka.delegated"
 	EventKAResultReceived     EventType = "ka.result_received"
 	EventUserDecision         EventType = "user.decision"

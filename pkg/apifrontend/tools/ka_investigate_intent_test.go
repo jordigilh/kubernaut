@@ -152,7 +152,7 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 					MCPClient: mockMCP,
 					Client:    tc,
 					Namespace: "kubernaut-system",
-					Triager:   defaultTestTriager(),
+					Triager:   defaultTestTriager("prod", "Deployment", "web-app"),
 				}, tools.InvestigateMCPArgs{
 					APIVersion: "apps/v1",
 					Namespace:  "prod",
@@ -468,6 +468,82 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 			Expect(recorder.correlationCalls[0].kaSessionID).To(Equal("ka-corr-sess-001"))
 		})
 
+		It("UT-AF-2029-101: UpdateCorrelation uses InvestigationSessionID (pollable analysis session), not the driver-lease SessionID, when KA returns both (#2029 regression)", func() {
+			// KA's kubernaut_investigate tool returns two distinct IDs: SessionID is the
+			// MCP driver-lease ID (exclusive-control lock, never pollable via REST), while
+			// InvestigationSessionID is the actual analysis session AA polls for RCA/workflow
+			// results. Correlating the driver-lease ID into IS.Status.KACorrelationID causes
+			// AA's handleSessionLost to 404-loop forever (see #2029 must-gather RCA).
+			tc := newTypedClientForInvestigate()
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID:              "ka-driver-lease-001",
+						InvestigationSessionID: "ka-analysis-sess-001",
+						Status:                 "investigation_started",
+						Closer:                 func() {},
+					}, nil
+				},
+			}
+
+			recorder := &recordingISSignaler{}
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre@kubernaut.ai",
+				Groups:   []string{"sre"},
+			})
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Signaler:  recorder,
+				}, tools.InvestigateMCPArgs{RRID: "rr-corr-002"},
+				false, "",
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.correlationCalls).To(HaveLen(1))
+			Expect(recorder.correlationCalls[0].crdName).To(Equal("is-rr-corr-002"))
+			Expect(recorder.correlationCalls[0].kaSessionID).To(Equal("ka-analysis-sess-001"),
+				"must correlate the pollable analysis session ID, not the driver-lease ID, or AA's session adoption (#2029 Part B) 404-loops forever")
+		})
+
+		It("UT-AF-2029-102: UpdateCorrelation falls back to SessionID when KA omits InvestigationSessionID (back-compat)", func() {
+			tc := newTypedClientForInvestigate()
+
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{
+						SessionID: "ka-driver-lease-002",
+						Status:    "investigation_started",
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			recorder := &recordingISSignaler{}
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
+				Username: "sre@kubernaut.ai",
+				Groups:   []string{"sre"},
+			})
+
+			_, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Signaler:  recorder,
+				}, tools.InvestigateMCPArgs{RRID: "rr-corr-003"},
+				false, "",
+			)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(recorder.correlationCalls).To(HaveLen(1))
+			Expect(recorder.correlationCalls[0].kaSessionID).To(Equal("ka-driver-lease-002"))
+		})
+
 		It("UT-AF-1332-074: signaler not called when signaler is nil (backward compat)", func() {
 			tc := newTypedClientForInvestigate()
 
@@ -495,6 +571,51 @@ var _ = Describe("kubernaut_investigate intent-based enhancement (#1332)", func(
 				false, "",
 			)
 			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
+	Describe("Ambiguous severity/signal correlation — DD-AF-012 (#2027/#2028)", func() {
+		It("UT-AF-2028-006: surfaces Ambiguous/CandidateSignalName/CandidateSeverity when only a cluster-scoped alert correlates, then proceeds once confirmed", func() {
+			tc := newTypedClientForInvestigate()
+			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{Username: "sre-erin", Groups: []string{"sre"}})
+
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				ctx, &tools.InvestigateConfig{
+					MCPClient: &ka.MockMCPClient{},
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Triager:   ambiguousTestTriager(),
+				}, tools.InvestigateMCPArgs{APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-ambiguous"},
+				true, "sre-erin",
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Ambiguous).To(BeTrue())
+			Expect(result.CandidateSignalName).To(Equal("TestDefaultAlert"))
+			Expect(result.CandidateSeverity).To(Equal("warning"))
+			Expect(result.RRID).To(BeEmpty())
+
+			eventCh := make(chan ka.InvestigationEvent)
+			close(eventCh)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					return &ka.StartInvestigationResult{SessionID: "sess-2028-006", Status: "started", Events: eventCh, Closer: func() {}}, nil
+				},
+			}
+			confirmed, err := tools.HandleInvestigationMCPWithRegistry(
+				shortCtx(ctx), &tools.InvestigateConfig{
+					MCPClient: mockMCP,
+					Client:    tc,
+					Namespace: "kubernaut-system",
+					Triager:   ambiguousTestTriager(),
+				}, tools.InvestigateMCPArgs{
+					APIVersion: "apps/v1", Namespace: "prod", Kind: "Deployment", Name: "web-ambiguous",
+					ConfirmedSignalName: "TestDefaultAlert",
+				},
+				true, "sre-erin",
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(confirmed.Ambiguous).To(BeFalse())
+			Expect(confirmed.RRID).NotTo(BeEmpty())
 		})
 	})
 })

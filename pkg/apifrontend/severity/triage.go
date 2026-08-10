@@ -25,6 +25,21 @@ import (
 // guessing is the fix; see DD-AF-010.
 var ErrSeverityUndetermined = errors.New("cannot determine severity: no active alert or prometheus rule correlates to this resource")
 
+// AmbiguousSeverityError is returned by Triage when the only correlating
+// evidence found is a cluster-scoped alert with no verified relationship to
+// the target resource (DD-AF-012, #2027/#2028). Unlike ErrSeverityUndetermined
+// (no evidence at all), here a candidate exists but trusting it silently
+// risks attributing an unrelated cluster-wide incident to this resource --
+// the caller must surface Candidate to the user and re-call with a matching
+// TriageInput.ConfirmedSignalName to proceed.
+type AmbiguousSeverityError struct {
+	Candidate TriageResult
+}
+
+func (e *AmbiguousSeverityError) Error() string {
+	return "severity triage ambiguous: only a cluster-scoped alert (" + e.Candidate.AlertName + ") correlates, with no verified relationship to this resource"
+}
+
 // LLMTriager defines the interface for LLM-based severity classification.
 type LLMTriager interface {
 	TriageWithRules(ctx context.Context, rules []prom.Rule, input TriageInput) (TriageResult, error)
@@ -131,6 +146,27 @@ func (t *Triager) Triage(ctx context.Context, input TriageInput) (TriageResult, 
 		}
 		return result, err
 	}
+
+	// DD-AF-012/#2027/#2028: a cluster-scoped-only match is a guess, not a
+	// fact -- fail closed unless the caller already carries the user's
+	// confirmation for this exact candidate (a different candidate does not
+	// bypass the gate, even on a later call).
+	if result.Ambiguous && result.AlertName != input.ConfirmedSignalName {
+		if t.auditor != nil {
+			t.auditor.Emit(ctx, &audit.Event{
+				Type: audit.EventSeverityTriageAmbiguous,
+				Detail: map[string]string{
+					"namespace":          input.Namespace,
+					"kind":               input.Kind,
+					"name":               input.Name,
+					"candidate_alert":    result.AlertName,
+					"candidate_severity": result.Severity,
+				},
+			})
+		}
+		return result, &AmbiguousSeverityError{Candidate: result}
+	}
+
 	if result.Severity != "" {
 		result.Severity = NormalizeSeverity(result.Severity)
 	}
@@ -336,9 +372,13 @@ func (t *Triager) bestOverallMatch(alerts []prom.Alert, targetLabels map[string]
 	case nsPending.found:
 		return nsPending.result(SourceNSPendingAlert), true
 	case clusterFiring.found:
-		return clusterFiring.result(SourceClusterFiringAlert), true
+		result := clusterFiring.result(SourceClusterFiringAlert)
+		result.Ambiguous = true
+		return result, true
 	case clusterPending.found:
-		return clusterPending.result(SourceClusterPendingAlert), true
+		result := clusterPending.result(SourceClusterPendingAlert)
+		result.Ambiguous = true
+		return result, true
 	}
 	return TriageResult{}, false
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 	"github.com/jordigilh/kubernaut/pkg/fleet/registry"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // AgentConfig holds the configuration for creating the ADK root agent.
@@ -109,6 +110,13 @@ type AgentConfig struct {
 	// When non-nil, the list_clusters tool is registered so the LLM can discover
 	// available clusters. When nil, the tool is not registered.
 	ClusterRegistry registry.ClusterRegistry
+	// ScopeChecker validates that a target resource is within Kubernaut's
+	// management scope (ADR-053) before kubernaut_remediate,
+	// kubernaut_investigate_alert, or kubernaut_investigate create an
+	// RR/InvestigationSession (#2025, main-tracking clone of #2022). When
+	// nil, scope validation is skipped at the tool layer (RO's
+	// CheckUnmanagedResource remains the fallback enforcement point).
+	ScopeChecker scope.ScopeChecker
 }
 
 // Option applies a configuration override to AgentConfig.

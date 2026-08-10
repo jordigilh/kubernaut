@@ -48,6 +48,12 @@ type TriageInput struct {
 	Description string
 	Labels      map[string]string
 	PodNames    []string // Resolved pod names for alert correlation (auto-populated by Triager when PodResolver is set)
+	// ConfirmedSignalName, when non-empty and it exactly matches an
+	// ambiguous candidate's AlertName, indicates the user has already
+	// confirmed that specific weak candidate (DD-AF-012). Triage() bypasses
+	// its ambiguity gate only for this exact match -- a different candidate
+	// on a later call still fails closed and asks again.
+	ConfirmedSignalName string
 }
 
 // TriageResult holds the outcome of the severity triage pipeline.
@@ -57,6 +63,13 @@ type TriageResult struct {
 	AlertName  string
 	RuleName   string
 	Confidence float64
+	// Ambiguous is true when the only correlating evidence found is a
+	// cluster-scoped alert with no verified relationship to the target
+	// resource (namespace/resource key overlap) -- a guess, not a fact
+	// (DD-AF-012, #2027/#2028). Only Tier 1's cluster-scoped branches set
+	// this; resource- and namespace-scoped matches always have a verified
+	// relationship and are never ambiguous.
+	Ambiguous bool
 }
 
 // Canonical severity values (ADR-066). Severity is kept as a plain string

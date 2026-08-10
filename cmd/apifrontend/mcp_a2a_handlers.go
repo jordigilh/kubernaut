@@ -50,6 +50,7 @@ func buildMCPHandler(d *handlerDeps) (http.Handler, func() bool, error) {
 		InteractiveEnabled:    d.Cfg.Interactive.Enabled,
 		ActiveContextRegistry: d.ActiveCtxRegistry,
 		RESTMapper:            d.Backends.Mapper,
+		ScopeChecker:          d.Backends.ScopeChecker,
 	}
 
 	mcpSessionTimeout := d.Cfg.MCP.SessionIdleTimeout
@@ -163,6 +164,7 @@ func buildRootAgentConfig(d *handlerDeps, llmModel model.LLM, sessionSvcForAgent
 		PromClient:            d.Backends.PromClient,
 		FleetReaderFactory:    d.Backends.FleetReaderFactory,
 		ClusterRegistry:       d.Backends.FleetClusterRegistry,
+		ScopeChecker:          d.Backends.ScopeChecker,
 	}
 }
 

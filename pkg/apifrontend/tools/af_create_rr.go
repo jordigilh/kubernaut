@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -16,6 +17,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 	gwtypes "github.com/jordigilh/kubernaut/pkg/gateway/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // unknownValue is the generic fallback used when a signal name, phase, or
@@ -31,6 +33,12 @@ type ToolDeps struct {
 	ControllerNS string
 	Triager      *severity.Triager
 	Auditor      audit.Emitter
+	// ScopeChecker, when non-nil, rejects RR creation for resources outside
+	// Kubernaut's management scope (ADR-053 Addendum "Point 3", #2025/#2022)
+	// before a Triager call or RR object is wastefully created. Nil is
+	// backward-compatible: scope validation is skipped (matches Triager's
+	// own nil-safe convention above).
+	ScopeChecker scope.ScopeChecker
 }
 
 // maxDescriptionLen is the maximum length for RR description (truncated, not rejected).
@@ -58,6 +66,13 @@ type CreateRRArgs struct {
 	// ClusterID is the cluster identifier from Thanos external_labels.
 	// Empty string indicates local hub cluster (ADR-065).
 	ClusterID string `json:"cluster_id,omitempty"`
+	// ConfirmedAmbiguousSignalName, when non-empty and it exactly matches a
+	// previously-surfaced ambiguous candidate's alert name, indicates the
+	// user has already confirmed that specific weak candidate (DD-AF-012,
+	// #2027/#2028). Populated internally by each tool handler from its own
+	// LLM-visible confirmed_signal_name field, not set by the LLM directly
+	// on this struct.
+	ConfirmedAmbiguousSignalName string `json:"-"`
 }
 
 // CreateRRResult is the output of RR creation.
@@ -79,6 +94,15 @@ type CreateRRResult struct {
 	// without recomputing -- both the create and dedup branches already know
 	// it via req.Fingerprint at construction time.
 	Fingerprint string `json:"-"`
+	// Ambiguous is true when severity triage found only a cluster-scoped
+	// alert with no verified relationship to the target resource -- no RR
+	// is created and the caller must ask the user to confirm
+	// CandidateSignalName before retrying (DD-AF-012, #2027/#2028).
+	Ambiguous bool `json:"ambiguous,omitempty"`
+	// CandidateSignalName/CandidateSeverity carry the unverified candidate
+	// so the calling agent can present it to the user for confirmation.
+	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
+	CandidateSeverity   string `json:"candidate_severity,omitempty"`
 }
 
 // rrCreateGroup provides singleflight deduplication per fingerprint.
@@ -146,8 +170,32 @@ func HandleCreateRR(ctx context.Context, d *ToolDeps, args *CreateRRArgs, userna
 		args.Description = args.Description[:maxDescriptionLen]
 	}
 
+	// #2025/#2022: reject out-of-scope resources before the Triager call and
+	// RR object creation that follow — RO's CheckUnmanagedResource would
+	// otherwise catch this downstream, but only after wasting a Prometheus
+	// triage round-trip and an RR CRD create/delete cycle.
+	if managed, msg := checkRRScope(ctx, d.ScopeChecker, d.Auditor, username, scope.ResourceIdentity{
+		ClusterID: args.ClusterID, Namespace: args.Namespace, Kind: args.Kind, Name: args.Name,
+	}); !managed {
+		return CreateRRResult{}, fmt.Errorf("%w: %s", ErrResourceNotManaged, msg)
+	}
+
 	resolvedSeverity, triageResult, err := resolveCreateRRSeverity(ctx, d, args)
 	if err != nil {
+		// DD-AF-012/#2027/#2028: an ambiguous match is a typed signal, not a
+		// generic error -- no RR is created, but the caller gets a normal
+		// result carrying the weak candidate so the agent can ask the user
+		// to confirm before retrying (mirrors #2022's Managed: false shape).
+		var ambErr *severity.AmbiguousSeverityError
+		if errors.As(err, &ambErr) {
+			return CreateRRResult{
+				Ambiguous:           true,
+				CandidateSignalName: ambErr.Candidate.AlertName,
+				CandidateSeverity:   ambErr.Candidate.Severity,
+				Message: fmt.Sprintf("severity/signal correlation is ambiguous for %s/%s: only a cluster-scoped alert (%s) was found, with no verified relationship to this resource",
+					args.Kind, args.Name, ambErr.Candidate.AlertName),
+			}, nil
+		}
 		return CreateRRResult{}, err
 	}
 
@@ -219,11 +267,12 @@ func resolveCreateRRSeverity(ctx context.Context, d *ToolDeps, args *CreateRRArg
 		return "", nil, fmt.Errorf("severity triage not configured: %w", severity.ErrSeverityUndetermined)
 	}
 	input := severity.TriageInput{
-		Namespace:   args.Namespace,
-		Kind:        args.Kind,
-		Name:        args.Name,
-		Description: args.Description,
-		Labels:      map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
+		Namespace:           args.Namespace,
+		Kind:                args.Kind,
+		Name:                args.Name,
+		Description:         args.Description,
+		Labels:              map[string]string{"namespace": args.Namespace, "kind": args.Kind, "name": args.Name},
+		ConfirmedSignalName: args.ConfirmedAmbiguousSignalName,
 	}
 	result, err := d.Triager.Triage(ctx, input)
 	if err != nil {

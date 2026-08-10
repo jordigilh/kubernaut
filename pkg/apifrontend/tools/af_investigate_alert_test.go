@@ -2,6 +2,7 @@ package tools_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/a2aproject/a2a-go/a2a"
@@ -16,6 +17,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	prom "github.com/jordigilh/kubernaut/pkg/apifrontend/prometheus"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
@@ -23,7 +25,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 		return tools.InvestigateAlertConfig{
 			Client:       newTypedFakeClient(),
 			ControllerNS: "kubernaut-system",
-			Triager:      defaultTestTriager(),
+			Triager:      defaultTestTriager("prod", "Deployment", "web"),
 		}
 	}
 
@@ -91,6 +93,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			}
 			cfg := baseCfg()
 			cfg.PromClient = promClient
+			cfg.Triager = defaultTestTriager("", "Node", "worker-03")
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
 				&tools.InvestigateAlertArgs{
 					AlertName:  "NodeNotReady",
@@ -437,6 +440,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 		It("UT-AF-1372-056: strips namespace for cluster-scoped kind (self-healing #1477)", func() {
 			cfg := baseCfg()
 			cfg.Mapper = newMapper()
+			cfg.Triager = defaultTestTriager("", "Node", "worker-1")
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
 				&tools.InvestigateAlertArgs{
 					AlertName:  "KubeNodeNotReady",
@@ -452,6 +456,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 		It("UT-AF-1372-057: allows cluster-scoped kind without namespace", func() {
 			cfg := baseCfg()
 			cfg.Mapper = newMapper()
+			cfg.Triager = defaultTestTriager("", "Node", "worker-1")
 			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
 				&tools.InvestigateAlertArgs{
 					AlertName:  "KubeNodeNotReady",
@@ -498,7 +503,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			result, err := tools.HandleInvestigateAlert(ctx, tools.InvestigateAlertConfig{
 				Client:       newTypedFakeClient(),
 				ControllerNS: "kubernaut-system",
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("demo-gateway", "Deployment", "api-frontend"),
 			}, &tools.InvestigateAlertArgs{
 				AlertName:  "ScalingLimited",
 				APIVersion: "apps/v1",
@@ -550,7 +555,7 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 				Client:       tc,
 				ControllerNS: "kubernaut-system",
 				Auditor:      rec,
-				Triager:      defaultTestTriager(),
+				Triager:      defaultTestTriager("prod", "Deployment", "web"),
 			}, &tools.InvestigateAlertArgs{
 				AlertName:  "KubePodCrashLooping",
 				APIVersion: "apps/v1",
@@ -589,6 +594,71 @@ var _ = Describe("kubernaut_investigate_alert (#1372)", func() {
 			}
 			Expect(eventSaw).To(BeTrue(),
 				"AU-3, SI-4: A2A status events must carry cluster_id from RRContext for Console cross-cluster correlation")
+		})
+	})
+
+	// #2025 (main-tracking clone of #2022): kubernaut_investigate_alert
+	// delegates to HandleCreateRR, which now pre-checks scope (ADR-053
+	// Addendum "Point 3") — this proves the ScopeChecker threads through
+	// InvestigateAlertConfig end-to-end.
+	Describe("ScopeChecker pre-check (#2025)", func() {
+		It("UT-AF-2025-020: rejects an unmanaged target resource before RR creation", func() {
+			cfg := baseCfg()
+			cfg.ScopeChecker = &mocks.NeverManagedScopeChecker{}
+			_, err := tools.HandleInvestigateAlert(context.Background(), cfg,
+				&tools.InvestigateAlertArgs{
+					AlertName:  "KubePodCrashLooping",
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "web",
+					Namespace:  "prod",
+				}, "user")
+			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+		})
+
+		It("UT-AF-2025-021: allows RR creation for a managed target resource", func() {
+			cfg := baseCfg()
+			cfg.ScopeChecker = &mocks.AlwaysManagedScopeChecker{}
+			result, err := tools.HandleInvestigateAlert(context.Background(), cfg,
+				&tools.InvestigateAlertArgs{
+					AlertName:  "KubePodCrashLooping",
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "web",
+					Namespace:  "prod",
+				}, "user")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RRID).NotTo(BeEmpty())
+		})
+	})
+
+	Describe("Ambiguous severity correlation — DD-AF-012 (#2027/#2028)", func() {
+		It("UT-AF-2028-007: surfaces Ambiguous/CandidateSignalName/CandidateSeverity when only a cluster-scoped alert correlates, then proceeds once confirmed", func() {
+			cfg := baseCfg()
+			cfg.Triager = ambiguousTestTriager()
+			args := &tools.InvestigateAlertArgs{
+				AlertName:  "KubePodCrashLooping",
+				APIVersion: "apps/v1",
+				Kind:       "Deployment",
+				Name:       "web-ambiguous",
+				Namespace:  "prod",
+			}
+
+			result, err := tools.HandleInvestigateAlert(context.Background(), cfg, args, "sre-alice")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Ambiguous).To(BeTrue())
+			Expect(result.CandidateSignalName).To(Equal("TestDefaultAlert"))
+			Expect(result.CandidateSeverity).To(Equal("warning"))
+			Expect(result.RRID).To(BeEmpty())
+			// AlertName is already user-confirmed and always wins for signal_name (#1372).
+			Expect(result.SignalName).To(Equal("KubePodCrashLooping"))
+
+			args.ConfirmedSignalName = "TestDefaultAlert"
+			confirmed, err := tools.HandleInvestigateAlert(context.Background(), cfg, args, "sre-alice")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(confirmed.Ambiguous).To(BeFalse())
+			Expect(confirmed.RRID).NotTo(BeEmpty())
 		})
 	})
 })
