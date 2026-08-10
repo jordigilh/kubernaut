@@ -118,6 +118,11 @@ type InvestigateMCPArgs struct {
 	// full, unattended remediation). An omitted or unrecognized value fails
 	// safe to "interactive" (AC-6 least privilege, SI-10 input validation).
 	InteractionMode string `json:"interaction_mode,omitempty" jsonschema:"one of interactive (default), full_remediation, full_remediation_autonomous -- declares how much autonomy to grant for post-investigation phase transitions"`
+
+	// ConfirmedSignalName re-supplies a previously-surfaced ambiguous
+	// candidate's alert name after the user has explicitly confirmed it
+	// (DD-AF-012, #2027/#2028). Leave empty on the first call.
+	ConfirmedSignalName string `json:"confirmed_signal_name,omitempty"`
 }
 
 // InvestigateMCPResult is the output of the MCP investigate tool.
@@ -128,6 +133,15 @@ type InvestigateMCPResult struct {
 	RRID      string          `json:"rr_id,omitempty"`
 	Error     string          `json:"error,omitempty"`
 	RCA       *InvestigateRCA `json:"rca,omitempty"`
+	// Ambiguous/CandidateSignalName/CandidateSeverity: see CreateRRResult
+	// (DD-AF-012, #2027/#2028). Re-call with ConfirmedSignalName set to
+	// CandidateSignalName once the user has confirmed it. Only meaningful
+	// on the new-RR (api_version/kind/name) path -- the rr_id takeover path
+	// never sets this, since that RR was already triaged at its own
+	// creation time.
+	Ambiguous           bool   `json:"ambiguous,omitempty"`
+	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
+	CandidateSeverity   string `json:"candidate_severity,omitempty"`
 }
 
 // InvestigateRCA is the structured RCA data extracted from the KA complete event.
@@ -168,6 +182,12 @@ type InvestigateConfig struct {
 	Pool      *ka.KASessionPool
 	Signaler  ISSignaler
 	Triager   *severity.Triager
+	// ScopeChecker rejects RR creation for out-of-scope resources on the
+	// "new investigation" (api_version/kind/name) path (#2025, main-tracking
+	// clone of #2022; ADR-053 Addendum "Point 3"). Not consulted on the
+	// existing-rr_id (takeover) path — that RR was already scope-checked at
+	// its own creation time. Nil skips scope validation (backward compat).
+	ScopeChecker scope.ScopeChecker
 }
 
 // HandleInvestigationMCP starts a dedicated MCP investigation session. When a
@@ -213,9 +233,17 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateCon
 		return InvestigateMCPResult{}, fmt.Errorf("KA MCP client unavailable")
 	}
 
-	rrSeverity, err := resolveInvestigationRR(ctx, cfg, &args)
+	rrSeverity, ambiguous, err := resolveInvestigationRR(ctx, cfg, &args)
 	if err != nil {
 		return InvestigateMCPResult{}, err
+	}
+	if ambiguous != nil {
+		return InvestigateMCPResult{
+			Ambiguous:           true,
+			CandidateSignalName: ambiguous.CandidateSignalName,
+			CandidateSeverity:   ambiguous.CandidateSeverity,
+			Error:               ambiguous.Message,
+		}, nil
 	}
 
 	identity := auth.UserIdentityFromContext(ctx)
@@ -280,30 +308,36 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, cfg *InvestigateCon
 // resource args (rr_id vs api_version/kind/name), and seeds the EventBridge
 // RR context (#1423) for Console banner population. Returns the severity
 // assessed during RR creation (if any) for later fallback-RCA use.
-func resolveInvestigationRR(ctx context.Context, cfg *InvestigateConfig, args *InvestigateMCPArgs) (rrSeverity string, err error) {
+func resolveInvestigationRR(ctx context.Context, cfg *InvestigateConfig, args *InvestigateMCPArgs) (rrSeverity string, ambiguous *CreateRRResult, err error) {
 	hasRRID := args.RRID != ""
 	hasResourceArgs := args.APIVersion != "" || args.Kind != "" || args.Name != "" || args.Namespace != ""
 
 	if !hasRRID && !hasResourceArgs {
-		return "", fmt.Errorf("rr_id or api_version/kind/name required")
+		return "", nil, fmt.Errorf("rr_id or api_version/kind/name required")
 	}
 	if hasRRID {
 		if err := validate.RRID(args.RRID); err != nil {
-			return "", fmt.Errorf("invalid rr_id: %w", err)
+			return "", nil, fmt.Errorf("invalid rr_id: %w", err)
 		}
 	}
 
 	identity := auth.UserIdentityFromContext(ctx)
 
 	if !hasRRID && hasResourceArgs {
-		rrSeverity, err = createRRForInvestigation(ctx, cfg, args, identity)
+		rrSeverity, ambiguous, err = createRRForInvestigation(ctx, cfg, args, identity)
 		if err != nil {
-			return "", err
+			return "", nil, err
+		}
+		// DD-AF-012/#2027/#2028: no RR was created -- the caller must ask
+		// the user to confirm the candidate before retrying. args.RRID was
+		// never populated, so the takeover-fetch logic below must not run.
+		if ambiguous != nil {
+			return "", ambiguous, nil
 		}
 	}
 
 	if args.RRID == "" {
-		return "", fmt.Errorf("rr_id is required for MCP investigation")
+		return "", nil, fmt.Errorf("rr_id is required for MCP investigation")
 	}
 
 	// For the existing-RR path (rr_id provided as input, i.e. a takeover of
@@ -316,7 +350,7 @@ func resolveInvestigationRR(ctx context.Context, cfg *InvestigateConfig, args *I
 		setTakeoverRRContext(ctx, cfg, args.RRID)
 	}
 
-	return rrSeverity, nil
+	return rrSeverity, nil, nil
 }
 
 // setTakeoverRRContext seeds the EventBridge RR context for the takeover
@@ -356,12 +390,12 @@ func setTakeoverRRContext(ctx context.Context, cfg *InvestigateConfig, rrID stri
 // stripping and rejecting service-account-initiated interactive
 // investigations. Mutates args.RRID/args.Namespace and seeds the
 // EventBridge RR context (#1423, AU-3, SI-4).
-func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args *InvestigateMCPArgs, identity *auth.UserIdentity) (string, error) {
+func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args *InvestigateMCPArgs, identity *auth.UserIdentity) (severityOut string, ambiguous *CreateRRResult, err error) {
 	if err := validate.APIVersion(args.APIVersion); err != nil {
-		return "", fmt.Errorf("%w", err)
+		return "", nil, fmt.Errorf("%w", err)
 	}
 	if args.Kind == "" || args.Name == "" {
-		return "", fmt.Errorf("kind and name required when providing api_version/kind/name")
+		return "", nil, fmt.Errorf("kind and name required when providing api_version/kind/name")
 	}
 
 	clusterScoped := resolveClusterScoped(ctx, args)
@@ -370,33 +404,39 @@ func createRRForInvestigation(ctx context.Context, cfg *InvestigateConfig, args 
 	}
 
 	if identity != nil && identity.IsServiceAccount {
-		return "", fmt.Errorf("interactive investigation cannot be started by service accounts")
+		return "", nil, fmt.Errorf("interactive investigation cannot be started by service accounts")
 	}
 	if cfg.Client == nil {
-		return "", fmt.Errorf("k8s client unavailable for RR creation")
+		return "", nil, fmt.Errorf("k8s client unavailable for RR creation")
 	}
 
 	createArgs := &CreateRRArgs{
-		Namespace:     args.Namespace,
-		Kind:          args.Kind,
-		Name:          args.Name,
-		APIVersion:    args.APIVersion,
-		ClusterScoped: clusterScoped,
-		ClusterID:     args.ClusterID,
+		Namespace:                    args.Namespace,
+		Kind:                         args.Kind,
+		Name:                         args.Name,
+		APIVersion:                   args.APIVersion,
+		ClusterScoped:                clusterScoped,
+		ClusterID:                    args.ClusterID,
+		ConfirmedAmbiguousSignalName: args.ConfirmedSignalName,
 	}
 	createUser := ""
 	if identity != nil {
 		createUser = identity.Username
 	}
-	result, err := HandleCreateRR(ctx, &ToolDeps{Client: cfg.Client, ControllerNS: cfg.Namespace, Triager: cfg.Triager, Auditor: cfg.Auditor}, createArgs, createUser)
+	result, err := HandleCreateRR(ctx, &ToolDeps{Client: cfg.Client, ControllerNS: cfg.Namespace, Triager: cfg.Triager, Auditor: cfg.Auditor, ScopeChecker: cfg.ScopeChecker}, createArgs, createUser)
 	if err != nil {
-		return "", fmt.Errorf("create RR for investigation: %w", err)
+		return "", nil, fmt.Errorf("create RR for investigation: %w", err)
+	}
+	// DD-AF-012/#2027/#2028: no RR was created -- surface the candidate to
+	// the caller instead of treating this as a fatal error.
+	if result.Ambiguous {
+		return "", &result, nil
 	}
 	args.RRID = result.RRID
 
 	launcher.SetRRContextSafe(ctx, newlyCreatedRRContext(result.RRID, args.Namespace, args.Kind, args.Name, result.SignalName, result.ClusterID))
 
-	return result.Severity, nil
+	return result.Severity, nil, nil
 }
 
 // resolveClusterScoped determines whether the target resource is
@@ -558,13 +598,23 @@ func startKAInvestigation(ctx context.Context, cfg *InvestigateConfig, rrID, kaS
 // registers the session in the MonitorRegistry so StopAll can force-close
 // on shutdown (the bridge goroutine/blocking path deregisters on exit).
 func finalizeInvestigationStart(ctx context.Context, cfg *InvestigateConfig, rrID, isCRDName string, result *ka.StartInvestigationResult, logger logr.Logger) {
+	// correlationSessionID is the pollable investigation-analysis session ID, NOT
+	// the MCP driver-lease result.SessionID. Correlating the driver-lease ID into
+	// IS.Status.KACorrelationID causes AA's handleSessionLost to 404-loop forever
+	// (#2029). Fall back to SessionID only when KA omits InvestigationSessionID
+	// (back-compat).
+	correlationSessionID := result.InvestigationSessionID
+	if correlationSessionID == "" {
+		correlationSessionID = result.SessionID
+	}
+
 	if cfg.Auditor != nil {
 		cfg.Auditor.Emit(ctx, &audit.Event{
 			Type: audit.EventKADelegated,
 			Detail: map[string]string{
 				"rr_id":             rrID,
 				"session_id":        result.SessionID,
-				"ka_correlation_id": result.SessionID,
+				"ka_correlation_id": correlationSessionID,
 				"delegation_type":   "interactive",
 			},
 		})
@@ -581,10 +631,10 @@ func finalizeInvestigationStart(ctx context.Context, cfg *InvestigateConfig, rrI
 		}
 	}
 
-	if cfg.Signaler != nil && isCRDName != "" && result.SessionID != "" {
-		if corrErr := cfg.Signaler.UpdateCorrelation(ctx, isCRDName, result.SessionID); corrErr != nil {
+	if cfg.Signaler != nil && isCRDName != "" && correlationSessionID != "" {
+		if corrErr := cfg.Signaler.UpdateCorrelation(ctx, isCRDName, correlationSessionID); corrErr != nil {
 			logger.Error(corrErr, "IS CRD correlation update failed (non-fatal)",
-				"crd_name", isCRDName, "session_id", result.SessionID)
+				"crd_name", isCRDName, "session_id", correlationSessionID)
 		}
 	}
 

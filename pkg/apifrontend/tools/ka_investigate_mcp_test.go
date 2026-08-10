@@ -19,6 +19,7 @@ package tools_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync/atomic"
 	"time"
 
@@ -37,6 +38,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/ka"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // goconst dedup: test-fixture literals deduplicated below.
@@ -1383,7 +1385,7 @@ var _ = Describe("Takeover RR context reconstruction — #1409, #1423 (AU-3, CC8
 		queue := &bridgeQueue{}
 		ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-011", "ctx-1409-011", nil)
 
-		_, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
+		_, _, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
 			Client:    tc,
 			Namespace: "kubernaut-system",
 		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-011"})
@@ -1410,7 +1412,7 @@ var _ = Describe("Takeover RR context reconstruction — #1409, #1423 (AU-3, CC8
 		queue := &bridgeQueue{}
 		ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-012", "ctx-1409-012", nil)
 
-		_, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
+		_, _, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
 			Client:    tc,
 			Namespace: "kubernaut-system",
 		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-012"})
@@ -1429,7 +1431,7 @@ var _ = Describe("Takeover RR context reconstruction — #1409, #1423 (AU-3, CC8
 		queue := &bridgeQueue{}
 		ctx := launcher.WithEventBridge(context.Background(), queue, "task-1409-013", "ctx-1409-013", nil)
 
-		_, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
+		_, _, err := tools.ResolveInvestigationRR(ctx, &tools.InvestigateConfig{
 			Namespace: "kubernaut-system",
 		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-013"})
 		Expect(err).NotTo(HaveOccurred())
@@ -1481,13 +1483,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — fleet cluster_id wiring
 			ctx, &tools.InvestigateConfig{
 				MCPClient: closedEventsMCP(),
 				Client:    tc,
-				Namespace: "kubernaut-system",
-				Triager:   defaultTestTriager(),
-			}, tools.InvestigateMCPArgs{
-				APIVersion: "apps/v1",
-				Namespace:  "prod",
-				Kind:       "Deployment",
-				Name:       "web-1409-003",
+			Namespace: "kubernaut-system",
+			Triager:   defaultTestTriager("prod", "Deployment", "web-1409-003"),
+		}, tools.InvestigateMCPArgs{
+			APIVersion: "apps/v1",
+			Namespace:  "prod",
+			Kind:       "Deployment",
+			Name:       "web-1409-003",
 				ClusterID:  "cluster-fleet-it-003",
 			},
 			true, "alice",
@@ -1620,6 +1622,57 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — fleet cluster_id wiring
 		}
 		Expect(meta).NotTo(BeNil(), "degraded takeover context must still carry rr_id for correlation")
 		Expect(meta["cluster_id"]).To(BeNil(), "degraded context must not fabricate cluster_id it couldn't fetch")
+	})
+})
+
+// #2025 (main-tracking clone of #2022): resolveInvestigationRR's
+// createRRForInvestigation branch (new RR from api_version/kind/name)
+// delegates to HandleCreateRR, which now pre-checks scope. The takeover
+// (rr_id-only) branch does NOT re-check scope, since that RR was already
+// scope-checked at its own creation time.
+var _ = Describe("ScopeChecker pre-check (#2025)", func() {
+	It("UT-AF-2025-050: rejects a new-RR investigation for an unmanaged target resource", func() {
+		tc := newTypedFakeClient()
+		_, _, err := tools.ResolveInvestigationRR(context.Background(), &tools.InvestigateConfig{
+			Client:       tc,
+			Namespace:    "kubernaut-system",
+			Triager:      defaultTestTriager("prod", "Deployment", "web"),
+			ScopeChecker: &mocks.NeverManagedScopeChecker{},
+		}, &tools.InvestigateMCPArgs{
+			APIVersion: "apps/v1", Kind: "Deployment", Name: "web", Namespace: "prod",
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(errors.Is(err, tools.ErrResourceNotManaged)).To(BeTrue())
+	})
+
+	It("UT-AF-2025-051: allows a new-RR investigation for a managed target resource", func() {
+		tc := newTypedFakeClient()
+		_, _, err := tools.ResolveInvestigationRR(context.Background(), &tools.InvestigateConfig{
+			Client:       tc,
+			Namespace:    "kubernaut-system",
+			Triager:      defaultTestTriager("prod", "Deployment", "web"),
+			ScopeChecker: &mocks.AlwaysManagedScopeChecker{},
+		}, &tools.InvestigateMCPArgs{
+			APIVersion: "apps/v1", Kind: "Deployment", Name: "web", Namespace: "prod",
+		})
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("UT-AF-2025-052: the rr_id (takeover) path is not scope-checked", func() {
+		rr := &remediationv1.RemediationRequest{
+			ObjectMeta: objMeta("kubernaut-system", "rr-takeover-2025"),
+			Spec: remediationv1.RemediationRequestSpec{
+				TargetResource: remediationv1.ResourceIdentifier{Kind: "Deployment", Name: "web", Namespace: "prod"},
+			},
+		}
+		tc := newTypedFakeClient(rr)
+		_, _, err := tools.ResolveInvestigationRR(context.Background(), &tools.InvestigateConfig{
+			Client:       tc,
+			Namespace:    "kubernaut-system",
+			ScopeChecker: &mocks.NeverManagedScopeChecker{},
+		}, &tools.InvestigateMCPArgs{RRID: "rr-takeover-2025"})
+		Expect(err).NotTo(HaveOccurred(),
+			"a takeover of an already-existing RR must not be re-scope-checked")
 	})
 })
 

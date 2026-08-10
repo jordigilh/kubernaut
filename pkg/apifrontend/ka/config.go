@@ -298,10 +298,18 @@ type StartInvestigationArgs struct {
 // StartInvestigationResult holds the response from a dedicated MCP investigation
 // session, including the event channel for streaming and a closer for cleanup.
 type StartInvestigationResult struct {
-	SessionID string                   `json:"session_id"`
-	Status    string                   `json:"status"`
-	Events    <-chan InvestigationEvent `json:"-"`
-	Closer    func()                   `json:"-"`
+	// SessionID is KA's MCP driver-lease ID: it grants exclusive control of the
+	// interactive session but is NOT pollable via the KA REST session-status API.
+	SessionID string `json:"session_id"`
+	// InvestigationSessionID is the underlying investigation-analysis session ID
+	// where RCA/workflow results are stored; it IS pollable via REST. KA's
+	// kubernaut_investigate "start" action returns both IDs (#2029). Callers that
+	// correlate a session for later polling (e.g. IS.Status.KACorrelationID) MUST
+	// use this field, falling back to SessionID only when KA omits it.
+	InvestigationSessionID string                    `json:"investigation_session_id,omitempty"`
+	Status                 string                    `json:"status"`
+	Events                 <-chan InvestigationEvent `json:"-"`
+	Closer                 func()                    `json:"-"`
 	// Session is the underlying MCP session. Exposed so the blocking A2A
 	// path can hand it off to the KASessionPool after the investigation
 	// completes, letting discover_workflows / select_workflow reuse the

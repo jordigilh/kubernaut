@@ -221,6 +221,32 @@ logging:
 {{- if .Values.global.fleet.enabled }}
 fleet:
   enabled: true
+  {{- /* Issue #2059/E2E-FLEET-018 RCA: this backend/endpoint pair was
+  missing here entirely (not just defaulted wrong) -- AF's own
+  fleet.NewScopeChecker call (cmd/apifrontend/backend_deps.go) always saw
+  Backend="" + Endpoint="", so pkg/fleet/config.go's EffectiveEndpoint()
+  returned "" (auto-derivation for the fmc backend is itself gated on
+  Backend==BackendFMC, never true for an empty Backend) and
+  pkg/fleet/scope_factory.go's NewScopeChecker silently returned the bare
+  local scope.Manager instead of a FederatedScopeChecker -- even with
+  global.fleet.enabled=true. Every kubernaut_remediate/investigate call
+  carrying a non-empty ClusterID then fail-closed with "local Manager
+  cannot resolve remote cluster", identical in shape to the GW/RO
+  Backend=""+auto-derived-Endpoint gap fixed for Issue #1737/DD-TEST-015
+  below (mirrors gateway.yaml/remediationorchestrator.yaml's identical
+  block verbatim). global.fleet.backend="" documented default is
+  "fleetmetadatacache" (README.md, values.yaml) -- must be MATERIALIZED
+  here, not just implied by the values.yaml comment, else
+  effectiveBackend() (which deliberately does NOT itself default an
+  empty Backend, see UT-FLEET-FAC-007) sees Backend="" + a non-empty
+  auto-derived Endpoint and fails startup with "fleet: unsupported
+  backend \"\"". */}}
+  backend: {{ $apifrontendFleetPreamble.config.backend | default "fleetmetadatacache" | quote }}
+  {{- if $apifrontendFleetPreamble.config.endpoint }}
+  endpoint: {{ $apifrontendFleetPreamble.config.endpoint | quote }}
+  {{- else if eq (default "fleetmetadatacache" $apifrontendFleetPreamble.config.backend) "fleetmetadatacache" }}
+  endpoint: {{ include "kubernaut.fleetmetadatacache.url" . | quote }}
+  {{- end }}
   mcpGatewayEndpoint: {{ $apifrontendFleetPreamble.config.mcpGatewayEndpoint | quote }}
   {{- if $apifrontendFleetPreamble.config.mcpGatewayType }}
   mcpGatewayType: {{ $apifrontendFleetPreamble.config.mcpGatewayType | quote }}

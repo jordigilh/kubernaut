@@ -115,6 +115,19 @@ data:
         tool_call:
           name: "kubernaut_investigate"
           arguments:
+            # api_version was missing here (unlike af_progressive_investigate
+            # above, its sibling scenario targeting the identical fixture):
+            # kubernaut_investigate's args validation rejects any call
+            # without it ("api_version must not be empty",
+            # pkg/apifrontend/validate/k8s.go), so every call matching this
+            # scenario unconditionally failed before ever reaching KA. A
+            # real LLM self-corrects and retries within ~2-3s (see
+            # DD-AF-012's forensic log excerpt), but mock-llm is
+            # deterministic and never retries, so any test relying on this
+            # scenario actually succeeding (e.g. structured_decision_e2e_
+            # test.go's groundSession helper, #2023 Stage 3) silently never
+            # got real grounding.
+            api_version: "v1"
             namespace: "af-investigate-e2e"
             name: "af-investigate-target"
             kind: "Pod"
@@ -164,9 +177,94 @@ data:
                 name: "Rollback"
                 description: "Rollback to previous revision"
 
+      - name: "af_structured_decision_ground"
+        # Dedicated grounding call for structured_decision_e2e_test.go's
+        # groundSession helper. Deliberately does NOT reuse af_investigate's
+        # keywords/target (af-investigate-e2e/af-investigate-target): that
+        # fixture is shared by 3 other scenarios above, and under Ginkgo
+        # --procs>1 a concurrent spec can already hold its interactive KA
+        # session open when this one calls in, hitting KA's session_active
+        # fallback instead of a clean grounded result (CI run 31320575553,
+        # E2E-AF-1395-001). This keyword/target pair is used nowhere else.
+        keywords: ["seed grounding context"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            api_version: "v1"
+            namespace: "af-structured-decision-e2e"
+            name: "structured-decision-target"
+            kind: "Pod"
+
+      - name: "af_structured_decision_ground_2"
+        # Dedicated grounding call for structured_decision_e2e_test.go's
+        # E2E-AF-1396-002 alone (its own target, not shared with
+        # af_structured_decision_ground above): that Describe block is
+        # Ordered, and by its 3rd It, af_create_rr.go's
+        # checkExistingRRByFingerprint would otherwise dedup onto the SAME
+        # RR the first two Its already opened a KA interactive session
+        # against, nondeterministically hitting session_active instead of a
+        # clean grounded result (CI run 31335085795, E2E-AF-1396-002, "AC-6:
+        # ALL options must be presented"). See
+        # StructuredDecisionGrounding2 (apifrontend_prometheus_e2e.go).
+        #
+        # Keyword deliberately shares no substring with any other keyword in
+        # this file (mock-llm's match is strings.Contains and picks the
+        # first-registered tie among equal-confidence matches, registry.go
+        # Detect) -- e.g. "seed grounding context v2" would also match
+        # af_structured_decision_ground's "seed grounding context" keyword.
+        keywords: ["seed alt fixture context 1396 002"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            api_version: "v1"
+            namespace: "af-structured-decision-e2e"
+            name: "structured-decision-target-2"
+            kind: "Pod"
+
+      - name: "af_structured_decision_ground_3"
+        # Dedicated grounding call for structured_decision_e2e_test.go's
+        # E2E-AF-1396-001 alone. af_structured_decision_ground_2 above only
+        # closed contention for the 3rd It (1396-002) relative to the first
+        # two -- it did not address that the 2nd It (1396-001) still shares
+        # af_structured_decision_ground's target with the 1st It
+        # (1395-001), so 1396-001's own grounding call could nondeterministically
+        # inherit 1395-001's still-open KA session and observe
+        # session_active, surfacing as an empty (fail-closed)
+        # payload.RCA.Severity instead of the scripted "critical" (CI run
+        # 31351842574, E2E-AF-1396-001, "severity must flow from mock-LLM
+        # through AF to SSE"). See StructuredDecisionGrounding3
+        # (apifrontend_prometheus_e2e.go).
+        keywords: ["seed third fixture context 1396 001"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            api_version: "v1"
+            namespace: "af-structured-decision-e2e"
+            name: "structured-decision-target-3"
+            kind: "Pod"
+
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]
         match_last_only: true
+        # repeat_tool_call is required, not optional, here: the mock-LLM's
+        # hasFunctionResults gate (handlers/gemini.go) is computed over the
+        # WHOLE session's conversation history, not scoped to this scenario.
+        # structured_decision_e2e_test.go's groundSession helper (#2023) runs
+        # a kubernaut_investigate call first in the same A2A session to
+        # satisfy the grounding guard, which leaves that tool's
+        # FunctionResponse in history. Without repeat_tool_call, this
+        # scenario's own first match would see hasFunctionResults=true (from
+        # groundSession's unrelated call) and fall straight to a text-only
+        # response, never invoking kubernaut_present_decision at all --
+        # silently producing no decision SSE event (CI run 31325053872,
+        # E2E-AF-1395-001, "not to be empty"). repeat_tool_call switches the
+        # re-fire guard to LastContentIsFunctionResponse (scoped to this
+        # scenario's own last turn), which still correctly falls through to
+        # text once present_decision's own result lands.
+        repeat_tool_call: true
         thought_text: "Let me analyze the investigation findings. The data-processor pod has been OOMKilled repeatedly, which correlates with the memory leak pattern in the worker goroutine. I should present the decision options to the operator."
         tool_call:
           name: "kubernaut_present_decision"

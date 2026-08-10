@@ -27,6 +27,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 const (
@@ -82,6 +83,10 @@ type MCPBridgeConfig struct {
 	// RESTMapper resolves Kind strings to GVR for scope-aware namespace stripping.
 	// If nil, falls back to the static clusterScopedKinds map.
 	RESTMapper meta.RESTMapper
+	// ScopeChecker rejects kubernaut_investigate RR creation for resources
+	// outside Kubernaut's management scope (ADR-053; #2025, main-tracking
+	// clone of #2022). Nil skips scope validation (backward compat).
+	ScopeChecker scope.ScopeChecker
 }
 
 // MCPBridgeMetrics holds Prometheus collectors specific to MCP bridge operations.
@@ -235,14 +240,15 @@ func registerInvestigationTool(srv *mcp.Server, cfg *MCPBridgeConfig, sem *semap
 		func(ctx context.Context, args tools.InvestigateMCPArgs) (any, error) {
 			ctx = tools.ContextWithRESTMapper(ctx, cfg.RESTMapper)
 			return tools.HandleInvestigationMCPWithRegistry(ctx, &tools.InvestigateConfig{
-				MCPClient: dedicatedClient,
-				Client:    cfg.TypedClient,
-				Namespace: cfg.Namespace,
-				Auditor:   cfg.Auditor,
-				Registry:  cfg.InvestigationRegistry,
-				OnStarted: onInvestigateStarted,
-				Signaler:  isSignaler,
-				Triager:   cfg.Triager,
+				MCPClient:    dedicatedClient,
+				Client:       cfg.TypedClient,
+				Namespace:    cfg.Namespace,
+				Auditor:      cfg.Auditor,
+				Registry:     cfg.InvestigationRegistry,
+				OnStarted:    onInvestigateStarted,
+				Signaler:     isSignaler,
+				Triager:      cfg.Triager,
+				ScopeChecker: cfg.ScopeChecker,
 			}, args, false, "")
 		})
 }

@@ -36,100 +36,116 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
+// createActiveIS creates an InvestigationSession CRD for rrName and drives it
+// to Phase=Active, waiting for that phase to be visible in the cache before
+// returning — prevents a race where the IS watch fires on Create but
+// HasActiveSession still sees the non-Active phase. Callers only need the
+// side effect (a visible, Active IS); none currently need the created object
+// itself.
+//
+// Package-level (not a Describe-local closure) so it can be shared across
+// integration test files in this package, e.g. session_correlation_adoption_test.go
+// (#2029 Part B).
+func createActiveIS(name, rrName string) {
+	const (
+		timeout  = 15 * time.Second
+		interval = 200 * time.Millisecond
+	)
+	is := &isv1alpha1.InvestigationSession{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: testNamespace,
+		},
+		Spec: isv1alpha1.InvestigationSessionSpec{
+			RemediationRequestRef: isv1alpha1.ObjectRef{
+				Name:      rrName,
+				Namespace: testNamespace,
+			},
+			A2ATaskID: "task-" + name,
+			UserIdentity: isv1alpha1.SessionUser{
+				Username: "integration-test-user",
+			},
+			JoinMode: isv1alpha1.SessionJoinModeStart,
+		},
+	}
+	Expect(k8sClient.Create(ctx, is)).To(Succeed())
+	is.Status.Phase = isv1alpha1.SessionPhaseActive
+	Expect(k8sClient.Status().Update(ctx, is)).To(Succeed())
+
+	Eventually(func() isv1alpha1.SessionPhase {
+		var updated isv1alpha1.InvestigationSession
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(is), &updated); err != nil {
+			return ""
+		}
+		return updated.Status.Phase
+	}, timeout, interval).Should(Equal(isv1alpha1.SessionPhaseActive))
+}
+
+// createInvestigatingAA creates an AIAnalysis CRD already in PhaseInvestigating
+// with a pre-set KASession (ID intentionally empty -- these tests assert on the
+// real ID the controller's own reconcile loop assigns via KA submission, not a
+// caller-supplied one), for tests that need to observe the reconcile loop's
+// reaction to IS/session state changes rather than the initial submit itself.
+//
+// Package-level for the same reason as createActiveIS above.
+func createInvestigatingAA(name, rrName, signalName string, interactive bool) *aianalysisv1.AIAnalysis {
+	if signalName == "" {
+		signalName = "CrashLoopBackOff"
+	}
+	analysis := &aianalysisv1.AIAnalysis{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: testNamespace,
+		},
+		Spec: aianalysisv1.AIAnalysisSpec{
+			RemediationRequestRef: corev1.ObjectReference{
+				Name:      rrName,
+				Namespace: testNamespace,
+			},
+			RemediationID: rrName,
+			AnalysisRequest: aianalysisv1.AnalysisRequest{
+				SignalContext: aianalysisv1.SignalContextInput{
+					Fingerprint:      "fp-interactive",
+					Severity:         "warning",
+					SignalName:       signalName,
+					Environment:      "staging",
+					BusinessPriority: "P2",
+					TargetResource: aianalysisv1.TargetResource{
+						Kind:      "Pod",
+						Name:      "test-pod",
+						Namespace: testNamespace,
+					},
+					EnrichmentResults: sharedtypes.EnrichmentResults{},
+				},
+				AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
+			},
+		},
+	}
+	Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
+
+	// RetryOnConflict: the controller races to set Phase=Pending on new AAs,
+	// which bumps the resource version. Same pattern as crd_lifecycle.go helpers.
+	Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
+			return err
+		}
+		now := metav1.Now()
+		analysis.Status.Phase = aianalysisv1.PhaseInvestigating
+		analysis.Status.KASession = &aianalysisv1.KASession{
+			Interactive: interactive,
+			CreatedAt:   &now,
+		}
+		return k8sClient.Status().Update(ctx, analysis)
+	})).To(Succeed())
+	return analysis
+}
+
 // BR-INTERACTIVE-010: Integration tests for InvestigationSession watch wiring (#1293).
 var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", Label("integration", "interactive"), func() {
 	const (
 		timeout  = 15 * time.Second
 		interval = 200 * time.Millisecond
 	)
-
-	createActiveIS := func(name, rrName string) *isv1alpha1.InvestigationSession {
-		is := &isv1alpha1.InvestigationSession{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: testNamespace,
-			},
-			Spec: isv1alpha1.InvestigationSessionSpec{
-				RemediationRequestRef: isv1alpha1.ObjectRef{
-					Name:      rrName,
-					Namespace: testNamespace,
-				},
-				A2ATaskID: "task-" + name,
-				UserIdentity: isv1alpha1.SessionUser{
-					Username: "integration-test-user",
-				},
-				JoinMode: isv1alpha1.SessionJoinModeStart,
-			},
-		}
-		Expect(k8sClient.Create(ctx, is)).To(Succeed())
-		is.Status.Phase = isv1alpha1.SessionPhaseActive
-		Expect(k8sClient.Status().Update(ctx, is)).To(Succeed())
-
-		// Wait for Active phase to be visible in the cache — prevents race where
-		// IS watch fires on Create but HasActiveSession sees non-Active phase.
-		Eventually(func() isv1alpha1.SessionPhase {
-			var updated isv1alpha1.InvestigationSession
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(is), &updated); err != nil {
-				return ""
-			}
-			return updated.Status.Phase
-		}, timeout, interval).Should(Equal(isv1alpha1.SessionPhaseActive))
-
-		return is
-	}
-
-	createInvestigatingAA := func(name, rrName, sessionID, signalName string, interactive bool) *aianalysisv1.AIAnalysis {
-		if signalName == "" {
-			signalName = "CrashLoopBackOff"
-		}
-		analysis := &aianalysisv1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name,
-				Namespace: testNamespace,
-			},
-			Spec: aianalysisv1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Name:      rrName,
-					Namespace: testNamespace,
-				},
-				RemediationID: rrName,
-				AnalysisRequest: aianalysisv1.AnalysisRequest{
-					SignalContext: aianalysisv1.SignalContextInput{
-						Fingerprint:      "fp-interactive",
-						Severity:         "warning",
-						SignalName:       signalName,
-						Environment:      "staging",
-						BusinessPriority: "P2",
-						TargetResource: aianalysisv1.TargetResource{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: testNamespace,
-						},
-						EnrichmentResults: sharedtypes.EnrichmentResults{},
-					},
-					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
-				},
-			},
-		}
-		Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
-
-		// RetryOnConflict: the controller races to set Phase=Pending on new AAs,
-		// which bumps the resource version. Same pattern as crd_lifecycle.go helpers.
-		Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
-			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
-				return err
-			}
-			now := metav1.Now()
-			analysis.Status.Phase = aianalysisv1.PhaseInvestigating
-			analysis.Status.KASession = &aianalysisv1.KASession{
-				ID:          sessionID,
-				Interactive: interactive,
-				CreatedAt:   &now,
-			}
-			return k8sClient.Status().Update(ctx, analysis)
-		})).To(Succeed())
-		return analysis
-	}
 
 	Context("IT-AA-1293-001: Field index returns IS by RR name", func() {
 		It("should list InvestigationSession using spec.remediationRequestRef.name field index", func() {
@@ -180,7 +196,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			rrName := helpers.UniqueTestName("rr-watch-create")
 			analysisName := helpers.UniqueTestName("aa-watch-create")
 
-			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", false)
+			analysis := createInvestigatingAA(analysisName, rrName, "slow-investigation-test", false)
 
 			By("waiting for real KA session to be established (KASession.ID set)")
 			Eventually(func(g Gomega) {
@@ -214,7 +230,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			isName := helpers.UniqueTestName("is-watch-delete")
 			createActiveIS(isName, rrName)
 
-			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", true)
+			analysis := createInvestigatingAA(analysisName, rrName, "slow-investigation-test", true)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
@@ -257,7 +273,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			rrName := helpers.UniqueTestName("rr-takeover")
 			analysisName := helpers.UniqueTestName("aa-takeover")
 
-			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", false)
+			analysis := createInvestigatingAA(analysisName, rrName, "slow-investigation-test", false)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
@@ -317,7 +333,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			rrName := helpers.UniqueTestName("rr-1390-upgrade")
 			analysisName := helpers.UniqueTestName("aa-1390-upgrade")
 
-			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", false)
+			analysis := createInvestigatingAA(analysisName, rrName, "slow-investigation-test", false)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
@@ -396,7 +412,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			completionTimeout := 25 * time.Second
 
 			By("creating Investigating AA first (autonomous session — no IS yet)")
-			analysis := createInvestigatingAA(aaName, rrName, "", "brief-investigation-test", false)
+			analysis := createInvestigatingAA(aaName, rrName, "brief-investigation-test", false)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
@@ -434,7 +450,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with slow scenario")
-			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
+			analysis := createInvestigatingAA(aaName, rrName, "slow-investigation-test", true)
 
 			By("waiting for session to be established")
 			Eventually(func(g Gomega) {
@@ -466,7 +482,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with slow scenario")
-			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", false)
+			analysis := createInvestigatingAA(aaName, rrName, "slow-investigation-test", false)
 
 			By("waiting for session to be established then backdating")
 			Eventually(func(g Gomega) {
@@ -509,7 +525,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with slow scenario (interactive)")
-			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
+			analysis := createInvestigatingAA(aaName, rrName, "slow-investigation-test", true)
 
 			By("waiting for session to be established then backdating")
 			Eventually(func(g Gomega) {
@@ -580,7 +596,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with slow-investigation scenario")
-			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
+			analysis := createInvestigatingAA(aaName, rrName, "slow-investigation-test", true)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {

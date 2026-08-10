@@ -274,7 +274,7 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 		return nil, fmt.Errorf("kubernaut_investigate start_autonomous: %s", startInvestigationErrorMessage(result))
 	}
 
-	sessionID, status := parseStartInvestigationResult(result)
+	sessionID, investigationSessionID, status := parseStartInvestigationResult(result)
 
 	var once sync.Once
 	closer := func() {
@@ -286,11 +286,12 @@ func (c *SDKMCPClient) StartInvestigation(ctx context.Context, args StartInvesti
 	}
 
 	return &StartInvestigationResult{
-		SessionID: sessionID,
-		Status:    status,
-		Events:    eventCh,
-		Closer:    closer,
-		Session:   session,
+		SessionID:              sessionID,
+		InvestigationSessionID: investigationSessionID,
+		Status:                 status,
+		Events:                 eventCh,
+		Closer:                 closer,
+		Session:                session,
 	}, nil
 }
 
@@ -392,20 +393,27 @@ func startInvestigationErrorMessage(result *mcp.CallToolResult) string {
 	return "KA tool error"
 }
 
-// parseStartInvestigationResult extracts the session ID and status reported
+// parseStartInvestigationResult extracts the session IDs and status reported
 // by KA in the kubernaut_investigate start_autonomous response. Malformed
 // content is treated as empty (the caller has already validated result.IsError).
-func parseStartInvestigationResult(result *mcp.CallToolResult) (sessionID, status string) {
+//
+// KA's InvestigateOutput (internal/kubernautagent/mcp/tools/investigate_types.go)
+// returns two distinct session IDs: sessionID is the driver-lease ID (exclusive
+// control, not pollable via REST); investigationSessionID is the pollable
+// analysis session where RCA/workflow results live. Both must be captured --
+// discarding investigationSessionID caused #2029's session-adoption 404-loop.
+func parseStartInvestigationResult(result *mcp.CallToolResult) (sessionID, investigationSessionID, status string) {
 	var invResult struct {
-		SessionID string `json:"session_id"`
-		Status    string `json:"status"`
+		SessionID              string `json:"session_id"`
+		Status                 string `json:"status"`
+		InvestigationSessionID string `json:"investigation_session_id"`
 	}
 	if len(result.Content) > 0 {
 		if tc, ok := result.Content[0].(*mcp.TextContent); ok {
 			_ = json.Unmarshal([]byte(tc.Text), &invResult)
 		}
 	}
-	return invResult.SessionID, invResult.Status
+	return invResult.SessionID, invResult.InvestigationSessionID, invResult.Status
 }
 
 // ConnectSession establishes a new MCP session without auto-closing it.

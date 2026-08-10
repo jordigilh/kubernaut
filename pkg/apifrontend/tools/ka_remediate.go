@@ -15,6 +15,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
+	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
 
 // RemediateArgs defines the LLM-supplied input for kubernaut_remediate.
@@ -31,6 +32,10 @@ type RemediateArgs struct {
 	// ClusterID identifies the fleet cluster the target resource lives on
 	// (#1409, ADR-065). Empty for the local hub cluster.
 	ClusterID string `json:"cluster_id,omitempty"`
+	// ConfirmedSignalName re-supplies a previously-surfaced ambiguous
+	// candidate's alert name after the user has explicitly confirmed it
+	// (DD-AF-012, #2027/#2028). Leave empty on the first call.
+	ConfirmedSignalName string `json:"confirmed_signal_name,omitempty"`
 }
 
 // RemediateResult is the output of kubernaut_remediate.
@@ -43,11 +48,17 @@ type RemediateResult struct {
 	SignalName     string `json:"signal_name,omitempty"`
 	// ClusterID attributes the RR to its cluster of origin (#1409).
 	ClusterID string `json:"cluster_id,omitempty"`
-	// Fingerprint (#2043) and ClusterID above must stay the two trailing
-	// fields, matching CreateRRResult's field order/types exactly, so the
+	// Fingerprint (#2043), Ambiguous/CandidateSignalName/CandidateSeverity
+	// (DD-AF-012, #2027/#2028), and ClusterID above must stay in this exact
+	// field order/types, matching CreateRRResult's trailing fields, so the
 	// RemediateResult(result) conversion below stays valid (Go struct
 	// conversion requires identical field sequences; tags may differ).
-	Fingerprint string `json:"-"`
+	// Re-call with ConfirmedSignalName set to CandidateSignalName once the
+	// user has confirmed an ambiguous candidate.
+	Fingerprint         string `json:"-"`
+	Ambiguous           bool   `json:"ambiguous,omitempty"`
+	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
+	CandidateSeverity   string `json:"candidate_severity,omitempty"`
 }
 
 // HandleRemediate creates a RemediationRequest CRD without creating an
@@ -96,18 +107,28 @@ func HandleRemediate(ctx context.Context, d *ToolDeps, args *RemediateArgs, user
 	}
 
 	createArgs := &CreateRRArgs{
-		Namespace:     args.Namespace,
-		Kind:          args.Kind,
-		Name:          args.Name,
-		Description:   args.Description,
-		APIVersion:    args.APIVersion,
-		ClusterScoped: args.Namespace == "",
-		ClusterID:     args.ClusterID,
+		Namespace:                    args.Namespace,
+		Kind:                         args.Kind,
+		Name:                         args.Name,
+		Description:                  args.Description,
+		APIVersion:                   args.APIVersion,
+		ClusterScoped:                args.Namespace == "",
+		ClusterID:                    args.ClusterID,
+		ConfirmedAmbiguousSignalName: args.ConfirmedSignalName,
 	}
 
 	result, err := HandleCreateRR(ctx, d, createArgs, username)
 	if err != nil {
 		return RemediateResult{}, err
+	}
+
+	if result.Ambiguous {
+		return RemediateResult{
+			Ambiguous:           true,
+			CandidateSignalName: result.CandidateSignalName,
+			CandidateSeverity:   result.CandidateSeverity,
+			Message:             result.Message,
+		}, nil
 	}
 
 	launcher.SetRRContextSafe(ctx, newlyCreatedRRContext(result.RRID, args.Namespace, args.Kind, args.Name, result.SignalName, result.ClusterID))
@@ -118,13 +139,14 @@ func HandleRemediate(ctx context.Context, d *ToolDeps, args *RemediateArgs, user
 // NewRemediateTool creates the kubernaut_remediate tool for autonomous remediation.
 // It creates RRs without InvestigationSessions — the pipeline handles analysis
 // autonomously without user interaction.
-func NewRemediateTool(client crclient.Client, dynClient dynamic.Interface, controllerNS string, triager *severity.Triager, auditor audit.Emitter) (tool.Tool, error) {
+func NewRemediateTool(client crclient.Client, dynClient dynamic.Interface, controllerNS string, triager *severity.Triager, auditor audit.Emitter, scopeChecker scope.ScopeChecker) (tool.Tool, error) {
 	d := &ToolDeps{
 		Client:       client,
 		DynClient:    dynClient,
 		ControllerNS: controllerNS,
 		Triager:      triager,
 		Auditor:      auditor,
+		ScopeChecker: scopeChecker,
 	}
 	return functiontool.New(functiontool.Config{
 		Name:        "kubernaut_remediate",

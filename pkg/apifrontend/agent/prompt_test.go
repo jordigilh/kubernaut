@@ -46,7 +46,7 @@ var _ = Describe("System Prompt", func() {
 
 	It("UT-AF-131-003: prompt contains present_decision handoff instruction", func() {
 		Expect(instruction).To(ContainSubstring("present_decision"))
-		Expect(instruction).To(ContainSubstring("MUST call present_decision"))
+		Expect(instruction).To(ContainSubstring("MUST call kubernaut_present_decision"))
 	})
 
 	It("UT-AF-131-004: prompt does not contain internal system names outside the constraint rule", func() {
@@ -673,5 +673,80 @@ var _ = Describe("Prompt — Plain Investigate Defaults to full_remediation (#19
 	It("UT-AF-1915-004: the autonomous-interactive sub-case is unambiguously distinct from the new full_remediation default", func() {
 		Expect(instruction).To(ContainSubstring("Autonomous Selection"),
 			"#1915: full_remediation_autonomous's own sub-case must be clearly named apart from the new full_remediation default, so the model does not conflate 'investigate' with 'investigate and fix'")
+	})
+})
+
+// =============================================================================
+// Content-grounding guard (#2023 clone #2047): the harness-side
+// enforceGroundingGuard is a backstop, not a substitute for the model
+// grounding its own claims. This prompt-level instruction tells the model
+// not to rely on that backstop and to describe honestly when no real
+// investigation content is available.
+// =============================================================================
+
+var _ = Describe("Prompt — Content Grounding (#2047)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-2047-001: prompt instructs the model to ground summary/rca claims in actual tool responses", func() {
+		Expect(instruction).To(ContainSubstring("Ground every claim"))
+		Expect(instruction).To(ContainSubstring("NEVER invent specific findings"))
+	})
+
+	It("UT-AF-2047-002: prompt mandates stating plainly when no investigation content is available", func() {
+		Expect(instruction).To(ContainSubstring("no real investigation content"))
+	})
+
+	It("UT-AF-2047-003: prompt tells the model not to rely on the harness backstop", func() {
+		Expect(instruction).To(ContainSubstring("you must not rely on that backstop"))
+	})
+
+	It("UT-AF-2047-004: prompt reports Completed/Failed/Cancelled/TimedOut/Skipped as terminal phases for Phase 4 reporting", func() {
+		Expect(instruction).To(ContainSubstring("Completed, Failed, Cancelled, TimedOut, Skipped"))
+	})
+})
+
+// =============================================================================
+// DD-AF-012 (#2028, main clone of #2027): ambiguous severity/signal
+// correlation must never be used silently. When a tool result carries
+// ambiguous: true, the model must ask the user to confirm the weak
+// candidate before retrying with confirmed_signal_name, and must never
+// guess, retry blindly, or leave the conversation without a structured
+// kubernaut_present_decision artifact.
+// =============================================================================
+
+var _ = Describe("Prompt — Ambiguous Signal/Severity Correlation (DD-AF-012, #2028)", func() {
+	var instruction string
+
+	BeforeEach(func() {
+		cfg := agentpkg.DefaultTestConfig()
+		instruction = cfg.Instruction
+	})
+
+	It("UT-AF-2028-010: prompt instructs the model to ask the user before using an ambiguous candidate", func() {
+		Expect(instruction).To(ContainSubstring("ambiguous"))
+		Expect(instruction).To(ContainSubstring("candidate_signal_name"))
+		Expect(instruction).To(ContainSubstring("confirmed_signal_name"))
+	})
+
+	It("UT-AF-2028-011: prompt forbids guessing or silently filling in the confirmed signal", func() {
+		Expect(instruction).To(ContainSubstring("do NOT guess"))
+	})
+
+	It("UT-AF-2028-012: prompt forbids retrying the same ambiguous call without a confirmation", func() {
+		Expect(instruction).To(ContainSubstring("do NOT retry the same call without it"))
+	})
+
+	It("UT-AF-2028-013: prompt mandates a structured kubernaut_present_decision close-out when no signal is confirmed", func() {
+		Expect(instruction).To(ContainSubstring("call kubernaut_present_decision with options: []"))
+	})
+
+	It("UT-AF-2028-014: prompt does not leak internal issue numbers", func() {
+		Expect(instruction).NotTo(MatchRegexp(`#\d{3,4}`),
+			"internal issue numbers must never appear in the model-facing prompt (leakage risk)")
 	})
 })

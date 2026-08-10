@@ -35,6 +35,11 @@ var ErrK8sUnavailable = errors.New("kubernetes cluster is not available — cont
 // ErrInvalidInput indicates input validation failed (RFC 1123, empty fields, etc.).
 var ErrInvalidInput = errors.New("invalid input")
 
+// ErrResourceNotManaged indicates the target resource is outside Kubernaut's
+// management scope (ADR-053) — rejected before RR/session creation
+// (#2025, main-tracking clone of #2022).
+var ErrResourceNotManaged = errors.New("resource not managed by kubernaut")
+
 // maxToolOutputBytes is the maximum serialized output size for tool results.
 // Matches the 16KB threshold used by session.MaxToolResultBytes for
 // in-memory session size safety.

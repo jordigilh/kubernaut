@@ -17,6 +17,7 @@ package fleet
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
 
@@ -36,6 +38,13 @@ import (
 // (same convention as kaToolE2ETargetName in 17_ka_real_fleet_investigation_test.go).
 const kaInteractiveFleetTargetName = "ka-interactive-fleet-target"
 const kaInteractiveFleetTargetNamespace = "kubernaut-system"
+
+// kaInteractiveFleetRemoteClusterID is the cluster_id Turn 1's
+// kubernaut_remediate call targets (mirrors the raw "remote-cluster"
+// literal used throughout this package, e.g. suite_test.go's clusterID);
+// named here (rather than left as an inline literal) because Turn 1's own
+// retry loop below needs to filter RemediationRequestList by it.
+const kaInteractiveFleetRemoteClusterID = "remote-cluster"
 
 // kaInteractiveFleetEvidence mirrors the mock-llm scenario's memory-limit
 // evidence constant. Deliberately distinct from #17's kaToolE2ELocal/RemoteEvidence
@@ -119,27 +128,78 @@ var _ = Describe("E2E-FLEET-018 [AC-4, AC-6, AU-3]: AF kubernaut_message drives 
 		}, 2*time.Minute, 2*time.Second).Should(Succeed())
 
 		By("Turn 1: kubernaut_remediate (creates RR with cluster_id=remote-cluster targeting the marker deployment)")
-		turn1ID := "fleet-018-1"
-		body := afA2ATasksSend(turn1ID, "ka-interactive-fleet-bridge-start")
-		resp1, err := afA2AInvokeWithTimeout(body, 60*time.Second)
-		Expect(err).NotTo(HaveOccurred())
-		defer func() { _ = resp1.Body.Close() }()
-		Expect(resp1.StatusCode).To(Equal(http.StatusOK), "Turn 1 A2A message/send should return 200")
-		rpc, parseErr := afParseRPC(resp1)
-		Expect(parseErr).NotTo(HaveOccurred())
-		Expect(rpc.Error).To(BeNil(), "Turn 1 should not return a JSON-RPC error")
-		task, taskErr := afExtractTask(rpc.Result)
-		Expect(taskErr).NotTo(HaveOccurred())
-		taskID := task.ID
-		Expect(taskID).NotTo(BeEmpty(), "Turn 1 A2A task ID must not be empty")
-		GinkgoWriter.Printf("  E2E-FLEET-018 Turn 1 — task: %s (state: %s)\n", taskID, task.Status.State)
+		// Issue #2059/E2E-FLEET-018 RCA (CI run 31384892125, confirmed AFTER
+		// the apifrontend.yaml fleet.backend/endpoint chart fix below): AF's
+		// own audit log showed "resource not managed by kubernaut: ...
+		// (cluster=remote-cluster) not managed by Kubernaut" for THIS
+		// deployment, even though it genuinely carries kubernaut.ai/managed=true
+		// (DeployMemoryEaterNamed) -- because AF's FederatedScopeChecker now
+		// correctly routes the check to FMC (pkg/fleet/fmc/http_client.go),
+		// and FMC only ever answers from its own cache, refreshed on a fixed
+		// 10s ticker (test/infrastructure/fleet_e2e.go's
+		// fleetmetadatacache-config sync.interval=10s -- see suite_test.go's
+		// fmcSyncTimeout doc comment for the full mechanism). The marker
+		// Deployment above became Available only seconds before this call,
+		// so it is not guaranteed to have survived a full FMC sync cycle
+		// yet. This mirrors fmcSyncTimeout/postFleetAlertUntilAccepted's
+		// identical staleness window on the Gateway alert path exactly --
+		// reused verbatim here since AF's own kubernaut_remediate call now
+		// goes through the SAME FederatedScopeChecker -> FMC HTTP client.
+		//
+		// checkRRScope (pkg/apifrontend/tools/af_create_rr.go) runs BEFORE
+		// any RR object creation, so a scope-rejected call has no side
+		// effects -- retrying is safe. The A2A envelope itself reports
+		// "completed" even when the underlying tool call was rejected (AF's
+		// ADK agent callback absorbs the tool error and the flow still
+		// concludes normally), so success can only be confirmed by checking
+		// that a real RR now exists for this target -- not by the
+		// envelope's own status/error fields. Each retry mints a fresh
+		// turn/session id (a rejected attempt's ADK session has no RR
+		// attached, so it can't be resumed) to avoid colliding with the
+		// still-existing session left behind by a prior attempt.
+		var taskID, sharedCtxID, body string
+		var rpc afRPCResponse
+		var parseErr error
+		attempt := 0
+		Eventually(func(g Gomega) {
+			attempt++
+			turn1ID := fmt.Sprintf("fleet-018-1-%d", attempt)
+			body := afA2ATasksSend(turn1ID, "ka-interactive-fleet-bridge-start")
+			resp1, err := afA2AInvokeWithTimeout(body, 60*time.Second)
+			g.Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = resp1.Body.Close() }()
+			g.Expect(resp1.StatusCode).To(Equal(http.StatusOK), "Turn 1 A2A message/send should return 200")
+			rpc, parseErr = afParseRPC(resp1)
+			g.Expect(parseErr).NotTo(HaveOccurred())
+			g.Expect(rpc.Error).To(BeNil(), "Turn 1 should not return a JSON-RPC error")
+			task, taskErr := afExtractTask(rpc.Result)
+			g.Expect(taskErr).NotTo(HaveOccurred())
+			g.Expect(task.ID).NotTo(BeEmpty(), "Turn 1 A2A task ID must not be empty")
 
-		// sharedCtxID MUST be Turn 1's own contextId ("ctx-"+turn1ID, set by
-		// afA2ATasksSend), not derived from taskID (a server-assigned A2A
-		// task identifier, unrelated to the ADK session/contextId) -- see
-		// afA2ATasksSendWithTask's doc comment for the CI-confirmed failure
-		// mode this avoids.
-		sharedCtxID := "ctx-" + turn1ID
+			rrList := &remediationv1.RemediationRequestList{}
+			g.Expect(k8sClient.List(ctx, rrList, client.InNamespace(namespace))).To(Succeed())
+			created := false
+			for _, rr := range rrList.Items {
+				if rr.Spec.ClusterID == kaInteractiveFleetRemoteClusterID &&
+					rr.Spec.TargetResource.Name == kaInteractiveFleetTargetName {
+					created = true
+					break
+				}
+			}
+			g.Expect(created).To(BeTrue(),
+				"Turn 1 (attempt %d, task %s, state %s) must have created a real RR for %s on cluster_id=%s "+
+					"(scope-rejected due to FMC sync lag is the known, retried failure mode here)",
+				attempt, task.ID, task.Status.State, kaInteractiveFleetTargetName, kaInteractiveFleetRemoteClusterID)
+
+			// sharedCtxID MUST be this attempt's own contextId
+			// ("ctx-"+turn1ID, set by afA2ATasksSend), not derived from
+			// taskID (a server-assigned A2A task identifier, unrelated to
+			// the ADK session/contextId) -- see afA2ATasksSendWithTask's
+			// doc comment for the CI-confirmed failure mode this avoids.
+			taskID = task.ID
+			sharedCtxID = "ctx-" + turn1ID
+			GinkgoWriter.Printf("  E2E-FLEET-018 Turn 1 — task: %s (state: %s, attempt: %d)\n", taskID, task.Status.State, attempt)
+		}, fmcSyncTimeout, 2*time.Second).Should(Succeed())
 
 		By("Turn 2: kubernaut_investigate (blocks until KA's autonomous investigation establishes the interactive session)")
 		body = afA2ATasksSendWithTask("fleet-018-2", taskID, sharedCtxID, "investigate the remediation")

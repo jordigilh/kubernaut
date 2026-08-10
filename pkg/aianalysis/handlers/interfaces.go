@@ -126,6 +126,13 @@ type InvestigationSessionChecker interface {
 	// terminal state. Returns ("", false, nil) if no IS exists at all.
 	// Used to distinguish "IS deleted" from "IS in terminal phase" in cancel handling.
 	FindSessionPhase(ctx context.Context, rrName string) (isv1alpha1.SessionPhase, bool, error)
+	// CorrelatedSessionID returns the KA session ID AF has most recently
+	// correlated onto this RR's InvestigationSession (status.kaCorrelationID),
+	// and whether that IS is still in a non-terminal phase. Returns ("", false, nil)
+	// if no IS exists or no correlation has been recorded yet.
+	// #2030 Part B: lets AA adopt a live session that AF correlated onto a
+	// takeover IS after AA's original session already went stale/terminal.
+	CorrelatedSessionID(ctx context.Context, rrName string) (id string, active bool, err error)
 }
 
 // ISPhaseUpdater transitions an InvestigationSession CRD phase. AA uses this

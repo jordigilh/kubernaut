@@ -1,0 +1,88 @@
+suite: "Fleet AF->FMC NetworkPolicy ingress gap (Issue #2059 E2E-FLEET-018 RCA, CI run 31387557179 + helios08 live repro): AF's own FederatedScopeChecker (#2025/ADR-068) calls FMC's /api/v1/scope/check directly, but FMC's NetworkPolicy ingress allow-list was never updated past its original gateway/remediationorchestrator-only scope"
+templates:
+  - templates/fleetmetadatacache/fleetmetadatacache.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
+  fleetmetadatacache:
+    enabled: true
+    oauth2:
+      credentialsSecretRef: "fmc-creds"
+  global:
+    fleet:
+      mcpGatewayEndpoint: "http://mcp.example.com"
+      oauth2:
+        enabled: true
+        tokenURL: "https://dex.example.com/token"
+        credentialsSecretRef: fleet-oauth2-creds
+tests:
+  # ---------------------------------------------------------------------
+  # RCA: live must-gather on helios08 (fleet E2E suite, CI-artifact
+  # pr-2048) proved a raw TCP dial from the apifrontend pod directly to
+  # FMC's pod IP on :8080 timed out (`curl --max-time 5` -> exit 28)
+  # while the IDENTICAL call from remediationorchestrator's pod returned
+  # a fast, genuine 401 in ~20ms -- isolating the block to FMC's ingress
+  # NetworkPolicy, which allowed only gateway/remediationorchestrator (the
+  # #1755/DD-TEST-015 fix above), never apifrontend. Confirmed as the sole
+  # blocker: live-patching just this one NetworkPolicy (kubectl patch,
+  # adding an apifrontend podSelector) turned the same curl into a 20ms
+  # 401 and made E2E-FLEET-018 pass end-to-end on the same preserved
+  # cluster, with zero other changes.
+  # ---------------------------------------------------------------------
+  - it: "FMC NetworkPolicy allows ingress from apifrontend on 8080 (both app and app.kubernetes.io/name pod-label conventions)"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: NetworkPolicy
+    asserts:
+      - contains:
+          path: spec.ingress
+          content:
+            from:
+              - podSelector:
+                  matchLabels:
+                    app: gateway
+              - podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: gateway
+              - podSelector:
+                  matchLabels:
+                    app: remediationorchestrator-controller
+              - podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: remediationorchestrator
+              - podSelector:
+                  matchLabels:
+                    app: apifrontend
+              - podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: apifrontend
+            ports:
+              - protocol: TCP
+                port: 8080
+
+  - it: "FMC NetworkPolicy ingress rule still allows gateway and remediationorchestrator (no regression on the #1755 fix)"
+    template: templates/fleetmetadatacache/fleetmetadatacache.yaml
+    documentSelector:
+      path: kind
+      value: NetworkPolicy
+    asserts:
+      - matchRegex:
+          path: spec.ingress[0].from[0].podSelector.matchLabels.app
+          pattern: "^gateway$"
+      - matchRegex:
+          path: spec.ingress[0].from[2].podSelector.matchLabels.app
+          pattern: "^remediationorchestrator-controller$"
