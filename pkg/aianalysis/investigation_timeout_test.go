@@ -221,7 +221,9 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 			Expect(analysis.Status.KASession.Generation).To(Equal(int32(1)),
 				"GetSessionResult 404 must trigger handleSessionLost regeneration (AA-HIGH-1)")
 			Expect(analysis.Status.KASession.ID).To(BeEmpty(), "session ID should be cleared for re-submit")
-			Expect(result.Requeue).To(BeTrue(), "should requeue immediately for re-submit")
+			// #2080: backs off instead of requeuing immediately (see UT-AA-064-008).
+			Expect(result.Requeue).To(BeFalse())
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0), "should back off before resubmit, not requeue immediately")
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
 				"should not use handleError terminal path on result 404")
 		})
