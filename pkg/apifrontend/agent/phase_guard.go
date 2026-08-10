@@ -17,6 +17,7 @@ limitations under the License.
 package agent
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -27,6 +28,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 const (
@@ -202,11 +204,23 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 				// earlier successful one in the same session (hardening
 				// beyond #2023's original binary gate -- see
 				// enforceGroundingGuard).
-				var rawRCA map[string]any
+				//
+				// #2068: a Provisional rca (AF's own severity-triage guess,
+				// synthesized when KA hasn't genuinely investigated yet --
+				// see ka_investigate_mcp.go's two InvestigateRCA fallback
+				// construction sites) is deliberately excluded here. It is
+				// not "extracted from the KA complete event" the way this
+				// struct's own doc comment describes, so it must not be
+				// cached as an authoritative fact to substitute into
+				// present_decision -- same treatment as "no structured rca
+				// at all" (UT-AF-2023-011).
+				var rca *tools.InvestigateRCA
 				if isSuccess {
-					rawRCA, _ = resp["rca"].(map[string]any)
+					if decoded := decodeInvestigateRCA(resp["rca"]); decoded != nil && !decoded.Provisional {
+						rca = decoded
+					}
 				}
-				if err := state.Set(session.StateKeyGroundedRCA, rawRCA); err != nil {
+				if err := state.Set(session.StateKeyGroundedRCA, rca); err != nil {
 					logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to persist grounded_rca state")
 				}
 			}
@@ -461,37 +475,52 @@ func investigateHasGroundedContent(resp map[string]any, isSuccess bool) bool {
 	return false
 }
 
-// rcaFieldRename maps InvestigateRCA's JSON field names (tools.InvestigateRCA)
-// to RCAData's JSON field names (tools.RCAData) where they differ --
-// canonicalGroundedRCA's pass-through target. severity/confidence/
-// causal_chain/target are identical in both and need no rename.
-var rcaFieldRename = map[string]string{
-	"total_tool_calls": "tool_calls_count",
-	"total_llm_turns":  "llm_turns",
-}
-
-// canonicalGroundedRCA converts a raw kubernaut_investigate "rca" payload
-// (tools.InvestigateRCA field names) into present_decision's RCAData shape,
-// renaming the two fields that differ and dropping the free-text
-// rca_summary/is_actionable/has_workflow keys that RCAData has no slot for.
-// Returns nil when raw is empty, so callers can distinguish "nothing to pass
-// through" from "pass through an empty object".
-func canonicalGroundedRCA(raw map[string]any) map[string]any {
-	if len(raw) == 0 {
+// decodeInvestigateRCA converts a kubernaut_investigate response's "rca"
+// value (map[string]any, per the ADK AfterToolCallback's untyped resp
+// contract) into the same tools.InvestigateRCA type ka_investigate_mcp.go
+// constructs it from, so callers work with named, typed fields (Severity,
+// Provisional, ...) instead of probing map keys by hand. Returns nil when v
+// isn't a non-empty map or fails to decode.
+func decodeInvestigateRCA(v any) *tools.InvestigateRCA {
+	raw, ok := v.(map[string]any)
+	if !ok || len(raw) == 0 {
 		return nil
 	}
-	out := make(map[string]any, len(raw))
-	for k, v := range raw {
-		if k == "rca_summary" || k == "is_actionable" || k == "has_workflow" {
-			continue
-		}
-		if renamed, ok := rcaFieldRename[k]; ok {
-			out[renamed] = v
-			continue
-		}
-		out[k] = v
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil
 	}
-	return out
+	var rca tools.InvestigateRCA
+	if err := json.Unmarshal(b, &rca); err != nil {
+		return nil
+	}
+	return &rca
+}
+
+// canonicalGroundedRCA converts KA's InvestigateRCA (tools package, KA's own
+// wire-format field names total_tool_calls/total_llm_turns) into
+// present_decision's RCAData shape (tools package, tool_calls_count/
+// llm_turns) -- the two have always used different names for these two
+// fields since InvestigateRCA mirrors KA's EventTypeComplete payload (a
+// contract this package doesn't own) while RCAData is AF's own LLM-facing
+// present_decision schema; renaming them is unavoidable however it's
+// expressed, so this is done via explicit field assignment rather than a
+// generic map copy. rca_summary/is_actionable/has_workflow/provisional have
+// no slot in RCAData and are intentionally dropped. Returns nil when rca is
+// nil or carries no severity at all, so callers can distinguish "nothing to
+// pass through" from "pass through an empty object".
+func canonicalGroundedRCA(rca *tools.InvestigateRCA) *tools.RCAData {
+	if rca == nil || rca.Severity == "" {
+		return nil
+	}
+	return &tools.RCAData{
+		Severity:       rca.Severity,
+		Confidence:     rca.Confidence,
+		CausalChain:    rca.CausalChain,
+		Target:         rca.Target,
+		ToolCallsCount: rca.TotalToolCalls,
+		LLMTurns:       rca.TotalLLMTurns,
+	}
 }
 
 // enforceGroundingGuard implements #2023's harness-side fabrication guard.
@@ -520,7 +549,10 @@ func canonicalGroundedRCA(raw map[string]any) map[string]any {
 // deliberately left model-authored once grounded -- it may legitimately
 // synthesize reasoning the pure structured facts don't capture -- and
 // args["rca"] is left untouched when KA reported no structured rca at all
-// (nothing authoritative to substitute).
+// (nothing authoritative to substitute) -- and, per #2068, when the only
+// "rca" available is AF's own Provisional severity-triage guess rather than
+// a genuine KA finding (session.StateKeyGroundedRCA is never populated with
+// a Provisional rca in the first place; see the after-callback above).
 func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
 	if args == nil {
 		return
@@ -536,8 +568,8 @@ func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
 	}
 	if grounded {
 		if v, err := state.Get(session.StateKeyGroundedRCA); err == nil {
-			if raw, ok := v.(map[string]any); ok {
-				if canonical := canonicalGroundedRCA(raw); canonical != nil {
+			if rca, ok := v.(*tools.InvestigateRCA); ok {
+				if canonical := canonicalGroundedRCA(rca); canonical != nil {
 					args["rca"] = canonical
 				}
 			}
