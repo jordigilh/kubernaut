@@ -62,9 +62,36 @@ import (
 // own target tool has already responded anywhere in the conversation
 // history. Verified against a live Kind cluster (test-e2e-fullpipeline
 // infra) in the authoring environment after the fix.
+//
+// Skipped when Fleet is disabled (#2022/#2025, ADR-053/ADR-068 port to
+// main): this suite's cluster_id="cluster-fleet-e2e-1409" has always been a
+// fiction (fullpipeline is a single Kind cluster, per
+// test/e2e/fleet/16_af_real_fleet_investigation_test.go's own doc comment),
+// but until AF's ADR-053 scope check landed on main, nothing actually
+// validated ClusterID before RR creation, so the fiction was harmless.
+// checkRRScope (pkg/apifrontend/tools/scope_helpers.go) now calls
+// ScopeChecker.IsManagedResource for every kubernaut_remediate/investigate
+// call; when Fleet is disabled, fleet.NewScopeChecker returns the local-only
+// scope.Manager unchanged, which correctly fails closed on any non-empty
+// ClusterID it has no federated backend to verify
+// (pkg/shared/scope/manager.go: "local Manager cannot resolve remote
+// cluster"). That is the intended, secure behavior for a real
+// single-cluster deployment -- an unverifiable cluster_id must not be
+// trusted -- so the fix here is to skip this now-incompatible scenario
+// rather than weaken the scope check. Real coverage for cluster_id
+// artifact-propagation through a genuinely Fleet-enabled AF instance
+// (with cluster_id="remote-cluster" registered and verified) already
+// exists in test/e2e/fleet/18_af_ka_interactive_fleet_bridge_test.go
+// (E2E-FLEET-018, Turn 1) and test/e2e/fleet/16_af_real_fleet_investigation_test.go
+// (E2E-FLEET-016); the pure server-side RRContext auto-fill logic this test
+// also exercised remains covered by UT-AF-1409-006b regardless.
 var _ = Describe("AF Fleet cluster_id Artifact Propagation [E2E-AF-1409-001]", Label("fp", "af", "fleet", "issue-1409"), func() {
 
 	It("should propagate LLM-supplied cluster_id through RRContext into the investigation_summary artifact", func() {
+		Skip("requires Fleet enabled to verify cluster_id (ADR-053/ADR-068 scope check) — " +
+			"fullpipeline's AF deployment has Fleet disabled (deploy/apifrontend/overlays/e2e/config.yaml has no fleet: key); " +
+			"see E2E-FLEET-018/E2E-FLEET-016 for equivalent coverage under a real Fleet-enabled AF instance")
+
 		fleetNS := fpRemediateNS["fleet"]
 		Expect(fleetNS).NotTo(BeEmpty(), "fleet namespace must be set by SynchronizedBeforeSuite")
 
