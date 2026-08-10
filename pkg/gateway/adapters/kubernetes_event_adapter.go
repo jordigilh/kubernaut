@@ -86,9 +86,9 @@ type kubernetesEvent struct {
 // NewKubernetesEventAdapter creates a new Kubernetes Event adapter.
 //
 // Parameters:
-// - ownerResolver: Optional. If non-nil, the adapter resolves the top-level owner
-//   (e.g., Deployment) for fingerprinting, enabling deduplication across pods from
-//   the same controller. If nil, fingerprinting uses resource-level deduplication.
+//   - ownerResolver: Optional. If non-nil, the adapter resolves the top-level owner
+//     (e.g., Deployment) for fingerprinting, enabling deduplication across pods from
+//     the same controller. If nil, fingerprinting uses resource-level deduplication.
 func NewKubernetesEventAdapter(ownerResolver ...types.OwnerResolver) *KubernetesEventAdapter {
 	adapter := &KubernetesEventAdapter{
 		name:        "kubernetes-event",
@@ -200,10 +200,13 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 	}
 
 	// 5. Extract resource information
+	// #2066: involvedObject.apiVersion is always correct (comes from the K8s
+	// API server itself) and must be carried through, not discarded.
 	resource := types.ResourceIdentifier{
-		Kind:      event.InvolvedObject.Kind,
-		Name:      event.InvolvedObject.Name,
-		Namespace: event.InvolvedObject.Namespace,
+		Kind:       event.InvolvedObject.Kind,
+		Name:       event.InvolvedObject.Name,
+		Namespace:  event.InvolvedObject.Namespace,
+		APIVersion: event.InvolvedObject.APIVersion,
 	}
 
 	// 6. Generate fingerprint for deduplication (BR-GATEWAY-004, Issue #228)
@@ -217,7 +220,7 @@ func (a *KubernetesEventAdapter) Parse(ctx context.Context, rawData []byte) (*ty
 	// 7. Populate NormalizedSignal
 	signal := &types.NormalizedSignal{
 		Fingerprint:  fingerprint,
-		SignalName:    event.Reason, // "OOMKilled", "FailedScheduling", etc.
+		SignalName:   event.Reason, // "OOMKilled", "FailedScheduling", etc.
 		Severity:     severity,
 		Namespace:    resolvedResource.Namespace,
 		Resource:     resolvedResource,
@@ -272,4 +275,3 @@ func (a *KubernetesEventAdapter) GetMetadata() AdapterMetadata {
 		RequiredHeaders:       []string{"Authorization"}, // Bearer token required
 	}
 }
-

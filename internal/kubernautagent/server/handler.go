@@ -35,8 +35,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/metrics"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 )
 
 // InvestigationRunner abstracts the investigation entry point so that
@@ -374,20 +374,21 @@ func (h *Handler) SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(
 // MapIncidentRequestToSignal converts an OpenAPI IncidentRequest to an internal SignalContext.
 func MapIncidentRequestToSignal(req *agentclient.IncidentRequest) katypes.SignalContext {
 	sc := katypes.SignalContext{
-		Name:             req.SignalName,
-		Namespace:        req.ResourceNamespace,
-		Severity:         string(req.Severity),
-		Message:          req.ErrorMessage,
-		IncidentID:       req.IncidentID,
-		ResourceKind:     req.ResourceKind,
-		ResourceName:     req.ResourceName,
-		ClusterName:      req.ClusterName,
-		Environment:      req.Environment,
-		Priority:         req.Priority,
-		RiskTolerance:    req.RiskTolerance,
-		SignalSource:     req.SignalSource,
-		BusinessCategory: req.BusinessCategory,
-		RemediationID:    req.RemediationID,
+		Name:               req.SignalName,
+		Namespace:          req.ResourceNamespace,
+		Severity:           string(req.Severity),
+		Message:            req.ErrorMessage,
+		IncidentID:         req.IncidentID,
+		ResourceKind:       req.ResourceKind,
+		ResourceName:       req.ResourceName,
+		ResourceAPIVersion: req.ResourceAPIVersion, // #2064: was omitted, KA's SignalContext never got apiVersion from the wire
+		ClusterName:        req.ClusterName,
+		Environment:        req.Environment,
+		Priority:           req.Priority,
+		RiskTolerance:      req.RiskTolerance,
+		SignalSource:       req.SignalSource,
+		BusinessCategory:   req.BusinessCategory,
+		RemediationID:      req.RemediationID,
 	}
 	if v, ok := req.Description.Get(); ok {
 		sc.Description = v

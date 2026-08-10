@@ -33,8 +33,8 @@ import (
 
 	kaserver "github.com/jordigilh/kubernaut/internal/kubernautagent/server"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -51,6 +51,7 @@ func validIncidentJSON() string {
   "resource_namespace": "default",
   "resource_kind": "Pod",
   "resource_name": "web-1",
+  "resource_api_version": "",
   "error_message": "out of memory",
   "environment": "staging",
   "priority": "P1",
@@ -299,6 +300,53 @@ var _ = Describe("Kubernaut Agent incident API HTTP contract — BR-AI-952 / GAP
 
 			Expect(resp.StatusCode).To(Equal(http.StatusUnsupportedMediaType))
 			Expect(strings.Contains(resp.Header.Get("Content-Type"), "application/json")).To(BeTrue())
+		})
+	})
+
+	Describe("IT-SRV-008: POST /api/v1/incident/analyze forwards resource_api_version to SignalContext (#2064)", func() {
+		It("propagates resource_api_version from the wire JSON through to the investigator's SignalContext", func() {
+			capturedCh := make(chan katypes.SignalContext, 1)
+			inv := &stubInvestigator{
+				fn: func(_ context.Context, sc katypes.SignalContext) (*katypes.InvestigationResult, error) {
+					capturedCh <- sc
+					return &katypes.InvestigationResult{RCASummary: "ok", Confidence: 0.85}, nil
+				},
+			}
+			ts, mgr := newTestAPIServer(inv)
+			defer ts.Close()
+			_ = mgr
+
+			body := `{
+  "incident_id": "inc-it-srv-008",
+  "remediation_id": "rem-it-srv-008",
+  "signal_name": "OOMKilled",
+  "severity": "high",
+  "signal_source": "prometheus",
+  "resource_namespace": "production",
+  "resource_kind": "Deployment",
+  "resource_name": "api-server",
+  "resource_api_version": "apps/v1",
+  "error_message": "out of memory",
+  "environment": "production",
+  "priority": "P1",
+  "risk_tolerance": "low",
+  "business_category": "platform",
+  "cluster_name": "kind-local"
+}`
+
+			req, err := http.NewRequest(http.MethodPost, ts.URL+"/api/v1/incident/analyze", strings.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer resp.Body.Close()
+			Expect(resp.StatusCode).To(Equal(http.StatusAccepted))
+
+			var sc katypes.SignalContext
+			Eventually(capturedCh, 3*time.Second).Should(Receive(&sc))
+			Expect(sc.ResourceAPIVersion).To(Equal("apps/v1"),
+				"#2064: the full HTTP wire path (JSON -> ogen decode -> MapIncidentRequestToSignal) must carry resource_api_version through to the investigator")
 		})
 	})
 })

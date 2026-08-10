@@ -54,7 +54,8 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 				"involvedObject": {
 					"kind": "Pod",
 					"namespace": "production",
-					"name": "payment-api-789"
+					"name": "payment-api-789",
+					"apiVersion": "v1"
 				}
 			}`)
 
@@ -72,6 +73,10 @@ var _ = Describe("BR-GATEWAY-005: Kubernetes Event Adapter", func() {
 				"AI needs NAMESPACE for kubectl context: 'kubectl -n production'")
 			Expect(signal.SignalName).To(Equal("OOMKilled"),
 				"AI needs alert name to understand failure type")
+			// #2066: involvedObject.apiVersion is always correct (comes straight from
+			// the K8s API server) and must not be discarded on the way to the CRD.
+			Expect(signal.Resource.APIVersion).To(Equal("v1"),
+				"AI needs the exact apiVersion to disambiguate the target's API group for GVK-based workflow discovery")
 
 			// Business capability verified:
 			// K8s Event → Gateway → AI can identify WHAT resource needs remediation

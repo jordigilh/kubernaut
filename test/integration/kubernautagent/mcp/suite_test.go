@@ -41,6 +41,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
@@ -49,10 +50,10 @@ import (
 // phase1Payload is the JSON struct passed between Ginkgo processes via
 // SynchronizedBeforeSuite. Uses the same pattern as the AIAnalysis IT suite.
 type phase1Payload struct {
-	Token            string            `json:"token"`
-	KubeconfigPath   string            `json:"kubeconfig_path"`
-	MockLLMEndpoint  string            `json:"mock_llm_endpoint"`
-	WorkflowUUIDs    map[string]string `json:"workflow_uuids"`
+	Token           string            `json:"token"`
+	KubeconfigPath  string            `json:"kubeconfig_path"`
+	MockLLMEndpoint string            `json:"mock_llm_endpoint"`
+	WorkflowUUIDs   map[string]string `json:"workflow_uuids"`
 }
 
 // Port allocation per DD-TEST-001 v2.5 — MCP IT (Phase 7A)
@@ -97,7 +98,8 @@ var _ = SynchronizedBeforeSuite(
 		GinkgoWriter.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 		ctx := context.Background()
 
-		// ── Step 1: envtest (Leases are core K8s — no CRDs needed) ──
+		// ── Step 1: envtest (Leases are core K8s; RemediationRequest CRD needed
+		// for IT-KA-DISC-011's CRD-fallback signal resolution, #2061) ──
 		By("Starting envtest")
 		assetsDir := os.Getenv("KUBEBUILDER_ASSETS")
 		if assetsDir == "" {
@@ -108,6 +110,8 @@ var _ = SynchronizedBeforeSuite(
 		}
 		testEnv := &envtest.Environment{
 			BinaryAssetsDirectory: assetsDir,
+			CRDDirectoryPaths:     []string{"../../../../config/crd/bases"},
+			ErrorIfCRDPathMissing: true,
 		}
 		cfg, err := testEnv.Start()
 		Expect(err).ToNot(HaveOccurred(), "envtest should start")
@@ -117,6 +121,7 @@ var _ = SynchronizedBeforeSuite(
 		scheme := runtime.NewScheme()
 		Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
 		Expect(corev1.AddToScheme(scheme)).To(Succeed())
+		Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 
 		k8sClient, err := client.New(cfg, client.Options{Scheme: scheme})
 		Expect(err).ToNot(HaveOccurred(), "controller-runtime client should build")
@@ -231,6 +236,7 @@ var _ = SynchronizedBeforeSuite(
 			scheme := runtime.NewScheme()
 			Expect(coordinationv1.AddToScheme(scheme)).To(Succeed())
 			Expect(corev1.AddToScheme(scheme)).To(Succeed())
+			Expect(remediationv1.AddToScheme(scheme)).To(Succeed())
 
 			var err error
 			sharedK8sClient, err = client.New(sharedK8sConfig, client.Options{Scheme: scheme})

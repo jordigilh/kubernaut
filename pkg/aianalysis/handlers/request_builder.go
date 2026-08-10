@@ -75,20 +75,21 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 	customLabels := getCustomLabels(enrichment)
 	req := &agentclient.IncidentRequest{
 		// REQUIRED fields per KA OpenAPI spec
-		IncidentID:        analysis.Name,    // Q1: Use CR name
-		RemediationID:     correlationID,    // DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for audit correlation
-		SignalName:        spec.SignalName,
-		Severity:          agentclient.Severity(spec.Severity),
-		SignalSource:      "kubernaut",
-		ResourceNamespace: spec.TargetResource.Namespace,
-		ResourceKind:      spec.TargetResource.Kind,
-		ResourceName:      spec.TargetResource.Name,
-		ErrorMessage:      "", // Populated from enrichment if available
-		Environment:       spec.Environment,
-		Priority:          spec.BusinessPriority,
-		RiskTolerance:     getOrDefault(customLabels, "risk_tolerance", "medium"),
-		BusinessCategory:  getOrDefault(customLabels, "business_category", "standard"),
-		ClusterName:       getOrDefault(customLabels, "cluster_name", "default"),
+		IncidentID:         analysis.Name, // Q1: Use CR name
+		RemediationID:      correlationID, // DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for audit correlation
+		SignalName:         spec.SignalName,
+		Severity:           agentclient.Severity(spec.Severity),
+		SignalSource:       "kubernaut",
+		ResourceNamespace:  spec.TargetResource.Namespace,
+		ResourceKind:       spec.TargetResource.Kind,
+		ResourceName:       spec.TargetResource.Name,
+		ResourceAPIVersion: spec.TargetResource.APIVersion, // #2064: was omitted, KA never received it
+		ErrorMessage:       "",                             // Populated from enrichment if available
+		Environment:        spec.Environment,
+		Priority:           spec.BusinessPriority,
+		RiskTolerance:      getOrDefault(customLabels, "risk_tolerance", "medium"),
+		BusinessCategory:   getOrDefault(customLabels, "business_category", "standard"),
+		ClusterName:        getOrDefault(customLabels, "cluster_name", "default"),
 	}
 
 	// Map enrichment results for richer KA context
