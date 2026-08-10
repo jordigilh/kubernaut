@@ -85,7 +85,7 @@ var _ = Describe("BR-INTERACTIVE-010: #2030 Part B session correlation adoption"
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with a real interactive KA session (the 'old', now-stale session)")
-			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
+			analysis := createInvestigatingAA(aaName, rrName, "slow-investigation-test", true)
 
 			By("waiting for the old KA session to be established")
 			var oldSessionID string

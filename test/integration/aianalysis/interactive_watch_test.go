@@ -39,12 +39,14 @@ import (
 // createActiveIS creates an InvestigationSession CRD for rrName and drives it
 // to Phase=Active, waiting for that phase to be visible in the cache before
 // returning — prevents a race where the IS watch fires on Create but
-// HasActiveSession still sees the non-Active phase.
+// HasActiveSession still sees the non-Active phase. Callers only need the
+// side effect (a visible, Active IS); none currently need the created object
+// itself.
 //
 // Package-level (not a Describe-local closure) so it can be shared across
 // integration test files in this package, e.g. session_correlation_adoption_test.go
 // (#2029 Part B).
-func createActiveIS(name, rrName string) *isv1alpha1.InvestigationSession {
+func createActiveIS(name, rrName string) {
 	const (
 		timeout  = 15 * time.Second
 		interval = 200 * time.Millisecond
@@ -77,16 +79,16 @@ func createActiveIS(name, rrName string) *isv1alpha1.InvestigationSession {
 		}
 		return updated.Status.Phase
 	}, timeout, interval).Should(Equal(isv1alpha1.SessionPhaseActive))
-
-	return is
 }
 
 // createInvestigatingAA creates an AIAnalysis CRD already in PhaseInvestigating
-// with a pre-set KASession, for tests that need to observe the reconcile loop's
+// with a pre-set KASession (ID intentionally empty -- these tests assert on the
+// real ID the controller's own reconcile loop assigns via KA submission, not a
+// caller-supplied one), for tests that need to observe the reconcile loop's
 // reaction to IS/session state changes rather than the initial submit itself.
 //
 // Package-level for the same reason as createActiveIS above.
-func createInvestigatingAA(name, rrName, sessionID, signalName string, interactive bool) *aianalysisv1.AIAnalysis {
+func createInvestigatingAA(name, rrName, signalName string, interactive bool) *aianalysisv1.AIAnalysis {
 	if signalName == "" {
 		signalName = "CrashLoopBackOff"
 	}
@@ -130,7 +132,6 @@ func createInvestigatingAA(name, rrName, sessionID, signalName string, interacti
 		now := metav1.Now()
 		analysis.Status.Phase = aianalysisv1.PhaseInvestigating
 		analysis.Status.KASession = &aianalysisv1.KASession{
-			ID:          sessionID,
 			Interactive: interactive,
 			CreatedAt:   &now,
 		}
@@ -195,7 +196,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			rrName := helpers.UniqueTestName("rr-watch-create")
 			analysisName := helpers.UniqueTestName("aa-watch-create")
 
-			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", false)
+			analysis := createInvestigatingAA(analysisName, rrName, "slow-investigation-test", false)
 
 			By("waiting for real KA session to be established (KASession.ID set)")
 			Eventually(func(g Gomega) {
@@ -229,7 +230,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			isName := helpers.UniqueTestName("is-watch-delete")
 			createActiveIS(isName, rrName)
 
-			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", true)
+			analysis := createInvestigatingAA(analysisName, rrName, "slow-investigation-test", true)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
@@ -272,7 +273,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			rrName := helpers.UniqueTestName("rr-takeover")
 			analysisName := helpers.UniqueTestName("aa-takeover")
 
-			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", false)
+			analysis := createInvestigatingAA(analysisName, rrName, "slow-investigation-test", false)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
@@ -332,7 +333,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			rrName := helpers.UniqueTestName("rr-1390-upgrade")
 			analysisName := helpers.UniqueTestName("aa-1390-upgrade")
 
-			analysis := createInvestigatingAA(analysisName, rrName, "", "slow-investigation-test", false)
+			analysis := createInvestigatingAA(analysisName, rrName, "slow-investigation-test", false)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
@@ -411,7 +412,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			completionTimeout := 25 * time.Second
 
 			By("creating Investigating AA first (autonomous session — no IS yet)")
-			analysis := createInvestigatingAA(aaName, rrName, "", "brief-investigation-test", false)
+			analysis := createInvestigatingAA(aaName, rrName, "brief-investigation-test", false)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
@@ -449,7 +450,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with slow scenario")
-			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
+			analysis := createInvestigatingAA(aaName, rrName, "slow-investigation-test", true)
 
 			By("waiting for session to be established")
 			Eventually(func(g Gomega) {
@@ -481,7 +482,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with slow scenario")
-			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", false)
+			analysis := createInvestigatingAA(aaName, rrName, "slow-investigation-test", false)
 
 			By("waiting for session to be established then backdating")
 			Eventually(func(g Gomega) {
@@ -524,7 +525,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with slow scenario (interactive)")
-			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
+			analysis := createInvestigatingAA(aaName, rrName, "slow-investigation-test", true)
 
 			By("waiting for session to be established then backdating")
 			Eventually(func(g Gomega) {
@@ -595,7 +596,7 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession Watch Integration", L
 			createActiveIS(isName, rrName)
 
 			By("creating Investigating AA with slow-investigation scenario")
-			analysis := createInvestigatingAA(aaName, rrName, "", "slow-investigation-test", true)
+			analysis := createInvestigatingAA(aaName, rrName, "slow-investigation-test", true)
 
 			By("waiting for real KA session to be established")
 			Eventually(func(g Gomega) {
