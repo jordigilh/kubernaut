@@ -14,12 +14,15 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Issue #2080: session-regeneration races with AF-correlated-session
-// adoption, exhausting the regeneration cap and failing investigations that
-// already succeeded.
+// Issue #2081 (v1.6 clone of #2080): session-regeneration races with
+// AF-correlated-session adoption, exhausting the regeneration cap and
+// failing investigations that already succeeded. Ported verbatim from
+// #2080's release/v1.5 fix -- the underlying code (checkISMismatchAndCancel,
+// tryAdoptCorrelatedSession, checkCorrelatedSessionBeforeFinalizing,
+// handleSessionLost) already exists on main in structurally identical form.
 //
 // handleSessionLost (reached from a 404 on PollSession/GetSessionResult) is
-// the one remaining call site in the #2029 Part B adoption family that never
+// the one remaining call site in the #2030 Part B adoption family that never
 // re-checked whether AF had already correlated a different, currently-active
 // KA session before treating the 404 as loss. A rapid, legitimate sequence
 // of session hand-offs (autonomous->interactive upgrade, one or more
@@ -32,7 +35,7 @@ limitations under the License.
 // Business-level framing:
 //   - FedRAMP IR-4 (Incident Handling): a completed investigation must not be
 //     discarded because of a session-lifecycle race -- this is the same
-//     continuity guarantee #2029 Part B established for the poll-completed/
+//     continuity guarantee #2030 Part B established for the poll-completed/
 //     poll-failed paths, now closed for the session-lost path too.
 //   - FedRAMP SI-4/AU-2/AU-3: the adoption remains an observable, durably
 //     audited event (unchanged: adoptCorrelatedSession's existing K8s Event +
@@ -99,7 +102,7 @@ var _ = Describe("InvestigatingHandler Session-Lost Correlation Adoption (#2080)
 				handlers.WithInvestigationSessionChecker(isChecker),
 			)
 
-			analysis := adoptionTestAnalysis("rr-2080-001", "ka-session-old-001", true)
+			analysis := adoptionTestAnalysis("rr-2080-001", "ka-session-old-001")
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -143,7 +146,7 @@ var _ = Describe("InvestigatingHandler Session-Lost Correlation Adoption (#2080)
 				handlers.WithInvestigationSessionChecker(isChecker),
 			)
 
-			analysis := adoptionTestAnalysis("rr-2080-002", "ka-session-old-002", true)
+			analysis := adoptionTestAnalysis("rr-2080-002", "ka-session-old-002")
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -181,7 +184,7 @@ var _ = Describe("InvestigatingHandler Session-Lost Correlation Adoption (#2080)
 				handlers.WithInvestigationSessionChecker(isChecker),
 			)
 
-			analysis := adoptionTestAnalysis("rr-2080-003", "ka-session-003", true)
+			analysis := adoptionTestAnalysis("rr-2080-003", "ka-session-003")
 
 			result, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -201,7 +204,7 @@ var _ = Describe("InvestigatingHandler Session-Lost Correlation Adoption (#2080)
 	// instead of ConsecutiveFailures.
 	Context("UT-AA-2080-004: session-lost regeneration backs off instead of tight-looping", func() {
 		It("requeues with a positive, generation-scaled delay, not immediately", func() {
-			analysis := adoptionTestAnalysis("rr-2080-004", "ka-session-004", false)
+			analysis := adoptionTestAnalysis("rr-2080-004", "ka-session-004")
 			analysis.Status.KASession.Generation = 0
 
 			mockClient.WithSessionPollError(&agentclient.APIError{StatusCode: 404, Message: "Session not found"})
@@ -249,7 +252,7 @@ var _ = Describe("InvestigatingHandler Session-Lost Correlation Adoption (#2080)
 				handlers.WithInvestigationSessionChecker(isChecker),
 			)
 
-			analysis := adoptionTestAnalysis("rr-2080-005", "ka-session-old-005", true)
+			analysis := adoptionTestAnalysis("rr-2080-005", "ka-session-old-005")
 
 			for i, id := range handOffs {
 				result, err := handler.Handle(ctx, analysis)
