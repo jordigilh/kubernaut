@@ -3,7 +3,7 @@
   "info": {
     "title": "Kubernaut Agent API Service",
     "description": "Internal investigation service for Kubernaut AI remediation platform",
-    "version": "1.5.0"
+    "version": "1.6.0"
   },
   "paths": {
     "/api/v1/incident/analyze": {
@@ -1106,6 +1106,11 @@
             "title": "Resource Name",
             "description": "Resource name"
           },
+          "resource_api_version": {
+            "type": "string",
+            "title": "Resource Api Version",
+            "description": "Kubernetes apiVersion of the target resource (e.g. 'apps/v1'), disambiguating the API group when the kind exists in more than one. Empty string when the upstream source could not determine it. #2064."
+          },
           "error_message": {
             "type": "string",
             "title": "Error Message",
@@ -1310,6 +1315,7 @@
           "resource_namespace",
           "resource_kind",
           "resource_name",
+          "resource_api_version",
           "error_message",
           "environment",
           "priority",
