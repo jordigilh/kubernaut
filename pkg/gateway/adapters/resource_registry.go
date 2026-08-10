@@ -25,12 +25,12 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/singleflight"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
-	"golang.org/x/sync/singleflight"
 )
 
 var (
@@ -53,6 +53,15 @@ type registrySnapshot struct {
 	kindToGVR      map[string]schema.GroupVersionResource
 	kindToGroup    map[string]string
 	kindNamespaced map[string]bool
+	// kindToGVRCandidates holds every discovered GroupVersionResource for a
+	// Kind, deduplicated by Group (#2066). Unlike kindToGVR (first-discovered
+	// group wins), this preserves all cross-group candidates so genuinely
+	// ambiguous kinds (e.g. Route in route.openshift.io vs serving.knative.dev,
+	// issue #1040) can be disambiguated via existence checks rather than an
+	// arbitrary pick. Multiple served versions of the same group/Kind are
+	// intentionally NOT treated as separate candidates here — only a distinct
+	// Group counts as a new candidate.
+	kindToGVRCandidates map[string][]schema.GroupVersionResource
 }
 
 type existenceCacheEntry struct {
@@ -158,8 +167,8 @@ func NewAPIResourceRegistry(dc discovery.DiscoveryInterface, opts ...RegistryOpt
 			"non-resource URL rules for /api and /apis): %w", err)
 	}
 	if len(snap.labelToKind) == 0 {
-		return nil, fmt.Errorf("discovery returned zero API resources — verify the gateway "+
-			"ServiceAccount has discovery RBAC (system:discovery ClusterRoleBinding or explicit "+
+		return nil, fmt.Errorf("discovery returned zero API resources — verify the gateway " +
+			"ServiceAccount has discovery RBAC (system:discovery ClusterRoleBinding or explicit " +
 			"non-resource URL rules for /api and /apis)")
 	}
 	r.snapshot = snap
@@ -183,10 +192,11 @@ func buildSnapshot(dc discovery.DiscoveryInterface) (*registrySnapshot, error) {
 		}
 	}
 	snap := &registrySnapshot{
-		labelToKind:    make(map[string]string, totalResources),
-		kindToGVR:      make(map[string]schema.GroupVersionResource, totalResources),
-		kindToGroup:    make(map[string]string, totalResources),
-		kindNamespaced: make(map[string]bool, totalResources),
+		labelToKind:         make(map[string]string, totalResources),
+		kindToGVR:           make(map[string]schema.GroupVersionResource, totalResources),
+		kindToGroup:         make(map[string]string, totalResources),
+		kindNamespaced:      make(map[string]bool, totalResources),
+		kindToGVRCandidates: make(map[string][]schema.GroupVersionResource, totalResources),
 	}
 
 	for _, list := range lists {
@@ -227,6 +237,20 @@ func (snap *registrySnapshot) addAPIResource(gv schema.GroupVersion, res metav1.
 		snap.kindToGVR[res.Kind] = gvr
 		snap.kindToGroup[res.Kind] = gv.Group
 		snap.kindNamespaced[res.Kind] = res.Namespaced
+	}
+
+	// #2066: record every distinct Group for this Kind (not every served
+	// version) so true cross-group ambiguity can be detected without false
+	// positives from multi-version CRDs.
+	seenGroup := false
+	for _, candidate := range snap.kindToGVRCandidates[res.Kind] {
+		if candidate.Group == gv.Group {
+			seenGroup = true
+			break
+		}
+	}
+	if !seenGroup {
+		snap.kindToGVRCandidates[res.Kind] = append(snap.kindToGVRCandidates[res.Kind], gvr)
 	}
 
 	singular := res.SingularName
@@ -287,6 +311,24 @@ func (r *APIResourceRegistry) IsNamespacedKind(kind string) bool {
 		return true
 	}
 	return namespaced
+}
+
+// KindToGVRCandidates returns every discovered GroupVersionResource for a
+// given Kind, one per distinct API group (#2066). Returns false if the kind
+// is not in the registry. Unlike KindToGVR, which returns only the
+// first-discovered group for backward compatibility, this exposes all
+// candidates so callers can disambiguate genuinely cross-group-ambiguous
+// kinds (e.g. Route in route.openshift.io vs serving.knative.dev, issue
+// #1040) via existence checks rather than an arbitrary first-seen pick.
+func (r *APIResourceRegistry) KindToGVRCandidates(kind string) ([]schema.GroupVersionResource, bool) {
+	r.mu.RLock()
+	snap := r.snapshot
+	r.mu.RUnlock()
+	if snap == nil {
+		return nil, false
+	}
+	candidates, ok := snap.kindToGVRCandidates[kind]
+	return candidates, ok
 }
 
 // TierForKind returns the priority tier for a given Kind.

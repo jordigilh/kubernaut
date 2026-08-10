@@ -493,4 +493,3 @@ func (c *CRDCreator) truncateLabelValues(labels map[string]string) map[string]st
 func (c *CRDCreator) truncateAnnotationValues(annotations map[string]string) map[string]string {
 	return sharedK8s.TruncateMapValues(annotations, sharedK8s.MaxAnnotationValueLength)
 }
-
