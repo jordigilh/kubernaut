@@ -574,6 +574,24 @@ func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
 				}
 			}
 		}
+		// #2073: when no authoritative InvestigateRCA was available to fully
+		// substitute above (summary-only grounding, a Provisional-severity
+		// triage guess, or a malformed investigate rca payload), args["rca"]
+		// is still whatever the LLM supplied. tool_calls_count/llm_turns are
+		// no longer schema-required (ka_tools.go RCAData omitempty), but the
+		// LLM is still never instructed how to compute them -- backfilling
+		// an honest zero (rather than leaving whatever value the LLM
+		// invented) prevents a fabricated-looking count from reaching the
+		// AU-3 structured artifact. severity/confidence/causal_chain/target
+		// remain LLM-authored here -- unlike the two bookkeeping fields,
+		// there is genuinely nothing authoritative in AF's state to
+		// substitute for them in this branch (see canonicalGroundedRCA doc).
+		if _, isRCAData := args["rca"].(*tools.RCAData); !isRCAData {
+			if rcaMap, ok := args["rca"].(map[string]any); ok {
+				rcaMap["tool_calls_count"] = 0
+				rcaMap["llm_turns"] = 0
+			}
+		}
 		return
 	}
 
