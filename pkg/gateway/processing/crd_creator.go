@@ -111,6 +111,11 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 	}
 }
 
+// Note: createCRDWithRetry and its error-classification/retry-handler methods
+// (handleAlreadyExistsError, shouldRetryError, logSuccessAfterRetry,
+// wrapRetryExhaustedError, waitWithBackoff, getErrorTypeString) live in
+// crd_creator_retry.go (Wave 6 GREEN: file-size remediation).
+
 // CreateRemediationRequest creates a RemediationRequest CRD from a signal
 //
 // This method:
@@ -464,10 +469,14 @@ func (c *CRDCreator) validateResourceInfo(signal *types.NormalizedSignal) error 
 func (c *CRDCreator) buildTargetResource(signal *types.NormalizedSignal) remediationv1alpha1.ResourceIdentifier {
 	// Note: Validation already performed by validateResourceInfo()
 	// Kind and Name are guaranteed to be non-empty at this point
+	// #2066: APIVersion carries through from whichever adapter resolved it
+	// (K8s Event: copy-through of involvedObject.apiVersion; Prometheus:
+	// discovery-resolved GVR) — empty when the adapter couldn't determine it.
 	return remediationv1alpha1.ResourceIdentifier{
-		Kind:      signal.Resource.Kind,
-		Name:      signal.Resource.Name,
-		Namespace: signal.Resource.Namespace,
+		Kind:       signal.Resource.Kind,
+		Name:       signal.Resource.Name,
+		Namespace:  signal.Resource.Namespace,
+		APIVersion: signal.Resource.APIVersion,
 	}
 }
 
@@ -485,7 +494,3 @@ func (c *CRDCreator) truncateAnnotationValues(annotations map[string]string) map
 	return sharedK8s.TruncateMapValues(annotations, sharedK8s.MaxAnnotationValueLength)
 }
 
-// Note: createCRDWithRetry and its error-classification/retry-handler methods
-// (handleAlreadyExistsError, shouldRetryError, logSuccessAfterRetry,
-// wrapRetryExhaustedError, waitWithBackoff, getErrorTypeString) live in
-// crd_creator_retry.go (Wave 6 GREEN: file-size remediation).
