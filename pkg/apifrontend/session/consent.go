@@ -68,7 +68,7 @@ const (
 	// artifact.
 	StateKeyGroundedContentAvailable = "af_grounded_content_available"
 
-	// StateKeyGroundedRCA records the exact "rca" payload (severity,
+	// StateKeyGroundedRCA records a *tools.InvestigateRCA (severity,
 	// confidence, causal_chain, target, total_tool_calls, total_llm_turns)
 	// carried by the most recent kubernaut_investigate response, keyed
 	// unconditionally on every investigate call (present or nil) so a
@@ -85,6 +85,12 @@ const (
 	// stays model-authored once grounded, since it may legitimately
 	// synthesize reasoning across a session that a pure pass-through would
 	// lose.
+	//
+	// #2068: never populated with a Provisional RCA (InvestigateRCA.
+	// Provisional=true -- AF's own severity-triage guess synthesized before
+	// KA has genuinely investigated, not a value "carried by" KA's response
+	// the way this key's name implies). A Provisional-only investigate call
+	// is treated the same as one with no structured RCA at all.
 	StateKeyGroundedRCA = "af_grounded_rca"
 )
 

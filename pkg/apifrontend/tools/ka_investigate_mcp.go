@@ -171,6 +171,15 @@ type InvestigateRCA struct {
 	// stays distinguishable from a genuine computed false.
 	IsActionable *bool `json:"is_actionable,omitempty"`
 	HasWorkflow  bool  `json:"has_workflow,omitempty"`
+	// Provisional marks an RCA synthesized locally by AF from severity-triage
+	// labels alone (no KA investigation occurred yet), as opposed to one
+	// extracted from KA's own EventTypeComplete payload (#2068). Progressive
+	// UX events (emitEarlyRCA/emitFallbackInvestigationArtifact) still fire
+	// normally for a provisional RCA -- only phase_guard.go's #2023
+	// anti-fabrication cache treats this flag specially, since this struct's
+	// own doc comment ("extracted from the KA complete event") never held
+	// for the fallback construction sites below.
+	Provisional bool `json:"provisional,omitempty"`
 }
 
 // SessionStartedHook is called after a successful StartInvestigation with the
@@ -414,9 +423,10 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 
 			if rrSeverity != "" {
 				rca := &InvestigateRCA{
-					Severity:   rrSeverity,
-					Confidence: 0.6,
-					RCASummary: fmt.Sprintf("Severity assessed from resource metadata (investigation in progress by %s)", driver),
+					Severity:    rrSeverity,
+					Confidence:  0.6,
+					Provisional: true,
+					RCASummary:  fmt.Sprintf("Severity assessed from resource metadata (investigation in progress by %s)", driver),
 				}
 				emitEarlyRCA(ctx, rca)
 				emitFallbackInvestigationArtifact(ctx, rca, args.RRID)
@@ -526,9 +536,10 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		// user gets immediate severity feedback.
 		if rca == nil && rrSeverity != "" {
 			rca = &InvestigateRCA{
-				Severity:   rrSeverity,
-				Confidence: 0.6,
-				RCASummary: "Severity assessed from resource metadata (full investigation pending)",
+				Severity:    rrSeverity,
+				Confidence:  0.6,
+				Provisional: true,
+				RCASummary:  "Severity assessed from resource metadata (full investigation pending)",
 			}
 			emitEarlyRCA(ctx, rca)
 			emitFallbackInvestigationArtifact(ctx, rca, args.RRID)

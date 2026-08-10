@@ -30,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 // statefulToolContext extends fakeToolContext with a working session.State
@@ -724,14 +725,14 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2023)", func() {
 		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
 		Expect(err).NotTo(HaveOccurred())
 
-		rca, ok := args["rca"].(map[string]any)
-		Expect(ok).To(BeTrue(), "rca must be overwritten with a map, not left as the LLM's own value")
-		Expect(rca["severity"]).To(Equal("warning"), "severity must come from KA's own report, not the LLM's fabricated 'critical'")
-		Expect(rca["confidence"]).To(Equal(0.55))
-		Expect(rca["target"]).To(Equal("pod/real-target"))
-		Expect(rca["causal_chain"]).To(Equal([]any{"MemoryPressure", "Evicted"}))
-		Expect(rca["tool_calls_count"]).To(Equal(7), "total_tool_calls must be renamed to RCAData's tool_calls_count field")
-		Expect(rca["llm_turns"]).To(Equal(3), "total_llm_turns must be renamed to RCAData's llm_turns field")
+		rca, ok := args["rca"].(*tools.RCAData)
+		Expect(ok).To(BeTrue(), "rca must be overwritten with a *tools.RCAData, not left as the LLM's own value")
+		Expect(rca.Severity).To(Equal("warning"), "severity must come from KA's own report, not the LLM's fabricated 'critical'")
+		Expect(rca.Confidence).To(Equal(0.55))
+		Expect(rca.Target).To(Equal("pod/real-target"))
+		Expect(rca.CausalChain).To(Equal([]string{"MemoryPressure", "Evicted"}))
+		Expect(rca.ToolCallsCount).To(Equal(7), "total_tool_calls must be renamed to RCAData's tool_calls_count field")
+		Expect(rca.LLMTurns).To(Equal(3), "total_llm_turns must be renamed to RCAData's llm_turns field")
 	})
 
 	It("UT-AF-2023-011: leaves the rca argument untouched when investigate reported no structured rca payload (summary-only grounding)", func() {
@@ -825,6 +826,70 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2023)", func() {
 		summary, _ := argsSecond["summary"].(string)
 		Expect(summary).To(ContainSubstring("No investigation content is available"),
 			"stale grounded=true from the FIRST investigate must not leak into the SECOND, failed attempt")
+	})
+
+	It("UT-AF-2068-001: does NOT overwrite present_decision's rca with a Provisional severity-triage fallback (RCA never genuinely investigated by KA)", func() {
+		// #2068 spike: reproduces ka_investigate_mcp.go's severity-triage
+		// fallback shape (Severity/Confidence only, no causal_chain/target/
+		// tool_calls_count/llm_turns -- KA never ran a real investigation).
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2068-1", "status": "completed",
+			"summary": "Severity assessed from resource metadata (full investigation pending)",
+			"rca": map[string]any{
+				"severity": "warning", "confidence": 0.6, "provisional": true,
+			},
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(args["rca"]).To(Equal(fabricatedArgs()["rca"]),
+			"#2068: a Provisional (AF-synthesized severity-triage guess, not a genuine KA finding) rca must "+
+				"not clobber present_decision's own rca -- same treatment as 'no structured rca at all' (UT-AF-2023-011)")
+	})
+
+	It("UT-AF-2068-004: still overwrites present_decision's rca when kubernaut_investigate's rca is genuinely KA-reported (Provisional unset/false)", func() {
+		// Companion to UT-AF-2023-010, restated in #2068 terms: a real,
+		// non-Provisional rca must keep working exactly as before -- #2068
+		// must gate ONLY on Provisional=true, not regress the original
+		// #2023 caching behavior for a genuinely-investigated result.
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2068-4", "status": "completed",
+			"summary": "Real investigation summary.",
+			"rca": map[string]any{
+				"severity": "warning", "confidence": 0.55,
+				"causal_chain": []any{"MemoryPressure", "Evicted"},
+			},
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		rca, ok := args["rca"].(*tools.RCAData)
+		Expect(ok).To(BeTrue())
+		Expect(rca.Severity).To(Equal("warning"), "a non-Provisional rca must still overwrite present_decision's rca (#2023's original guarantee)")
+	})
+
+	It("UT-AF-2068-005: treats a malformed (non-object) rca payload the same as no rca at all, without panicking", func() {
+		// decodeInvestigateRCA must fail closed: a type-mismatched "rca"
+		// value (here a bare string instead of an object) must not cache
+		// anything usable, and must never panic the after-callback.
+		Expect(func() {
+			_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+				"session_id": "sess-2068-5", "status": "completed",
+				"summary": "Real investigation summary.",
+				"rca":     "not-an-object",
+			}, nil)
+		}).NotTo(Panic())
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(args["rca"]).To(Equal(fabricatedArgs()["rca"]),
+			"a malformed rca payload has nothing authoritative to substitute, same as UT-AF-2023-011")
 	})
 })
 
