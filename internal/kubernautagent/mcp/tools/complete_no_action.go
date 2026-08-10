@@ -47,11 +47,12 @@ type CompleteNoActionOutput struct {
 // Allows the user to explicitly conclude an investigation without selecting
 // a workflow. No discovery gate — can be called at any point in the session.
 type CompleteNoActionTool struct {
-	sessions       mcpinternal.SessionManager
-	httpCompleter  HTTPSessionCompleter
-	mutexProvider  SessionMutexProvider
-	timeoutTracker TimeoutTracker
-	logger         logr.Logger
+	sessions           mcpinternal.SessionManager
+	httpCompleter      HTTPSessionCompleter
+	mutexProvider      SessionMutexProvider
+	timeoutTracker     TimeoutTracker
+	autoCloseTombstone AutoCloseTombstone
+	logger             logr.Logger
 }
 
 // CompleteNoActionOption configures optional dependencies.
@@ -89,6 +90,18 @@ func WithCompleteNoActionTimeoutTracker(tt TimeoutTracker) CompleteNoActionOptio
 	}
 }
 
+// WithCompleteNoActionAutoCloseTombstone sets the tombstone consulted when
+// no active driver session is found, so a call racing a backend auto-close
+// (e.g. investigate.go's no_matching_workflows) resolves as
+// "already_resolved" instead of erroring (#2075).
+func WithCompleteNoActionAutoCloseTombstone(tombstone AutoCloseTombstone) CompleteNoActionOption {
+	return func(t *CompleteNoActionTool) {
+		if tombstone != nil {
+			t.autoCloseTombstone = tombstone
+		}
+	}
+}
+
 // NewCompleteNoActionTool creates the tool handler with its dependencies.
 func NewCompleteNoActionTool(sessions mcpinternal.SessionManager, opts ...CompleteNoActionOption) *CompleteNoActionTool {
 	t := &CompleteNoActionTool{sessions: sessions, logger: logr.Discard()}
@@ -117,6 +130,18 @@ func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionI
 	}
 
 	if !t.sessions.IsDriverActive(input.RRID) {
+		// #2075: the backend may have already auto-closed this session on
+		// its own (e.g. investigate.go's no_matching_workflows) between the
+		// caller learning about the session and this call arriving. That
+		// auto-close already emitted its own terminal audit record and
+		// released the lease exactly once -- re-running any of that here
+		// would duplicate it (AU-3/AU-12). Report a distinct
+		// "already_resolved" status rather than "completed_no_action" or
+		// "escalated", since this call's specific dismiss/escalate reason
+		// was never actually recorded.
+		if t.autoCloseTombstone != nil && t.autoCloseTombstone.WasRecentlyAutoClosed(input.RRID) {
+			return CompleteNoActionOutput{Status: "already_resolved"}, nil
+		}
 		return CompleteNoActionOutput{}, fmt.Errorf("no active interactive session for rr_id")
 	}
 
