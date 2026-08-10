@@ -50,17 +50,20 @@ var (
 
 type registrySnapshot struct {
 	labelToKind    map[string]string
-	kindToGVR      map[string]schema.GroupVersionResource
-	kindToGroup    map[string]string
 	kindNamespaced map[string]bool
 	// kindToGVRCandidates holds every discovered GroupVersionResource for a
-	// Kind, deduplicated by Group (#2066). Unlike kindToGVR (first-discovered
-	// group wins), this preserves all cross-group candidates so genuinely
-	// ambiguous kinds (e.g. Route in route.openshift.io vs serving.knative.dev,
-	// issue #1040) can be disambiguated via existence checks rather than an
-	// arbitrary pick. Multiple served versions of the same group/Kind are
-	// intentionally NOT treated as separate candidates here — only a distinct
-	// Group counts as a new candidate.
+	// Kind, deduplicated by Group (#2066), in first-discovered order.
+	// Candidate [0] is always the first-discovered group for that Kind —
+	// KindToGVR and IsCoreBatchAppsKind derive their single-value answer from
+	// it (refactor: this used to be tracked in two separate parallel maps,
+	// kindToGVR/kindToGroup, populated by the same first-seen-wins loop
+	// iteration; both were always exactly equal to candidates[0]/candidates[0].Group,
+	// so the redundant bookkeeping was removed). Callers needing genuine
+	// cross-group disambiguation (e.g. Route in route.openshift.io vs
+	// serving.knative.dev, issue #1040) use the full candidate list via
+	// KindToGVRCandidates instead. Multiple served versions of the same
+	// group/Kind are intentionally NOT treated as separate candidates here —
+	// only a distinct Group counts as a new candidate.
 	kindToGVRCandidates map[string][]schema.GroupVersionResource
 }
 
@@ -173,7 +176,7 @@ func NewAPIResourceRegistry(dc discovery.DiscoveryInterface, opts ...RegistryOpt
 	}
 	r.snapshot = snap
 	r.logger.Info("API resource registry initialized",
-		"kind_count", len(snap.kindToGVR))
+		"kind_count", len(snap.kindToGVRCandidates))
 	return r, nil
 }
 
@@ -193,8 +196,6 @@ func buildSnapshot(dc discovery.DiscoveryInterface) (*registrySnapshot, error) {
 	}
 	snap := &registrySnapshot{
 		labelToKind:         make(map[string]string, totalResources),
-		kindToGVR:           make(map[string]schema.GroupVersionResource, totalResources),
-		kindToGroup:         make(map[string]string, totalResources),
 		kindNamespaced:      make(map[string]bool, totalResources),
 		kindToGVRCandidates: make(map[string][]schema.GroupVersionResource, totalResources),
 	}
@@ -233,15 +234,15 @@ func (snap *registrySnapshot) addAPIResource(gv schema.GroupVersion, res metav1.
 		Resource: res.Name,
 	}
 
-	if _, exists := snap.kindToGVR[res.Kind]; !exists {
-		snap.kindToGVR[res.Kind] = gvr
-		snap.kindToGroup[res.Kind] = gv.Group
+	if _, exists := snap.kindNamespaced[res.Kind]; !exists {
 		snap.kindNamespaced[res.Kind] = res.Namespaced
 	}
 
 	// #2066: record every distinct Group for this Kind (not every served
 	// version) so true cross-group ambiguity can be detected without false
-	// positives from multi-version CRDs.
+	// positives from multi-version CRDs. candidates[0] is the first-discovered
+	// group, i.e. the same value KindToGVR/IsCoreBatchAppsKind derive their
+	// single-value answer from.
 	seenGroup := false
 	for _, candidate := range snap.kindToGVRCandidates[res.Kind] {
 		if candidate.Group == gv.Group {
@@ -282,8 +283,11 @@ func (r *APIResourceRegistry) LabelToKind(labelKey string) string {
 	return snap.labelToKind[labelKey]
 }
 
-// KindToGVR returns the GroupVersionResource for a given Kind string.
-// Returns zero-value GVR and false if the kind is not in the registry.
+// KindToGVR returns the first-discovered GroupVersionResource for a given
+// Kind string. Returns zero-value GVR and false if the kind is not in the
+// registry. Derived from KindToGVRCandidates[0] (refactor, #2066): the two
+// were always in lockstep by construction, so there is exactly one
+// first-seen-wins answer, not two independently-maintained ones.
 func (r *APIResourceRegistry) KindToGVR(kind string) (schema.GroupVersionResource, bool) {
 	r.mu.RLock()
 	snap := r.snapshot
@@ -291,8 +295,11 @@ func (r *APIResourceRegistry) KindToGVR(kind string) (schema.GroupVersionResourc
 	if snap == nil {
 		return schema.GroupVersionResource{}, false
 	}
-	gvr, ok := snap.kindToGVR[kind]
-	return gvr, ok
+	candidates, ok := snap.kindToGVRCandidates[kind]
+	if !ok || len(candidates) == 0 {
+		return schema.GroupVersionResource{}, false
+	}
+	return candidates[0], true
 }
 
 // IsNamespacedKind returns true if the given Kind is namespaced according to
@@ -346,7 +353,9 @@ func (r *APIResourceRegistry) TierForKind(kind string) int {
 
 // IsCoreBatchAppsKind returns true if the kind belongs to core, apps, batch,
 // autoscaling, or policy API groups (used to determine whether owner chain
-// traversal is appropriate).
+// traversal is appropriate). Derived from KindToGVRCandidates[0].Group
+// (refactor, #2066): see KindToGVR's comment for why this is the correct
+// first-seen-wins group, not a behavior change.
 func (r *APIResourceRegistry) IsCoreBatchAppsKind(kind string) bool {
 	r.mu.RLock()
 	snap := r.snapshot
@@ -354,11 +363,11 @@ func (r *APIResourceRegistry) IsCoreBatchAppsKind(kind string) bool {
 	if snap == nil {
 		return false
 	}
-	group, ok := snap.kindToGroup[kind]
-	if !ok {
+	candidates, ok := snap.kindToGVRCandidates[kind]
+	if !ok || len(candidates) == 0 {
 		return false
 	}
-	return coreBatchAppsGroups[group]
+	return coreBatchAppsGroups[candidates[0].Group]
 }
 
 // Refresh re-queries the discovery API and atomically swaps the internal maps.
@@ -387,7 +396,7 @@ func (r *APIResourceRegistry) Refresh(ctx context.Context) error {
 	r.cacheMu.Unlock()
 
 	r.logger.Info("API resource registry refreshed",
-		"kind_count", len(snap.kindToGVR))
+		"kind_count", len(snap.kindToGVRCandidates))
 	return nil
 }
 
@@ -551,5 +560,5 @@ func (r *APIResourceRegistry) KindCount() int {
 	if snap == nil {
 		return 0
 	}
-	return len(snap.kindToGVR)
+	return len(snap.kindToGVRCandidates)
 }
