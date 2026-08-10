@@ -124,6 +124,26 @@ func namespaceResource() []*metav1.APIResourceList {
 	}
 }
 
+// ambiguousKindResources returns a discovery response where "Route" exists in
+// two entirely different API groups — mirrors the real cross-group ambiguity
+// documented in issue #1040 (route.openshift.io vs serving.knative.dev).
+func ambiguousKindResources() []*metav1.APIResourceList {
+	return []*metav1.APIResourceList{
+		{
+			GroupVersion: "route.openshift.io/v1",
+			APIResources: []metav1.APIResource{
+				{Name: "routes", SingularName: "route", Kind: "Route", Namespaced: true},
+			},
+		},
+		{
+			GroupVersion: "serving.knative.dev/v1",
+			APIResources: []metav1.APIResource{
+				{Name: "routes", SingularName: "route", Kind: "Route", Namespaced: true},
+			},
+		},
+	}
+}
+
 func newFakeDiscovery(resources ...[]*metav1.APIResourceList) *fakediscovery.FakeDiscovery {
 	cs := fakeclientset.NewSimpleClientset()
 	fd := cs.Discovery().(*fakediscovery.FakeDiscovery)
@@ -622,6 +642,57 @@ var _ = Describe("API Resource Registry (#1029)", func() {
 			Expect(registry.IsCoreBatchAppsKind("Job")).To(BeTrue())
 			Expect(registry.IsCoreBatchAppsKind("BuildConfig")).To(BeFalse())
 			Expect(registry.IsCoreBatchAppsKind("Route")).To(BeFalse())
+		})
+	})
+
+	// =========================================================================
+	// Ambiguous Kind Disambiguation (#2066)
+	// =========================================================================
+	Context("Ambiguous Kind Disambiguation", func() {
+		It("UT-GW-2066-001: KindToGVRCandidates returns all discovered groups for an ambiguous kind", func() {
+			fd := newFakeDiscovery(ambiguousKindResources())
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			candidates, ok := registry.KindToGVRCandidates("Route")
+			Expect(ok).To(BeTrue())
+			Expect(candidates).To(HaveLen(2), "Route exists in two independent API groups (#1040)")
+
+			groups := make([]string, 0, len(candidates))
+			for _, c := range candidates {
+				groups = append(groups, c.Group)
+			}
+			Expect(groups).To(ConsistOf("route.openshift.io", "serving.knative.dev"))
+		})
+
+		It("UT-GW-2066-002: KindToGVRCandidates returns a single candidate for an unambiguous kind (regression guard)", func() {
+			fd := newFakeDiscovery(standardResources())
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			candidates, ok := registry.KindToGVRCandidates("Deployment")
+			Expect(ok).To(BeTrue())
+			Expect(candidates).To(HaveLen(1))
+			Expect(candidates[0].Group).To(Equal("apps"))
+		})
+
+		It("UT-GW-2066-003: KindToGVR still returns exactly one GVR for an ambiguous kind (existing behavior preserved)", func() {
+			fd := newFakeDiscovery(ambiguousKindResources())
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			gvr, ok := registry.KindToGVR("Route")
+			Expect(ok).To(BeTrue())
+			Expect(gvr.Resource).To(Equal("routes"))
+		})
+
+		It("UT-GW-2066-004: unknown kind returns false from KindToGVRCandidates", func() {
+			fd := newFakeDiscovery(standardResources())
+			registry, err := adapters.NewAPIResourceRegistry(fd)
+			Expect(err).ToNot(HaveOccurred())
+
+			_, ok := registry.KindToGVRCandidates("TotallyUnknownKind")
+			Expect(ok).To(BeFalse())
 		})
 	})
 })
