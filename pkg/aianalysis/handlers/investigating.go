@@ -974,7 +974,33 @@ func (h *InvestigatingHandler) handleSessionPollError(ctx context.Context, analy
 // handleSessionLost handles session loss (404 on poll) with regeneration logic.
 // BR-AA-HAPI-064.5: Increment generation, clear ID, requeue for re-submit
 // BR-AA-HAPI-064.6: Fail with SessionRegenerationExceeded if cap reached
+//
+// #2080: before declaring the session lost, re-check whether AF has already
+// correlated a different, currently-active KA session onto this RR's
+// InvestigationSession. A rapid, legitimate session hand-off (autonomous->
+// interactive upgrade immediately followed by a takeover, or several hops in
+// quick succession) can produce a 404 for an already-superseded session ID
+// before checkISMismatchAndCancel/checkCorrelatedSessionBeforeFinalizing get
+// another chance to run -- exhausting the regeneration cap even though the
+// real, underlying investigation had already completed. This re-check is
+// symmetric to those two call sites (same tryAdoptCorrelatedSession helper,
+// #2029 Part B) but closes the gap for the session-lost path specifically.
+//
+// Residual (accepted, theoretical) risk: if this re-check races and misses
+// (correlation hasn't landed yet at the exact instant of this 404), the 404
+// below still counts as one regeneration before the backoff gives the race
+// room to settle on the next attempt. No evidence of this occurring in the
+// #2080 incident's log timeline; the backoff below already shrinks this
+// window to well under the ~1-2s cascade duration observed there.
 func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+	if h.isChecker != nil {
+		if rrName := analysis.Spec.RemediationRequestRef.Name; rrName != "" {
+			if h.tryAdoptCorrelatedSession(ctx, analysis, rrName, "session-lost-recheck") {
+				return ctrl.Result{Requeue: true}, nil
+			}
+		}
+	}
+
 	session := analysis.Status.KASession
 	session.Generation++
 	session.ID = ""
@@ -1033,8 +1059,14 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 	aianalysis.SetInvestigationSessionReady(analysis, false, aianalysis.ReasonSessionLost,
 		fmt.Sprintf("Session lost, regenerating (generation %d/%d)", session.Generation, MaxSessionRegenerations))
 
-	// Requeue immediately for re-submit
-	return ctrl.Result{Requeue: true}, nil
+	// #2080: back off before resubmitting instead of an immediate tight-loop
+	// requeue -- gives a legitimate multi-hop session hand-off room to settle
+	// (see the re-check above) before the next regeneration is even
+	// attempted. Reuses the same DD-SHARED-001-compliant backoff calculator
+	// as BR-AI-009's transient-error retry (handleError), keyed on
+	// session.Generation instead of ConsecutiveFailures.
+	backoffDuration := h.errorClassifier.GetRetryDelay(int(session.Generation))
+	return ctrl.Result{RequeueAfter: backoffDuration}, nil
 }
 
 // handleSessionGetResultError handles errors when fetching the session result.
