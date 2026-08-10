@@ -398,13 +398,14 @@ func (h *Handler) SessionSnapshotAPIV1IncidentSessionSessionIDSnapshotGet(
 // MapIncidentRequestToSignal converts an OpenAPI IncidentRequest to an internal SignalContext.
 func MapIncidentRequestToSignal(req *agentclient.IncidentRequest) katypes.SignalContext {
 	sc := katypes.SignalContext{
-		Name:             req.SignalName,
-		Namespace:        req.ResourceNamespace,
-		Severity:         string(req.Severity),
-		Message:          req.ErrorMessage,
-		IncidentID:       req.IncidentID,
-		ResourceKind:     req.ResourceKind,
-		ResourceName:     req.ResourceName,
+		Name:               req.SignalName,
+		Namespace:          req.ResourceNamespace,
+		Severity:           string(req.Severity),
+		Message:            req.ErrorMessage,
+		IncidentID:         req.IncidentID,
+		ResourceKind:       req.ResourceKind,
+		ResourceName:       req.ResourceName,
+		ResourceAPIVersion: req.ResourceAPIVersion, // #2064: was omitted, KA's SignalContext never got apiVersion from the wire
 		// BR-FLEET-054: cluster_name carries the raw cluster identifier
 		// (openapi.json IncidentRequest.cluster_name doc comment), propagated
 		// from RemediationRequest.Spec.ClusterID via AIAnalysis.Spec.ClusterID
