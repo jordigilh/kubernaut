@@ -187,6 +187,30 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		_, _ = scanDecisionEvent(resp) // drain to EOF; no decision event expected here
 	}
 
+	// groundSessionBeta is groundSession's/groundSessionAlt's third sibling,
+	// dedicated to E2E-AF-1396-001 alone (structured-decision-target-3,
+	// StructuredDecisionGrounding3 in apifrontend_prometheus_e2e.go / the
+	// "seed third fixture context 1396 001" mock-LLM keyword).
+	// groundSessionAlt above only closed contention for the 3rd It
+	// (1396-002) relative to the first two -- it did not address that the
+	// 2nd It (1396-001) still shares groundSession's ORIGINAL target with
+	// the 1st It (1395-001), so 1396-001's own grounding call could just as
+	// nondeterministically inherit 1395-001's still-open KA session and
+	// observe session_active instead of a clean grounded result, which per
+	// investigateHasGroundedContent (phase_guard.go) deterministically
+	// fails present_decision's grounding guard closed -- surfacing as an
+	// empty payload.RCA.Severity instead of the scripted "critical" (CI run
+	// 31351842574, "severity must flow from mock-LLM through AF to SSE").
+	// A third dedicated target removes the last remaining shared fixture in
+	// this Ordered block.
+	groundSessionBeta := func(ctx context.Context, contextID string) {
+		resp, err := a2aSSEPost(ctx, a2aMessageStreamWithContext(contextID+"-ground", contextID,
+			"seed third fixture context 1396 001 for pod structured-decision-target-3 in af-structured-decision-e2e"))
+		Expect(err).NotTo(HaveOccurred(), "grounding kubernaut_investigate call must succeed")
+		defer func() { _ = resp.Body.Close() }()
+		_, _ = scanDecisionEvent(resp) // drain to EOF; no decision event expected here
+	}
+
 	It("E2E-AF-1395-001: SI-10 — structured decision payload > 512 chars arrives intact via SSE", func() {
 		readCtx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 		defer cancel()
@@ -221,7 +245,7 @@ var _ = Describe("Structured Decision Payload E2E — #1395 #1396", Ordered, Lab
 		defer cancel()
 
 		const ctxID = "ctx-e2e-structured-002"
-		groundSession(readCtx, ctxID)
+		groundSessionBeta(readCtx, ctxID)
 
 		resp, err := a2aSSEPost(readCtx, a2aMessageStreamWithContext("e2e-structured-002-decision", ctxID, "present structured rca decision"))
 		Expect(err).NotTo(HaveOccurred())

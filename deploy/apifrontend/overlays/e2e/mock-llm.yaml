@@ -223,6 +223,29 @@ data:
             name: "structured-decision-target-2"
             kind: "Pod"
 
+      - name: "af_structured_decision_ground_3"
+        # Dedicated grounding call for structured_decision_e2e_test.go's
+        # E2E-AF-1396-001 alone. af_structured_decision_ground_2 above only
+        # closed contention for the 3rd It (1396-002) relative to the first
+        # two -- it did not address that the 2nd It (1396-001) still shares
+        # af_structured_decision_ground's target with the 1st It
+        # (1395-001), so 1396-001's own grounding call could nondeterministically
+        # inherit 1395-001's still-open KA session and observe
+        # session_active, surfacing as an empty (fail-closed)
+        # payload.RCA.Severity instead of the scripted "critical" (CI run
+        # 31351842574, E2E-AF-1396-001, "severity must flow from mock-LLM
+        # through AF to SSE"). See StructuredDecisionGrounding3
+        # (apifrontend_prometheus_e2e.go).
+        keywords: ["seed third fixture context 1396 001"]
+        match_last_only: true
+        tool_call:
+          name: "kubernaut_investigate"
+          arguments:
+            api_version: "v1"
+            namespace: "af-structured-decision-e2e"
+            name: "structured-decision-target-3"
+            kind: "Pod"
+
       - name: "af_structured_decision"
         keywords: ["structured decision", "present structured rca decision"]
         match_last_only: true

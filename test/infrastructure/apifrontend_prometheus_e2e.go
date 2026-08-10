@@ -255,6 +255,20 @@ func AFInjectOTLPMetrics(ctx context.Context, prometheusURL, metricName string, 
 //     gives this one test its own RR so it never contends with #1395-001/
 //     #1396-001's still-open sessions, matching the fix already applied
 //     once above for cross-Describe-block contention.
+//   - StructuredDecisionGrounding3: same shape again
+//     (name="structured-decision-target-3"), dedicated to
+//     structured_decision_e2e_test.go's E2E-AF-1396-001 alone. The
+//     StructuredDecisionGrounding2 fix above only closed contention for
+//     the 3rd It (1396-002) relative to the first two -- it did not
+//     address that the 2nd It (1396-001) still shares #1395-001's ORIGINAL
+//     target, so 1396-001's own groundSession call can just as
+//     nondeterministically inherit #1395-001's still-open KA session and
+//     observe "session_active", surfacing as an empty (fail-closed)
+//     payload.RCA.Severity instead of the scripted "critical" (CI run
+//     31351842574, E2E-AF-1396-001, "severity must flow from mock-LLM
+//     through AF to SSE"). A third dedicated target removes the last
+//     remaining shared fixture in this Ordered block: each of the 3 Its
+//     now grounds against its own RR.
 //
 // #1839 follow-up (no fixtures in "default"): HighCPU and HighMemory used to
 // target namespace="default" (unlike DiskPressure/NetworkLatency, which
@@ -389,4 +403,15 @@ groups:
           name: structured-decision-target-2
         annotations:
           summary: "Synthetic grounding alert for structured_decision_e2e_test.go's E2E-AF-1396-002 (dedicated target, avoids intra-suite session_active contention with #1395-001/#1396-001)"
+      - alert: StructuredDecisionGrounding3
+        expr: vector(1) > 0
+        for: 0s
+        labels:
+          severity: warning
+          source: prometheus
+          namespace: af-structured-decision-e2e
+          kind: Pod
+          name: structured-decision-target-3
+        annotations:
+          summary: "Synthetic grounding alert for structured_decision_e2e_test.go's E2E-AF-1396-001 (dedicated target -- #1396-002's own fix above only closed contention for the 3rd It relative to the first two; the 2nd It (1396-001) still shared #1395-001's target, CI run 31351842574)"
 `
