@@ -3,6 +3,7 @@ package tools_test
 import (
 	"encoding/json"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -100,6 +101,43 @@ var _ = Describe("present_decision", func() {
 		Expect(decoded.CausalChain).To(HaveLen(3))
 		Expect(decoded.ToolCallsCount).To(Equal(19))
 		Expect(decoded.LLMTurns).To(Equal(17))
+	})
+
+	It("UT-AF-2073-001: SI-10 RCAData's ADK-generated JSON schema does not require tool_calls_count/llm_turns", func() {
+		// #2073: prompt.txt never instructs the LLM to compute tool_calls_count
+		// or llm_turns, but the ADK-generated schema (github.com/google/
+		// jsonschema-go) marks every non-omitempty field as required --
+		// causing every kubernaut_present_decision call to fail schema
+		// validation before the handler ever runs.
+		schema, err := jsonschema.For[tools.RCAData](nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(schema.Required).NotTo(ContainElement("tool_calls_count"),
+			"the LLM is never told to supply tool_calls_count -- marking it required makes every present_decision call fail schema validation (#2073)")
+		Expect(schema.Required).NotTo(ContainElement("llm_turns"),
+			"the LLM is never told to supply llm_turns -- marking it required makes every present_decision call fail schema validation (#2073)")
+		Expect(schema.Required).To(ContainElement("severity"),
+			"fields the LLM IS expected to supply must remain required")
+	})
+
+	It("UT-AF-2073-002: AU-3 RCAData omits zero-value tool_calls_count/llm_turns from JSON but still round-trips genuine values", func() {
+		rca := tools.RCAData{Severity: "critical", Confidence: 0.9}
+		data, err := json.Marshal(rca)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).NotTo(ContainSubstring("tool_calls_count"),
+			"an unset count must not appear in the payload the LLM is never told to populate (#2073)")
+		Expect(string(data)).NotTo(ContainSubstring("llm_turns"))
+
+		rcaWithCounts := tools.RCAData{Severity: "critical", Confidence: 0.9, ToolCallsCount: 5, LLMTurns: 2}
+		data2, err := json.Marshal(rcaWithCounts)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data2)).To(ContainSubstring(`"tool_calls_count":5`),
+			"a genuinely supplied count must still round-trip correctly (no regression vs UT-AF-1396-001)")
+		Expect(string(data2)).To(ContainSubstring(`"llm_turns":2`))
+
+		var decoded tools.RCAData
+		Expect(json.Unmarshal(data2, &decoded)).To(Succeed())
+		Expect(decoded.ToolCallsCount).To(Equal(5))
+		Expect(decoded.LLMTurns).To(Equal(2))
 	})
 
 	It("UT-AF-1396-002: AU-3 WorkflowOption.Parameters serializes as JSON object", func() {

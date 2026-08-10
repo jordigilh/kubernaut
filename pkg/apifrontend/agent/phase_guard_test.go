@@ -745,8 +745,16 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2023)", func() {
 		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(args["rca"]).To(Equal(fabricatedArgs()["rca"]),
-			"with no structured rca to pass through, the harness has nothing authoritative to substitute")
+		rca, ok := args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rca["severity"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["severity"]),
+			"with no structured rca to pass through, the harness has nothing authoritative to substitute for severity/confidence/causal_chain")
+		Expect(rca["confidence"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["confidence"]))
+		Expect(rca["causal_chain"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["causal_chain"]))
+		Expect(rca["tool_calls_count"]).To(Equal(0),
+			"#2073: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
+		Expect(rca["llm_turns"]).To(Equal(0),
+			"#2073: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
 	})
 
 	It("UT-AF-2023-012: clears a stale rca pass-through after a later investigate call that reported no rca", func() {
@@ -766,8 +774,14 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2023)", func() {
 		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(args["rca"]).To(Equal(fabricatedArgs()["rca"]),
+		rca, ok := args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rca["severity"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["severity"]),
 			"the first call's rca must not leak into a present_decision grounded by the second, rca-less call")
+		Expect(rca["tool_calls_count"]).To(Equal(0),
+			"#2073: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
+		Expect(rca["llm_turns"]).To(Equal(0),
+			"#2073: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
 	})
 
 	It("UT-AF-2023-013: overrides present_decision content when kubernaut_investigate's shadow-agent alignment verdict is not aligned, even with summary/rca present", func() {
@@ -844,9 +858,15 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2023)", func() {
 		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(args["rca"]).To(Equal(fabricatedArgs()["rca"]),
+		rca, ok := args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rca["severity"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["severity"]),
 			"#2068: a Provisional (AF-synthesized severity-triage guess, not a genuine KA finding) rca must "+
 				"not clobber present_decision's own rca -- same treatment as 'no structured rca at all' (UT-AF-2023-011)")
+		Expect(rca["tool_calls_count"]).To(Equal(0),
+			"#2073: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
+		Expect(rca["llm_turns"]).To(Equal(0),
+			"#2073: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
 	})
 
 	It("UT-AF-2068-004: still overwrites present_decision's rca when kubernaut_investigate's rca is genuinely KA-reported (Provisional unset/false)", func() {
@@ -888,8 +908,14 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2023)", func() {
 		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(args["rca"]).To(Equal(fabricatedArgs()["rca"]),
+		rca, ok := args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rca["severity"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["severity"]),
 			"a malformed rca payload has nothing authoritative to substitute, same as UT-AF-2023-011")
+		Expect(rca["tool_calls_count"]).To(Equal(0),
+			"#2073: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
+		Expect(rca["llm_turns"]).To(Equal(0),
+			"#2073: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
 	})
 })
 
