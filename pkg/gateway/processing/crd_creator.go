@@ -58,7 +58,7 @@ type RetryObserver interface {
 // - Example: rr-b157a3a9e42f-1c2b5576
 // - Reason: Human-readable fingerprint prefix + UUID suffix for zero collision risk
 type CRDCreator struct {
-	k8sClient           k8s.ClientInterface  // TDD GREEN: Interface supports circuit breaker (BR-GATEWAY-093)
+	k8sClient           k8s.ClientInterface   // TDD GREEN: Interface supports circuit breaker (BR-GATEWAY-093)
 	logger              logr.Logger           // DD-005: logr.Logger for unified logging
 	metrics             *metrics.Metrics      // Day 9 Phase 6B Option C1: Centralized metrics
 	retryConfig         *config.RetrySettings // BR-GATEWAY-111: Retry configuration
@@ -137,6 +137,7 @@ func NewCRDCreatorWithClock(k8sClient k8s.ClientInterface, logger logr.Logger, m
 //   - BR-GATEWAY-112: Error Classification (retryable vs non-retryable)
 //   - BR-GATEWAY-113: Exponential Backoff with jitter (shared utility)
 //   - BR-GATEWAY-114: Retry Metrics
+//
 // ========================================
 func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1alpha1.RemediationRequest, signal *types.NormalizedSignal) error {
 	startTime := c.clock.Now()
@@ -193,8 +194,8 @@ func (c *CRDCreator) createCRDWithRetry(ctx context.Context, rr *remediationv1al
 // GAP-10: Simplified error classification without external dependencies.
 // errorPattern defines a pattern to match against error strings
 type errorPattern struct {
-	patterns []string // Patterns to match (case-insensitive)
-	errorType string  // Error type to return if matched
+	patterns  []string // Patterns to match (case-insensitive)
+	errorType string   // Error type to return if matched
 }
 
 // errorPatterns defines the mapping of error patterns to error types
@@ -330,10 +331,10 @@ func (c *CRDCreator) CreateRemediationRequest(
 				"app.kubernetes.io/managed-by": "gateway-service",
 				"app.kubernetes.io/component":  "remediation",
 			},
-		Annotations: map[string]string{
-			// Timestamp for audit trail (RFC3339 format)
-			"kubernaut.ai/created-at": c.clock.Now().UTC().Format(time.RFC3339),
-		},
+			Annotations: map[string]string{
+				// Timestamp for audit trail (RFC3339 format)
+				"kubernaut.ai/created-at": c.clock.Now().UTC().Format(time.RFC3339),
+			},
 		},
 		Spec: remediationv1alpha1.RemediationRequestSpec{
 			// Core signal identification
@@ -564,10 +565,14 @@ func (c *CRDCreator) validateResourceInfo(signal *types.NormalizedSignal) error 
 func (c *CRDCreator) buildTargetResource(signal *types.NormalizedSignal) remediationv1alpha1.ResourceIdentifier {
 	// Note: Validation already performed by validateResourceInfo()
 	// Kind and Name are guaranteed to be non-empty at this point
+	// #2066: APIVersion carries through from whichever adapter resolved it
+	// (K8s Event: copy-through of involvedObject.apiVersion; Prometheus:
+	// discovery-resolved GVR) — empty when the adapter couldn't determine it.
 	return remediationv1alpha1.ResourceIdentifier{
-		Kind:      signal.Resource.Kind,
-		Name:      signal.Resource.Name,
-		Namespace: signal.Resource.Namespace,
+		Kind:       signal.Resource.Kind,
+		Name:       signal.Resource.Name,
+		Namespace:  signal.Resource.Namespace,
+		APIVersion: signal.Resource.APIVersion,
 	}
 }
 
@@ -778,4 +783,3 @@ func (c *CRDCreator) waitWithBackoff(ctx context.Context, attempt int, err error
 		return ctx.Err()
 	}
 }
-
