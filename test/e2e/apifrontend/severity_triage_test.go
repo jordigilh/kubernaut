@@ -13,9 +13,6 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	remediationv1alpha1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
@@ -36,11 +33,15 @@ var _ = Describe("Severity Triage Pipeline (G12)", Label("e2e", "phase4", "g12")
 		Expect(err).NotTo(HaveOccurred(), "SRE DEX token")
 		Expect(authToken).NotTo(BeEmpty())
 
+		// #2022/#2025/ADR-053: AF's scope check now fail-closes to unmanaged
+		// for any namespace lacking the kubernaut.ai/managed label, so every
+		// E2E fixture namespace that expects kubernaut_investigate/
+		// kubernaut_remediate to actually create an RR must be labeled
+		// managed, matching what a real Kubernaut deployment would already
+		// have configured.
 		for _, nsName := range []string{"sev-tier1-ns", "sev-tier15-ns", "sev-tier2-ns", "no-data-ns", "no-rules-ns", "sev-userhint-ns"} {
-			ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: nsName}}
-			err = k8sClient.Create(context.Background(), ns)
-			if err != nil && !apierrors.IsAlreadyExists(err) {
-				_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: failed to create namespace %s: %v\n", nsName, err)
+			if err := kinfra.EnsureManagedNamespace(context.Background(), k8sClient, nsName); err != nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: failed to ensure managed namespace %s: %v\n", nsName, err)
 			}
 		}
 	})

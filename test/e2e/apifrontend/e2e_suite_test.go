@@ -124,6 +124,27 @@ var _ = SynchronizedBeforeSuite(
 		clientset, err = kubernetes.NewForConfig(restCfg)
 		Expect(err).NotTo(HaveOccurred(), "failed to create kubernetes clientset")
 
+		// #2022/#2025/ADR-053: the mock-LLM's dedicated investigate fixture
+		// (af_investigate/af_progressive_investigate scenarios, see
+		// deploy/apifrontend/overlays/e2e/mock-llm.yaml) targets this
+		// namespace, which — unlike sev-tier1-ns et al. — was never actually
+		// created as a real Namespace object (only referenced as a string in
+		// RR specs and Prometheus alert labels). AF's scope check now
+		// fail-closes to unmanaged when neither the target resource nor its
+		// namespace exists/is labeled, so this namespace must exist and
+		// carry the managed label for kubernaut_investigate to proceed past
+		// scope validation, matching a real Kubernaut deployment's setup.
+		Expect(kinfra.EnsureManagedNamespace(context.Background(), k8sClient, "af-investigate-e2e")).
+			To(Succeed(), "af-investigate-e2e namespace must exist and be labeled managed")
+
+		// structured_decision_e2e_test.go's groundSession helper uses its own
+		// dedicated namespace/target (StructuredDecisionGrounding alert,
+		// apifrontend_prometheus_e2e.go) rather than reusing af-investigate-e2e
+		// above, to avoid fixture contention with concurrent specs under
+		// Ginkgo --procs>1 (CI run 31320575553, E2E-AF-1395-001).
+		Expect(kinfra.EnsureManagedNamespace(context.Background(), k8sClient, "af-structured-decision-e2e")).
+			To(Succeed(), "af-structured-decision-e2e namespace must exist and be labeled managed")
+
 		healthURL := "http://localhost:18081"
 		Eventually(func() error {
 			resp, err := http.Get(healthURL + "/healthz") //nolint:gosec,noctx // E2E health probe

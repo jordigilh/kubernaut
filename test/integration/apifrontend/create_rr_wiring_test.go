@@ -63,6 +63,11 @@ func (a *alwaysFiringPromClientIT) InstantQuery(_ context.Context, _ string) (*p
 	return &prom.QueryResult{}, nil
 }
 
+// nolint:unparam // kind always receives "Deployment" today, but call sites
+// span create_rr_wiring_test.go and remediate_wiring_test.go -- dropping the
+// param would require touching every caller in lockstep across both files
+// for a value that may legitimately vary as fixtures grow (mirrors
+// unnamedAlertTestTriagerIT's identical (namespace, kind, name) shape above).
 func defaultTestTriagerIT(namespace, kind, name string) *severity.Triager {
 	return severity.NewTriager(&alwaysFiringPromClientIT{namespace: namespace, kind: kind, name: name}, severity.NewNoopLLMTriager(logr.Discard()), severity.DefaultConfig(), logr.Discard())
 }

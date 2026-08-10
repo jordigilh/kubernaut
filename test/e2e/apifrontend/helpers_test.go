@@ -100,16 +100,7 @@ func a2aTasksSendWithContext(id, contextID, text string) string {
 // SessionInterceptor from routing independent SSE streams to a shared session,
 // which causes phantom connections that never drain.
 func a2aMessageStream(id, text string) string {
-	return buildJSONRPC(id, "message/stream", map[string]interface{}{
-		"message": map[string]interface{}{
-			"messageId": "msg-" + id,
-			"contextId": "ctx-" + id,
-			"role":      "user",
-			"parts": []map[string]interface{}{
-				{"kind": "text", "text": text},
-			},
-		},
-	})
+	return a2aMessageStreamWithContext(id, "ctx-"+id, text)
 }
 
 // a2aMessageStreamWithContext is like a2aMessageStream but takes an explicit
