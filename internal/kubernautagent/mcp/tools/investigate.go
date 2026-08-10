@@ -164,6 +164,16 @@ type TimeoutTracker interface {
 	ClearActiveCancel(sessionID string)
 }
 
+// AutoCloseTombstone tracks interactive sessions the backend recently
+// auto-closed on its own, so a racing kubernaut_complete_no_action call can
+// recognize "already resolved" instead of erroring (#2075). Implemented by
+// *mcp.AutoCloseTombstone; written by InvestigateTool's no_matching_workflows
+// auto-close, read by CompleteNoActionTool.Handle.
+type AutoCloseTombstone interface {
+	Mark(rrID string)
+	WasRecentlyAutoClosed(rrID string) bool
+}
+
 // withInactivityCancel derives a cancellable context from ctx and registers
 // its CancelFunc with the timeout tracker so that, if sessionID's inactivity
 // timer expires while this action is still in flight, the action's context
@@ -220,22 +230,23 @@ func (NopAutonomousManager) EmitSessionEndedByRR(string, string)                
 // start, message, complete, cancel, takeover, discover_workflows.
 // BR-INTERACTIVE-001, BR-INTERACTIVE-004.
 type InvestigateTool struct {
-	sessions       mcpinternal.SessionManager
-	runner         InvestigatorRunner
-	recon          mcpinternal.ContextReconstructor
-	autoMgr        AutonomousSessionManager
-	httpCompleter  HTTPSessionCompleter
-	signalResolver SignalContextResolver
-	rrChecker      RRExistenceChecker
-	catalog        WorkflowCatalog
-	metrics        ToolMetrics
-	rateLimiter    MessageRateLimiter
-	timeoutTracker TimeoutTracker
-	auditStore     audit.AuditStore
-	logger         logr.Logger
-	notifyFn       func(sessionID, msg string) // optional: delivers timeout warnings to client
-	sessionMu      sync.Map                    // rrID -> *sync.Mutex (per-session serialization)
-	reconHistory   sync.Map                    // rrID -> []LLMMessage (reconstructed context for LLM)
+	sessions           mcpinternal.SessionManager
+	runner             InvestigatorRunner
+	recon              mcpinternal.ContextReconstructor
+	autoMgr            AutonomousSessionManager
+	httpCompleter      HTTPSessionCompleter
+	signalResolver     SignalContextResolver
+	rrChecker          RRExistenceChecker
+	catalog            WorkflowCatalog
+	metrics            ToolMetrics
+	rateLimiter        MessageRateLimiter
+	timeoutTracker     TimeoutTracker
+	auditStore         audit.AuditStore
+	autoCloseTombstone AutoCloseTombstone
+	logger             logr.Logger
+	notifyFn           func(sessionID, msg string) // optional: delivers timeout warnings to client
+	sessionMu          sync.Map                    // rrID -> *sync.Mutex (per-session serialization)
+	reconHistory       sync.Map                    // rrID -> []LLMMessage (reconstructed context for LLM)
 }
 
 // InvestigateOption configures optional dependencies for InvestigateTool.
@@ -325,6 +336,18 @@ func WithAuditStore(store audit.AuditStore, logger logr.Logger) InvestigateOptio
 func WithWorkflowCatalog(catalog WorkflowCatalog) InvestigateOption {
 	return func(t *InvestigateTool) {
 		t.catalog = catalog
+	}
+}
+
+// WithInvestigateAutoCloseTombstone sets the tombstone that records
+// sessions this tool auto-closes on its own (#2075), e.g. via
+// no_matching_workflows, so a racing kubernaut_complete_no_action call can
+// recognize the session as already resolved instead of erroring.
+func WithInvestigateAutoCloseTombstone(tombstone AutoCloseTombstone) InvestigateOption {
+	return func(t *InvestigateTool) {
+		if tombstone != nil {
+			t.autoCloseTombstone = tombstone
+		}
 	}
 }
 
@@ -1053,6 +1076,7 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 			autoMgr := t.autoMgr
 			completer := t.httpCompleter
 			sessions := t.sessions
+			tombstone := t.autoCloseTombstone
 			rrID := input.RRID
 			sessionID := sess.SessionID
 			result := workflowResult
@@ -1069,6 +1093,13 @@ func (t *InvestigateTool) handleDiscoverWorkflows(ctx context.Context, input Inv
 				// closes.
 				autoMgr.EmitSessionEndedByRR(rrID, "no_matching_workflows")
 				CompleteHTTPSession(completer, rrID, result, logger, "no_matching_workflows")
+				// #2075: mark BEFORE releasing the lease, so a
+				// complete_no_action call that observes IsDriverActive==false
+				// can never find a tombstone miss for a release that already
+				// happened by the time it checks.
+				if tombstone != nil {
+					tombstone.Mark(rrID)
+				}
 				if releaseErr := sessions.Release(sessionID, "no_matching_workflows"); releaseErr != nil {
 					if !errors.Is(releaseErr, mcpinternal.ErrSessionNotFound) {
 						logger.Error(releaseErr, "failed to release MCP lease", "session_id", sessionID)
