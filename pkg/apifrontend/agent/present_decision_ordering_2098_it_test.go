@@ -64,11 +64,19 @@ var _ = Describe("IT #2098 — present_decision ordering guard through the full 
 		Expect(invErr).NotTo(HaveOccurred())
 
 		// --- Ordering violation: present_decision called before discovery ---
+		// rca carries a fabricated tool_calls_count (mirroring a mock/hallucinated
+		// LLM payload) to prove the #2103-regression fix below: even though this
+		// call is rejected, part_converter.go's emitDecisionEvent reads these
+		// SAME args (by reference) directly off the model's raw FunctionCall to
+		// build the AU-3 SSE decision artifact, independent of this before
+		// callback's block/allow outcome -- so grounding must still sanitize
+		// args in place before the ordering check runs (E2E-AF-1396-001).
 		prematureArgs := map[string]any{
 			"session_id": "sess-2098-it",
 			"summary":    "should never reach HandlePresentDecision",
 			"rca": map[string]any{
 				"severity": "critical", "confidence": 0.9, "target": "Deployment/checkout-service",
+				"tool_calls_count": 19, "llm_turns": 17,
 			},
 			"options": []any{},
 		}
@@ -76,6 +84,14 @@ var _ = Describe("IT #2098 — present_decision ordering guard through the full 
 		Expect(cbErr).NotTo(HaveOccurred())
 		Expect(cbResult).NotTo(BeNil(), "the premature call must be rejected by the before callback")
 		Expect(cbResult["error"]).To(ContainSubstring("kubernaut_discover_workflows"))
+
+		rcaMap, ok := prematureArgs["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rcaMap["tool_calls_count"]).To(Equal(0),
+			"#2103-regression: enforceGroundingGuard must still zero the fabricated tool_calls_count in place "+
+				"even when the call is rejected by the #2098 ordering guard, since the SSE decision artifact is "+
+				"built from these same (by-reference) args regardless of this callback's block/allow outcome")
+		Expect(rcaMap["llm_turns"]).To(Equal(0))
 
 		// --- Corrected ordering: discover_workflows runs, then retry ---
 		_, dwErr := after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil,

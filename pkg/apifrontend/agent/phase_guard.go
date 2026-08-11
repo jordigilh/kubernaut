@@ -21,7 +21,9 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
+	"google.golang.org/adk/model"
 	adksession "google.golang.org/adk/session"
 	"google.golang.org/adk/tool"
 
@@ -54,10 +56,9 @@ const errCheckpointBlocked = "this action requires explicit user confirmation fi
 // #2098 ordering guard when kubernaut_present_decision is attempted before
 // kubernaut_discover_workflows has succeeded, in an interaction mode where
 // that ordering is load-bearing. Mirrors errCheckpointBlocked's
-// reject-and-let-the-model-retry pattern (DD-AF-011, #1899) rather than
-// enforceGroundingGuard's mutate-and-continue pattern: unlike a fabrication
-// risk, there is no honest content to substitute here, so the correct
-// remedy is for the model to call discover_workflows and retry.
+// reject-and-let-the-model-retry pattern (DD-AF-011, #1899): the real tool
+// handler never runs, and the model is expected to call discover_workflows
+// and retry.
 const errDiscoveryRequiredBeforeDecision = "kubernaut_discover_workflows has not been called yet -- call kubernaut_discover_workflows first, then retry kubernaut_present_decision"
 
 // noGroundedContentSummary is the fixed, honest payload #2023's grounding
@@ -126,15 +127,23 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 		// present_decision still executes and the AU-3 structured artifact
 		// is always emitted -- only a fabricated narrative is blocked.
 		if t.Name() == presentDecisionTool {
-			// #2098: reject-and-retry ordering guard, checked BEFORE the
-			// #2023 grounding guard runs -- a premature call must not even
-			// reach enforceGroundingGuard's mutation/masking logic.
+			// #2098: enforceGroundingGuard also runs unconditionally here,
+			// before the ordering check below, even though this call may
+			// end up rejected -- defense-in-depth for the tool's own
+			// execution-time args (matters for the unblocked path and any
+			// non-SSE consumer of HandlePresentDecision's FunctionResponse).
+			// This is NOT what makes the AU-3 SSE artifact itself honest,
+			// though: sanitizePresentDecisionResponse (an AfterModelCallback,
+			// registered in root.go) is what actually closes that loop --
+			// see its doc comment for why a BeforeToolCallback mutation
+			// alone is too late for that purpose (#2103-regression,
+			// E2E-AF-1396-001).
+			enforceGroundingGuard(ctx, args)
 			if presentDecisionRequiresDiscoveryFirst(ctx.State()) {
 				logr.FromContextOrDiscard(ctx).Info("phase-guard blocked present_decision",
 					"tool", t.Name(), "reason", "discover_workflows_not_yet_succeeded")
 				return map[string]any{"error": errDiscoveryRequiredBeforeDecision}, nil
 			}
-			enforceGroundingGuard(ctx, args)
 			return nil, nil
 		}
 
@@ -592,6 +601,48 @@ func canonicalGroundedRCA(rca *tools.InvestigateRCA) *tools.RCAData {
 	}
 }
 
+// sanitizePresentDecisionResponse is an AfterModelCallback (registered in
+// root.go's AfterModelCallbacks) that applies enforceGroundingGuard's
+// grounding sanitization directly to the model's own raw
+// kubernaut_present_decision FunctionCall.Args, in place, immediately after
+// the model responds -- BEFORE ADK finalizes and yields that response as an
+// SSE event.
+//
+// #2103-regression (E2E-AF-1396-001: ToolCallsCount 19 instead of the
+// grounded 0): part_converter.go's emitDecisionEvent builds the AU-3
+// decision artifact straight from this same FunctionCall (by reference --
+// google.golang.org/adk@v1.5.1/internal/llminternal/base_flow.go's
+// runOneStep calls yield(modelResponseEvent, ...) at the point the model's
+// turn is finalized, and only afterwards calls handleFunctionCalls, which is
+// what invokes BeforeToolCallback/phaseGuardBefore). enforceGroundingGuard
+// mutating args from phaseGuardBefore -- the ONLY place it ran before this
+// callback existed -- therefore always ran too late to affect what the
+// client had already received for that artifact; it only ever reached
+// HandlePresentDecision's own FunctionResponse, which #1408 deliberately
+// suppresses from the SSE stream in favor of this FunctionCall-based
+// artifact. This callback closes that gap by running the identical
+// sanitization at the one point in the pipeline that precedes the yield.
+//
+// phaseGuardBefore still also calls enforceGroundingGuard on the tool's
+// execution-time args (defense-in-depth for the unblocked path, and for any
+// non-SSE consumer of the tool's own FunctionResponse) -- the two calls are
+// idempotent over the same underlying args map.
+func sanitizePresentDecisionResponse(ctx agent.CallbackContext, llmResponse *model.LLMResponse, llmResponseErr error) (*model.LLMResponse, error) {
+	if llmResponseErr != nil || llmResponse == nil || llmResponse.Content == nil {
+		return nil, nil
+	}
+	for _, part := range llmResponse.Content.Parts {
+		if part == nil || part.FunctionCall == nil || part.FunctionCall.Name != presentDecisionTool {
+			continue
+		}
+		if part.FunctionCall.Args == nil {
+			part.FunctionCall.Args = map[string]any{}
+		}
+		enforceGroundingGuard(ctx, part.FunctionCall.Args)
+	}
+	return nil, nil
+}
+
 // enforceGroundingGuard implements #2023's harness-side fabrication guard.
 // Immediately before kubernaut_present_decision executes, it checks whether
 // the most recent kubernaut_investigate call (tracked via
@@ -622,7 +673,7 @@ func canonicalGroundedRCA(rca *tools.InvestigateRCA) *tools.RCAData {
 // "rca" available is AF's own Provisional severity-triage guess rather than
 // a genuine KA finding (session.StateKeyGroundedRCA is never populated with
 // a Provisional rca in the first place; see the after-callback above).
-func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
+func enforceGroundingGuard(ctx agent.CallbackContext, args map[string]any) {
 	if args == nil {
 		return
 	}
@@ -700,7 +751,7 @@ func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
 // actionable error) when the string is empty or does not parse as a JSON
 // array -- this must never mask genuinely malformed input as an
 // empty-but-valid payload (SI-11).
-func repairPresentDecisionOptions(ctx tool.Context, args map[string]any) {
+func repairPresentDecisionOptions(ctx agent.CallbackContext, args map[string]any) {
 	raw, ok := args["options"].(string)
 	if !ok {
 		return
