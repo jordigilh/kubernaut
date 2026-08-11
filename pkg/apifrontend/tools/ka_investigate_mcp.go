@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -952,13 +953,50 @@ func emitEventToA2A(ctx context.Context, evt ka.InvestigationEvent, text string)
 	}
 }
 
+// watchTerminalEventsSafetyNetNs bounds how long WatchTerminalEvents will
+// wait for a terminal event before giving up (#2094). It is deliberately
+// much larger than KA's own inactivity timeout (~10m default) or
+// DefaultSessionTTL (30m per ka/session_pool.go) so it never fires for a
+// legitimately long-running session -- it only bounds the case where the
+// expected session_ended/done signal is truly lost (a pool onRelease
+// callback that never fires, or a dropped events channel). Stored as an
+// atomic.Int64 (nanoseconds) rather than a plain var: WatchTerminalEvents
+// reads it from a newly-spawned goroutine with no happens-before
+// relationship to a test's setup/teardown, so a plain var would be a data
+// race under -race whenever a test overrides it via
+// SetWatchTerminalEventsSafetyNetForTest while a previously-spawned watcher
+// goroutine is still starting up.
+var watchTerminalEventsSafetyNetNs atomic.Int64
+
+func init() {
+	watchTerminalEventsSafetyNetNs.Store(int64(30 * time.Minute))
+}
+
+// SetWatchTerminalEventsSafetyNetForTest overrides the WatchTerminalEvents
+// safety-net timeout for the duration of a test. Test-only. Returns a
+// restore function that must be deferred to reset the previous value.
+func SetWatchTerminalEventsSafetyNetForTest(d time.Duration) (restore func()) {
+	prev := watchTerminalEventsSafetyNetNs.Swap(int64(d))
+	return func() { watchTerminalEventsSafetyNetNs.Store(prev) }
+}
+
 // WatchTerminalEvents watches a residual event channel for a session_ended
 // event after pool inject. When received, it emits a terminal
 // TaskStatusUpdateEvent to the A2A queue via the EventBridge in ctx.
-// Exits deterministically on: session_ended received, events closed, or
-// done closed (pool Release/EvictIdle/DrainAll).  No timer-based safety net.
-// #1438, SI-4.
+// Exits deterministically on: session_ended received, events closed, done
+// closed (pool Release/EvictIdle/DrainAll), or the safety-net timer
+// (watchTerminalEventsSafetyNetNs) elapsing (#2094). The safety-net timer is
+// created once, before the loop, so a steady stream of non-terminal events
+// cannot indefinitely postpone the deadline. watchCtx (the caller's ctx) is
+// detached via context.WithoutCancel by design -- this goroutine must
+// outlive the originating tool call -- so ctx.Done() is deliberately not a
+// fourth exit path here; the safety net is this function's only independent
+// bound. #1438, #2094, SI-4, SI-11.
 func WatchTerminalEvents(ctx context.Context, events <-chan ka.InvestigationEvent, rrID string, done <-chan struct{}) {
+	safetyNetTimeout := time.Duration(watchTerminalEventsSafetyNetNs.Load())
+	safetyNet := time.NewTimer(safetyNetTimeout)
+	defer safetyNet.Stop()
+
 	for {
 		select {
 		case evt, ok := <-events:
@@ -979,6 +1017,11 @@ func WatchTerminalEvents(ctx context.Context, events <-chan ka.InvestigationEven
 				}
 			default:
 			}
+			return
+		case <-safetyNet.C:
+			logr.FromContextOrDiscard(ctx).Info(
+				"WatchTerminalEvents: safety-net timeout reached without a terminal event; exiting to prevent goroutine leak",
+				"rr_id", rrID, "timeout", safetyNetTimeout)
 			return
 		}
 	}
