@@ -55,6 +55,21 @@ const (
 	// kubernaut_select_workflow may run.
 	StateKeyPhase3Blocked = "af_phase3_blocked"
 
+	// StateKeyDiscoverWorkflowsSucceeded records whether
+	// kubernaut_discover_workflows has completed successfully at least
+	// once in the current driver session (#2098). phase_guard.go's
+	// before-callback reads this to reject a premature
+	// kubernaut_present_decision call in interaction modes that don't
+	// otherwise gate discover_workflows behind a human-confirmation
+	// checkpoint (StateKeyPhase2Blocked == false --
+	// full_remediation/full_remediation_autonomous). Reset to false on
+	// every fresh kubernaut_investigate (never kubernaut_reconnect,
+	// matching StateKeyPhase2Blocked/StateKeyInteractionMode's own
+	// investigate-only reset) so a second investigation in the same chat
+	// session can't inherit a stale "discovery already happened" flag
+	// from a prior RemediationRequest.
+	StateKeyDiscoverWorkflowsSucceeded = "af_discover_workflows_succeeded"
+
 	// StateKeyGroundedContentAvailable records whether the most recent
 	// kubernaut_investigate call produced real, groundable RCA content
 	// (#2023). phase_guard.go's harness-enforced grounding guard reads this
