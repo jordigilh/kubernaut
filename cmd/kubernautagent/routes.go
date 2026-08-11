@@ -328,8 +328,19 @@ func buildMCPCoreDeps(ctx context.Context, p mcpHandlerParams) (*mcpCoreDeps, er
 	// paths produce an audit trail, not just action=complete/cancel through InvestigateTool.
 	emitDisconnectAudit := newDisconnectAuditEmitter(auditStore, logger) //nolint:contextcheck // disconnect audit emitter fires asynchronously on session disconnect events, not tied to any single request
 
+	// #2100 (v1.6 clone #2101): SessionJanitor is a backstop sweep for
+	// interactive sessions that never reach an explicit Release path (e.g.
+	// a session whose owning goroutine panics or exits early before the
+	// TTL/inactivity checks in GetDriver ever run against it again) --
+	// without it, those sessions hold their Lease and activeCount slot
+	// until process restart, eroding interactive.maxConcurrentSessions
+	// capacity. Interval reuses cfg.Interactive.SessionTTL so the sweep
+	// never fires earlier than the TTL/inactivity paths already cover.
+	sessionJanitor := mcpkg.NewSessionJanitor(cfg.Interactive.SessionTTL, logger.WithName("session-janitor"))
+	go sessionJanitor.Run(ctx)
+
 	// Session management via K8s Leases (single-driver guarantee).
-	leaseMgr := buildMCPLeaseManager(ctrlCli, namespace, cfg, autoMgr, agentMetrics, logger, emitDisconnectAudit) //nolint:contextcheck // buildMCPLeaseManager wires session lease management once at startup; no parent request context exists yet
+	leaseMgr := buildMCPLeaseManager(ctrlCli, namespace, cfg, autoMgr, agentMetrics, logger, emitDisconnectAudit, sessionJanitor) //nolint:contextcheck // buildMCPLeaseManager wires session lease management once at startup; no parent request context exists yet
 
 	// Context reconstruction from DS audit events (best-effort).
 	recon := resolveContextReconstructor(ds, logger)
@@ -511,6 +522,7 @@ func buildMCPHandler(ctx context.Context, p mcpHandlerParams) (http.Handler, *mc
 		"reconstruction_spawner", true,
 		"notification_bus", true,
 		"session_drainer", true,
+		"session_janitor", true,
 	)
 
 	return mcpHandler, drainer
@@ -578,7 +590,7 @@ func newDisconnectAuditEmitter(auditStore audit.AuditStore, logger logr.Logger) 
 // buildMCPLeaseManager constructs the K8s-Lease-backed session manager
 // (single-driver guarantee) and reclaims any orphaned Leases left over from a
 // previous process instance.
-func buildMCPLeaseManager(ctrlCli ctrlclient.Client, namespace string, cfg *kaconfig.Config, autoMgr *session.Manager, agentMetrics *kametrics.Metrics, logger logr.Logger, emitDisconnectAudit func(string, string, string)) *mcpkg.LeaseSessionManager {
+func buildMCPLeaseManager(ctrlCli ctrlclient.Client, namespace string, cfg *kaconfig.Config, autoMgr *session.Manager, agentMetrics *kametrics.Metrics, logger logr.Logger, emitDisconnectAudit func(string, string, string), sessionJanitor *mcpkg.SessionJanitor) *mcpkg.LeaseSessionManager {
 	leaseOpts := []mcpkg.LeaseOption{
 		mcpkg.WithSessionTTL(cfg.Interactive.SessionTTL),
 		mcpkg.WithInactivityTimeout(cfg.Interactive.InactivityTimeout),
@@ -591,6 +603,7 @@ func buildMCPLeaseManager(ctrlCli ctrlclient.Client, namespace string, cfg *kaco
 			emitDisconnectAudit(sessionID, rrID, reason)
 			agentMetrics.RecordInteractiveSessionEnded()
 		}),
+		mcpkg.WithSessionJanitor(sessionJanitor),
 	}
 	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, logger, leaseOpts...)
 
