@@ -28,17 +28,17 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
-// #2103-regression (E2E-AF-1396-001): part_converter.go's emitDecisionEvent
-// builds the AU-3 SSE decision artifact directly from the model's raw
-// kubernaut_present_decision FunctionCall, which ADK streams to the client
-// BEFORE BeforeToolCallback (phaseGuardBefore/enforceGroundingGuard) ever
-// runs -- see sanitizePresentDecisionResponse's doc comment (phase_guard.go)
-// for the exact ADK call sequence proving this ordering. These tests prove
-// this AfterModelCallback sanitizes the model's raw FunctionCall.Args in
-// place, at the one point in the pipeline that runs before that yield, so
-// the emitted decision artifact is grounded/honest regardless of whether
-// the tool call is later blocked (#2098) or succeeds.
-var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2103-regression)", func() {
+// #2105 (E2E-AF-1396-001 regression from #2098): part_converter.go's
+// emitDecisionEvent builds the AU-3 SSE decision artifact directly from the
+// model's raw kubernaut_present_decision FunctionCall, which ADK streams to
+// the client BEFORE BeforeToolCallback (phaseGuardBefore/enforceGroundingGuard)
+// ever runs -- see sanitizePresentDecisionResponse's doc comment
+// (phase_guard.go) for the exact ADK call sequence proving this ordering.
+// These tests prove this AfterModelCallback sanitizes the model's raw
+// FunctionCall.Args in place, at the one point in the pipeline that runs
+// before that yield, so the emitted decision artifact is grounded/honest
+// regardless of whether the tool call is later blocked (#2098) or succeeds.
+var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2105)", func() {
 	newCtx := func(state *mapState) *statefulCallbackContext {
 		return &statefulCallbackContext{
 			stubCallbackContext: &stubCallbackContext{Context: context.Background()},
@@ -55,7 +55,7 @@ var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2103-regr
 						FunctionCall: &genai.FunctionCall{
 							Name: presentDecisionTool,
 							Args: map[string]any{
-								"session_id": "sess-2103",
+								"session_id": "sess-2105",
 								"summary":    "Root cause identified: bad command override.",
 								"rca": map[string]any{
 									"severity": "critical", "confidence": 0.9,
@@ -72,7 +72,7 @@ var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2103-regr
 		}
 	}
 
-	It("UT-AF-2103-001 (AU-3): zeros a fabricated tool_calls_count/llm_turns on the raw FunctionCall.Args when grounded", func() {
+	It("UT-AF-2105-001 (AU-3): zeros a fabricated tool_calls_count/llm_turns on the raw FunctionCall.Args when grounded", func() {
 		state := newMapState()
 		Expect(state.Set(session.StateKeyGroundedContentAvailable, true)).To(Succeed())
 
@@ -90,7 +90,7 @@ var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2103-regr
 		Expect(rcaMap["llm_turns"]).To(Equal(0))
 	})
 
-	It("UT-AF-2103-002 (regression guard): overwrites args with the honest no-data payload when ungrounded", func() {
+	It("UT-AF-2105-002 (regression guard): overwrites args with the honest no-data payload when ungrounded", func() {
 		state := newMapState() // StateKeyGroundedContentAvailable never set -> ungrounded
 
 		resp := presentDecisionResponse(19, 17)
@@ -104,7 +104,7 @@ var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2103-regr
 		Expect(fc.Args["rca"]).To(Equal(emptyRCAPayload))
 	})
 
-	It("UT-AF-2103-003 (regression guard): leaves unrelated FunctionCalls untouched", func() {
+	It("UT-AF-2105-003 (regression guard): leaves unrelated FunctionCalls untouched", func() {
 		state := newMapState()
 		resp := &model.LLMResponse{
 			Content: &genai.Content{
@@ -122,7 +122,7 @@ var _ = Describe("sanitizePresentDecisionResponse AfterModelCallback (#2103-regr
 			"only kubernaut_present_decision FunctionCalls are sanitized")
 	})
 
-	It("UT-AF-2103-004 (regression guard): handles a nil/errored/contentless response without panicking", func() {
+	It("UT-AF-2105-004 (regression guard): handles a nil/errored/contentless response without panicking", func() {
 		state := newMapState()
 
 		out, err := sanitizePresentDecisionResponse(newCtx(state), nil, nil)

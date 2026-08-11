@@ -65,7 +65,7 @@ var _ = Describe("IT #2098 — present_decision ordering guard through the full 
 
 		// --- Ordering violation: present_decision called before discovery ---
 		// rca carries a fabricated tool_calls_count (mirroring a mock/hallucinated
-		// LLM payload) to prove the #2103-regression fix below: even though this
+		// LLM payload) to prove the #2105 fix below: even though this
 		// call is rejected, part_converter.go's emitDecisionEvent reads these
 		// SAME args (by reference) directly off the model's raw FunctionCall to
 		// build the AU-3 SSE decision artifact, independent of this before
@@ -88,7 +88,7 @@ var _ = Describe("IT #2098 — present_decision ordering guard through the full 
 		rcaMap, ok := prematureArgs["rca"].(map[string]any)
 		Expect(ok).To(BeTrue())
 		Expect(rcaMap["tool_calls_count"]).To(Equal(0),
-			"#2103-regression: enforceGroundingGuard must still zero the fabricated tool_calls_count in place "+
+			"#2105: enforceGroundingGuard must still zero the fabricated tool_calls_count in place "+
 				"even when the call is rejected by the #2098 ordering guard, since the SSE decision artifact is "+
 				"built from these same (by-reference) args regardless of this callback's block/allow outcome")
 		Expect(rcaMap["llm_turns"]).To(Equal(0))

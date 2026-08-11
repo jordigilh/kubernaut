@@ -136,8 +136,8 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 			// though: sanitizePresentDecisionResponse (an AfterModelCallback,
 			// registered in root.go) is what actually closes that loop --
 			// see its doc comment for why a BeforeToolCallback mutation
-			// alone is too late for that purpose (#2103-regression,
-			// E2E-AF-1396-001).
+			// alone is too late for that purpose (#2105, a regression from
+			// this #2098 change caught by E2E-AF-1396-001).
 			enforceGroundingGuard(ctx, args)
 			if presentDecisionRequiresDiscoveryFirst(ctx.State()) {
 				logr.FromContextOrDiscard(ctx).Info("phase-guard blocked present_decision",
@@ -608,8 +608,9 @@ func canonicalGroundedRCA(rca *tools.InvestigateRCA) *tools.RCAData {
 // the model responds -- BEFORE ADK finalizes and yields that response as an
 // SSE event.
 //
-// #2103-regression (E2E-AF-1396-001: ToolCallsCount 19 instead of the
-// grounded 0): part_converter.go's emitDecisionEvent builds the AU-3
+// #2105 (E2E-AF-1396-001 regression caught by this #2098 change:
+// ToolCallsCount 19 instead of the grounded 0): part_converter.go's
+// emitDecisionEvent builds the AU-3
 // decision artifact straight from this same FunctionCall (by reference --
 // google.golang.org/adk@v1.5.1/internal/llminternal/base_flow.go's
 // runOneStep calls yield(modelResponseEvent, ...) at the point the model's
