@@ -86,6 +86,28 @@ type LeaseSessionManager struct {
 	// deployments/tests that don't wire one via WithSessionJanitor --
 	// Track/Untrack calls are no-ops in that case.
 	janitor *SessionJanitor
+
+	// sessionMetrics is the #2103 centralization point for
+	// aiagent_mcp_interactive_sessions_active: every Release caller used to
+	// be individually responsible for calling RecordInteractiveSessionEnded,
+	// and most never wired it (CompleteNoActionTool, SelectWorkflowTool,
+	// InvestigateTool's no_matching_workflows goroutine, and #2100's own new
+	// SessionJanitor onExpire callback all leaked this gauge). Wiring the
+	// decrement here instead, paired with activeCount's own Add(-1), makes
+	// every current and future Release() caller correct automatically. Nil
+	// in deployments/tests that don't wire one via WithSessionEndedMetrics --
+	// the call is a no-op in that case.
+	sessionMetrics SessionEndedMetrics
+}
+
+// SessionEndedMetrics is the minimal metrics surface LeaseSessionManager
+// needs to keep aiagent_mcp_interactive_sessions_active accurate for every
+// Release caller (#2103). Implemented structurally by *metrics.Metrics (see
+// tools.ToolMetrics for the parallel interface at the tool-handler layer) --
+// defined locally here, rather than imported, to avoid mcp importing
+// metrics or tools (tools already imports mcp, so the reverse would cycle).
+type SessionEndedMetrics interface {
+	RecordInteractiveSessionEnded()
 }
 
 type sessionEntry struct {
@@ -143,6 +165,20 @@ func (m *LeaseSessionManager) SetReconnectCallback(fn func(sessionID string)) {
 func WithSessionJanitor(j *SessionJanitor) LeaseOption {
 	return func(m *LeaseSessionManager) {
 		m.janitor = j
+	}
+}
+
+// WithSessionEndedMetrics wires the aiagent_mcp_interactive_sessions_active
+// decrement into Release() itself (#2103), so every current and future
+// Release() caller -- InvestigateTool, SelectWorkflowTool,
+// CompleteNoActionTool, the SessionJanitor backstop, and main.go's own
+// TTL/inactivity/disconnect callbacks -- keeps the gauge accurate without
+// needing its own metrics field.
+func WithSessionEndedMetrics(m SessionEndedMetrics) LeaseOption {
+	return func(mgr *LeaseSessionManager) {
+		if m != nil {
+			mgr.sessionMetrics = m
+		}
 	}
 }
 
@@ -366,6 +402,16 @@ func (m *LeaseSessionManager) Release(sessionID string, reason string) error {
 	m.sessions.Delete(sessionID)
 	m.rrIndex.Delete(entry.rrID)
 	m.activeCount.Add(-1)
+
+	// #2103: centralize the aiagent_mcp_interactive_sessions_active
+	// decrement here, paired with activeCount.Add(-1) above, so every
+	// current and future Release() caller keeps the gauge accurate. Only
+	// reached once the session is confirmed locally found and removed
+	// above -- a double-Release (ErrSessionNotFound) or a hard Lease-delete
+	// error never reaches this line, so this can never double-decrement.
+	if m.sessionMetrics != nil {
+		m.sessionMetrics.RecordInteractiveSessionEnded()
+	}
 
 	if m.janitor != nil {
 		m.janitor.Untrack(sessionID)

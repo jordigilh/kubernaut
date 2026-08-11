@@ -601,9 +601,21 @@ func buildMCPLeaseManager(ctrlCli ctrlclient.Client, namespace string, cfg *kaco
 			autoMgr.EmitSessionEndedByRR(rrID, reason)
 			mcptools.CompleteHTTPSession(autoMgr, rrID, nil, logger, reason)
 			emitDisconnectAudit(sessionID, rrID, reason)
-			agentMetrics.RecordInteractiveSessionEnded()
+			// #2103 (v1.6 clone #2104): aiagent_mcp_interactive_sessions_active
+			// decrement moved into LeaseSessionManager.Release() itself (called
+			// by GetDriver just before this callback fires) -- see
+			// WithSessionEndedMetrics below. An explicit call here would
+			// double-decrement.
 		}),
 		mcpkg.WithSessionJanitor(sessionJanitor),
+		// #2103 (v1.6 clone #2104): centralizes the
+		// aiagent_mcp_interactive_sessions_active decrement inside Release()
+		// itself, so every Release() caller -- InvestigateTool,
+		// SelectWorkflowTool, CompleteNoActionTool, the SessionJanitor
+		// backstop above, and this file's own TTL/inactivity/disconnect
+		// callbacks below -- keeps the gauge accurate without each needing
+		// its own metrics wiring.
+		mcpkg.WithSessionEndedMetrics(agentMetrics),
 	}
 	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, logger, leaseOpts...)
 
@@ -637,8 +649,10 @@ func buildMCPTimeoutManager(cfg *kaconfig.Config, autoMgr *session.Manager, leas
 			// KA-CRIT-2: Resolve the HTTP session so AA stops polling user_driving.
 			mcptools.CompleteHTTPSession(autoMgr, rrID, nil, logger, "inactivity_timeout")
 			emitDisconnectAudit(sessionID, rrID, "inactivity_timeout")
-			// T1-4: Decrement gauge on timeout expiry to prevent drift.
-			agentMetrics.RecordInteractiveSessionEnded()
+			// #2103 (v1.6 clone #2104): T1-4's gauge decrement moved into
+			// LeaseSessionManager.Release() itself (called by leaseMgr.Release
+			// just above) -- see WithSessionEndedMetrics. An explicit call
+			// here would double-decrement.
 		},
 	)
 }
@@ -719,8 +733,10 @@ func buildMCPDisconnectHandler(d mcpDisconnectHandlerDeps) *mcpkg.GracefulSessio
 
 		d.emitDisconnectAudit(interactiveSessionID, rrID, "disconnect")
 
-		// T1-4: Decrement gauge on disconnect to prevent drift.
-		d.agentMetrics.RecordInteractiveSessionEnded()
+		// #2103 (v1.6 clone #2104): T1-4's gauge decrement moved into
+		// LeaseSessionManager.Release() itself (called above) -- see
+		// WithSessionEndedMetrics. An explicit call here would
+		// double-decrement.
 
 		// Spawn reconstruction in background (best-effort, BR-INTERACTIVE-008).
 		go spawnReconstruction(d.reconSpawner, d.logger, rrID, interactiveSessionID, signalMeta)

@@ -48,6 +48,18 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		return InvestigateOutput{}, startErr
 	}
 
+	// #2103 (v1.6 clone #2104): record Started as soon as startInteractiveSession
+	// confirms a genuinely new lease was acquired (activeCount.Add(1)) --
+	// before any fallback logic below that might immediately Release() it
+	// again (the exhausted branch a few lines down). Now that Release()
+	// centrally decrements aiagent_mcp_interactive_sessions_active (paired
+	// with its own activeCount.Add(-1)), Started/Ended must stay paired with
+	// the lease's own lifecycle -- otherwise that branch would decrement a
+	// gauge that was never incremented, driving it negative.
+	if t.metrics != nil {
+		t.metrics.RecordInteractiveSessionStarted()
+	}
+
 	// #1390: Upgrade running autonomous session in-place (Jump In) instead of
 	// cancelling and recreating. UpgradeToInteractive sets the atomic flag so
 	// the goroutine's next InteractiveHold check sees it, and store.Update's
@@ -77,7 +89,6 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	}
 
 	if t.metrics != nil {
-		t.metrics.RecordInteractiveSessionStarted()
 		t.metrics.RecordInteractiveTakeover("start_success")
 	}
 
