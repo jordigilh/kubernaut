@@ -95,7 +95,7 @@ var _ = Describe("AF/KA reasoning_delta relay key-mismatch — #1634", func() {
 			}
 			close(events)
 
-			_, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, _, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			queuedEvents := queue.Events()
 			Expect(queuedEvents).NotTo(BeEmpty(),

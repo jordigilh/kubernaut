@@ -112,7 +112,14 @@ const (
 
 // BridgeEventsCollectSummary is the exported entry point for bridgeEventsCollectSummary.
 // It is used by integration tests and the blocking MCP investigation path.
-func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, string) {
+//
+// The fourth return value (#2071, forward-port of release/v1.5's #2034 Stage
+// 3b) is the last AlignmentVerdictResult seen (nil if none arrived), letting
+// the caller wire KA's optional #1096 shadow-agent verdict into
+// InvestigateMCPResult -- previously this was only used locally to fire the
+// human-facing SSE alignment_check_failed notification and then discarded,
+// leaving phase_guard.go's #2047 grounding guard with no way to consult it.
+func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, string, *katypes.AlignmentVerdictResult) {
 	return bridgeEventsCollectSummary(ctx, events, inactivityTimeout)
 }
 
@@ -133,9 +140,10 @@ func ExitReasonToStatus(exitReason string) string {
 // accumulates reasoning_delta text into a summary returned when the channel
 // closes, the context is cancelled, or no events arrive within
 // inactivityTimeout (hang detection).
-func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, string) {
+func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, string, *katypes.AlignmentVerdictResult) {
 	var summary strings.Builder
 	var rcaResult *InvestigateRCA
+	var verdictResult *katypes.AlignmentVerdictResult
 	keepalive := time.NewTicker(5 * time.Second)
 	defer keepalive.Stop()
 	inactivity := time.NewTimer(inactivityTimeout)
@@ -143,18 +151,18 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 	for {
 		select {
 		case <-ctx.Done():
-			return summary.String(), rcaResult, ExitReasonCtxCancelled
+			return summary.String(), rcaResult, ExitReasonCtxCancelled, verdictResult
 		case <-inactivity.C:
-			return summary.String(), rcaResult, ExitReasonInactivityTimeout
+			return summary.String(), rcaResult, ExitReasonInactivityTimeout, verdictResult
 		case <-keepalive.C:
 			_ = launcher.EmitKeepaliveDotSafe(ctx)
 		case evt, ok := <-events:
 			if !ok {
-				return summary.String(), rcaResult, ExitReasonChannelClosed
+				return summary.String(), rcaResult, ExitReasonChannelClosed, verdictResult
 			}
 			inactivity.Reset(inactivityTimeout)
-			if done, exitReason := processBridgeEvent(ctx, evt, &summary, &rcaResult); done {
-				return summary.String(), rcaResult, exitReason
+			if done, exitReason := processBridgeEvent(ctx, evt, &summary, &rcaResult, &verdictResult); done {
+				return summary.String(), rcaResult, exitReason, verdictResult
 			}
 		}
 	}
@@ -164,7 +172,7 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 // accumulates streamed text into summary, and captures the RCA result when
 // the investigation completes. Returns done=true (with the terminal exit
 // reason) when bridgeEventsCollectSummary's loop should stop.
-func processBridgeEvent(ctx context.Context, evt ka.InvestigationEvent, summary *strings.Builder, rcaResult **InvestigateRCA) (bool, string) {
+func processBridgeEvent(ctx context.Context, evt ka.InvestigationEvent, summary *strings.Builder, rcaResult **InvestigateRCA, verdictResult **katypes.AlignmentVerdictResult) (bool, string) {
 	// #1438: Handle session_ended before generic emit to avoid double-emit.
 	if evt.Type == ka.EventTypeSessionEnded {
 		phase := mapReasonToPhase(evt.Phase)
@@ -195,7 +203,7 @@ func processBridgeEvent(ctx context.Context, evt ka.InvestigationEvent, summary 
 			summary.WriteString(chunk)
 		}
 	case ka.EventTypeAlignmentVerdict:
-		emitAlignmentVerdictIfMisaligned(ctx, evt)
+		captureAlignmentVerdict(ctx, evt, verdictResult)
 	case ka.EventTypeComplete:
 		captureCompleteEventRCA(ctx, evt, summary, rcaResult)
 		return true, ExitReasonChannelClosed
@@ -205,14 +213,23 @@ func processBridgeEvent(ctx context.Context, evt ka.InvestigationEvent, summary 
 	return false, ""
 }
 
-// emitAlignmentVerdictIfMisaligned emits an alignment-check-failed event when
-// evt carries a non-"aligned" AlignmentVerdictResult payload.
-func emitAlignmentVerdictIfMisaligned(ctx context.Context, evt ka.InvestigationEvent) {
+// captureAlignmentVerdict parses evt's AlignmentVerdictResult payload and
+// stores it in verdictResult for the caller (#2071, forward-port of
+// release/v1.5's #2034 Stage 3b) -- previously this only fired the
+// human-facing SSE alignment_check_failed notification and discarded the
+// verdict, leaving phase_guard.go's #2047 grounding guard with no way to
+// consult it (investigateHasGroundedContent). The SSE notification itself is
+// unchanged: only emitted when the verdict is not "aligned".
+func captureAlignmentVerdict(ctx context.Context, evt ka.InvestigationEvent, verdictResult **katypes.AlignmentVerdictResult) {
 	if len(evt.Data) == 0 {
 		return
 	}
 	var avr katypes.AlignmentVerdictResult
-	if json.Unmarshal(evt.Data, &avr) != nil || avr.Result == "aligned" {
+	if json.Unmarshal(evt.Data, &avr) != nil {
+		return
+	}
+	*verdictResult = &avr
+	if avr.Result == "aligned" {
 		return
 	}
 	meta := map[string]any{

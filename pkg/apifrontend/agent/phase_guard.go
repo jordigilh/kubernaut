@@ -17,6 +17,7 @@ limitations under the License.
 package agent
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/go-logr/logr"
@@ -27,6 +28,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 const (
@@ -261,6 +263,32 @@ func phaseGuardAfter(registry *launcher.ActiveContextRegistry, ctx tool.Context,
 			grounded := investigateHasGroundedContent(resp, isSuccess)
 			if err := state.Set(session.StateKeyGroundedContentAvailable, grounded); err != nil {
 				logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to persist grounded_content_available state")
+			}
+
+			// Unconditional, mirroring the grounded flag above: a
+			// rejected/rca-less call must clear a stale rca left by an
+			// earlier successful one in the same session (hardening
+			// beyond #2047's original binary gate -- see
+			// enforceGroundingGuard) (#2071, forward-port of
+			// release/v1.5's #2034).
+			//
+			// #2071 (forward-port of release/v1.5's #2068): a Provisional
+			// rca (AF's own severity-triage guess, synthesized when KA
+			// hasn't genuinely investigated yet -- see
+			// ka_investigate_mcp.go's InvestigateRCA fallback construction
+			// sites) is deliberately excluded here. It is not "extracted
+			// from the KA complete event" the way this struct's own doc
+			// comment describes, so it must not be cached as an
+			// authoritative fact to substitute into present_decision --
+			// same treatment as "no structured rca at all".
+			var rca *tools.InvestigateRCA
+			if isSuccess {
+				if decoded := decodeInvestigateRCA(resp["rca"]); decoded != nil && !decoded.Provisional {
+					rca = decoded
+				}
+			}
+			if err := state.Set(session.StateKeyGroundedRCA, rca); err != nil {
+				logr.FromContextOrDiscard(ctx).Error(err, "phase-guard failed to persist grounded_rca state")
 			}
 		}
 	}
@@ -521,12 +549,32 @@ func interactionModeFromState(state adksession.State) string {
 // it is a legitimate different-user state with its own dedicated fallback
 // card (#1922): the CALLING agent still has no fresh RCA of its own to
 // report, so present_decision must not fabricate one on its behalf.
+//
+// Hardening beyond the original #2047 gate (#2071, forward-port of
+// release/v1.5's #2034): a summary/rca can be syntactically present yet
+// still not trustworthy when KA's own #1096 shadow-agent full-context
+// grounding review flagged this investigation as not aligned (reasoning
+// drift, unsupported conclusions, or distributed prompt-injection influence
+// -- see internal/kubernautagent/alignment/prompt/grounding.go). That
+// verdict is already computed and streamed to AF today
+// (EventTypeAlignmentVerdict) but was previously only surfaced as a
+// human-facing SSE notification (launcher.MetaTypeAlignmentCheckFailed);
+// this treats it as a groundedness input too, closing embellishment cases
+// KA's own reviewer already caught. Only takes effect when a deployment has
+// ai.alignmentCheck enabled -- alignment_verdict is absent otherwise, so
+// this is additive, never a behavior change for deployments that leave the
+// shadow review off.
 func investigateHasGroundedContent(resp map[string]any, isSuccess bool) bool {
 	if !isSuccess || resp == nil {
 		return false
 	}
 	if status, _ := resp["status"].(string); status == "unmanaged" || status == "session_active" {
 		return false
+	}
+	if verdict, ok := resp["alignment_verdict"].(map[string]any); ok {
+		if result, _ := verdict["result"].(string); result != "" && result != "aligned" {
+			return false
+		}
 	}
 	if summary, _ := resp["summary"].(string); strings.TrimSpace(summary) != "" {
 		return true
@@ -535,6 +583,54 @@ func investigateHasGroundedContent(resp map[string]any, isSuccess bool) bool {
 		return true
 	}
 	return false
+}
+
+// decodeInvestigateRCA converts a kubernaut_investigate response's "rca"
+// value (map[string]any, per the ADK AfterToolCallback's untyped resp
+// contract) into the same tools.InvestigateRCA type ka_investigate_mcp.go
+// constructs it from, so callers work with named, typed fields (Severity,
+// Provisional, ...) instead of probing map keys by hand. Returns nil when v
+// isn't a non-empty map or fails to decode.
+func decodeInvestigateRCA(v any) *tools.InvestigateRCA {
+	raw, ok := v.(map[string]any)
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var rca tools.InvestigateRCA
+	if err := json.Unmarshal(b, &rca); err != nil {
+		return nil
+	}
+	return &rca
+}
+
+// canonicalGroundedRCA converts KA's InvestigateRCA (tools package, KA's own
+// wire-format field names total_tool_calls/total_llm_turns) into
+// present_decision's RCAData shape (tools package, tool_calls_count/
+// llm_turns) -- the two have always used different names for these two
+// fields since InvestigateRCA mirrors KA's EventTypeComplete payload (a
+// contract this package doesn't own) while RCAData is AF's own LLM-facing
+// present_decision schema; renaming them is unavoidable however it's
+// expressed, so this is done via explicit field assignment rather than a
+// generic map copy. rca_summary/is_actionable/has_workflow/provisional have
+// no slot in RCAData and are intentionally dropped. Returns nil when rca is
+// nil or carries no severity at all, so callers can distinguish "nothing to
+// pass through" from "pass through an empty object".
+func canonicalGroundedRCA(rca *tools.InvestigateRCA) *tools.RCAData {
+	if rca == nil || rca.Severity == "" {
+		return nil
+	}
+	return &tools.RCAData{
+		Severity:       rca.Severity,
+		Confidence:     rca.Confidence,
+		CausalChain:    rca.CausalChain,
+		Target:         rca.Target,
+		ToolCallsCount: rca.TotalToolCalls,
+		LLMTurns:       rca.TotalLLMTurns,
+	}
 }
 
 // enforceGroundingGuard implements #2047's (main clone of #2023) harness-side
@@ -551,6 +647,24 @@ func investigateHasGroundedContent(resp map[string]any, isSuccess bool) bool {
 // AU-3 structured-artifact mandate (#1408) requires present_decision to
 // still run and emit an investigation_summary artifact in every scenario --
 // only a fabricated narrative is blocked here, never the artifact itself.
+//
+// Hardening beyond the original #2047 gate (#2071, forward-port of
+// release/v1.5's #2034): even when grounded, args["rca"] is deterministically
+// overwritten with the exact structured facts (severity/confidence/
+// causal_chain/target/tool_calls_count/llm_turns) KA's kubernaut_investigate
+// response reported (session.StateKeyGroundedRCA), rather than trusting the
+// LLM's own transcription of those same facts into present_decision. This
+// closes a narrower gap than the grounded/ungrounded gate above: a
+// technically-grounded session where the model still alters a number or
+// claim while copying it. The free-text args["summary"] is deliberately left
+// model-authored once grounded -- it may legitimately synthesize reasoning
+// the pure structured facts don't capture -- and args["rca"] is left
+// untouched when KA reported no structured rca at all (nothing authoritative
+// to substitute) -- and, per #2071's forward-port of release/v1.5's #2068,
+// when the only "rca" available is AF's own Provisional severity-triage
+// guess rather than a genuine KA finding (session.StateKeyGroundedRCA is
+// never populated with a Provisional rca in the first place; see the
+// after-callback above).
 func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
 	if args == nil {
 		return
@@ -565,6 +679,32 @@ func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
 		grounded, _ = v.(bool)
 	}
 	if grounded {
+		if v, err := state.Get(session.StateKeyGroundedRCA); err == nil {
+			if rca, ok := v.(*tools.InvestigateRCA); ok {
+				if canonical := canonicalGroundedRCA(rca); canonical != nil {
+					args["rca"] = canonical
+				}
+			}
+		}
+		// #2073/#2074: when no authoritative InvestigateRCA was available to
+		// fully substitute above (summary-only grounding, a
+		// Provisional-severity triage guess, or a malformed investigate rca
+		// payload), args["rca"] is still whatever the LLM supplied.
+		// tool_calls_count/llm_turns are no longer schema-required
+		// (ka_tools.go RCAData omitempty), but the LLM is still never
+		// instructed how to compute them -- backfilling an honest zero
+		// (rather than leaving whatever value the LLM invented) prevents a
+		// fabricated-looking count from reaching the AU-3 structured
+		// artifact. severity/confidence/causal_chain/target remain
+		// LLM-authored here -- unlike the two bookkeeping fields, there is
+		// genuinely nothing authoritative in AF's state to substitute for
+		// them in this branch (see canonicalGroundedRCA doc).
+		if _, isRCAData := args["rca"].(*tools.RCAData); !isRCAData {
+			if rcaMap, ok := args["rca"].(map[string]any); ok {
+				rcaMap["tool_calls_count"] = 0
+				rcaMap["llm_turns"] = 0
+			}
+		}
 		return
 	}
 

@@ -36,7 +36,7 @@ var _ = Describe("bridgeEventsCollectSummary exit reason — #1451 (BR-AF-MCP-00
 			events := make(chan ka.InvestigationEvent, 5)
 			ctx := context.Background()
 
-			_, _, exitReason := tools.BridgeEventsCollectSummary(ctx, events, 50*time.Millisecond)
+			_, _, exitReason, _ := tools.BridgeEventsCollectSummary(ctx, events, 50*time.Millisecond)
 
 			Expect(exitReason).To(Equal("inactivity_timeout"),
 				"SI-4: bridge must report inactivity_timeout when no events arrive")
@@ -47,7 +47,7 @@ var _ = Describe("bridgeEventsCollectSummary exit reason — #1451 (BR-AF-MCP-00
 			close(events)
 			ctx := context.Background()
 
-			_, _, exitReason := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, _, exitReason, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			Expect(exitReason).To(Equal("channel_closed"),
 				"SI-4: bridge must report channel_closed when events channel closes normally")
@@ -58,7 +58,7 @@ var _ = Describe("bridgeEventsCollectSummary exit reason — #1451 (BR-AF-MCP-00
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			_, _, exitReason := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, _, exitReason, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			Expect(exitReason).To(Equal("ctx_cancelled"),
 				"SI-4: bridge must report ctx_cancelled when context is done")
@@ -71,7 +71,7 @@ var _ = Describe("bridgeEventsCollectSummary exit reason — #1451 (BR-AF-MCP-00
 			events := make(chan ka.InvestigationEvent, 5)
 			ctx := context.Background()
 
-			_, _, exitReason := tools.BridgeEventsCollectSummary(ctx, events, 50*time.Millisecond)
+			_, _, exitReason, _ := tools.BridgeEventsCollectSummary(ctx, events, 50*time.Millisecond)
 			Expect(exitReason).To(Equal("inactivity_timeout"))
 
 			status := tools.ExitReasonToStatus(exitReason)
@@ -84,7 +84,7 @@ var _ = Describe("bridgeEventsCollectSummary exit reason — #1451 (BR-AF-MCP-00
 			close(events)
 			ctx := context.Background()
 
-			_, _, exitReason := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, _, exitReason, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 			Expect(exitReason).To(Equal("channel_closed"))
 
 			status := tools.ExitReasonToStatus(exitReason)
@@ -97,7 +97,7 @@ var _ = Describe("bridgeEventsCollectSummary exit reason — #1451 (BR-AF-MCP-00
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			_, _, exitReason := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, _, exitReason, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 			Expect(exitReason).To(Equal("ctx_cancelled"))
 
 			status := tools.ExitReasonToStatus(exitReason)
@@ -127,7 +127,7 @@ var _ = Describe("bridgeEventsCollectSummary exit reason — #1451 (BR-AF-MCP-00
 				close(events)
 			}()
 
-			_, _, exitReason := tools.BridgeEventsCollectSummary(ctx, events, 50*time.Millisecond)
+			_, _, exitReason, _ := tools.BridgeEventsCollectSummary(ctx, events, 50*time.Millisecond)
 
 			Expect(exitReason).To(Equal("channel_closed"),
 				"SI-4: event arrival must reset inactivity timer; channel close at T+80ms with 50ms timeout should not trigger timeout")
@@ -160,7 +160,7 @@ var _ = Describe("bridgeEventsCollectSummary exit reason — #1451 (BR-AF-MCP-00
 				Data: json.RawMessage(`{"text":"partial analysis of the issue"}`),
 			}
 
-			summary, _, exitReason := tools.BridgeEventsCollectSummary(ctx, events, 50*time.Millisecond)
+			summary, _, exitReason, _ := tools.BridgeEventsCollectSummary(ctx, events, 50*time.Millisecond)
 
 			Expect(exitReason).To(Equal("inactivity_timeout"))
 			Expect(summary).To(ContainSubstring("partial analysis of the issue"),
@@ -185,7 +185,7 @@ var _ = Describe("bridgeEventsCollectSummary exit reason — #1451 (BR-AF-MCP-00
 				Data: rcaJSON,
 			}
 
-			_, rca, exitReason := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, rca, exitReason, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			Expect(exitReason).To(Equal("channel_closed"),
 				"EventTypeComplete triggers immediate return with channel_closed")

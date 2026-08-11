@@ -39,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/remediationrequest"
 	"github.com/jordigilh/kubernaut/pkg/shared/scope"
 )
@@ -142,6 +143,16 @@ type InvestigateMCPResult struct {
 	Ambiguous           bool   `json:"ambiguous,omitempty"`
 	CandidateSignalName string `json:"candidate_signal_name,omitempty"`
 	CandidateSeverity   string `json:"candidate_severity,omitempty"`
+	// AlignmentVerdict carries KA's #1096 shadow-agent full-context grounding
+	// review verdict for this investigation, when ai.alignmentCheck is
+	// enabled on KA (#2071, forward-port of release/v1.5's #2034 Stage 3b).
+	// Hardening beyond the original #2047 gate: AF's present_decision
+	// grounding guard (phase_guard.go, investigateHasGroundedContent) treats
+	// a non-"aligned" Result here as ungrounded even when Summary/RCA are
+	// otherwise present, since KA's own reviewer already found the
+	// conclusions weren't well-supported by tool evidence. Always nil when
+	// alignment checking is disabled (the default).
+	AlignmentVerdict *katypes.AlignmentVerdictResult `json:"alignment_verdict,omitempty"`
 }
 
 // InvestigateRCA is the structured RCA data extracted from the KA complete event.
@@ -163,6 +174,16 @@ type InvestigateRCA struct {
 	// stays distinguishable from a genuine computed false.
 	IsActionable *bool `json:"is_actionable,omitempty"`
 	HasWorkflow  bool  `json:"has_workflow,omitempty"`
+	// Provisional marks an RCA synthesized locally by AF from severity-triage
+	// labels alone (no KA investigation occurred yet), as opposed to one
+	// extracted from KA's own EventTypeComplete payload (#2071, forward-port
+	// of release/v1.5's #2068). Progressive UX events (emitEarlyRCA/
+	// emitFallbackInvestigationArtifact) still fire normally for a
+	// provisional RCA -- only phase_guard.go's #2047 anti-fabrication cache
+	// treats this flag specially, since this struct's own doc comment
+	// ("extracted from the KA complete event") never held for the fallback
+	// construction sites below.
+	Provisional bool `json:"provisional,omitempty"`
 }
 
 // SessionStartedHook is called after a successful StartInvestigation with the
@@ -565,9 +586,10 @@ func startKAInvestigation(ctx context.Context, cfg *InvestigateConfig, rrID, kaS
 
 			if rrSeverity != "" {
 				rca := &InvestigateRCA{
-					Severity:   rrSeverity,
-					Confidence: 0.6,
-					RCASummary: fmt.Sprintf("Severity assessed from resource metadata (investigation in progress by %s)", driver),
+					Severity:    rrSeverity,
+					Confidence:  0.6,
+					Provisional: true,
+					RCASummary:  fmt.Sprintf("Severity assessed from resource metadata (investigation in progress by %s)", driver),
 				}
 				emitEarlyRCA(ctx, rca)
 				emitFallbackInvestigationArtifact(ctx, rca, rrID)
@@ -667,7 +689,7 @@ func runBlockingInvestigation(ctx context.Context, cfg *InvestigateConfig, p blo
 	logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
 		"rr_id", rrID, "session_id", result.SessionID, "ctx_err", ctx.Err())
 	bridgeCtx := WithRRID(ctx, rrID)
-	summary, rca, exitReason := bridgeEventsCollectSummary(bridgeCtx, result.Events, BridgeInactivityTimeout)
+	summary, rca, exitReason, alignmentVerdict := bridgeEventsCollectSummary(bridgeCtx, result.Events, BridgeInactivityTimeout)
 	status := ExitReasonToStatus(exitReason)
 	logger.Info("bridgeEventsCollectSummary: finished",
 		"rr_id", rrID, "status", status, "exit_reason", exitReason, "summary_len", len(summary))
@@ -691,9 +713,10 @@ func runBlockingInvestigation(ctx context.Context, cfg *InvestigateConfig, p blo
 	// user gets immediate severity feedback.
 	if rca == nil && rrSeverity != "" {
 		rca = &InvestigateRCA{
-			Severity:   rrSeverity,
-			Confidence: 0.6,
-			RCASummary: "Severity assessed from resource metadata (full investigation pending)",
+			Severity:    rrSeverity,
+			Confidence:  0.6,
+			Provisional: true,
+			RCASummary:  "Severity assessed from resource metadata (full investigation pending)",
 		}
 		emitEarlyRCA(ctx, rca)
 		emitFallbackInvestigationArtifact(ctx, rca, rrID)
@@ -707,11 +730,12 @@ func runBlockingInvestigation(ctx context.Context, cfg *InvestigateConfig, p blo
 	handoffOrCloseSession(ctx, cfg, rrID, username, result, cleanup, logger)
 
 	return InvestigateMCPResult{
-		SessionID: result.SessionID,
-		Status:    status,
-		Summary:   summary,
-		RRID:      rrID,
-		RCA:       rca,
+		SessionID:        result.SessionID,
+		Status:           status,
+		Summary:          summary,
+		RRID:             rrID,
+		RCA:              rca,
+		AlignmentVerdict: alignmentVerdict,
 	}
 }
 

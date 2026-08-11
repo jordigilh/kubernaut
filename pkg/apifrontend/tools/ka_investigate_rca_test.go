@@ -58,7 +58,7 @@ var _ = Describe("bridgeEventsCollectSummary RCA Parsing — TP-1395-1396 (#1396
 			}
 
 			ctx := context.Background()
-			summary, rca, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			summary, rca, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			Expect(summary).To(ContainSubstring("Investigating..."))
 			Expect(rca).NotTo(BeNil(), "RCA should be populated from complete event Data")
@@ -85,7 +85,7 @@ var _ = Describe("bridgeEventsCollectSummary RCA Parsing — TP-1395-1396 (#1396
 			}
 
 			ctx := context.Background()
-			summary, rca, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			summary, rca, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			Expect(summary).To(Equal("Found the issue."))
 			Expect(rca).To(BeNil(), "RCA should be nil when complete event has no Data")
@@ -111,7 +111,7 @@ var _ = Describe("bridgeEventsCollectSummary RCA Parsing — TP-1395-1396 (#1396
 			events <- ka.InvestigationEvent{Type: ka.EventTypeComplete, Data: rcaJSON}
 
 			ctx := context.Background()
-			_, rca, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, rca, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			Expect(rca).NotTo(BeNil())
 			Expect(rca.IsActionable).NotTo(BeNil(),
@@ -136,7 +136,7 @@ var _ = Describe("bridgeEventsCollectSummary RCA Parsing — TP-1395-1396 (#1396
 			events <- ka.InvestigationEvent{Type: ka.EventTypeComplete, Data: rcaJSON}
 
 			ctx := context.Background()
-			_, rca, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, rca, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			Expect(rca).NotTo(BeNil())
 			Expect(rca.IsActionable).NotTo(BeNil())
@@ -157,7 +157,7 @@ var _ = Describe("bridgeEventsCollectSummary RCA Parsing — TP-1395-1396 (#1396
 			events <- ka.InvestigationEvent{Type: ka.EventTypeComplete, Data: rcaJSON}
 
 			ctx := context.Background()
-			_, rca, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, rca, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			Expect(rca).NotTo(BeNil())
 			Expect(rca.IsActionable).To(BeNil(),
@@ -195,7 +195,7 @@ var _ = Describe("Progressive RCA Emission — #1407", func() {
 				Data: rcaJSON,
 			}
 
-			_, rca, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, rca, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 			Expect(rca).NotTo(BeNil())
 
 			allEvents := queue.Events()
@@ -242,7 +242,7 @@ var _ = Describe("Progressive RCA Emission — #1407", func() {
 				Type: ka.EventTypeComplete,
 			}
 
-			_, rca, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, rca, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 			Expect(rca).To(BeNil())
 
 			allEvents := queue.Events()
@@ -277,7 +277,7 @@ var _ = Describe("Progressive RCA Emission — #1407", func() {
 				Data: rcaJSON,
 			}
 
-			_, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, _, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			allEvents := queue.Events()
 			var decisionEvt *a2a.TaskStatusUpdateEvent
@@ -319,7 +319,7 @@ var _ = Describe("Progressive RCA Emission — #1407", func() {
 			}
 
 			ctx := context.Background()
-			summary, rca, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			summary, rca, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 			Expect(rca).NotTo(BeNil())
 			Expect(summary).To(ContainSubstring("Should not panic"))
 		})

@@ -353,12 +353,18 @@ func HandleListWorkflowsKA(ctx context.Context, mcpClient ka.MCPClient, args Lis
 // This field is required — ADK schema validation enforces self-correction
 // if omitted by the LLM (#1396).
 type RCAData struct {
-	Severity       string   `json:"severity"`
-	Confidence     float64  `json:"confidence"`
-	CausalChain    []string `json:"causal_chain,omitempty"`
-	Target         string   `json:"target"`
-	ToolCallsCount int      `json:"tool_calls_count"`
-	LLMTurns       int      `json:"llm_turns"`
+	Severity    string   `json:"severity"`
+	Confidence  float64  `json:"confidence"`
+	CausalChain []string `json:"causal_chain,omitempty"`
+	Target      string   `json:"target"`
+	// ToolCallsCount and LLMTurns are omitempty (#2073/#2074): prompt.txt
+	// never instructs the LLM to compute these bookkeeping fields, so
+	// marking them required made ADK's schema validation reject every
+	// kubernaut_present_decision call. The harness backfills an
+	// authoritative value where available (canonicalGroundedRCA,
+	// enforceGroundingGuard) rather than relying on the LLM to supply them.
+	ToolCallsCount int `json:"tool_calls_count,omitempty"`
+	LLMTurns       int `json:"llm_turns,omitempty"`
 }
 
 type PresentDecisionArgs struct {

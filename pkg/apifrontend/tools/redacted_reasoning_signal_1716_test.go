@@ -50,7 +50,7 @@ var _ = Describe("AF redacted reasoning content live signal — #1716", func() {
 		}
 		close(events)
 
-		_, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+		_, _, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 		queuedEvents := queue.Events()
 		Expect(queuedEvents).To(HaveLen(1),
@@ -82,7 +82,7 @@ var _ = Describe("AF redacted reasoning content live signal — #1716", func() {
 		}
 		close(events)
 
-		_, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+		_, _, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 		Expect(queue.Events()).To(BeEmpty(),
 			"UT-AF-1716-002: a genuinely empty, non-redacted turn must remain a no-op on the real dispatch path — only redacted=true changes behavior")

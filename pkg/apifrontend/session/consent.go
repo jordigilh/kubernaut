@@ -67,6 +67,32 @@ const (
 	// structured-artifact mandate (#1408) is preserved; only a fabricated
 	// narrative is blocked, never the artifact.
 	StateKeyGroundedContentAvailable = "af_grounded_content_available"
+
+	// StateKeyGroundedRCA records a *tools.InvestigateRCA (severity,
+	// confidence, causal_chain, target, total_tool_calls, total_llm_turns)
+	// carried by the most recent kubernaut_investigate response, keyed
+	// unconditionally on every investigate call (present or nil) so a
+	// later call without a structured RCA correctly clears a stale value
+	// left by an earlier one -- mirroring
+	// StateKeyGroundedContentAvailable's own unconditional-overwrite
+	// semantics. present_decision's before-callback (enforceGroundingGuard,
+	// phase_guard.go) uses this to overwrite whatever the LLM transcribed
+	// into present_decision's own "rca" argument with KA's actual reported
+	// values, closing the risk of the model silently altering facts (e.g.
+	// severity, confidence, causal chain) while otherwise staying inside
+	// #2047's grounded/ungrounded gate (#2071, forward-port of
+	// release/v1.5's #2034). Deliberately holds only the structured facts,
+	// not the free-text summary -- that narrative field stays
+	// model-authored once grounded, since it may legitimately synthesize
+	// reasoning across a session that a pure pass-through would lose.
+	//
+	// #2071 (forward-port of release/v1.5's #2068): never populated with a
+	// Provisional RCA (InvestigateRCA.Provisional=true -- AF's own
+	// severity-triage guess synthesized before KA has genuinely
+	// investigated, not a value "carried by" KA's response the way this
+	// key's name implies). A Provisional-only investigate call is treated
+	// the same as one with no structured RCA at all.
+	StateKeyGroundedRCA = "af_grounded_rca"
 )
 
 // Interaction mode values for InteractionMode / StateKeyInteractionMode.
