@@ -720,6 +720,10 @@ func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
 	}
 	if grounded {
 		substituteGroundedRCA(state, args)
+		// #2092 (v1.6 clone #2093): repair a JSON-double-encoded options
+		// payload before ADK's schema validation runs -- see
+		// repairPresentDecisionOptions' own doc comment.
+		repairPresentDecisionOptions(ctx, args)
 		return
 	}
 
@@ -752,4 +756,44 @@ func NewPhaseGuardWithRegistryForTest(registry *launcher.ActiveContextRegistry) 
 	func(tool.Context, tool.Tool, map[string]any, map[string]any, error) (map[string]any, error),
 ) {
 	return newPhaseGuard(registry)
+}
+
+// repairPresentDecisionOptions defensively repairs args["options"] when it
+// arrives as a JSON-encoded string instead of the native array
+// present_decision's schema requires (#2092): live evidence showed a model
+// emitting a fully-correct options payload, just double-encoded -- the
+// array serialized once, then that whole JSON blob wrapped again as a
+// string value. ADK's functionTool.Run (ConvertToWithJSONSchema,
+// google.golang.org/adk@v1.5.1/tool/functiontool/function.go) re-marshals
+// args and validates the result against the inferred schema immediately
+// after this callback returns, and a string where the schema declares
+// "type: array" fails that validation before HandlePresentDecision ever
+// runs -- the same "mutate args before schema validation" ordering
+// enforceGroundingGuard already relies on for rca/summary/options above.
+//
+// Only called from the grounded branch: the ungrounded branch above already
+// unconditionally overwrites options with a clean empty slice, so it can
+// never carry a stringified value in the first place.
+//
+// Left untouched (and thus still schema-rejected, surfacing a real,
+// actionable error) when the string is empty or does not parse as a JSON
+// array -- this must never mask genuinely malformed input as an
+// empty-but-valid payload (SI-11).
+func repairPresentDecisionOptions(ctx tool.Context, args map[string]any) {
+	raw, ok := args["options"].(string)
+	if !ok {
+		return
+	}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return
+	}
+	var parsed []any
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+		logr.FromContextOrDiscard(ctx).Info(
+			"present_decision options arrived as a string that is not valid JSON; leaving as-is for schema validation to reject",
+			"error", err.Error())
+		return
+	}
+	args["options"] = parsed
 }
