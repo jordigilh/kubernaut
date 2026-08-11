@@ -391,6 +391,12 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 		Tools:    submitOnlyTools,
 	}
 
+	// #2086: this extraction call is non-streamed and emits no sink events
+	// for its duration. discover_workflows callers can wait through this
+	// call while AF's bridge-inactivity timer is running, so a keepalive is
+	// required to prevent AF from falsely reporting completion.
+	emitGateRetryKeepalive(ctx, "extracting_rca_from_conversation")
+
 	resp, err := llm.ChatWithParams(ctx, client, req, runtimeParams)
 	if err != nil {
 		return nil, fmt.Errorf("RCA extraction LLM call: %w", err)
@@ -1695,6 +1701,22 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 	default:
 		diagSendDrop.Add(1)
 	}
+}
+
+// emitGateRetryKeepalive emits an EventTypeToolCallStart keepalive around a
+// silent, non-streamed llm.ChatWithParams call (#2086: sameKindValidationGate,
+// apiVersionValidationGate, RunRCAExtractionFromConversation). Turn 0 is a
+// sentinel -- these calls happen outside runLLMLoop's normal turn counting.
+// EventTypeToolCallStart is used (not EventTypeReasoningDelta/TokenDelta)
+// specifically because bridgeEventsCollectSummary only accumulates the
+// latter two into the RCA summary returned to the driving agent; using a
+// text-accumulating event type would splice placeholder status text
+// directly into the summary (spike-discovered regression, see
+// UT-AF-2086-006).
+func emitGateRetryKeepalive(ctx context.Context, toolName string) {
+	emitToSink(ctx, session.EventTypeToolCallStart, 0, string(katypes.PhaseRCA), map[string]interface{}{
+		"tool_name": toolName,
+	})
 }
 
 // emitCancellationAudit emits an investigation-level cancellation event
