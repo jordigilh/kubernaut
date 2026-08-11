@@ -557,6 +557,24 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 			} else if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
 				t.logger.Error(forceErr, "start: force-transition to user-driving (no running session found)",
 					"rr_id", input.RRID)
+
+				// #2100: both fallback paths are now exhausted -- there is
+				// genuinely no investigation this session could ever
+				// attach to. Release the just-acquired Lease immediately
+				// and fail closed instead of falling through to
+				// startTimeoutTracking/a "started" response with an empty
+				// InvestigationSessionID, which previously left the lease
+				// reclaimed only incidentally by TimeoutManager's
+				// ~10-minute inactivity window (interactive.
+				// maxConcurrentSessions capacity erosion).
+				if releaseErr := t.sessions.Release(sess.SessionID, "no_investigation_available"); releaseErr != nil {
+					t.logger.Error(releaseErr, "start: failed to release lease after exhausting all fallback paths",
+						"rr_id", input.RRID, "session_id", sess.SessionID)
+				}
+				if t.metrics != nil {
+					t.metrics.RecordInteractiveTakeover("start_failed")
+				}
+				return InvestigateOutput{}, ErrCodeNoInvestigationAvailable
 			}
 		}
 	}

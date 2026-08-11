@@ -225,6 +225,17 @@ func (j *SessionJanitor) Untrack(sessionID string) {
 	delete(j.tracked, sessionID)
 }
 
+// TrackedForTest reports whether sessionID is currently tracked. Test-only
+// accessor exposing SessionJanitor's otherwise-private state (#2100) so
+// LeaseSessionManager's Track/Untrack chokepoint wiring can be asserted
+// directly, without waiting for a full sweep interval to elapse.
+func (j *SessionJanitor) TrackedForTest(sessionID string) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	_, ok := j.tracked[sessionID]
+	return ok
+}
+
 // Run starts the janitor loop until ctx is cancelled.
 func (j *SessionJanitor) Run(ctx context.Context) {
 	ticker := time.NewTicker(j.interval)

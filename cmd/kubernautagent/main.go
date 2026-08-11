@@ -1287,6 +1287,17 @@ func buildMCPHandler(
 		audit.StoreBestEffort(context.Background(), auditStore, event, logger.WithName("mcp-audit"))
 	}
 
+	// #2100: SessionJanitor is a backstop sweep for interactive sessions
+	// that never reach an explicit Release path (e.g. a session whose
+	// owning goroutine panics or exits early before the TTL/inactivity
+	// checks in GetDriver ever run against it again) -- without it, those
+	// sessions hold their Lease and activeCount slot until process
+	// restart, eroding interactive.maxConcurrentSessions capacity.
+	// Interval reuses cfg.Interactive.SessionTTL so the sweep never fires
+	// earlier than the TTL/inactivity paths already cover.
+	sessionJanitor := mcpkg.NewSessionJanitor(cfg.Interactive.SessionTTL, logger.WithName("session-janitor"))
+	go sessionJanitor.Run(ctx)
+
 	// Session management via K8s Leases (single-driver guarantee).
 	leaseOpts := []mcpkg.LeaseOption{
 		mcpkg.WithSessionTTL(cfg.Interactive.SessionTTL),
@@ -1300,6 +1311,7 @@ func buildMCPHandler(
 			emitDisconnectAudit(sessionID, rrID, reason)
 			agentMetrics.RecordInteractiveSessionEnded()
 		}),
+		mcpkg.WithSessionJanitor(sessionJanitor),
 	}
 	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, logger, leaseOpts...)
 
@@ -1535,6 +1547,7 @@ func buildMCPHandler(
 		"reconstruction_spawner", true,
 		"notification_bus", true,
 		"session_drainer", true,
+		"session_janitor", true,
 	)
 
 	return mcpHandler, drainer

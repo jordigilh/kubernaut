@@ -40,6 +40,12 @@ type fallbackAutoMgr struct {
 	upgradeErr    error
 	upgradeCalled atomic.Int32
 
+	// forceErr configures ForceTransitionToUserDriving's return value.
+	// Defaults to nil (existing tests' assumed always-succeeds behavior);
+	// #2100's fallback-exhausted test sets this to force handleStart's new
+	// fail-closed branch.
+	forceErr error
+
 	startCalled atomic.Int32
 	startResult string
 	startErr    error
@@ -66,7 +72,7 @@ func (m *fallbackAutoMgr) TransitionToUserDriving(_ string, _ string, _ []string
 	return nil
 }
 func (m *fallbackAutoMgr) ForceTransitionToUserDriving(_ string, _ string, _ []string) error {
-	return nil
+	return m.forceErr
 }
 func (m *fallbackAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) error {
 	m.upgradeCalled.Add(1)
