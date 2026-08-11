@@ -78,6 +78,15 @@ func (m *mockSessionManager) getReleased() (string, string) {
 	return m.releasedID, m.releasedReason
 }
 
+// setActive lets a test simulate a real SessionManager's IsDriverActive
+// transitioning to false after Release runs (#2076, v1.6 clone of #2075,
+// race reproduction) -- the mock otherwise reports a static isActive value.
+func (m *mockSessionManager) setActive(active bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.isActive = active
+}
+
 type mockInvestigatorRunner struct {
 	response                string
 	err                     error

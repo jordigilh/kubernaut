@@ -431,6 +431,13 @@ func buildAndRegisterMCPTools(core *mcpCoreDeps, p mcpHandlerParams) (mcpkg.Tool
 	wfLister := resolveWorkflowLister(p.wfCatalog, logger)
 	listWorkflowsTool := mcptools.NewListWorkflowsTool(wfLister)
 
+	// AutoCloseTombstone: records interactive sessions InvestigateTool's
+	// no_matching_workflows handling auto-closes on its own, so a racing
+	// kubernaut_complete_no_action call resolves as "already_resolved"
+	// instead of erroring (#2076, v1.6 clone of #2075). TTL matches
+	// disconnectGracePeriod's order of magnitude used elsewhere in this file.
+	autoCloseTombstone := mcpkg.NewAutoCloseTombstone(60 * time.Second)
+
 	investigateTool, selectWfTool, completeNoActionTool := buildMCPTools(mcpToolsDeps{
 		leaseMgr:           core.leaseMgr,
 		investigatorRunner: investigatorRunner,
@@ -446,6 +453,7 @@ func buildAndRegisterMCPTools(core *mcpCoreDeps, p mcpHandlerParams) (mcpkg.Tool
 		signalResolver:     signalResolver,
 		catalogAdapter:     catalogAdapter,
 		enricher:           enricher,
+		autoCloseTombstone: autoCloseTombstone,
 	})
 
 	// Register tools with the MCP SDK server.
@@ -725,6 +733,7 @@ type mcpToolsDeps struct {
 	signalResolver     *mcpadapters.SessionSignalContextResolver
 	catalogAdapter     *mcpadapters.WorkflowCatalogAdapter
 	enricher           *enrichment.Enricher
+	autoCloseTombstone *mcpkg.AutoCloseTombstone
 }
 
 // buildMCPTools constructs the InvestigateTool, SelectWorkflowTool, and
@@ -742,6 +751,7 @@ func buildMCPTools(d mcpToolsDeps) (*mcptools.InvestigateTool, *mcptools.SelectW
 		mcptools.WithAuditStore(d.auditStore, d.logger.WithName("mcp-audit")),
 		mcptools.WithSignalContextResolver(d.signalResolver),
 		mcptools.WithWorkflowCatalog(d.catalogAdapter),
+		mcptools.WithInvestigateAutoCloseTombstone(d.autoCloseTombstone),
 	}
 	investigateTool := mcptools.NewInvestigateTool(d.leaseMgr, d.investigatorRunner, d.recon, d.autoMgr, investigateOpts...)
 
@@ -765,6 +775,7 @@ func buildMCPTools(d mcpToolsDeps) (*mcptools.InvestigateTool, *mcptools.SelectW
 		mcptools.WithCompleteNoActionHTTPCompleter(d.autoMgr),
 		mcptools.WithCompleteNoActionMutexProvider(investigateTool),
 		mcptools.WithCompleteNoActionTimeoutTracker(d.timeoutMgr),
+		mcptools.WithCompleteNoActionAutoCloseTombstone(d.autoCloseTombstone),
 	)
 
 	return investigateTool, selectWfTool, completeNoActionTool

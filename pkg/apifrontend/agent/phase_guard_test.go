@@ -30,6 +30,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 // statefulToolContext extends fakeToolContext with a working session.State
@@ -729,6 +730,201 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2047)", func() {
 		summary, _ := argsSecond["summary"].(string)
 		Expect(summary).To(ContainSubstring("No investigation content is available"),
 			"stale grounded=true from the FIRST investigate must not leak into the SECOND, failed attempt")
+	})
+
+	// #2071 (forward-port of release/v1.5's #2034): Stage 2's grounding guard
+	// above is binary (grounded or not) and never checked whether a
+	// technically-grounded session still let the model alter the facts it
+	// was transcribing into present_decision. These hardenings close that
+	// narrower gap.
+
+	It("UT-AF-2071-014: overwrites present_decision's rca argument with KA's own reported RCA, discarding the LLM's transcription", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2071-rca-1", "status": "completed",
+			"summary": "Real investigation summary.",
+			"rca": map[string]any{
+				"severity": "warning", "confidence": 0.55,
+				"causal_chain":     []any{"MemoryPressure", "Evicted"},
+				"target":           "pod/real-target",
+				"total_tool_calls": 7, "total_llm_turns": 3,
+			},
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		rca, ok := args["rca"].(*tools.RCAData)
+		Expect(ok).To(BeTrue(), "rca must be overwritten with a *tools.RCAData, not left as the LLM's own value")
+		Expect(rca.Severity).To(Equal("warning"), "severity must come from KA's own report, not the LLM's fabricated 'critical'")
+		Expect(rca.Confidence).To(Equal(0.55))
+		Expect(rca.Target).To(Equal("pod/real-target"))
+		Expect(rca.CausalChain).To(Equal([]string{"MemoryPressure", "Evicted"}))
+		Expect(rca.ToolCallsCount).To(Equal(7), "total_tool_calls must be renamed to RCAData's tool_calls_count field")
+		Expect(rca.LLMTurns).To(Equal(3), "total_llm_turns must be renamed to RCAData's llm_turns field")
+	})
+
+	It("UT-AF-2071-015: leaves the rca argument untouched when investigate reported no structured rca payload (summary-only grounding)", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2071-rca-2", "status": "completed",
+			"summary": "OOMKilled 3 times in the last 10 minutes; memory limit is too low for observed usage.",
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		rca, ok := args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rca["severity"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["severity"]),
+			"with no structured rca to pass through, the harness has nothing authoritative to substitute for severity/confidence/causal_chain")
+		Expect(rca["confidence"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["confidence"]))
+		Expect(rca["causal_chain"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["causal_chain"]))
+		Expect(rca["tool_calls_count"]).To(Equal(0),
+			"#2073/#2074: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
+		Expect(rca["llm_turns"]).To(Equal(0),
+			"#2073/#2074: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
+	})
+
+	It("UT-AF-2071-016: clears a stale rca pass-through after a later investigate call that reported no rca", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2071-rca-3a", "status": "completed",
+			"summary": "First investigation.",
+			"rca":     map[string]any{"severity": "critical", "confidence": 0.9},
+		}, nil)
+
+		// A second, re-checked investigate call is grounded via summary only.
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2071-rca-3b", "status": "completed",
+			"summary": "Second investigation, no structured RCA this time.",
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		rca, ok := args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rca["severity"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["severity"]),
+			"the first call's rca must not leak into a present_decision grounded by the second, rca-less call")
+		Expect(rca["tool_calls_count"]).To(Equal(0),
+			"#2073/#2074: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
+		Expect(rca["llm_turns"]).To(Equal(0),
+			"#2073/#2074: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
+	})
+
+	It("UT-AF-2071-017: overrides present_decision content when kubernaut_investigate's shadow-agent alignment verdict is not aligned, even with summary/rca present", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2071-align-1", "status": "completed",
+			"summary": "Looks like a real investigation summary.",
+			"rca":     map[string]any{"severity": "critical", "confidence": 0.9},
+			"alignment_verdict": map[string]any{
+				"result": "suspicious", "circuit_breaker_activated": true,
+			},
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		summary, _ := args["summary"].(string)
+		Expect(summary).To(ContainSubstring("No investigation content is available"),
+			"KA's own shadow-agent flagging the RCA as ungrounded must override present_decision content, "+
+				"even though summary/rca look superficially legitimate")
+	})
+
+	It("UT-AF-2071-018: does NOT override present_decision content when the shadow-agent alignment verdict is aligned", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2071-align-2", "status": "completed",
+			"summary":           "A genuinely grounded summary.",
+			"alignment_verdict": map[string]any{"result": "aligned"},
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(args["summary"]).To(Equal(fabricatedArgs()["summary"]),
+			"an aligned shadow-agent verdict must not itself trigger the override")
+	})
+
+	// #2068 (forward-port): a Provisional rca (AF's own severity-triage
+	// guess, synthesized before KA has genuinely investigated -- see
+	// ka_investigate_mcp.go's/ka_investigate_bridge.go's fallback
+	// construction sites) must never be cached by the #2071 pass-through
+	// above as if it were a verified KA finding.
+
+	It("UT-AF-2068-001: does not cache a Provisional rca -- a later present_decision keeps its own rca untouched", func() {
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2068-1", "status": "completed",
+			"summary": "Severity assessed from resource metadata (full investigation pending)",
+			"rca": map[string]any{
+				"severity": "warning", "confidence": 0.6, "provisional": true,
+			},
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		rca, ok := args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rca["severity"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["severity"]),
+			"#2068: a Provisional (AF-synthesized severity-triage guess, not a genuine KA finding) rca must "+
+				"not clobber present_decision's own rca -- same treatment as 'no structured rca at all' (UT-AF-2071-015)")
+		Expect(rca["tool_calls_count"]).To(Equal(0),
+			"#2073/#2074: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
+		Expect(rca["llm_turns"]).To(Equal(0),
+			"#2073/#2074: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
+	})
+
+	It("UT-AF-2068-004: still overwrites present_decision's rca when kubernaut_investigate's rca is genuinely KA-reported (Provisional unset/false)", func() {
+		// Companion to UT-AF-2071-014, restated in #2068 terms: a real,
+		// non-Provisional rca must keep working exactly as before -- #2068
+		// must gate ONLY on Provisional=true, not regress the original
+		// #2071 caching behavior for a genuinely-investigated result.
+		_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+			"session_id": "sess-2068-4", "status": "completed",
+			"summary": "Real investigation summary.",
+			"rca": map[string]any{
+				"severity": "warning", "confidence": 0.55,
+				"causal_chain": []any{"MemoryPressure", "Evicted"},
+			},
+		}, nil)
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		rca, ok := args["rca"].(*tools.RCAData)
+		Expect(ok).To(BeTrue())
+		Expect(rca.Severity).To(Equal("warning"), "a non-Provisional rca must still overwrite present_decision's rca (#2071's original guarantee)")
+	})
+
+	It("UT-AF-2068-005: treats a malformed (non-object) rca payload the same as no rca at all, without panicking", func() {
+		// decodeInvestigateRCA must fail closed: a type-mismatched "rca"
+		// value (here a bare string instead of an object) must not cache
+		// anything usable, and must never panic the after-callback.
+		Expect(func() {
+			_, _ = after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
+				"session_id": "sess-2068-5", "status": "completed",
+				"summary": "Real investigation summary.",
+				"rca":     "not-an-object",
+			}, nil)
+		}).NotTo(Panic())
+
+		args := fabricatedArgs()
+		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
+		Expect(err).NotTo(HaveOccurred())
+
+		rca, ok := args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue())
+		Expect(rca["severity"]).To(Equal(fabricatedArgs()["rca"].(map[string]any)["severity"]),
+			"a malformed rca payload has nothing authoritative to substitute, same as UT-AF-2071-015")
+		Expect(rca["tool_calls_count"]).To(Equal(0),
+			"#2073/#2074: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
+		Expect(rca["llm_turns"]).To(Equal(0),
+			"#2073/#2074: backfilled with an honest zero rather than left for the LLM to fabricate a plausible-looking count")
 	})
 })
 

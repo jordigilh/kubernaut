@@ -52,12 +52,20 @@ type CompleteNoActionOutput struct {
 // Allows the user to explicitly conclude an investigation without selecting
 // a workflow. No discovery gate — can be called at any point in the session.
 type CompleteNoActionTool struct {
-	sessions       mcpinternal.SessionManager
-	httpCompleter  HTTPSessionCompleter
-	mutexProvider  SessionMutexProvider
-	timeoutTracker TimeoutTracker
-	logger         logr.Logger
+	sessions           mcpinternal.SessionManager
+	httpCompleter      HTTPSessionCompleter
+	mutexProvider      SessionMutexProvider
+	timeoutTracker     TimeoutTracker
+	autoCloseTombstone AutoCloseTombstone
+	logger             logr.Logger
 }
+
+// errAlreadyResolved is a sentinel returned by authorizeCompleteNoActionDriver
+// when IsDriverActive is false because the backend itself already
+// auto-closed this session (#2076, v1.6 clone of #2075), rather than the
+// session being genuinely missing. Handle checks for this specific error to
+// return a distinct "already_resolved" status instead of a generic failure.
+var errAlreadyResolved = errors.New("session already auto-resolved")
 
 // CompleteNoActionOption configures optional dependencies.
 type CompleteNoActionOption func(*CompleteNoActionTool)
@@ -94,6 +102,18 @@ func WithCompleteNoActionTimeoutTracker(tt TimeoutTracker) CompleteNoActionOptio
 	}
 }
 
+// WithCompleteNoActionAutoCloseTombstone sets the tombstone consulted when
+// IsDriverActive is false, to distinguish a session the backend already
+// auto-closed on its own (#2076, v1.6 clone of #2075) from one that is
+// genuinely missing.
+func WithCompleteNoActionAutoCloseTombstone(tombstone AutoCloseTombstone) CompleteNoActionOption {
+	return func(t *CompleteNoActionTool) {
+		if tombstone != nil {
+			t.autoCloseTombstone = tombstone
+		}
+	}
+}
+
 // NewCompleteNoActionTool creates the tool handler with its dependencies.
 func NewCompleteNoActionTool(sessions mcpinternal.SessionManager, opts ...CompleteNoActionOption) *CompleteNoActionTool {
 	t := &CompleteNoActionTool{sessions: sessions, logger: logr.Discard()}
@@ -124,6 +144,19 @@ func validateCompleteNoActionInput(input CompleteNoActionInput) error {
 // session for rrID and that user is its current driver.
 func (t *CompleteNoActionTool) authorizeCompleteNoActionDriver(rrID string, user mcpinternal.UserInfo) (*mcpinternal.InteractiveSession, error) {
 	if !t.sessions.IsDriverActive(rrID) {
+		// #2076 (v1.6 clone of #2075): the backend may have already
+		// auto-closed this session on its own (e.g.
+		// investigate_discovery.go's no_matching_workflows) between the
+		// caller learning about the session and this call arriving. That
+		// auto-close already emitted its own terminal audit record and
+		// released the lease exactly once -- re-running any of that here
+		// would duplicate it (AU-3/AU-12). Signal errAlreadyResolved so
+		// Handle can report a distinct "already_resolved" status rather
+		// than "completed_no_action" or "escalated", since this call's
+		// specific dismiss/escalate reason was never actually recorded.
+		if t.autoCloseTombstone != nil && t.autoCloseTombstone.WasRecentlyAutoClosed(rrID) {
+			return nil, errAlreadyResolved
+		}
 		return nil, fmt.Errorf("no active interactive session for rr_id")
 	}
 	driver, err := t.sessions.GetDriver(rrID)
@@ -184,6 +217,9 @@ func (t *CompleteNoActionTool) Handle(_ context.Context, input CompleteNoActionI
 
 	driver, err := t.authorizeCompleteNoActionDriver(input.RRID, user)
 	if err != nil {
+		if errors.Is(err, errAlreadyResolved) {
+			return CompleteNoActionOutput{Status: "already_resolved"}, nil
+		}
 		return CompleteNoActionOutput{}, err
 	}
 

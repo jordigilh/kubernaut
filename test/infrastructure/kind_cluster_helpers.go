@@ -202,7 +202,11 @@ func CreateKindClusterWithExtraMounts(ctx context.Context,
 	checkOutput, _ := checkCmd.CombinedOutput()
 	if strings.Contains(string(checkOutput), clusterName) {
 		_, _ = fmt.Fprintf(writer, "  ♻️  Cluster %s already exists, reusing (retry-safe)\n", clusterName)
-		return exportKubeconfigIfNeeded(ctx, clusterName, kubeconfigPath, writer)
+		// usePodman=false: this function's own "kind create cluster" call below
+		// never sets KIND_EXPERIMENTAL_PROVIDER either, relying entirely on the
+		// ambient process environment (unlike CreateKindClusterWithConfig's
+		// opts.UsePodman-gated cmd.Env) -- mirror that here for consistency.
+		return exportKubeconfigIfNeeded(ctx, clusterName, kubeconfigPath, false, writer)
 	}
 
 	// 1. Find workspace root
@@ -420,7 +424,7 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 	if clusterExists {
 		if opts.ReuseExisting {
 			_, _ = fmt.Fprintf(writer, "  ℹ️  Cluster %s already exists, reusing...\n", opts.ClusterName)
-			return exportKubeconfigIfNeeded(ctx, opts.ClusterName, opts.KubeconfigPath, writer)
+			return exportKubeconfigIfNeeded(ctx, opts.ClusterName, opts.KubeconfigPath, opts.UsePodman, writer)
 		}
 		if opts.DeleteExisting {
 			_, _ = fmt.Fprintf(writer, "  ⚠️  Cluster already exists, deleting...\n")
@@ -507,13 +511,27 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 	}
 
 	// 11. Export kubeconfig explicitly (kind create --kubeconfig doesn't always work reliably)
-	return exportKubeconfigIfNeeded(ctx, opts.ClusterName, opts.KubeconfigPath, writer)
+	return exportKubeconfigIfNeeded(ctx, opts.ClusterName, opts.KubeconfigPath, opts.UsePodman, writer)
 }
 
 // exportKubeconfigIfNeeded exports the kubeconfig for a Kind cluster
 // This is a workaround for unreliable --kubeconfig flag behavior
-func exportKubeconfigIfNeeded(ctx context.Context, clusterName, kubeconfigPath string, writer io.Writer) error {
+//
+// usePodman must mirror the KindClusterOptions.UsePodman passed to the
+// preceding "kind create cluster" call (step 9 above): kind has no
+// persistent state recording which provider a cluster was created under,
+// so "kind get kubeconfig" re-derives it from KIND_EXPERIMENTAL_PROVIDER on
+// every invocation and silently defaults to the Docker provider when unset.
+// Without this, the lookup fails with "could not locate any control plane
+// nodes" whenever the ambient process environment doesn't already export
+// KIND_EXPERIMENTAL_PROVIDER=podman itself -- which every CI workflow does
+// at the job level (masking the gap there), but a local `make
+// test-e2e-<service>` invocation does not.
+func exportKubeconfigIfNeeded(ctx context.Context, clusterName, kubeconfigPath string, usePodman bool, writer io.Writer) error {
 	kubeconfigCmd := exec.CommandContext(ctx, "kind", "get", "kubeconfig", "--name", clusterName)
+	if usePodman {
+		kubeconfigCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+	}
 	kubeconfigOutput, err := kubeconfigCmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to get kubeconfig: %w", err)

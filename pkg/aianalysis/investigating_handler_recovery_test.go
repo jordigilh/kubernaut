@@ -158,8 +158,10 @@ var _ = Describe("Fix #1390: AA GetResult 409 Retry Cap — BR-REL-014", func() 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(analysis.Status.KASession.ID).To(BeEmpty(),
 				"session ID must be cleared after 3 consecutive 409 errors")
-			Expect(result.Requeue).To(BeTrue(),
-				"should requeue for re-submit (session regeneration)")
+			// #2080: backs off instead of requeuing immediately (see UT-AA-064-008).
+			Expect(result.Requeue).To(BeFalse())
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+				"should back off before resubmit, not requeue immediately (session regeneration)")
 		})
 	})
 

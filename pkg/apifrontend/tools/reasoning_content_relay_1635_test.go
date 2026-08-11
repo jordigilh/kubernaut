@@ -84,7 +84,7 @@ var _ = Describe("AF/KA reasoning content live-stream relay — #1635", func() {
 			}
 			close(events)
 
-			_, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, _, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			queuedEvents := queue.Events()
 			Expect(queuedEvents).NotTo(BeEmpty(),
@@ -127,7 +127,7 @@ var _ = Describe("AF/KA reasoning content live-stream relay — #1635", func() {
 			}
 			close(events)
 
-			_, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			_, _, _, _ = tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			queuedEvents := queue.Events()
 			Expect(queuedEvents).To(HaveLen(1),
@@ -159,7 +159,7 @@ var _ = Describe("AF/KA reasoning content live-stream relay — #1635", func() {
 			}
 			close(events)
 
-			summary, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+			summary, _, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 			Expect(summary).NotTo(ContainSubstring("raw model deliberation"),
 				"#1635 / DD-LLM-009: genuine reasoning content must never leak into the final chat-answer/RCA summary text")
