@@ -514,6 +514,18 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		}
 	}
 
+	// #2103: record Started as soon as Takeover confirms a genuinely new
+	// lease was acquired (activeCount.Add(1)) -- before any fallback logic
+	// below that might immediately Release() it again (the
+	// no_investigation_available branch a few lines down). Now that
+	// Release() centrally decrements aiagent_mcp_interactive_sessions_active
+	// (paired with its own activeCount.Add(-1)), Started/Ended must stay
+	// paired with the lease's own lifecycle -- otherwise that branch would
+	// decrement a gauge that was never incremented, driving it negative.
+	if t.metrics != nil {
+		t.metrics.RecordInteractiveSessionStarted()
+	}
+
 	// #1390: Upgrade running autonomous session in-place (Jump In) instead of
 	// cancelling and recreating. UpgradeToInteractive sets the atomic flag so
 	// the goroutine's next InteractiveHold check sees it, and store.Update's
@@ -580,7 +592,6 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	}
 
 	if t.metrics != nil {
-		t.metrics.RecordInteractiveSessionStarted()
 		t.metrics.RecordInteractiveTakeover("start_success")
 	}
 
@@ -846,9 +857,12 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinterna
 
 	CompleteHTTPSession(t.httpCompleter, input.RRID, finalResult, t.logger, "complete")
 
-	if t.metrics != nil {
-		t.metrics.RecordInteractiveSessionEnded()
-	}
+	// #2103: the aiagent_mcp_interactive_sessions_active decrement moved
+	// into LeaseSessionManager.Release() itself (called above), paired
+	// with its own activeCount.Add(-1) -- centralizing it there closes the
+	// same gap for every other Release() caller (complete_no_action,
+	// workflow_selected, no_matching_workflows, the SessionJanitor
+	// backstop) that never had a metrics field to call this explicitly.
 
 	t.sessionMu.Delete(input.RRID)
 	t.reconHistory.Delete(input.RRID)
@@ -1267,9 +1281,8 @@ func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.
 
 	CompleteHTTPSession(t.httpCompleter, input.RRID, nil, t.logger, "cancel")
 
-	if t.metrics != nil {
-		t.metrics.RecordInteractiveSessionEnded()
-	}
+	// #2103: see handleComplete's matching comment above -- the gauge
+	// decrement is now centralized in LeaseSessionManager.Release().
 
 	t.sessionMu.Delete(input.RRID)
 	t.reconHistory.Delete(input.RRID)
