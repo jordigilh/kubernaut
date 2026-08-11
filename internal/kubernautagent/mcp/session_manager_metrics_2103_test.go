@@ -62,7 +62,7 @@ var _ = Describe("LeaseSessionManager.Release centralized metrics decrement — 
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		namespace = "kubernaut-system"
+		namespace = testNamespace
 		logger = logr.Discard()
 
 		scheme := runtime.NewScheme()

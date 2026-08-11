@@ -340,7 +340,16 @@ func buildMCPCoreDeps(ctx context.Context, p mcpHandlerParams) (*mcpCoreDeps, er
 	go sessionJanitor.Run(ctx)
 
 	// Session management via K8s Leases (single-driver guarantee).
-	leaseMgr := buildMCPLeaseManager(ctrlCli, namespace, cfg, autoMgr, agentMetrics, logger, emitDisconnectAudit, sessionJanitor) //nolint:contextcheck // buildMCPLeaseManager wires session lease management once at startup; no parent request context exists yet
+	leaseMgr := buildMCPLeaseManager(mcpLeaseManagerDeps{ //nolint:contextcheck // buildMCPLeaseManager wires session lease management once at startup; no parent request context exists yet
+		ctrlCli:             ctrlCli,
+		namespace:           namespace,
+		cfg:                 cfg,
+		autoMgr:             autoMgr,
+		agentMetrics:        agentMetrics,
+		logger:              logger,
+		emitDisconnectAudit: emitDisconnectAudit,
+		sessionJanitor:      sessionJanitor,
+	})
 
 	// Context reconstruction from DS audit events (best-effort).
 	recon := resolveContextReconstructor(ds, logger)
@@ -350,7 +359,7 @@ func buildMCPCoreDeps(ctx context.Context, p mcpHandlerParams) (*mcpCoreDeps, er
 	eventStore := mcpkg.NewDelegatingEventStore()
 
 	// TimeoutManager: fires onExpire when a session goes inactive (SEC-04, HARM-03/04).
-	timeoutMgr := buildMCPTimeoutManager(cfg, autoMgr, leaseMgr, agentMetrics, logger, emitDisconnectAudit) //nolint:contextcheck // session Release must succeed on its own bounded context regardless of the caller's (drain/timeout/disconnect) context state
+	timeoutMgr := buildMCPTimeoutManager(cfg, autoMgr, leaseMgr, logger, emitDisconnectAudit) //nolint:contextcheck // session Release must succeed on its own bounded context regardless of the caller's (drain/timeout/disconnect) context state
 
 	// ReconstructionSpawner: rebuilds context and spawns autonomous investigation
 	// after an interactive session ends (INT-06, BR-INTERACTIVE-008).
@@ -587,27 +596,42 @@ func newDisconnectAuditEmitter(auditStore audit.AuditStore, logger logr.Logger) 
 	}
 }
 
+// mcpLeaseManagerDeps groups buildMCPLeaseManager's construction-time
+// dependencies (revive argument-limit: sessionJanitor, added for #2100 (v1.6
+// clone #2101), pushed the plain-parameter list to 8 -- follows the same
+// deps-struct pattern as mcpDisconnectHandlerDeps below).
+type mcpLeaseManagerDeps struct {
+	ctrlCli             ctrlclient.Client
+	namespace           string
+	cfg                 *kaconfig.Config
+	autoMgr             *session.Manager
+	agentMetrics        *kametrics.Metrics
+	logger              logr.Logger
+	emitDisconnectAudit func(string, string, string)
+	sessionJanitor      *mcpkg.SessionJanitor
+}
+
 // buildMCPLeaseManager constructs the K8s-Lease-backed session manager
 // (single-driver guarantee) and reclaims any orphaned Leases left over from a
 // previous process instance.
-func buildMCPLeaseManager(ctrlCli ctrlclient.Client, namespace string, cfg *kaconfig.Config, autoMgr *session.Manager, agentMetrics *kametrics.Metrics, logger logr.Logger, emitDisconnectAudit func(string, string, string), sessionJanitor *mcpkg.SessionJanitor) *mcpkg.LeaseSessionManager {
+func buildMCPLeaseManager(d mcpLeaseManagerDeps) *mcpkg.LeaseSessionManager {
 	leaseOpts := []mcpkg.LeaseOption{
-		mcpkg.WithSessionTTL(cfg.Interactive.SessionTTL),
-		mcpkg.WithInactivityTimeout(cfg.Interactive.InactivityTimeout),
-		mcpkg.WithMaxConcurrentSessions(cfg.Interactive.MaxConcurrentSessions),
+		mcpkg.WithSessionTTL(d.cfg.Interactive.SessionTTL),
+		mcpkg.WithInactivityTimeout(d.cfg.Interactive.InactivityTimeout),
+		mcpkg.WithMaxConcurrentSessions(d.cfg.Interactive.MaxConcurrentSessions),
 		mcpkg.WithSessionExpiredCallback(func(sessionID, rrID, reason string) {
 			// #1438: Emit terminal event BEFORE completing the HTTP session so
 			// EventLogBridge can forward it to AF before the channel closes.
-			autoMgr.EmitSessionEndedByRR(rrID, reason)
-			mcptools.CompleteHTTPSession(autoMgr, rrID, nil, logger, reason)
-			emitDisconnectAudit(sessionID, rrID, reason)
+			d.autoMgr.EmitSessionEndedByRR(rrID, reason)
+			mcptools.CompleteHTTPSession(d.autoMgr, rrID, nil, d.logger, reason)
+			d.emitDisconnectAudit(sessionID, rrID, reason)
 			// #2103 (v1.6 clone #2104): aiagent_mcp_interactive_sessions_active
 			// decrement moved into LeaseSessionManager.Release() itself (called
 			// by GetDriver just before this callback fires) -- see
 			// WithSessionEndedMetrics below. An explicit call here would
 			// double-decrement.
 		}),
-		mcpkg.WithSessionJanitor(sessionJanitor),
+		mcpkg.WithSessionJanitor(d.sessionJanitor),
 		// #2103 (v1.6 clone #2104): centralizes the
 		// aiagent_mcp_interactive_sessions_active decrement inside Release()
 		// itself, so every Release() caller -- InvestigateTool,
@@ -615,12 +639,12 @@ func buildMCPLeaseManager(ctrlCli ctrlclient.Client, namespace string, cfg *kaco
 		// backstop above, and this file's own TTL/inactivity/disconnect
 		// callbacks below -- keeps the gauge accurate without each needing
 		// its own metrics wiring.
-		mcpkg.WithSessionEndedMetrics(agentMetrics),
+		mcpkg.WithSessionEndedMetrics(d.agentMetrics),
 	}
-	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(ctrlCli, namespace, logger, leaseOpts...)
+	leaseMgr := mcpkg.NewLeaseSessionManagerConcrete(d.ctrlCli, d.namespace, d.logger, leaseOpts...)
 
 	if n := leaseMgr.ReconcileOrphanedLeases(context.Background()); n > 0 {
-		logger.Info("startup: reclaimed orphaned interactive Leases", "count", n)
+		d.logger.Info("startup: reclaimed orphaned interactive Leases", "count", n)
 	}
 	return leaseMgr
 }
@@ -629,7 +653,13 @@ func buildMCPLeaseManager(ctrlCli ctrlclient.Client, namespace string, cfg *kaco
 // when a session goes inactive (SEC-04, HARM-03/04): it snapshots the
 // correlation ID before releasing the lease, resolves the HTTP session so AA
 // stops polling user_driving, and emits the disconnect audit trail.
-func buildMCPTimeoutManager(cfg *kaconfig.Config, autoMgr *session.Manager, leaseMgr *mcpkg.LeaseSessionManager, agentMetrics *kametrics.Metrics, logger logr.Logger, emitDisconnectAudit func(string, string, string)) *mcpkg.TimeoutManager {
+//
+// #2103 (v1.6 clone #2104): no longer takes an agentMetrics parameter -- the
+// aiagent_mcp_interactive_sessions_active decrement this callback used to
+// call explicitly moved into LeaseSessionManager.Release() itself (via
+// buildMCPLeaseManager's WithSessionEndedMetrics), which leaseMgr.Release
+// below already invokes.
+func buildMCPTimeoutManager(cfg *kaconfig.Config, autoMgr *session.Manager, leaseMgr *mcpkg.LeaseSessionManager, logger logr.Logger, emitDisconnectAudit func(string, string, string)) *mcpkg.TimeoutManager {
 	return mcpkg.NewTimeoutManager(
 		cfg.Interactive.InactivityTimeout,
 		[]time.Duration{cfg.Interactive.InactivityTimeout - 2*time.Minute, cfg.Interactive.InactivityTimeout - 30*time.Second},

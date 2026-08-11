@@ -46,7 +46,7 @@ var _ = Describe("SessionDrainer — BR-OPS-013 graceful shutdown", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		namespace = "kubernaut-system"
+		namespace = testNamespace
 		logger = logr.Discard()
 
 		scheme = runtime.NewScheme()

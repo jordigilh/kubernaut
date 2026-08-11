@@ -259,7 +259,7 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 		return nil, err
 	}
 
-	return m.registerNewInteractiveSession(sessionID, rrID, user), nil
+	return m.registerNewInteractiveSession(sessionID, rrID, user), nil //nolint:contextcheck // registerNewInteractiveSession's #2100 janitor.Track onExpire callback calls Release at an arbitrary future time (the sweep interval), detached from this Takeover request's ctx -- see drainer.go's identical Release call for the same rationale
 }
 
 // reconnectOrRejectExistingLease checks whether rrID already has an active

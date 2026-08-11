@@ -45,7 +45,7 @@ var _ = Describe("LeaseSessionManager — #703 BR-INTERACTIVE-002", func() {
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		namespace = "kubernaut-system"
+		namespace = testNamespace
 		logger = logr.Discard()
 
 		scheme = runtime.NewScheme()

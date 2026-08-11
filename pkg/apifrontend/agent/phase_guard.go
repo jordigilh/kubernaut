@@ -790,9 +790,18 @@ func substituteGroundedRCA(state adksession.State, args map[string]any) {
 // execution-time args (defense-in-depth for the unblocked path, and for any
 // non-SSE consumer of the tool's own FunctionResponse) -- the two calls are
 // idempotent over the same underlying args map.
+// Both returns below are (nil, nil), per ADK's own AfterModelCallback
+// contract (google.golang.org/adk@v1.5.1/internal/llminternal/base_flow.go's
+// runAfterModelCallbacks): "(nil, nil) means no override -- the original
+// llmResponse/llmResponseErr flow through unchanged", as opposed to a
+// generically ambiguous nil-value success/lost-error. There is nothing to
+// sanitize when the model itself errored or returned no content (first
+// return), and the loop above already did its job by mutating
+// llmResponse.Content.Parts[*].FunctionCall.Args in place -- no replacement
+// response object is needed (second return).
 func sanitizePresentDecisionResponse(ctx agent.CallbackContext, llmResponse *model.LLMResponse, llmResponseErr error) (*model.LLMResponse, error) {
 	if llmResponseErr != nil || llmResponse == nil || llmResponse.Content == nil {
-		return nil, nil
+		return nil, nil //nolint:nilerr,nilnil // see doc comment above: not an error path, ADK's own "no override" sentinel
 	}
 	for _, part := range llmResponse.Content.Parts {
 		if part == nil || part.FunctionCall == nil || part.FunctionCall.Name != presentDecisionTool {
@@ -803,7 +812,7 @@ func sanitizePresentDecisionResponse(ctx agent.CallbackContext, llmResponse *mod
 		}
 		enforceGroundingGuard(ctx, part.FunctionCall.Args)
 	}
-	return nil, nil
+	return nil, nil //nolint:nilnil // see doc comment above: ADK's own "no override" sentinel, not an ambiguous nil-value success
 }
 
 // enforceGroundingGuard implements #2047's (main clone of #2023) harness-side

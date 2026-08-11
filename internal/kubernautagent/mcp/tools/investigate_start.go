@@ -70,21 +70,7 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		var exhausted bool
 		investigationSessionID, exhausted = t.upgradeOrCreateInteractiveSession(ctx, input, user)
 		if exhausted {
-			// #2100 (v1.6 clone #2101): both fallback paths are exhausted --
-			// release the just-acquired Lease immediately and fail closed
-			// instead of falling through to startTimeoutTracking/a
-			// "started" response with an empty InvestigationSessionID,
-			// which previously left the lease reclaimed only incidentally
-			// by TimeoutManager's ~10-minute inactivity window
-			// (interactive.maxConcurrentSessions capacity erosion).
-			if releaseErr := t.sessions.Release(sess.SessionID, "no_investigation_available"); releaseErr != nil {
-				t.logger.Error(releaseErr, "start: failed to release lease after exhausting all fallback paths",
-					"rr_id", input.RRID, "session_id", sess.SessionID)
-			}
-			if t.metrics != nil {
-				t.metrics.RecordInteractiveTakeover("start_failed")
-			}
-			return InvestigateOutput{}, ErrCodeNoInvestigationAvailable
+			return InvestigateOutput{}, t.failStartOnFallbackExhausted(sess.SessionID, input.RRID)
 		}
 	}
 
@@ -101,6 +87,27 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		Status:                 "started",
 		InvestigationSessionID: investigationSessionID,
 	}, nil
+}
+
+// failStartOnFallbackExhausted handles handleStart's fallback-exhausted
+// branch (#2100, v1.6 clone #2101): both the running-autonomous-session
+// upgrade and the fallback-session-creation path failed, so the just-acquired
+// Lease is released immediately and the request fails closed, instead of
+// falling through to startTimeoutTracking/a "started" response with an empty
+// InvestigationSessionID -- which previously left the lease reclaimed only
+// incidentally by TimeoutManager's ~10-minute inactivity window
+// (interactive.maxConcurrentSessions capacity erosion). Extracted out of
+// handleStart to keep its own nesting depth within this repo's complexity
+// limit (nestif).
+func (t *InvestigateTool) failStartOnFallbackExhausted(sessionID, rrID string) error {
+	if releaseErr := t.sessions.Release(sessionID, "no_investigation_available"); releaseErr != nil {
+		t.logger.Error(releaseErr, "start: failed to release lease after exhausting all fallback paths",
+			"rr_id", rrID, "session_id", sessionID)
+	}
+	if t.metrics != nil {
+		t.metrics.RecordInteractiveTakeover("start_failed")
+	}
+	return ErrCodeNoInvestigationAvailable
 }
 
 // launchPendingInteractiveSession launches a previously-deferred interactive

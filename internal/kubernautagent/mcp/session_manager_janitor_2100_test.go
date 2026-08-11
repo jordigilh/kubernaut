@@ -51,7 +51,7 @@ var _ = Describe("LeaseSessionManager + SessionJanitor wiring — #2100", func()
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		namespace = "kubernaut-system"
+		namespace = testNamespace
 		logger = logr.Discard()
 
 		scheme := runtime.NewScheme()
