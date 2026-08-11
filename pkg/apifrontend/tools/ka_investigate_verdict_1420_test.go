@@ -62,7 +62,7 @@ var _ = Describe("Issue #1420: AF Bridge Alignment Verdict Handling (SC-7)", fun
 		ctx := launcher.WithEventBridge(context.Background(), q, taskID, "ctx-1420", nil)
 		ctx = tools.WithRRID(ctx, "rr-1420-001")
 
-		summary, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+		summary, _, _, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 		_ = summary
 
 		found := false
@@ -163,7 +163,7 @@ var _ = Describe("Issue #1420: AF Bridge Alignment Verdict Handling (SC-7)", fun
 		ctx := launcher.WithEventBridge(context.Background(), q, taskID, "ctx-1420-004", nil)
 		ctx = tools.WithRRID(ctx, "rr-1420-004")
 
-		_, _, verdict := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+		_, _, verdict, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 		Expect(verdict).NotTo(BeNil(),
 			"the caller (HandleInvestigationMCPWithRegistry) needs the verdict to populate InvestigateMCPResult.AlignmentVerdict, "+
@@ -178,7 +178,7 @@ var _ = Describe("Issue #1420: AF Bridge Alignment Verdict Handling (SC-7)", fun
 		events <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
 
 		ctx := context.Background()
-		_, _, verdict := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
+		_, _, verdict, _ := tools.BridgeEventsCollectSummary(ctx, events, 5*time.Second)
 
 		Expect(verdict).To(BeNil(), "no alignment check ran (or is disabled) -- must not fabricate a verdict")
 	})
