@@ -50,6 +50,16 @@ const errNoActiveDriver = "interactive session not active — you must call kube
 // option; this is defense-in-depth for the rare case a call slips through.
 const errCheckpointBlocked = "this action requires explicit user confirmation first -- wait for the user's next message before proceeding"
 
+// errDiscoveryRequiredBeforeDecision is returned by phaseGuardBefore's
+// #2098 (v1.6 clone #2099) ordering guard when kubernaut_present_decision is
+// attempted before kubernaut_discover_workflows has succeeded, in an
+// interaction mode where that ordering is load-bearing. Mirrors
+// errCheckpointBlocked's reject-and-let-the-model-retry pattern (DD-AF-011,
+// #1899) rather than enforceGroundingGuard's mutate-and-continue pattern:
+// unlike a fabrication risk, there is no honest content to substitute here,
+// so the correct remedy is for the model to call discover_workflows and retry.
+const errDiscoveryRequiredBeforeDecision = "kubernaut_discover_workflows has not been called yet -- call kubernaut_discover_workflows first, then retry kubernaut_present_decision"
+
 // noGroundedContentSummary is the fixed, honest payload #2047's (main clone
 // of #2023) grounding guard substitutes for present_decision's summary when
 // the most recent kubernaut_investigate produced no real content to
@@ -157,6 +167,14 @@ func phaseGuardBefore(ctx tool.Context, t tool.Tool, args map[string]any) (map[s
 	// AU-3 structured artifact is always emitted -- only a fabricated
 	// narrative is blocked.
 	if t.Name() == presentDecisionTool {
+		// #2098 (v1.6 clone #2099): reject-and-retry ordering guard,
+		// checked BEFORE the grounding guard runs -- a premature call must
+		// not even reach enforceGroundingGuard's mutation/masking logic.
+		if presentDecisionRequiresDiscoveryFirst(ctx.State()) {
+			logr.FromContextOrDiscard(ctx).Info("phase-guard blocked present_decision",
+				"tool", t.Name(), "reason", "discover_workflows_not_yet_succeeded")
+			return map[string]any{"error": errDiscoveryRequiredBeforeDecision}, nil
+		}
 		enforceGroundingGuard(ctx, args)
 		return nil, nil // nolint:nilnil
 	}
@@ -201,6 +219,45 @@ func driverIsActive(state adksession.State) bool {
 	}
 	b, ok := active.(bool)
 	return ok && b
+}
+
+// presentDecisionRequiresDiscoveryFirst implements #2098's (v1.6 clone
+// #2099) ordering guard: it reports whether kubernaut_present_decision must
+// be rejected because discover_workflows has not yet succeeded in this
+// driver session, in an interaction mode where that ordering actually
+// matters.
+//
+// Phase2Blocked == false means the declared mode does NOT gate
+// discover_workflows behind a human-confirmation checkpoint -- true for
+// full_remediation/full_remediation_autonomous, where the model is expected
+// to call discover_workflows autonomously before presenting a decision.
+// Reusing Phase2Blocked (rather than re-deriving interaction mode here)
+// means this gate automatically inherits #1918's rcaConcludedNotActionable
+// exemption for free: that override forces Phase2Blocked=true precisely
+// because no workflow discovery is expected in that case either.
+//
+// Fails open (never blocks) when state is nil or Phase2Blocked was never
+// set, matching InteractionModeInteractive's own fail-safe default
+// (interactionModeFromState) -- a present_decision call with no prior
+// investigate at all is enforceGroundingGuard's concern, not this gate's.
+func presentDecisionRequiresDiscoveryFirst(state adksession.State) bool {
+	if state == nil {
+		return false
+	}
+	phase2Blocked := true
+	if v, err := state.Get(session.StateKeyPhase2Blocked); err == nil {
+		if b, ok := v.(bool); ok {
+			phase2Blocked = b
+		}
+	}
+	if phase2Blocked {
+		return false
+	}
+	succeeded := false
+	if v, err := state.Get(session.StateKeyDiscoverWorkflowsSucceeded); err == nil {
+		succeeded, _ = v.(bool)
+	}
+	return !succeeded
 }
 
 // injectStoredRRID fills args["rr_id"] from session state when the caller
@@ -368,6 +425,11 @@ func recordDiscoverWorkflowsCheckpoint(ctx tool.Context) {
 	if err := state.Set(session.StateKeyPhase3Blocked, blocked); err != nil {
 		logger.Error(err, "phase-guard failed to persist phase3_blocked state")
 	}
+	// #2098 (v1.6 clone #2099): unblocks presentDecisionRequiresDiscoveryFirst's
+	// ordering guard for the remainder of this driver session.
+	if err := state.Set(session.StateKeyDiscoverWorkflowsSucceeded, true); err != nil {
+		logger.Error(err, "phase-guard failed to persist discover_workflows_succeeded state")
+	}
 }
 
 // recordDriverEntryState persists driver-active flag, rr_id, and session_id
@@ -418,6 +480,14 @@ func recordInteractionMode(state adksession.State, inputArgs, resp map[string]an
 	if err := state.Set(session.StateKeyInteractionMode, mode); err != nil {
 		logger.Error(err, "phase-guard failed to persist interaction mode")
 	}
+
+	// #2098 (v1.6 clone #2099): a fresh investigation must not inherit a
+	// discover_workflows_succeeded flag left by a prior RR in the same chat
+	// session.
+	if err := state.Set(session.StateKeyDiscoverWorkflowsSucceeded, false); err != nil {
+		logger.Error(err, "phase-guard failed to reset discover_workflows_succeeded state")
+	}
+
 	blocked := mode == session.InteractionModeInteractive
 
 	// #1918: harness-enforced actionability gate. Independent of the
