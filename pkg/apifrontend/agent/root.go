@@ -89,6 +89,7 @@ func NewRootAgent(cfg AgentConfig, opts ...Option) (agent.Agent, []tool.Tool, er
 		Instruction:          cfg.Instruction,
 		InstructionProvider:  cfg.InstructionProvider,
 		BeforeModelCallbacks: []llmagent.BeforeModelCallback{historySanitizer, checkpointToolFilter},
+		AfterModelCallbacks:  []llmagent.AfterModelCallback{sanitizePresentDecisionResponse},
 		BeforeToolCallbacks:  beforeCallbacks,
 		AfterToolCallbacks:   []llmagent.AfterToolCallback{afterMetrics, afterAudit, afterPhase, afterLog},
 	})

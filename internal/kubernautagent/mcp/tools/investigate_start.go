@@ -48,6 +48,18 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		return InvestigateOutput{}, startErr
 	}
 
+	// #2103 (v1.6 clone #2104): record Started as soon as startInteractiveSession
+	// confirms a genuinely new lease was acquired (activeCount.Add(1)) --
+	// before any fallback logic below that might immediately Release() it
+	// again (the exhausted branch a few lines down). Now that Release()
+	// centrally decrements aiagent_mcp_interactive_sessions_active (paired
+	// with its own activeCount.Add(-1)), Started/Ended must stay paired with
+	// the lease's own lifecycle -- otherwise that branch would decrement a
+	// gauge that was never incremented, driving it negative.
+	if t.metrics != nil {
+		t.metrics.RecordInteractiveSessionStarted()
+	}
+
 	// #1390: Upgrade running autonomous session in-place (Jump In) instead of
 	// cancelling and recreating. UpgradeToInteractive sets the atomic flag so
 	// the goroutine's next InteractiveHold check sees it, and store.Update's
@@ -55,11 +67,14 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 	// Skip when we just launched a pending session — its RCA goroutine will
 	// self-transition via InteractiveHold once complete.
 	if !launchedPending {
-		investigationSessionID = t.upgradeOrCreateInteractiveSession(ctx, input, user)
+		var exhausted bool
+		investigationSessionID, exhausted = t.upgradeOrCreateInteractiveSession(ctx, input, user)
+		if exhausted {
+			return InvestigateOutput{}, t.failStartOnFallbackExhausted(sess.SessionID, input.RRID)
+		}
 	}
 
 	if t.metrics != nil {
-		t.metrics.RecordInteractiveSessionStarted()
 		t.metrics.RecordInteractiveTakeover("start_success")
 	}
 
@@ -72,6 +87,27 @@ func (t *InvestigateTool) handleStart(ctx context.Context, input InvestigateInpu
 		Status:                 "started",
 		InvestigationSessionID: investigationSessionID,
 	}, nil
+}
+
+// failStartOnFallbackExhausted handles handleStart's fallback-exhausted
+// branch (#2100, v1.6 clone #2101): both the running-autonomous-session
+// upgrade and the fallback-session-creation path failed, so the just-acquired
+// Lease is released immediately and the request fails closed, instead of
+// falling through to startTimeoutTracking/a "started" response with an empty
+// InvestigationSessionID -- which previously left the lease reclaimed only
+// incidentally by TimeoutManager's ~10-minute inactivity window
+// (interactive.maxConcurrentSessions capacity erosion). Extracted out of
+// handleStart to keep its own nesting depth within this repo's complexity
+// limit (nestif).
+func (t *InvestigateTool) failStartOnFallbackExhausted(sessionID, rrID string) error {
+	if releaseErr := t.sessions.Release(sessionID, "no_investigation_available"); releaseErr != nil {
+		t.logger.Error(releaseErr, "start: failed to release lease after exhausting all fallback paths",
+			"rr_id", rrID, "session_id", sessionID)
+	}
+	if t.metrics != nil {
+		t.metrics.RecordInteractiveTakeover("start_failed")
+	}
+	return ErrCodeNoInvestigationAvailable
 }
 
 // launchPendingInteractiveSession launches a previously-deferred interactive
@@ -165,8 +201,16 @@ func (t *InvestigateTool) startInteractiveSession(ctx context.Context, input Inv
 // the existing one is terminal — reattaches to (or creates) a fresh
 // interactive session so the user is never left with a lease but no
 // investigation to drive (#1440 SC-24). Returns the resulting investigation
-// session ID.
-func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) string {
+// session ID, and (#2100, v1.6 clone #2101) whether every fallback path was
+// exhausted with genuinely nothing for the caller to attach to -- true only
+// when no running session exists for this RR AND both the reattach-or-create
+// fallback and ForceTransitionToUserDriving failed. handleStart uses this
+// second value to fail closed (release the lease, return an actionable
+// error) instead of returning a hollow "started" response with an empty
+// InvestigationSessionID. The terminal-session branch below deliberately
+// never reports exhausted=true: it always has autoSessionID (a real,
+// non-empty session) to fall back to, matching pre-#2100 behavior.
+func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (string, bool) {
 	autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
 	if !found {
 		// No Running session exists for this RR — reattach to an existing
@@ -174,23 +218,27 @@ func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context,
 		// a genuine placeholder, so the user is never left with a lease but
 		// no investigation.
 		if reattachedID := t.reattachOrCreateFallback(ctx, input.RRID, user); reattachedID != "" {
-			return reattachedID
+			return reattachedID, false
 		}
 		if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
 			t.logger.Error(forceErr, "start: force-transition to user-driving (no running session found)",
 				"rr_id", input.RRID)
+			// #2100 (v1.6 clone #2101): both fallback paths are now
+			// exhausted -- there is genuinely no investigation this
+			// session could ever attach to.
+			return "", true
 		}
-		return ""
+		return "", false
 	}
 
 	upgradeErr := t.autoMgr.UpgradeToInteractive(autoSessionID, user.Username, user.Groups)
 	if upgradeErr == nil {
-		return autoSessionID
+		return autoSessionID, false
 	}
 	if !errors.Is(upgradeErr, session.ErrSessionTerminal) {
 		t.logger.Error(upgradeErr, "start: upgrade autonomous session to interactive",
 			"rr_id", input.RRID, "auto_session_id", autoSessionID)
-		return autoSessionID
+		return autoSessionID, false
 	}
 
 	if forceErr := t.autoMgr.ForceTransitionToUserDriving(input.RRID, user.Username, user.Groups); forceErr != nil {
@@ -200,9 +248,9 @@ func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context,
 	// #1440 SC-24 / #1818: Terminal session — reattach to the real RCA (or a
 	// genuine placeholder) so the user always has an investigation to drive.
 	if reattachedID := t.reattachOrCreateFallback(ctx, input.RRID, user); reattachedID != "" {
-		return reattachedID
+		return reattachedID, false
 	}
-	return autoSessionID
+	return autoSessionID, false
 }
 
 // reattachOrCreateFallback resolves the investigation session the user

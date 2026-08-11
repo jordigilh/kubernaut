@@ -60,9 +60,9 @@ func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.
 
 	CompleteHTTPSession(t.httpCompleter, input.RRID, nil, t.logger, "cancel")
 
-	if t.metrics != nil {
-		t.metrics.RecordInteractiveSessionEnded()
-	}
+	// #2103 (v1.6 clone #2104): see handleComplete's matching comment
+	// (investigate_takeover.go) -- the gauge decrement is now centralized
+	// in LeaseSessionManager.Release().
 
 	t.sessionMu.Delete(input.RRID)
 	t.reconHistory.Delete(input.RRID)

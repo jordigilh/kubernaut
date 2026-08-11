@@ -77,6 +77,37 @@ type LeaseSessionManager struct {
 	logger            logr.Logger
 	onSessionExpired  func(sessionID, rrID, reason string) // called on TTL/inactivity auto-release
 	onReconnect       func(sessionID string)               // called when Takeover detects same-user reconnect
+
+	// janitor is the #2100 backstop: every session Takeover creates is
+	// Tracked here and Untracked on Release, so a session that never gets
+	// explicitly released (crash, panic, code path that returns early
+	// without calling Release) is still reclaimed by the janitor's sweep
+	// instead of leaking Lease capacity until process restart. Nil in
+	// deployments/tests that don't wire one via WithSessionJanitor --
+	// Track/Untrack calls are no-ops in that case.
+	janitor *SessionJanitor
+
+	// sessionMetrics is the #2103 centralization point for
+	// aiagent_mcp_interactive_sessions_active: every Release caller used to
+	// be individually responsible for calling RecordInteractiveSessionEnded,
+	// and most never wired it (CompleteNoActionTool, SelectWorkflowTool,
+	// InvestigateTool's no_matching_workflows goroutine, and #2100's own new
+	// SessionJanitor onExpire callback all leaked this gauge). Wiring the
+	// decrement here instead, paired with activeCount's own Add(-1), makes
+	// every current and future Release() caller correct automatically. Nil
+	// in deployments/tests that don't wire one via WithSessionEndedMetrics --
+	// the call is a no-op in that case.
+	sessionMetrics SessionEndedMetrics
+}
+
+// SessionEndedMetrics is the minimal metrics surface LeaseSessionManager
+// needs to keep aiagent_mcp_interactive_sessions_active accurate for every
+// Release caller (#2103). Implemented structurally by *metrics.Metrics (see
+// tools.ToolMetrics for the parallel interface at the tool-handler layer) --
+// defined locally here, rather than imported, to avoid mcp importing
+// metrics or tools (tools already imports mcp, so the reverse would cycle).
+type SessionEndedMetrics interface {
+	RecordInteractiveSessionEnded()
 }
 
 type sessionEntry struct {
@@ -124,6 +155,31 @@ func WithSessionExpiredCallback(fn func(sessionID, rrID, reason string)) LeaseOp
 // in GracefulSessionClosedHandler (BR-INTERACTIVE-001).
 func (m *LeaseSessionManager) SetReconnectCallback(fn func(sessionID string)) {
 	m.onReconnect = fn
+}
+
+// WithSessionJanitor wires a SessionJanitor as a backstop for orphaned
+// sessions (#2100): every session Takeover creates is Tracked with the
+// janitor, and Untracked on Release, so sessions that are never explicitly
+// released are still reclaimed by the janitor's periodic sweep instead of
+// eroding interactive.maxConcurrentSessions capacity indefinitely.
+func WithSessionJanitor(j *SessionJanitor) LeaseOption {
+	return func(m *LeaseSessionManager) {
+		m.janitor = j
+	}
+}
+
+// WithSessionEndedMetrics wires the aiagent_mcp_interactive_sessions_active
+// decrement into Release() itself (#2103), so every current and future
+// Release() caller -- InvestigateTool, SelectWorkflowTool,
+// CompleteNoActionTool, the SessionJanitor backstop, and main.go's own
+// TTL/inactivity/disconnect callbacks -- keeps the gauge accurate without
+// needing its own metrics field.
+func WithSessionEndedMetrics(m SessionEndedMetrics) LeaseOption {
+	return func(mgr *LeaseSessionManager) {
+		if m != nil {
+			mgr.sessionMetrics = m
+		}
+	}
 }
 
 // NewLeaseSessionManager creates a LeaseSessionManager backed by the given K8s client.
@@ -203,7 +259,7 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 		return nil, err
 	}
 
-	return m.registerNewInteractiveSession(sessionID, rrID, user), nil
+	return m.registerNewInteractiveSession(sessionID, rrID, user), nil //nolint:contextcheck // registerNewInteractiveSession's #2100 janitor.Track onExpire callback calls Release at an arbitrary future time (the sweep interval), detached from this Takeover request's ctx -- see drainer.go's identical Release call for the same rationale
 }
 
 // reconnectOrRejectExistingLease checks whether rrID already has an active
@@ -300,6 +356,18 @@ func (m *LeaseSessionManager) registerNewInteractiveSession(sessionID, rrID stri
 	m.rrIndex.Store(rrID, sessionID)
 	m.activeCount.Add(1)
 
+	if m.janitor != nil {
+		// #2100: onExpire routes through the same Release path as every
+		// other exit (explicit complete/cancel, TTL, inactivity), so the
+		// Lease is deleted and activeCount decremented identically --
+		// the janitor is a backstop, not a parallel cleanup mechanism.
+		m.janitor.Track(sessionID, session.StartedAt, func(expiredID string) {
+			if err := m.Release(expiredID, "janitor_expired"); err != nil && !errors.Is(err, ErrSessionNotFound) {
+				m.logger.Error(err, "janitor: failed to release expired session", "session_id", expiredID)
+			}
+		})
+	}
+
 	m.logger.Info("interactive session started",
 		"session_id", sessionID,
 		"rr_id", rrID,
@@ -334,6 +402,20 @@ func (m *LeaseSessionManager) Release(sessionID string, reason string) error {
 	m.sessions.Delete(sessionID)
 	m.rrIndex.Delete(entry.rrID)
 	m.activeCount.Add(-1)
+
+	// #2103: centralize the aiagent_mcp_interactive_sessions_active
+	// decrement here, paired with activeCount.Add(-1) above, so every
+	// current and future Release() caller keeps the gauge accurate. Only
+	// reached once the session is confirmed locally found and removed
+	// above -- a double-Release (ErrSessionNotFound) or a hard Lease-delete
+	// error never reaches this line, so this can never double-decrement.
+	if m.sessionMetrics != nil {
+		m.sessionMetrics.RecordInteractiveSessionEnded()
+	}
+
+	if m.janitor != nil {
+		m.janitor.Untrack(sessionID)
+	}
 
 	m.logger.Info("interactive session released",
 		"session_id", sessionID,

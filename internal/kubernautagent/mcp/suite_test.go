@@ -27,3 +27,9 @@ func TestMCPUnit(t *testing.T) {
 	RegisterFailHandler(Fail)
 	RunSpecs(t, "Kubernaut Agent MCP Unit Suite")
 }
+
+// testNamespace is the shared fixture namespace for this package's fake-client
+// tests (drainer_test.go, session_manager_test.go, and the janitor/#2100 and
+// metrics/#2103 wiring tests) -- factored out once goconst flagged the fourth
+// independent literal occurrence.
+const testNamespace = "kubernaut-system"

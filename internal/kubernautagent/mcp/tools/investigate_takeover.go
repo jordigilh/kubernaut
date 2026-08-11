@@ -219,9 +219,13 @@ func (t *InvestigateTool) handleComplete(input InvestigateInput, user mcpinterna
 
 	CompleteHTTPSession(t.httpCompleter, input.RRID, finalResult, t.logger, "complete")
 
-	if t.metrics != nil {
-		t.metrics.RecordInteractiveSessionEnded()
-	}
+	// #2103 (v1.6 clone #2104): the aiagent_mcp_interactive_sessions_active
+	// decrement moved into LeaseSessionManager.Release() itself (called
+	// above), paired with its own activeCount.Add(-1) -- centralizing it
+	// there closes the same gap for every other Release() caller
+	// (complete_no_action, workflow_selected, no_matching_workflows, the
+	// SessionJanitor backstop) that never had a metrics field to call this
+	// explicitly.
 
 	t.sessionMu.Delete(input.RRID)
 	t.reconHistory.Delete(input.RRID)
