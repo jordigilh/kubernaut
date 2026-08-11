@@ -77,6 +77,15 @@ type LeaseSessionManager struct {
 	logger            logr.Logger
 	onSessionExpired  func(sessionID, rrID, reason string) // called on TTL/inactivity auto-release
 	onReconnect       func(sessionID string)               // called when Takeover detects same-user reconnect
+
+	// janitor is the #2100 backstop: every session Takeover creates is
+	// Tracked here and Untracked on Release, so a session that never gets
+	// explicitly released (crash, panic, code path that returns early
+	// without calling Release) is still reclaimed by the janitor's sweep
+	// instead of leaking Lease capacity until process restart. Nil in
+	// deployments/tests that don't wire one via WithSessionJanitor --
+	// Track/Untrack calls are no-ops in that case.
+	janitor *SessionJanitor
 }
 
 type sessionEntry struct {
@@ -124,6 +133,17 @@ func WithSessionExpiredCallback(fn func(sessionID, rrID, reason string)) LeaseOp
 // in GracefulSessionClosedHandler (BR-INTERACTIVE-001).
 func (m *LeaseSessionManager) SetReconnectCallback(fn func(sessionID string)) {
 	m.onReconnect = fn
+}
+
+// WithSessionJanitor wires a SessionJanitor as a backstop for orphaned
+// sessions (#2100): every session Takeover creates is Tracked with the
+// janitor, and Untracked on Release, so sessions that are never explicitly
+// released are still reclaimed by the janitor's periodic sweep instead of
+// eroding interactive.maxConcurrentSessions capacity indefinitely.
+func WithSessionJanitor(j *SessionJanitor) LeaseOption {
+	return func(m *LeaseSessionManager) {
+		m.janitor = j
+	}
 }
 
 // NewLeaseSessionManager creates a LeaseSessionManager backed by the given K8s client.
@@ -262,6 +282,18 @@ func (m *LeaseSessionManager) Takeover(ctx context.Context, rrID string, user Us
 	m.rrIndex.Store(rrID, sessionID)
 	m.activeCount.Add(1)
 
+	if m.janitor != nil {
+		// #2100: onExpire routes through the same Release path as every
+		// other exit (explicit complete/cancel, TTL, inactivity), so the
+		// Lease is deleted and activeCount decremented identically --
+		// the janitor is a backstop, not a parallel cleanup mechanism.
+		m.janitor.Track(sessionID, session.StartedAt, func(expiredID string) {
+			if err := m.Release(expiredID, "janitor_expired"); err != nil && !errors.Is(err, ErrSessionNotFound) {
+				m.logger.Error(err, "janitor: failed to release expired session", "session_id", expiredID)
+			}
+		})
+	}
+
 	m.logger.Info("interactive session started",
 		"session_id", sessionID,
 		"rr_id", rrID,
@@ -296,6 +328,10 @@ func (m *LeaseSessionManager) Release(sessionID string, reason string) error {
 	m.sessions.Delete(sessionID)
 	m.rrIndex.Delete(entry.rrID)
 	m.activeCount.Add(-1)
+
+	if m.janitor != nil {
+		m.janitor.Untrack(sessionID)
+	}
 
 	m.logger.Info("interactive session released",
 		"session_id", sessionID,

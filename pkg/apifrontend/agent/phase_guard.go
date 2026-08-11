@@ -21,7 +21,9 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
+	"google.golang.org/adk/model"
 	adksession "google.golang.org/adk/session"
 	"google.golang.org/adk/tool"
 
@@ -49,6 +51,15 @@ const errNoActiveDriver = "interactive session not active — you must call kube
 // primary layer that keeps the model from even seeing the tool as an
 // option; this is defense-in-depth for the rare case a call slips through.
 const errCheckpointBlocked = "this action requires explicit user confirmation first -- wait for the user's next message before proceeding"
+
+// errDiscoveryRequiredBeforeDecision is returned by phaseGuardBefore's
+// #2098 ordering guard when kubernaut_present_decision is attempted before
+// kubernaut_discover_workflows has succeeded, in an interaction mode where
+// that ordering is load-bearing. Mirrors errCheckpointBlocked's
+// reject-and-let-the-model-retry pattern (DD-AF-011, #1899): the real tool
+// handler never runs, and the model is expected to call discover_workflows
+// and retry.
+const errDiscoveryRequiredBeforeDecision = "kubernaut_discover_workflows has not been called yet -- call kubernaut_discover_workflows first, then retry kubernaut_present_decision"
 
 // noGroundedContentSummary is the fixed, honest payload #2023's grounding
 // guard substitutes for present_decision's summary when the most recent
@@ -116,7 +127,23 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 		// present_decision still executes and the AU-3 structured artifact
 		// is always emitted -- only a fabricated narrative is blocked.
 		if t.Name() == presentDecisionTool {
+			// #2098: enforceGroundingGuard also runs unconditionally here,
+			// before the ordering check below, even though this call may
+			// end up rejected -- defense-in-depth for the tool's own
+			// execution-time args (matters for the unblocked path and any
+			// non-SSE consumer of HandlePresentDecision's FunctionResponse).
+			// This is NOT what makes the AU-3 SSE artifact itself honest,
+			// though: sanitizePresentDecisionResponse (an AfterModelCallback,
+			// registered in root.go) is what actually closes that loop --
+			// see its doc comment for why a BeforeToolCallback mutation
+			// alone is too late for that purpose (#2105, a regression from
+			// this #2098 change caught by E2E-AF-1396-001).
 			enforceGroundingGuard(ctx, args)
+			if presentDecisionRequiresDiscoveryFirst(ctx.State()) {
+				logr.FromContextOrDiscard(ctx).Info("phase-guard blocked present_decision",
+					"tool", t.Name(), "reason", "discover_workflows_not_yet_succeeded")
+				return map[string]any{"error": errDiscoveryRequiredBeforeDecision}, nil
+			}
 			return nil, nil
 		}
 
@@ -262,6 +289,11 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 				if err := state.Set(session.StateKeyPhase3Blocked, blocked); err != nil {
 					logger.Error(err, "phase-guard failed to persist phase3_blocked state")
 				}
+				// #2098: unblocks presentDecisionRequiresDiscoveryFirst's
+				// ordering guard for the remainder of this driver session.
+				if err := state.Set(session.StateKeyDiscoverWorkflowsSucceeded, true); err != nil {
+					logger.Error(err, "phase-guard failed to persist discover_workflows_succeeded state")
+				}
 			}
 			return nil, nil
 		}
@@ -307,6 +339,14 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 					if err := state.Set(session.StateKeyInteractionMode, mode); err != nil {
 						logger.Error(err, "phase-guard failed to persist interaction mode")
 					}
+
+					// #2098: a fresh investigation must not inherit a
+					// discover_workflows_succeeded flag left by a prior RR
+					// in the same chat session.
+					if err := state.Set(session.StateKeyDiscoverWorkflowsSucceeded, false); err != nil {
+						logger.Error(err, "phase-guard failed to reset discover_workflows_succeeded state")
+					}
+
 					blocked := mode == session.InteractionModeInteractive
 
 					// #1918: harness-enforced actionability gate. Independent
@@ -364,6 +404,44 @@ func newPhaseGuard(registry *launcher.ActiveContextRegistry) (llmagent.BeforeToo
 	}
 
 	return before, after
+}
+
+// presentDecisionRequiresDiscoveryFirst implements #2098's ordering guard:
+// it reports whether kubernaut_present_decision must be rejected because
+// discover_workflows has not yet succeeded in this driver session, in an
+// interaction mode where that ordering actually matters.
+//
+// Phase2Blocked == false means the declared mode does NOT gate
+// discover_workflows behind a human-confirmation checkpoint -- true for
+// full_remediation/full_remediation_autonomous, where the model is expected
+// to call discover_workflows autonomously before presenting a decision.
+// Reusing Phase2Blocked (rather than re-deriving interaction mode here)
+// means this gate automatically inherits #1918's rcaConcludedNotActionable
+// exemption for free: that override forces Phase2Blocked=true precisely
+// because no workflow discovery is expected in that case either.
+//
+// Fails open (never blocks) when state is nil or Phase2Blocked was never
+// set, matching InteractionModeInteractive's own fail-safe default
+// (interactionModeFromState) -- a present_decision call with no prior
+// investigate at all is enforceGroundingGuard's concern, not this gate's.
+func presentDecisionRequiresDiscoveryFirst(state adksession.State) bool {
+	if state == nil {
+		return false
+	}
+	phase2Blocked := true
+	if v, err := state.Get(session.StateKeyPhase2Blocked); err == nil {
+		if b, ok := v.(bool); ok {
+			phase2Blocked = b
+		}
+	}
+	if phase2Blocked {
+		return false
+	}
+	succeeded := false
+	if v, err := state.Get(session.StateKeyDiscoverWorkflowsSucceeded); err == nil {
+		succeeded, _ = v.(bool)
+	}
+	return !succeeded
 }
 
 // interactionModeFromState reads the DD-AF-011 (#1899) interaction mode
@@ -523,6 +601,49 @@ func canonicalGroundedRCA(rca *tools.InvestigateRCA) *tools.RCAData {
 	}
 }
 
+// sanitizePresentDecisionResponse is an AfterModelCallback (registered in
+// root.go's AfterModelCallbacks) that applies enforceGroundingGuard's
+// grounding sanitization directly to the model's own raw
+// kubernaut_present_decision FunctionCall.Args, in place, immediately after
+// the model responds -- BEFORE ADK finalizes and yields that response as an
+// SSE event.
+//
+// #2105 (E2E-AF-1396-001 regression caught by this #2098 change:
+// ToolCallsCount 19 instead of the grounded 0): part_converter.go's
+// emitDecisionEvent builds the AU-3
+// decision artifact straight from this same FunctionCall (by reference --
+// google.golang.org/adk@v1.5.1/internal/llminternal/base_flow.go's
+// runOneStep calls yield(modelResponseEvent, ...) at the point the model's
+// turn is finalized, and only afterwards calls handleFunctionCalls, which is
+// what invokes BeforeToolCallback/phaseGuardBefore). enforceGroundingGuard
+// mutating args from phaseGuardBefore -- the ONLY place it ran before this
+// callback existed -- therefore always ran too late to affect what the
+// client had already received for that artifact; it only ever reached
+// HandlePresentDecision's own FunctionResponse, which #1408 deliberately
+// suppresses from the SSE stream in favor of this FunctionCall-based
+// artifact. This callback closes that gap by running the identical
+// sanitization at the one point in the pipeline that precedes the yield.
+//
+// phaseGuardBefore still also calls enforceGroundingGuard on the tool's
+// execution-time args (defense-in-depth for the unblocked path, and for any
+// non-SSE consumer of the tool's own FunctionResponse) -- the two calls are
+// idempotent over the same underlying args map.
+func sanitizePresentDecisionResponse(ctx agent.CallbackContext, llmResponse *model.LLMResponse, llmResponseErr error) (*model.LLMResponse, error) {
+	if llmResponseErr != nil || llmResponse == nil || llmResponse.Content == nil {
+		return nil, nil
+	}
+	for _, part := range llmResponse.Content.Parts {
+		if part == nil || part.FunctionCall == nil || part.FunctionCall.Name != presentDecisionTool {
+			continue
+		}
+		if part.FunctionCall.Args == nil {
+			part.FunctionCall.Args = map[string]any{}
+		}
+		enforceGroundingGuard(ctx, part.FunctionCall.Args)
+	}
+	return nil, nil
+}
+
 // enforceGroundingGuard implements #2023's harness-side fabrication guard.
 // Immediately before kubernaut_present_decision executes, it checks whether
 // the most recent kubernaut_investigate call (tracked via
@@ -553,7 +674,7 @@ func canonicalGroundedRCA(rca *tools.InvestigateRCA) *tools.RCAData {
 // "rca" available is AF's own Provisional severity-triage guess rather than
 // a genuine KA finding (session.StateKeyGroundedRCA is never populated with
 // a Provisional rca in the first place; see the after-callback above).
-func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
+func enforceGroundingGuard(ctx agent.CallbackContext, args map[string]any) {
 	if args == nil {
 		return
 	}
@@ -592,6 +713,7 @@ func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
 				rcaMap["llm_turns"] = 0
 			}
 		}
+		repairPresentDecisionOptions(ctx, args)
 		return
 	}
 
@@ -607,6 +729,46 @@ func enforceGroundingGuard(ctx tool.Context, args map[string]any) {
 	// execute and emit its structured artifact even when ungrounded).
 	args["rca"] = emptyRCAPayload
 	args["options"] = []any{}
+}
+
+// repairPresentDecisionOptions defensively repairs args["options"] when it
+// arrives as a JSON-encoded string instead of the native array
+// present_decision's schema requires (#2092): live evidence showed a model
+// emitting a fully-correct options payload, just double-encoded -- the
+// array serialized once, then that whole JSON blob wrapped again as a
+// string value. ADK's functionTool.Run (ConvertToWithJSONSchema,
+// google.golang.org/adk@v1.5.1/tool/functiontool/function.go) re-marshals
+// args and validates the result against the inferred schema immediately
+// after this callback returns, and a string where the schema declares
+// "type: array" fails that validation before HandlePresentDecision ever
+// runs -- the same "mutate args before schema validation" ordering
+// enforceGroundingGuard already relies on for rca/summary/options above.
+//
+// Only called from the grounded branch: the ungrounded branch above already
+// unconditionally overwrites options with a clean empty slice, so it can
+// never carry a stringified value in the first place.
+//
+// Left untouched (and thus still schema-rejected, surfacing a real,
+// actionable error) when the string is empty or does not parse as a JSON
+// array -- this must never mask genuinely malformed input as an
+// empty-but-valid payload (SI-11).
+func repairPresentDecisionOptions(ctx agent.CallbackContext, args map[string]any) {
+	raw, ok := args["options"].(string)
+	if !ok {
+		return
+	}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return
+	}
+	var parsed []any
+	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
+		logr.FromContextOrDiscard(ctx).Info(
+			"present_decision options arrived as a string that is not valid JSON; leaving as-is for schema validation to reject",
+			"error", err.Error())
+		return
+	}
+	args["options"] = parsed
 }
 
 // emptyRCAPayload is the zero-value RCAData (tools.RCAData) shape,
