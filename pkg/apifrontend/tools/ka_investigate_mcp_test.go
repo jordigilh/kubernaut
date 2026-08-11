@@ -250,10 +250,34 @@ var _ = Describe("formatEventForUser — #1326 BR-MCP-008 event filtering", func
 		It("should format tool name with 'Calling ...' prefix", func() {
 			evt := ka.InvestigationEvent{
 				Type: ka.EventTypeToolCallStart,
-				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+				Data: json.RawMessage(`{"tool_name":"kubectl_get"}`),
 			}
 			result := tools.FormatEventForUser(evt)
 			Expect(result).To(Equal("Calling kubectl_get..."))
+		})
+	})
+
+	Describe("UT-AF-2086-007: tool_call_start key mismatch fix — reads tool_name, not tool", func() {
+		It("should extract the tool name from the real KA wire key \"tool_name\"", func() {
+			evt := ka.InvestigationEvent{
+				Type: ka.EventTypeToolCallStart,
+				Data: json.RawMessage(`{"tool_name":"kubectl_get"}`),
+			}
+			result := tools.FormatEventForUser(evt)
+			Expect(result).To(Equal("Calling kubectl_get..."),
+				"#2086: KA's real emission (investigator.go) uses the \"tool_name\" key -- "+
+					"FormatEventForUser must read it for tool-call status text to ever render")
+		})
+
+		It("should return empty string for the old (wrong) \"tool\" key, proving the mismatch is fixed and not just relocated", func() {
+			evt := ka.InvestigationEvent{
+				Type: ka.EventTypeToolCallStart,
+				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+			}
+			result := tools.FormatEventForUser(evt)
+			Expect(result).To(BeEmpty(),
+				"#2086: the old \"tool\" key never appears on KA's real wire format; a fixed "+
+					"FormatEventForUser must not silently keep accepting it")
 		})
 	})
 
@@ -393,7 +417,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			eventCh := make(chan ka.InvestigationEvent, 5)
 			eventCh <- ka.InvestigationEvent{
 				Type: ka.EventTypeToolCallStart,
-				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+				Data: json.RawMessage(`{"tool_name":"kubectl_get"}`),
 			}
 			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
 			close(eventCh)
@@ -538,7 +562,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			eventCh := make(chan ka.InvestigationEvent, 10)
 			eventCh <- ka.InvestigationEvent{
 				Type: ka.EventTypeToolCallStart,
-				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+				Data: json.RawMessage(`{"tool_name":"kubectl_get"}`),
 			}
 			eventCh <- ka.InvestigationEvent{
 				Type: ka.EventTypeReasoningDelta,
@@ -550,7 +574,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			}
 			eventCh <- ka.InvestigationEvent{
 				Type: ka.EventTypeToolCallStart,
-				Data: json.RawMessage(`{"tool":"kubectl_describe"}`),
+				Data: json.RawMessage(`{"tool_name":"kubectl_describe"}`),
 			}
 			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
 			close(eventCh)
@@ -1048,7 +1072,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path
 					go func() {
 						eventCh <- ka.InvestigationEvent{
 							Type: ka.EventTypeToolCallStart,
-							Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+							Data: json.RawMessage(`{"tool_name":"kubectl_get"}`),
 						}
 						eventCh <- ka.InvestigationEvent{
 							Type: ka.EventTypeReasoningDelta,
@@ -1078,6 +1102,213 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path
 			Expect(result.Summary).To(Equal("Root cause: memory limit too low."))
 			Expect(result.Summary).NotTo(ContainSubstring("kubectl_get"))
 		})
+	})
+})
+
+// #2086 (BR-INTERACTIVE-010, FedRAMP AU-3/SI-11): bridgeEventsCollectSummary
+// previously returned identically whether it received a genuine terminal KA
+// event (EventTypeComplete/Cancelled/SessionEnded) or simply gave up after
+// its inactivity timer fired — the caller's status := "completed" only
+// checked the OUTER ctx.Err(), never why the bridge itself returned. Live
+// forensics on rr-cc99762025f0-5977eb36 showed KA's silent gate-retry LLM
+// calls (see gate_keepalive_2086_test.go) blow past the 60s inactivity
+// budget, so AF told the driving agent the investigation was "completed"
+// with an empty RCA — the agent then never called discover_workflows. These
+// specs prove the bridge now distinguishes "silently timed out" from
+// "genuinely finished" and that the distinction reaches InvestigateMCPResult.
+var _ = Describe("#2086: bridgeEventsCollectSummary/InvestigateMCPResult must not report false completion on inactivity timeout", func() {
+
+	Describe("UT-AF-2086-004: BridgeEventsCollectSummary returns completed=false on inactivity timeout without a terminal event", func() {
+		It("should signal completed=false when the bridge exits via its inactivity timer, not a terminal KA event", func() {
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeReasoningDelta,
+				Data: json.RawMessage(`{"text":"Partial analysis before silence"}`),
+			}
+			// No further events, no close — simulate a silent gap (KA's
+			// gate-retry LLM call) that outlasts inactivityTimeout without
+			// KA ever actually completing (#2086).
+
+			summary, rca, _, completed := tools.BridgeEventsCollectSummary(context.Background(), eventCh, 100*time.Millisecond)
+			Expect(completed).To(BeFalse(),
+				"UT-AF-2086-004: exiting via the inactivity timer (no EventTypeComplete/Cancelled/SessionEnded "+
+					"seen) must be reported as NOT completed, or callers cannot distinguish a genuine finish "+
+					"from a silent gap (#2086)")
+			Expect(summary).To(Equal("Partial analysis before silence"))
+			Expect(rca).To(BeNil())
+		})
+	})
+
+	Describe("UT-AF-2086-004b: BridgeEventsCollectSummary returns completed=true on a genuine terminal event", func() {
+		It("should signal completed=true when the bridge exits via EventTypeComplete", func() {
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeReasoningDelta,
+				Data: json.RawMessage(`{"text":"Full analysis"}`),
+			}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete, Data: json.RawMessage(`{}`)}
+			close(eventCh)
+
+			_, _, _, completed := tools.BridgeEventsCollectSummary(context.Background(), eventCh, 5*time.Second)
+			Expect(completed).To(BeTrue(),
+				"UT-AF-2086-004b: a genuine EventTypeComplete must be reported as completed=true, "+
+					"so this regression guard fails loudly if a future change breaks the true-completion path")
+		})
+	})
+
+	Describe("UT-AF-2086-005: HandleInvestigationMCPWithRegistry does not report status=completed when the bridge times out without a terminal event", func() {
+		It("should return a truthful, non-completed status with guidance to poll instead of retry (#2086)", func() {
+			origInactivity := tools.BridgeInactivityTimeout
+			tools.BridgeInactivityTimeout = 100 * time.Millisecond
+			defer func() { tools.BridgeInactivityTimeout = origInactivity }()
+
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			mockMCP := &ka.MockMCPClient{
+				StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+					go func() {
+						eventCh <- ka.InvestigationEvent{
+							Type: ka.EventTypeReasoningDelta,
+							Data: json.RawMessage(`{"text":"Investigating"}`),
+						}
+						// Simulate KA's silent gate-retry LLM call (#2086 root
+						// cause): no further events arrive within
+						// BridgeInactivityTimeout, and the investigation is
+						// NOT actually complete.
+					}()
+					return &ka.StartInvestigationResult{
+						SessionID: "sess-2086-005",
+						Status:    "autonomous_started",
+						Events:    eventCh,
+						Closer:    func() {},
+					}, nil
+				},
+			}
+
+			// Outer ctx is never cancelled — the ONLY reason the bridge
+			// returns here is BridgeInactivityTimeout, exactly like the live
+			// #2086 incident where AF's outer ctx was healthy the whole time.
+			result, err := tools.HandleInvestigationMCPWithRegistry(
+				context.Background(), mockMCP, nil, "",
+				tools.InvestigateMCPArgs{RRID: "rr-2086-005"},
+				nil, nil, nil, true, nil, "", nil, nil,
+			)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.Status).NotTo(Equal("completed"),
+				"UT-AF-2086-005: inactivity timeout without a terminal event must NOT be reported as "+
+					"'completed' — this is the exact defect that caused #2086: the driving agent believed "+
+					"the investigation had finished with an empty RCA and never called discover_workflows")
+			Expect(result.Error).NotTo(BeEmpty(),
+				"UT-AF-2086-005: the result must carry guidance so the driving agent knows to poll "+
+					"kubernaut_get_remediation instead of retrying kubernaut_investigate")
+			Expect(result.Error).NotTo(ContainSubstring("investigation complete"),
+				"UT-AF-2086-005: guidance text must not imply the investigation finished")
+		})
+	})
+
+	Describe("UT-AF-2086-006: bridgeEventsCollectSummary's summary excludes keepalive status text", func() {
+		It("should not splice EventTypeToolCallStart keepalive text into the RCA summary (spike-discovered regression guard)", func() {
+			eventCh := make(chan ka.InvestigationEvent, 5)
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeReasoningDelta,
+				Data: json.RawMessage(`{"text":"Root cause: memory limit too low."}`),
+			}
+			// Fix 1's keepalive: emitted around KA's silent gate-retry LLM
+			// call using EventTypeToolCallStart (NOT reasoning_delta/token_delta)
+			// specifically so it cannot be concatenated into the summary below.
+			eventCh <- ka.InvestigationEvent{
+				Type: ka.EventTypeToolCallStart,
+				Data: json.RawMessage(`{"tool_name":"revalidating_remediation_target"}`),
+			}
+			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete, Data: json.RawMessage(`{}`)}
+			close(eventCh)
+
+			summary, _, _, completed := tools.BridgeEventsCollectSummary(context.Background(), eventCh, 5*time.Second)
+			Expect(completed).To(BeTrue())
+			Expect(summary).To(Equal("Root cause: memory limit too low."),
+				"UT-AF-2086-006: a keepalive emitted as EventTypeToolCallStart must NOT be concatenated "+
+					"into the RCA summary returned to the driving agent — using EventTypeReasoningDelta for "+
+					"the keepalive (the original plan) would have spliced placeholder status text directly "+
+					"into the analysis content returned to the agent (spike-discovered content-correctness bug)")
+			Expect(summary).NotTo(ContainSubstring("revalidating_remediation_target"))
+		})
+	})
+})
+
+// IT-AF-2086-010 (Pyramid Invariant: IT proves wiring): drives the FULL
+// production dispatch path (HandleInvestigationMCPWithRegistry -> pool
+// handoff -> bridgeEventsCollectSummary) with a fake KA session that goes
+// silent for longer than BridgeInactivityTimeout before ever sending a
+// terminal event -- the exact live #2086 shape. Proves two things a UT of
+// bridgeEventsCollectSummary alone cannot: (1) the truthful non-completed
+// status reaches the caller through the real handler, and (2) the pooled
+// session handoff (so a later kubernaut_get_remediation/select_workflow can
+// reuse the same MCP connection) still happens even though the investigation
+// was not reported as completed.
+var _ = Describe("IT-AF-2086-010: full dispatch path survives a silent gap without falsely reporting completion or dropping the pooled session", func() {
+	It("should report a non-completed status AND still hand the session off to the pool (#2086)", func() {
+		origInactivity := tools.BridgeInactivityTimeout
+		tools.BridgeInactivityTimeout = 50 * time.Millisecond
+		defer func() { tools.BridgeInactivityTimeout = origInactivity }()
+
+		mockSession := &mockPoolSession{}
+		eventCh := make(chan ka.InvestigationEvent, 5)
+		mockMCP := &ka.MockMCPClient{
+			StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+				go func() {
+					eventCh <- ka.InvestigationEvent{
+						Type: ka.EventTypeReasoningDelta,
+						Data: json.RawMessage(`{"text":"Investigating before the silent gate-retry gap"}`),
+					}
+					// Silence longer than BridgeInactivityTimeout with no
+					// ctx cancellation -- this is KA's silent gate-retry
+					// LLM call from the live #2086 incident. The bridge
+					// MUST give up here; any later send on eventCh below is
+					// deliberately never read by THIS blocking call (it
+					// already returned), matching the real incident where
+					// KA's genuine completion arrived ~10s after AF had
+					// already told the driving agent "completed".
+					time.Sleep(150 * time.Millisecond)
+					eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete, Data: json.RawMessage(`{}`)}
+					close(eventCh)
+				}()
+				return &ka.StartInvestigationResult{
+					SessionID: "sess-it-2086-010",
+					Status:    "autonomous_started",
+					Events:    eventCh,
+					Closer:    func() {},
+					Session:   mockSession,
+				}, nil
+			},
+		}
+
+		registry := tools.NewMonitorRegistry()
+		pool := ka.NewKASessionPool(ka.PoolConfig{
+			Factory: func(_ context.Context) (ka.PoolSession, error) {
+				return &mockPoolSession{}, nil
+			},
+			MaxEntries: 10,
+			Logger:     logr.Discard(),
+		})
+
+		result, err := tools.HandleInvestigationMCPWithRegistry(
+			context.Background(), mockMCP, nil, "",
+			tools.InvestigateMCPArgs{RRID: "rr-it-2086-010"},
+			nil, registry, nil, true, pool, "alice", nil, nil,
+		)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result.Status).NotTo(Equal("completed"),
+			"IT-AF-2086-010: a silent gap that outlasts BridgeInactivityTimeout without a terminal event "+
+				"must not be reported as completed through the real production dispatch path (#2086)")
+
+		acquired, acqErr := pool.Acquire(context.Background(), "rr-it-2086-010", "alice")
+		Expect(acqErr).NotTo(HaveOccurred())
+		Expect(acquired).To(BeIdenticalTo(mockSession),
+			"IT-AF-2086-010: the MCP session must still be handed off to the pool even though the "+
+				"investigation was not reported as completed, so a later kubernaut_get_remediation or "+
+				"select_workflow call can reuse the connection instead of KA's session being orphaned")
+
+		Expect(registry.Active("sess-it-2086-010")).To(BeFalse(),
+			"IT-AF-2086-010: session must be deregistered from MonitorRegistry once handed off to the pool")
 	})
 })
 

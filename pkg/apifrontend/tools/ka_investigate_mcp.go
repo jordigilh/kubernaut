@@ -520,12 +520,28 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 		logger.Info("bridgeEventsCollectSummary: starting blocking event bridge",
 			"rr_id", args.RRID, "session_id", result.SessionID, "ctx_err", ctx.Err())
 		bridgeCtx := WithRRID(ctx, args.RRID)
-		summary, rca, alignmentVerdict := bridgeEventsCollectSummary(bridgeCtx, result.Events, BridgeInactivityTimeout)
+		summary, rca, alignmentVerdict, bridgeCompleted := bridgeEventsCollectSummary(bridgeCtx, result.Events, BridgeInactivityTimeout)
+		var statusErr string
 		status := "completed"
-		if ctx.Err() != nil {
+		switch {
+		case ctx.Err() != nil:
 			status = "timeout"
 			logger.Info("bridgeEventsCollectSummary: context cancelled",
 				"rr_id", args.RRID, "ctx_err", ctx.Err(), "summary_len", len(summary))
+		case !bridgeCompleted:
+			// #2086: the bridge gave up (inactivity timeout or channel
+			// closed) without ever observing a genuine terminal KA event.
+			// KA's investigation may still be running (e.g. a silent
+			// gate-retry LLM call) -- reporting "completed" here is exactly
+			// the defect that caused #2086: the driving agent believed the
+			// investigation had finished with an empty RCA and never called
+			// discover_workflows. Report a truthful, distinct status with
+			// guidance to poll rather than retry.
+			status = "in_progress"
+			statusErr = "investigation is still in progress on the backend; poll kubernaut_get_remediation " +
+				"for the current status instead of retrying kubernaut_investigate"
+			logger.Info("bridgeEventsCollectSummary: bridge exited without a terminal event",
+				"rr_id", args.RRID, "summary_len", len(summary))
 		}
 		logger.Info("bridgeEventsCollectSummary: finished",
 			"rr_id", args.RRID, "status", status, "summary_len", len(summary))
@@ -583,6 +599,7 @@ func HandleInvestigationMCPWithRegistry(ctx context.Context, mcpClient ka.MCPCli
 			RCA:              rca,
 			Managed:          true,
 			AlignmentVerdict: alignmentVerdict,
+			Error:            statusErr,
 		}, nil
 	}
 
@@ -680,11 +697,18 @@ var NonBlockingBridgeTTL = 15 * time.Minute
 // so investigations of any wall-clock duration succeed as long as KA keeps
 // producing events (token deltas, tool calls, keepalives).
 // Exported so that tests can override it without modifying production code.
-var BridgeInactivityTimeout = 60 * time.Second
+//
+// #2086: set to 90s (was 60s) purely for headroom. DefaultToolCallTimeout
+// (KA's per-tool-call bound, #1949) is also 60s -- an uncoordinated tie with
+// zero margin between two independent timeouts. Fix 1's keepalives are the
+// primary fix for the silent-gate-retry class of bug; this bump is
+// defense-in-depth against any other single tool call that legitimately
+// takes close to the full 60s.
+var BridgeInactivityTimeout = 90 * time.Second
 
 // BridgeEventsCollectSummary is the exported entry point for bridgeEventsCollectSummary.
 // It is used by integration tests and the blocking MCP investigation path.
-func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, *katypes.AlignmentVerdictResult) {
+func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, *katypes.AlignmentVerdictResult, bool) {
 	return bridgeEventsCollectSummary(ctx, events, inactivityTimeout)
 }
 
@@ -697,7 +721,16 @@ func BridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 // previously this was only used locally to fire the human-facing SSE
 // alignment_check_failed notification and then discarded, leaving the #2023
 // grounding guard with no way to consult it.
-func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, *katypes.AlignmentVerdictResult) {
+//
+// The returned bool is `completed`: true only when the bridge exited because
+// it observed a genuine terminal KA event (EventTypeComplete, Cancelled, or
+// SessionEnded). Exiting via ctx.Done(), the inactivity timer, or the events
+// channel closing without ever seeing a terminal event all report
+// completed=false -- these are cases where KA's investigation may still be
+// running (#2086: the caller previously could not distinguish a silent
+// bridge-inactivity timeout from a genuine finish, so it told the driving
+// agent the investigation was "completed" with an empty RCA).
+func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.InvestigationEvent, inactivityTimeout time.Duration) (string, *InvestigateRCA, *katypes.AlignmentVerdictResult, bool) {
 	var summary strings.Builder
 	var rcaResult *InvestigateRCA
 	var verdictResult *katypes.AlignmentVerdictResult
@@ -708,14 +741,14 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 	for {
 		select {
 		case <-ctx.Done():
-			return summary.String(), rcaResult, verdictResult
+			return summary.String(), rcaResult, verdictResult, false
 		case <-inactivity.C:
-			return summary.String(), rcaResult, verdictResult
+			return summary.String(), rcaResult, verdictResult, false
 		case <-keepalive.C:
 			_ = launcher.EmitKeepaliveDotSafe(ctx)
 		case evt, ok := <-events:
 			if !ok {
-				return summary.String(), rcaResult, verdictResult
+				return summary.String(), rcaResult, verdictResult, false
 			}
 			inactivity.Reset(inactivityTimeout)
 			// #1438: Handle session_ended before generic emit to avoid double-emit.
@@ -729,7 +762,7 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 						"reason":   evt.Phase,
 						"terminal": true,
 					})
-				return summary.String(), rcaResult, verdictResult
+				return summary.String(), rcaResult, verdictResult, true
 			}
 			emitEventToA2A(ctx, evt, FormatEventForUser(evt))
 			switch evt.Type {
@@ -766,9 +799,9 @@ func bridgeEventsCollectSummary(ctx context.Context, events <-chan ka.Investigat
 						emitEarlyRCA(ctx, &rca)
 					}
 				}
-				return summary.String(), rcaResult, verdictResult
+				return summary.String(), rcaResult, verdictResult, true
 			case ka.EventTypeCancelled:
-				return summary.String(), rcaResult, verdictResult
+				return summary.String(), rcaResult, verdictResult, true
 			}
 		}
 	}
@@ -860,7 +893,12 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 	case ka.EventTypeTokenDelta:
 		return extractJSONField(evt.Data, "delta")
 	case ka.EventTypeToolCallStart:
-		toolName := extractJSONField(evt.Data, "tool")
+		// #2086 Fix 5: KA's real emission (investigator.go's emitToSink calls,
+		// e.g. runLLMLoop's tool-dispatch block) uses key "tool_name" -- this
+		// previously read "tool", a wire-format mismatch AF's own unit tests
+		// never caught because they hand-constructed fixtures with the wrong
+		// key instead of exercising the real KA emission path.
+		toolName := extractJSONField(evt.Data, "tool_name")
 		if toolName != "" {
 			return "Calling " + toolName + "..."
 		}

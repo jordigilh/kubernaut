@@ -847,7 +847,38 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 	if err == nil {
 		h.setRetryCount(analysis, 0)
 	}
+
+	// #2086 Fix 4: KA's own session inactivity timeout (e.g. a 10-minute
+	// interactive-session idle limit) completes with no InvestigationResult
+	// ever produced. KA synthesizes a placeholder for this
+	// (synthesizeNilResult's default branch, internal/kubernautagent/server/handler.go)
+	// with has_workflow=false and human_review_reason="" -- ProcessIncidentResponse
+	// cannot distinguish this from a genuine "investigated and found no
+	// matching workflow" conclusion, so it always classifies both identically
+	// as SubReason=NoMatchingWorkflows. That is misleading: the investigation
+	// never actually reached a conclusion. Correct the classification here
+	// (response_processor.go stays untouched -- this fix's blast radius is
+	// contained to this file, per plan). FedRAMP AU-3 (truthful audit
+	// content) / SI-11 (accurate error handling).
+	if analysis.Status.SubReason == "NoMatchingWorkflows" && isSessionTimedOutWithoutResult(resp) {
+		analysis.Status.SubReason = "InvestigationInconclusive"
+		analysis.Status.HumanReviewReason = "investigation_inconclusive"
+		analysis.Status.Message = "KA session completed without producing a result " +
+			"(likely an inactivity timeout); the investigation did not reach a conclusion"
+	}
+
 	return result, err
+}
+
+// isSessionTimedOutWithoutResult reports whether resp is KA's nil-result
+// synthesis placeholder rather than a genuine investigation outcome. #2086:
+// this is the only signal available on the wire that distinguishes "the
+// session completed without KA ever producing a result" (e.g. an inactivity
+// timeout) from "KA investigated and concluded no workflow matches" --
+// synthesizeNilResult's default branch always sets exactly this Analysis text
+// with Confidence 0 and no other fields populated.
+func isSessionTimedOutWithoutResult(resp *agentclient.IncidentResponse) bool {
+	return resp.Analysis == "Investigation completed without result" && resp.Confidence == 0
 }
 
 // handleSessionPollFailed handles poll results where investigation has failed on KA side.

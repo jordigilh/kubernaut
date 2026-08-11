@@ -94,6 +94,15 @@ func (inv *Investigator) sameKindValidationGate(
 	gateEvent.Data["target_name"] = result.RemediationTarget.Name
 	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
 
+	// #2086: this gate-retry LLM call is non-streamed (llm.ChatWithParams),
+	// so it emits zero sink events for the duration of the round-trip. A
+	// slow/retried backend call here can outlast AF's bridge-inactivity
+	// timeout, causing AF to falsely report the investigation as
+	// "completed" while the driving agent never calls discover_workflows.
+	// This keepalive resets that timer without polluting the RCA summary
+	// (EventTypeToolCallStart is never concatenated into summary text).
+	emitGateRetryKeepalive(ctx, "revalidating_remediation_target")
+
 	resp, err := llm.ChatWithParams(ctx, client, llm.ChatRequest{
 		Messages: retryMessages,
 		Tools:    submitOnlyTools,
@@ -247,6 +256,11 @@ func (inv *Investigator) apiVersionValidationGate(
 	gateEvent.Data["ambiguous_kind"] = kind
 	gateEvent.Data["conflicting_groups"] = groupList
 	audit.StoreBestEffort(ctx, inv.auditStore, gateEvent, inv.auditLog())
+
+	// #2086: same silent-gap risk as sameKindValidationGate above — this
+	// retry LLM call is non-streamed and emits no sink events during the
+	// round-trip.
+	emitGateRetryKeepalive(ctx, "resolving_api_version_ambiguity")
 
 	resp, retryErr := llm.ChatWithParams(ctx, client, llm.ChatRequest{
 		Messages: retryMessages,
