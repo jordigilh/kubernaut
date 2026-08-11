@@ -145,6 +145,7 @@ func (t *InvestigateTool) autoCloseOnNoMatchingWorkflows(rrID, sessionID string,
 	autoMgr := t.autoMgr
 	completer := t.httpCompleter
 	sessions := t.sessions
+	tombstone := t.autoCloseTombstone
 	result := workflowResult
 	logger := t.logger
 	go func() {
@@ -156,6 +157,13 @@ func (t *InvestigateTool) autoCloseOnNoMatchingWorkflows(rrID, sessionID string,
 
 		autoMgr.EmitSessionEndedByRR(rrID, "no_matching_workflows")
 		CompleteHTTPSession(completer, rrID, result, logger, "no_matching_workflows")
+		// #2076 (v1.6 clone of #2075): mark BEFORE releasing the lease, so a
+		// complete_no_action call that observes IsDriverActive==false can
+		// never find a tombstone miss for a release that already happened
+		// by the time it checks.
+		if tombstone != nil {
+			tombstone.Mark(rrID)
+		}
 		if releaseErr := sessions.Release(sessionID, "no_matching_workflows"); releaseErr != nil {
 			if !errors.Is(releaseErr, mcpinternal.ErrSessionNotFound) {
 				logger.Error(releaseErr, "failed to release MCP lease", "session_id", sessionID)
