@@ -710,17 +710,32 @@ func decodeInvestigateRCA(v any) *tools.InvestigateRCA {
 // no slot in RCAData and are intentionally dropped. Returns nil when rca is
 // nil or carries no severity at all, so callers can distinguish "nothing to
 // pass through" from "pass through an empty object".
-func canonicalGroundedRCA(rca *tools.InvestigateRCA) *tools.RCAData {
+// Returns a plain map[string]any, NOT a *tools.RCAData struct pointer
+// (#2110, v1.6 clone #2111): the returned value is assigned directly into
+// enforceGroundingGuard's args["rca"] (a map[string]any), which ADK's own
+// part_converter.go/EventBridge.EmitArtifact later hands to a2a-go as an
+// a2a.DataPart.Data payload. a2a-go's task manager gob-encodes every SSE
+// artifact for its deep-copy fan-out to subscriber goroutines
+// (internal/utils/utils.go's DeepCopy), and encoding/gob requires any
+// concrete type stored behind an interface{} to be gob.Register'd first --
+// tools.RCAData is never registered anywhere in this repo, so returning it
+// by struct pointer crashed every grounded kubernaut_present_decision call
+// in production with "gob: type not registered for interface:
+// tools.RCAData". map[string]any IS safe here: a2a-go's own
+// internal/taskstore/store.go registers it (and []any) at init(), and that
+// package is already transitively imported via pkg/apifrontend/launcher's
+// own use of a2a-go types.
+func canonicalGroundedRCA(rca *tools.InvestigateRCA) map[string]any {
 	if rca == nil || rca.Severity == "" {
 		return nil
 	}
-	return &tools.RCAData{
-		Severity:       rca.Severity,
-		Confidence:     rca.Confidence,
-		CausalChain:    rca.CausalChain,
-		Target:         rca.Target,
-		ToolCallsCount: rca.TotalToolCalls,
-		LLMTurns:       rca.TotalLLMTurns,
+	return map[string]any{
+		"severity":         rca.Severity,
+		"confidence":       rca.Confidence,
+		"causal_chain":     rca.CausalChain,
+		"target":           rca.Target,
+		"tool_calls_count": rca.TotalToolCalls,
+		"llm_turns":        rca.TotalLLMTurns,
 	}
 }
 
@@ -749,14 +764,26 @@ func canonicalGroundedRCA(rca *tools.InvestigateRCA) *tools.RCAData {
 // this fallback case -- unlike the two bookkeeping fields, there is
 // genuinely nothing authoritative in AF's state to substitute for them.
 func substituteGroundedRCA(state adksession.State, args map[string]any) {
+	// canonicalSubstituted tracks whether the branch below fully replaced
+	// args["rca"] with KA's own authoritative facts, as opposed to the
+	// zero-backfill branch further down still needing to run. Tracked via
+	// an explicit bool rather than a type assertion on args["rca"] (#2110,
+	// v1.6 clone #2111): canonicalGroundedRCA now returns map[string]any
+	// (not *tools.RCAData -- a raw struct pointer here crashed a2a-go's
+	// real task-manager gob DeepCopy in production, "gob: type not
+	// registered for interface: tools.RCAData"), so both branches produce
+	// the same concrete type and are no longer distinguishable by Go type
+	// alone.
+	canonicalSubstituted := false
 	if v, err := state.Get(session.StateKeyGroundedRCA); err == nil {
 		if rca, ok := v.(*tools.InvestigateRCA); ok {
 			if canonical := canonicalGroundedRCA(rca); canonical != nil {
 				args["rca"] = canonical
+				canonicalSubstituted = true
 			}
 		}
 	}
-	if _, isRCAData := args["rca"].(*tools.RCAData); !isRCAData {
+	if !canonicalSubstituted {
 		if rcaMap, ok := args["rca"].(map[string]any); ok {
 			rcaMap["tool_calls_count"] = 0
 			rcaMap["llm_turns"] = 0
