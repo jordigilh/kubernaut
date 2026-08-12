@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.5.6] - 2026-08-06
+## [1.5.6] - 2026-08-12
 
 ### Security
 
@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`aiagent_mcp_interactive_sessions_active` gauge drifted upward under sustained load instead of tracking real session capacity (#2103)** — Every completion path (`complete`, `cancel`, `complete_no_action`, workflow selection, auto-close, the session janitor) now decrements the gauge centrally inside `LeaseSessionManager.Release()`, instead of each caller needing its own metrics wiring.
 - **`kubernaut_present_decision` failed JSON-schema validation when a model double-encoded the `options` array (#2092)** — The array is now repaired back to native JSON before schema validation runs; genuinely malformed input still surfaces a real validation error.
 - **`kubernaut_present_decision` could be called before workflow discovery ever ran, in `full_remediation`/`full_remediation_autonomous` modes (#2098)** — Added an ordering guard that rejects and retries the call until `kubernaut_discover_workflows` has succeeded for the current investigation.
+- **The AU-3 audit decision artifact emitted over SSE for `kubernaut_present_decision` carried the model's raw, ungrounded `tool_calls_count`/`llm_turns` values instead of the grounded ones `enforceGroundingGuard` backfills (#2105, #2098 regression)** — ADK yields the SSE artifact from the model's raw `FunctionCall` before `BeforeToolCallback`s (where grounding previously ran exclusively) ever execute, so the guard's mutation always arrived too late to affect what the client received. Added `sanitizePresentDecisionResponse`, an `AfterModelCallback` that sanitizes the model's `FunctionCall.Args` in place immediately after the model responds, before ADK streams it.
 - **`WatchTerminalEvents` had no exit path if its event stream went silent without erroring, leaking a goroutine per affected session (#2094)** — Added a 30-minute safety-net timer as an additional exit condition.
 - **Interactive session capacity eroded well before `interactive.maxConcurrentSessions` real concurrent sessions were active, under sustained load (#2100)** — Wired the previously-unused `SessionJanitor` into `main.go`, and fixed the fallback-exhausted path in session start to release its lease immediately instead of relying on a ~10-minute inactivity timeout to reclaim it.
 - **`workflow_discovery` could hang indefinitely when KA's same-kind/API-version validation gates issued a non-streamed retry LLM call that exceeded AF's 60s inactivity budget, silently completing the investigation with an empty RCA (#2086)** — KA's gate-retry calls now emit keepalive events, and AF's bridge inactivity timer resets on them.
