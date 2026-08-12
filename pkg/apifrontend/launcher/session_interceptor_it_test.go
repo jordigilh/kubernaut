@@ -140,10 +140,11 @@ var _ = Describe("SessionInterceptor Integration (BR-SESS-020)", func() {
 	})
 
 	It("IT-AF-1446-004: SC-7 — Message with empty contextId is NOT redirected when registry entry is idle-expired (#1446)", func() {
-		shortIdleRegistry := launcher.NewActiveContextRegistry(2*time.Hour, 1*time.Millisecond)
+		clock := launcher.NewMockClock(time.Now())
+		shortIdleRegistry := launcher.NewActiveContextRegistryWithClock(2*time.Hour, 1*time.Millisecond, clock)
 		shortIdleRegistry.Set("diana", "ctx-stale-investigation")
 
-		time.Sleep(5 * time.Millisecond)
+		clock.Advance(5 * time.Millisecond)
 
 		interceptor := launcher.NewSessionInterceptor(shortIdleRegistry, logger)
 		h, err := launcher.NewA2AHandler(launcher.A2AConfig{
@@ -169,7 +170,8 @@ var _ = Describe("SessionInterceptor Integration (BR-SESS-020)", func() {
 	})
 
 	It("IT-AF-1446-005: SC-7, AC-2 — Active session stays alive via Refresh through tool call sequence (#1446)", func() {
-		shortIdleRegistry := launcher.NewActiveContextRegistry(2*time.Hour, 50*time.Millisecond)
+		clock := launcher.NewMockClock(time.Now())
+		shortIdleRegistry := launcher.NewActiveContextRegistryWithClock(2*time.Hour, 50*time.Millisecond, clock)
 		shortIdleRegistry.Set("edgar", "ctx-active-investigation")
 
 		interceptor := launcher.NewSessionInterceptor(shortIdleRegistry, logger)
@@ -182,9 +184,9 @@ var _ = Describe("SessionInterceptor Integration (BR-SESS-020)", func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		time.Sleep(30 * time.Millisecond)
+		clock.Advance(30 * time.Millisecond)
 		shortIdleRegistry.Refresh("edgar")
-		time.Sleep(30 * time.Millisecond)
+		clock.Advance(30 * time.Millisecond)
 
 		rec := sendMessage(h, "edgar", "", "show me the RCA")
 		Expect(rec.Code).To(Equal(http.StatusOK))
