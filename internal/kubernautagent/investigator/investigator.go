@@ -447,6 +447,13 @@ func (inv *Investigator) RunRCAExtractionFromConversation(ctx context.Context, m
 		Tools:    submitOnlyTools,
 	}
 
+	// #2088 (main port of #2086): this extraction call is non-streamed and
+	// emits no sink events for its duration. discover_workflows callers can
+	// wait through this call while AF's bridge-inactivity timer is running,
+	// so a keepalive is required to prevent AF from falsely reporting
+	// completion.
+	emitGateRetryKeepalive(ctx, "extracting_rca_from_conversation")
+
 	resp, err := llm.ChatWithParams(ctx, client, req, runtimeParams)
 	if err != nil {
 		return nil, fmt.Errorf("RCA extraction LLM call: %w", err)
