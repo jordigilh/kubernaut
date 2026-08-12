@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`kubernaut_present_decision` crashed the a2a task's artifact delivery on every grounded decision, breaking the entire interactive approve/decline/dismiss flow (#2110)** — The grounding guard's structured RCA substitution now assigns a plain `map[string]any` instead of a `*tools.RCAData` struct pointer, which is not `gob`-registered and previously failed `a2a-go`'s deep-copy artifact fan-out.
 - **`aiagent_mcp_interactive_sessions_active` gauge drifted upward under sustained load instead of tracking real session capacity (#2103)** — Every completion path (`complete`, `cancel`, `complete_no_action`, workflow selection, auto-close, the session janitor) now decrements the gauge centrally inside `LeaseSessionManager.Release()`, instead of each caller needing its own metrics wiring.
 - **`kubernaut_present_decision` failed JSON-schema validation when a model double-encoded the `options` array (#2092)** — The array is now repaired back to native JSON before schema validation runs; genuinely malformed input still surfaces a real validation error.
 - **`kubernaut_present_decision` could be called before workflow discovery ever ran, in `full_remediation`/`full_remediation_autonomous` modes (#2098)** — Added an ordering guard that rejects and retries the call until `kubernaut_discover_workflows` has succeeded for the current investigation.
