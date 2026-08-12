@@ -30,7 +30,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
-	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
 )
 
 // statefulToolContext extends fakeToolContext with a working session.State
@@ -725,14 +724,22 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2023)", func() {
 		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
 		Expect(err).NotTo(HaveOccurred())
 
-		rca, ok := args["rca"].(*tools.RCAData)
-		Expect(ok).To(BeTrue(), "rca must be overwritten with a *tools.RCAData, not left as the LLM's own value")
-		Expect(rca.Severity).To(Equal("warning"), "severity must come from KA's own report, not the LLM's fabricated 'critical'")
-		Expect(rca.Confidence).To(Equal(0.55))
-		Expect(rca.Target).To(Equal("pod/real-target"))
-		Expect(rca.CausalChain).To(Equal([]string{"MemoryPressure", "Evicted"}))
-		Expect(rca.ToolCallsCount).To(Equal(7), "total_tool_calls must be renamed to RCAData's tool_calls_count field")
-		Expect(rca.LLMTurns).To(Equal(3), "total_llm_turns must be renamed to RCAData's llm_turns field")
+		// #2110 (v1.6 clone #2111): rca must be a map[string]any, NOT a
+		// *tools.RCAData struct pointer -- a2a-go's task manager gob-encodes
+		// every SSE artifact for its deep-copy fan-out, and tools.RCAData is
+		// never gob.Register'd anywhere in this repo, so a raw struct
+		// pointer here crashed every grounded present_decision call in
+		// production ("gob: type not registered for interface:
+		// tools.RCAData"). map[string]any IS safe: a2a-go's own
+		// internal/taskstore/store.go registers it at init().
+		rca, ok := args["rca"].(map[string]any)
+		Expect(ok).To(BeTrue(), "rca must be overwritten with a gob-safe map[string]any, not a *tools.RCAData struct pointer (#2110)")
+		Expect(rca["severity"]).To(Equal("warning"), "severity must come from KA's own report, not the LLM's fabricated 'critical'")
+		Expect(rca["confidence"]).To(Equal(0.55))
+		Expect(rca["target"]).To(Equal("pod/real-target"))
+		Expect(rca["causal_chain"]).To(Equal([]string{"MemoryPressure", "Evicted"}))
+		Expect(rca["tool_calls_count"]).To(Equal(7), "total_tool_calls must be renamed to RCAData's tool_calls_count field")
+		Expect(rca["llm_turns"]).To(Equal(3), "total_llm_turns must be renamed to RCAData's llm_turns field")
 	})
 
 	It("UT-AF-2023-011: leaves the rca argument untouched when investigate reported no structured rca payload (summary-only grounding)", func() {
@@ -887,9 +894,11 @@ var _ = Describe("Phase Guard — Content Grounding Guard (#2023)", func() {
 		_, err := before(toolCtx, fakeTool{name: "kubernaut_present_decision"}, args)
 		Expect(err).NotTo(HaveOccurred())
 
-		rca, ok := args["rca"].(*tools.RCAData)
+		// #2110 (v1.6 clone #2111): map[string]any, not *tools.RCAData -- see
+		// UT-AF-2071-014's comment above for why.
+		rca, ok := args["rca"].(map[string]any)
 		Expect(ok).To(BeTrue())
-		Expect(rca.Severity).To(Equal("warning"), "a non-Provisional rca must still overwrite present_decision's rca (#2023's original guarantee)")
+		Expect(rca["severity"]).To(Equal("warning"), "a non-Provisional rca must still overwrite present_decision's rca (#2023's original guarantee)")
 	})
 
 	It("UT-AF-2068-005: treats a malformed (non-object) rca payload the same as no rca at all, without panicking", func() {
