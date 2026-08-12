@@ -24,6 +24,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp" // GAP-14 / Issue #1519: inbound tracing
 
 	dsaudit "github.com/jordigilh/kubernaut/pkg/datastorage/audit"
 	dsmiddleware "github.com/jordigilh/kubernaut/pkg/datastorage/server/middleware"
@@ -38,6 +39,22 @@ import (
 // dependency wiring and server_lifecycle.go for Start/Shutdown.
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
+
+	// GAP-14 / Issue #1519: root span per inbound request. Data Storage is
+	// the hub every other Kubernaut service calls into, so this is the
+	// receiving end of each of those services' outbound-call spans -- e.g.
+	// Gateway's audit POST (see pkg/gateway/server_constructors.go) shows up
+	// here as a child span. No-op cost when no TracerProvider is registered.
+	//
+	// Deliberately inbound-only: Data Storage's own outbound dependencies
+	// are Postgres and Redis, not HTTP, so the otelhttp.NewTransport pattern
+	// used elsewhere doesn't apply here without a different mechanism
+	// (otelsql / redis client hooks) -- out of scope unless requested.
+	r.Use(otelhttp.NewMiddleware("datastorage.http",
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return r.Method + " " + r.URL.Path
+		}),
+	))
 
 	s.registerGlobalMiddleware(r)
 

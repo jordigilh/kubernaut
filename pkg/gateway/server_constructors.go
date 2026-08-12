@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-logr/logr" // BR-GATEWAY-093: Circuit breaker detection
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp" // GAP-14 / Issue #1519: inbound/outbound tracing
 
 	"github.com/jordigilh/kubernaut/pkg/audit" // DD-AUDIT-003: Audit integration
 	// Ogen generated audit types
@@ -484,7 +485,22 @@ func buildAuditStore(cfg *config.ServerConfig, logger logr.Logger) (audit.AuditS
 	// DD-API-001: Use OpenAPI generated client (not direct HTTP)
 	// DD-AUTH-005 DI: cfg.DataStorage.Transport overrides the default SA token transport
 	// (used by integration tests to inject authenticated transports)
-	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(cfg.DataStorage.URL, cfg.DataStorage.Timeout, cfg.DataStorage.Transport)
+	//
+	// GAP-14 / Issue #1519: when no transport was injected (production
+	// default), build the same default chain pkg/audit would build
+	// internally, wrapped with otelhttp, so this outbound audit call
+	// carries the Gateway request's span onward to Data Storage.
+	// Deliberately built HERE (Gateway-only) rather than inside the
+	// shared pkg/audit adapter, which is used by 9 other services.
+	dsTransport := cfg.DataStorage.Transport
+	if dsTransport == nil {
+		baseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
+		if err != nil {
+			return nil, fmt.Errorf("FATAL: failed to create TLS-aware base transport for Data Storage client: %w", err)
+		}
+		dsTransport = otelhttp.NewTransport(auth.NewAuthTransport(auth.NewDefaultTokenSource(), baseTransport))
+	}
+	dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(cfg.DataStorage.URL, cfg.DataStorage.Timeout, dsTransport)
 	if err != nil {
 		return nil, fmt.Errorf("FATAL: failed to create Data Storage client - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service): %w", err)
 	}

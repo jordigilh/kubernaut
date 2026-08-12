@@ -39,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
+	"github.com/jordigilh/kubernaut/pkg/shared/telemetry"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
@@ -292,6 +293,35 @@ func main() {
 	}
 
 	logger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
+
+	// GAP-14 / Issue #1519: OTel tracing bootstrap. KA's outbound deps (LLM
+	// provider, DataStorage, Prometheus) are all HTTP, so unlike Data
+	// Storage, both an inbound root span and outbound-call child spans are
+	// wired (see buildTransportChain in llm_builder.go, initDSClients,
+	// buildAuditStore, buildToolRegistry). Endpoint (real collector) and
+	// LogSink (span summaries via this logger) are independent and opt-in;
+	// neither costs anything when left off.
+	tracerShutdown, tracerErr := telemetry.NewTracerProvider(context.Background(), telemetry.Config{
+		ServiceName: "kubernaut-agent",
+		Endpoint:    cfg.Runtime.Telemetry.Endpoint,
+		TLS:         cfg.Runtime.Telemetry.TLS,
+		LogSink:     cfg.Runtime.Telemetry.LogSink,
+		Logger:      logger.WithName("otel"),
+	})
+	if tracerErr != nil {
+		logger.Error(tracerErr, "failed to initialize OpenTelemetry tracer provider")
+		os.Exit(1)
+	}
+	logger.Info("OpenTelemetry tracing configured",
+		"otlp_endpoint", cfg.Runtime.Telemetry.Endpoint,
+		"log_sink_enabled", cfg.Runtime.Telemetry.LogSink)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tracerShutdown(shutdownCtx); err != nil {
+			logger.Error(err, "failed to shut down tracer provider")
+		}
+	}()
 
 	// DD-PLATFORM-009: bind a bootstrap health server before initializeAgent's
 	// blocking fleet MCP Gateway connection so kubelet's probes see an honest

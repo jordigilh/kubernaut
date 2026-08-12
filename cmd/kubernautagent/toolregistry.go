@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"golang.org/x/sync/singleflight"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	metricsclient "k8s.io/metrics/pkg/client/clientset/versioned"
@@ -113,9 +114,17 @@ func registerPrometheusTools(reg *registry.Registry, cfg *kaconfig.Config, logge
 		Timeout:   cfg.Integrations.Tools.Prometheus.Timeout,
 		SizeLimit: cfg.Integrations.Tools.Prometheus.SizeLimit,
 	}
+	// GAP-14 / Issue #1519: outbound span for every Prometheus query --
+	// wired unconditionally (not just when TLS CA is configured) so the
+	// tool-call latency breakdown includes Prometheus regardless of
+	// transport config. No-op cost when no TracerProvider is registered.
+	promBase := http.RoundTripper(http.DefaultTransport)
 	if cfg.Integrations.Tools.Prometheus.TLSCaFile != "" {
-		promCfg.Transport = buildTLSAwareTransport(cfg.Integrations.Tools.Prometheus.TLSCaFile, logger, "Prometheus")
+		if tlsBase := buildTLSAwareTransport(cfg.Integrations.Tools.Prometheus.TLSCaFile, logger, "Prometheus"); tlsBase != nil {
+			promBase = tlsBase
+		}
 	}
+	promCfg.Transport = otelhttp.NewTransport(promBase)
 	promClient, promErr := promtools.NewClient(promCfg)
 	if promErr != nil {
 		logger.Error(promErr, "failed to create Prometheus client")
