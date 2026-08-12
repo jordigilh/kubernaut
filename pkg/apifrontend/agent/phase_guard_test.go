@@ -1096,17 +1096,18 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 			"session_id": "ka-sess-001", "rr_id": "rr-123",
 		}, nil)
 
-		shortIdleRegistry := launcher.NewActiveContextRegistry(2*time.Hour, 200*time.Millisecond)
+		clock := launcher.NewMockClock(time.Now())
+		shortIdleRegistry := launcher.NewActiveContextRegistryWithClock(2*time.Hour, 200*time.Millisecond, clock)
 		shortIdleRegistry.Set("alice", "ctx-session-abc")
 		_, afterShort := NewPhaseGuardWithRegistryForTest(shortIdleRegistry)
 
-		time.Sleep(50 * time.Millisecond)
+		clock.Advance(50 * time.Millisecond)
 
 		_, _ = afterShort(toolCtx, fakeTool{name: "kubectl_get"}, nil, map[string]any{
 			"result": "pod/nginx Running",
 		}, nil)
 
-		time.Sleep(100 * time.Millisecond)
+		clock.Advance(100 * time.Millisecond)
 
 		contextID, ok := shortIdleRegistry.Get("alice")
 		Expect(ok).To(BeTrue(),
@@ -1115,17 +1116,18 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 	})
 
 	It("UT-AF-1446-008: AU-3 — Refresh NOT called on failed tool call (#1446)", func() {
-		shortIdleRegistry := launcher.NewActiveContextRegistry(2*time.Hour, 200*time.Millisecond)
+		clock := launcher.NewMockClock(time.Now())
+		shortIdleRegistry := launcher.NewActiveContextRegistryWithClock(2*time.Hour, 200*time.Millisecond, clock)
 		shortIdleRegistry.Set("alice", "ctx-session-abc")
 		_, afterShort := NewPhaseGuardWithRegistryForTest(shortIdleRegistry)
 
-		time.Sleep(50 * time.Millisecond)
+		clock.Advance(50 * time.Millisecond)
 
 		_, _ = afterShort(toolCtx, fakeTool{name: "kubectl_get"}, nil, map[string]any{
 			"error": "forbidden",
 		}, nil)
 
-		time.Sleep(250 * time.Millisecond)
+		clock.Advance(250 * time.Millisecond)
 
 		_, ok := shortIdleRegistry.Get("alice")
 		Expect(ok).To(BeFalse(),

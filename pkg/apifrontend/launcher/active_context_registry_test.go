@@ -13,10 +13,11 @@ import (
 var _ = Describe("ActiveContextRegistry — Idle Timeout (#1446, BR-SESS-023)", func() {
 
 	It("UT-AF-1446-001: SC-7 — Get returns false when entry exceeds idle timeout but is within max TTL", func() {
-		registry := launcher.NewActiveContextRegistry(2*time.Hour, 1*time.Millisecond)
+		clock := launcher.NewMockClock(time.Now())
+		registry := launcher.NewActiveContextRegistryWithClock(2*time.Hour, 1*time.Millisecond, clock)
 		registry.Set("alice", "ctx-stale")
 
-		time.Sleep(5 * time.Millisecond)
+		clock.Advance(5 * time.Millisecond)
 
 		contextID, ok := registry.Get("alice")
 		Expect(ok).To(BeFalse(),
@@ -25,12 +26,13 @@ var _ = Describe("ActiveContextRegistry — Idle Timeout (#1446, BR-SESS-023)", 
 	})
 
 	It("UT-AF-1446-002: SC-7 — Refresh resets idle timer, keeping entry alive past idle timeout", func() {
-		registry := launcher.NewActiveContextRegistry(2*time.Hour, 10*time.Millisecond)
+		clock := launcher.NewMockClock(time.Now())
+		registry := launcher.NewActiveContextRegistryWithClock(2*time.Hour, 10*time.Millisecond, clock)
 		registry.Set("bob", "ctx-active")
 
-		time.Sleep(5 * time.Millisecond)
+		clock.Advance(5 * time.Millisecond)
 		registry.Refresh("bob")
-		time.Sleep(7 * time.Millisecond)
+		clock.Advance(7 * time.Millisecond)
 
 		contextID, ok := registry.Get("bob")
 		Expect(ok).To(BeTrue(),
@@ -91,10 +93,11 @@ var _ = Describe("ActiveContextRegistry (BR-SESS-020, BR-SESS-022, BR-SESS-024)"
 	})
 
 	It("UT-AF-SESS-020-005: Get returns false for expired entry (AC-2)", func() {
-		shortTTL := launcher.NewActiveContextRegistry(1*time.Millisecond, 1*time.Millisecond)
+		clock := launcher.NewMockClock(time.Now())
+		shortTTL := launcher.NewActiveContextRegistryWithClock(1*time.Millisecond, 1*time.Millisecond, clock)
 		shortTTL.Set("dave", "ctx-expired")
 
-		time.Sleep(5 * time.Millisecond)
+		clock.Advance(5 * time.Millisecond)
 
 		contextID, ok := shortTTL.Get("dave")
 		Expect(ok).To(BeFalse())
