@@ -62,6 +62,11 @@ type ServerConfig struct {
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
 
+	// Telemetry configures OTel distributed tracing (GAP-14 / Issue #1519).
+	// Both Endpoint (OTLP export) and LogSink (span summaries via this
+	// service's logger) are opt-in and off by default (BYO-collector).
+	Telemetry sharedconfig.TelemetryConfig `yaml:"telemetry,omitempty"`
+
 	// Fleet enables multi-cluster federation scope checking (ADR-065, ADR-068).
 	// When enabled, GW uses FederatedScopeChecker via the configured backend adapter.
 	Fleet fleet.FleetConfig `yaml:"fleet,omitempty"`
@@ -82,16 +87,16 @@ type CORSConfig struct {
 // ServerSettings contains HTTP server configuration.
 // Single Responsibility: HTTP server behavior
 type ServerSettings struct {
-	ListenAddr            string              `yaml:"listenAddr"`              // Default: ":8080"
-	HealthAddr            string              `yaml:"healthAddr"`              // Default: ":8081" (Issue #753: dedicated health probe port)
-	MetricsAddr           string              `yaml:"metricsAddr"`             // Default: ":9090" (Issue #753: dedicated metrics port)
-	DisableProfiling      bool                `yaml:"disableProfiling"`        // Set true to suppress /debug/pprof/* on health port
-	MaxConcurrentRequests int                 `yaml:"maxConcurrentRequests"`   // Default: 100 (0 = unlimited)
-	ReadTimeout           time.Duration       `yaml:"readTimeout"`             // Default: 30s
-	WriteTimeout          time.Duration       `yaml:"writeTimeout"`            // Default: 30s
-	IdleTimeout           time.Duration       `yaml:"idleTimeout"`             // Default: 120s
-	K8sRequestTimeout     time.Duration       `yaml:"k8sRequestTimeout"`      // Default: 15s -- per-handler deadline for K8s API ops (BR-GATEWAY-102)
-	TLS                   sharedtls.TLSConfig `yaml:"tls,omitempty"`           // Issue #493: Optional TLS
+	ListenAddr            string              `yaml:"listenAddr"`            // Default: ":8080"
+	HealthAddr            string              `yaml:"healthAddr"`            // Default: ":8081" (Issue #753: dedicated health probe port)
+	MetricsAddr           string              `yaml:"metricsAddr"`           // Default: ":9090" (Issue #753: dedicated metrics port)
+	DisableProfiling      bool                `yaml:"disableProfiling"`      // Set true to suppress /debug/pprof/* on health port
+	MaxConcurrentRequests int                 `yaml:"maxConcurrentRequests"` // Default: 100 (0 = unlimited)
+	ReadTimeout           time.Duration       `yaml:"readTimeout"`           // Default: 30s
+	WriteTimeout          time.Duration       `yaml:"writeTimeout"`          // Default: 30s
+	IdleTimeout           time.Duration       `yaml:"idleTimeout"`           // Default: 120s
+	K8sRequestTimeout     time.Duration       `yaml:"k8sRequestTimeout"`     // Default: 15s -- per-handler deadline for K8s API ops (BR-GATEWAY-102)
+	TLS                   sharedtls.TLSConfig `yaml:"tls,omitempty"`         // Issue #493: Optional TLS
 }
 
 // validateAddrAndConcurrency checks the listen address and throttle bounds.
@@ -410,7 +415,8 @@ func DefaultServerConfig() *ServerConfig {
 			},
 			Retry: DefaultRetrySettings(),
 		},
-		Logging: sharedconfig.DefaultLoggingConfig(),
+		Logging:   sharedconfig.DefaultLoggingConfig(),
+		Telemetry: sharedconfig.DefaultTelemetryConfig(),
 	}
 }
 

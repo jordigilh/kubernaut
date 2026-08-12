@@ -31,7 +31,6 @@ import (
 	"errors"
 	"fmt"
 	"iter"
-	"sync"
 	"testing"
 	"time"
 )
@@ -117,7 +116,6 @@ func filterBySource(events []Event, source string) []Event {
 // can use to inject side-channel events during execution.
 type testableExecute struct {
 	bridgeCh chan Event
-	mu       sync.Mutex
 }
 
 func newTestableExecute() *testableExecute {

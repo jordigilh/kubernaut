@@ -39,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
+	"github.com/jordigilh/kubernaut/pkg/shared/telemetry"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
@@ -285,13 +286,38 @@ func main() {
 	bootstrapLogger := kubelog.NewLogger(kubelog.Options{Level: 0, ServiceName: "kubernaut-agent"})
 
 	cfg, llmRuntime, logger, atomicLevel := loadStartupConfig(configPath, llmRuntimePath, bootstrapLogger)
-	defer kubelog.Sync(logger)
 
 	if addr == "" {
 		addr = fmt.Sprintf("%s:%d", cfg.Runtime.Server.Address, cfg.Runtime.Server.Port)
 	}
 
 	logger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
+
+	// GAP-14 / Issue #1519: OTel tracing bootstrap. KA's outbound deps (LLM
+	// provider, DataStorage, Prometheus) are all HTTP, so unlike Data
+	// Storage, both an inbound root span and outbound-call child spans are
+	// wired (see buildTransportChain in llm_builder.go, initDSClients,
+	// buildAuditStore, buildToolRegistry). Endpoint (real collector) and
+	// LogSink (span summaries via this logger) are independent and opt-in;
+	// neither costs anything when left off.
+	//
+	// Deliberately bootstrapped before the `defer kubelog.Sync(logger)`
+	// below (gocritic:exitAfterDefer) so a failure here can os.Exit(1)
+	// cleanly with no defers yet registered to skip; Sync is called
+	// explicitly on that path instead.
+	tracerShutdown, ok := telemetry.Bootstrap(context.Background(), telemetry.Config{
+		ServiceName: "kubernaut-agent",
+		Endpoint:    cfg.Runtime.Telemetry.Endpoint,
+		TLS:         cfg.Runtime.Telemetry.TLS,
+		LogSink:     cfg.Runtime.Telemetry.LogSink,
+		Logger:      logger.WithName("otel"),
+	})
+	if !ok {
+		kubelog.Sync(logger)
+		os.Exit(1)
+	}
+	defer kubelog.Sync(logger)
+	defer tracerShutdown()
 
 	// DD-PLATFORM-009: bind a bootstrap health server before initializeAgent's
 	// blocking fleet MCP Gateway connection so kubelet's probes see an honest

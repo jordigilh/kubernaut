@@ -260,6 +260,12 @@ func WithClientCert(certFile, keyFile string) TLSTransportOption {
 // *http.Transport; callers that need a raw *tls.Config directly (e.g.
 // go-redis's redis.Options.TLSConfig) should call this instead of
 // constructing their own ad-hoc tls.Config (DD-PLATFORM-006 DA9).
+//
+// caFile is REQUIRED here (LoadCACert errors on empty/unreadable paths) --
+// existing callers (cmd/apifrontend, cmd/fleetmetadatacache) always
+// validate a non-empty CAFile before calling this. For callers that need
+// an OPTIONAL CAFile (empty = trust the system CA pool, e.g. a
+// publicly-trusted vendor OTel collector), use BuildClientTLSConfig instead.
 func BuildTLSConfig(caFile string, opts ...TLSTransportOption) (*tls.Config, error) {
 	pool, err := LoadCACert(caFile)
 	if err != nil {
@@ -271,9 +277,40 @@ func BuildTLSConfig(caFile string, opts ...TLSTransportOption) (*tls.Config, err
 		fn(&o)
 	}
 
-	tlsCfg := &tls.Config{
-		RootCAs:    pool,
-		MinVersion: tls.VersionTLS12,
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: pool}
+
+	if o.certFile != "" && o.keyFile != "" {
+		cert, err := tls.LoadX509KeyPair(o.certFile, o.keyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate (%s, %s): %w", o.certFile, o.keyFile, err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+
+	ApplyProfile(tlsCfg, getDefaultSecurityProfile())
+	return tlsCfg, nil
+}
+
+// BuildClientTLSConfig builds a *tls.Config for outbound HTTPS calls, with
+// the process-wide SecurityProfile (see profile.go) applied. Unlike
+// BuildTLSConfig, caFile is OPTIONAL here: when empty, the system CA pool
+// is trusted (e.g. a publicly-trusted vendor OTel collector); when set, it
+// is loaded as the sole trust anchor via LoadCACert. Optional
+// TLSTransportOption values (e.g. WithClientCert) add mTLS.
+func BuildClientTLSConfig(caFile string, opts ...TLSTransportOption) (*tls.Config, error) {
+	var o tlsTransportOpts
+	for _, fn := range opts {
+		fn(&o)
+	}
+
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+
+	if caFile != "" {
+		pool, err := LoadCACert(caFile)
+		if err != nil {
+			return nil, err
+		}
+		tlsCfg.RootCAs = pool
 	}
 
 	if o.certFile != "" && o.keyFile != "" {

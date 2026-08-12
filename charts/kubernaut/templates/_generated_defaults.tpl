@@ -446,6 +446,14 @@ signalprocessing:
         content: ""
         existingConfigMap: ""
     replicas: 1
+telemetry:
+    endpoint: ""
+    logSink: false
+    tls:
+        caFile: ""
+        certFile: ""
+        enabled: false
+        keyFile: ""
 tls:
     certManager:
         issuerRef:

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
@@ -129,7 +130,7 @@ func buildDSBaseTransport(caFile string, cbCfg types.LLMCircuitBreaker) (http.Ro
 			return nil, err
 		}
 	}
-	return sharedtransport.NewCircuitBreakerTransport(base, sharedtransport.CircuitBreakerConfig{
+	cbTransport := sharedtransport.NewCircuitBreakerTransport(base, sharedtransport.CircuitBreakerConfig{
 		Enabled:          cbCfg.Enabled,
 		Name:             "datastorage",
 		MaxRequests:      cbCfg.MaxRequests,
@@ -137,7 +138,12 @@ func buildDSBaseTransport(caFile string, cbCfg types.LLMCircuitBreaker) (http.Ro
 		Timeout:          cbCfg.Timeout,
 		FailureThreshold: cbCfg.FailureThreshold,
 		FailureRatio:     cbCfg.FailureRatio,
-	}), nil
+	})
+
+	// GAP-14 / Issue #1519: outbound span for every DS call (workflow
+	// catalog fetch, enrichment reads) -- child of KA's inbound request
+	// span. No-op cost when no TracerProvider is registered.
+	return otelhttp.NewTransport(cbTransport), nil
 }
 
 // buildEnricher creates the enrichment.Enricher when DS clients are available.
@@ -203,8 +209,12 @@ func buildAuditStore(cfg *kaconfig.Config, dsTokenSource *auth.TokenSource, logg
 		return audit.NopAuditStore{}, nop
 	}
 
+	// GAP-14 / Issue #1519: outbound span for every buffered audit flush to
+	// DS -- child of whichever span was active when the flush goroutine ran
+	// (best-effort; audit flushes are async and may not always have a live
+	// parent span). No-op cost when no TracerProvider is registered.
 	dsClient, err := sharedaudit.NewOpenAPIClientAdapterWithTransport(
-		cfg.Integrations.DataStorage.URL, 5*time.Second, auth.NewAuthTransport(dsTokenSource, auditBase),
+		cfg.Integrations.DataStorage.URL, 5*time.Second, otelhttp.NewTransport(auth.NewAuthTransport(dsTokenSource, auditBase)),
 	)
 	if err != nil {
 		logger.Error(err, "failed to create DS audit client, falling back to nop")
