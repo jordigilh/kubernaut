@@ -15,6 +15,17 @@ reused from the file-top declaration below. */}}
 {{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "gateway") | fromYaml -}}
 logging:
   level: {{ $v.logging.level | quote }}
+# GAP-14 / Issue #1519: OTel distributed tracing, opt-in (BYO-collector).
+# Shared across Gateway/DataStorage/KubernautAgent (top-level .Values.telemetry).
+# Empty endpoint + logSink=false (default) disables tracing entirely.
+telemetry:
+  endpoint: {{ .Values.telemetry.endpoint | default "" | quote }}
+  logSink: {{ .Values.telemetry.logSink | default false }}
+  tls:
+    enabled: {{ .Values.telemetry.tls.enabled | default false }}
+    caFile: {{ .Values.telemetry.tls.caFile | default "" | quote }}
+    certFile: {{ .Values.telemetry.tls.certFile | default "" | quote }}
+    keyFile: {{ .Values.telemetry.tls.keyFile | default "" | quote }}
 server:
   listenAddr: ":8080"
   healthAddr: ":8081"
