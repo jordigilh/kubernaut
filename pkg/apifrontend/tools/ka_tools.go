@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -365,6 +366,23 @@ type RCAData struct {
 	// enforceGroundingGuard) rather than relying on the LLM to supply them.
 	ToolCallsCount int `json:"tool_calls_count,omitempty"`
 	LLMTurns       int `json:"llm_turns,omitempty"`
+}
+
+// #2110 (v1.6 clone #2111): defense-in-depth only -- production code paths
+// must convert RCAData to a plain map[string]any before it can reach an SSE
+// artifact (see agent/phase_guard.go's canonicalGroundedRCA doc comment for
+// why: a2a-go's task manager gob-encodes every artifact for its deep-copy
+// fan-out, and only registered concrete types can be gob-encoded behind an
+// interface{}). Registering RCAData here means that IF some future code
+// path violates that convention and assigns a raw *RCAData/RCAData into an
+// any-typed field reaching that same gob round-trip, it round-trips
+// correctly instead of crashing the a2a task outright -- turning a
+// hard-to-diagnose production crash into a working (if less-audited) path.
+// This must never be treated as a substitute for the map[string]any
+// convention itself: gob.Register does nothing to prevent a struct pointer
+// from being assigned where a map was expected by calling code.
+func init() {
+	gob.Register(&RCAData{})
 }
 
 type PresentDecisionArgs struct {
