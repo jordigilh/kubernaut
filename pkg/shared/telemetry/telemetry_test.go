@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/pkg/shared/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/codes"
@@ -49,6 +50,23 @@ var _ = Describe("NewTracerProvider validation", func() {
 		})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("Logger"))
+	})
+})
+
+// UT-1519-004: TLS.Enabled with a nonexistent CAFile surfaces a clear error
+// instead of silently falling back to plaintext or an opaque SDK failure.
+var _ = Describe("NewTracerProvider with TLS misconfigured", func() {
+	It("returns an error naming the unreadable CA file", func() {
+		_, err := telemetry.NewTracerProvider(context.Background(), telemetry.Config{
+			ServiceName: "gateway",
+			Endpoint:    "collector.example.com:4318",
+			TLS: internalconfig.TelemetryTLSConfig{
+				Enabled: true,
+				CAFile:  "/nonexistent/ca.pem",
+			},
+		})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("/nonexistent/ca.pem"))
 	})
 })
 

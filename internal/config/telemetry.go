@@ -37,6 +37,35 @@ type TelemetryConfig struct {
 	// must-gather and CI log capture. Recommended default for CI/E2E test
 	// harnesses; leave false in production unless explicitly requested.
 	LogSink bool `yaml:"logSink,omitempty"`
+
+	// TLS configures the OTLP/HTTP export connection to Endpoint. Ignored
+	// when Endpoint is empty. Default (TLS.Enabled=false) is a plain HTTP
+	// connection, matching most in-cluster collector deployments (e.g. an
+	// OTel Collector sidecar/Service with no TLS termination).
+	TLS TelemetryTLSConfig `yaml:"tls,omitempty"`
+}
+
+// TelemetryTLSConfig configures TLS for the OTLP/HTTP exporter connection.
+// Mirrors the shape of pkg/datastorage/config.RedisTLSConfig for consistency:
+// CAFile is for a self-signed/private collector certificate (optional --
+// omit to trust the system CA pool); CertFile/KeyFile are for mTLS, if the
+// collector requires a client certificate.
+type TelemetryTLSConfig struct {
+	// Enabled turns on TLS for the OTLP/HTTP connection. False (default)
+	// uses a plain HTTP connection.
+	Enabled bool `yaml:"enabled,omitempty"`
+
+	// CAFile is the path to a PEM CA certificate used to verify a
+	// self-signed or privately-issued collector certificate. Optional --
+	// leave empty to trust the system CA pool (e.g. a publicly-trusted
+	// vendor collector).
+	CAFile string `yaml:"caFile,omitempty"`
+
+	// CertFile and KeyFile are the client certificate/key pair for mTLS,
+	// if the collector requires client authentication. Both are optional
+	// and must be set together.
+	CertFile string `yaml:"certFile,omitempty"`
+	KeyFile  string `yaml:"keyFile,omitempty"`
 }
 
 // DefaultTelemetryConfig returns tracing fully disabled by default

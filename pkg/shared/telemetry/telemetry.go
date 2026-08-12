@@ -21,7 +21,9 @@ limitations under the License.
 // composable sinks:
 //
 //   - Endpoint: OTLP/HTTP export to a real collector/backend (bring-your-own
-//     -- Jaeger, Tempo, a vendor). Batched for throughput.
+//     -- Jaeger, Tempo, a vendor). Batched for throughput. Plain HTTP by
+//     default (TLS.Enabled=false); set TLS.Enabled to use HTTPS, with an
+//     optional CAFile for a self-signed/private collector certificate.
 //   - LogSink: a compact structured log line per span through the service's
 //     existing logr.Logger. No collector needed -- lands in the same log
 //     stream already captured by must-gather and CI log collection. Uses a
@@ -34,6 +36,7 @@ package telemetry
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 
 	"github.com/go-logr/logr"
@@ -43,6 +46,9 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
+
+	internalconfig "github.com/jordigilh/kubernaut/internal/config"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // Config controls TracerProvider construction for one service process.
@@ -55,12 +61,36 @@ type Config struct {
 	// Empty disables OTLP export.
 	Endpoint string
 
+	// TLS configures the OTLP/HTTP connection to Endpoint. Ignored when
+	// Endpoint is empty. Zero value (Enabled=false) is a plain HTTP
+	// connection -- the existing default, unchanged. Reuses
+	// internal/config.TelemetryTLSConfig directly (rather than redefining an
+	// identical shape here) so every caller passes serverCfg.Telemetry.TLS
+	// straight through with no field-by-field remapping.
+	TLS internalconfig.TelemetryTLSConfig
+
 	// LogSink, when true, emits a compact structured log line per completed
 	// span through Logger. Requires Logger to be set.
 	LogSink bool
 
 	// Logger receives span-completion log lines when LogSink is true.
 	Logger logr.Logger
+}
+
+// buildTLSConfig delegates to pkg/shared/tls.BuildClientTLSConfig -- the
+// same CA-loading, optional-mTLS, and process-wide SecurityProfile logic
+// used by every other outbound TLS client in Kubernaut (Issue #493/#748) --
+// rather than re-implementing it here. Returns nil if TLS is disabled.
+func buildTLSConfig(t internalconfig.TelemetryTLSConfig) (*tls.Config, error) {
+	if !t.Enabled {
+		return nil, nil
+	}
+
+	var opts []sharedtls.TLSTransportOption
+	if t.CertFile != "" && t.KeyFile != "" {
+		opts = append(opts, sharedtls.WithClientCert(t.CertFile, t.KeyFile))
+	}
+	return sharedtls.BuildClientTLSConfig(t.CAFile, opts...)
 }
 
 // Shutdown flushes buffered spans and stops the TracerProvider. Callers
@@ -98,10 +128,20 @@ func NewTracerProvider(ctx context.Context, cfg Config) (Shutdown, error) {
 	opts := []sdktrace.TracerProviderOption{sdktrace.WithResource(res)}
 
 	if cfg.Endpoint != "" {
-		exporter, err := otlptracehttp.New(ctx,
-			otlptracehttp.WithEndpoint(cfg.Endpoint),
-			otlptracehttp.WithInsecure(),
-		)
+		httpOpts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(cfg.Endpoint)}
+		if cfg.TLS.Enabled {
+			tlsConfig, err := buildTLSConfig(cfg.TLS)
+			if err != nil {
+				return nil, fmt.Errorf("telemetry: build TLS config: %w", err)
+			}
+			httpOpts = append(httpOpts, otlptracehttp.WithTLSClientConfig(tlsConfig))
+		} else {
+			// Default: plain HTTP, matching most in-cluster collector
+			// deployments (no TLS termination in front of the collector).
+			httpOpts = append(httpOpts, otlptracehttp.WithInsecure())
+		}
+
+		exporter, err := otlptracehttp.New(ctx, httpOpts...)
 		if err != nil {
 			return nil, fmt.Errorf("telemetry: build OTLP exporter: %w", err)
 		}

@@ -230,24 +230,27 @@ func WithClientCert(certFile, keyFile string) TLSTransportOption {
 	}
 }
 
-// NewTLSTransport creates an http.Transport configured with a custom CA pool
-// for verifying server certificates on outbound HTTPS calls.
-// Optional TLSTransportOption values (e.g. WithClientCert) extend the transport
-// with mTLS or other features without breaking existing callers.
-func NewTLSTransport(caFile string, opts ...TLSTransportOption) (*http.Transport, error) {
-	pool, err := LoadCACert(caFile)
-	if err != nil {
-		return nil, err
-	}
-
+// BuildClientTLSConfig builds a *tls.Config for outbound HTTPS calls, with
+// the process-wide SecurityProfile (see profile.go) applied. caFile is
+// optional: when empty, the system CA pool is trusted (e.g. a
+// publicly-trusted endpoint); when set, it is loaded as the sole trust
+// anchor via LoadCACert, matching Kubernaut's mandatory-inter-service-TLS
+// convention. Optional TLSTransportOption values (e.g. WithClientCert) add
+// mTLS.
+func BuildClientTLSConfig(caFile string, opts ...TLSTransportOption) (*tls.Config, error) {
 	var o tlsTransportOpts
 	for _, fn := range opts {
 		fn(&o)
 	}
 
-	tlsCfg := &tls.Config{
-		RootCAs:    pool,
-		MinVersion: tls.VersionTLS12,
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+
+	if caFile != "" {
+		pool, err := LoadCACert(caFile)
+		if err != nil {
+			return nil, err
+		}
+		tlsCfg.RootCAs = pool
 	}
 
 	if o.certFile != "" && o.keyFile != "" {
@@ -259,5 +262,17 @@ func NewTLSTransport(caFile string, opts ...TLSTransportOption) (*http.Transport
 	}
 
 	ApplyProfile(tlsCfg, getDefaultSecurityProfile())
+	return tlsCfg, nil
+}
+
+// NewTLSTransport creates an http.Transport configured with a custom CA pool
+// for verifying server certificates on outbound HTTPS calls.
+// Optional TLSTransportOption values (e.g. WithClientCert) extend the transport
+// with mTLS or other features without breaking existing callers.
+func NewTLSTransport(caFile string, opts ...TLSTransportOption) (*http.Transport, error) {
+	tlsCfg, err := BuildClientTLSConfig(caFile, opts...)
+	if err != nil {
+		return nil, err
+	}
 	return &http.Transport{TLSClientConfig: tlsCfg}, nil
 }

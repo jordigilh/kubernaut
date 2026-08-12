@@ -216,6 +216,63 @@ var _ = Describe("Shared TLS Helper (#493)", func() {
 		})
 	})
 
+	Describe("BuildClientTLSConfig (GAP-14 / Issue #1519)", func() {
+
+		// UT-TLS-1519-001: empty caFile trusts the system CA pool instead of
+		// erroring -- needed by pkg/shared/telemetry's BYO-collector OTLP
+		// exporter, which may point at a publicly-trusted vendor collector
+		// with no custom CA to load.
+		It("UT-TLS-1519-001: should trust the system CA pool when caFile is empty", func() {
+			cfg, err := sharedtls.BuildClientTLSConfig("")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.RootCAs).To(BeNil(), "nil RootCAs means Go falls back to the system trust store")
+		})
+
+		// UT-TLS-1519-002: non-empty caFile still loads a custom CA pool,
+		// preserving the existing mandatory-inter-service-TLS behavior.
+		It("UT-TLS-1519-002: should load a custom CA pool when caFile is set", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			cfg, err := sharedtls.BuildClientTLSConfig(certPath)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.RootCAs.Subjects()).ToNot(BeEmpty()) //nolint:staticcheck // no alternative for validating cert pool content
+		})
+
+		// UT-TLS-1519-003: an invalid caFile surfaces a clear error naming
+		// the file, even with no client cert options set.
+		It("UT-TLS-1519-003: should return an error naming the unreadable caFile", func() {
+			_, err := sharedtls.BuildClientTLSConfig("/nonexistent/ca.pem")
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("/nonexistent/ca.pem"))
+		})
+
+		// UT-TLS-1519-004: WithClientCert still works via BuildClientTLSConfig
+		// directly (not just through NewTLSTransport), for callers -- like
+		// pkg/shared/telemetry -- that need a *tls.Config rather than a
+		// full *http.Transport.
+		It("UT-TLS-1519-004: should load a client certificate when WithClientCert is provided", func() {
+			generateSelfSignedCert(certPath, keyPath)
+
+			cfg, err := sharedtls.BuildClientTLSConfig("", sharedtls.WithClientCert(certPath, keyPath))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Certificates).To(HaveLen(1))
+		})
+
+		// UT-TLS-1519-005: the process-wide SecurityProfile (cipher suites,
+		// TLS version floor) is applied to BuildClientTLSConfig's output,
+		// same as NewTLSTransport -- callers must not bypass fleet-wide TLS
+		// hardening just because they only need a *tls.Config.
+		It("UT-TLS-1519-005: should apply the process-wide security profile, including cipher suites", func() {
+			sharedtls.SetDefaultSecurityProfile(sharedtls.IntermediateProfile())
+			defer sharedtls.ResetDefaultSecurityProfileForTesting()
+
+			cfg, err := sharedtls.BuildClientTLSConfig("")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.MinVersion).To(Equal(uint16(tls.VersionTLS12)))
+			Expect(cfg.CipherSuites).To(HaveLen(6), "Intermediate profile must set its 6 AEAD ECDHE cipher suites")
+		})
+	})
+
 	Describe("DefaultBaseTransport (#753)", func() {
 
 		AfterEach(func() {
