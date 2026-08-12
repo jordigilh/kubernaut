@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-logr/logr"
 	"github.com/a2aproject/a2a-go/a2a"
+	"github.com/go-logr/logr"
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/server/adka2a"
 	"google.golang.org/adk/session"
@@ -102,6 +102,53 @@ func EmitArtifactForTest(ctx context.Context, data map[string]any, textFallback 
 		return nil
 	}
 	return bridge.EmitArtifact(ctx, data, textFallback, meta)
+}
+
+// LastArtifactDataForTest extracts the DataPart.Data map from a
+// TaskArtifactUpdateEvent, or nil if the event carries no DataPart
+// (#2110/#2111 EmitArtifact gob-safety boundary tests).
+func LastArtifactDataForTest(evt a2a.Event) map[string]any {
+	artEvt, ok := evt.(*a2a.TaskArtifactUpdateEvent)
+	if !ok || artEvt.Artifact == nil {
+		return nil
+	}
+	for _, part := range artEvt.Artifact.Parts {
+		if dp, ok := part.(a2a.DataPart); ok {
+			return dp.Data
+		}
+	}
+	return nil
+}
+
+// ArtifactHasDataPartForTest reports whether the event's artifact carries a
+// DataPart at all, distinct from LastArtifactDataForTest returning nil for
+// an empty-but-present map (#2110/#2111 degraded-artifact assertions).
+func ArtifactHasDataPartForTest(evt a2a.Event) bool {
+	artEvt, ok := evt.(*a2a.TaskArtifactUpdateEvent)
+	if !ok || artEvt.Artifact == nil {
+		return false
+	}
+	for _, part := range artEvt.Artifact.Parts {
+		if _, ok := part.(a2a.DataPart); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// ArtifactTextFallbackForTest extracts the TextPart.Text from a
+// TaskArtifactUpdateEvent (#2110/#2111 degraded-artifact assertions).
+func ArtifactTextFallbackForTest(evt a2a.Event) string {
+	artEvt, ok := evt.(*a2a.TaskArtifactUpdateEvent)
+	if !ok || artEvt.Artifact == nil {
+		return ""
+	}
+	for _, part := range artEvt.Artifact.Parts {
+		if tp, ok := part.(a2a.TextPart); ok {
+			return tp.Text
+		}
+	}
+	return ""
 }
 
 // ValidatePayloadForTest exports ValidatePayload for testing.
