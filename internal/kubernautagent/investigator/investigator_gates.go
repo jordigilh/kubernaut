@@ -53,6 +53,17 @@ func (inv *Investigator) sameKindValidationGate(
 		"signal_resource_kind", signal.ResourceKind,
 		"correlation_id", correlationID)
 
+	// #2118: the original wording below only asked the LLM to confirm or
+	// change remediation_target.kind. Because that reads as a narrow
+	// yes/no question, the LLM often responds with a minimal tool call
+	// that answers only the target question and omits (or zeroes) the
+	// separately-required confidence field -- silently overwriting a
+	// real, previously-validated confidence with a placeholder. The
+	// second paragraph makes the full-restatement requirement explicit.
+	// This is a best-effort, defense-in-depth improvement: a live-LLM
+	// spike (see docs/testing/2118/TEST_PLAN.md) confirmed prompt wording
+	// alone is not reliably sufficient, which is why the guard below is
+	// the actual, deterministic fix.
 	correctionMsg := fmt.Sprintf(
 		`Your remediation_target.kind is "%s", which is the same resource kind as the input signal. `+
 			`Signals often propagate upward: workload-level issues manifest as conditions on parent resources `+
@@ -60,7 +71,12 @@ func (inv *Investigator) sameKindValidationGate(
 			`Please re-evaluate: is a child resource (Deployment, StatefulSet, DaemonSet, Pod) the actual root cause `+
 			`whose configuration should be modified? If after re-evaluation you are confident the %s itself is the `+
 			`correct remediation target, confirm by resubmitting with the same target and explain why in your `+
-			`due_diligence.target_accuracy field.`,
+			`due_diligence.target_accuracy field. `+
+			`Whichever target you conclude is correct, you MUST resubmit a COMPLETE root cause analysis result: `+
+			`restate confidence (genuinely recomputed from the evidence, not a placeholder or default value), `+
+			`severity, and causal_chain at the same rigor as your original submission. Do not omit or zero out `+
+			`confidence just because this is a confirmation -- an incomplete resubmission will be treated as a `+
+			`loss of your prior analysis.`,
 		result.RemediationTarget.Kind,
 		result.RemediationTarget.Kind,
 	)
@@ -145,6 +161,18 @@ func (inv *Investigator) sameKindValidationGate(
 			"original_target", result.RemediationTarget.Kind+"/"+result.RemediationTarget.Name,
 			"correlation_id", correlationID)
 		return result
+	}
+
+	// #2118: unlike the RemediationTarget.Kind guard above, a lost
+	// confidence does not warrant discarding the whole retry -- the
+	// retry's other content (e.g. an updated due_diligence.target_accuracy
+	// narrative) is genuinely new and worth keeping. Only the regressed
+	// field itself is backfilled from the pre-retry result.
+	if retryResult.Confidence <= 0 && result.Confidence > 0 {
+		inv.logger.Info("same-kind validation gate: retry lost confidence, keeping original",
+			"original_confidence", result.Confidence,
+			"correlation_id", correlationID)
+		retryResult.Confidence = result.Confidence
 	}
 
 	inv.logger.Info("same-kind validation gate: accepted retry result",
