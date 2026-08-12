@@ -188,7 +188,7 @@ var _ = Describe("Investigation Event Bridge Wiring (IT-AF-1326)", func() {
 			}
 			eventCh <- ka.InvestigationEvent{
 				Type: ka.EventTypeToolCallStart,
-				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+				Data: json.RawMessage(`{"tool_name":"kubectl_get"}`),
 			}
 			eventCh <- ka.InvestigationEvent{
 				Type: ka.EventTypeComplete,
@@ -302,7 +302,7 @@ var _ = Describe("Investigation Event Bridge Wiring (IT-AF-1326)", func() {
 					expected: "Analyzing...",
 				},
 				{
-					evt:      ka.InvestigationEvent{Type: ka.EventTypeToolCallStart, Data: json.RawMessage(`{"tool":"kubectl_get"}`)},
+					evt:      ka.InvestigationEvent{Type: ka.EventTypeToolCallStart, Data: json.RawMessage(`{"tool_name":"kubectl_get"}`)},
 					expected: "Calling kubectl_get...",
 				},
 				{

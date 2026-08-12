@@ -352,7 +352,13 @@ func FormatEventForUser(evt ka.InvestigationEvent) string {
 	case ka.EventTypeTokenDelta:
 		return extractJSONField(evt.Data, "delta")
 	case ka.EventTypeToolCallStart:
-		toolName := extractJSONField(evt.Data, "tool")
+		// #2090 (main port of #2089): KA's real emission (investigator's
+		// emitToSink calls, e.g. runLLMLoop's tool-dispatch block) uses key
+		// "tool_name" -- this previously read "tool", a wire-format
+		// mismatch AF's own unit tests never caught because they
+		// hand-constructed fixtures with the wrong key instead of
+		// exercising the real KA emission path.
+		toolName := extractJSONField(evt.Data, "tool_name")
 		if toolName != "" {
 			return "Calling " + toolName + "..."
 		}
