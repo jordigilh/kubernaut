@@ -266,7 +266,11 @@ var _ = Describe("formatEventForUser — #1326 BR-MCP-008 event filtering", func
 		It("should format tool name with 'Calling ...' prefix", func() {
 			evt := ka.InvestigationEvent{
 				Type: ka.EventTypeToolCallStart,
-				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+				// #2090 (main port of #2089): "tool_name" is KA's real wire
+				// key (investigator's emitToSink calls) -- this fixture
+				// previously hand-constructed the wrong key ("tool"),
+				// matching the pre-fix code and never catching the mismatch.
+				Data: json.RawMessage(`{"tool_name":"kubectl_get"}`),
 			}
 			result := tools.FormatEventForUser(evt)
 			Expect(result).To(Equal("Calling kubectl_get..."))
@@ -409,7 +413,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			eventCh := make(chan ka.InvestigationEvent, 5)
 			eventCh <- ka.InvestigationEvent{
 				Type: ka.EventTypeToolCallStart,
-				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+				Data: json.RawMessage(`{"tool_name":"kubectl_get"}`),
 			}
 			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
 			close(eventCh)
@@ -554,7 +558,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			eventCh := make(chan ka.InvestigationEvent, 10)
 			eventCh <- ka.InvestigationEvent{
 				Type: ka.EventTypeToolCallStart,
-				Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+				Data: json.RawMessage(`{"tool_name":"kubectl_get"}`),
 			}
 			eventCh <- ka.InvestigationEvent{
 				Type: ka.EventTypeReasoningDelta,
@@ -566,7 +570,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			}
 			eventCh <- ka.InvestigationEvent{
 				Type: ka.EventTypeToolCallStart,
-				Data: json.RawMessage(`{"tool":"kubectl_describe"}`),
+				Data: json.RawMessage(`{"tool_name":"kubectl_describe"}`),
 			}
 			eventCh <- ka.InvestigationEvent{Type: ka.EventTypeComplete}
 			close(eventCh)
@@ -1085,7 +1089,7 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — blocking mode (A2A path
 					go func() {
 						eventCh <- ka.InvestigationEvent{
 							Type: ka.EventTypeToolCallStart,
-							Data: json.RawMessage(`{"tool":"kubectl_get"}`),
+							Data: json.RawMessage(`{"tool_name":"kubectl_get"}`),
 						}
 						eventCh <- ka.InvestigationEvent{
 							Type: ka.EventTypeReasoningDelta,
@@ -1483,13 +1487,13 @@ var _ = Describe("HandleInvestigationMCPWithRegistry — fleet cluster_id wiring
 			ctx, &tools.InvestigateConfig{
 				MCPClient: closedEventsMCP(),
 				Client:    tc,
-			Namespace: "kubernaut-system",
-			Triager:   defaultTestTriager("prod", "Deployment", "web-1409-003"),
-		}, tools.InvestigateMCPArgs{
-			APIVersion: "apps/v1",
-			Namespace:  "prod",
-			Kind:       "Deployment",
-			Name:       "web-1409-003",
+				Namespace: "kubernaut-system",
+				Triager:   defaultTestTriager("prod", "Deployment", "web-1409-003"),
+			}, tools.InvestigateMCPArgs{
+				APIVersion: "apps/v1",
+				Namespace:  "prod",
+				Kind:       "Deployment",
+				Name:       "web-1409-003",
 				ClusterID:  "cluster-fleet-it-003",
 			},
 			true, "alice",
