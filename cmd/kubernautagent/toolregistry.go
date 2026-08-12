@@ -118,7 +118,7 @@ func registerPrometheusTools(reg *registry.Registry, cfg *kaconfig.Config, logge
 	// wired unconditionally (not just when TLS CA is configured) so the
 	// tool-call latency breakdown includes Prometheus regardless of
 	// transport config. No-op cost when no TracerProvider is registered.
-	promBase := http.RoundTripper(http.DefaultTransport)
+	var promBase = http.DefaultTransport
 	if cfg.Integrations.Tools.Prometheus.TLSCaFile != "" {
 		if tlsBase := buildTLSAwareTransport(cfg.Integrations.Tools.Prometheus.TLSCaFile, logger, "Prometheus"); tlsBase != nil {
 			promBase = tlsBase

@@ -38,6 +38,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel"
@@ -83,6 +84,10 @@ type Config struct {
 // rather than re-implementing it here. Returns nil if TLS is disabled.
 func buildTLSConfig(t internalconfig.TelemetryTLSConfig) (*tls.Config, error) {
 	if !t.Enabled {
+		// nil config + nil error is a valid, deliberate "TLS disabled" result
+		// (otlptracehttp.WithTLSClientConfig is never called by the caller
+		// in that case) -- not an error path with a missing value.
+		//nolint:nilnil
 		return nil, nil
 	}
 
@@ -91,6 +96,30 @@ func buildTLSConfig(t internalconfig.TelemetryTLSConfig) (*tls.Config, error) {
 		opts = append(opts, sharedtls.WithClientCert(t.CertFile, t.KeyFile))
 	}
 	return sharedtls.BuildClientTLSConfig(t.CAFile, opts...)
+}
+
+// buildOTLPBatcherOption builds the sdktrace.WithBatcher option for
+// cfg.Endpoint, over plain HTTP or TLS per cfg.TLS.Enabled. Extracted out of
+// NewTracerProvider to keep that function's branching flat.
+func buildOTLPBatcherOption(ctx context.Context, cfg Config) (sdktrace.TracerProviderOption, error) {
+	httpOpts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(cfg.Endpoint)}
+	if cfg.TLS.Enabled {
+		tlsConfig, err := buildTLSConfig(cfg.TLS)
+		if err != nil {
+			return nil, fmt.Errorf("telemetry: build TLS config: %w", err)
+		}
+		httpOpts = append(httpOpts, otlptracehttp.WithTLSClientConfig(tlsConfig))
+	} else {
+		// Default: plain HTTP, matching most in-cluster collector
+		// deployments (no TLS termination in front of the collector).
+		httpOpts = append(httpOpts, otlptracehttp.WithInsecure())
+	}
+
+	exporter, err := otlptracehttp.New(ctx, httpOpts...)
+	if err != nil {
+		return nil, fmt.Errorf("telemetry: build OTLP exporter: %w", err)
+	}
+	return sdktrace.WithBatcher(exporter), nil
 }
 
 // Shutdown flushes buffered spans and stops the TracerProvider. Callers
@@ -128,24 +157,11 @@ func NewTracerProvider(ctx context.Context, cfg Config) (Shutdown, error) {
 	opts := []sdktrace.TracerProviderOption{sdktrace.WithResource(res)}
 
 	if cfg.Endpoint != "" {
-		httpOpts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(cfg.Endpoint)}
-		if cfg.TLS.Enabled {
-			tlsConfig, err := buildTLSConfig(cfg.TLS)
-			if err != nil {
-				return nil, fmt.Errorf("telemetry: build TLS config: %w", err)
-			}
-			httpOpts = append(httpOpts, otlptracehttp.WithTLSClientConfig(tlsConfig))
-		} else {
-			// Default: plain HTTP, matching most in-cluster collector
-			// deployments (no TLS termination in front of the collector).
-			httpOpts = append(httpOpts, otlptracehttp.WithInsecure())
-		}
-
-		exporter, err := otlptracehttp.New(ctx, httpOpts...)
+		batcherOpt, err := buildOTLPBatcherOption(ctx, cfg)
 		if err != nil {
-			return nil, fmt.Errorf("telemetry: build OTLP exporter: %w", err)
+			return nil, err
 		}
-		opts = append(opts, sdktrace.WithBatcher(exporter))
+		opts = append(opts, batcherOpt)
 	}
 
 	if cfg.LogSink {
@@ -164,4 +180,34 @@ func NewTracerProvider(ctx context.Context, cfg Config) (Shutdown, error) {
 	))
 
 	return tp.Shutdown, nil
+}
+
+// Bootstrap wraps NewTracerProvider with the identical log-and-defer
+// boilerplate every service's main() needs (see cmd/gateway/main.go,
+// cmd/datastorage/main.go, cmd/kubernautagent/main.go): log success/failure,
+// and hand back a ready-to-defer shutdown func bounded by a 5s timeout. On
+// failure (ok=false), the error is already logged via cfg.Logger and the
+// returned shutdown is nil -- callers should exit non-zero without
+// registering a defer for it.
+func Bootstrap(ctx context.Context, cfg Config) (shutdown func(), ok bool) {
+	tracerShutdown, err := NewTracerProvider(ctx, cfg)
+	if err != nil {
+		cfg.Logger.Error(err, "failed to initialize OpenTelemetry tracer provider")
+		return nil, false
+	}
+	cfg.Logger.Info("OpenTelemetry tracing configured",
+		"otlp_endpoint", cfg.Endpoint,
+		"log_sink_enabled", cfg.LogSink)
+	// Deliberately context.Background(), not ctx (the one passed to
+	// NewTracerProvider above): this closure runs during graceful shutdown,
+	// potentially after ctx itself has already been canceled -- draining
+	// buffered spans needs its own independent, un-canceled deadline.
+	//nolint:contextcheck
+	return func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tracerShutdown(shutdownCtx); err != nil {
+			cfg.Logger.Error(err, "failed to shut down tracer provider")
+		}
+	}, true
 }

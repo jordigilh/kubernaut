@@ -164,27 +164,17 @@ func run() int {
 	// pkg/gateway/processing/crd_creator.go). Endpoint (real collector) and
 	// LogSink (span summaries via this logger, no collector needed) are
 	// independent and opt-in; neither costs anything when left off.
-	tracerShutdown, err := telemetry.NewTracerProvider(context.Background(), telemetry.Config{
+	tracerShutdown, ok := telemetry.Bootstrap(context.Background(), telemetry.Config{
 		ServiceName: "gateway",
 		Endpoint:    serverCfg.Telemetry.Endpoint,
 		TLS:         serverCfg.Telemetry.TLS,
 		LogSink:     serverCfg.Telemetry.LogSink,
 		Logger:      logger.WithName("otel"),
 	})
-	if err != nil {
-		logger.Error(err, "failed to initialize OpenTelemetry tracer provider")
-		os.Exit(1)
+	if !ok {
+		return 1
 	}
-	logger.Info("OpenTelemetry tracing configured",
-		"otlp_endpoint", serverCfg.Telemetry.Endpoint,
-		"log_sink_enabled", serverCfg.Telemetry.LogSink)
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := tracerShutdown(shutdownCtx); err != nil {
-			logger.Error(err, "failed to shut down tracer provider")
-		}
-	}()
+	defer tracerShutdown()
 
 	// Create Gateway server
 	srv, err := gateway.NewServer(serverCfg, logger.WithName("server"))

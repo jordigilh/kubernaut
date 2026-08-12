@@ -204,7 +204,7 @@ var _ = Describe("Gateway production wiring: OTel export over TLS (GAP-14 / Issu
 		testServer := httptest.NewServer(gatewayServer.Handler())
 		defer testServer.Close()
 
-		alertPayload := createPrometheusAlert(testNamespace, "OTelWiringTestAlert", "critical", "", "")
+		alertPayload := createPrometheusAlert(testNamespace, "OTelWiringTestAlert", "critical", "")
 		webhookResp := SendWebhookWithAuth(testServer.URL+"/api/v1/signals/prometheus", alertPayload, suiteAuthToken)
 		Expect(webhookResp.StatusCode).To(Equal(http.StatusCreated),
 			"an authorized webhook for a managed namespace must be accepted and create a RemediationRequest (proves the real business pipeline ran, not just an auth-rejected request)")
@@ -283,7 +283,7 @@ var _ = Describe("Gateway production wiring: OTel export over TLS (GAP-14 / Issu
 		testServer := httptest.NewServer(gatewayServer.Handler())
 		defer testServer.Close()
 
-		alertPayload := createPrometheusAlert(testNamespace, "OTelFailClosedTestAlert", "critical", "", "")
+		alertPayload := createPrometheusAlert(testNamespace, "OTelFailClosedTestAlert", "critical", "")
 		webhookResp := SendWebhookWithAuth(testServer.URL+"/api/v1/signals/prometheus", alertPayload, suiteAuthToken)
 		Expect(webhookResp.StatusCode).To(Equal(http.StatusCreated),
 			"BR-OTEL-1519: an untrusted OTel collector must never block or fail the business pipeline -- tracing is a side channel")
@@ -359,7 +359,7 @@ var _ = Describe("Gateway production wiring: OTel export over TLS (GAP-14 / Issu
 		testServer := httptest.NewServer(gatewayServer.Handler())
 		defer testServer.Close()
 
-		alertPayload := createPrometheusAlert(testNamespace, "OTelResilienceTestAlert", "critical", "", "")
+		alertPayload := createPrometheusAlert(testNamespace, "OTelResilienceTestAlert", "critical", "")
 
 		start := time.Now()
 		webhookResp := SendWebhookWithAuth(testServer.URL+"/api/v1/signals/prometheus", alertPayload, suiteAuthToken)

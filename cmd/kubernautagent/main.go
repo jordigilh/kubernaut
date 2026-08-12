@@ -286,7 +286,6 @@ func main() {
 	bootstrapLogger := kubelog.NewLogger(kubelog.Options{Level: 0, ServiceName: "kubernaut-agent"})
 
 	cfg, llmRuntime, logger, atomicLevel := loadStartupConfig(configPath, llmRuntimePath, bootstrapLogger)
-	defer kubelog.Sync(logger)
 
 	if addr == "" {
 		addr = fmt.Sprintf("%s:%d", cfg.Runtime.Server.Address, cfg.Runtime.Server.Port)
@@ -301,27 +300,24 @@ func main() {
 	// buildAuditStore, buildToolRegistry). Endpoint (real collector) and
 	// LogSink (span summaries via this logger) are independent and opt-in;
 	// neither costs anything when left off.
-	tracerShutdown, tracerErr := telemetry.NewTracerProvider(context.Background(), telemetry.Config{
+	//
+	// Deliberately bootstrapped before the `defer kubelog.Sync(logger)`
+	// below (gocritic:exitAfterDefer) so a failure here can os.Exit(1)
+	// cleanly with no defers yet registered to skip; Sync is called
+	// explicitly on that path instead.
+	tracerShutdown, ok := telemetry.Bootstrap(context.Background(), telemetry.Config{
 		ServiceName: "kubernaut-agent",
 		Endpoint:    cfg.Runtime.Telemetry.Endpoint,
 		TLS:         cfg.Runtime.Telemetry.TLS,
 		LogSink:     cfg.Runtime.Telemetry.LogSink,
 		Logger:      logger.WithName("otel"),
 	})
-	if tracerErr != nil {
-		logger.Error(tracerErr, "failed to initialize OpenTelemetry tracer provider")
+	if !ok {
+		kubelog.Sync(logger)
 		os.Exit(1)
 	}
-	logger.Info("OpenTelemetry tracing configured",
-		"otlp_endpoint", cfg.Runtime.Telemetry.Endpoint,
-		"log_sink_enabled", cfg.Runtime.Telemetry.LogSink)
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := tracerShutdown(shutdownCtx); err != nil {
-			logger.Error(err, "failed to shut down tracer provider")
-		}
-	}()
+	defer kubelog.Sync(logger)
+	defer tracerShutdown()
 
 	// DD-PLATFORM-009: bind a bootstrap health server before initializeAgent's
 	// blocking fleet MCP Gateway connection so kubelet's probes see an honest

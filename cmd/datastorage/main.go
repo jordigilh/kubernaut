@@ -72,6 +72,50 @@ func main() {
 	os.Exit(run())
 }
 
+// loadRunConfig loads and validates Data Storage's YAML config (ADR-030),
+// then re-creates the logger at the configured level. Extracted from run()
+// to keep it under the funlen budget (matches logEffectiveServerConfig's
+// existing extraction pattern in this file) -- pure code motion, no behavior
+// change. ok=false means the failure has already been logged via
+// bootstrapLogger.
+func loadRunConfig(bootstrapLogger logr.Logger) (cfg *config.Config, cfgPath string, atomicLevel zaplog.AtomicLevel, logger logr.Logger, ok bool) {
+	// ADR-030: Load configuration from YAML file (ConfigMap), load secrets,
+	// validate, and apply PORT/HEALTH_PORT env var overrides (DD-AUTH-014, #753).
+	cfgPath = os.Getenv("CONFIG_PATH")
+	if cfgPath == "" {
+		bootstrapLogger.Error(fmt.Errorf("CONFIG_PATH not set"), "CONFIG_PATH environment variable required (ADR-030)",
+			"env_var", "CONFIG_PATH",
+			"reason", "Service must not guess config file location - deployment controls this",
+			"example_local", "export CONFIG_PATH=config/data-storage.yaml",
+			"example_k8s", "Set in Deployment manifest",
+		)
+		return nil, "", zaplog.AtomicLevel{}, bootstrapLogger, false
+	}
+	cfg, err := loadDataStorageConfig(cfgPath, bootstrapLogger)
+	if err != nil {
+		// loadDataStorageConfig already logs the specific failure (file load,
+		// secrets, or validation) before returning.
+		return nil, "", zaplog.AtomicLevel{}, bootstrapLogger, false
+	}
+
+	// Issue #875: Apply config-driven log level using shared LoggingConfig mapping
+	dsLogging := internalconfig.LoggingConfig{Level: strings.ToUpper(cfg.Logging.Level)}
+	atomicLevel = dsLogging.NewAtomicLevel()
+	logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
+		ServiceName: "datastorage",
+	}, atomicLevel)
+
+	logger.Info("Configuration loaded successfully (ADR-030)",
+		"service", "data-storage",
+		"port", cfg.Server.Port,
+		"database_host", cfg.Database.Host,
+		"database_port", cfg.Database.Port,
+		"redis_addr", cfg.Redis.Addr,
+		"log_level", cfg.Logging.Level,
+	)
+	return cfg, cfgPath, atomicLevel, logger, true
+}
+
 func run() int {
 	// Bootstrap logger at INFO for config loading
 	bootstrapLevel := internalconfig.DefaultLoggingConfig().NewAtomicLevel()
@@ -86,40 +130,11 @@ func run() int {
 		"buildDate", version.BuildDate,
 	)
 
-	// ADR-030: Load configuration from YAML file (ConfigMap), load secrets,
-	// validate, and apply PORT/HEALTH_PORT env var overrides (DD-AUTH-014, #753).
-	cfgPath := os.Getenv("CONFIG_PATH")
-	if cfgPath == "" {
-		logger.Error(fmt.Errorf("CONFIG_PATH not set"), "CONFIG_PATH environment variable required (ADR-030)",
-			"env_var", "CONFIG_PATH",
-			"reason", "Service must not guess config file location - deployment controls this",
-			"example_local", "export CONFIG_PATH=config/data-storage.yaml",
-			"example_k8s", "Set in Deployment manifest",
-		)
+	cfg, cfgPath, atomicLevel, configuredLogger, ok := loadRunConfig(logger)
+	if !ok {
 		return 1
 	}
-	cfg, err := loadDataStorageConfig(cfgPath, logger)
-	if err != nil {
-		// loadDataStorageConfig already logs the specific failure (file load,
-		// secrets, or validation) before returning.
-		return 1
-	}
-
-	// Issue #875: Apply config-driven log level using shared LoggingConfig mapping
-	dsLogging := internalconfig.LoggingConfig{Level: strings.ToUpper(cfg.Logging.Level)}
-	atomicLevel := dsLogging.NewAtomicLevel()
-	logger = kubelog.NewLoggerWithAtomicLevel(kubelog.Options{
-		ServiceName: "datastorage",
-	}, atomicLevel)
-
-	logger.Info("Configuration loaded successfully (ADR-030)",
-		"service", "data-storage",
-		"port", cfg.Server.Port,
-		"database_host", cfg.Database.Host,
-		"database_port", cfg.Database.Port,
-		"redis_addr", cfg.Redis.Addr,
-		"log_level", cfg.Logging.Level,
-	)
+	logger = configuredLogger
 
 	// Context management for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -131,27 +146,17 @@ func run() int {
 	// Endpoint (real collector) and LogSink (span summaries via this
 	// logger) are independent and opt-in; neither costs anything when left
 	// off.
-	tracerShutdown, err := telemetry.NewTracerProvider(ctx, telemetry.Config{
+	tracerShutdown, ok := telemetry.Bootstrap(ctx, telemetry.Config{
 		ServiceName: "datastorage",
 		Endpoint:    cfg.Telemetry.Endpoint,
 		TLS:         cfg.Telemetry.TLS,
 		LogSink:     cfg.Telemetry.LogSink,
 		Logger:      logger.WithName("otel"),
 	})
-	if err != nil {
-		logger.Error(err, "failed to initialize OpenTelemetry tracer provider")
-		os.Exit(1)
+	if !ok {
+		return 1
 	}
-	logger.Info("OpenTelemetry tracing configured",
-		"otlp_endpoint", cfg.Telemetry.Endpoint,
-		"log_sink_enabled", cfg.Telemetry.LogSink)
-	defer func() {
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer shutdownCancel()
-		if err := tracerShutdown(shutdownCtx); err != nil {
-			logger.Error(err, "failed to shut down tracer provider")
-		}
-	}()
+	defer tracerShutdown()
 
 	// Build PostgreSQL connection string from config
 	dbConnStr := cfg.Database.GetConnectionString()
