@@ -379,6 +379,55 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func(
 			})
 		})
 
+		// IT-AA-2088-020 (main port of #2086 Fix 4): Poll completed via KA's
+		// own inactivity timeout, which synthesizes a nil result
+		// (has_workflow=false, human_review_reason=""). Must not be
+		// misclassified identically to a genuine "no matching workflows"
+		// conclusion. Driven through the real reconcile entry point
+		// (handler.Handle), not a direct call to handleSessionIncidentResult,
+		// so this proves the wiring end-to-end.
+		Context("IT-AA-2088-020: Poll completed via KA inactivity timeout (nil result, no human_review_reason)", func() {
+			It("should classify as InvestigationInconclusive, not NoMatchingWorkflows (#2088 Fix 4)", func() {
+				analysis := createSessionTestAnalysis()
+				analysis.Status.KASession = &aianalysisv1.KASession{
+					ID:         "session-timeout-001",
+					Generation: 0,
+					CreatedAt:  &metav1.Time{Time: time.Now().Add(-600 * time.Second)},
+				}
+
+				mockClient.WithSessionPollStatus("completed")
+				// #2088: mirrors KA's synthesizeNilResult default branch
+				// (internal/kubernautagent/server/handler.go) -- the exact
+				// wire shape produced when a user-driving session's own
+				// 10-minute inactivity timeout fires with no
+				// InvestigationResult ever set: has_workflow=false,
+				// human_review_reason="" (left unset), confidence=0.
+				mockClient.WithResponse(&agentclient.IncidentResponse{
+					IncidentID:       "session-timeout-001",
+					Analysis:         "Investigation completed without result",
+					NeedsHumanReview: agentclient.NewOptBool(false),
+					Confidence:       0,
+					Timestamp:        "2026-04-03T00:00:00Z",
+					Warnings:         []string{},
+				})
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+				// #2088 Fix 4: must NOT be misclassified as a genuine "no
+				// matching workflows found" conclusion -- KA's investigation
+				// never reached one. FedRAMP AU-3 (truthful audit content) /
+				// SI-11 (accurate error handling).
+				Expect(analysis.Status.SubReason).NotTo(Equal("NoMatchingWorkflows"),
+					"#2088: a session that timed out with no result must not be reported as a genuine no-match conclusion")
+				Expect(analysis.Status.SubReason).To(Equal("InvestigationInconclusive"),
+					"#2088: distinguishable classification for a session that completed without producing any result")
+				Expect(analysis.Status.Message).NotTo(Equal("No workflow selected for remediation"),
+					"#2088: message must reflect the true timeout/no-result cause, not the generic no-match message")
+			})
+		})
+
 		// UT-AA-064-007: Polling interval is constant across all polls
 		// BR-AA-KA-064.8: Constant interval -- polling is not error recovery.
 		// Every poll uses the same configured interval regardless of PollCount.

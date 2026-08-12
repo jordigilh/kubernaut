@@ -500,6 +500,22 @@ func emitToSink(ctx context.Context, eventType string, turn int, phase string, d
 	}
 }
 
+// emitGateRetryKeepalive emits an EventTypeToolCallStart keepalive around a
+// silent, non-streamed llm.ChatWithParams call (#2088, main port of #2086:
+// sameKindValidationGate, apiVersionValidationGate,
+// RunRCAExtractionFromConversation). Turn 0 is a sentinel -- these calls
+// happen outside runLLMLoop's normal turn counting. EventTypeToolCallStart is
+// used (not EventTypeReasoningDelta/TokenDelta) specifically because
+// bridgeEventsCollectSummary only accumulates the latter two into the RCA
+// summary returned to the driving agent; using a text-accumulating event type
+// would splice placeholder status text directly into the summary
+// (spike-discovered regression, see UT-AF-2086-006).
+func emitGateRetryKeepalive(ctx context.Context, toolName string) {
+	emitToSink(ctx, session.EventTypeToolCallStart, 0, string(katypes.PhaseRCA), map[string]interface{}{
+		"tool_name": toolName,
+	})
+}
+
 // emitCancellationAudit emits an investigation-level cancellation event
 // carrying the phase, turn, token usage, and accumulated messages at the point
 // of cancellation. Enriched per COR-2 (token cost attribution), AUD-4
