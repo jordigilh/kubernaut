@@ -24,6 +24,7 @@
 || 035 | [Asynchronous Buffered Audit Ingestion](./ADR-038-async-buffered-audit-ingestion.md) | ✅ Approved | 2025-11-08 | Async buffered writes for zero latency impact |
 || 047 | [Policy Engine Selection](./ADR-047-policy-engine-selection.md) | 🔄 Proposed | 2025-12-05 | Rego vs CEL vs 6 alternatives for policy evaluation |
 || 048 | [Rate Limiting Proxy Delegation](./ADR-048-rate-limiting-proxy-delegation.md) | ✅ Approved | 2025-12-07 | Delegate rate limiting to Nginx Ingress/HAProxy Router |
+| 068 | [OpenTelemetry Distributed Tracing Adoption](./ADR-068-opentelemetry-distributed-tracing-adoption.md) | ✅ Accepted | 2026-08-11 | GAP-14/#1519: OTel for GW/DS/KA, BYO-collector + log-sink, no cross-service span-link annotations (correlation_id remains authoritative) |
 
 ### **Business Requirement (BR) Migration Decisions**
 
@@ -50,6 +51,7 @@
 || DD-AUDIT-002 | [Audit Shared Library Design](./DD-AUDIT-002-audit-shared-library-design.md) | All Services | ✅ Approved | 2025-11-08 | Shared library (`pkg/audit/`) for async buffered writes |
 || DD-AUDIT-003 | [Service Audit Trace Requirements](./DD-AUDIT-003-service-audit-trace-requirements.md) | All Services | ✅ Approved | 2025-11-08 | Defines which 8 of 11 services must generate audit traces |
 || DD-AUDIT-004 | [Structured Types for Audit Event Payloads](./DD-AUDIT-004-structured-types-for-audit-event-payloads.md) | All Services | ✅ Approved | 2025-12-16 | Type-safe audit event data (eliminates `map[string]interface{}`) |
+| DD-OTEL-001 | [OpenTelemetry Tracing Design](./DD-OTEL-001-opentelemetry-tracing-design.md) | Gateway, DataStorage, Kubernaut Agent | ✅ Approved | 2026-08-11 | `otelhttp` inbound/outbound spans, BYO-collector + log-sink exporter, GAP-14/#1519 |
 
 #### **Service-Specific Decisions**
 
