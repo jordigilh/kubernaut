@@ -101,6 +101,50 @@
           "description": "Log level (Issue #875)"
         }
       }
+    },
+    "telemetryConfig": {
+      "description": "OTel distributed tracing (GAP-14 / Issue #1519). Opt-in, BYO-collector. Both fields off/empty by default -- zero overhead until set.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "default": "",
+          "description": "OTLP/HTTP collector endpoint (host:port, no scheme). Empty disables OTLP export. Requires an operator-supplied collector (Jaeger, Tempo, a vendor APM)."
+        },
+        "logSink": {
+          "type": "boolean",
+          "default": false,
+          "description": "Emit one structured log line per completed span via the service's existing logger. No collector needed -- lands in the same log stream captured by must-gather/CI log collection."
+        },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "TLS for the OTLP/HTTP connection to endpoint. Default is plain HTTP.",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Use HTTPS for the OTLP/HTTP connection. False (default) uses plain HTTP, matching most in-cluster collectors."
+            },
+            "caFile": {
+              "type": "string",
+              "default": "",
+              "description": "CA certificate for a self-signed/privately-issued collector cert. Optional -- empty trusts the system CA pool."
+            },
+            "certFile": {
+              "type": "string",
+              "default": "",
+              "description": "Client certificate for mTLS, if the collector requires client authentication. Optional; must be set together with keyFile."
+            },
+            "keyFile": {
+              "type": "string",
+              "default": "",
+              "description": "Client private key for mTLS. Optional; must be set together with certFile."
+            }
+          }
+        }
+      }
     }
   },
   "properties": {
@@ -241,6 +285,7 @@
         }
       }
     },
+    "telemetry": { "$ref": "#/definitions/telemetryConfig" },
     "gateway": {
       "type": "object",
       "description": "Gateway service (AlertManager webhook target + external signal ingestion)",
@@ -781,7 +826,6 @@
             }
           }
         },
-       
         "podSecurityContext": { "$ref": "#/definitions/securityContext" },
         "containerSecurityContext": { "$ref": "#/definitions/securityContext" },
         "pdb": { "$ref": "#/definitions/pdb" },

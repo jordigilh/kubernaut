@@ -187,6 +187,16 @@ data:
         flushIntervalSeconds: 1.0
         bufferSize: 10000
         batchSize: 50
+      # GAP-14 / Issue #1519: OTel distributed tracing, opt-in (BYO-collector).
+      # Empty endpoint + logSink=false (default) disables tracing entirely.
+      telemetry:
+        endpoint: {{ .Values.telemetry.endpoint | default "" | quote }}
+        logSink: {{ .Values.telemetry.logSink | default false }}
+        tls:
+          enabled: {{ .Values.telemetry.tls.enabled | default false }}
+          caFile: {{ .Values.telemetry.tls.caFile | default "" | quote }}
+          certFile: {{ .Values.telemetry.tls.certFile | default "" | quote }}
+          keyFile: {{ .Values.telemetry.tls.keyFile | default "" | quote }}
     ai:
 {{- if and .Values.kubernautAgent.llm.provider .Values.kubernautAgent.llm.model }}
       llm:

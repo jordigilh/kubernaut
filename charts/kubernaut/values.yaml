@@ -37,6 +37,37 @@ tls:
     certDir: /etc/tls
     caFile: /etc/tls-ca/ca.crt
 
+# -- OTel distributed tracing (GAP-14 / Issue #1519), shared across Gateway,
+# DataStorage, and Kubernaut Agent. Opt-in, BYO-collector -- both fields
+# off/empty by default (zero overhead until set). A single collector
+# endpoint/log-sink toggle covers the whole deployment; there is normally no
+# reason to point different services at different collectors.
+telemetry:
+  # -- OTLP/HTTP collector endpoint (host:port, no scheme). Empty disables
+  # OTLP export. Requires an operator-supplied collector (Jaeger, Tempo,
+  # a vendor APM) -- Kubernaut does not deploy or manage one.
+  endpoint: ""
+  # -- Emit one structured log line per completed span via each service's
+  # existing logger. No collector needed -- lands in the same log stream
+  # captured by must-gather/CI log collection. Recommended for
+  # troubleshooting; leave false in production unless explicitly needed.
+  logSink: false
+  # -- TLS for the OTLP/HTTP connection to endpoint. Default is plain HTTP,
+  # matching most in-cluster collectors (e.g. an OTel Collector Service with
+  # no TLS termination). Set enabled=true for a collector that terminates
+  # TLS (e.g. a vendor SaaS endpoint or an in-cluster collector behind a
+  # TLS-terminating route/ingress).
+  tls:
+    enabled: false
+    # -- CA certificate for a self-signed/privately-issued collector cert.
+    # Optional -- leave empty to trust the system CA pool (e.g. a
+    # publicly-trusted vendor collector).
+    caFile: ""
+    # -- Client certificate/key pair for mTLS, if the collector requires
+    # client authentication. Optional; must be set together.
+    certFile: ""
+    keyFile: ""
+
 # -- Gateway service (AlertManager webhook target + external signal ingestion)
 gateway:
   replicas: 1
