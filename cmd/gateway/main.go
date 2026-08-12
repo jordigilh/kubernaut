@@ -41,6 +41,7 @@ import (
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	sharedhealth "github.com/jordigilh/kubernaut/pkg/shared/health"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	"github.com/jordigilh/kubernaut/pkg/shared/telemetry"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -155,6 +156,25 @@ func run() int {
 	ctrl.SetLogger(bootstrapLogger)
 
 	serverCfg, logger, atomicLevel := loadGatewayConfig(configPath, bootstrapLogger)
+
+	// GAP-14 / Issue #1519: OTel tracing bootstrap. Gateway is the trace root
+	// for the whole system -- it's the entry point that receives the signal
+	// and creates the RemediationRequest, so its span becomes the causal
+	// origin every downstream service can link back to (see
+	// pkg/gateway/processing/crd_creator.go). Endpoint (real collector) and
+	// LogSink (span summaries via this logger, no collector needed) are
+	// independent and opt-in; neither costs anything when left off.
+	tracerShutdown, ok := telemetry.Bootstrap(context.Background(), telemetry.Config{
+		ServiceName: "gateway",
+		Endpoint:    serverCfg.Telemetry.Endpoint,
+		TLS:         serverCfg.Telemetry.TLS,
+		LogSink:     serverCfg.Telemetry.LogSink,
+		Logger:      logger.WithName("otel"),
+	})
+	if !ok {
+		return 1
+	}
+	defer tracerShutdown()
 
 	// Create Gateway server
 	srv, err := gateway.NewServer(serverCfg, logger.WithName("server"))

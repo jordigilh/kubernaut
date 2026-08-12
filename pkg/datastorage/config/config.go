@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	sharedconfig "github.com/jordigilh/kubernaut/internal/config"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls" // Issue #678: TLS config
 	"gopkg.in/yaml.v3"
 )
@@ -62,6 +63,12 @@ type Config struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+
+	// Telemetry configures OTel distributed tracing (GAP-14 / Issue #1519).
+	// Zero value (both Endpoint and LogSink empty/false) is fully disabled --
+	// opt-in, BYO-collector. Data Storage's outbound deps (Postgres, Redis)
+	// are non-HTTP, so only an inbound root span per request is wired here.
+	Telemetry sharedconfig.TelemetryConfig `yaml:"telemetry,omitempty"`
 }
 
 // IsProduction returns true when the environment is set to "production".

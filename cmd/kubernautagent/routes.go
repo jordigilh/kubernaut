@@ -26,6 +26,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -144,6 +145,16 @@ func registerAPIRoutes(r chi.Router, ctx context.Context, p apiRoutesParams) (*m
 	var authCleanupRef func()
 
 	r.Route("/api/v1", func(r chi.Router) {
+		// GAP-14 / Issue #1519: root span per inbound request -- KA is where
+		// LLM call latency (the dominant cost of an AI agent investigation)
+		// shows up as a per-hop breakdown against enrichment, tool calls,
+		// and the DS/audit writes. No-op cost when no TracerProvider is
+		// registered.
+		r.Use(otelhttp.NewMiddleware("kubernautagent.http",
+			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+				return r.Method + " " + r.URL.Path
+			}),
+		))
 		r.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				req.Body = http.MaxBytesReader(w, req.Body, p.maxRequestBodySize)

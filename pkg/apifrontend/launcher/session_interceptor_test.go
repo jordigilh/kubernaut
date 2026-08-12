@@ -180,7 +180,8 @@ var _ = Describe("SessionInterceptor (BR-SESS-020, BR-SESS-021, BR-SESS-023)", f
 	})
 
 	It("UT-AF-1446-006: SC-7, AC-6 — Does NOT override contextId when session is idle-expired; clears stale entry (#1446)", func() {
-		shortIdle := launcher.NewActiveContextRegistry(2*time.Hour, 1*time.Millisecond)
+		clock := launcher.NewMockClock(time.Now())
+		shortIdle := launcher.NewActiveContextRegistryWithClock(2*time.Hour, 1*time.Millisecond, clock)
 		logBuf.Reset()
 		logger := funcr.New(func(prefix, args string) {
 			logBuf.WriteString(prefix + " " + args + "\n")
@@ -188,7 +189,7 @@ var _ = Describe("SessionInterceptor (BR-SESS-020, BR-SESS-021, BR-SESS-023)", f
 		staleInterceptor := launcher.NewSessionInterceptor(shortIdle, logger)
 
 		shortIdle.Set("hank", "ctx-stale-investigation")
-		time.Sleep(5 * time.Millisecond)
+		clock.Advance(5 * time.Millisecond)
 
 		ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
 			Username: "hank", Groups: []string{"sre"},

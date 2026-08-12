@@ -28,7 +28,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/go-logr/logr" // BR-GATEWAY-093: Circuit breaker detection
+	"github.com/go-logr/logr"                                       // BR-GATEWAY-093: Circuit breaker detection
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp" // GAP-14 / Issue #1519: inbound/outbound tracing
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
 
@@ -249,6 +250,25 @@ func (s *Server) GetMetrics() *metrics.Metrics {
 // - Middleware per route group
 func (s *Server) setupRoutes() chi.Router {
 	r := chi.NewRouter()
+
+	// GAP-14 / Issue #1519: root span per inbound request (no inbound
+	// traceparent from Prometheus/AlertManager today), correlating with the
+	// outbound DS audit call made within the same request. No-op cost when
+	// no TracerProvider is registered (see pkg/shared/telemetry).
+	//
+	// Deliberately scoped to in-process + outbound-call tracing only: a
+	// trace-link annotation hand-off to Remediation Orchestrator's later,
+	// watch-triggered reconcile was considered and dropped -- correlation_id
+	// (rr.Name) already gives full causal correlation across that
+	// async/cross-service boundary via structured logs; the annotation only
+	// added trace-backend visualization value, which didn't justify the
+	// extra surface area (see pkg/shared/telemetry/tracelink.go, still used
+	// by the AuthWebhook spike branch, kept as-is there).
+	r.Use(otelhttp.NewMiddleware("gateway.http",
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return r.Method + " " + r.URL.Path
+		}),
+	))
 
 	// BR-HTTP-015 + Issue #1215: CORS from config YAML with env-var fallback.
 	corsOpts := kubecors.FromConfig(&kubecors.Options{

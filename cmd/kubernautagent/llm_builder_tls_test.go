@@ -42,14 +42,18 @@ var _ = Describe("buildTransportChain — TLS wiring", func() {
 		Expect(transport).NotTo(BeNil())
 	})
 
-	It("returns a nil transport when no custom TLS config is set", func() {
+	// GAP-14 / Issue #1519: buildTransportChain now always returns a non-nil
+	// transport (otelhttp-wrapped) so the outbound LLM span exists even on
+	// the vanilla default-config path -- this is the "no custom TLS/OAuth2/
+	// headers/circuit-breaker" case, previously asserted as nil.
+	It("returns a non-nil (otelhttp-wrapped) transport when no custom TLS config is set", func() {
 		cfg := kaconfig.DefaultConfig()
 
 		merged := mergeLLMConfig(cfg.AI.LLM, &kaconfig.LLMRuntimeConfig{})
 
 		transport, err := buildTransportChain(merged)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(transport).To(BeNil())
+		Expect(transport).NotTo(BeNil())
 	})
 
 	// UT-KA-1342-030: buildTransportChain returns error for invalid CA file (fail-hard per SC-8)
