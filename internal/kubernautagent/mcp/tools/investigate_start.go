@@ -126,8 +126,21 @@ func (t *InvestigateTool) launchPendingInteractiveSession(input InvestigateInput
 		return false, ""
 	}
 	if launchErr := t.autoMgr.LaunchDeferredInvestigation(pendingID); launchErr != nil {
-		t.logger.Error(launchErr, "start: failed to launch deferred investigation",
-			"rr_id", input.RRID, "pending_session_id", pendingID)
+		// #2088 (main port of #2086): session.ErrSessionNotPending is a
+		// benign, expected race -- it fires when the driving agent retries
+		// action=start after a prior call already launched the deferred
+		// session (e.g. a retry after a false-"completed" report from
+		// #2086 could trigger this). Logging this at Error level pollutes
+		// on-call alerting with false-positive noise for routine retries;
+		// genuine failures (missing deferred function, unknown session)
+		// stay at Error.
+		if errors.Is(launchErr, session.ErrSessionNotPending) {
+			t.logger.Info("start: failed to launch deferred investigation",
+				"rr_id", input.RRID, "pending_session_id", pendingID, "reason", launchErr.Error())
+		} else {
+			t.logger.Error(launchErr, "start: failed to launch deferred investigation",
+				"rr_id", input.RRID, "pending_session_id", pendingID)
+		}
 		return false, ""
 	}
 	return true, pendingID
