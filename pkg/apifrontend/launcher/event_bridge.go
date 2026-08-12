@@ -5,7 +5,7 @@ Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
 
-    http://www.apache.org/licenses/LICENSE-2.0
+	http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,10 @@ package launcher
 
 import (
 	"context"
+	"encoding/gob"
+	"encoding/json"
+	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +32,19 @@ import (
 
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/security"
 )
+
+// #2110/#2111: a2a-go@v0.3.15's own internal/taskstore/store.go registers
+// map[string]any and []any at init() too, but relying solely on that
+// package being transitively imported by *something else* in this binary
+// is fragile -- it depends on unrelated import-graph decisions elsewhere in
+// this repo that have nothing to do with EmitArtifact's own correctness.
+// Registering them here as well makes sanitizeArtifactData's gob-safety
+// guarantee self-contained. gob.Register is idempotent, so duplicate
+// registration (here and in a2a-go) is harmless.
+func init() {
+	gob.Register(map[string]any{})
+	gob.Register([]any{})
+}
 
 type contextKey struct{}
 
@@ -486,6 +503,21 @@ func stripEmoji(s string) string {
 // EmitArtifact writes a TaskArtifactUpdateEvent with multi-part content:
 // Part[0] = DataPart (structured JSON), Part[1] = TextPart (human-readable fallback).
 // This is the A2A v1.0-compliant way to deliver structured results to clients.
+//
+// EmitArtifact is the single choke point every artifact producer in this
+// package (present_decision's emitDecisionEvent, crd_tools.go's progress
+// snapshot, ka_investigate_mcp.go's RCA artifact) shares before data
+// reaches a2a-go@v0.3.15's task manager, which gob-encodes every artifact
+// for its internal deep-copy fan-out (#2110/#2111: a *tools.RCAData struct
+// pointer reaching that pipeline unregistered crashed every grounded
+// present_decision call in v1.5.6-rc4 with "gob: type not registered for
+// interface: tools.RCAData"). #2112's fix on this branch closed that one
+// call site by changing its return type, but nothing stopped a *future*
+// caller from reintroducing the identical crash by assigning any other
+// struct into any nested field of an artifact's data map.
+// sanitizeArtifactData below closes that gap here, at the boundary every
+// caller shares, instead of relying on each caller to remember the
+// map[string]any convention.
 func (b *EventBridge) EmitArtifact(ctx context.Context, data map[string]any, textFallback string, meta map[string]any) error {
 	if b == nil || b.queue == nil {
 		return nil
@@ -493,10 +525,19 @@ func (b *EventBridge) EmitArtifact(ctx context.Context, data map[string]any, tex
 
 	parts := make(a2a.ContentParts, 0, 2)
 	if data != nil {
-		parts = append(parts, a2a.DataPart{
-			Data:     data,
-			Metadata: map[string]any{"mediaType": "application/json"},
-		})
+		safe, err := sanitizeArtifactData(data)
+		if err != nil {
+			logr.FromContextOrDiscard(ctx).Error(err, "artifact data is not gob-safe for a2a-go's deep-copy pipeline -- "+
+				"dropping structured DataPart and falling back to text-only artifact (#2110/#2111 boundary guard)")
+			if b.metrics != nil {
+				b.metrics.IncBridgeWriteFailures()
+			}
+		} else {
+			parts = append(parts, a2a.DataPart{
+				Data:     safe,
+				Metadata: map[string]any{"mediaType": "application/json"},
+			})
+		}
 	}
 	parts = append(parts, a2a.TextPart{Text: textFallback})
 
@@ -523,6 +564,60 @@ func (b *EventBridge) EmitArtifact(ctx context.Context, data map[string]any, tex
 		}
 	}
 	return err
+}
+
+// sanitizeArtifactData guarantees data can survive a2a-go@v0.3.15's task
+// manager's gob-encoded deep-copy fan-out (#2110/#2111 -- see EmitArtifact's
+// doc comment for full context), regardless of what any current or future
+// artifact producer puts into an interface{}-typed field.
+//
+// The fast path probes data with the REAL encoding/gob encoder (gobProbe)
+// rather than a hand-maintained list of "safe" types, so it stays correct
+// if Go's or a2a-go's own registered type set ever changes. Data that is
+// already gob-safe -- which is every existing caller in this package,
+// since map[string]any/[]any/string/bool/nil/float64 and Go's own
+// gob-builtin slice types ([]string, []int, etc., see encoding/gob's own
+// type.go init()) all pass -- is returned completely unchanged, byte-for-
+// byte and type-for-type. This matters: an earlier version of this fix
+// naively JSON-round-tripped every call unconditionally, which silently
+// coerced already-compliant []string/int values into []any/float64 and
+// broke existing callers asserting on the original Go types (regression
+// caught by UT-AF-1922-001/002 and UT-AF-WIRE-SESSION-003 in
+// pkg/apifrontend/tools) -- exactly the kind of new, avoidable breakage a
+// boundary hardening fix must not introduce.
+//
+// Only when gobProbe finds something actually unsafe (e.g. a bare struct
+// value/pointer, exactly #2110's mistake) does this fall back to a JSON
+// marshal/unmarshal round-trip, which normalizes the offending value into
+// the same map[string]any/[]any/primitive shape every compliant caller in
+// this package already produces by convention -- turning that convention
+// into a structural guarantee instead of something merely documented.
+func sanitizeArtifactData(data map[string]any) (map[string]any, error) {
+	if gobProbe(data) == nil {
+		return data, nil
+	}
+
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return nil, fmt.Errorf("artifact data is not JSON-marshalable: %w", err)
+	}
+	var safe map[string]any
+	if err := json.Unmarshal(raw, &safe); err != nil {
+		return nil, fmt.Errorf("artifact data failed JSON round-trip: %w", err)
+	}
+	if err := gobProbe(safe); err != nil {
+		return nil, fmt.Errorf("artifact data remains gob-unsafe after JSON normalization: %w", err)
+	}
+	return safe, nil
+}
+
+// gobProbe reports whether v can be gob-encoded through an interface{}
+// value, using a scratch encoder discarded after one use so probing never
+// has observable side effects (gob.Encoder accumulates per-instance type
+// definitions across calls, purely as a wire-size optimization, but that
+// state never escapes this function).
+func gobProbe(v any) error {
+	return gob.NewEncoder(io.Discard).Encode(v)
 }
 
 // isEmoji returns true if the rune is a Unicode emoji codepoint.
