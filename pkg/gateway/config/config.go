@@ -56,6 +56,11 @@ type ServerConfig struct {
 	// TLSProfile selects the TLS security profile (Old/Intermediate/Modern).
 	// Issue #748: OCP-only — set by kubernaut-operator from the cluster APIServer CR.
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
+
+	// Telemetry configures OTel distributed tracing (GAP-14 / Issue #1519).
+	// Both Endpoint (OTLP export) and LogSink (span summaries via this
+	// service's logger) are opt-in and off by default (BYO-collector).
+	Telemetry sharedconfig.TelemetryConfig `yaml:"telemetry,omitempty"`
 }
 
 // CORSConfig contains CORS settings for the Gateway HTTP API.
@@ -278,7 +283,8 @@ func DefaultServerConfig() *ServerConfig {
 			},
 			Retry: DefaultRetrySettings(),
 		},
-		Logging: sharedconfig.DefaultLoggingConfig(),
+		Logging:   sharedconfig.DefaultLoggingConfig(),
+		Telemetry: sharedconfig.DefaultTelemetryConfig(),
 	}
 }
 

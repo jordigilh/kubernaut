@@ -44,6 +44,12 @@ type RuntimeConfig struct {
 	Server  ServerConfig                 `yaml:"server"`
 	Session SessionConfig                `yaml:"session"`
 	Audit   AuditConfig                  `yaml:"audit"`
+
+	// Telemetry configures OTel distributed tracing (GAP-14 / Issue #1519).
+	// Zero value (both Endpoint and LogSink empty/false) is fully disabled --
+	// opt-in, BYO-collector. KA's outbound deps (LLM provider, DataStorage,
+	// Prometheus) are all HTTP, so both inbound and outbound spans are wired.
+	Telemetry internalconfig.TelemetryConfig `yaml:"telemetry,omitempty"`
 }
 
 // AIConfig holds LLM, investigation behavior, and safety guardrails.

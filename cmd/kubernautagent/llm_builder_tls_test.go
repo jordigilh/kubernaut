@@ -39,6 +39,10 @@ func TestBuildTransportChain_TLSCaFile(t *testing.T) {
 	}
 }
 
+// GAP-14 / Issue #1519: buildTransportChain now always returns a non-nil
+// transport (otelhttp-wrapped) so the outbound LLM span exists even on the
+// vanilla default-config path -- this is the "no custom TLS/OAuth2/headers/
+// circuit-breaker" case, previously asserted as nil.
 func TestBuildTransportChain_NoTLSCaFile(t *testing.T) {
 	cfg := kaconfig.DefaultConfig()
 	rt := &kaconfig.LLMRuntimeConfig{}
@@ -47,8 +51,8 @@ func TestBuildTransportChain_NoTLSCaFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if transport != nil {
-		t.Fatalf("expected nil transport when no custom config, got %T", transport)
+	if transport == nil {
+		t.Fatal("expected non-nil (otelhttp-wrapped) transport even with no custom config")
 	}
 }
 

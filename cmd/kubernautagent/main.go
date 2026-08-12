@@ -35,6 +35,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -53,6 +54,7 @@ import (
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	"github.com/jordigilh/kubernaut/pkg/shared/telemetry"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	sharedtransport "github.com/jordigilh/kubernaut/pkg/shared/transport"
 
@@ -169,6 +171,35 @@ func main() {
 	}
 
 	logger.Info("starting Kubernaut Agent", "addr", addr, "config", configPath)
+
+	// GAP-14 / Issue #1519: OTel tracing bootstrap. KA's outbound deps (LLM
+	// provider, DataStorage, Prometheus) are all HTTP, so unlike Data
+	// Storage, both an inbound root span and outbound-call child spans are
+	// wired (see buildTransportChain in llm_builder.go, initDSClients,
+	// buildAuditStore, buildToolRegistry below). Endpoint (real collector)
+	// and LogSink (span summaries via this logger) are independent and
+	// opt-in; neither costs anything when left off.
+	tracerShutdown, tracerErr := telemetry.NewTracerProvider(context.Background(), telemetry.Config{
+		ServiceName: "kubernaut-agent",
+		Endpoint:    cfg.Runtime.Telemetry.Endpoint,
+		TLS:         cfg.Runtime.Telemetry.TLS,
+		LogSink:     cfg.Runtime.Telemetry.LogSink,
+		Logger:      logger.WithName("otel"),
+	})
+	if tracerErr != nil {
+		logger.Error(tracerErr, "failed to initialize OpenTelemetry tracer provider")
+		os.Exit(1)
+	}
+	logger.Info("OpenTelemetry tracing configured",
+		"otlp_endpoint", cfg.Runtime.Telemetry.Endpoint,
+		"log_sink_enabled", cfg.Runtime.Telemetry.LogSink)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tracerShutdown(shutdownCtx); err != nil {
+			logger.Error(err, "failed to shut down tracer provider")
+		}
+	}()
 
 	llmClient, err := buildLLMClientFromConfig(context.Background(), cfg, llmRuntime)
 	if err != nil {
@@ -420,6 +451,16 @@ func main() {
 	var sessionDrainer *mcpkg.SessionDrainer
 
 	r.Route("/api/v1", func(r chi.Router) {
+		// GAP-14 / Issue #1519: root span per inbound request -- KA is where
+		// LLM call latency (the dominant cost of an AI agent investigation)
+		// shows up as a per-hop breakdown against enrichment, tool calls,
+		// and the DS/audit writes. No-op cost when no TracerProvider is
+		// registered.
+		r.Use(otelhttp.NewMiddleware("kubernautagent.http",
+			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+				return r.Method + " " + r.URL.Path
+			}),
+		))
 		r.Use(func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 				req.Body = http.MaxBytesReader(w, req.Body, maxRequestBodySize)
@@ -870,7 +911,7 @@ func buildDSBaseTransport(caFile string, cbCfg kaconfig.CircuitBreakerCfg) (http
 			return nil, err
 		}
 	}
-	return sharedtransport.NewCircuitBreakerTransport(base, sharedtransport.CircuitBreakerConfig{
+	cbTransport := sharedtransport.NewCircuitBreakerTransport(base, sharedtransport.CircuitBreakerConfig{
 		Enabled:          cbCfg.Enabled,
 		Name:             "datastorage",
 		MaxRequests:      cbCfg.MaxRequests,
@@ -878,7 +919,12 @@ func buildDSBaseTransport(caFile string, cbCfg kaconfig.CircuitBreakerCfg) (http
 		Timeout:          cbCfg.Timeout,
 		FailureThreshold: cbCfg.FailureThreshold,
 		FailureRatio:     cbCfg.FailureRatio,
-	}), nil
+	})
+
+	// GAP-14 / Issue #1519: outbound span for every DS call (workflow
+	// catalog fetch, enrichment reads) -- child of KA's inbound request
+	// span. No-op cost when no TracerProvider is registered.
+	return otelhttp.NewTransport(cbTransport), nil
 }
 
 // buildEnricher creates the enrichment.Enricher when DS clients are available.
@@ -944,8 +990,12 @@ func buildAuditStore(cfg *kaconfig.Config, dsTokenSource *auth.TokenSource, logg
 		return audit.NopAuditStore{}, nop
 	}
 
+	// GAP-14 / Issue #1519: outbound span for every buffered audit flush to
+	// DS -- child of whichever span was active when the flush goroutine ran
+	// (best-effort; audit flushes are async and may not always have a live
+	// parent span). No-op cost when no TracerProvider is registered.
 	dsClient, err := sharedaudit.NewOpenAPIClientAdapterWithTransport(
-		cfg.Integrations.DataStorage.URL, 5*time.Second, auth.NewAuthTransport(dsTokenSource, auditBase),
+		cfg.Integrations.DataStorage.URL, 5*time.Second, otelhttp.NewTransport(auth.NewAuthTransport(dsTokenSource, auditBase)),
 	)
 	if err != nil {
 		logger.Error(err, "failed to create DS audit client, falling back to nop")
@@ -1027,15 +1077,21 @@ func buildToolRegistry(cfg *kaconfig.Config, logger logr.Logger, infra *k8sInfra
 			Timeout:   cfg.Integrations.Tools.Prometheus.Timeout,
 			SizeLimit: cfg.Integrations.Tools.Prometheus.SizeLimit,
 		}
+		// GAP-14 / Issue #1519: outbound span for every Prometheus query --
+		// wired unconditionally (not just when TLS CA is configured) so the
+		// tool-call latency breakdown includes Prometheus regardless of
+		// transport config. No-op cost when no TracerProvider is registered.
+		promBase := http.DefaultTransport
 		if cfg.Integrations.Tools.Prometheus.TLSCaFile != "" {
-			promBase, promTLSErr := sharedtls.NewTLSTransport(cfg.Integrations.Tools.Prometheus.TLSCaFile)
+			tlsBase, promTLSErr := sharedtls.NewTLSTransport(cfg.Integrations.Tools.Prometheus.TLSCaFile)
 			if promTLSErr != nil {
 				logger.Error(promTLSErr, "failed to create Prometheus TLS transport", "ca_file", cfg.Integrations.Tools.Prometheus.TLSCaFile)
 			} else {
-				promCfg.Transport = auth.NewAuthTransport(auth.NewDefaultTokenSource(), promBase)
+				promBase = auth.NewAuthTransport(auth.NewDefaultTokenSource(), tlsBase)
 				logger.Info("Prometheus client configured with TLS + SA bearer auth", "ca_file", cfg.Integrations.Tools.Prometheus.TLSCaFile)
 			}
 		}
+		promCfg.Transport = otelhttp.NewTransport(promBase)
 		promClient, promErr := promtools.NewClient(promCfg)
 		if promErr != nil {
 			logger.Error(promErr, "failed to create Prometheus client")

@@ -47,6 +47,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/shared/auth"
 	"github.com/jordigilh/kubernaut/pkg/shared/health"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	"github.com/jordigilh/kubernaut/pkg/shared/telemetry"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
@@ -170,6 +171,34 @@ func main() {
 	// Context management for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// GAP-14 / Issue #1519: OTel tracing bootstrap. Data Storage is the hub
+	// every other Kubernaut service calls into, so its inbound root span is
+	// the receiving end of each of those services' outbound-call spans.
+	// Endpoint (real collector) and LogSink (span summaries via this
+	// logger) are independent and opt-in; neither costs anything when left
+	// off.
+	tracerShutdown, err := telemetry.NewTracerProvider(ctx, telemetry.Config{
+		ServiceName: "datastorage",
+		Endpoint:    cfg.Telemetry.Endpoint,
+		TLS:         cfg.Telemetry.TLS,
+		LogSink:     cfg.Telemetry.LogSink,
+		Logger:      logger.WithName("otel"),
+	})
+	if err != nil {
+		logger.Error(err, "failed to initialize OpenTelemetry tracer provider")
+		os.Exit(1)
+	}
+	logger.Info("OpenTelemetry tracing configured",
+		"otlp_endpoint", cfg.Telemetry.Endpoint,
+		"log_sink_enabled", cfg.Telemetry.LogSink)
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := tracerShutdown(shutdownCtx); err != nil {
+			logger.Error(err, "failed to shut down tracer provider")
+		}
+	}()
 
 	// Build PostgreSQL connection string from config
 	dbConnStr := cfg.Database.GetConnectionString()

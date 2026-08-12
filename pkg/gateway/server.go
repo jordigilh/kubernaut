@@ -32,6 +32,7 @@ import (
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp" // GAP-14 / Issue #1519: inbound/outbound tracing
 	"github.com/jordigilh/kubernaut/pkg/shared/circuitbreaker" // BR-GATEWAY-093: Circuit breaker detection
 
 	gwerrors "github.com/jordigilh/kubernaut/pkg/gateway/errors"
@@ -623,7 +624,22 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 		// DD-API-001: Use OpenAPI generated client (not direct HTTP)
 		// DD-AUTH-005 DI: cfg.DataStorage.Transport overrides the default SA token transport
 		// (used by integration tests to inject authenticated transports)
-		dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(cfg.DataStorage.URL, cfg.DataStorage.Timeout, cfg.DataStorage.Transport)
+		//
+		// GAP-14 / Issue #1519: when no transport was injected (production
+		// default), build the same default chain pkg/audit would build
+		// internally, wrapped with otelhttp, so this outbound audit call
+		// carries the Gateway request's span onward to Data Storage.
+		// Deliberately built HERE (Gateway-only) rather than inside the
+		// shared pkg/audit adapter, which is used by 9 other services.
+		dsTransport := cfg.DataStorage.Transport
+		if dsTransport == nil {
+			baseTransport, err := sharedtls.DefaultBaseTransportWithRetry()
+			if err != nil {
+				return nil, fmt.Errorf("FATAL: failed to create TLS-aware base transport for Data Storage client: %w", err)
+			}
+			dsTransport = otelhttp.NewTransport(auth.NewAuthTransport(auth.NewDefaultTokenSource(), baseTransport))
+		}
+		dsClient, err := audit.NewOpenAPIClientAdapterWithTransport(cfg.DataStorage.URL, cfg.DataStorage.Timeout, dsTransport)
 		if err != nil {
 			// ADR-032 §2: No fallback/recovery allowed - crash on init failure
 			return nil, fmt.Errorf("FATAL: failed to create Data Storage client - audit is MANDATORY per ADR-032 §1.5 (Gateway is P0 service): %w", err)
@@ -766,6 +782,25 @@ func createServerWithClients(cfg *config.ServerConfig, logger logr.Logger, metri
 // - Middleware per route group
 func (s *Server) setupRoutes() chi.Router {
 	r := chi.NewRouter()
+
+	// GAP-14 / Issue #1519: root span per inbound request (no inbound
+	// traceparent from Prometheus/AlertManager today), correlating with the
+	// outbound DS audit call made within the same request. No-op cost when
+	// no TracerProvider is registered (see pkg/shared/telemetry).
+	//
+	// Deliberately scoped to in-process + outbound-call tracing only: a
+	// trace-link annotation hand-off to Remediation Orchestrator's later,
+	// watch-triggered reconcile was considered and dropped -- correlation_id
+	// (rr.Name) already gives full causal correlation across that
+	// async/cross-service boundary via structured logs; the annotation only
+	// added trace-backend visualization value, which didn't justify the
+	// extra surface area (see pkg/shared/telemetry/tracelink.go, still used
+	// by the AuthWebhook spike branch, kept as-is there).
+	r.Use(otelhttp.NewMiddleware("gateway.http",
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return r.Method + " " + r.URL.Path
+		}),
+	))
 
 	// BR-HTTP-015 + Issue #1215: CORS from config YAML with env-var fallback.
 	corsOpts := kubecors.FromConfig(&kubecors.Options{

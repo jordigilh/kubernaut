@@ -34,6 +34,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/gateway/config"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
+	"github.com/jordigilh/kubernaut/pkg/shared/telemetry"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -97,6 +98,35 @@ func main() {
 	logger.Info("Configuration validated",
 		"listen_addr", serverCfg.Server.ListenAddr,
 		"data_storage_url", serverCfg.DataStorage.URL)
+
+	// GAP-14 / Issue #1519: OTel tracing bootstrap. Gateway is the trace root
+	// for the whole system -- it's the entry point that receives the signal
+	// and creates the RemediationRequest, so its span becomes the causal
+	// origin every downstream service can link back to (see
+	// pkg/gateway/processing/crd_creator.go). Endpoint (real collector) and
+	// LogSink (span summaries via this logger, no collector needed) are
+	// independent and opt-in; neither costs anything when left off.
+	tracerShutdown, err := telemetry.NewTracerProvider(context.Background(), telemetry.Config{
+		ServiceName: "gateway",
+		Endpoint:    serverCfg.Telemetry.Endpoint,
+		TLS:         serverCfg.Telemetry.TLS,
+		LogSink:     serverCfg.Telemetry.LogSink,
+		Logger:      logger.WithName("otel"),
+	})
+	if err != nil {
+		logger.Error(err, "failed to initialize OpenTelemetry tracer provider")
+		os.Exit(1)
+	}
+	logger.Info("OpenTelemetry tracing configured",
+		"otlp_endpoint", serverCfg.Telemetry.Endpoint,
+		"log_sink_enabled", serverCfg.Telemetry.LogSink)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tracerShutdown(shutdownCtx); err != nil {
+			logger.Error(err, "failed to shut down tracer provider")
+		}
+	}()
 
 	// Create Gateway server
 	srv, err := gateway.NewServer(serverCfg, logger.WithName("server"))

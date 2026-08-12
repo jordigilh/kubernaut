@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	kaconfig "github.com/jordigilh/kubernaut/internal/kubernautagent/config"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/credentials"
@@ -165,9 +166,32 @@ func buildTransportChain(cfg *kaconfig.Config, rt *kaconfig.LLMRuntimeConfig) (h
 	}
 
 	if !needsCustom {
-		return nil, nil
+		base = http.DefaultTransport
 	}
-	return base, nil
+
+	// GAP-14 / Issue #1519: LLM call latency is the single most valuable hop
+	// to time in an AI agent -- always wrap, regardless of whether any other
+	// custom transport layer was configured, so the outbound LLM span exists
+	// even on the vanilla default-config path. No-op cost when no
+	// TracerProvider is registered (see pkg/shared/telemetry).
+	return &otelCloseAwareTransport{
+		RoundTripper: otelhttp.NewTransport(base),
+		base:         base,
+	}, nil
+}
+
+// otelCloseAwareTransport wraps otelhttp.Transport (which does not implement
+// CloseIdleConnections) so that callers relying on that optional interface
+// (llmRuntimeReloadCallback's hot-reload Closer) keep working unchanged.
+type otelCloseAwareTransport struct {
+	http.RoundTripper
+	base http.RoundTripper
+}
+
+func (t *otelCloseAwareTransport) CloseIdleConnections() {
+	if closer, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		closer.CloseIdleConnections()
+	}
 }
 
 // llmRuntimeReloadCallback creates a hotreload.ReloadCallback for LLM runtime
