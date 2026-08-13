@@ -480,6 +480,55 @@ auth:
 		Expect(cfg.Auth.ReplayCache.TLS.KeyFile).To(Equal("/etc/certs/client.key"))
 	})
 
+	It("#1999 loads trustedProxyCIDRs for jti replay-cache source binding", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  replayCache:
+    backend: redis
+    redisAddr: "valkey.kubernaut-system.svc:6379"
+    trustedProxyCIDRs:
+      - "10.0.0.0/8"
+      - "172.16.0.0/12"
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Validate()).To(Succeed())
+		Expect(cfg.Auth.ReplayCache.TrustedProxyCIDRs).To(Equal([]string{"10.0.0.0/8", "172.16.0.0/12"}))
+	})
+
+	It("#1999 defaults trustedProxyCIDRs to empty (fail-closed) when omitted", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  replayCache:
+    backend: redis
+    redisAddr: "valkey.kubernaut-system.svc:6379"
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Validate()).To(Succeed())
+		Expect(cfg.Auth.ReplayCache.TrustedProxyCIDRs).To(BeEmpty())
+	})
+
+	It("#1999 rejects a malformed trustedProxyCIDRs entry", func() {
+		data := []byte(`
+auth:
+  issuerURL: "https://sso.example.com/realms/kubernaut"
+  audience: "apifrontend"
+  replayCache:
+    backend: redis
+    redisAddr: "valkey.kubernaut-system.svc:6379"
+    trustedProxyCIDRs:
+      - "not-a-cidr"
+`)
+		cfg, err := config.Load(data)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cfg.Validate()).To(MatchError(ContainSubstring("invalid CIDR")))
+	})
+
 	It("UT-AF-1247-001 loads allowInsecureIssuers field", func() {
 		data := []byte(`
 auth:

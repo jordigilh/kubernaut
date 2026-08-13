@@ -127,3 +127,36 @@ tests:
                 bogusField: nope
     asserts:
       - failedTemplate: {}
+
+  - it: "DD-PLATFORM-006 DA18 (#1999): replayCache.enabled=true, trustedProxyCIDRs unset (default): no trustedProxyCIDRs block rendered -- fail-closed"
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: "trustedProxyCIDRs:"
+
+  - it: "DD-PLATFORM-006 DA18 (#1999): replayCache.enabled=true, trustedProxyCIDRs set: renders each CIDR"
+    set:
+      apifrontend:
+        config:
+          auth:
+            replayCache:
+              enabled: true
+              trustedProxyCIDRs:
+                - "10.0.0.0/8"
+                - "172.16.0.0/12"
+    documentSelector:
+      path: kind
+      value: ConfigMap
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'trustedProxyCIDRs:\s*\n\s*- "10\.0\.0\.0/8"\s*\n\s*- "172\.16\.0\.0/12"'

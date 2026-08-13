@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -340,8 +341,10 @@ var _ = Describe("Adversarial OIDC", func() {
 	})
 
 	Describe("Replay protection", func() {
-		It("ADV-017: replayed token with same jti is rejected", func() {
-			// Business outcome: token replay attacks are detected and blocked
+		It("ADV-017: token reused from the same source is allowed (#1999, BR-SECURITY-1505)", func() {
+			// Business outcome: standard OAuth2 Bearer-token reuse by the
+			// same caller across multiple requests must succeed, not be
+			// rejected as a replay attack.
 			rc := auth.NewReplayCache(1 * time.Minute)
 			DeferCleanup(rc.Stop)
 
@@ -354,12 +357,39 @@ var _ = Describe("Adversarial OIDC", func() {
 			claims["jti"] = "unique-request-id-adv-017"
 			token := kp.signToken(claims)
 
-			identity, err := validator.Validate(context.Background(), token)
+			ctx := auth.WithSourceIP(context.Background(), "198.51.100.1")
+
+			identity, err := validator.Validate(ctx, token)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(identity.Username).To(Equal("alice"))
 
-			_, err = validator.Validate(context.Background(), token)
+			_, err = validator.Validate(ctx, token)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("ADV-017b: replayed token from a different source is rejected (#1999, BR-SECURITY-1505)", func() {
+			// Business outcome: the actual threat GAP-08 exists to catch —
+			// a stolen token replayed from somewhere other than its
+			// legitimate caller — is still detected and blocked.
+			rc := auth.NewReplayCache(1 * time.Minute)
+			DeferCleanup(rc.Stop)
+
+			validator, err := auth.NewJWTValidator(cfg,
+				auth.WithHTTPClient(jwksSrv.Client()),
+				auth.WithReplayCache(rc))
+			Expect(err).NotTo(HaveOccurred())
+
+			claims := standardClaims(jwksSrv.URL, "alice", []string{"kubernaut-agent"}, nil, time.Now().Add(time.Hour))
+			claims["jti"] = "unique-request-id-adv-017b"
+			token := kp.signToken(claims)
+
+			identity, err := validator.Validate(auth.WithSourceIP(context.Background(), "198.51.100.1"), token)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(identity.Username).To(Equal("alice"))
+
+			_, err = validator.Validate(auth.WithSourceIP(context.Background(), "203.0.113.9"), token)
 			Expect(err).To(HaveOccurred())
+			Expect(errors.Is(err, auth.ErrTokenReplayed)).To(BeTrue())
 		})
 
 		It("ADV-018: replay protection is per-process only (documented limitation)", func() {

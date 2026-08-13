@@ -124,8 +124,10 @@ func TestWithCBMetrics_GaugeUpdatesOnStateChange(t *testing.T) {
 	}
 }
 
-func TestWithReplayCache_RejectsReplayedToken(t *testing.T) {
-	// Business outcome: a token used twice with the same jti is rejected the second time
+func TestWithReplayCache_AllowsSameSourceReuse(t *testing.T) {
+	// Business outcome (#1999, BR-SECURITY-1505): a token reused by the same
+	// caller across multiple requests — standard OAuth2 Bearer-token usage —
+	// must succeed both times, not be rejected as a replay.
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
@@ -162,9 +164,10 @@ func TestWithReplayCache_RejectsReplayedToken(t *testing.T) {
 		"preferred_username": "alice",
 	}
 	token := testSignToken(t, key, "k1", claims)
+	ctx := WithSourceIP(context.Background(), "198.51.100.1")
 
 	// First use: should succeed
-	identity, err := v.Validate(context.Background(), token)
+	identity, err := v.Validate(ctx, token)
 	if err != nil {
 		t.Fatalf("first Validate failed: %v", err)
 	}
@@ -172,10 +175,61 @@ func TestWithReplayCache_RejectsReplayedToken(t *testing.T) {
 		t.Errorf("expected username alice, got %q", identity.Username)
 	}
 
-	// Replay: should be rejected
-	_, err = v.Validate(context.Background(), token)
+	// Reuse from the same source: legitimate, must still succeed.
+	_, err = v.Validate(ctx, token)
+	if err != nil {
+		t.Fatalf("expected reuse from the same source to succeed, got %v", err)
+	}
+}
+
+func TestWithReplayCache_RejectsReplayFromDifferentSource(t *testing.T) {
+	// Business outcome (#1999): a token presented from a different source
+	// than the one that first used it is a genuine replay and is rejected.
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keySet := jose.JSONWebKeySet{
+		Keys: []jose.JSONWebKey{{Key: &key.PublicKey, KeyID: "k1", Algorithm: "RS256", Use: "sig"}},
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(keySet)
+	}))
+	defer srv.Close()
+
+	rc := NewReplayCache(1 * time.Minute)
+	defer rc.Stop()
+
+	cfg := Config{
+		AllowInsecureIssuers: true,
+		JWT: []ProviderConfig{
+			{Issuer: IssuerConfig{URL: srv.URL, Audiences: []string{"aud"}}},
+		},
+	}
+
+	v, err := NewJWTValidator(cfg, WithHTTPClient(&http.Client{}), WithReplayCache(rc))
+	if err != nil {
+		t.Fatalf("NewJWTValidator: %v", err)
+	}
+
+	claims := map[string]interface{}{
+		"iss": srv.URL, "sub": "alice", "aud": []string{"aud"},
+		"exp":                time.Now().Add(time.Hour).Unix(),
+		"jti":                "unique-token-id-002",
+		"preferred_username": "alice",
+	}
+	token := testSignToken(t, key, "k1", claims)
+
+	_, err = v.Validate(WithSourceIP(context.Background(), "198.51.100.1"), token)
+	if err != nil {
+		t.Fatalf("first Validate failed: %v", err)
+	}
+
+	_, err = v.Validate(WithSourceIP(context.Background(), "203.0.113.9"), token)
 	if err == nil {
-		t.Fatal("expected error on replay, got nil")
+		t.Fatal("expected error on replay from a different source, got nil")
 	}
 }
 

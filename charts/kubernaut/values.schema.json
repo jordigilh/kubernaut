@@ -3046,6 +3046,14 @@
                           "description": "CA bundle to verify the Valkey/Redis server certificate. Defaults to the chart's distributed inter-service CA (/etc/tls-ca/ca.crt) when left empty; override only for a BYO Valkey/Redis signed by a different CA."
                         }
                       }
+                    },
+                    "trustedProxyCIDRs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "default": [],
+                      "description": "DD-PLATFORM-006 DA18 (#1999): CIDRs of proxies/ingresses trusted to supply a forwarded client-IP header for jti replay-cache source binding. Empty by default -- fail-closed: no proxy header is trusted for this purpose until explicitly configured to match the deployment's real ingress topology (mirrors pkg/gateway's TrustedRealIP / DD-AUTH-003 pattern)."
                     }
                   }
                 }

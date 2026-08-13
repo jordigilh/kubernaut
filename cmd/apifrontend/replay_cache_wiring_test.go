@@ -66,11 +66,14 @@ func TestBuildReplayCache_RedisBackend_ReturnsValkeyReplayCache(t *testing.T) {
 		t.Errorf("expected backend=redis to construct a ValkeyReplayCache, got %T", rc)
 	}
 	// Sanity check the constructed cache is actually wired to the running instance.
-	if rc.Seen("jti-wiring-check") {
+	if rc.Seen("jti-wiring-check", "wiring-source") {
 		t.Error("expected a fresh jti to not be seen yet")
 	}
-	if !rc.Seen("jti-wiring-check") {
-		t.Error("expected the same jti to be detected as seen on the second call")
+	if rc.Seen("jti-wiring-check", "wiring-source") {
+		t.Error("expected the same jti reused from the same source to not be treated as a replay (#1999)")
+	}
+	if !rc.Seen("jti-wiring-check", "other-source") {
+		t.Error("expected the same jti from a different source to be detected as a replay on the third call")
 	}
 }
 
@@ -201,11 +204,11 @@ func TestBuildReplayCache_TLSEnabled_ConnectsOverTLS(t *testing.T) {
 	if _, ok := rc.(*auth.ValkeyReplayCache); !ok {
 		t.Fatalf("expected a TLS-enabled config to still construct a ValkeyReplayCache (successful TLS handshake), got %T", rc)
 	}
-	if rc.Seen("jti-tls-wiring-check") {
+	if rc.Seen("jti-tls-wiring-check", "wiring-source") {
 		t.Error("expected a fresh jti to not be seen yet")
 	}
-	if !rc.Seen("jti-tls-wiring-check") {
-		t.Error("expected the same jti to be detected as seen on the second call")
+	if !rc.Seen("jti-tls-wiring-check", "other-source") {
+		t.Error("expected the same jti from a different source to be detected as a replay on the second call")
 	}
 }
 

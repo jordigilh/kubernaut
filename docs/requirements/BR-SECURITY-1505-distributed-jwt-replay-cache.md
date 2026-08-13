@@ -8,7 +8,7 @@
 **Date**: June 30, 2026
 **GitHub Issues**: [#1505](https://github.com/jordigilh/kubernaut/issues/1505) (GAP-08)
 
-> **Partially superseded (Helm gating only)**: [DD-PLATFORM-006](../architecture/decisions/DD-PLATFORM-006-helm-chart-configuration-surface-reduction.md)
+> **Partially superseded (Helm gating + replay semantics)**: [DD-PLATFORM-006](../architecture/decisions/DD-PLATFORM-006-helm-chart-configuration-surface-reduction.md)
 > Decision Area 9/13 added TLS support to this client (`replayCache.tls`),
 > required once Valkey became TLS-only (Decision Area 8) — the `tls` block
 > described below is now available for BYO Valkey/Redis setups that need it.
@@ -18,8 +18,20 @@
 > is exactly how a legitimate client reuses an OAuth2 Bearer token across
 > multiple requests, so mandating it broke normal multi-call sessions. The
 > `enabled` toggle described below still exists, still defaults to `false`,
-> exactly as originally designed in this BR. The cache design and fallback
-> behavior below are still accurate.
+> exactly as originally designed in this BR.
+>
+> **Decision Area 18** (#1999) then fixed the underlying semantics DA16 left
+> unaddressed: `Seen(jti)` has become `Seen(jti, sourceKey)` — a jti
+> re-presented from the *same* source (the legitimate client reusing its own
+> token) is no longer treated as a replay at all; only a jti presented from a
+> *different* source triggers `ErrTokenReplayed`. This was confirmed as a
+> live production incident, not just a theoretical gap: with
+> `auth.replayCache` enabled against a real Valkey backend, every session
+> died silently on its second authenticated call. Source-key resolution adds
+> a new `auth.replayCache.trustedProxyCIDRs` config (default empty,
+> fail-closed) — see DA18 for the full design. The distributed-cache
+> architecture, backend selection, and fail-open behavior described below
+> are otherwise still accurate.
 
 ---
 
@@ -59,7 +71,7 @@ Key design choices:
 ## Success Criteria
 
 1. `ReplayCacheStore` interface allows `JWTValidator` to remain agnostic to the backing store; existing callers using the in-memory `*ReplayCache` are unaffected (interface satisfied without changes).
-2. `ValkeyReplayCache.Seen()` correctly detects a replay across two independent `redis.Client` instances pointed at the same Valkey instance (simulating two APIFrontend replicas).
+2. `ValkeyReplayCache.Seen()` correctly shares state across two independent `redis.Client` instances pointed at the same Valkey instance (simulating two APIFrontend replicas): the same source's token reused via a different replica is still recognized as legitimate (not a replay), while a genuinely different source presenting the same jti via a different replica is detected (#1999, DA18).
 3. A Valkey outage at startup falls back to the in-memory cache (logged), rather than failing APIFrontend startup or silently disabling replay protection.
 4. A Valkey outage at request time fails open (request allowed, logged) rather than blocking authenticated traffic.
 5. `auth.replayCache` config validation rejects an unknown backend and a `redis`/`valkey` backend missing `redisAddr`.
