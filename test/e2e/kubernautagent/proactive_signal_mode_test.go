@@ -89,8 +89,7 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 			// ASSERT: Business outcome validation
 			// ========================================
 			// BEHAVIOR: Analysis should complete successfully
-			Expect(len(incidentResp.Analysis) > 0).To(BeTrue(),
-				"Proactive analysis should produce non-empty analysis text")
+			Expect(incidentResp.Analysis).ToNot(BeEmpty(), "Proactive analysis should produce non-empty analysis text")
 
 			// CORRECTNESS: Mock LLM oomkilled_predictive scenario returns confidence = 0.88
 			Expect(incidentResp.Confidence).To(BeNumerically("~", 0.88, 0.05),
@@ -170,8 +169,7 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 			// ASSERT: Business outcome validation
 			// ========================================
 			// BEHAVIOR: Standard reactive response
-			Expect(len(incidentResp.Analysis) > 0).To(BeTrue(),
-				"Reactive analysis should produce non-empty analysis text")
+			Expect(incidentResp.Analysis).ToNot(BeEmpty(), "Reactive analysis should produce non-empty analysis text")
 
 			// CORRECTNESS: Standard oomkilled scenario confidence
 			Expect(incidentResp.Confidence).To(BeNumerically(">", 0.0),
@@ -225,8 +223,7 @@ var _ = Describe("E2E-KA-084: Proactive Signal Mode Investigation", Label("e2e",
 			// ASSERT: Business outcome validation
 			// ========================================
 			// BEHAVIOR: Should behave same as explicit reactive mode
-			Expect(len(incidentResp.Analysis) > 0).To(BeTrue(),
-				"Default (no signal_mode) should produce non-empty analysis like reactive")
+			Expect(incidentResp.Analysis).ToNot(BeEmpty(), "Default (no signal_mode) should produce non-empty analysis like reactive")
 
 			// CORRECTNESS: Positive confidence (standard scenario)
 			Expect(incidentResp.Confidence).To(BeNumerically(">", 0.0),

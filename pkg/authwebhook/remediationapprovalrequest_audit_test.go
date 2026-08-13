@@ -298,8 +298,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 				"SECURITY CONTROL: No patches applied (DecidedBy is immutable)")
 
 			// BUSINESS VALIDATION: No duplicate audit event emitted
-			Expect(mockStore.StoredEvents).To(HaveLen(0),
-				"IDEMPOTENCY: No duplicate webhook audit event (already attributed)")
+			Expect(mockStore.StoredEvents).To(BeEmpty(), "IDEMPOTENCY: No duplicate webhook audit event (already attributed)")
 		})
 
 		It("UNIT-RAR-AUDIT-AW-005: should not emit audit event for pending decisions", func() {
@@ -356,8 +355,7 @@ var _ = Describe("BR-AUDIT-006: RemediationApprovalRequest Webhook Audit Trail",
 			Expect(resp.Patches).To(BeEmpty(), "No patches for pending decisions")
 
 			// BUSINESS VALIDATION: No audit event emitted (prevents pollution)
-			Expect(mockStore.StoredEvents).To(HaveLen(0),
-				"BUSINESS BEHAVIOR: No audit event for pending decisions (prevents audit pollution)")
+			Expect(mockStore.StoredEvents).To(BeEmpty(), "BUSINESS BEHAVIOR: No audit event for pending decisions (prevents audit pollution)")
 		})
 	})
 

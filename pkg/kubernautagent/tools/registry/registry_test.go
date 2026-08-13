@@ -25,17 +25,17 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/k8s"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"k8s.io/client-go/kubernetes/fake"
 )
 
 type nopResolver struct{}
 
 func (n *nopResolver) Get(_ context.Context, _, _, _, _ string) (interface{}, error) { return nil, nil }
-func (n *nopResolver) List(_ context.Context, _, _, _ string) (interface{}, error)  { return nil, nil }
+func (n *nopResolver) List(_ context.Context, _, _, _ string) (interface{}, error)   { return nil, nil }
 
 var _ k8s.ResourceResolver = (*nopResolver)(nil)
 
@@ -157,8 +157,7 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 			wg.Wait()
 
 			all := reg.All()
-			Expect(len(all)).To(BeNumerically(">=", 1),
-				"registry must contain tools after concurrent registration")
+			Expect(all).ToNot(BeEmpty(), "registry must contain tools after concurrent registration")
 		})
 
 		It("UT-REG-CONC-002: Concurrent Register and Execute do not race", func() {
@@ -205,7 +204,7 @@ var _ = Describe("Kubernaut Agent Tool Registry — #433", func() {
 					defer wg.Done()
 					defer GinkgoRecover()
 					result := reg.ToolsForPhase(katypes.PhaseRCA, phaseTools)
-					Expect(len(result)).To(BeNumerically(">=", 1))
+					Expect(result).ToNot(BeEmpty())
 				}()
 			}
 			wg.Wait()
@@ -233,7 +232,7 @@ type stubTool struct {
 	name string
 }
 
-func (s *stubTool) Name() string               { return s.name }
+func (s *stubTool) Name() string                { return s.name }
 func (s *stubTool) Description() string         { return "stub tool for concurrency tests" }
 func (s *stubTool) Parameters() json.RawMessage { return json.RawMessage(`{}`) }
 func (s *stubTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {

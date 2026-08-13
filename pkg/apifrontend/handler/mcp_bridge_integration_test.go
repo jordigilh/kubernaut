@@ -48,34 +48,34 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			ServerVersion: "0.0.1-test",
 			Enabled:       true,
 			Bridge: &handler.MCPBridgeConfig{
-				K8sClient: fakeK8s,
-				TypedClient:        newBridgeTypedClient(),
-			KAMCPClient: &ka.MockMCPClient{
-				SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
-					return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
+				K8sClient:   fakeK8s,
+				TypedClient: newBridgeTypedClient(),
+				KAMCPClient: &ka.MockMCPClient{
+					SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
+						return &ka.SelectWorkflowResult{Status: "selected", Message: "workflow selected"}, nil
+					},
+					StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
+						ch := make(chan ka.InvestigationEvent, 10)
+						return &ka.StartInvestigationResult{
+							SessionID: "mcp-sess-" + args.RRID,
+							Status:    "autonomous_started",
+							Events:    ch,
+							Closer:    func() { close(ch) },
+						}, nil
+					},
+					// #1677 Phase 2f (DD-WORKFLOW-019): kubernaut_list_workflows is now
+					// KA-backed (workflow catalog), not DS-backed. Fixture matches what
+					// IT-BRIDGE-004 previously got from ds.MockClient.ListWorkflowsFn.
+					ListWorkflowsFn: func(_ context.Context, _ ka.ListWorkflowsArgs) (*ka.ListWorkflowsResult, error) {
+						return &ka.ListWorkflowsResult{
+							Workflows: []ka.WorkflowSummary{
+								{ID: "wf-restart", Name: "Restart Pod", Kind: "Deployment"},
+								{ID: "wf-scale", Name: "Scale Up", Kind: "Deployment"},
+							},
+							Count: 2,
+						}, nil
+					},
 				},
-				StartInvestigationFn: func(_ context.Context, args ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {
-					ch := make(chan ka.InvestigationEvent, 10)
-					return &ka.StartInvestigationResult{
-						SessionID: "mcp-sess-" + args.RRID,
-						Status:    "autonomous_started",
-						Events:    ch,
-						Closer:    func() { close(ch) },
-					}, nil
-				},
-				// #1677 Phase 2f (DD-WORKFLOW-019): kubernaut_list_workflows is now
-				// KA-backed (workflow catalog), not DS-backed. Fixture matches what
-				// IT-BRIDGE-004 previously got from ds.MockClient.ListWorkflowsFn.
-				ListWorkflowsFn: func(_ context.Context, _ ka.ListWorkflowsArgs) (*ka.ListWorkflowsResult, error) {
-					return &ka.ListWorkflowsResult{
-						Workflows: []ka.WorkflowSummary{
-							{ID: "wf-restart", Name: "Restart Pod", Kind: "Deployment"},
-							{ID: "wf-scale", Name: "Scale Up", Kind: "Deployment"},
-						},
-						Count: 2,
-					}, nil
-				},
-			},
 				DSClient:           dsClient,
 				Authorizer:         &mapAuthorizer{roles: map[string][]string{"sre": {"*"}}},
 				Logger:             logr.Discard(),
@@ -323,8 +323,7 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 			}, testUser)
 
 			events := auditor.Events()
-			Expect(len(events)).To(BeNumerically(">=", 1),
-				"present_decision should emit at least one audit event")
+			Expect(events).ToNot(BeEmpty(), "present_decision should emit at least one audit event")
 		})
 	})
 
@@ -439,8 +438,8 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 				ServerVersion: "0.0.1-test",
 				Enabled:       true,
 				Bridge: &handler.MCPBridgeConfig{
-					K8sClient: fakeK8s,
-					TypedClient:        newBridgeTypedClient(),
+					K8sClient:   fakeK8s,
+					TypedClient: newBridgeTypedClient(),
 					KAMCPClient: &ka.MockMCPClient{
 						SelectWorkflowFn: func(_ context.Context, _ ka.SelectWorkflowArgs) (*ka.SelectWorkflowResult, error) {
 							return nil, ka.ErrMCPUnavailable
@@ -859,7 +858,6 @@ var _ = Describe("MCP Bridge Integration (httptest backends)", func() {
 	})
 })
 
-
 var _ = Describe("kubernaut_complete_no_action — AF MCP bridge proxy (#1418)", func() {
 
 	var (
@@ -1250,6 +1248,7 @@ func (r *recordingSessionFinalizer) FinalizeSessionByRR(_ context.Context, rrNam
 	r.calls = append(r.calls, finalizeCall{rrNamespace: rrNamespace, rrName: rrName, phase: phase})
 	return nil
 }
+
 type initCall struct {
 	rrNamespace, rrName, sessionID, username string
 	groups                                   []string

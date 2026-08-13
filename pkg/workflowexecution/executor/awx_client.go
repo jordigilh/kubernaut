@@ -151,24 +151,28 @@ func (c *AWXHTTPClient) CancelJob(ctx context.Context, jobID int) error {
 	return nil
 }
 
-func (c *AWXHTTPClient) FindJobTemplateByName(ctx context.Context, name string) (int, error) {
-	url := fmt.Sprintf("%s/api/v2/job_templates/?name=%s", c.baseURL, name)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// findFirstIDByListQuery performs a GET request against an AWX list endpoint
+// filtered by a query string, decodes a `{count, results: [{id}]}` envelope,
+// and returns the first matching result's ID (dupl: shared by
+// FindJobTemplateByName/FindCredentialTypeByName, which were byte-for-byte
+// identical apart from the URL path and the entity name used in error
+// messages).
+func (c *AWXHTTPClient) findFirstIDByListQuery(ctx context.Context, listURL, entity, notFoundValue string) (int, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, listURL, nil)
 	if err != nil {
-		return 0, fmt.Errorf("create template search request: %w", err)
+		return 0, fmt.Errorf("create %s search request: %w", entity, err)
 	}
 	c.setHeaders(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("AWX template search request: %w", err)
+		return 0, fmt.Errorf("AWX %s search request: %w", entity, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("AWX template search returned %d: %s", resp.StatusCode, string(respBody))
+		return 0, fmt.Errorf("AWX %s search returned %d: %s", entity, resp.StatusCode, string(respBody))
 	}
 
 	var result struct {
@@ -178,14 +182,19 @@ func (c *AWXHTTPClient) FindJobTemplateByName(ctx context.Context, name string) 
 		} `json:"results"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("decode template search response: %w", err)
+		return 0, fmt.Errorf("decode %s search response: %w", entity, err)
 	}
 
 	if result.Count == 0 {
-		return 0, fmt.Errorf("AWX job template %q not found", name)
+		return 0, fmt.Errorf("AWX %s %q not found", entity, notFoundValue)
 	}
 
 	return result.Results[0].ID, nil
+}
+
+func (c *AWXHTTPClient) FindJobTemplateByName(ctx context.Context, name string) (int, error) {
+	url := fmt.Sprintf("%s/api/v2/job_templates/?name=%s", c.baseURL, name)
+	return c.findFirstIDByListQuery(ctx, url, "job template", name)
 }
 
 func (c *AWXHTTPClient) CreateCredentialType(ctx context.Context, name string, inputs CredentialTypeInputs, injectors CredentialTypeInjectors) (int, error) {
@@ -232,39 +241,7 @@ func (c *AWXHTTPClient) CreateCredentialType(ctx context.Context, name string, i
 
 func (c *AWXHTTPClient) FindCredentialTypeByName(ctx context.Context, name string) (int, error) {
 	url := fmt.Sprintf("%s/api/v2/credential_types/?name=%s", c.baseURL, name)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return 0, fmt.Errorf("create credential type search request: %w", err)
-	}
-	c.setHeaders(req)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("AWX credential type search request: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("AWX credential type search returned %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var result struct {
-		Count   int `json:"count"`
-		Results []struct {
-			ID int `json:"id"`
-		} `json:"results"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("decode credential type search response: %w", err)
-	}
-
-	if result.Count == 0 {
-		return 0, fmt.Errorf("AWX credential type %q not found", name)
-	}
-
-	return result.Results[0].ID, nil
+	return c.findFirstIDByListQuery(ctx, url, "credential type", name)
 }
 
 func (c *AWXHTTPClient) FindCredentialTypeByKind(ctx context.Context, kind string, managed bool) (int, error) {

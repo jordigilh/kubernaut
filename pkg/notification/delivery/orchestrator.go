@@ -613,7 +613,11 @@ func (o *Orchestrator) incrementInFlightAttempts(uid string, channel string) {
 	// Atomic increment using CompareAndSwap loop
 	for {
 		currentVal, _ := o.inFlightAttempts.LoadOrStore(key, 0)
-		current := currentVal.(int)
+		current, ok := currentVal.(int)
+		if !ok {
+			o.logger.Error(nil, "DD-NOT-008: in-flight counter has unexpected type", "key", key)
+			return
+		}
 		if o.inFlightAttempts.CompareAndSwap(key, current, current+1) {
 			o.logger.V(1).Info("DD-NOT-008: Incremented in-flight counter",
 				"key", key,
@@ -636,7 +640,11 @@ func (o *Orchestrator) decrementInFlightAttempts(uid string, channel string) {
 			return
 		}
 
-		current := currentVal.(int)
+		current, ok := currentVal.(int)
+		if !ok {
+			o.logger.Error(nil, "DD-NOT-008: in-flight counter has unexpected type", "key", key)
+			return
+		}
 		if current <= 0 {
 			o.logger.Error(nil, "DD-NOT-008: Attempted to decrement in-flight counter below 0", "key", key, "current", current)
 			return
@@ -661,8 +669,14 @@ func (o *Orchestrator) decrementInFlightAttempts(uid string, channel string) {
 // the same notification are serialized, eliminating the TOCTOU window between
 // in-flight decrement and status persistence (DD-NOT-008 v2).
 func (o *Orchestrator) getDeliveryMutex(uid string) *sync.Mutex {
-	mu, _ := o.deliveryMu.LoadOrStore(uid, &sync.Mutex{})
-	return mu.(*sync.Mutex)
+	raw, _ := o.deliveryMu.LoadOrStore(uid, &sync.Mutex{})
+	// LoadOrStore's stored value is always the *sync.Mutex{} literal above
+	// (the only value ever stored into this map) -- a checked assertion
+	// with a fallback would have to fabricate a *different* mutex, which
+	// silently breaks the per-notification mutual-exclusion guarantee this
+	// method exists to provide, a worse failure mode than the panic it
+	// avoids (same reasoning as InvestigateTool.getSessionMutex).
+	return raw.(*sync.Mutex) //nolint:forcetypeassert
 }
 
 // ClearInMemoryState clears all in-memory tracking for a notification.
@@ -671,7 +685,10 @@ func (o *Orchestrator) getDeliveryMutex(uid string) *sync.Mutex {
 func (o *Orchestrator) ClearInMemoryState(uid string) {
 	// Clear in-flight attempts for all channels
 	o.inFlightAttempts.Range(func(key, value interface{}) bool {
-		keyStr := key.(string)
+		keyStr, ok := key.(string)
+		if !ok {
+			return true
+		}
 		if len(keyStr) > len(uid) && keyStr[:len(uid)] == uid && keyStr[len(uid)] == ':' {
 			o.inFlightAttempts.Delete(key)
 			o.logger.V(1).Info("DD-NOT-008: Cleared in-flight attempts",
@@ -682,7 +699,10 @@ func (o *Orchestrator) ClearInMemoryState(uid string) {
 
 	// Clear successful deliveries for all channels
 	o.successfulDeliveries.Range(func(key, value interface{}) bool {
-		keyStr := key.(string)
+		keyStr, ok := key.(string)
+		if !ok {
+			return true
+		}
 		if len(keyStr) > len(uid) && keyStr[:len(uid)] == uid && keyStr[len(uid)] == ':' {
 			o.successfulDeliveries.Delete(key)
 			o.logger.V(1).Info("DD-NOT-008: Cleared successful delivery tracking",

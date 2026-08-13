@@ -109,7 +109,7 @@ var _ = Describe("Phase Guard — present_decision ordering guard (#2098)", func
 
 		v, getErr := state.Get(session.StateKeyDiscoverWorkflowsSucceeded)
 		Expect(getErr).NotTo(HaveOccurred())
-		Expect(v).To(Equal(true))
+		Expect(v).To(BeTrue())
 
 		_, invErr := after(toolCtx, fakeTool{name: "kubernaut_investigate"}, nil, map[string]any{
 			"session_id": "sess-2098-2", "rr_id": "rr-2", "status": "completed",
@@ -119,7 +119,6 @@ var _ = Describe("Phase Guard — present_decision ordering guard (#2098)", func
 
 		v2, getErr2 := state.Get(session.StateKeyDiscoverWorkflowsSucceeded)
 		Expect(getErr2).NotTo(HaveOccurred())
-		Expect(v2).To(Equal(false),
-			"a second investigation in the same chat session must not inherit a stale success flag from a prior RR")
+		Expect(v2).To(BeFalse(), "a second investigation in the same chat session must not inherit a stale success flag from a prior RR")
 	})
 })

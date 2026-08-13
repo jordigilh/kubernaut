@@ -97,7 +97,7 @@ var _ = Describe("IT #2092 — present_decision options repair through real ADK 
 			"#2092: real ADK schema validation (ConvertToWithJSONSchema) must accept the repaired native array -- "+
 				"before this fix, a JSON-double-encoded options string reached this point unmodified and was rejected here")
 		Expect(result).NotTo(BeNil())
-		Expect(result["presented"]).To(Equal(true))
+		Expect(result["presented"]).To(BeTrue())
 
 		message, _ := result["message"].(string)
 		Expect(message).To(ContainSubstring("crashloop-rollback-v1"),

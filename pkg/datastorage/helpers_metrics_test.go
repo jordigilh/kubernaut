@@ -168,8 +168,7 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 			}
 
 			// Should only have the 4 known tables
-			Expect(len(uniqueTables)).To(BeZero(),
-				"No unknown tables should pass through sanitization")
+			Expect(uniqueTables).To(BeEmpty(), "No unknown tables should pass through sanitization")
 		})
 	})
 
@@ -204,8 +203,7 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 			}
 
 			// Should only have 2 values: "success" and "failure"
-			Expect(len(uniqueStatuses)).To(Equal(2),
-				"Status cardinality should be exactly 2 (success, failure)")
+			Expect(uniqueStatuses).To(HaveLen(2), "Status cardinality should be exactly 2 (success, failure)")
 		})
 	})
 
@@ -214,7 +212,7 @@ var _ = Describe("Cardinality Protection Helpers", func() {
 			// Calculate theoretical maximum cardinality
 			maxFailureReasons := 6    // 5 known + 1 unknown
 			maxValidationCombos := 60 // 10 fields × 6 reasons
-			maxTableStatus := 8        // 4 tables × 2 statuses
+			maxTableStatus := 8       // 4 tables × 2 statuses
 
 			totalMaxCardinality := maxFailureReasons + maxValidationCombos + maxTableStatus
 

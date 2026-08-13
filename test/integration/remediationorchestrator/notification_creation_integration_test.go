@@ -117,10 +117,10 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 					ConfidenceLevel: "high",
 					Reason:          "Test approval expiry scenario",
 					RecommendedWorkflow: remediationv1.RecommendedWorkflowSummary{
-						WorkflowID:     "test-workflow-001",
-						Version:        "v1.0.0",
+						WorkflowID:      "test-workflow-001",
+						Version:         "v1.0.0",
 						ExecutionBundle: "test/image:latest",
-						Rationale:      "Test rationale",
+						Rationale:       "Test rationale",
 					},
 					InvestigationSummary: "Test investigation summary",
 					RecommendedActions: []remediationv1.ApprovalRecommendedAction{
@@ -338,7 +338,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 			Expect(err).ToNot(HaveOccurred(), "Field selector should work with cached client (field index set up by reconciler.SetupWithManager)")
 
 			GinkgoWriter.Printf("DEBUG: Field selector returned %d RRs\n", len(rrList.Items))
-			Expect(len(rrList.Items)).To(BeNumerically(">=", 1), "Should find RemediationRequest by fingerprint field")
+			Expect(rrList.Items).ToNot(BeEmpty(), "Should find RemediationRequest by fingerprint field")
 
 			// Validate NotificationRequests are correlated to the RR via spec.remediationRequestRef
 			nrList := &notificationv1.NotificationRequestList{}

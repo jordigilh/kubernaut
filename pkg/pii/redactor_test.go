@@ -145,7 +145,7 @@ var _ = Describe("Redactor", func() {
 
 		It("returns non-string, non-composite values unchanged", func() {
 			Expect(r.RedactJSON(42)).To(Equal(42))
-			Expect(r.RedactJSON(true)).To(Equal(true))
+			Expect(r.RedactJSON(true)).To(BeTrue())
 			Expect(r.RedactJSON(nil)).To(BeNil())
 		})
 	})

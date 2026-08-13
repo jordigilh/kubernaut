@@ -123,7 +123,7 @@ var _ = Describe("EmitArtifact gob-safety boundary (#2110/#2111 hardening)", fun
 		Expect(got["type"]).To(Equal("investigation_summary"))
 		Expect(got["summary"]).To(Equal("OOMKill detected"))
 		Expect(got["confidence"]).To(Equal(0.92))
-		Expect(got["critical"]).To(Equal(true))
+		Expect(got["critical"]).To(BeTrue())
 		Expect(got["missing"]).To(BeNil())
 		Expect(got["causal_chain"]).To(Equal([]any{"MemoryPressure", "Evicted"}))
 		rca, ok := got["rca"].(map[string]any)

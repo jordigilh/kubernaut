@@ -105,7 +105,15 @@ func (r *CAReloader) CurrentTransport() *http.Transport {
 }
 
 func buildTransport(pool *x509.CertPool) *http.Transport {
-	t := http.DefaultTransport.(*http.Transport).Clone()
+	var t *http.Transport
+	if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+		t = defaultTransport.Clone()
+	} else {
+		// net/http guarantees http.DefaultTransport is *http.Transport
+		// unless something has reassigned the package var -- fall back to
+		// a bare Transport rather than panic in that unlikely case.
+		t = &http.Transport{}
+	}
 	t.TLSClientConfig = &tls.Config{
 		RootCAs:    pool,
 		MinVersion: tls.VersionTLS12,

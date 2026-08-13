@@ -310,7 +310,7 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 | UT-KA-433-037 | Below-threshold tool output passes through summarizer unchanged | BR-HAPI-433-002 |
 | UT-KA-433-038 | Above-threshold tool output triggers secondary LLM summarization call | BR-HAPI-433-002 |
 
-#### Phase 5 — Security (21 UT)
+#### Phase 5 — Security (19 UT + 2 Benchmark)
 
 | ID | Business Outcome Under Test | BR |
 |----|----------------------------|-----|
@@ -322,19 +322,23 @@ Full service (`cmd/kubernautagent/main.go` + all packages) deployed in Kind clus
 | UT-KA-433-044 | I1: Strips prompt escape sequences (boundary markers) | BR-HAPI-433-004 (I1) |
 | UT-KA-433-045 | I1: Preserves legitimate tool output not matching injection patterns | BR-HAPI-433-004 (I1) |
 | UT-KA-433-046 | I1: Configurable patterns loaded from config (extensible without code changes) | BR-HAPI-433-004 (I1) |
-| UT-KA-433-047 | G4+I1: Combined sanitization latency < 10ms per call | BR-HAPI-433-004 |
+| BENCH-KA-433-047 | G4+I1: Combined sanitization throughput characterization (was a `<10ms` UT gate; converted to a manual-only Go benchmark per Issue #2140 -- see AGENTS.md "Exception: Go Native Benchmarks") | BR-HAPI-433-004 |
 | UT-KA-433-048 | G4: Scrubs database URL patterns (postgres://, mysql://) | BR-HAPI-211 |
 | UT-KA-433-049 | G4: Scrubs API key patterns (Bearer, x-api-key) | BR-HAPI-211 |
 | UT-KA-433-050 | G4: Scrubs bearer token patterns | BR-HAPI-211 |
 | UT-KA-433-051 | G4: Covers all 17 BR-HAPI-211/DD-005 credential pattern categories | BR-HAPI-211 |
 | UT-KA-433-052 | G4: Preserves non-credential content unchanged | BR-HAPI-211 |
-| UT-KA-433-053 | G4: Single-call scrubbing latency < 10ms | BR-HAPI-211 |
+| BENCH-KA-433-053 | G4: Single-call scrubbing throughput characterization (was a `<10ms` UT gate; converted to a manual-only Go benchmark per Issue #2140 -- see AGENTS.md "Exception: Go Native Benchmarks") | BR-HAPI-211 |
 | UT-KA-433-054 | I7: Per-tool call limit triggers abort at configurable threshold | BR-HAPI-433-004 (I7) |
 | UT-KA-433-055 | I7: Total tool call limit triggers abort at threshold | BR-HAPI-433-004 (I7) |
 | UT-KA-433-056 | I7: Repeated identical failures (same tool+args) trigger abort | BR-HAPI-433-004 (I7) |
 | UT-KA-433-057 | I7: Suspicious argument patterns logged as anomaly | BR-HAPI-433-004 (I7) |
 | UT-KA-433-058 | I7: Below-threshold calls proceed normally (no false positives) | BR-HAPI-433-004 (I7) |
 | UT-KA-433-059 | I7: Configurable thresholds from config | BR-HAPI-433-004 (I7) |
+
+Benchmark implementation: `pkg/kubernautagent/tools/sanitization/benchmark_test.go`
+(`BenchmarkG4I1Pipeline`, `BenchmarkCredentialSanitizer`). Run manually via
+`go test -bench=. -benchmem ./pkg/kubernautagent/tools/sanitization/...`.
 
 #### Phase 7 — LLM Provider Extension: Azure/Vertex (5 UT)
 

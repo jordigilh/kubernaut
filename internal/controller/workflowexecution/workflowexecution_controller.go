@@ -354,7 +354,10 @@ func registerTargetResourceIndex(mgr ctrl.Manager) error {
 		&workflowexecutionv1alpha1.WorkflowExecution{},
 		"spec.targetResource",
 		func(obj client.Object) []string {
-			wfe := obj.(*workflowexecutionv1alpha1.WorkflowExecution)
+			wfe, ok := obj.(*workflowexecutionv1alpha1.WorkflowExecution)
+			if !ok {
+				return nil
+			}
 			return []string{wfe.Spec.TargetResource}
 		},
 	); err != nil {

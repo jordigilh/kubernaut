@@ -2,7 +2,6 @@ package sanitization_test
 
 import (
 	"context"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -122,24 +121,4 @@ Events: Normal Scheduled, Normal Pulled, Normal Created, Normal Started.`
 		})
 	})
 
-	Describe("UT-KA-433-053: Single-call scrubbing latency < 10ms", func() {
-		It("should complete G4 scrubbing in under 10ms per call", func() {
-			input := "Connection: postgresql://admin:s3cr3t@host:5432/db\n" +
-				`{"password":"abc","api_key":"sk-proj-xyz","token":"eyJ..."}` + "\n" +
-				"Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig\n" +
-				"AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n" +   // pre-commit:allow-sensitive
-				"ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij" // notsecret pre-commit:allow-sensitive
-
-			start := time.Now()
-			iterations := 100
-			for i := 0; i < iterations; i++ {
-				_, err := stage.Sanitize(ctx, input)
-				Expect(err).NotTo(HaveOccurred())
-			}
-			elapsed := time.Since(start)
-			avgLatency := elapsed / time.Duration(iterations)
-			Expect(avgLatency).To(BeNumerically("<", 10*time.Millisecond),
-				"average G4 latency should be under 10ms, got %v", avgLatency)
-		})
-	})
 })

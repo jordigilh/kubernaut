@@ -71,7 +71,7 @@ var _ = Describe("LLM error classification — #1585", func() {
 		})
 
 		It("MarkNonRetryable(nil) returns nil", func() {
-			Expect(llm.MarkNonRetryable(nil)).To(BeNil())
+			Expect(llm.MarkNonRetryable(nil)).To(Succeed())
 		})
 	})
 

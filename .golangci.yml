@@ -188,6 +188,113 @@ linters:
     # purpose. It runs as a separate, deliberately non-blocking
     # `continue-on-error` step in .github/workflows/ci-pipeline.yml
     # (lint-go job) instead, so findings are visible without gating CI.
+    - ginkgolinter    # AI/human "slop" hardening pass (2026-08): enforces
+                      # correct Gomega matcher usage in this codebase's ~2000
+                      # Ginkgo test files -- a purpose-built superset of the
+                      # 4 hand-written NULL-TESTING forbidigo regexes above
+                      # (wrong-length/-nil/-error/-comparison assertions,
+                      # sync-vs-async matcher misuse). 201 pre-existing
+                      # findings; 199 mechanically auto-fixed via
+                      # `golangci-lint run --fix` (e.g. `Expect(len(x)).To(
+                      # Equal(n))` -> `Expect(x).To(HaveLen(n))`), 2 manually
+                      # fixed (`BeIdenticalTo(nil)` on typed values ->
+                      # `BeNil()`, avoiding a reflect-identity comparison
+                      # gotcha). `forbid-focus-container` (below) additionally
+                      # guards against `FDescribe`/`FContext`/`FIt`/`FWhen`
+                      # left in by accident, which would silently skip the
+                      # rest of the suite in CI -- verified 0 pre-existing
+                      # findings.
+    - fatcontext      # Flags context.WithValue/WithCancel/WithTimeout called
+                      # inside a loop, creating a new context per iteration
+                      # instead of reusing one (100 Go Mistakes lineage,
+                      # complements the already-enabled `containedctx`).
+                      # Verified 0 production findings; 111 test-only findings
+                      # are Ginkgo's idiomatic per-spec `ctx, cancel =
+                      # context.WithCancel(...)` re-assignment inside
+                      # BeforeEach/JustBeforeEach closures (each spec's
+                      # context legitimately replaces the previous one, not a
+                      # leak) -- excluded below, same carve-out as
+                      # containedctx/noctx/contextcheck.
+    - misspell        # Flags misspelled words in comments/strings/log
+                      # messages -- a cheap, low-noise signal for careless
+                      # (AI or human) edits. 4 pre-existing findings: 1 real
+                      # typo fixed (`testFingerprint("proces")` ->
+                      # `("process")`); 3 are `"searchs"` in
+                      # pkg/shared/k8s/gvk_test.go, which is not a typo but
+                      # the literal (grammatically wrong) plural
+                      # `meta.UnsafeGuessKindToResource("Search")` actually
+                      # returns -- excluded below by path+text rather than
+                      # "corrected" to a value the test wouldn't exercise.
+    - dupl            # Flags duplicate code blocks -- the canonical "copy-
+                      # pasted instead of extracted" (AI/human) slop pattern,
+                      # and a direct enforcement of AGENTS.md's "avoid
+                      # duplication" rule. 9 pre-existing production findings
+                      # (3 distinct duplicate blocks) all remediated by
+                      # extraction: notificationrequest_controller.go's
+                      # auditMessageAcknowledged/auditMessageEscalated ->
+                      # shared auditSimpleEvent helper; k8s_enricher.go's 5
+                      # near-identical Deployment/StatefulSet/DaemonSet/
+                      # ReplicaSet/Service enrich functions -> a single
+                      # generic enrichWorkloadSignal[T metav1.Object] (every
+                      # K8s workload type here embeds metav1.ObjectMeta, so
+                      # Get*() accessors work generically); awx_client.go's
+                      # FindJobTemplateByName/FindCredentialTypeByName ->
+                      # shared findFirstIDByListQuery helper. Scoped to
+                      # production code only (see exclusions below): ~311
+                      # test-file findings are unreviewed and likely include
+                      # legitimate Ginkgo table-driven repetition alongside
+                      # real drift -- a separate, larger triage pass, not
+                      # bundled into this one.
+    - exhaustive      # Flags switch statements over a defined enum type that
+                      # don't handle every declared value -- silent gaps are
+                      # exactly the kind of thing an AI (or a human) adds a
+                      # new enum value for and forgets to thread through every
+                      # switch (AGENTS.md "avoid duplication"/completeness
+                      # spirit). `default-signifies-exhaustive: true` (below)
+                      # because this codebase's existing idiom is an explicit
+                      # `default:` arm for "every other value" rather than
+                      # listing every case -- 24 of 37 production findings
+                      # already had a `default:` and needed no code change.
+                      # The remaining 13 switches had no `default:` at all;
+                      # each was individually triaged against its surrounding
+                      # doc comments/callers (not just silenced): 11 were
+                      # confirmed intentional narrow-purpose switches (e.g.
+                      # geminifamily's content-block accumulator only cares
+                      # about 2 of ~15 block kinds; openaicompat's
+                      # applyEffort already documents "no-op for
+                      # EffortDialectNone" in its own doc comment) and given
+                      # an explicit `default:`/case documenting that intent
+                      # in code rather than leaving it implicit; 2 were
+                      # genuine gaps fixed by adding the missing enum values
+                      # to their case list (notification status/manager.go's
+                      # delivery-attempt counters were silently dropping
+                      # DeliveryAttemptStatusTimeout/Invalid instead of
+                      # counting them as failed) — see inline comments at
+                      # each site for the specific rationale.
+    - forcetypeassert # Flags unchecked type assertions (`x.(T)` without the
+                      # `, ok` form) -- a classic panic-on-bad-input pattern,
+                      # and one AI-generated code reaches for reflexively
+                      # since the happy-path assertion is fewer tokens than
+                      # the checked form. 55 production findings, each
+                      # triaged individually: the overwhelming majority were
+                      # controller-runtime field-indexer callbacks and
+                      # sync.Map-backed caches/registries where the
+                      # concrete type is guaranteed by construction (the
+                      # same function that stores the value is the only
+                      # writer) -- converted to the checked `v, ok := x.(T)`
+                      # form with a safe fallback (skip/no-op/return a
+                      # not-found sentinel) so a future refactor that
+                      # breaks the invariant fails soft instead of
+                      # panicking. 2 sites (getSessionMutex-style "one
+                      # mutex per key" accessors) keep the unchecked
+                      # assertion with a scoped `//nolint:forcetypeassert`
+                      # because a checked fallback would have to fabricate
+                      # a *different* mutex, silently breaking the
+                      # mutual-exclusion guarantee the method exists to
+                      # provide -- a worse failure mode than the panic it
+                      # would avoid. Scoped to production code only (see
+                      # exclusions below): the ~415 test-file findings are
+                      # an unreviewed, separate triage pass.
 
   settings:
     govet:
@@ -201,6 +308,28 @@ linters:
         - name: argument-limit
           arguments: [7]  # AGENTS.md Go Anti-Pattern Checklist: 8+ params -> Options pattern
           severity: warning
+    exhaustive:
+      default-signifies-exhaustive: true  # This codebase's idiom is an
+                                           # explicit `default:` arm meaning
+                                           # "every other value", not
+                                           # listing every case (see the
+                                           # `exhaustive` enable comment
+                                           # above for the triage that
+                                           # justifies this).
+    ginkgolinter:
+      forbid-focus-container: true  # Opt-in: FDescribe/FContext/FIt/FWhen left
+                                     # in by accident silently skip the rest of
+                                     # the suite in CI. Verified 0 findings.
+                                     # NOTE: the other opt-in strictness flags
+                                     # (force-succeed, force-expect-to,
+                                     # forbid-spec-pollution, force-tonot,
+                                     # force-assertion-description) have NOT
+                                     # been piloted against this codebase and
+                                     # are deliberately left at their default
+                                     # (off) until someone measures the
+                                     # finding count -- only the always-on
+                                     # default checks + this one flag are
+                                     # covered by the "201 findings" note above.
     funlen:
       lines: 80
       statements: 60
@@ -431,6 +560,44 @@ linters:
       - path: _test\.go
         linters:
           - contextcheck
+      # fatcontext: Ginkgo's idiomatic per-spec context re-creation inside
+      # BeforeEach/JustBeforeEach (see the `fatcontext` enable comment above)
+      # -- same carve-out as containedctx/noctx/contextcheck. Production code
+      # is NOT exempted.
+      - path: (_test\.go|^test/)
+        linters:
+          - fatcontext
+      # misspell: `meta.UnsafeGuessKindToResource("Search")` genuinely
+      # returns the ungrammatical plural "searchs" (see the `misspell` enable
+      # comment above); the test's mock map key must match that literal
+      # return value to exercise the real behavior, not a "corrected" one.
+      - path: pkg/shared/k8s/gvk_test\.go
+        linters:
+          - misspell
+        text: "searchs"
+      # dupl: scoped to production code only (see the `dupl` enable comment
+      # above) -- the ~311 test-file findings are an unreviewed, separate
+      # triage pass; Ginkgo suites legitimately repeat similar
+      # Context/It shapes across table-driven-style scenarios.
+      - path: (_test\.go|^test/)
+        linters:
+          - dupl
+      # exhaustive: scoped to production code only (see the `exhaustive`
+      # enable comment above) -- test-file switches over these enums
+      # (fixture builders, table-driven scenario setup) are a separate,
+      # unreviewed triage pass.
+      - path: (_test\.go|^test/)
+        linters:
+          - exhaustive
+      # forcetypeassert: scoped to production code only (see the
+      # `forcetypeassert` enable comment above) -- the ~415 test-file
+      # findings are a separate, unreviewed triage pass; test code makes
+      # heavy use of unchecked assertions against literal fixture/mock
+      # data (e.g. `result["field"].(string)`) where a panic on mismatch
+      # is an acceptable, immediate test failure signal.
+      - path: (_test\.go|^test/)
+        linters:
+          - forcetypeassert
 
 issues:
   max-issues-per-linter: 0

@@ -360,21 +360,19 @@ func emitPartViaBridge(ctx context.Context, bridge *EventBridge, part *genai.Par
 			emitDecisionEvent(ctx, bridge, part.FunctionCall)
 			return nil
 		}
-		text := convertFunctionCall(part.FunctionCall)
-		if text != nil {
-			_ = bridge.EmitReasoning(ctx, text.(a2a.TextPart).Text)
+		if text, ok := convertFunctionCall(part.FunctionCall).(a2a.TextPart); ok {
+			_ = bridge.EmitReasoning(ctx, text.Text)
 		}
 		return nil
 	case part.FunctionResponse != nil:
-		text := convertFunctionResponse(part.FunctionResponse)
-		if text != nil {
+		if text, ok := convertFunctionResponse(part.FunctionResponse).(a2a.TextPart); ok {
 			switch {
 			case decisionMetaTools[part.FunctionResponse.Name]:
-				_ = bridge.EmitStructuredMeta(ctx, text.(a2a.TextPart).Text, map[string]any{"type": MetaTypeDecision})
+				_ = bridge.EmitStructuredMeta(ctx, text.Text, map[string]any{"type": MetaTypeDecision})
 			case outputMetaTools[part.FunctionResponse.Name]:
-				_ = bridge.EmitStatus(ctx, text.(a2a.TextPart).Text)
+				_ = bridge.EmitStatus(ctx, text.Text)
 			default:
-				_ = bridge.EmitReasoning(ctx, text.(a2a.TextPart).Text)
+				_ = bridge.EmitReasoning(ctx, text.Text)
 			}
 		}
 		return nil

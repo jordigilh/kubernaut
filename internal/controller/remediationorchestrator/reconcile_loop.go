@@ -449,7 +449,10 @@ func registerFingerprintIndex(mgr ctrl.Manager) error {
 		&remediationv1.RemediationRequest{},
 		FingerprintFieldIndex, // "spec.signalFingerprint"
 		func(obj client.Object) []string {
-			rr := obj.(*remediationv1.RemediationRequest)
+			rr, ok := obj.(*remediationv1.RemediationRequest)
+			if !ok {
+				return nil
+			}
 			if rr.Spec.SignalFingerprint == "" {
 				return nil
 			}
@@ -477,7 +480,10 @@ func registerWFETargetResourceIndex(mgr ctrl.Manager) error {
 		&workflowexecutionv1.WorkflowExecution{},
 		"spec.targetResource", // Field to index
 		func(obj client.Object) []string {
-			wfe := obj.(*workflowexecutionv1.WorkflowExecution)
+			wfe, ok := obj.(*workflowexecutionv1.WorkflowExecution)
+			if !ok {
+				return nil
+			}
 			if wfe.Spec.TargetResource == "" {
 				return nil
 			}
@@ -488,6 +494,24 @@ func registerWFETargetResourceIndex(mgr ctrl.Manager) error {
 		if !k8serrors.IsIndexerConflict(err) {
 			return fmt.Errorf("failed to create field index on WorkflowExecution.spec.targetResource: %w", err)
 		}
+	}
+	return nil
+}
+
+// extractRefName is a shared field-index extractor for child CRDs whose spec
+// embeds a RemediationRequestRef-style reference: casts obj to the concrete
+// kind T (returning nil, not panicking, if the manager ever calls this
+// extractor with a mismatched kind — forcetypeassert) and delegates the
+// actual field lookup to getName, so each per-kind extractor below only
+// needs to state where its ref name lives, not repeat the
+// cast/empty-check/wrap boilerplate 5 times over.
+func extractRefName[T client.Object](obj client.Object, getName func(T) string) []string {
+	typed, ok := obj.(T)
+	if !ok {
+		return nil
+	}
+	if name := getName(typed); name != "" {
+		return []string{name}
 	}
 	return nil
 }
@@ -507,51 +531,44 @@ func childCRDIndexDefinitions() []struct {
 		{
 			obj: &aianalysisv1.AIAnalysis{},
 			extractor: func(obj client.Object) []string {
-				aa := obj.(*aianalysisv1.AIAnalysis)
-				if aa.Spec.RemediationRequestRef.Name == "" {
-					return nil
-				}
-				return []string{aa.Spec.RemediationRequestRef.Name}
+				return extractRefName(obj, func(aa *aianalysisv1.AIAnalysis) string {
+					return aa.Spec.RemediationRequestRef.Name
+				})
 			},
 		},
 		{
 			obj: &notificationv1.NotificationRequest{},
 			extractor: func(obj client.Object) []string {
-				nr := obj.(*notificationv1.NotificationRequest)
-				if nr.Spec.RemediationRequestRef == nil || nr.Spec.RemediationRequestRef.Name == "" {
-					return nil
-				}
-				return []string{nr.Spec.RemediationRequestRef.Name}
+				return extractRefName(obj, func(nr *notificationv1.NotificationRequest) string {
+					if nr.Spec.RemediationRequestRef == nil {
+						return ""
+					}
+					return nr.Spec.RemediationRequestRef.Name
+				})
 			},
 		},
 		{
 			obj: &signalprocessingv1.SignalProcessing{},
 			extractor: func(obj client.Object) []string {
-				sp := obj.(*signalprocessingv1.SignalProcessing)
-				if sp.Spec.RemediationRequestRef.Name == "" {
-					return nil
-				}
-				return []string{sp.Spec.RemediationRequestRef.Name}
+				return extractRefName(obj, func(sp *signalprocessingv1.SignalProcessing) string {
+					return sp.Spec.RemediationRequestRef.Name
+				})
 			},
 		},
 		{
 			obj: &remediationv1.RemediationApprovalRequest{},
 			extractor: func(obj client.Object) []string {
-				rar := obj.(*remediationv1.RemediationApprovalRequest)
-				if rar.Spec.RemediationRequestRef.Name == "" {
-					return nil
-				}
-				return []string{rar.Spec.RemediationRequestRef.Name}
+				return extractRefName(obj, func(rar *remediationv1.RemediationApprovalRequest) string {
+					return rar.Spec.RemediationRequestRef.Name
+				})
 			},
 		},
 		{
 			obj: &workflowexecutionv1.WorkflowExecution{},
 			extractor: func(obj client.Object) []string {
-				wfe := obj.(*workflowexecutionv1.WorkflowExecution)
-				if wfe.Spec.RemediationRequestRef.Name == "" {
-					return nil
-				}
-				return []string{wfe.Spec.RemediationRequestRef.Name}
+				return extractRefName(obj, func(wfe *workflowexecutionv1.WorkflowExecution) string {
+					return wfe.Spec.RemediationRequestRef.Name
+				})
 			},
 		},
 	}

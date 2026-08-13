@@ -28,9 +28,9 @@ import (
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
@@ -363,7 +363,7 @@ var _ = Describe("InvestigatingHandler", func() {
 				failedEvents := auditSpy.getFailedEvents()
 				Expect(failedEvents).To(HaveLen(1), "Should record exactly 1 failure audit event")
 				Expect(failedEvents[0].analysis.Name).To(Equal(analysis.Name))
-				Expect(failedEvents[0].err).ToNot(BeNil(), "Should capture the error that caused failure")
+				Expect(failedEvents[0].err).To(HaveOccurred(), "Should capture the error that caused failure")
 				Expect(failedEvents[0].err.Error()).To(ContainSubstring("Service Unavailable"), "Should capture upstream error message")
 			})
 		})

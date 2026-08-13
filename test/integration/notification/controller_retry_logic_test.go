@@ -155,37 +155,37 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			// PHASE 2: Wait for retry logic to execute
 			// ========================================
 			By("Waiting for exponential backoff retries (up to 5 attempts)")
-		// Expected retry intervals: 1s, 2s, 4s, 8s = 15s total backoff
-		// + 5s for controller reconciliation and status propagation
-		// DD-AUTH-014: 25s timeout sufficient with 5 concurrent workers (no queue saturation)
-		Eventually(func() int {
-			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
-				Name:      notification.Name,
-				Namespace: notification.Namespace,
-			}, notification)
-			if err != nil {
-				return 0
-			}
-			return len(notification.Status.DeliveryAttempts)
-		}, 25*time.Second, 500*time.Millisecond).Should(Equal(6),
-			"BR-NOT-054: 6 attempts total (1 console + 5 file with backoff 0+1s+2s+4s+8s=15s) + 5-10s reconcile latency")
+			// Expected retry intervals: 1s, 2s, 4s, 8s = 15s total backoff
+			// + 5s for controller reconciliation and status propagation
+			// DD-AUTH-014: 25s timeout sufficient with 5 concurrent workers (no queue saturation)
+			Eventually(func() int {
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, notification)
+				if err != nil {
+					return 0
+				}
+				return len(notification.Status.DeliveryAttempts)
+			}, 25*time.Second, 500*time.Millisecond).Should(Equal(6),
+				"BR-NOT-054: 6 attempts total (1 console + 5 file with backoff 0+1s+2s+4s+8s=15s) + 5-10s reconcile latency")
 
 			// ========================================
 			// PHASE 3: Verify final state after max attempts
 			// ========================================
-		By("Verifying notification marked as PartiallySent after max retries")
-		// DD-AUTH-014: 30s timeout sufficient with 5 concurrent workers
-		Eventually(func() notificationv1alpha1.NotificationPhase {
-			err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
-				Name:      notification.Name,
-				Namespace: notification.Namespace,
-			}, notification)
-			if err != nil {
-				return ""
-			}
-			return notification.Status.Phase
-		}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
-			"DD-E2E-003: After retry exhaustion (15s backoff + status propagation) → PartiallySent")
+			By("Verifying notification marked as PartiallySent after max retries")
+			// DD-AUTH-014: 30s timeout sufficient with 5 concurrent workers
+			Eventually(func() notificationv1alpha1.NotificationPhase {
+				err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{
+					Name:      notification.Name,
+					Namespace: notification.Namespace,
+				}, notification)
+				if err != nil {
+					return ""
+				}
+				return notification.Status.Phase
+			}, 30*time.Second, 500*time.Millisecond).Should(Equal(notificationv1alpha1.NotificationPhasePartiallySent),
+				"DD-E2E-003: After retry exhaustion (15s backoff + status propagation) → PartiallySent")
 
 			// ========================================
 			// ASSERTIONS: Retry Logic Validation
@@ -215,8 +215,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 				"Console delivery should succeed (1 successful)")
 			Expect(notification.Status.FailedDeliveries).To(Equal(1),
 				"File delivery should fail after max retries (1 failed)")
-			Expect(len(notification.Status.DeliveryAttempts)).To(Equal(6),
-				"Should record 6 total attempts (1 console success + 5 file failures with MaxAttempts=5)")
+			Expect(notification.Status.DeliveryAttempts).To(HaveLen(6), "Should record 6 total attempts (1 console success + 5 file failures with MaxAttempts=5)")
 
 			By("Validating exponential backoff timing")
 			// Expected minimum time: 1s + 2s + 4s + 8s + 10s = 25s
@@ -226,30 +225,30 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			Expect(elapsedTime.Seconds()).To(BeNumerically("<", 40),
 				"Retry logic should not exceed 40s (reasonable upper bound)")
 
-		By("🔍 DEBUG: Validating mock service call counts (proves attempts were made)")
-		mockFileCallCount := mockFileService.GetCallCount()
-		mockConsoleCallCount := mockConsoleService.GetCallCount()
+			By("🔍 DEBUG: Validating mock service call counts (proves attempts were made)")
+			mockFileCallCount := mockFileService.GetCallCount()
+			mockConsoleCallCount := mockConsoleService.GetCallCount()
 
-		GinkgoWriter.Printf("\n🔍 DEBUG: Mock Call Counts:\n")
-		GinkgoWriter.Printf("  File service calls: %d (expected: 5-6)\n", mockFileCallCount)
-		GinkgoWriter.Printf("  Console service calls: %d (expected: 1)\n", mockConsoleCallCount)
-		GinkgoWriter.Printf("  Status.DeliveryAttempts length: %d (expected: 6 total = 1 console + 5 file)\n", len(notification.Status.DeliveryAttempts))
-		GinkgoWriter.Printf("\n🔍 BR-NOT-052: MaxAttempts=5 enforced via per-notification mutex (DD-NOT-008 v2)\n\n")
+			GinkgoWriter.Printf("\n🔍 DEBUG: Mock Call Counts:\n")
+			GinkgoWriter.Printf("  File service calls: %d (expected: 5-6)\n", mockFileCallCount)
+			GinkgoWriter.Printf("  Console service calls: %d (expected: 1)\n", mockConsoleCallCount)
+			GinkgoWriter.Printf("  Status.DeliveryAttempts length: %d (expected: 6 total = 1 console + 5 file)\n", len(notification.Status.DeliveryAttempts))
+			GinkgoWriter.Printf("\n🔍 BR-NOT-052: MaxAttempts=5 enforced via per-notification mutex (DD-NOT-008 v2)\n\n")
 
-		// DD-NOT-008 v2: Per-notification mutex serializes concurrent reconciles
-		// within the orchestrator. However, the controller reads persisted attempt
-		// count from etcd BEFORE acquiring the lock. A stale read can allow at most
-		// 1 extra delivery when a reconcile fires between delivery completion and
-		// status persistence to etcd. Full elimination requires distributed locking
-		// (TD-NOT-001). Tolerate exactly 1 extra call.
-		Expect(mockFileCallCount).To(BeNumerically("<=", 6),
-			"BR-NOT-052: File service must be called at most MaxAttempts+1 (stale-read tolerance per DD-NOT-008 v2)")
-		Expect(mockFileCallCount).To(BeNumerically(">=", 5),
-			"BR-NOT-052: File service must be called at least MaxAttempts times")
-		Expect(mockConsoleCallCount).To(BeNumerically("<=", 2),
-			"BR-NOT-052: Console service must be called at most 1+1 (stale-read tolerance per DD-NOT-008 v2)")
-		Expect(mockConsoleCallCount).To(BeNumerically(">=", 1),
-			"Console service must be called at least once (succeeds on first attempt)")
+			// DD-NOT-008 v2: Per-notification mutex serializes concurrent reconciles
+			// within the orchestrator. However, the controller reads persisted attempt
+			// count from etcd BEFORE acquiring the lock. A stale read can allow at most
+			// 1 extra delivery when a reconcile fires between delivery completion and
+			// status persistence to etcd. Full elimination requires distributed locking
+			// (TD-NOT-001). Tolerate exactly 1 extra call.
+			Expect(mockFileCallCount).To(BeNumerically("<=", 6),
+				"BR-NOT-052: File service must be called at most MaxAttempts+1 (stale-read tolerance per DD-NOT-008 v2)")
+			Expect(mockFileCallCount).To(BeNumerically(">=", 5),
+				"BR-NOT-052: File service must be called at least MaxAttempts times")
+			Expect(mockConsoleCallCount).To(BeNumerically("<=", 2),
+				"BR-NOT-052: Console service must be called at most 1+1 (stale-read tolerance per DD-NOT-008 v2)")
+			Expect(mockConsoleCallCount).To(BeNumerically(">=", 1),
+				"Console service must be called at least once (succeeds on first attempt)")
 
 			// ========================================
 			// CLEANUP: Remove test notification
@@ -372,8 +371,7 @@ var _ = Describe("Controller Retry Logic (BR-NOT-054)", func() {
 			GinkgoWriter.Printf("  Status.DeliveryAttempts length: %d (expected: 3)\n", len(notification.Status.DeliveryAttempts))
 			GinkgoWriter.Printf("\n🔍 CRITICAL: If file calls=3 but status<3, it's a STATUS RECORDING BUG\n\n")
 
-			Expect(len(notification.Status.DeliveryAttempts)).To(Equal(3),
-				"Should stop retrying after first success (3 attempts: 2 failures + 1 success)")
+			Expect(notification.Status.DeliveryAttempts).To(HaveLen(3), "Should stop retrying after first success (3 attempts: 2 failures + 1 success)")
 			Expect(mockFileCallCount).To(Equal(3),
 				"🔍 CRITICAL: File service should be called exactly 3 times")
 			Expect(notification.Status.SuccessfulDeliveries).To(Equal(1),

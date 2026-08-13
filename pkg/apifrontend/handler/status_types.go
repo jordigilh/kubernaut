@@ -114,6 +114,10 @@ func addPhaseSpecificMetadata(meta map[string]any, rr *remediationv1.Remediation
 		if rr.Status.SkipReason != "" {
 			meta["skip_reason"] = string(rr.Status.SkipReason)
 		}
+	default:
+		// Pending/Processing/Analyzing/Cancelled have no phase-specific
+		// metadata to add beyond the generic fields BuildPhaseMetadata
+		// already set before calling here.
 	}
 }
 

@@ -117,7 +117,7 @@ var _ = Describe("IT #2098 — present_decision ordering guard through the full 
 
 		result, runErr := runnable.Run(toolCtx, retryArgs)
 		Expect(runErr).NotTo(HaveOccurred())
-		Expect(result["presented"]).To(Equal(true))
+		Expect(result["presented"]).To(BeTrue())
 
 		message, _ := result["message"].(string)
 		Expect(message).To(ContainSubstring("crashloop-rollback-v1"),

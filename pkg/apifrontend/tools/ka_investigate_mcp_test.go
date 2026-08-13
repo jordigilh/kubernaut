@@ -421,7 +421,7 @@ var _ = Describe("A2A status channel routing — event type aware emission", fun
 			tools.BridgeEventsToA2A(ctx, eventCh, tools.BridgeInactivityTimeout)
 
 			events := queue.Events()
-			Expect(len(events)).To(BeNumerically(">=", 1))
+			Expect(events).ToNot(BeEmpty())
 
 			var statusEvents []*a2a.TaskStatusUpdateEvent
 			for _, evt := range events {

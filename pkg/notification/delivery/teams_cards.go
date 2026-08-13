@@ -126,6 +126,9 @@ func buildHeaderSection(notification *notificationv1alpha1.NotificationRequest) 
 	case notificationv1alpha1.NotificationPriorityHigh:
 		prefix = "HIGH: "
 		color = colorOrSeverityWarning
+	default:
+		// Medium/Low priority get no special prefix/color -- only
+		// Critical/High warrant visually flagging the card header.
 	}
 
 	header := CardElement{

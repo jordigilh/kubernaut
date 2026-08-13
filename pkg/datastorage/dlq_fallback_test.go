@@ -213,7 +213,7 @@ var _ = Describe("DataStorage DLQ Fallback Logic", func() {
 				Expect(err).NotTo(HaveOccurred())
 				Expect(mockDLQClient.EnqueueBatchCallCount()).To(Equal(1))
 				enqueuedBatch := mockDLQClient.EnqueueBatchArgsForCall(0)
-				Expect(len(enqueuedBatch)).To(Equal(3))
+				Expect(enqueuedBatch).To(HaveLen(3))
 			})
 		})
 	})

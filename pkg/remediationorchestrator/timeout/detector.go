@@ -119,6 +119,10 @@ func (d *Detector) CheckPhaseTimeout(rr *remediationv1.RemediationRequest) Timeo
 			t := rr.Status.ExecutingStartTime.Time
 			phaseStartTime = &t
 		}
+	default:
+		// Only these 3 phases track a per-phase start time / support
+		// per-phase timeout detection (BR-ORCH-028); other phases have no
+		// phaseStartTime, so the nil check below is a no-op for them.
 	}
 
 	if phaseStartTime == nil {

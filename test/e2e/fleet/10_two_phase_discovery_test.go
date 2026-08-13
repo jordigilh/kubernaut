@@ -178,8 +178,7 @@ var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), 
 			g.Expect(err).ToNot(HaveOccurred(),
 				"AC-3: tool call through two-phase discovery must succeed end-to-end")
 		}).WithTimeout(60 * time.Second).WithPolling(5 * time.Second).Should(Succeed())
-		Expect(len(result.Content)).To(BeNumerically(">=", 1),
-			"tool call response must contain at least one content block with namespace data")
+		Expect(result.Content).ToNot(BeEmpty(), "tool call response must contain at least one content block with namespace data")
 		Expect(result.IsError).To(BeFalse(),
 			"tool call must not return an error result")
 	})

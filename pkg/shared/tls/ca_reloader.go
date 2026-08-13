@@ -132,7 +132,15 @@ func buildCertPool(pemData []byte) (*x509.CertPool, error) {
 // buildCATransport creates an http.Transport configured with the given CA pool.
 // Issue #748: Applies the process-wide SecurityProfile when set (OCP deployments).
 func buildCATransport(pool *x509.CertPool) *http.Transport {
-	t := http.DefaultTransport.(*http.Transport).Clone()
+	var t *http.Transport
+	if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+		t = defaultTransport.Clone()
+	} else {
+		// net/http guarantees http.DefaultTransport is *http.Transport
+		// unless something has reassigned the package var -- fall back to
+		// a bare Transport rather than panic in that unlikely case.
+		t = &http.Transport{}
+	}
 	t.IdleConnTimeout = 15 * time.Second // Issue #853: prevents stale connection reuse after pod rescheduling
 	t.TLSClientConfig = &tls.Config{
 		RootCAs:    pool,

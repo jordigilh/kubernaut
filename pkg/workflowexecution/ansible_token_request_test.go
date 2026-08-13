@@ -210,8 +210,7 @@ var _ = Describe("Ansible TokenRequest Credential Injection [#501]", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result.ResourceName).To(Equal("awx-job-42"),
 				"ResourceName should match the AWX job ID format")
-			Expect(result.Warnings).To(HaveLen(0),
-				"no warnings expected when using in-cluster fallback")
+			Expect(result.Warnings).To(BeEmpty(), "no warnings expected when using in-cluster fallback")
 		})
 	})
 
@@ -224,8 +223,7 @@ var _ = Describe("Ansible TokenRequest Credential Injection [#501]", func() {
 			result, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
 
 			Expect(err).ToNot(HaveOccurred())
-			Expect(result.Warnings).To(HaveLen(0),
-				"no warning expected when granted TTL (2h) >= execution timeout (30m)")
+			Expect(result.Warnings).To(BeEmpty(), "no warning expected when granted TTL (2h) >= execution timeout (30m)")
 		})
 
 		It("UT-WE-501-008: Warning when API server shortens token TTL below timeout", func() {

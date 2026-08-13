@@ -183,6 +183,10 @@ func (r *Reconciler) getEffectivePhaseTimeout(rr *remediationv1.RemediationReque
 			if rr.Status.TimeoutConfig.Executing != nil {
 				return rr.Status.TimeoutConfig.Executing.Duration
 			}
+		default:
+			// Only these 3 phases support a per-RR override (AC-028-5); all
+			// other phases fall through to the controller-level defaults
+			// switch below, which explicitly returns 0 for them.
 		}
 	}
 

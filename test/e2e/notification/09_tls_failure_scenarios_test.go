@@ -175,8 +175,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 				notif.Status.Phase, len(notif.Status.DeliveryAttempts))
 
 			// BUSINESS OUTCOME: Graceful handling validated (service operational)
-			Expect(len(notif.Status.DeliveryAttempts)).To(BeNumerically(">", 0),
-				"Should have delivery attempts")
+			Expect(notif.Status.DeliveryAttempts).ToNot(BeEmpty(), "Should have delivery attempts")
 		})
 
 		It("should handle certificate validation in multi-channel scenario", func() {
@@ -275,8 +274,7 @@ var _ = Describe("TLS/HTTPS Failure Scenarios", func() {
 
 			// CORRECTNESS: Retry policy respected
 			if notif.Status.Phase == notificationv1alpha1.NotificationPhaseFailed {
-				Expect(len(notif.Status.DeliveryAttempts)).To(BeNumerically(">=", 1),
-					"Should attempt delivery at least once before failing")
+				Expect(notif.Status.DeliveryAttempts).ToNot(BeEmpty(), "Should attempt delivery at least once before failing")
 				Expect(len(notif.Status.DeliveryAttempts)).To(BeNumerically("<=", 5),
 					"Should respect MaxAttempts (5) from retry policy")
 			}

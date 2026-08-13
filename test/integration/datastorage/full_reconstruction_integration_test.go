@@ -300,7 +300,7 @@ var _ = Describe("Full RR Reconstruction Integration Tests (BR-AUDIT-005 v2.0)",
 			Expect(rr.Status.TimeoutConfig.Executing.Duration.String()).To(Equal("15m0s"), "Gap #8: Executing timeout from orchestrator.lifecycle.created")
 
 			// Validate validation warnings (should be minimal with complete audit trail)
-			Expect(validation.Warnings).To(HaveLen(0), "Should have no warnings with complete audit trail")
+			Expect(validation.Warnings).To(BeEmpty(), "Should have no warnings with complete audit trail")
 
 			// Validate metadata
 			Expect(rr.Name).To(ContainSubstring(correlationID), "RR name should contain correlation ID")

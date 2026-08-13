@@ -66,7 +66,7 @@ var _ = Describe("IT-KA-MCP-007: Lease CRUD lifecycle — PR4 BR-INTERACTIVE-005
 
 		leaseList = &coordinationv1.LeaseList{}
 		Expect(sharedK8sClient.List(context.Background(), leaseList, client.InNamespace(nsName))).To(Succeed())
-		Expect(leaseList.Items).To(HaveLen(0))
+		Expect(leaseList.Items).To(BeEmpty())
 
 		// Verify second takeover on same rrID works after release
 		sess2, err := mgr.Takeover(context.Background(), "rr-crud-001", user)
