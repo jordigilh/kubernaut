@@ -106,7 +106,21 @@ type gateRecordingAuditStore struct {
 func (s *gateRecordingAuditStore) StoreAudit(_ context.Context, event *audit.AuditEvent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.events = append(s.events, event)
+	// #2120: snapshot Data at call time rather than storing the raw pointer,
+	// mirroring real production audit stores (internal/kubernautagent/audit/
+	// ds_store.go's DSAuditStore/BufferedDSAuditStore), which serialize the
+	// event into an outbound request synchronously here and never see later
+	// mutations. Storing the raw *audit.AuditEvent pointer previously masked
+	// a bug where callers mutated event.Data AFTER this call returned -- a
+	// real store would have missed that mutation, but a live pointer read by
+	// the test after Investigate() returned would not.
+	snapshot := *event
+	dataCopy := make(map[string]interface{}, len(event.Data))
+	for k, v := range event.Data {
+		dataCopy[k] = v
+	}
+	snapshot.Data = dataCopy
+	s.events = append(s.events, &snapshot)
 	return nil
 }
 
