@@ -89,11 +89,52 @@ No Wiring Manifest row: both gates already wire into the production
 `Investigate()` path; this change modifies their internal retry-handling
 and audit-emission logic without adding a new production entry point.
 
+### Follow-up discovery: `retry_outcome` doesn't actually reach Data Storage today (tracked separately, not fixed here)
+
+Post-implementation review asked whether a DB round-trip test (query
+Data Storage/Postgres by `correlation_id` after a real `Investigate()`
+call, confirming `retry_outcome` is queryable from the persisted audit
+trail per BR-AUDIT-005/SOC2 CC8.1) was needed to fully prove the
+dead-mutation fix above. Investigation found it would fail regardless of
+the ordering fix: both gates' audit events use
+`EventType: audit.EventTypeLLMRequest`, which serializes through
+`buildLLMRequestPayload` (`internal/kubernautagent/audit/ds_payloads.go`)
+into the OpenAPI-generated `ogenclient.LLMRequestPayload` -- a fixed
+schema (`model`, `prompt_length`, `prompt_preview`, `event_id`,
+`incident_id`, `toolsets_enabled`) with no passthrough for arbitrary
+`Data` keys. `retry_outcome` (and the pre-existing `ambiguous_kind`/
+`conflicting_groups` fields `IT-KA-1044-005` already asserts on) are
+silently dropped before the outbound `AuditEventRequest` is even built.
+
+This is a pre-existing schema gap, not something #2119/#2121 caused or
+can fix in scope -- fixing it is a Data Storage API contract change
+(OpenAPI schema + ogen codegen), not a test-only change. Tracked as
+[#2141](https://github.com/jordigilh/kubernaut/issues/2141) for its own
+preflight/plan. Decision: keep this PR scoped to the in-process ordering
+fix (still correct and necessary once the schema gap is eventually
+closed) and its UT proof; no DB round-trip IT was added here since it
+cannot currently pass for a reason unrelated to this fix's correctness.
+
+### Independent hardening landed in this same PR: IT-level audit fixture had the identical masking flaw
+
+While investigating the above, `capturingAuditStore`
+(`test/integration/kubernautagent/investigator/suite_test.go`) -- the
+shared IT-tier fixture behind `IT-KA-1044-*`, `IT-KA-433-AP-*`,
+`IT-KA-851-AP-*`, and `IT-KA-947-*` -- was found to have the exact same
+pointer-aliasing flaw the pre-fix `gateRecordingAuditStore` unit double
+had: `c.events = append(c.events, event)` stores the raw pointer, so any
+of those ~15 existing IT specs reading `auditStore.events` after
+`Investigate()` returns would see final-state data regardless of when
+`StoreAudit` was actually called, masking this same class of bug at the
+IT tier too. Fixed to snapshot `event.Data` at call time, mirroring the
+unit-level fix and real `DSAuditStore` semantics. This is fixture
+hardening, not a new business-behavior test -- see Section 5.
+
 ## 3. FedRAMP Control Mapping
 
 | Control | Title | Relevance |
 |---|---|---|
-| **AU-3** | Content of Audit Records | The audit trail must distinguish "the LLM re-evaluated and answered" from "the LLM never engaged with the correction at all," and must actually persist that distinction (fixing the dead-mutation defect) rather than silently dropping it before it reaches the real audit store. |
+| **AU-3** | Content of Audit Records | The audit trail must distinguish "the LLM re-evaluated and answered" from "the LLM never engaged with the correction at all," and must actually persist that distinction (fixing the dead-mutation defect) rather than silently dropping it before it reaches the real audit store. **Caveat**: full AU-3 satisfaction (the field actually reconstructable from Data Storage by `correlation_id`) is blocked on the pre-existing schema gap tracked in [#2141](https://github.com/jordigilh/kubernaut/issues/2141) -- this fix corrects in-process ordering so the field is *ready* to persist once that gap closes, and is proven correct at the UT tier via a snapshot-at-call-time double, not yet via a real Data Storage round-trip. |
 | **SI-10** | Information Input/Output Validation | A gate correction must be actually delivered and answered before its result is trusted; an undeclared-tool response must not be silently conflated with a validated confirmation. |
 
 ## 4. Pyramid Invariant — Test Scenario Inventory
@@ -127,6 +168,17 @@ upstream fix, per this package's convention.)
 
 ## 5. Validation Results
 
+- `capturingAuditStore` fixture fix
+  (`test/integration/kubernautagent/investigator/suite_test.go`): compiles
+  clean (`go vet ./test/integration/kubernautagent/investigator/...`).
+  Could not be executed in this environment (no local Docker daemon, no
+  `envtest`/kubebuilder binaries) -- will be validated by
+  `ci-pipeline.yml`'s kubernaut-agent integration job on push. This is a
+  narrow, mechanical change (identical to the already-proven unit-level
+  snapshot fix) affecting how ~15 pre-existing `IT-KA-*` specs observe
+  audit events they already assert on; it does not change what those
+  specs assert, only when the observed data is captured relative to
+  `StoreAudit`.
 - `go test ./internal/kubernautagent/investigator/...` -- pass, 366/366
   specs (including the 6 new UT-KA-2120-XXX specs above plus 4
   UT-KA-2118-XXX specs from the co-ported #2119 fix; UT-KA-2120-003 required
