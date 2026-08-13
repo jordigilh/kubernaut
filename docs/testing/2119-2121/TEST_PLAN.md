@@ -129,13 +129,20 @@ new production entry point.
   undeclared-tool-retry/audit-timing behavior are pure business-logic
   properties of the two gates' retry-handling and audit-emission code,
   fully reproducible with a mock `llm.Client` and no external dependencies.
-- **IT/E2E**: not added net-new. Both gates' wiring into the production
-  `Investigate()` path already exists and is already exercised by the
-  existing `apiversion_gate_test.go`/`gate_history_propagation_1936_test.go`/
-  `gate_keepalive_2088_test.go` suites plus this fix's own UT specs (which
-  call through that same real entry point); this change modifies internal
-  retry-handling and audit-emission behavior without adding a new wiring
-  point.
+- **IT/E2E for this fix itself**: not added net-new. Both gates' wiring into
+  the production `Investigate()` path already exists and is already
+  exercised by the existing `apiversion_gate_test.go`/
+  `gate_history_propagation_1936_test.go`/`gate_keepalive_2088_test.go`
+  suites plus this fix's own UT specs (which call through that same real
+  entry point); this change modifies internal retry-handling and
+  audit-emission behavior without adding a new wiring point.
+- **IT/E2E were added net-new for a related, separately-tracked gap**:
+  verifying this fix's audit trail surfaced [#2141](https://github.com/jordigilh/kubernaut/issues/2141)
+  (the `retry_outcome`/`ambiguous_kind`/`conflicting_groups` fields set here
+  never reached Data Storage due to a fixed `LLMRequestPayload` schema,
+  independent of this fix's correctness). See
+  `docs/testing/2141/TEST_PLAN.md` for that fix's own IT/E2E proof —
+  consolidated into this same PR/branch given CI resource constraints.
 
 ## 5. Validation Results
 
