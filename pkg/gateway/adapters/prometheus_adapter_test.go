@@ -80,8 +80,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 				"Deduplication requires consistent fingerprints for identical alerts")
 
 			// BUSINESS RULE: SHA256 produces 64-character hex string
-			Expect(len(signal1.Fingerprint)).To(Equal(64),
-				"SHA256 fingerprint must be 64 hex characters")
+			Expect(signal1.Fingerprint).To(HaveLen(64), "SHA256 fingerprint must be 64 hex characters")
 			Expect(signal1.Fingerprint).To(MatchRegexp("^[a-f0-9]{64}$"),
 				"Fingerprint must be valid SHA256 hex string")
 		})
@@ -698,7 +697,7 @@ var _ = Describe("BR-GATEWAY-002: Prometheus Adapter - Parse AlertManager Webhoo
 			// BUSINESS RULE: Annotation should be present (truncated or full)
 			desc, exists := signal.Annotations["description"]
 			Expect(exists).To(BeTrue(), "Annotation should exist even if long")
-			Expect(len(desc)).To(BeNumerically(">", 0), "Annotation should have content")
+			Expect(desc).ToNot(BeEmpty(), "Annotation should have content")
 		})
 
 		It("[GW-UNIT-ADP-007] should handle empty annotations without error", func() {

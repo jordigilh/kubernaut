@@ -32,8 +32,8 @@ var _ = Describe("UT-DS-1048-P5: PEL Recovery (AU-2)", func() {
 			Expect(server.PelRecoveryMinIdleTime).To(Equal(60 * time.Second))
 			Expect(server.PelRecoveryClaimCount).To(Equal(int64(10)))
 
-			Expect(server.PelRecoveryClaimInterval > 0).To(BeTrue())
-			Expect(server.PelRecoveryMinIdleTime > 0).To(BeTrue())
+			Expect(server.PelRecoveryClaimInterval).To(BeNumerically(">", 0))
+			Expect(server.PelRecoveryMinIdleTime).To(BeNumerically(">", 0))
 			Expect(server.PelRecoveryClaimCount).To(BeNumerically(">", 0))
 		})
 	})

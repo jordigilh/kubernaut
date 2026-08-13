@@ -62,7 +62,15 @@ func NewHTTPClientWithCA(caFile string, timeout time.Duration) (*http.Client, er
 		return nil, fmt.Errorf("CA file %q: %w", caFile, err)
 	}
 
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	var transport *http.Transport
+	if defaultTransport, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = defaultTransport.Clone()
+	} else {
+		// net/http guarantees http.DefaultTransport is *http.Transport
+		// unless something has reassigned the package var -- fall back to
+		// a bare Transport rather than panic in that unlikely case.
+		transport = &http.Transport{}
+	}
 	transport.TLSClientConfig = &tls.Config{
 		RootCAs:    pool,
 		MinVersion: tls.VersionTLS12,

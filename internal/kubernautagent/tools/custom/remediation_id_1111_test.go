@@ -108,7 +108,7 @@ var _ = Describe("Issue #1111: Remediation ID forwarding to discovery filters", 
 	Describe("UT-KA-1111-005: Max-length RemediationID forwarded without truncation", func() {
 		It("should forward a 256-char RemediationID as-is", func() {
 			longID := "rr-" + strings.Repeat("a", 253)
-			Expect(len(longID)).To(Equal(256))
+			Expect(longID).To(HaveLen(256))
 
 			fake := &fakeWorkflowDS{}
 			allTools := newTestTools(fake)

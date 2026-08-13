@@ -82,7 +82,8 @@ func (s *DelegatingEventStore) LookupInteractiveSession(mcpSessionID string) (st
 	if !ok {
 		return "", false
 	}
-	return val.(string), true
+	id, ok := val.(string)
+	return id, ok
 }
 
 // ClosedSessions returns the channel that receives closed MCP session IDs.

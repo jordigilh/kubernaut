@@ -107,8 +107,23 @@ func (r *Reconciler) emitBlockedK8sEvent(rr *remediationv1.RemediationRequest, b
 		r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonConsecutiveFailureBlocked,
 			fmt.Sprintf("Target blocked: %s", blocked.Message))
 	case remediationv1.BlockReasonIneffectiveChain:
-		r.Recorder.Event(rr, corev1.EventTypeWarning, "IneffectiveChainDetected",
+		r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonIneffectiveChainDetected,
 			fmt.Sprintf("Escalating to manual review: %s", blocked.Message))
+	// Issue #2136: DuplicateInProgress/ResourceBusy/UnmanagedResource
+	// previously got no K8s Event at all (found during exhaustive-linter
+	// triage). DuplicateInProgress/ResourceBusy are expected coordination
+	// outcomes (Normal, like CooldownActive above); UnmanagedResource
+	// usually means a resource is missing required labeling and warrants
+	// operator attention (Warning, like ConsecutiveFailures above).
+	case remediationv1.BlockReasonDuplicateInProgress:
+		r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonDuplicateBlocked,
+			fmt.Sprintf("Remediation deferred: %s", blocked.Message))
+	case remediationv1.BlockReasonResourceBusy:
+		r.Recorder.Event(rr, corev1.EventTypeNormal, events.EventReasonResourceBusyBlocked,
+			fmt.Sprintf("Remediation deferred: %s", blocked.Message))
+	case remediationv1.BlockReasonUnmanagedResource:
+		r.Recorder.Event(rr, corev1.EventTypeWarning, events.EventReasonUnmanagedResourceBlocked,
+			fmt.Sprintf("Target blocked: %s", blocked.Message))
 	}
 }
 

@@ -207,13 +207,12 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// CORRECTNESS: Complete audit trail
 			Expect(incidentResp.ValidationAttemptsHistory).ToNot(BeEmpty(),
 				"validation_attempts_history must be present for debugging")
-			Expect(len(incidentResp.ValidationAttemptsHistory)).To(Equal(3),
-				"MOCK_MAX_RETRIES_EXHAUSTED triggers exactly 3 validation attempts")
+			Expect(incidentResp.ValidationAttemptsHistory).To(HaveLen(3), "MOCK_MAX_RETRIES_EXHAUSTED triggers exactly 3 validation attempts")
 
-		// Verify each attempt has required fields
-		for i, attempt := range incidentResp.ValidationAttemptsHistory {
-			Expect(attempt.Attempt).To(Equal(i+1),
-				"attempt number must be sequential")
+			// Verify each attempt has required fields
+			for i, attempt := range incidentResp.ValidationAttemptsHistory {
+				Expect(attempt.Attempt).To(Equal(i+1),
+					"attempt number must be sequential")
 				Expect(attempt.IsValid).To(BeFalse(),
 					"is_valid must be false for failed validation")
 				Expect(attempt.Errors).ToNot(BeEmpty(),
@@ -325,8 +324,7 @@ var _ = Describe("E2E-KA Incident Analysis", Label("e2e", "ka", "incident"), fun
 			// BEHAVIOR: Complete response structure
 			Expect(incidentResp.IncidentID).To(Equal("test-struct-005"),
 				"incident_id must match request")
-			Expect(len(incidentResp.Analysis) > 0).To(BeTrue(),
-				"analysis field must be present")
+			Expect(incidentResp.Analysis).ToNot(BeEmpty(), "analysis field must be present")
 			Expect(true).To(BeTrue(),
 				"root_cause_analysis field must be present")
 			Expect(true).To(BeTrue(),

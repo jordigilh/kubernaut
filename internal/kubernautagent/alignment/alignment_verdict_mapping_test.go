@@ -26,8 +26,8 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("Fix 7: AlignmentVerdict mapping on InvestigationResult", func() {
@@ -125,7 +125,7 @@ var _ = Describe("Fix 7: AlignmentVerdict mapping on InvestigationResult", func(
 		Expect(result.AlignmentVerdict.Result).To(Equal("suspicious"))
 		Expect(result.AlignmentVerdict.Flagged).To(BeNumerically(">", 0))
 		Expect(result.AlignmentVerdict.Total).To(BeNumerically(">", 0))
-		Expect(len(result.AlignmentVerdict.Findings)).To(BeNumerically(">", 0))
+		Expect(result.AlignmentVerdict.Findings).ToNot(BeEmpty())
 
 		finding := result.AlignmentVerdict.Findings[0]
 		Expect(finding.StepKind).NotTo(BeEmpty())

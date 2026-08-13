@@ -251,7 +251,10 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentReconciles 
 		&eav1.EffectivenessAssessment{},
 		"spec.correlationID",
 		func(obj client.Object) []string {
-			ea := obj.(*eav1.EffectivenessAssessment)
+			ea, ok := obj.(*eav1.EffectivenessAssessment)
+			if !ok {
+				return nil
+			}
 			if ea.Spec.CorrelationID == "" {
 				return nil
 			}

@@ -16,7 +16,7 @@ var _ = Describe("RedactMap", func() {
 
 	It("returns empty map for empty input", func() {
 		result := security.RedactMap(map[string]string{})
-		Expect(result).To(HaveLen(0))
+		Expect(result).To(BeEmpty())
 	})
 
 	It("redacts known sensitive keys (case-insensitive)", func() {

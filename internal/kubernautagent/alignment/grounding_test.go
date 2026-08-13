@@ -626,7 +626,7 @@ var _ = Describe("Full-Context Grounding Review — #1096", func() {
 
 				wr := observer.WaitForCompletion(10 * time.Second)
 				Expect(wr.Complete).To(BeTrue())
-				Expect(len(wr.Observations)).To(Equal(10))
+				Expect(wr.Observations).To(HaveLen(10))
 			})
 		})
 

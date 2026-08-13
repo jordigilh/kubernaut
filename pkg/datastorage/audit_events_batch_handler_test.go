@@ -86,7 +86,7 @@ var _ = Describe("Audit Events Batch Handler Unit Tests (DD-AUDIT-002)", func() 
 			var payloads []map[string]interface{}
 			err = json.Unmarshal(body, &payloads)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(payloads)).To(Equal(0), "Empty array should have length 0")
+			Expect(payloads).To(BeEmpty(), "Empty array should have length 0")
 		})
 	})
 

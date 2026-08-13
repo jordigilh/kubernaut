@@ -30,8 +30,8 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
 	"github.com/jordigilh/kubernaut/pkg/datastorage/models"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 var _ = Describe("BR-KA-191: Parameter Validation Self-Correction Integration (#1170)", func() {
@@ -104,8 +104,7 @@ var _ = Describe("BR-KA-191: Parameter Validation Self-Correction Integration (#
 			firstAttempt := result.ValidationAttemptsHistory[0]
 			Expect(firstAttempt.IsValid).To(BeFalse(),
 				"First attempt should fail due to bad parameters")
-			Expect(len(firstAttempt.Errors)).To(BeNumerically(">=", 1),
-				"First attempt should record parameter validation errors")
+			Expect(firstAttempt.Errors).ToNot(BeEmpty(), "First attempt should record parameter validation errors")
 
 			secondAttempt := result.ValidationAttemptsHistory[1]
 			Expect(secondAttempt.IsValid).To(BeTrue(),
@@ -260,7 +259,7 @@ var _ = Describe("BR-KA-191: Parameter Validation Self-Correction Integration (#
 			Expect(failEvent.Data["is_valid"]).To(BeFalse())
 			errList, ok := failEvent.Data["errors"].([]string)
 			Expect(ok).To(BeTrue(), "errors should be []string")
-			Expect(len(errList)).To(BeNumerically(">=", 1))
+			Expect(errList).ToNot(BeEmpty())
 			Expect(errList[0]).To(ContainSubstring("REPLICA_COUNT"),
 				"Audit event should contain parameter-level error detail")
 		})

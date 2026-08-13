@@ -201,6 +201,38 @@ const (
 	// Priority: P2
 	EventReasonConsecutiveFailureBlocked = "ConsecutiveFailureBlocked"
 
+	// EventReasonIneffectiveChainDetected is emitted when a routing block is
+	// escalated to manual review because remediation has been ineffective.
+	// Type: Warning
+	// Priority: P2
+	EventReasonIneffectiveChainDetected = "IneffectiveChainDetected"
+
+	// EventReasonDuplicateBlocked is emitted when a RemediationRequest is
+	// blocked because another RR with the same signal fingerprint is
+	// already active; this RR will inherit the original's outcome
+	// (DD-RO-002-ADDENDUM, Issue #1546 exhaustive-linter follow-up).
+	// Type: Normal (expected coordination, not a failure)
+	// Priority: P3
+	EventReasonDuplicateBlocked = "DuplicateBlocked"
+
+	// EventReasonResourceBusyBlocked is emitted when a RemediationRequest is
+	// blocked because another WorkflowExecution is already running against
+	// the same target resource (DD-RO-002, DD-WE-001, Issue #1546
+	// exhaustive-linter follow-up).
+	// Type: Normal (expected coordination, not a failure)
+	// Priority: P3
+	EventReasonResourceBusyBlocked = "ResourceBusyBlocked"
+
+	// EventReasonUnmanagedResourceBlocked is emitted when a RemediationRequest
+	// is blocked because its target resource/namespace lacks the
+	// kubernaut.ai/managed=true label, or scope validation itself failed
+	// (BR-SCOPE-001, FR-SCOPE-003, Issue #1546 exhaustive-linter follow-up).
+	// Unlike DuplicateBlocked/ResourceBusyBlocked, this warrants operator
+	// attention: it usually means a resource is missing required labeling.
+	// Type: Warning
+	// Priority: P2
+	EventReasonUnmanagedResourceBlocked = "UnmanagedResourceBlocked"
+
 	// EventReasonInheritedCompleted is emitted when a deduplicated RR inherits
 	// Completed from the original WorkflowExecution (Issue #190).
 	// Type: Normal

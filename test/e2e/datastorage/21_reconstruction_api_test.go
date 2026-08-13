@@ -112,7 +112,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 			gatewayPayload := ogenclient.GatewayAuditPayload{
 				EventType:   "gateway.signal.received",
 				SignalType:  ogenclient.GatewayAuditPayloadSignalTypeAlert,
-				SignalName:   "HighCPUUsage",        // string, not OptString
+				SignalName:  "HighCPUUsage",        // string, not OptString
 				Namespace:   "production",          // string, not OptString
 				Fingerprint: "e2e-fingerprint-123", // string, not OptString
 				SignalLabels: ogenclient.NewOptGatewayAuditPayloadSignalLabels(ogenclient.GatewayAuditPayloadSignalLabels{
@@ -457,8 +457,7 @@ var _ = Describe("E2E: Reconstruction REST API (BR-AUDIT-006)", Label("e2e", "re
 					"Completeness should be less than 80% for partial data")
 
 				// Warnings present for missing fields
-				Expect(len(resp.Validation.Warnings)).To(BeNumerically(">=", 1),
-					"Should have at least 1 warning for missing optional fields")
+				Expect(resp.Validation.Warnings).ToNot(BeEmpty(), "Should have at least 1 warning for missing optional fields")
 
 				GinkgoWriter.Printf("✅ Partial reconstruction succeeded: completeness=%d%%, warnings=%d\n",
 					resp.Validation.Completeness,

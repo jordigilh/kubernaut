@@ -262,10 +262,10 @@ func buildQueryPagination(args []interface{}, total int, eventCount int) *Pagina
 	limit := 0
 	offset := 0
 	if len(args) >= 2 {
-		limit = args[len(args)-2].(int)
-		offset = args[len(args)-1].(int)
+		limit, _ = args[len(args)-2].(int)
+		offset, _ = args[len(args)-1].(int)
 	} else if len(args) == 1 {
-		limit = args[0].(int)
+		limit, _ = args[0].(int)
 	}
 	return &PaginationMetadata{
 		Limit:   limit,

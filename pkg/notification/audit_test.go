@@ -485,7 +485,7 @@ var _ = Describe("Audit Helpers", func() {
 				var eventData map[string]interface{}
 				err = json.Unmarshal(eventDataBytes, &eventData)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(len(eventData["subject"].(string))).To(Equal(15000))
+				Expect(eventData["subject"].(string)).To(HaveLen(15000))
 			})
 		})
 

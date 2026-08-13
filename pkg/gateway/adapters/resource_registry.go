@@ -530,7 +530,8 @@ func (r *APIResourceRegistry) CheckExistence(ctx context.Context, gvr schema.Gro
 		return exists, nil
 	})
 
-	return v.(bool)
+	exists, _ := v.(bool)
+	return exists
 }
 
 // evictExpiredLocked removes expired cache entries and, if still over capacity,

@@ -75,7 +75,7 @@ var _ = Describe("RR CRD Lifecycle (G4)", Label("e2e", "phase2", "g4"), func() {
 		Expect(json.Unmarshal([]byte(text), &out)).To(Succeed())
 		rem, ok := out["remediations"].([]interface{})
 		Expect(ok).To(BeTrue(), "list result should include remediations array")
-		Expect(len(rem)).To(BeNumerically(">=", 1))
+		Expect(rem).ToNot(BeEmpty())
 		Expect(strings.ToLower(text)).To(ContainSubstring(strings.ToLower(rrName)))
 
 		By("TC-E2E-RR-05: kubernaut_get_remediation returns detail for RR")

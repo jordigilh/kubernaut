@@ -35,6 +35,7 @@ import (
 
 	notificationv1alpha1 "github.com/jordigilh/kubernaut/api/notification/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	kubernautnotif "github.com/jordigilh/kubernaut/pkg/notification"
 	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	"github.com/jordigilh/kubernaut/pkg/notification/credentials"
@@ -554,74 +555,61 @@ func (r *NotificationRequestReconciler) auditMessageFailed(ctx context.Context, 
 	return nil
 }
 
-// auditMessageAcknowledged audits notification acknowledgment (non-blocking).
-// Emitted when a notification transitions to Sent (all deliveries succeeded).
-func (r *NotificationRequestReconciler) auditMessageAcknowledged(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+// auditSimpleEvent is the shared non-blocking audit-emission path for event
+// types that need no extra context beyond the notification itself (dupl:
+// extracted from auditMessageAcknowledged/auditMessageEscalated, which were
+// identical apart from the event type string and the factory call).
+func (r *NotificationRequestReconciler) auditSimpleEvent(
+	ctx context.Context,
+	notification *notificationv1alpha1.NotificationRequest,
+	eventType string,
+	createEvent func() (*ogenclient.AuditEventRequest, error),
+) error {
 	if r.AuditStore == nil || r.AuditManager == nil {
 		err := fmt.Errorf("audit store or helpers nil - audit is MANDATORY per ADR-032 §1")
 		log := log.FromContext(ctx)
-		log.Error(err, "CRITICAL: Cannot record audit event", "event_type", "message.acknowledged")
+		log.Error(err, "CRITICAL: Cannot record audit event", "event_type", eventType)
 		return err
 	}
 
 	log := log.FromContext(ctx)
 
 	notificationKey := fmt.Sprintf("%s/%s", notification.Namespace, notification.Name)
-	eventKey := "message.acknowledged"
-	if !r.shouldEmitAuditEvent(notificationKey, eventKey) {
-		log.V(1).Info("Audit event already emitted, skipping duplicate", "event_type", "message.acknowledged")
+	if !r.shouldEmitAuditEvent(notificationKey, eventType) {
+		log.V(1).Info("Audit event already emitted, skipping duplicate", "event_type", eventType)
 		return nil
 	}
 
-	// DD-AUDIT-003 v2.2: ClusterID from NR spec
-	event, err := r.AuditManager.CreateMessageAcknowledgedEvent(notification, notification.Spec.ClusterID)
+	// DD-AUDIT-003 v2.2: ClusterID from NR spec (baked into createEvent by the caller)
+	event, err := createEvent()
 	if err != nil {
-		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.acknowledged")
+		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", eventType)
 		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
 	}
 
 	if err := r.AuditStore.StoreAudit(ctx, event); err != nil {
-		log.Error(err, "Failed to buffer audit event", "event_type", "message.acknowledged")
+		log.Error(err, "Failed to buffer audit event", "event_type", eventType)
 	} else {
-		r.markAuditEventEmitted(notificationKey, eventKey)
+		r.markAuditEventEmitted(notificationKey, eventType)
 	}
 
 	return nil
 }
 
+// auditMessageAcknowledged audits notification acknowledgment (non-blocking).
+// Emitted when a notification transitions to Sent (all deliveries succeeded).
+func (r *NotificationRequestReconciler) auditMessageAcknowledged(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
+	return r.auditSimpleEvent(ctx, notification, "message.acknowledged", func() (*ogenclient.AuditEventRequest, error) {
+		return r.AuditManager.CreateMessageAcknowledgedEvent(notification, notification.Spec.ClusterID)
+	})
+}
+
 // auditMessageEscalated audits notification escalation (non-blocking).
 // Emitted when a notification transitions to Failed (all retries exhausted).
 func (r *NotificationRequestReconciler) auditMessageEscalated(ctx context.Context, notification *notificationv1alpha1.NotificationRequest) error {
-	if r.AuditStore == nil || r.AuditManager == nil {
-		err := fmt.Errorf("audit store or helpers nil - audit is MANDATORY per ADR-032 §1")
-		log := log.FromContext(ctx)
-		log.Error(err, "CRITICAL: Cannot record audit event", "event_type", "message.escalated")
-		return err
-	}
-
-	log := log.FromContext(ctx)
-
-	notificationKey := fmt.Sprintf("%s/%s", notification.Namespace, notification.Name)
-	eventKey := "message.escalated"
-	if !r.shouldEmitAuditEvent(notificationKey, eventKey) {
-		log.V(1).Info("Audit event already emitted, skipping duplicate", "event_type", "message.escalated")
-		return nil
-	}
-
-	// DD-AUDIT-003 v2.2: ClusterID from NR spec
-	event, err := r.AuditManager.CreateMessageEscalatedEvent(notification, notification.Spec.ClusterID)
-	if err != nil {
-		log.Error(err, "Failed to create audit event - audit creation is MANDATORY per ADR-032 §1", "event_type", "message.escalated")
-		return fmt.Errorf("failed to create audit event (ADR-032 §1): %w", err)
-	}
-
-	if err := r.AuditStore.StoreAudit(ctx, event); err != nil {
-		log.Error(err, "Failed to buffer audit event", "event_type", "message.escalated")
-	} else {
-		r.markAuditEventEmitted(notificationKey, eventKey)
-	}
-
-	return nil
+	return r.auditSimpleEvent(ctx, notification, "message.escalated", func() (*ogenclient.AuditEventRequest, error) {
+		return r.AuditManager.CreateMessageEscalatedEvent(notification, notification.Spec.ClusterID)
+	})
 }
 
 // =============================================================================

@@ -64,7 +64,13 @@ func (m *Manager) RecordDeliveryAttempt(ctx context.Context, notification *notif
 			case notificationv1alpha1.DeliveryAttemptStatusSuccess:
 				successfulChannels[string(a.Channel)] = true
 				delete(failedChannels, string(a.Channel)) // Remove from failed if it later succeeds
-			case notificationv1alpha1.DeliveryAttemptStatusFailed:
+			// Timeout/Invalid are both non-success terminal outcomes for a
+			// channel and must count the same as Failed (exhaustive):
+			// otherwise a channel whose only attempts timed out or were
+			// rejected as invalid is silently excluded from both counters.
+			case notificationv1alpha1.DeliveryAttemptStatusFailed,
+				notificationv1alpha1.DeliveryAttemptStatusTimeout,
+				notificationv1alpha1.DeliveryAttemptStatusInvalid:
 				// Only count as failed if the channel never succeeded
 				if !successfulChannels[string(a.Channel)] {
 					failedChannels[string(a.Channel)] = true
@@ -227,7 +233,12 @@ func recalculateDeliveryCounters(notification *notificationv1alpha1.Notification
 		case notificationv1alpha1.DeliveryAttemptStatusSuccess:
 			successfulChannels[string(attempt.Channel)] = true
 			delete(failedChannels, string(attempt.Channel)) // Remove from failed if it later succeeds
-		case notificationv1alpha1.DeliveryAttemptStatusFailed:
+		// Timeout/Invalid are both non-success terminal outcomes for a
+		// channel and must count the same as Failed (exhaustive): see the
+		// matching case in AtomicStatusUpdate above for the full rationale.
+		case notificationv1alpha1.DeliveryAttemptStatusFailed,
+			notificationv1alpha1.DeliveryAttemptStatusTimeout,
+			notificationv1alpha1.DeliveryAttemptStatusInvalid:
 			// Only count as failed if the channel never succeeded
 			if !successfulChannels[string(attempt.Channel)] {
 				failedChannels[string(attempt.Channel)] = true

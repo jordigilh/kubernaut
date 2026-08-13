@@ -314,7 +314,7 @@ var _ = Describe("FileWatcher", func() {
 			hash1 := watcher.GetLastHash()
 			Expect(hash1).NotTo(BeEmpty())
 			// BR-SP-072: Full SHA256 hash (64 hex chars) for audit trail and policy version tracking
-			Expect(len(hash1)).To(Equal(64)) // Full SHA256 hex = 64 chars
+			Expect(hash1).To(HaveLen(64)) // Full SHA256 hex = 64 chars
 		})
 	})
 

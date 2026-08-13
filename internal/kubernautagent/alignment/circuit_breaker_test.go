@@ -28,8 +28,8 @@ import (
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/alignment"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/config"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // delayedInnerRunner simulates an inner investigation that submits steps to the
@@ -231,7 +231,7 @@ var _ = Describe("Circuit Breaker — #1076", func() {
 			// Parent cancellation should be treated as an error (shutdown), not circuit break
 			// The wrapper currently passes through errors from inner.Investigate
 			// This test validates the existing behavior is preserved
-			Expect(err).To(BeNil()) // inner returns result, no error
+			Expect(err).ToNot(HaveOccurred()) // inner returns result, no error
 		})
 	})
 

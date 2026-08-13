@@ -225,7 +225,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, ContinueOnF
 			logger.Info("✅ Export API returned successfully")
 
 			// Step 3: Verify response contains signature metadata
-			Expect(len(exportData.ExportMetadata.Signature)).To(BeNumerically(">", 0), "Export must contain digital signature")
+			Expect(exportData.ExportMetadata.Signature).ToNot(BeEmpty(), "Export must contain digital signature")
 			Expect(exportData.ExportMetadata.SignatureAlgorithm.Set).To(BeTrue(), "Export must specify signature algorithm")
 			Expect(exportData.ExportMetadata.SignatureAlgorithm.Value).To(Equal("SHA256withRSA"), "Signature algorithm must be SHA256withRSA")
 			logger.Info("✅ Export contains signature metadata",
@@ -241,7 +241,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, ContinueOnF
 			// Step 5: Verify certificate fingerprint exists
 			logger.Info("Step 5: Validating certificate fingerprint")
 			Expect(exportData.ExportMetadata.CertificateFingerprint.Set).To(BeTrue(), "Export must contain certificate fingerprint")
-			Expect(len(exportData.ExportMetadata.CertificateFingerprint.Value)).To(BeNumerically(">", 0), "Certificate fingerprint must have a value")
+			Expect(exportData.ExportMetadata.CertificateFingerprint.Value).ToNot(BeEmpty(), "Certificate fingerprint must have a value")
 			logger.Info("✅ Certificate fingerprint present",
 				"fingerprint", exportData.ExportMetadata.CertificateFingerprint.Value)
 
@@ -349,7 +349,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, ContinueOnF
 			logger.Info("✅ All individual events have valid hash chains")
 
 			// Step 5: Verify tampered_event_ids is empty
-			Expect(verification.TamperedEventIds).To(HaveLen(0), "No tampered events expected")
+			Expect(verification.TamperedEventIds).To(BeEmpty(), "No tampered events expected")
 			logger.Info("✅ No tampered events detected")
 
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -409,7 +409,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, ContinueOnF
 				"integrity", verification.ChainIntegrityPercentage.Value)
 
 			// Step 5: Verify tampered_event_ids contains the corrupted event
-			Expect(len(verification.TamperedEventIds)).To(BeNumerically(">=", 1), "Should detect at least 1 tampered event (hash chain breakage can cascade)")
+			Expect(verification.TamperedEventIds).ToNot(BeEmpty(), "Should detect at least 1 tampered event (hash chain breakage can cascade)")
 			logger.Info("✅ Tampered event IDs captured", "tampered_ids", verification.TamperedEventIds)
 
 			// Step 6: Verify corrupted event has hash_chain_valid: false
@@ -615,7 +615,7 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, ContinueOnF
 
 			// Step 4: Verify Digital Signature (CC8.1)
 			logger.Info("Step 4: Validating Digital Signature (CC8.1)")
-			Expect(len(exportData.ExportMetadata.Signature)).To(BeNumerically(">", 0), "Signature must be present")
+			Expect(exportData.ExportMetadata.Signature).ToNot(BeEmpty(), "Signature must be present")
 			Expect(exportData.ExportMetadata.SignatureAlgorithm.Set).To(BeTrue(), "SignatureAlgorithm must be present")
 			Expect(exportData.ExportMetadata.SignatureAlgorithm.Value).To(Equal("SHA256withRSA"))
 			err = verifyBase64Signature(exportData.ExportMetadata.Signature)
@@ -660,14 +660,14 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, ContinueOnF
 			// Step 7: Verify Certificate Fingerprint
 			logger.Info("Step 7: Validating Certificate Fingerprint")
 			Expect(exportData.ExportMetadata.CertificateFingerprint.Set).To(BeTrue(), "CertificateFingerprint must be present")
-			Expect(len(exportData.ExportMetadata.CertificateFingerprint.Value)).To(BeNumerically(">", 0), "CertificateFingerprint must have a value")
+			Expect(exportData.ExportMetadata.CertificateFingerprint.Value).ToNot(BeEmpty(), "CertificateFingerprint must have a value")
 			logger.Info("✅ Certificate fingerprint present",
 				"fingerprint", exportData.ExportMetadata.CertificateFingerprint.Value)
 
 			// Step 8: Verify Export Metadata (User Attribution)
 			logger.Info("Step 8: Validating Export Metadata (User Attribution)")
 			Expect(exportData.ExportMetadata.ExportedBy.Set).To(BeTrue(), "ExportedBy must be present")
-			Expect(len(exportData.ExportMetadata.ExportedBy.Value)).To(BeNumerically(">", 0), "ExportedBy must identify the exporter")
+			Expect(exportData.ExportMetadata.ExportedBy.Value).ToNot(BeEmpty(), "ExportedBy must identify the exporter")
 			Expect(exportData.ExportMetadata.TotalEvents).To(Equal(10))
 			Expect(exportData.ExportMetadata.ExportFormat).To(Equal(dsgen.AuditExportResponseExportMetadataExportFormatJSON))
 			logger.Info("✅ Export metadata validated",
@@ -748,9 +748,9 @@ var _ = Describe("SOC2 Compliance Features (cert-manager)", Ordered, ContinueOnF
 			// Verify signature and fingerprint
 			exportData, ok := resp.(*dsgen.AuditExportResponse)
 			Expect(ok).To(BeTrue())
-			Expect(len(exportData.ExportMetadata.Signature)).To(BeNumerically(">", 0), "Signature must be present")
+			Expect(exportData.ExportMetadata.Signature).ToNot(BeEmpty(), "Signature must be present")
 			Expect(exportData.ExportMetadata.CertificateFingerprint.Set).To(BeTrue(), "CertificateFingerprint must be present")
-			Expect(len(exportData.ExportMetadata.CertificateFingerprint.Value)).To(BeNumerically(">", 0), "CertificateFingerprint must have a value")
+			Expect(exportData.ExportMetadata.CertificateFingerprint.Value).ToNot(BeEmpty(), "CertificateFingerprint must have a value")
 
 			currentFingerprint := exportData.ExportMetadata.CertificateFingerprint.Value
 			logger.Info("✅ Current certificate validated",

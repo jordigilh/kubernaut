@@ -852,7 +852,7 @@ var _ = Describe("Utility Functions (BR-WE-014)", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Should have 3 user params + 1 TARGET_RESOURCE = 4
-			Expect(len(pr.Spec.Params)).To(Equal(4))
+			Expect(pr.Spec.Params).To(HaveLen(4))
 
 			paramMap := make(map[string]string)
 			for _, p := range pr.Spec.Params {

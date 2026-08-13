@@ -61,7 +61,7 @@ var _ = Describe("UT-KA-AUDIT-002: ResultToAuditJSON reasoning mapping", func() 
 		reasoning, ok := m["reasoning"].(map[string]interface{})
 		Expect(ok).To(BeTrue())
 		Expect(reasoning["text"]).To(Equal(r.Reasoning.Text))
-		Expect(reasoning["redacted"]).To(Equal(false))
+		Expect(reasoning["redacted"]).To(BeFalse())
 	})
 
 	It("should include redacted=true with empty text when reasoning was redacted by the provider", func() {
@@ -76,7 +76,7 @@ var _ = Describe("UT-KA-AUDIT-002: ResultToAuditJSON reasoning mapping", func() 
 		reasoning, ok := m["reasoning"].(map[string]interface{})
 		Expect(ok).To(BeTrue())
 		Expect(reasoning["text"]).To(BeEmpty())
-		Expect(reasoning["redacted"]).To(Equal(true))
+		Expect(reasoning["redacted"]).To(BeTrue())
 	})
 })
 
@@ -240,7 +240,7 @@ var _ = Describe("UT-KA-AUDIT-007: has_reasoning observability field", func() {
 
 		respEvents := capStore.eventsByType(audit.EventTypeLLMResponse)
 		Expect(respEvents).NotTo(BeEmpty())
-		Expect(respEvents[0].Data["has_reasoning"]).To(Equal(true))
+		Expect(respEvents[0].Data["has_reasoning"]).To(BeTrue())
 	})
 
 	It("should set has_reasoning=false on the LLM response audit event when no reasoning was captured", func() {
@@ -263,7 +263,7 @@ var _ = Describe("UT-KA-AUDIT-007: has_reasoning observability field", func() {
 
 		respEvents := capStore.eventsByType(audit.EventTypeLLMResponse)
 		Expect(respEvents).NotTo(BeEmpty())
-		Expect(respEvents[0].Data["has_reasoning"]).To(Equal(false))
+		Expect(respEvents[0].Data["has_reasoning"]).To(BeFalse())
 	})
 })
 

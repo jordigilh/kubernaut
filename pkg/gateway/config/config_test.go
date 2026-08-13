@@ -360,8 +360,7 @@ var _ = Describe("BR-GATEWAY-100: Gateway Configuration Validation", func() {
 				}
 
 				// BUSINESS RULE: Runtime state should persist across config reloads
-				Expect(len(runtimeState)).To(Equal(2),
-					"BR-GATEWAY-082: Deduplication state should not be cleared during config reload")
+				Expect(runtimeState).To(HaveLen(2), "BR-GATEWAY-082: Deduplication state should not be cleared during config reload")
 				Expect(runtimeState["alert-fingerprint-1"]).To(BeTrue(),
 					"Cached fingerprints should persist during config reload")
 

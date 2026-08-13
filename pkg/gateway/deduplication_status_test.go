@@ -266,7 +266,7 @@ var _ = Describe("Deduplication Status (DD-GATEWAY-011)", func() {
 			It("should return true for in-progress RR (Processing phase)", func() {
 				// Setup: Create RR in Processing phase
 				now := metav1.Now()
-				fp := testFingerprint("proces")
+				fp := testFingerprint("process")
 				rr := &remediationv1alpha1.RemediationRequest{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "processing-rr",

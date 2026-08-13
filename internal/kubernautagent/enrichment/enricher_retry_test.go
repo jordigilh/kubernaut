@@ -98,8 +98,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-KA-261/264 #704", func() 
 
 			Expect(k8s.CallCount()).To(Equal(4),
 				"UT-704-E-001: initial call + 3 retries = 4 total calls")
-			Expect(result.OwnerChainError).NotTo(BeNil(),
-				"UT-704-E-001: OwnerChainError must be set after retry exhaustion")
+			Expect(result.OwnerChainError).To(HaveOccurred(), "UT-704-E-001: OwnerChainError must be set after retry exhaustion")
 			Expect(result.HardFail).To(BeTrue(),
 				"UT-704-E-001: HardFail must be true after retry exhaustion")
 		})
@@ -127,8 +126,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-KA-261/264 #704", func() 
 
 			Expect(k8s.CallCount()).To(Equal(2),
 				"UT-704-E-002: should succeed on 2nd attempt")
-			Expect(result.OwnerChainError).To(BeNil(),
-				"UT-704-E-002: OwnerChainError must be nil after successful retry")
+			Expect(result.OwnerChainError).ToNot(HaveOccurred(), "UT-704-E-002: OwnerChainError must be nil after successful retry")
 			Expect(result.HardFail).To(BeFalse(),
 				"UT-704-E-002: HardFail must be false when retry succeeds")
 			Expect(result.OwnerChain).To(HaveLen(1),
@@ -155,8 +153,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-KA-261/264 #704", func() 
 
 			Expect(k8s.CallCount()).To(Equal(1),
 				"UT-704-E-003: NotFound skips retries — only 1 call (#1039)")
-			Expect(result.OwnerChainError).NotTo(BeNil(),
-				"UT-704-E-003: OwnerChainError must be set for observability")
+			Expect(result.OwnerChainError).To(HaveOccurred(), "UT-704-E-003: OwnerChainError must be set for observability")
 			Expect(result.HardFail).To(BeFalse(),
 				"UT-704-E-003: HardFail must be false for NotFound — deleted resource proceeds (#1039)")
 			Expect(result.TargetResourceDeleted).To(BeTrue(),
@@ -202,8 +199,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-KA-261/264 #704", func() 
 
 			Expect(k8s.CallCount()).To(Equal(1),
 				"UT-704-E-004: no retries with default config")
-			Expect(result.OwnerChainError).NotTo(BeNil(),
-				"UT-704-E-004: OwnerChainError must be set for observability")
+			Expect(result.OwnerChainError).To(HaveOccurred(), "UT-704-E-004: OwnerChainError must be set for observability")
 			Expect(result.HardFail).To(BeFalse(),
 				"UT-704-E-004: HardFail must be false in best-effort mode (retries=0)")
 		})
@@ -228,8 +224,7 @@ var _ = Describe("Enricher Retry Infrastructure — BR-KA-261/264 #704", func() 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(result).NotTo(BeNil())
 
-			Expect(result.OwnerChainError).NotTo(BeNil(),
-				"UT-704-E-006: OwnerChainError should be set for observability")
+			Expect(result.OwnerChainError).To(HaveOccurred(), "UT-704-E-006: OwnerChainError should be set for observability")
 			Expect(result.HardFail).To(BeFalse(),
 				"UT-704-E-006: HardFail must be false — unknown Kind is a schema limitation, not an RCA failure")
 		})

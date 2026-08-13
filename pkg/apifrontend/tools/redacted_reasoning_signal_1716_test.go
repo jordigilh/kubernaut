@@ -59,7 +59,7 @@ var _ = Describe("AF redacted reasoning content live signal — #1716", func() {
 		statusEvt, ok := queuedEvents[0].(*a2a.TaskStatusUpdateEvent)
 		Expect(ok).To(BeTrue())
 		Expect(statusEvt.Metadata["type"]).To(Equal(launcher.MetaTypeReasoningContent))
-		Expect(statusEvt.Metadata["redacted"]).To(Equal(true))
+		Expect(statusEvt.Metadata["redacted"]).To(BeTrue())
 		if statusEvt.Status.Message != nil {
 			for _, part := range statusEvt.Status.Message.Parts {
 				if textPart, ok := part.(a2a.TextPart); ok {

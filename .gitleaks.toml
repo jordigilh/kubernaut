@@ -104,6 +104,8 @@ paths = [
   '''^pkg/apifrontend/launcher/event_bridge_test\.go$''',
   '''^pkg/apifrontend/tools/kubectl_get_test\.go$''',
   '''^pkg/gateway/processing/storm_aggregator\.go$''',
+  '''^pkg/kubernautagent/tools/sanitization/credential_test\.go$''',
+  '''^pkg/kubernautagent/tools/sanitization/injection_test\.go$''',
   '''^pkg/notification/sanitization/sanitizer_v31_test\.go$''',
   '''^python\-api/tests/test_integration\.py$''',
   '''^scripts/helm\-smoke\-test\.sh$''',
@@ -124,8 +126,8 @@ paths = [
   '''^test/unit/kapi/transport/resolver_test\.go$''',
   '''^test/unit/kubernautagent/llm/vertexanthropic/client_test\.go$''',
   '''^test/unit/kubernautagent/security/boundary/boundary_test\.go$''',
-  '''^test/unit/kubernautagent/tools/sanitization/credential_test\.go$''',
-  '''^test/unit/kubernautagent/tools/sanitization/injection_test\.go$''',
+  '''^test/unit/kubernautagent/tools/sanitization/credential_test\.go$''', # pre-rename path (#50); history still references it
+  '''^test/unit/kubernautagent/tools/sanitization/injection_test\.go$''',  # pre-rename path (#50); history still references it
   '''^test/unit/kubernautagent/transport/resolver_test\.go$''',
   '''^test/unit/notification/sanitization_test\.go$''',
   '''^test/unit/security/security_algorithms_test\.go$''',

@@ -119,7 +119,10 @@ func (r *ActiveContextRegistry) Refresh(username string) {
 	if !ok {
 		return
 	}
-	entry := raw.(contextEntry)
+	entry, ok := raw.(contextEntry)
+	if !ok {
+		return
+	}
 	entry.lastActive = r.clock.Now()
 	r.entries.Store(username, entry)
 }
@@ -132,7 +135,10 @@ func (r *ActiveContextRegistry) Get(username string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	entry := raw.(contextEntry)
+	entry, ok := raw.(contextEntry)
+	if !ok {
+		return "", false
+	}
 	now := r.clock.Now()
 	if now.Sub(entry.createdAt) > r.ttl || now.Sub(entry.lastActive) > r.idleTimeout {
 		r.entries.Delete(username)

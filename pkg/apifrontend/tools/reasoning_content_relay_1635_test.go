@@ -136,8 +136,7 @@ var _ = Describe("AF/KA reasoning content live-stream relay — #1635", func() {
 			statusEvt, ok := queuedEvents[0].(*a2a.TaskStatusUpdateEvent)
 			Expect(ok).To(BeTrue())
 			Expect(statusEvt.Metadata["type"]).To(Equal(launcher.MetaTypeReasoningContent))
-			Expect(statusEvt.Metadata["redacted"]).To(Equal(true),
-				"#1716: metadata.redacted must be true so Console can render a placeholder")
+			Expect(statusEvt.Metadata["redacted"]).To(BeTrue(), "#1716: metadata.redacted must be true so Console can render a placeholder")
 		})
 	})
 

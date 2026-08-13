@@ -231,7 +231,11 @@ func (r *gatewayOverlayResolver) Overlay(ctx context.Context, clusterID string) 
 	// Safe to share the same map across every waiter on this singleflight
 	// key: FleetOverlayFromContext/resolveTool only ever read it, never
 	// mutate it (see fleet_overlay.go).
-	return v.(map[string]tools.Tool), nil
+	overlay, ok := v.(map[string]tools.Tool)
+	if !ok {
+		return nil, fmt.Errorf("internal error: unexpected type %T from tool overlay singleflight", v)
+	}
+	return overlay, nil
 }
 
 // genericNameTool decorates a *fleetclient.BridgeTool, exposing it to KA's

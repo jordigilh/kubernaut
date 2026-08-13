@@ -268,8 +268,7 @@ var _ = Describe("AuditClient RecordError", func() {
 			}).NotTo(Panic(), "RecordError should not panic on audit store failure")
 
 			// Verify attempt was made (event not stored due to mock error)
-			Expect(mockStore.StoredEvents).To(HaveLen(0),
-				"Event should not be stored when StoreError is set")
+			Expect(mockStore.StoredEvents).To(BeEmpty(), "Event should not be stored when StoreError is set")
 		})
 	})
 

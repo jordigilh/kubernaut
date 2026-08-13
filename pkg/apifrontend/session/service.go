@@ -47,7 +47,10 @@ const FieldIndexRRName = "spec.remediationRequestRef.name"
 func RegisterFieldIndexes(ctx context.Context, indexer client.FieldIndexer) error {
 	return indexer.IndexField(ctx, &v1alpha1.InvestigationSession{}, FieldIndexRRName,
 		func(obj client.Object) []string {
-			is := obj.(*v1alpha1.InvestigationSession)
+			is, ok := obj.(*v1alpha1.InvestigationSession)
+			if !ok {
+				return nil
+			}
 			if is.Spec.RemediationRequestRef.Name == "" {
 				return nil
 			}

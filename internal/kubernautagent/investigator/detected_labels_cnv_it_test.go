@@ -64,9 +64,9 @@ var _ = Describe("CNV DetectedLabels Investigator Integration — #1378", Label(
 			investigator.FinalizeWorkflowResult(result, signal, nil, enrichData)
 
 			Expect(result.DetectedLabels).NotTo(BeNil())
-			Expect(result.DetectedLabels["virtualMachine"]).To(Equal(true))
-			Expect(result.DetectedLabels["liveMigratable"]).To(Equal(true))
-			Expect(result.DetectedLabels["cdiManaged"]).To(Equal(true))
+			Expect(result.DetectedLabels["virtualMachine"]).To(BeTrue())
+			Expect(result.DetectedLabels["liveMigratable"]).To(BeTrue())
+			Expect(result.DetectedLabels["cdiManaged"]).To(BeTrue())
 			Expect(result.DetectedLabels["storageBackend"]).To(Equal("odf-ceph"))
 
 			// Prompt map mirrors detectedLabelsToPromptMap output for the same CNV enrichment.
