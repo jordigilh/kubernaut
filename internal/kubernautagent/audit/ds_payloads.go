@@ -65,6 +65,19 @@ func buildLLMRequestPayload(event *AuditEvent) ogenclient.AuditEventRequestEvent
 	if tools := dataStringSlice(event.Data, "toolsets_enabled"); len(tools) > 0 {
 		payload.ToolsetsEnabled = tools
 	}
+	// #2141 (BR-AI-2120/BR-AI-1044, FedRAMP AU-3): only present on
+	// sameKindValidationGate/apiVersionValidationGate retry audit events --
+	// ordinary llm.request events never set these Data keys, so the
+	// optional fields stay unset rather than persisting empty strings.
+	if v := dataString(event.Data, "retry_outcome"); v != "" {
+		payload.RetryOutcome.SetTo(v)
+	}
+	if v := dataString(event.Data, "ambiguous_kind"); v != "" {
+		payload.AmbiguousKind.SetTo(v)
+	}
+	if v := dataString(event.Data, "conflicting_groups"); v != "" {
+		payload.ConflictingGroups.SetTo(v)
+	}
 	return ogenclient.NewLLMRequestPayloadAuditEventRequestEventData(payload)
 }
 
