@@ -16653,6 +16653,24 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 					e.ArrEnd()
 				}
 			}
+			{
+				if s.RetryOutcome.Set {
+					e.FieldStart("retry_outcome")
+					s.RetryOutcome.Encode(e)
+				}
+			}
+			{
+				if s.AmbiguousKind.Set {
+					e.FieldStart("ambiguous_kind")
+					s.AmbiguousKind.Encode(e)
+				}
+			}
+			{
+				if s.ConflictingGroups.Set {
+					e.FieldStart("conflicting_groups")
+					s.ConflictingGroups.Encode(e)
+				}
+			}
 		}
 	case LLMResponsePayloadAuditEventEventData:
 		e.FieldStart("event_type")
@@ -21635,6 +21653,24 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 						e.Str(elem)
 					}
 					e.ArrEnd()
+				}
+			}
+			{
+				if s.RetryOutcome.Set {
+					e.FieldStart("retry_outcome")
+					s.RetryOutcome.Encode(e)
+				}
+			}
+			{
+				if s.AmbiguousKind.Set {
+					e.FieldStart("ambiguous_kind")
+					s.AmbiguousKind.Encode(e)
+				}
+			}
+			{
+				if s.ConflictingGroups.Set {
+					e.FieldStart("conflicting_groups")
+					s.ConflictingGroups.Encode(e)
 				}
 			}
 		}
@@ -32166,18 +32202,39 @@ func (s *LLMRequestPayload) encodeFields(e *jx.Encoder) {
 			e.ArrEnd()
 		}
 	}
+	{
+		if s.RetryOutcome.Set {
+			e.FieldStart("retry_outcome")
+			s.RetryOutcome.Encode(e)
+		}
+	}
+	{
+		if s.AmbiguousKind.Set {
+			e.FieldStart("ambiguous_kind")
+			s.AmbiguousKind.Encode(e)
+		}
+	}
+	{
+		if s.ConflictingGroups.Set {
+			e.FieldStart("conflicting_groups")
+			s.ConflictingGroups.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfLLMRequestPayload = [9]string{
-	0: "event_type",
-	1: "event_id",
-	2: "incident_id",
-	3: "model",
-	4: "prompt_length",
-	5: "prompt_preview",
-	6: "max_tokens",
-	7: "toolsets_enabled",
-	8: "mcp_servers",
+var jsonFieldsNameOfLLMRequestPayload = [12]string{
+	0:  "event_type",
+	1:  "event_id",
+	2:  "incident_id",
+	3:  "model",
+	4:  "prompt_length",
+	5:  "prompt_preview",
+	6:  "max_tokens",
+	7:  "toolsets_enabled",
+	8:  "mcp_servers",
+	9:  "retry_outcome",
+	10: "ambiguous_kind",
+	11: "conflicting_groups",
 }
 
 // Decode decodes LLMRequestPayload from json.
@@ -32306,6 +32363,36 @@ func (s *LLMRequestPayload) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"mcp_servers\"")
+			}
+		case "retry_outcome":
+			if err := func() error {
+				s.RetryOutcome.Reset()
+				if err := s.RetryOutcome.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"retry_outcome\"")
+			}
+		case "ambiguous_kind":
+			if err := func() error {
+				s.AmbiguousKind.Reset()
+				if err := s.AmbiguousKind.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"ambiguous_kind\"")
+			}
+		case "conflicting_groups":
+			if err := func() error {
+				s.ConflictingGroups.Reset()
+				if err := s.ConflictingGroups.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"conflicting_groups\"")
 			}
 		default:
 			return d.Skip()
