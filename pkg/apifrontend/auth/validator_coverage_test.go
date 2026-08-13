@@ -15,11 +15,11 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
-func testSignToken(t *testing.T, key *rsa.PrivateKey, kid string, claims interface{}) string {
+func testSignToken(t *testing.T, key *rsa.PrivateKey, claims interface{}) string {
 	t.Helper()
 	signer, err := jose.NewSigner(
 		jose.SigningKey{Algorithm: jose.RS256, Key: key},
-		(&jose.SignerOptions{}).WithHeader(jose.HeaderKey("kid"), kid),
+		(&jose.SignerOptions{}).WithHeader(jose.HeaderKey("kid"), "k1"),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +102,7 @@ func TestWithCBMetrics_GaugeUpdatesOnStateChange(t *testing.T) {
 		"iss": srv.URL, "sub": "u", "aud": []string{"aud"},
 		"exp": time.Now().Add(time.Hour).Unix(),
 	}
-	token := testSignToken(t, key, "k1", claims)
+	token := testSignToken(t, key, claims)
 
 	// Trigger 4 validation attempts (JWKS fetches) to trip the CB
 	for i := 0; i < 4; i++ {
@@ -163,7 +163,7 @@ func TestWithReplayCache_AllowsSameSourceReuse(t *testing.T) {
 		"jti":                "unique-token-id-001",
 		"preferred_username": "alice",
 	}
-	token := testSignToken(t, key, "k1", claims)
+	token := testSignToken(t, key, claims)
 	ctx := WithSourceIP(context.Background(), "198.51.100.1")
 
 	// First use: should succeed
@@ -220,7 +220,7 @@ func TestWithReplayCache_RejectsReplayFromDifferentSource(t *testing.T) {
 		"jti":                "unique-token-id-002",
 		"preferred_username": "alice",
 	}
-	token := testSignToken(t, key, "k1", claims)
+	token := testSignToken(t, key, claims)
 
 	_, err = v.Validate(WithSourceIP(context.Background(), "198.51.100.1"), token)
 	if err != nil {
@@ -270,7 +270,7 @@ func TestWithReplayCache_RequiresJTI(t *testing.T) {
 		"exp":                time.Now().Add(time.Hour).Unix(),
 		"preferred_username": "alice",
 	}
-	token := testSignToken(t, key, "k1", claims)
+	token := testSignToken(t, key, claims)
 
 	_, err = v.Validate(context.Background(), token)
 	if err == nil {

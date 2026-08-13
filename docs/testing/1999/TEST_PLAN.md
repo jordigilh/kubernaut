@@ -74,10 +74,33 @@ rate limiting and audit logging — zero reason to touch either) — the new res
 | UT | `TestWithReplayCache_*` (rewritten) | `pkg/apifrontend/auth/validator_coverage_test.go` | business-outcome framing: reused token from same caller succeeds end-to-end |
 | IT | `IT-AF-1999-001..003` | `test/integration/apifrontend/auth_middleware_test.go` | full `MiddlewareWithConfig` wiring: `TrustedProxyCIDRs` config → real HTTP request → source-key resolution → `ReplayCacheStore` — same client 2 calls succeed, spoofed-source-from-untrusted-peer has no effect, genuinely different trusted source rejected |
 | Wiring | n/a | `cmd/apifrontend/auth_wiring.go`, `cmd/apifrontend/replay_cache_wiring_test.go` | mechanical signature update; `buildAuthMiddleware` threads config through unchanged control flow |
+| E2E | `E2E-FP-AF-1999-001` | `test/e2e/fullpipeline/19_af_replay_cache_test.go` | real deployed chart + real Valkey: same client, same DEX-issued Bearer token reused across 3 independent MCP handshakes all succeed (the exact production-incident scenario) |
 
-E2E: not required — this is a targeted regression fix to an existing, already-E2E-exercised
-control (`fullpipeline`'s AF token reuse already covers the "no false 401" happy path; DD-PLATFORM-006
-DA16 is the historical record of that discovery).
+**Correction (post-implementation review):** this plan originally claimed E2E coverage was
+unnecessary because "`fullpipeline`'s AF token reuse already covers the happy path." That was
+inaccurate — `apifrontend.config.auth.replayCache.enabled` was never set to `true` anywhere in
+`test/infrastructure/fullpipeline_e2e_helm.go` (or any other E2E Helm install), so the feature
+this fix repairs was never actually exercised against a real cluster before this test plan
+revision. Two changes close that gap:
+
+1. `fullpipeline_e2e_helm.go` now sets `apifrontend.config.auth.replayCache.enabled=true` and
+   `apifrontend.config.auth.replayCache.tls.enabled=true` for the *entire* FP suite (not just one
+   test) — `redisAddr`/`redisDB`/`credentialsPath`/the Valkey volume mount/the NetworkPolicy
+   egress rule are all chart-computed once `enabled=true` (confirmed via `helm template`), so no
+   further overrides are needed.
+2. Because `getAFToken()` (`suite_test.go`) caches one DEX-issued token per Ginkgo process and
+   every other AF-touching FP spec reuses it via that cache, turning this on makes **every**
+   existing FP AF test an implicit regression check for the same-source-reuse happy path (had the
+   old `Seen(jti)`-only semantics still been in effect, the *second* authenticated MCP call
+   anywhere in the whole process would 401). `E2E-FP-AF-1999-001` above is the explicit,
+   narrowly-named version of that same check, so a regression fails with a clear message instead
+   of diffusely across unrelated specs.
+
+The "different source is still rejected" side of the fix is deliberately left to the IT tier
+(`IT-AF-1999-002`) rather than E2E: reliably forcing two *genuinely different* apparent source IPs
+through a Kind NodePort (SNAT'd to the node's IP by kube-proxy) would require faking
+`X-Forwarded-For` through a configured trusted-proxy CIDR, which doesn't reflect this suite's real
+ingress topology and would test the trusted-CIDR plumbing, not the deployed system.
 
 ## 6. Documentation Updates
 
