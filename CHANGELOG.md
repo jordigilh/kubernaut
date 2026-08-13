@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **AIAnalysis session-lost regeneration could still exceed its retry cap despite an already-computed exponential backoff (#2080 recurrence)** — The original #2080/#2079 fix computed a `RequeueAfter` backoff before resubmitting a lost KA session, but the controller's own self-watch predicate (`aiAnalysisUpdatePredicate`) re-triggers `reconcileInvestigating` immediately whenever `Status.KASession.ID` changes — which `handleSessionLost`'s own regeneration write does on every attempt — bypassing that backoff entirely and burning through the regeneration cap in rapid succession (observed in CI runs [31454349115](https://github.com/jordigilh/kubernaut/actions/runs/31454349115) and [31695817033](https://github.com/jordigilh/kubernaut/actions/runs/31695817033)). Added a durable `KASession.BackoffUntil` deadline, checked by `reconcileInvestigating` before the handler runs regardless of what woke the reconciler, so any early wake-up is absorbed instead of spending another regeneration attempt.
+
 ## [1.5.6] - 2026-08-12
 
 ### Security
