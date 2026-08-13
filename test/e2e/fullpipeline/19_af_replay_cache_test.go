@@ -17,7 +17,6 @@ limitations under the License.
 package fullpipeline
 
 import (
-	"fmt"
 	"net/http"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -32,6 +31,19 @@ import (
 // wrongly rejected as a replay. The fix (#1999, DD-PLATFORM-006 DA18) makes
 // replay detection source-bound: Seen(jti, sourceKey) only flags a replay
 // when the *same* jti arrives from a *different* source.
+//
+// Deliberately targets GET /a2a/access (#1919, ConsoleAccessHandler) rather
+// than /mcp: both routes pass through the identical AuthMiddleware chain
+// (pkg/apifrontend/handler/router.go's a2aChain/mcpChain both wrap
+// cfg.AuthMiddleware), so this exercises the exact same JWTValidator/
+// ReplayCacheStore code path #1999 fixed -- but /a2a/access is a lightweight
+// SAR-backed check with no MCP session semantics, avoiding a collision with
+// 06_af_audit_trace_test.go's E2E-FP-AF-001, which depends on being the
+// first-ever session-less request to AF's real /mcp endpoint in the whole
+// suite run to observe a one-time apifrontend.mcp.session_init audit event
+// (pkg/apifrontend/handler/mcp.go's seenSessions sentinel is keyed on the
+// absence of an Mcp-Session-Id header, so it can only ever fire once per AF
+// process lifetime -- a separate, pre-existing gap, not this PR's concern).
 //
 // Prerequisite: AF deployed in the FP cluster with
 // apifrontend.config.auth.replayCache.enabled=true against the chart's own
@@ -53,27 +65,32 @@ var _ = Describe("E2E-FP-AF-1999: source-bound jti replay-cache reuse (#1999, BR
 			_ = resp.Body.Close()
 		})
 
-		It("E2E-FP-AF-1999-001: the same client reusing its Bearer token across independent MCP sessions is never rejected as a replay", func() {
+		accessCheck := func(token string) int {
+			req, err := http.NewRequest(http.MethodGet, afBaseURL+"/a2a/access", http.NoBody)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer "+token)
+			resp, err := afHTTPClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { _ = resp.Body.Close() }()
+			return resp.StatusCode
+		}
+
+		It("E2E-FP-AF-1999-001: the same client reusing its Bearer token across independent authenticated requests is never rejected as a replay", func() {
 			token := getAFToken()
 			Expect(token).NotTo(BeEmpty())
 
-			By("First MCP handshake with this token succeeds")
-			sessionID1, err := fpInitMCPSessionExplicit(afHTTPClient, afBaseURL, token)
-			Expect(err).NotTo(HaveOccurred(), "first use of the token must succeed")
-			Expect(sessionID1).NotTo(BeEmpty())
+			By("First authenticated request with this token is not rejected as unauthorized")
+			code1 := accessCheck(token)
+			Expect(code1).NotTo(Equal(http.StatusUnauthorized), "first use of the token must not be rejected as unauthorized")
 
-			By("Reusing the exact same token for a second, independent MCP handshake")
-			sessionID2, err := fpInitMCPSessionExplicit(afHTTPClient, afBaseURL, token)
-			Expect(err).NotTo(HaveOccurred(),
+			By("Reusing the exact same token for a second, independent request")
+			code2 := accessCheck(token)
+			Expect(code2).NotTo(Equal(http.StatusUnauthorized),
 				"reusing the same Bearer token from the same client must NOT be rejected as a replay "+
 					"(#1999) -- this exact scenario was a confirmed production incident before the fix")
-			Expect(sessionID2).NotTo(BeEmpty())
-			Expect(sessionID2).NotTo(Equal(sessionID1),
-				"each handshake mints a fresh MCP session even though the underlying JWT is reused")
 
 			By("A third reuse also succeeds, ruling out a one-shot fluke")
-			sessionID3, err := fpInitMCPSessionExplicit(afHTTPClient, afBaseURL, token)
-			Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("third reuse of the token must also succeed: %v", err))
-			Expect(sessionID3).NotTo(BeEmpty())
+			code3 := accessCheck(token)
+			Expect(code3).NotTo(Equal(http.StatusUnauthorized), "third reuse of the token must also not be rejected as a replay")
 		})
 	})

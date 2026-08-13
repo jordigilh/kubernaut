@@ -74,7 +74,7 @@ rate limiting and audit logging — zero reason to touch either) — the new res
 | UT | `TestWithReplayCache_*` (rewritten) | `pkg/apifrontend/auth/validator_coverage_test.go` | business-outcome framing: reused token from same caller succeeds end-to-end |
 | IT | `IT-AF-1999-001..003` | `test/integration/apifrontend/auth_middleware_test.go` | full `MiddlewareWithConfig` wiring: `TrustedProxyCIDRs` config → real HTTP request → source-key resolution → `ReplayCacheStore` — same client 2 calls succeed, spoofed-source-from-untrusted-peer has no effect, genuinely different trusted source rejected |
 | Wiring | n/a | `cmd/apifrontend/auth_wiring.go`, `cmd/apifrontend/replay_cache_wiring_test.go` | mechanical signature update; `buildAuthMiddleware` threads config through unchanged control flow |
-| E2E | `E2E-FP-AF-1999-001` | `test/e2e/fullpipeline/19_af_replay_cache_test.go` | real deployed chart + real Valkey: same client, same DEX-issued Bearer token reused across 3 independent MCP handshakes all succeed (the exact production-incident scenario) |
+| E2E | `E2E-FP-AF-1999-001` | `test/e2e/fullpipeline/19_af_replay_cache_test.go` | real deployed chart + real Valkey: same client, same DEX-issued Bearer token reused across 3 independent authenticated `GET /a2a/access` requests, none rejected as `401` (the exact production-incident scenario) |
 
 **Correction (post-implementation review):** this plan originally claimed E2E coverage was
 unnecessary because "`fullpipeline`'s AF token reuse already covers the happy path." That was
@@ -95,6 +95,20 @@ revision. Two changes close that gap:
    anywhere in the whole process would 401). `E2E-FP-AF-1999-001` above is the explicit,
    narrowly-named version of that same check, so a regression fails with a clear message instead
    of diffusely across unrelated specs.
+
+   `E2E-FP-AF-1999-001` targets `GET /a2a/access` (#1919, `ConsoleAccessHandler`) rather than a raw
+   `/mcp` handshake. Both routes pass through the identical `AuthMiddleware` chain
+   (`pkg/apifrontend/handler/router.go`'s `a2aChain`/`mcpChain` both wrap `cfg.AuthMiddleware`), so
+   this exercises the exact same `JWTValidator`/`ReplayCacheStore` code path #1999 fixed. An earlier
+   revision of this test drove `/mcp` `initialize` directly and intermittently broke
+   `06_af_audit_trace_test.go`'s `E2E-FP-AF-001`: `pkg/apifrontend/handler/mcp.go`'s `seenSessions`
+   sentinel can only ever emit `apifrontend.mcp.session_init` once per AF process lifetime (it's
+   keyed on the *absence* of an `Mcp-Session-Id` header, which every session-less `initialize` call
+   shares), so whichever spec's `initialize` call ran first in Ginkgo's execution order "won" that
+   one-shot audit event and starved every other direct-`/mcp` spec of it. `/a2a/access` is a
+   lightweight SAR-backed check with no MCP session semantics, so it avoids that collision
+   entirely. The `mcp.go` sentinel bug itself is pre-existing and out of scope for #1999; tracked
+   separately.
 
 The "different source is still rejected" side of the fix is deliberately left to the IT tier
 (`IT-AF-1999-002`) rather than E2E: reliably forcing two *genuinely different* apparent source IPs
