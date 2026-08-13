@@ -584,6 +584,17 @@ type KASession struct {
 	// +kubebuilder:validation:Minimum=0
 	// +optional
 	ConsecutiveGetResultErrors int32 `json:"consecutiveGetResultErrors,omitempty"`
+	// BackoffUntil is the earliest time the Investigating handler is allowed
+	// to run again after a session-lost regeneration. #2080 recurrence: the
+	// controller's own self-watch predicate (aiAnalysisUpdatePredicate) wakes
+	// the reconciler immediately whenever ID changes -- which handleSessionLost's
+	// regeneration writes do on every attempt -- bypassing the RequeueAfter
+	// backoff it just computed. This durable deadline is checked BEFORE the
+	// handler runs (reconcileInvestigating), regardless of what woke the
+	// reconciler, so an early wake-up is absorbed instead of spending another
+	// regeneration attempt.
+	// +optional
+	BackoffUntil *metav1.Time `json:"backoffUntil,omitempty"`
 }
 
 // InteractiveSessionInfo tracks the dynamic takeover session for MCP interactive mode.

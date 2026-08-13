@@ -171,6 +171,24 @@ func (r *AIAnalysisReconciler) runInvestigatingHandler(ctx context.Context, anal
 			"investigationTime", analysis.Status.InvestigationTime)
 	}
 
+	// #2080 recurrence: absorb any early wake-up (self-watch on
+	// KASession.ID, the IS-watch on KACorrelationID, or a stray requeue)
+	// that arrives before handleSessionLost's own RequeueAfter backoff has
+	// actually elapsed. Checked here -- the single production entry point
+	// into InvestigatingHandler -- so it applies regardless of what
+	// triggered this reconcile. No status field is mutated on this path, so
+	// the resulting (no-op) Status().Update() cannot itself re-trigger the
+	// self-watch predicate.
+	if ks := analysis.Status.KASession; ks != nil && ks.BackoffUntil != nil {
+		if remaining := time.Until(ks.BackoffUntil.Time); remaining > 0 {
+			log.V(1).Info("Session regeneration backoff still active, skipping handler (#2080 recurrence)",
+				"remaining", remaining, "generation", ks.Generation)
+			outcome.handlerExecuted = false
+			outcome.result = ctrl.Result{RequeueAfter: remaining}
+			return nil
+		}
+	}
+
 	// Execute handler ONLY if phase check passed AND not already executed
 	outcome.result, outcome.handlerErr = invHandler.Handle(ctx, analysis)
 	outcome.handlerExecuted = true
