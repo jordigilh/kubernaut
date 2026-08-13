@@ -19,6 +19,8 @@ package launcher_test
 import (
 	"context"
 	"iter"
+	"strconv"
+	"sync"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -27,6 +29,7 @@ import (
 	adksession "google.golang.org/adk/session"
 	"google.golang.org/genai"
 
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/launcher"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
@@ -112,7 +115,7 @@ var _ = Describe("reinvokingRunner (BR-SESS-013, issue #1776)", func() {
 				toolCallModelEvent("inv-2"),
 			},
 		}
-		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard())
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard(), nil)
 
 		var events []*adksession.Event
 		for event, runErr := range rr.Run(context.Background(), "user-1", "sess-1", genai.NewContentFromText("investigate", genai.RoleUser), agent.RunConfig{}) {
@@ -138,7 +141,7 @@ var _ = Describe("reinvokingRunner (BR-SESS-013, issue #1776)", func() {
 			sessionSvc: sessionSvc,
 			responses:  []*adksession.Event{toolCallModelEvent("inv-1")},
 		}
-		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard())
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard(), nil)
 
 		var events []*adksession.Event
 		for event, runErr := range rr.Run(context.Background(), "user-1", "sess-2", genai.NewContentFromText("investigate", genai.RoleUser), agent.RunConfig{}) {
@@ -237,7 +240,7 @@ var _ = Describe("reinvokingRunner checkpoint-flag clearing (DD-AF-011, #1899)",
 			appName:    appName,
 			responses:  []*adksession.Event{toolCallModelEvent("inv-1")},
 		}
-		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, appName, logr.Discard())
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, appName, logr.Discard(), nil)
 
 		for _, runErr := range rr.Run(ctx, "user-1", "sess-ckpt-1", genai.NewContentFromText("go ahead", genai.RoleUser), agent.RunConfig{}) {
 			Expect(runErr).NotTo(HaveOccurred())
@@ -282,7 +285,7 @@ var _ = Describe("reinvokingRunner checkpoint-flag clearing (DD-AF-011, #1899)",
 				toolCallModelEvent("inv-2"),
 			},
 		}
-		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, appName, logr.Discard())
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, appName, logr.Discard(), nil)
 
 		for _, runErr := range rr.Run(ctx, "user-1", "sess-ckpt-2", genai.NewContentFromText("go ahead", genai.RoleUser), agent.RunConfig{}) {
 			Expect(runErr).NotTo(HaveOccurred())
@@ -301,5 +304,195 @@ var _ = Describe("reinvokingRunner checkpoint-flag clearing (DD-AF-011, #1899)",
 		Expect(final).To(Equal(true),
 			"Run() must NOT clear the checkpoint flag a second time after correctly deciding not to reinvoke -- "+
 				"clearCheckpointFlags only runs once, at genuine top-level entry, never mid-loop")
+	})
+})
+
+// toolResponseEvent builds a tool-call FunctionResponse event, mirroring
+// ADK's own base_flow.go convention (errMsg populates the "error" key;
+// otherwise the response is a plain success).
+func toolResponseEvent(toolName, errMsg string) *adksession.Event {
+	resp := map[string]any{}
+	if errMsg != "" {
+		resp["error"] = errMsg
+	} else {
+		resp["output"] = "ok"
+	}
+	event := adksession.NewEvent("inv-cb")
+	event.Author = genai.RoleModel
+	event.Content = &genai.Content{
+		Role: "user",
+		Parts: []*genai.Part{
+			{FunctionResponse: &genai.FunctionResponse{Name: toolName, Response: resp}},
+		},
+	}
+	return event
+}
+
+// unboundedFailureRunner simulates ADK's own base_flow.go Flow.Run internal
+// loop getting stuck retrying the same failing tool call with no cap of its
+// own (#2078) -- it will yield up to maxFailures consecutive same-tool
+// failure events for a single Run() call, tracking in yielded exactly how
+// many it actually produced before the consumer (reinvokingRunner.Run) ever
+// stopped pulling, so tests can prove the breaker stopped it early rather
+// than merely observing a scripted, already-finite sequence complete.
+type unboundedFailureRunner struct {
+	toolName    string
+	maxFailures int
+	yielded     int
+}
+
+func (r *unboundedFailureRunner) Run(_ context.Context, _, _ string, _ *genai.Content, _ agent.RunConfig) iter.Seq2[*adksession.Event, error] {
+	return func(yield func(*adksession.Event, error) bool) {
+		for i := 0; i < r.maxFailures; i++ {
+			r.yielded++
+			if !yield(toolResponseEvent(r.toolName, "schema validation failed"), nil) {
+				return
+			}
+		}
+	}
+}
+
+// scriptedEventRunner yields a fixed, pre-built sequence of events for a
+// single Run() call, tracking how many it actually yielded.
+type scriptedEventRunner struct {
+	events  []*adksession.Event
+	yielded int
+}
+
+func (r *scriptedEventRunner) Run(_ context.Context, _, _ string, _ *genai.Content, _ agent.RunConfig) iter.Seq2[*adksession.Event, error] {
+	return func(yield func(*adksession.Event, error) bool) {
+		for _, ev := range r.events {
+			r.yielded++
+			if !yield(ev, nil) {
+				return
+			}
+		}
+	}
+}
+
+// auditSpyEmitter records every audit event emitted, for assertions on
+// circuit-breaker-trip audit visibility (IT-AF-2078-003).
+type auditSpyEmitter struct {
+	mu     sync.Mutex
+	events []*audit.Event
+}
+
+func (s *auditSpyEmitter) Emit(_ context.Context, event *audit.Event) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.events = append(s.events, event)
+}
+
+func (s *auditSpyEmitter) eventsByType(t audit.EventType) []*audit.Event {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []*audit.Event
+	for _, e := range s.events {
+		if e.Type == t {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+var _ = Describe("reinvokingRunner tool-retry circuit breaker (#2078, DD-AF-013)", func() {
+	It("IT-AF-2078-001: an unbounded stream of same-tool failures is stopped at the threshold, not left to run forever", func() {
+		sessionSvc := adksession.InMemoryService()
+		_, err := sessionSvc.Create(context.Background(), &adksession.CreateRequest{
+			AppName: "test-app", UserID: "user-1", SessionID: "sess-cb-1",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		fake := &unboundedFailureRunner{toolName: "kubernaut_present_decision", maxFailures: 100}
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard(), nil)
+
+		var sawError bool
+		for _, runErr := range rr.Run(context.Background(), "user-1", "sess-cb-1", genai.NewContentFromText("investigate", genai.RoleUser), agent.RunConfig{}) {
+			if runErr != nil {
+				sawError = true
+			}
+		}
+
+		Expect(fake.yielded).To(Equal(launcher.DefaultToolRetryCircuitBreakerThreshold),
+			"the inner runner's iterator must be stopped after exactly the threshold's worth of consecutive failures, not left to keep yielding")
+		Expect(sawError).To(BeTrue(), "the turn must end in an error once the circuit breaker trips")
+	})
+
+	It("IT-AF-2078-002: failures below the threshold followed by a genuine success do not trip", func() {
+		sessionSvc := adksession.InMemoryService()
+		_, err := sessionSvc.Create(context.Background(), &adksession.CreateRequest{
+			AppName: "test-app", UserID: "user-1", SessionID: "sess-cb-2",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var events []*adksession.Event
+		for i := 0; i < launcher.DefaultToolRetryCircuitBreakerThreshold-1; i++ {
+			events = append(events, toolResponseEvent("kubernaut_present_decision", "schema validation failed"))
+		}
+		events = append(events, toolResponseEvent("kubernaut_present_decision", ""))
+		fake := &scriptedEventRunner{events: events}
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard(), nil)
+
+		var sawError bool
+		var yieldedCount int
+		for _, runErr := range rr.Run(context.Background(), "user-1", "sess-cb-2", genai.NewContentFromText("investigate", genai.RoleUser), agent.RunConfig{}) {
+			yieldedCount++
+			if runErr != nil {
+				sawError = true
+			}
+		}
+
+		Expect(sawError).To(BeFalse(), "a turn that eventually succeeds within the threshold must not trip the breaker")
+		Expect(fake.yielded).To(Equal(len(events)), "every scripted event must have been consumed -- no premature stop")
+		Expect(yieldedCount).To(Equal(len(events)))
+	})
+
+	It("IT-AF-2078-003: on trip, the configured auditor receives exactly one EventCircuitBreakerTrip event naming the failing tool", func() {
+		sessionSvc := adksession.InMemoryService()
+		_, err := sessionSvc.Create(context.Background(), &adksession.CreateRequest{
+			AppName: "test-app", UserID: "user-1", SessionID: "sess-cb-3",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		spy := &auditSpyEmitter{}
+		fake := &unboundedFailureRunner{toolName: "kubernaut_present_decision", maxFailures: 100}
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard(), spy)
+
+		for range rr.Run(context.Background(), "user-1", "sess-cb-3", genai.NewContentFromText("investigate", genai.RoleUser), agent.RunConfig{}) {
+		}
+
+		trips := spy.eventsByType(audit.EventCircuitBreakerTrip)
+		Expect(trips).To(HaveLen(1), "exactly one circuit-breaker-trip audit event must be emitted")
+		Expect(trips[0].Detail["circuit_name"]).To(Equal("kubernaut_present_decision"))
+		Expect(trips[0].Detail["failure_count"]).To(Equal(strconv.Itoa(launcher.DefaultToolRetryCircuitBreakerThreshold)))
+	})
+
+	It("IT-AF-2078-004: a failing tool interleaved with a different, successful tool does not trip (per-tool isolation, wired end-to-end)", func() {
+		sessionSvc := adksession.InMemoryService()
+		_, err := sessionSvc.Create(context.Background(), &adksession.CreateRequest{
+			AppName: "test-app", UserID: "user-1", SessionID: "sess-cb-4",
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		var events []*adksession.Event
+		for i := 0; i < launcher.DefaultToolRetryCircuitBreakerThreshold-1; i++ {
+			events = append(events,
+				toolResponseEvent("kubernaut_present_decision", "schema validation failed"),
+				toolResponseEvent("kubernaut_list_workflows", ""),
+			)
+		}
+		fake := &scriptedEventRunner{events: events}
+		rr := launcher.NewReinvokingRunnerForTest(fake, sessionSvc, "test-app", logr.Discard(), nil)
+
+		var sawError bool
+		for _, runErr := range rr.Run(context.Background(), "user-1", "sess-cb-4", genai.NewContentFromText("investigate", genai.RoleUser), agent.RunConfig{}) {
+			if runErr != nil {
+				sawError = true
+			}
+		}
+
+		Expect(sawError).To(BeFalse(),
+			"kubernaut_present_decision's failures stay below the threshold on its own; the interleaved successful kubernaut_list_workflows calls must not push it over")
+		Expect(fake.yielded).To(Equal(len(events)), "every scripted event must have been consumed -- no premature stop")
 	})
 })
