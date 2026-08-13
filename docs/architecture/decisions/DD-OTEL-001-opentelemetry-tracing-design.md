@@ -99,23 +99,32 @@ pkg/shared/telemetry/
 └── *_test.go
 ```
 
-**`Config` / `NewTracerProvider`** (`telemetry.go`):
+**`Config` / `NewTracerProvider` / `Bootstrap`** (`telemetry.go`):
 
 ```go
 type Config struct {
-    ServiceName string      // required, e.g. "gateway", "datastorage", "kubernaut-agent"
-    Endpoint    string      // OTLP/HTTP collector host:port; empty disables OTLP export
-    LogSink     bool        // emit one log line per span via Logger
-    Logger      logr.Logger // required if LogSink is true
+    ServiceName string                          // required, e.g. "gateway", "datastorage", "kubernaut-agent"
+    Endpoint    string                          // OTLP/HTTP collector host:port; empty disables OTLP export
+    TLS         internalconfig.TelemetryTLSConfig // OTLP/HTTP connection security; ignored when Endpoint == ""
+    LogSink     bool                            // emit one log line per span via Logger
+    Logger      logr.Logger                     // required if LogSink is true
 }
 
 type Shutdown func(context.Context) error
 
 func NewTracerProvider(ctx context.Context, cfg Config) (Shutdown, error)
+
+// Bootstrap wraps NewTracerProvider with the log-success/failure +
+// bounded-shutdown-timeout boilerplate every service's main() needs.
+// Extracted (after this DD was first written) out of three near-identical
+// call sites in cmd/{gateway,datastorage,kubernautagent}/main.go to keep
+// each under the funlen lint budget -- all three services now bootstrap via
+// this, not NewTracerProvider directly.
+func Bootstrap(ctx context.Context, cfg Config) (shutdown func(), ok bool)
 ```
 
 - `Endpoint == "" && !LogSink` -> returns a no-op `Shutdown`, OTel's default no-op `TracerProvider` stays globally registered. This is the default, zero-overhead state.
-- `Endpoint != ""` -> adds an `otlptracehttp` exporter via `sdktrace.WithBatcher` (throughput-optimized).
+- `Endpoint != ""` -> adds an `otlptracehttp` exporter via `sdktrace.WithBatcher` (throughput-optimized), over TLS if `TLS.Enabled`.
 - `LogSink == true` -> adds the custom `logExporter` via `sdktrace.WithSyncer` (synchronous — a span survives a hard crash/OOM-kill immediately after export, matching how a normal `logger.Error()` call already behaves; batching would risk losing the very spans most useful for post-mortem).
 - Both can be enabled simultaneously; they are independent, composable sinks.
 - Always registers the W3C `TraceContext` + `Baggage` propagator globally (`otel.SetTextMapPropagator`), regardless of exporter state, so `otelhttp` middleware/transport call sites behave identically whether tracing is active or not.
@@ -148,6 +157,8 @@ func DefaultTelemetryConfig() TelemetryConfig {
 
 **TLS default is plain HTTP** (`TLS.Enabled == false`), matching the common case of an in-cluster OTel Collector `Service` with no TLS termination. Set `TLS.Enabled: true` for a collector that terminates TLS (vendor SaaS endpoint, or an in-cluster collector behind a TLS-terminating route/ingress); set `TLS.CAFile` when that collector presents a self-signed or privately-issued certificate. `CertFile`/`KeyFile` are for the uncommon case of a collector requiring mTLS client authentication.
 
+**No per-telemetry cipher-suite or TLS-version field, by design.** `TelemetryTLSConfig` has no `cipherSuites`/`minVersion`-style field to configure — when `TLS.Enabled`, the exporter's `*tls.Config` is built via `pkg/shared/tls.BuildClientTLSConfig`, which unconditionally applies the process-wide `SecurityProfile` (`ApplyProfile`: minimum TLS version, cipher suites, curve preferences) that every other Kubernaut TLS client (Redis, Postgres, inter-service mTLS) already uses. This is deliberate: cipher/version policy is a fleet-wide security posture set once (Issue #493/#748), not a per-connection knob — allowing OTel's exporter to pick weaker ciphers than the rest of the fleet would be a needless inconsistency. IT-1519-007 proves this profile is enforced on the actual negotiated connection, not just present in the in-memory config.
+
 Each service embeds this in its own YAML-backed config struct and merges it into `telemetry.Config` at startup (service name is the only field each `main.go` supplies itself).
 
 ```yaml
@@ -166,17 +177,17 @@ telemetry:
 
 | Component | Production Entry Point | Wiring Code Location | Test ID |
 |---|---|---|---|
-| Gateway/DS/KA `TracerProvider` bootstrap (TLS branch) | `main()` (all 3 services) | `pkg/shared/telemetry/telemetry.go` (`NewTracerProvider`, shared by all 3 `cmd/*/main.go`) | `pkg/shared/telemetry/tls_internal_test.go` (UT-1519-005..012: `buildTLSConfig` branching logic) + `test/integration/shared/telemetry/otel_tls_wiring_integration_test.go` (**IT-1519-001/002/006/006b/007/008**: real TLS-encrypted span delivery to a trusted collector; fail-closed rejection of an untrusted one; a real mTLS handshake when the collector requires a client cert, and fail-closed when none is presented; the process-wide `SecurityProfile`'s minimum TLS version enforced on the actual negotiated connection, not just the in-memory config; and the exported span payload never containing the inbound request's bearer token — all through the same `otelhttp.NewMiddleware` call production servers use) |
-| Gateway `TracerProvider` bootstrap (no-TLS path) | `main()` | `cmd/gateway/main.go` (`telemetry.NewTracerProvider`) | Manual/build verification (bootstrap-only, no branching logic to unit test) |
-| Gateway inbound root span | `chi.Router` construction | `pkg/gateway/server.go` (`otelhttp.NewMiddleware("gateway.http", ...)`) | `pkg/gateway/otel_middleware_test.go` (UT: direct middleware construction) + `test/integration/gateway/otel_tls_wiring_integration_test.go` (**IT-1519-003/009/010**: real webhook POST through the actual `gateway.Server.Handler()` — real auth, scope check, CRD creation, DS audit — exports a span over TLS (003); the same real dispatch still succeeds and delivers zero spans when the collector's cert is untrusted (009); and still completes promptly when the collector never responds at all (010)) |
-| Gateway outbound span (Data Storage audit client) | DS audit client transport build | `pkg/gateway/server.go` (`otelhttp.NewTransport(...)` wrapping `dsTransport`) | `pkg/gateway/ds_transport_tracing_test.go` |
-| Data Storage `TracerProvider` bootstrap (no-TLS path) | `main()` | `cmd/datastorage/main.go` (`telemetry.NewTracerProvider`) | Manual/build verification |
-| Data Storage inbound root span | `Handler()` (`chi.Router` construction) | `pkg/datastorage/server/server.go` (`otelhttp.NewMiddleware("datastorage.http", ...)`) | `pkg/datastorage/server/otel_middleware_test.go` (UT-1519-010) + `test/integration/datastorage/otel_tls_wiring_integration_test.go` (**IT-1519-004**: real authenticated GET through `server.NewServer`'s actual `Handler()` reading real seeded Postgres data, exports a span over TLS) |
-| Kubernaut Agent `TracerProvider` bootstrap | `main()` | `cmd/kubernautagent/main.go` (`telemetry.NewTracerProvider`) | Manual/build verification |
-| Kubernaut Agent inbound root span | `/api/v1` route group | `cmd/kubernautagent/main.go` (`otelhttp.NewMiddleware("kubernautagent.http", ...)`) | `cmd/kubernautagent/otel_wiring_test.go` (UT-1519-012) + `test/integration/kubernautagent/server/otel_tls_wiring_integration_test.go` (**IT-1519-005**: real JWT-authenticated POST through a router mirroring main.go's real `/api/v1` route group — real `otelhttp` middleware, real rate limiter, real `auth.Middleware`/`JWTAuthenticator` verified against a real mock JWKS server, real `kaserver.NewHandler` — exports a span over TLS) |
-| Kubernaut Agent outbound span (Data Storage client) | `buildDSBaseTransport` | `cmd/kubernautagent/main.go` | Covered transitively by existing DS client tests + `otel_wiring_test.go` pattern |
-| Kubernaut Agent outbound span (audit flush to DS) | `buildAuditStore` | `cmd/kubernautagent/main.go` | Covered transitively by existing audit store tests |
-| Kubernaut Agent outbound span (Prometheus tool) | `buildToolRegistry` | `cmd/kubernautagent/main.go` | Covered transitively by existing Prometheus tool tests |
+| Gateway/DS/KA `TracerProvider` bootstrap (TLS branch) | `main()` (all 3 services, via `telemetry.Bootstrap`) | `pkg/shared/telemetry/telemetry.go` (`NewTracerProvider`, wrapped by `Bootstrap` — shared by all 3 `cmd/*/main.go`) | `pkg/shared/telemetry/tls_internal_test.go` (UT-1519-005..012: `buildTLSConfig` branching logic) + `test/integration/shared/telemetry/otel_tls_wiring_integration_test.go` (**IT-1519-001/002/006/006b/007/008**: real TLS-encrypted span delivery to a trusted collector; fail-closed rejection of an untrusted one; a real mTLS handshake when the collector requires a client cert, and fail-closed when none is presented; the process-wide `SecurityProfile`'s minimum TLS version enforced on the actual negotiated connection, not just the in-memory config; and the exported span payload never containing the inbound request's bearer token — all through the same `otelhttp.NewMiddleware` call production servers use) |
+| Gateway `TracerProvider` bootstrap (no-TLS path) | `run()` | `cmd/gateway/main.go` (`telemetry.Bootstrap`) | Manual/build verification (bootstrap-only, no branching logic to unit test) |
+| Gateway inbound root span | `setupRoutes()` (`chi.Router` construction) | `pkg/gateway/server.go` (`otelhttp.NewMiddleware("gateway.http", ...)`) | `pkg/gateway/otel_middleware_test.go` (UT: direct middleware construction) + `test/integration/gateway/otel_tls_wiring_integration_test.go` (**IT-1519-003/009/010**: real webhook POST through the actual `gateway.Server.Handler()` — real auth, scope check, CRD creation, DS audit — exports a span over TLS (003); the same real dispatch still succeeds and delivers zero spans when the collector's cert is untrusted (009); and still completes promptly when the collector never responds at all (010)) |
+| Gateway outbound span (Data Storage audit client) | `buildAuditStore` | `pkg/gateway/server_constructors.go` (`otelhttp.NewTransport(...)` wrapping `dsTransport`) | `pkg/gateway/ds_transport_tracing_test.go` |
+| Data Storage `TracerProvider` bootstrap (no-TLS path) | `run()` (via `loadRunConfig()`) | `cmd/datastorage/main.go` (`telemetry.Bootstrap`) | Manual/build verification |
+| Data Storage inbound root span | `Handler()` (`chi.Router` construction) | `pkg/datastorage/server/server_routes.go` (`otelhttp.NewMiddleware("datastorage.http", ...)`) | `pkg/datastorage/server/otel_middleware_test.go` (UT-1519-010) + `test/integration/datastorage/otel_tls_wiring_integration_test.go` (**IT-1519-004**: real authenticated GET through `server.NewServer`'s actual `Handler()` reading real seeded Postgres data, exports a span over TLS) |
+| Kubernaut Agent `TracerProvider` bootstrap | `main()` | `cmd/kubernautagent/main.go` (`telemetry.Bootstrap`) | Manual/build verification |
+| Kubernaut Agent inbound root span | `/api/v1` route group | `cmd/kubernautagent/routes.go` (`otelhttp.NewMiddleware("kubernautagent.http", ...)`) | `cmd/kubernautagent/otel_wiring_test.go` (UT-1519-012) + `test/integration/kubernautagent/server/otel_tls_wiring_integration_test.go` (**IT-1519-005**: real JWT-authenticated POST through a router mirroring main.go's real `/api/v1` route group — real `otelhttp` middleware, real rate limiter, real `auth.Middleware`/`JWTAuthenticator` verified against a real mock JWKS server, real `kaserver.NewHandler` — exports a span over TLS) |
+| Kubernaut Agent outbound span (Data Storage client) | `buildDSBaseTransport` | `cmd/kubernautagent/datastorage.go` | Covered transitively by existing DS client tests + `otel_wiring_test.go` pattern |
+| Kubernaut Agent outbound span (audit flush to DS) | `buildAuditStore` | `cmd/kubernautagent/datastorage.go` | Covered transitively by existing audit store tests |
+| Kubernaut Agent outbound span (Prometheus tool) | `registerPrometheusTools` | `cmd/kubernautagent/toolregistry.go` | Covered transitively by existing Prometheus tool tests |
 | Kubernaut Agent outbound span (LLM provider) | `buildTransportChain` | `cmd/kubernautagent/llm_builder.go` (`otelhttp.NewTransport` + `otelCloseAwareTransport` shim) | `cmd/kubernautagent/otel_wiring_test.go` (UT-1519-011), `cmd/kubernautagent/llm_builder_tls_test.go` |
 
 **CHECKPOINT W**: every row above has a production caller in `cmd/` (no orphaned `pkg/` wiring code); the three `otelhttp.NewMiddleware` rows and the LLM transport row each have a dedicated UT proving the span/context wiring through an `httptest` request; the remaining outbound rows are `otelhttp.NewTransport` one-line wraps around already-tested client-construction functions, so no new dedicated span-assertion test was written for them individually — the wrap itself is a pure library call with no branching logic to fail. The shared `TracerProvider` bootstrap's TLS branch is the one row that gained real branching logic after this table was first written (`Config.TLS`/`TelemetryTLSConfig`); it is the only bootstrap row with both a UT (`buildTLSConfig` config-construction logic) and an IT (real TLS handshake + fail-closed rejection through the actual `otelhttp` middleware) — the no-TLS bootstrap calls remain build-verification-only per the original rationale, since `Endpoint == ""`/`WithInsecure()` has no branching logic to fail.
@@ -289,17 +300,17 @@ Each row is a control objective this implementation makes a specific, testable c
 
 | File | Purpose |
 |---|---|
-| `pkg/shared/telemetry/telemetry.go` | `Config`, `NewTracerProvider`, `Shutdown` — shared bootstrap for all services |
+| `pkg/shared/telemetry/telemetry.go` | `Config`, `NewTracerProvider`, `Shutdown`, `Bootstrap` — shared bootstrap for all services |
 | `pkg/shared/telemetry/log_exporter.go` | `logExporter` — `sdktrace.SpanExporter` writing spans as structured log lines |
 | `pkg/shared/telemetry/tracelink.go` | `WriteTraceLinkAnnotation`/`ExtractTraceLink` — retained, unused (Alternative C) |
 | `internal/config/telemetry.go` | `TelemetryConfig`, `TelemetryTLSConfig`, `DefaultTelemetryConfig` — ADR-030 YAML config shared by all services |
 | `pkg/shared/tls/tls.go` (`BuildClientTLSConfig`) | Reused (not duplicated) for the OTLP exporter's TLS `*tls.Config` — same CA-loading + `SecurityProfile` (cipher suites, min TLS version) application as every other Kubernaut TLS client |
 | `test/integration/shared/telemetry/otel_tls_wiring_integration_test.go` | IT proof that the TLS branch of `NewTracerProvider` actually encrypts and validates, not just parses config: trusted-CA delivery and fail-closed rejection (IT-1519-001/002); real mTLS handshake and its fail-closed negative (IT-1519-006/006b); `SecurityProfile` minimum-version enforcement on the wire (IT-1519-007); span-payload data minimization (IT-1519-008) |
 | `test/integration/gateway/otel_tls_wiring_integration_test.go` | IT proof that Gateway's real `Handler()` (not a reconstructed middleware call) exports a span over TLS for a real, fully-processed webhook request (IT-1519-003); the same fail-closed and resilience controls re-proven through that real dispatch path (IT-1519-009/010) |
-| `cmd/gateway/main.go`, `pkg/gateway/config/config.go`, `pkg/gateway/server.go` | Gateway wiring (bootstrap, config, inbound middleware, outbound DS transport) |
-| `cmd/datastorage/main.go`, `pkg/datastorage/config/config.go`, `pkg/datastorage/server/server.go` | Data Storage wiring (bootstrap, config, inbound middleware only) |
+| `cmd/gateway/main.go`, `pkg/gateway/config/config.go`, `pkg/gateway/server.go`, `pkg/gateway/server_constructors.go` | Gateway wiring (bootstrap, config, inbound middleware in `server.go`'s `setupRoutes()`, outbound DS transport in `server_constructors.go`'s `buildAuditStore`) |
+| `cmd/datastorage/main.go`, `pkg/datastorage/config/config.go`, `pkg/datastorage/server/server_routes.go` | Data Storage wiring (bootstrap, config, inbound middleware only) |
 | `test/integration/datastorage/otel_tls_wiring_integration_test.go` | IT proof that Data Storage's real `Handler()` exports a span over TLS for a real authenticated request reading real seeded data (IT-1519-004) |
-| `cmd/kubernautagent/main.go`, `cmd/kubernautagent/llm_builder.go`, `internal/kubernautagent/config/config.go` | Kubernaut Agent wiring (bootstrap, config, inbound middleware, outbound DS/Prometheus/audit/LLM transports, `otelCloseAwareTransport`) |
+| `cmd/kubernautagent/main.go`, `cmd/kubernautagent/routes.go`, `cmd/kubernautagent/datastorage.go`, `cmd/kubernautagent/toolregistry.go`, `cmd/kubernautagent/llm_builder.go`, `internal/kubernautagent/config/config_types.go` | Kubernaut Agent wiring (bootstrap in `main.go`, config in `config_types.go`, inbound middleware in `routes.go`, outbound DS/audit transports in `datastorage.go`, outbound Prometheus transport in `toolregistry.go`, outbound LLM transport + `otelCloseAwareTransport` in `llm_builder.go`) |
 | `test/integration/kubernautagent/server/otel_tls_wiring_integration_test.go` | IT proof that a router mirroring KA's real `/api/v1` route group exports a span over TLS for a real JWT-authenticated request (IT-1519-005) |
 
 ---
