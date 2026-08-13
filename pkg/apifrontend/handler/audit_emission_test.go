@@ -166,4 +166,61 @@ var _ = Describe("Audit event emission – MCP handler (PR2 wiring)", func() {
 		events := spy.eventsByType(audit.EventMCPSessionInit)
 		Expect(events).To(HaveLen(1), "second request with same session should NOT emit another mcp.session_init")
 	})
+
+	It("UT-AF-2139-001: emits mcp.session_init for EVERY new session, not just the first one the handler ever sees", func() {
+		// Issue #2139: the SDK only invokes the getServer callback (where this
+		// audit logic lives) when creating a brand-new session -- an existing
+		// session's requests are routed straight to it and never reach this
+		// callback again (see UT-AF-1156-065 above, which passes for that
+		// reason alone). Every session-less "initialize" call therefore
+		// represents a genuinely distinct new session and must be audited,
+		// no matter how many earlier sessions this same handler/pod has
+		// already served.
+		spy := &handlerAuditSpy{}
+		h, err := handler.NewMCPHandler(handler.MCPConfig{
+			ServerName:    "kubernaut-apifrontend",
+			ServerVersion: "v0.1.0",
+			Enabled:       true,
+			Auditor:       spy,
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		initReq := map[string]any{
+			"jsonrpc": "2.0",
+			"id":      1,
+			"method":  "initialize",
+			"params": map[string]any{
+				"protocolVersion": "2025-03-26",
+				"capabilities":    map[string]any{},
+				"clientInfo":      map[string]any{"name": "test-client", "version": "1.0"},
+			},
+		}
+		body, _ := json.Marshal(initReq)
+
+		By("first client's session-less initialize call")
+		req1 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(string(body)))
+		req1.Header.Set("Content-Type", "application/json")
+		req1.Header.Set("Accept", "application/json, text/event-stream")
+		rec1 := httptest.NewRecorder()
+		h.ServeHTTP(rec1, req1)
+		Expect(rec1.Code).To(Equal(http.StatusOK))
+
+		By("second, unrelated client's session-less initialize call on the same handler")
+		req2 := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(string(body)))
+		req2.Header.Set("Content-Type", "application/json")
+		req2.Header.Set("Accept", "application/json, text/event-stream")
+		rec2 := httptest.NewRecorder()
+		h.ServeHTTP(rec2, req2)
+		Expect(rec2.Code).To(Equal(http.StatusOK))
+
+		sid1 := rec1.Header().Get("Mcp-Session-Id")
+		sid2 := rec2.Header().Get("Mcp-Session-Id")
+		Expect(sid1).NotTo(BeEmpty(), "SDK should assign a session ID")
+		Expect(sid2).NotTo(BeEmpty(), "SDK should assign a session ID")
+		Expect(sid2).NotTo(Equal(sid1), "each session-less initialize call must create a distinct session")
+
+		events := spy.eventsByType(audit.EventMCPSessionInit)
+		Expect(events).To(HaveLen(2),
+			"BR-OPS-013/AU-3: every new MCP session must be audited, not just the first one this handler ever served")
+	})
 })
