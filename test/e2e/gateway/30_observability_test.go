@@ -310,8 +310,7 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Verify metric has label sets (Prometheus aggregates by unique label combinations)
 			// Both CRDs have same environment="unknown" and priority="P1", so they aggregate into 1 label set
-			Expect(len([]float64{crdMetric})).To(BeNumerically(">=", 1),
-				"Should have at least one metric label set")
+			Expect([]float64{crdMetric}).ToNot(BeEmpty(), "Should have at least one metric label set")
 
 			// Verify the metric value reflects both CRD creations
 			totalCRDs := float64(0)
@@ -460,8 +459,7 @@ var _ = Describe("Observability E2E Tests", func() {
 
 			// Verify endpoint labels are present (at least 1 endpoint tracked)
 			// Note: Histogram metrics aggregate by endpoint+method+status labels
-			Expect(len([]float64{durationCountMetric})).To(BeNumerically(">=", 1),
-				fmt.Sprintf("Should track at least 1 endpoint (got %d)", len([]float64{durationCountMetric})))
+			Expect([]float64{durationCountMetric}).ToNot(BeEmpty(), fmt.Sprintf("Should track at least 1 endpoint (got %d)", len([]float64{durationCountMetric})))
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Operators can identify slow endpoints

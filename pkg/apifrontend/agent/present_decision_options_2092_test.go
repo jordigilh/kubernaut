@@ -86,7 +86,7 @@ var _ = Describe("Phase Guard — present_decision options repair (#2092)", func
 		Expect(ok).To(BeTrue())
 		Expect(first["workflow_id"]).To(Equal("wf-1"))
 		Expect(first["name"]).To(Equal("crashloop-rollback-v1"))
-		Expect(first["recommended"]).To(Equal(true))
+		Expect(first["recommended"]).To(BeTrue())
 	})
 
 	It("UT-AF-2092-002 (SI-10, SI-11, regression guard): leaves a genuinely malformed options string untouched", func() {

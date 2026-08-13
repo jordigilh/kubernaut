@@ -374,7 +374,7 @@ var _ = Describe("Category 1: CRD Lifecycle Integration Tests", Label("integrati
 		It("should accept NotificationRequest with 63-character name (DNS-1123 limit)", func() {
 			// DNS-1123 subdomain allows max 63 characters
 			longName := "a123456789b123456789c123456789d123456789e123456789f123456789abc"
-			Expect(len(longName)).To(Equal(63), "Test name should be exactly 63 characters")
+			Expect(longName).To(HaveLen(63), "Test name should be exactly 63 characters")
 
 			notif := &notificationv1alpha1.NotificationRequest{
 				ObjectMeta: metav1.ObjectMeta{

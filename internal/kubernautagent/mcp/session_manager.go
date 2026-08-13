@@ -209,7 +209,10 @@ func (m *LeaseSessionManager) StoreSignalMetadata(sessionID string, metadata map
 	if !ok {
 		return
 	}
-	entry := raw.(*sessionEntry)
+	entry, ok := raw.(*sessionEntry)
+	if !ok {
+		return
+	}
 	entry.signalMeta = metadata
 }
 
@@ -220,7 +223,11 @@ func (m *LeaseSessionManager) GetSignalMetadata(sessionID string) map[string]str
 	if !ok {
 		return nil
 	}
-	return raw.(*sessionEntry).signalMeta
+	entry, ok := raw.(*sessionEntry)
+	if !ok {
+		return nil
+	}
+	return entry.signalMeta
 }
 
 // GetSessionInfo returns the correlationID (rrID) and signal metadata for a session.
@@ -231,7 +238,10 @@ func (m *LeaseSessionManager) GetSessionInfo(sessionID string) (rrID string, sig
 	if !ok {
 		return "", nil
 	}
-	entry := raw.(*sessionEntry)
+	entry, ok := raw.(*sessionEntry)
+	if !ok {
+		return "", nil
+	}
 	return entry.rrID, entry.signalMeta
 }
 
@@ -284,7 +294,10 @@ func (m *LeaseSessionManager) reconnectOrRejectExistingLease(rrID string, user U
 	if !found {
 		return nil, ErrLeaseHeld, true
 	}
-	entry := raw.(*sessionEntry)
+	entry, ok := raw.(*sessionEntry)
+	if !ok {
+		return nil, ErrLeaseHeld, true
+	}
 	if entry.session.ActingUser.Username != user.Username {
 		return nil, fmt.Errorf("%w: held by %q since %s",
 			ErrLeaseHeld, entry.session.ActingUser.Username, entry.session.StartedAt.Format(time.RFC3339)), true
@@ -382,7 +395,10 @@ func (m *LeaseSessionManager) Release(sessionID string, reason string) error {
 	if !ok {
 		return ErrSessionNotFound
 	}
-	entry := raw.(*sessionEntry)
+	entry, ok := raw.(*sessionEntry)
+	if !ok {
+		return ErrSessionNotFound
+	}
 
 	leaseName := leaseName(entry.rrID)
 	lease := &coordinationv1.Lease{
@@ -434,13 +450,19 @@ func (m *LeaseSessionManager) GetDriver(rrID string) (*InteractiveSession, error
 	if !ok {
 		return nil, ErrSessionNotFound
 	}
-	sessionID := raw.(string)
+	sessionID, ok := raw.(string)
+	if !ok {
+		return nil, ErrSessionNotFound
+	}
 
 	raw, ok = m.sessions.Load(sessionID)
 	if !ok {
 		return nil, ErrSessionNotFound
 	}
-	entry := raw.(*sessionEntry)
+	entry, ok := raw.(*sessionEntry)
+	if !ok {
+		return nil, ErrSessionNotFound
+	}
 
 	// SEC-04: Check session TTL expiry.
 	if m.sessionTTL > 0 && time.Since(entry.session.StartedAt) > m.sessionTTL {
@@ -487,12 +509,19 @@ func (m *LeaseSessionManager) TouchActivity(rrID string) {
 	if !ok {
 		return
 	}
-	sessionID := raw.(string)
+	sessionID, ok := raw.(string)
+	if !ok {
+		return
+	}
 	raw, ok = m.sessions.Load(sessionID)
 	if !ok {
 		return
 	}
-	raw.(*sessionEntry).lastActivity.Store(time.Now())
+	entry, ok := raw.(*sessionEntry)
+	if !ok {
+		return
+	}
+	entry.lastActivity.Store(time.Now())
 }
 
 func (m *LeaseSessionManager) IsDriverActive(rrID string) bool {
@@ -505,7 +534,9 @@ func (m *LeaseSessionManager) IsDriverActive(rrID string) bool {
 func (m *LeaseSessionManager) ActiveSessionIDs() []string {
 	var ids []string
 	m.sessions.Range(func(key, _ any) bool {
-		ids = append(ids, key.(string))
+		if id, ok := key.(string); ok {
+			ids = append(ids, id)
+		}
 		return true
 	})
 	return ids

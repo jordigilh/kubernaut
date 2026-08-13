@@ -42,6 +42,7 @@ package enricher
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -254,9 +255,24 @@ func (e *K8sEnricher) enrichPodSignal(ctx context.Context, signal *signalprocess
 	return result, nil
 }
 
-// enrichDeploymentSignal fetches Namespace + Deployment.
-// BR-SP-001: Sets DegradedMode=true if target deployment not found
-func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
+// enrichWorkloadSignal fetches Namespace + a single workload object of type T
+// and populates result.Workload from it. Shared by enrichDeploymentSignal/
+// enrichStatefulSetSignal/enrichDaemonSetSignal/enrichReplicaSetSignal/
+// enrichServiceSignal (dupl: these 5 were byte-for-byte identical apart from
+// the Kind string and which getter was called — every K8s workload type here
+// embeds metav1.ObjectMeta, so metav1.Object's Get* accessors cover Name/
+// Labels/Annotations generically without reflection).
+// BR-SP-001: Sets DegradedMode=true if the target object is not found.
+func enrichWorkloadSignal[T metav1.Object](
+	ctx context.Context,
+	e *K8sEnricher,
+	signal *signalprocessingv1alpha1.SignalData,
+	result *signalprocessingv1alpha1.KubernetesContext,
+	kind string,
+	getter func(ctx context.Context, namespace, name string) (T, error),
+) (*signalprocessingv1alpha1.KubernetesContext, error) {
+	noun := strings.ToLower(kind)
+
 	// 1. Fetch namespace (required)
 	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
 	if err != nil {
@@ -264,159 +280,57 @@ func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signal
 	}
 	e.populateNamespaceContext(result, ns)
 
-	// 2. Fetch deployment - enter degraded mode if not found (BR-SP-001)
-	deployment, err := e.getDeployment(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
+	// 2. Fetch the workload object - enter degraded mode if not found (BR-SP-001)
+	obj, err := getter(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
-			e.logger.Info("Target deployment not found, entering degraded mode", "name", signal.TargetResource.Name)
+			e.logger.Info(fmt.Sprintf("Target %s not found, entering degraded mode", noun), "name", signal.TargetResource.Name)
 			result.DegradedMode = true
 			e.metrics.RecordEnrichmentError("not_found")
 			return result, nil
 		}
-		e.logger.Error(err, "Failed to fetch deployment", "name", signal.TargetResource.Name)
+		e.logger.Error(err, fmt.Sprintf("Failed to fetch %s", noun), "name", signal.TargetResource.Name)
 		e.metrics.RecordEnrichmentError("api_error")
-		return nil, fmt.Errorf("failed to fetch deployment: %w", err)
+		return nil, fmt.Errorf("failed to fetch %s: %w", noun, err)
 	}
 	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
-		Kind:        "Deployment",
-		Name:        deployment.Name,
-		Labels:      ensureMap(deployment.Labels),
-		Annotations: ensureMap(deployment.Annotations),
+		Kind:        kind,
+		Name:        obj.GetName(),
+		Labels:      ensureMap(obj.GetLabels()),
+		Annotations: ensureMap(obj.GetAnnotations()),
 	}
 
 	return result, nil
+}
+
+// enrichDeploymentSignal fetches Namespace + Deployment.
+// BR-SP-001: Sets DegradedMode=true if target deployment not found
+func (e *K8sEnricher) enrichDeploymentSignal(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
+	return enrichWorkloadSignal(ctx, e, signal, result, "Deployment", e.getDeployment)
 }
 
 // enrichStatefulSetSignal fetches Namespace + StatefulSet.
 // BR-SP-001: Sets DegradedMode=true if target statefulset not found
 func (e *K8sEnricher) enrichStatefulSetSignal(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
-	// 1. Fetch namespace (required)
-	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
-	}
-	e.populateNamespaceContext(result, ns)
-
-	// 2. Fetch statefulset - enter degraded mode if not found (BR-SP-001)
-	statefulset, err := e.getStatefulSet(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			e.logger.Info("Target statefulset not found, entering degraded mode", "name", signal.TargetResource.Name)
-			result.DegradedMode = true
-			e.metrics.RecordEnrichmentError("not_found")
-			return result, nil
-		}
-		e.logger.Error(err, "Failed to fetch statefulset", "name", signal.TargetResource.Name)
-		e.metrics.RecordEnrichmentError("api_error")
-		return nil, fmt.Errorf("failed to fetch statefulset: %w", err)
-	}
-	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
-		Kind:        "StatefulSet",
-		Name:        statefulset.Name,
-		Labels:      ensureMap(statefulset.Labels),
-		Annotations: ensureMap(statefulset.Annotations),
-	}
-
-	return result, nil
+	return enrichWorkloadSignal(ctx, e, signal, result, "StatefulSet", e.getStatefulSet)
 }
 
 // enrichDaemonSetSignal fetches Namespace + DaemonSet.
 // BR-SP-001: Sets DegradedMode=true if target daemonset not found
 func (e *K8sEnricher) enrichDaemonSetSignal(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
-	// 1. Fetch namespace (required)
-	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
-	}
-	e.populateNamespaceContext(result, ns)
-
-	// 2. Fetch daemonset - enter degraded mode if not found (BR-SP-001)
-	daemonset, err := e.getDaemonSet(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			e.logger.Info("Target daemonset not found, entering degraded mode", "name", signal.TargetResource.Name)
-			result.DegradedMode = true
-			e.metrics.RecordEnrichmentError("not_found")
-			return result, nil
-		}
-		e.logger.Error(err, "Failed to fetch daemonset", "name", signal.TargetResource.Name)
-		e.metrics.RecordEnrichmentError("api_error")
-		return nil, fmt.Errorf("failed to fetch daemonset: %w", err)
-	}
-	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
-		Kind:        "DaemonSet",
-		Name:        daemonset.Name,
-		Labels:      ensureMap(daemonset.Labels),
-		Annotations: ensureMap(daemonset.Annotations),
-	}
-
-	return result, nil
+	return enrichWorkloadSignal(ctx, e, signal, result, "DaemonSet", e.getDaemonSet)
 }
 
 // enrichReplicaSetSignal fetches Namespace + ReplicaSet.
 // BR-SP-001: Sets DegradedMode=true if target replicaset not found
 func (e *K8sEnricher) enrichReplicaSetSignal(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
-	// 1. Fetch namespace (required)
-	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
-	}
-	e.populateNamespaceContext(result, ns)
-
-	// 2. Fetch replicaset - enter degraded mode if not found (BR-SP-001)
-	replicaset, err := e.getReplicaSet(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			e.logger.Info("Target replicaset not found, entering degraded mode", "name", signal.TargetResource.Name)
-			result.DegradedMode = true
-			e.metrics.RecordEnrichmentError("not_found")
-			return result, nil
-		}
-		e.logger.Error(err, "Failed to fetch replicaset", "name", signal.TargetResource.Name)
-		e.metrics.RecordEnrichmentError("api_error")
-		return nil, fmt.Errorf("failed to fetch replicaset: %w", err)
-	}
-	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
-		Kind:        "ReplicaSet",
-		Name:        replicaset.Name,
-		Labels:      ensureMap(replicaset.Labels),
-		Annotations: ensureMap(replicaset.Annotations),
-	}
-
-	return result, nil
+	return enrichWorkloadSignal(ctx, e, signal, result, "ReplicaSet", e.getReplicaSet)
 }
 
 // enrichServiceSignal fetches Namespace + Service.
 // BR-SP-001: Sets DegradedMode=true if target service not found
 func (e *K8sEnricher) enrichServiceSignal(ctx context.Context, signal *signalprocessingv1alpha1.SignalData, result *signalprocessingv1alpha1.KubernetesContext) (*signalprocessingv1alpha1.KubernetesContext, error) {
-	// 1. Fetch namespace (required)
-	ns, err := e.getNamespace(ctx, signal.TargetResource.Namespace)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get namespace %s: %w", signal.TargetResource.Namespace, err)
-	}
-	e.populateNamespaceContext(result, ns)
-
-	// 2. Fetch service - enter degraded mode if not found (BR-SP-001)
-	service, err := e.getService(ctx, signal.TargetResource.Namespace, signal.TargetResource.Name)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			e.logger.Info("Target service not found, entering degraded mode", "name", signal.TargetResource.Name)
-			result.DegradedMode = true
-			e.metrics.RecordEnrichmentError("not_found")
-			return result, nil
-		}
-		e.logger.Error(err, "Failed to fetch service", "name", signal.TargetResource.Name)
-		e.metrics.RecordEnrichmentError("api_error")
-		return nil, fmt.Errorf("failed to fetch service: %w", err)
-	}
-	result.Workload = &signalprocessingv1alpha1.WorkloadDetails{
-		Kind:        "Service",
-		Name:        service.Name,
-		Labels:      ensureMap(service.Labels),
-		Annotations: ensureMap(service.Annotations),
-	}
-
-	return result, nil
+	return enrichWorkloadSignal(ctx, e, signal, result, "Service", e.getService)
 }
 
 // enrichNodeSignal fetches Node only (no namespace for node signals).
@@ -477,14 +391,17 @@ func ensureMap(m map[string]string) map[string]string {
 func (e *K8sEnricher) getNamespace(ctx context.Context, name string) (*corev1.Namespace, error) {
 	cacheKey := "ns:" + name
 	if cached, ok := e.cache.Get(cacheKey); ok {
-		ns := cached.(*corev1.Namespace)
-		if hasKubernautLabels(ns.Labels) {
-			return ns, nil
+		if ns, ok := cached.(*corev1.Namespace); ok {
+			if hasKubernautLabels(ns.Labels) {
+				return ns, nil
+			}
+			// SP-CACHE-001: Cached namespace has no kubernaut.ai/* labels — likely stale.
+			// Evict and re-fetch from API server to pick up labels that may have propagated.
+			e.cache.Delete(cacheKey)
+			e.logger.V(1).Info("Evicted stale namespace cache entry (no kubernaut.ai labels)", "namespace", name)
+		} else {
+			e.cache.Delete(cacheKey)
 		}
-		// SP-CACHE-001: Cached namespace has no kubernaut.ai/* labels — likely stale.
-		// Evict and re-fetch from API server to pick up labels that may have propagated.
-		e.cache.Delete(cacheKey)
-		e.logger.V(1).Info("Evicted stale namespace cache entry (no kubernaut.ai labels)", "namespace", name)
 	}
 
 	reader := e.nsReader()

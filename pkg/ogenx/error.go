@@ -199,6 +199,10 @@ func getStatusCode(resp any) int {
 				return int(statusField.Int())
 			case reflect.Int:
 				return int(statusField.Int())
+			default:
+				// A Status field of any other kind (string, bool, etc.) is
+				// not a numeric HTTP status code this helper can extract --
+				// falls through to "no status code found" below.
 			}
 		}
 	}

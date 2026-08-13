@@ -106,8 +106,7 @@ var _ = Describe("Error Classification for Retry Strategy", func() {
 				"NotFound reason tells operator to check workflow registry, not KA health")
 
 			By("Verifying root cause enables precise troubleshooting")
-			Expect(errors.Unwrap(err)).NotTo(BeNil(),
-				"HTTP 404 status helps operator verify workflow exists in repository")
+			Expect(errors.Unwrap(err)).NotTo(Succeed(), "HTTP 404 status helps operator verify workflow exists in repository")
 		})
 
 		It("should distinguish configuration errors from resource exhaustion", func() {

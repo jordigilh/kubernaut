@@ -113,8 +113,7 @@ var _ = Describe("WorkflowExecution Observability E2E", func() {
 					wfeEvents = append(wfeEvents, event)
 				}
 			}
-			Expect(len(wfeEvents)).To(BeNumerically(">", 0),
-				"Expected at least one event for WFE lifecycle")
+			Expect(wfeEvents).ToNot(BeEmpty(), "Expected at least one event for WFE lifecycle")
 
 			GinkgoWriter.Printf("✅ BR-WE-005: Found %d events for WFE lifecycle\n", len(wfeEvents))
 			for _, e := range wfeEvents {

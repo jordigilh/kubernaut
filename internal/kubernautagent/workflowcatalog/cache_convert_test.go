@@ -202,7 +202,7 @@ var _ = Describe("crdWorkflowToModel (Issue #1677 Phase 2b)", func() {
 		Expect(params).To(HaveLen(2))
 		Expect(params[0]["name"]).To(Equal("NAMESPACE"))
 		Expect(params[0]["type"]).To(Equal("string"))
-		Expect(params[0]["required"]).To(Equal(true))
+		Expect(params[0]["required"]).To(BeTrue())
 		Expect(params[1]["name"]).To(Equal("REPLICAS"))
 		Expect(params[1]["enum"]).To(Equal([]interface{}{"1", "2", "3"}))
 	})

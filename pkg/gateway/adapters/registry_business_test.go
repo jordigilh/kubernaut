@@ -129,8 +129,7 @@ var _ = Describe("BR-GATEWAY-001: Adapter Registry enables multi-source signal i
 			// Usage: for _, a := range GetAllAdapters() { mux.HandleFunc(a.GetRoute(), ...) }
 			allAdapters := registry.GetAllAdapters()
 
-			Expect(len(allAdapters)).To(Equal(1),
-				"All registered adapters returned for HTTP route setup")
+			Expect(allAdapters).To(HaveLen(1), "All registered adapters returned for HTTP route setup")
 		})
 	})
 })
@@ -160,7 +159,7 @@ var _ = Describe("BR-GATEWAY-003: Prometheus signal validation prevents invalid 
 			// Prevents: duplicate RemediationRequest CRDs for same alert
 			signal := &types.NormalizedSignal{
 				SignalName: "HighMemoryUsage",
-				Severity:  "critical",
+				Severity:   "critical",
 				// Missing: Fingerprint
 			}
 
@@ -209,7 +208,7 @@ var _ = Describe("BR-GATEWAY-003: Prometheus signal validation prevents invalid 
 			for _, tc := range testCases {
 				signal := &types.NormalizedSignal{
 					Fingerprint: "abc123",
-					SignalName:   "TestAlert",
+					SignalName:  "TestAlert",
 					Severity:    tc.severity,
 				}
 
@@ -223,7 +222,7 @@ var _ = Describe("BR-GATEWAY-003: Prometheus signal validation prevents invalid 
 		It("rejects empty severity - required for downstream policy", func() {
 			signal := &types.NormalizedSignal{
 				Fingerprint: "abc123",
-				SignalName:   "OOMKilled",
+				SignalName:  "OOMKilled",
 				Severity:    "", // Empty
 			}
 

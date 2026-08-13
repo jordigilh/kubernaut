@@ -318,8 +318,32 @@ func buildExportIntermediateResponse(
 		},
 	}
 
-	// Add optional query filters
-	queryFilters := intermediateResponse["export_metadata"].(map[string]interface{})["query_filters"].(map[string]interface{})
+	// Add optional query filters and tampered event IDs.
+	addOptionalQueryFilters(intermediateResponse, filters)
+	addOptionalTamperedEventIDs(intermediateResponse, exportResult.TamperedEventIDs)
+
+	intermediateResponse["events"] = convertExportEvents(exportResult.Events)
+
+	return intermediateResponse
+}
+
+// addOptionalQueryFilters populates the "query_filters" sub-map of
+// intermediateResponse["export_metadata"] with the optional filter fields
+// present in filters. exportMetadata/queryFilters are guaranteed to be
+// map[string]interface{} -- they are the literal maps
+// buildExportIntermediateResponse constructs a few lines above -- but
+// asserted with `ok` rather than bare `.()` per forcetypeassert; on the
+// always-false-in-practice failure path this is simply a no-op rather than
+// a panic.
+func addOptionalQueryFilters(intermediateResponse map[string]interface{}, filters repository.ExportFilters) {
+	exportMetadata, ok := intermediateResponse["export_metadata"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	queryFilters, ok := exportMetadata["query_filters"].(map[string]interface{})
+	if !ok {
+		return
+	}
 	if filters.StartTime != nil {
 		queryFilters["start_time"] = filters.StartTime
 	}
@@ -332,15 +356,21 @@ func buildExportIntermediateResponse(
 	if filters.EventCategory != "" {
 		queryFilters["event_category"] = filters.EventCategory
 	}
+}
 
-	// Add optional tampered event IDs (always include, even if empty, to match OpenAPI contract)
-	if exportResult.TamperedEventIDs != nil {
-		intermediateResponse["hash_chain_verification"].(map[string]interface{})["tampered_event_ids"] = *exportResult.TamperedEventIDs
+// addOptionalTamperedEventIDs adds the tampered-event-IDs field to
+// intermediateResponse["hash_chain_verification"] when tamperedEventIDs is
+// present. See addOptionalQueryFilters above for the forcetypeassert
+// rationale.
+func addOptionalTamperedEventIDs(intermediateResponse map[string]interface{}, tamperedEventIDs *[]string) {
+	if tamperedEventIDs == nil {
+		return
 	}
-
-	intermediateResponse["events"] = convertExportEvents(exportResult.Events)
-
-	return intermediateResponse
+	hashChainVerification, ok := intermediateResponse["hash_chain_verification"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	hashChainVerification["tampered_event_ids"] = *tamperedEventIDs
 }
 
 // convertExportEvents converts repository export events into the

@@ -299,8 +299,7 @@ var _ = Describe("WorkflowExecution Audit Flow Integration Tests", Label("audit"
 			// DD-TESTING-001: Deterministic validation - we always expect workflowexecution.execution.started
 			// May also have workflowexecution.workflow.completed/failed if Tekton is available
 			// Per ADR-034 v1.5: all event types prefixed with "workflowexecution"
-			Expect(len(auditEvents)).To(BeNumerically(">=", 1),
-				"Should have at least workflowexecution.execution.started event")
+			Expect(auditEvents).ToNot(BeEmpty(), "Should have at least workflowexecution.execution.started event")
 
 			By("5. Verify workflow lifecycle events")
 			eventTypes := make(map[string]bool)

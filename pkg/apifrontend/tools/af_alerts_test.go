@@ -267,7 +267,7 @@ var _ = Describe("Alert Tools (#1367)", func() {
 			Expect(alerts[result.SelectedIndex].Labels["severity"]).To(Equal("critical"))
 			Expect(result.TiedIndices).To(BeEmpty())
 			Expect(result.AlsoActiveStart).To(Equal(1))
-			Expect(len(alerts[result.AlsoActiveStart:])).To(Equal(2))
+			Expect(alerts[result.AlsoActiveStart:]).To(HaveLen(2))
 		})
 
 		It("UT-AF-1412-030: tie at same severity — FIFO (oldest ActiveAt) wins, others in TiedIndices", func() {

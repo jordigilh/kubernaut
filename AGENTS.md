@@ -428,6 +428,38 @@ Rules for this exception:
 - Seed corpus entries (`f.Add(...)`) should include at least one valid, one malformed, and
   one edge-case (empty/null) payload.
 
+### Exception: Go Native Benchmarks
+
+Native Go benchmarks (`func BenchmarkXxx(b *testing.B)`) are the **second, narrowly-scoped
+exception** to the Ginkgo/Gomega mandate above, alongside fuzz tests. This exists because a
+hard wall-clock threshold (`Expect(avgLatency).To(BeNumerically("<", 10*time.Millisecond))`)
+embedded in a Ginkgo `It()` block is not a business-behavior assertion -- it is a performance
+characterization pretending to be a unit test, and it fails unpredictably on shared/noisy CI
+runners regardless of framework (confirmed recurring pattern: issues #1552, #1714, #2140).
+
+- Go's benchmarking engine (`go test -bench=`) only recognizes the exact stdlib signature
+  `func BenchmarkXxx(b *testing.B)`, run via `b.N`-controlled iterations. No third-party
+  framework, including Ginkgo, produces comparable `ns/op`/`allocs/op` statistics from it.
+- Benchmarks are not business-logic behavior specs -- they characterize throughput/latency,
+  which varies with underlying hardware. A pass/fail gate on wall-clock time in CI cannot be
+  trusted without dedicated, isolated benchmark hardware, which this project does not have.
+
+Rules for this exception:
+
+- Benchmark functions live in dedicated `benchmark_test.go` files (existing convention: see
+  `pkg/datastorage/{repository,query,server}/benchmark_test.go`), never mixed into a Ginkgo
+  spec file.
+- Target only performance/throughput characterization (e.g. "how fast is this sanitizer at
+  N ops") -- the underlying business behavior (e.g. "does this sanitizer actually redact
+  credentials") still requires its own Ginkgo UT coverage, kept separate.
+- Benchmarks MUST NOT be wired into any CI job (unit, integration, or a dedicated "perf" job)
+  as a pass/fail gate. They are run manually/on-demand only: `go test -bench=. -benchmem
+  ./path/to/pkg/...`. Revisit this if/when dedicated benchmark hardware with a stable baseline
+  becomes available -- at that point, a release-process step reporting results without
+  blocking the release (fail-open) is the preferred integration pattern, not a CI merge gate.
+- Reference the Test Scenario ID with a `BENCH-` prefix (e.g. `BENCH-KA-433-047`) in the
+  benchmark's doc comment for traceability, mirroring the `UT-`/`IT-`/`E2E-` convention.
+
 ### Coverage Targets
 
 | Tier | Target | Metric | Rationale |
@@ -619,7 +651,7 @@ A 13-dimension quality gate applied before declaring a service or feature produc
 | 3 | **Unit Tests** | 100% pass rate, 100% coverage on business logic |
 | 4 | **Integration Tests** | 100% pass rate, all wiring points + FedRAMP controls assessed |
 | 5 | **Wiring Verification** | CHECKPOINT W passes for all components |
-| 6 | **BDD Framework** | Zero standard `testing.T` usage in business tests (native Go fuzz tests are the sole exception -- see [Exception: Go Native Fuzz Tests](#exception-go-native-fuzz-tests)) |
+| 6 | **BDD Framework** | Zero standard `testing.T` usage in business tests (native Go fuzz tests and benchmarks are the sole exceptions -- see [Exception: Go Native Fuzz Tests](#exception-go-native-fuzz-tests) and [Exception: Go Native Benchmarks](#exception-go-native-benchmarks)) |
 | 7 | **Test ID Assignment** | All tests have scenario IDs or BR references |
 | 8 | **SOC2/FedRAMP Compliance** | All audit events mapped to controls, reconstruction proven |
 | 9 | **100 Go Mistakes** | Zero violations from [anti-pattern checklist](#go-anti-pattern-checklist) |

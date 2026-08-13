@@ -610,8 +610,7 @@ var _ = Describe("WorkflowExecution Job Backend E2E (BR-WE-014)", func() {
 			// DD-WE-003: Job name format is wfe-<sha256(targetResource)[:16]>
 			Expect(job.Name).To(HavePrefix("wfe-"),
 				"Job name should follow deterministic naming convention (wfe- prefix)")
-			Expect(len(job.Name)).To(Equal(20),
-				"Job name should be wfe- + 16 hex chars = 20 chars total")
+			Expect(job.Name).To(HaveLen(20), "Job name should be wfe- + 16 hex chars = 20 chars total")
 
 			By("Verifying ExecutionRef in WFE status matches the deterministic Job name")
 			running, err := getWFE(wfe.Name, wfe.Namespace)

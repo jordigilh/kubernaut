@@ -201,8 +201,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 				"Console and log should succeed (2 successful)")
 			Expect(notification.Status.FailedDeliveries).To(Equal(1),
 				"File delivery should fail (1 failed)")
-			Expect(len(notification.Status.DeliveryAttempts)).To(Equal(3),
-				"Should attempt delivery to all 3 channels")
+			Expect(notification.Status.DeliveryAttempts).To(HaveLen(3), "Should attempt delivery to all 3 channels")
 
 			By("Validating mock service call counts")
 			// DD-STATUS-001: Cache-bypassed reads + rapid reconciliation can cause 1-2 calls
@@ -432,8 +431,7 @@ var _ = Describe("Controller Partial Failure Handling (BR-NOT-053)", func() {
 				"No channels should succeed")
 			Expect(notification.Status.FailedDeliveries).To(Equal(3),
 				"All 3 channels should fail")
-			Expect(len(notification.Status.DeliveryAttempts)).To(Equal(3),
-				"Should attempt delivery to all 3 channels")
+			Expect(notification.Status.DeliveryAttempts).To(HaveLen(3), "Should attempt delivery to all 3 channels")
 
 			// ========================================
 			// CLEANUP

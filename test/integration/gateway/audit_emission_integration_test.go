@@ -1135,8 +1135,7 @@ var _ = Describe("Gateway Audit Event Emission", Label("audit", "integration"), 
 
 			Expect(duplicates).To(BeEmpty(),
 				"BR-GATEWAY-055: All audit event IDs must be globally unique (found duplicates: %v)", duplicates)
-			Expect(len(uniqueIDs)).To(Equal(len(allAuditIDs)),
-				"BR-GATEWAY-055: Number of unique IDs must match total audit events")
+			Expect(uniqueIDs).To(HaveLen(len(allAuditIDs)), "BR-GATEWAY-055: Number of unique IDs must match total audit events")
 
 			By("4. Validate audit ID format (ULID or UUID)")
 			for _, id := range allAuditIDs {

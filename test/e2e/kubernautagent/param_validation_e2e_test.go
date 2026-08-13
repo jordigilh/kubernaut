@@ -90,8 +90,7 @@ var _ = Describe("E2E-KA Parameter Validation Self-Correction (#1170)", Label("e
 				"First attempt number should be 1")
 			Expect(firstAttempt.IsValid).To(BeFalse(),
 				"First attempt should fail due to type mismatch")
-			Expect(len(firstAttempt.Errors)).To(BeNumerically(">=", 1),
-				"First attempt must record parameter-level validation errors")
+			Expect(firstAttempt.Errors).ToNot(BeEmpty(), "First attempt must record parameter-level validation errors")
 			hasParamError := false
 			for _, e := range firstAttempt.Errors {
 				if strings.Contains(e, "REPLICA_COUNT") || strings.Contains(e, "type") || strings.Contains(e, "required") {

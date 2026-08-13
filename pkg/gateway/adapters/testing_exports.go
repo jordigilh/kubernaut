@@ -35,7 +35,13 @@ import (
 // PodDisruptionBudget (policy/v1), ClusterRole (rbac.authorization.k8s.io/v1).
 func NewTestAPIResourceRegistry() *APIResourceRegistry {
 	cs := fakeclientset.NewSimpleClientset()
-	fd := cs.Discovery().(*fakediscovery.FakeDiscovery)
+	fd, ok := cs.Discovery().(*fakediscovery.FakeDiscovery)
+	if !ok {
+		// client-go's fake.NewSimpleClientset() always backs Discovery()
+		// with *fakediscovery.FakeDiscovery -- an upstream contract this
+		// test helper relies on, not a runtime condition callers can hit.
+		panic("NewTestAPIResourceRegistry: fake clientset Discovery() is not *fakediscovery.FakeDiscovery")
+	}
 	fd.Resources = []*metav1.APIResourceList{
 		{
 			GroupVersion: "apps/v1",
@@ -109,7 +115,12 @@ func NewTestAPIResourceRegistryNilSnapshot() *APIResourceRegistry {
 // Prometheus label was resolved as a Namespace resource candidate.
 func NewTestAPIResourceRegistryWithNamespace() *APIResourceRegistry {
 	cs := fakeclientset.NewSimpleClientset()
-	fd := cs.Discovery().(*fakediscovery.FakeDiscovery)
+	fd, ok := cs.Discovery().(*fakediscovery.FakeDiscovery)
+	if !ok {
+		// See NewTestAPIResourceRegistry above for why this is a genuine
+		// invariant, not a runtime condition.
+		panic("NewTestAPIResourceRegistryWithNamespace: fake clientset Discovery() is not *fakediscovery.FakeDiscovery")
+	}
 	fd.Resources = []*metav1.APIResourceList{
 		{
 			GroupVersion: "apps/v1",

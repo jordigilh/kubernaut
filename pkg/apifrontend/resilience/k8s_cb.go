@@ -82,7 +82,9 @@ func (k *K8sCircuitBreaker) Execute(ctx context.Context, fn func(ctx context.Con
 		return err
 	}
 	if result != nil {
-		return result.(error)
+		if resultErr, ok := result.(error); ok {
+			return resultErr
+		}
 	}
 	return nil
 }

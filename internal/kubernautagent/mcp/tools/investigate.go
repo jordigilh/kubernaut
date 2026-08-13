@@ -399,7 +399,12 @@ func (t *InvestigateTool) SubscribeEvents(ctx context.Context, sessionID string)
 // getSessionMutex returns a per-rrID mutex for serializing concurrent requests.
 func (t *InvestigateTool) getSessionMutex(rrID string) *sync.Mutex {
 	val, _ := t.sessionMu.LoadOrStore(rrID, &sync.Mutex{})
-	return val.(*sync.Mutex)
+	// LoadOrStore's stored value is always the *sync.Mutex{} literal above
+	// (the only value ever stored into this map) -- a checked assertion
+	// with a fallback would have to fabricate a *different* mutex, which
+	// silently breaks the per-rrID mutual-exclusion guarantee this method
+	// exists to provide, a worse failure mode than the panic it avoids.
+	return val.(*sync.Mutex) //nolint:forcetypeassert
 }
 
 // GetSessionMutex implements SessionMutexProvider, exposing the per-rrID mutex

@@ -211,8 +211,7 @@ var _ = Describe("Test 04: Metrics Endpoint (BR-GATEWAY-017)", Ordered, Continue
 		testLogger.Info(fmt.Sprintf("  Request metrics present: %v", hasRequestMetrics))
 
 		// Verify metrics endpoint still works after processing
-		Expect(len(metricsOutput2)).To(BeNumerically(">", 0),
-			"Metrics should still be available after processing")
+		Expect(metricsOutput2).ToNot(BeEmpty(), "Metrics should still be available after processing")
 
 		testLogger.Info("  ✅ Metrics updated after alert processing")
 

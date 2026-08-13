@@ -197,6 +197,10 @@ func (j *JobExecutor) GetStatus(ctx context.Context, wfe *workflowexecutionv1alp
 					Summary: summary,
 				}, nil
 			}
+		default:
+			// Suspended/FailureTarget/SuccessCriteriaMet are non-terminal
+			// signals -- only Complete/Failed determine this loop's
+			// outcome; anything else falls through to "still running".
 		}
 	}
 

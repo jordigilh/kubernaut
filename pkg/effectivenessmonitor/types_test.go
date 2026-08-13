@@ -72,7 +72,7 @@ var _ = Describe("Core Types (BR-EM-001 through BR-EM-008)", func() {
 			Expect(result.Component).To(Equal(types.ComponentHealth))
 			Expect(result.Assessed).To(BeTrue())
 			Expect(*result.Score).To(Equal(0.85))
-			Expect(result.Error).To(BeNil())
+			Expect(result.Error).ToNot(HaveOccurred())
 		})
 
 		It("should represent an unassessed component", func() {

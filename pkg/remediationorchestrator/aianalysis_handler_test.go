@@ -782,7 +782,7 @@ var _ = Describe("AIAnalysisHandler", func() {
 				nrList := &notificationv1.NotificationRequestList{}
 				err = client.List(ctx, nrList)
 				Expect(err).ToNot(HaveOccurred())
-				Expect(nrList.Items).To(HaveLen(0))
+				Expect(nrList.Items).To(BeEmpty())
 			})
 
 			// UT-RO-197-003: NeedsHumanReview takes precedence over WorkflowResolutionFailed

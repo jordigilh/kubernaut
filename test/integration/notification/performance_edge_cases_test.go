@@ -152,8 +152,7 @@ var _ = Describe("Category 8: Performance Edge Cases", Label("integration", "per
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
 			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(freshNotif.Spec.Body)).To(Equal(bodySize),
-				"Body should not be truncated")
+			Expect(freshNotif.Spec.Body).To(HaveLen(bodySize), "Body should not be truncated")
 
 			err = deleteAndWait(ctx, k8sClient, notif, 5*time.Second)
 			Expect(err).NotTo(HaveOccurred())

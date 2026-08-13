@@ -633,8 +633,7 @@ var _ = Describe("CRDSessionService", func() {
 			storedEvent := getResp.Session.Events().At(0)
 			storedResp := storedEvent.Content.Parts[0].FunctionResponse.Response
 
-			Expect(storedResp["truncated"]).To(Equal(true),
-				"response must be truncated (exceeds 16KB)")
+			Expect(storedResp["truncated"]).To(BeTrue(), "response must be truncated (exceeds 16KB)")
 			Expect(storedResp["rr_id"]).To(Equal("rr-preserve-001"),
 				"rr_id must survive trimming for cross-turn LLM context (BR-INTERACTIVE-010, AU-3)")
 			Expect(storedResp["session_id"]).To(Equal("sess-preserve-001"),

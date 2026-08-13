@@ -160,8 +160,7 @@ var _ = Describe("EventBridge", func() {
 
 			evt := queue.events[0].(*a2a.TaskStatusUpdateEvent)
 			textPart := evt.Status.Message.Parts[0].(a2a.TextPart)
-			Expect(len(textPart.Text)).To(Equal(600),
-				"#1435: reasoning limit raised to 4096, 600 chars should not be truncated")
+			Expect(textPart.Text).To(HaveLen(600), "#1435: reasoning limit raised to 4096, 600 chars should not be truncated")
 			Expect(evt.Metadata["type"]).To(Equal("reasoning"))
 		})
 	})
@@ -482,8 +481,7 @@ var _ = Describe("EventBridge", func() {
 			Expect(ok).To(BeTrue(), "EmitReasoningContent must produce TaskStatusUpdateEvent")
 			Expect(evt.Metadata).NotTo(BeNil())
 			Expect(evt.Metadata["type"]).To(Equal("reasoning_content"))
-			Expect(evt.Metadata["redacted"]).To(Equal(true),
-				"#1716: metadata.redacted must be true so Console can render a placeholder")
+			Expect(evt.Metadata["redacted"]).To(BeTrue(), "#1716: metadata.redacted must be true so Console can render a placeholder")
 		})
 
 		It("UT-AF-1716-EB-002: a non-redacted empty text still no-ops (regression guard)", func() {

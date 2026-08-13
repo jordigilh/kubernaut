@@ -252,9 +252,22 @@ func (r *SignalProcessingReconciler) classifyBusiness(k8sCtx *signalprocessingv1
 		case signalprocessingv1alpha1.EnvironmentStaging:
 			result.Criticality = signalprocessingv1alpha1.CriticalityMedium
 			result.SLARequirement = signalprocessingv1alpha1.SLARequirementSilver
-		case signalprocessingv1alpha1.EnvironmentDevelopment:
+		case signalprocessingv1alpha1.EnvironmentDevelopment, signalprocessingv1alpha1.EnvironmentTest:
+			// Issue #2137: Test carries the same non-production risk
+			// profile as Development (ephemeral, disposable) -- found
+			// with no case at all during exhaustive-linter triage.
 			result.Criticality = signalprocessingv1alpha1.CriticalityLow
 			result.SLARequirement = signalprocessingv1alpha1.SLARequirementBronze
+		case signalprocessingv1alpha1.EnvironmentUnknown:
+			// Issue #2137: safety-first default -- when classification
+			// fails we cannot assume this is NOT production, so default to
+			// the middle tier (same as Staging) rather than either
+			// extreme: Low/Bronze risks silently under-serving a
+			// misclassified production issue; High/Gold would
+			// over-escalate every classification failure. Provisional
+			// pending product confirmation (see issue).
+			result.Criticality = signalprocessingv1alpha1.CriticalityMedium
+			result.SLARequirement = signalprocessingv1alpha1.SLARequirementSilver
 		}
 	}
 

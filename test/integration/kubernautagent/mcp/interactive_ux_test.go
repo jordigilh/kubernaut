@@ -65,7 +65,7 @@ var _ = Describe("Interactive Session UX — Notifications & Timeouts BR-INTERAC
 				mu.Lock()
 				defer mu.Unlock()
 				return warnings
-			}, 2*time.Second, 50*time.Millisecond).Should(HaveLen(0))
+			}, 2*time.Second, 50*time.Millisecond).Should(BeEmpty())
 			// With 600ms timeout and warning at timeout-1s (negative -> filtered),
 			// no warning is expected. This validates the filter logic.
 		})

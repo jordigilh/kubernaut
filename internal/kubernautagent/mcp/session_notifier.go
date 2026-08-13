@@ -42,8 +42,9 @@ func (n *SessionNotifier) Register(sessionID string, fn func(msg string)) {
 // No-op if the session has no registered notifier (already deregistered).
 func (n *SessionNotifier) Notify(sessionID, msg string) {
 	if raw, ok := n.notifiers.Load(sessionID); ok {
-		fn := raw.(func(msg string))
-		fn(msg)
+		if fn, ok := raw.(func(msg string)); ok {
+			fn(msg)
+		}
 	}
 }
 

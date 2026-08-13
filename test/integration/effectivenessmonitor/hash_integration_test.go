@@ -23,8 +23,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -62,8 +62,7 @@ var _ = Describe("Spec Hash Integration (BR-EM-004)", func() {
 		// Hash uses DD-EM-002 canonical format: "sha256:<64-hex>" (71 chars)
 		Expect(fetchedEA.Status.Components.PostRemediationSpecHash).To(HavePrefix("sha256:"),
 			"hash should use canonical sha256: prefix (DD-EM-002)")
-		Expect(len(fetchedEA.Status.Components.PostRemediationSpecHash)).To(Equal(71),
-			"hash should be 71 characters: 'sha256:' (7) + 64 hex digits")
+		Expect(fetchedEA.Status.Components.PostRemediationSpecHash).To(HaveLen(71), "hash should be 71 characters: 'sha256:' (7) + 64 hex digits")
 	})
 
 	// ========================================

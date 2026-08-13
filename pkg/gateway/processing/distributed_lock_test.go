@@ -434,7 +434,7 @@ var _ = Describe("DistributedLockManager", func() {
 				leaseList := &coordinationv1.LeaseList{}
 				err = k8sClient.List(ctx, leaseList, client.InNamespace(namespace))
 				Expect(err).NotTo(HaveOccurred())
-				Expect(len(leaseList.Items)).To(Equal(1))
+				Expect(leaseList.Items).To(HaveLen(1))
 				Expect(len(leaseList.Items[0].Name)).To(BeNumerically("<=", 63),
 					"Lease name must comply with K8s 63-char limit")
 			})
@@ -503,8 +503,7 @@ var _ = Describe("DistributedLockManager", func() {
 			// Then: Only one should acquire lock
 			Expect(err1).NotTo(HaveOccurred())
 			Expect(err2).NotTo(HaveOccurred())
-			Expect(acquired1 != acquired2).To(BeTrue(),
-				"Only one pod should acquire lock (mutual exclusion)")
+			Expect(acquired1).ToNot(Equal(acquired2), "Only one pod should acquire lock (mutual exclusion)")
 
 			// And: The pod that didn't acquire lock should be able to retry after release
 			if acquired1 {

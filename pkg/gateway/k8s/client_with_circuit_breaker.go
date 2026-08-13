@@ -18,6 +18,7 @@ package k8s
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/sony/gobreaker/v2"
@@ -171,7 +172,11 @@ func (c *ClientWithCircuitBreaker) GetRemediationRequest(ctx context.Context, na
 		return nil, err
 	}
 
-	return result.(*remediationv1alpha1.RemediationRequest), nil
+	rr, ok := result.(*remediationv1alpha1.RemediationRequest)
+	if !ok {
+		return nil, fmt.Errorf("internal error: unexpected type %T from circuit-breaker-wrapped GetRemediationRequest", result)
+	}
+	return rr, nil
 }
 
 // State returns the current circuit breaker state (for observability)

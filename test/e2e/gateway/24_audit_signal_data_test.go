@@ -287,24 +287,24 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			eventType := gateway.EventTypeSignalReceived
 			eventCategory := gateway.CategoryGateway
 
-		// ✅ MANDATORY: Use Eventually() for async operations (NO time.Sleep())
-		// Per TESTING_GUIDELINES.md: time.Sleep() is ABSOLUTELY FORBIDDEN
-		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-				EventType:     ogenclient.NewOptString(eventType),
-				EventCategory: ogenclient.NewOptString(eventCategory),
-				CorrelationID: ogenclient.NewOptString(correlationID),
-			})
-			if err != nil {
-				GinkgoWriter.Printf("QueryAuditEvents error: %v\n", err)
+			// ✅ MANDATORY: Use Eventually() for async operations (NO time.Sleep())
+			// Per TESTING_GUIDELINES.md: time.Sleep() is ABSOLUTELY FORBIDDEN
+			Eventually(func() int {
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationID),
+				})
+				if err != nil {
+					GinkgoWriter.Printf("QueryAuditEvents error: %v\n", err)
+					return 0
+				}
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					return resp.Pagination.Value.Total.Value
+				}
 				return 0
-			}
-			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-				return resp.Pagination.Value.Total.Value
-			}
-			return 0
-		}, 120*time.Second, 1*time.Second).Should(Equal(1),
-			"Should find exactly 1 gateway.signal.received audit event")
+			}, 120*time.Second, 1*time.Second).Should(Equal(1),
+				"Should find exactly 1 gateway.signal.received audit event")
 
 			// Query final audit events for validation
 			resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
@@ -316,7 +316,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			// ✅ DD-TESTING-001: Deterministic count validation (Equal(N) not BeNumerically(">="))
 			events := resp2.Data
-			Expect(len(events)).To(Equal(1), "Should have exactly 1 audit event")
+			Expect(events).To(HaveLen(1), "Should have exactly 1 audit event")
 
 			auditEvent := events[0]
 
@@ -368,7 +368,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			// Validate nested alert data
 			alerts, ok := originalPayload["alerts"].([]interface{})
 			Expect(ok).To(BeTrue(), "alerts should be an array")
-			Expect(len(alerts)).To(BeNumerically(">", 0), "Should have at least one alert")
+			Expect(alerts).ToNot(BeEmpty(), "Should have at least one alert")
 
 			// ┌─────────────────────────────────────────────────────────────┐
 			// │ Gap #2: signal_labels (Prometheus Alert Labels)             │
@@ -502,37 +502,37 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			eventType := gateway.EventTypeSignalReceived
 			eventCategory := gateway.CategoryGateway
 
-		// ✅ Use Eventually() for async validation
-		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+			// ✅ Use Eventually() for async validation
+			Eventually(func() int {
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationID),
+				})
+				if err != nil {
+					GinkgoWriter.Printf("QueryAuditEvents error (empty labels): %v\n", err)
+					return 0
+				}
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					return resp.Pagination.Value.Total.Value
+				}
+				return 0
+			}, 120*time.Second, 1*time.Second).Should(Equal(1),
+				"Should find exactly 1 audit event for empty labels test")
+
+			// Query final audit events
+			resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
 				EventCategory: ogenclient.NewOptString(eventCategory),
 				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
-			if err != nil {
-				GinkgoWriter.Printf("QueryAuditEvents error (empty labels): %v\n", err)
-				return 0
-			}
-			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-				return resp.Pagination.Value.Total.Value
-			}
-			return 0
-		}, 120*time.Second, 1*time.Second).Should(Equal(1),
-			"Should find exactly 1 audit event for empty labels test")
+			Expect(err).ToNot(HaveOccurred())
 
-		// Query final audit events
-		resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-			EventType:     ogenclient.NewOptString(eventType),
-			EventCategory: ogenclient.NewOptString(eventCategory),
-			CorrelationID: ogenclient.NewOptString(correlationID),
-		})
-		Expect(err).ToNot(HaveOccurred())
+			events := resp2.Data
+			Expect(events).To(HaveLen(1))
 
-		events := resp2.Data
-		Expect(len(events)).To(Equal(1))
-
-		// Convert EventData discriminated union to map for existing validation logic
-		eventDataBytes, _ := json.Marshal(events[0].EventData)
+			// Convert EventData discriminated union to map for existing validation logic
+			eventDataBytes, _ := json.Marshal(events[0].EventData)
 			var eventData map[string]interface{}
 			err = json.Unmarshal(eventDataBytes, &eventData)
 			Expect(err).ToNot(HaveOccurred())
@@ -548,8 +548,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			signalLabels, ok := eventData["signal_labels"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "signal_labels should be a map, not nil")
-			Expect(len(signalLabels)).To(Equal(3),
-				"signal_labels should have alertname, namespace, and pod")
+			Expect(signalLabels).To(HaveLen(3), "signal_labels should have alertname, namespace, and pod")
 			Expect(signalLabels).To(HaveKeyWithValue("alertname", "MinimalAlert"))
 			Expect(signalLabels).To(HaveKey("namespace"))
 			Expect(signalLabels).To(HaveKeyWithValue("pod", "minimal-alert-pod"))
@@ -560,8 +559,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			signalAnnotations, ok := eventData["signal_annotations"].(map[string]interface{})
 			Expect(ok).To(BeTrue(), "signal_annotations should be a map, not nil")
-			Expect(len(signalAnnotations)).To(Equal(0),
-				"signal_annotations should be empty map when no annotations provided")
+			Expect(signalAnnotations).To(BeEmpty(), "signal_annotations should be empty map when no annotations provided")
 
 			// Gap #1: original_payload should still be present (contains alert structure)
 			Expect(eventData).To(HaveKey("original_payload"),
@@ -630,36 +628,36 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			eventType := gateway.EventTypeSignalReceived
 			eventCategory := gateway.CategoryGateway
 
-		// ✅ Use Eventually() for async validation
-		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+			// ✅ Use Eventually() for async validation
+			Eventually(func() int {
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationID),
+				})
+				if err != nil {
+					GinkgoWriter.Printf("QueryAuditEvents error (nil payload): %v\n", err)
+					return 0
+				}
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					return resp.Pagination.Value.Total.Value
+				}
+				return 0
+			}, 120*time.Second, 1*time.Second).Should(Equal(1),
+				"Should find exactly 1 audit event for nil payload test")
+
+			// Query final audit events
+			resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
 				EventCategory: ogenclient.NewOptString(eventCategory),
 				CorrelationID: ogenclient.NewOptString(correlationID),
 			})
-			if err != nil {
-				GinkgoWriter.Printf("QueryAuditEvents error (nil payload): %v\n", err)
-				return 0
-			}
-			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-				return resp.Pagination.Value.Total.Value
-			}
-			return 0
-		}, 120*time.Second, 1*time.Second).Should(Equal(1),
-			"Should find exactly 1 audit event for nil payload test")
+			Expect(err).ToNot(HaveOccurred())
+			events := resp2.Data
+			Expect(events).To(HaveLen(1))
 
-		// Query final audit events
-		resp2, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-			EventType:     ogenclient.NewOptString(eventType),
-			EventCategory: ogenclient.NewOptString(eventCategory),
-			CorrelationID: ogenclient.NewOptString(correlationID),
-		})
-		Expect(err).ToNot(HaveOccurred())
-		events := resp2.Data
-		Expect(len(events)).To(Equal(1))
-
-		// Convert EventData discriminated union to map for existing validation logic
-		eventDataBytes, _ := json.Marshal(events[0].EventData)
+			// Convert EventData discriminated union to map for existing validation logic
+			eventDataBytes, _ := json.Marshal(events[0].EventData)
 			var eventData map[string]interface{}
 			err = json.Unmarshal(eventDataBytes, &eventData)
 			Expect(err).ToNot(HaveOccurred())
@@ -811,23 +809,23 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			eventType := gateway.EventTypeSignalDeduplicated
 			eventCategory := gateway.CategoryGateway
 
-		// ✅ Use Eventually() for async validation
-		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-				EventType:     ogenclient.NewOptString(eventType),
-				EventCategory: ogenclient.NewOptString(eventCategory),
-				CorrelationID: ogenclient.NewOptString(correlationID2),
-			})
-			if err != nil {
-				GinkgoWriter.Printf("QueryAuditEvents error (dedup): %v\n", err)
+			// ✅ Use Eventually() for async validation
+			Eventually(func() int {
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationID2),
+				})
+				if err != nil {
+					GinkgoWriter.Printf("QueryAuditEvents error (dedup): %v\n", err)
+					return 0
+				}
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					return resp.Pagination.Value.Total.Value
+				}
 				return 0
-			}
-			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-				return resp.Pagination.Value.Total.Value
-			}
-			return 0
-		}, 120*time.Second, 1*time.Second).Should(Equal(1),
-			"Should find exactly 1 gateway.signal.deduplicated event")
+			}, 120*time.Second, 1*time.Second).Should(Equal(1),
+				"Should find exactly 1 gateway.signal.deduplicated event")
 
 			// Query final audit events
 			resp3, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
@@ -838,7 +836,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			Expect(err).ToNot(HaveOccurred())
 
 			events := resp3.Data
-			Expect(len(events)).To(Equal(1))
+			Expect(events).To(HaveLen(1))
 
 			// ✅ DD-TESTING-001: Validate event metadata
 			Expect(events[0].EventType).To(Equal(eventType))
@@ -940,28 +938,28 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			By("Sending Kubernetes Event")
 
-		k8sEvent := map[string]interface{}{
-			"apiVersion": "v1",
-			"kind":       "Event",
-			"metadata": map[string]interface{}{
-				"name":      "cross-type-test-k8s",
-				"namespace": sharedNamespace,
-				"labels": map[string]string{
-					"app":    "payment-service",
-					"source": "kubernetes",
+			k8sEvent := map[string]interface{}{
+				"apiVersion": "v1",
+				"kind":       "Event",
+				"metadata": map[string]interface{}{
+					"name":      "cross-type-test-k8s",
+					"namespace": sharedNamespace,
+					"labels": map[string]string{
+						"app":    "payment-service",
+						"source": "kubernetes",
+					},
+					"annotations": map[string]string{
+						"runbook": "http://runbooks.com/k8s-oom",
+					},
 				},
-				"annotations": map[string]string{
-					"runbook": "http://runbooks.com/k8s-oom",
+				"reason":  "OOMKilled",
+				"message": "Container exceeded memory limit (cross-type test)",
+				"type":    "Warning",
+				"involvedObject": map[string]interface{}{
+					"kind":      "Pod",
+					"name":      "payment-service-recurring",
+					"namespace": sharedNamespace,
 				},
-			},
-			"reason":  "OOMKilled",
-			"message": "Container exceeded memory limit (cross-type test)",
-			"type":    "Warning",
-			"involvedObject": map[string]interface{}{
-				"kind":      "Pod",
-				"name":      "payment-service-recurring",
-				"namespace": sharedNamespace,
-			},
 				"source": map[string]interface{}{
 					"component": "kubelet",
 				},
@@ -991,21 +989,21 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			eventType := gateway.EventTypeSignalReceived
 			eventCategory := gateway.CategoryGateway
 
-		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-				EventType:     ogenclient.NewOptString(eventType),
-				EventCategory: ogenclient.NewOptString(eventCategory),
-				CorrelationID: ogenclient.NewOptString(correlationIDProm),
-			})
-			if err != nil {
-				GinkgoWriter.Printf("QueryAuditEvents error (prom cross-type): %v\n", err)
+			Eventually(func() int {
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationIDProm),
+				})
+				if err != nil {
+					GinkgoWriter.Printf("QueryAuditEvents error (prom cross-type): %v\n", err)
+					return 0
+				}
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					return resp.Pagination.Value.Total.Value
+				}
 				return 0
-			}
-			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-				return resp.Pagination.Value.Total.Value
-			}
-			return 0
-		}, 120*time.Second, 1*time.Second).Should(Equal(1))
+			}, 120*time.Second, 1*time.Second).Should(Equal(1))
 
 			respPromAudit, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
@@ -1014,7 +1012,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			})
 			Expect(err).ToNot(HaveOccurred())
 			promEvents := respPromAudit.Data
-			Expect(len(promEvents)).To(Equal(1))
+			Expect(promEvents).To(HaveLen(1))
 
 			// Convert EventData discriminated union to map for existing validation logic
 			promEventDataBytes, _ := json.Marshal(promEvents[0].EventData)
@@ -1026,21 +1024,21 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 
 			By("Verifying K8s Event audit event has all 3 RR reconstruction fields")
 
-		Eventually(func() int {
-			resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
-				EventType:     ogenclient.NewOptString(eventType),
-				EventCategory: ogenclient.NewOptString(eventCategory),
-				CorrelationID: ogenclient.NewOptString(correlationIDK8s),
-			})
-			if err != nil {
-				GinkgoWriter.Printf("QueryAuditEvents error (k8s cross-type): %v\n", err)
+			Eventually(func() int {
+				resp, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
+					EventType:     ogenclient.NewOptString(eventType),
+					EventCategory: ogenclient.NewOptString(eventCategory),
+					CorrelationID: ogenclient.NewOptString(correlationIDK8s),
+				})
+				if err != nil {
+					GinkgoWriter.Printf("QueryAuditEvents error (k8s cross-type): %v\n", err)
+					return 0
+				}
+				if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
+					return resp.Pagination.Value.Total.Value
+				}
 				return 0
-			}
-			if resp.Pagination.IsSet() && resp.Pagination.Value.Total.IsSet() {
-				return resp.Pagination.Value.Total.Value
-			}
-			return 0
-		}, 120*time.Second, 1*time.Second).Should(Equal(1))
+			}, 120*time.Second, 1*time.Second).Should(Equal(1))
 
 			respK8sAudit, err := dsClient.QueryAuditEvents(testCtx, ogenclient.QueryAuditEventsParams{
 				EventType:     ogenclient.NewOptString(eventType),
@@ -1049,7 +1047,7 @@ var _ = Describe("BR-AUDIT-005: Gateway Signal Data for RR Reconstruction", func
 			})
 			Expect(err).ToNot(HaveOccurred())
 			k8sEvents := respK8sAudit.Data
-			Expect(len(k8sEvents)).To(Equal(1))
+			Expect(k8sEvents).To(HaveLen(1))
 
 			// Convert EventData discriminated union to map for existing validation logic
 			k8sEventDataBytes, _ := json.Marshal(k8sEvents[0].EventData)

@@ -247,10 +247,8 @@ var _ = Describe("reinvokingRunner checkpoint-flag clearing (DD-AF-011, #1899)",
 		}
 
 		Expect(fake.calls).To(HaveLen(1))
-		Expect(fake.calls[0].phase2AtEntry).To(Equal(false),
-			"a genuine top-level user turn must clear af_phase2_blocked before the inner runner is ever invoked")
-		Expect(fake.calls[0].phase3AtEntry).To(Equal(false),
-			"a genuine top-level user turn must clear af_phase3_blocked before the inner runner is ever invoked")
+		Expect(fake.calls[0].phase2AtEntry).To(BeFalse(), "a genuine top-level user turn must clear af_phase2_blocked before the inner runner is ever invoked")
+		Expect(fake.calls[0].phase3AtEntry).To(BeFalse(), "a genuine top-level user turn must clear af_phase3_blocked before the inner runner is ever invoked")
 	})
 
 	It("IT-AF-1899-007: a checkpoint re-blocked mid-turn correctly suppresses reinvocation and is NOT wiped by Run() itself afterward", func() {
@@ -294,16 +292,14 @@ var _ = Describe("reinvokingRunner checkpoint-flag clearing (DD-AF-011, #1899)",
 		Expect(fake.calls).To(HaveLen(1),
 			"a checkpoint re-blocked mid-turn must suppress reinvocation for the rest of THIS turn -- "+
 				"the model must wait for the user, not be nudged again")
-		Expect(fake.calls[0].phase2AtEntry).To(Equal(false),
-			"the genuine top-level call must see the leftover checkpoint cleared before it runs")
+		Expect(fake.calls[0].phase2AtEntry).To(BeFalse(), "the genuine top-level call must see the leftover checkpoint cleared before it runs")
 
 		getResp, err := sessionSvc.Get(ctx, &adksession.GetRequest{AppName: appName, UserID: "user-1", SessionID: "sess-ckpt-2"})
 		Expect(err).NotTo(HaveOccurred())
 		final, err := getResp.Session.State().Get(session.StateKeyPhase2Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(final).To(Equal(true),
-			"Run() must NOT clear the checkpoint flag a second time after correctly deciding not to reinvoke -- "+
-				"clearCheckpointFlags only runs once, at genuine top-level entry, never mid-loop")
+		Expect(final).To(BeTrue(), "Run() must NOT clear the checkpoint flag a second time after correctly deciding not to reinvoke -- "+
+			"clearCheckpointFlags only runs once, at genuine top-level entry, never mid-loop")
 	})
 })
 

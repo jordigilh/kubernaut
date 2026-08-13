@@ -121,7 +121,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 		// Test signal
 		testSignal = &types.NormalizedSignal{
 			SignalName: "HighMemoryUsage",
-			Namespace: "production",
+			Namespace:  "production",
 			Resource: types.ResourceIdentifier{
 				Kind: "Pod",
 				Name: "payment-api-123",
@@ -140,7 +140,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 
 			// BUSINESS OUTCOME: K8s API failure detected
-			Expect(err).ToNot(BeNil(), "K8s API failure must be detected and propagated")
+			Expect(err).To(HaveOccurred(), "K8s API failure must be detected and propagated")
 			Expect(err.Error()).To(ContainSubstring("connection refused"), "Error message must indicate K8s API as root cause")
 
 			// BUSINESS CAPABILITY VERIFIED:
@@ -195,14 +195,14 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			// Simulate K8s API down
 			failingK8sClient.failCreate = true
 			_, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
-			Expect(err).ToNot(BeNil(), "First attempt fails when K8s API down")
+			Expect(err).To(HaveOccurred(), "First attempt fails when K8s API down")
 
-		// Simulate K8s API recovery
-		failingK8sClient.failCreate = false
-		rr, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
+			// Simulate K8s API recovery
+			failingK8sClient.failCreate = false
+			rr, err := crdCreator.CreateRemediationRequest(ctx, testSignal) // environment/priority removed - SP owns classification
 
-		Expect(err).To(BeNil(), "Second attempt succeeds when K8s API recovers")
-		Expect(rr).NotTo(BeNil(), "RemediationRequest CRD must be returned on success")
+			Expect(err).ToNot(HaveOccurred(), "Second attempt succeeds when K8s API recovers")
+			Expect(rr).NotTo(BeNil(), "RemediationRequest CRD must be returned on success")
 
 			// BUSINESS CAPABILITY VERIFIED:
 			// ✅ Gateway operational flow resumes after K8s recovery
@@ -219,7 +219,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 
 			// Signal 1: K8s API down
 			signal1 := &types.NormalizedSignal{
-				SignalName:   "HighMemoryUsage",
+				SignalName:  "HighMemoryUsage",
 				Namespace:   "production",
 				Fingerprint: "signal-1",
 				Resource: types.ResourceIdentifier{
@@ -233,7 +233,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 
 			// Signal 2: K8s API recovers
 			signal2 := &types.NormalizedSignal{
-				SignalName:   "HighCPU",
+				SignalName:  "HighCPU",
 				Namespace:   "staging",
 				Fingerprint: "signal-2",
 				Resource: types.ResourceIdentifier{
@@ -353,7 +353,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			// Trigger 10 consecutive failures to trip circuit breaker
 			signal := &types.NormalizedSignal{
 				SignalName: "HighCPU",
-				Namespace: "default",
+				Namespace:  "default",
 				Resource: types.ResourceIdentifier{
 					Kind: "Pod",
 					Name: "test-pod",
@@ -388,7 +388,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 			_, err := cbCrdCreator.CreateRemediationRequest(ctx, signal)
 			duration := time.Since(startTime)
 
-			Expect(err).ToNot(BeNil(), "Request should fail when circuit breaker is open")
+			Expect(err).To(HaveOccurred(), "Request should fail when circuit breaker is open")
 			Expect(duration).To(BeNumerically("<", 50*time.Millisecond), "Fail-fast should be immediate (<50ms), not wait for K8s API timeout")
 
 			// BUSINESS CAPABILITY VERIFIED:
@@ -405,7 +405,7 @@ var _ = Describe("BR-GATEWAY-019: Kubernetes API Failure Handling - Integration 
 
 			signal := &types.NormalizedSignal{
 				SignalName: "DiskFull",
-				Namespace: "default",
+				Namespace:  "default",
 				Resource: types.ResourceIdentifier{
 					Kind: "Node",
 					Name: "test-node",
