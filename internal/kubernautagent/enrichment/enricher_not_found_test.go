@@ -66,8 +66,7 @@ var _ = Describe("Enricher NotFound Handling — Issue #1039", func() {
 
 			Expect(result.HardFail).To(BeFalse(),
 				"UT-KA-1039-001: NotFound must NOT trigger HardFail")
-			Expect(result.OwnerChainError).NotTo(BeNil(),
-				"UT-KA-1039-001: OwnerChainError must still be recorded for observability")
+			Expect(result.OwnerChainError).To(HaveOccurred(), "UT-KA-1039-001: OwnerChainError must still be recorded for observability")
 		})
 	})
 

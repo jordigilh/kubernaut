@@ -52,7 +52,7 @@ var _ = Describe("ValidationError", func() {
 			Expect(validationErr.Message).To(Equal("validation failed"), "Message should be set")
 
 			// CORRECTNESS: FieldErrors map is initialized and empty
-			Expect(validationErr.FieldErrors).To(HaveLen(0), "FieldErrors should be empty initially")
+			Expect(validationErr.FieldErrors).To(BeEmpty(), "FieldErrors should be empty initially")
 		})
 	})
 
@@ -61,7 +61,7 @@ var _ = Describe("ValidationError", func() {
 			validationErr.AddFieldError("field1", "error1")
 			validationErr.AddFieldError("field2", "error2")
 
-			Expect(len(validationErr.FieldErrors)).To(Equal(2))
+			Expect(validationErr.FieldErrors).To(HaveLen(2))
 			Expect(validationErr.FieldErrors["field1"]).To(Equal("error1"))
 			Expect(validationErr.FieldErrors["field2"]).To(Equal("error2"))
 		})
@@ -70,7 +70,7 @@ var _ = Describe("ValidationError", func() {
 			validationErr.AddFieldError("field1", "error1")
 			validationErr.AddFieldError("field1", "error2")
 
-			Expect(len(validationErr.FieldErrors)).To(Equal(1))
+			Expect(validationErr.FieldErrors).To(HaveLen(1))
 			Expect(validationErr.FieldErrors["field1"]).To(Equal("error2"))
 		})
 	})

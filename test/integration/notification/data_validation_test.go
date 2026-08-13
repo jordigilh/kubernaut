@@ -151,8 +151,7 @@ var _ = Describe("Category 5: Data Validation & Correctness", Label("integration
 			freshNotif := &notificationv1alpha1.NotificationRequest{}
 			err = k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: notifName, Namespace: testNamespace}, freshNotif)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(len(freshNotif.Spec.Subject)).To(Equal(500),
-				"Subject length preserved through delivery")
+			Expect(freshNotif.Spec.Subject).To(HaveLen(500), "Subject length preserved through delivery")
 
 			GinkgoWriter.Printf("✅ Maximum-length subject (500 chars) delivered successfully\n")
 

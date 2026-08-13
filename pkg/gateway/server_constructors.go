@@ -296,7 +296,10 @@ func buildGatewayCache(
 	if err := k8sCache.IndexField(ctx, &remediationv1alpha1.RemediationRequest{},
 		"spec.signalFingerprint",
 		func(obj client.Object) []string {
-			rr := obj.(*remediationv1alpha1.RemediationRequest)
+			rr, ok := obj.(*remediationv1alpha1.RemediationRequest)
+			if !ok {
+				return nil
+			}
 			return []string{rr.Spec.SignalFingerprint}
 		}); err != nil {
 		cancel()

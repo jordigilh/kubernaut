@@ -50,7 +50,7 @@ var _ = Describe("DLQ EventData Validation (#1048 Phase 4 / SC-5, SI-10)", func(
 			framing := len(`{"d":"` + `"}`)
 			fill := dlq.MaxEventDataSize - framing
 			data := []byte(`{"d":"` + strings.Repeat("x", fill) + `"}`)
-			Expect(len(data)).To(Equal(dlq.MaxEventDataSize), "test payload should be exactly MaxEventDataSize")
+			Expect(data).To(HaveLen(dlq.MaxEventDataSize), "test payload should be exactly MaxEventDataSize")
 			Expect(dlq.ValidateEventData(data)).To(Succeed())
 		})
 	})

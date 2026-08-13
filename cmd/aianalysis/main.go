@@ -156,7 +156,10 @@ func buildAIAnalysisManager(cfg *config.Config, controllerNS string) ctrl.Manage
 		&isv1alpha1.InvestigationSession{},
 		handlers.ISFieldIndexRRName,
 		func(obj crclient.Object) []string {
-			is := obj.(*isv1alpha1.InvestigationSession)
+			is, ok := obj.(*isv1alpha1.InvestigationSession)
+			if !ok {
+				return nil
+			}
 			if is.Spec.RemediationRequestRef.Name == "" {
 				return nil
 			}
@@ -172,7 +175,10 @@ func buildAIAnalysisManager(cfg *config.Config, controllerNS string) ctrl.Manage
 		&aianalysisv1.AIAnalysis{},
 		aianalysis.AIAnalysisRRNameIndex(),
 		func(obj crclient.Object) []string {
-			aa := obj.(*aianalysisv1.AIAnalysis)
+			aa, ok := obj.(*aianalysisv1.AIAnalysis)
+			if !ok {
+				return nil
+			}
 			if aa.Spec.RemediationRequestRef.Name == "" {
 				return nil
 			}

@@ -181,7 +181,7 @@ var _ = Describe("WorkflowExecution HandleAlreadyExists - Race Conditions", func
 				"WFE should reference the pre-existing PipelineRun")
 
 			By("Verifying ExecutionCreated condition is set")
-			Expect(len(finalWFE.Status.Conditions)).To(BeNumerically(">", 0), "Conditions must be populated")
+			Expect(finalWFE.Status.Conditions).ToNot(BeEmpty(), "Conditions must be populated")
 			createdCondition := findCondition(finalWFE.Status.Conditions, "ExecutionCreated")
 			Expect(createdCondition).To(Not(BeZero()), "ExecutionCreated condition must exist")
 			Expect(createdCondition.Status).To(Equal(metav1.ConditionTrue))

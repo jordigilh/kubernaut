@@ -296,6 +296,11 @@ func accumulateContentBlocks(blocks []*schema.ContentBlock) contentBlockAccumula
 					Arguments: block.FunctionToolCall.Arguments,
 				})
 			}
+		default:
+			// This accumulator only cares about reasoning/assistant-text/
+			// tool-call blocks (see doc comment above); every other block
+			// kind (user input, tool results, MCP blocks, etc.) is handled
+			// by other parts of the pipeline, not here.
 		}
 	}
 	return acc
@@ -361,6 +366,9 @@ func extractStreamTextDelta(chunk *schema.AgenticMessage) string {
 			if block.Reasoning != nil {
 				sb.WriteString(block.Reasoning.Text)
 			}
+		default:
+			// Only text/reasoning deltas are forwarded here (see doc
+			// comment above); other block kinds carry no incremental text.
 		}
 	}
 	return sb.String()

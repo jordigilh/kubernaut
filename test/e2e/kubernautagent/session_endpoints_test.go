@@ -119,8 +119,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 				"needs_human_review must be false for confident CrashLoopBackOff recommendation")
 			Expect(result.Confidence).To(BeNumerically("~", 0.95, 0.05),
 				"Mock LLM 'crashloop' scenario returns confidence = 0.95 ± 0.05")
-			Expect(len(result.Analysis) > 0).To(BeTrue(),
-				"analysis field must be present")
+			Expect(result.Analysis).ToNot(BeEmpty(), "analysis field must be present")
 
 			// BUSINESS IMPACT: AIAnalysis creates WorkflowExecution automatically
 		})
@@ -159,8 +158,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			By("Submitting OOMKilled incident via session endpoint")
 			sessionID, err := sessionClient.SubmitInvestigation(ctx, req)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(sessionID)).To(BeNumerically(">", 0),
-				"SubmitInvestigation should return a non-empty session ID")
+			Expect(sessionID).ToNot(BeEmpty(), "SubmitInvestigation should return a non-empty session ID")
 
 			By("Polling session status until completed")
 			Eventually(func() string {
@@ -376,8 +374,7 @@ var _ = Describe("E2E-KA-064: Session-Based Endpoints", Label("e2e", "ka", "sess
 			// CORRECTNESS: Complete validation history for debugging
 			Expect(result.ValidationAttemptsHistory).ToNot(BeEmpty(),
 				"validation_attempts_history must be present for debugging")
-			Expect(len(result.ValidationAttemptsHistory)).To(Equal(3),
-				"MOCK_MAX_RETRIES_EXHAUSTED triggers exactly 3 validation attempts")
+			Expect(result.ValidationAttemptsHistory).To(HaveLen(3), "MOCK_MAX_RETRIES_EXHAUSTED triggers exactly 3 validation attempts")
 
 			for i, attempt := range result.ValidationAttemptsHistory {
 				Expect(attempt.Attempt).To(Equal(i+1), "attempt number must be sequential")

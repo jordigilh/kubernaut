@@ -225,7 +225,9 @@ func (t *InvestigateTool) storeReconstructedContext(ctx context.Context, rrID, s
 func (t *InvestigateTool) appendConversationTurn(rrID, userMessage, assistantResponse string) {
 	var history []LLMMessage
 	if raw, ok := t.reconHistory.Load(rrID); ok {
-		history = raw.([]LLMMessage)
+		if cached, ok := raw.([]LLMMessage); ok {
+			history = cached
+		}
 	}
 	history = append(history,
 		LLMMessage{Role: "user", Content: userMessage},
@@ -240,9 +242,10 @@ func (t *InvestigateTool) appendConversationTurn(rrID, userMessage, assistantRes
 func (t *InvestigateTool) buildMessagesWithContext(rrID, userMessage string) []LLMMessage {
 	var history []LLMMessage
 	if raw, ok := t.reconHistory.Load(rrID); ok {
-		cached := raw.([]LLMMessage)
-		history = make([]LLMMessage, len(cached))
-		copy(history, cached)
+		if cached, ok := raw.([]LLMMessage); ok {
+			history = make([]LLMMessage, len(cached))
+			copy(history, cached)
+		}
 	}
 	messages := make([]LLMMessage, 0, len(history)+1)
 	messages = append(messages, history...)

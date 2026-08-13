@@ -78,8 +78,7 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 			By("Submitting investigation")
 			sessionID, err := sessionClient.SubmitInvestigation(ctx, req)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(sessionID)).To(BeNumerically(">", 0),
-				"SubmitInvestigation should return a non-zero-length session ID")
+			Expect(sessionID).ToNot(BeEmpty(), "SubmitInvestigation should return a non-zero-length session ID")
 
 			// Connect SSE immediately after submission — before the mock LLM
 			// can complete the investigation. Polling first introduces a race
@@ -128,8 +127,7 @@ var _ = Describe("E2E-KA-V15: v1.5 Streaming and Cancellation", Label("e2e", "ka
 			}
 
 			By("Asserting SSE stream contents")
-			Expect(len(events)).To(BeNumerically(">", 0),
-				"SSE stream must deliver at least one event")
+			Expect(events).ToNot(BeEmpty(), "SSE stream must deliver at least one event")
 			Expect(hasComplete).To(BeTrue(),
 				"SSE stream must terminate with 'complete' event")
 		})

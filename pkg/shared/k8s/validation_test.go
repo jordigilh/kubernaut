@@ -50,6 +50,6 @@ var _ = Describe("BR-SHARED-001: TruncateMapValues (issue 668)", func() {
 	It("honours MaxLabelValueLength when used as maxLength (BR-SHARED-001)", func() {
 		long := strings.Repeat("x", 80)
 		out := k8sutil.TruncateMapValues(map[string]string{"v": long}, k8sutil.MaxLabelValueLength)
-		Expect(len(out["v"])).To(Equal(k8sutil.MaxLabelValueLength))
+		Expect(out["v"]).To(HaveLen(k8sutil.MaxLabelValueLength))
 	})
 })

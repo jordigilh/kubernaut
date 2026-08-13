@@ -35,9 +35,9 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/tools/registry"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -198,7 +198,7 @@ var _ = Describe("KA Audit Parity Integration — TP-433-AUDIT-SOC2", func() {
 			respEvents := eventsOfType(audit.EventTypeLLMResponse)
 			Expect(respEvents).To(HaveLen(2))
 			first := respEvents[0]
-			Expect(first.Data["has_analysis"]).To(Equal(true))
+			Expect(first.Data["has_analysis"]).To(BeTrue())
 			Expect(first.Data["analysis_preview"]).To(Equal(expectedContent))
 			Expect(first.Data["analysis_full"]).To(Equal(expectedContent))
 			Expect(first.Data["analysis_length"]).To(Equal(len(expectedContent)))

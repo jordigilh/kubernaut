@@ -402,8 +402,7 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			//
 			// Total: 9 AIAnalysis events (deterministic per DD-AIANALYSIS-005 v1.x + BR-AA-KA-064 session audit)
 			// Breakdown: 3 phase transitions + 3 AI agent events (submit+result+call) + 1 Rego + 1 approval + 1 completion
-			Expect(len(events)).To(Equal(9),
-				"AIAnalysis workflow generates exactly 9 audit events: 3 phase transitions + 3 AI agent (submit+result+call) + 1 Rego + 1 approval + 1 completion")
+			Expect(events).To(HaveLen(9), "AIAnalysis workflow generates exactly 9 audit events: 3 phase transitions + 3 AI agent (submit+result+call) + 1 Rego + 1 approval + 1 completion")
 		})
 	})
 

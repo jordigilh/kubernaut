@@ -63,7 +63,10 @@ func (r *SessionRateLimiter) Allow(sessionID string, messageSize int) error {
 	}
 
 	raw, _ := r.windows.LoadOrStore(sessionID, &rateLimitWindow{})
-	w := raw.(*rateLimitWindow)
+	w, ok := raw.(*rateLimitWindow)
+	if !ok {
+		return fmt.Errorf("internal error: rate limit window for session %s has unexpected type", sessionID)
+	}
 
 	w.mu.Lock()
 	defer w.mu.Unlock()

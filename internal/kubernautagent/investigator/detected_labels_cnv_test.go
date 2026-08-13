@@ -55,9 +55,9 @@ var _ = Describe("CNV DetectedLabels Propagation — #1378", func() {
 			investigator.FinalizeWorkflowResult(result, signal, nil, enrichData)
 
 			Expect(result.DetectedLabels).NotTo(BeNil())
-			Expect(result.DetectedLabels["virtualMachine"]).To(Equal(true))
-			Expect(result.DetectedLabels["liveMigratable"]).To(Equal(true))
-			Expect(result.DetectedLabels["cdiManaged"]).To(Equal(true))
+			Expect(result.DetectedLabels["virtualMachine"]).To(BeTrue())
+			Expect(result.DetectedLabels["liveMigratable"]).To(BeTrue())
+			Expect(result.DetectedLabels["cdiManaged"]).To(BeTrue())
 			Expect(result.DetectedLabels["storageBackend"]).To(Equal("odf-ceph"))
 		})
 	})
@@ -89,11 +89,11 @@ var _ = Describe("CNV DetectedLabels Propagation — #1378", func() {
 			investigator.FinalizeWorkflowResult(result, signal, nil, enrichData)
 
 			Expect(result.DetectedLabels).NotTo(BeNil())
-			Expect(result.DetectedLabels["virtualMachine"]).To(Equal(true))
+			Expect(result.DetectedLabels["virtualMachine"]).To(BeTrue())
 			// storageBackend omitted when empty in result map — but detectedLabelsToResult
 			// always includes bool fields, so liveMigratable and cdiManaged are present as false
-			Expect(result.DetectedLabels["liveMigratable"]).To(Equal(false))
-			Expect(result.DetectedLabels["cdiManaged"]).To(Equal(false))
+			Expect(result.DetectedLabels["liveMigratable"]).To(BeFalse())
+			Expect(result.DetectedLabels["cdiManaged"]).To(BeFalse())
 		})
 	})
 
@@ -124,9 +124,9 @@ var _ = Describe("CNV DetectedLabels Propagation — #1378", func() {
 			investigator.FinalizeWorkflowResult(result, signal, nil, enrichData)
 
 			Expect(result.DetectedLabels).NotTo(BeNil())
-			Expect(result.DetectedLabels["virtualMachine"]).To(Equal(false))
-			Expect(result.DetectedLabels["liveMigratable"]).To(Equal(false))
-			Expect(result.DetectedLabels["cdiManaged"]).To(Equal(false))
+			Expect(result.DetectedLabels["virtualMachine"]).To(BeFalse())
+			Expect(result.DetectedLabels["liveMigratable"]).To(BeFalse())
+			Expect(result.DetectedLabels["cdiManaged"]).To(BeFalse())
 		})
 	})
 
@@ -160,12 +160,12 @@ var _ = Describe("CNV DetectedLabels Propagation — #1378", func() {
 
 			Expect(result.DetectedLabels).NotTo(BeNil())
 			// CNV fields
-			Expect(result.DetectedLabels["virtualMachine"]).To(Equal(true))
-			Expect(result.DetectedLabels["liveMigratable"]).To(Equal(true))
-			Expect(result.DetectedLabels["cdiManaged"]).To(Equal(true))
+			Expect(result.DetectedLabels["virtualMachine"]).To(BeTrue())
+			Expect(result.DetectedLabels["liveMigratable"]).To(BeTrue())
+			Expect(result.DetectedLabels["cdiManaged"]).To(BeTrue())
 			Expect(result.DetectedLabels["storageBackend"]).To(Equal("lvms"))
 			// Existing fields still present
-			Expect(result.DetectedLabels["gitOpsManaged"]).To(Equal(true))
+			Expect(result.DetectedLabels["gitOpsManaged"]).To(BeTrue())
 			Expect(result.DetectedLabels["gitOpsTool"]).To(Equal("argocd"))
 		})
 	})

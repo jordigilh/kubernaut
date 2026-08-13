@@ -216,7 +216,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 
 			By("4. Validate workflowexecution.selection.completed event structure (ADR-034 v1.5)")
 			selectionEvents := filterEventsByType(allEvents, weaudit.EventTypeSelectionCompleted)
-			Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
+			Expect(selectionEvents).To(HaveLen(1), "Should have exactly 1 selection event")
 
 			selectionEvent := selectionEvents[0]
 			validateEventMetadata(selectionEvent, "workflowexecution", correlationID)
@@ -247,7 +247,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 
 			By("5. Validate workflowexecution.execution.started event structure (ADR-034 v1.5)")
 			executionEvents := filterEventsByType(allEvents, weaudit.EventTypeExecutionStarted)
-			Expect(len(executionEvents)).To(Equal(1), "Should have exactly 1 execution event")
+			Expect(executionEvents).To(HaveLen(1), "Should have exactly 1 execution event")
 
 			executionEvent := executionEvents[0]
 			validateEventMetadata(executionEvent, "workflowexecution", correlationID)
@@ -346,7 +346,7 @@ var _ = Describe("BR-AUDIT-005 Gap 5-6: Workflow Selection & Execution", Label("
 			selectionType := weaudit.EventTypeSelectionCompleted
 			selectionEvents, err := queryAuditEvents(dsClient, correlationID, &selectionType)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(selectionEvents)).To(Equal(1), "Should have exactly 1 selection event")
+			Expect(selectionEvents).To(HaveLen(1), "Should have exactly 1 selection event")
 
 			// Validate event structure (per ADR-034 v1.5: category is "workflowexecution")
 			selectionEvent := selectionEvents[0]

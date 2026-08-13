@@ -170,7 +170,7 @@ var _ = Describe("NotificationAudit Model", func() {
 				longID = longID[:i] + "a" + longID[i+1:]
 			}
 			audit.RemediationID = longID
-			Expect(len(audit.RemediationID)).To(Equal(255))
+			Expect(audit.RemediationID).To(HaveLen(255))
 		})
 
 		It("should handle NotificationID up to 255 characters", func() {
@@ -179,7 +179,7 @@ var _ = Describe("NotificationAudit Model", func() {
 				longID = longID[:i] + "a" + longID[i+1:]
 			}
 			audit.NotificationID = longID
-			Expect(len(audit.NotificationID)).To(Equal(255))
+			Expect(audit.NotificationID).To(HaveLen(255))
 		})
 
 		It("should handle Recipient up to 255 characters", func() {
@@ -188,7 +188,7 @@ var _ = Describe("NotificationAudit Model", func() {
 				longRecipient = longRecipient[:i] + "a" + longRecipient[i+1:]
 			}
 			audit.Recipient = longRecipient
-			Expect(len(audit.Recipient)).To(Equal(255))
+			Expect(audit.Recipient).To(HaveLen(255))
 		})
 
 		It("should handle Channel up to 50 characters", func() {

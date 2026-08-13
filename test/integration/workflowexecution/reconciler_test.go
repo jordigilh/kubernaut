@@ -696,7 +696,7 @@ var _ = Describe("WorkflowExecution Controller Reconciliation", func() {
 				// Deterministic name should be "wfe-" + first 16 chars of sha256(targetResource)
 				// Verify format: starts with "wfe-" and has correct length (DD-WE-003)
 				Expect(prName).To(HavePrefix("wfe-"))
-				Expect(len(prName)).To(Equal(20), "PipelineRun name should be wfe- (4 chars) + 16 char hash = 20 total (DD-WE-003)")
+				Expect(prName).To(HaveLen(20), "PipelineRun name should be wfe- (4 chars) + 16 char hash = 20 total (DD-WE-003)")
 
 				GinkgoWriter.Printf("✅ BR-WE-009: Deterministic PipelineRun name: %s\n", prName)
 			})

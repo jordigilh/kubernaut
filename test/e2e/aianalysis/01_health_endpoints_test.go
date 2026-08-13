@@ -98,7 +98,7 @@ var _ = Describe("Health Endpoints E2E", Label("e2e", "health"), func() {
 
 			// Should show dependency health status
 			// The exact format depends on implementation
-			Expect(len(body)).To(BeNumerically(">", 0))
+			Expect(body).ToNot(BeEmpty())
 		})
 	})
 

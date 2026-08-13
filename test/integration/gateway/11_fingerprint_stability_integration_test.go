@@ -263,8 +263,7 @@ var _ = Describe("Test 11: Fingerprint Stability (Integration)", Ordered, Contin
 		testLogger.Info(fmt.Sprintf("  Found %d matching CRDs", len(matchingCRDs)))
 
 		// With deduplication, we should have fewer CRDs than signals sent
-		Expect(len(matchingCRDs)).To(BeNumerically(">=", 1),
-			"At least 1 CRD should exist")
+		Expect(matchingCRDs).ToNot(BeEmpty(), "At least 1 CRD should exist")
 		Expect(len(matchingCRDs)).To(BeNumerically("<=", 3),
 			"Should not exceed signal count (deduplication active)")
 

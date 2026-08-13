@@ -262,7 +262,7 @@ var _ = Describe("ServiceDecorator", func() {
 				UserID:  "frank",
 			})
 			Expect(err).NotTo(HaveOccurred())
-			Expect(listResp.Sessions).To(HaveLen(0))
+			Expect(listResp.Sessions).To(BeEmpty())
 		})
 	})
 

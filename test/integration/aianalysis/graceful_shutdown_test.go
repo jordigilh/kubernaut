@@ -325,8 +325,7 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 			})
 			Expect(err).NotTo(HaveOccurred(), "Audit query should succeed")
 			Expect(resp.Data).ToNot(BeNil(), "Response should have data array")
-			Expect(len(resp.Data)).To(BeNumerically(">=", 1),
-				"At least one phase.transition event must be persisted (ADR-032 §2: auditStore.Close() flushes buffer on shutdown)")
+			Expect(resp.Data).ToNot(BeEmpty(), "At least one phase.transition event must be persisted (ADR-032 §2: auditStore.Close() flushes buffer on shutdown)")
 
 			GinkgoWriter.Printf("✅ Audit buffer flushing validated: %d events persisted\n", len(resp.Data))
 

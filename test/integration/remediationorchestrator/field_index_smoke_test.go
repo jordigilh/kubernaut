@@ -101,7 +101,7 @@ var _ = Describe("Field Index Smoke Test", func() {
 			}
 		}
 
-		Expect(len(indexedRRs.Items)).To(Equal(1), "Field index should return 1 RR")
+		Expect(indexedRRs.Items).To(HaveLen(1), "Field index should return 1 RR")
 		Expect(indexedRRs.Items[0].Name).To(Equal(rrName))
 		Expect(indexedRRs.Items[0].Spec.SignalFingerprint).To(Equal(testFingerprint))
 

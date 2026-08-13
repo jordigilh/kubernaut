@@ -387,7 +387,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 		It("should pass validation for recipient at 255 characters", func() {
 			audit.Recipient = strings.Repeat("a", 255)
 			err := validator.Validate(audit)
-			Expect(err).To(BeNil())
+			Expect(err).ToNot(HaveOccurred())
 		})
 	})
 
@@ -766,8 +766,7 @@ var _ = Describe("NotificationAuditValidator", func() {
 			Expect(ok).To(BeTrue(), "Error should be ValidationError type")
 
 			// CORRECTNESS: Exactly 8 field errors (not fail-fast behavior)
-			Expect(len(valErr.FieldErrors)).To(Equal(8),
-				"Validator should report all 8 field errors, not fail-fast")
+			Expect(valErr.FieldErrors).To(HaveLen(8), "Validator should report all 8 field errors, not fail-fast")
 
 			// CORRECTNESS: All expected field error keys are present
 			Expect(valErr.FieldErrors).To(HaveKey("remediation_id"), "Should report remediation_id error")
@@ -855,7 +854,7 @@ var _ = Describe("ValidationError", func() {
 			Expect(validationErr.Message).To(Equal("validation failed"), "Message should be set")
 
 			// CORRECTNESS: FieldErrors map is initialized and empty
-			Expect(validationErr.FieldErrors).To(HaveLen(0), "FieldErrors should be empty initially")
+			Expect(validationErr.FieldErrors).To(BeEmpty(), "FieldErrors should be empty initially")
 		})
 	})
 
@@ -864,7 +863,7 @@ var _ = Describe("ValidationError", func() {
 			validationErr.AddFieldError("field1", "error1")
 			validationErr.AddFieldError("field2", "error2")
 
-			Expect(len(validationErr.FieldErrors)).To(Equal(2))
+			Expect(validationErr.FieldErrors).To(HaveLen(2))
 			Expect(validationErr.FieldErrors["field1"]).To(Equal("error1"))
 			Expect(validationErr.FieldErrors["field2"]).To(Equal("error2"))
 		})
@@ -873,7 +872,7 @@ var _ = Describe("ValidationError", func() {
 			validationErr.AddFieldError("field1", "error1")
 			validationErr.AddFieldError("field1", "error2")
 
-			Expect(len(validationErr.FieldErrors)).To(Equal(1))
+			Expect(validationErr.FieldErrors).To(HaveLen(1))
 			Expect(validationErr.FieldErrors["field1"]).To(Equal("error2"))
 		})
 	})

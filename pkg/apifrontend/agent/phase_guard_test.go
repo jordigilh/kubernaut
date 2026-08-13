@@ -313,8 +313,7 @@ var _ = Describe("Phase Guard (#1307)", func() {
 
 		blocked, err := state.Get(session.StateKeyPhase2Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(blocked).To(Equal(true),
-			"interactive mode must block phase 2 (discover_workflows) until a genuine user turn")
+		Expect(blocked).To(BeTrue(), "interactive mode must block phase 2 (discover_workflows) until a genuine user turn")
 	})
 
 	It("IT-AF-1899-002b: successful investigate with interaction_mode=full_remediation does NOT block phase 2", func() {
@@ -325,8 +324,7 @@ var _ = Describe("Phase Guard (#1307)", func() {
 
 		blocked, err := state.Get(session.StateKeyPhase2Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(blocked).To(Equal(false),
-			"full_remediation must auto-proceed through workflow discovery")
+		Expect(blocked).To(BeFalse(), "full_remediation must auto-proceed through workflow discovery")
 	})
 
 	It("IT-AF-1899-002c: an unrecognized interaction_mode value fails safe to interactive", func() {
@@ -351,8 +349,7 @@ var _ = Describe("Phase Guard (#1307)", func() {
 
 		blocked, err := state.Get(session.StateKeyPhase3Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(blocked).To(Equal(true),
-			"full_remediation must still wait for genuine user confirmation before executing a workflow")
+		Expect(blocked).To(BeTrue(), "full_remediation must still wait for genuine user confirmation before executing a workflow")
 	})
 
 	It("IT-AF-1899-003b: full_remediation_autonomous does NOT block phase 3", func() {
@@ -365,8 +362,7 @@ var _ = Describe("Phase Guard (#1307)", func() {
 
 		blocked, err := state.Get(session.StateKeyPhase3Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(blocked).To(Equal(false),
-			"full_remediation_autonomous must auto-proceed through workflow selection")
+		Expect(blocked).To(BeFalse(), "full_remediation_autonomous must auto-proceed through workflow selection")
 	})
 
 	It("IT-AF-1899-003c: a failed discover_workflows does not set phase3_blocked", func() {
@@ -441,8 +437,7 @@ var _ = Describe("Phase Guard (#1307)", func() {
 
 		phase2Blocked, err := state.Get(session.StateKeyPhase2Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(phase2Blocked).To(Equal(false),
-			"#1915: full_remediation must auto-proceed through workflow discovery for a plain investigate request")
+		Expect(phase2Blocked).To(BeFalse(), "#1915: full_remediation must auto-proceed through workflow discovery for a plain investigate request")
 
 		_, _ = after(toolCtx, fakeTool{name: "kubernaut_discover_workflows"}, nil, map[string]any{
 			"workflows": []any{"wf-1"},
@@ -450,8 +445,7 @@ var _ = Describe("Phase Guard (#1307)", func() {
 
 		phase3Blocked, err := state.Get(session.StateKeyPhase3Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(phase3Blocked).To(Equal(true),
-			"#1915: full_remediation must still require a genuine user turn before executing a workflow -- auto-discovery is not auto-execution")
+		Expect(phase3Blocked).To(BeTrue(), "#1915: full_remediation must still require a genuine user turn before executing a workflow -- auto-discovery is not auto-execution")
 	})
 
 	// --- #1918: harness-enforced actionability gate ---
@@ -479,9 +473,8 @@ var _ = Describe("Phase Guard (#1307)", func() {
 
 		blocked, err := state.Get(session.StateKeyPhase2Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(blocked).To(Equal(true),
-			"#1918: a not-actionable RCA with no workflow must force phase2_blocked=true even under full_remediation_autonomous, "+
-				"independent of the model's own reading of the RCA narrative")
+		Expect(blocked).To(BeTrue(), "#1918: a not-actionable RCA with no workflow must force phase2_blocked=true even under full_remediation_autonomous, "+
+			"independent of the model's own reading of the RCA narrative")
 	})
 
 	It("IT-AF-1918-002: forces phase2_blocked=true on full_remediation (not just autonomous) when RCA is not actionable", func() {
@@ -496,7 +489,7 @@ var _ = Describe("Phase Guard (#1307)", func() {
 
 		blocked, err := state.Get(session.StateKeyPhase2Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(blocked).To(Equal(true), "#1918: the override applies to full_remediation too, not just the autonomous variant")
+		Expect(blocked).To(BeTrue(), "#1918: the override applies to full_remediation too, not just the autonomous variant")
 	})
 
 	It("IT-AF-1918-003: does NOT override a genuinely actionable RCA under full_remediation_autonomous", func() {
@@ -511,8 +504,7 @@ var _ = Describe("Phase Guard (#1307)", func() {
 
 		blocked, err := state.Get(session.StateKeyPhase2Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(blocked).To(Equal(false),
-			"#1918: a genuinely actionable RCA must never be second-guessed by this gate")
+		Expect(blocked).To(BeFalse(), "#1918: a genuinely actionable RCA must never be second-guessed by this gate")
 	})
 
 	It("IT-AF-1918-004: does NOT override when is_actionable=false but a workflow was already identified (defense-in-depth, mirrors investigator.go)", func() {
@@ -528,9 +520,8 @@ var _ = Describe("Phase Guard (#1307)", func() {
 
 		blocked, err := state.Get(session.StateKeyPhase2Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(blocked).To(Equal(false),
-			"#1918: has_workflow=true must suppress the override, matching investigator.go's own "+
-				"defense-in-depth guard (actionable=false && workflow_id==\"\")")
+		Expect(blocked).To(BeFalse(), "#1918: has_workflow=true must suppress the override, matching investigator.go's own "+
+			"defense-in-depth guard (actionable=false && workflow_id==\"\")")
 	})
 
 	It("IT-AF-1918-005: does NOT change the already-blocked interactive default when is_actionable is absent", func() {
@@ -540,7 +531,7 @@ var _ = Describe("Phase Guard (#1307)", func() {
 
 		blocked, err := state.Get(session.StateKeyPhase2Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(blocked).To(Equal(true), "interactive mode's own default already blocks phase 2 -- the gate must not need to intervene here")
+		Expect(blocked).To(BeTrue(), "interactive mode's own default already blocks phase 2 -- the gate must not need to intervene here")
 	})
 
 	It("IT-AF-1918-006: does NOT override full_remediation_autonomous when the response carries no rca payload at all", func() {
@@ -550,8 +541,7 @@ var _ = Describe("Phase Guard (#1307)", func() {
 
 		blocked, err := state.Get(session.StateKeyPhase2Blocked)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(blocked).To(Equal(false),
-			"#1918: an absent rca payload must never be treated as a not-actionable signal -- only a genuine computed false")
+		Expect(blocked).To(BeFalse(), "#1918: an absent rca payload must never be treated as a not-actionable signal -- only a genuine computed false")
 	})
 })
 
@@ -1098,7 +1088,7 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 
 		active, err := state.Get(session.StateKeyDriverActive)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(active).To(Equal(true), "precondition: driverActive must be true after a successful investigate")
+		Expect(active).To(BeTrue(), "precondition: driverActive must be true after a successful investigate")
 
 		_, _ = after(toolCtx, fakeTool{name: "kubernaut_complete"}, nil, map[string]any{
 			"status": "completed",
@@ -1106,8 +1096,7 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 
 		active, err = state.Get(session.StateKeyDriverActive)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(active).To(Equal(false),
-			"driverActive must be cleared after kubernaut_complete succeeds -- a stale true leaves reinvocation incorrectly eligible (#1912)")
+		Expect(active).To(BeFalse(), "driverActive must be cleared after kubernaut_complete succeeds -- a stale true leaves reinvocation incorrectly eligible (#1912)")
 	})
 
 	It("UT-AF-1912-002: Clears driverActive on kubernaut_cancel success, alongside the registry (#1912)", func() {
@@ -1121,8 +1110,7 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 
 		active, err := state.Get(session.StateKeyDriverActive)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(active).To(Equal(false),
-			"driverActive must be cleared after kubernaut_cancel succeeds -- a stale true leaves reinvocation incorrectly eligible (#1912)")
+		Expect(active).To(BeFalse(), "driverActive must be cleared after kubernaut_cancel succeeds -- a stale true leaves reinvocation incorrectly eligible (#1912)")
 	})
 
 	It("UT-AF-1912-003: Does NOT clear driverActive on kubernaut_complete failure (#1912)", func() {
@@ -1136,8 +1124,7 @@ var _ = Describe("Phase Guard — ActiveContextRegistry Integration (BR-SESS-020
 
 		active, err := state.Get(session.StateKeyDriverActive)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(active).To(Equal(true),
-			"driverActive must NOT be cleared when kubernaut_complete returns an error -- the driver session is still legitimately active")
+		Expect(active).To(BeTrue(), "driverActive must NOT be cleared when kubernaut_complete returns an error -- the driver session is still legitimately active")
 	})
 
 	It("UT-AF-1446-007: AU-3 — Refresh called on successful non-entry/non-terminal tool call (#1446)", func() {

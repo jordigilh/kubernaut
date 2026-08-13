@@ -102,11 +102,10 @@ var _ = Describe("Phase 9C: Drain Error Contract (DF-H1, SRE-M2)", func() {
 			stats, drainErr := dlqClient.DrainWithTimeout(drainCtx, mockNotifRepo, failingRepo)
 
 			// DF-H1: DrainWithTimeout MUST return an error when messages fail
-			Expect(stats).ToNot(BeIdenticalTo(nil), "stats should be returned even on error")
+			Expect(stats).ToNot(BeNil(), "stats should be returned even on error")
 			Expect(drainErr).To(HaveOccurred(),
 				"DF-H1: drain must report error when DB writes permanently fail")
-			Expect(len(stats.Errors)).To(BeNumerically(">", 0),
-				"drain should accumulate errors when per-message writes fail")
+			Expect(stats.Errors).ToNot(BeEmpty(), "drain should accumulate errors when per-message writes fail")
 		})
 	})
 

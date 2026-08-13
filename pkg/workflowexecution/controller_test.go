@@ -159,7 +159,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 			targetResource := defaultDeploymentMyApp
 			name := weexecutor.ExecutionResourceName(targetResource)
 			// "wfe-" (4 chars) + 16 hex chars = 20 chars
-			Expect(len(name)).To(Equal(20))
+			Expect(name).To(HaveLen(20))
 		})
 
 		It("should generate different names for different targetResources", func() {
@@ -200,7 +200,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Test format
 				Expect(name1).To(HavePrefix("wfe-"), "Should have wfe- prefix for: %s", description)
-				Expect(len(name1)).To(Equal(20), "Should be 20 chars (wfe- + 16 hex) for: %s", description)
+				Expect(name1).To(HaveLen(20), "Should be 20 chars (wfe- + 16 hex) for: %s", description)
 
 				// Test valid K8s name
 				Expect(len(name1)).To(BeNumerically("<=", 63), "Should be valid K8s name for: %s", description)
@@ -5556,7 +5556,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Then: Label should be truncated to 63 characters
 				labelValue := pr.Labels["kubernaut.ai/target-resource"]
-				Expect(len(labelValue)).To(Equal(63))
+				Expect(labelValue).To(HaveLen(63))
 				Expect(labelValue).To(Equal(strings.Repeat("a", 63)))
 			})
 
@@ -5585,7 +5585,7 @@ var _ = Describe("WorkflowExecution Controller", func() {
 
 				// Then: Label should remain unchanged
 				labelValue := pr.Labels["kubernaut.ai/target-resource"]
-				Expect(len(labelValue)).To(Equal(63))
+				Expect(labelValue).To(HaveLen(63))
 				Expect(labelValue).To(Equal(resource63))
 			})
 		})

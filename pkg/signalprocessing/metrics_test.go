@@ -292,7 +292,7 @@ var _ = Describe("BR-SP-008: SignalProcessing Metrics", func() {
 
 			metricFamilies, err := registry.Gather()
 			Expect(err).ToNot(HaveOccurred())
-			Expect(len(metricFamilies)).To(BeNumerically(">", 0))
+			Expect(metricFamilies).ToNot(BeEmpty())
 
 			// Verify each metric family has proper structure
 			for _, mf := range metricFamilies {

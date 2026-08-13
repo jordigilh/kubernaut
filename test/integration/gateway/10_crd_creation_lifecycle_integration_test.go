@@ -174,8 +174,7 @@ var _ = Describe("Test 10: CRD Creation Lifecycle (BR-GATEWAY-018, BR-GATEWAY-02
 		crdList := &remediationv1alpha1.RemediationRequestList{}
 		err := k8sClient.List(testCtx, crdList, client.InNamespace(controllerNamespace))
 		Expect(err).ToNot(HaveOccurred(), "Should list CRDs successfully")
-		Expect(len(crdList.Items)).To(BeNumerically(">=", 1),
-			"At least 1 CRD should be created")
+		Expect(crdList.Items).ToNot(BeEmpty(), "At least 1 CRD should be created")
 
 		testLogger.Info(fmt.Sprintf("  ✅ Found %d CRDs (IMMEDIATELY, no timeout!)", len(crdList.Items)))
 

@@ -59,7 +59,7 @@ var _ = Describe("Phase 9C: Internal Client Data Integrity (DF-C1, DF-H2, DF-M1)
 			}
 			var db *sql.DB // nil DB is fine — we're testing config wiring, not DB writes
 			client := audit.NewInternalAuditClientWithConfig(db, config)
-			Expect(client).ToNot(BeIdenticalTo(nil), "client should be created with config")
+			Expect(client).ToNot(BeNil(), "client should be created with config")
 		})
 	})
 

@@ -232,6 +232,10 @@ func applyEffort(body map[string]any, effort string, dialect EffortDialect) {
 		body["reasoning_effort"] = effort
 	case EffortDialectDeepSeek:
 		applyDeepSeekEffort(body, effort)
+	case EffortDialectNone:
+		// No-op: the model has no recognized effort knob (see doc comment
+		// above) -- never send a speculative field a bare-bones server
+		// might reject.
 	}
 }
 
