@@ -206,24 +206,34 @@ matching the tracked issue number.)
   for ordinary events). Confirmed RED before GREEN (test failed against
   the pre-#2141 schema, as expected).
 - `IT-KA-2141-001`
-  (`test/integration/kubernautagent/investigator/apiversion_gate_integration_test.go`)
-  and the `E2E-KA-1044-001` extension
-  (`test/e2e/kubernautagent/apiversion_gate_e2e_test.go`): compile clean
-  (`go vet`). Could not be executed in this environment (no local Docker
-  daemon, no `envtest`/kubebuilder binaries, no live Kind cluster) --
-  will be validated by CI on push, same constraint as the
-  `capturingAuditStore` fixture fix below.
+  (`test/integration/kubernautagent/investigator/apiversion_gate_integration_test.go`):
+  **executed locally against real envtest + Podman-backed Data
+  Storage/Postgres** (`KUBEBUILDER_ASSETS=$(setup-envtest use 1.36 -p path)
+  ginkgo ./test/integration/kubernautagent/investigator/...`) -- **142/142
+  specs pass**, including this one: the gate-exhaustion audit event is
+  queried back from the real Postgres-backed Data Storage by
+  `correlation_id` and `retry_outcome`/`ambiguous_kind`/`conflicting_groups`
+  are confirmed present and correct on the decoded `LLMRequestPayload`.
+  This also transitively re-validates the `capturingAuditStore` fixture fix
+  below (same suite run, same process).
+- `E2E-KA-1044-001` extension
+  (`test/e2e/kubernautagent/apiversion_gate_e2e_test.go`): **executed
+  locally against a real Kind cluster** (`ginkgo --focus="BR-AI-1044"
+  ./test/e2e/kubernautagent/...`, full infra bootstrap: Kind + Data
+  Storage + Postgres + Mock LLM + Kubernaut Agent deployment) -- **2/2
+  focused specs pass** (134 total, 132 skipped via focus). The extended
+  assertions confirm the full production journey: real gate exhaustion in
+  the deployed Kubernaut Agent binary -> real `DSAuditStore` -> real Data
+  Storage service -> real Postgres -> queryable by `remediation_id` via
+  `QueryAuditEvents`, with `ambiguous_kind` and `retry_outcome=exhausted`
+  reconstructable end-to-end.
 - `capturingAuditStore` fixture fix
-  (`test/integration/kubernautagent/investigator/suite_test.go`): compiles
-  clean (`go vet ./test/integration/kubernautagent/investigator/...`).
-  Could not be executed in this environment (no local Docker daemon, no
-  `envtest`/kubebuilder binaries) -- will be validated by
-  `ci-pipeline.yml`'s kubernaut-agent integration job on push. This is a
-  narrow, mechanical change (identical to the already-proven unit-level
-  snapshot fix) affecting how ~15 pre-existing `IT-KA-*` specs observe
-  audit events they already assert on; it does not change what those
-  specs assert, only when the observed data is captured relative to
-  `StoreAudit`.
+  (`test/integration/kubernautagent/investigator/suite_test.go`):
+  re-validated by the same 142/142 passing integration run above -- the
+  ~15 pre-existing `IT-KA-*` specs that observe audit events via this
+  fixture all pass unchanged, confirming the snapshot-at-call-time
+  behavior did not alter what those specs assert, only when the observed
+  data is captured relative to `StoreAudit`.
 - `go test ./internal/kubernautagent/investigator/...` -- pass, 366/366
   specs (including the 6 new UT-KA-2120-XXX specs above plus 4
   UT-KA-2118-XXX specs from the co-ported #2119 fix; UT-KA-2120-003 required
