@@ -74,7 +74,16 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), nil)
+		handler := readinessHandler(readinessDeps{
+			shutdownFlag:   &shutdownFlag,
+			apiServerReady: &apiServerReady,
+			swappable:      swappable,
+			ds:             nil,
+			interactive:    interactive,
+			fleetGate:      nil,
+			wfCatalog:      readyWfCatalog(),
+			dsGate:         nil,
+		})
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -87,7 +96,16 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), nil)
+		handler := readinessHandler(readinessDeps{
+			shutdownFlag:   &shutdownFlag,
+			apiServerReady: &apiServerReady,
+			swappable:      swappable,
+			ds:             nil,
+			interactive:    interactive,
+			fleetGate:      nil,
+			wfCatalog:      readyWfCatalog(),
+			dsGate:         nil,
+		})
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusOK))
@@ -101,7 +119,16 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), nil)
+		handler := readinessHandler(readinessDeps{
+			shutdownFlag:   &shutdownFlag,
+			apiServerReady: &apiServerReady,
+			swappable:      swappable,
+			ds:             nil,
+			interactive:    interactive,
+			fleetGate:      nil,
+			wfCatalog:      readyWfCatalog(),
+			dsGate:         nil,
+		})
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -122,7 +149,16 @@ var _ = Describe("readinessHandler", func() {
 		gate.Start(context.Background())
 		DeferCleanup(gate.Stop)
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, gate, readyWfCatalog(), nil)
+		handler := readinessHandler(readinessDeps{
+			shutdownFlag:   &shutdownFlag,
+			apiServerReady: &apiServerReady,
+			swappable:      swappable,
+			ds:             nil,
+			interactive:    interactive,
+			fleetGate:      gate,
+			wfCatalog:      readyWfCatalog(),
+			dsGate:         nil,
+		})
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -136,7 +172,16 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), nil)
+		handler := readinessHandler(readinessDeps{
+			shutdownFlag:   &shutdownFlag,
+			apiServerReady: &apiServerReady,
+			swappable:      swappable,
+			ds:             nil,
+			interactive:    interactive,
+			fleetGate:      nil,
+			wfCatalog:      readyWfCatalog(),
+			dsGate:         nil,
+		})
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusOK))
@@ -153,7 +198,16 @@ var _ = Describe("readinessHandler", func() {
 
 		notReady := workflowcatalog.NewLazyCatalog(logr.Discard()) // never Start()ed
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, notReady, nil)
+		handler := readinessHandler(readinessDeps{
+			shutdownFlag:   &shutdownFlag,
+			apiServerReady: &apiServerReady,
+			swappable:      swappable,
+			ds:             nil,
+			interactive:    interactive,
+			fleetGate:      nil,
+			wfCatalog:      notReady,
+			dsGate:         nil,
+		})
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -164,7 +218,16 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, nil, nil)
+		handler := readinessHandler(readinessDeps{
+			shutdownFlag:   &shutdownFlag,
+			apiServerReady: &apiServerReady,
+			swappable:      swappable,
+			ds:             nil,
+			interactive:    interactive,
+			fleetGate:      nil,
+			wfCatalog:      nil,
+			dsGate:         nil,
+		})
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -175,7 +238,16 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), nil)
+		handler := readinessHandler(readinessDeps{
+			shutdownFlag:   &shutdownFlag,
+			apiServerReady: &apiServerReady,
+			swappable:      swappable,
+			ds:             nil,
+			interactive:    interactive,
+			fleetGate:      nil,
+			wfCatalog:      readyWfCatalog(),
+			dsGate:         nil,
+		})
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusOK))
@@ -196,7 +268,16 @@ var _ = Describe("readinessHandler", func() {
 		dsGate.Start(context.Background())
 		DeferCleanup(dsGate.Stop)
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), dsGate)
+		handler := readinessHandler(readinessDeps{
+			shutdownFlag:   &shutdownFlag,
+			apiServerReady: &apiServerReady,
+			swappable:      swappable,
+			ds:             nil,
+			interactive:    interactive,
+			fleetGate:      nil,
+			wfCatalog:      readyWfCatalog(),
+			dsGate:         dsGate,
+		})
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -207,7 +288,16 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), nil)
+		handler := readinessHandler(readinessDeps{
+			shutdownFlag:   &shutdownFlag,
+			apiServerReady: &apiServerReady,
+			swappable:      swappable,
+			ds:             nil,
+			interactive:    interactive,
+			fleetGate:      nil,
+			wfCatalog:      readyWfCatalog(),
+			dsGate:         nil,
+		})
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusOK))
