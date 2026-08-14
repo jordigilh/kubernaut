@@ -189,7 +189,7 @@ func SetupEMInfrastructure(ctx context.Context, clusterName, kubeconfigPath stri
 		{HostPath: coverdataPath, ContainerPath: "/coverdata", ReadOnly: false},
 	}
 
-	if err := CreateKindClusterWithExtraMounts(ctx, 
+	if err := CreateKindClusterWithExtraMounts(ctx,
 		clusterName, kubeconfigPath, emE2EKindConfig, extraMounts, writer,
 	); err != nil {
 		return fmt.Errorf("failed to create Kind cluster: %w", err)
@@ -365,6 +365,7 @@ data:
       validityWindow: 120s
     datastorage:
       url: https://data-storage-service:8080
+      healthUrl: http://data-storage-service:8081/readyz
       timeout: 10s
       buffer:
         bufferSize: 100
@@ -511,6 +512,162 @@ spec:
 
 	_, _ = fmt.Fprintln(writer, "    EM controller deployed")
 	return nil
+}
+
+// EffectivenessMonitor resilience E2E (#1985): a second, throwaway,
+// single-replica EM instance dedicated to the DataStorage-resilience
+// journey (test/e2e/effectivenessmonitor/datastorage_resilience_e2e_test.go),
+// the ctrl-runtime-based representative service for the shared E2E
+// mechanism proof (see plan's "Coverage note" -- Gateway is the
+// custom-aggregator representative, proving the full readyz-flip +
+// post-recovery audit-trail journey; this one proves the readyz-flip half
+// only, since EM's own audit-write path is CRD-reconciliation-driven, not
+// simply HTTP-triggerable like Gateway's webhook endpoint -- IT tier
+// already proves EM's specific wiring, IT-AUDIT-1985-003).
+const (
+	// EMResilienceHealthNodePort/HostPort are unique within this suite's
+	// own Kind cluster, distinct from the shared EM controller's own
+	// 30089 (API) / 30189 (metrics) -- see kind-effectivenessmonitor-config.yaml.
+	EMResilienceHealthNodePort = 30094
+	EMResilienceHealthHostPort = 9194
+)
+
+// DeployEMForDataStorageResilienceTest deploys the dedicated, throwaway
+// "effectivenessmonitor-resilience" instance and waits for its Deployment
+// to report at least one available replica (its own /readyz is polled
+// directly by the caller via the host-mapped NodePort above, not gated by
+// a kubelet readinessProbe here -- same rationale as the Gateway variant).
+// Must be called AFTER the fault-injection bridge (bridgeServiceName) is
+// already live, so the very first readiness probe succeeds.
+func DeployEMForDataStorageResilienceTest(ctx context.Context, kubeconfigPath, namespace, bridgeServiceName string, bridgePort int, writer io.Writer) error {
+	imageName, err := resolveDeployedImage(ctx, kubeconfigPath, namespace, "effectivenessmonitor-controller")
+	if err != nil {
+		return fmt.Errorf("failed to resolve EM image for resilience instance: %w", err)
+	}
+	pullPolicy := GetImagePullPolicy()
+
+	manifest := fmt.Sprintf(`---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: effectivenessmonitor-resilience-config
+  namespace: %[1]s
+  labels:
+    app: effectivenessmonitor-resilience
+data:
+  effectivenessmonitor.yaml: |
+    assessment:
+      stabilizationWindow: 30s
+      validityWindow: 120s
+    datastorage:
+      url: https://data-storage-service.%[1]s.svc.cluster.local:8080
+      healthUrl: http://%[2]s:%[3]d/readyz
+      timeout: 10s
+      buffer:
+        bufferSize: 100
+        batchSize: 10
+        flushInterval: 1s
+        maxRetries: 3
+    controller:
+      metricsAddr: ":9090"
+      healthProbeAddr: ":8081"
+      leaderElection: false
+      leaderElectionId: "effectivenessmonitor-resilience.kubernaut.ai"
+    external:
+      prometheusUrl: http://prometheus-svc:9090
+      prometheusEnabled: false
+      alertManagerUrl: http://alertmanager-svc:9093
+      alertManagerEnabled: false
+      connectionTimeout: 10s
+      prometheusLookback: 2m
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: effectivenessmonitor-resilience
+  namespace: %[1]s
+  labels:
+    app: effectivenessmonitor-resilience
+    kubernaut.ai/resilience-test: "datastorage-1985"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: effectivenessmonitor-resilience
+  template:
+    metadata:
+      labels:
+        app: effectivenessmonitor-resilience
+    spec:
+      serviceAccountName: effectivenessmonitor-controller
+      containers:
+      - name: controller
+        image: %[4]s
+        imagePullPolicy: %[5]s
+        args:
+        - "--config=/etc/effectivenessmonitor/effectivenessmonitor.yaml"
+        ports:
+        - containerPort: 8081
+          name: health
+        # No readinessProbe on purpose: this dedicated instance's whole
+        # point is to let the test poll /readyz directly via the
+        # host-reachable NodePort below and observe the real transition.
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        volumeMounts:
+        - name: config
+          mountPath: /etc/effectivenessmonitor
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"
+      volumes:
+      - name: config
+        configMap:
+          name: effectivenessmonitor-resilience-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: effectivenessmonitor-resilience-service
+  namespace: %[1]s
+  labels:
+    app: effectivenessmonitor-resilience
+spec:
+  type: NodePort
+  selector:
+    app: effectivenessmonitor-resilience
+  ports:
+  - name: health
+    port: 8081
+    targetPort: 8081
+    nodePort: %[6]d
+`, namespace, bridgeServiceName, bridgePort, imageName, pullPolicy, EMResilienceHealthNodePort)
+
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
+		return fmt.Errorf("failed to deploy effectivenessmonitor-resilience: %w", err)
+	}
+
+	return waitForDeploymentReadyWithTimeout(ctx, kubeconfigPath, namespace, "effectivenessmonitor-resilience", 90*time.Second, writer)
+}
+
+// TeardownEMForDataStorageResilienceTest deletes everything
+// DeployEMForDataStorageResilienceTest created. Best-effort.
+func TeardownEMForDataStorageResilienceTest(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) {
+	del := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
+		"delete", "deployment,service,configmap", "-l", "app=effectivenessmonitor-resilience", "--ignore-not-found", "--wait=false")
+	del.Stdout = writer
+	del.Stderr = writer
+	if err := del.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  failed to delete effectivenessmonitor-resilience resources: %v\n", err)
+	}
 }
 
 // waitForDeploymentReadyWithTimeout waits for a deployment to have at least one ready replica.

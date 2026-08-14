@@ -35,13 +35,23 @@ type InterruptibleProxy struct {
 	target   string
 	mu       sync.Mutex
 	conns    []net.Conn
+	paused   bool
 	done     chan struct{}
 }
 
 // NewInterruptibleProxy creates a proxy listening on a random localhost port.
 // All accepted connections are forwarded to target (e.g., "localhost:8088").
 func NewInterruptibleProxy(target string) (*InterruptibleProxy, error) {
-	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+	return NewInterruptibleProxyOn("127.0.0.1:0", target)
+}
+
+// NewInterruptibleProxyOn creates a proxy listening on listenAddr (e.g.
+// "0.0.0.0:0" for a random port reachable from outside the host -- needed
+// when the proxy must be dialed from inside a Kind pod via the podman
+// bridge network, see CreateServiceBridge/KindBridgeGatewayIP, #1985). All
+// accepted connections are forwarded to target.
+func NewInterruptibleProxyOn(listenAddr, target string) (*InterruptibleProxy, error) {
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", listenAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +80,30 @@ func (p *InterruptibleProxy) DisconnectAll() {
 	p.conns = nil
 }
 
+// Pause stops the proxy from forwarding NEW connections (accepted
+// connections are immediately closed instead of dialed upstream) and
+// forcibly drops every currently active connection. Used to simulate a
+// sustained dependency outage against short-lived request/response clients
+// (e.g. an HTTP health-check prober that opens a fresh connection every
+// probe cycle) where DisconnectAll() alone would not stay "down" -- the
+// next probe would simply reconnect successfully (#1985).
+func (p *InterruptibleProxy) Pause() {
+	p.mu.Lock()
+	p.paused = true
+	for _, c := range p.conns {
+		_ = c.Close()
+	}
+	p.conns = nil
+	p.mu.Unlock()
+}
+
+// Resume lets the proxy forward new connections again after Pause.
+func (p *InterruptibleProxy) Resume() {
+	p.mu.Lock()
+	p.paused = false
+	p.mu.Unlock()
+}
+
 // Close shuts down the listener and all active connections.
 func (p *InterruptibleProxy) Close() {
 	close(p.done)
@@ -93,6 +127,14 @@ func (p *InterruptibleProxy) acceptLoop() {
 }
 
 func (p *InterruptibleProxy) handleConn(clientConn net.Conn) {
+	p.mu.Lock()
+	paused := p.paused
+	p.mu.Unlock()
+	if paused {
+		_ = clientConn.Close()
+		return
+	}
+
 	upstreamConn, err := (&net.Dialer{}).DialContext(context.Background(), "tcp", p.target)
 	if err != nil {
 		_ = clientConn.Close()
@@ -100,6 +142,15 @@ func (p *InterruptibleProxy) handleConn(clientConn net.Conn) {
 	}
 
 	p.mu.Lock()
+	if p.paused {
+		// Pause() was called while we were dialing upstream; drop both
+		// ends immediately rather than let this one connection slip
+		// through the outage window.
+		p.mu.Unlock()
+		_ = clientConn.Close()
+		_ = upstreamConn.Close()
+		return
+	}
 	p.conns = append(p.conns, clientConn, upstreamConn)
 	p.mu.Unlock()
 

@@ -643,6 +643,7 @@ data:
         timeout: 10s
     datastorage:
       url: "https://data-storage-service.%s.svc.cluster.local:8080"
+      healthUrl: "http://data-storage-service.%s.svc.cluster.local:8081/readyz"
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -905,7 +906,7 @@ spec:
       - name: notification-output
         emptyDir: {}%s
       terminationGracePeriodSeconds: 10%s
-`, namespace, namespace, imageName, pullPolicy, namespace, coverageEnvYAML, slackWebhookURL, coverageVolumeMountYAML, coverageVolumeYAML, coverageSecurityContextYAML)
+`, namespace, namespace, namespace, imageName, pullPolicy, namespace, coverageEnvYAML, slackWebhookURL, coverageVolumeMountYAML, coverageVolumeYAML, coverageSecurityContextYAML)
 }
 
 // DeployNotificationDataStorageServices deploys DataStorage with OAuth2-Proxy for Notification E2E.

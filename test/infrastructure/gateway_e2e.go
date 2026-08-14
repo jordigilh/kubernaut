@@ -665,6 +665,7 @@ data:
       idleTimeout: 120s
     datastorage:
       url: "https://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      healthUrl: "http://data-storage-service.kubernaut-system.svc.cluster.local:8081/readyz"
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -806,6 +807,223 @@ spec:
       targetPort: 9090
       nodePort: 30090
 `, coverageSecurityContextYAML, imageName, pullPolicy, coverageEnvYAML, coverageVolumeMountYAML, coverageVolumeYAML)
+}
+
+// Gateway resilience E2E (#1985): a second, throwaway, single-replica
+// Gateway instance dedicated to the DataStorage-resilience journey
+// (test/e2e/gateway/39_datastorage_resilience_test.go), reusing the exact
+// image already running as the shared "gateway" Deployment (resolved live
+// via kubectl rather than re-derived, so it always matches whatever this
+// suite actually built/pulled). Its datastorage.healthUrl points at a
+// CreateServiceBridge-created Service fronting a host-side
+// InterruptibleProxy (fault-injectable); its datastorage.url stays pointed
+// at the REAL, shared DataStorage instance, so a signal POSTed after
+// recovery produces a genuine, queryable audit trail. NodePorts (30183
+// health, 30185 API) are unique within this suite's own Kind cluster,
+// distinct from the shared Gateway's own 30080/30180/30090.
+const (
+	// GatewayResilienceAPINodePort/HealthNodePort are this suite's own,
+	// distinct from the shared Gateway's 30080 (API) / 30180 (health).
+	GatewayResilienceAPINodePort    = 30185
+	GatewayResilienceHealthNodePort = 30183
+	// GatewayResilienceAPIHostPort/HealthHostPort mirror the Kind config's
+	// extraPortMappings for the above NodePorts (see
+	// kind-gateway-config.yaml -- must be added there for these NodePorts
+	// to be host-reachable).
+	GatewayResilienceAPIHostPort    = 28185
+	GatewayResilienceHealthHostPort = 28183
+)
+
+// resolveDeployedImage reads back the exact image reference a running
+// Deployment's first container uses, so a dedicated throwaway instance can
+// reuse it verbatim instead of re-deriving a build tag that might drift
+// (registry vs. local build, coverage-instrumented vs. not).
+func resolveDeployedImage(ctx context.Context, kubeconfigPath, namespace, deploymentName string) (string, error) {
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", namespace, "get", "deployment", deploymentName,
+		"-o", "jsonpath={.spec.template.spec.containers[0].image}")
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve image for deployment %s/%s: %w", namespace, deploymentName, err)
+	}
+	image := strings.TrimSpace(string(out))
+	if image == "" {
+		return "", fmt.Errorf("empty image resolved for deployment %s/%s", namespace, deploymentName)
+	}
+	return image, nil
+}
+
+// DeployGatewayForDataStorageResilienceTest deploys the dedicated,
+// throwaway "gateway-resilience" instance described above and waits for it
+// to report Ready. Must be called AFTER the fault-injection bridge
+// (bridgeServiceName) is already live, so the very first readiness probe
+// succeeds.
+func DeployGatewayForDataStorageResilienceTest(ctx context.Context, kubeconfigPath, namespace, bridgeServiceName string, bridgePort int, writer io.Writer) error {
+	imageName, err := resolveDeployedImage(ctx, kubeconfigPath, namespace, "gateway")
+	if err != nil {
+		return fmt.Errorf("failed to resolve gateway image for resilience instance: %w", err)
+	}
+	pullPolicy := GetImagePullPolicy()
+
+	manifest := fmt.Sprintf(`---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-resilience-config
+  namespace: %[1]s
+  labels:
+    app: gateway-resilience
+data:
+  config.yaml: |
+    server:
+      listenAddr: ":8080"
+      maxConcurrentRequests: 100
+      readTimeout: 30s
+      writeTimeout: 30s
+      idleTimeout: 120s
+    datastorage:
+      url: "https://data-storage-service.%[1]s.svc.cluster.local:8080"
+      healthUrl: "http://%[2]s:%[3]d/readyz"
+      timeout: 10s
+      buffer:
+        bufferSize: 10000
+        batchSize: 100
+        flushInterval: 1s
+        maxRetries: 3
+    processing:
+      environment:
+        cacheTtl: 5s
+        configmapNamespace: %[1]s
+        configmapName: "kubernaut-environment-overrides"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway-resilience
+  namespace: %[1]s
+  labels:
+    app: gateway-resilience
+    kubernaut.ai/resilience-test: "datastorage-1985"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway-resilience
+  template:
+    metadata:
+      labels:
+        app: gateway-resilience
+    spec:
+      serviceAccountName: gateway
+      terminationGracePeriodSeconds: 5
+      nodeSelector:
+        node-role.kubernetes.io/control-plane: ""
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: gateway
+          image: %[4]s
+          imagePullPolicy: %[5]s
+          args:
+            - "--config=/etc/gateway/config.yaml"
+          env:
+            - name: TLS_CA_FILE
+              value: /etc/tls-ca/ca.crt
+            - name: KUBERNAUT_CONTROLLER_NAMESPACE
+              value: %[1]s
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: health
+              containerPort: 8081
+              protocol: TCP
+          volumeMounts:
+            - name: config
+              mountPath: /etc/gateway
+              readOnly: true
+            - name: tls-ca
+              mountPath: /etc/tls-ca
+              readOnly: true
+          # No startupProbe/readinessProbe gating the pod's OWN Service
+          # endpoints here on purpose: the whole point of this dedicated
+          # instance is to let the test poll its /readyz directly via the
+          # host-reachable NodePort below and observe the real transition,
+          # rather than have kubelet silently pull it out of rotation.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+      volumes:
+        - name: config
+          configMap:
+            name: gateway-resilience-config
+        - name: tls-ca
+          configMap:
+            name: inter-service-ca
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway-resilience-service
+  namespace: %[1]s
+  labels:
+    app: gateway-resilience
+spec:
+  type: NodePort
+  selector:
+    app: gateway-resilience
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+      nodePort: %[6]d
+    - name: health
+      protocol: TCP
+      port: 8081
+      targetPort: 8081
+      nodePort: %[7]d
+`, namespace, bridgeServiceName, bridgePort, imageName, pullPolicy, GatewayResilienceAPINodePort, GatewayResilienceHealthNodePort)
+
+	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
+		return fmt.Errorf("failed to deploy gateway-resilience: %w", err)
+	}
+
+	return waitForDeploymentReadyWithTimeout(ctx, kubeconfigPath, namespace, "gateway-resilience", 90*time.Second, writer)
+}
+
+// TeardownGatewayForDataStorageResilienceTest deletes everything
+// DeployGatewayForDataStorageResilienceTest created. Best-effort.
+func TeardownGatewayForDataStorageResilienceTest(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) {
+	del := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "-n", namespace,
+		"delete", "deployment,service,configmap", "-l", "app=gateway-resilience", "--ignore-not-found", "--wait=false")
+	del.Stdout = writer
+	del.Stderr = writer
+	if err := del.Run(); err != nil {
+		_, _ = fmt.Fprintf(writer, "   ⚠️  failed to delete gateway-resilience resources: %v\n", err)
+	}
 }
 
 // gatewayManifest generates the full Gateway multi-document YAML manifest as an inline
