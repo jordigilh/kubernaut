@@ -1103,6 +1103,32 @@ EOF
     return 1
   fi
 
+  # Issue #2144 RCA: run_console_live_001's oauth2-proxy has TCP-timed-out
+  # reaching Dex's ClusterIP moments after the rollout-status check above
+  # returned -- Deployment readiness only proves the Pod passed its own
+  # readiness probe, not that kube-proxy/CNI has finished programming this
+  # Service's data-plane rules for that Pod yet. Poll the EndpointSlice
+  # (not the deprecated v1 Endpoints -- see the "Endpoints is deprecated"
+  # warnings already elsewhere in this suite's output) for a populated
+  # address before returning, to close that race at its source rather than
+  # relying on incidental delay between here and oauth2-proxy's startup.
+  local dex_ep_ready=false attempt
+  for attempt in $(seq 1 15); do
+    local ready_addr
+    ready_addr=$(kubectl get endpointslices -n "$NAMESPACE" \
+      -l kubernetes.io/service-name=dex \
+      -o jsonpath='{.items[*].endpoints[*].addresses[*]}' 2>/dev/null || echo "")
+    if [[ -n "$ready_addr" ]]; then
+      dex_ep_ready=true
+      break
+    fi
+    sleep 2
+  done
+  if ! $dex_ep_ready; then
+    tap_not_ok "$desc" "Dex Deployment was ready, but its Service had no EndpointSlice address after 30s (data-plane not yet programmed)"
+    return 1
+  fi
+
   kubectl create secret generic console-oauth-creds -n "$NAMESPACE" \
     --from-literal=client-id=kubernaut-console \
     --from-literal=client-secret="$DEX_CLIENT_SECRET" \
