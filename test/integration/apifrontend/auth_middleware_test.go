@@ -246,6 +246,106 @@ var _ = Describe("Auth Middleware Integration (auth/)", func() {
 		})
 	})
 
+	Describe("#1999 (BR-SECURITY-1505, DD-PLATFORM-006 DA18): source-bound jti replay detection wiring", func() {
+		buildReplayServer := func(trustedProxyCIDRs []string) (*httptest.Server, *auth.ReplayCache) {
+			rc := auth.NewReplayCache(10 * time.Minute)
+			validator, err := auth.NewJWTValidator(auth.Config{
+				AllowInsecureIssuers: true,
+				JWT: []auth.ProviderConfig{{
+					Issuer: auth.IssuerConfig{
+						URL:       jwksServer.URL,
+						JWKSURL:   jwksServer.URL,
+						Audiences: []string{"kubernaut-af"},
+					},
+				}},
+			}, auth.WithHTTPClient(jwksServer.Client()), auth.WithReplayCache(rc))
+			Expect(err).NotTo(HaveOccurred())
+
+			var captured *auth.UserIdentity
+			mw := auth.MiddlewareWithConfig(auth.MiddlewareConfig{
+				Validator:         validator,
+				Logger:            logf.Log.WithName("it-1999-replay"),
+				TrustedProxyCIDRs: trustedProxyCIDRs,
+			})
+			srv := httptest.NewServer(mw(identityCapture(&captured)))
+			return srv, rc
+		}
+
+		claimsWithJTI := func(subject, jti string) map[string]any {
+			claims := standardClaims(jwksServer.URL, subject, []string{"kubernaut-af"}, time.Now().Add(1*time.Hour))
+			claims["jti"] = jti
+			return claims
+		}
+
+		doRequestWithXFF := func(srv *httptest.Server, token, xff string) *http.Response {
+			req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+			Expect(err).NotTo(HaveOccurred())
+			req.Header.Set("Authorization", "Bearer "+token)
+			if xff != "" {
+				req.Header.Set("X-Forwarded-For", xff)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			return resp
+		}
+
+		It("IT-AF-1999-001: same client reusing its token across requests succeeds both times", func() {
+			srv, rc := buildReplayServer(nil)
+			defer srv.Close()
+			defer rc.Stop()
+
+			token := jwksKeyPair.signToken(claimsWithJTI("it-1999-same-client", "jti-1999-001"))
+
+			resp1 := doRequestWithXFF(srv, token, "")
+			defer resp1.Body.Close()
+			Expect(resp1.StatusCode).To(Equal(http.StatusOK), "first use of the token should succeed")
+
+			resp2 := doRequestWithXFF(srv, token, "")
+			defer resp2.Body.Close()
+			Expect(resp2.StatusCode).To(Equal(http.StatusOK),
+				"reusing the same token from the same client must succeed, not be rejected as a replay (#1999)")
+		})
+
+		It("IT-AF-1999-002: token replayed from a genuinely different trusted-proxy-reported source is rejected", func() {
+			// httptest servers listen on 127.0.0.1, so trusting that CIDR
+			// lets X-Forwarded-For stand in for "a different real client."
+			srv, rc := buildReplayServer([]string{"127.0.0.1/32"})
+			defer srv.Close()
+			defer rc.Stop()
+
+			token := jwksKeyPair.signToken(claimsWithJTI("it-1999-cross-source", "jti-1999-002"))
+
+			resp1 := doRequestWithXFF(srv, token, "198.51.100.1")
+			defer resp1.Body.Close()
+			Expect(resp1.StatusCode).To(Equal(http.StatusOK), "first source's use of the token should succeed")
+
+			resp2 := doRequestWithXFF(srv, token, "203.0.113.9")
+			defer resp2.Body.Close()
+			Expect(resp2.StatusCode).To(Equal(http.StatusUnauthorized),
+				"the same token presented via a different trusted-proxy-reported source must be rejected as a replay")
+		})
+
+		It("IT-AF-1999-003: a spoofed X-Forwarded-For from an untrusted peer has no effect (fail-closed default)", func() {
+			// No trustedProxyCIDRs configured -- every request looks like
+			// the same source (the httptest client's own loopback peer),
+			// regardless of what X-Forwarded-For claims.
+			srv, rc := buildReplayServer(nil)
+			defer srv.Close()
+			defer rc.Stop()
+
+			token := jwksKeyPair.signToken(claimsWithJTI("it-1999-untrusted-xff", "jti-1999-003"))
+
+			resp1 := doRequestWithXFF(srv, token, "198.51.100.1")
+			defer resp1.Body.Close()
+			Expect(resp1.StatusCode).To(Equal(http.StatusOK))
+
+			resp2 := doRequestWithXFF(srv, token, "203.0.113.9")
+			defer resp2.Body.Close()
+			Expect(resp2.StatusCode).To(Equal(http.StatusOK),
+				"an untrusted peer's X-Forwarded-For must not be trusted for source binding -- both requests are the same real (loopback) source")
+		})
+	})
+
 	Describe("AC-13: JWKS circuit breaker fail-open", func() {
 		It("IT-AF-1195-022: fail-open with cached keys when JWKS server is down", func() {
 			requestCount := 0

@@ -141,15 +141,24 @@ in metrics, making it impossible for SREs to distinguish replay attacks from exp
 **Required behavior:** Define `ErrTokenReplayed` as a distinct sentinel. `classifyAuthError`
 returns `"token_replayed"`. Metric label distinguishes the two.
 
+**Superseded by #1999 (DD-PLATFORM-006 DA18):** "same JTI presented again" is no longer
+sufficient on its own to be a replay — a JTI is fixed for a token's entire lifetime, and
+standard OAuth2 Bearer-token usage is exactly "fetch once, reuse for many requests." TC-B-05b/c
+below now require the second presentation to come from a **different source key** (see
+`auth.WithSourceIP` / `trustedSourceResolver`) to trigger `ErrTokenReplayed`; the same-source
+case is covered separately by `TC-B-1999-a`.
+
 | TC ID | Preconditions | Input | Expected Result | Type |
 |-------|---------------|-------|-----------------|------|
 | TC-B-05a | Replay cache enabled | Token with JTI seen first time | Accepted | Unit |
-| TC-B-05b | Replay cache enabled | Same JTI presented again | Error; `errors.Is(err, ErrTokenReplayed)` is true | Unit |
-| TC-B-05c | Replay cache enabled | Replayed token error | `errors.Is(err, ErrTokenExpired)` is **false** | Unit |
+| TC-B-05b | Replay cache enabled | Same JTI presented again from a **different** source | Error; `errors.Is(err, ErrTokenReplayed)` is true | Unit |
+| TC-B-05c | Replay cache enabled | Replayed (different-source) token error | `errors.Is(err, ErrTokenExpired)` is **false** | Unit |
 | TC-B-05d | Replay cache enabled | `classifyAuthError(ErrTokenReplayed)` | Returns `"token_replayed"` | Unit |
 | TC-B-05e | Replay cache enabled | `classifyAuthError(ErrTokenExpired)` | Returns `"token_expired"` (unchanged) | Unit |
 | TC-B-05f | Replay cache disabled (nil) | Token with any JTI | Accepted (no replay check) | Unit |
-| TC-B-05g | Replay cache enabled | Token without JTI | Accepted (JTI is optional; or error if required — document decision) | Unit |
+| TC-B-05g | Replay cache enabled | Token without JTI | Rejected: `errors.Is(err, ErrMalformedToken)` (JTI is required once replay protection is enabled) | Unit |
+| TC-B-1999-a | Replay cache enabled | Same JTI presented again from the **same** source | Accepted — legitimate Bearer-token reuse, not a replay | Unit |
+| TC-B-1999-b | Replay cache enabled, distributed (Valkey) backend | Same JTI, same source, across two replica instances sharing the store | Accepted on both — cross-replica state sharing must not itself look like a replay | Unit |
 
 **Observability:**
 

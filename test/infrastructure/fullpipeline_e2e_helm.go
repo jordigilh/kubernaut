@@ -993,6 +993,24 @@ func InstallFullPipelineHelmChart(ctx context.Context, kubeconfigPath, namespace
 		"--set", "apifrontend.config.auth.jwksURL=https://dex:5556/dex/keys",
 		"--set", "apifrontend.config.auth.audience=kubernaut-apifrontend",
 		"--set", "apifrontend.config.auth.oidcCaFile=/etc/tls-ca/ca.crt",
+		// #1999 (BR-SECURITY-1505, DD-PLATFORM-006 DA18): enable the distributed
+		// jti replay cache against the chart's own bundled Valkey so this suite
+		// exercises source-bound replay detection end-to-end against real
+		// infrastructure, not just IT-level httptest wiring. This is the exact
+		// configuration that caused a confirmed production incident pre-fix:
+		// every FP test in this process shares one cached DEX token
+		// (getAFToken(), suite_test.go) across dozens of MCP calls -- with the
+		// old Seen(jti)-only semantics, the SECOND such call in the whole
+		// process would have 401'd as a false-positive replay. Leaving this
+		// enabled for the entire suite (rather than a narrowly-scoped test)
+		// means every existing AF test that reuses getAFToken() now also acts
+		// as an implicit regression check, in addition to the dedicated
+		// 19_af_replay_cache_test.go. tls.enabled=true is required because the
+		// chart's own Valkey is TLS-only by default (DD-PLATFORM-006 DA8);
+		// redisAddr/redisDB/credentialsPath are chart-computed once enabled=true
+		// (apifrontend.yaml), no override needed.
+		"--set", "apifrontend.config.auth.replayCache.enabled=true",
+		"--set", "apifrontend.config.auth.replayCache.tls.enabled=true",
 		// #1839 RCA (must-gather logs, PR #1841 CI): AF's severity-triage
 		// GetAlerts/GetRules calls to Prometheus were consistently timing out
 		// at the 10s Go default (pkg/apifrontend/config.defaultResilienceConfig)

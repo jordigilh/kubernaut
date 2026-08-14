@@ -42,6 +42,7 @@ apifrontend:
                     certFile: ""
                     enabled: false
                     keyFile: ""
+                trustedProxyCIDRs: []
         interactive:
             awaitSessionTimeout: 3m
             bridgeInactivityTimeout: 180s

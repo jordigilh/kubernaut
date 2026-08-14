@@ -229,8 +229,8 @@ func (v *JWTValidator) Validate(ctx context.Context, rawToken string) (*UserIden
 		if v.replayCache.MissingJTI(jti) {
 			return nil, fmt.Errorf("%w: token missing required jti claim for replay protection", ErrMalformedToken)
 		}
-		if v.replayCache.Seen(jti) {
-			return nil, fmt.Errorf("%w: token jti already used", ErrTokenReplayed)
+		if v.replayCache.Seen(jti, SourceIPFromContext(ctx)) {
+			return nil, fmt.Errorf("%w: token jti already used from a different source", ErrTokenReplayed)
 		}
 	}
 

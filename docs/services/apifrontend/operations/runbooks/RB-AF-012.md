@@ -19,8 +19,11 @@ automated attack tooling targeting the API Frontend.
 2. **Brute force attack** — repeated auth attempts with variations.
 3. **Misconfigured client** — legitimate client with expired credentials in a
    retry loop.
-4. **Token replay attempt** — attacker reusing captured tokens (mitigated by
-   JTI replay protection).
+4. **Token replay attempt** — attacker reusing captured tokens from a
+   *different* source than the legitimate caller (mitigated by source-bound
+   JTI replay protection, #1999/DD-PLATFORM-006 DA18). A legitimate client
+   reusing its own Bearer token repeatedly is expected and is **not** flagged
+   — only a jti presented from a different source key trips this control.
 
 ## Triage Steps
 
@@ -33,7 +36,15 @@ automated attack tooling targeting the API Frontend.
    ```
    rate(af_http_requests_total{status="401"}[5m])
    ```
-   Cross-reference with audit logs for `reason: "token_replayed"`.
+   Cross-reference with audit logs for `reason: "token_replayed"`. Since
+   #1999, this only fires for a genuinely different-source replay of the
+   same jti — if it's firing for a single client's normal repeated calls,
+   verify `auth.replayCache.trustedProxyCIDRs` matches the deployment's real
+   ingress topology (a misconfigured/missing entry makes every request look
+   like it's coming from the ingress's own IP, which is still safe — it
+   just means this control detects nothing — but the opposite, an
+   over-broad entry, could let a spoofed header impersonate the legitimate
+   source).
 
 3. Review rate-limit tier distribution:
    ```

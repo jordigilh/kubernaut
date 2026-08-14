@@ -3,7 +3,9 @@
 **Status**: ✅ **IMPLEMENTED** (merged via [PR #1790](https://github.com/jordigilh/kubernaut/pull/1790))
 **Decision Date**: 2026-07-31 (merge date; Decision Area 14's materialized-defaults generator
 remains deferred to its own follow-up PR — see Status section below)
-**Version**: 5.11 (Decision Area 13 addendum, round-16 RCA: FMC was a third Go Valkey client missed
+**Version**: 5.12 (Decision Area 18 added: source-bound `jti` replay detection, implementing
+Decision Area 16's deferred Option 3 — issue #1999, confirmed as a live production incident.
+Previously 5.11, Decision Area 13 addendum, round-16 RCA: FMC was a third Go Valkey client missed
 by this Decision Area's original DataStorage/APIFrontend-only census — fixed with the identical
 `sharedtls.BuildTLSConfig` pattern, mandatory-on per DataStorage's shape rather than the replay
 cache's opt-in one, since FMC's Valkey dependency has no fail-open fallback)
@@ -993,6 +995,87 @@ pattern (DD-PLATFORM-006 round-13). Fix: raised both readiness-poll timeouts in
 `waitForFullPipelineServicesReady` from 3 to 6 minutes (+1min margin over the 5min ceiling),
 applied uniformly rather than per-service to keep the function simple, since every other service
 converges in seconds regardless and this only affects the failure-case ceiling.
+
+---
+
+### Decision Area 18 — Source-Bound `jti` Replay Detection (implements Decision Area 16's deferred Option 3)
+
+**Finding, confirmed as a live production incident (diagnosed alongside issue #1995)**: with
+`apifrontend.config.auth.replayCache` enabled against a real Valkey backend on a live cluster,
+every investigation session died silently at its **second** authenticated API call — the first
+call always succeeded, every subsequent call from the same client was rejected with
+`ErrTokenReplayed`. Root cause is identical in mechanism to Decision Area 16's finding
+(`v.replayCache.Seen(jti)` rejects any second presentation of the same `jti`, regardless of
+source, timing, or legitimacy — a JWT's `jti` claim is fixed for the token's entire lifetime, and
+standard OAuth2 Bearer-token usage is exactly "fetch once, reuse for many requests until it
+expires"). Decision Area 16 already root-caused this exact mechanism and reverted the Helm
+mandate to opt-in, but deliberately left `pkg/apifrontend/auth/jwt.go`'s `Seen()` semantics
+unchanged, rejecting a redesign as its Option 3 ("out-of-scope for this DD"). This incident is new
+evidence that DA16's opt-in-plus-operator-education mitigation already failed once in practice:
+someone enabled the feature without `Seen()`'s single-use-ever semantics being safe for their
+client population, and it broke every real investigation, not just a hypothetical multi-call E2E
+test.
+
+**Decision**: implement DA16's deferred Option 3. `ReplayCacheStore.Seen(jti string) bool` becomes
+`Seen(jti, sourceKey string) bool`, binding replay detection to the request's source instead of
+treating every repeat presentation as a replay:
+
+- New `jti` → recorded with the current source key, not a replay.
+- Existing `jti`, **same** source key → legitimate Bearer-token reuse, **not** a replay.
+- Existing `jti`, **different** source key → replay, rejected with `ErrTokenReplayed`.
+
+Both backends implement this without new race windows: `ReplayCache` (in-memory) stores
+`{sourceKey, expiry}` per `jti` under its existing mutex; `ValkeyReplayCache` stores `sourceKey` as
+the `SETNX` value instead of a plain sentinel, and on a `SETNX` miss issues one follow-up `GET` to
+compare — safe without a Lua script because the stored value is write-once until TTL eviction, so
+there is no race between the miss and the `GET`.
+
+Source-key resolution is itself hardened against the classic X-Forwarded-For spoofing attack: a
+new `trustedSourceResolver` (`pkg/apifrontend/auth/trusted_source.go`) trusts a forwarded
+client-IP header only when the immediate peer's `RemoteAddr` matches a configured trusted-proxy
+CIDR (new `auth.replayCache.trustedProxyCIDRs`, default empty). This mirrors the already-proven
+`pkg/gateway/middleware/trusted_realip.go` pattern (DD-AUTH-003, issue #673 L-1) — duplicated in
+miniature rather than imported, since `pkg/apifrontend` and `pkg/gateway` are intentionally
+independent services with no shared runtime dependency — and is deliberately isolated from
+`pkg/apifrontend/httputil.ExtractClientIP` (shared by rate limiting and audit logging, neither of
+which needed or wanted this change). Fail-closed: no CIDRs configured means proxy headers are
+never trusted, so every request looks like the same source — this control then detects no
+cross-source replay, but critically, it also never produces a false positive, preserving DA16's
+own "never break legitimate traffic" floor while DA18 restores a genuine hard control once
+`trustedProxyCIDRs` is configured to match the real ingress topology.
+
+**Options considered**:
+1. **Source-bound replay detection (selected, implements DA16's Option 3)** — fixes the confirmed
+   failure mode (same client, same token, reused across calls → wrongly rejected) while preserving
+   the actual protection GAP-08 exists for (a stolen token replayed from a different source is
+   still caught). Blast radius is contained: `Validate(ctx, rawToken)`'s signature is unchanged
+   (source key flows through context, mirroring this package's existing `WithUserIdentity`
+   convention) — only `ReplayCacheStore.Seen` gains a parameter, with one production call site
+   (`middleware.go`) and ~9 mechanical test call-site updates (verified via type-aware reference
+   search, not just grep).
+2. Remove `jti` single-use enforcement entirely, keep replay detection as an observability signal
+   (log/count only, never reject) — rejected: throws away GAP-08's actual protection against a
+   genuinely stolen token replayed from elsewhere, which is the control's whole reason to exist,
+   not just the false-positive path this DD needs to fix.
+3. Leave `Seen()` unchanged, rely solely on Decision Area 16's opt-in default plus operator
+   documentation — rejected: this incident is direct evidence the opt-in mitigation alone already
+   failed once; the next operator who enables this feature (e.g. specifically to close GAP-08's
+   multi-replica HA gap) will hit the identical live-cluster failure without a code fix.
+4. Bind replay detection to a request nonce or DPoP-style proof-of-possession key instead of source
+   IP — rejected as disproportionate: requires client-side protocol changes (a fresh nonce or
+   DPoP header per call) across every AF client (console, CLI, agents), whereas source-IP binding
+   requires zero client changes and is proportionate to the confirmed failure mode.
+
+**Confidence**: 90% — the false-positive fix itself (same-client reuse allowed) is ~92% confident,
+independently validated for both backends with no new race conditions. The residual gap is
+entirely "does source-IP binding restore a genuine hard control, or only a soft one," which
+depends on `trustedProxyCIDRs` being configured to match each deployment's actual ingress
+topology — a deployment-time configuration correctness question, not an implementation risk. The
+uncovered residual (IP-roaming mid-session: mobile NAT, corporate proxy rotation) is a
+low-probability exposure for this product's actual client population (browser console sessions,
+server-to-server agents/CLI — not mobile), and strictly smaller in both likelihood and blast
+radius than the "every 2nd request, unconditionally" failure mode this DD confirms already broke
+a live cluster.
 
 ---
 

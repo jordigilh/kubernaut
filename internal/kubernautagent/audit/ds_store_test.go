@@ -153,6 +153,56 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 		})
 	})
 
+	Describe("UT-KA-2141-001: DSAuditStore persists gate-retry diagnostic fields on LLMRequestPayload (BR-AI-2120, FedRAMP AU-3)", func() {
+		It("should populate retry_outcome/ambiguous_kind/conflicting_groups when present on event.Data", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-gate-retry")
+			event.Data["retry_outcome"] = "resolved_after_other_tool_retry"
+			event.Data["ambiguous_kind"] = "Subscription"
+			event.Data["conflicting_groups"] = "operators.coreos.com,messaging.knative.dev"
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recorder.calls).To(HaveLen(1))
+
+			payload, ok := recorder.calls[0].EventData.GetLLMRequestPayload()
+			Expect(ok).To(BeTrue(), "should extract LLMRequestPayload")
+			retryOutcome, hasRetryOutcome := payload.RetryOutcome.Get()
+			Expect(hasRetryOutcome).To(BeTrue(), "retry_outcome must survive into the wire payload")
+			Expect(retryOutcome).To(Equal("resolved_after_other_tool_retry"))
+
+			ambiguousKind, hasAmbiguousKind := payload.AmbiguousKind.Get()
+			Expect(hasAmbiguousKind).To(BeTrue(), "ambiguous_kind must survive into the wire payload")
+			Expect(ambiguousKind).To(Equal("Subscription"))
+
+			conflictingGroups, hasConflictingGroups := payload.ConflictingGroups.Get()
+			Expect(hasConflictingGroups).To(BeTrue(), "conflicting_groups must survive into the wire payload")
+			Expect(conflictingGroups).To(Equal("operators.coreos.com,messaging.knative.dev"))
+		})
+
+		It("should leave retry_outcome/ambiguous_kind/conflicting_groups unset for ordinary (non-gate) LLM request events", func() {
+			recorder := &fakeOgenClient{}
+			store := audit.NewDSAuditStore(recorder)
+
+			event := audit.NewEvent(audit.EventTypeLLMRequest, "corr-ordinary")
+			event.Data["model"] = "claude-sonnet-4-20250514"
+
+			err := store.StoreAudit(context.Background(), event)
+			Expect(err).NotTo(HaveOccurred())
+
+			payload, ok := recorder.calls[0].EventData.GetLLMRequestPayload()
+			Expect(ok).To(BeTrue())
+			_, hasRetryOutcome := payload.RetryOutcome.Get()
+			Expect(hasRetryOutcome).To(BeFalse(), "ordinary llm.request events must not fabricate a retry_outcome")
+			_, hasAmbiguousKind := payload.AmbiguousKind.Get()
+			Expect(hasAmbiguousKind).To(BeFalse())
+			_, hasConflictingGroups := payload.ConflictingGroups.Get()
+			Expect(hasConflictingGroups).To(BeFalse())
+		})
+	})
+
 	Describe("UT-KA-PR9-001: buildEventData coverage for all AllEventTypes (MNT-2)", func() {
 		It("should produce a non-zero EventData type for every event type in AllEventTypes", func() {
 			recorder := &fakeOgenClient{}
