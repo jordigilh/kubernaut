@@ -1202,6 +1202,15 @@ func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *
 	// as BR-AI-009's transient-error retry (handleError), keyed on
 	// session.Generation instead of ConsecutiveFailures.
 	backoffDuration := h.errorClassifier.GetRetryDelay(int(session.Generation))
+
+	// #2080 recurrence: RequeueAfter alone is not durable -- the controller's
+	// own self-watch predicate (aiAnalysisUpdatePredicate) wakes the
+	// reconciler immediately whenever KASession.ID changes, which this very
+	// function just did (cleared it above), bypassing the backoff entirely.
+	// BackoffUntil is checked by reconcileInvestigating BEFORE this handler
+	// runs again, so it survives any early wake-up regardless of source.
+	backoffUntil := metav1.NewTime(time.Now().Add(backoffDuration))
+	session.BackoffUntil = &backoffUntil
 	return ctrl.Result{RequeueAfter: backoffDuration}, nil
 }
 
