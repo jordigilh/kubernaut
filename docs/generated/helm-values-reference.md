@@ -48,6 +48,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.auth.replayCache.tls.certFile` | string | Client certificate file path (mTLS) -- unused against the chart's own Valkey (no client cert required), available for BYO Redis that requires mTLS | `""` | No |
 | `config.auth.replayCache.tls.enabled` | boolean | Enable TLS for the replay-cache Valkey/Redis connection | `false` | No |
 | `config.auth.replayCache.tls.keyFile` | string | Client key file path (mTLS) | `""` | No |
+| `config.auth.replayCache.trustedProxyCIDRs` | array of string | DD-PLATFORM-006 DA18 (#1999): CIDRs of proxies/ingresses trusted to supply a forwarded client-IP header for jti replay-cache source binding. Empty by default -- fail-closed: no proxy header is trusted for this purpose until explicitly configured to match the deployment's real ingress topology (mirrors pkg/gateway's TrustedRealIP / DD-AUTH-003 pattern). | `[]` | No |
 | `config.interactive.awaitSessionTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"3m"` | No |
 | `config.interactive.bridgeInactivityTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"180s"` | No |
 | `config.interactive.enabled` | boolean |  | `true` | No |

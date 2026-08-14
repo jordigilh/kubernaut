@@ -211,12 +211,23 @@ func buildAuthMiddleware(cfg *config.Config, reg *metrics.Registry, auditor audi
 	}
 
 	mw := auth.MiddlewareWithConfig(auth.MiddlewareConfig{
-		Validator:    validator,
-		Logger:       logger,
-		Auditor:      auditor,
-		AuthDuration: reg.AuthDuration,
+		Validator:         validator,
+		Logger:            logger,
+		Auditor:           auditor,
+		AuthDuration:      reg.AuthDuration,
+		TrustedProxyCIDRs: replayCacheTrustedProxyCIDRs(cfg.Auth.ReplayCache),
 	})
 	return mw, validator.Ready
+}
+
+// replayCacheTrustedProxyCIDRs returns cfg's trusted-proxy CIDRs for jti
+// replay-cache source binding (#1999), or nil when no ReplayCache config is
+// present (fail-closed default: no proxy header is ever trusted).
+func replayCacheTrustedProxyCIDRs(cfg *config.ReplayCacheConfig) []string {
+	if cfg == nil {
+		return nil
+	}
+	return cfg.TrustedProxyCIDRs
 }
 
 // buildOIDCHTTPClient creates an HTTP client that trusts the system CAs plus

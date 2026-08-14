@@ -18,6 +18,8 @@ package investigator_test
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
@@ -31,8 +33,9 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/investigator"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/prompt"
-	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 func newITAmbiguousMapper() *meta.DefaultRESTMapper {
@@ -309,6 +312,96 @@ var _ = Describe("TP-1044: apiVersionValidationGate Integration — Full Investi
 			}
 			Expect(found).To(BeTrue(),
 				"IT-KA-1044-005: api_version_validation_gate audit event must be persisted")
+		})
+	})
+
+	Describe("IT-KA-2141-001: retry_outcome/ambiguous_kind/conflicting_groups actually reach Data Storage (BR-AI-1044, BR-AI-2120, FedRAMP AU-3)", func() {
+		It("must be queryable from DS by correlation_id after a real gate-exhaustion Investigate() call", func() {
+			correlationID := fmt.Sprintf("test-2141-gate-retry-%d", time.Now().UnixNano())
+
+			k8s := &k8sFixtureClient{ownerChain: nil, err: nil}
+			localEnricher := enrichment.NewEnricher(k8s, suiteDSAdapter, auditStore, invLogger)
+			resolver := investigator.NewMapperScopeResolver(newITAmbiguousMapper())
+
+			// Same shape as IT-KA-1044-002: gate exhausts because the LLM
+			// never supplies api_version, guaranteeing ambiguous_kind/
+			// conflicting_groups/retry_outcome=exhausted are set on the
+			// audit event -- this is the exact scenario that motivated
+			// #2141 (these fields previously never reached DS regardless
+			// of the in-process ordering fix from #2119/#2121, since
+			// LLMRequestPayload had no carrier field for them).
+			mockClient.responses = []llm.ChatResponse{
+				{Message: llm.Message{Role: "assistant", Content: `{
+					"rca_summary":"Subscription etcd needs restart",
+					"confidence":0.85,
+					"remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator"}
+				}`}},
+				{Message: llm.Message{Role: "assistant", Content: `{
+					"rca_summary":"Subscription etcd needs restart",
+					"confidence":0.85,
+					"remediation_target":{"kind":"Subscription","name":"etcd","namespace":"demo-operator"}
+				}`}},
+			}
+
+			inv := investigator.New(investigator.Config{
+				Client: mockClient, Builder: builder, ResultParser: rp,
+				Enricher: localEnricher, AuditStore: auditStore, Logger: invLogger,
+				MaxTurns: 15, PhaseTools: phaseTools, ScopeResolver: resolver,
+			})
+
+			gateSignal := signal
+			gateSignal.RemediationID = correlationID
+
+			_, err := inv.Investigate(context.Background(), gateSignal)
+			Expect(err).NotTo(HaveOccurred())
+
+			By("Querying DS for the api_version_validation_gate audit event")
+			var events []ogenclient.AuditEvent
+			Eventually(func() bool {
+				params := ogenclient.QueryAuditEventsParams{}
+				params.CorrelationID.SetTo(correlationID)
+				params.EventType.SetTo(audit.EventTypeLLMRequest)
+				params.Limit.SetTo(100)
+
+				resp, qErr := ogenClient.QueryAuditEvents(context.Background(), params)
+				if qErr != nil {
+					GinkgoWriter.Printf("  ⚠️  Audit query failed: %v\n", qErr)
+					return false
+				}
+				events = resp.Data
+				return len(events) > 0
+			}, 15*time.Second, 1*time.Second).Should(BeTrue(),
+				fmt.Sprintf("DS should contain %s event(s) for correlation_id=%s", audit.EventTypeLLMRequest, correlationID))
+
+			var gateEvent *ogenclient.AuditEvent
+			for i := range events {
+				if events[i].EventAction == audit.ActionAPIVersionGate {
+					gateEvent = &events[i]
+					break
+				}
+			}
+			Expect(gateEvent).NotTo(BeNil(),
+				"IT-KA-2141-001: api_version_validation_gate event must be among the persisted events")
+
+			payload, ok := gateEvent.EventData.GetLLMRequestPayload()
+			Expect(ok).To(BeTrue(), "IT-KA-2141-001: persisted event_data must decode as LLMRequestPayload")
+
+			ambiguousKind, hasAmbiguousKind := payload.AmbiguousKind.Get()
+			Expect(hasAmbiguousKind).To(BeTrue(),
+				"IT-KA-2141-001: ambiguous_kind must be reconstructable from DS, not just from an in-memory test double")
+			Expect(ambiguousKind).To(Equal("Subscription"))
+
+			conflictingGroups, hasConflictingGroups := payload.ConflictingGroups.Get()
+			Expect(hasConflictingGroups).To(BeTrue(),
+				"IT-KA-2141-001: conflicting_groups must be reconstructable from DS")
+			Expect(conflictingGroups).NotTo(BeEmpty())
+
+			retryOutcome, hasRetryOutcome := payload.RetryOutcome.Get()
+			Expect(hasRetryOutcome).To(BeTrue(),
+				"IT-KA-2141-001: retry_outcome must be reconstructable from DS -- this is the field #2119/#2121's "+
+					"deferred-StoreAudit ordering fix was written to protect, now proven end-to-end rather than "+
+					"just via a snapshotting test double")
+			Expect(retryOutcome).To(Equal("exhausted"))
 		})
 	})
 })

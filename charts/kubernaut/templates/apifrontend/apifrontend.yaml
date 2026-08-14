@@ -201,6 +201,17 @@ auth:
       keyFile: {{ . | quote }}
       {{- end }}
     {{- end }}
+    {{- with .Values.apifrontend.config.auth.replayCache.trustedProxyCIDRs }}
+    # DD-PLATFORM-006 DA18 (#1999): trusted-proxy CIDRs for jti replay-cache
+    # source binding. Only set this to CIDRs that actually terminate/rewrite
+    # client-IP headers before reaching apifrontend (e.g. the cluster
+    # ingress) -- an untrusted or misconfigured entry here would let a
+    # replayed token spoof its way past source binding.
+    trustedProxyCIDRs:
+      {{- range . }}
+      - {{ . | quote }}
+      {{- end }}
+    {{- end }}
   {{- end }}
 # Issue #1737 gap found: never wired into the chart, so AF silently ran
 # with cmd/apifrontend/main.go's buildRateLimiters() package-level

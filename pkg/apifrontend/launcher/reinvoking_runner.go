@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"iter"
 	"slices"
+	"strconv"
 
 	"github.com/a2aproject/a2a-go/a2asrv"
 	"github.com/go-logr/logr"
@@ -31,6 +32,7 @@ import (
 	"google.golang.org/genai"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
+	"github.com/jordigilh/kubernaut/pkg/apifrontend/audit"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 )
 
@@ -46,20 +48,32 @@ import (
 // a2a-go consumer never observes a premature "final" event and never tears
 // the shared context down mid-reinvocation.
 type reinvokingRunner struct {
-	inner          adka2a.Runner
-	sessionService adksession.Service
-	appName        string
-	logger         logr.Logger
+	inner              adka2a.Runner
+	sessionService     adksession.Service
+	appName            string
+	logger             logr.Logger
+	auditor            audit.Emitter
+	toolRetryThreshold int
 }
 
 // newReinvokingRunner constructs a reinvokingRunner around inner (the
 // underlying agent-invocation seam). inner is typically a plainRunnerAdapter
 // wrapping a real *runner.Runner in production, or a fake in unit tests.
-func newReinvokingRunner(inner adka2a.Runner, sessionService adksession.Service, appName string, logger logr.Logger) *reinvokingRunner {
+// auditor may be nil (audit emission is best-effort and skipped when unset,
+// matching this package's other AuditFunc-style call sites); it is used to
+// record SI-4/AU-3 evidence when the #2078 tool-retry circuit breaker trips.
+func newReinvokingRunner(inner adka2a.Runner, sessionService adksession.Service, appName string, logger logr.Logger, auditor audit.Emitter) *reinvokingRunner {
 	if logger.GetSink() == nil {
 		logger = logr.Discard()
 	}
-	return &reinvokingRunner{inner: inner, sessionService: sessionService, appName: appName, logger: logger}
+	return &reinvokingRunner{
+		inner:              inner,
+		sessionService:     sessionService,
+		appName:            appName,
+		logger:             logger,
+		auditor:            auditor,
+		toolRetryThreshold: DefaultToolRetryCircuitBreakerThreshold,
+	}
 }
 
 // Run implements adka2a.Runner. It delegates each turn to the wrapped inner
@@ -82,19 +96,18 @@ func (r *reinvokingRunner) Run(ctx context.Context, userID, sessionID string, ms
 		currentMsg := msg
 		reinvokeCount := 0
 		for {
-			hadError := false
-			for event, err := range r.inner.Run(ctx, userID, sessionID, currentMsg, cfg) {
-				if !yield(event, err) {
-					return
-				}
-				if err != nil {
-					hadError = true
-				}
+			outcome := r.runOneTurn(ctx, userID, sessionID, currentMsg, cfg, yield)
+			if outcome.consumerStopped {
+				return
+			}
+			if outcome.tripped {
+				r.handleCircuitBreakerTrip(ctx, sessionID, outcome.trippedTool, yield)
+				return
 			}
 			// Mirrors the previous StreamingExecutor.runReinvocationLoop
 			// contract: any error from a turn stops the loop immediately,
 			// no further reinvocation attempts.
-			if hadError {
+			if outcome.hadError {
 				return
 			}
 
@@ -109,6 +122,62 @@ func (r *reinvokingRunner) Run(ctx context.Context, userID, sessionID string, ms
 			currentMsg = session.SyntheticMessage()
 		}
 	}
+}
+
+// turnOutcome summarizes how a single r.inner.Run() call ended, letting
+// Run's reinvocation loop stay a flat sequence of independent checks rather
+// than nested state tracking (gocognit).
+type turnOutcome struct {
+	// consumerStopped means yield itself returned false (the caller of
+	// Run stopped pulling); Run must return immediately without any
+	// further processing of this turn.
+	consumerStopped bool
+	hadError        bool
+	tripped         bool
+	trippedTool     string
+}
+
+// runOneTurn drives a single call to r.inner.Run to completion (or until the
+// #2078 tool-retry circuit breaker trips, or the consumer stops pulling),
+// forwarding every event to yield as it arrives.
+func (r *reinvokingRunner) runOneTurn(ctx context.Context, userID, sessionID string, msg *genai.Content, cfg agent.RunConfig, yield func(*adksession.Event, error) bool) turnOutcome {
+	// DD-AF-013 (#2078): a fresh breaker per inner.Run() call --
+	// google.golang.org/adk's own model-generation loop
+	// (internal/llminternal/base_flow.go's Flow.Run) has no retry cap of
+	// its own when a tool call repeatedly fails, and can yield an
+	// unbounded number of same-tool failure events within this single
+	// call. Scoped per-call (not across reinvocations) because a
+	// synthetic reinvocation is a fresh model turn, not a continuation of
+	// the same stuck tool-call attempt.
+	breaker := newToolRetryCircuitBreaker(r.toolRetryThreshold)
+	var outcome turnOutcome
+	for event, err := range r.inner.Run(ctx, userID, sessionID, msg, cfg) {
+		if !yield(event, err) {
+			outcome.consumerStopped = true
+			return outcome
+		}
+		if err != nil {
+			outcome.hadError = true
+		}
+		if name, didTrip := breaker.observe(event); didTrip {
+			outcome.tripped = true
+			outcome.trippedTool = name
+			return outcome
+		}
+	}
+	return outcome
+}
+
+// handleCircuitBreakerTrip logs, audits, and yields the terminal error for a
+// #2078 tool-retry circuit breaker trip.
+func (r *reinvokingRunner) handleCircuitBreakerTrip(ctx context.Context, sessionID, trippedTool string, yield func(*adksession.Event, error) bool) {
+	r.logger.Error(nil, "tool retry circuit breaker tripped: stopping turn after consecutive same-tool failures",
+		"session_id", sessionID,
+		"tool_name", trippedTool,
+		"threshold", r.toolRetryThreshold,
+	)
+	r.emitCircuitBreakerTrip(ctx, trippedTool)
+	yield(nil, fmt.Errorf("tool retry circuit breaker tripped for tool %q after %d consecutive failures", trippedTool, r.toolRetryThreshold))
 }
 
 // needsReinvocation fetches the most recent session event and delegates the
@@ -133,6 +202,25 @@ func (r *reinvokingRunner) needsReinvocation(ctx context.Context, userID, sessio
 		return false
 	}
 	return session.NeedsReinvocationCtx(ctx, isv1alpha1.SessionPhaseActive, resp.Session.Events(), resp.Session.State(), reinvokeCount)
+}
+
+// emitCircuitBreakerTrip records a SOC2 AU-2/FedRAMP SI-4 audit event for a
+// #2078 tool-retry circuit breaker trip. Detail keys ("circuit_name",
+// "failure_count") match audit.buildCircuitBreakerTripPayload's expected
+// schema so the event serializes through the shared
+// apifrontend.circuitbreaker.trip OpenAPI payload, not just a fire-and-forget
+// log line -- a no-op when no auditor is configured (nil, best-effort).
+func (r *reinvokingRunner) emitCircuitBreakerTrip(ctx context.Context, toolName string) {
+	if r.auditor == nil {
+		return
+	}
+	r.auditor.Emit(ctx, &audit.Event{
+		Type: audit.EventCircuitBreakerTrip,
+		Detail: map[string]string{
+			"circuit_name":  toolName,
+			"failure_count": strconv.Itoa(r.toolRetryThreshold),
+		},
+	})
 }
 
 // clearCheckpointFlags clears any DD-AF-011 (#1899) phase checkpoint flags
@@ -196,8 +284,9 @@ func (a plainRunnerAdapter) Run(ctx context.Context, userID, sessionID string, m
 // the executor's a2a-bridging plugin to baseConfig's plugin list (required
 // for AfterEventCallback/ExecutorContext to work) and constructs a real
 // *runner.Runner from it, then wraps that runner instead of returning it
-// directly.
-func newReinvokingRunnerProvider(baseConfig runner.Config, logger logr.Logger) adka2a.RunnerProvider {
+// directly. auditor may be nil; it is threaded through to reinvokingRunner
+// for #2078 tool-retry circuit breaker trip audit events.
+func newReinvokingRunnerProvider(baseConfig runner.Config, logger logr.Logger, auditor audit.Emitter) adka2a.RunnerProvider {
 	return func(_ context.Context, _ *a2asrv.RequestContext, p *plugin.Plugin) (adka2a.RunnerConfig, adka2a.Runner, error) {
 		if baseConfig.Agent == nil {
 			return adka2a.RunnerConfig{}, nil, fmt.Errorf("runner.Config.Agent is not provided")
@@ -214,7 +303,7 @@ func newReinvokingRunnerProvider(baseConfig runner.Config, logger logr.Logger) a
 		}
 
 		runnerConfig := adka2a.RunnerConfig{AppName: cfg.AppName, Agent: cfg.Agent, SessionService: cfg.SessionService}
-		wrapped := newReinvokingRunner(plainRunnerAdapter{runner: realRunner}, cfg.SessionService, cfg.AppName, logger)
+		wrapped := newReinvokingRunner(plainRunnerAdapter{runner: realRunner}, cfg.SessionService, cfg.AppName, logger, auditor)
 		return runnerConfig, wrapped, nil
 	}
 }

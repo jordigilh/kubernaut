@@ -17,10 +17,17 @@ limitations under the License.
 package kubernautagent
 
 import (
+	"net/http"
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	kaaudit "github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
+	"github.com/jordigilh/kubernaut/test/infrastructure"
+	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
 // apiVersion Validation Gate E2E Tests — Issue #1044
@@ -42,6 +49,22 @@ import (
 var _ = Describe("E2E-KA-1044: apiVersion Validation Gate", Label("e2e", "ka", "apiversion-gate", "1044"), func() {
 
 	Context("BR-AI-1044: Gate exhaustion with ambiguous CRD kind", func() {
+
+		var dataStorageClient *ogenclient.Client
+
+		BeforeEach(func() {
+			saToken, err := infrastructure.GetServiceAccountToken(ctx, sharedNamespace, "kubernaut-agent-e2e-sa", kubeconfigPath)
+			Expect(err).ToNot(HaveOccurred(), "Failed to get ServiceAccount token")
+
+			dataStorageClient, err = ogenclient.NewClient(
+				dataStorageURL,
+				ogenclient.WithClient(&http.Client{
+					Transport: testauth.NewServiceAccountTransport(saToken),
+					Timeout:   30 * time.Second,
+				}),
+			)
+			Expect(err).ToNot(HaveOccurred(), "Failed to create authenticated DataStorage client")
+		})
 
 		It("E2E-KA-1044-001: Pod signal with RCA targeting ambiguous TestWidget triggers human review", func() {
 			// ========================================
@@ -97,6 +120,47 @@ var _ = Describe("E2E-KA-1044: apiVersion Validation Gate", Label("e2e", "ka", "
 
 			Expect(result.Warnings).NotTo(BeEmpty(),
 				"warnings should be present when gate exhausts retries for ambiguous kind")
+
+			// ========================================
+			// ASSERT (#2141, BR-AI-2120, FedRAMP AU-3): gate-retry diagnostic
+			// fields are reconstructable from the real persisted audit trail,
+			// not just from the in-process InvestigationResult above -- this
+			// is the full journey the UT (ds_store_test.go) and IT
+			// (IT-KA-2141-001) tiers prove piecewise: real gate exhaustion,
+			// through the real binary's DSAuditStore, into real Data
+			// Storage/Postgres, queryable by remediation_id.
+			// ========================================
+			var gateEvent *ogenclient.AuditEvent
+			Eventually(func() bool {
+				params := ogenclient.QueryAuditEventsParams{}
+				params.CorrelationID.SetTo(req.RemediationID)
+				params.EventType.SetTo(kaaudit.EventTypeLLMRequest)
+				params.Limit.SetTo(100)
+
+				resp, qErr := dataStorageClient.QueryAuditEvents(ctx, params)
+				if qErr != nil {
+					return false
+				}
+				for i := range resp.Data {
+					if resp.Data[i].EventAction == kaaudit.ActionAPIVersionGate {
+						gateEvent = &resp.Data[i]
+						return true
+					}
+				}
+				return false
+			}, 30*time.Second, 2*time.Second).Should(BeTrue(),
+				"api_version_validation_gate audit event must be persisted and queryable by remediation_id")
+
+			payload, ok := gateEvent.EventData.GetLLMRequestPayload()
+			Expect(ok).To(BeTrue(), "persisted event_data must decode as LLMRequestPayload")
+
+			ambiguousKind, hasAmbiguousKind := payload.AmbiguousKind.Get()
+			Expect(hasAmbiguousKind).To(BeTrue(), "ambiguous_kind must survive the full journey into Data Storage")
+			Expect(ambiguousKind).NotTo(BeEmpty())
+
+			retryOutcome, hasRetryOutcome := payload.RetryOutcome.Get()
+			Expect(hasRetryOutcome).To(BeTrue(), "retry_outcome must survive the full journey into Data Storage")
+			Expect(retryOutcome).To(Equal("exhausted"))
 		})
 
 		It("E2E-KA-1044-002: TestWidget signal directly triggers gate exhaustion and human review", func() {

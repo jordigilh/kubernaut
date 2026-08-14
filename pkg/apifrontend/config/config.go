@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -138,6 +139,13 @@ type ReplayCacheConfig struct {
 	// DA9). Optional: nil or Enabled=false connects in plaintext. Required
 	// once the Valkey instance is TLS-only (DD-PLATFORM-006 DA8's default).
 	TLS *ReplayCacheTLSConfig `yaml:"tls,omitempty"`
+	// TrustedProxyCIDRs lists immediate-connection CIDRs (e.g. an ingress or
+	// service mesh sidecar) trusted to supply a forwarded client-IP header
+	// used for jti replay-cache source binding (#1999, DD-PLATFORM-006
+	// Decision Area 18). Optional; empty/nil (default) means no proxy
+	// header is ever trusted for this purpose — fail-closed, matching
+	// pkg/gateway's TrustedRealIP (DD-AUTH-003).
+	TrustedProxyCIDRs []string `yaml:"trustedProxyCIDRs,omitempty"`
 }
 
 // ReplayCacheTLSConfig selects TLS settings for the replay-cache Valkey/Redis
@@ -501,6 +509,11 @@ func (c *Config) validateReplayCache() error {
 	}
 	if rc.CredentialsPath != "" && !filepath.IsAbs(rc.CredentialsPath) {
 		return fmt.Errorf("auth.replayCache.credentialsPath must be an absolute path, got %q", rc.CredentialsPath)
+	}
+	for _, cidr := range rc.TrustedProxyCIDRs {
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			return fmt.Errorf("auth.replayCache.trustedProxyCIDRs: invalid CIDR %q: %w", cidr, err)
+		}
 	}
 	return nil
 }

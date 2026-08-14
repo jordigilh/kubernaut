@@ -56,6 +56,7 @@ func newTestInvestigator(cfg investigator.Config) *investigator.Investigator {
 			validator: parser.NewValidator([]string{
 				"restart-sub", "scale-up", "generic-fix", "restart-pod", // apiversion_gate_test.go
 				"restart-cache", "noop", // workflow_discovery_rca_characterization_test.go
+				"rotate-node-logs", "increase-memory-limit", // samekind_confidence_2119_test.go, gate_undeclared_tool_2121_test.go
 			}),
 		}
 	}
@@ -106,7 +107,21 @@ type gateRecordingAuditStore struct {
 func (s *gateRecordingAuditStore) StoreAudit(_ context.Context, event *audit.AuditEvent) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.events = append(s.events, event)
+	// #2121: snapshot event.Data (and EventOutcome) at call time, matching
+	// real production audit stores (internal/kubernautagent/audit/ds_store.go's
+	// DSAuditStore/BufferedDSAuditStore), which serialize the event into an
+	// outbound request synchronously here and never see later mutations.
+	// Storing the raw *audit.AuditEvent pointer previously masked a
+	// pre-existing bug (#2124) where callers mutated event.Data AFTER this
+	// call returned -- a real store would have missed that mutation, but a
+	// live pointer read by the test after Investigate() returned would not.
+	snapshot := *event
+	dataCopy := make(map[string]interface{}, len(event.Data))
+	for k, v := range event.Data {
+		dataCopy[k] = v
+	}
+	snapshot.Data = dataCopy
+	s.events = append(s.events, &snapshot)
 	return nil
 }
 

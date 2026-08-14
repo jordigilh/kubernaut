@@ -84,7 +84,22 @@ func newCapturingAuditStore(delegate audit.AuditStore) *capturingAuditStore {
 }
 
 func (c *capturingAuditStore) StoreAudit(ctx context.Context, event *audit.AuditEvent) error {
-	c.events = append(c.events, event)
+	// #2120/#2121: snapshot Data at call time rather than capturing the raw
+	// pointer. The real DSAuditStore (internal/kubernautagent/audit/ds_store.go)
+	// reads event.Data/event.EventOutcome synchronously while building the
+	// outbound request, then never sees the *event again — mirroring that
+	// here means an assertion against c.events reflects what was actually
+	// handed to the store at call time, not any mutation a caller makes to
+	// the same event.Data map afterward. Capturing the raw pointer would
+	// mask exactly the class of bug #2120/#2121 fixed (a retry_outcome/
+	// EventOutcome mutation made after StoreAudit already returned).
+	snapshot := *event
+	dataCopy := make(map[string]interface{}, len(event.Data))
+	for k, v := range event.Data {
+		dataCopy[k] = v
+	}
+	snapshot.Data = dataCopy
+	c.events = append(c.events, &snapshot)
 	return c.real.StoreAudit(ctx, event)
 }
 
