@@ -43,7 +43,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: 'healthUrl: "https://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
+          pattern: 'healthUrl: "http://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
 
   - it: "authwebhook-config renders datastorage.healthUrl on port 8081, distinct from the port-8080 url"
     template: templates/authwebhook/authwebhook.yaml
@@ -53,7 +53,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['authwebhook.yaml']
-          pattern: 'healthUrl: "https://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
+          pattern: 'healthUrl: "http://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
 
   - it: "effectivenessmonitor-config renders datastorage.healthUrl on port 8081, distinct from the port-8080 url"
     template: templates/effectivenessmonitor/effectivenessmonitor.yaml
@@ -63,7 +63,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['effectivenessmonitor.yaml']
-          pattern: 'healthUrl: https://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz'
+          pattern: 'healthUrl: http://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz'
 
   - it: "gateway-config renders datastorage.healthUrl on port 8081, distinct from the port-8080 url"
     template: templates/gateway/gateway.yaml
@@ -73,7 +73,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: 'healthUrl: "https://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
+          pattern: 'healthUrl: "http://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
 
   - it: "kubernaut-agent-config renders integrations.dataStorage.healthUrl on port 8081, distinct from the port-8080 url"
     template: templates/kubernaut-agent/kubernaut-agent.yaml
@@ -83,7 +83,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: 'healthUrl: "https://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
+          pattern: 'healthUrl: "http://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
 
   - it: "notification-controller-config renders datastorage.healthUrl on port 8081, distinct from the port-8080 url"
     template: templates/notification/notification.yaml
@@ -93,7 +93,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: 'healthUrl: "https://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
+          pattern: 'healthUrl: "http://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
 
   - it: "remediationorchestrator-config renders datastorage.healthUrl on port 8081, distinct from the port-8080 url"
     template: templates/remediationorchestrator/remediationorchestrator.yaml
@@ -103,7 +103,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['remediationorchestrator.yaml']
-          pattern: 'healthUrl: "https://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
+          pattern: 'healthUrl: "http://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
 
   - it: "signalprocessing-config renders datastorage.healthUrl on port 8081, distinct from the port-8080 url"
     template: templates/signalprocessing/signalprocessing.yaml
@@ -113,7 +113,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: 'healthUrl: "https://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
+          pattern: 'healthUrl: "http://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
 
   - it: "workflowexecution-config renders datastorage.healthUrl on port 8081, distinct from the port-8080 url"
     template: templates/workflowexecution/workflowexecution.yaml
@@ -123,7 +123,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['workflowexecution.yaml']
-          pattern: 'healthUrl: "https://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
+          pattern: 'healthUrl: "http://data-storage-service\.NAMESPACE\.svc\.cluster\.local:8081/readyz"'
 
   - it: "apifrontend-config renders agent.dsHealthURL on port 8081, distinct from the port-8080 dsBaseURL (AF is the one service whose field lives under agent.*, not datastorage.*)"
     template: templates/apifrontend/apifrontend.yaml
@@ -133,7 +133,7 @@ tests:
     asserts:
       - matchRegex:
           path: data['config.yaml']
-          pattern: 'dsHealthURL: "https://data-storage-service\.NAMESPACE\.svc:8081/readyz"'
+          pattern: 'dsHealthURL: "http://data-storage-service\.NAMESPACE\.svc:8081/readyz"'
 
   - it: "regression guard: kubernaut.datastorage.healthUrl always targets port 8081, never reusing the port-8080 audit-write URL (would silently defeat the #1985 readiness gate by probing the wrong endpoint)"
     template: templates/gateway/gateway.yaml

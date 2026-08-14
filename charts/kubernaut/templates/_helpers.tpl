@@ -446,10 +446,14 @@ Return the in-cluster DataStorage health/readiness endpoint URL (port 8081,
 distinct from the main API port 8080 above). Consumed by every
 audit-writing service's pkg/audit.DataStorageProber to gate its own
 /readyz on DataStorage's real reachability (#1985, BR-AUDIT-005 v2.0).
-Issue #753: always HTTPS -- inter-service TLS is mandatory.
+Issue #753: always plain HTTP -- pkg/shared/health.NewHealthServer's doc
+comment is explicit that the dedicated health port never serves TLS
+("kubelet probes never need TLS"), unlike the main API port 8080 above
+which does require it. Using https:// here would make every service's
+own readiness probe fail 100% of the time in every real deployment.
 */}}
 {{- define "kubernaut.datastorage.healthUrl" -}}
-https://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8081/readyz
+http://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8081/readyz
 {{- end }}
 
 {{/*
