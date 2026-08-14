@@ -136,6 +136,28 @@ var _ = SynchronizedBeforeSuite(
 		err = os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
+		// Issue #753/AU-9: DataStorage's Deployment mounts both the inter-service
+		// TLS CA and the RSA audit-signing cert as Secrets. infrastructure.
+		// DeployDataStorageTestServicesWithNodePort (used below by
+		// DeployNotificationAuditInfrastructure) does not generate either --
+		// unlike the standalone DataStorage suite's own setup, it expects a
+		// caller to have already done so, mirroring apifrontend/gateway/etc's
+		// established pattern. Previously this "worked" only because
+		// DeployNotificationController happened to run first and generate
+		// these as a side effect; reordering it after DataStorage (below)
+		// means we must generate them explicitly here first, or DataStorage's
+		// pod sits in ContainerCreating forever ("secret datastorage-signing
+		// not found" -- confirmed via CI must-gather events.txt). Both calls
+		// are idempotent (GenerateInterServiceTLS has an explicit skip-if-
+		// exists guard; GenerateSigningCertSecret re-applies via kubectl
+		// apply), so DeployNotificationController's own internal calls to
+		// the same two functions later remain safe, redundant no-ops.
+		if _, err := infrastructure.GenerateInterServiceTLS(ctx, kubeconfigPath, controllerNamespace, GinkgoWriter); err != nil {
+			Expect(err).ToNot(HaveOccurred(), "inter-service TLS generation should succeed")
+		}
+		Expect(infrastructure.GenerateSigningCertSecret(ctx, kubeconfigPath, controllerNamespace, GinkgoWriter)).To(Succeed(),
+			"AU-9 signing cert generation should succeed")
+
 		// Deploy Audit Infrastructure (PostgreSQL + Data Storage + migrations) BEFORE
 		// the Notification Controller. Required for BR-NOT-062, BR-NOT-063, BR-NOT-064
 		// E2E tests, and -- since #1985 (BR-AUDIT-005 v2.0) -- the controller's own
