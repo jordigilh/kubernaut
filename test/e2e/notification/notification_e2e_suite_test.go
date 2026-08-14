@@ -152,6 +152,17 @@ var _ = SynchronizedBeforeSuite(
 		// exists guard; GenerateSigningCertSecret re-applies via kubectl
 		// apply), so DeployNotificationController's own internal calls to
 		// the same two functions later remain safe, redundant no-ops.
+		//
+		// The namespace itself must exist first too: previously
+		// createTestNamespace(controllerNamespace) only ran inside
+		// DeployNotificationController, which used to run first (see above).
+		// Now that TLS/signing-secret generation runs before that, it needs
+		// its own explicit, equally idempotent namespace-creation call here,
+		// or the secret Create calls below fail with "namespaces
+		// \"notification-e2e\" not found" (confirmed via CI run 31842923960).
+		if err := infrastructure.CreateTestNamespace(ctx, controllerNamespace, kubeconfigPath, GinkgoWriter); err != nil {
+			Expect(err).ToNot(HaveOccurred(), "notification-e2e namespace creation should succeed")
+		}
 		if _, err := infrastructure.GenerateInterServiceTLS(ctx, kubeconfigPath, controllerNamespace, GinkgoWriter); err != nil {
 			Expect(err).ToNot(HaveOccurred(), "inter-service TLS generation should succeed")
 		}

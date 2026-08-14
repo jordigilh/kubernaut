@@ -212,12 +212,12 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	}
 
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "📁 Creating default namespace (for E2E tests)...\n")
-	if err := createTestNamespace(ctx, "default", kubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, "default", kubeconfigPath, writer); err != nil {
 		errMsg := strings.ToLower(err.Error())
 		if !strings.Contains(errMsg, "alreadyexists") && !strings.Contains(errMsg, "already exists") {
 			return fmt.Errorf("failed to create default namespace: %w", err)

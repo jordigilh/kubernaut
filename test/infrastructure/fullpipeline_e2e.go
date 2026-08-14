@@ -251,7 +251,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	_, _ = fmt.Fprintln(writer, "\n🔐 PHASE 5: Namespace + Helm prerequisite Secrets...")
 	phase5Start := time.Now()
 
-	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -386,6 +386,15 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: AuthWebhook rollout not ready: %w", err)
 	}
 	_, _ = fmt.Fprintln(writer, "  ✅ AuthWebhook deployment rolled out")
+
+	// Deployment rollout completing does not guarantee the Service's own
+	// Endpoints/kube-proxy DNAT are programmed yet (see
+	// waitForServiceEndpointReady doc comment) -- close that remaining gap
+	// before the apiserver's webhook call below can hit it.
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for AuthWebhook Service endpoint (kube-proxy programming)...")
+	if err := waitForServiceEndpointReady(ctx, namespace, kubeconfigPath, "authwebhook", 60*time.Second, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: AuthWebhook service endpoint not ready: %w", err)
+	}
 
 	if err := SeedE2EActionTypes(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed action types: %w", err)
@@ -595,7 +604,7 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 	// createTestNamespace first mirrors fleet_e2e.go's pattern -- idempotent
 	// if the WE controller has already created it.
 	go func() {
-		if err := createTestNamespace(ctx, ExecutionNamespace, kubeconfigPath, writer); err != nil {
+		if err := CreateTestNamespace(ctx, ExecutionNamespace, kubeconfigPath, writer); err != nil {
 			allResults <- waveResult{"workflow-job-executor-RBAC", fmt.Errorf("failed to create %s namespace: %w", ExecutionNamespace, err)}
 			return
 		}
@@ -1423,4 +1432,53 @@ func waitForDeploymentRollout(ctx context.Context, namespace, kubeconfigPath, de
 		return fmt.Errorf("%s rollout not ready: %w", deploymentName, err)
 	}
 	return nil
+}
+
+// waitForServiceEndpointReady blocks until the named Service has at least
+// one ready backing address, or timeout elapses.
+//
+// `kubectl rollout status` reports success the instant a Deployment's
+// replica first passes its readiness probe -- but the Service's own
+// Endpoints/EndpointSlice update (via the endpoint-controller watching that
+// pod-readiness transition) and kube-proxy's iptables DNAT reprogramming
+// are both separate, asynchronous steps with their own latency. Confirmed
+// via CI (run 31842923960): waitForDeploymentRollout("authwebhook")
+// returned success, yet the very next kubectl apply (routed through
+// apiserver -> actiontype.validate.kubernaut.ai -> authwebhook Service)
+// still failed with "dial tcp ...:443: connect: connection refused" --
+// the Service had no programmed endpoint yet. Polling the Service's own
+// Endpoints closes that specific gap instead of guessing at a fixed sleep.
+func waitForServiceEndpointReady(ctx context.Context, namespace, kubeconfigPath, serviceName string, timeout time.Duration, writer io.Writer) error {
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		ep, getErr := clientset.CoreV1().Endpoints(namespace).Get(ctx, serviceName, metav1.GetOptions{})
+		if getErr == nil {
+			for _, subset := range ep.Subsets {
+				if len(subset.Addresses) > 0 {
+					_, _ = fmt.Fprintf(writer, "  ✅ Service %s has %d ready endpoint(s)\n", serviceName, len(subset.Addresses))
+					return nil
+				}
+			}
+		}
+		if ctxErr := sleepOrDone(ctx, 2*time.Second); ctxErr != nil {
+			return ctxErr
+		}
+	}
+	return fmt.Errorf("service %s had no ready endpoints within %s", serviceName, timeout)
+}
+
+// sleepOrDone sleeps for d, returning early with ctx.Err() if ctx is
+// cancelled first.
+func sleepOrDone(ctx context.Context, d time.Duration) error {
+	select {
+	case <-time.After(d):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

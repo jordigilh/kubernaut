@@ -196,7 +196,7 @@ func SetupGatewayInfrastructureParallel(ctx context.Context, clusterName, kubeco
 
 	// Create namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
