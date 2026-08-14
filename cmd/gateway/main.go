@@ -208,21 +208,11 @@ func run() int {
 		return 1
 	}
 
-	// #1553 / ADR-068 / BR-INTEGRATION-065: fail closed on Fleet dependency
-	// unreachability via /readyz (pod-wide), instead of the previous
-	// fail-open behavior. Must be wired before the HTTP server starts
-	// accepting readiness probes.
-	fleetReadinessGate := wireFleetReadinessGate(serverCtx, srv, fleetResilientClient, serverCfg, logger)
-	if fleetReadinessGate != nil {
-		defer fleetReadinessGate.Stop()
-	}
-
-	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
-	// /readyz (pod-wide), unconditionally -- every service writes audit,
-	// unlike the Fleet-conditional gate above. Must be wired before the
-	// HTTP server starts accepting readiness probes.
-	dataStorageReadinessGate := wireDataStorageReadinessGate(serverCtx, srv, serverCfg, logger)
-	defer dataStorageReadinessGate.Stop()
+	// #1553/#1985: fail closed on Fleet and DataStorage dependency
+	// unreachability via /readyz (pod-wide). Must be wired before the HTTP
+	// server starts accepting readiness probes.
+	stopReadinessGates := wireReadinessGates(serverCtx, srv, fleetResilientClient, serverCfg, logger)
+	defer stopReadinessGates()
 
 	// DD-PLATFORM-009: hand off to the real health server bound below.
 	stopBootstrapHealthServer(bootstrapHealth, logger)
@@ -480,6 +470,29 @@ func wireDataStorageReadinessGate(
 	gate := audit.NewReadinessGate(ctx, serverCfg.DataStorage.HealthURL, logger)
 	srv.SetDataStorageReadinessGate(gate)
 	return gate
+}
+
+// wireReadinessGates wires the Fleet dependency readiness gate (#1553 /
+// ADR-068 / BR-INTEGRATION-065, conditional on Fleet being enabled) and the
+// DataStorage readiness gate (#1985 / BR-AUDIT-005, unconditional -- every
+// service writes audit) and returns a single stop function for both.
+// Extracted from run() to keep it under the funlen limit -- pure code
+// motion, no behavior change.
+func wireReadinessGates(
+	ctx context.Context,
+	srv *gateway.Server,
+	fleetResilientClient *fleetclient.ResilientClient,
+	serverCfg *config.ServerConfig,
+	logger logr.Logger,
+) func() {
+	fleetReadinessGate := wireFleetReadinessGate(ctx, srv, fleetResilientClient, serverCfg, logger)
+	dataStorageReadinessGate := wireDataStorageReadinessGate(ctx, srv, serverCfg, logger)
+	return func() {
+		if fleetReadinessGate != nil {
+			fleetReadinessGate.Stop()
+		}
+		dataStorageReadinessGate.Stop()
+	}
 }
 
 // buildFleetOAuth2Option builds the reloadable OAuth2 transport option for
