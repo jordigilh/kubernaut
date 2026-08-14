@@ -227,6 +227,11 @@ func run() int {
 	// fail-open behavior of only logging an error.
 	fleetGate := wireFleetReadinessGate(ctx, fleetResilientClient, setupLog)
 
+	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
+	// /readyz (pod-wide), unconditionally.
+	dsGate := wireDataStorageReadinessGate(ctx, cfg, setupLog)
+	defer dsGate.Stop()
+
 	// BR-WE-014: Executor Registry (Strategy Pattern). Issue #868: engines
 	// are registered based on availability (job always, tekton via CRD
 	// auto-discovery, ansible config-gated). BR-FLEET-054: executors use
@@ -262,7 +267,7 @@ func run() int {
 	}
 	//+kubebuilder:scaffold:builder
 
-	if err := registerHealthChecks(mgr, executorRegistry, fleetGate); err != nil {
+	if err := registerHealthChecks(mgr, executorRegistry, fleetGate, dsGate); err != nil {
 		setupLog.Error(err, "unable to set up health checks")
 		return 1
 	}
@@ -551,9 +556,10 @@ func registerAnsibleExecutor(cfg *weconfig.Config, mgr ctrl.Manager, controllerN
 // Issue #868 "engines" readyz sub-check, which reports execution engine
 // availability (the job engine is always registered, so this passes in
 // normal operation but provides a clear signal if the registry is
-// misconfigured), and the #1553 Fleet readiness gate (a nil fleetGate is a
-// no-op — Fleet unconfigured).
-func registerHealthChecks(mgr ctrl.Manager, executorRegistry *weexecutor.Registry, fleetGate *readiness.Gate) error {
+// misconfigured), the #1553 Fleet readiness gate (a nil fleetGate is a
+// no-op — Fleet unconfigured), and the #1985 DataStorage readiness gate
+// (always non-nil).
+func registerHealthChecks(mgr ctrl.Manager, executorRegistry *weexecutor.Registry, fleetGate *readiness.Gate, dsGate *readiness.Gate) error {
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up health check: %w", err)
 	}
@@ -572,6 +578,9 @@ func registerHealthChecks(mgr ctrl.Manager, executorRegistry *weexecutor.Registr
 		if err := mgr.AddReadyzCheck("fleet", fleetGate.Check); err != nil {
 			return fmt.Errorf("unable to set up fleet readiness check: %w", err)
 		}
+	}
+	if err := mgr.AddReadyzCheck("datastorage", dsGate.Check); err != nil {
+		return fmt.Errorf("unable to set up datastorage readiness check: %w", err)
 	}
 	return nil
 }
@@ -602,6 +611,20 @@ func wireFleetReadinessGate(ctx context.Context, fleetResilientClient *fleetclie
 	gate.Start(ctx)
 	logger.Info("Fleet readiness gate started", "ready", gate.Ready())
 	return gate
+}
+
+// wireDataStorageReadinessGate builds and starts the DataStorage
+// dependency readiness gate (#1985, BR-AUDIT-005 v2.0): WE's pod-wide
+// /readyz must fail closed when DataStorage is unreachable, closing the
+// audit-loss window where a pod accepts traffic (and generates audit
+// events) before DataStorage is confirmed reachable. Unlike
+// wireFleetReadinessGate, this is unconditional -- always wired, never
+// nil -- since every service writes audit. The caller registers the
+// returned Gate's Check method via mgr.AddReadyzCheck and must Stop() it
+// on shutdown. Delegates gate construction to audit.NewReadinessGate
+// (REFACTOR, shared across all 10 services).
+func wireDataStorageReadinessGate(ctx context.Context, cfg *weconfig.Config, logger logr.Logger) *readiness.Gate {
+	return audit.NewReadinessGate(ctx, cfg.DataStorage.HealthURL, logger)
 }
 
 // wireShutdownHooks returns a single cleanup function that flushes the

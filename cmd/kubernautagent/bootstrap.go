@@ -67,6 +67,10 @@ type coreServices struct {
 	reg                  *registry.Registry
 	fleetClient          *fleetclient.ResilientClient
 	fleetGate            *readiness.Gate
+	// dsGate is the #1985 pod-wide readiness gate for DataStorage
+	// reachability (BR-AUDIT-005 v2.0). Unlike fleetGate, this is always
+	// non-nil -- every service writes audit, there is no "disabled" state.
+	dsGate               *readiness.Gate
 	fleetOverlayResolver investigator.FleetOverlayResolver
 	enricher             *enrichment.Enricher
 	sanitizer            *sanitization.Pipeline
@@ -122,6 +126,9 @@ func buildCoreServices(
 	// dependency unreachability via readyz (pod-wide), instead of the
 	// previous fail-open behavior of only logging an error.
 	fleetGate := wireFleetReadinessGate(context.Background(), fleetClient, logger)
+	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
+	// readyz (pod-wide), unconditionally.
+	dsGate := wireDataStorageReadinessGate(context.Background(), cfg, logger)
 	enricher := buildEnricher(cfg, ds, infra, auditStore, logger)
 	sanitizer := buildSanitizationPipeline(cfg, logger)
 	anomalyDetector := buildAnomalyDetector(cfg, logger)
@@ -144,7 +151,7 @@ func buildCoreServices(
 	return &coreServices{
 		auditStore: auditStore, auditCleanup: auditCleanup, infra: infra,
 		interactiveReadiness: interactiveReadiness, eventEmitter: eventEmitter,
-		ds: ds, reg: reg, fleetClient: fleetClient, fleetGate: fleetGate, fleetOverlayResolver: fleetOverlayResolver, enricher: enricher,
+		ds: ds, reg: reg, fleetClient: fleetClient, fleetGate: fleetGate, dsGate: dsGate, fleetOverlayResolver: fleetOverlayResolver, enricher: enricher,
 		sanitizer: sanitizer, anomalyDetector: anomalyDetector, summarizer: sum,
 		catalogFetcher: catalogFetcher, effectiveLLM: effectiveLLM, effectiveReg: effectiveReg,
 		alignEvaluator: alignEvaluator, alignCfg: alignCfg,

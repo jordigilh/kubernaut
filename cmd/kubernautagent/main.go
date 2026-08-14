@@ -345,7 +345,8 @@ func main() {
 	healthServer, metricsServer := startHealthAndMetricsServers(healthServersParams{
 		Config: cfg, AtomicLevel: atomicLevel, Swappable: swappable, DS: core.ds,
 		InteractiveReadiness: core.interactiveReadiness, ShutdownFlag: &shutdownFlag,
-		APIServerReady: &apiServerReady, FleetGate: core.fleetGate, WfCatalog: core.wfCatalog, Logger: logger,
+		APIServerReady: &apiServerReady, FleetGate: core.fleetGate, WfCatalog: core.wfCatalog,
+		DSGate: core.dsGate, Logger: logger,
 	})
 
 	httpServer, sessionDrainer, cleanupServers := startAPIServer(ctx, apiServerStartParams{
@@ -363,7 +364,7 @@ func main() {
 		cfg: cfg, mgr: stack.mgr, sessionDrainer: sessionDrainer,
 		httpServer: httpServer, healthServer: healthServer, metricsServer: metricsServer,
 		eventEmitter: core.eventEmitter, fleetClient: core.fleetClient, fleetGate: core.fleetGate,
-		auditCleanup: core.auditCleanup, wfCatalog: core.wfCatalog, logger: logger,
+		dsGate: core.dsGate, auditCleanup: core.auditCleanup, wfCatalog: core.wfCatalog, logger: logger,
 	})
 }
 
@@ -380,6 +381,7 @@ type shutdownParams struct {
 	eventEmitter   *karbac.EventEmitter
 	fleetClient    *fleetclient.ResilientClient
 	fleetGate      *readiness.Gate
+	dsGate         *readiness.Gate
 	auditCleanup   func()
 	wfCatalog      *workflowcatalog.LazyCatalog
 	logger         logr.Logger
@@ -407,6 +409,9 @@ func runShutdownSequence(p shutdownParams) {
 	p.eventEmitter.Shutdown()
 	if p.fleetGate != nil {
 		p.fleetGate.Stop()
+	}
+	if p.dsGate != nil {
+		p.dsGate.Stop()
 	}
 	if p.fleetClient != nil {
 		_ = p.fleetClient.Close()

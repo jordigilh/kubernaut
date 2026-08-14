@@ -40,6 +40,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/parser"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/tools/custom"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/workflowcatalog"
+	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	dsschema "github.com/jordigilh/kubernaut/pkg/datastorage/schema"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
@@ -390,6 +391,20 @@ func wireFleetReadinessGate(ctx context.Context, fleetClient *fleetclient.Resili
 	gate.Start(ctx)
 	logger.Info("Fleet readiness gate started", "ready", gate.Ready())
 	return gate
+}
+
+// wireDataStorageReadinessGate builds and starts the DataStorage
+// dependency readiness gate (#1985, BR-AUDIT-005 v2.0): KA's pod-wide
+// readyz must fail closed when DataStorage is unreachable, closing the
+// audit-loss window where a pod accepts traffic (and generates audit
+// events) before DataStorage is confirmed reachable. Unlike
+// wireFleetReadinessGate, this is unconditional -- always wired, never
+// nil -- since every service writes audit. The caller registers the
+// returned Gate's Ready method into readinessHandler and must Stop() it
+// on shutdown. Delegates gate construction to sharedaudit.NewReadinessGate
+// (REFACTOR, shared across all 10 services).
+func wireDataStorageReadinessGate(ctx context.Context, cfg *kaconfig.Config, logger logr.Logger) *readiness.Gate {
+	return sharedaudit.NewReadinessGate(ctx, cfg.Integrations.DataStorage.HealthURL, logger)
 }
 
 func registerK8sTools(reg *registry.Registry, infra *k8sInfra, logger logr.Logger, auditStore audit.AuditStore) {

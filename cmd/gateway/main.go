@@ -32,6 +32,7 @@ import (
 
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	"github.com/jordigilh/kubernaut/internal/version"
+	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	fleetclient "github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
@@ -215,6 +216,13 @@ func run() int {
 	if fleetReadinessGate != nil {
 		defer fleetReadinessGate.Stop()
 	}
+
+	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
+	// /readyz (pod-wide), unconditionally -- every service writes audit,
+	// unlike the Fleet-conditional gate above. Must be wired before the
+	// HTTP server starts accepting readiness probes.
+	dataStorageReadinessGate := wireDataStorageReadinessGate(serverCtx, srv, serverCfg, logger)
+	defer dataStorageReadinessGate.Stop()
 
 	// DD-PLATFORM-009: hand off to the real health server bound below.
 	stopBootstrapHealthServer(bootstrapHealth, logger)
@@ -451,6 +459,26 @@ func wireFleetReadinessGate(
 	gate.Start(ctx)
 	srv.SetFleetReadinessGate(gate)
 	logger.Info("Fleet readiness gate started", "prober_count", len(probers), "ready", gate.Ready())
+	return gate
+}
+
+// wireDataStorageReadinessGate builds and starts the DataStorage
+// dependency readiness gate (#1985, BR-AUDIT-005 v2.0): GW's pod-wide
+// /readyz must fail closed when DataStorage is unreachable, closing the
+// audit-loss window where a pod accepts traffic (and generates audit
+// events, DD-AUDIT-003) before DataStorage is confirmed reachable.
+// Unlike wireFleetReadinessGate, this is unconditional -- always wired,
+// never nil -- since every service writes audit. Wires the gate onto srv;
+// callers must Stop() it on shutdown. Delegates gate construction to
+// audit.NewReadinessGate (REFACTOR, shared across all 10 services).
+func wireDataStorageReadinessGate(
+	ctx context.Context,
+	srv *gateway.Server,
+	serverCfg *config.ServerConfig,
+	logger logr.Logger,
+) *readiness.Gate {
+	gate := audit.NewReadinessGate(ctx, serverCfg.DataStorage.HealthURL, logger)
+	srv.SetDataStorageReadinessGate(gate)
 	return gate
 }
 

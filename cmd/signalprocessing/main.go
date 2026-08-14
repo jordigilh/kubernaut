@@ -467,6 +467,20 @@ func wireFleetReadinessGate(
 	return gate
 }
 
+// wireDataStorageReadinessGate builds and starts the DataStorage
+// dependency readiness gate (#1985, BR-AUDIT-005 v2.0): SP's pod-wide
+// readyz must fail closed when DataStorage is unreachable, closing the
+// audit-loss window where a pod accepts traffic (and generates audit
+// events) before DataStorage is confirmed reachable. Unlike
+// wireFleetReadinessGate, this is unconditional -- always wired, never
+// nil -- since every service writes audit. The caller registers the
+// returned Gate's Check method via mgr.AddReadyzCheck and must Stop() it
+// on shutdown. Delegates gate construction to sharedaudit.NewReadinessGate
+// (REFACTOR, shared across all 10 services).
+func wireDataStorageReadinessGate(ctx context.Context, cfg *config.Config, logger logr.Logger) *readiness.Gate {
+	return sharedaudit.NewReadinessGate(ctx, cfg.DataStorage.HealthURL, logger)
+}
+
 // setupSignalProcessingReconciler creates the atomic status manager
 // (DD-PERF-001, SP-CACHE-001) and audit manager (Phase 3 refactoring,
 // 2026-01-22), wires the SignalProcessingReconciler into mgr, and
@@ -481,6 +495,7 @@ func setupSignalProcessingReconciler(
 	signalModeClassifier *classifier.SignalModeClassifier,
 	enrichment *signalProcessingEnrichment,
 	fleetGate *readiness.Gate,
+	dsGate *readiness.Gate,
 ) {
 	statusManager := spstatus.NewManager(mgr.GetClient(), mgr.GetAPIReader())
 	setupLog.Info("SignalProcessing status manager initialized (DD-PERF-001 + SP-CACHE-001)")
@@ -516,6 +531,10 @@ func setupSignalProcessingReconciler(
 			setupLog.Error(err, "unable to register fleet readiness check")
 			os.Exit(1)
 		}
+	}
+	if err := mgr.AddReadyzCheck("datastorage", dsGate.Check); err != nil {
+		setupLog.Error(err, "unable to register datastorage readiness check")
+		os.Exit(1)
 	}
 }
 
@@ -617,7 +636,12 @@ func run() int {
 		defer fleetGate.Stop()
 	}
 
-	setupSignalProcessingReconciler(mgr, auditClient, policyEvaluator, signalModeClassifier, enrichment, fleetGate)
+	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
+	// readyz (pod-wide), unconditionally.
+	dsGate := wireDataStorageReadinessGate(ctx, cfg, setupLog)
+	defer dsGate.Stop()
+
+	setupSignalProcessingReconciler(mgr, auditClient, policyEvaluator, signalModeClassifier, enrichment, fleetGate, dsGate)
 
 	cleanupHotReload := configureSignalProcessingTLSAndHotReload(ctx, cfg, configFile, atomicLevel)
 	defer cleanupHotReload()

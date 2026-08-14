@@ -39,6 +39,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/severity"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tlswiring"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
+	readinessaudit "github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/fleet"
 	"github.com/jordigilh/kubernaut/pkg/fleet/mcpclient"
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
@@ -85,6 +86,12 @@ type backendDeps struct {
 	// dependencies (ADR-068, BR-FLEET-054); nil when fleet is disabled.
 	// Stopped on shutdown by stopBackendDeps.
 	fleetReadinessGate *readiness.Gate
+	// dataStorageReadinessGate is the #1985 pod-wide readiness gate for
+	// DataStorage reachability (BR-AUDIT-005 v2.0). Unlike
+	// fleetReadinessGate, this is always wired (every service writes
+	// audit -- there is no "disabled" state). Stopped on shutdown by
+	// stopBackendDeps.
+	dataStorageReadinessGate *readiness.Gate
 	// ScopeChecker validates target resources against Kubernaut's
 	// management scope (ADR-053) before kubernaut_remediate/
 	// kubernaut_investigate_alert/kubernaut_investigate create an RR
@@ -116,6 +123,18 @@ func (d *backendDeps) FleetReady() bool {
 	return d.fleetReadinessGate.Ready()
 }
 
+// DataStorageReady reports whether DataStorage is currently reachable, for
+// composition into the /readyz ReadyChecker chain (#1985, BR-AUDIT-005
+// v2.0). Unlike FleetReady, dataStorageReadinessGate is always non-nil in
+// production (buildBackendDeps always wires it); the nil check only
+// protects lightweight tests that construct a bare backendDeps.
+func (d *backendDeps) DataStorageReady() bool {
+	if d.dataStorageReadinessGate == nil {
+		return true
+	}
+	return d.dataStorageReadinessGate.Ready()
+}
+
 // K8sClient returns the pod service-account scoped dynamic K8s client,
 // wrapped with a circuit breaker. Returns nil if K8s API was unreachable
 // at startup; callers must check for nil (tools return a clear error).
@@ -132,6 +151,11 @@ func (d *backendDeps) TypedClient() crclient.WithWatch {
 
 func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metrics.Registry, auditor audit.Emitter, logger logr.Logger) (*backendDeps, error) {
 	deps := &backendDeps{}
+
+	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
+	// /readyz (pod-wide), unconditionally -- every service writes audit,
+	// unlike the Fleet-conditional gate below.
+	deps.dataStorageReadinessGate = wireDataStorageReadinessGate(ctx, cfg, logger)
 
 	if err := buildDSClientDeps(ctx, cfg, deps, metricsReg, auditor, logger); err != nil {
 		return nil, err
@@ -606,6 +630,21 @@ func wireFleetReadinessGate(ctx context.Context, fleetClient *mcpclient.Resilien
 	gate.Start(ctx)
 	logger.Info("Fleet readiness gate started", "prober_count", len(probers), "ready", gate.Ready())
 	return gate
+}
+
+// wireDataStorageReadinessGate builds and starts the DataStorage
+// dependency readiness gate (#1985, BR-AUDIT-005 v2.0): AF's pod-wide
+// /readyz must fail closed when DataStorage is unreachable, closing the
+// audit-loss window where a pod accepts traffic (and generates audit
+// events) before DataStorage is confirmed reachable. Unlike
+// wireFleetReadinessGate, this is unconditional -- always wired, never
+// nil -- since every service writes audit. The returned Gate is stored on
+// deps.dataStorageReadinessGate (consumed via deps.DataStorageReady());
+// stopBackendDeps must Stop() it on shutdown. Delegates gate construction
+// to readinessaudit.NewReadinessGate (REFACTOR, shared across all 10
+// services).
+func wireDataStorageReadinessGate(ctx context.Context, cfg *config.Config, logger logr.Logger) *readiness.Gate {
+	return readinessaudit.NewReadinessGate(ctx, cfg.Agent.DSHealthURL, logger)
 }
 
 // adaptFleetReaderFactory adapts a fleet.ReaderFactory (client.Reader) into a

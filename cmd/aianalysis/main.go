@@ -29,6 +29,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	zaplog "go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -54,6 +55,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	aistatus "github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	sharedaudit "github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	scope "github.com/jordigilh/kubernaut/pkg/shared/scope"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
@@ -288,7 +290,7 @@ func wireAIAnalysisClients(ctx context.Context, cfg *config.Config) *aiAnalysisC
 // including the cache-sync-aware readyz check that prevents premature
 // reconciliation before controller watches are established. Exits the
 // process on any failure, matching main()'s original fail-fast behavior.
-func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerNS string, clients *aiAnalysisClients) *metrics.Metrics {
+func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerNS string, clients *aiAnalysisClients, dsGate *readiness.Gate) *metrics.Metrics {
 	// DD-METRICS-001: Per V1.0 Service Maturity Requirements - P0 Blocker.
 	setupLog.Info("Initializing AIAnalysis metrics (DD-METRICS-001)")
 	aianalysisMetrics := metrics.NewMetrics()
@@ -352,8 +354,31 @@ func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerN
 		setupLog.Error(err, "unable to set up ready check")
 		os.Exit(1)
 	}
+	if err := mgr.AddReadyzCheck("datastorage", dsGate.Check); err != nil {
+		setupLog.Error(err, "unable to set up datastorage readiness check")
+		os.Exit(1)
+	}
 
 	return aianalysisMetrics
+}
+
+// wireDataStorageReadinessGate builds and starts the DataStorage
+// dependency readiness gate (#1985, BR-AUDIT-005 v2.0): AIAnalysis's
+// pod-wide /readyz must fail closed when DataStorage is unreachable,
+// closing the audit-loss window where a pod accepts traffic (and
+// generates audit events, DD-AUDIT-003) before DataStorage is confirmed
+// reachable. AIAnalysis has no pre-existing Fleet-conditional gate to
+// extend by analogy (net-new, always-on readiness check, like
+// AuthWebhook/Notification). This is distinct from -- and does not
+// replace -- ADR-032's audit-init fail-fast (wireAIAnalysisClients already
+// os.Exit(1)s if the audit store cannot be constructed); this gate instead
+// covers the window after successful init where DataStorage becomes
+// transiently unreachable. The caller registers the returned Gate's Check
+// method via mgr.AddReadyzCheck and must Stop() it on shutdown. Delegates
+// gate construction to sharedaudit.NewReadinessGate (REFACTOR, shared
+// across all 10 services).
+func wireDataStorageReadinessGate(ctx context.Context, cfg *config.Config, logger logr.Logger) *readiness.Gate {
+	return sharedaudit.NewReadinessGate(ctx, cfg.DataStorage.HealthURL, logger)
 }
 
 // configureAIAnalysisTLSAndHotReload applies the OCP TLS security profile
@@ -439,10 +464,15 @@ func run() int {
 	regoEvaluator := clients.regoEvaluator
 	auditStore := clients.auditStore
 
-	setupAIAnalysisReconciler(mgr, cfg, controllerNS, clients)
-
 	// Issue #756: Extract signal context for CA file watcher lifecycle
 	ctx = ctrl.SetupSignalHandler()
+
+	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
+	// readyz (pod-wide), unconditionally.
+	dsGate := wireDataStorageReadinessGate(ctx, cfg, setupLog)
+	defer dsGate.Stop()
+
+	setupAIAnalysisReconciler(mgr, cfg, controllerNS, clients, dsGate)
 
 	cleanupHotReload := configureAIAnalysisTLSAndHotReload(ctx, cfg, configPath, atomicLevel)
 	defer cleanupHotReload()

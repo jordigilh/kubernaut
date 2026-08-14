@@ -74,7 +74,7 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog())
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), nil)
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -87,7 +87,7 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog())
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), nil)
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusOK))
@@ -101,7 +101,7 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog())
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), nil)
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -122,7 +122,7 @@ var _ = Describe("readinessHandler", func() {
 		gate.Start(context.Background())
 		DeferCleanup(gate.Stop)
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, gate, readyWfCatalog())
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, gate, readyWfCatalog(), nil)
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -136,7 +136,7 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog())
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), nil)
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusOK))
@@ -153,7 +153,7 @@ var _ = Describe("readinessHandler", func() {
 
 		notReady := workflowcatalog.NewLazyCatalog(logr.Discard()) // never Start()ed
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, notReady)
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, notReady, nil)
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -164,7 +164,7 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, nil)
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, nil, nil)
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
@@ -175,7 +175,39 @@ var _ = Describe("readinessHandler", func() {
 		swappable := setupSwappable(GinkgoTB())
 		interactive := karbac.NewInteractiveReadiness()
 
-		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog())
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), nil)
+
+		rec := doRequest(handler)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+	})
+
+	// UT-AUDIT-1985-013/014: readinessHandler must report 503 when the
+	// injected DataStorage readiness gate is NotReady, mirroring the
+	// fleetGate contract above -- but unlike fleetGate, this dependency is
+	// unconditional (every service writes audit, BR-AUDIT-005 v2.0), so a
+	// nil dsGate must still be treated as ready (soft-fail only in tests
+	// that don't wire one; production always wires a non-nil gate).
+	It("UT-AUDIT-1985-013: reports 503 when the DataStorage readiness gate is NotReady", func() {
+		atomic.StoreInt32(&apiServerReady, 1)
+		swappable := setupSwappable(GinkgoTB())
+		interactive := karbac.NewInteractiveReadiness()
+
+		dsGate := readiness.NewGate(time.Hour, logr.Discard(), fakeUnreadyProber{})
+		dsGate.Start(context.Background())
+		DeferCleanup(dsGate.Stop)
+
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), dsGate)
+
+		rec := doRequest(handler)
+		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
+	})
+
+	It("UT-AUDIT-1985-014: reports 200 when the DataStorage readiness gate is nil (test convenience only)", func() {
+		atomic.StoreInt32(&apiServerReady, 1)
+		swappable := setupSwappable(GinkgoTB())
+		interactive := karbac.NewInteractiveReadiness()
+
+		handler := readinessHandler(&shutdownFlag, &apiServerReady, swappable, nil, interactive, nil, readyWfCatalog(), nil)
 
 		rec := doRequest(handler)
 		Expect(rec.Code).To(Equal(http.StatusOK))

@@ -148,6 +148,13 @@ type Server struct {
 	// entirely (fleet was never part of the readiness contract before).
 	fleetReadinessGate *readiness.Gate
 
+	// dataStorageReadinessGate reflects DataStorage's real reachability
+	// (#1985, BR-AUDIT-005 v2.0). Unlike fleetReadinessGate, this is always
+	// wired in production (every service writes audit -- there is no
+	// "disabled" state); nil-checked here only so lightweight readiness
+	// tests that don't need it can omit it.
+	dataStorageReadinessGate *readiness.Gate
+
 	// ADR-057: Controller namespace where all CRDs are created and queried
 	controllerNamespace string
 
@@ -221,6 +228,14 @@ func (s *Server) ScopeChecker() scope.ScopeChecker {
 // server starts accepting readiness probes.
 func (s *Server) SetFleetReadinessGate(gate *readiness.Gate) {
 	s.fleetReadinessGate = gate
+}
+
+// SetDataStorageReadinessGate wires the DataStorage dependency readiness
+// gate (#1985). Production code (cmd/gateway/main.go) calls this once at
+// startup, unconditionally, after starting the gate. Must be called
+// before the HTTP server starts accepting readiness probes.
+func (s *Server) SetDataStorageReadinessGate(gate *readiness.Gate) {
+	s.dataStorageReadinessGate = gate
 }
 
 // MarkCacheReady signals that the informer cache has completed initial sync.
@@ -656,6 +671,19 @@ func (s *Server) readinessHandler(w http.ResponseWriter, r *http.Request) {
 		if err := s.fleetReadinessGate.Check(r); err != nil {
 			s.writeReadinessUnavailable(w, r, "fleet dependency unreachable: "+err.Error(),
 				"Fleet dependency unreachable: "+err.Error())
+			return
+		}
+	}
+
+	// #1985 / BR-AUDIT-005: DataStorage must always be reachable before this
+	// pod accepts traffic that would generate audit events (DD-AUDIT-003),
+	// closing the audit-loss window at its root instead of just retrying
+	// writes after the fact. Unlike fleetReadinessGate, this check is
+	// unconditional (nil only in lightweight tests that don't set it).
+	if s.dataStorageReadinessGate != nil {
+		if err := s.dataStorageReadinessGate.Check(r); err != nil {
+			s.writeReadinessUnavailable(w, r, "DataStorage unreachable: "+err.Error(),
+				"DataStorage unreachable: "+err.Error())
 			return
 		}
 	}
