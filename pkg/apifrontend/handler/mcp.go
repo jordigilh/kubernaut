@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"iter"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -90,27 +89,28 @@ func NewMCPHandler(cfg MCPConfig) (http.Handler, error) { //nolint:gocritic // h
 		opts.EventStore = newAuditingEventStore(auditor)
 	}
 
-	var seenSessions sync.Map
+	// #2139: getServer is only invoked by the SDK when it's about to create a
+	// brand-new session (an existing session's requests carry a
+	// Mcp-Session-Id the SDK recognizes and routes directly to it, never
+	// calling back here) -- see mcp.StreamableHTTPHandler.serveStatefulPOST.
+	// So every invocation of this callback already corresponds to exactly one
+	// new session; no additional dedup is needed, and a previous dedup guard
+	// keyed on the (always-empty, pre-assignment) request header caused every
+	// session after the pod's first-ever one to go unaudited.
 	h := mcp.NewStreamableHTTPHandler(
 		func(r *http.Request) *mcp.Server {
 			if auditor != nil {
-				sid := r.Header.Get("Mcp-Session-Id")
-				if sid == "" {
-					sid = "__no_session__"
+				username := ""
+				if user := auth.UserIdentityFromContext(r.Context()); user != nil {
+					username = user.Username
 				}
-				if _, loaded := seenSessions.LoadOrStore(sid, struct{}{}); !loaded {
-					username := ""
-					if user := auth.UserIdentityFromContext(r.Context()); user != nil {
-						username = user.Username
-					}
-					auditor.Emit(r.Context(), &audit.Event{
-						Type:   audit.EventMCPSessionInit,
-						UserID: username,
-						Detail: map[string]string{
-							"protocol_version": "2025-03-26",
-						},
-					})
-				}
+				auditor.Emit(r.Context(), &audit.Event{
+					Type:   audit.EventMCPSessionInit,
+					UserID: username,
+					Detail: map[string]string{
+						"protocol_version": "2025-03-26",
+					},
+				})
 			}
 			return srv
 		},
