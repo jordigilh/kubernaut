@@ -1113,12 +1113,30 @@ Usage: {{ include "kubernaut.np.commonEgress" . | nindent 4 }}
 {{- end }}
 
 {{/*
-DataStorage egress rule: allow TCP 8080 to datastorage pods.
+DataStorage egress rule: allow TCP 8080 (API) and 8081 (health/readyz) to
+datastorage pods.
+
+#1985 (BR-AUDIT-005 v2.0) added a DataStorage readiness gate to all 10
+callers of this helper: each now polls DataStorage's health endpoint
+(port 8081) from its own /readyz handler. The chart's datastorage
+NetworkPolicy (datastorage/networkpolicy.yaml) already allowlists ingress
+on 8081 from these same 10 callers, but NetworkPolicy is bidirectional --
+each caller's own egress side must independently permit 8081 too, or a
+CNI that enforces NetworkPolicy (e.g. recent kindnetd releases, and any
+real cluster's default-deny egress policy) silently drops the SYN with no
+RST, surfacing as "DataStorage health endpoint ... unreachable: context
+deadline exceeded" on every caller (confirmed via local Kind repro: the
+identical one-sided-egress-gap pattern already described above in
+kubernaut.np.fleetmetadatacacheEgress, issue #1737). Adding 8081 here
+once, in the single shared helper, fixes it for all 10 callers instead of
+patching each networkpolicy.yaml individually.
 Usage: {{ include "kubernaut.np.datastorageEgress" . | nindent 4 }}
 */}}
 {{- define "kubernaut.np.datastorageEgress" -}}
 - ports:
     - port: 8080
+      protocol: TCP
+    - port: 8081
       protocol: TCP
   to:
     - podSelector:

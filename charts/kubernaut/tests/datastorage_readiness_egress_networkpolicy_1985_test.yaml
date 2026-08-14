@@ -1,0 +1,51 @@
+suite: "DataStorage NetworkPolicy readiness-probe egress (#1985, BR-AUDIT-005 v2.0): the ingress-side fix (datastorage_readiness_ingress_networkpolicy_1985_test.yaml) allowlisted port 8081 FROM all 10 audit-writing services on DataStorage's own NetworkPolicy, but NetworkPolicy is bidirectional -- each caller's own egress side must independently permit 8081 too, or a NetworkPolicy-enforcing CNI (e.g. recent kindnetd releases) silently drops the SYN with no RST. Confirmed via local Kind repro (kindnetd v20260528): DataStorage reported 1/1 Ready (its own kubelet-local probe is unaffected), but every one of the 10 callers stayed permanently NotReady with 'DataStorage health endpoint ... unreachable: context deadline exceeded' -- the identical one-sided-egress-gap pattern already fixed once before for FleetMetadataCache (issue #1737, kubernaut.np.fleetmetadatacacheEgress). All 10 callers share one helper (kubernaut.np.datastorageEgress in _helpers.tpl), so this is a single-point fix verified once here across every caller template."
+templates:
+  - templates/gateway/networkpolicy.yaml
+  - templates/aianalysis/networkpolicy.yaml
+  - templates/signalprocessing/networkpolicy.yaml
+  - templates/remediationorchestrator/networkpolicy.yaml
+  - templates/workflowexecution/networkpolicy.yaml
+  - templates/notification/networkpolicy.yaml
+  - templates/effectivenessmonitor/networkpolicy.yaml
+  - templates/authwebhook/networkpolicy.yaml
+  - templates/kubernaut-agent/networkpolicy-agent.yaml
+  - templates/apifrontend/networkpolicy.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  workflowexecution:
+    fleet:
+      oauth2:
+        credentialsSecretRef: we-oauth2-creds
+tests:
+  - it: "allows egress on port 8081 (readiness probe), alongside the existing 8080 (audit writes), to DataStorage pods -- for every one of the 10 audit-writing services"
+    asserts:
+      - contains:
+          path: spec.egress
+          content:
+            ports:
+              - port: 8080
+                protocol: TCP
+              - port: 8081
+                protocol: TCP
+            to:
+              - podSelector:
+                  matchLabels:
+                    app: datastorage
