@@ -176,22 +176,40 @@ func loadNotificationConfig(configPath string, bootstrapLogger logr.Logger) (*no
 	return cfg, controllerNS, logger, atomicLevel
 }
 
+// reconcilerSetupParams groups setupNotificationReconciler's dependencies
+// (Go anti-pattern checklist: 8+ parameters -> config struct instead of a
+// long positional argument list).
+type reconcilerSetupParams struct {
+	mgr          ctrl.Manager
+	cfg          *notificationconfig.Config
+	ds           *deliveryServices
+	auditStore   audit.AuditStore
+	auditManager *notificationaudit.Manager
+	ob           *orchestratorBundle
+	dsGate       *readiness.Gate
+	logger       logr.Logger
+}
+
 // setupNotificationReconciler builds the NotificationRequestReconciler with
 // its delivery/sanitization/audit/metrics/EventRecorder/statusManager/
 // deliveryOrchestrator/circuitBreaker dependencies, registers it with the
 // manager, and wires the healthz/readyz checks (including the #1985
 // DataStorage readiness gate). Exits the process on any failure, matching
 // main()'s original fail-fast behavior.
-func setupNotificationReconciler(
-	mgr ctrl.Manager,
-	cfg *notificationconfig.Config,
-	ds *deliveryServices,
-	auditStore audit.AuditStore,
-	auditManager *notificationaudit.Manager,
-	ob *orchestratorBundle,
-	dsGate *readiness.Gate,
-	logger logr.Logger,
-) *notification.NotificationRequestReconciler {
+// wireDataStorageAndReconciler wires the #1985 DataStorage readiness gate
+// and builds the NotificationRequestReconciler on top of it, returning both
+// so run() can defer the gate's Stop and pass the reconciler into
+// wireHotReload. Extracted from run() to keep it under the funlen limit --
+// pure code motion, no behavior change.
+func wireDataStorageAndReconciler(ctx context.Context, p reconcilerSetupParams) (*notification.NotificationRequestReconciler, *readiness.Gate) {
+	p.dsGate = wireDataStorageReadinessGate(ctx, p.cfg, p.logger)
+	return setupNotificationReconciler(p), p.dsGate
+}
+
+func setupNotificationReconciler(p reconcilerSetupParams) *notification.NotificationRequestReconciler {
+	mgr, cfg, ds, auditStore, auditManager, ob, dsGate, logger :=
+		p.mgr, p.cfg, p.ds, p.auditStore, p.auditManager, p.ob, p.dsGate, p.logger
+
 	reconciler := &notification.NotificationRequestReconciler{
 		Client:               mgr.GetClient(),
 		APIReader:            mgr.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reader
@@ -324,10 +342,16 @@ func run() int {
 
 	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
 	// readyz (pod-wide), unconditionally.
-	dsGate := wireDataStorageReadinessGate(ctx, cfg, logger)
+	reconciler, dsGate := wireDataStorageAndReconciler(ctx, reconcilerSetupParams{
+		mgr:          mgr,
+		cfg:          cfg,
+		ds:           ds,
+		auditStore:   auditStore,
+		auditManager: auditManager,
+		ob:           ob,
+		logger:       logger,
+	})
 	defer dsGate.Stop()
-
-	reconciler := setupNotificationReconciler(mgr, cfg, ds, auditStore, auditManager, ob, dsGate, logger)
 
 	logger.Info("Starting manager")
 
