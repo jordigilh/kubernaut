@@ -252,6 +252,16 @@ type RBACConfig struct {
 	// SARCacheTTL controls how long SubjectAccessReview results are cached.
 	// Zero disables caching (every call hits the API server).
 	SARCacheTTL time.Duration `yaml:"sarCacheTTL"`
+
+	// ConsoleAccessAuthOnly, when true, makes the coarse-grained console
+	// gate (GET /a2a/access and its inline per-request equivalent) grant
+	// any authenticated user without an authorization (SAR) check --
+	// authentication is still mandatory, only the group-based authz step
+	// is skipped (#2148). Per-tool SAR checks are never affected by this
+	// and always fail closed. Intended for deployments where no console
+	// access groups have been configured at all; defaults to false
+	// (today's unconditional fail-closed behavior, unchanged).
+	ConsoleAccessAuthOnly bool `yaml:"consoleAccessAuthOnly,omitempty"`
 }
 
 // DefaultConfig returns a Config populated with production defaults.

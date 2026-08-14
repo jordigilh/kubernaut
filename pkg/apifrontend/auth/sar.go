@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -53,6 +54,15 @@ type SARChecker struct {
 	logger   logr.Logger
 	mu       sync.RWMutex
 	cache    map[string]cacheEntry
+
+	// consoleAccessAuthOnly, when true, makes CheckConsoleAccess grant any
+	// authenticated (non-empty) user without calling SAR at all -- an
+	// explicit, narrowly-scoped exception to fail-closed for the
+	// coarse-grained console gate only (#2148). Check (per-tool
+	// authorization) never consults this flag and always calls SAR.
+	// Set via SetConsoleAccessAuthOnly; defaults to false (today's
+	// unconditional fail-closed behavior, unchanged).
+	consoleAccessAuthOnly atomic.Bool
 }
 
 // NewSARChecker creates a SARChecker that performs SubjectAccessReview calls
@@ -108,8 +118,28 @@ func (s *SARChecker) Check(ctx context.Context, user string, groups []string, to
 // resource (verb=use, no resourceName). Results are cached for the
 // configured TTL, in the same cache but keyed distinctly from Check's
 // "tools" entries so the two never collide.
+//
+// When SetConsoleAccessAuthOnly(true) has been set, this degrades to an
+// authentication-only check (empty user still fails closed) and skips the
+// SAR call entirely (#2148) -- a narrow, explicit exception scoped to this
+// coarse-grained gate alone; Check (per-tool) is never affected and always
+// calls SAR.
 func (s *SARChecker) CheckConsoleAccess(ctx context.Context, user string, groups []string) (bool, error) {
+	if s.consoleAccessAuthOnly.Load() {
+		if user == "" {
+			return false, fmt.Errorf("user must not be empty")
+		}
+		return true, nil
+	}
 	return s.checkSAR(ctx, user, groups, "console", "")
+}
+
+// SetConsoleAccessAuthOnly configures whether CheckConsoleAccess grants any
+// authenticated user without an authorization (SAR) check -- see the
+// consoleAccessAuthOnly field doc. Safe for concurrent use; typically set
+// once at startup based on RBACConfig.ConsoleAccessAuthOnly.
+func (s *SARChecker) SetConsoleAccessAuthOnly(v bool) {
+	s.consoleAccessAuthOnly.Store(v)
 }
 
 // checkSAR is the shared SAR-call-plus-cache implementation behind both

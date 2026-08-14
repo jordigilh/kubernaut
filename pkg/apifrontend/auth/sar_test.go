@@ -261,6 +261,44 @@ var _ = Describe("SARChecker", func() {
 		})
 	})
 
+	Describe("UT-AF-2148-001: CheckConsoleAccess auth-only mode skips SAR for any authenticated user [AC-3]", func() {
+		It("should allow access without calling SAR when ConsoleAccessAuthOnly is enabled", func() {
+			fakeK8s.PrependReactor("create", "subjectaccessreviews", denyAll)
+			checker = auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
+			checker.SetConsoleAccessAuthOnly(true)
+
+			allowed, err := checker.CheckConsoleAccess(ctx, "alice", nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(allowed).To(BeTrue(), "auth-only mode grants any authenticated user, regardless of groups/RBAC")
+			Expect(sarCalls.Load()).To(Equal(int32(0)), "auth-only mode must not call the SAR API at all")
+		})
+	})
+
+	Describe("UT-AF-2148-002: CheckConsoleAccess auth-only mode still fail-closed on empty user [AC-3]", func() {
+		It("should reject an empty user even in auth-only mode", func() {
+			checker = auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
+			checker.SetConsoleAccessAuthOnly(true)
+
+			allowed, err := checker.CheckConsoleAccess(ctx, "", nil)
+			Expect(err).To(HaveOccurred(), "authentication is still mandatory in auth-only mode")
+			Expect(allowed).To(BeFalse(), "fail-closed on invalid/missing identity")
+			Expect(sarCalls.Load()).To(Equal(int32(0)))
+		})
+	})
+
+	Describe("UT-AF-2148-003: Check (per-tool) is unaffected by ConsoleAccessAuthOnly [AC-3]", func() {
+		It("should still call SAR and enforce per-tool RBAC even when ConsoleAccessAuthOnly is enabled", func() {
+			fakeK8s.PrependReactor("create", "subjectaccessreviews", denyAll)
+			checker = auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
+			checker.SetConsoleAccessAuthOnly(true)
+
+			allowed, err := checker.Check(ctx, "alice", []string{"sre"}, "kubernaut_approve")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(allowed).To(BeFalse(), "per-tool SAR checks must remain fully fail-closed regardless of the console auth-only flag")
+			Expect(sarCalls.Load()).To(Equal(int32(1)), "per-tool Check must still call the SAR API")
+		})
+	})
+
 	Describe("UT-AF-1919: tools and console SAR cache entries do not collide", func() {
 		It("should call the SAR API separately for Check(tools) and CheckConsoleAccess even with identical user/groups", func() {
 			callCount := atomic.Int32{}

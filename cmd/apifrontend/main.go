@@ -52,7 +52,7 @@ func run() int {
 	defer func() { _ = zapLogger.Sync() }()
 	ctrl.SetLogger(logger.WithName("controller-runtime"))
 
-	sarChecker, err := buildSARClient(logger, cfg.RBAC.SARCacheTTL)
+	sarChecker, err := buildSARClient(logger, cfg.RBAC.SARCacheTTL, cfg.RBAC.ConsoleAccessAuthOnly)
 	if err != nil {
 		return 1
 	}
@@ -387,8 +387,11 @@ func setupConfigAndLogger() (*config.Config, logr.Logger, *zap.Logger, error) {
 }
 
 // buildSARClient wires the SelfSubjectAccessReview-based authorizer used for
-// K8s-tool RBAC gating.
-func buildSARClient(logger logr.Logger, sarCacheTTL time.Duration) (auth.ToolAuthorizer, error) {
+// K8s-tool RBAC gating. consoleAccessAuthOnly configures the coarse-grained
+// console gate (only) to skip its SAR call and grant any authenticated user
+// -- see RBACConfig.ConsoleAccessAuthOnly (#2148); per-tool checks are
+// unaffected and always call SAR.
+func buildSARClient(logger logr.Logger, sarCacheTTL time.Duration, consoleAccessAuthOnly bool) (auth.ToolAuthorizer, error) {
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
 		logger.Error(err, "failed to get in-cluster config for SAR client")
@@ -399,7 +402,12 @@ func buildSARClient(logger logr.Logger, sarCacheTTL time.Duration) (auth.ToolAut
 		logger.Error(err, "failed to create kubernetes client for SAR")
 		return nil, err
 	}
-	return auth.NewSARChecker(k8sClient, sarCacheTTL, logger.WithName("sar")), nil
+	checker := auth.NewSARChecker(k8sClient, sarCacheTTL, logger.WithName("sar"))
+	checker.SetConsoleAccessAuthOnly(consoleAccessAuthOnly)
+	if consoleAccessAuthOnly {
+		logger.Info("console-access gate running in auth-only mode: no consoleAccessGroups/roleBindings configured, SAR is skipped for the console gate and any authenticated user is granted; per-tool RBAC checks are unaffected")
+	}
+	return checker, nil
 }
 
 // buildAuditWiring wires AF's audit trail to the shared BufferedAuditStore
