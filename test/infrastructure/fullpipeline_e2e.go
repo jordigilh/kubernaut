@@ -370,6 +370,23 @@ func SetupFullPipelineInfrastructure(ctx context.Context, clusterName, kubeconfi
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: DataStorage HTTP not ready: %w", err)
 	}
 
+	// #1985 (BR-AUDIT-005 v2.0): AuthWebhook's own /readyz now blocks on
+	// DataStorage's health endpoint being reachable, so it can no longer be
+	// assumed ready merely because `helm install` returned (the chart install
+	// does not --wait) or because DataStorage itself just became ready --
+	// AuthWebhook's readiness probe only starts succeeding some time *after*
+	// DataStorage's. SeedE2EActionTypes below creates/deletes ActionType CRs,
+	// which the actiontype.validate.kubernaut.ai ValidatingWebhookConfiguration
+	// routes to AuthWebhook's :443 endpoint -- if its pod isn't Ready yet, the
+	// Service has no endpoints and the apiserver's webhook call fails closed
+	// with "dial tcp ...:443: connect: connection refused" (confirmed via CI
+	// must-gather).
+	_, _ = fmt.Fprintln(writer, "  ⏳ Waiting for AuthWebhook rollout (validating webhook pre-condition)...")
+	if err := waitForDeploymentRollout(ctx, namespace, kubeconfigPath, "authwebhook", 120*time.Second, writer); err != nil {
+		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: AuthWebhook rollout not ready: %w", err)
+	}
+	_, _ = fmt.Fprintln(writer, "  ✅ AuthWebhook deployment rolled out")
+
 	if err := SeedE2EActionTypes(ctx, kubeconfigPath, namespace, writer); err != nil {
 		return builtImages, nil, nil, fmt.Errorf("PHASE 6b: failed to seed action types: %w", err)
 	}
@@ -1390,4 +1407,20 @@ func waitForDataStorageHTTP(ctx context.Context, namespace, kubeconfigPath strin
 		time.Sleep(2 * time.Second)
 	}
 	return fmt.Errorf("DataStorage pod not ready within 60s")
+}
+
+// waitForDeploymentRollout blocks until the named Deployment's rollout
+// completes (all replicas updated and available) or timeout elapses.
+func waitForDeploymentRollout(ctx context.Context, namespace, kubeconfigPath, deploymentName string, timeout time.Duration, writer io.Writer) error {
+	rolloutCmd := exec.CommandContext(ctx, "kubectl", "rollout", "status",
+		"deployment/"+deploymentName,
+		"-n", namespace,
+		"--kubeconfig", kubeconfigPath,
+		fmt.Sprintf("--timeout=%s", timeout))
+	rolloutCmd.Stdout = writer
+	rolloutCmd.Stderr = writer
+	if err := rolloutCmd.Run(); err != nil {
+		return fmt.Errorf("%s rollout not ready: %w", deploymentName, err)
+	}
+	return nil
 }
