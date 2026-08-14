@@ -65,7 +65,7 @@ func TestWireDataStorageReadinessGate_EM_Reachable_ReadyImmediately(t *testing.T
 
 func TestWireDataStorageReadinessGate_EM_Unreachable_NotReady(t *testing.T) {
 	cfg := config.DefaultConfig()
-	cfg.DataStorage.HealthURL = "http://127.0.0.1:1/unreachable"
+	cfg.DataStorage.HealthURL = unreachableTestEndpoint
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
