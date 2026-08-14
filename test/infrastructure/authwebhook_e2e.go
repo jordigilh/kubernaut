@@ -1136,6 +1136,15 @@ spec:
     targetPort: 8080
     nodePort: %[2]s
     protocol: TCP
+  # #1985 / BR-AUDIT-005 v2.0: AuthWebhook's DataStorage readiness gate
+  # probes this port via cluster DNS (data-storage-service:8081); without
+  # a matching Service port, kube-proxy has no DNAT rule for it and
+  # traffic is silently blackholed (Client.Timeout "awaiting headers",
+  # not "connection refused") even though the pod itself listens on 8081.
+  - name: health
+    port: 8081
+    targetPort: 8081
+    protocol: TCP
   selector:
     app: datastorage
 ---
@@ -1165,6 +1174,8 @@ spec:
           containerPort: 8080
         - name: metrics
           containerPort: 9090
+        - name: health
+          containerPort: 8081
         env:
         - name: CONFIG_PATH
           value: /etc/datastorage/config.yaml
