@@ -210,7 +210,14 @@ spec:
             failureThreshold: 3
           readinessProbe:
             httpGet:
-              path: /healthz
+              # #1985 (BR-AUDIT-005 v2.0): was /healthz (liveness), a bug that
+              # silently defeated this service's DataStorage readiness gate --
+              # /healthz.AlwaysReadyLiveness always returns 200 regardless of
+              # dsGate's state, so AIAnalysis's pod reported Ready even while
+              # its own readiness gate logs showed DataStorage permanently
+              # unreachable (confirmed via CI must-gather: every other
+              # service's readinessProbe already correctly targets /readyz).
+              path: /readyz
               port: 8081
             initialDelaySeconds: 30
             periodSeconds: 5
