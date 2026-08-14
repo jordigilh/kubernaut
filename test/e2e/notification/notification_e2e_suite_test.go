@@ -136,6 +136,18 @@ var _ = SynchronizedBeforeSuite(
 		err = os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
+		// Deploy Audit Infrastructure (PostgreSQL + Data Storage + migrations) BEFORE
+		// the Notification Controller. Required for BR-NOT-062, BR-NOT-063, BR-NOT-064
+		// E2E tests, and -- since #1985 (BR-AUDIT-005 v2.0) -- the controller's own
+		// /readyz now blocks on DataStorage's health endpoint being reachable, so
+		// DataStorage must already exist by the time the controller pod starts, or
+		// its readiness wait below (and DeployNotificationController's internal one)
+		// times out waiting for a dependency that was never deployed yet.
+		logger.Info("Deploying Audit Infrastructure (PostgreSQL + Data Storage)...")
+		err = infrastructure.DeployNotificationAuditInfrastructure(ctx, controllerNamespace, kubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Audit infrastructure deployment should succeed")
+		logger.Info("✅ Audit infrastructure ready")
+
 		// Deploy shared Notification Controller (ONCE for all tests) - pass image name from setup
 		logger.Info("Deploying shared Notification Controller...")
 		logger.Info("  • Using image: " + notificationImageName)
@@ -156,13 +168,6 @@ var _ = SynchronizedBeforeSuite(
 		err = waitCmd.Run()
 		Expect(err).ToNot(HaveOccurred(), "Notification Controller pod did not become ready")
 		logger.Info("✅ Notification Controller pod is ready")
-
-		// Deploy Audit Infrastructure (PostgreSQL + Data Storage + migrations)
-		// Required for BR-NOT-062, BR-NOT-063, BR-NOT-064 E2E tests
-		logger.Info("Deploying Audit Infrastructure (PostgreSQL + Data Storage)...")
-		err = infrastructure.DeployNotificationAuditInfrastructure(ctx, controllerNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred(), "Audit infrastructure deployment should succeed")
-		logger.Info("✅ Audit infrastructure ready")
 
 		// Deploy AuthWebhook manifests (using pre-built + pre-loaded image from PHASE 1 & 3)
 		// Per DD-WEBHOOK-001: Required for NotificationRequest DELETE operations
