@@ -4873,6 +4873,26 @@ components:
           items:
             type: string
           description: List of MCP servers
+        retry_outcome:
+          type: string
+          description: >-
+            Present only on sameKindValidationGate/apiVersionValidationGate
+            retry audit events (#2119/#2120/#2121, BR-AI-2120, FedRAMP AU-3):
+            why the gate retry ended the way it did, e.g. "resolved",
+            "resolved_after_other_tool_retry", "llm_requested_other_tool",
+            "empty_response", "parse_error", "exhausted".
+        ambiguous_kind:
+          type: string
+          description: >-
+            Present only on apiVersionValidationGate audit events (#1044,
+            BR-AI-1044): the Kind that resolved to multiple API groups,
+            triggering the gate.
+        conflicting_groups:
+          type: string
+          description: >-
+            Present only on apiVersionValidationGate audit events (#1044,
+            BR-AI-1044): comma-joined list of the conflicting API groups
+            for ambiguous_kind.
 
     LLMResponsePayload:
       type: object

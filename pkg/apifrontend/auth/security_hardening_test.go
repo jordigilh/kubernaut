@@ -281,16 +281,19 @@ func TestValidateNotBefore_Absent(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestReplayCache_DistinctSentinel(t *testing.T) {
-	// TC-B-05b/c: replayed JTI → ErrTokenReplayed, NOT ErrTokenExpired
+	// TC-B-05b/c: replayed JTI (from a different source) → ErrTokenReplayed,
+	// NOT ErrTokenExpired. #1999: same-source reuse is legitimate, so the
+	// "seen" assertion must use a different source key to actually exercise
+	// replay detection.
 	rc := NewReplayCache(10 * time.Minute)
 	defer rc.Stop()
 
-	if rc.Seen("jti-1") {
+	if rc.Seen("jti-1", "source-a") {
 		t.Fatal("TC-B-05a: first presentation should not be seen")
 	}
 
-	if !rc.Seen("jti-1") {
-		t.Fatal("TC-B-05b: second presentation should be seen")
+	if !rc.Seen("jti-1", "source-b") {
+		t.Fatal("TC-B-05b: presentation from a different source should be seen as a replay")
 	}
 }
 
@@ -542,9 +545,12 @@ func TestValidateNotBefore_NegativeOne(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // TC-P2B-04a/b/d: Replay through full Validate path
+// #1999 (BR-SECURITY-1505): rewritten for source-bound replay semantics —
+// same-source reuse is legitimate Bearer-token usage; only a different
+// source presenting the same jti is a replay.
 // ---------------------------------------------------------------------------
 
-func TestValidate_ReplayedJTI_ReturnsErrTokenReplayed(t *testing.T) {
+func TestValidate_ReusedJTI_SameSource_Allowed(t *testing.T) {
 	t.Parallel()
 
 	kp := generateTestKeyPair(t)
@@ -581,16 +587,69 @@ func TestValidate_ReplayedJTI_ReturnsErrTokenReplayed(t *testing.T) {
 		"iat": float64(time.Now().Unix()),
 	})
 
-	ctx := context.Background()
+	ctx := WithSourceIP(context.Background(), "198.51.100.1")
 
 	_, err = v.Validate(ctx, token)
 	if err != nil {
 		t.Fatalf("TC-P2B-04a: first validation should succeed, got %v", err)
 	}
 
+	// Standard OAuth2 Bearer-token usage: the same client reuses the same
+	// token for a second request. This must succeed, not be rejected as a
+	// replay (the exact production regression this fix corrects).
 	_, err = v.Validate(ctx, token)
+	if err != nil {
+		t.Errorf("TC-P2B-04a: reusing the same token from the same source should succeed, got %v", err)
+	}
+}
+
+func TestValidate_ReplayedJTI_DifferentSource_ReturnsErrTokenReplayed(t *testing.T) {
+	t.Parallel()
+
+	kp := generateTestKeyPair(t)
+	jwksSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(kp.publicJWKS())
+	}))
+	t.Cleanup(jwksSrv.Close)
+
+	cfg := Config{
+		AllowInsecureIssuers: true,
+		JWT: []ProviderConfig{{
+			Issuer: IssuerConfig{
+				URL:       jwksSrv.URL,
+				JWKSURL:   jwksSrv.URL,
+				Audiences: []string{"test"},
+			},
+		}},
+	}
+	rc := NewReplayCache(10 * time.Minute)
+	t.Cleanup(rc.Stop)
+
+	v, err := NewJWTValidator(cfg, WithReplayCache(rc))
+	if err != nil {
+		t.Fatalf("NewJWTValidator: %v", err)
+	}
+
+	token := kp.signToken(t, map[string]interface{}{
+		"iss": jwksSrv.URL,
+		"aud": "test",
+		"sub": "alice",
+		"jti": "unique-jti-002",
+		"exp": float64(time.Now().Add(1 * time.Hour).Unix()),
+		"iat": float64(time.Now().Unix()),
+	})
+
+	_, err = v.Validate(WithSourceIP(context.Background(), "198.51.100.1"), token)
+	if err != nil {
+		t.Fatalf("TC-P2B-04a: first validation should succeed, got %v", err)
+	}
+
+	// A different source presenting the identical jti is the actual threat
+	// GAP-08 exists to catch (stolen token replayed elsewhere).
+	_, err = v.Validate(WithSourceIP(context.Background(), "203.0.113.9"), token)
 	if !errors.Is(err, ErrTokenReplayed) {
-		t.Errorf("TC-P2B-04a: replayed token should return ErrTokenReplayed, got %v", err)
+		t.Errorf("TC-P2B-04a: token replayed from a different source should return ErrTokenReplayed, got %v", err)
 	}
 }
 

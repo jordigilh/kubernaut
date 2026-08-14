@@ -28,6 +28,11 @@ type MiddlewareConfig struct {
 	Logger       logr.Logger
 	Auditor      audit.Emitter
 	AuthDuration *prometheus.HistogramVec
+	// TrustedProxyCIDRs configures which immediate-connection CIDRs are
+	// trusted to supply a forwarded client-IP header for jti replay-cache
+	// source binding (#1999, BR-SECURITY-1505). Empty/nil (default) means no
+	// proxy header is ever trusted for this purpose — fail-closed.
+	TrustedProxyCIDRs []string
 }
 
 // MiddlewareWithConfig returns auth middleware with full observability support.
@@ -45,6 +50,7 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 	if cfg.Validator != nil {
 		authMethod = cfg.Validator.AuthMethod()
 	}
+	sourceResolver := newTrustedSourceResolver(cfg.TrustedProxyCIDRs)
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -58,13 +64,14 @@ func MiddlewareWithConfig(cfg MiddlewareConfig) func(http.Handler) http.Handler 
 				"request_id", requestid.FromContext(r.Context()),
 			)
 			ctx := logging.WithLogger(r.Context(), reqLogger)
+			ctx = WithSourceIP(ctx, sourceResolver.sourceKey(r))
 
 			token, ok := extractBearerToken(w, r, ctx, cfg.Auditor, reqLogger, authMethod)
 			if !ok {
 				return
 			}
 
-			identity, err := cfg.Validator.Validate(r.Context(), token)
+			identity, err := cfg.Validator.Validate(ctx, token)
 			if err != nil {
 				reqLogger.V(1).Info("auth failed: token validation", "error", err)
 				observeAuthDuration(cfg.AuthDuration, start, "failure")

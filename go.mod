@@ -1,6 +1,6 @@
 module github.com/jordigilh/kubernaut
 
-go 1.26.5
+go 1.26.6
 
 require (
 	cloud.google.com/go/auth v0.23.0

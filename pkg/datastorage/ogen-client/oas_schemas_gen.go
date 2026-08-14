@@ -19144,6 +19144,17 @@ type LLMRequestPayload struct {
 	ToolsetsEnabled []string `json:"toolsets_enabled"`
 	// List of MCP servers.
 	McpServers []string `json:"mcp_servers"`
+	// Present only on sameKindValidationGate/apiVersionValidationGate retry audit events
+	// (#2119/#2120/#2121, BR-AI-2120, FedRAMP AU-3): why the gate retry ended the way it did, e.g.
+	// "resolved", "resolved_after_other_tool_retry", "llm_requested_other_tool", "empty_response",
+	// "parse_error", "exhausted".
+	RetryOutcome OptString `json:"retry_outcome"`
+	// Present only on apiVersionValidationGate audit events (#1044, BR-AI-1044): the Kind that resolved
+	// to multiple API groups, triggering the gate.
+	AmbiguousKind OptString `json:"ambiguous_kind"`
+	// Present only on apiVersionValidationGate audit events (#1044, BR-AI-1044): comma-joined list of
+	// the conflicting API groups for ambiguous_kind.
+	ConflictingGroups OptString `json:"conflicting_groups"`
 }
 
 // GetEventType returns the value of EventType.
@@ -19191,6 +19202,21 @@ func (s *LLMRequestPayload) GetMcpServers() []string {
 	return s.McpServers
 }
 
+// GetRetryOutcome returns the value of RetryOutcome.
+func (s *LLMRequestPayload) GetRetryOutcome() OptString {
+	return s.RetryOutcome
+}
+
+// GetAmbiguousKind returns the value of AmbiguousKind.
+func (s *LLMRequestPayload) GetAmbiguousKind() OptString {
+	return s.AmbiguousKind
+}
+
+// GetConflictingGroups returns the value of ConflictingGroups.
+func (s *LLMRequestPayload) GetConflictingGroups() OptString {
+	return s.ConflictingGroups
+}
+
 // SetEventType sets the value of EventType.
 func (s *LLMRequestPayload) SetEventType(val LLMRequestPayloadEventType) {
 	s.EventType = val
@@ -19234,6 +19260,21 @@ func (s *LLMRequestPayload) SetToolsetsEnabled(val []string) {
 // SetMcpServers sets the value of McpServers.
 func (s *LLMRequestPayload) SetMcpServers(val []string) {
 	s.McpServers = val
+}
+
+// SetRetryOutcome sets the value of RetryOutcome.
+func (s *LLMRequestPayload) SetRetryOutcome(val OptString) {
+	s.RetryOutcome = val
+}
+
+// SetAmbiguousKind sets the value of AmbiguousKind.
+func (s *LLMRequestPayload) SetAmbiguousKind(val OptString) {
+	s.AmbiguousKind = val
+}
+
+// SetConflictingGroups sets the value of ConflictingGroups.
+func (s *LLMRequestPayload) SetConflictingGroups(val OptString) {
+	s.ConflictingGroups = val
 }
 
 // Event type for discriminator (matches parent event_type).

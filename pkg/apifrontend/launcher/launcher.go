@@ -89,7 +89,7 @@ func NewA2AHandler(cfg A2AConfig) (http.Handler, error) { //nolint:gocritic // h
 		// RunnerProvider (not the plain RunnerConfig) wraps the real ADK
 		// runner in a reinvokingRunner, moving BR-SESS-013's reinvocation
 		// decision inside runner.Runner.Run's own iterator (issue #1776).
-		RunnerProvider:        newReinvokingRunnerProvider(runnerCfg, log),
+		RunnerProvider:        newReinvokingRunnerProvider(runnerCfg, log, cfg.Auditor),
 		BeforeExecuteCallback: buildBeforeExecuteCallback(cfg.BeforeExecute, cfg.Auditor),
 		AfterExecuteCallback:  buildAfterExecuteCallback(log, cfg.Auditor),
 		GenAIPartConverter:    buildStreamingPartConverter(),
