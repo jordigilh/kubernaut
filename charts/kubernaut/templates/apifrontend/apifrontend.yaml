@@ -65,6 +65,7 @@ agent:
   # validate the chart's own self-signed inter-service certs).
   kaMCPEndpoint: "https://kubernaut-agent.{{ .Release.Namespace }}.svc:8443/api/v1/mcp/"
   dsBaseURL: "https://data-storage-service.{{ .Release.Namespace }}.svc:8080"
+  dsHealthURL: "https://data-storage-service.{{ .Release.Namespace }}.svc:8081/readyz"
   dsBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
   kaBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
   kaTlsCaFile: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}

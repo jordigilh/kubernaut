@@ -174,8 +174,9 @@ var _ = Describe("Config.Validate", func() {
 					HotReloadInterval: 30 * time.Second,
 				},
 				DataStorage: sharedconfig.DataStorageConfig{
-					URL:     "http://data-storage:8080",
-					Timeout: 10 * time.Second,
+					URL:       "http://data-storage:8080",
+					HealthURL: "http://data-storage:8081/readyz",
+					Timeout:   10 * time.Second,
 					Buffer: sharedconfig.BufferConfig{
 						BufferSize:    0, // Invalid
 						BatchSize:     100,

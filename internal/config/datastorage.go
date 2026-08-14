@@ -15,6 +15,15 @@ type DataStorageConfig struct {
 	// Example: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
 	URL string `yaml:"url"`
 
+	// HealthURL is DataStorage's readiness-check endpoint (REQUIRED), on a
+	// separate port (8081) from the main audit-write API (URL, port 8080).
+	// Consumed by pkg/audit.DataStorageProber to gate this service's own
+	// /readyz on DataStorage's real reachability (#1985, BR-AUDIT-005 v2.0),
+	// closing the audit-loss window where a service starts serving traffic
+	// before DataStorage is reachable.
+	// Example: "http://data-storage-service.kubernaut-system.svc.cluster.local:8081/readyz"
+	HealthURL string `yaml:"healthUrl"`
+
 	// Timeout for individual Data Storage API calls.
 	Timeout time.Duration `yaml:"timeout"`
 
@@ -50,8 +59,9 @@ type BufferConfig struct {
 // DefaultDataStorageConfig returns safe defaults for Data Storage connectivity.
 func DefaultDataStorageConfig() DataStorageConfig {
 	return DataStorageConfig{
-		URL:     "http://data-storage-service:8080",
-		Timeout: 10 * time.Second,
+		URL:       "http://data-storage-service:8080",
+		HealthURL: "http://data-storage-service:8081/readyz",
+		Timeout:   10 * time.Second,
 		Buffer: BufferConfig{
 			BufferSize:    10000,
 			BatchSize:     100,
@@ -66,6 +76,9 @@ func DefaultDataStorageConfig() DataStorageConfig {
 func ValidateDataStorageConfig(ds *DataStorageConfig) error {
 	if ds.URL == "" {
 		return fmt.Errorf("datastorage.url is required")
+	}
+	if ds.HealthURL == "" {
+		return fmt.Errorf("datastorage.healthUrl is required")
 	}
 	if ds.Timeout <= 0 {
 		return fmt.Errorf("datastorage.timeout must be positive")

@@ -197,7 +197,12 @@ func (r *LLMRuntimeConfig) EffectivePhaseConfig(phase string, baseLLM types.LLMC
 }
 
 type DataStorageConfig struct {
-	URL            string                  `yaml:"url"`
+	URL string `yaml:"url"`
+	// HealthURL is DataStorage's readiness-check endpoint (separate port,
+	// 8081, from the main API's URL above). Consumed by
+	// pkg/audit.DataStorageProber to gate KA's own /readyz on DataStorage's
+	// real reachability (#1985, BR-AUDIT-005 v2.0).
+	HealthURL      string                  `yaml:"healthUrl"`
 	SATokenPath    string                  `yaml:"saTokenPath"`
 	TLS            sharedtls.TLSConfig     `yaml:"tls,omitempty"`
 	CircuitBreaker types.LLMCircuitBreaker `yaml:"circuitBreaker,omitempty"`

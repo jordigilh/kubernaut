@@ -442,6 +442,17 @@ https://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080
 {{- end }}
 
 {{/*
+Return the in-cluster DataStorage health/readiness endpoint URL (port 8081,
+distinct from the main API port 8080 above). Consumed by every
+audit-writing service's pkg/audit.DataStorageProber to gate its own
+/readyz on DataStorage's real reachability (#1985, BR-AUDIT-005 v2.0).
+Issue #753: always HTTPS -- inter-service TLS is mandatory.
+*/}}
+{{- define "kubernaut.datastorage.healthUrl" -}}
+https://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8081/readyz
+{{- end }}
+
+{{/*
 Return the in-cluster FleetMetadataCache service URL.
 Issue #1683: FleetMetadataCache's API port presents TLS by default
 (ConfigureConditionalTLS), matching every other Kubernaut HTTP-API service.
