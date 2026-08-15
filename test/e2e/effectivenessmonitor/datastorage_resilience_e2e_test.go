@@ -51,26 +51,24 @@ import (
 //
 // Business Requirements: BR-AUDIT-005 v2.0.
 // Authority: Issue #1985, SOC2 CC8.1, AU-9.
-const (
-	emResilienceBridgeServiceName = "datastorage-fault-proxy-em"
-	emResilienceBridgePort        = 8081
-	// emResilienceDataStorageHealthHostAddr: DataStorage's real health
-	// NodePort (30281) is already host-mapped 1:1 for this suite
-	// (kind-effectivenessmonitor-config.yaml) -- reused directly, no
-	// kubectl port-forward subprocess needed.
-	emResilienceDataStorageHealthHostAddr = "127.0.0.1:30281"
-)
+// emResilienceDataStorageUpstreamAddr: the REAL, shared DataStorage
+// instance's health endpoint, reachable from the bridge-proxy sidecar via
+// ordinary namespace-qualified cluster DNS -- see dsshared.Journey's doc
+// comment for why a sidecar replaced the earlier host-bridge and
+// in-cluster-Deployment mechanisms (#1985 follow-up, 2026-08-15).
+var emResilienceDataStorageUpstreamAddr = fmt.Sprintf("data-storage-service.%s.svc.cluster.local:8081", controllerNamespace)
 
 var _ = dsshared.Journey("DataStorage Resilience (#1985, BR-AUDIT-005 v2.0, SOC2 CC8.1)", func() dsshared.Target {
 	return dsshared.Target{
-		KubeconfigPath:            kubeconfigPath,
-		Namespace:                 controllerNamespace,
-		DataStorageHealthHostAddr: emResilienceDataStorageHealthHostAddr,
-		BridgeServiceName:         emResilienceBridgeServiceName,
-		BridgePort:                emResilienceBridgePort,
+		KubeconfigPath:          kubeconfigPath,
+		Namespace:               controllerNamespace,
+		PodLabelSelector:        "app=effectivenessmonitor-resilience",
+		BridgeContainerName:     infrastructure.EMResilienceBridgeContainerName,
+		BridgeProxyPort:         infrastructure.EMResilienceBridgeProxyPort,
+		DataStorageUpstreamAddr: emResilienceDataStorageUpstreamAddr,
 		Deploy: func(ctx context.Context) error {
 			return infrastructure.DeployEMForDataStorageResilienceTest(
-				ctx, kubeconfigPath, controllerNamespace, emResilienceBridgeServiceName, emResilienceBridgePort, GinkgoWriter)
+				ctx, kubeconfigPath, controllerNamespace, GinkgoWriter)
 		},
 		Teardown: func(ctx context.Context) {
 			infrastructure.TeardownEMForDataStorageResilienceTest(ctx, kubeconfigPath, controllerNamespace, GinkgoWriter)

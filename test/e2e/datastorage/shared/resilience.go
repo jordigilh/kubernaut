@@ -23,122 +23,50 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os/exec"
-	"runtime"
-	"strconv"
-	"time"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck // Ginkgo DSL dot-import convention
 	. "github.com/onsi/gomega"    //nolint:staticcheck // Ginkgo/Gomega DSL dot-import convention
-
-	"github.com/jordigilh/kubernaut/test/infrastructure"
 )
-
-// PortForward manages a kubectl port-forward subprocess. Exported (unlike
-// the near-identical private helper in test/infrastructure/migrations.go,
-// which is hardcoded to PostgreSQL on port 5432) so this package can tunnel
-// to an arbitrary Service:port -- here, the REAL DataStorage's health
-// Service, so the host-side InterruptibleProxy below has a genuine
-// dependency to forward to.
-type PortForward struct {
-	cmd       *exec.Cmd
-	LocalPort int
-}
-
-// StartPortForward opens a `kubectl port-forward` tunnel from a random local
-// port to target (e.g. "service/data-storage-service") on remotePort inside
-// namespace, blocking until the tunnel actually accepts TCP connections.
-func StartPortForward(ctx context.Context, kubeconfigPath, namespace, target string, remotePort int, writer io.Writer) (*PortForward, error) {
-	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
-	if err != nil {
-		return nil, fmt.Errorf("failed to find available local port: %w", err)
-	}
-	localPort := listener.Addr().(*net.TCPAddr).Port
-	_ = listener.Close()
-
-	_, _ = fmt.Fprintf(writer, "   🔌 Starting port-forward to %s/%s (localhost:%d -> %d)...\n", namespace, target, localPort, remotePort)
-
-	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"port-forward", "-n", namespace, target,
-		fmt.Sprintf("%d:%d", localPort, remotePort))
-	cmd.Stdout = writer
-	cmd.Stderr = writer
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("failed to start port-forward: %w", err)
-	}
-
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		conn, dialErr := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", localPort))
-		if dialErr == nil {
-			_ = conn.Close()
-			_, _ = fmt.Fprintf(writer, "   ✅ Port-forward ready (localhost:%d)\n", localPort)
-			return &PortForward{cmd: cmd, LocalPort: localPort}, nil
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	_ = cmd.Process.Kill()
-	_ = cmd.Wait()
-	return nil, fmt.Errorf("port-forward to %s/%s not ready after 30 seconds", namespace, target)
-}
-
-// Close terminates the port-forward subprocess.
-func (pf *PortForward) Close() {
-	if pf == nil || pf.cmd == nil || pf.cmd.Process == nil {
-		return
-	}
-	_ = pf.cmd.Process.Kill()
-	_ = pf.cmd.Wait()
-}
 
 // Target describes everything the #1985 DataStorage-resilience journey
 // needs to know about one dedicated, throwaway instance of a
 // service-under-test. The dedicated instance's `datastorage.url` (audit
 // writes) stays pointed at the REAL DataStorage instance throughout --
 // only its `datastorage.healthUrl` (readiness probe) is repointed at the
-// fault-injectable bridge. This is deliberate: it is what lets the journey
-// prove a genuine, gapless, queryable-by-correlation_id audit trail after
-// recovery, not just a readyz flag flip.
+// fault-injectable bridge-proxy sidecar (localhost:BridgeProxyPort). This
+// is deliberate: it is what lets the journey prove a genuine, gapless,
+// queryable-by-correlation_id audit trail after recovery, not just a
+// readyz flag flip.
 type Target struct {
-	// KubeconfigPath, Namespace: where the dedicated instance + the
-	// CreateServiceBridge Service/Endpoints live.
+	// KubeconfigPath, Namespace: where the dedicated instance (and its
+	// bridge-proxy sidecar, in the SAME Pod) lives.
 	KubeconfigPath string
 	Namespace      string
 
-	// DataStorageHealthHostAddr, if set, is a host-reachable "host:port"
-	// for the REAL DataStorage's health endpoint (e.g. "127.0.0.1:28091",
-	// when the suite's Kind config already NodePort-maps DataStorage's
-	// health port -- see kind-gateway-config.yaml's 30281->28091 mapping).
-	// Preferred when available: no extra subprocess needed.
-	DataStorageHealthHostAddr string
+	// PodLabelSelector selects the single Pod running both the dedicated
+	// instance's main container and its bridge-proxy sidecar (e.g.
+	// "app=gateway-resilience"). Resolved once, right after Deploy
+	// succeeds, to a concrete Pod name used for every subsequent
+	// `kubectl exec`.
+	PodLabelSelector string
+	// BridgeContainerName is the bridge-proxy sidecar container's name
+	// within that Pod (e.g. infrastructure.GatewayResilienceBridgeContainerName).
+	BridgeContainerName string
+	// BridgeProxyPort/DataStorageUpstreamAddr must exactly match the
+	// socat TCP-LISTEN port and forward target already baked into the
+	// sidecar's manifest by Deploy (see Deploy*ForDataStorageResilienceTest)
+	// -- needed to reissue an identical `socat -d TCP-LISTEN:<port>,...
+	// TCP:<upstream>` command when relaunching it after a simulated
+	// partition.
+	BridgeProxyPort         int
+	DataStorageUpstreamAddr string
 
-	// DataStorageNamespace/DataStorageHealthService identify the REAL,
-	// shared DataStorage instance whose health Service is port-forwarded
-	// from the host when DataStorageHealthHostAddr is empty (so the
-	// InterruptibleProxy still has a genuine, live dependency to forward
-	// to -- this journey never touches or disrupts that real instance
-	// itself either way).
-	DataStorageNamespace     string
-	DataStorageHealthService string
-
-	// BridgeServiceName is the in-cluster DNS name CreateServiceBridge
-	// registers in Namespace (e.g. "datastorage-fault-proxy-gw"). Must be
-	// unique per concurrently-running Target, since CreateServiceBridge's
-	// hand-authored Endpoints object is keyed by this name.
-	BridgeServiceName string
-	// BridgePort is the port both the bridge Service and the dedicated
-	// instance's healthUrl dial (DataStorage's real health port, 8081).
-	BridgePort int
-
-	// Deploy stands up the dedicated, throwaway instance with
-	// datastorage.healthUrl already pointed at
-	// "http://<BridgeServiceName>:<BridgePort>/readyz", blocking until it
-	// reports Ready. Called only after the bridge is already live, so the
-	// very first readiness probe succeeds against the (currently
-	// unpaused) proxy.
+	// Deploy stands up the dedicated, throwaway instance (main container
+	// plus the bridge-proxy sidecar, both already running and the
+	// sidecar already forwarding), blocking until it reports Ready.
 	Deploy func(ctx context.Context) error
 	// Teardown removes everything Deploy created. Best-effort: failures
 	// are logged, not asserted (mirrors TeardownIsolatedDataStorageInstance).
@@ -163,12 +91,42 @@ type Target struct {
 }
 
 // Journey runs the #1985 DataStorage-resilience E2E scenario against one
-// Target: a goroutine-hosted InterruptibleProxy (bound to 0.0.0.0, forwarding
-// to the REAL DataStorage's health endpoint via a kubectl port-forward) is
-// bridged into the cluster via CreateServiceBridge + KindBridgeGatewayIP
-// (Spike S19/DD-TEST-013, empirically re-validated for host-to-pod
-// reachability 2026-08-14), fronting Target's dedicated, throwaway service
-// instance instead of the real data-storage-service.
+// Target: a socat TCP-forwarding sidecar (bridgeProxy) in the SAME Pod as
+// Target's dedicated, throwaway service instance fronts the REAL
+// DataStorage's health endpoint instead of the real data-storage-service.
+// "Partition"/"recover" are implemented by killing/relaunching the socat
+// process in-place via `kubectl exec` (not scaling, not signaling the
+// whole container): killing it closes its listening socket outright, so
+// new connections get an immediate ECONNREFUSED -- the same fail-fast
+// symptom a real, sustained DataStorage outage produces from the probing
+// pod's perspective. (A SIGSTOP-based pause was deliberately rejected: it
+// would leave the socket bound, so the kernel completes the TCP handshake
+// for new connections and the caller hangs until its own client timeout
+// instead of failing fast, making the test's timing depend on an
+// unrelated client-side timeout rather than exercising the fail-closed
+// path directly.)
+//
+// REPLACES (#1985 follow-up, 2026-08-15) two earlier designs:
+//  1. The original host-side InterruptibleProxy +
+//     CreateServiceBridge/KindBridgeGatewayIP Podman-bridge mechanism: that
+//     design relied on a Kind pod reaching a host-bound TCP listener via
+//     the Podman bridge gateway IP, which only works under rootful Podman
+//     -- confirmed broken under rootless Podman on both GitHub-hosted CI
+//     runners and a Linux dev box (helios08), which is what this project's
+//     CI actually runs (`.github/actions/install-podman` installs Podman
+//     with no rootful configuration). A rootful-CI spike independently
+//     confirmed the pod-to-host path itself works under rootful Podman,
+//     but wiring rootful Podman into this CI pipeline's artifact-based (no
+//     registry) image-loading model would require duplicating every
+//     loaded image into a second, root Podman store just for the two
+//     matrix entries that need it.
+//  2. An interim in-cluster socat Deployment+Service (scaled 0/1 replicas
+//     to partition/recover): correctly avoided the rootless-Podman problem
+//     above, but added a second Deployment+Service per Target purely to
+//     host a TCP forwarder. Folding the forwarder into a sidecar container
+//     of Target's own dedicated-instance Pod achieves the same fail-fast,
+//     runtime-agnostic partition semantics with zero extra Kubernetes
+//     objects.
 //
 // Proves what no lower tier can:
 //   - UT (pkg/audit/datastorage_prober_test.go) only proves Probe's
@@ -177,96 +135,43 @@ type Target struct {
 //     only proves each service's readyz surface is wired to a fake/unreachable
 //     HTTP target -- never a real network partition to a real DataStorage.
 //
-// The proxy's Pause()/Resume() (not just DisconnectAll()) is required
-// because DataStorageProber opens a fresh HTTP connection every probe
-// cycle: a bare DisconnectAll() only breaks connections already in flight,
-// so the very next probe would reconnect and succeed. Pause forces every
-// new connection attempt to fail closed too, which is what a real,
-// sustained DataStorage outage actually looks like.
-//
 // No Serial needed and zero blast radius to other concurrently-running
-// specs: the real DataStorage instance is never touched (only a
-// port-forwarded READ of its health endpoint), and only this Target's own
-// dedicated, throwaway instance is ever partitioned.
+// specs: the real DataStorage instance is never touched (only dialed by the
+// bridge-proxy sidecar's own forwarding), and only this Target's own
+// dedicated, throwaway Pod is ever partitioned.
 //
 // Authority: Issue #1985, BR-AUDIT-005 v2.0, SOC2 CC8.1, AU-9.
 func Journey(name string, targetFn func() Target) bool {
 	return Describe(name, Ordered, func() {
 		var (
 			target Target
-			proxy  *infrastructure.InterruptibleProxy
-			pf     *PortForward
+			bridge *bridgeProxy
 		)
 
 		BeforeAll(func() {
-			// ENVIRONMENT-GATED SKIP, NOT a TDD "deferred implementation"
-			// anti-pattern (AGENTS.md TDD Anti-Patterns table: "Pending
-			// Tests | Using XIt or Skip()"). This test is fully implemented
-			// and passes on Linux (CI and Linux dev boxes, e.g. helios08) --
-			// confirmed by empirical spike, 2026-08-14 (see #1985 plan
-			// notes). Skipped ONLY on macOS: Podman Machine's gvproxy
-			// network backend (used by CreateServiceBridge to reach the
-			// host-side InterruptibleProxy) never forwards arbitrary
-			// guest-to-host TCP connections -- confirmed with a VPN both
-			// present and fully disconnected (identical failure both times,
-			// including via the host's real LAN IP, not just
-			// host.containers.internal); gvproxy's own log shows zero dial
-			// attempts for the test port even with UserModeNetworking
-			// enabled, meaning it fast-rejects unregistered ports by design
-			// rather than being blocked by a fixable local misconfiguration.
-			// This is a structural macOS/Podman-Machine limitation, not an
-			// untested or unimplemented code path. Precedent:
-			// test/infrastructure/notification_e2e.go's GetE2EFileOutputDir
-			// has the same runtime.GOOS == "darwin" / Podman VM limitation
-			// gate.
-			if runtime.GOOS == "darwin" {
-				Skip("requires a real Linux Podman host for CreateServiceBridge host-forwarding -- " +
-					"Podman Machine's gvproxy on macOS does not forward arbitrary guest-to-host TCP " +
-					"connections; run on Linux (CI or a Linux dev box) instead")
-			}
-
 			target = targetFn()
-
 			bgCtx := context.Background()
-			var err error
-
-			realDSAddr := target.DataStorageHealthHostAddr
-			if realDSAddr == "" {
-				pf, err = StartPortForward(bgCtx, target.KubeconfigPath, target.DataStorageNamespace,
-					"service/"+target.DataStorageHealthService, target.BridgePort, GinkgoWriter)
-				Expect(err).NotTo(HaveOccurred(), "must be able to port-forward to the real DataStorage health service")
-				realDSAddr = fmt.Sprintf("127.0.0.1:%d", pf.LocalPort)
-			}
-
-			proxy, err = infrastructure.NewInterruptibleProxyOn("0.0.0.0:0", realDSAddr)
-			Expect(err).NotTo(HaveOccurred(), "the host-side fault-injection proxy must bind successfully")
-
-			gatewayIP, err := infrastructure.KindBridgeGatewayIP(bgCtx, "kind")
-			Expect(err).NotTo(HaveOccurred(), "must resolve the podman 'kind' bridge network's gateway IP")
-
-			_, portStr, err := net.SplitHostPort(proxy.Addr())
-			Expect(err).NotTo(HaveOccurred())
-			proxyPort, err := strconv.Atoi(portStr)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(infrastructure.CreateServiceBridge(bgCtx, target.KubeconfigPath, target.Namespace,
-				target.BridgeServiceName, target.BridgePort, gatewayIP, proxyPort, GinkgoWriter)).To(Succeed(),
-				"bridging the host-side proxy into the cluster must succeed")
 
 			Expect(target.Deploy(bgCtx)).To(Succeed(),
-				"the dedicated throwaway instance must deploy and become Ready before the partition is induced")
+				"the dedicated throwaway instance (plus its bridge-proxy sidecar) must deploy and become Ready")
+
+			bridge = &bridgeProxy{
+				kubeconfigPath:   target.KubeconfigPath,
+				namespace:        target.Namespace,
+				podLabelSelector: target.PodLabelSelector,
+				containerName:    target.BridgeContainerName,
+				port:             target.BridgeProxyPort,
+				upstreamAddr:     target.DataStorageUpstreamAddr,
+				writer:           GinkgoWriter,
+			}
+			Expect(bridge.resolvePod(bgCtx)).To(Succeed(),
+				"must resolve the dedicated instance's Pod name (selector %q) before it can be exec'd into", target.PodLabelSelector)
 		})
 
 		AfterAll(func() {
 			bgCtx := context.Background()
 			if target.Teardown != nil {
 				target.Teardown(bgCtx)
-			}
-			if proxy != nil {
-				proxy.Close()
-			}
-			if pf != nil {
-				pf.Close()
 			}
 		})
 
@@ -275,10 +180,10 @@ func Journey(name string, targetFn func() Target) bool {
 			Eventually(func() int {
 				return readyzStatus(target.ReadyzURL)
 			}, "60s", "2s").Should(Equal(http.StatusOK),
-				"baseline /readyz must be healthy once the dedicated instance is deployed and the bridge is intact")
+				"baseline /readyz must be healthy once the dedicated instance is deployed and the bridge-proxy sidecar is intact")
 
-			By("pausing the proxy: simulates a real, sustained network partition to DataStorage")
-			proxy.Pause()
+			By("killing the bridge-proxy sidecar's socat process: simulates a real, sustained network partition to DataStorage")
+			Expect(bridge.pause(context.Background())).To(Succeed(), "killing the bridge-proxy sidecar's socat process must succeed")
 
 			By("verifying the dedicated instance fails closed: /readyz reports 503 (no silent false-healthy)")
 			Eventually(func() int {
@@ -288,8 +193,8 @@ func Journey(name string, targetFn func() Target) bool {
 					"window at the root, since Kubernetes removes the pod from Service endpoints before it can "+
 					"serve traffic (and generate audit events) against an unreachable DataStorage")
 
-			By("resuming the proxy: DataStorage becomes reachable again")
-			proxy.Resume()
+			By("relaunching the bridge-proxy sidecar's socat process: DataStorage becomes reachable again")
+			Expect(bridge.resume(context.Background())).To(Succeed(), "relaunching the bridge-proxy sidecar's socat process must succeed")
 
 			By("verifying the dedicated instance self-heals: /readyz recovers to 200 without a restart")
 			Eventually(func() int {
@@ -314,4 +219,96 @@ func readyzStatus(url string) int {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode
+}
+
+// bridgeProxy controls the pre-existing bridge-proxy sidecar container
+// (deployed as part of Target.Deploy, in the SAME Pod as the dedicated
+// instance under test) that fronts the REAL DataStorage's health endpoint
+// via socat (#1985 follow-up, 2026-08-15 -- see Journey's doc comment for
+// the full history of what this replaced). "Partition" and "recover" are
+// implemented by killing/relaunching socat in-place via `kubectl exec`,
+// which works identically regardless of container runtime or
+// rootful/rootless Podman, and does not disturb the main container's own
+// process (and therefore its own /readyz handler) at all.
+//
+// The sidecar's own entrypoint (baked into its container manifest by
+// Deploy*ForDataStorageResilienceTest) starts socat once at Pod startup,
+// redirects its output to a log file, and records its PID to
+// /tmp/socat.pid, e.g.:
+//
+//	socat -d TCP-LISTEN:<port>,fork,reuseaddr TCP:<upstream> > /tmp/socat.log 2>&1 & echo $! > /tmp/socat.pid; while true; do sleep 3600; done
+//
+// PID 1 in that container is the wrapping shell's infinite sleep loop, not
+// socat itself, so killing socat never restarts or exits the container.
+// The output redirect matters just as much for resume's relaunch (see
+// resume's own doc comment) as it does here: leaving a backgrounded
+// process's stdout/stderr attached to whichever stream started it (a
+// `kubectl exec` session, in resume's case) prevents that stream from
+// ever closing.
+type bridgeProxy struct {
+	kubeconfigPath   string
+	namespace        string
+	podLabelSelector string
+	containerName    string
+	port             int
+	upstreamAddr     string
+	writer           io.Writer
+
+	podName string
+}
+
+// resolvePod finds the single Pod matching podLabelSelector and caches its
+// name for every subsequent `kubectl exec`. Must be called once, after
+// Target.Deploy has created the Pod.
+func (b *bridgeProxy) resolvePod(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", b.kubeconfigPath, "-n", b.namespace,
+		"get", "pods", "-l", b.podLabelSelector, "-o", "jsonpath={.items[0].metadata.name}")
+	out, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to resolve pod for selector %q in namespace %s: %w", b.podLabelSelector, b.namespace, err)
+	}
+	name := strings.TrimSpace(string(out))
+	if name == "" {
+		return fmt.Errorf("no pod found matching selector %q in namespace %s", b.podLabelSelector, b.namespace)
+	}
+	b.podName = name
+	return nil
+}
+
+// pause kills the sidecar's socat process, closing its listening socket
+// outright: new connection attempts from the dedicated instance's own
+// readiness probe get an immediate ECONNREFUSED (fail-fast), the same
+// symptom a real, sustained DataStorage outage produces.
+func (b *bridgeProxy) pause(ctx context.Context) error {
+	cmd := b.execCmd(ctx, "sh", "-c", "kill $(cat /tmp/socat.pid) 2>/dev/null; rm -f /tmp/socat.pid")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to kill bridge-proxy socat process in pod %s/%s: %w", b.namespace, b.podName, err)
+	}
+	return nil
+}
+
+// resume relaunches socat inside the sidecar with the exact same
+// TCP-LISTEN/forward arguments it started with, restoring connectivity.
+// The backgrounded socat's stdout/stderr are explicitly redirected to a
+// log file, NOT left attached to this `kubectl exec` session's own
+// stream: without that redirect, socat (still running after this
+// short-lived shell exits) keeps that stream's pipe open, and `kubectl
+// exec` hangs indefinitely waiting for it to close rather than returning
+// once the parent shell exits (confirmed empirically on helios08).
+func (b *bridgeProxy) resume(ctx context.Context) error {
+	relaunch := fmt.Sprintf("socat -d TCP-LISTEN:%d,fork,reuseaddr TCP:%s > /tmp/socat.log 2>&1 & echo $! > /tmp/socat.pid", b.port, b.upstreamAddr)
+	cmd := b.execCmd(ctx, "sh", "-c", relaunch)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to relaunch bridge-proxy socat process in pod %s/%s: %w", b.namespace, b.podName, err)
+	}
+	return nil
+}
+
+func (b *bridgeProxy) execCmd(ctx context.Context, command ...string) *exec.Cmd {
+	args := append([]string{"--kubeconfig", b.kubeconfigPath, "-n", b.namespace,
+		"exec", b.podName, "-c", b.containerName, "--"}, command...)
+	cmd := exec.CommandContext(ctx, "kubectl", args...)
+	cmd.Stdout = b.writer
+	cmd.Stderr = b.writer
+	return cmd
 }

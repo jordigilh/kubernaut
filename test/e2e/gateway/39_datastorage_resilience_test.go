@@ -46,26 +46,26 @@ import (
 //
 // Business Requirements: BR-AUDIT-005 v2.0, BR-GATEWAY-190.
 // Authority: Issue #1985, SOC2 CC8.1, AU-9.
-const (
-	gwResilienceBridgeServiceName = "datastorage-fault-proxy-gw"
-	gwResilienceBridgePort        = 8081
-	// gwResilienceDataStorageHealthHostAddr: DataStorage's real health
-	// NodePort (30281) is already host-mapped to 28091 for this suite
-	// (kind-gateway-config.yaml) -- reused directly, no kubectl
-	// port-forward subprocess needed.
-	gwResilienceDataStorageHealthHostAddr = "127.0.0.1:28091"
-)
-
 var _ = dsshared.Journey("Test 39: DataStorage Resilience (#1985, BR-AUDIT-005 v2.0, SOC2 CC8.1)", func() dsshared.Target {
 	return dsshared.Target{
-		KubeconfigPath:            kubeconfigPath,
-		Namespace:                 gatewayNamespace,
-		DataStorageHealthHostAddr: gwResilienceDataStorageHealthHostAddr,
-		BridgeServiceName:         gwResilienceBridgeServiceName,
-		BridgePort:                gwResilienceBridgePort,
+		KubeconfigPath:      kubeconfigPath,
+		Namespace:           gatewayNamespace,
+		PodLabelSelector:    "app=gateway-resilience",
+		BridgeContainerName: infrastructure.GatewayResilienceBridgeContainerName,
+		BridgeProxyPort:     infrastructure.GatewayResilienceBridgeProxyPort,
+		// DataStorageUpstreamAddr: the REAL, shared DataStorage instance's
+		// health endpoint, reachable from the bridge-proxy sidecar via
+		// ordinary namespace-qualified cluster DNS -- see
+		// dsshared.Journey's doc comment for why a sidecar replaced the
+		// earlier host-bridge and in-cluster-Deployment mechanisms (#1985
+		// follow-up, 2026-08-15). Computed here (not as a package-level
+		// var) since gatewayNamespace is only populated inside
+		// SynchronizedBeforeSuite, after package-level var initializers
+		// would already have run.
+		DataStorageUpstreamAddr: fmt.Sprintf("data-storage-service.%s.svc.cluster.local:8081", gatewayNamespace),
 		Deploy: func(ctx context.Context) error {
 			return infrastructure.DeployGatewayForDataStorageResilienceTest(
-				ctx, kubeconfigPath, gatewayNamespace, gwResilienceBridgeServiceName, gwResilienceBridgePort, GinkgoWriter)
+				ctx, kubeconfigPath, gatewayNamespace, GinkgoWriter)
 		},
 		Teardown: func(ctx context.Context) {
 			infrastructure.TeardownGatewayForDataStorageResilienceTest(ctx, kubeconfigPath, gatewayNamespace, GinkgoWriter)

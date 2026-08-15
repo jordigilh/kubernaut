@@ -532,14 +532,38 @@ const (
 	EMResilienceHealthHostPort = 9194
 )
 
+// EMResilienceBridgeContainerName is the sidecar container name within the
+// "effectivenessmonitor-resilience" Pod that runs the #1985
+// fault-injectable TCP proxy fronting the REAL DataStorage's health
+// endpoint. "Partition"/"recover" are driven by killing/relaunching the
+// socat process via `kubectl exec ... -c <this>` (see
+// test/e2e/datastorage/shared/resilience.go's bridgeProxy) -- killing it
+// closes the listening socket outright, so new connections get an
+// immediate ECONNREFUSED (the same fail-fast symptom a real, sustained
+// DataStorage outage produces), rather than merely freezing the process
+// (SIGSTOP would leave the socket bound, so the kernel still completes
+// the TCP handshake and the caller would hang until its own client
+// timeout instead of failing fast). A sidecar in the SAME Pod as the
+// controller (not a separate Deployment/Service) shares its network
+// namespace (dialed via localhost) while remaining independently
+// killable -- unlike an in-process goroutine, which could only be
+// stopped by killing the whole container, taking the controller's own
+// /readyz handler down with it.
+const EMResilienceBridgeContainerName = "bridge-proxy"
+
+// EMResilienceBridgeProxyPort is the sidecar's own listening port -- must
+// differ from the controller's healthProbeAddr port (8081, shared by both
+// containers' network namespace) to avoid a bind conflict.
+const EMResilienceBridgeProxyPort = 18081
+
 // DeployEMForDataStorageResilienceTest deploys the dedicated, throwaway
-// "effectivenessmonitor-resilience" instance and waits for its Deployment
-// to report at least one available replica (its own /readyz is polled
-// directly by the caller via the host-mapped NodePort above, not gated by
-// a kubelet readinessProbe here -- same rationale as the Gateway variant).
-// Must be called AFTER the fault-injection bridge (bridgeServiceName) is
-// already live, so the very first readiness probe succeeds.
-func DeployEMForDataStorageResilienceTest(ctx context.Context, kubeconfigPath, namespace, bridgeServiceName string, bridgePort int, writer io.Writer) error {
+// "effectivenessmonitor-resilience" instance (controller container plus a
+// bridge-proxy sidecar fronting the real DataStorage health endpoint) and
+// waits for its Deployment to report at least one available replica (its
+// own /readyz is polled directly by the caller via the host-mapped
+// NodePort above, not gated by a kubelet readinessProbe here -- same
+// rationale as the Gateway variant).
+func DeployEMForDataStorageResilienceTest(ctx context.Context, kubeconfigPath, namespace string, writer io.Writer) error {
 	imageName, err := resolveDeployedImage(ctx, kubeconfigPath, namespace, "effectivenessmonitor-controller")
 	if err != nil {
 		return fmt.Errorf("failed to resolve EM image for resilience instance: %w", err)
@@ -561,7 +585,14 @@ data:
       validityWindow: 120s
     datastorage:
       url: https://data-storage-service.%[1]s.svc.cluster.local:8080
-      healthUrl: http://%[2]s:%[3]d/readyz
+      # 127.0.0.1, not "localhost": the bridge-proxy sidecar's socat binds
+      # IPv4 only (TCP-LISTEN defaults to 0.0.0.0), so an IPv6-first
+      # resolution of "localhost" (-> ::1) would get an immediate
+      # ECONNREFUSED on that address with no automatic IPv4 fallback in
+      # every HTTP client (confirmed empirically on helios08: busybox
+      # wget resolved "localhost" to ::1 and failed outright, whereas
+      # 127.0.0.1 worked immediately).
+      healthUrl: http://127.0.0.1:%[2]d/readyz
       timeout: 10s
       buffer:
         bufferSize: 100
@@ -602,8 +633,8 @@ spec:
       serviceAccountName: effectivenessmonitor-controller
       containers:
       - name: controller
-        image: %[4]s
-        imagePullPolicy: %[5]s
+        image: %[3]s
+        imagePullPolicy: %[4]s
         args:
         - "--config=/etc/effectivenessmonitor/effectivenessmonitor.yaml"
         env:
@@ -652,6 +683,30 @@ spec:
           limits:
             memory: "256Mi"
             cpu: "500m"
+      # #1985 follow-up: bridge-proxy sidecar, not a separate
+      # Deployment/Service -- shares this Pod's network namespace (dialed
+      # by the controller container above via localhost). PID 1 is a
+      # shell wrapper (not socat itself) that stays alive regardless of
+      # socat's state, so the journey's pause/resume
+      # (test/e2e/datastorage/shared/resilience.go's bridgeProxy, via
+      # kubectl exec -c bridge-proxy) can kill and relaunch JUST the
+      # forwarder using the PID recorded in /tmp/socat.pid --
+      # closing/reopening its listening socket to produce a real,
+      # immediate ECONNREFUSED on partition -- without restarting this
+      # container or disturbing the controller container's own /readyz
+      # handler.
+      - name: %[5]s
+        image: docker.io/alpine/socat:1.8.0.1
+        command: ["sh", "-c"]
+        args:
+          - "socat -d TCP-LISTEN:%[2]d,fork,reuseaddr TCP:data-storage-service.%[1]s.svc.cluster.local:8081 > /tmp/socat.log 2>&1 & echo $! > /tmp/socat.pid; while true; do sleep 3600; done"
+        resources:
+          requests:
+            memory: "16Mi"
+            cpu: "10m"
+          limits:
+            memory: "64Mi"
+            cpu: "100m"
       volumes:
       - name: config
         configMap:
@@ -673,7 +728,7 @@ spec:
     port: 8081
     targetPort: 8081
     nodePort: %[6]d
-`, namespace, bridgeServiceName, bridgePort, imageName, pullPolicy, EMResilienceHealthNodePort)
+`, namespace, EMResilienceBridgeProxyPort, imageName, pullPolicy, EMResilienceBridgeContainerName, EMResilienceHealthNodePort)
 
 	if err := kubectlApplyManifest(ctx, kubeconfigPath, writer, manifest); err != nil {
 		return fmt.Errorf("failed to deploy effectivenessmonitor-resilience: %w", err)
