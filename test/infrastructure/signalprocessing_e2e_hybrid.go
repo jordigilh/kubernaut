@@ -855,6 +855,7 @@ data:
       hotReloadInterval: "30s"
     datastorage:
       url: "https://data-storage-service.kubernaut-system.svc.cluster.local:8080"
+      healthUrl: "http://data-storage-service.kubernaut-system.svc.cluster.local:8081/readyz"
       timeout: "10s"
       buffer:
         bufferSize: 10000

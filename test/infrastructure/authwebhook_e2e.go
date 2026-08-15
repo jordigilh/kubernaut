@@ -168,7 +168,7 @@ func SetupAuthWebhookInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Create namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return "", "", fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -326,7 +326,7 @@ func loadAuthWebhookImageOnly(ctx context.Context, imageName, clusterName string
 // This is the single source of truth for all AuthWebhook E2E deployments.
 // Includes: ServiceAccount, ClusterRole, ClusterRoleBinding, Service, ConfigMap,
 // Deployment, MutatingWebhookConfiguration, ValidatingWebhookConfiguration.
-func authWebhookManifest(namespace, imageTag, dataStorageURL string) string {
+func authWebhookManifest(namespace, imageTag, dataStorageURL, dataStorageHealthURL string) string {
 	pullPolicy := GetImagePullPolicy()
 
 	return fmt.Sprintf(`---
@@ -409,6 +409,7 @@ data:
       healthProbeAddr: ":8081"
     datastorage:
       url: "%[4]s"
+      healthUrl: "%[5]s"
       timeout: 30s
       buffer:
         bufferSize: 1000
@@ -636,7 +637,7 @@ webhooks:
     scope: "Namespaced"
   sideEffects: NoneOnDryRun
   timeoutSeconds: 15
-`, namespace, imageTag, pullPolicy, dataStorageURL)
+`, namespace, imageTag, pullPolicy, dataStorageURL, dataStorageHealthURL)
 }
 
 // deployAuthWebhookToKind deploys the AuthWebhook service to Kind cluster.
@@ -667,7 +668,8 @@ func deployAuthWebhookToKind(ctx context.Context, kubeconfigPath, namespace, ima
 	// STEP 3: Apply AuthWebhook manifest (all resources including webhook configs)
 	_, _ = fmt.Fprintln(writer, "🚀 Applying AuthWebhook deployment...")
 	dsURL := fmt.Sprintf("https://data-storage-service.%s.svc.cluster.local:8080", namespace)
-	manifest := authWebhookManifest(namespace, imageTag, dsURL)
+	dsHealthURL := fmt.Sprintf("http://data-storage-service.%s.svc.cluster.local:8081/readyz", namespace)
+	manifest := authWebhookManifest(namespace, imageTag, dsURL, dsHealthURL)
 	cmd = exec.CommandContext(ctx, "kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
 		"-f", "-")
@@ -1134,6 +1136,15 @@ spec:
     targetPort: 8080
     nodePort: %[2]s
     protocol: TCP
+  # #1985 / BR-AUDIT-005 v2.0: AuthWebhook's DataStorage readiness gate
+  # probes this port via cluster DNS (data-storage-service:8081); without
+  # a matching Service port, kube-proxy has no DNAT rule for it and
+  # traffic is silently blackholed (Client.Timeout "awaiting headers",
+  # not "connection refused") even though the pod itself listens on 8081.
+  - name: health
+    port: 8081
+    targetPort: 8081
+    protocol: TCP
   selector:
     app: datastorage
 ---
@@ -1163,6 +1174,8 @@ spec:
           containerPort: 8080
         - name: metrics
           containerPort: 9090
+        - name: health
+          containerPort: 8081
         env:
         - name: CONFIG_PATH
           value: /etc/datastorage/config.yaml

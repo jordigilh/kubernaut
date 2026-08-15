@@ -47,6 +47,33 @@ func KindNodeBridgeIP(ctx context.Context, nodeName string) (string, error) {
 	return ip, nil
 }
 
+// KindBridgeGatewayIP returns the podman "kind" bridge network's gateway
+// address -- the host machine's own IP on that bridge, reachable from any
+// container/pod attached to the network (e.g. "10.89.1.1"). Empirically
+// validated on a real Linux Podman host (helios08, matching CI's
+// KIND_EXPERIMENTAL_PROVIDER=podman environment): a host-bound listener is
+// reachable from inside a Kind pod via this exact address (#1985 spike,
+// 2026-08-14). This is the correct, portable target for host-side fault
+// injection (e.g. InterruptibleProxy bound via NewInterruptibleProxyOn) --
+// NOT "host.containers.internal", which is a Podman-Machine/macOS-only DNS
+// alias that does not resolve on plain Linux Podman and is, in any case,
+// structurally unreachable from macOS's gvproxy backend for arbitrary
+// guest-to-host connections (see the E2E test's runtime.GOOS=="darwin"
+// skip for that permanent limitation).
+func KindBridgeGatewayIP(ctx context.Context, networkName string) (string, error) {
+	cmd := exec.CommandContext(ctx, "podman", "network", "inspect", networkName,
+		"--format", "{{(index .Subnets 0).Gateway}}")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("podman network inspect %s failed: %w (%s)", networkName, err, string(out))
+	}
+	ip := strings.TrimSpace(string(out))
+	if ip == "" {
+		return "", fmt.Errorf("empty gateway IP for podman network %s", networkName)
+	}
+	return ip, nil
+}
+
 // CreateServiceBridge creates a Service+Endpoints pair in the cluster
 // identified by kubeconfigPath that makes serviceName resolvable via normal
 // in-cluster DNS (e.g. "keycloak", "kube-mcp-server-remote"), routing

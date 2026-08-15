@@ -87,6 +87,7 @@ delivery:
     enabled: false
 datastorage:
   url: "http://ds-test:9090"
+  healthUrl: "http://ds-test:9091/readyz"
   timeout: 3s
   buffer:
     bufferSize: 200
@@ -105,6 +106,7 @@ datastorage:
 			// applyDefaults re-enables console for local-style configs when YAML disables it.
 			Expect(cfg.Delivery.Console.Enabled).To(BeTrue())
 			Expect(cfg.DataStorage.URL).To(Equal("http://ds-test:9090"))
+			Expect(cfg.DataStorage.HealthURL).To(Equal("http://ds-test:9091/readyz"))
 			Expect(cfg.Validate()).To(Succeed())
 		})
 

@@ -136,6 +136,51 @@ var _ = SynchronizedBeforeSuite(
 		err = os.Setenv("KUBECONFIG", kubeconfigPath)
 		Expect(err).ToNot(HaveOccurred())
 
+		// Issue #753/AU-9: DataStorage's Deployment mounts both the inter-service
+		// TLS CA and the RSA audit-signing cert as Secrets. infrastructure.
+		// DeployDataStorageTestServicesWithNodePort (used below by
+		// DeployNotificationAuditInfrastructure) does not generate either --
+		// unlike the standalone DataStorage suite's own setup, it expects a
+		// caller to have already done so, mirroring apifrontend/gateway/etc's
+		// established pattern. Previously this "worked" only because
+		// DeployNotificationController happened to run first and generate
+		// these as a side effect; reordering it after DataStorage (below)
+		// means we must generate them explicitly here first, or DataStorage's
+		// pod sits in ContainerCreating forever ("secret datastorage-signing
+		// not found" -- confirmed via CI must-gather events.txt). Both calls
+		// are idempotent (GenerateInterServiceTLS has an explicit skip-if-
+		// exists guard; GenerateSigningCertSecret re-applies via kubectl
+		// apply), so DeployNotificationController's own internal calls to
+		// the same two functions later remain safe, redundant no-ops.
+		//
+		// The namespace itself must exist first too: previously
+		// createTestNamespace(controllerNamespace) only ran inside
+		// DeployNotificationController, which used to run first (see above).
+		// Now that TLS/signing-secret generation runs before that, it needs
+		// its own explicit, equally idempotent namespace-creation call here,
+		// or the secret Create calls below fail with "namespaces
+		// \"notification-e2e\" not found" (confirmed via CI run 31842923960).
+		if err := infrastructure.CreateTestNamespace(ctx, controllerNamespace, kubeconfigPath, GinkgoWriter); err != nil {
+			Expect(err).ToNot(HaveOccurred(), "notification-e2e namespace creation should succeed")
+		}
+		if _, err := infrastructure.GenerateInterServiceTLS(ctx, kubeconfigPath, controllerNamespace, GinkgoWriter); err != nil {
+			Expect(err).ToNot(HaveOccurred(), "inter-service TLS generation should succeed")
+		}
+		Expect(infrastructure.GenerateSigningCertSecret(ctx, kubeconfigPath, controllerNamespace, GinkgoWriter)).To(Succeed(),
+			"AU-9 signing cert generation should succeed")
+
+		// Deploy Audit Infrastructure (PostgreSQL + Data Storage + migrations) BEFORE
+		// the Notification Controller. Required for BR-NOT-062, BR-NOT-063, BR-NOT-064
+		// E2E tests, and -- since #1985 (BR-AUDIT-005 v2.0) -- the controller's own
+		// /readyz now blocks on DataStorage's health endpoint being reachable, so
+		// DataStorage must already exist by the time the controller pod starts, or
+		// its readiness wait below (and DeployNotificationController's internal one)
+		// times out waiting for a dependency that was never deployed yet.
+		logger.Info("Deploying Audit Infrastructure (PostgreSQL + Data Storage)...")
+		err = infrastructure.DeployNotificationAuditInfrastructure(ctx, controllerNamespace, kubeconfigPath, GinkgoWriter)
+		Expect(err).ToNot(HaveOccurred(), "Audit infrastructure deployment should succeed")
+		logger.Info("✅ Audit infrastructure ready")
+
 		// Deploy shared Notification Controller (ONCE for all tests) - pass image name from setup
 		logger.Info("Deploying shared Notification Controller...")
 		logger.Info("  • Using image: " + notificationImageName)
@@ -156,13 +201,6 @@ var _ = SynchronizedBeforeSuite(
 		err = waitCmd.Run()
 		Expect(err).ToNot(HaveOccurred(), "Notification Controller pod did not become ready")
 		logger.Info("✅ Notification Controller pod is ready")
-
-		// Deploy Audit Infrastructure (PostgreSQL + Data Storage + migrations)
-		// Required for BR-NOT-062, BR-NOT-063, BR-NOT-064 E2E tests
-		logger.Info("Deploying Audit Infrastructure (PostgreSQL + Data Storage)...")
-		err = infrastructure.DeployNotificationAuditInfrastructure(ctx, controllerNamespace, kubeconfigPath, GinkgoWriter)
-		Expect(err).ToNot(HaveOccurred(), "Audit infrastructure deployment should succeed")
-		logger.Info("✅ Audit infrastructure ready")
 
 		// Deploy AuthWebhook manifests (using pre-built + pre-loaded image from PHASE 1 & 3)
 		// Per DD-WEBHOOK-001: Required for NotificationRequest DELETE operations

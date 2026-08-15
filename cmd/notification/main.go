@@ -42,6 +42,7 @@ import (
 	"github.com/jordigilh/kubernaut/internal/controller/notification"
 	"github.com/jordigilh/kubernaut/internal/version"
 	"github.com/jordigilh/kubernaut/pkg/audit"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	kubelog "github.com/jordigilh/kubernaut/pkg/log"
 	notificationaudit "github.com/jordigilh/kubernaut/pkg/notification/audit"
 	notificationconfig "github.com/jordigilh/kubernaut/pkg/notification/config"
@@ -175,20 +176,40 @@ func loadNotificationConfig(configPath string, bootstrapLogger logr.Logger) (*no
 	return cfg, controllerNS, logger, atomicLevel
 }
 
+// reconcilerSetupParams groups setupNotificationReconciler's dependencies
+// (Go anti-pattern checklist: 8+ parameters -> config struct instead of a
+// long positional argument list).
+type reconcilerSetupParams struct {
+	mgr          ctrl.Manager
+	cfg          *notificationconfig.Config
+	ds           *deliveryServices
+	auditStore   audit.AuditStore
+	auditManager *notificationaudit.Manager
+	ob           *orchestratorBundle
+	dsGate       *readiness.Gate
+	logger       logr.Logger
+}
+
 // setupNotificationReconciler builds the NotificationRequestReconciler with
 // its delivery/sanitization/audit/metrics/EventRecorder/statusManager/
 // deliveryOrchestrator/circuitBreaker dependencies, registers it with the
-// manager, and wires the healthz/readyz checks. Exits the process on any
-// failure, matching main()'s original fail-fast behavior.
-func setupNotificationReconciler(
-	mgr ctrl.Manager,
-	cfg *notificationconfig.Config,
-	ds *deliveryServices,
-	auditStore audit.AuditStore,
-	auditManager *notificationaudit.Manager,
-	ob *orchestratorBundle,
-	logger logr.Logger,
-) *notification.NotificationRequestReconciler {
+// manager, and wires the healthz/readyz checks (including the #1985
+// DataStorage readiness gate). Exits the process on any failure, matching
+// main()'s original fail-fast behavior.
+// wireDataStorageAndReconciler wires the #1985 DataStorage readiness gate
+// and builds the NotificationRequestReconciler on top of it, returning both
+// so run() can defer the gate's Stop and pass the reconciler into
+// wireHotReload. Extracted from run() to keep it under the funlen limit --
+// pure code motion, no behavior change.
+func wireDataStorageAndReconciler(ctx context.Context, p reconcilerSetupParams) (*notification.NotificationRequestReconciler, *readiness.Gate) {
+	p.dsGate = wireDataStorageReadinessGate(ctx, p.cfg, p.logger)
+	return setupNotificationReconciler(p), p.dsGate
+}
+
+func setupNotificationReconciler(p reconcilerSetupParams) *notification.NotificationRequestReconciler {
+	mgr, cfg, ds, auditStore, auditManager, ob, dsGate, logger :=
+		p.mgr, p.cfg, p.ds, p.auditStore, p.auditManager, p.ob, p.dsGate, p.logger
+
 	reconciler := &notification.NotificationRequestReconciler{
 		Client:               mgr.GetClient(),
 		APIReader:            mgr.GetAPIReader(), // DD-STATUS-001: Cache-bypassed reader
@@ -220,8 +241,27 @@ func setupNotificationReconciler(
 		logger.Error(err, "Unable to set up ready check")
 		os.Exit(1)
 	}
+	if err := mgr.AddReadyzCheck("datastorage", dsGate.Check); err != nil {
+		logger.Error(err, "Unable to set up datastorage readiness check")
+		os.Exit(1)
+	}
 
 	return reconciler
+}
+
+// wireDataStorageReadinessGate builds and starts the DataStorage
+// dependency readiness gate (#1985, BR-AUDIT-005 v2.0): Notification's
+// pod-wide /readyz must fail closed when DataStorage is unreachable,
+// closing the audit-loss window where a pod accepts traffic (and
+// generates audit events) before DataStorage is confirmed reachable.
+// Notification has no pre-existing Fleet-conditional gate to extend by
+// analogy (net-new, always-on readiness check, like AuthWebhook). The
+// caller registers the returned Gate's Check method via
+// mgr.AddReadyzCheck and must Stop() it on shutdown. Delegates gate
+// construction to audit.NewReadinessGate (REFACTOR, shared across all 10
+// services).
+func wireDataStorageReadinessGate(ctx context.Context, cfg *notificationconfig.Config, logger logr.Logger) *readiness.Gate {
+	return audit.NewReadinessGate(ctx, cfg.DataStorage.HealthURL, logger)
 }
 
 func main() {
@@ -297,12 +337,23 @@ func run() int {
 	// ========================================
 	ob := buildDeliveryOrchestrator(mgr, ds, sanitizer, controllerNS, logger)
 
-	reconciler := setupNotificationReconciler(mgr, cfg, ds, auditStore, auditManager, ob, logger)
-
-	logger.Info("Starting manager")
-
 	// Setup signal handler for graceful shutdown
 	ctx := ctrl.SetupSignalHandler()
+
+	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
+	// readyz (pod-wide), unconditionally.
+	reconciler, dsGate := wireDataStorageAndReconciler(ctx, reconcilerSetupParams{
+		mgr:          mgr,
+		cfg:          cfg,
+		ds:           ds,
+		auditStore:   auditStore,
+		auditManager: auditManager,
+		ob:           ob,
+		logger:       logger,
+	})
+	defer dsGate.Stop()
+
+	logger.Info("Starting manager")
 
 	// BR-NOT-104-002/#244/#878/#748/#756: credential, routing, log-level
 	// hot-reload watchers plus TLS security profile + CA-cert hot-reload.

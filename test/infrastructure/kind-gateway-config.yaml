@@ -43,6 +43,15 @@ nodes:
   - containerPort: 30281  # Data Storage health NodePort (Issue #753)
     hostPort: 28091       # Port on host machine (localhost:28091)
     protocol: TCP
+  # Dedicated "gateway-resilience" throwaway instance (#1985 DataStorage
+  # resilience E2E, test/e2e/gateway/39_datastorage_resilience_test.go) --
+  # distinct from the shared Gateway's own 30080/30180 above.
+  - containerPort: 30185  # GatewayResilienceAPINodePort
+    hostPort: 28185       # GatewayResilienceAPIHostPort
+    protocol: TCP
+  - containerPort: 30183  # GatewayResilienceHealthNodePort
+    hostPort: 28183       # GatewayResilienceHealthHostPort
+    protocol: TCP
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration

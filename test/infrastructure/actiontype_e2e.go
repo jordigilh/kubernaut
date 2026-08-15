@@ -64,18 +64,9 @@ func SeedE2EActionTypes(ctx context.Context, kubeconfigPath, namespace string, o
 
 	for _, at := range e2eActionTypes {
 		yaml := buildActionTypeYAML(at, namespace)
-
-		cmd := exec.CommandContext(ctx, "kubectl", "apply",
-			"--kubeconfig", kubeconfigPath,
-			"-f", "-")
-		cmd.Stdin = strings.NewReader(yaml)
-
-		cmdOutput, err := cmd.CombinedOutput()
-		if err != nil {
-			_, _ = fmt.Fprintf(output, "  ❌ %s: %s\n", at.SpecName, cmdOutput)
-			return fmt.Errorf("failed to apply ActionType %s: %w", at.SpecName, err)
+		if err := applyActionTypeWithWebhookRetry(ctx, kubeconfigPath, at, yaml, output); err != nil {
+			return err
 		}
-		_, _ = fmt.Fprintf(output, "  ✅ %s\n", at.SpecName)
 	}
 
 	_, _ = fmt.Fprintf(output, "\n⏳ Waiting for ActionTypes to register in DataStorage...\n")
@@ -159,6 +150,68 @@ func SeedActionTypesViaCRD(ctx context.Context, kubeconfigPath, namespace string
 
 	_, _ = fmt.Fprintf(output, "✅ All action types seeded as CRDs (%d types, no AuthWebhook dependency)\n\n", len(e2eActionTypes))
 	return nil
+}
+
+// isTransientWebhookError reports whether err/output looks like a transient
+// admission-webhook connectivity failure (Service endpoint not yet
+// programmed, or briefly flapped out of rotation because #1985's DataStorage
+// readiness gate made AuthWebhook's own /readyz momentarily fail under CI
+// resource contention) rather than a genuine, permanent failure such as a
+// malformed manifest or an admission rejection on the merits.
+func isTransientWebhookError(combinedOutput string) bool {
+	return strings.Contains(combinedOutput, "connect: connection refused") ||
+		strings.Contains(combinedOutput, "failed calling webhook") ||
+		strings.Contains(combinedOutput, "context deadline exceeded") ||
+		strings.Contains(combinedOutput, "no endpoints available")
+}
+
+// applyActionTypeWithWebhookRetry applies one ActionType CR via kubectl,
+// retrying on transient AuthWebhook admission-webhook connectivity errors.
+//
+// waitForDeploymentRollout("authwebhook") reports success the instant the
+// Deployment's replica first passes its readiness probe, but the Service's
+// own Endpoints/kube-proxy DNAT programming is a separate, asynchronous
+// step -- and #1985's DataStorage readiness gate means AuthWebhook's /readyz
+// can keep flapping under CI resource contention even after that first
+// pass, briefly pulling it back out of the Service's endpoints. A single
+// pre-flight endpoint check (see waitForServiceEndpointReady) closes the
+// first race but not the second; retrying the actual apply call here
+// tolerates both (confirmed recurring symptom: CI runs 31842923960,
+// 31845258440, both "DeletePod: ... dial tcp ...:443: connect: connection
+// refused" on the very first ActionType apply of the batch).
+func applyActionTypeWithWebhookRetry(ctx context.Context, kubeconfigPath string, at actionTypeDef, yaml string, output io.Writer) error {
+	const maxAttempts = 6
+	const retryDelay = 5 * time.Second
+
+	var lastOutput []byte
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		cmd := exec.CommandContext(ctx, "kubectl", "apply",
+			"--kubeconfig", kubeconfigPath,
+			"-f", "-")
+		cmd.Stdin = strings.NewReader(yaml)
+
+		cmdOutput, err := cmd.CombinedOutput()
+		if err == nil {
+			_, _ = fmt.Fprintf(output, "  ✅ %s\n", at.SpecName)
+			return nil
+		}
+
+		lastOutput, lastErr = cmdOutput, err
+		if !isTransientWebhookError(string(cmdOutput)) || attempt == maxAttempts {
+			break
+		}
+		_, _ = fmt.Fprintf(output, "  ⚠️  %s: transient webhook error on attempt %d/%d, retrying in %s: %s\n",
+			at.SpecName, attempt, maxAttempts, retryDelay, cmdOutput)
+		select {
+		case <-time.After(retryDelay):
+		case <-ctx.Done():
+			return fmt.Errorf("context cancelled while retrying ActionType %s apply: %w", at.SpecName, ctx.Err())
+		}
+	}
+
+	_, _ = fmt.Fprintf(output, "  ❌ %s: %s\n", at.SpecName, lastOutput)
+	return fmt.Errorf("failed to apply ActionType %s: %w", at.SpecName, lastErr)
 }
 
 func buildActionTypeYAML(at actionTypeDef, namespace string) string {

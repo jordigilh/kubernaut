@@ -220,6 +220,10 @@ func setupRemediationOrchestratorControllers(ctx context.Context, cfg *config.Co
 	stopConfigWatcher = setupFleetReadinessCheck(
 		ctx, mgr, routingEngine, fleetResilientClient, cfg, stopConfigWatcher, setupLog)
 
+	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
+	// readyz (pod-wide), unconditionally.
+	stopConfigWatcher = setupDataStorageReadinessCheck(ctx, mgr, cfg, stopConfigWatcher, setupLog)
+
 	if err = roReconciler.SetupWithManager(mgr); err != nil { //nolint:contextcheck // SetupWithManager is controller-runtime's reconciler-registration contract (no ctx param) called once at startup
 		setupLog.Error(err, "unable to create controller", "controller", "RemediationOrchestrator")
 		os.Exit(1)
@@ -603,6 +607,42 @@ func setupFleetReadinessCheck(
 		}
 	}
 	return wrapStopWithFleetCleanup(stop, fleetGate, fleetResilientClient, logger)
+}
+
+// wireDataStorageReadinessGate builds and starts the DataStorage
+// dependency readiness gate (#1985, BR-AUDIT-005 v2.0): RO's pod-wide
+// readyz must fail closed when DataStorage is unreachable, closing the
+// audit-loss window where a pod accepts traffic (and generates audit
+// events) before DataStorage is confirmed reachable. Unlike
+// wireFleetReadinessGate, this is unconditional -- always wired, never
+// nil -- since every service writes audit. The caller registers the
+// returned Gate's Check method via mgr.AddReadyzCheck and must Stop() it
+// on shutdown. Delegates gate construction to audit.NewReadinessGate
+// (REFACTOR, shared across all 10 services).
+func wireDataStorageReadinessGate(ctx context.Context, cfg *config.Config, logger logr.Logger) *readiness.Gate {
+	return audit.NewReadinessGate(ctx, cfg.DataStorage.HealthURL, logger)
+}
+
+// setupDataStorageReadinessCheck wires the #1985 DataStorage readiness
+// gate into mgr's readyz surface and composes its cleanup into stop.
+// Unconditional (unlike setupFleetReadinessCheck): always registers the
+// check and always wraps stop with the gate's Stop().
+func setupDataStorageReadinessCheck(
+	ctx context.Context,
+	mgr ctrl.Manager,
+	cfg *config.Config,
+	stop func(),
+	logger logr.Logger,
+) func() {
+	dsGate := wireDataStorageReadinessGate(ctx, cfg, logger)
+	if err := mgr.AddReadyzCheck("datastorage", dsGate.Check); err != nil {
+		logger.Error(err, "unable to register datastorage readiness check")
+		os.Exit(1)
+	}
+	return func() {
+		stop()
+		dsGate.Stop()
+	}
 }
 
 // wrapStopWithFleetCleanup composes stop with closing the Fleet resilient

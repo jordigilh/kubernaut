@@ -2,9 +2,9 @@
 
 ## Status
 **✅ APPROVED**
-**Version**: 1.3
+**Version**: 1.4
 **Decision Date**: November 2, 2025
-**Last Reviewed**: December 17, 2025
+**Last Reviewed**: August 14, 2026
 **Confidence**: 100%
 **Authority Level**: **ARCHITECTURAL** - Supersedes all related Design Decisions
 
@@ -73,12 +73,18 @@
 | **RemediationOrchestrator** | ✅ MANDATORY | ✅ YES (P0) | ❌ NO | cmd/remediationorchestrator/main.go:126 |
 | **WorkflowExecution** | ✅ MANDATORY | ✅ YES (P0) | ❌ NO | cmd/workflowexecution/main.go:170 |
 | **Notification** | ✅ MANDATORY | ✅ YES (P0) | ❌ NO | cmd/notification/main.go:163 |
-| **AIAnalysis** | ⚠️ OPTIONAL | ❌ NO (P1) | ✅ YES (by design) | cmd/aianalysis/main.go:155 |
+| **AIAnalysis** | ✅ MANDATORY | ✅ YES (P0) | ❌ NO | cmd/aianalysis/main.go:265, internal/controller/aianalysis/aianalysis_controller.go:258-279 |
 | **DataStorage** | ✅ MANDATORY | ✅ YES (P0) | ❌ NO | pkg/datastorage/server/server.go:186 |
 | **Gateway** | 🟡 PLANNED | 🟡 PENDING | 🟡 PENDING | DD-AUDIT-003 |
 
 **P0 Services** (Business-Critical): **MUST crash** if audit cannot be initialized
 **P1 Services** (Operational Visibility): **MAY** continue without audit (log warning)
+
+> **Correction (v1.4, see Changelog)**: AIAnalysis was previously listed above as audit-OPTIONAL/P1/graceful-degradation. This was **stale and incorrect** — SOC2 alignment (BR-AUDIT-005 v2.0) mandates audit for every service, with no P1 exception carve-out. The code already enforced the mandatory pattern (`cmd/aianalysis/main.go:265` crashes via `os.Exit(1)` on audit store init failure; `internal/controller/aianalysis/aianalysis_controller.go:258-279`'s `ValidateDependencies()` fails closed on a nil `AuditClient`) — only this table was out of date. There are now **10 of 10** audit-writing services classified MANDATORY/crash-on-init, with **zero** P1/graceful-degradation exceptions.
+
+### **Distinguishing audit-init fail-fast (§2) from service readiness gating**
+
+ADR-032 §2's "No Recovery Allowed" rule governs the audit **store's own constructor** (`audit.NewBufferedStore(...)`): it must fail fast and `exit(1)` if it cannot be constructed — no retry loop, no queuing, no waiting inside init. This is orthogonal to, and not violated by, gating a service's Kubernetes `/readyz` on DataStorage's live reachability (see #1985): a readiness gate changes only whether Kubernetes routes traffic to an already-running pod. `NewBufferedStore` still constructs immediately and unchanged; the pod simply reports `NotReady` (removed from Service endpoints, not restarted) until DataStorage's health check passes. This is the sanctioned pattern for closing audit-loss windows caused by service/dependency startup-ordering races, distinct from — and not a loophole in — the forbidden "retry loop inside audit init" pattern in §2's violation examples above.
 
 ### **Enforcement (ADR-032 §4)**
 
@@ -155,6 +161,21 @@ Per ADR-032 §2: No fallback/recovery allowed - fail fast at startup
 ---
 
 ## Changelog
+
+### Version 1.4 (August 14, 2026) - AIANALYSIS CLASSIFICATION CORRECTION + READINESS-GATING CLARIFICATION
+**Changes**:
+1. **AIAnalysis row corrected**: §3's Service Classification table changed AIAnalysis from audit-OPTIONAL/P1/graceful-degradation to audit-MANDATORY/P0/crash-on-init, matching the other 9 services.
+2. **Clarifying cross-reference added**: new subsection distinguishing §2's audit-init fail-fast rule (governs `audit.NewBufferedStore(...)`'s own constructor) from service-level Kubernetes readiness gating on DataStorage reachability (#1985) — the latter is the sanctioned mitigation for startup-ordering audit-loss races, not a §2 violation.
+
+**Rationale**:
+- **SOC2 alignment**: BR-AUDIT-005 v2.0 mandates audit for every service; there is no P1/graceful-degradation carve-out. The AIAnalysis table row was stale documentation, not an intentional exception — the code (Issue #1116's `ValidateDependencies` hardening, and `cmd/aianalysis/main.go:265`'s `os.Exit(1)` on audit init failure) already enforced the mandatory pattern.
+- **Avoid ambiguity**: without the cross-reference, a reader could misread §2 as forbidding any readiness-based traffic gating tied to a dependency's health, which is not the intent — only retry/wait/queue loops *inside* audit initialization are forbidden.
+
+**Impact**:
+- ✅ 10 of 10 audit-writing services now correctly classified MANDATORY/crash-on-init, zero exceptions
+- ✅ #1985's DataStorage readiness-gate fix is explicitly sanctioned by this ADR, not left as an inferred exception
+
+**Confidence**: 100% (corrected classification verified by direct code read, not inferred from stale doc text)
 
 ### Version 1.3 (December 17, 2025) - MANDATORY AUDIT SECTION ADDED
 **Changes**:

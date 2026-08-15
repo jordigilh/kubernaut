@@ -590,6 +590,7 @@ data:
       sessionPollInterval: "2s"
     datastorage:
       url: "https://data-storage-service:8080"
+      healthUrl: "http://data-storage-service:8081/readyz"
       timeout: "10s"
       buffer:
         bufferSize: 20000

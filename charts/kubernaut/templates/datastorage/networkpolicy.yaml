@@ -41,9 +41,57 @@ spec:
         - podSelector:
             matchLabels:
               app: kubernaut-agent
+        # #1985: apifrontend writes audit events directly to DataStorage's
+        # main API (confirmed via the apifrontend.mcp.session_init audit
+        # event, CHANGELOG #2139) but was never listed here -- a
+        # pre-existing, one-sided NetworkPolicy gap independent of #1985,
+        # fixed alongside since it's a one-line addition to the same file.
+        - podSelector:
+            matchLabels:
+              app: apifrontend
     {{- include "kubernaut.np.ingressCIDRs" (dict "cidrs" .Values.networkPolicies.datastorage.ingressCIDRs "port" 8080) | nindent 4 }}
     {{- include "kubernaut.np.ingressNamespaceSelectors" (dict "selectors" .Values.networkPolicies.datastorage.ingressNamespaceSelectors "port" 8080) | nindent 4 }}
     {{- include "kubernaut.np.metricsIngress" $ | nindent 4 }}
+    # #1985 (BR-AUDIT-005 v2.0): every audit-writing service now gates its
+    # own /readyz on DataStorage's health endpoint (pkg/audit.DataStorageProber),
+    # a separate port (8081) from the main audit-write API (8080) above.
+    # Without this rule, a strict-NetworkPolicy-enforcing cluster would
+    # block the very probe this fix depends on, permanently failing every
+    # service's readiness.
+    - ports:
+        - port: 8081
+          protocol: TCP
+      from:
+        - podSelector:
+            matchLabels:
+              app: gateway
+        - podSelector:
+            matchLabels:
+              app: aianalysis-controller
+        - podSelector:
+            matchLabels:
+              app: signalprocessing-controller
+        - podSelector:
+            matchLabels:
+              app: remediationorchestrator-controller
+        - podSelector:
+            matchLabels:
+              app: workflowexecution-controller
+        - podSelector:
+            matchLabels:
+              app: notification-controller
+        - podSelector:
+            matchLabels:
+              app: effectivenessmonitor-controller
+        - podSelector:
+            matchLabels:
+              app: authwebhook
+        - podSelector:
+            matchLabels:
+              app: kubernaut-agent
+        - podSelector:
+            matchLabels:
+              app: apifrontend
   egress:
     {{- include "kubernaut.np.commonEgress" . | nindent 4 }}
     - ports:

@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-logr/logr"
 	zap2 "go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 
@@ -20,6 +21,7 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/pkg/authwebhook"
 	awconfig "github.com/jordigilh/kubernaut/pkg/authwebhook/config"
+	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
 	"github.com/jordigilh/kubernaut/pkg/shared/hotreload"
 	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 
@@ -176,13 +178,29 @@ func wireAuthWebhookAuditStore(ctx context.Context, cfg *awconfig.Config) audit.
 	return auditStore
 }
 
+// wireDataStorageReadinessGate builds and starts the DataStorage
+// dependency readiness gate (#1985, BR-AUDIT-005 v2.0): AuthWebhook's
+// pod-wide /readyz must fail closed when DataStorage is unreachable,
+// closing the audit-loss window where a pod accepts traffic (and
+// generates audit events) before DataStorage is confirmed reachable.
+// Unlike EM/WE/RO/SP, AuthWebhook has no pre-existing Fleet-conditional
+// gate to extend by analogy -- this is a net-new, always-on readiness
+// check. The caller registers the returned Gate's Check method via
+// mgr.AddReadyzCheck and must Stop() it on shutdown. Delegates gate
+// construction to audit.NewReadinessGate (REFACTOR, shared across all 10
+// services).
+func wireDataStorageReadinessGate(ctx context.Context, cfg *awconfig.Config, logger logr.Logger) *readiness.Gate {
+	return audit.NewReadinessGate(ctx, cfg.DataStorage.HealthURL, logger)
+}
+
 // registerAuthWebhookHandlers wires the webhook admission handlers
 // (WorkflowExecution, RemediationApprovalRequest, RemediationRequest,
 // NotificationRequest DELETE, RemediationWorkflow, ActionType), the
 // RemediationWorkflow finalizer reconciler (Issue #418), the startup
-// reconciler (Issue #548, #1246), and the healthz/readyz checks. Exits the
-// process on any failure, matching main()'s original fail-fast behavior.
-func registerAuthWebhookHandlers(mgr ctrl.Manager, cfg *awconfig.Config, auditStore audit.AuditStore) {
+// reconciler (Issue #548, #1246), and the healthz/readyz checks
+// (including the #1985 DataStorage readiness gate). Exits the process on
+// any failure, matching main()'s original fail-fast behavior.
+func registerAuthWebhookHandlers(mgr ctrl.Manager, cfg *awconfig.Config, auditStore audit.AuditStore, dsGate *readiness.Gate) {
 	registerAuthWebhookCRUDHandlers(mgr, auditStore)
 	registerAuthWebhookWorkflowHandlers(mgr, cfg, auditStore)
 
@@ -192,6 +210,10 @@ func registerAuthWebhookHandlers(mgr ctrl.Manager, cfg *awconfig.Config, auditSt
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up ready check")
+		os.Exit(1)
+	}
+	if err := mgr.AddReadyzCheck("datastorage", dsGate.Check); err != nil {
+		setupLog.Error(err, "unable to set up datastorage readiness check")
 		os.Exit(1)
 	}
 	setupLog.Info("Registered health check endpoints", "liveness", "/healthz", "readiness", "/readyz")
@@ -389,7 +411,12 @@ func run() int {
 	ctx := ctrl.SetupSignalHandler()
 	auditStore := wireAuthWebhookAuditStore(ctx, cfg)
 
-	registerAuthWebhookHandlers(mgr, cfg, auditStore)
+	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
+	// /readyz (pod-wide), unconditionally.
+	dsGate := wireDataStorageReadinessGate(ctx, cfg, setupLog)
+	defer dsGate.Stop()
+
+	registerAuthWebhookHandlers(mgr, cfg, auditStore, dsGate)
 
 	cleanupHotReload := configureAuthWebhookTLSAndHotReload(ctx, cfg, configPath, atomicLevel)
 	defer cleanupHotReload()

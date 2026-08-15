@@ -212,12 +212,12 @@ func DeployNotificationController(ctx context.Context, namespace, kubeconfigPath
 	}
 
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
 	_, _ = fmt.Fprintf(writer, "📁 Creating default namespace (for E2E tests)...\n")
-	if err := createTestNamespace(ctx, "default", kubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, "default", kubeconfigPath, writer); err != nil {
 		errMsg := strings.ToLower(err.Error())
 		if !strings.Contains(errMsg, "alreadyexists") && !strings.Contains(errMsg, "already exists") {
 			return fmt.Errorf("failed to create default namespace: %w", err)
@@ -643,6 +643,7 @@ data:
         timeout: 10s
     datastorage:
       url: "https://data-storage-service.%s.svc.cluster.local:8080"
+      healthUrl: "http://data-storage-service.%s.svc.cluster.local:8081/readyz"
       timeout: 10s
       buffer:
         bufferSize: 10000
@@ -905,7 +906,7 @@ spec:
       - name: notification-output
         emptyDir: {}%s
       terminationGracePeriodSeconds: 10%s
-`, namespace, namespace, imageName, pullPolicy, namespace, coverageEnvYAML, slackWebhookURL, coverageVolumeMountYAML, coverageVolumeYAML, coverageSecurityContextYAML)
+`, namespace, namespace, namespace, imageName, pullPolicy, namespace, coverageEnvYAML, slackWebhookURL, coverageVolumeMountYAML, coverageVolumeYAML, coverageSecurityContextYAML)
 }
 
 // DeployNotificationDataStorageServices deploys DataStorage with OAuth2-Proxy for Notification E2E.
