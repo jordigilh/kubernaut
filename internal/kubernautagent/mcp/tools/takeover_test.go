@@ -575,4 +575,50 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 			Expect(found).To(BeTrue(), "should find aiagent.interactive.completed event with reason=complete_already_released")
 		})
 	})
+
+	// #2156 (v1.5.7 clone of #2155): proves the AU-2/CC8.1-mapped
+	// aiagent.interactive.started audit event
+	// (docs/services/stateless/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md)
+	// is unaffected by the context-reconstruction race the
+	// storeReconstructedContextWithRetry fix closes. emitInteractiveStarted
+	// runs before the (possibly retried) reconstruction call, so its
+	// session_id/acting_user attribution must be correct regardless of how
+	// many reconstruction attempts the retry takes.
+	Describe("UT-KA-2155-AUDIT-001: interactive.started audit (AU-2/CC8.1) is correctly attributed even when reconstruction races", func() {
+		It("should emit aiagent.interactive.started with correct session_id/acting_user while reconstruction is still retrying", func() {
+			auditRecorder := &recordingAuditStore{}
+			delayedRecon := &delayedReconstructor{
+				emptyAttempts: 2, // first 2 reconstruction attempts find nothing — retry must run
+				turns: []mcpinternal.ConversationTurn{
+					{Role: "assistant", Content: "prior RCA landed just after takeover"},
+				},
+			}
+			toolWithAudit := tools.NewInvestigateTool(sessMgr, runner, delayedRecon, autoMgr,
+				tools.WithAuditStore(auditRecorder, logr.Discard()),
+			)
+
+			input := tools.InvestigateInput{
+				RRID:   "rr-001",
+				Action: tools.ActionTakeover,
+			}
+			out, err := toolWithAudit.Handle(ctx, input, testUser)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("takeover_started"))
+			Expect(out.Response).To(MatchRegexp(`[1-9]\d* prior turns reconstructed`),
+				"#2156: retry must have observed the delayed reconstruction result")
+
+			found := false
+			for _, e := range auditRecorder.events {
+				if e.EventType == audit.EventTypeInteractiveStarted {
+					found = true
+					Expect(e.SessionID).To(Equal("interactive-session-456"),
+						"AU-2/CC8.1: interactive.started must carry the correct session_id even though reconstruction retried")
+					Expect(e.ActingUser).To(Equal(testUser.Username),
+						"AU-2/CC8.1: interactive.started must attribute the correct acting_user even though reconstruction retried")
+					Expect(e.CorrelationID).To(Equal("rr-001"))
+				}
+			}
+			Expect(found).To(BeTrue(), "aiagent.interactive.started must be emitted on takeover regardless of reconstruction retry outcome")
+		})
+	})
 })
