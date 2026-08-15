@@ -52,7 +52,7 @@ func run() int {
 	defer func() { _ = zapLogger.Sync() }()
 	ctrl.SetLogger(logger.WithName("controller-runtime"))
 
-	sarChecker, err := buildSARClient(logger, cfg.RBAC.SARCacheTTL)
+	sarChecker, err := buildSARClient(logger, cfg.RBAC.SARCacheTTL, cfg.RBAC.ConsoleAccessAuthOnly)
 	if err != nil {
 		return 1
 	}
@@ -387,8 +387,12 @@ func setupConfigAndLogger() (*config.Config, logr.Logger, *zap.Logger, error) {
 }
 
 // buildSARClient wires the SelfSubjectAccessReview-based authorizer used for
-// K8s-tool RBAC gating.
-func buildSARClient(logger logr.Logger, sarCacheTTL time.Duration) (auth.ToolAuthorizer, error) {
+// K8s-tool RBAC gating. When consoleAccessAuthOnly is true, the coarse-grained
+// console gate (kubernaut.ai/console) is made authentication-only -- see
+// auth.ConsoleAuthOnlyGate (#2148); per-tool authorization is unaffected.
+// The decision is made exactly once, here, at process startup: no per-request
+// branching is introduced anywhere in the request-handling hot path.
+func buildSARClient(logger logr.Logger, sarCacheTTL time.Duration, consoleAccessAuthOnly bool) (auth.ToolAuthorizer, error) {
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
 		logger.Error(err, "failed to get in-cluster config for SAR client")
@@ -399,7 +403,12 @@ func buildSARClient(logger logr.Logger, sarCacheTTL time.Duration) (auth.ToolAut
 		logger.Error(err, "failed to create kubernetes client for SAR")
 		return nil, err
 	}
-	return auth.NewSARChecker(k8sClient, sarCacheTTL, logger.WithName("sar")), nil
+	checker := auth.NewSARChecker(k8sClient, sarCacheTTL, logger.WithName("sar"))
+	if consoleAccessAuthOnly {
+		logger.Info("console access gate running in auth-only mode: no console RBAC configured (#2148)")
+		return auth.NewConsoleAuthOnlyGate(checker), nil
+	}
+	return checker, nil
 }
 
 // buildAuditWiring wires AF's audit trail to the shared BufferedAuditStore
@@ -679,9 +688,10 @@ func buildRouterConfig(p routerBuildParams) (handler.RouterConfig, http.Handler,
 
 	// #1919: GET /a2a/access is only registered when the configured
 	// Authorizer also implements ConsoleAuthorizer. Production always
-	// constructs *auth.SARChecker (see buildSARClient), which satisfies both
-	// interfaces at compile time (sar.go's `var _ auth.ConsoleAuthorizer =
-	// (*SARChecker)(nil)`); the assertion only ever fails for a
+	// constructs either *auth.SARChecker or, in auth-only mode (#2148),
+	// *auth.ConsoleAuthOnlyGate (see buildSARClient) -- both satisfy
+	// ConsoleAuthorizer at compile time (sar.go's `var _
+	// auth.ConsoleAuthorizer = ...`); the assertion only ever fails for a
 	// ToolAuthorizer-only test double.
 	var consoleAccessHandler http.Handler
 	if ca, ok := p.HDeps.Authorizer.(auth.ConsoleAuthorizer); ok {

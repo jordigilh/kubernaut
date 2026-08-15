@@ -252,6 +252,14 @@ type RBACConfig struct {
 	// SARCacheTTL controls how long SubjectAccessReview results are cached.
 	// Zero disables caching (every call hits the API server).
 	SARCacheTTL time.Duration `yaml:"sarCacheTTL"`
+
+	// ConsoleAccessAuthOnly, when true, makes the coarse-grained console
+	// gate (kubernaut.ai/console SAR check) authentication-only: any
+	// non-empty authenticated user is allowed, and no SAR call is made.
+	// Per-tool authorization is completely unaffected and remains
+	// unconditionally fail-closed. Intended only for installs that have
+	// not configured any console/RBAC bindings at all (#2148).
+	ConsoleAccessAuthOnly bool `yaml:"consoleAccessAuthOnly"`
 }
 
 // DefaultConfig returns a Config populated with production defaults.

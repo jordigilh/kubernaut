@@ -1,0 +1,59 @@
+suite: "Issue #2148: apifrontend.config.rbac.consoleAccessAuthOnly must default to false and be chart-overridable"
+# RBACConfig.ConsoleAccessAuthOnly (pkg/apifrontend/config.RBACConfig) makes
+# the coarse-grained console gate (kubernaut.ai/console SAR check)
+# authentication-only when true -- for installs with no console/RBAC
+# bindings configured at all. Defaults to false (today's unchanged,
+# unconditionally-fail-closed behavior); per-tool authorization (Check) is
+# never affected by this flag regardless of value.
+templates:
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  apifrontend:
+    config:
+      auth:
+        issuerURL: "https://sso.example.com/realms/kubernaut"
+tests:
+  - it: "default install (no consoleAccessAuthOnly override) renders consoleAccessAuthOnly: false, matching the Go default exactly"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'consoleAccessAuthOnly: false'
+
+  - it: "explicit consoleAccessAuthOnly: true override renders through to config.yaml"
+    set:
+      apifrontend:
+        config:
+          rbac:
+            consoleAccessAuthOnly: true
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'consoleAccessAuthOnly: true'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'consoleAccessAuthOnly: false'

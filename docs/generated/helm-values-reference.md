@@ -58,6 +58,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.rateLimit.maxConcurrentSessions` | integer |  | `50` | No |
 | `config.rateLimit.toolCallsPerMinute` | integer |  | `600` | No |
 | `config.rateLimit.userRequestsPerSec` | integer |  | `100` | No |
+| `config.rbac.consoleAccessAuthOnly` | boolean | Makes the coarse-grained console gate (kubernaut.ai/console) authentication-only, bypassing the SAR call, for installs with no console/RBAC bindings configured at all (#2148). Per-tool authorization is unaffected and remains unconditionally fail-closed. | `false` | No |
 | `config.rbac.consoleAccessGroups` | array of string | OIDC groups granted the coarse-grained kubernaut-console-access ClusterRole (kubernaut.ai/console, verb=use), a separate grant from the per-tool personas above (#1919) | `` | No |
 | `config.rbac.personas` | map[string]object | Map of persona name to list of allowed tool names for SAR-based authorization | `` | No |
 | `config.rbac.sarCacheTTL` | string | TTL for SubjectAccessReview cache entries | `"30s"` | No |

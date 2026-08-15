@@ -165,6 +165,40 @@ func (s *SARChecker) checkSAR(ctx context.Context, user string, groups []string,
 	return allowed, nil
 }
 
+// ConsoleAuthOnlyGate wraps a *SARChecker to make the coarse-grained
+// console gate authentication-only (#2148): CheckConsoleAccess no longer
+// performs a SAR call, it just requires a non-empty user. Check (per-tool
+// authorization, the actual security boundary) is inherited unchanged via
+// embedding -- this type never defines its own Check, so that invariant is
+// provably untouched by construction, not merely by convention.
+//
+// Intended only for installs that have not configured any console/RBAC
+// bindings at all -- anyone who has configured even one binding is
+// unaffected (see RBACConfig.ConsoleAccessAuthOnly).
+type ConsoleAuthOnlyGate struct {
+	*SARChecker
+}
+
+// NewConsoleAuthOnlyGate wraps checker so that CheckConsoleAccess bypasses
+// the SAR call and grants access to any non-empty authenticated user. Check
+// (per-tool authorization) delegates to checker unchanged.
+func NewConsoleAuthOnlyGate(checker *SARChecker) *ConsoleAuthOnlyGate {
+	return &ConsoleAuthOnlyGate{SARChecker: checker}
+}
+
+// CheckConsoleAccess grants console access to any non-empty authenticated
+// user without calling the SAR API. Authentication remains mandatory: an
+// empty user still fails closed.
+func (g *ConsoleAuthOnlyGate) CheckConsoleAccess(_ context.Context, user string, _ []string) (bool, error) {
+	if user == "" {
+		return false, fmt.Errorf("user must not be empty")
+	}
+	return true, nil
+}
+
+var _ ToolAuthorizer = (*ConsoleAuthOnlyGate)(nil)
+var _ ConsoleAuthorizer = (*ConsoleAuthOnlyGate)(nil)
+
 func cacheKey(user string, groups []string, resource, name string) string {
 	sorted := make([]string, len(groups))
 	copy(sorted, groups)
