@@ -54,11 +54,19 @@ branching is introduced anywhere in the hot path.
 
 ## 2. Test Scope
 
+Per the project's Pyramid Invariant (UT proves logic, IT proves wiring): UT
+coverage alone on `ConsoleAuthOnlyGate` would prove its logic in isolation
+but not that it is actually consumed correctly at any of the three
+production console-gate enforcement points (`console_access.go`'s `GET
+/a2a/access` handler, `mcp_bridge.go`'s `checkRBAC`, `agent/root.go`'s
+`newRBACGuard`). IT coverage was added specifically to close that gap.
+
 | Component | Test Type | Test IDs |
 |---|---|---|
-| `auth.ConsoleAuthOnlyGate` | Unit | UT-AF-2148-001..005 |
-| `buildSARClient` wiring | Manual/code-review (not independently unit-testable — requires in-cluster config) | N/A |
-| Helm chart passthrough | helm-unittest | HT-AF-2148-001 |
+| `auth.ConsoleAuthOnlyGate` logic | Unit | UT-AF-2148-001..004 |
+| Wiring through the real router/bridge | Integration | IT-AF-2148-001..002 |
+| `buildSARClient` construction | Manual/code-review (not independently unit-testable — requires in-cluster config) | N/A |
+| Helm chart passthrough | helm-unittest | HT-AF-2148-001..002 |
 
 ## 3. Test Cases
 
@@ -67,12 +75,15 @@ branching is introduced anywhere in the hot path.
 | UT-AF-2148-001 | Auth-only mode allows any non-empty user, no SAR call made | UT |
 | UT-AF-2148-002 | Auth-only mode still fail-closes on empty user | UT |
 | UT-AF-2148-003 | Auth-only mode does not affect `Check` (per-tool) — SAR still called, allow/deny still honored | UT |
-| UT-AF-2148-004 | Default (flag unset/false) behavior is provably unchanged (delegates straight to `SARChecker.CheckConsoleAccess`) | UT |
-| UT-AF-2148-005 | `ConsoleAuthOnlyGate` satisfies both `ToolAuthorizer` and `ConsoleAuthorizer` (compile-time) | UT |
-| HT-AF-2148-001 | `apifrontend.config.rbac.consoleAccessAuthOnly` renders into `config.yaml` | helm-unittest |
+| UT-AF-2148-004 | `ConsoleAuthOnlyGate` satisfies both `ToolAuthorizer` and `ConsoleAuthorizer` (compile-time) | UT |
+| IT-AF-2148-001 | `GET /a2a/access`, through the real `handler.NewRouter` + `handler.NewConsoleAccessHandler`, returns 200 when wired with `ConsoleAuthOnlyGate`, even though the underlying `*SARChecker` (backed by a fake K8s clientset that unconditionally denies) would have returned 403 | IT |
+| IT-AF-2148-002 | A real `POST /mcp` tool call, through `handler.NewRouter` + `handler.NewMCPHandler`, still fail-closes on per-tool `Check` when wired with `ConsoleAuthOnlyGate` as `MCPBridgeConfig.Authorizer` — proves `Check` is untouched end-to-end, not just when called directly | IT |
+| HT-AF-2148-001 | Default install renders `consoleAccessAuthOnly: false` into `config.yaml`, matching the Go default | helm-unittest |
+| HT-AF-2148-002 | Explicit `consoleAccessAuthOnly: true` override renders through | helm-unittest |
 
 ## 4. Out of Scope
 
-- E2E/integration coverage: this is a pure decorator over already-covered
-  `SARChecker` behavior (`UT-AF-1919-*`, `UT-AF-1221-*`); no new wiring path
-  through the real K8s API needs re-proving.
+- E2E coverage: the underlying `SARChecker` SAR-call/cache behavior is
+  already proven end-to-end by `UT-AF-1919-*`/`UT-AF-1221-*`; this feature
+  only adds a decorator in front of it, fully proven by the UT+IT pairing
+  above without needing a real cluster.
