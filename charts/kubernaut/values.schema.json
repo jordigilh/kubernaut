@@ -1078,6 +1078,11 @@
               "additionalProperties": false,
               "properties": {
                 "sarCacheTTL": { "type": "string", "default": "30s", "description": "TTL for SubjectAccessReview cache entries" },
+                "consoleAccessAuthOnly": {
+                  "type": "boolean",
+                  "default": false,
+                  "description": "Makes the coarse-grained console gate (kubernaut.ai/console) authentication-only, bypassing the SAR call, for installs with no console/RBAC bindings configured at all (#2148). Per-tool authorization is unaffected and remains unconditionally fail-closed."
+                },
                 "personas": {
                   "type": "object",
                   "description": "Map of persona name to list of allowed tool names for SAR-based authorization",

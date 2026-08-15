@@ -664,6 +664,11 @@ apifrontend:
       #     audiences: ["spiffe://trust-domain/ns/kubernaut-system/sa/apifrontend"]
     rbac:
       sarCacheTTL: "30s"
+      # -- Makes the coarse-grained console gate (kubernaut.ai/console)
+      # authentication-only, bypassing the SAR call, for installs with no
+      # console/RBAC bindings configured at all (#2148). Per-tool
+      # authorization is unaffected and remains unconditionally fail-closed.
+      consoleAccessAuthOnly: false
       personas:
         sre:
           - kubernaut_list_remediations
