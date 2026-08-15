@@ -2,11 +2,12 @@
 
 > **Template Version**: 2.0 — Hybrid IEEE 829-2008 + Kubernaut
 
-**Test Plan Identifier**: TP-2156-v1.0
-**Feature**: Bound-retry context reconstruction on takeover to close the race between
-`TransitionToUserDriving`'s synchronous status flip and the autonomous investigation
-goroutine's own (slightly later) result write.
-**Version**: 1.0
+**Test Plan Identifier**: TP-2156-v2.0
+**Feature**: Close the race between `TransitionToUserDriving`'s synchronous status flip
+and the autonomous investigation goroutine's own (slightly later) result write, by having
+`handleTakeover` wait on a real completion signal (`WaitForCompletionByRemediationID`)
+instead of retrying context reconstruction on a fixed sleep schedule.
+**Version**: 2.0 (v1.0's fixed 5×100ms retry design was replaced — see §16 changelog)
 **Created**: 2026-08-15
 **Author**: AI agent (Cursor) + jgil
 **Status**: Complete
@@ -50,28 +51,36 @@ eventually stored at all. The same race exists on `release/v1.5`: the relevant c
 both branches, even though it had not yet manifested as an observed CI failure on
 `release/v1.5` at the time of this port.
 
-This plan documents the port of the RED→GREEN TDD sequence used on `main` to reproduce
-the race deterministically and close it with the same short bounded retry.
+This plan originally documented a port of `main`'s fixed-retry TDD sequence (see §16 for
+why that design was replaced). The v2.0 design closes the same race deterministically
+instead of probabilistically: rather than guessing how long the investigation goroutine
+might still take and sleeping on a fixed schedule, `handleTakeover` now waits on a real
+completion signal — a `done` channel on `session.Session`, closed by the investigation
+goroutine's own deferred cleanup only after it has fully finished mutating session state
+(including the `storePartialResult` fallback write). This is a Go memory-model
+happens-before guarantee (channel close/receive), not a timing guess.
 
 ### 1.2 Objectives
 
 1. **Deterministic reproduction**: an integration test forces the investigation's
-   result-write to land strictly *after* takeover's status transition and strictly
-   *before* the retry budget is exhausted, so the test is not a timing-dependent flake
-   in either direction.
-2. **Bounded fix**: the retry adds no latency on the common path (result already
-   present, or a genuinely fresh investigation with no history) and caps worst-case
-   added latency at `reconstructionRetryAttempts * reconstructionRetryInterval` (400ms)
-   only in the narrow race window.
-3. **Scoped blast radius**: only `handleTakeover`'s call site is changed.
-   `handleStart` (fresh session, no result to race against) and
+   result-write to land strictly *after* takeover's status transition, exercising a real
+   `session.Manager`-backed completion signal end to end (not a mocked channel), so the
+   test proves the actual synchronization primitive, not a stand-in for it.
+2. **No arbitrary bound on the common path**: waiting on the real signal costs nothing
+   when there's nothing to wait for (an already-closed channel is returned immediately
+   for a genuinely fresh investigation, a pending/never-launched session, or a session
+   whose investigation already fully finished) — there is no fixed-schedule "tax" on
+   these paths, unlike the fixed-retry design this replaces (see §16).
+3. **Scoped blast radius**: only `handleTakeover`'s call site (plus the new
+   `Session.done`/`Manager.WaitForCompletionByRemediationID` primitive it depends on) is
+   changed. `handleStart` (fresh session, no result to race against) and
    `discover_workflows` (called well after the user's first interactive message, by
    which point the race window has closed) are unaffected.
 4. **Compliance-control regression check**: prove the one FedRAMP/SOC2-mapped audit
    event on this code path (`aiagent.interactive.started`, AU-2/CC8.1 per
    `docs/services/stateless/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md`) keeps its
-   correct `session_id`/`acting_user` attribution regardless of how many reconstruction
-   retry attempts run underneath it.
+   correct `session_id`/`acting_user` attribution regardless of how long the wait for the
+   completion signal takes.
 
 ### 1.4 FedRAMP/SOC2 Control Objective Assessment (ported from `main`, see §16)
 
@@ -109,7 +118,8 @@ on the `release/v1.5` port — the same code paths and audit event catalog apply
 | Unit test pass rate | 100% | `go test ./internal/kubernautagent/mcp/tools/... -run TestMCPToolsUnit -args -ginkgo.focus=2155` |
 | Integration test pass rate | 100% | `bin/ginkgo --focus="IT-KA-2155-001" ./test/integration/kubernautagent/mcp/...` |
 | Backward compatibility | 0 regressions | `go test ./internal/kubernautagent/...` |
-| Port parity with `main` | Same fix logic, same test coverage | recorded below |
+| No arbitrary latency tax | 0 (was: 400ms in the v1.0 retry design) added latency when there's nothing to wait for | `UT-KA-2155-002` |
+| Race-detector clean | 0 data races on the new `Session.done` channel | `go test -race ./internal/kubernautagent/mcp/tools/... ./internal/kubernautagent/session/...` |
 
 ---
 
@@ -135,15 +145,16 @@ on the `release/v1.5` port — the same code paths and audit event catalog apply
 
 | ID | Risk | Impact | Probability | Affected Tests | Mitigation |
 |----|------|--------|-------------|----------------|------------|
-| R1 | Retry adds latency to every takeover, even when there is no race | User-visible slowdown | Low | UT-KA-2155-001/002 | Retry only fires when the first read finds 0 turns; common path (result present or genuinely empty) returns on attempt 1 |
-| R2 | Retry loop ignores session/inactivity cancellation and blocks | Hung takeover call | Low | UT-KA-2155-003 | `select` on `ctx.Done()` between attempts; `handleTakeover` already wraps `ctx` with `withInactivityCancel` (#1949) |
-| R3 | Retry masks a genuine "no prior investigation" case by waiting the full budget every time | Latency regression for the common cold-start case | Medium | UT-KA-2155-002 | Bounded to 5 attempts / 400ms; only `handleTakeover`'s call site retries (not `handleStart`) |
+| R1 | Waiting on the signal adds latency to every takeover, even when there is no race | User-visible slowdown | Low | UT-KA-2155-002 | `WaitForCompletionByRemediationID` returns an already-closed channel when there's nothing to wait for (no investigation, or one that already fully finished); the `select` resolves immediately in that case |
+| R2 | The wait ignores session/inactivity cancellation and blocks | Hung takeover call | Low | UT-KA-2155-003 | `select` on `ctx.Done()` alongside the completion channel; `handleTakeover` already wraps `ctx` with `withInactivityCancel` (#1949) |
+| R3 | `Session.done` is closed more than once (panic) or never closed (goroutine leak/hang) | Panic on double-close, or a takeover that hangs forever | Low | `go test -race`, UT-KA-2155-001/002/003 | `close(done)` is a single `defer` registered once per investigation launch in `launchInvestigation`, guaranteed to run exactly once via Go's defer semantics (including on panic, via `recoverPanic`'s defer ordering) |
+| R4 (superseded, was primary risk in v1.0) | A fixed retry budget is an unfounded guess with no principled bound, and unconditionally taxes the "no prior investigation" case with its full budget | Correctness bug masked as "good enough," plus a real latency regression | N/A (design replaced) | N/A | Replaced by the completion-signal design (§16); no longer applicable |
 
 ### 3.1 Risk-to-Test Traceability
 
-All three risks (R1–R3) are directly covered: R1/R2 by unit tests exercising the retry
-helper's decision logic and cancellation handling in isolation; R3 is bounded by
-construction (fixed attempt budget) and proven by `UT-KA-2155-002`.
+R1/R2 are covered by unit tests exercising `handleTakeover`'s wait behavior in isolation
+(via a controllable `WaitForCompletionByRemediationID` mock). R3 is covered by the
+race detector plus the full unit/integration suite exercising real goroutine lifecycles.
 
 ---
 
@@ -151,15 +162,16 @@ construction (fixed attempt budget) and proven by `UT-KA-2155-002`.
 
 ### 4.1 Features to be Tested
 
-- **`storeReconstructedContextWithRetry`** (`internal/kubernautagent/mcp/tools/investigate.go`
-  on `release/v1.5`, consolidated from `main`'s `investigate_autonomous.go`): bounded-retry
-  wrapper around `storeReconstructedContext`. Validates: retries until a non-zero result
-  appears, gives up after the attempt budget, and aborts immediately on context
-  cancellation.
-- **`handleTakeover`** (same `investigate.go` file, consolidated from `main`'s
-  `investigate_takeover.go`): wiring — the takeover path now calls the retrying wrapper,
-  closing the race against a real `session.Manager`-driven autonomous investigation
-  goroutine.
+- **`Session.done` / `Manager.WaitForCompletionByRemediationID`**
+  (`internal/kubernautagent/session/{store,manager}.go`): the new completion signal.
+  Validates: closed exactly once after the investigation goroutine fully finishes
+  mutating session state (including the `storePartialResult` fallback), and resolves to
+  an already-closed channel when there's nothing to wait for.
+- **`handleTakeover`** (`internal/kubernautagent/mcp/tools/investigate.go`): wiring — the
+  takeover path now `select`s on the completion signal (bounded only by the existing
+  request `ctx`, already wrapped with `withInactivityCancel`) before reading
+  reconstructed context, closing the race against a real `session.Manager`-driven
+  autonomous investigation goroutine with no new arbitrary timeout.
 
 ### 4.2 Features Not to be Tested
 
@@ -173,9 +185,11 @@ construction (fixed attempt budget) and proven by `UT-KA-2155-002`.
 
 | Decision | Rationale |
 |----------|-----------|
-| Retry only in `handleTakeover`, not inside `storeReconstructedContext` itself | Keeps the latency cost scoped to the one call site actually exposed to the race; `handleStart`/`discover_workflows` callers would pay for a race they can't hit |
-| Fixed attempt budget (5 × 100ms = 400ms) instead of a context-deadline-based loop | Simple, predictable worst case; identical to the `main` fix, kept unchanged for port parity |
-| Deterministic IT reproduction via a goroutine that closes an unblock channel exactly 50ms after the investigation reaches `StatusRunning`, ahead of `tool.Handle`'s synchronous takeover call | Avoids a flaky sleep-based test in either direction: pre-fix, the single immediate read always loses (read happens in low single-digit ms); post-fix, the second retry attempt (~100–105ms in) always wins (write lands at ~50ms) |
+| A real completion signal (`done chan struct{}` on `Session`) instead of a fixed retry/sleep schedule | The fixed retry (v1.0 of this plan) had no principled bound — 5×100ms was a guess, not a measurement — and unconditionally taxed the "no prior investigation" case with the full budget (proven by the retired `UT-KA-2155-002`, which asserted all 5 attempts were burned in exactly that case). A channel close/receive is a real Go memory-model happens-before guarantee: `handleTakeover` observes the investigation goroutine's state exactly when it's actually safe to, never more and never less. |
+| `done` closed via `defer` registered first (so it runs last, per Go's LIFO defer order) in the investigation goroutine | Guarantees `close(done)` fires only after every other deferred cleanup in that goroutine (`recoverPanic`, which itself calls `Store.Update` on panic) has completed — so `done` firing is a true "fully finished mutating state" signal, not just "the happy path returned" |
+| `WaitForCompletionByRemediationID` (looked up by remediation ID, re-scanning the store) rather than threading a specific session ID through `TransitionToUserDriving`'s return value | Mirrors the existing `GetLatestRCASummaryByRemediationID` "latest session for this RR" lookup pattern already used by the same code path; handles both the `TransitionToUserDriving` and `ForceTransitionToUserDriving` (terminal-session force-through) cases uniformly without new interface surface on those methods |
+| Bounded only by the existing request `ctx` (already carries the inactivity-cancel wrapper, #1949) — no new timeout constant introduced | The investigation goroutine's own runtime is already bounded upstream by `ToolCallTimeout`/LLM `TimeoutSeconds`, so it cannot hang forever underneath the wait; inventing a second, shorter arbitrary timeout here would just reintroduce the same "how do we know it's enough" problem this design replaces |
+| Deterministic IT reproduction via a goroutine that closes an unblock channel exactly 50ms after the investigation reaches `StatusRunning`, ahead of `tool.Handle`'s synchronous takeover call | Avoids a flaky sleep-based test in either direction: pre-fix, the single immediate read always loses (read happens in low single-digit ms); post-fix, the wait resolves the instant the real `done` channel closes (~50ms in, when the gate releases), regardless of exact scheduling jitter |
 
 ---
 
@@ -183,10 +197,12 @@ construction (fixed attempt budget) and proven by `UT-KA-2155-002`.
 
 ### 5.1 Coverage Policy
 
-- **Unit**: 100% of the new retry decision logic (`storeReconstructedContextWithRetry`):
-  succeed-on-retry, exhaust-budget, cancel-aborts-early.
+- **Unit**: 100% of the new wait decision logic in `handleTakeover`: waits for the signal
+  before reading, adds no latency when there's nothing to wait for, aborts immediately on
+  context cancellation. Plus `go test -race` coverage of `Session.done`'s lifecycle.
 - **Integration**: the real race, through the real production entry point
-  (`InvestigateTool.Handle` → `handleTakeover`), against a real `session.Manager`.
+  (`InvestigateTool.Handle` → `handleTakeover`), against a real `session.Manager` and its
+  real `WaitForCompletionByRemediationID` implementation (not a mocked channel).
 - **E2E**: no new E2E test added — same rationale as `main`: the equivalent
   `test/e2e/fullpipeline/10_interactive_investigation_test.go` journey already exercises
   this code path end-to-end; a `release/v1.5`-specific occurrence of the flake was not
@@ -201,7 +217,7 @@ UT (logic) + IT (wiring) — both present. See Section 8.
 The business outcome under test is: "when a user takes over an autonomous investigation
 that finishes moments after the takeover's status transition, the interactive session
 still has that investigation's context available for its first `discover_workflows`/message
-turn" — not merely "the retry function was called."
+turn" — not merely "the completion signal was awaited."
 
 ### 5.4 Pass/Fail Criteria
 
@@ -224,13 +240,15 @@ turn" — not merely "the retry function was called."
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `internal/kubernautagent/mcp/tools/investigate.go` | `storeReconstructedContextWithRetry` | ~25 |
+| `internal/kubernautagent/mcp/tools/investigate.go` | `handleTakeover` (wait-on-signal call site) | ~8 |
+| `internal/kubernautagent/session/manager.go` | `WaitForCompletionByRemediationID` | ~25 |
 
 ### 6.2 Integration-Testable Code
 
 | File | Functions/Methods | Lines (approx) |
 |------|-------------------|-----------------|
-| `internal/kubernautagent/mcp/tools/investigate.go` | `handleTakeover` (call-site change) | ~1 |
+| `internal/kubernautagent/session/manager.go` | `launchInvestigation` (`done` channel creation/close wiring) | ~10 |
+| `internal/kubernautagent/mcp/tools/investigate.go` | `handleTakeover` → `Manager.WaitForCompletionByRemediationID` (real end-to-end wiring) | ~8 |
 
 ---
 
@@ -238,11 +256,11 @@ turn" — not merely "the retry function was called."
 
 | BR ID | Description | Priority | Tier | Test ID | Status |
 |-------|-------------|----------|------|---------|--------|
-| BR-INTERACTIVE-010 | Context reconstruction on takeover must observe a same-moment-completing investigation, not just an already-completed one | P0 | Unit | UT-KA-2155-001 | Pass |
-| BR-INTERACTIVE-010 | Retry must not run forever when there is genuinely no prior investigation | P1 | Unit | UT-KA-2155-002 | Pass |
-| BR-KA-267 / #1949 | Retry must honor session-inactivity cascade cancellation | P1 | Unit | UT-KA-2155-003 | Pass |
-| BR-INTERACTIVE-010 SC-3 | End-to-end: takeover through the real production entry point must not lose context to this race | P0 | Integration | IT-KA-2155-001 | Pass |
-| AU-2, CC8.1 (audit identity attribution, per `AUDIT_EVENT_CATALOG.md`) | `aiagent.interactive.started`'s `session_id`/`acting_user` attribution must remain correct regardless of reconstruction retry outcome | P1 | Unit | UT-KA-2155-AUDIT-001 | Pass |
+| BR-INTERACTIVE-010 | Context reconstruction on takeover must wait for a same-moment-completing investigation's real completion signal, not just read an already-completed one | P0 | Unit | UT-KA-2155-001 | Pass |
+| BR-INTERACTIVE-010 | Waiting must add no latency when there is genuinely no prior investigation to wait for | P1 | Unit | UT-KA-2155-002 | Pass |
+| BR-KA-267 / #1949 | The wait must honor session-inactivity cascade cancellation | P1 | Unit | UT-KA-2155-003 | Pass |
+| BR-INTERACTIVE-010 SC-3 | End-to-end: takeover through the real production entry point, against a real `session.Manager`'s real completion signal, must not lose context to this race | P0 | Integration | IT-KA-2155-001 | Pass |
+| AU-2, CC8.1 (audit identity attribution, per `AUDIT_EVENT_CATALOG.md`) | `aiagent.interactive.started`'s `session_id`/`acting_user` attribution must remain correct regardless of how long the wait for the completion signal takes | P1 | Unit | UT-KA-2155-AUDIT-001 | Pass |
 
 ---
 
@@ -254,15 +272,15 @@ turn" — not merely "the retry function was called."
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-KA-2155-001` | Retry observes a delayed result once it lands, instead of giving up on the first empty read | Pass |
-| `UT-KA-2155-002` | Retry gives up after exactly the configured attempt budget when there is genuinely no result | Pass |
-| `UT-KA-2155-003` | Retry aborts immediately (not after the full budget) when the context is already cancelled | Pass |
+| `UT-KA-2155-001` | Takeover waits for the completion signal to fire before reading, and returns the turns that landed by then, instead of reading too early | Pass |
+| `UT-KA-2155-002` | Takeover adds no latency when there is nothing to wait for (a genuinely empty investigation history still resolves to 0, but fast) | Pass |
+| `UT-KA-2155-003` | Takeover aborts the wait immediately (not after any fixed budget) when the context is already cancelled | Pass |
 
 **File**: `internal/kubernautagent/mcp/tools/takeover_test.go`
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `UT-KA-2155-AUDIT-001` | The AU-2/CC8.1-mapped `aiagent.interactive.started` audit event keeps correct `session_id`/`acting_user`/`correlation_id` attribution even while the reconstruction retry is still running underneath it | Pass |
+| `UT-KA-2155-AUDIT-001` | The AU-2/CC8.1-mapped `aiagent.interactive.started` audit event keeps correct `session_id`/`acting_user`/`correlation_id` attribution even while the takeover is still waiting on the completion signal | Pass |
 
 ### Tier 2: Integration Tests
 
@@ -270,7 +288,7 @@ turn" — not merely "the retry function was called."
 
 | ID | Business Outcome Under Test | Phase |
 |----|----------------------------|-------|
-| `IT-KA-2155-001` | A takeover whose target investigation completes 50ms after the status transition still reports >=1 reconstructed turn, through the real `InvestigateTool.Handle` → `handleTakeover` → real `session.Manager` path | Pass |
+| `IT-KA-2155-001` | A takeover whose target investigation completes 50ms after the status transition still reports >=1 reconstructed turn, through the real `InvestigateTool.Handle` → `handleTakeover` → real `session.Manager.WaitForCompletionByRemediationID` path (real completion signal, not mocked) | Pass |
 
 ### Tier Skip Rationale
 
@@ -299,8 +317,11 @@ turn" — not merely "the retry function was called."
 4. **Then**: the response's `Response` field matches `[1-9]\d* prior turns reconstructed`
    (not `0 prior turns reconstructed`).
 
-**Port verification result**: passes in 0.109s, confirmed 2026-08-15 against
-`release/v1.5` (`fix/2156-takeover-reconstruction-race`), 1 of 104 specs, SUCCESS.
+**Verification result**: passes in 0.055s (v2.0, completion-signal design), confirmed
+2026-08-15 against `release/v1.5` (`fix/2156-takeover-reconstruction-race`), 1 of 104
+specs, SUCCESS. (v1.0's fixed-retry design passed in 0.109s on the same test — the v2.0
+design is faster here because it resolves the instant the real signal fires (~50ms, the
+gate delay) rather than on the next 100ms-aligned retry tick after it.)
 
 **Dependencies**: envtest (Leases), Podman (PostgreSQL/Redis/DataStorage + Mock LLM containers).
 
@@ -312,7 +333,7 @@ turn" — not merely "the retry function was called."
 
 - **Framework**: Ginkgo/Gomega BDD
 - **Location**: `internal/kubernautagent/mcp/tools/reconstruction_test.go`
-- **Mocks**: `delayedReconstructor` (in-package test double controlling per-call turn availability) — the only "external dependency" being simulated is the DS-backed audit reconstruction call
+- **Mocks**: `interactiveAutoMgr.waitCh` / `takeoverAutoMgr.waitCh` (in-package test double fields exposing a controllable channel for `WaitForCompletionByRemediationID`) and `mockContextReconstructor` (DS-backed audit reconstruction call stub)
 
 ### 10.2 Integration Tests
 
@@ -330,17 +351,30 @@ None — self-contained port of the `main` fix, scoped to `internal/kubernautage
 
 ### 11.2 Execution Order
 
-1. **Phase 1**: ported `storeReconstructedContextWithRetry` + constants into
-   `investigate.go` (consolidated equivalent of `main`'s `investigate_autonomous.go`).
-2. **Phase 2**: updated `handleTakeover`'s call site in the same file (consolidated
-   equivalent of `main`'s `investigate_takeover.go`).
-3. **Phase 3**: ported `UT-KA-2155-001/002/003`, `UT-KA-2155-AUDIT-001`, and
-   `IT-KA-2155-001`, adapting only to the diverged test-double signatures already present
-   on `release/v1.5` (e.g. `newReconSessionMgr` returning a tuple).
-4. **Phase 4 (REFACTOR)**: N/A — direct logic port, no follow-up cleanup needed.
-5. **Phase 5 (VERIFY)**: `go build ./...`, `go vet ./internal/kubernautagent/...`,
-   `golangci-lint run`, unit suite (232/232 pass), and `IT-KA-2155-001` run locally against
-   real envtest + Podman infrastructure (pass).
+1. **Phase 1 (v1.0, retired)**: ported `main`'s fixed 5×100ms retry design
+   (`storeReconstructedContextWithRetry`) into `investigate.go`.
+2. **Phase 2 (v2.0, current)**: replaced the retry design after review flagged it as an
+   unfounded/arbitrary bound (see §16):
+   - Added `done chan struct{}` to `session.Session` (`store.go`), closed exactly once by
+     the investigation goroutine's own deferred cleanup (`manager.go`
+     `launchInvestigation`).
+   - Added `Manager.WaitForCompletionByRemediationID` (`manager.go`).
+   - Added `WaitForCompletionByRemediationID` to the `AutonomousSessionManager` interface
+     and every test double implementing it.
+   - Updated `handleTakeover` to `select` on the completion signal (bounded only by the
+     existing request `ctx`) instead of retrying on a fixed schedule; removed
+     `storeReconstructedContextWithRetry` and its constants entirely.
+3. **Phase 3**: rewrote `UT-KA-2155-001/002/003` and `UT-KA-2155-AUDIT-001` against the
+   new wait-based behavior (via `Handle(ActionTakeover)` + a controllable `waitCh`
+   test-double field, rather than testing a removed retry helper directly); `IT-KA-2155-001`
+   required only a doc-comment update — it already exercised the real production entry
+   point end to end, and now exercises the real completion signal too.
+4. **Phase 4 (REFACTOR)**: N/A — this was a targeted redesign of the fix itself in
+   response to review feedback, not a refactor of otherwise-complete GREEN-phase code.
+5. **Phase 5 (VERIFY)**: `go build ./...`, `go vet ./...`, `golangci-lint run` (0 issues),
+   `go test -race ./internal/kubernautagent/mcp/tools/... ./internal/kubernautagent/session/...`
+   (pass), and `IT-KA-2155-001` run locally against real envtest + Podman infrastructure
+   (pass, 0.055s).
 
 ---
 
@@ -352,7 +386,7 @@ None — self-contained port of the `main` fix, scoped to `internal/kubernautage
 | Unit tests | `internal/kubernautagent/mcp/tools/reconstruction_test.go` | UT-KA-2155-001/002/003 |
 | Unit test (compliance) | `internal/kubernautagent/mcp/tools/takeover_test.go` | UT-KA-2155-AUDIT-001 |
 | Integration test | `test/integration/kubernautagent/mcp/takeover_test.go` | IT-KA-2155-001 |
-| Fix | `internal/kubernautagent/mcp/tools/investigate.go`, `export_test.go` | `storeReconstructedContextWithRetry` + call-site update |
+| Fix | `internal/kubernautagent/session/store.go`, `manager.go`; `internal/kubernautagent/mcp/tools/investigate.go`, `export_test.go` | `Session.done`, `Manager.WaitForCompletionByRemediationID`, `handleTakeover` call-site update |
 
 ---
 
@@ -378,7 +412,8 @@ golangci-lint run --timeout=5m ./internal/kubernautagent/mcp/tools/... ./test/in
 
 | Code Path | Entry Point | Exit Point | Wiring IT | Status |
 |-----------|-------------|------------|-----------|--------|
-| `storeReconstructedContextWithRetry` | `InvestigateTool.Handle(ActionTakeover)` (MCP tool call) | `InvestigateOutput.Response` ("N prior turns reconstructed") | `IT-KA-2155-001` | Pass |
+| `Manager.WaitForCompletionByRemediationID` | `InvestigateTool.Handle(ActionTakeover)` (MCP tool call) → `handleTakeover`'s `select` | `InvestigateOutput.Response` ("N prior turns reconstructed") | `IT-KA-2155-001` | Pass |
+| `Session.done` close (`launchInvestigation`'s deferred cleanup) | Investigation goroutine completion (success, failure, or panic) | Unblocks the `select` above via channel close | `IT-KA-2155-001` | Pass |
 
 ---
 
@@ -395,4 +430,5 @@ investigation's completion.
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 1.0 | 2026-08-15 | Initial test plan, porting the `main` fix (#2155, PR #2157) to `release/v1.5` as #2156 |
+| 1.0 | 2026-08-15 | Initial test plan, porting the `main` fix (#2155, PR #2157) to `release/v1.5` as #2156. Design: fixed 5×100ms retry budget on `handleTakeover`'s reconstruction read. |
+| 2.0 | 2026-08-15 | **Design replaced** following review feedback that the fixed retry budget was arbitrary and did not actually solve the underlying synchronization problem: (1) it had no principled bound — 5×100ms was a guess, not derived from any measurement of how long the goroutine's own state-mutation could take; (2) it proved the "genuinely no prior investigation" case unconditionally paid the *entire* 400ms budget (the retired `UT-KA-2155-002` asserted exactly this), directly contradicting the v1.0 code comment's claim that this case "still returns on the first attempt." Replaced with a real completion signal: `session.Session` gained a `done chan struct{}`, closed exactly once by the investigation goroutine's own deferred cleanup only after it fully finishes mutating state (including the `storePartialResult` fallback). `handleTakeover` now `select`s on `Manager.WaitForCompletionByRemediationID(rrID)` (bounded only by the existing request `ctx`, no new arbitrary timeout) instead of retrying on a schedule. This closes the same race deterministically (a Go memory-model happens-before guarantee) rather than probabilistically, and eliminates the latency tax on the empty-history case entirely. Applies to both this `release/v1.5` port and the `main` fix (#2155/PR #2157), which is being fixed forward in a follow-up PR. |

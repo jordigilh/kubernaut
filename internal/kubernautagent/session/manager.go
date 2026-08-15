@@ -156,6 +156,7 @@ func (m *Manager) StartInvestigationWithContext(ctx context.Context, fn Investig
 // context, lazy sink, emits the started audit event, and spawns the goroutine.
 func (m *Manager) launchInvestigation(ctx context.Context, id string, fn InvestigateFunc, correlationID, signalName, severity string, startExtra []string) (string, error) {
 	bgCtx, cancelFn := context.WithCancel(context.Background())
+	done := make(chan struct{})
 
 	ls := &LazySink{}
 	bgCtx = WithLazySink(bgCtx, ls)
@@ -164,6 +165,7 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 	m.store.mu.Lock()
 	sess := m.store.sessions[id]
 	sess.cancel = cancelFn
+	sess.done = done
 	sess.lazySink = ls
 	bgCtx = WithInteractiveUpgrade(bgCtx, sess.interactiveUpgrade)
 	m.logger.Info("launchInvestigation: LazySink attached to session",
@@ -182,6 +184,13 @@ func (m *Manager) launchInvestigation(ctx context.Context, id string, fn Investi
 
 	go func() {
 		start := time.Now()
+		// #2155/#2156: deferred first, so (by Go's LIFO defer order) it runs
+		// LAST -- after recoverPanic and recordSessionMetrics below, and
+		// after every session-state mutation later in this goroutine body
+		// (Store.Update, storePartialResult). done only closes once this
+		// goroutine has fully finished mutating session state, giving
+		// WaitForCompletionByRemediationID a real happens-before signal.
+		defer close(done)
 		defer m.recordSessionMetrics(id, start)
 		defer m.recoverPanic(id, correlationID)
 
@@ -547,6 +556,45 @@ func (m *Manager) FindPendingByRemediationID(rrID string) (string, bool) {
 // if it were real investigation output (#1640).
 func isFallbackSession(sess *Session) bool {
 	return sess.Metadata["mode"] == "interactive_fallback"
+}
+
+// WaitForCompletionByRemediationID returns a channel that closes once the
+// most recent investigation goroutine for the given remediation_id has fully
+// finished mutating session state (including any storePartialResult fallback
+// write). #2155/#2156: this is the synchronization handleTakeover's
+// context-reconstruction read waits on to close the race against a
+// still-finishing autonomous investigation, replacing an earlier
+// fixed-schedule retry loop that had no principled bound and unconditionally
+// taxed every "genuinely no prior investigation" takeover with its full
+// retry budget.
+//
+// Returns an already-closed channel if no session exists for rrID, or if the
+// latest matching session never launched an investigation goroutine (e.g. a
+// StatusPending deferred-interactive session) -- callers can unconditionally
+// select on the result without special-casing "nothing to wait for".
+func (m *Manager) WaitForCompletionByRemediationID(rrID string) <-chan struct{} {
+	m.store.mu.RLock()
+	var latest *Session
+	for _, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] != rrID {
+			continue
+		}
+		if latest == nil || sess.CreatedAt.After(latest.CreatedAt) {
+			latest = sess
+		}
+	}
+	var done chan struct{}
+	if latest != nil {
+		done = latest.done
+	}
+	m.store.mu.RUnlock()
+
+	if done == nil {
+		closed := make(chan struct{})
+		close(closed)
+		return closed
+	}
+	return done
 }
 
 // GetLatestRCASummaryByRemediationID returns the RCA summary from the most

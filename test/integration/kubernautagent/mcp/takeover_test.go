@@ -121,6 +121,10 @@ func (m *mockAutoMgrIT) GetLatestRCASummaryByRemediationID(rrID string) (string,
 	return m.mgr.GetLatestRCASummaryByRemediationID(rrID)
 }
 
+func (m *mockAutoMgrIT) WaitForCompletionByRemediationID(rrID string) <-chan struct{} {
+	return m.mgr.WaitForCompletionByRemediationID(rrID)
+}
+
 func (m *mockAutoMgrIT) GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool) {
 	return m.mgr.GetLatestRCAResultByRemediationID(rrID)
 }
@@ -504,10 +508,13 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 	// storeReconstructedContext read can observe 0 turns even though the
 	// investigation succeeds moments later. This test deterministically
 	// forces that ordering (the investigation's result lands 50ms *after*
-	// takeover's status transition fires) and asserts the takeover response
-	// still reports >=1 reconstructed turn.
+	// takeover's status transition fires) and uses the REAL session.Manager
+	// (via mockAutoMgrIT's delegation), so it exercises the real
+	// WaitForCompletionByRemediationID completion signal end to end -- not
+	// just a mocked channel -- asserting the takeover response still
+	// reports >=1 reconstructed turn.
 	// ---------------------------------------------------------------
-	Describe("IT-KA-2155-001: takeover retries context reconstruction when it races ahead of a still-finishing autonomous investigation [BR-INTERACTIVE-010 SC-3]", func() {
+	Describe("IT-KA-2155-001: takeover waits for the real completion signal when it races ahead of a still-finishing autonomous investigation [BR-INTERACTIVE-010 SC-3]", func() {
 		It("should reconstruct at least 1 prior turn even when the investigation's result lands moments after takeover's status transition", func() {
 			nsName := uniqueNamespace("take2155")
 			createNamespace(context.Background(), sharedK8sClient, nsName)

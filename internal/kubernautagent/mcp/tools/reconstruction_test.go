@@ -19,7 +19,6 @@ package tools_test
 import (
 	"context"
 	"errors"
-	"sync/atomic"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -202,34 +201,23 @@ var _ = Describe("BR-INTERACTIVE-010: Context reconstruction from audit trail", 
 	})
 })
 
-// delayedReconstructor returns empty turns for the first emptyAttempts
-// calls, then returns the configured turns thereafter (#2156, v1.5.7 clone
-// of #2155): simulates an in-flight autonomous investigation whose result
-// lands a few retry attempts after the takeover's first (immediate)
-// reconstruction read.
-type delayedReconstructor struct {
-	emptyAttempts int32
-	calls         atomic.Int32
-	turns         []mcpinternal.ConversationTurn
-}
+// #2155/#2156: takeover now waits on AutonomousSessionManager.WaitForCompletionByRemediationID
+// (a real completion signal closed by the investigation goroutine itself)
+// instead of retrying context reconstruction on a fixed sleep schedule. The
+// fixed-schedule retry design was replaced because it (a) had no principled
+// bound -- 5x100ms was a guess, not a measurement -- and (b) unconditionally
+// taxed every "genuinely no prior investigation" takeover with its full
+// retry budget (proven by the old UT-KA-2155-002, which asserted all 5
+// attempts were burned in exactly that case).
+var _ = Describe("BR-INTERACTIVE-010 SC-3, #2156 (v1.5.7 clone of #2155): takeover waits for a real completion signal to close the race with a still-finishing autonomous investigation", func() {
 
-func (d *delayedReconstructor) Reconstruct(_ context.Context, _, _ string) ([]mcpinternal.ConversationTurn, error) {
-	n := d.calls.Add(1)
-	if n <= d.emptyAttempts {
-		return nil, nil
-	}
-	return d.turns, nil
-}
-
-var _ = Describe("BR-INTERACTIVE-010 SC-3, #2156 (v1.5.7 clone of #2155): takeover retries context reconstruction to close the race with a still-finishing autonomous investigation", func() {
-
-	Describe("UT-KA-2155-001: reconstruction succeeds on a later retry attempt", func() {
-		It("should return the reconstructed turn count once the delayed result becomes available", func() {
+	Describe("UT-KA-2155-001: takeover waits for the completion signal before reading reconstructed context", func() {
+		It("should not read until the signal fires, then return the turns that landed by then", func() {
 			const rrID = "rr-2155-001"
 			_, sessionMgr := newReconSessionMgr(rrID, "sess-2155-001")
-			autoMgr := &interactiveAutoMgr{}
-			recon := &delayedReconstructor{
-				emptyAttempts: 2, // first 2 calls (initial + 1 retry) find nothing
+			waitCh := make(chan struct{})
+			autoMgr := &interactiveAutoMgr{waitCh: waitCh}
+			recon := &mockContextReconstructor{
 				turns: []mcpinternal.ConversationTurn{
 					{Role: "assistant", Content: "prior RCA landed just after takeover"},
 				},
@@ -237,41 +225,58 @@ var _ = Describe("BR-INTERACTIVE-010 SC-3, #2156 (v1.5.7 clone of #2155): takeov
 			runner := &messagesCapturingInvestigatorRunner{response: "n/a"}
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
 
-			count := tool.StoreReconstructedContextWithRetry(context.Background(), rrID, "sess-2155-001")
+			const signalDelay = 30 * time.Millisecond
+			go func() {
+				time.Sleep(signalDelay)
+				close(waitCh)
+			}()
 
-			Expect(count).To(Equal(1),
-				"#2156: retry must observe the result once it lands, instead of giving up on the first empty read")
-			Expect(recon.calls.Load()).To(BeNumerically(">=", int32(3)),
-				"must have retried past the 2 empty attempts before succeeding")
+			start := time.Now()
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   rrID,
+				Action: mcptools.ActionTakeover,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			elapsed := time.Since(start)
+
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Response).To(Equal("1 prior turns reconstructed"),
+				"#2156: must read only after the completion signal fires, observing the landed result")
+			Expect(elapsed).To(BeNumerically(">=", signalDelay),
+				"must actually wait for the real signal rather than reading immediately and getting lucky on timing")
 		})
 	})
 
-	Describe("UT-KA-2155-002: reconstruction gives up after exhausting the retry budget", func() {
-		It("should return 0 and stop retrying once the attempt budget is spent", func() {
+	Describe("UT-KA-2155-002: takeover proceeds immediately when there is nothing to wait for", func() {
+		It("should not add any latency for a genuinely empty investigation history", func() {
 			const rrID = "rr-2155-002"
 			_, sessionMgr := newReconSessionMgr(rrID, "sess-2155-002")
-			autoMgr := &interactiveAutoMgr{}
-			recon := &delayedReconstructor{
-				emptyAttempts: 1000, // never produces turns — genuinely no prior investigation
-			}
+			autoMgr := &interactiveAutoMgr{} // default WaitForCompletionByRemediationID: already-closed channel
+			recon := &mockContextReconstructor{}
 			runner := &messagesCapturingInvestigatorRunner{response: "n/a"}
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
 
-			count := tool.StoreReconstructedContextWithRetry(context.Background(), rrID, "sess-2155-002")
+			start := time.Now()
+			out, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
+				RRID:   rrID,
+				Action: mcptools.ActionTakeover,
+			}, mcpinternal.UserInfo{Username: "alice"})
+			elapsed := time.Since(start)
 
-			Expect(count).To(Equal(0),
-				"a genuinely empty investigation history must still resolve to 0, not retry forever")
-			Expect(recon.calls.Load()).To(Equal(int32(mcptools.ReconstructionRetryAttempts())),
-				"must stop after exactly the configured attempt budget, bounding worst-case added latency")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Response).To(Equal("0 prior turns reconstructed"),
+				"a genuinely empty investigation history must still resolve to 0")
+			Expect(elapsed).To(BeNumerically("<", 50*time.Millisecond),
+				"#2156: must not pay any fixed retry-budget tax when there's nothing to wait for -- "+
+					"the prior retry-based design unconditionally burned its full 400ms budget in exactly this case")
 		})
 	})
 
-	Describe("UT-KA-2155-003: reconstruction stops retrying when the context is cancelled", func() {
-		It("should return 0 promptly instead of exhausting the full retry budget", func() {
+	Describe("UT-KA-2155-003: takeover stops waiting when the context is cancelled", func() {
+		It("should return promptly instead of blocking on a signal that never fires", func() {
 			const rrID = "rr-2155-003"
 			_, sessionMgr := newReconSessionMgr(rrID, "sess-2155-003")
-			autoMgr := &interactiveAutoMgr{}
-			recon := &delayedReconstructor{emptyAttempts: 1000}
+			autoMgr := &interactiveAutoMgr{waitCh: make(chan struct{})} // never closes
+			recon := &mockContextReconstructor{}
 			runner := &messagesCapturingInvestigatorRunner{response: "n/a"}
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
 
@@ -279,13 +284,17 @@ var _ = Describe("BR-INTERACTIVE-010 SC-3, #2156 (v1.5.7 clone of #2155): takeov
 			cancel()
 
 			start := time.Now()
-			count := tool.StoreReconstructedContextWithRetry(ctx, rrID, "sess-2155-003")
+			out, err := tool.Handle(ctx, mcptools.InvestigateInput{
+				RRID:   rrID,
+				Action: mcptools.ActionTakeover,
+			}, mcpinternal.UserInfo{Username: "alice"})
 			elapsed := time.Since(start)
 
-			Expect(count).To(Equal(0))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("takeover_started"))
 			Expect(elapsed).To(BeNumerically("<", 100*time.Millisecond),
 				"BR-KA-267/#1949: an already-cancelled context (e.g. inactivity timeout) must abort "+
-					"the retry loop immediately rather than sleeping through the full retry budget")
+					"the wait immediately rather than blocking on a signal that will never fire")
 		})
 	})
 })

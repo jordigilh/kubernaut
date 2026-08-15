@@ -52,14 +52,8 @@ func (t *InvestigateTool) GetReconstructedHistory(rrID string) []LLMMessage {
 	return msgs
 }
 
-// StoreReconstructedContextWithRetry exposes storeReconstructedContextWithRetry
-// for external test packages (#2156, v1.5.7 clone of #2155).
-func (t *InvestigateTool) StoreReconstructedContextWithRetry(ctx context.Context, rrID, sessionID string) int {
-	return t.storeReconstructedContextWithRetry(ctx, rrID, sessionID)
-}
-
-// ReconstructionRetryAttempts exposes reconstructionRetryAttempts for
-// external test packages (#2156, v1.5.7 clone of #2155).
-func ReconstructionRetryAttempts() int {
-	return reconstructionRetryAttempts
+// StoreReconstructedContext exposes storeReconstructedContext for external
+// test packages (#2156, v1.5.7 clone of #2155).
+func (t *InvestigateTool) StoreReconstructedContext(ctx context.Context, rrID, sessionID string) int {
+	return t.storeReconstructedContext(ctx, rrID, sessionID)
 }
