@@ -126,7 +126,7 @@ func run() int {
 		logger.Error(err, "failed to create kubernetes client for SAR")
 		return 1
 	}
-	sarChecker := buildSARClient(k8sClient, cfg.RBAC.SARCacheTTL, cfg.RBAC.ConsoleAccessAuthOnly, logger)
+	sarChecker := buildSARClient(k8sClient, cfg.RBAC.SARCacheTTL, cfg.RBAC.ConsoleAccessAuthorizationCheckEnabled, logger)
 
 	metricsReg := metrics.NewRegistry()
 
@@ -288,9 +288,10 @@ func run() int {
 
 	// #1919: GET /a2a/access is an advisory pre-flight check for the
 	// console/chat client, backed by the same authorizer used for per-tool
-	// authorization elsewhere in this file (either *auth.SARChecker or,
-	// when cfg.RBAC.ConsoleAccessAuthOnly is set, *auth.ConsoleAuthOnlyGate
-	// (#2148) -- both satisfy auth.ConsoleAuthorizer, hence the assertion).
+	// authorization elsewhere in this file (either *auth.SARChecker, when
+	// cfg.RBAC.ConsoleAccessAuthorizationCheckEnabled is true, or
+	// *auth.ConsoleAccessAuthorizationCheckGate (#2148) -- both satisfy
+	// auth.ConsoleAuthorizer, hence the assertion).
 	var consoleAccessHandler http.Handler
 	if ca, ok := sarChecker.(auth.ConsoleAuthorizer); ok {
 		consoleAccessHandler = handler.NewConsoleAccessHandler(ca, auditor, logger)
@@ -913,16 +914,17 @@ func triageLLMSource(cfg *config.Config) string {
 }
 
 // buildSARClient wires the SelfSubjectAccessReview-based authorizer used for
-// K8s-tool RBAC gating. When consoleAccessAuthOnly is true, the coarse-grained
-// console gate (kubernaut.ai/console) is made authentication-only -- see
-// auth.ConsoleAuthOnlyGate (#2148); per-tool authorization is unaffected.
-// The decision is made exactly once, here, at process startup: no per-request
-// branching is introduced anywhere in the request-handling hot path.
-func buildSARClient(k8sClient kubernetes.Interface, sarCacheTTL time.Duration, consoleAccessAuthOnly bool, logger logr.Logger) auth.ToolAuthorizer {
+// K8s-tool RBAC gating. When consoleAccessAuthorizationCheckEnabled is false
+// (the default), the coarse-grained console gate (kubernaut.ai/console) is
+// made authentication-only -- see auth.ConsoleAccessAuthorizationCheckGate
+// (#2148); per-tool authorization is unaffected either way. The decision is
+// made exactly once, here, at process startup: no per-request branching is
+// introduced anywhere in the request-handling hot path.
+func buildSARClient(k8sClient kubernetes.Interface, sarCacheTTL time.Duration, consoleAccessAuthorizationCheckEnabled bool, logger logr.Logger) auth.ToolAuthorizer {
 	checker := auth.NewSARChecker(k8sClient, sarCacheTTL, logger.WithName("sar"))
-	if consoleAccessAuthOnly {
+	if !consoleAccessAuthorizationCheckEnabled {
 		logger.Info("console access gate running in auth-only mode: no console RBAC configured (#2148)")
-		return auth.NewConsoleAuthOnlyGate(checker)
+		return auth.NewConsoleAccessAuthorizationCheckGate(checker)
 	}
 	return checker
 }

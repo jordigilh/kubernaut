@@ -19,24 +19,24 @@ set:
       model: gpt-4o
       credentialsSecretName: dummy
 tests:
-  - it: "default values (consoleAccessAuthOnly defaults to true): notice is present"
+  - it: "default values (consoleAccessAuthorizationCheckEnabled defaults to false): notice is present"
     asserts:
       - matchRegexRaw:
           pattern: "RBAC NOTICE: console-access gate is authentication-only \\(#2148/#2150\\)"
       - matchRegexRaw:
-          pattern: "consoleAccessAuthOnly is true \\(the default\\)"
+          pattern: "consoleAccessAuthorizationCheckEnabled is false"
 
-  - it: "consoleAccessAuthOnly explicitly set to false (production hardening): notice is absent"
+  - it: "consoleAccessAuthorizationCheckEnabled explicitly set to true (production hardening): notice is absent"
     set:
       apifrontend:
         config:
           rbac:
-            consoleAccessAuthOnly: false
+            consoleAccessAuthorizationCheckEnabled: true
     asserts:
       - notMatchRegexRaw:
           pattern: "RBAC NOTICE: console-access gate is authentication-only"
 
-  - it: "apifrontend.enabled=false: notice is absent regardless of consoleAccessAuthOnly"
+  - it: "apifrontend.enabled=false: notice is absent regardless of consoleAccessAuthorizationCheckEnabled"
     set:
       apifrontend:
         enabled: false
