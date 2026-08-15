@@ -126,7 +126,7 @@ func run() int {
 		logger.Error(err, "failed to create kubernetes client for SAR")
 		return 1
 	}
-	sarChecker := auth.NewSARChecker(k8sClient, cfg.RBAC.SARCacheTTL, logger.WithName("sar"))
+	sarChecker := buildSARClient(k8sClient, cfg.RBAC.SARCacheTTL, cfg.RBAC.ConsoleAccessAuthorizationCheckEnabled, logger)
 
 	metricsReg := metrics.NewRegistry()
 
@@ -287,11 +287,15 @@ func run() int {
 	}
 
 	// #1919: GET /a2a/access is an advisory pre-flight check for the
-	// console/chat client, backed by the same *auth.SARChecker used for
-	// per-tool authorization elsewhere in this file. sarChecker satisfies
-	// auth.ConsoleAuthorizer at compile time (see sar.go's
-	// `var _ auth.ConsoleAuthorizer = (*SARChecker)(nil)`).
-	consoleAccessHandler := handler.NewConsoleAccessHandler(sarChecker, auditor, logger)
+	// console/chat client, backed by the same authorizer used for per-tool
+	// authorization elsewhere in this file (either *auth.SARChecker, when
+	// cfg.RBAC.ConsoleAccessAuthorizationCheckEnabled is true, or
+	// *auth.ConsoleAccessAuthorizationCheckGate (#2148) -- both satisfy
+	// auth.ConsoleAuthorizer, hence the assertion).
+	var consoleAccessHandler http.Handler
+	if ca, ok := sarChecker.(auth.ConsoleAuthorizer); ok {
+		consoleAccessHandler = handler.NewConsoleAccessHandler(ca, auditor, logger)
+	}
 
 	draining := &atomic.Bool{}
 	routerCfg := handler.RouterConfig{
@@ -907,6 +911,22 @@ func triageLLMSource(cfg *config.Config) string {
 		return "severityTriage.llm (explicit)"
 	}
 	return "agent.llm (inherited)"
+}
+
+// buildSARClient wires the SelfSubjectAccessReview-based authorizer used for
+// K8s-tool RBAC gating. When consoleAccessAuthorizationCheckEnabled is false
+// (the default), the coarse-grained console gate (kubernaut.ai/console) is
+// made authentication-only -- see auth.ConsoleAccessAuthorizationCheckGate
+// (#2148); per-tool authorization is unaffected either way. The decision is
+// made exactly once, here, at process startup: no per-request branching is
+// introduced anywhere in the request-handling hot path.
+func buildSARClient(k8sClient kubernetes.Interface, sarCacheTTL time.Duration, consoleAccessAuthorizationCheckEnabled bool, logger logr.Logger) auth.ToolAuthorizer {
+	checker := auth.NewSARChecker(k8sClient, sarCacheTTL, logger.WithName("sar"))
+	if !consoleAccessAuthorizationCheckEnabled {
+		logger.Info("console access gate running in auth-only mode: no console RBAC configured (#2148)")
+		return auth.NewConsoleAccessAuthorizationCheckGate(checker)
+	}
+	return checker
 }
 
 func buildMCPHandler(cfg *config.Config, deps *backendDeps, sessInfra *sessionInfra, metricsReg *metrics.Registry, authorizer auth.ToolAuthorizer, auditor audit.Emitter, logger logr.Logger, userLimiter *ratelimit.UserLimiter) (http.Handler, func() bool, error) {

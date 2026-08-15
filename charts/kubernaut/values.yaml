@@ -664,6 +664,16 @@ apifrontend:
       #     audiences: ["spiffe://trust-domain/ns/kubernaut-system/sa/apifrontend"]
     rbac:
       sarCacheTTL: "30s"
+      # -- Enables the authorization check on the coarse-grained console
+      # gate (kubernaut.ai/console), so consoleAccessGroups below takes
+      # precedence. Defaults to false (authentication-only) so dev/eval
+      # installs get a working console with zero RBAC configuration
+      # (#2148, #2150); production installs should configure personas/
+      # consoleAccessGroups below and set this to true to enable the
+      # authorization check on the console gate too. Per-tool
+      # authorization is unaffected either way and remains unconditionally
+      # fail-closed.
+      consoleAccessAuthorizationCheckEnabled: false
       personas:
         sre:
           - kubernaut_list_remediations

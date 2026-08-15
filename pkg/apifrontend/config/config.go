@@ -38,8 +38,8 @@ type Config struct {
 // kubernaut_investigate, kubernaut_message) are hidden from MCP enumeration
 // and the A2A agent tool list (#1366).
 type InteractiveConfig struct {
-	Enabled                bool          `yaml:"enabled"`
-	AwaitSessionTimeout    time.Duration `yaml:"awaitSessionTimeout,omitempty"`
+	Enabled                 bool          `yaml:"enabled"`
+	AwaitSessionTimeout     time.Duration `yaml:"awaitSessionTimeout,omitempty"`
 	BridgeInactivityTimeout time.Duration `yaml:"bridgeInactivityTimeout,omitempty"`
 }
 
@@ -158,14 +158,14 @@ type ServerTLSConfig struct {
 
 // AgentConfig holds ADK agent and backend connectivity settings.
 type AgentConfig struct {
-	KABaseURL          string    `yaml:"kaBaseURL"`
-	KAMCPEndpoint      string    `yaml:"kaMCPEndpoint"`
-	DSBaseURL          string    `yaml:"dsBaseURL"`
-	DSBearerTokenFile  string    `yaml:"dsBearerTokenFile,omitempty"`
-	KABearerTokenFile  string    `yaml:"kaBearerTokenFile,omitempty"`
-	KATLSCaFile        string    `yaml:"kaTlsCaFile,omitempty"`
-	DSTLSCaFile        string    `yaml:"dsTlsCaFile,omitempty"`
-	LLM                LLMConfig `yaml:"llm"`
+	KABaseURL         string    `yaml:"kaBaseURL"`
+	KAMCPEndpoint     string    `yaml:"kaMCPEndpoint"`
+	DSBaseURL         string    `yaml:"dsBaseURL"`
+	DSBearerTokenFile string    `yaml:"dsBearerTokenFile,omitempty"`
+	KABearerTokenFile string    `yaml:"kaBearerTokenFile,omitempty"`
+	KATLSCaFile       string    `yaml:"kaTlsCaFile,omitempty"`
+	DSTLSCaFile       string    `yaml:"dsTlsCaFile,omitempty"`
+	LLM               LLMConfig `yaml:"llm"`
 }
 
 // LLMConfig holds LLM provider settings for the A2A handler. The schema
@@ -227,10 +227,10 @@ const (
 
 // MCPConfig holds Model Context Protocol feature flags.
 type MCPConfig struct {
-	Enabled            bool                       `yaml:"enabled"`
-	SessionIdleTimeout time.Duration              `yaml:"sessionIdleTimeout,omitempty"`
-	ToolTimeout        time.Duration              `yaml:"toolTimeout,omitempty"`
-	ToolTimeouts       map[string]time.Duration   `yaml:"toolTimeouts,omitempty"`
+	Enabled            bool                     `yaml:"enabled"`
+	SessionIdleTimeout time.Duration            `yaml:"sessionIdleTimeout,omitempty"`
+	ToolTimeout        time.Duration            `yaml:"toolTimeout,omitempty"`
+	ToolTimeouts       map[string]time.Duration `yaml:"toolTimeouts,omitempty"`
 }
 
 // AgentCardConfig holds the agent card endpoint configuration.
@@ -243,6 +243,20 @@ type RBACConfig struct {
 	// SARCacheTTL controls how long SubjectAccessReview results are cached.
 	// Zero disables caching (every call hits the API server).
 	SARCacheTTL time.Duration `yaml:"sarCacheTTL"`
+
+	// ConsoleAccessAuthorizationCheckEnabled, when false (the default),
+	// makes the coarse-grained console gate (kubernaut.ai/console) skip
+	// its authorization check entirely and become authentication-only:
+	// any non-empty authenticated user is allowed -- ConsoleAccessGroups
+	// is not enforced. When true, the authorization check runs and
+	// ConsoleAccessGroups takes precedence, gating the console like any
+	// other RBAC-gated resource. Per-tool authorization is completely
+	// unaffected either way and remains unconditionally fail-closed.
+	// Defaults to false (#2148, #2150) so a fresh install's console works
+	// with zero RBAC configuration; production installs should configure
+	// Personas/ConsoleAccessGroups and set this to true to enable the
+	// authorization check on the console gate too.
+	ConsoleAccessAuthorizationCheckEnabled bool `yaml:"consoleAccessAuthorizationCheckEnabled"`
 }
 
 // DefaultConfig returns a Config populated with production defaults.
@@ -266,10 +280,10 @@ func DefaultConfig() *Config {
 			Enabled:     false,
 			ToolTimeout: 30 * time.Second,
 			ToolTimeouts: map[string]time.Duration{
-				"kubernaut_investigate":          15 * time.Minute,
-				"kubernaut_await_session":        3 * time.Minute,
-				"kubernaut_watch":                15 * time.Minute,
-				"kubernaut_discover_workflows":   60 * time.Second,
+				"kubernaut_investigate":        15 * time.Minute,
+				"kubernaut_await_session":      3 * time.Minute,
+				"kubernaut_watch":              15 * time.Minute,
+				"kubernaut_discover_workflows": 60 * time.Second,
 			},
 		},
 		Logging: LoggingConfig{
@@ -324,6 +338,12 @@ func DefaultConfig() *Config {
 		},
 		RBAC: RBACConfig{
 			SARCacheTTL: 30 * time.Second,
+			// ConsoleAccessAuthorizationCheckEnabled defaults to false (Go
+			// zero value, #2148/#2150): the coarse-grained console gate is
+			// authentication-only out of the box, so a fresh install works
+			// with zero RBAC configuration for dev/eval. Set to true once
+			// ConsoleAccessGroups is configured for production, to enable
+			// the authorization check on the console gate too.
 		},
 		Interactive: InteractiveConfig{
 			Enabled: true,
