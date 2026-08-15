@@ -113,20 +113,28 @@ func triggerGatewayResilienceSignalAndVerifyAudit(bgCtx context.Context) error {
 		return fmt.Errorf("failed to get resilience-test ServiceAccount token: %w", err)
 	}
 
-	// The owner-resolver (BR-GATEWAY-185) queries the real K8s API for the
-	// Pod named below and drops the signal (batch parse failure) if it
-	// doesn't exist -- mirrors 15_audit_trace_validation_test.go's
-	// helpers.EnsureTestPod call, without which this alert is unconditionally
-	// rejected regardless of Gateway/DataStorage RBAC (root-caused via
-	// must-gather log from CI run 31886951674: "Pod \"ds-resilience-test-pod\"
-	// not found").
+	// BR-SCOPE-002: Gateway rejects (HTTP 200, StatusRejected) signals for
+	// resources it doesn't consider "managed" -- a Pod inherits managed
+	// status from its namespace unless labeled itself (pkg/shared/scope).
+	// kubernaut-system (gatewayNamespace) is the shared system namespace
+	// and is never labeled kubernaut.ai/managed=true, so posting the alert
+	// there (as this test previously did) is unconditionally rejected
+	// regardless of RBAC/connectivity -- root-caused via must-gather log
+	// from CI run 31889224478 (got HTTP 200, not the expected 201).
+	// Every sibling spec in this suite (e.g. 15_audit_trace_validation_test.go,
+	// 32_service_resilience_test.go) avoids this by targeting a dedicated,
+	// freshly created namespace instead of kubernaut-system directly --
+	// helpers.CreateTestNamespaceAndWait labels it kubernaut.ai/managed=true
+	// by default. Mirror that pattern here rather than mutating the shared
+	// system namespace's labels.
+	alertNamespace := helpers.CreateTestNamespaceAndWait(k8sClient, "ds-resilience")
 	podName := "ds-resilience-test-pod"
-	helpers.EnsureTestPod(reqCtx, k8sClient, gatewayNamespace, podName)
+	helpers.EnsureTestPod(reqCtx, k8sClient, alertNamespace, podName)
 
 	resilienceGatewayURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.GatewayResilienceAPIHostPort)
 	alertPayload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 		AlertName: "DataStorageResilienceTestAlert",
-		Namespace: gatewayNamespace,
+		Namespace: alertNamespace,
 		Severity:  "critical",
 		PodName:   podName,
 		Annotations: map[string]string{
