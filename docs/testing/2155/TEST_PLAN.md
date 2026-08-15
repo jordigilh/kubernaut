@@ -53,6 +53,39 @@ deterministically and close it with a short bounded retry.
    `handleStart` (fresh session, no result to race against) and
    `discover_workflows` (called well after the user's first interactive message, by
    which point the race window has closed) are unaffected.
+4. **Compliance-control regression check**: prove the one FedRAMP/SOC2-mapped audit
+   event on this code path (`aiagent.interactive.started`, AU-2/CC8.1 per
+   `docs/services/stateless/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md`) keeps its
+   correct `session_id`/`acting_user` attribution regardless of how many reconstruction
+   retry attempts run underneath it.
+
+### 1.4 FedRAMP/SOC2 Control Objective Assessment (added retroactively, see §16)
+
+**Finding**: this bug and its fix are **not** tied to any documented FedRAMP/SOC2 control
+objective for audit-completeness. `BR-INTERACTIVE-010` (the governing BR) contains no
+compliance-control references at all; the design authority for takeover
+(`docs/architecture/decisions/DD-INTERACTIVE-002-dynamic-takeover-model.md`) frames
+context-reconstruction correctness as a **UX** concern ("must feel like joining a Slack
+thread") and a **security** concern distinct from compliance — SEC-TAKEOVER-001,
+preventing "investigation hacking" via poisoned LLM context flowing back into
+autonomous execution. The separate, unrelated "reconstruction" concept that *is*
+CC8.1-mapped (ADR-034: reconstructing a full `RemediationRequest` from the audit trail
+for SOC2 forensic purposes) is unaffected by this bug: the autonomous investigation's
+own audit trail is written independently of whether the *interactive* session's
+in-memory LLM context successfully reloads it, so CC8.1 reconstruction-from-audit-trail
+holds regardless of this race.
+
+The one audit event actually on this code path, `aiagent.interactive.started`
+(AU-2/CC8.1 — user identity attribution for session start, per the audit event catalog),
+is emitted *before* the (possibly retried) reconstruction call and carries no
+reconstruction-count data — so it cannot be corrupted by this race. `UT-KA-2155-AUDIT-001`
+(added below) proves this explicitly rather than leaving it as an inference from reading
+the call order in `handleTakeover`.
+
+**Conclusion**: no #2141-style audit-schema gap exists here. This is a legitimate
+business-logic/decision-quality bug (an SRE taking over sees an artificially empty
+conversation history) with one adjacent, now-explicitly-tested compliance control
+(AU-2/CC8.1 identity attribution) confirmed unaffected.
 
 ### 1.3 Success Metrics
 
@@ -193,6 +226,7 @@ turn" — not merely "the retry function was called."
 | BR-INTERACTIVE-010 | Retry must not run forever when there is genuinely no prior investigation | P1 | Unit | UT-KA-2155-002 | Pass |
 | BR-KA-267 / #1949 | Retry must honor session-inactivity cascade cancellation | P1 | Unit | UT-KA-2155-003 | Pass |
 | BR-INTERACTIVE-010 SC-3 | End-to-end: takeover through the real production entry point must not lose context to this race | P0 | Integration | IT-KA-2155-001 | Pass |
+| AU-2, CC8.1 (audit identity attribution, per `AUDIT_EVENT_CATALOG.md`) | `aiagent.interactive.started`'s `session_id`/`acting_user` attribution must remain correct regardless of reconstruction retry outcome | P1 | Unit | UT-KA-2155-AUDIT-001 | Pass |
 
 ---
 
@@ -207,6 +241,12 @@ turn" — not merely "the retry function was called."
 | `UT-KA-2155-001` | Retry observes a delayed result once it lands, instead of giving up on the first empty read | Pass |
 | `UT-KA-2155-002` | Retry gives up after exactly the configured attempt budget when there is genuinely no result | Pass |
 | `UT-KA-2155-003` | Retry aborts immediately (not after the full budget) when the context is already cancelled | Pass |
+
+**File**: `internal/kubernautagent/mcp/tools/takeover_test.go`
+
+| ID | Business Outcome Under Test | Phase |
+|----|----------------------------|-------|
+| `UT-KA-2155-AUDIT-001` | The AU-2/CC8.1-mapped `aiagent.interactive.started` audit event keeps correct `session_id`/`acting_user`/`correlation_id` attribution even while the reconstruction retry is still running underneath it | Pass |
 
 ### Tier 2: Integration Tests
 
@@ -294,6 +334,7 @@ None — self-contained fix in `internal/kubernautagent/mcp/tools`.
 |-------------|----------|--------------|
 | This test plan | `docs/testing/2155/TEST_PLAN.md` | Strategy and test design |
 | Unit tests | `internal/kubernautagent/mcp/tools/reconstruction_test.go` | UT-KA-2155-001/002/003 |
+| Unit test (compliance) | `internal/kubernautagent/mcp/tools/takeover_test.go` | UT-KA-2155-AUDIT-001 |
 | Integration test | `test/integration/kubernautagent/mcp/takeover_test.go` | IT-KA-2155-001 |
 | Fix | `internal/kubernautagent/mcp/tools/investigate_autonomous.go`, `investigate_takeover.go` | `storeReconstructedContextWithRetry` + call-site update |
 
@@ -338,3 +379,4 @@ investigation's completion.
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-08-15 | Initial test plan, documented alongside RED→GREEN implementation |
+| 1.1 | 2026-08-15 | Added §1.4 FedRAMP/SOC2 control objective assessment and `UT-KA-2155-AUDIT-001`, closing the compliance-verification pass requested after initial implementation |
