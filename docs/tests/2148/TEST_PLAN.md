@@ -41,13 +41,17 @@ untouched by construction, not merely by convention. Only
 but otherwise returns `(true, nil)` without ever calling the SAR API. The
 decision of which concrete type to construct is made exactly once, at
 process startup in `buildSARClient`, based on
-`RBACConfig.ConsoleAccessAuthOnly` (default `false`, unchanged behavior) —
-no per-request branching is introduced anywhere in the hot path.
+`RBACConfig.ConsoleAccessAuthOnly` — no per-request branching is introduced
+anywhere in the hot path.
 
-`release/v1.5` note: the default stays `false` on this branch, matching the
-issue's proposal exactly, to keep today's exact behavior unchanged for
-existing v1.5.x deployments. `main`/v1.6's sibling issue (#2150) flips the
-default to `true` for that line only — out of scope here.
+**Addendum (#2150)**: `RBACConfig.ConsoleAccessAuthOnly` defaults to `true`
+(not `false`) on this branch too, matching `main`/v1.6's sibling issue
+(#2150) exactly: a fresh install's console works out of the box with zero
+RBAC configuration for dev/eval — the exact "haven't wired OIDC groups yet"
+case this feature exists to unblock. Production installs are expected to
+configure `apifrontend.config.rbac.personas`/`consoleAccessGroups` and set
+this to `false` explicitly to enforce SAR on the console gate; a NOTES.txt
+hint reminds operators of this whenever the flag is left at its default.
 
 ### 1.3 Non-Goals
 
@@ -57,8 +61,6 @@ default to `true` for that line only — out of scope here.
 - Deciding *when* to set the flag (kubernaut-operator's
   `spec.apiFrontend.rbac == nil` heuristic) is out of scope for this repo —
   tracked as a companion change in kubernaut-operator.
-- Changing the default (#2150) is a separate, `main`/v1.6-only change and
-  out of scope for this backport.
 
 ## 2. Test Scope
 
@@ -86,8 +88,10 @@ added specifically to close that gap.
 | UT-AF-2148-004 | `ConsoleAuthOnlyGate` satisfies both `ToolAuthorizer` and `ConsoleAuthorizer` (compile-time) | UT |
 | IT-AF-2148-001 | `GET /a2a/access`, through the real `handler.NewRouter` + `handler.NewConsoleAccessHandler`, returns 200 when wired with `ConsoleAuthOnlyGate`, even though the underlying `*SARChecker` (backed by a fake K8s clientset that unconditionally denies) would have returned 403 | IT |
 | IT-AF-2148-002 | A real `POST /mcp` tool call, through `handler.NewRouter` + `handler.NewMCPHandler`, still fail-closes on per-tool `Check` when wired with `ConsoleAuthOnlyGate` as `MCPBridgeConfig.Authorizer` — proves `Check` is untouched end-to-end, not just when called directly | IT |
-| HT-AF-2148-001 | Default install renders `consoleAccessAuthOnly: false` into `config.yaml`, matching the Go default | helm-unittest |
-| HT-AF-2148-002 | Explicit `consoleAccessAuthOnly: true` override renders through | helm-unittest |
+| HT-AF-2148-001 | Default install renders `consoleAccessAuthOnly: true` into `config.yaml`, matching the Go default (#2150) | helm-unittest |
+| HT-AF-2148-002 | Explicit `consoleAccessAuthOnly: false` override renders through (production hardening) | helm-unittest |
+| HT-AF-2150-001 | NOTES.txt shows the auth-only RBAC notice when `consoleAccessAuthOnly` is left at its default (`true`) | helm-unittest |
+| HT-AF-2150-002 | NOTES.txt notice is absent once `consoleAccessAuthOnly` is explicitly set to `false` | helm-unittest |
 
 ## 4. Out of Scope
 

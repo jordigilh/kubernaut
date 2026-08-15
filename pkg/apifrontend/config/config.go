@@ -38,8 +38,8 @@ type Config struct {
 // kubernaut_investigate, kubernaut_message) are hidden from MCP enumeration
 // and the A2A agent tool list (#1366).
 type InteractiveConfig struct {
-	Enabled                bool          `yaml:"enabled"`
-	AwaitSessionTimeout    time.Duration `yaml:"awaitSessionTimeout,omitempty"`
+	Enabled                 bool          `yaml:"enabled"`
+	AwaitSessionTimeout     time.Duration `yaml:"awaitSessionTimeout,omitempty"`
 	BridgeInactivityTimeout time.Duration `yaml:"bridgeInactivityTimeout,omitempty"`
 }
 
@@ -158,14 +158,14 @@ type ServerTLSConfig struct {
 
 // AgentConfig holds ADK agent and backend connectivity settings.
 type AgentConfig struct {
-	KABaseURL          string    `yaml:"kaBaseURL"`
-	KAMCPEndpoint      string    `yaml:"kaMCPEndpoint"`
-	DSBaseURL          string    `yaml:"dsBaseURL"`
-	DSBearerTokenFile  string    `yaml:"dsBearerTokenFile,omitempty"`
-	KABearerTokenFile  string    `yaml:"kaBearerTokenFile,omitempty"`
-	KATLSCaFile        string    `yaml:"kaTlsCaFile,omitempty"`
-	DSTLSCaFile        string    `yaml:"dsTlsCaFile,omitempty"`
-	LLM                LLMConfig `yaml:"llm"`
+	KABaseURL         string    `yaml:"kaBaseURL"`
+	KAMCPEndpoint     string    `yaml:"kaMCPEndpoint"`
+	DSBaseURL         string    `yaml:"dsBaseURL"`
+	DSBearerTokenFile string    `yaml:"dsBearerTokenFile,omitempty"`
+	KABearerTokenFile string    `yaml:"kaBearerTokenFile,omitempty"`
+	KATLSCaFile       string    `yaml:"kaTlsCaFile,omitempty"`
+	DSTLSCaFile       string    `yaml:"dsTlsCaFile,omitempty"`
+	LLM               LLMConfig `yaml:"llm"`
 }
 
 // LLMConfig holds LLM provider settings for the A2A handler. The schema
@@ -227,10 +227,10 @@ const (
 
 // MCPConfig holds Model Context Protocol feature flags.
 type MCPConfig struct {
-	Enabled            bool                       `yaml:"enabled"`
-	SessionIdleTimeout time.Duration              `yaml:"sessionIdleTimeout,omitempty"`
-	ToolTimeout        time.Duration              `yaml:"toolTimeout,omitempty"`
-	ToolTimeouts       map[string]time.Duration   `yaml:"toolTimeouts,omitempty"`
+	Enabled            bool                     `yaml:"enabled"`
+	SessionIdleTimeout time.Duration            `yaml:"sessionIdleTimeout,omitempty"`
+	ToolTimeout        time.Duration            `yaml:"toolTimeout,omitempty"`
+	ToolTimeouts       map[string]time.Duration `yaml:"toolTimeouts,omitempty"`
 }
 
 // AgentCardConfig holds the agent card endpoint configuration.
@@ -248,8 +248,10 @@ type RBACConfig struct {
 	// gate (kubernaut.ai/console SAR check) authentication-only: any
 	// non-empty authenticated user is allowed, and no SAR call is made.
 	// Per-tool authorization is completely unaffected and remains
-	// unconditionally fail-closed. Intended only for installs that have
-	// not configured any console/RBAC bindings at all (#2148).
+	// unconditionally fail-closed. Defaults to true (#2148, #2150) so a
+	// fresh install's console works with zero RBAC configuration;
+	// production installs should configure Personas/ConsoleAccessGroups
+	// and set this to false to enforce SAR on the console gate too.
 	ConsoleAccessAuthOnly bool `yaml:"consoleAccessAuthOnly"`
 }
 
@@ -274,10 +276,10 @@ func DefaultConfig() *Config {
 			Enabled:     false,
 			ToolTimeout: 30 * time.Second,
 			ToolTimeouts: map[string]time.Duration{
-				"kubernaut_investigate":          15 * time.Minute,
-				"kubernaut_await_session":        3 * time.Minute,
-				"kubernaut_watch":                15 * time.Minute,
-				"kubernaut_discover_workflows":   60 * time.Second,
+				"kubernaut_investigate":        15 * time.Minute,
+				"kubernaut_await_session":      3 * time.Minute,
+				"kubernaut_watch":              15 * time.Minute,
+				"kubernaut_discover_workflows": 60 * time.Second,
 			},
 		},
 		Logging: LoggingConfig{
@@ -332,6 +334,12 @@ func DefaultConfig() *Config {
 		},
 		RBAC: RBACConfig{
 			SARCacheTTL: 30 * time.Second,
+			// Defaults to true (#2150): the coarse-grained console gate is
+			// authentication-only out of the box, so a fresh install works
+			// with zero RBAC configuration for dev/eval. Set to false once
+			// ConsoleAccessGroups is configured for production, to enforce
+			// SAR on the console gate too.
+			ConsoleAccessAuthOnly: true,
 		},
 		Interactive: InteractiveConfig{
 			Enabled: true,

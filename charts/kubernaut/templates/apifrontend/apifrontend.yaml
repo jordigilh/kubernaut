@@ -159,7 +159,7 @@ data:
       {{- end }}
     rbac:
       sarCacheTTL: {{ .Values.apifrontend.config.rbac.sarCacheTTL | default "30s" }}
-      consoleAccessAuthOnly: {{ .Values.apifrontend.config.rbac.consoleAccessAuthOnly | default false }}
+      consoleAccessAuthOnly: {{ .Values.apifrontend.config.rbac.consoleAccessAuthOnly }}
     logging:
       level: {{ .Values.apifrontend.logging.level | default "INFO" }}
       format: json

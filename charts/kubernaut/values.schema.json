@@ -1080,8 +1080,8 @@
                 "sarCacheTTL": { "type": "string", "default": "30s", "description": "TTL for SubjectAccessReview cache entries" },
                 "consoleAccessAuthOnly": {
                   "type": "boolean",
-                  "default": false,
-                  "description": "Makes the coarse-grained console gate (kubernaut.ai/console) authentication-only, bypassing the SAR call, for installs with no console/RBAC bindings configured at all (#2148). Per-tool authorization is unaffected and remains unconditionally fail-closed."
+                  "default": true,
+                  "description": "Makes the coarse-grained console gate (kubernaut.ai/console) authentication-only, bypassing the SAR call. Defaults to true so dev/eval installs get a working console with zero RBAC configuration (#2148, #2150); production installs should configure apifrontend.config.rbac.consoleAccessGroups and set this to false to enforce SAR on the console gate. Per-tool authorization is unaffected either way and remains unconditionally fail-closed."
                 },
                 "personas": {
                   "type": "object",
