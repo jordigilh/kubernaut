@@ -86,7 +86,7 @@ func TestWireFleetReadinessGate_EM_EnabledReachable_ReadyImmediately(t *testing.
 func TestWireFleetReadinessGate_EM_EnabledUnreachable_NotReady(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Fleet.Enabled = true
-	cfg.Fleet.MCPGatewayEndpoint = "http://127.0.0.1:1/unreachable"
+	cfg.Fleet.MCPGatewayEndpoint = unreachableTestEndpoint
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

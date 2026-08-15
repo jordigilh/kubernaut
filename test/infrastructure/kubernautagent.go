@@ -130,7 +130,7 @@ func SetupKubernautAgentInfrastructure(ctx context.Context, clusterName, kubecon
 	// Reuses the same inline pattern as CreateAIAnalysisClusterHybrid.
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintln(writer, "\n🗄️  PHASE 4: Deploying DataStorage stack...")
-	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -935,6 +935,7 @@ data:
     integrations:
       dataStorage:
         url: "https://data-storage-service:8080"
+        healthUrl: "http://data-storage-service:8081/readyz"
       tools:
         prometheus:
           url: "http://prometheus-svc.%s.svc.cluster.local:9090"

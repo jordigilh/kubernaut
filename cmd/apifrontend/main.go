@@ -219,14 +219,18 @@ func runShutdown(p runShutdownParams) {
 	})
 }
 
-// stopBackendDeps stops the CA file watchers and closes the Fleet resilient
-// MCP client, logging any close error. Safe to call via defer unconditionally.
+// stopBackendDeps stops the CA file watchers, the #1985 DataStorage
+// readiness gate, and closes the Fleet resilient MCP client, logging any
+// close error. Safe to call via defer unconditionally.
 func stopBackendDeps(deps *backendDeps, logger logr.Logger) {
 	for _, w := range deps.CAWatchers {
 		w.watcher.Stop()
 	}
 	if deps.fleetReadinessGate != nil {
 		deps.fleetReadinessGate.Stop()
+	}
+	if deps.dataStorageReadinessGate != nil {
+		deps.dataStorageReadinessGate.Stop()
 	}
 	if fc := deps.FleetResilientClient(); fc != nil {
 		logger.Info("Closing fleet MCP Gateway connection")

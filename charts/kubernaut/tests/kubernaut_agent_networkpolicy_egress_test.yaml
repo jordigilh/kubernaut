@@ -54,6 +54,8 @@ tests:
             ports:
               - port: 8080
                 protocol: TCP
+              - port: 8081
+                protocol: TCP
             to:
               - podSelector:
                   matchLabels:

@@ -367,7 +367,7 @@ func SetupFleetE2EInfrastructure(ctx context.Context, clusterName, kubeconfigPat
 		// namespace only pre-existed on the hub cluster; without it, both the
 		// SA creation below and the Job itself would fail with "namespace not found".
 		_, _ = fmt.Fprintf(writer, "\n📁 Creating %s namespace on the remote cluster (Issue #1542)...\n", ExecutionNamespace)
-		if err := createTestNamespace(ctx, ExecutionNamespace, remoteKubeconfigPath, writer); err != nil {
+		if err := CreateTestNamespace(ctx, ExecutionNamespace, remoteKubeconfigPath, writer); err != nil {
 			return nil, fmt.Errorf("failed to create %s namespace on remote cluster: %w", ExecutionNamespace, err)
 		}
 

@@ -70,6 +70,7 @@ classifier:
   hotReloadInterval: "30s"
 datastorage:
   url: "{{ include "kubernaut.datastorage.url" . }}"
+  healthUrl: "{{ include "kubernaut.datastorage.healthUrl" . }}"
   timeout: "10s"
   buffer:
     bufferSize: 10000

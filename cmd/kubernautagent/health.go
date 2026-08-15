@@ -92,11 +92,32 @@ func healthHandler(w http.ResponseWriter, _ *http.Request) {
 //     in-cluster and always constructs a wfCatalog, so nil or Not-Ready
 //     here always fails the probe, keeping the pod out of Service
 //     endpoints until discovery is genuinely available.
-func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.SwappableClient, ds *dsClients, interactive *karbac.InteractiveReadiness, fleetGate *readiness.Gate, wfCatalog *workflowcatalog.LazyCatalog) http.HandlerFunc {
+//   - dsGate: verifies DataStorage itself is reachable (#1985,
+//     BR-AUDIT-005 v2.0). Unlike fleetGate, this is a hard (non-optional,
+//     always non-nil) dependency -- every service writes audit, so a
+//     Not-Ready DataStorage always fails the probe, closing the
+//     audit-loss window where a pod accepts traffic before DataStorage is
+//     confirmed reachable.
+//
+// readinessDeps groups readinessHandler's dependencies (Go anti-pattern
+// checklist: 8+ parameters -> config struct instead of a long positional
+// argument list).
+type readinessDeps struct {
+	shutdownFlag   *int32
+	apiServerReady *int32
+	swappable      *llm.SwappableClient
+	ds             *dsClients
+	interactive    *karbac.InteractiveReadiness
+	fleetGate      *readiness.Gate
+	wfCatalog      *workflowcatalog.LazyCatalog
+	dsGate         *readiness.Gate
+}
+
+func readinessHandler(deps readinessDeps) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		if atomic.LoadInt32(shutdownFlag) != 0 {
+		if atomic.LoadInt32(deps.shutdownFlag) != 0 {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status": "not_ready",
@@ -105,7 +126,7 @@ func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.Swappa
 			return
 		}
 
-		if atomic.LoadInt32(apiServerReady) == 0 {
+		if atomic.LoadInt32(deps.apiServerReady) == 0 {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status": "not_ready",
@@ -114,7 +135,7 @@ func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.Swappa
 			return
 		}
 
-		if swappable.ModelName() == "" {
+		if deps.swappable.ModelName() == "" {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status": "not_ready",
@@ -123,7 +144,7 @@ func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.Swappa
 			return
 		}
 
-		if ds != nil && ds.ogenClient == nil {
+		if deps.ds != nil && deps.ds.ogenClient == nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status": "not_ready",
@@ -132,7 +153,7 @@ func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.Swappa
 			return
 		}
 
-		if fleetGate != nil && !fleetGate.Ready() {
+		if deps.fleetGate != nil && !deps.fleetGate.Ready() {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status": "not_ready",
@@ -141,7 +162,7 @@ func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.Swappa
 			return
 		}
 
-		if wfCatalog == nil || !wfCatalog.Ready() {
+		if deps.wfCatalog == nil || !deps.wfCatalog.Ready() {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status": "not_ready",
@@ -150,11 +171,20 @@ func readinessHandler(shutdownFlag, apiServerReady *int32, swappable *llm.Swappa
 			return
 		}
 
+		if deps.dsGate != nil && !deps.dsGate.Ready() {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status": "not_ready",
+				"reason": "datastorage_unreachable",
+			})
+			return
+		}
+
 		resp := map[string]string{
 			"status":           "ready",
-			"interactive_mode": interactive.StatusString(),
+			"interactive_mode": deps.interactive.StatusString(),
 		}
-		if reason := interactive.Reason(); reason != "" {
+		if reason := deps.interactive.Reason(); reason != "" {
 			resp["interactive_reason"] = reason
 		}
 		_ = json.NewEncoder(w).Encode(resp)
@@ -188,7 +218,10 @@ type healthServersParams struct {
 	APIServerReady       *int32
 	FleetGate            *readiness.Gate
 	WfCatalog            *workflowcatalog.LazyCatalog
-	Logger               logr.Logger
+	// DSGate is the #1985 DataStorage readiness gate (BR-AUDIT-005 v2.0),
+	// always non-nil in production (unlike FleetGate).
+	DSGate *readiness.Gate
+	Logger logr.Logger
 }
 
 // startHealthAndMetricsServers builds and starts (in background goroutines)
@@ -203,7 +236,16 @@ func startHealthAndMetricsServers(p healthServersParams) (*http.Server, *http.Se
 
 	healthMux := http.NewServeMux()
 	healthMux.HandleFunc("/healthz", healthHandler)
-	healthMux.HandleFunc("/readyz", readinessHandler(shutdownFlag, apiServerReady, swappable, ds, interactiveReadiness, p.FleetGate, p.WfCatalog))
+	healthMux.HandleFunc("/readyz", readinessHandler(readinessDeps{
+		shutdownFlag:   shutdownFlag,
+		apiServerReady: apiServerReady,
+		swappable:      swappable,
+		ds:             ds,
+		interactive:    interactiveReadiness,
+		fleetGate:      p.FleetGate,
+		wfCatalog:      p.WfCatalog,
+		dsGate:         p.DSGate,
+	}))
 	healthMux.HandleFunc("/config", configHandler(cfg, swappable))
 	if !cfg.Runtime.Server.DisableAdminEndpoints {
 		healthMux.Handle("/admin/loglevel", atomicLevel)

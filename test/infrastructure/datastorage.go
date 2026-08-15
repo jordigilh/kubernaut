@@ -567,7 +567,7 @@ func SetupDataStorageInfrastructureParallel(ctx context.Context, clusterName, ku
 
 	// Create namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -717,7 +717,7 @@ func DeployDataStorageTestServices(ctx context.Context, namespace, kubeconfigPat
 
 	// 1. Create test namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -803,7 +803,7 @@ func DeployDataStorageTestServicesWithNodePort(ctx context.Context, namespace, k
 
 	// 1. Create test namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -880,7 +880,7 @@ func CleanupDataStorageTestNamespace(ctx context.Context, namespace, kubeconfigP
 	return nil
 }
 
-func createTestNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+func CreateTestNamespace(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	clientset, err := getKubernetesClient(kubeconfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to create Kubernetes client: %w", err)

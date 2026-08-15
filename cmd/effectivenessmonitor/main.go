@@ -160,7 +160,12 @@ func run() int {
 		defer fleetGate.Stop()
 	}
 
-	if err := registerHealthChecks(mgr, fleetGate); err != nil {
+	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
+	// /readyz (pod-wide), unconditionally.
+	dsGate := wireDataStorageReadinessGate(ctx, cfg, setupLog)
+	defer dsGate.Stop()
+
+	if err := registerHealthChecks(mgr, fleetGate, dsGate); err != nil {
 		setupLog.Error(err, "unable to set up health checks")
 		return 1
 	}
@@ -641,14 +646,32 @@ func wireFleetReadinessGate(
 	return gate
 }
 
-// registerHealthChecks wires the standard healthz/readyz probes, plus the
-// #1553 Fleet readiness gate (a nil fleetGate is a no-op — Fleet disabled).
-func registerHealthChecks(mgr ctrl.Manager, fleetGate *readiness.Gate) error {
+// wireDataStorageReadinessGate builds and starts the DataStorage
+// dependency readiness gate (#1985, BR-AUDIT-005 v2.0): EM's pod-wide
+// /readyz must fail closed when DataStorage is unreachable, closing the
+// audit-loss window where a pod accepts traffic (and generates audit
+// events) before DataStorage is confirmed reachable. Unlike
+// wireFleetReadinessGate, this is unconditional -- always wired, never
+// nil -- since every service writes audit. The caller registers the
+// returned Gate's Check method via mgr.AddReadyzCheck and must Stop() it
+// on shutdown. Delegates gate construction to audit.NewReadinessGate
+// (REFACTOR, shared across all 10 services).
+func wireDataStorageReadinessGate(ctx context.Context, cfg *config.Config, logger logr.Logger) *readiness.Gate {
+	return audit.NewReadinessGate(ctx, cfg.DataStorage.HealthURL, logger)
+}
+
+// registerHealthChecks wires the standard healthz/readyz probes, the
+// #1553 Fleet readiness gate (a nil fleetGate is a no-op — Fleet disabled),
+// and the #1985 DataStorage readiness gate (always non-nil).
+func registerHealthChecks(mgr ctrl.Manager, fleetGate *readiness.Gate, dsGate *readiness.Gate) error {
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up health check: %w", err)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up ready check: %w", err)
+	}
+	if err := mgr.AddReadyzCheck("datastorage", dsGate.Check); err != nil {
+		return fmt.Errorf("unable to set up datastorage readiness check: %w", err)
 	}
 	if fleetGate != nil {
 		if err := mgr.AddReadyzCheck("fleet", fleetGate.Check); err != nil {

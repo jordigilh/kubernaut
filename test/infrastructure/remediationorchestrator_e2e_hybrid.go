@@ -195,7 +195,7 @@ func SetupROInfrastructureHybridWithCoverage(ctx context.Context, clusterName, k
 
 	// Create kubernaut-system namespace
 	_, _ = fmt.Fprintf(writer, "📁 Creating namespace %s...\n", namespace)
-	if err := createTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
+	if err := CreateTestNamespace(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("failed to create namespace: %w", err)
 	}
 
@@ -616,6 +616,7 @@ data:
       awaitingApproval: "3s"%s
     datastorage:
       url: "https://data-storage-service:8080"
+      healthUrl: "http://data-storage-service:8081/readyz"
       timeout: "10s"
       buffer:
         bufferSize: 10000

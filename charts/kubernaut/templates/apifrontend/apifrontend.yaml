@@ -65,6 +65,10 @@ agent:
   # validate the chart's own self-signed inter-service certs).
   kaMCPEndpoint: "https://kubernaut-agent.{{ .Release.Namespace }}.svc:8443/api/v1/mcp/"
   dsBaseURL: "https://data-storage-service.{{ .Release.Namespace }}.svc:8080"
+  # Plain HTTP: pkg/shared/health.NewHealthServer always serves the dedicated
+  # health port (8081) unencrypted -- distinct from dsBaseURL's TLS-required
+  # main API port 8080 above (#1985, BR-AUDIT-005 v2.0).
+  dsHealthURL: "http://data-storage-service.{{ .Release.Namespace }}.svc:8081/readyz"
   dsBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
   kaBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
   kaTlsCaFile: {{ include "kubernaut.interServiceTLS.caFile" . | quote }}

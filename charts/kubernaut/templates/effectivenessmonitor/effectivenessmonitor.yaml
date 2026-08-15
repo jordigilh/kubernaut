@@ -23,6 +23,7 @@ assessment:
   validityWindow: {{ $v.config.assessment.validityWindow }}
 datastorage:
   url: {{ include "kubernaut.datastorage.url" . }}
+  healthUrl: {{ include "kubernaut.datastorage.healthUrl" . }}
   timeout: 10s
   buffer:
     bufferSize: 100

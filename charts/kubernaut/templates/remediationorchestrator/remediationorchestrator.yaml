@@ -35,6 +35,7 @@ timeouts:
   verifying: {{ $v.config.timeouts.verifying | quote }}
 datastorage:
   url: "{{ include "kubernaut.datastorage.url" . }}"
+  healthUrl: "{{ include "kubernaut.datastorage.healthUrl" . }}"
   timeout: "10s"
   buffer:
     bufferSize: 30000

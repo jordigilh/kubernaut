@@ -442,6 +442,21 @@ https://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8080
 {{- end }}
 
 {{/*
+Return the in-cluster DataStorage health/readiness endpoint URL (port 8081,
+distinct from the main API port 8080 above). Consumed by every
+audit-writing service's pkg/audit.DataStorageProber to gate its own
+/readyz on DataStorage's real reachability (#1985, BR-AUDIT-005 v2.0).
+Issue #753: always plain HTTP -- pkg/shared/health.NewHealthServer's doc
+comment is explicit that the dedicated health port never serves TLS
+("kubelet probes never need TLS"), unlike the main API port 8080 above
+which does require it. Using https:// here would make every service's
+own readiness probe fail 100% of the time in every real deployment.
+*/}}
+{{- define "kubernaut.datastorage.healthUrl" -}}
+http://data-storage-service.{{ .Release.Namespace }}.svc.cluster.local:8081/readyz
+{{- end }}
+
+{{/*
 Return the in-cluster FleetMetadataCache service URL.
 Issue #1683: FleetMetadataCache's API port presents TLS by default
 (ConfigureConditionalTLS), matching every other Kubernaut HTTP-API service.
@@ -1098,12 +1113,30 @@ Usage: {{ include "kubernaut.np.commonEgress" . | nindent 4 }}
 {{- end }}
 
 {{/*
-DataStorage egress rule: allow TCP 8080 to datastorage pods.
+DataStorage egress rule: allow TCP 8080 (API) and 8081 (health/readyz) to
+datastorage pods.
+
+#1985 (BR-AUDIT-005 v2.0) added a DataStorage readiness gate to all 10
+callers of this helper: each now polls DataStorage's health endpoint
+(port 8081) from its own /readyz handler. The chart's datastorage
+NetworkPolicy (datastorage/networkpolicy.yaml) already allowlists ingress
+on 8081 from these same 10 callers, but NetworkPolicy is bidirectional --
+each caller's own egress side must independently permit 8081 too, or a
+CNI that enforces NetworkPolicy (e.g. recent kindnetd releases, and any
+real cluster's default-deny egress policy) silently drops the SYN with no
+RST, surfacing as "DataStorage health endpoint ... unreachable: context
+deadline exceeded" on every caller (confirmed via local Kind repro: the
+identical one-sided-egress-gap pattern already described above in
+kubernaut.np.fleetmetadatacacheEgress, issue #1737). Adding 8081 here
+once, in the single shared helper, fixes it for all 10 callers instead of
+patching each networkpolicy.yaml individually.
 Usage: {{ include "kubernaut.np.datastorageEgress" . | nindent 4 }}
 */}}
 {{- define "kubernaut.np.datastorageEgress" -}}
 - ports:
     - port: 8080
+      protocol: TCP
+    - port: 8081
       protocol: TCP
   to:
     - podSelector:

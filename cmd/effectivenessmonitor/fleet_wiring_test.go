@@ -38,6 +38,12 @@ var backendGVRListKinds = map[schema.GroupVersionResource]string{
 	registry.BackendGVR: "BackendList",
 }
 
+// unreachableTestEndpoint is a well-known unroutable address (RFC 5737-style
+// loopback with a closed port) shared by the fleet- and DataStorage-readiness
+// wiring tests in this package to simulate an unreachable dependency without
+// depending on real network conditions or timeouts.
+const unreachableTestEndpoint = "http://127.0.0.1:1/unreachable"
+
 // ---------------------------------------------------------------------------
 // IT-EM-054-004: cmd/effectivenessmonitor must wire a fleet.ReaderFactory
 // into emReconciler.SetReaderFactory from Config.Fleet — this is the actual
@@ -196,7 +202,7 @@ func TestBuildFleetReaderFactory_EnabledUnreachableEndpoint_DegradesGracefully(t
 	dynClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), backendGVRListKinds)
 	cfg := config.DefaultConfig()
 	cfg.Fleet.Enabled = true
-	cfg.Fleet.MCPGatewayEndpoint = "http://127.0.0.1:1/unreachable"
+	cfg.Fleet.MCPGatewayEndpoint = unreachableTestEndpoint
 	cfg.Fleet.MCPGatewayType = registry.GatewayEAIGW
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

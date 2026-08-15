@@ -224,9 +224,14 @@ type ServerTLSConfig struct {
 
 // AgentConfig holds ADK agent and backend connectivity settings.
 type AgentConfig struct {
-	KABaseURL         string          `yaml:"kaBaseURL"`
-	KAMCPEndpoint     string          `yaml:"kaMCPEndpoint"`
-	DSBaseURL         string          `yaml:"dsBaseURL"`
+	KABaseURL     string `yaml:"kaBaseURL"`
+	KAMCPEndpoint string `yaml:"kaMCPEndpoint"`
+	DSBaseURL     string `yaml:"dsBaseURL"`
+	// DSHealthURL is DataStorage's readiness-check endpoint (separate port,
+	// 8081, from the main API's DSBaseURL above). Consumed by
+	// pkg/audit.DataStorageProber to gate APIFrontend's own /readyz on
+	// DataStorage's real reachability (#1985, BR-AUDIT-005 v2.0).
+	DSHealthURL       string          `yaml:"dsHealthURL"`
 	DSBearerTokenFile string          `yaml:"dsBearerTokenFile,omitempty"`
 	KABearerTokenFile string          `yaml:"kaBearerTokenFile,omitempty"`
 	KATLSCaFile       string          `yaml:"kaTlsCaFile,omitempty"`
@@ -281,6 +286,7 @@ func DefaultConfig() *Config {
 			KABaseURL:     "http://localhost:8080",
 			KAMCPEndpoint: "http://localhost:8080/api/v1/mcp/",
 			DSBaseURL:     "http://localhost:9090",
+			DSHealthURL:   "http://localhost:9091/readyz",
 			LLM: types.LLMConfig{
 				VertexLocation: "us-central1",
 			},
@@ -445,6 +451,12 @@ func (c *Config) validateAgentBaseFields() error {
 		return fmt.Errorf("agent.dsBaseURL is required")
 	}
 	if err := validateURL("agent.dsBaseURL", c.Agent.DSBaseURL); err != nil {
+		return err
+	}
+	if c.Agent.DSHealthURL == "" {
+		return fmt.Errorf("agent.dsHealthURL is required")
+	}
+	if err := validateURL("agent.dsHealthURL", c.Agent.DSHealthURL); err != nil {
 		return err
 	}
 	if c.Agent.DSBearerTokenFile != "" {

@@ -34,6 +34,7 @@ func validConfig() *config.Config {
 			KABaseURL:     "http://localhost:8080",
 			KAMCPEndpoint: "http://localhost:8080/api/v1/mcp/",
 			DSBaseURL:     "http://localhost:9090",
+			DSHealthURL:   "http://localhost:9091/readyz",
 		},
 		MCP:       config.MCPConfig{Enabled: false},
 		AgentCard: config.AgentCardConfig{URL: "https://localhost:8443"},
@@ -163,6 +164,9 @@ var _ = Describe("Tier 2: Config Validation — Validate()", func() {
 		Entry("empty kaBaseURL", func(c *config.Config) { c.Agent.KABaseURL = "" }, "kaBaseURL"),
 		Entry("empty kaMCPEndpoint", func(c *config.Config) { c.Agent.KAMCPEndpoint = "" }, "kaMCPEndpoint"),
 		Entry("empty dsBaseURL", func(c *config.Config) { c.Agent.DSBaseURL = "" }, "dsBaseURL"),
+		// IT-AUDIT-1985-002: dsHealthURL is required, distinct from dsBaseURL,
+		// so DataStorageProber (#1985) always has a real health endpoint to gate on.
+		Entry("empty dsHealthURL", func(c *config.Config) { c.Agent.DSHealthURL = "" }, "dsHealthURL"),
 	)
 
 	DescribeTable("UT-AF-039-014, 017 malformed URLs",
@@ -175,6 +179,7 @@ var _ = Describe("Tier 2: Config Validation — Validate()", func() {
 		},
 		Entry("kaBaseURL no scheme", func(c *config.Config) { c.Agent.KABaseURL = "not-a-url" }, "kaBaseURL"),
 		Entry("dsBaseURL no scheme", func(c *config.Config) { c.Agent.DSBaseURL = "://bad" }, "dsBaseURL"),
+		Entry("dsHealthURL no scheme", func(c *config.Config) { c.Agent.DSHealthURL = "://bad" }, "dsHealthURL"),
 	)
 
 	It("UT-AF-039-018 accepts valid complete config", func() {

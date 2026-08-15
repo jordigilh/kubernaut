@@ -211,6 +211,7 @@ interactive:
 integrations:
   dataStorage:
     url: "{{ include "kubernaut.datastorage.url" . }}"
+    healthUrl: "{{ include "kubernaut.datastorage.healthUrl" . }}"
 {{- if include "kubernaut.agent.tlsEnabled" . }}
     tls:
       caFile: "{{ include "kubernaut.agent.tlsCaDir" . }}/{{ include "kubernaut.agent.tlsCaKey" . }}"

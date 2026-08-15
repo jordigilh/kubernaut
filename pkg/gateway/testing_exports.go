@@ -44,6 +44,13 @@ func (s *Server) SetFleetReadinessGateForTesting(gate *readiness.Gate) {
 	s.fleetReadinessGate = gate
 }
 
+// SetDataStorageReadinessGateForTesting allows tests to inject a
+// DataStorage readiness gate. Production code must use
+// SetDataStorageReadinessGate instead (#1985).
+func (s *Server) SetDataStorageReadinessGateForTesting(gate *readiness.Gate) {
+	s.dataStorageReadinessGate = gate
+}
+
 // NewMinimalServerForReadinessTest creates a lightweight Server suitable for
 // readiness handler unit tests. If apiReaders are provided, the first is used
 // as the apiReader for the K8s connectivity check; otherwise the K8s check
