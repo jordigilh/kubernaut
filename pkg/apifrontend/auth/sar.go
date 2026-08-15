@@ -172,9 +172,10 @@ func (s *SARChecker) checkSAR(ctx context.Context, user string, groups []string,
 // embedding -- this type never defines its own Check, so that invariant is
 // provably untouched by construction, not merely by convention.
 //
-// Intended only for installs that have not configured any console/RBAC
-// bindings at all -- anyone who has configured even one binding is
-// unaffected (see RBACConfig.ConsoleAccessAuthOnly).
+// This is the default (#2150) so a fresh install's console works with zero
+// RBAC configuration -- production installs that configure real
+// personas/consoleAccessGroups should set RBACConfig.ConsoleAccessAuthOnly
+// to false to enforce SAR on the console gate too.
 type ConsoleAuthOnlyGate struct {
 	*SARChecker
 }

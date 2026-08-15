@@ -257,8 +257,10 @@ type RBACConfig struct {
 	// gate (kubernaut.ai/console SAR check) authentication-only: any
 	// non-empty authenticated user is allowed, and no SAR call is made.
 	// Per-tool authorization is completely unaffected and remains
-	// unconditionally fail-closed. Intended only for installs that have
-	// not configured any console/RBAC bindings at all (#2148).
+	// unconditionally fail-closed. Defaults to true (#2148, #2150) so a
+	// fresh install's console works with zero RBAC configuration;
+	// production installs should configure Personas/ConsoleAccessGroups
+	// and set this to false to enforce SAR on the console gate too.
 	ConsoleAccessAuthOnly bool `yaml:"consoleAccessAuthOnly"`
 }
 
@@ -302,6 +304,12 @@ func DefaultConfig() *Config {
 		Resilience: defaultResilienceConfig(),
 		RBAC: RBACConfig{
 			SARCacheTTL: 30 * time.Second,
+			// Defaults to true (#2150): the coarse-grained console gate is
+			// authentication-only out of the box, so a fresh install works
+			// with zero RBAC configuration for dev/eval. Set to false once
+			// ConsoleAccessGroups is configured for production, to enforce
+			// SAR on the console gate too.
+			ConsoleAccessAuthOnly: true,
 		},
 		Interactive: InteractiveConfig{
 			Enabled: true,

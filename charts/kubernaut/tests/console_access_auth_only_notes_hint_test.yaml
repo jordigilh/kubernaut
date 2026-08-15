@@ -1,0 +1,50 @@
+suite: "#2150: NOTES.txt notices when the console-access gate is authentication-only"
+templates:
+  - templates/NOTES.txt
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+tests:
+  - it: "default values (consoleAccessAuthOnly defaults to true): notice is present"
+    asserts:
+      - matchRegexRaw:
+          pattern: "RBAC NOTICE: console-access gate is authentication-only \\(#2150\\)"
+      - matchRegexRaw:
+          pattern: "consoleAccessAuthOnly is true \\(the default\\)"
+
+  - it: "consoleAccessAuthOnly explicitly set to false (production hardening): notice is absent"
+    set:
+      apifrontend:
+        config:
+          rbac:
+            consoleAccessAuthOnly: false
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "RBAC NOTICE: console-access gate is authentication-only"
+
+  - it: "apifrontend.enabled=false (console also disabled, its dependency): notice is absent regardless of consoleAccessAuthOnly"
+    set:
+      apifrontend:
+        enabled: false
+      console:
+        enabled: false
+    asserts:
+      - notMatchRegexRaw:
+          pattern: "RBAC NOTICE: console-access gate is authentication-only"
