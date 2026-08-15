@@ -86,11 +86,26 @@ func triggerGatewayResilienceSignalAndVerifyAudit(bgCtx context.Context) error {
 	reqCtx, cancel := context.WithTimeout(bgCtx, 60*time.Second)
 	defer cancel()
 
+	// This single SA needs the union of two RBAC grants, mirroring the proven
+	// two-token pattern in 15_audit_trace_validation_test.go: Gateway access
+	// (services/gateway-service, verb create) to authorize the signal POST
+	// below, and DataStorage access (data-storage-client CRUD) to authorize
+	// the correlation_id audit query later in this function. Test 15 keeps
+	// these as two separate SAs/tokens; granting both ClusterRoleBindings to
+	// one SA here is equivalent and simpler for a single-purpose test helper.
+	// Root-caused via must-gather log evidence (CI run 31883439910): POSTing
+	// with a DataStorage-only token got a genuine 403 authorization_denied
+	// from Gateway's auth middleware -- not a connection/readiness race.
 	e2eSAName := "gateway-resilience-e2e-audit-client"
+	if err := infrastructure.CreateE2EServiceAccountWithGatewayAccess(
+		reqCtx, gatewayNamespace, kubeconfigPath, e2eSAName, GinkgoWriter,
+	); err != nil {
+		return fmt.Errorf("failed to grant resilience-test audit ServiceAccount Gateway access: %w", err)
+	}
 	if err := infrastructure.CreateE2EServiceAccountWithDataStorageAccess(
 		reqCtx, gatewayNamespace, kubeconfigPath, e2eSAName, GinkgoWriter,
 	); err != nil {
-		return fmt.Errorf("failed to create resilience-test audit ServiceAccount: %w", err)
+		return fmt.Errorf("failed to grant resilience-test audit ServiceAccount DataStorage access: %w", err)
 	}
 	e2eToken, err := infrastructure.GetServiceAccountToken(reqCtx, gatewayNamespace, e2eSAName, kubeconfigPath)
 	if err != nil {
