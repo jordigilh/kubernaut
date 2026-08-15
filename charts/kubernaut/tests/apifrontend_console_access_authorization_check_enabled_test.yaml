@@ -1,0 +1,60 @@
+suite: "Issue #2148/#2150: apifrontend.config.rbac.consoleAccessAuthorizationCheckEnabled must default to false and be chart-overridable"
+# RBACConfig.ConsoleAccessAuthorizationCheckEnabled (pkg/apifrontend/config.RBACConfig)
+# makes the coarse-grained console gate (kubernaut.ai/console) skip its
+# authorization check when false -- for installs with no console/RBAC
+# bindings configured at all. Defaults to false (#2150: dev/eval installs
+# get a working console with zero RBAC configuration); production installs
+# should set this to true once consoleAccessGroups is configured. Per-tool
+# authorization (Check) is never affected by this flag regardless of value.
+templates:
+  - templates/apifrontend/apifrontend.yaml
+set:
+  postgresql:
+    auth:
+      existingSecret: dummy
+  valkey:
+    existingSecret: dummy
+  global:
+    llmProfiles:
+      primary:
+        provider: openai
+        model: gpt-4
+        credentialsSecretName: llm-credentials-primary
+  kubernautAgent:
+    llmProfileRef: primary
+  signalprocessing:
+    policies:
+      existingConfigMap: test-cm
+  aianalysis:
+    policies:
+      existingConfigMap: test-cm
+  apifrontend:
+    config:
+      auth:
+        issuerURL: "https://sso.example.com/realms/kubernaut"
+tests:
+  - it: "default install (no consoleAccessAuthorizationCheckEnabled override) renders consoleAccessAuthorizationCheckEnabled: false, matching the Go default exactly"
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'consoleAccessAuthorizationCheckEnabled: false'
+
+  - it: "explicit consoleAccessAuthorizationCheckEnabled: true override renders through to config.yaml (production hardening)"
+    set:
+      apifrontend:
+        config:
+          rbac:
+            consoleAccessAuthorizationCheckEnabled: true
+    documentSelector:
+      path: metadata.name
+      value: apifrontend-config
+    asserts:
+      - matchRegex:
+          path: data['config.yaml']
+          pattern: 'consoleAccessAuthorizationCheckEnabled: true'
+      - notMatchRegex:
+          path: data['config.yaml']
+          pattern: 'consoleAccessAuthorizationCheckEnabled: false'

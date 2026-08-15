@@ -253,15 +253,19 @@ type RBACConfig struct {
 	// Zero disables caching (every call hits the API server).
 	SARCacheTTL time.Duration `yaml:"sarCacheTTL"`
 
-	// ConsoleAccessAuthOnly, when true, makes the coarse-grained console
-	// gate (kubernaut.ai/console SAR check) authentication-only: any
-	// non-empty authenticated user is allowed, and no SAR call is made.
-	// Per-tool authorization is completely unaffected and remains
-	// unconditionally fail-closed. Defaults to true (#2148, #2150) so a
-	// fresh install's console works with zero RBAC configuration;
-	// production installs should configure Personas/ConsoleAccessGroups
-	// and set this to false to enforce SAR on the console gate too.
-	ConsoleAccessAuthOnly bool `yaml:"consoleAccessAuthOnly"`
+	// ConsoleAccessAuthorizationCheckEnabled, when false (the default),
+	// makes the coarse-grained console gate (kubernaut.ai/console) skip
+	// its authorization check entirely and become authentication-only:
+	// any non-empty authenticated user is allowed -- ConsoleAccessGroups
+	// is not enforced. When true, the authorization check runs and
+	// ConsoleAccessGroups takes precedence, gating the console like any
+	// other RBAC-gated resource. Per-tool authorization is completely
+	// unaffected either way and remains unconditionally fail-closed.
+	// Defaults to false (#2148, #2150) so a fresh install's console works
+	// with zero RBAC configuration; production installs should configure
+	// Personas/ConsoleAccessGroups and set this to true to enable the
+	// authorization check on the console gate too.
+	ConsoleAccessAuthorizationCheckEnabled bool `yaml:"consoleAccessAuthorizationCheckEnabled"`
 }
 
 // DefaultConfig returns a Config populated with production defaults.
@@ -304,12 +308,12 @@ func DefaultConfig() *Config {
 		Resilience: defaultResilienceConfig(),
 		RBAC: RBACConfig{
 			SARCacheTTL: 30 * time.Second,
-			// Defaults to true (#2150): the coarse-grained console gate is
+			// ConsoleAccessAuthorizationCheckEnabled defaults to false (Go
+			// zero value, #2148/#2150): the coarse-grained console gate is
 			// authentication-only out of the box, so a fresh install works
-			// with zero RBAC configuration for dev/eval. Set to false once
-			// ConsoleAccessGroups is configured for production, to enforce
-			// SAR on the console gate too.
-			ConsoleAccessAuthOnly: true,
+			// with zero RBAC configuration for dev/eval. Set to true once
+			// ConsoleAccessGroups is configured for production, to enable
+			// the authorization check on the console gate too.
 		},
 		Interactive: InteractiveConfig{
 			Enabled: true,

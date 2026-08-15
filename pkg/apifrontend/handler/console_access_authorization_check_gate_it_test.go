@@ -19,10 +19,10 @@ import (
 )
 
 // denyAllSAR makes every SubjectAccessReview call return Allowed: false --
-// used below to prove auth.ConsoleAuthOnlyGate genuinely bypasses the SAR
-// call for console access (rather than merely happening to agree with an
-// allowing SAR result), while a real *auth.SARChecker underneath it would
-// have denied.
+// used below to prove auth.ConsoleAccessAuthorizationCheckGate genuinely
+// bypasses the authorization check for console access (rather than merely
+// happening to agree with an allowing SAR result), while a real
+// *auth.SARChecker underneath it would have denied.
 //
 //nolint:unparam // action unused but must match k8stesting.ReactionFunc signature required by PrependReactor
 func denyAllSAR(_ k8stesting.Action) (bool, runtime.Object, error) {
@@ -31,17 +31,17 @@ func denyAllSAR(_ k8stesting.Action) (bool, runtime.Object, error) {
 	}, nil
 }
 
-// IT-AF-2148-001/002 prove auth.ConsoleAuthOnlyGate's wiring through the real
-// production dispatch path (handler.NewRouter, handler.NewConsoleAccessHandler,
-// handler.NewMCPHandler), not just the gate's own logic in isolation
-// (UT-AF-2148-*, pkg/apifrontend/auth). Both wrap a real *auth.SARChecker
-// backed by a fake K8s clientset that unconditionally denies, matching the
-// #2148 target scenario of an install with no console/RBAC bindings
-// configured at all.
-var _ = Describe("ConsoleAuthOnlyGate wiring (#2148)", func() {
+// IT-AF-2148-001/002 prove auth.ConsoleAccessAuthorizationCheckGate's wiring
+// through the real production dispatch path (handler.NewRouter,
+// handler.NewConsoleAccessHandler, handler.NewMCPHandler), not just the
+// gate's own logic in isolation (UT-AF-2148-*, pkg/apifrontend/auth). Both
+// wrap a real *auth.SARChecker backed by a fake K8s clientset that
+// unconditionally denies, matching the #2148 target scenario of an install
+// with no console/RBAC bindings configured at all.
+var _ = Describe("ConsoleAccessAuthorizationCheckGate wiring (#2148)", func() {
 	var (
 		metricsReg *metrics.Registry
-		gate       *auth.ConsoleAuthOnlyGate
+		gate       *auth.ConsoleAccessAuthorizationCheckGate
 	)
 
 	BeforeEach(func() {
@@ -49,7 +49,7 @@ var _ = Describe("ConsoleAuthOnlyGate wiring (#2148)", func() {
 		fakeK8s := k8sfake.NewSimpleClientset()
 		fakeK8s.PrependReactor("create", "subjectaccessreviews", denyAllSAR)
 		checker := auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
-		gate = auth.NewConsoleAuthOnlyGate(checker)
+		gate = auth.NewConsoleAccessAuthorizationCheckGate(checker)
 	})
 
 	It("IT-AF-2148-001 [AC-3]: GET /a2a/access returns 200 through the real router even though the underlying SAR would deny", func() {
@@ -109,8 +109,8 @@ var _ = Describe("ConsoleAuthOnlyGate wiring (#2148)", func() {
 		// The console gate is bypassed (auth-only), so a plain user gets past
 		// it -- but the per-tool SAR (denyAllSAR) must still fail-close the
 		// actual tool call through the real bridge/router, proving Check is
-		// untouched by ConsoleAuthOnlyGate end-to-end, not just when called
-		// directly (UT-AF-2148-003).
+		// untouched by ConsoleAccessAuthorizationCheckGate end-to-end, not
+		// just when called directly (UT-AF-2148-003).
 		sid := mcpInitializeThroughRouter(router)
 		status, respBody := mcpCallToolThroughRouter(router, sid, kubernautListRemediations, map[string]any{})
 		Expect(status).To(Equal(http.StatusOK), "MCP transport itself succeeds; denial is inside the tool result")
