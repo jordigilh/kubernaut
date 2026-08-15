@@ -52,7 +52,7 @@ func run() int {
 	defer func() { _ = zapLogger.Sync() }()
 	ctrl.SetLogger(logger.WithName("controller-runtime"))
 
-	sarChecker, err := buildSARClient(logger, cfg.RBAC.SARCacheTTL, cfg.RBAC.ConsoleAccessAuthOnly)
+	sarChecker, err := buildSARClient(logger, cfg.RBAC.SARCacheTTL, cfg.RBAC.ConsoleAccessAuthorizationCheckEnabled)
 	if err != nil {
 		return 1
 	}
@@ -391,12 +391,13 @@ func setupConfigAndLogger() (*config.Config, logr.Logger, *zap.Logger, error) {
 }
 
 // buildSARClient wires the SelfSubjectAccessReview-based authorizer used for
-// K8s-tool RBAC gating. When consoleAccessAuthOnly is true, the coarse-grained
-// console gate (kubernaut.ai/console) is made authentication-only -- see
-// auth.ConsoleAuthOnlyGate (#2148); per-tool authorization is unaffected.
-// The decision is made exactly once, here, at process startup: no per-request
-// branching is introduced anywhere in the request-handling hot path.
-func buildSARClient(logger logr.Logger, sarCacheTTL time.Duration, consoleAccessAuthOnly bool) (auth.ToolAuthorizer, error) {
+// K8s-tool RBAC gating. When consoleAccessAuthorizationCheckEnabled is false
+// (the default), the coarse-grained console gate (kubernaut.ai/console) is
+// made authentication-only -- see auth.ConsoleAccessAuthorizationCheckGate
+// (#2148); per-tool authorization is unaffected either way. The decision is
+// made exactly once, here, at process startup: no per-request branching is
+// introduced anywhere in the request-handling hot path.
+func buildSARClient(logger logr.Logger, sarCacheTTL time.Duration, consoleAccessAuthorizationCheckEnabled bool) (auth.ToolAuthorizer, error) {
 	restCfg, err := ctrl.GetConfig()
 	if err != nil {
 		logger.Error(err, "failed to get in-cluster config for SAR client")
@@ -408,9 +409,9 @@ func buildSARClient(logger logr.Logger, sarCacheTTL time.Duration, consoleAccess
 		return nil, err
 	}
 	checker := auth.NewSARChecker(k8sClient, sarCacheTTL, logger.WithName("sar"))
-	if consoleAccessAuthOnly {
+	if !consoleAccessAuthorizationCheckEnabled {
 		logger.Info("console access gate running in auth-only mode: no console RBAC configured (#2148)")
-		return auth.NewConsoleAuthOnlyGate(checker), nil
+		return auth.NewConsoleAccessAuthorizationCheckGate(checker), nil
 	}
 	return checker, nil
 }
@@ -693,8 +694,8 @@ func buildRouterConfig(p routerBuildParams) (handler.RouterConfig, http.Handler,
 	// #1919: GET /a2a/access is only registered when the configured
 	// Authorizer also implements ConsoleAuthorizer. Production always
 	// constructs either *auth.SARChecker or, in auth-only mode (#2148),
-	// *auth.ConsoleAuthOnlyGate (see buildSARClient) -- both satisfy
-	// ConsoleAuthorizer at compile time (sar.go's `var _
+	// *auth.ConsoleAccessAuthorizationCheckGate (see buildSARClient) --
+	// both satisfy ConsoleAuthorizer at compile time (sar.go's `var _
 	// auth.ConsoleAuthorizer = ...`); the assertion only ever fails for a
 	// ToolAuthorizer-only test double.
 	var consoleAccessHandler http.Handler
