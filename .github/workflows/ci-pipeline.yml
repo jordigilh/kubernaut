@@ -124,7 +124,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
           cache: true
 
       - name: Generate Go code
@@ -173,7 +173,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
           cache: true
 
       - name: Install go-licenses
@@ -239,7 +239,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
           cache: true
 
       - name: Generate Go code
@@ -368,7 +368,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
           cache: true
 
       - name: Generate required files
@@ -503,7 +503,7 @@ jobs:
           submodules: true
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
       - name: Generate OpenAPI specs
         run: make generate
       - name: Install Podman
@@ -690,7 +690,7 @@ jobs:
 
       - uses: actions/setup-go@v7
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
       - name: Generate OpenAPI specs
         run: make generate
       - name: Install Podman
@@ -877,7 +877,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.5'
+          go-version: '1.26.6'
           cache: true
 
       - name: CRD freshness gate
