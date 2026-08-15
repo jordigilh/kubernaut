@@ -766,6 +766,15 @@ networkPolicies:
 # config.rateLimit.*/config.rbac.sarCacheTTL all have non-zero schema defaults
 # -- omitted here, override only what you need, e.g.:
 #   enabled: false  # set false only if you don't need AF at all (Console/KA MCP depend on it)
+#
+# config.rbac.consoleAccessAuthOnly defaults to true (#2150): the coarse-grained
+# console gate is authentication-only out of the box, so a fresh install works
+# with zero RBAC configuration for dev/eval. Once you configure real personas/
+# consoleAccessGroups for production, set this to false to enforce SAR on the
+# console gate too (per-tool authorization is unaffected either way):
+#   config:
+#     rbac:
+#       consoleAccessAuthOnly: false
 apifrontend:
   # -- Ingress for external access (BR-PLATFORM-009, Kubernaut Operator parity
   # with APIFrontendRoute). Opt-in and disabled by default, same as Gateway:

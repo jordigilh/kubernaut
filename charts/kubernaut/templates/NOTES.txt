@@ -111,6 +111,21 @@ will have ALL tool calls denied until you add them to consoleAccessGroups,
 even though their per-tool grants above remain intact and unchanged.
 
 {{- end }}
+{{- if $afNotesV.config.rbac.consoleAccessAuthOnly }}
+=== RBAC NOTICE: console-access gate is authentication-only (#2150) ===
+
+apifrontend.config.rbac.consoleAccessAuthOnly is true (the default). The
+coarse-grained kubernaut.ai/console "use" grant is NOT enforced via SAR --
+any authenticated user is granted console access, with no RBAC bindings
+required. This is convenient for dev/eval installs, but for production:
+
+  1. Configure apifrontend.config.rbac.personas/consoleAccessGroups
+  2. Set apifrontend.config.rbac.consoleAccessAuthOnly=false
+
+Per-tool authorization (the actual security boundary for individual tool
+calls) is unaffected either way and remains unconditionally fail-closed.
+
+{{- end }}
 {{- end }}
 === Monitoring ===
 

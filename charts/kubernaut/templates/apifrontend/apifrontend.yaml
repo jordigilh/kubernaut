@@ -226,6 +226,7 @@ rateLimit:
   toolCallsPerMinute: {{ $v.config.rateLimit.toolCallsPerMinute }}
 rbac:
   sarCacheTTL: {{ $v.config.rbac.sarCacheTTL }}
+  consoleAccessAuthOnly: {{ $v.config.rbac.consoleAccessAuthOnly }}
 logging:
   level: {{ $v.logging.level }}
   format: json
