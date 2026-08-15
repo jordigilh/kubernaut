@@ -31,6 +31,7 @@ import (
 	dsshared "github.com/jordigilh/kubernaut/test/e2e/datastorage/shared"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
+	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
 // Test 39: DataStorage Resilience -- the custom-aggregator representative
@@ -112,29 +113,47 @@ func triggerGatewayResilienceSignalAndVerifyAudit(bgCtx context.Context) error {
 		return fmt.Errorf("failed to get resilience-test ServiceAccount token: %w", err)
 	}
 
+	// The owner-resolver (BR-GATEWAY-185) queries the real K8s API for the
+	// Pod named below and drops the signal (batch parse failure) if it
+	// doesn't exist -- mirrors 15_audit_trace_validation_test.go's
+	// helpers.EnsureTestPod call, without which this alert is unconditionally
+	// rejected regardless of Gateway/DataStorage RBAC (root-caused via
+	// must-gather log from CI run 31886951674: "Pod \"ds-resilience-test-pod\"
+	// not found").
+	podName := "ds-resilience-test-pod"
+	helpers.EnsureTestPod(reqCtx, k8sClient, gatewayNamespace, podName)
+
 	resilienceGatewayURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.GatewayResilienceAPIHostPort)
 	alertPayload := createPrometheusWebhookPayload(PrometheusAlertPayload{
 		AlertName: "DataStorageResilienceTestAlert",
 		Namespace: gatewayNamespace,
 		Severity:  "critical",
-		PodName:   "ds-resilience-test-pod",
+		PodName:   podName,
 		Annotations: map[string]string{
 			"summary":     "Post-recovery signal for #1985 DataStorage resilience E2E",
 			"description": "Proves a gapless, queryable-by-correlation_id audit trail after the readiness gate self-heals",
 		},
 	})
 
-	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost,
-		resilienceGatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(alertPayload))
-	if err != nil {
-		return fmt.Errorf("failed to build signal request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", e2eToken))
-
+	// The request is (re)built fresh on every Eventually attempt (mirroring
+	// 15_audit_trace_validation_test.go), not once beforehand: a
+	// *http.Request built with a bytes.Buffer body can only be sent once --
+	// http.Client.Do drains the body reader, so a second Do() on the same
+	// *http.Request silently fails client-side (ContentLength/body-length
+	// mismatch) rather than reaching the server. Building it once outside
+	// this closure made every retry after the first return status 0,
+	// masking the real (now-fixed) first-attempt failures above.
 	var resp *http.Response
 	Eventually(func() int {
+		req, buildErr := http.NewRequestWithContext(reqCtx, http.MethodPost,
+			resilienceGatewayURL+"/api/v1/signals/prometheus", bytes.NewBuffer(alertPayload))
+		if buildErr != nil {
+			return 0
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Timestamp", fmt.Sprintf("%d", time.Now().Unix()))
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", e2eToken))
+
 		var doErr error
 		resp, doErr = http.DefaultClient.Do(req) //nolint:bodyclose // closed below once loop exits
 		if doErr != nil {
