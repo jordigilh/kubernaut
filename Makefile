@@ -162,10 +162,16 @@ sync-version: ## Propagate VERSION and CHART_VERSION files to Chart.yaml, values
 	rm -f charts/kubernaut/values.yaml.bak charts/kubernaut/values.schema.json.bak \
 		charts/kubernaut/values-airgap.yaml.bak charts/kubernaut/README.md.bak \
 		hack/airgap/imageset-config.yaml.tmpl.bak && \
-	for df in docker/*.Dockerfile; do \
-		sed -i.bak "s/^ARG APP_VERSION=v[0-9][0-9a-zA-Z._-]*/ARG APP_VERSION=v$$VER/" "$$df" && rm -f "$$df.bak"; \
-	done && \
 	echo "✅ Version v$$VER synced to all targets"
+# Note: docker/*.Dockerfile ARG APP_VERSION defaults are intentionally NOT
+# synced here. Every real build path (image-build-*, cross-build-*, and
+# release.yml via the Makefile) always passes an explicit
+# `--build-arg APP_VERSION=$(APP_VERSION)` (line ~936), so the Dockerfile
+# ARG default is only ever seen by an out-of-band `podman build` invoked
+# without Make -- for that case, "unknown" (matching internal/version's own
+# ldflags-unset default and the GIT_COMMIT/BUILD_DATE ARGs beside it) is a
+# more honest default than a stale hardcoded version tag that silently drifts
+# from reality between releases.
 
 .PHONY: generate
 generate: controller-gen ogen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
