@@ -19,6 +19,7 @@ package effectivenessmonitor
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	. "github.com/onsi/ginkgo/v2" //nolint:staticcheck // Ginkgo DSL dot-import convention
 
@@ -74,6 +75,13 @@ var _ = dsshared.Journey("DataStorage Resilience (#1985, BR-AUDIT-005 v2.0, SOC2
 			infrastructure.TeardownEMForDataStorageResilienceTest(ctx, kubeconfigPath, controllerNamespace, GinkgoWriter)
 		},
 		ReadyzURL: fmt.Sprintf("http://127.0.0.1:%d/readyz", infrastructure.EMResilienceHealthHostPort),
+		// UnavailableStatusCode: EM is a ctrl-runtime service -- its
+		// entire /readyz is controller-runtime's own generic
+		// healthz.Handler, which always returns 500 (not 503) for ANY
+		// failed check (confirmed against controller-runtime's own
+		// manager_test.go). See dsshared.Target.UnavailableStatusCode's
+		// doc comment.
+		UnavailableStatusCode: http.StatusInternalServerError,
 		// TriggerAndVerifyAudit intentionally left nil -- see package doc above.
 	}
 })

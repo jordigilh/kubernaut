@@ -77,6 +77,19 @@ type Target struct {
 	// from the shared instance's own readyz NodePort).
 	ReadyzURL string
 
+	// UnavailableStatusCode is the HTTP status /readyz must return while
+	// DataStorage is unreachable. Defaults to http.StatusServiceUnavailable
+	// (503) if left zero -- correct for custom-aggregator services with a
+	// hand-rolled readyz handler (e.g. Gateway, which explicitly writes
+	// 503 -- pkg/gateway/server.go's writeReadinessUnavailable). A
+	// ctrl-runtime service (e.g. EffectivenessMonitor) delegates its
+	// entire /readyz to controller-runtime's own generic healthz.Handler,
+	// which unconditionally writes http.StatusInternalServerError (500)
+	// for ANY failed check regardless of cause (confirmed by
+	// controller-runtime's own manager_test.go) -- such Targets MUST set
+	// this to http.StatusInternalServerError explicitly.
+	UnavailableStatusCode int
+
 	// TriggerAndVerifyAudit, if non-nil, drives one real business request
 	// through the now-recovered dedicated instance and asserts a
 	// complete, gapless audit trail is queryable by correlation_id (SOC2
@@ -150,6 +163,9 @@ func Journey(name string, targetFn func() Target) bool {
 
 		BeforeAll(func() {
 			target = targetFn()
+			if target.UnavailableStatusCode == 0 {
+				target.UnavailableStatusCode = http.StatusServiceUnavailable
+			}
 			bgCtx := context.Background()
 
 			Expect(target.Deploy(bgCtx)).To(Succeed(),
@@ -175,7 +191,7 @@ func Journey(name string, targetFn func() Target) bool {
 			}
 		})
 
-		It("flips /readyz to 503 on a real DataStorage network partition and self-heals with a gapless post-recovery audit trail (SOC2 CC8.1, AU-9)", func() {
+		It("fails /readyz closed on a real DataStorage network partition and self-heals with a gapless post-recovery audit trail (SOC2 CC8.1, AU-9)", func() {
 			By("confirming baseline: the dedicated instance's /readyz is healthy before the partition")
 			Eventually(func() int {
 				return readyzStatus(target.ReadyzURL)
@@ -185,13 +201,14 @@ func Journey(name string, targetFn func() Target) bool {
 			By("killing the bridge-proxy sidecar's socat process: simulates a real, sustained network partition to DataStorage")
 			Expect(bridge.pause(context.Background())).To(Succeed(), "killing the bridge-proxy sidecar's socat process must succeed")
 
-			By("verifying the dedicated instance fails closed: /readyz reports 503 (no silent false-healthy)")
+			By(fmt.Sprintf("verifying the dedicated instance fails closed: /readyz reports %d (no silent false-healthy)", target.UnavailableStatusCode))
 			Eventually(func() int {
 				return readyzStatus(target.ReadyzURL)
-			}, "45s", "1s").Should(Equal(http.StatusServiceUnavailable),
-				"#1985: /readyz must report 503 while DataStorage is unreachable -- this closes the audit-loss "+
-					"window at the root, since Kubernetes removes the pod from Service endpoints before it can "+
-					"serve traffic (and generate audit events) against an unreachable DataStorage")
+			}, "45s", "1s").Should(Equal(target.UnavailableStatusCode),
+				fmt.Sprintf("#1985: /readyz must report %d while DataStorage is unreachable -- this closes the "+
+					"audit-loss window at the root, since Kubernetes removes the pod from Service endpoints "+
+					"before it can serve traffic (and generate audit events) against an unreachable DataStorage",
+					target.UnavailableStatusCode))
 
 			By("relaunching the bridge-proxy sidecar's socat process: DataStorage becomes reachable again")
 			Expect(bridge.resume(context.Background())).To(Succeed(), "relaunching the bridge-proxy sidecar's socat process must succeed")
