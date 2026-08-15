@@ -606,6 +606,30 @@ spec:
         imagePullPolicy: %[5]s
         args:
         - "--config=/etc/effectivenessmonitor/effectivenessmonitor.yaml"
+        env:
+        # Issue #1985 follow-up: this dedicated instance shares
+        # controllerNamespace (and its ServiceAccount) with the real EM
+        # controller under test by every other spec in this suite, but
+        # buildManager's cache.Options.ByObject restricts the
+        # EffectivenessAssessment watch to scope.GetControllerNamespace()
+        # (ADR-057) -- without this override both instances watch/reconcile
+        # the SAME namespace's EAs. leaderElection is false on both (see
+        # ConfigMap below), so there's no lease to make one instance stand
+        # down: they raced as two live reconcilers over the other specs'
+        # EAs. Since this instance's own config disables Prometheus/
+        # AlertManager (it doesn't need them for the DS-resilience journey),
+        # whichever raced-and-won pass first would mark
+        # AlertAssessed/MetricsAssessed=true via the "disabled" skip branch
+        # (reconcile_components.go) with a nil Score, corrupting the other
+        # specs' assertions -- exactly the "AlertScore should be set"/
+        # "MetricsScore should be set" nil failures this fixes. Pointing
+        # this instance's cache at a namespace that is never populated with
+        # real EAs makes its watch permanently empty (K8s List/Watch on a
+        # namespace return zero results, not an error, even if the
+        # namespace doesn't exist) -- fully isolating it without touching
+        # production code, RBAC, or DNS.
+        - name: KUBERNAUT_CONTROLLER_NAMESPACE
+          value: "effectivenessmonitor-resilience-isolated"
         ports:
         - containerPort: 8081
           name: health
