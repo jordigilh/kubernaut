@@ -56,7 +56,7 @@ apifrontend:
             toolCallsPerMinute: 600
             userRequestsPerSec: 100
         rbac:
-            consoleAccessAuthOnly: true
+            consoleAccessAuthorizationCheckEnabled: false
             sarCacheTTL: 30s
         resilience:
             prometheus:

@@ -16,11 +16,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 )
 
-var _ = Describe("ConsoleAuthOnlyGate", func() {
+var _ = Describe("ConsoleAccessAuthorizationCheckGate", func() {
 	var (
 		ctx      context.Context
 		fakeK8s  *k8sfake.Clientset
-		gate     *auth.ConsoleAuthOnlyGate
+		gate     *auth.ConsoleAccessAuthorizationCheckGate
 		sarCalls atomic.Int32
 	)
 
@@ -40,11 +40,11 @@ var _ = Describe("ConsoleAuthOnlyGate", func() {
 		sarCalls.Store(0)
 	})
 
-	Describe("UT-AF-2148-001: auth-only mode allows any non-empty user without a SAR call", func() {
+	Describe("UT-AF-2148-001: auth-only mode allows any non-empty user without running the authorization check", func() {
 		It("should return true without calling the SAR API", func() {
 			fakeK8s.PrependReactor("create", "subjectaccessreviews", countingReactor(false))
 			checker := auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
-			gate = auth.NewConsoleAuthOnlyGate(checker)
+			gate = auth.NewConsoleAccessAuthorizationCheckGate(checker)
 
 			allowed, err := gate.CheckConsoleAccess(ctx, "alice", []string{"sre"})
 			Expect(err).NotTo(HaveOccurred())
@@ -57,7 +57,7 @@ var _ = Describe("ConsoleAuthOnlyGate", func() {
 		It("should reject an empty user without calling the SAR API", func() {
 			fakeK8s.PrependReactor("create", "subjectaccessreviews", countingReactor(true))
 			checker := auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
-			gate = auth.NewConsoleAuthOnlyGate(checker)
+			gate = auth.NewConsoleAccessAuthorizationCheckGate(checker)
 
 			allowed, err := gate.CheckConsoleAccess(ctx, "", []string{"sre"})
 			Expect(err).To(HaveOccurred(), "#2148: authentication is still mandatory in auth-only mode")
@@ -70,7 +70,7 @@ var _ = Describe("ConsoleAuthOnlyGate", func() {
 		It("should still call the SAR API and honor its allow/deny result for Check", func() {
 			fakeK8s.PrependReactor("create", "subjectaccessreviews", countingReactor(false))
 			checker := auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
-			gate = auth.NewConsoleAuthOnlyGate(checker)
+			gate = auth.NewConsoleAccessAuthorizationCheckGate(checker)
 
 			allowed, err := gate.Check(ctx, "alice", []string{"sre"}, "kubernaut_approve")
 			Expect(err).NotTo(HaveOccurred())
@@ -79,10 +79,10 @@ var _ = Describe("ConsoleAuthOnlyGate", func() {
 		})
 	})
 
-	Describe("UT-AF-2148-004: ConsoleAuthOnlyGate satisfies both ToolAuthorizer and ConsoleAuthorizer", func() {
+	Describe("UT-AF-2148-004: ConsoleAccessAuthorizationCheckGate satisfies both ToolAuthorizer and ConsoleAuthorizer", func() {
 		It("should be usable as both interfaces", func() {
 			checker := auth.NewSARChecker(fakeK8s, 30*time.Second, logr.Discard())
-			gate = auth.NewConsoleAuthOnlyGate(checker)
+			gate = auth.NewConsoleAccessAuthorizationCheckGate(checker)
 
 			var _ auth.ToolAuthorizer = gate
 			var _ auth.ConsoleAuthorizer = gate
