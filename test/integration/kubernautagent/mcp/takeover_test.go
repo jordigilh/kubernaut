@@ -487,4 +487,77 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			GinkgoWriter.Println("SEC-TAKEOVER-001: Takeover abandonment validated — autonomous NOT resumed")
 		})
 	})
+
+	// ---------------------------------------------------------------
+	// IT-KA-2155-001: Takeover races ahead of a still-finishing autonomous
+	// investigation
+	// BR: BR-INTERACTIVE-010 SC-3, #2155
+	//
+	// Reproduces the CI flake in E2E-1293-006: TransitionToUserDriving
+	// cancels the investigation's context and flips its status
+	// synchronously, but the investigation goroutine may have already
+	// produced a valid result and only needs a few more milliseconds to
+	// land it via storePartialResult (session/manager.go
+	// handleInvestigationSuccess). A single immediate
+	// storeReconstructedContext read can observe 0 turns even though the
+	// investigation succeeds moments later. This test deterministically
+	// forces that ordering (the investigation's result lands 50ms *after*
+	// takeover's status transition fires) and asserts the takeover response
+	// still reports >=1 reconstructed turn.
+	// ---------------------------------------------------------------
+	Describe("IT-KA-2155-001: takeover retries context reconstruction when it races ahead of a still-finishing autonomous investigation [BR-INTERACTIVE-010 SC-3]", func() {
+		It("should reconstruct at least 1 prior turn even when the investigation's result lands moments after takeover's status transition", func() {
+			nsName := uniqueNamespace("take2155")
+			createNamespace(context.Background(), sharedK8sClient, nsName)
+
+			store := session.NewStore(30 * time.Minute)
+			mgr := session.NewManager(store, logr.Discard(), nil, nil)
+			autoMgr := &mockAutoMgrIT{mgr: mgr}
+
+			gate := make(chan struct{})
+			expectedResult := &katypes.InvestigationResult{
+				RCASummary: "Deployment memory-eater OOMKilled",
+			}
+
+			By("Starting an autonomous investigation whose own Chat() call already returned, so it completes successfully once released")
+			autoSessionID, err := mgr.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
+				<-gate
+				return expectedResult, nil
+			}, map[string]string{"remediation_id": "rr-2155-it-001"})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() session.Status {
+				s, _ := mgr.GetSession(autoSessionID)
+				if s == nil {
+					return ""
+				}
+				return s.Status
+			}).Should(Equal(session.StatusRunning))
+
+			By("Scheduling the investigation's completion to land 50ms after takeover's status transition")
+			go func() {
+				time.Sleep(50 * time.Millisecond)
+				close(gate)
+			}()
+
+			By("Taking over — races the investigation's own result-write against the reconstruction read")
+			logger := logr.Discard()
+			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
+			runner := &delayedMockRunner{delay: 10 * time.Millisecond, response: "interactive response"}
+			recon := &mockReconIT{}
+			tool := tools.NewInvestigateTool(leaseMgr, runner, recon, autoMgr)
+
+			user := mcpinternal.UserInfo{Username: "sre@example.com"}
+			out, err := tool.Handle(context.Background(), tools.InvestigateInput{
+				RRID:   "rr-2155-it-001",
+				Action: tools.ActionTakeover,
+			}, user)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("takeover_started"))
+			Expect(out.Response).To(MatchRegexp(`[1-9]\d* prior turns reconstructed`),
+				"BR-INTERACTIVE-010 SC-3 / #2155: takeover must retry reconstruction long enough to observe "+
+					"a result the in-flight investigation goroutine lands moments after the status transition, "+
+					"instead of returning a stale '0 prior turns reconstructed' from a single immediate read")
+		})
+	})
 })

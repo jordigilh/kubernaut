@@ -19,6 +19,8 @@ package tools_test
 import (
 	"context"
 	"errors"
+	"sync/atomic"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -196,6 +198,93 @@ var _ = Describe("BR-INTERACTIVE-010: Context reconstruction from audit trail", 
 			Expect(runner.capturedMessages[0]).To(Equal(mcptools.LLMMessage{
 				Role: "user", Content: "start fresh",
 			}))
+		})
+	})
+})
+
+// delayedReconstructor returns empty turns for the first emptyAttempts
+// calls, then returns the configured turns thereafter (#2155): simulates
+// an in-flight autonomous investigation whose result lands a few retry
+// attempts after the takeover's first (immediate) reconstruction read.
+type delayedReconstructor struct {
+	emptyAttempts int32
+	calls         atomic.Int32
+	turns         []mcpinternal.ConversationTurn
+}
+
+func (d *delayedReconstructor) Reconstruct(_ context.Context, _, _ string) ([]mcpinternal.ConversationTurn, error) {
+	n := d.calls.Add(1)
+	if n <= d.emptyAttempts {
+		return nil, nil
+	}
+	return d.turns, nil
+}
+
+var _ = Describe("BR-INTERACTIVE-010 SC-3, #2155: takeover retries context reconstruction to close the race with a still-finishing autonomous investigation", func() {
+
+	Describe("UT-KA-2155-001: reconstruction succeeds on a later retry attempt", func() {
+		It("should return the reconstructed turn count once the delayed result becomes available", func() {
+			const rrID = "rr-2155-001"
+			sessionMgr := newReconSessionMgr(rrID, "sess-2155-001")
+			autoMgr := &interactiveAutoMgr{}
+			recon := &delayedReconstructor{
+				emptyAttempts: 2, // first 2 calls (initial + 1 retry) find nothing
+				turns: []mcpinternal.ConversationTurn{
+					{Role: "assistant", Content: "prior RCA landed just after takeover"},
+				},
+			}
+			runner := &messagesCapturingInvestigatorRunner{response: "n/a"}
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
+
+			count := tool.StoreReconstructedContextWithRetry(context.Background(), rrID, "sess-2155-001")
+
+			Expect(count).To(Equal(1),
+				"#2155: retry must observe the result once it lands, instead of giving up on the first empty read")
+			Expect(recon.calls.Load()).To(BeNumerically(">=", int32(3)),
+				"must have retried past the 2 empty attempts before succeeding")
+		})
+	})
+
+	Describe("UT-KA-2155-002: reconstruction gives up after exhausting the retry budget", func() {
+		It("should return 0 and stop retrying once the attempt budget is spent", func() {
+			const rrID = "rr-2155-002"
+			sessionMgr := newReconSessionMgr(rrID, "sess-2155-002")
+			autoMgr := &interactiveAutoMgr{}
+			recon := &delayedReconstructor{
+				emptyAttempts: 1000, // never produces turns — genuinely no prior investigation
+			}
+			runner := &messagesCapturingInvestigatorRunner{response: "n/a"}
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
+
+			count := tool.StoreReconstructedContextWithRetry(context.Background(), rrID, "sess-2155-002")
+
+			Expect(count).To(Equal(0),
+				"a genuinely empty investigation history must still resolve to 0, not retry forever")
+			Expect(recon.calls.Load()).To(Equal(int32(mcptools.ReconstructionRetryAttempts())),
+				"must stop after exactly the configured attempt budget, bounding worst-case added latency")
+		})
+	})
+
+	Describe("UT-KA-2155-003: reconstruction stops retrying when the context is cancelled", func() {
+		It("should return 0 promptly instead of exhausting the full retry budget", func() {
+			const rrID = "rr-2155-003"
+			sessionMgr := newReconSessionMgr(rrID, "sess-2155-003")
+			autoMgr := &interactiveAutoMgr{}
+			recon := &delayedReconstructor{emptyAttempts: 1000}
+			runner := &messagesCapturingInvestigatorRunner{response: "n/a"}
+			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			start := time.Now()
+			count := tool.StoreReconstructedContextWithRetry(ctx, rrID, "sess-2155-003")
+			elapsed := time.Since(start)
+
+			Expect(count).To(Equal(0))
+			Expect(elapsed).To(BeNumerically("<", 100*time.Millisecond),
+				"BR-KA-267/#1949: an already-cancelled context (e.g. inactivity timeout) must abort "+
+					"the retry loop immediately rather than sleeping through the full retry budget")
 		})
 	})
 })

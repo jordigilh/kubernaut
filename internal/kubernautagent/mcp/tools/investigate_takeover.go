@@ -72,7 +72,7 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	ctx, cancelInactivity := t.withInactivityCancel(ctx, sess.SessionID)
 	defer cancelInactivity()
 
-	reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
+	reconCount := t.storeReconstructedContextWithRetry(ctx, input.RRID, sess.SessionID)
 	contextSummary := fmt.Sprintf("%d prior turns reconstructed", reconCount)
 
 	return InvestigateOutput{
