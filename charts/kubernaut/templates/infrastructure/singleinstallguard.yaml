@@ -11,11 +11,14 @@
   late-firing error that doesn't explain the supported topology or the remediation step.
 
   This guard fails fast, before any resources are rendered/applied, with a Kubernaut-specific
-  message. It uses the `gateway-role` ClusterRole (templates/gateway/gateway.yaml) as an
-  existence canary: Gateway is not an optional/gated service, so this ClusterRole is
-  unconditionally present whenever Kubernaut is installed. If Gateway ever becomes
-  optional/gated, this canary must be swapped for a different unconditionally-rendered
-  cluster-scoped resource.
+  message. It uses the `authwebhook` ClusterRole (templates/authwebhook/authwebhook.yaml) as an
+  existence canary: AuthWebhook is not an optional/gated service and has no `enabled` toggle
+  planned, so this ClusterRole is unconditionally present whenever Kubernaut is installed.
+  (Issue #2162: previously used `gateway-role`, but Gateway itself became optional/gated via
+  `gateway.enabled` -- swapped to a still-unconditionally-rendered canary, per this file's own
+  prior warning that such a swap would be required. If AuthWebhook ever becomes optional/gated
+  too, this canary must be swapped again for a different unconditionally-rendered cluster-scoped
+  resource, e.g. DataStorage's `data-storage-auth-middleware` ClusterRole.)
 
   Skipped during `helm template` / `helm lint --strict` (no live cluster access — `lookup`
   returns empty), consistent with the chart's existing offline-rendering contract (see the
@@ -23,13 +26,13 @@
   (ST-CHART-GUARD-001).
 */}}
 
-{{- $existingGatewayRole := lookup "rbac.authorization.k8s.io/v1" "ClusterRole" "" "gateway-role" }}
-{{- if $existingGatewayRole }}
+{{- $existingAuthwebhookRole := lookup "rbac.authorization.k8s.io/v1" "ClusterRole" "" "authwebhook" }}
+{{- if $existingAuthwebhookRole }}
 {{- $existingRelease := "" }}
 {{- $existingNamespace := "" }}
-{{- if $existingGatewayRole.metadata.annotations }}
-{{- $existingRelease = index $existingGatewayRole.metadata.annotations "meta.helm.sh/release-name" | default "" }}
-{{- $existingNamespace = index $existingGatewayRole.metadata.annotations "meta.helm.sh/release-namespace" | default "" }}
+{{- if $existingAuthwebhookRole.metadata.annotations }}
+{{- $existingRelease = index $existingAuthwebhookRole.metadata.annotations "meta.helm.sh/release-name" | default "" }}
+{{- $existingNamespace = index $existingAuthwebhookRole.metadata.annotations "meta.helm.sh/release-namespace" | default "" }}
 {{- end }}
 {{- if or (ne $existingRelease .Release.Name) (ne $existingNamespace .Release.Namespace) }}
 {{- fail (printf "Kubernaut only supports one installation per cluster. An existing installation was found: release %q in namespace %q. This install is release %q in namespace %q.\n\nTo replace the existing installation:\n  helm uninstall %s -n %s\n\nThen retry this install." $existingRelease $existingNamespace .Release.Name .Release.Namespace $existingRelease $existingNamespace) }}

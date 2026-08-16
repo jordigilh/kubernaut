@@ -8,7 +8,9 @@ default: exposing it externally is a deliberate choice, not a default.
 Gateway serves plain HTTP on its "http" port, so no backend-protocol
 annotation is needed (unlike apifrontend's HTTPS backend).
 */}}
-{{- if .Values.gateway.ingress.enabled }}
+{{- /* Issue #2162: ANDs with $v.enabled, mirroring apifrontend/ingress.yaml. */}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "gateway") | fromYaml }}
+{{- if and $v.enabled .Values.gateway.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:

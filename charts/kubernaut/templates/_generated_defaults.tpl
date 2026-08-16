@@ -219,6 +219,7 @@ gateway:
             maxConcurrentRequests: 100
             readTimeout: 30s
             writeTimeout: 30s
+    enabled: true
     fleet:
         oauth2:
             credentialsSecretRef: ""

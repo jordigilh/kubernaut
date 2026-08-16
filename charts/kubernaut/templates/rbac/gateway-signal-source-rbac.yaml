@@ -1,3 +1,7 @@
+{{- /* Issue #2162: this RBAC only makes sense while Gateway itself exists --
+gates on gateway.enabled the same way gateway.yaml does. */}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "gateway") | fromYaml }}
+{{- if $v.enabled }}
 ---
 # BR-GATEWAY-036/037: Gateway signal source RBAC
 # Grants signal sources (AlertManager, Event Exporter) permission to send
@@ -34,4 +38,5 @@ subjects:
   - kind: ServiceAccount
     name: {{ .serviceAccount }}
     namespace: {{ .namespace }}
+{{- end }}
 {{- end }}

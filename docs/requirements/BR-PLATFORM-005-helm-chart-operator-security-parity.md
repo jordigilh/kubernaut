@@ -82,6 +82,12 @@ per BR-PLATFORM-003/004's OCP-removal scope).
    from `additionalClusterRoleBindings`, actually removes the corresponding
    cluster-scoped `ClusterRole`/`ClusterRoleBinding` from the cluster on the next
    `helm upgrade` — not just from a fresh render (FR-6).
+8. `gateway.enabled` (added 2026-08-16, Issue #2162) lets an operator fully disable the Gateway
+   component (Deployment/Service/RBAC/NetworkPolicy/Ingress) the same way `apifrontend.enabled`
+   already does — Gateway (webhook-driven signal ingestion) and APIFrontend (natural-language-driven
+   investigation) are independent, complementary ingress points into the same `RemediationRequest`
+   CRD pipeline, so either may run standalone. Defaults to `true` (zero behavior change for
+   existing installs).
 
 ---
 
@@ -114,6 +120,22 @@ per BR-PLATFORM-003/004's OCP-removal scope).
   Verified via live-cluster smoke tests (`ST-CHART-RBAC-PRUNE-001/002/003`,
   `docs/testing/2159/TEST_PLAN.md`) rather than a code change — preflight confirmed all
   three cases were already correctly wired.
+- **FR-7** (added 2026-08-16, Issue #2162; renumbered from FR-6 since PR #2161 (Issue #2159)
+  claimed FR-6 first for its own, unrelated RBAC-pruning-on-upgrade requirement):
+  `gateway.enabled` (`values.schema.json`, default `true`) gates Gateway's entire
+  Deployment/Service/ServiceAccount/ClusterRole/ClusterRoleBinding/
+  ConfigMap set (`templates/gateway/gateway.yaml`) plus its NetworkPolicy and opt-in Ingress,
+  mirroring the existing `apifrontend.enabled` gate pattern exactly. Independent of
+  `apifrontend.enabled`/`console.enabled` — any combination of Gateway/APIFrontend enabled is
+  supported; `console.enabled` continues to require `apifrontend.enabled` specifically, with no
+  dependency on `gateway.enabled`. Cross-service RBAC bindings to Gateway's ServiceAccount
+  (`rbac/fmc-scope-check-client-rbac.yaml`'s `gateway-fmc-scope-check-client`,
+  `rbac/datastorage-rbac.yaml`'s `gateway-data-storage-client`) and Gateway's
+  `PodDisruptionBudget` are pruned along with it. The chart's single-install guard
+  (`templates/infrastructure/singleinstallguard.yaml`, BR-PLATFORM-004) is re-pointed from the
+  now-optional `gateway-role` ClusterRole to the still-unconditional `authwebhook` ClusterRole as
+  its existence canary. Verified via a new live-cluster smoke test
+  (`ST-CHART-RBAC-PRUNE-004`, `docs/testing/2162/TEST_PLAN.md`).
 
 ---
 

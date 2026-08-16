@@ -23,12 +23,19 @@ minAvailable/maxUnavailable since those aren't booleans. */}}
 {{- $pdb := $component.pdb | default dict }}
 {{- $pdbEnabled := $globalV.podDefaults.pdb.enabled }}
 {{- if hasKey $pdb "enabled" }}{{- $pdbEnabled = $pdb.enabled }}{{- end }}
-{{/* "console" and "fleetmetadatacache" are opt-in (enabled defaults false); skip their PDB entirely when disabled. fleetmetadatacache's opt-in state must go through
-DD-PLATFORM-006 Decision Area 10's derived-default helper (not a raw $component.enabled read), since global.fleet.enabled=true + a "fleetmetadatacache" backend
-implicitly turns FMC on even when fleetmetadatacache.enabled is never set explicitly -- a raw read would skip its PDB even though the Deployment itself renders. */}}
-{{- $fmcEffectiveEnabled := $component.enabled }}
-{{- if eq $name "fleetmetadatacache" }}{{- $fmcEffectiveEnabled = eq (include "kubernaut.fleetmetadatacache.effectiveEnabled" $) "true" }}{{- end }}
-{{- if and $pdbEnabled (or (not (has $name (list "console" "fleetmetadatacache"))) $fmcEffectiveEnabled) }}
+{{/* "console" and "fleetmetadatacache" are opt-in (enabled defaults false); "gateway" and
+"apifrontend" (Issue #2162) default to enabled=true instead -- skip their PDB entirely when
+disabled, same as console/fleetmetadatacache, but resolve via kubernaut.mergedValues (not a raw
+$component.enabled read) since a raw read of an unset field is nil/falsy regardless of the
+service's actual schema default, which would incorrectly skip gateway/apifrontend's PDB by
+default. fleetmetadatacache's opt-in state must additionally go through DD-PLATFORM-006 Decision
+Area 10's derived-default helper, since global.fleet.enabled=true + a "fleetmetadatacache"
+backend implicitly turns FMC on even when fleetmetadatacache.enabled is never set explicitly. */}}
+{{- $effectiveEnabled := $component.enabled }}
+{{- if eq $name "fleetmetadatacache" }}{{- $effectiveEnabled = eq (include "kubernaut.fleetmetadatacache.effectiveEnabled" $) "true" }}{{- end }}
+{{- if eq $name "gateway" }}{{- $effectiveEnabled = (include "kubernaut.mergedValues" (dict "root" $ "service" "gateway") | fromYaml).enabled }}{{- end }}
+{{- if eq $name "apifrontend" }}{{- $effectiveEnabled = (include "kubernaut.mergedValues" (dict "root" $ "service" "apifrontend") | fromYaml).enabled }}{{- end }}
+{{- if and $pdbEnabled (or (not (has $name (list "console" "fleetmetadatacache" "gateway" "apifrontend"))) $effectiveEnabled) }}
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

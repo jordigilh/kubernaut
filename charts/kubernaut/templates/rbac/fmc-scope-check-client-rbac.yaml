@@ -20,6 +20,7 @@ second, unconditional ClusterRole to that same template would make those
 selectors ambiguous.
 */}}
 {{- if eq (include "kubernaut.fleetmetadatacache.effectiveEnabled" .) "true" }}
+{{- $gwV := include "kubernaut.mergedValues" (dict "root" . "service" "gateway") | fromYaml }}
 ---
 # FMC auth middleware: TokenReview/SAR for the GW/RO -> FMC scope-check API
 # (Issue #1993). Mirrors data-storage-auth-middleware (datastorage-rbac.yaml).
@@ -68,6 +69,10 @@ rules:
     resources: ["services"]
     resourceNames: ["fleetmetadatacache-service"]
     verbs: ["get"]
+{{- /* Issue #2162: this binding only makes sense while Gateway's own
+ServiceAccount exists -- gates independently of RemediationOrchestrator's
+identical binding below, which has no enabled toggle. */}}
+{{- if $gwV.enabled }}
 ---
 # Gateway (gateway.yaml ServiceAccount "gateway")
 apiVersion: rbac.authorization.k8s.io/v1
@@ -85,6 +90,7 @@ subjects:
   - kind: ServiceAccount
     name: gateway
     namespace: {{ .Release.Namespace }}
+{{- end }}
 ---
 # RemediationOrchestrator (remediationorchestrator.yaml ServiceAccount "remediationorchestrator-controller")
 apiVersion: rbac.authorization.k8s.io/v1

@@ -114,6 +114,16 @@ fleet:
   {{- end }}
 {{- end }}
 {{- end }}
+{{- /*
+Issue #2162: gates the entire Gateway component (ServiceAccount, RBAC,
+ConfigMap, Deployment, Service -- everything below) the same way
+apifrontend.yaml's $v.enabled gate does. Recomputed here (not shared with
+kubernaut.gateway.configYAML above) since this is a separate top-level scope
+in the same file, not a nested named-template call -- mirrors
+apifrontend.yaml's own identical recompute-for-the-outer-gate pattern.
+*/}}
+{{- $v := include "kubernaut.mergedValues" (dict "root" . "service" "gateway") | fromYaml }}
+{{- if $v.enabled }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -386,3 +396,4 @@ spec:
       protocol: TCP
       port: 9090
       targetPort: 9090
+{{- end }}

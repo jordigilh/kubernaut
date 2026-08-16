@@ -1450,6 +1450,58 @@ run_rbac_prune_003() {
   # No further revert needed -- run_uninst_001/002 follow shortly in flow_a_production.
 }
 
+# Issue #2162 (BR-PLATFORM-005 FR-7): gateway.enabled cluster-scoped RBAC is pruned by
+# helm upgrade when the toggle transitions to false. Test ID number continues the
+# ST-CHART-RBAC-PRUNE-00N family introduced above for fleetmetadatacache/
+# additionalClusterRoleBindings/apifrontend by issue #2159 (PR #2161, merged first).
+run_rbac_prune_004() {
+  local desc="ST-CHART-RBAC-PRUNE-004: BR-PLATFORM-005 FR-7 -- gateway cluster-scoped RBAC is pruned by helm upgrade when gateway.enabled transitions to false"
+  local objs=(
+    "clusterrole/gateway-role"
+    "clusterrolebinding/gateway-rolebinding"
+    "clusterrolebinding/gateway-view"
+  )
+
+  # gateway.enabled defaults true, so run_inst_001's initial install is the positive
+  # control here -- unlike fleetmetadatacache (opt-in, defaults false), no separate
+  # enable step is needed before asserting presence.
+  local obj missing=()
+  for obj in "${objs[@]}"; do
+    kubectl get "$obj" >/dev/null 2>&1 || missing+=("$obj")
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    tap_not_ok "$desc (precondition)" "expected objects missing before toggle-off (gateway.enabled defaults true): ${missing[*]}"
+    return 1
+  fi
+
+  if ! helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" --reuse-values \
+    --set gateway.enabled=false \
+    --timeout 2m >/dev/null 2>&1; then
+    tap_not_ok "$desc" "helm upgrade to disable gateway failed"
+    return 1
+  fi
+
+  local still_present=()
+  for obj in "${objs[@]}"; do
+    kubectl get "$obj" >/dev/null 2>&1 && still_present+=("$obj")
+  done
+  if [[ ${#still_present[@]} -eq 0 ]]; then
+    tap_ok "$desc"
+  else
+    tap_not_ok "$desc" "still present after toggle-off: ${still_present[*]}"
+  fi
+
+  # Revert so the release returns to its documented default (gateway enabled) for the
+  # rest of the test run -- unlike run_rbac_prune_001, run_uninst_001/002 do NOT
+  # immediately follow this function in flow_a_production (run_edge_001/run_guard_001/
+  # run_console_live_001 run first), so leaving gateway disabled here would affect them.
+  helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" --reuse-values \
+    --set gateway.enabled=true \
+    --timeout 2m >/dev/null 2>&1 || true
+}
+
 run_uninst_001() {
   # The chart's pre-delete hook (webhook-cleanup Job) removes admission webhooks
   # before Helm deletes the release resources, preventing failurePolicy=Fail
@@ -1652,6 +1704,7 @@ flow_a_production() {
   run_mon_003 || flow_failed=true
   run_rbac_prune_001 || flow_failed=true
   run_rbac_prune_002 || flow_failed=true
+  run_rbac_prune_004 || flow_failed=true
 
   if [[ "$PLATFORM" == "kind" ]]; then
     run_console_live_001 || flow_failed=true

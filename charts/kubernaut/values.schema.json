@@ -945,6 +945,11 @@
       "description": "Gateway service (AlertManager webhook target + external signal ingestion)",
       "additionalProperties": false,
       "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Issue #2162: whether the Gateway component (Deployment, Service, RBAC) is deployed. Independent of apifrontend.enabled -- either, both, or neither ingress point may be enabled."
+        },
         "replicas": {
           "type": "integer",
           "default": 1,
