@@ -526,13 +526,13 @@
       "description": "Global settings applied across all components",
       "additionalProperties": false,
       "properties": {
-        "additionalClusterRoleBindings": {
+        "additionalClusterRoles": {
           "type": "array",
           "items": {
             "type": "string"
           },
           "default": [],
-          "description": "Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to ALL THREE of Gateway, EffectivenessMonitor, and Kubernaut Agent's ServiceAccounts -- the common case, since all three inspect the same owner-chain/target resources at different pipeline stages and usually need identical ecosystem visibility (e.g. OLM Subscription, ArgoCD Application). Merged with each service's own additionalClusterRoleBindings (deduplicated). Use the per-service field instead of this one when you deliberately want asymmetric access -- e.g. withholding an ecosystem grant from kubernautAgent, the highest-risk, LLM-driven component (BR-PLATFORM-005)."
+          "description": "Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to ALL THREE of Gateway, EffectivenessMonitor, and Kubernaut Agent's ServiceAccounts -- the common case, since all three inspect the same owner-chain/target resources at different pipeline stages and usually need identical ecosystem visibility (e.g. OLM Subscription, ArgoCD Application). Merged with each service's own additionalClusterRoles (deduplicated). Use the per-service field instead of this one when you deliberately want asymmetric access -- e.g. withholding an ecosystem grant from kubernautAgent, the highest-risk, LLM-driven component (BR-PLATFORM-005)."
         },
         "image": {
           "type": "object",
@@ -955,7 +955,7 @@
           "default": 1,
           "minimum": 0
         },
-        "additionalClusterRoleBindings": {
+        "additionalClusterRoles": {
           "type": "array",
           "items": {
             "type": "string"
@@ -2075,7 +2075,7 @@
           "default": 1,
           "minimum": 0
         },
-        "additionalClusterRoleBindings": {
+        "additionalClusterRoles": {
           "type": "array",
           "items": {
             "type": "string"
@@ -2167,7 +2167,7 @@
           "default": 1,
           "minimum": 0
         },
-        "additionalClusterRoleBindings": {
+        "additionalClusterRoles": {
           "type": "array",
           "items": {
             "type": "string"

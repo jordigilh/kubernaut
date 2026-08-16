@@ -395,3 +395,44 @@ scripts/helm-smoke-test.sh --platform kind --chart-path charts/kubernaut/ ...
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-08-16 | Initial test plan (written retrospectively alongside the completed implementation) |
+| 1.1 | 2026-08-16 | Combined Issue #2160 into this PR (see Addendum below) |
+
+---
+
+## Addendum: Issue #2160 — rename `additionalClusterRoleBindings` to `additionalClusterRoles`
+
+Combined into this PR/branch (`feat/2162-gateway-enabled-toggle`) rather than shipped separately,
+since it is the last remaining open issue targeting the v1.6 milestone and both changes are
+breaking, pre-GA Helm schema edits.
+
+**Rationale**: the field holds ClusterRole *names* to bind (`gateway.additionalClusterRoleBindings:
+["my-olm-reader"]`), not `ClusterRoleBinding` objects — the chart generates one `ClusterRoleBinding`
+per name. The original name described the generated output, not the field's actual contents,
+which reads as if the operator supplies pre-built binding objects. Renamed to `additionalClusterRoles`
+on all four locations (`global`, `gateway`, `effectivenessmonitor`, `kubernautAgent`).
+
+**Scope**: pure rename, no behavior change — `additionalClusterRoles: []` remains the default (empty
+list) everywhere, and the merge/dedup semantics (`concat global + per-service | uniq`) are unchanged.
+The `kubernaut.additionalClusterRoleBindings` named template (`_helpers.tpl`) keeps its name, since it
+accurately describes what it renders (one `ClusterRoleBinding` per name) — only the *input* field name
+was misleading, not the template's own name.
+
+**No backwards compatibility**: this is a clean-break rename with no deprecated alias, consistent with
+the "no back-compat needed, clean start" position for this pre-GA chart schema.
+
+**Files changed**: `values.schema.json`, `values.yaml`, `templates/_helpers.tpl` (doc comment only),
+`templates/gateway/gateway.yaml`, `templates/effectivenessmonitor/effectivenessmonitor.yaml`,
+`templates/kubernaut-agent/kubernaut-agent.yaml`, `templates/NOTES.txt`,
+`tests/owner_chain_rbac_extensibility_test.yaml`, `tests/owner_chain_rbac_notes_hint_test.yaml`,
+`README.md`, `docs/generated/helm-values-reference.md` (regenerated),
+`docs/architecture/decisions/DD-GATEWAY-018-owner-chain-rbac-extensibility.md`,
+`docs/requirements/BR-PLATFORM-005-helm-chart-operator-security-parity.md` (new FR-8/criterion 9),
+`scripts/helm-smoke-test.sh` (`run_rbac_prune_002`'s `--set` paths, from #2159/#2161).
+
+`docs/testing/2159/TEST_PLAN.md` is intentionally left referencing the old field name — it is a
+point-in-time historical record of what was tested for #2159, not a living reference doc.
+
+**Verification**: `helm unittest charts/kubernaut/` — 546/546 passed (including both renamed
+suites); `helm template` manually re-verified with `--set 'gateway.additionalClusterRoles[0]=...'`
+and `--set 'global.additionalClusterRoles[0]=...'` to confirm merge/dedup still renders correctly
+end-to-end; `go build ./...` passed (no Go code references this Helm-only field).

@@ -590,7 +590,7 @@ clusters where those operators are actually installed).
 
 Some ecosystems don't aggregate to `view` (OLM's `Subscription`/`ClusterServiceVersion`,
 ArgoCD's `Application` -- ArgoCD manages its own RBAC internally). For these,
-`global.additionalClusterRoleBindings` lets you bind a `ClusterRole` you create and own to
+`global.additionalClusterRoles` lets you bind a `ClusterRole` you create and own to
 **all three** service accounts at once, without waiting on a Kubernaut release -- this is the
 common case, since Gateway/EM/KA inspect the same owner-chain/target resource at different
 pipeline stages and usually need identical visibility:
@@ -611,15 +611,15 @@ rules:
 # 2. Reference it by name once -- applies to gateway, effectivenessmonitor, AND
 # kubernautAgent. Kubernaut only binds it, never authors its rules.
 global:
-  additionalClusterRoleBindings:
+  additionalClusterRoles:
     - my-olm-reader
 ```
 
 If you want asymmetric access instead -- most commonly, granting Gateway/EM an ecosystem
 while withholding it from `kubernautAgent`, the highest-risk, LLM-driven component
 (BR-PLATFORM-005) -- use the per-service fields instead of (or in addition to) the global
-one: `gateway.additionalClusterRoleBindings`, `effectivenessmonitor.additionalClusterRoleBindings`,
-`kubernautAgent.additionalClusterRoleBindings`. The same pattern works for ArgoCD
+one: `gateway.additionalClusterRoles`, `effectivenessmonitor.additionalClusterRoles`,
+`kubernautAgent.additionalClusterRoles`. The same pattern works for ArgoCD
 (`apiGroups: ["argoproj.io"]`, `resources: ["applications"]`) or any other resource kind.
 
 ### Infrastructure

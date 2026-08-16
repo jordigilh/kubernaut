@@ -224,10 +224,10 @@ subjects:
 # ecosystems `view` cannot cover via aggregation (e.g. OLM Subscription,
 # ArgoCD Application, which manages its own RBAC internally). The operator
 # creates and owns the referenced ClusterRole; Kubernaut only binds it.
-# global.additionalClusterRoleBindings covers the common case (same grant
+# global.additionalClusterRoles covers the common case (same grant
 # across Gateway/EM/KA); merged here with gateway's own list (deduplicated)
 # for the asymmetric case.
-{{- include "kubernaut.additionalClusterRoleBindings" (dict "prefix" "gateway" "serviceAccount" "gateway" "names" (concat .Values.global.additionalClusterRoleBindings .Values.gateway.additionalClusterRoleBindings | uniq) "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+{{- include "kubernaut.additionalClusterRoleBindings" (dict "prefix" "gateway" "serviceAccount" "gateway" "names" (concat .Values.global.additionalClusterRoles .Values.gateway.additionalClusterRoles | uniq) "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 ---
 # Role: namespace-scoped access to configmaps and secrets (#229)
 {{ include "kubernaut.nsRoleForSecrets" (dict "name" "gateway" "serviceAccount" "gateway" "Release" .Release "labels" (include "kubernaut.labels" .)) }}

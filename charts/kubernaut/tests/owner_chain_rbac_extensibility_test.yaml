@@ -60,7 +60,7 @@ tests:
   # Gateway, EM, and KA in the Helm chart, for ecosystems `view` cannot
   # cover via aggregation (OLM, ArgoCD, Kafka/Strimzi, custom CRDs, ...).
   # ---------------------------------------------------------------------
-  - it: "IT-HELM-1069-002: Gateway renders no additionalClusterRoleBindings by default"
+  - it: "IT-HELM-1069-002: Gateway renders no additionalClusterRoles by default"
     template: templates/gateway/gateway.yaml
     documentSelector:
       path: metadata.name
@@ -71,10 +71,10 @@ tests:
           count: 0
           filterAware: true
 
-  - it: "IT-HELM-1069-003: Gateway renders a ClusterRoleBinding per name in additionalClusterRoleBindings"
+  - it: "IT-HELM-1069-003: Gateway renders a ClusterRoleBinding per name in additionalClusterRoles"
     set:
       gateway:
-        additionalClusterRoleBindings: ["my-olm-reader"]
+        additionalClusterRoles: ["my-olm-reader"]
     template: templates/gateway/gateway.yaml
     documentSelector:
       path: metadata.name
@@ -98,7 +98,7 @@ tests:
   - it: "IT-HELM-1069-004: Gateway renders one ClusterRoleBinding per entry when multiple names are given"
     set:
       gateway:
-        additionalClusterRoleBindings: ["role-a", "role-b"]
+        additionalClusterRoles: ["role-a", "role-b"]
     template: templates/gateway/gateway.yaml
     documentSelector:
       path: metadata.name
@@ -110,10 +110,10 @@ tests:
           path: roleRef.name
           value: role-b
 
-  - it: "IT-HELM-1069-005: EM renders a ClusterRoleBinding per name in additionalClusterRoleBindings"
+  - it: "IT-HELM-1069-005: EM renders a ClusterRoleBinding per name in additionalClusterRoles"
     set:
       effectivenessmonitor:
-        additionalClusterRoleBindings: ["my-argocd-reader"]
+        additionalClusterRoles: ["my-argocd-reader"]
     template: templates/effectivenessmonitor/effectivenessmonitor.yaml
     documentSelector:
       path: metadata.name
@@ -128,10 +128,10 @@ tests:
           path: subjects[0].name
           value: effectivenessmonitor-controller
 
-  - it: "IT-HELM-1069-006: KA renders a ClusterRoleBinding per name in additionalClusterRoleBindings"
+  - it: "IT-HELM-1069-006: KA renders a ClusterRoleBinding per name in additionalClusterRoles"
     set:
       kubernautAgent:
-        additionalClusterRoleBindings: ["my-kafka-reader"]
+        additionalClusterRoles: ["my-kafka-reader"]
     template: templates/kubernaut-agent/kubernaut-agent.yaml
     documentSelector:
       path: metadata.name
@@ -147,15 +147,15 @@ tests:
           value: kubernaut-agent-sa
 
   # ---------------------------------------------------------------------
-  # global.additionalClusterRoleBindings (write once, applies to all 3
+  # global.additionalClusterRoles (write once, applies to all 3
   # services -- the common case, since Gateway/EM/KA usually need identical
   # ecosystem visibility). Per-service fields remain for asymmetric cases
   # (e.g. withholding a grant from kubernautAgent, BR-PLATFORM-005).
   # ---------------------------------------------------------------------
-  - it: "IT-HELM-1069-007: global.additionalClusterRoleBindings applies to Gateway without a per-service entry"
+  - it: "IT-HELM-1069-007: global.additionalClusterRoles applies to Gateway without a per-service entry"
     set:
       global:
-        additionalClusterRoleBindings: ["my-shared-reader"]
+        additionalClusterRoles: ["my-shared-reader"]
     template: templates/gateway/gateway.yaml
     documentSelector:
       path: metadata.name
@@ -170,10 +170,10 @@ tests:
           path: subjects[0].name
           value: gateway
 
-  - it: "IT-HELM-1069-008: global.additionalClusterRoleBindings applies to EM without a per-service entry"
+  - it: "IT-HELM-1069-008: global.additionalClusterRoles applies to EM without a per-service entry"
     set:
       global:
-        additionalClusterRoleBindings: ["my-shared-reader"]
+        additionalClusterRoles: ["my-shared-reader"]
     template: templates/effectivenessmonitor/effectivenessmonitor.yaml
     documentSelector:
       path: metadata.name
@@ -188,10 +188,10 @@ tests:
           path: subjects[0].name
           value: effectivenessmonitor-controller
 
-  - it: "IT-HELM-1069-009: global.additionalClusterRoleBindings applies to KA without a per-service entry"
+  - it: "IT-HELM-1069-009: global.additionalClusterRoles applies to KA without a per-service entry"
     set:
       global:
-        additionalClusterRoleBindings: ["my-shared-reader"]
+        additionalClusterRoles: ["my-shared-reader"]
     template: templates/kubernaut-agent/kubernaut-agent.yaml
     documentSelector:
       path: metadata.name
@@ -206,12 +206,12 @@ tests:
           path: subjects[0].name
           value: kubernaut-agent-sa
 
-  - it: "IT-HELM-1069-010a: global + per-service additionalClusterRoleBindings both render (global entry present)"
+  - it: "IT-HELM-1069-010a: global + per-service additionalClusterRoles both render (global entry present)"
     set:
       global:
-        additionalClusterRoleBindings: ["my-shared-reader"]
+        additionalClusterRoles: ["my-shared-reader"]
       gateway:
-        additionalClusterRoleBindings: ["my-gateway-only-reader"]
+        additionalClusterRoles: ["my-gateway-only-reader"]
     template: templates/gateway/gateway.yaml
     documentSelector:
       path: metadata.name
@@ -223,12 +223,12 @@ tests:
           path: roleRef.name
           value: my-shared-reader
 
-  - it: "IT-HELM-1069-010b: global + per-service additionalClusterRoleBindings both render (per-service entry present, no clobbering)"
+  - it: "IT-HELM-1069-010b: global + per-service additionalClusterRoles both render (per-service entry present, no clobbering)"
     set:
       global:
-        additionalClusterRoleBindings: ["my-shared-reader"]
+        additionalClusterRoles: ["my-shared-reader"]
       gateway:
-        additionalClusterRoleBindings: ["my-gateway-only-reader"]
+        additionalClusterRoles: ["my-gateway-only-reader"]
     template: templates/gateway/gateway.yaml
     documentSelector:
       path: metadata.name
@@ -243,9 +243,9 @@ tests:
   - it: "IT-HELM-1069-011: the same name in global and per-service lists renders exactly once (dedup)"
     set:
       global:
-        additionalClusterRoleBindings: ["my-shared-reader"]
+        additionalClusterRoles: ["my-shared-reader"]
       gateway:
-        additionalClusterRoleBindings: ["my-shared-reader"]
+        additionalClusterRoles: ["my-shared-reader"]
     template: templates/gateway/gateway.yaml
     documentSelector:
       path: metadata.name

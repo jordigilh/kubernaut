@@ -169,7 +169,7 @@ datastorage:
         nodePort: 0
         type: ClusterIP
 effectivenessmonitor:
-    additionalClusterRoleBindings: []
+    additionalClusterRoles: []
     config:
         assessment:
             stabilizationWindow: 30s
@@ -203,7 +203,7 @@ fleetmetadatacache:
         certFile: ""
         keyFile: ""
 gateway:
-    additionalClusterRoleBindings: []
+    additionalClusterRoles: []
     config:
         cors:
             allowCredentials: false
@@ -239,7 +239,7 @@ gateway:
         nodePort: 0
         type: ClusterIP
 global:
-    additionalClusterRoleBindings: []
+    additionalClusterRoles: []
     fleet:
         backend: ""
         enabled: false
@@ -273,7 +273,7 @@ hooks:
         extraSANs: []
         image: docker.io/bitnami/kubectl:latest@sha256:6e2cdb22d6ab7264ea198c717f555e30536b54029d26c8781b9f25f78951b564
 kubernautAgent:
-    additionalClusterRoleBindings: []
+    additionalClusterRoles: []
     ai:
         safety:
             anomaly:
