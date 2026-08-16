@@ -16,6 +16,8 @@ limitations under the License.
 
 package tools
 
+import "context"
+
 // BuildFinalResult exposes buildFinalResult for external test packages.
 var BuildFinalResult = buildFinalResult
 
@@ -37,4 +39,10 @@ func (t *InvestigateTool) GetReconstructedHistory(rrID string) []LLMMessage {
 		return nil
 	}
 	return msgs
+}
+
+// StoreReconstructedContext exposes storeReconstructedContext for external
+// test packages (#2155).
+func (t *InvestigateTool) StoreReconstructedContext(ctx context.Context, rrID, sessionID string) int {
+	return t.storeReconstructedContext(ctx, rrID, sessionID)
 }

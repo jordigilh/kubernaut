@@ -109,6 +109,10 @@ func (m *goldenPathAutoMgr) Subscribe(_ context.Context, _ string) (<-chan sessi
 
 func (m *goldenPathAutoMgr) EmitSessionEndedByRR(_, _ string) {}
 
+func (m *goldenPathAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
+}
+
 func (m *goldenPathAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false
 }
@@ -158,6 +162,10 @@ func (m *sessionIDForwardingAutoMgr) GetLatestRCAResultByRemediationID(_ string)
 	return nil, false
 }
 func (m *sessionIDForwardingAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
+func (m *sessionIDForwardingAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
+}
 
 func (m *sessionIDForwardingAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false

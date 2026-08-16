@@ -72,6 +72,14 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	ctx, cancelInactivity := t.withInactivityCancel(ctx, sess.SessionID)
 	defer cancelInactivity()
 
+	// #2155: wait for the real completion signal (if any investigation is
+	// still finishing for this RR) instead of guessing a retry schedule.
+	// Bounded only by ctx (already carries the inactivity-cancel wrapper
+	// above) -- no new arbitrary timeout invented here.
+	select {
+	case <-t.autoMgr.WaitForCompletionByRemediationID(input.RRID):
+	case <-ctx.Done():
+	}
 	reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
 	contextSummary := fmt.Sprintf("%d prior turns reconstructed", reconCount)
 

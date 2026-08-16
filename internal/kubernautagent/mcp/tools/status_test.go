@@ -68,6 +68,9 @@ func (m *statusAutoMgr) StartInvestigation(_ context.Context, _ session.Investig
 func (m *statusAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) { return nil, nil }
 func (m *statusAutoMgr) EmitSessionEndedByRR(_, _ string)                      {}
 func (m *statusAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) { return nil, false }
+func (m *statusAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
+}
 
 var _ = Describe("action=status — PR4 PROD-01 BR-INTERACTIVE-002", func() {
 

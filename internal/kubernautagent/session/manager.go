@@ -186,7 +186,7 @@ func (m *Manager) launchInvestigation(ctx context.Context, p investigationLaunch
 	// The cancel func returned here is also stored on the session entry by
 	// attachInvestigationContext, so cancellation (e.g. session abandonment)
 	// is driven from there rather than from this call site.
-	bgCtx, _ := m.attachInvestigationContext(id, correlationID, clusterName)
+	bgCtx, _, done := m.attachInvestigationContext(id, correlationID, clusterName)
 
 	if updateErr := m.store.Update(id, StatusRunning, nil, nil); updateErr != nil {
 		m.logger.Error(updateErr, "failed to update session",
@@ -199,7 +199,7 @@ func (m *Manager) launchInvestigation(ctx context.Context, p investigationLaunch
 	}, nil, startExtra...)
 	m.metrics.RecordSessionStarted(signalName, severity)
 
-	go m.runInvestigation(bgCtx, id, correlationID, fn) //nolint:contextcheck // runInvestigation is launched as a detached goroutine that must outlive the triggering request
+	go m.runInvestigation(bgCtx, id, correlationID, fn, done) //nolint:contextcheck // runInvestigation is launched as a detached goroutine that must outlive the triggering request
 
 	return id, nil
 }
@@ -208,9 +208,13 @@ func (m *Manager) launchInvestigation(ctx context.Context, p investigationLaunch
 // runs under (independent of the request context, carrying session ID,
 // cluster name, correlation ID, and a lazily-attached event sink) and wires
 // its cancel func + sink onto the session store entry so later operations
-// (cancellation, interactive upgrade) can reach them.
-func (m *Manager) attachInvestigationContext(id, correlationID, clusterName string) (context.Context, context.CancelFunc) {
+// (cancellation, interactive upgrade) can reach them. The returned done
+// channel is closed exactly once by runInvestigation's cleanup, after it has
+// fully finished mutating session state (#2155) -- see the doc comment on
+// Session.done for the race this closes.
+func (m *Manager) attachInvestigationContext(id, correlationID, clusterName string) (context.Context, context.CancelFunc, chan struct{}) {
 	bgCtx, cancelFn := context.WithCancel(context.Background())
+	done := make(chan struct{})
 
 	ls := &LazySink{}
 	bgCtx = WithLazySink(bgCtx, ls)
@@ -224,6 +228,7 @@ func (m *Manager) attachInvestigationContext(id, correlationID, clusterName stri
 	m.store.mu.Lock()
 	sess := m.store.sessions[id]
 	sess.cancel = cancelFn
+	sess.done = done
 	sess.lazySink = ls
 	bgCtx = WithInteractiveUpgrade(bgCtx, sess.interactiveUpgrade)
 	m.logger.Info("launchInvestigation: LazySink attached to session",
@@ -232,15 +237,21 @@ func (m *Manager) attachInvestigationContext(id, correlationID, clusterName stri
 		"has_deferred_fn", sess.deferredFn != nil)
 	m.store.mu.Unlock()
 
-	return bgCtx, cancelFn
+	return bgCtx, cancelFn, done
 }
 
 // runInvestigation executes fn in the background, then reconciles the
 // session's terminal status (failed/completed/user-driving) and emits the
 // corresponding lifecycle audit event. Runs as its own goroutine; panics are
 // recovered and session/duration metrics are always recorded.
-func (m *Manager) runInvestigation(bgCtx context.Context, id, correlationID string, fn InvestigateFunc) {
+//
+// #2155: done is closed last (deferred first, so by Go's LIFO defer order it
+// runs after recoverPanic/recordSessionMetrics and after every session-state
+// mutation below), giving WaitForCompletionByRemediationID a real
+// happens-before signal that this goroutine has fully finished.
+func (m *Manager) runInvestigation(bgCtx context.Context, id, correlationID string, fn InvestigateFunc, done chan struct{}) {
 	start := time.Now()
+	defer close(done)
 	defer m.recordSessionMetrics(id, start)
 	defer m.recoverPanic(id, correlationID) //nolint:contextcheck // recoverPanic emits a best-effort failure audit event; must survive whatever context state caused the panic
 

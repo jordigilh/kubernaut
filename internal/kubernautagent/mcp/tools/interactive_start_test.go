@@ -43,6 +43,12 @@ type interactiveAutoMgr struct {
 	pendingOK     bool
 	launchErr     error
 	launchCalled  atomic.Int32
+
+	// waitCh, if set, is returned by WaitForCompletionByRemediationID
+	// instead of an already-closed channel (#2155), letting tests simulate
+	// a still-finishing autonomous investigation that handleTakeover must
+	// wait on.
+	waitCh <-chan struct{}
 }
 
 func (m *interactiveAutoMgr) FindByRemediationID(_ string) (string, bool) {
@@ -86,6 +92,13 @@ func (m *interactiveAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katyp
 	return nil, false
 }
 func (m *interactiveAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
+func (m *interactiveAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	if m.waitCh != nil {
+		return m.waitCh
+	}
+	return mcptools.ClosedChan()
+}
 
 func (m *interactiveAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false
@@ -467,6 +480,10 @@ func (m *sessionIDTrackingAutoMgr) GetLatestRCAResultByRemediationID(_ string) (
 }
 func (m *sessionIDTrackingAutoMgr) EmitSessionEndedByRR(_, _ string) {}
 
+func (m *sessionIDTrackingAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
+}
+
 func (m *sessionIDTrackingAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false
 }
@@ -514,6 +531,10 @@ func (m *upgradeTrackingAutoMgr) Subscribe(_ context.Context, _ string) (<-chan 
 	return nil, nil
 }
 func (m *upgradeTrackingAutoMgr) EmitSessionEndedByRR(_, _ string) {}
+
+func (m *upgradeTrackingAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
+}
 
 func (m *upgradeTrackingAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false

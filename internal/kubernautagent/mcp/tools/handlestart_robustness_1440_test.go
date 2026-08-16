@@ -126,6 +126,9 @@ func (m *fallbackAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session
 }
 func (m *fallbackAutoMgr) EmitSessionEndedByRR(_, _ string)                      {}
 func (m *fallbackAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) { return nil, false }
+func (m *fallbackAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
+}
 
 // reattachHTTPCompleter is a minimal HTTPSessionCompleter stub for #1818
 // tests: only FindUserDrivingByRemediationID is exercised by the reattach
