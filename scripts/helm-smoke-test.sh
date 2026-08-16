@@ -1252,6 +1252,204 @@ run_mon_003() {
     --timeout 2m >/dev/null 2>&1 || true
 }
 
+# Issue #2159 (BR-PLATFORM-005 FR-6): the ST-CHART-RBAC-PRUNE-* tests close a
+# confirmed test-coverage gap -- helm-unittest already proves each toggle
+# renders/doesn't-render a given manifest for a single values input, but has
+# no release-state/diff concept, so it can never prove an object is actually
+# *removed* by a real `helm upgrade` transition. These three tests do that
+# against the live Kind cluster, for the three genuinely toggle-gated
+# cluster-scoped RBAC surfaces confirmed during preflight (gateway.enabled
+# doesn't exist as a field at all, so there's nothing to test there).
+#
+# AC-6 (least privilege): a cluster-scoped RBAC grant that outlives its
+# feature toggle is a privilege-creep violation, not merely cosmetic litter.
+
+# ST-CHART-RBAC-PRUNE-001: fleetmetadatacache's cluster-scoped RBAC is pruned
+# by helm upgrade when fleetmetadatacache.enabled transitions true -> false.
+#
+# fleetmetadatacache.enabled defaults to false (derived from
+# global.fleet.enabled=false) and this flow's install never turns fleet on,
+# so -- unlike run_mon_003's autoscaling toggle -- there is no ambient "already
+# on" state to toggle off. This test first enables FMC (positive control),
+# then disables it (prune assertion). The extra global.fleet.oauth2/
+# workflowexecution.fleet.oauth2.credentialsSecretRef fields are schema-mandatory
+# once global.fleet.mcpGatewayEndpoint is non-empty (confirmed via `helm
+# template` spike), not FMC-specific.
+#
+# Object list confirmed via `helm template` spike, not assumed: FMC's own
+# ClusterRole/ClusterRoleBinding (plain "fleetmetadatacache" name) only render
+# when fleetmetadatacache.namespace is explicitly cleared to "" (opts out of
+# the default namespace-scoped Role/RoleBinding) -- not exercised here, since
+# that's a second, independent toggle. The 5 objects below are the ones that
+# actually render under fleetmetadatacache.enabled=true with no other
+# overrides, which is what this test (and #2159) is about.
+run_rbac_prune_001() {
+  local desc="ST-CHART-RBAC-PRUNE-001: BR-PLATFORM-005 FR-6 -- fleetmetadatacache cluster-scoped RBAC is pruned by helm upgrade when fleetmetadatacache.enabled transitions to false"
+  local objs=(
+    "clusterrole/fleetmetadatacache-auth-middleware"
+    "clusterrolebinding/fleetmetadatacache-auth-middleware"
+    "clusterrole/fmc-scope-check-client"
+    "clusterrolebinding/gateway-fmc-scope-check-client"
+    "clusterrolebinding/remediationorchestrator-fmc-scope-check-client"
+  )
+
+  # RCA (local GREEN-phase run): global.fleet.oauth2.enabled=true cascades to
+  # every service's fleet-preamble helper (not just fleetmetadatacache), so
+  # each rolls a new pod template mounting a Secret volume for
+  # credentialsSecretRef. Without these Secrets exist, the affected
+  # Deployments' new pods hang in ContainerCreating for the rest of the flow
+  # (kubectl create secret is idempotent-safe here: run_uninst_001 removes
+  # the whole namespace shortly after, so no explicit cleanup is needed).
+  kubectl create secret generic fleet-oauth2-creds -n "$NAMESPACE" \
+    --from-literal=client-id=smoke-test-client \
+    --from-literal=client-secret=smoke-test-secret >/dev/null 2>&1 || true
+  kubectl create secret generic we-oauth2-creds -n "$NAMESPACE" \
+    --from-literal=client-id=smoke-test-client \
+    --from-literal=client-secret=smoke-test-secret >/dev/null 2>&1 || true
+
+  if ! helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" --reuse-values \
+    --set fleetmetadatacache.enabled=true \
+    --set global.fleet.mcpGatewayEndpoint=https://mcp.smoke-test.local \
+    --set global.fleet.oauth2.enabled=true \
+    --set global.fleet.oauth2.tokenURL=https://oauth.smoke-test.local/token \
+    --set global.fleet.oauth2.credentialsSecretRef=fleet-oauth2-creds \
+    --set workflowexecution.fleet.oauth2.credentialsSecretRef=we-oauth2-creds \
+    --timeout 2m >/dev/null 2>&1; then
+    tap_not_ok "$desc (precondition)" "helm upgrade to enable fleetmetadatacache failed"
+    return 1
+  fi
+
+  local obj missing=()
+  for obj in "${objs[@]}"; do
+    kubectl get "$obj" >/dev/null 2>&1 || missing+=("$obj")
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    tap_not_ok "$desc (precondition)" "expected objects missing after enabling fleetmetadatacache: ${missing[*]}"
+    return 1
+  fi
+
+  if ! helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" --reuse-values \
+    --set fleetmetadatacache.enabled=false \
+    --timeout 2m >/dev/null 2>&1; then
+    tap_not_ok "$desc" "helm upgrade to disable fleetmetadatacache failed"
+    return 1
+  fi
+
+  local still_present=()
+  for obj in "${objs[@]}"; do
+    kubectl get "$obj" >/dev/null 2>&1 && still_present+=("$obj")
+  done
+  if [[ ${#still_present[@]} -eq 0 ]]; then
+    tap_ok "$desc"
+  else
+    tap_not_ok "$desc" "still present after toggle-off: ${still_present[*]}"
+  fi
+  # No further revert needed -- run_uninst_001/002 follow shortly in flow_a_production.
+}
+
+# ST-CHART-RBAC-PRUNE-002: a gateway.additionalClusterRoleBindings entry's
+# generated ClusterRoleBinding is pruned by helm upgrade when the name is
+# removed from the list (Issue #1069 / DD-GATEWAY-018 lifecycle, list-
+# membership-based rather than boolean). Binds to the built-in "view"
+# ClusterRole -- already bound unconditionally via gateway-view -- so no
+# throwaway test-only ClusterRole is needed and no new permissions are
+# granted; this only exercises the additionalClusterRoleBindings CRB
+# create/prune mechanics themselves. Syntax confirmed via `helm template`
+# spike: `--set 'gateway.additionalClusterRoleBindings[0]=view'` to add,
+# `--set-json 'gateway.additionalClusterRoleBindings=[]'` to clear.
+run_rbac_prune_002() {
+  local desc="ST-CHART-RBAC-PRUNE-002: BR-PLATFORM-005 FR-6 -- gateway.additionalClusterRoleBindings generated ClusterRoleBinding is pruned by helm upgrade when removed from the list"
+
+  if ! helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" --reuse-values \
+    --set 'gateway.additionalClusterRoleBindings[0]=view' \
+    --timeout 2m >/dev/null 2>&1; then
+    tap_not_ok "$desc (precondition)" "helm upgrade to add additionalClusterRoleBindings entry failed"
+    return 1
+  fi
+
+  if ! kubectl get clusterrolebinding/gateway-ext-view >/dev/null 2>&1; then
+    tap_not_ok "$desc (precondition)" "expected clusterrolebinding/gateway-ext-view to exist after adding the entry"
+    return 1
+  fi
+
+  if ! helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" --reuse-values \
+    --set-json 'gateway.additionalClusterRoleBindings=[]' \
+    --timeout 2m >/dev/null 2>&1; then
+    tap_not_ok "$desc" "helm upgrade to clear additionalClusterRoleBindings failed"
+    return 1
+  fi
+
+  if kubectl get clusterrolebinding/gateway-ext-view >/dev/null 2>&1; then
+    tap_not_ok "$desc" "clusterrolebinding/gateway-ext-view still present after removing it from the list"
+  else
+    tap_ok "$desc"
+  fi
+}
+
+# ST-CHART-RBAC-PRUNE-003: APIFrontend's cluster-scoped RBAC is pruned by helm
+# upgrade when apifrontend.enabled transitions true -> false.
+#
+# apifrontend.enabled=false was initially (incorrectly) suspected dead during
+# #2159 preflight -- re-verified via `helm template` spike + existing passing
+# helm-unittest coverage (networkpolicies_unconditional_test.yaml et al.) to
+# already correctly gate the entire apifrontend.yaml template via the
+# kubernaut.mergedValues $v.enabled pattern. No code fix was needed; this is
+# purely the missing live-cluster prune-verification test.
+#
+# Must run after console is disabled too: console.enabled=true (left on by
+# run_console_live_001, never reverted) + apifrontend.enabled=false is a
+# schema-rejected combination (console's nginx sidecar hardcodes a
+# reverse-proxy to APIFrontend with no other backend) -- confirmed via `helm
+# template` spike that disabling both together in the same upgrade renders
+# cleanly.
+#
+# Checks a representative subset of APIFrontend's 15 cluster-scoped RBAC
+# objects (not all 15, to keep the test fast/readable) covering all 3 object
+# shapes -- names confirmed via `helm template` spike, not assumed.
+run_rbac_prune_003() {
+  local desc="ST-CHART-RBAC-PRUNE-003: BR-PLATFORM-005 FR-6 -- apifrontend cluster-scoped RBAC is pruned by helm upgrade when apifrontend.enabled transitions to false"
+  local objs=(
+    "clusterrole/apifrontend"
+    "clusterrolebinding/apifrontend"
+    "clusterrole/kubernaut-tool-sre"
+    "clusterrole/kubernaut-console-access"
+    "clusterrolebinding/kubernaut-console-access-sre"
+  )
+
+  local obj missing=()
+  for obj in "${objs[@]}"; do
+    kubectl get "$obj" >/dev/null 2>&1 || missing+=("$obj")
+  done
+  if [[ ${#missing[@]} -gt 0 ]]; then
+    tap_not_ok "$desc (precondition)" "expected objects missing before toggle-off (apifrontend enabled by default): ${missing[*]}"
+    return 1
+  fi
+
+  if ! helm upgrade kubernaut "$CHART_PATH" \
+    --namespace "$NAMESPACE" --reuse-values \
+    --set apifrontend.enabled=false \
+    --set console.enabled=false \
+    --timeout 2m >/dev/null 2>&1; then
+    tap_not_ok "$desc" "helm upgrade to disable apifrontend failed"
+    return 1
+  fi
+
+  local still_present=()
+  for obj in "${objs[@]}"; do
+    kubectl get "$obj" >/dev/null 2>&1 && still_present+=("$obj")
+  done
+  if [[ ${#still_present[@]} -eq 0 ]]; then
+    tap_ok "$desc"
+  else
+    tap_not_ok "$desc" "still present after toggle-off: ${still_present[*]}"
+  fi
+  # No further revert needed -- run_uninst_001/002 follow shortly in flow_a_production.
+}
+
 run_uninst_001() {
   # The chart's pre-delete hook (webhook-cleanup Job) removes admission webhooks
   # before Helm deletes the release resources, preventing failurePolicy=Fail
@@ -1452,10 +1650,14 @@ flow_a_production() {
   run_edge_001
   run_guard_001
   run_mon_003 || flow_failed=true
+  run_rbac_prune_001 || flow_failed=true
+  run_rbac_prune_002 || flow_failed=true
 
   if [[ "$PLATFORM" == "kind" ]]; then
     run_console_live_001 || flow_failed=true
   fi
+
+  run_rbac_prune_003 || flow_failed=true
 
   if $flow_failed; then
     must_gather "$NAMESPACE" "flow-a-verification-failure"
