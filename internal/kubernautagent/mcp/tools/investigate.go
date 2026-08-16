@@ -106,6 +106,12 @@ type AutonomousSessionQuerier interface {
 	GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool)
 	// #1384: Get the LazySink for a session so workflow_discovery can stream events.
 	GetSessionLazySink(id string) (*session.LazySink, bool)
+	// #2155: returns a channel that closes once the latest investigation
+	// goroutine for rrID has fully finished mutating session state, letting
+	// handleTakeover wait deterministically instead of retrying on a fixed
+	// schedule. Always closes eventually (already-closed if there's nothing
+	// to wait for).
+	WaitForCompletionByRemediationID(rrID string) <-chan struct{}
 }
 
 // AutonomousSessionLifecycle provides suspension, user-driving transition,
@@ -148,6 +154,15 @@ type AutonomousSessionLifecycle interface {
 type AutonomousSessionManager interface {
 	AutonomousSessionQuerier
 	AutonomousSessionLifecycle
+}
+
+// ClosedChan returns an already-closed channel. #2155: exported so test
+// doubles implementing AutonomousSessionManager can return a no-op
+// WaitForCompletionByRemediationID without each defining their own.
+func ClosedChan() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
 }
 
 // RRExistenceChecker validates that a RemediationRequest exists before
@@ -243,6 +258,9 @@ func (NopAutonomousManager) Subscribe(context.Context, string) (<-chan session.I
 }
 func (NopAutonomousManager) GetSessionLazySink(string) (*session.LazySink, bool) { return nil, false }
 func (NopAutonomousManager) EmitSessionEndedByRR(string, string)                 {}
+func (NopAutonomousManager) WaitForCompletionByRemediationID(string) <-chan struct{} {
+	return ClosedChan()
+}
 
 // InvestigateTool handles the kubernaut_investigate MCP tool actions:
 // start, message, complete, cancel, takeover, discover_workflows.

@@ -20,28 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/audit"
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
-)
-
-// #2155: bounds how long handleTakeover retries context reconstruction
-// after an immediate read finds zero turns. TransitionToUserDriving cancels
-// the in-flight autonomous investigation's context and flips its status
-// synchronously, but the investigation goroutine may already have produced
-// a valid result and only need a few more milliseconds to land it via
-// storePartialResult (session/manager.go handleInvestigationSuccess) --
-// without a retry, a single immediate read loses that race and silently
-// drops the completed investigation's context. 5 attempts * 100ms bounds
-// the worst case at 400ms of added latency, and only in that narrow race
-// window: the common case (result already landed, or genuinely no prior
-// investigation) still returns on the first attempt.
-const (
-	reconstructionRetryAttempts = 5
-	reconstructionRetryInterval = 100 * time.Millisecond
 )
 
 func (t *InvestigateTool) handleCancel(input InvestigateInput, user mcpinternal.UserInfo) (InvestigateOutput, error) {
@@ -234,32 +217,6 @@ func (t *InvestigateTool) storeReconstructedContext(ctx context.Context, rrID, s
 	}
 	t.reconHistory.Store(rrID, history)
 	return len(history)
-}
-
-// storeReconstructedContextWithRetry wraps storeReconstructedContext with a
-// short bounded retry when the first attempt finds zero turns (#2155). See
-// the reconstructionRetryAttempts/Interval doc comment for the race this
-// closes. Only handleTakeover uses this: it is the sole caller exposed to
-// an immediate read racing a takeover's own status transition against the
-// investigation goroutine it just cancelled. handleStart's call has no
-// prior investigation to race against, and investigate_discovery's call
-// happens well after the user has already sent at least one interactive
-// message, by which time the race window has long closed -- retrying there
-// would only add latency without protecting against a real race.
-func (t *InvestigateTool) storeReconstructedContextWithRetry(ctx context.Context, rrID, sessionID string) int {
-	for attempt := 0; ; attempt++ {
-		if count := t.storeReconstructedContext(ctx, rrID, sessionID); count > 0 {
-			return count
-		}
-		if attempt >= reconstructionRetryAttempts-1 {
-			return 0
-		}
-		select {
-		case <-ctx.Done():
-			return 0
-		case <-time.After(reconstructionRetryInterval):
-		}
-	}
 }
 
 // appendConversationTurn appends a user message and the LLM response to

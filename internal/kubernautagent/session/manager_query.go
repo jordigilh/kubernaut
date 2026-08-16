@@ -64,6 +64,45 @@ func isFallbackSession(sess *Session) bool {
 	return sess.Metadata["mode"] == "interactive_fallback"
 }
 
+// WaitForCompletionByRemediationID returns a channel that closes once the
+// most recent investigation goroutine for the given remediation_id has fully
+// finished mutating session state (including any storePartialResult fallback
+// write). #2155: this is the synchronization handleTakeover's
+// context-reconstruction read waits on to close the race against a
+// still-finishing autonomous investigation, replacing an earlier
+// fixed-schedule retry loop that had no principled bound and unconditionally
+// taxed every "genuinely no prior investigation" takeover with its full
+// retry budget.
+//
+// Returns an already-closed channel if no session exists for rrID, or if the
+// latest matching session never launched an investigation goroutine (e.g. a
+// StatusPending deferred-interactive session) -- callers can unconditionally
+// select on the result without special-casing "nothing to wait for".
+func (m *Manager) WaitForCompletionByRemediationID(rrID string) <-chan struct{} {
+	m.store.mu.RLock()
+	var latest *Session
+	for _, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] != rrID {
+			continue
+		}
+		if latest == nil || sess.CreatedAt.After(latest.CreatedAt) {
+			latest = sess
+		}
+	}
+	var done chan struct{}
+	if latest != nil {
+		done = latest.done
+	}
+	m.store.mu.RUnlock()
+
+	if done == nil {
+		closed := make(chan struct{})
+		close(closed)
+		return closed
+	}
+	return done
+}
+
 // GetLatestRCASummaryByRemediationID returns the RCA summary from the most
 // recent completed/user-driving session for the given remediation_id, if any.
 // BR-INTERACTIVE-010: enables context reconstruction to use the concise RCA
