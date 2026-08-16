@@ -132,7 +132,9 @@ helm install kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   --set gateway.auth.signalSources[0].namespace=monitoring
 ```
 
-Configure AlertManager to send webhooks to the Gateway:
+Configure AlertManager to send webhooks to the Gateway (requires `gateway.enabled=true`, the
+default — see [Enable/Disable Gateway or APIFrontend](#enable-gateway-or-apifrontend) if you've
+disabled it):
 
 ```yaml
 receivers:
@@ -413,9 +415,39 @@ helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
   (BR-PLATFORM-009, parity with the Operator's `GatewayRoute`/`APIFrontendRoute`) for their
   own external access, since both are machine-facing pipeline entry points where exposure is
   a deliberate security decision. Unlike Console, neither requires a `host` to be set.
+- `gateway.enabled` and `apifrontend.enabled` (both default `true`, Issue #2162) are fully
+  independent — Gateway (webhook-driven signal ingestion, e.g. AlertManager) and APIFrontend
+  (natural-language-driven investigation) are complementary, not redundant, entry points into
+  the same `RemediationRequest` pipeline. Disable either one on its own to run with only the
+  ingress point(s) you actually use, or leave both enabled to support both. `console.enabled`
+  continues to require `apifrontend.enabled` specifically (Console's UI proxies to APIFrontend
+  only) — it has no dependency on `gateway.enabled`.
 - The chart fails fast at `helm template`/`helm install` time (before any resources are
   applied) if `console.enabled=true` and `console.auth.secretName`, a resolvable OIDC issuer,
   or `console.ingress.host` is missing.
+
+### Enable/Disable Gateway or APIFrontend (Issue #2162)
+
+Gateway and APIFrontend are Kubernaut's two independent ingress points — both create
+`RemediationRequest` CRDs, but from different sources: Gateway ingests webhook-driven signals
+(e.g. AlertManager), while APIFrontend serves natural-language-driven investigations (and is
+required by Console, see above). Both default to `enabled: true`; disable whichever one you
+don't use to remove its Deployment/Service/RBAC/NetworkPolicy footprint entirely:
+
+```bash
+# Gateway-only deployment (no natural-language API/Console)
+helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --namespace kubernaut-system --reuse-values \
+  --set apifrontend.enabled=false
+
+# APIFrontend-only deployment (no AlertManager/webhook ingestion)
+helm upgrade kubernaut oci://quay.io/kubernaut-ai/charts/kubernaut \
+  --namespace kubernaut-system --reuse-values \
+  --set gateway.enabled=false
+```
+
+`console.enabled=true` still requires `apifrontend.enabled=true` (see above) — disabling
+Gateway has no effect on Console's availability.
 
 ### OpenShift (OCP)
 
@@ -558,7 +590,7 @@ clusters where those operators are actually installed).
 
 Some ecosystems don't aggregate to `view` (OLM's `Subscription`/`ClusterServiceVersion`,
 ArgoCD's `Application` -- ArgoCD manages its own RBAC internally). For these,
-`global.additionalClusterRoleBindings` lets you bind a `ClusterRole` you create and own to
+`global.additionalClusterRoles` lets you bind a `ClusterRole` you create and own to
 **all three** service accounts at once, without waiting on a Kubernaut release -- this is the
 common case, since Gateway/EM/KA inspect the same owner-chain/target resource at different
 pipeline stages and usually need identical visibility:
@@ -579,15 +611,15 @@ rules:
 # 2. Reference it by name once -- applies to gateway, effectivenessmonitor, AND
 # kubernautAgent. Kubernaut only binds it, never authors its rules.
 global:
-  additionalClusterRoleBindings:
+  additionalClusterRoles:
     - my-olm-reader
 ```
 
 If you want asymmetric access instead -- most commonly, granting Gateway/EM an ecosystem
 while withholding it from `kubernautAgent`, the highest-risk, LLM-driven component
 (BR-PLATFORM-005) -- use the per-service fields instead of (or in addition to) the global
-one: `gateway.additionalClusterRoleBindings`, `effectivenessmonitor.additionalClusterRoleBindings`,
-`kubernautAgent.additionalClusterRoleBindings`. The same pattern works for ArgoCD
+one: `gateway.additionalClusterRoles`, `effectivenessmonitor.additionalClusterRoles`,
+`kubernautAgent.additionalClusterRoles`. The same pattern works for ArgoCD
 (`apiGroups: ["argoproj.io"]`, `resources: ["applications"]`) or any other resource kind.
 
 ### Infrastructure
@@ -667,9 +699,10 @@ See `docs/generated/helm-values-reference.md#tls` for `tls.mode`/`tls.certManage
 
 NetworkPolicies are unconditionally mandatory for every service (DD-PLATFORM-006 Decision Area
 3) -- there is no `networkPolicies.enabled` or per-service `networkPolicies.<service>.enabled`
-toggle; `additionalProperties: false` in the schema rejects both if set. The 4 policies for
-optional services (apifrontend/console/postgresql/valkey) are still a no-op when that service
-itself is disabled -- gate on that service's own `enabled` field, not a NetworkPolicy-specific one.
+toggle; `additionalProperties: false` in the schema rejects both if set. The 5 policies for
+optional services (gateway/apifrontend/console/postgresql/valkey) are still a no-op when that
+service itself is disabled -- gate on that service's own `enabled` field, not a
+NetworkPolicy-specific one (Issue #2162 added gateway to this set).
 See `docs/generated/helm-values-reference.md#networkpolicies` for the full field list
 (`apiServerCIDR(s)`, `apiServerPort`, `monitoring.*`, `externalWebhooks.cidr`,
 `externalRegistry.cidr`, `apifrontend.ingressNamespaces`, `console.ingressNamespaces`).

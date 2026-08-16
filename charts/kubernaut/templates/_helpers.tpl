@@ -560,7 +560,7 @@ subjects:
 
 {{/*
 Render one ClusterRoleBinding per entry in a service's
-additionalClusterRoleBindings list, binding an operator-supplied,
+additionalClusterRoles list, binding an operator-supplied,
 pre-existing ClusterRole (referenced by name only) to the given
 ServiceAccount. Generalizes kubernaut-operator's KubernautAgent-only
 AdditionalClusterRoleBindings mechanism to any Helm-chart service (#1069,

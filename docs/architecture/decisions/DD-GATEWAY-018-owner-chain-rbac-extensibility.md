@@ -91,7 +91,7 @@ Issue [#1069](https://github.com/jordigilh/kubernaut/issues/1069) (RBAC gaps sil
 
 **Approach**: Two parts.
 1. Reduce the mandatory/built-in owner-chain RBAC default for Gateway/EM to **only** genuinely universal, non-ecosystem-specific Kubernetes-core kinds (`policy/poddisruptionbudgets` plus the existing `networking.k8s.io` core rules) — remove the unconditional OLM/Istio/cert-manager/ArgoCD/KubeVirt/Routes grant.
-2. Generalize the reference-by-name mechanism that already exists for KubernautAgent in `kubernaut-operator` (`AdditionalClusterRoleBindings []string`, `kubernaut-operator/api/v1alpha1/kubernaut_types.go:806`, rendered by `AdditionalAgentCRB`/`AdditionalAgentCRBName`, `rbac.go:475-511`) — currently KA-only and operator-only — to Gateway and EM too, and introduce the equivalent in this repo's Helm chart (net-new there; confirmed zero existing `additionalClusterRoleBindings` support in `charts/kubernaut/` today for any service). Operators create their own `ClusterRole` for whichever ecosystem(s) they run (OLM, Istio, cert-manager, ArgoCD, Kafka, Knative, custom CRDs — anything) and reference its name in `<service>.additionalClusterRoleBindings: [...]`.
+2. Generalize the reference-by-name mechanism that already exists for KubernautAgent in `kubernaut-operator` (`AdditionalClusterRoleBindings []string`, `kubernaut-operator/api/v1alpha1/kubernaut_types.go:806`, rendered by `AdditionalAgentCRB`/`AdditionalAgentCRBName`, `rbac.go:475-511`) — currently KA-only and operator-only — to Gateway and EM too, and introduce the equivalent in this repo's Helm chart (net-new there; confirmed zero existing `additionalClusterRoles` support in `charts/kubernaut/` today for any service). Operators create their own `ClusterRole` for whichever ecosystem(s) they run (OLM, Istio, cert-manager, ArgoCD, Kafka, Knative, custom CRDs — anything) and reference its name in `<service>.additionalClusterRoles: [...]`.
 
 **Pros**:
 - ✅ Scales to unbounded/unanticipated resource kinds — the operator writes the exact `ClusterRole` they need, no Kubernaut release required
@@ -139,29 +139,35 @@ Issue [#1069](https://github.com/jordigilh/kubernaut/issues/1069) (RBAC gaps sil
 **Scope for this repository (`kubernaut`)**: the Helm chart (`charts/kubernaut/`) only — this is where #1069's actual customer-facing bug lives.
 
 **Primary Implementation Files**:
-- `charts/kubernaut/templates/gateway/gateway.yaml` — new `gateway-view` `ClusterRoleBinding` (mirrors `effectivenessmonitor-view`/`remediationorchestrator-view` from #545); new `gateway.additionalClusterRoleBindings` values-driven `ClusterRoleBinding` block
-- `charts/kubernaut/templates/effectivenessmonitor/effectivenessmonitor.yaml` — new `effectivenessmonitor.additionalClusterRoleBindings` block (already has the `view` binding from #545)
-- `charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml` — new `kubernautAgent.additionalClusterRoleBindings` block, for parity with the operator's existing KA-only mechanism
+- `charts/kubernaut/templates/gateway/gateway.yaml` — new `gateway-view` `ClusterRoleBinding` (mirrors `effectivenessmonitor-view`/`remediationorchestrator-view` from #545); new `gateway.additionalClusterRoles` values-driven `ClusterRoleBinding` block
+- `charts/kubernaut/templates/effectivenessmonitor/effectivenessmonitor.yaml` — new `effectivenessmonitor.additionalClusterRoles` block (already has the `view` binding from #545)
+- `charts/kubernaut/templates/kubernaut-agent/kubernaut-agent.yaml` — new `kubernautAgent.additionalClusterRoles` block, for parity with the operator's existing KA-only mechanism
 - `charts/kubernaut/templates/_helpers.tpl` — shared `kubernaut.additionalClusterRoleBindings` named template (name-safe CRB naming, matching the operator's `AdditionalAgentCRBName` truncation/hashing logic for consistency)
-- `charts/kubernaut/values.schema.json` / `values.yaml` — new `<service>.additionalClusterRoleBindings: []` list-of-string field per service
+- `charts/kubernaut/values.schema.json` / `values.yaml` — new `<service>.additionalClusterRoles: []` list-of-string field per service
 - `charts/kubernaut/tests/owner_chain_rbac_extensibility_test.yaml` — helm-unittest coverage (IT-HELM-1069-001..004)
 - `docs/installation/02-configure-services.md` (follow-up) — sample `ClusterRole` snippets for OLM, ArgoCD
 
 **Not in scope for this repo**: `kubernaut-operator`. [jordigilh/kubernaut-operator#277](https://github.com/jordigilh/kubernaut-operator/issues/277) (v1.6) tracks the same redesign for that repo's maintainers to decide on independently.
 
-### Addendum: `global.additionalClusterRoleBindings` (2026-08-02, post-implementation)
+### Addendum: `global.additionalClusterRoles` (2026-08-02, post-implementation)
 
-The initial implementation gave each of Gateway/EM/KA an independent `additionalClusterRoleBindings`
+The initial implementation gave each of Gateway/EM/KA an independent `additionalClusterRoles`
 list, requiring the same `ClusterRole` name to be repeated three times for the common case where all
 three services need identical ecosystem visibility (they inspect the same owner-chain/target resource
-at different pipeline stages). Added `global.additionalClusterRoleBindings` — merged (deduplicated via
+at different pipeline stages). Added `global.additionalClusterRoles` — merged (deduplicated via
 `concat ... | uniq`) with each service's own list at each of the three call sites — as the "write once,
 applies everywhere" default, mirroring this chart's existing `global.fleet.oauth2` + per-service-override
 convention. The per-service fields remain for the one legitimate asymmetric case already established in
 this codebase: `kubernautAgent` is documented (`BR-PLATFORM-005`) as the highest-risk, LLM-driven
 component with deliberately more restrictive defaults than Gateway/EM, so an operator may want to grant
-an ecosystem to Gateway/EM via `global.additionalClusterRoleBindings` while withholding it from KA, or
+an ecosystem to Gateway/EM via `global.additionalClusterRoles` while withholding it from KA, or
 vice versa, by using only the per-service field.
+
+**Renamed to `additionalClusterRoles` (2026-08-16, Issue #2160)**: the field held ClusterRole
+*names* to bind, not `ClusterRoleBinding` objects — the original name was misleading about what
+the list actually contains (the *bindings* are what the chart generates from it, one per entry).
+Renamed globally (`global`/`gateway`/`effectivenessmonitor`/`kubernautAgent`) across schema,
+values, templates, tests, and docs. Breaking, pre-GA change; no migration path needed.
 
 ## Consequences
 
@@ -192,4 +198,4 @@ vice versa, by using only the per-service field.
 
 **Success Metrics**:
 - Gateway's Helm-chart ClusterRole grants PDB read access by default (fixes #1069) with zero unconditional ecosystem-specific grants
-- `additionalClusterRoleBindings` available and helm-unittest-covered on all 3 services (Gateway, EM, KA)
+- `additionalClusterRoles` available and helm-unittest-covered on all 3 services (Gateway, EM, KA)

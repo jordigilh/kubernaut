@@ -48,9 +48,30 @@ import (
 //   UT proves Ping-on-Acquire logic (session_pool_test.go)
 //   IT proves wiring through PooledMCPClient (investigation_session_handoff_test.go)
 //   E2E (this file) proves the journey through the full deployed stack
+//
+// Serial (Issue #2165): Step 3 deletes ALL kubernaut-agent pods cluster-wide
+// (label selector, no name scoping) and Step 4 waits up to 120s for the
+// Deployment to roll back to Ready -- KA is unavailable to every other spec
+// for that entire window. Since apifrontend E2E tests run with --procs > 1
+// (true parallel Ginkgo OS processes sharing the same deployed KA), any spec
+// in ANY other process that calls kubernaut_investigate/discover_workflows
+// during that window can have its in-flight KA session torn down mid-call,
+// starving AF's grounding-guard of investigation content and forcing its
+// documented fail-closed fallback (observed: E2E-AF-1395-001 failing with a
+// truncated 431-char payload instead of the expected >512, CI run
+// 31948595609/job 95170442227 -- must-gather confirmed the structured-decision
+// test's own groundSession() call returned summary_len:0/channel_closed
+// squarely inside this spec's pod-kill-to-rollout-complete window). This is
+// the same "process-wide shared state, non-Serial spec" collision class
+// already fixed once in this package for the connection-tracker cap test
+// (streaming_test.go's Serial Describe, TC-E2E-STREAM-04) -- Serial is
+// Ginkgo's authoritative mechanism for it: it guarantees no other spec runs
+// on any parallel process while this one executes
+// (https://onsi.github.io/ginkgo/#serial-specs), eliminating the collision
+// window at its source rather than just reducing its odds.
 // =============================================================================
 
-var _ = Describe("MCP Session Resilience (#1387)", Label("e2e", "mcp-resilience"), func() {
+var _ = Describe("MCP Session Resilience (#1387)", Serial, Label("e2e", "mcp-resilience"), func() {
 
 	var authToken string
 	var mcpSessionID string

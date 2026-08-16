@@ -76,6 +76,10 @@ rules:
     resources: ["services"]
     resourceNames: ["data-storage-service"]
     verbs: ["create", "get", "list", "update", "delete"]
+{{- /* Issue #2162: this binding only makes sense while Gateway's own
+ServiceAccount exists. */}}
+{{- $gwV := include "kubernaut.mergedValues" (dict "root" . "service" "gateway") | fromYaml }}
+{{- if $gwV.enabled }}
 ---
 # Gateway
 apiVersion: rbac.authorization.k8s.io/v1
@@ -93,6 +97,7 @@ subjects:
   - kind: ServiceAccount
     name: gateway
     namespace: {{ .Release.Namespace }}
+{{- end }}
 ---
 # SignalProcessing
 apiVersion: rbac.authorization.k8s.io/v1

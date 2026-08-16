@@ -201,7 +201,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 
 | Parameter | Type | Description | Default | Required |
 |-----------|------|--------------|---------|----------|
-| `additionalClusterRoleBindings` | array of string | Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to the EffectivenessMonitor ServiceAccount, for ecosystem resource kinds not already covered by the built-in view ClusterRole binding (#545). | `[]` | No |
+| `additionalClusterRoles` | array of string | Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to the EffectivenessMonitor ServiceAccount, for ecosystem resource kinds not already covered by the built-in view ClusterRole binding (#545). | `[]` | No |
 | `affinity` | object | Kubernetes affinity rules | `` | No |
 | `config.assessment.stabilizationWindow` | string | Time to wait after remediation before assessing effectiveness | `"30s"` | No |
 | `config.assessment.validityWindow` | string | Time window for assessment validity | `"120s"` | No |
@@ -263,7 +263,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 
 | Parameter | Type | Description | Default | Required |
 |-----------|------|--------------|---------|----------|
-| `additionalClusterRoleBindings` | array of string | Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to the Gateway ServiceAccount, for ecosystem resource kinds not already covered by the built-in view ClusterRole binding (e.g. OLM Subscription, ArgoCD Application). | `[]` | No |
+| `additionalClusterRoles` | array of string | Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to the Gateway ServiceAccount, for ecosystem resource kinds not already covered by the built-in view ClusterRole binding (e.g. OLM Subscription, ArgoCD Application). | `[]` | No |
 | `affinity` | object | Kubernetes affinity rules | `` | No |
 | `auth.signalSources` | array of object | External signal sources that need RBAC to call the Gateway | `` | No |
 | `config.cors.allowCredentials` | boolean | Whether cross-origin requests may include credentials. | `false` | No |
@@ -276,6 +276,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 | `config.server.readTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"30s"` | No |
 | `config.server.writeTimeout` | string | Go time.Duration string (e.g. "30s", "5m", "1h30m") | `"30s"` | No |
 | `containerSecurityContext` | object | Kubernetes securityContext (pod or container level) | `` | No |
+| `enabled` | boolean | Issue #2162: whether the Gateway component (Deployment, Service, RBAC) is deployed. Independent of apifrontend.enabled -- either, both, or neither ingress point may be enabled. | `true` | No |
 | `fleet.oauth2.credentialsSecretRef` | string | K8s Secret with keys: client-id, client-secret. Overrides global.fleet.oauth2.credentialsSecretRef for this service only. | `""` | No |
 | `ingress.annotations` | object |  | `{}` | No |
 | `ingress.className` | string |  | `""` | No |
@@ -302,7 +303,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 
 | Parameter | Type | Description | Default | Required |
 |-----------|------|--------------|---------|----------|
-| `additionalClusterRoleBindings` | array of string | Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to ALL THREE of Gateway, EffectivenessMonitor, and Kubernaut Agent's ServiceAccounts -- the common case, since all three inspect the same owner-chain/target resources at different pipeline stages and usually need identical ecosystem visibility (e.g. OLM Subscription, ArgoCD Application). Merged with each service's own additionalClusterRoleBindings (deduplicated). Use the per-service field instead of this one when you deliberately want asymmetric access -- e.g. withholding an ecosystem grant from kubernautAgent, the highest-risk, LLM-driven component (BR-PLATFORM-005). | `[]` | No |
+| `additionalClusterRoles` | array of string | Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to ALL THREE of Gateway, EffectivenessMonitor, and Kubernaut Agent's ServiceAccounts -- the common case, since all three inspect the same owner-chain/target resources at different pipeline stages and usually need identical ecosystem visibility (e.g. OLM Subscription, ArgoCD Application). Merged with each service's own additionalClusterRoles (deduplicated). Use the per-service field instead of this one when you deliberately want asymmetric access -- e.g. withholding an ecosystem grant from kubernautAgent, the highest-risk, LLM-driven component (BR-PLATFORM-005). | `[]` | No |
 | `defaultResources.limits.cpu` | string | Kubernetes resource quantity (e.g., 256Mi, 100m) | `` | No |
 | `defaultResources.limits.memory` | string | Kubernetes resource quantity (e.g., 256Mi, 100m) | `` | No |
 | `defaultResources.requests.cpu` | string | Kubernetes resource quantity (e.g., 256Mi, 100m) | `` | No |
@@ -347,7 +348,7 @@ Auto-generated from `charts/kubernaut/values.schema.json` by `hack/gen-helm-conf
 
 | Parameter | Type | Description | Default | Required |
 |-----------|------|--------------|---------|----------|
-| `additionalClusterRoleBindings` | array of string | Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to the Kubernaut Agent ServiceAccount, generalizing kubernaut-operator's equivalent KA-only mechanism to the Helm chart, for resource kinds not already covered by its investigator ClusterRole. | `[]` | No |
+| `additionalClusterRoles` | array of string | Issue #1069 (DD-GATEWAY-018): names of pre-existing ClusterRoles to bind to the Kubernaut Agent ServiceAccount, generalizing kubernaut-operator's equivalent KA-only mechanism to the Helm chart, for resource kinds not already covered by its investigator ClusterRole. | `[]` | No |
 | `affinity` | object | Kubernetes affinity rules | `` | No |
 | `ai.safety.anomaly.maxTotalToolCalls` | integer | Maximum total tool calls allowed per investigation phase before the investigation aborts as budget-exhausted (surfaces as MCPError code tool_budget_exhausted for interactive sessions). | `30` | No |
 | `alignmentCheck.enabled` | boolean | Enable the shadow alignment agent. | `false` | No |

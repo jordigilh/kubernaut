@@ -60,12 +60,6 @@ tests:
       - hasDocuments:
           count: 1
 
-  - it: "gateway NetworkPolicy always renders (no enabled toggle exists anymore)"
-    template: templates/gateway/networkpolicy.yaml
-    asserts:
-      - hasDocuments:
-          count: 1
-
   - it: "kubernautAgent NetworkPolicy always renders (no enabled toggle exists anymore)"
     template: templates/kubernaut-agent/networkpolicy-agent.yaml
     asserts:
@@ -96,7 +90,22 @@ tests:
       - hasDocuments:
           count: 1
 
-  # --- Group B: the 4 services whose NetworkPolicy still depends on the OWNING service's own .enabled (not a NetworkPolicy-specific toggle) ---
+  # --- Group B: the services whose NetworkPolicy still depends on the OWNING service's own .enabled (not a NetworkPolicy-specific toggle) ---
+  - it: "gateway NetworkPolicy renders by default (gateway.enabled defaults true) (Issue #2162)"
+    template: templates/gateway/networkpolicy.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+
+  - it: "gateway NetworkPolicy is NOT rendered when gateway.enabled=false (owning-service gate, not a NetworkPolicy toggle, still respected) (Issue #2162)"
+    template: templates/gateway/networkpolicy.yaml
+    set:
+      gateway:
+        enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
   - it: "apifrontend NetworkPolicy renders by default (apifrontend.enabled defaults true)"
     template: templates/apifrontend/networkpolicy.yaml
     asserts:

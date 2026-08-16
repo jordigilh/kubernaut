@@ -194,10 +194,10 @@ subjects:
 # Issue #1069 (DD-GATEWAY-018): operator-supplied ClusterRole references for
 # ecosystems the `view` binding above cannot cover via aggregation (e.g. OLM
 # Subscription, ArgoCD Application, which manages its own RBAC internally).
-# global.additionalClusterRoleBindings covers the common case (same grant
+# global.additionalClusterRoles covers the common case (same grant
 # across Gateway/EM/KA); merged here with EM's own list (deduplicated) for
 # the asymmetric case.
-{{- include "kubernaut.additionalClusterRoleBindings" (dict "prefix" "effectivenessmonitor" "serviceAccount" "effectivenessmonitor-controller" "names" (concat .Values.global.additionalClusterRoleBindings .Values.effectivenessmonitor.additionalClusterRoleBindings | uniq) "Release" .Release "labels" (include "kubernaut.labels" .)) }}
+{{- include "kubernaut.additionalClusterRoleBindings" (dict "prefix" "effectivenessmonitor" "serviceAccount" "effectivenessmonitor-controller" "names" (concat .Values.global.additionalClusterRoles .Values.effectivenessmonitor.additionalClusterRoles | uniq) "Release" .Release "labels" (include "kubernaut.labels" .)) }}
 ---
 apiVersion: apps/v1
 kind: Deployment
