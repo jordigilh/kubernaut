@@ -419,10 +419,14 @@ golangci-lint run --timeout=5m ./internal/kubernautagent/mcp/tools/... ./test/in
 
 ## 15. Existing Tests Requiring Updates
 
-None. `IT-KA-1425-001` and `IT-KA-TAKE-001` (same file) continue to pass unmodified —
-they test a different aspect of takeover (result preservation via `Store.SetResult`,
-and basic status transition) and don't race the reconstruction read against the
-investigation's completion.
+`IT-KA-1425-001` (same file) required a fix (see §16 v2.1): its investigation
+function blocked on an artificial gate channel that ignored `ctx` cancellation,
+which now hangs `handleTakeover`'s wait indefinitely since it legitimately waits
+for the goroutine's real completion signal rather than reading once and moving on.
+Updated to respect `ctx.Done()` like real production `RunFullInvestigation`/LLM
+calls do -- the test's actual assertions (result preserved through takeover,
+`discover_workflows` finds it) are unchanged. `IT-KA-TAKE-001` continues to pass
+unmodified (its investigation function already selects on `ctx.Done()`).
 
 ---
 
@@ -432,3 +436,4 @@ investigation's completion.
 |---------|------|---------|
 | 1.0 | 2026-08-15 | Initial test plan, porting the `main` fix (#2155, PR #2157) to `release/v1.5` as #2156. Design: fixed 5×100ms retry budget on `handleTakeover`'s reconstruction read. |
 | 2.0 | 2026-08-15 | **Design replaced** following review feedback that the fixed retry budget was arbitrary and did not actually solve the underlying synchronization problem: (1) it had no principled bound — 5×100ms was a guess, not derived from any measurement of how long the goroutine's own state-mutation could take; (2) it proved the "genuinely no prior investigation" case unconditionally paid the *entire* 400ms budget (the retired `UT-KA-2155-002` asserted exactly this), directly contradicting the v1.0 code comment's claim that this case "still returns on the first attempt." Replaced with a real completion signal: `session.Session` gained a `done chan struct{}`, closed exactly once by the investigation goroutine's own deferred cleanup only after it fully finishes mutating state (including the `storePartialResult` fallback). `handleTakeover` now `select`s on `Manager.WaitForCompletionByRemediationID(rrID)` (bounded only by the existing request `ctx`, no new arbitrary timeout) instead of retrying on a schedule. This closes the same race deterministically (a Go memory-model happens-before guarantee) rather than probabilistically, and eliminates the latency tax on the empty-history case entirely. Applies to both this `release/v1.5` port and the `main` fix (#2155/PR #2157), which is being fixed forward in a follow-up PR. |
+| 2.1 | 2026-08-15 | **Found and fixed a latent hang exposed by v2.0's design change**: a full-suite run (not just the `IT-KA-2155-001`-focused run recorded in §9) revealed `IT-KA-1425-001` timing out after 3 minutes. Its investigation function blocked on an artificial `gate` channel that ignored `ctx` entirely, so `TransitionToUserDriving`'s cancellation had no way to unblock it — under the v1.0 retry design this didn't matter (a single immediate read just returned 0 and moved on), but under v2.0's real wait-for-completion design, `handleTakeover` now blocks until the goroutine's `done` channel closes, which never happened. Fixed by making the test's investigation function respect `ctx.Done()` (as real production `RunFullInvestigation`/LLM calls do), removing the artificial gate. Full suite (104/104 specs) and `go vet`/`golangci-lint` reconfirmed clean after the fix. |

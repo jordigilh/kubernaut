@@ -305,6 +305,14 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 	// investigation goroutine's result is preserved via storePartialResult
 	// (first-write-wins on SetResult), and discover_workflows finds the
 	// stored RCA through the normal preferred path.
+	//
+	// #2156: the investigation function below respects ctx cancellation
+	// (like production RunFullInvestigation/LLM calls do) instead of
+	// blocking on an artificial gate that ignores ctx -- handleTakeover now
+	// legitimately waits for this goroutine's done signal before returning,
+	// so a fn that never observes cancellation would hang the takeover call
+	// itself, which is exactly the scenario CHECKPOINT-worthy production
+	// code must not exhibit.
 	// ---------------------------------------------------------------
 	Describe("IT-KA-1425-001: takeover preserves investigation result, discover_workflows succeeds [SC-24, IR-4(1)]", func() {
 		It("should preserve investigation result through takeover and use it for discover_workflows", func() {
@@ -315,7 +323,6 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 			autoMgr := &mockAutoMgrIT{mgr: mgr}
 
-			gate := make(chan struct{})
 			expectedResult := &katypes.InvestigationResult{
 				RCASummary: "OOMKilled in api-server deployment",
 				WorkflowID: "restart-pod-v1",
@@ -327,7 +334,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 
 			By("Starting autonomous investigation that returns result on cancellation")
 			autoSessionID, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
-				<-gate
+				<-ctx.Done()
 				return expectedResult, ctx.Err()
 			}, map[string]string{"remediation_id": "rr-1425-it-001"})
 			Expect(err).NotTo(HaveOccurred())
@@ -340,7 +347,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 				return s.Status
 			}).Should(Equal(session.StatusRunning))
 
-			By("Taking over the autonomous investigation (cancels context)")
+			By("Taking over the autonomous investigation (cancels context, waits for the goroutine's completion signal)")
 			logger := logr.Discard()
 			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			runner := &delayedMockRunner{delay: 10 * time.Millisecond, response: "interactive response"}
@@ -361,10 +368,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out.Status).To(Equal("takeover_started"))
 
-			By("Unblocking investigation goroutine (returns result + context.Canceled)")
-			close(gate)
-
-			By("Waiting for investigation result to be stored via storePartialResult")
+			By("Verifying the investigation result was stored via storePartialResult by the time takeover returned")
 			Eventually(func() bool {
 				result, ok := mgr.GetLatestRCAResultByRemediationID("rr-1425-it-001")
 				return ok && result != nil
