@@ -17,6 +17,8 @@ limitations under the License.
 package tools
 
 import (
+	"context"
+
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
@@ -48,4 +50,10 @@ func (t *InvestigateTool) GetReconstructedHistory(rrID string) []LLMMessage {
 		return nil
 	}
 	return msgs
+}
+
+// StoreReconstructedContext exposes storeReconstructedContext for external
+// test packages (#2156, v1.5.7 clone of #2155).
+func (t *InvestigateTool) StoreReconstructedContext(ctx context.Context, rrID, sessionID string) int {
+	return t.storeReconstructedContext(ctx, rrID, sessionID)
 }

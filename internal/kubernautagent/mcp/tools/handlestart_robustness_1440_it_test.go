@@ -67,6 +67,9 @@ func (m *itFallbackAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string
 func (m *itFallbackAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false
 }
+func (m *itFallbackAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
+}
 func (m *itFallbackAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
 	m.startCalled.Add(1)
 	return m.startResult, m.startErr

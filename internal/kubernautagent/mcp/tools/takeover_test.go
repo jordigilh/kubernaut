@@ -59,6 +59,11 @@ type takeoverAutoMgr struct {
 	suspendCalled    atomic.Int32
 	transitionCalled atomic.Int32
 	cancelDelay      time.Duration
+
+	// waitCh, if set, is returned by WaitForCompletionByRemediationID
+	// (#2155/#2156). nil means "nothing to wait for" -- returns an
+	// already-closed channel.
+	waitCh chan struct{}
 }
 
 func (m *takeoverAutoMgr) FindByRemediationID(_ string) (string, bool) {
@@ -102,14 +107,26 @@ func (m *takeoverAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string) e
 	return nil
 }
 
-func (m *takeoverAutoMgr) FindPendingByRemediationID(_ string) (string, bool)         { return "", false }
-func (m *takeoverAutoMgr) LaunchDeferredInvestigation(_ string) error                  { return nil }
-func (m *takeoverAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool)  { return "", false }
+func (m *takeoverAutoMgr) FindPendingByRemediationID(_ string) (string, bool) { return "", false }
+func (m *takeoverAutoMgr) LaunchDeferredInvestigation(_ string) error         { return nil }
+func (m *takeoverAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
+	return "", false
+}
+func (m *takeoverAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	if m.waitCh != nil {
+		return m.waitCh
+	}
+	return tools.ClosedChan()
+}
 func (m *takeoverAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false
 }
-func (m *takeoverAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) { return "", nil }
-func (m *takeoverAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) { return nil, nil }
+func (m *takeoverAutoMgr) StartInvestigation(_ context.Context, _ session.InvestigateFunc, _ map[string]string) (string, error) {
+	return "", nil
+}
+func (m *takeoverAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) {
+	return nil, nil
+}
 func (m *takeoverAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) { return nil, false }
 func (m *takeoverAutoMgr) EmitSessionEndedByRR(_, _ string)                      {}
 
@@ -144,12 +161,12 @@ func (m *takeoverSessMgr) TouchActivity(_ string) {}
 
 // recordingToolMetrics captures metric calls for assertion.
 type recordingToolMetrics struct {
-	takeoverOutcomes   []string
-	sessionStarted     int
-	sessionEnded       int
-	leaseContentions   int
-	commandDurations   []float64
-	mu                 sync.Mutex
+	takeoverOutcomes []string
+	sessionStarted   int
+	sessionEnded     int
+	leaseContentions int
+	commandDurations []float64
+	mu               sync.Mutex
 }
 
 func (m *recordingToolMetrics) RecordInteractiveSessionStarted() {
@@ -573,6 +590,57 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 				}
 			}
 			Expect(found).To(BeTrue(), "should find aiagent.interactive.completed event with reason=complete_already_released")
+		})
+	})
+
+	// #2156 (v1.5.7 clone of #2155): proves the AU-2/CC8.1-mapped
+	// aiagent.interactive.started audit event
+	// (docs/services/stateless/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md)
+	// is unaffected by the context-reconstruction race the
+	// WaitForCompletionByRemediationID fix closes. emitInteractiveStarted
+	// runs before the (possibly-waiting) reconstruction call, so its
+	// session_id/acting_user attribution must be correct regardless of how
+	// long the wait for the completion signal takes.
+	Describe("UT-KA-2155-AUDIT-001: interactive.started audit (AU-2/CC8.1) is correctly attributed even when reconstruction waits on the completion signal", func() {
+		It("should emit aiagent.interactive.started with correct session_id/acting_user while reconstruction is still waiting", func() {
+			auditRecorder := &recordingAuditStore{}
+			waitCh := make(chan struct{})
+			autoMgr.waitCh = waitCh
+			go func() {
+				time.Sleep(20 * time.Millisecond)
+				close(waitCh)
+			}()
+			delayedRecon := &takeoverRecon{
+				turns: []mcpinternal.ConversationTurn{
+					{Role: "assistant", Content: "prior RCA landed just after takeover"},
+				},
+			}
+			toolWithAudit := tools.NewInvestigateTool(sessMgr, runner, delayedRecon, autoMgr,
+				tools.WithAuditStore(auditRecorder, logr.Discard()),
+			)
+
+			input := tools.InvestigateInput{
+				RRID:   "rr-001",
+				Action: tools.ActionTakeover,
+			}
+			out, err := toolWithAudit.Handle(ctx, input, testUser)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(out.Status).To(Equal("takeover_started"))
+			Expect(out.Response).To(MatchRegexp(`[1-9]\d* prior turns reconstructed`),
+				"#2156: must have waited for the completion signal before observing the reconstruction result")
+
+			found := false
+			for _, e := range auditRecorder.events {
+				if e.EventType == audit.EventTypeInteractiveStarted {
+					found = true
+					Expect(e.SessionID).To(Equal("interactive-session-456"),
+						"AU-2/CC8.1: interactive.started must carry the correct session_id even though reconstruction retried")
+					Expect(e.ActingUser).To(Equal(testUser.Username),
+						"AU-2/CC8.1: interactive.started must attribute the correct acting_user even though reconstruction retried")
+					Expect(e.CorrelationID).To(Equal("rr-001"))
+				}
+			}
+			Expect(found).To(BeTrue(), "aiagent.interactive.started must be emitted on takeover regardless of reconstruction retry outcome")
 		})
 	})
 })

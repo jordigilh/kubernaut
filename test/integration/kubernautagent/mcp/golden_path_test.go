@@ -69,8 +69,8 @@ func (r *goldenPathRecon) Reconstruct(_ context.Context, _, _ string) ([]mcpinte
 }
 
 type goldenPathAutoMgr struct {
-	cancelled  bool
-	suspended  bool
+	cancelled bool
+	suspended bool
 }
 
 func (m *goldenPathAutoMgr) FindByRemediationID(_ string) (string, bool) { return "auto-001", true }
@@ -94,9 +94,14 @@ func (m *goldenPathAutoMgr) UpgradeToInteractive(_ string, _ string, _ []string)
 	return nil
 }
 
-func (m *goldenPathAutoMgr) FindPendingByRemediationID(_ string) (string, bool)         { return "", false }
-func (m *goldenPathAutoMgr) LaunchDeferredInvestigation(_ string) error                  { return nil }
-func (m *goldenPathAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool)  { return "", false }
+func (m *goldenPathAutoMgr) FindPendingByRemediationID(_ string) (string, bool) { return "", false }
+func (m *goldenPathAutoMgr) LaunchDeferredInvestigation(_ string) error         { return nil }
+func (m *goldenPathAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
+	return "", false
+}
+func (m *goldenPathAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
+}
 func (m *goldenPathAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false
 }
@@ -115,9 +120,9 @@ func (m *goldenPathAutoMgr) EmitSessionEndedByRR(_, _ string) {}
 
 // sessionIDForwardingAutoMgr tracks whether AF-provided SessionID was used for direct lookup.
 type sessionIDForwardingAutoMgr struct {
-	launchOK           bool
-	launchedID         string
-	findPendingCalled  int32
+	launchOK          bool
+	launchedID        string
+	findPendingCalled int32
 }
 
 func (m *sessionIDForwardingAutoMgr) FindByRemediationID(_ string) (string, bool) {
@@ -153,6 +158,9 @@ func (m *sessionIDForwardingAutoMgr) Subscribe(_ context.Context, _ string) (<-c
 }
 func (m *sessionIDForwardingAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
 	return "", false
+}
+func (m *sessionIDForwardingAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
 }
 func (m *sessionIDForwardingAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false

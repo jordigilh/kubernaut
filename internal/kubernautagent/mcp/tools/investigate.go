@@ -119,6 +119,12 @@ type AutonomousSessionManager interface {
 	LaunchDeferredInvestigation(id string) error
 	// BR-INTERACTIVE-010: Get RCA summary from latest completed session for context reconstruction.
 	GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
+	// #2155/#2156: returns a channel that closes once the latest investigation
+	// goroutine for rrID has fully finished mutating session state, letting
+	// handleTakeover wait deterministically instead of retrying on a fixed
+	// schedule. Always closes eventually (already-closed if there's nothing
+	// to wait for).
+	WaitForCompletionByRemediationID(rrID string) <-chan struct{}
 	// Get full RCA result from latest completed session for workflow discovery.
 	GetLatestRCAResultByRemediationID(rrID string) (*katypes.InvestigationResult, bool)
 
@@ -199,6 +205,23 @@ func (t *InvestigateTool) withInactivityCancel(ctx context.Context, sessionID st
 	}
 }
 
+// closedChan is an already-closed channel shared by no-op
+// WaitForCompletionByRemediationID implementations that have nothing to
+// wait for.
+var closedChan = func() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
+}()
+
+// ClosedChan returns an already-closed channel. Exported for
+// AutonomousSessionManager implementations (including test doubles outside
+// this package) that have nothing to wait for from
+// WaitForCompletionByRemediationID (#2155/#2156).
+func ClosedChan() <-chan struct{} {
+	return closedChan
+}
+
 // NopAutonomousManager is a no-op implementation for tests that exercise
 // actions unrelated to autonomous session management (start, message, etc.).
 type NopAutonomousManager struct{}
@@ -213,6 +236,9 @@ func (NopAutonomousManager) FindPendingByRemediationID(string) (string, bool)   
 func (NopAutonomousManager) LaunchDeferredInvestigation(string) error                    { return nil }
 func (NopAutonomousManager) GetLatestRCASummaryByRemediationID(string) (string, bool) {
 	return "", false
+}
+func (NopAutonomousManager) WaitForCompletionByRemediationID(string) <-chan struct{} {
+	return closedChan
 }
 func (NopAutonomousManager) GetLatestRCAResultByRemediationID(string) (*katypes.InvestigationResult, bool) {
 	return nil, false
@@ -703,6 +729,14 @@ func (t *InvestigateTool) handleTakeover(ctx context.Context, input InvestigateI
 	ctx, cancelInactivity := t.withInactivityCancel(ctx, sess.SessionID)
 	defer cancelInactivity()
 
+	// #2155/#2156: wait for the real completion signal (if any investigation
+	// is still finishing for this RR) instead of guessing a retry schedule.
+	// Bounded only by ctx (already carries the inactivity-cancel wrapper
+	// above) -- no new arbitrary timeout invented here.
+	select {
+	case <-t.autoMgr.WaitForCompletionByRemediationID(input.RRID):
+	case <-ctx.Done():
+	}
 	reconCount := t.storeReconstructedContext(ctx, input.RRID, sess.SessionID)
 	contextSummary := fmt.Sprintf("%d prior turns reconstructed", reconCount)
 

@@ -60,11 +60,25 @@ type Session struct {
 	Context   SessionContext
 	Metadata  map[string]string // Deprecated: use Context. Retained for backward compat.
 
-	// cancel, eventChan, and lazySink are manager-managed internal fields.
-	// They are NOT part of the public copy surface (clone excludes them).
+	// cancel, done, eventChan, and lazySink are manager-managed internal
+	// fields. They are NOT part of the public copy surface (clone excludes
+	// them).
 	cancel    context.CancelFunc
 	eventChan chan InvestigationEvent
 	lazySink  *LazySink
+
+	// done is closed exactly once, by the investigation goroutine's own
+	// deferred cleanup, after it has fully finished mutating session state
+	// (including the storePartialResult fallback write when its terminal
+	// Store.Update is rejected). #2155/#2156: this gives WaitForCompletionByRemediationID
+	// a real happens-before signal (Go channel close/receive) that a takeover's
+	// context-reconstruction read can wait on, instead of guessing how long
+	// the goroutine might still take to land its result after cancellation --
+	// eliminating both the arbitrary retry/sleep schedule and its side effect
+	// of taxing every "genuinely no prior investigation" takeover with the
+	// full retry budget's worth of latency. nil until the investigation is
+	// actually launched (e.g. a StatusPending deferred-interactive session).
+	done chan struct{}
 
 	// interactiveUpgrade is set by UpgradeToInteractive under store.mu.
 	// Checked by store.Update under the same lock to guarantee deterministic
@@ -190,6 +204,7 @@ func (s *Session) clone() *Session {
 	cp.cancel = nil
 	cp.eventChan = nil
 	cp.lazySink = nil
+	cp.done = nil
 	if s.Metadata != nil {
 		cp.Metadata = make(map[string]string, len(s.Metadata))
 		for k, v := range s.Metadata {

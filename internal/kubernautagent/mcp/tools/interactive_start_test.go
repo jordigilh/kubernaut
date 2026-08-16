@@ -43,6 +43,12 @@ type interactiveAutoMgr struct {
 	pendingOK     bool
 	launchErr     error
 	launchCalled  atomic.Int32
+
+	// waitCh, if set, is returned by WaitForCompletionByRemediationID
+	// (#2155/#2156). nil means "nothing to wait for" -- returns an
+	// already-closed channel, matching the default AutonomousSessionManager
+	// behavior when no investigation is racing the takeover.
+	waitCh chan struct{}
 }
 
 func (m *interactiveAutoMgr) FindByRemediationID(_ string) (string, bool) {
@@ -81,6 +87,13 @@ func (m *interactiveAutoMgr) Subscribe(_ context.Context, _ string) (<-chan sess
 }
 func (m *interactiveAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
 	return "", false
+}
+
+func (m *interactiveAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	if m.waitCh != nil {
+		return m.waitCh
+	}
+	return mcptools.ClosedChan()
 }
 func (m *interactiveAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false
@@ -418,14 +431,14 @@ var _ = Describe("Fix #1452: handleStart prefers AF-provided session ID — BR-I
 // sessionIDTrackingAutoMgr tracks the session ID passed to LaunchDeferredInvestigation
 // and whether FindPendingByRemediationID was called.
 type sessionIDTrackingAutoMgr struct {
-	findResult         string
-	findOK             bool
-	pendingResult      string
-	pendingOK          bool
-	launchOK           bool
-	launchErr          error
-	launchedID         string
-	findPendingCalled  atomic.Int32
+	findResult        string
+	findOK            bool
+	pendingResult     string
+	pendingOK         bool
+	launchOK          bool
+	launchErr         error
+	launchedID        string
+	findPendingCalled atomic.Int32
 }
 
 func (m *sessionIDTrackingAutoMgr) FindByRemediationID(_ string) (string, bool) {
@@ -461,6 +474,9 @@ func (m *sessionIDTrackingAutoMgr) Subscribe(_ context.Context, _ string) (<-cha
 }
 func (m *sessionIDTrackingAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
 	return "", false
+}
+func (m *sessionIDTrackingAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
 }
 func (m *sessionIDTrackingAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false
@@ -503,6 +519,9 @@ func (m *upgradeTrackingAutoMgr) FindPendingByRemediationID(_ string) (string, b
 func (m *upgradeTrackingAutoMgr) LaunchDeferredInvestigation(_ string) error { return nil }
 func (m *upgradeTrackingAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, bool) {
 	return "", false
+}
+func (m *upgradeTrackingAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
 }
 func (m *upgradeTrackingAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return nil, false

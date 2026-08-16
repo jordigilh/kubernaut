@@ -88,6 +88,9 @@ func (m *fallbackAutoMgr) GetLatestRCASummaryByRemediationID(_ string) (string, 
 func (m *fallbackAutoMgr) GetLatestRCAResultByRemediationID(_ string) (*katypes.InvestigationResult, bool) {
 	return m.rcaResult, m.rcaOK
 }
+func (m *fallbackAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
+}
 func (m *fallbackAutoMgr) StartInvestigation(_ context.Context, fn session.InvestigateFunc, metadata map[string]string) (string, error) {
 	m.startCalled.Add(1)
 	m.mu.Lock()
@@ -145,7 +148,8 @@ func (c *reattachHTTPCompleter) CompleteUserDriving(_ string, _ *katypes.Investi
 func (c *reattachHTTPCompleter) ForceCompleteByRemediationID(_ string, _ *katypes.InvestigationResult) error {
 	return nil
 }
-func (c *reattachHTTPCompleter) PersistPendingDecisionResult(_ string, _ *katypes.InvestigationResult) {}
+func (c *reattachHTTPCompleter) PersistPendingDecisionResult(_ string, _ *katypes.InvestigationResult) {
+}
 
 var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 
