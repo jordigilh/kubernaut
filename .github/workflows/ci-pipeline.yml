@@ -252,6 +252,14 @@ jobs:
         run: |
           echo "🧪 Running unit tests for ${{ matrix.service }}..."
           export PATH="${{ github.workspace }}/bin:$PATH"
+          # apifrontend's unit suite has grown to where it now reliably lands
+          # at ~5m00-5m01s against the 5m default, causing the aggregate
+          # Ginkgo --timeout to intermittently (and, as of #2166, consistently)
+          # cut off whichever suite is still running -- not a real hang, just
+          # a stale margin. Give it real headroom instead of re-running CI.
+          if [ "${{ matrix.service }}" = "apifrontend" ]; then
+            export TEST_TIMEOUT_UNIT=10m
+          fi
           make test-unit-${{ matrix.service }}
 
       - name: Calculate and save coverage
