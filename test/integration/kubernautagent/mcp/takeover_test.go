@@ -127,6 +127,10 @@ func (m *mockAutoMgrIT) GetLatestRCAResultByRemediationID(rrID string) (*katypes
 
 func (m *mockAutoMgrIT) EmitSessionEndedByRR(_, _ string) {}
 
+func (m *mockAutoMgrIT) WaitForCompletionByRemediationID(rrID string) <-chan struct{} {
+	return m.mgr.WaitForCompletionByRemediationID(rrID)
+}
+
 func (m *mockAutoMgrIT) GetSessionLazySink(id string) (*session.LazySink, bool) {
 	return m.mgr.GetSessionLazySink(id)
 }
@@ -299,6 +303,14 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 	// investigation goroutine's result is preserved via storePartialResult
 	// (first-write-wins on SetResult), and discover_workflows finds the
 	// stored RCA through the normal preferred path.
+	//
+	// #2155: the investigation function below respects ctx cancellation
+	// (like production RunFullInvestigation/LLM calls do) instead of
+	// blocking on an artificial gate that ignores ctx -- handleTakeover now
+	// legitimately waits for this goroutine's done signal before returning,
+	// so a fn that never observes cancellation would hang the takeover call
+	// itself, which is exactly the scenario CHECKPOINT-worthy production
+	// code must not exhibit.
 	// ---------------------------------------------------------------
 	Describe("IT-KA-1425-001: takeover preserves investigation result, discover_workflows succeeds [SC-24, IR-4(1)]", func() {
 		It("should preserve investigation result through takeover and use it for discover_workflows", func() {
@@ -309,7 +321,6 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			mgr := session.NewManager(store, logr.Discard(), nil, nil)
 			autoMgr := &mockAutoMgrIT{mgr: mgr}
 
-			gate := make(chan struct{})
 			expectedResult := &katypes.InvestigationResult{
 				RCASummary: "OOMKilled in api-server deployment",
 				WorkflowID: "restart-pod-v1",
@@ -321,7 +332,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 
 			By("Starting autonomous investigation that returns result on cancellation")
 			autoSessionID, err := mgr.StartInvestigation(context.Background(), func(ctx context.Context) (*katypes.InvestigationResult, error) {
-				<-gate
+				<-ctx.Done()
 				return expectedResult, ctx.Err()
 			}, map[string]string{"remediation_id": "rr-1425-it-001"})
 			Expect(err).NotTo(HaveOccurred())
@@ -334,7 +345,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 				return s.Status
 			}).Should(Equal(session.StatusRunning))
 
-			By("Taking over the autonomous investigation (cancels context)")
+			By("Taking over the autonomous investigation (cancels context, waits for the goroutine's completion signal)")
 			logger := logr.Discard()
 			leaseMgr := mcpinternal.NewLeaseSessionManagerConcrete(sharedK8sClient, nsName, logger)
 			runner := &delayedMockRunner{delay: 10 * time.Millisecond, response: "interactive response"}
@@ -355,10 +366,7 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out.Status).To(Equal("takeover_started"))
 
-			By("Unblocking investigation goroutine (returns result + context.Canceled)")
-			close(gate)
-
-			By("Waiting for investigation result to be stored via storePartialResult")
+			By("Verifying the investigation result was stored via storePartialResult by the time takeover returned")
 			Eventually(func() bool {
 				result, ok := mgr.GetLatestRCAResultByRemediationID("rr-1425-it-001")
 				return ok && result != nil
@@ -498,14 +506,17 @@ var _ = Describe("MCP Dynamic Takeover Integration — PR4 BR-INTERACTIVE-004", 
 	// synchronously, but the investigation goroutine may have already
 	// produced a valid result and only needs a few more milliseconds to
 	// land it via storePartialResult (session/manager.go
-	// handleInvestigationSuccess). A single immediate
-	// storeReconstructedContext read can observe 0 turns even though the
+	// handleInvestigationSuccess). An immediate storeReconstructedContext
+	// read (with no synchronization) can observe 0 turns even though the
 	// investigation succeeds moments later. This test deterministically
 	// forces that ordering (the investigation's result lands 50ms *after*
 	// takeover's status transition fires) and asserts the takeover response
-	// still reports >=1 reconstructed turn.
+	// still reports >=1 reconstructed turn -- proving handleTakeover's wait
+	// on the real *session.Manager's WaitForCompletionByRemediationID
+	// channel (not a guessed retry schedule) correctly blocks until the
+	// investigation goroutine's deferred close(done) fires.
 	// ---------------------------------------------------------------
-	Describe("IT-KA-2155-001: takeover retries context reconstruction when it races ahead of a still-finishing autonomous investigation [BR-INTERACTIVE-010 SC-3]", func() {
+	Describe("IT-KA-2155-001: takeover waits for a still-finishing autonomous investigation's completion signal before reconstructing context [BR-INTERACTIVE-010 SC-3]", func() {
 		It("should reconstruct at least 1 prior turn even when the investigation's result lands moments after takeover's status transition", func() {
 			nsName := uniqueNamespace("take2155")
 			createNamespace(context.Background(), sharedK8sClient, nsName)

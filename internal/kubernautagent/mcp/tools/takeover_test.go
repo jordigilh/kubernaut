@@ -59,6 +59,12 @@ type takeoverAutoMgr struct {
 	suspendCalled    atomic.Int32
 	transitionCalled atomic.Int32
 	cancelDelay      time.Duration
+
+	// waitCh, if set, is returned by WaitForCompletionByRemediationID
+	// instead of an already-closed channel (#2155), letting tests simulate
+	// a still-finishing autonomous investigation that handleTakeover must
+	// wait on.
+	waitCh <-chan struct{}
 }
 
 func (m *takeoverAutoMgr) FindByRemediationID(_ string) (string, bool) {
@@ -112,6 +118,12 @@ func (m *takeoverAutoMgr) StartInvestigation(_ context.Context, _ session.Invest
 func (m *takeoverAutoMgr) Subscribe(_ context.Context, _ string) (<-chan session.InvestigationEvent, error) { return nil, nil }
 func (m *takeoverAutoMgr) EmitSessionEndedByRR(_, _ string)                      {}
 func (m *takeoverAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) { return nil, false }
+func (m *takeoverAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	if m.waitCh != nil {
+		return m.waitCh
+	}
+	return tools.ClosedChan()
+}
 
 // takeoverSessMgr mocks mcpinternal.SessionManager for takeover tests.
 type takeoverSessMgr struct {
@@ -578,22 +590,28 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 
 	// #2155: proves the AU-2/CC8.1-mapped aiagent.interactive.started audit
 	// event (docs/services/stateless/kubernaut-agent/security/AUDIT_EVENT_CATALOG.md)
-	// is unaffected by the context-reconstruction race the storeReconstructedContextWithRetry
-	// fix closes. emitInteractiveStarted runs before the (possibly retried)
-	// reconstruction call, so its session_id/acting_user attribution must be
-	// correct regardless of how many reconstruction attempts the retry takes.
-	Describe("UT-KA-2155-AUDIT-001: interactive.started audit (AU-2/CC8.1) is correctly attributed even when reconstruction races", func() {
-		It("should emit aiagent.interactive.started with correct session_id/acting_user while reconstruction is still retrying", func() {
+	// is unaffected by the completion-signal wait handleTakeover now performs
+	// before reconstructing context. emitInteractiveStarted runs before the
+	// (possibly-waiting) reconstruction call, so its session_id/acting_user
+	// attribution must be correct regardless of how long that wait takes.
+	Describe("UT-KA-2155-AUDIT-001: interactive.started audit (AU-2/CC8.1) is correctly attributed even when reconstruction waits on the completion signal", func() {
+		It("should emit aiagent.interactive.started with correct session_id/acting_user while still waiting for the signal to close", func() {
 			auditRecorder := &recordingAuditStore{}
-			delayedRecon := &delayedReconstructor{
-				emptyAttempts: 2, // first 2 reconstruction attempts find nothing — retry must run
+			waitCh := make(chan struct{})
+			autoMgr.waitCh = waitCh
+			delayedRecon := &takeoverRecon{
 				turns: []mcpinternal.ConversationTurn{
-					{Role: "assistant", Content: "prior RCA landed just after takeover"},
+					{Role: "assistant", Content: "prior RCA landed just before the signal closed"},
 				},
 			}
 			toolWithAudit := tools.NewInvestigateTool(sessMgr, runner, delayedRecon, autoMgr,
 				tools.WithAuditStore(auditRecorder, logr.Discard()),
 			)
+
+			go func() {
+				time.Sleep(20 * time.Millisecond)
+				close(waitCh)
+			}()
 
 			input := tools.InvestigateInput{
 				RRID:   "rr-001",
@@ -603,20 +621,20 @@ var _ = Describe("kubernaut_investigate — Dynamic Takeover (PR4, BR-INTERACTIV
 			Expect(err).NotTo(HaveOccurred())
 			Expect(out.Status).To(Equal("takeover_started"))
 			Expect(out.Response).To(MatchRegexp(`[1-9]\d* prior turns reconstructed`),
-				"#2155: retry must have observed the delayed reconstruction result")
+				"#2155: the wait must have observed the result that landed once the signal closed")
 
 			found := false
 			for _, e := range auditRecorder.events {
 				if e.EventType == audit.EventTypeInteractiveStarted {
 					found = true
 					Expect(e.SessionID).To(Equal("interactive-session-456"),
-						"AU-2/CC8.1: interactive.started must carry the correct session_id even though reconstruction retried")
+						"AU-2/CC8.1: interactive.started must carry the correct session_id even though reconstruction waited")
 					Expect(e.ActingUser).To(Equal(testUser.Username),
-						"AU-2/CC8.1: interactive.started must attribute the correct acting_user even though reconstruction retried")
+						"AU-2/CC8.1: interactive.started must attribute the correct acting_user even though reconstruction waited")
 					Expect(e.CorrelationID).To(Equal("rr-001"))
 				}
 			}
-			Expect(found).To(BeTrue(), "aiagent.interactive.started must be emitted on takeover regardless of reconstruction retry outcome")
+			Expect(found).To(BeTrue(), "aiagent.interactive.started must be emitted on takeover regardless of the completion-signal wait outcome")
 		})
 	})
 })

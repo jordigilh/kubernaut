@@ -76,6 +76,10 @@ func (m *itFallbackAutoMgr) Subscribe(_ context.Context, _ string) (<-chan sessi
 }
 func (m *itFallbackAutoMgr) EmitSessionEndedByRR(_, _ string) {}
 
+func (m *itFallbackAutoMgr) WaitForCompletionByRemediationID(_ string) <-chan struct{} {
+	return mcptools.ClosedChan()
+}
+
 func (m *itFallbackAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, bool) {
 	return nil, false
 }
