@@ -34,26 +34,37 @@ import (
 // periodic Gate (including the synchronous first probe on Start).
 const defaultProbeTimeout = 10 * time.Second
 
-// DataStorageProber probes DataStorage's real health endpoint (port 8081
-// readyz, verifies Postgres connectivity -- see
-// pkg/datastorage/server/handlers.go's handleReadiness) so that every
-// audit-writing service can gate its own /readyz on DataStorage's actual
-// reachability (#1985, BR-AUDIT-005 v2.0). This closes the audit-loss
-// window where a service starts serving traffic -- and therefore
-// generating audit events -- before DataStorage is reachable: if the pod
-// never reports Ready, Kubernetes never routes it traffic in the first
-// place, so no audit event is ever lost to a cold-start race.
+// DataStorageProber probes DataStorage's real readiness endpoint (verifies
+// Postgres connectivity -- see pkg/datastorage/server/handlers.go's
+// handleReadiness) so that every audit-writing service can gate its own
+// /readyz on DataStorage's actual reachability (#1985, BR-AUDIT-005 v2.0).
+// This closes the audit-loss window where a service starts serving
+// traffic -- and therefore generating audit events -- before DataStorage
+// is reachable: if the pod never reports Ready, Kubernetes never routes
+// it traffic in the first place, so no audit event is ever lost to a
+// cold-start race.
+//
+// DD-PLATFORM-010: HealthURL targets an unauthenticated /readyz route on
+// DataStorage's main API port (8080, HTTPS) -- not the dedicated
+// kubelet-only health port (8081, HTTP) -- so this reuses the exact same
+// handler kubelet's own probe hits, registered a second time at the
+// router's top level, outside the DD-AUTH-014 auth middleware group.
 //
 // Implements pkg/fleet/readiness.Prober directly; that interface has no
 // Fleet-specific coupling, so DataStorageProber is aggregated into each
 // service's own independent, always-on readiness.Gate (distinct from the
 // existing Fleet-conditional gate).
 type DataStorageProber struct {
-	// HealthURL is DataStorage's health-check endpoint (its readyz port,
-	// 8081 -- distinct from the main API port 8080 used for audit writes).
+	// HealthURL is DataStorage's cross-service readiness endpoint:
+	// https://<service>:8080/readyz (DD-PLATFORM-010; see
+	// kubernaut.datastorage.healthUrl in charts/kubernaut/templates/_helpers.tpl).
 	HealthURL string
 	// Client performs the HTTP health check. Defaults to an http.Client
-	// with defaultProbeTimeout when nil.
+	// with defaultProbeTimeout when nil. Because HealthURL is HTTPS, this
+	// relies on the same default system trust store every other
+	// DataStorage HTTPS caller already uses (see
+	// pkg/audit/openapi_client_adapter.go) -- no custom RootCAs/
+	// TLSClientConfig needed here either.
 	Client *http.Client
 }
 

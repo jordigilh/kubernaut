@@ -24,27 +24,29 @@ import (
 
 // ========================================
 // DATASTORAGE HEALTHURL CONFIG UNIT TESTS
-// BR-AUDIT-005 v2.0 | Issue #1985
+// BR-AUDIT-005 v2.0 | Issue #1985 | DD-PLATFORM-010
 // Test ID: IT-AUDIT-1985-002
 //
-// DataStorage's readiness probe (port 8081, verifies Postgres) lives on a
-// separate port from the main audit-write API (port 8080, DataStorageConfig.URL).
-// A DataStorageProber needs its own, distinct HealthURL to probe -- reusing
-// URL would probe the audit-write API, not the real dependency-health check.
+// DD-PLATFORM-010: DataStorage's cross-service readiness probe is an
+// unauthenticated /readyz route on the SAME main API port as the
+// audit-write API (DataStorageConfig.URL) -- HealthURL and URL differ only
+// by path, never by port. A DataStorageProber still needs its own,
+// distinct HealthURL to probe -- reusing URL bare would hit the
+// auth-protected /api/v1 routes, not the unauthenticated /readyz path.
 // ========================================
 
-var _ = Describe("DataStorageConfig.HealthURL (IT-AUDIT-1985-002, BR-AUDIT-005)", func() {
-	It("exposes a HealthURL field distinct from URL", func() {
+var _ = Describe("DataStorageConfig.HealthURL (IT-AUDIT-1985-002, BR-AUDIT-005, DD-PLATFORM-010)", func() {
+	It("exposes a HealthURL field distinct from URL by path, sharing URL's port", func() {
 		cfg := config.DataStorageConfig{
-			URL:       "http://data-storage-service:8080",
-			HealthURL: "http://data-storage-service:8081/readyz",
+			URL:       "https://data-storage-service:8080",
+			HealthURL: "https://data-storage-service:8080/readyz",
 		}
 
-		Expect(cfg.HealthURL).To(Equal("http://data-storage-service:8081/readyz"))
-		Expect(cfg.HealthURL).NotTo(Equal(cfg.URL), "HealthURL must target DataStorage's separate health port (8081), not the audit-write API port (8080)")
+		Expect(cfg.HealthURL).To(Equal("https://data-storage-service:8080/readyz"))
+		Expect(cfg.HealthURL).NotTo(Equal(cfg.URL), "HealthURL must target the unauthenticated /readyz path, not the bare audit-write API URL")
 	})
 
-	It("defaults HealthURL to DataStorage's health port, distinct from the main API URL", func() {
+	It("defaults HealthURL to a usable /readyz path, distinct from the bare main API URL", func() {
 		cfg := config.DefaultDataStorageConfig()
 
 		Expect(cfg.HealthURL).NotTo(BeEmpty(), "a usable default HealthURL is required so services fail closed instead of silently skipping the readiness gate")
