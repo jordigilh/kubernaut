@@ -101,6 +101,17 @@ func triggerGatewayResilienceSignalAndVerifyAudit(bgCtx context.Context) error {
 	); err != nil {
 		return fmt.Errorf("failed to grant resilience-test audit ServiceAccount DataStorage access: %w", err)
 	}
+	// The above grant is scoped to gatewayNamespace (the SHARED DataStorage
+	// instance's own auth.MiddlewareConfig.Namespace), but this test queries
+	// the DEDICATED, ISOLATED instance instead -- whose own SAR namespace is
+	// GatewayResilienceDataStorageNamespace. Without this second, explicitly
+	// scoped RoleBinding, the query below gets a 403 on every attempt and
+	// this Eventually spins for its full budget with total staying 0.
+	if err := infrastructure.GrantDataStorageAccessInNamespace(
+		reqCtx, kubeconfigPath, infrastructure.GatewayResilienceDataStorageNamespace, gatewayNamespace, e2eSAName, GinkgoWriter,
+	); err != nil {
+		return fmt.Errorf("failed to grant resilience-test audit ServiceAccount access scoped to the isolated DataStorage namespace: %w", err)
+	}
 	e2eToken, err := infrastructure.GetServiceAccountToken(reqCtx, gatewayNamespace, e2eSAName, kubeconfigPath)
 	if err != nil {
 		return fmt.Errorf("failed to get resilience-test ServiceAccount token: %w", err)

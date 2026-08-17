@@ -894,6 +894,19 @@ func DeployGatewayForDataStorageResilienceTest(ctx context.Context, kubeconfigPa
 		return fmt.Errorf("failed to deploy isolated DataStorage instance for gateway resilience test: %w", err)
 	}
 
+	// The isolated instance's own auth.MiddlewareConfig.Namespace (DD-AUTH-014
+	// SAR check) is its own POD_NAMESPACE (GatewayResilienceDataStorageNamespace),
+	// not gatewayNamespace -- so the "gateway" ServiceAccount's existing
+	// data-storage-client RoleBinding (scoped to gatewayNamespace, covering
+	// the SHARED DataStorage instance deployed there) does not authorize
+	// audit writes to this dedicated instance. Without this, DD-AUDIT-003's
+	// fail-open buffering silently drops every post-recovery audit event
+	// with a 403, and the SOC2 CC8.1 reconstruction assertion below would
+	// find nothing to reconstruct.
+	if err := GrantDataStorageAccessInNamespace(ctx, kubeconfigPath, GatewayResilienceDataStorageNamespace, namespace, "gateway", writer); err != nil {
+		return fmt.Errorf("failed to grant gateway-resilience's ServiceAccount access to the isolated DataStorage instance: %w", err)
+	}
+
 	manifest := fmt.Sprintf(`---
 apiVersion: v1
 kind: ConfigMap
