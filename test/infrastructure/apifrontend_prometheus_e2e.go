@@ -93,11 +93,21 @@ func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, kubeconfi
 // ReplicaSet is fully available, so a subsequent `kubectl rollout restart`
 // (SeedTriageAlertRules) always starts from a single stable ReplicaSet
 // instead of racing with it (see DeployPrometheusForSeverityTriage RCA above).
+//
+// 120s (not SeedTriageAlertRules's 60s) because, unlike that restart, this is
+// the FIRST rollout: PrometheusImage ("prom/prometheus:latest") is pulled
+// live from Docker Hub here, not preloaded into Kind like the app images
+// (apifrontend/datastorage/mock-llm/kubernautagent) or already cached
+// node-side like SeedTriageAlertRules's restart of the same image. Docker
+// Hub is more prone to registry throttling on shared GH-hosted-runner egress
+// IPs than the ghcr.io pulls elsewhere in this package -- DeployDex's
+// equivalent first-rollout wait for its own external ghcr.io image uses
+// 120s for the same reason (test/infrastructure/dex_e2e.go).
 func waitForPrometheusRollout(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infra
 		"rollout", "status", "deployment/prometheus",
 		"-n", namespace,
-		"--timeout=60s")
+		"--timeout=120s")
 	cmd.Stdout = writer
 	cmd.Stderr = writer
 	if err := cmd.Run(); err != nil {
