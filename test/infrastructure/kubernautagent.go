@@ -935,7 +935,7 @@ data:
     integrations:
       dataStorage:
         url: "https://data-storage-service:8080"
-        healthUrl: "http://data-storage-service:8081/readyz"
+        healthUrl: "https://data-storage-service:8080/readyz"
       tools:
         prometheus:
           url: "http://prometheus-svc.%s.svc.cluster.local:9090"

@@ -1332,7 +1332,7 @@ data:
       cooldownPeriod: 1m
     datastorage:
       url: "https://data-storage-service.%[1]s:8080"
-      healthUrl: "http://data-storage-service.%[1]s:8081/readyz"
+      healthUrl: "https://data-storage-service.%[1]s:8080/readyz"
       timeout: 10s
       buffer:
         bufferSize: 10000

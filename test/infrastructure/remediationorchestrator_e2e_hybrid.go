@@ -616,7 +616,7 @@ data:
       awaitingApproval: "3s"%s
     datastorage:
       url: "https://data-storage-service:8080"
-      healthUrl: "http://data-storage-service:8081/readyz"
+      healthUrl: "https://data-storage-service:8080/readyz"
       timeout: "10s"
       buffer:
         bufferSize: 10000

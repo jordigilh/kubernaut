@@ -668,7 +668,7 @@ func deployAuthWebhookToKind(ctx context.Context, kubeconfigPath, namespace, ima
 	// STEP 3: Apply AuthWebhook manifest (all resources including webhook configs)
 	_, _ = fmt.Fprintln(writer, "🚀 Applying AuthWebhook deployment...")
 	dsURL := fmt.Sprintf("https://data-storage-service.%s.svc.cluster.local:8080", namespace)
-	dsHealthURL := fmt.Sprintf("http://data-storage-service.%s.svc.cluster.local:8081/readyz", namespace)
+	dsHealthURL := fmt.Sprintf("https://data-storage-service.%s.svc.cluster.local:8080/readyz", namespace)
 	manifest := authWebhookManifest(namespace, imageTag, dsURL, dsHealthURL)
 	cmd = exec.CommandContext(ctx, "kubectl", "apply",
 		"--kubeconfig", kubeconfigPath,
@@ -1136,15 +1136,12 @@ spec:
     targetPort: 8080
     nodePort: %[2]s
     protocol: TCP
-  # #1985 / BR-AUDIT-005 v2.0: AuthWebhook's DataStorage readiness gate
-  # probes this port via cluster DNS (data-storage-service:8081); without
-  # a matching Service port, kube-proxy has no DNAT rule for it and
-  # traffic is silently blackholed (Client.Timeout "awaiting headers",
-  # not "connection refused") even though the pod itself listens on 8081.
-  - name: health
-    port: 8081
-    targetPort: 8081
-    protocol: TCP
+  # DD-PLATFORM-010 (supersedes the original #1985 "health" Service port
+  # that used to live here): AuthWebhook's DataStorage readiness gate now
+  # probes an unauthenticated /readyz route on the SAME port (8080) as the
+  # https entry above, already exposed via cluster DNS -- no separate
+  # Service port needed for the dedicated kubelet-only health port (8081),
+  # which stays pod-local only.
   selector:
     app: datastorage
 ---
