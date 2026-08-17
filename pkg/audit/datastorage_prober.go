@@ -25,6 +25,7 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/jordigilh/kubernaut/pkg/fleet/readiness"
+	sharedtls "github.com/jordigilh/kubernaut/pkg/shared/tls"
 )
 
 // defaultProbeTimeout bounds how long a single Probe call may block waiting
@@ -59,12 +60,15 @@ type DataStorageProber struct {
 	// https://<service>:8080/readyz (DD-PLATFORM-010; see
 	// kubernaut.datastorage.healthUrl in charts/kubernaut/templates/_helpers.tpl).
 	HealthURL string
-	// Client performs the HTTP health check. Defaults to an http.Client
-	// with defaultProbeTimeout when nil. Because HealthURL is HTTPS, this
-	// relies on the same default system trust store every other
-	// DataStorage HTTPS caller already uses (see
-	// pkg/audit/openapi_client_adapter.go) -- no custom RootCAs/
-	// TLSClientConfig needed here either.
+	// Client performs the HTTP health check. NewReadinessGate (the sole
+	// production constructor) always sets this to a CA-aware client via
+	// sharedtls.DefaultBaseTransport() -- the same $TLS_CA_FILE-driven
+	// CAReloader transport pkg/audit/openapi_client_adapter.go's real
+	// audit-write client uses -- since HealthURL is HTTPS and, in most
+	// deployments, signed by a cluster-local (non-system-trusted) CA. A nil
+	// Client here (e.g. direct struct construction in tests) falls back to
+	// an http.Client with defaultProbeTimeout and Go's default transport,
+	// which only trusts the system root CA pool.
 	Client *http.Client
 }
 
@@ -111,10 +115,34 @@ const DefaultReadinessProbeInterval = 15 * time.Second
 // extraction (e.g. cfg.DataStorage.HealthURL vs cfg.Agent.DSHealthURL)
 // differs per service, which callers still own. Callers must Stop() the
 // returned Gate on shutdown.
+//
+// DD-PLATFORM-010 follow-up: healthURL moved from plain-HTTP port 8081 to
+// HTTPS port 8080, so the probe's http.Client must trust whatever CA
+// signed DataStorage's server cert (rarely the system root pool in a
+// cluster deployment). newProbeClient wires the same $TLS_CA_FILE-driven
+// transport every other DataStorage HTTPS caller uses.
 func NewReadinessGate(ctx context.Context, healthURL string, logger logr.Logger) *readiness.Gate {
-	prober := &DataStorageProber{HealthURL: healthURL}
+	prober := &DataStorageProber{HealthURL: healthURL, Client: newProbeClient(logger)}
 	gate := readiness.NewGate(DefaultReadinessProbeInterval, logger.WithName("datastorage-readiness"), prober)
 	gate.Start(ctx)
 	logger.Info("DataStorage readiness gate started", "ready", gate.Ready())
 	return gate
+}
+
+// newProbeClient builds the http.Client used by the production
+// DataStorageProber: a bounded timeout plus sharedtls.DefaultBaseTransport(),
+// which honours $TLS_CA_FILE (falling back to a plain transport -- and thus
+// the system root CA pool -- when that env var is unset, e.g. plaintext
+// local dev). Fails open to an uncustomized http.Client on transport-build
+// error (e.g. a malformed CA file) rather than blocking readiness-gate
+// construction entirely; the resulting TLS verification failures still
+// surface per-probe via Probe's own error return, so this is observable,
+// not silent.
+func newProbeClient(logger logr.Logger) *http.Client {
+	transport, err := sharedtls.DefaultBaseTransport()
+	if err != nil {
+		logger.Error(err, "failed to build CA-aware transport for DataStorage readiness probe; falling back to the system trust store")
+		return &http.Client{Timeout: defaultProbeTimeout}
+	}
+	return &http.Client{Timeout: defaultProbeTimeout, Transport: transport}
 }
