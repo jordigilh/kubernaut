@@ -403,6 +403,39 @@ health:
   # Endpoints: /healthz (liveness), /readyz (readiness)
 ```
 
+Port 8081 is reserved exclusively for kubelet's own liveness/readiness
+probes and MUST NOT gain cross-pod NetworkPolicy ingress for any reason.
+
+### Cross-Service Readiness Checks (DD-PLATFORM-010)
+
+When Service A needs to gate its own readiness on Service B's reachability
+(e.g. an audit-writing service gating on DataStorage, or Gateway/
+RemediationOrchestrator gating on FleetMetadataCache), Service B MUST expose
+a **dedicated, purpose-built, side-effect-free `/readyz` route on its main
+business API port (8080)** -- reusing the exact same handler already backing
+its own kubelet probe on 8081, registered a second time as a top-level,
+unauthenticated route outside any auth-enforcing middleware group. Service A
+then polls `http://<service-b>:8080/readyz` instead of the kubelet-only
+health port.
+
+This is a route-registration duplication, not a logic duplication: the
+handler function is identical on both ports. It requires no NetworkPolicy
+change (the business port already has ingress from legitimate callers) and
+no new authentication-exemption mechanism (most routers, e.g. `chi`, already
+scope middleware per route group, so a top-level route is unauthenticated by
+construction).
+
+Do NOT:
+- Widen the kubelet-only health port's NetworkPolicy to accept cross-pod
+  traffic (expands the blast radius of the port kubelet depends on to keep
+  the pod alive).
+- Repurpose a real, authenticated business-data endpoint as the health-check
+  target (silently inherits whatever auth requirements are later added to
+  that endpoint for unrelated reasons).
+
+See `DD-PLATFORM-010` for full rationale and the two retrofitted examples
+(DataStorage, FleetMetadataCache).
+
 ---
 
 ## Environment Variable Overrides

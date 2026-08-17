@@ -46,15 +46,13 @@ tests:
           path: spec.policyTypes
           content: Egress
 
-  - it: "renders the DataStorage egress rule unconditionally (BR-AUDIT-005 audit events)"
+  - it: "renders the DataStorage egress rule unconditionally (BR-AUDIT-005 audit events, DD-PLATFORM-010 shared port 8080)"
     asserts:
       - contains:
           path: spec.egress
           content:
             ports:
               - port: 8080
-                protocol: TCP
-              - port: 8081
                 protocol: TCP
             to:
               - podSelector:

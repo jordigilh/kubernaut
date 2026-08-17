@@ -34,12 +34,18 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
-// Test 39: DataStorage Resilience -- the custom-aggregator representative
-// service for the #1985 shared E2E journey (see plan's "Coverage note":
-// one ctrl-runtime service (EffectivenessMonitor,
-// test/e2e/effectivenessmonitor/06_datastorage_resilience_test.go) + one
-// custom-aggregator service prove the shared *mechanism*; the other 8
-// in-scope services are proven at IT tier, IT-AUDIT-1985-003..012).
+// Test 39: DataStorage Resilience -- the sole E2E representative for the
+// #1985 shared journey (2026-08-16 scope decision: the readyz fail/recover
+// *mechanism* is already fully proven at UT tier, pkg/fleet/readiness's
+// UT-FLEET-READY-004, and at IT tier for all 10 services,
+// IT-AUDIT-1985-003..012 -- including a dedicated ctrl-runtime-vs-custom-
+// aggregator EffectivenessMonitor/Gateway pair -- against each service's
+// real production wiring entry point. A second full E2E journey would only
+// re-prove that same mechanism a third time with no new assertion. What
+// only E2E can add is the SOC2 CC8.1 business-outcome claim this test
+// alone makes: a real request after recovery produces a complete, gapless,
+// queryable-by-correlation_id audit trail -- see
+// triggerGatewayResilienceSignalAndVerifyAudit below).
 //
 // Runs against a dedicated, throwaway "gateway-resilience" instance (never
 // the shared "gateway" instance every other spec in this suite depends on)
@@ -49,21 +55,8 @@ import (
 // Authority: Issue #1985, SOC2 CC8.1, AU-9.
 var _ = dsshared.Journey("Test 39: DataStorage Resilience (#1985, BR-AUDIT-005 v2.0, SOC2 CC8.1)", func() dsshared.Target {
 	return dsshared.Target{
-		KubeconfigPath:      kubeconfigPath,
-		Namespace:           gatewayNamespace,
-		PodLabelSelector:    "app=gateway-resilience",
-		BridgeContainerName: infrastructure.GatewayResilienceBridgeContainerName,
-		BridgeProxyPort:     infrastructure.GatewayResilienceBridgeProxyPort,
-		// DataStorageUpstreamAddr: the REAL, shared DataStorage instance's
-		// health endpoint, reachable from the bridge-proxy sidecar via
-		// ordinary namespace-qualified cluster DNS -- see
-		// dsshared.Journey's doc comment for why a sidecar replaced the
-		// earlier host-bridge and in-cluster-Deployment mechanisms (#1985
-		// follow-up, 2026-08-15). Computed here (not as a package-level
-		// var) since gatewayNamespace is only populated inside
-		// SynchronizedBeforeSuite, after package-level var initializers
-		// would already have run.
-		DataStorageUpstreamAddr: fmt.Sprintf("data-storage-service.%s.svc.cluster.local:8081", gatewayNamespace),
+		KubeconfigPath:       kubeconfigPath,
+		DataStorageNamespace: infrastructure.GatewayResilienceDataStorageNamespace,
 		Deploy: func(ctx context.Context) error {
 			return infrastructure.DeployGatewayForDataStorageResilienceTest(
 				ctx, kubeconfigPath, gatewayNamespace, GinkgoWriter)
@@ -107,6 +100,17 @@ func triggerGatewayResilienceSignalAndVerifyAudit(bgCtx context.Context) error {
 		reqCtx, gatewayNamespace, kubeconfigPath, e2eSAName, GinkgoWriter,
 	); err != nil {
 		return fmt.Errorf("failed to grant resilience-test audit ServiceAccount DataStorage access: %w", err)
+	}
+	// The above grant is scoped to gatewayNamespace (the SHARED DataStorage
+	// instance's own auth.MiddlewareConfig.Namespace), but this test queries
+	// the DEDICATED, ISOLATED instance instead -- whose own SAR namespace is
+	// GatewayResilienceDataStorageNamespace. Without this second, explicitly
+	// scoped RoleBinding, the query below gets a 403 on every attempt and
+	// this Eventually spins for its full budget with total staying 0.
+	if err := infrastructure.GrantDataStorageAccessInNamespace(
+		reqCtx, kubeconfigPath, infrastructure.GatewayResilienceDataStorageNamespace, gatewayNamespace, e2eSAName, GinkgoWriter,
+	); err != nil {
+		return fmt.Errorf("failed to grant resilience-test audit ServiceAccount access scoped to the isolated DataStorage namespace: %w", err)
 	}
 	e2eToken, err := infrastructure.GetServiceAccountToken(reqCtx, gatewayNamespace, e2eSAName, kubeconfigPath)
 	if err != nil {
@@ -183,7 +187,13 @@ func triggerGatewayResilienceSignalAndVerifyAudit(bgCtx context.Context) error {
 		return fmt.Errorf("gateway-resilience response did not include a correlation ID (remediationRequestName)")
 	}
 
-	dataStorageURL := fmt.Sprintf("https://127.0.0.1:%d", infrastructure.DataStorageE2EHostPort)
+	// #1985 follow-up (2026-08-16): queries the DEDICATED, ISOLATED
+	// DataStorage instance (GatewayResilienceDataStorageNamespace), not
+	// the shared one -- gateway-resilience's datastorage.url points there
+	// too (see DeployGatewayForDataStorageResilienceTest), so this is
+	// where the signal's audit trail actually landed. Plain HTTP: the
+	// isolated instance has no TLS cert configured.
+	dataStorageURL := fmt.Sprintf("http://127.0.0.1:%d", infrastructure.GatewayResilienceDataStorageAPIHostPort)
 	saTransport := testauth.NewServiceAccountTransport(e2eToken)
 	httpClient := &http.Client{Timeout: 20 * time.Second, Transport: saTransport}
 	auditClient, err := dsgen.NewClient(dataStorageURL, dsgen.WithClient(httpClient))

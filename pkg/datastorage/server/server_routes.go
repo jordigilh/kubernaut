@@ -58,6 +58,19 @@ func (s *Server) Handler() http.Handler {
 
 	s.registerGlobalMiddleware(r)
 
+	// DD-PLATFORM-010: cross-service readiness check, registered at the
+	// router's top level -- i.e. deliberately OUTSIDE the /api/v1 route
+	// group below, so it never passes through registerAPIV1AuthMiddleware's
+	// DD-AUTH-014 TokenReview+SAR chain. Reuses the exact same
+	// s.ReadinessHandler() already serving kubelet's probe on the dedicated
+	// health port (8081, see server_lifecycle.go's health server wiring);
+	// this is a second *registration* of that handler, not a second
+	// *implementation*. Lets every audit-writing service's
+	// pkg/audit.DataStorageProber gate its own readiness on this
+	// already-open port 8080 without any NetworkPolicy widening, and
+	// without kubelet's own health port ever accepting cross-pod traffic.
+	r.Get("/readyz", s.ReadinessHandler())
+
 	// API v1 routes
 	s.logger.V(1).Info("Setting up API v1 routes",
 		"handler_nil", s.handler == nil,

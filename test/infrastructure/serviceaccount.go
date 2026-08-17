@@ -145,6 +145,64 @@ func CreateE2EServiceAccountWithDataStorageAccess(ctx context.Context, namespace
 	return nil
 }
 
+// GrantDataStorageAccessInNamespace binds the existing "data-storage-client"
+// ClusterRole (CRUD: create/get/list/update/delete, DD-AUTH-011) to an
+// already-existing ServiceAccount (saNamespace/saName), scoped to
+// rbacNamespace -- WITHOUT creating a new ServiceAccount. Use this (instead
+// of CreateE2EServiceAccountWithDataStorageAccess) when a caller/token
+// already exists in one namespace but must additionally reach a DataStorage
+// instance whose own auth.MiddlewareConfig.Namespace (DD-AUTH-014's
+// per-instance SAR namespace, sourced from that instance's own
+// POD_NAMESPACE) is a *different* namespace -- e.g. a dedicated, isolated
+// DataStorage instance deployed into its own throwaway namespace for a
+// resilience/fault-injection test rather than the shared instance's
+// namespace the caller's other RBAC already covers. Idempotent: tolerates
+// AlreadyExists on the RoleBinding.
+func GrantDataStorageAccessInNamespace(ctx context.Context, kubeconfigPath, rbacNamespace, saNamespace, saName string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "🔐 Granting %s/%s DataStorage access scoped to namespace %s\n", saNamespace, saName, rbacNamespace)
+
+	clientset, err := getKubernetesClient(kubeconfigPath)
+	if err != nil {
+		return fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	rb := &rbacv1.RoleBinding{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      fmt.Sprintf("%s-data-storage-client", saName),
+			Namespace: rbacNamespace,
+			Labels: map[string]string{
+				"app":       "datastorage-e2e",
+				"component": "rbac",
+				"test":      "e2e",
+			},
+		},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "data-storage-client",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      saName,
+				Namespace: saNamespace,
+			},
+		},
+	}
+
+	_, err = clientset.RbacV1().RoleBindings(rbacNamespace).Create(ctx, rb, metav1.CreateOptions{})
+	if err != nil && !apierrors.IsAlreadyExists(err) {
+		return fmt.Errorf("failed to create cross-namespace RoleBinding in %s: %w", rbacNamespace, err)
+	}
+	if apierrors.IsAlreadyExists(err) {
+		_, _ = fmt.Fprintf(writer, "   ℹ️  RoleBinding already exists in %s\n", rbacNamespace)
+	} else {
+		_, _ = fmt.Fprintf(writer, "   ✅ RoleBinding created in %s\n", rbacNamespace)
+	}
+
+	return nil
+}
+
 // CreateE2EServiceAccountWithGatewayAccess creates a ServiceAccount for E2E tests
 // with RBAC permissions to access the Gateway service via middleware-based SAR validation.
 //

@@ -155,7 +155,9 @@ func buildBackendDeps(ctx context.Context, cfg *config.Config, metricsReg *metri
 	// #1985 / BR-AUDIT-005: fail closed on DataStorage unreachability via
 	// /readyz (pod-wide), unconditionally -- every service writes audit,
 	// unlike the Fleet-conditional gate below.
-	deps.dataStorageReadinessGate = wireDataStorageReadinessGate(ctx, cfg, logger)
+	if err := wireDataStorageReadinessGate(ctx, cfg, deps, logger); err != nil {
+		return nil, fmt.Errorf("datastorage readiness gate wiring: %w", err)
+	}
 
 	if err := buildDSClientDeps(ctx, cfg, deps, metricsReg, auditor, logger); err != nil {
 		return nil, err
@@ -640,11 +642,33 @@ func wireFleetReadinessGate(ctx context.Context, fleetClient *mcpclient.Resilien
 // wireFleetReadinessGate, this is unconditional -- always wired, never
 // nil -- since every service writes audit. The returned Gate is stored on
 // deps.dataStorageReadinessGate (consumed via deps.DataStorageReady());
-// stopBackendDeps must Stop() it on shutdown. Delegates gate construction
-// to readinessaudit.NewReadinessGate (REFACTOR, shared across all 10
-// services).
-func wireDataStorageReadinessGate(ctx context.Context, cfg *config.Config, logger logr.Logger) *readiness.Gate {
-	return readinessaudit.NewReadinessGate(ctx, cfg.Agent.DSHealthURL, logger)
+// stopBackendDeps must Stop() it on shutdown.
+//
+// Unlike the other 9 audit-writing services (which delegate straight to
+// readinessaudit.NewReadinessGate and its $TLS_CA_FILE-driven default
+// client), AF's DataStorage-facing TLS trust is driven by
+// cfg.Agent.DSTLSCaFile -- a distinct CA from whatever $TLS_CA_FILE
+// happens to be, mirroring buildDSClientDeps'/buildAuditDSTransport's own
+// tlswiring.CAReloadableTransport usage for AF's other DataStorage
+// clients. 2026-08-17 CI RCA (PR #2168): using the $TLS_CA_FILE-based
+// default here produced a real "certificate signed by unknown authority"
+// failure in E2E, leaving the pod permanently NotReady.
+func wireDataStorageReadinessGate(ctx context.Context, cfg *config.Config, deps *backendDeps, logger logr.Logger) error {
+	readinessLogger := logger.WithName("readiness-ds-ca")
+	dsTransport, dsWatcher, err := tlswiring.CAReloadableTransport(cfg.Agent.DSTLSCaFile, readinessLogger)
+	if err != nil {
+		return fmt.Errorf("DataStorage readiness CA transport: %w", err)
+	}
+	if dsWatcher != nil {
+		if err := dsWatcher.Start(ctx); err != nil {
+			return fmt.Errorf("DataStorage readiness CA watcher start: %w", err)
+		}
+		deps.CAWatchers = append(deps.CAWatchers, caWatcherEntry{name: "readiness-ds-ca", watcher: dsWatcher})
+	}
+
+	client := &http.Client{Timeout: readinessaudit.DefaultProbeTimeout, Transport: dsTransport}
+	deps.dataStorageReadinessGate = readinessaudit.NewReadinessGateWithClient(ctx, cfg.Agent.DSHealthURL, client, logger)
+	return nil
 }
 
 // adaptFleetReaderFactory adapts a fleet.ReaderFactory (client.Reader) into a

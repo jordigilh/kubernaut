@@ -50,7 +50,11 @@ func TestWireDataStorageReadinessGate_AF_Reachable_ReadyImmediately(t *testing.T
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	gate := wireDataStorageReadinessGate(ctx, cfg, logr.Discard())
+	deps := &backendDeps{}
+	if err := wireDataStorageReadinessGate(ctx, cfg, deps, logr.Discard()); err != nil {
+		t.Fatalf("IT-AUDIT-1985-009a: wireDataStorageReadinessGate must not fail with an empty DSTLSCaFile (plaintext dev default): %v", err)
+	}
+	gate := deps.dataStorageReadinessGate
 	if gate == nil {
 		t.Fatal("IT-AUDIT-1985-009a: DataStorage readiness gate must always be wired (unconditional, unlike the Fleet gate)")
 	}
@@ -68,7 +72,11 @@ func TestWireDataStorageReadinessGate_AF_Unreachable_NotReady(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	gate := wireDataStorageReadinessGate(ctx, cfg, logr.Discard())
+	deps := &backendDeps{}
+	if err := wireDataStorageReadinessGate(ctx, cfg, deps, logr.Discard()); err != nil {
+		t.Fatalf("IT-AUDIT-1985-009b: wireDataStorageReadinessGate must not fail with an empty DSTLSCaFile (plaintext dev default): %v", err)
+	}
+	gate := deps.dataStorageReadinessGate
 	if gate == nil {
 		t.Fatal("IT-AUDIT-1985-009b: gate must still be wired (and report NotReady) when DataStorage is currently unreachable")
 	}

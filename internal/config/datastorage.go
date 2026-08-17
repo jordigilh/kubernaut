@@ -15,13 +15,16 @@ type DataStorageConfig struct {
 	// Example: "http://data-storage-service.kubernaut-system.svc.cluster.local:8080"
 	URL string `yaml:"url"`
 
-	// HealthURL is DataStorage's readiness-check endpoint (REQUIRED), on a
-	// separate port (8081) from the main audit-write API (URL, port 8080).
+	// HealthURL is DataStorage's cross-service readiness-check endpoint
+	// (REQUIRED). DD-PLATFORM-010: this is an unauthenticated /readyz route
+	// on the SAME main API port as URL (not a separate port) -- registered
+	// as a top-level route outside the DD-AUTH-014 auth-middleware group,
+	// so HealthURL and URL differ only by path, never by port.
 	// Consumed by pkg/audit.DataStorageProber to gate this service's own
 	// /readyz on DataStorage's real reachability (#1985, BR-AUDIT-005 v2.0),
 	// closing the audit-loss window where a service starts serving traffic
 	// before DataStorage is reachable.
-	// Example: "http://data-storage-service.kubernaut-system.svc.cluster.local:8081/readyz"
+	// Example: "https://data-storage-service.kubernaut-system.svc.cluster.local:8080/readyz"
 	HealthURL string `yaml:"healthUrl"`
 
 	// Timeout for individual Data Storage API calls.
@@ -60,7 +63,7 @@ type BufferConfig struct {
 func DefaultDataStorageConfig() DataStorageConfig {
 	return DataStorageConfig{
 		URL:       "http://data-storage-service:8080",
-		HealthURL: "http://data-storage-service:8081/readyz",
+		HealthURL: "http://data-storage-service:8080/readyz",
 		Timeout:   10 * time.Second,
 		Buffer: BufferConfig{
 			BufferSize:    10000,

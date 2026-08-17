@@ -1,4 +1,4 @@
-suite: "DataStorage NetworkPolicy readiness-probe ingress (#1985, BR-AUDIT-005 v2.0): every audit-writing service now probes DataStorage's health port (8081) via pkg/audit.DataStorageProber, but the NetworkPolicy never opened ingress on that port -- only 8080 (audit writes) was ever allowed. Also fixes a pre-existing, independently-confirmed gap: apifrontend writes audit directly to DataStorage on port 8080 (CHANGELOG #2139) but was never listed in that port's ingress 'from' selectors."
+suite: "DataStorage NetworkPolicy readiness-probe ingress (DD-PLATFORM-010, BR-AUDIT-005 v2.0): supersedes the original #1985 ingress fix, which opened a second port (8081) on DataStorage's own NetworkPolicy for every one of the 10 audit-writing services' pkg/audit.DataStorageProber. DD-PLATFORM-010 moved that cross-service /readyz check onto the main API port (8080) instead -- an unauthenticated top-level route on the same chi router as /api/v1 -- so the pre-existing 8080 ingress rule already covers it; no second ingress rule is needed. Also keeps the pre-existing, independently-confirmed gap fix: apifrontend writes audit directly to DataStorage on port 8080 (CHANGELOG #2139) but was never listed in that port's ingress 'from' selectors."
 templates:
   - templates/datastorage/networkpolicy.yaml
 set:
@@ -22,48 +22,7 @@ set:
     policies:
       existingConfigMap: test-cm
 tests:
-  - it: "allows ingress on port 8081 (readiness probe) from every one of the 10 audit-writing services"
-    template: templates/datastorage/networkpolicy.yaml
-    asserts:
-      - contains:
-          path: spec.ingress
-          content:
-            ports:
-              - port: 8081
-                protocol: TCP
-            from:
-              - podSelector:
-                  matchLabels:
-                    app: gateway
-              - podSelector:
-                  matchLabels:
-                    app: aianalysis-controller
-              - podSelector:
-                  matchLabels:
-                    app: signalprocessing-controller
-              - podSelector:
-                  matchLabels:
-                    app: remediationorchestrator-controller
-              - podSelector:
-                  matchLabels:
-                    app: workflowexecution-controller
-              - podSelector:
-                  matchLabels:
-                    app: notification-controller
-              - podSelector:
-                  matchLabels:
-                    app: effectivenessmonitor-controller
-              - podSelector:
-                  matchLabels:
-                    app: authwebhook
-              - podSelector:
-                  matchLabels:
-                    app: kubernaut-agent
-              - podSelector:
-                  matchLabels:
-                    app: apifrontend
-
-  - it: "allows ingress on port 8080 (audit writes) from apifrontend (pre-existing gap, #2139 confirms AF writes audit directly)"
+  - it: "allows ingress on port 8080 (audit writes + DD-PLATFORM-010 /readyz) from every one of the 10 audit-writing services, including apifrontend (pre-existing gap, #2139 confirms AF writes audit directly)"
     template: templates/datastorage/networkpolicy.yaml
     asserts:
       - contains:
@@ -103,3 +62,13 @@ tests:
               - podSelector:
                   matchLabels:
                     app: apifrontend
+
+  - it: "regression guard: never re-opens ingress on port 8081 (DD-PLATFORM-010 deliberately keeps the kubelet-only health port off every cross-pod policy)"
+    template: templates/datastorage/networkpolicy.yaml
+    asserts:
+      - notContains:
+          path: spec.ingress
+          content:
+            ports:
+              - port: 8081
+                protocol: TCP

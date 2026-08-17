@@ -1,4 +1,4 @@
-suite: "DataStorage NetworkPolicy readiness-probe egress (#1985, BR-AUDIT-005 v2.0): the ingress-side fix (datastorage_readiness_ingress_networkpolicy_1985_test.yaml) allowlisted port 8081 FROM all 10 audit-writing services on DataStorage's own NetworkPolicy, but NetworkPolicy is bidirectional -- each caller's own egress side must independently permit 8081 too, or a NetworkPolicy-enforcing CNI (e.g. recent kindnetd releases) silently drops the SYN with no RST. Confirmed via local Kind repro (kindnetd v20260528): DataStorage reported 1/1 Ready (its own kubelet-local probe is unaffected), but every one of the 10 callers stayed permanently NotReady with 'DataStorage health endpoint ... unreachable: context deadline exceeded' -- the identical one-sided-egress-gap pattern already fixed once before for FleetMetadataCache (issue #1737, kubernaut.np.fleetmetadatacacheEgress). All 10 callers share one helper (kubernaut.np.datastorageEgress in _helpers.tpl), so this is a single-point fix verified once here across every caller template."
+suite: "DataStorage NetworkPolicy readiness-probe egress (DD-PLATFORM-010, BR-AUDIT-005 v2.0): supersedes the original #1985 fix, which allowlisted a second port (8081) on every one of the 10 audit-writing services' own egress side (kubernaut.np.datastorageEgress) because DataStorage's readiness probe lived on a dedicated kubelet-only health port. DD-PLATFORM-010 moved that cross-service /readyz check onto the main API port (8080) instead -- an unauthenticated top-level route on the same chi router as /api/v1 -- specifically so no second port needs opening anywhere, on any of the 10 callers or on DataStorage's own NetworkPolicy. This suite proves the egress helper reverted to exactly the pre-#1985 single-port (8080) shape, with no 8081 regression."
 templates:
   - templates/gateway/networkpolicy.yaml
   - templates/aianalysis/networkpolicy.yaml
@@ -35,7 +35,7 @@ set:
       oauth2:
         credentialsSecretRef: we-oauth2-creds
 tests:
-  - it: "allows egress on port 8081 (readiness probe), alongside the existing 8080 (audit writes), to DataStorage pods -- for every one of the 10 audit-writing services"
+  - it: "allows egress on port 8080 only (API writes + DD-PLATFORM-010 /readyz) to DataStorage pods -- for every one of the 10 audit-writing services"
     asserts:
       - contains:
           path: spec.egress
@@ -43,6 +43,17 @@ tests:
             ports:
               - port: 8080
                 protocol: TCP
+            to:
+              - podSelector:
+                  matchLabels:
+                    app: datastorage
+
+  - it: "regression guard: never re-opens egress on port 8081 to DataStorage (DD-PLATFORM-010 deliberately keeps the kubelet-only health port off every cross-pod policy)"
+    asserts:
+      - notContains:
+          path: spec.egress
+          content:
+            ports:
               - port: 8081
                 protocol: TCP
             to:
