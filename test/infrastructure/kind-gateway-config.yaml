@@ -52,6 +52,14 @@ nodes:
   - containerPort: 30183  # GatewayResilienceHealthNodePort
     hostPort: 28183       # GatewayResilienceHealthHostPort
     protocol: TCP
+  # Dedicated, isolated DataStorage instance backing gateway-resilience
+  # (#1985 follow-up, 2026-08-16): infrastructure.ResilienceDSNodePortAPI
+  # (datastorage_isolated_instance.go), host-mapped so
+  # triggerGatewayResilienceSignalAndVerifyAudit can query its audit trail
+  # by correlation_id after recovery.
+  - containerPort: 30082  # ResilienceDSNodePortAPI
+    hostPort: 28193       # GatewayResilienceDataStorageAPIHostPort
+    protocol: TCP
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration

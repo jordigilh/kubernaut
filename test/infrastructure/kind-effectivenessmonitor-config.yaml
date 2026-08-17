@@ -65,13 +65,6 @@ nodes:
   - containerPort: 30191  # DD-TEST-001 v3.8: moved from 30193
     hostPort: 9193        # DD-TEST-001 v2.8: AlertManager
     protocol: TCP
-  # Dedicated "effectivenessmonitor-resilience" throwaway instance (#1985
-  # DataStorage resilience E2E,
-  # test/e2e/effectivenessmonitor/datastorage_resilience_e2e_test.go) --
-  # distinct from the shared EM controller's own 30089/30189 above.
-  - containerPort: 30094  # EMResilienceHealthNodePort
-    hostPort: 9194        # EMResilienceHealthHostPort
-    protocol: TCP
   # Extra mounts are added programmatically in SetupEMInfrastructure
   kubeadmConfigPatches:
   - |

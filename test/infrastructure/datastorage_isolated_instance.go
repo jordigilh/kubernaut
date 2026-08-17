@@ -599,3 +599,67 @@ func RestartIsolatedDataStoragePod(ctx context.Context, namespace, kubeconfigPat
 	_, _ = fmt.Fprintf(writer, "✅ Isolated DataStorage pod restarted and ready\n")
 	return nil
 }
+
+// ScaleIsolatedDataStorageDown scales the isolated instance's "datastorage"
+// Deployment to 0 replicas and waits for its pod to actually terminate,
+// producing a genuine, deterministic outage window (zero backing pods, zero
+// Service endpoints) for a caller (e.g. the #1985 DataStorage-resilience
+// Gateway/EM E2E journey, test/e2e/datastorage/shared/resilience.go) to
+// observe a real network partition. Mirrors
+// test/e2e/fleetmetadatacache/shared/resilience.go's proven Valkey
+// scale-to-0 pattern: scaling to 0 (not `kubectl delete pod`) guarantees
+// zero backing pods for the whole window, whereas a force-deleted pod's
+// API-level removal is not synchronized with the kubelet actually tearing
+// down the container/network, making a "genuinely unreachable" assertion
+// racy.
+func ScaleIsolatedDataStorageDown(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "💥 Scaling isolated DataStorage to 0 replicas (namespace=%s)...\n", namespace)
+
+	scaleCtx, scaleCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer scaleCancel()
+	scaleCmd := exec.CommandContext(scaleCtx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", namespace, "scale", "deployment/datastorage", "--replicas=0")
+	scaleCmd.Stdout = writer
+	scaleCmd.Stderr = writer
+	if err := scaleCmd.Run(); err != nil {
+		return fmt.Errorf("failed to scale isolated DataStorage to 0 replicas: %w", err)
+	}
+
+	waitCtx, waitCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer waitCancel()
+	waitCmd := exec.CommandContext(waitCtx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", namespace, "wait", "--for=delete", "pod", "-l", "app=datastorage", "--timeout=30s")
+	waitCmd.Stdout = writer
+	waitCmd.Stderr = writer
+	if err := waitCmd.Run(); err != nil {
+		return fmt.Errorf("isolated DataStorage pod did not actually terminate: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "✅ Isolated DataStorage scaled to 0 (genuine outage window open)\n")
+	return nil
+}
+
+// ScaleIsolatedDataStorageUp scales the isolated instance's "datastorage"
+// Deployment back to 1 replica and waits for the replacement pod (and its
+// already-unaffected Postgres/Redis peers) to report Ready, closing the
+// outage window opened by ScaleIsolatedDataStorageDown.
+func ScaleIsolatedDataStorageUp(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	_, _ = fmt.Fprintf(writer, "🔧 Scaling isolated DataStorage back to 1 replica (namespace=%s)...\n", namespace)
+
+	scaleCtx, scaleCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer scaleCancel()
+	scaleCmd := exec.CommandContext(scaleCtx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", namespace, "scale", "deployment/datastorage", "--replicas=1")
+	scaleCmd.Stdout = writer
+	scaleCmd.Stderr = writer
+	if err := scaleCmd.Run(); err != nil {
+		return fmt.Errorf("failed to scale isolated DataStorage back to 1 replica: %w", err)
+	}
+
+	if err := waitForDataStorageServicesReady(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("isolated DataStorage replacement pod not ready: %w", err)
+	}
+
+	_, _ = fmt.Fprintf(writer, "✅ Isolated DataStorage scaled back to 1 and ready\n")
+	return nil
+}
