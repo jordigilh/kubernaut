@@ -17,14 +17,15 @@ agent:
   kaBaseURL: "https://kubernaut-agent.kubernaut-system.svc:8443"
   kaMCPEndpoint: "https://kubernaut-agent.kubernaut-system.svc:8443/api/v1/mcp/"
   dsBaseURL: "https://data-storage-service.kubernaut-system.svc:8080"
-  # #1985 / BR-AUDIT-005 v2.0: gates /readyz on DataStorage's own readiness
-  # port (8081, distinct from dsBaseURL's port 8080). Without this, AF falls
-  # back to config.DefaultConfig()'s dev-only "http://localhost:9091/readyz"
-  # placeholder, which is unreachable in-cluster and leaves the pod
-  # permanently NotReady. Plain HTTP (not HTTPS): pkg/shared/health.NewHealthServer
-  # always serves the dedicated health port unencrypted (kubelet probes never
-  # need TLS) -- distinct from dsBaseURL's TLS-required main API port above.
-  dsHealthURL: "http://data-storage-service.kubernaut-system.svc:8081/readyz"
+  # #1985 / BR-AUDIT-005 v2.0: gates /readyz on DataStorage's own reachability.
+  # Without this, AF falls back to config.DefaultConfig()'s dev-only
+  # "http://localhost:9091/readyz" placeholder, which is unreachable
+  # in-cluster and leaves the pod permanently NotReady.
+  # DD-PLATFORM-010: the cross-service /readyz check lives on dsBaseURL's own
+  # port (8080, TLS-required) as an unauthenticated top-level route -- not
+  # the dedicated kubelet-only health port (8081), which is never exposed
+  # cross-pod.
+  dsHealthURL: "https://data-storage-service.kubernaut-system.svc:8080/readyz"
   dsBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
   kaBearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
   kaTlsCaFile: /etc/apifrontend/inter-service-ca/ca.crt
