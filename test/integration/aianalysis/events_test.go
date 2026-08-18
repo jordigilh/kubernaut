@@ -349,7 +349,11 @@ var _ = Describe("AIAnalysis K8s Event Observability (DD-EVENT-001, BR-AA-095)",
 			for _, e := range evts {
 				if e.Reason == events.EventReasonSessionCreated {
 					Expect(e.Type).To(Equal(corev1.EventTypeNormal))
-					Expect(e.Message).To(ContainSubstring("session created"))
+					// DD-AA-KA-001: finalizeSessionSubmit (pkg/aianalysis/handlers/investigating.go)
+					// now names the actual AgentSession object ("AgentSession <name> created")
+					// instead of the old generic "session created" text, for observability.
+					Expect(e.Message).To(ContainSubstring("AgentSession"))
+					Expect(e.Message).To(ContainSubstring("created"))
 					break
 				}
 			}

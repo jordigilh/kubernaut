@@ -23,6 +23,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sretry "k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -114,14 +115,25 @@ func createInvestigatingAA(name, rrName string) {
 	}
 	Expect(k8sClient.Create(ctx, analysis)).To(Succeed())
 
-	Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
+	// RetryOnConflict: the real per-process AIAnalysis controller reconciles
+	// this object concurrently (it watches Create events too), so a plain
+	// Get-then-Status().Update here can race its own status write and get
+	// "the object has been modified" -- same documented pattern already used
+	// for AIAnalysis/other CRDs in test/shared/helpers/crd_lifecycle.go
+	// (SimulateAICompletedWithWorkflow et al.: "Uses RetryOnConflict to
+	// handle races with the RO controller").
 	now := metav1.Now()
-	analysis.Status.Phase = aianalysisv1.PhaseInvestigating
-	analysis.Status.KASession = &aianalysisv1.KASession{
-		Interactive: false,
-		CreatedAt:   &now,
-	}
-	Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
+	Expect(k8sretry.RetryOnConflict(k8sretry.DefaultRetry, func() error {
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis); err != nil {
+			return err
+		}
+		analysis.Status.Phase = aianalysisv1.PhaseInvestigating
+		analysis.Status.KASession = &aianalysisv1.KASession{
+			Interactive: false,
+			CreatedAt:   &now,
+		}
+		return k8sClient.Status().Update(ctx, analysis)
+	})).To(Succeed())
 }
 
 // BR-INTERACTIVE-010: Integration tests for InvestigationSession field index

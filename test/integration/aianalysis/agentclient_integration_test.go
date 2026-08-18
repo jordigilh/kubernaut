@@ -25,8 +25,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	. "github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	. "github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
 
@@ -98,20 +98,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 			// Real KA call with Mock LLM backend
 			// Mock LLM will return deterministic response based on signal type
 			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
-				IncidentID:        "test-crashloop-001",
-				RemediationID:     "req-test-001",
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "critical",
-				SignalSource:      "kubernaut",
-				ResourceNamespace: "staging",
-				ResourceKind:      "Pod",
-				ResourceName:      "test-app",
-				ErrorMessage:      "Container restarted 5 times",
-				Environment:       "staging",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "test-cluster",
+				IncidentID:         "test-crashloop-001",
+				RemediationID:      "req-test-001",
+				SignalName:         "CrashLoopBackOff",
+				Severity:           "critical",
+				SignalSource:       "kubernaut",
+				ResourceNamespace:  "staging",
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "test-app",
+				ErrorMessage:       "Container restarted 5 times",
+				Environment:        "staging",
+				Priority:           "P1",
+				RiskTolerance:      "medium",
+				BusinessCategory:   "standard",
+				ClusterName:        "test-cluster",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -124,20 +125,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 		It("should return valid response without targetInOwnerChain (ADR-055) - BR-AI-007", func() {
 			// Real KA call - response determined by Mock LLM
 			_, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
-				IncidentID:        "test-memory-001",
-				RemediationID:     "req-test-002",
-				SignalName:        "MemoryPressure",
-				Severity:          "warning", // DD-SEVERITY-001: Use normalized severity enum
-				SignalSource:      "kubernaut",
-				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-				ResourceKind:      "Pod",
-				ResourceName:      "web-app-abc123",
-				ErrorMessage:      "Memory pressure detected",
-				Environment:       "production",
-				Priority:          "P2",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "test-cluster",
+				IncidentID:         "test-memory-001",
+				RemediationID:      "req-test-002",
+				SignalName:         "MemoryPressure",
+				Severity:           "warning", // DD-SEVERITY-001: Use normalized severity enum
+				SignalSource:       "kubernaut",
+				ResourceNamespace:  testNamespace, // DD-TEST-002: Use dynamic namespace
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "web-app-abc123",
+				ErrorMessage:       "Memory pressure detected",
+				Environment:        "production",
+				Priority:           "P2",
+				RiskTolerance:      "medium",
+				BusinessCategory:   "standard",
+				ClusterName:        "test-cluster",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -148,20 +150,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 		It("should return selected workflow - BR-AI-016", func() {
 			// Real KA call - Mock LLM returns workflow based on OOMKilled signal type
 			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
-				IncidentID:        "test-oom-001",
-				RemediationID:     "req-test-003",
-				SignalName:        "OOMKilled",
-				Severity:          "critical",
-				SignalSource:      "kubernaut",
-				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-				ResourceKind:      "Pod",
-				ResourceName:      "memory-hog",
-				ErrorMessage:      "Container exceeded memory limit",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "test-cluster",
+				IncidentID:         "test-oom-001",
+				RemediationID:      "req-test-003",
+				SignalName:         "OOMKilled",
+				Severity:           "critical",
+				SignalSource:       "kubernaut",
+				ResourceNamespace:  testNamespace, // DD-TEST-002: Use dynamic namespace
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "memory-hog",
+				ErrorMessage:       "Container exceeded memory limit",
+				Environment:        "production",
+				Priority:           "P1",
+				RiskTolerance:      "medium",
+				BusinessCategory:   "standard",
+				ClusterName:        "test-cluster",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -180,20 +183,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 		It("should include alternative workflows for production - BR-AI-016", func() {
 			// Real KA call - Mock LLM may include alternatives for production
 			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
-				IncidentID:        "test-prod-001",
-				RemediationID:     "req-test-004",
-				SignalName:        "CrashLoopBackOff",
-				Severity:          "critical",
-				SignalSource:      "kubernaut",
-				ResourceNamespace: "production",
-				ResourceKind:      "Pod",
-				ResourceName:      "prod-app",
-				ErrorMessage:      "Pod in CrashLoopBackOff state",
-				Environment:       "production",
-				Priority:          "P0",
-				RiskTolerance:     "low",
-				BusinessCategory:  "critical",
-				ClusterName:       "prod-cluster",
+				IncidentID:         "test-prod-001",
+				RemediationID:      "req-test-004",
+				SignalName:         "CrashLoopBackOff",
+				Severity:           "critical",
+				SignalSource:       "kubernaut",
+				ResourceNamespace:  "production",
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "prod-app",
+				ErrorMessage:       "Pod in CrashLoopBackOff state",
+				Environment:        "production",
+				Priority:           "P0",
+				RiskTolerance:      "low",
+				BusinessCategory:   "critical",
+				ClusterName:        "prod-cluster",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -208,20 +212,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 		It("should handle needs_human_review=true with reason enum", func() {
 			// Real KA call - Unknown signal type may trigger human review
 			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
-				IncidentID:        "test-hr-001",
-				RemediationID:     "req-hr-001",
-				SignalName:        "Unknown",
-				Severity:          "critical",
-				SignalSource:      "kubernaut",
-				ResourceNamespace: "production",
-				ResourceKind:      "Pod",
-				ResourceName:      "unknown-app",
-				ErrorMessage:      "Unknown error pattern - requires investigation",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "low",
-				BusinessCategory:  "standard",
-				ClusterName:       "prod-cluster",
+				IncidentID:         "test-hr-001",
+				RemediationID:      "req-hr-001",
+				SignalName:         "Unknown",
+				Severity:           "critical",
+				SignalSource:       "kubernaut",
+				ResourceNamespace:  "production",
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "unknown-app",
+				ErrorMessage:       "Unknown error pattern - requires investigation",
+				Environment:        "production",
+				Priority:           "P1",
+				RiskTolerance:      "low",
+				BusinessCategory:   "standard",
+				ClusterName:        "prod-cluster",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -282,20 +287,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 			for _, tc := range testCases {
 				By(fmt.Sprintf("Testing %s", tc.description))
 				resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
-					IncidentID:        "test-hr-" + tc.signalType,
-					RemediationID:     "req-hr-" + tc.signalType,
-					SignalName:        tc.signalType,
-					Severity:          "warning",
-					SignalSource:      "kubernaut",
-					ResourceNamespace: testNamespace,
-					ResourceKind:      "Pod",
-					ResourceName:      "test-pod",
-					ErrorMessage:      "Test for " + tc.signalType,
-					Environment:       "staging",
-					Priority:          "P2",
-					RiskTolerance:     "medium",
-					BusinessCategory:  "standard",
-					ClusterName:       "test-cluster",
+					IncidentID:         "test-hr-" + tc.signalType,
+					RemediationID:      "req-hr-" + tc.signalType,
+					SignalName:         tc.signalType,
+					Severity:           "warning",
+					SignalSource:       "kubernaut",
+					ResourceNamespace:  testNamespace,
+					ResourceKind:       "Pod",
+					ResourceAPIVersion: "v1",
+					ResourceName:       "test-pod",
+					ErrorMessage:       "Test for " + tc.signalType,
+					Environment:        "staging",
+					Priority:           "P2",
+					RiskTolerance:      "medium",
+					BusinessCategory:   "standard",
+					ClusterName:        "test-cluster",
 				})
 
 				Expect(err).NotTo(HaveOccurred(), "Request should succeed for %s", tc.description)
@@ -322,20 +328,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 			// Mock LLM returns investigation_outcome="resolved" with no workflow
 			// See server.py lines 948-980 for scenario definition
 			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
-				IncidentID:        "test-resolved-001",
-				RemediationID:     "req-resolved-001",
-				SignalName:        "MOCK_PROBLEM_RESOLVED", // Mock LLM scenario trigger
-				Severity:          "warning",
-				SignalSource:      "kubernaut",
-				ResourceNamespace: testNamespace,
-				ResourceKind:      "Pod",
-				ResourceName:      "recovered-pod",
-				ErrorMessage:      "Service was previously degraded but has now recovered",
-				Environment:       "staging",
-				Priority:          "P2",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "test-cluster",
+				IncidentID:         "test-resolved-001",
+				RemediationID:      "req-resolved-001",
+				SignalName:         "MOCK_PROBLEM_RESOLVED", // Mock LLM scenario trigger
+				Severity:           "warning",
+				SignalSource:       "kubernaut",
+				ResourceNamespace:  testNamespace,
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "recovered-pod",
+				ErrorMessage:       "Service was previously degraded but has now recovered",
+				Environment:        "staging",
+				Priority:           "P2",
+				RiskTolerance:      "medium",
+				BusinessCategory:   "standard",
+				ClusterName:        "test-cluster",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -356,20 +363,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 		// #301: Contradiction case — KA parser should override needs_human_review to false
 		It("should override contradictory needs_human_review=true when investigation_outcome=resolved (#301)", func() {
 			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
-				IncidentID:        "test-resolved-contradiction-001",
-				RemediationID:     "req-resolved-contradiction-001",
-				SignalName:        "MOCK_PROBLEM_RESOLVED_CONTRADICTION",
-				Severity:          "info",
-				SignalSource:      "kubernaut",
-				ResourceNamespace: testNamespace,
-				ResourceKind:      "Pod",
-				ResourceName:      "recovered-pod",
-				ErrorMessage:      "Service was previously degraded but has now recovered",
-				Environment:       "production",
-				Priority:          "P2",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "test-cluster",
+				IncidentID:         "test-resolved-contradiction-001",
+				RemediationID:      "req-resolved-contradiction-001",
+				SignalName:         "MOCK_PROBLEM_RESOLVED_CONTRADICTION",
+				Severity:           "info",
+				SignalSource:       "kubernaut",
+				ResourceNamespace:  testNamespace,
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "recovered-pod",
+				ErrorMessage:       "Service was previously degraded but has now recovered",
+				Environment:        "production",
+				Priority:           "P2",
+				RiskTolerance:      "medium",
+				BusinessCategory:   "standard",
+				ClusterName:        "test-cluster",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -391,20 +399,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 			// Mock LLM simulates LLM returning unparseable responses, triggering retry exhaustion
 			// See server.py lines 1011-1042 for scenario definition
 			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
-				IncidentID:        "test-max-retries-001",
-				RemediationID:     "req-max-retries-001",
-				SignalName:        "MOCK_MAX_RETRIES_EXHAUSTED", // Mock LLM scenario trigger
-				Severity:          "high",
-				SignalSource:      "kubernaut",
-				ResourceNamespace: testNamespace,
-				ResourceKind:      "Pod",
-				ResourceName:      "llm-parse-fail-pod",
-				ErrorMessage:      "LLM response parsing failed repeatedly",
-				Environment:       "production",
-				Priority:          "P1",
-				RiskTolerance:     "low",
-				BusinessCategory:  "critical",
-				ClusterName:       "prod-cluster",
+				IncidentID:         "test-max-retries-001",
+				RemediationID:      "req-max-retries-001",
+				SignalName:         "MOCK_MAX_RETRIES_EXHAUSTED", // Mock LLM scenario trigger
+				Severity:           "high",
+				SignalSource:       "kubernaut",
+				ResourceNamespace:  testNamespace,
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "llm-parse-fail-pod",
+				ErrorMessage:       "LLM response parsing failed repeatedly",
+				Environment:        "production",
+				Priority:           "P1",
+				RiskTolerance:      "low",
+				BusinessCategory:   "critical",
+				ClusterName:        "prod-cluster",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -425,20 +434,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 		It("should handle investigation_inconclusive scenario", func() {
 			// Real KA call - NetworkFailure with unclear pattern may trigger inconclusive
 			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
-				IncidentID:        "test-inconclusive-001",
-				RemediationID:     "req-inconclusive-001",
-				SignalName:        "NetworkFailure",
-				Severity:          "warning", // DD-SEVERITY-001: Use normalized severity enum
-				SignalSource:      "kubernaut",
-				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-				ResourceKind:      "Pod",
-				ResourceName:      "network-app",
-				ErrorMessage:      "Intermittent network failures with unclear pattern",
-				Environment:       "staging",
-				Priority:          "P2",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "test-cluster",
+				IncidentID:         "test-inconclusive-001",
+				RemediationID:      "req-inconclusive-001",
+				SignalName:         "NetworkFailure",
+				Severity:           "warning", // DD-SEVERITY-001: Use normalized severity enum
+				SignalSource:       "kubernaut",
+				ResourceNamespace:  testNamespace, // DD-TEST-002: Use dynamic namespace
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "network-app",
+				ErrorMessage:       "Intermittent network failures with unclear pattern",
+				Environment:        "staging",
+				Priority:           "P2",
+				RiskTolerance:      "medium",
+				BusinessCategory:   "standard",
+				ClusterName:        "test-cluster",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -455,20 +465,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 		It("should return validation attempts history when present", func() {
 			// Real KA call - validation history populated by KA's retry logic
 			resp, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
-				IncidentID:        "test-validation-001",
-				RemediationID:     "req-validation-001",
-				SignalName:        "DatabaseTimeout",
-				Severity:          "warning", // DD-SEVERITY-001: Use normalized severity enum
-				SignalSource:      "kubernaut",
-				ResourceNamespace: "staging",
-				ResourceKind:      "Pod",
-				ResourceName:      "db-client",
-				ErrorMessage:      "Database connection timeout",
-				Environment:       "staging",
-				Priority:          "P2",
-				RiskTolerance:     "medium",
-				BusinessCategory:  "standard",
-				ClusterName:       "test-cluster",
+				IncidentID:         "test-validation-001",
+				RemediationID:      "req-validation-001",
+				SignalName:         "DatabaseTimeout",
+				Severity:           "warning", // DD-SEVERITY-001: Use normalized severity enum
+				SignalSource:       "kubernaut",
+				ResourceNamespace:  "staging",
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "db-client",
+				ErrorMessage:       "Database connection timeout",
+				Environment:        "staging",
+				Priority:           "P2",
+				RiskTolerance:      "medium",
+				BusinessCategory:   "standard",
+				ClusterName:        "test-cluster",
 			})
 
 			Expect(err).NotTo(HaveOccurred())
@@ -496,20 +507,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 			time.Sleep(2 * time.Millisecond) // ✅ APPROVED EXCEPTION: ensure nanosecond-timeout context expires
 
 			_, err = shortClient.Investigate(shortCtx, &agentclient.IncidentRequest{
-				IncidentID:        "test-timeout-001",
-				RemediationID:     "req-timeout-001",
-				SignalName:        "Test",
-				Severity:          "info",
-				SignalSource:      "kubernaut",
-				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
-				ErrorMessage:      "Test timeout handling",
-				Environment:       "staging",
-				Priority:          "P3",
-				RiskTolerance:     "high",
-				BusinessCategory:  "standard",
-				ClusterName:       "test-cluster",
+				IncidentID:         "test-timeout-001",
+				RemediationID:      "req-timeout-001",
+				SignalName:         "Test",
+				Severity:           "info",
+				SignalSource:       "kubernaut",
+				ResourceNamespace:  testNamespace, // DD-TEST-002: Use dynamic namespace
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "test-pod",
+				ErrorMessage:       "Test timeout handling",
+				Environment:        "staging",
+				Priority:           "P3",
+				RiskTolerance:      "high",
+				BusinessCategory:   "standard",
+				ClusterName:        "test-cluster",
 			})
 
 			Expect(err).To(HaveOccurred())
@@ -529,20 +541,21 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 			// Real KA call with missing required field - should return 400
 			// DD-WORKFLOW-002: remediation_id is required
 			_, err := realAgentClient.Investigate(testCtx, &agentclient.IncidentRequest{
-				IncidentID:        "test-validation-error",
-				RemediationID:     "", // EMPTY - violates DD-WORKFLOW-002
-				SignalName:        "Test",
-				Severity:          "info",
-				SignalSource:      "kubernaut",
-				ResourceNamespace: testNamespace, // DD-TEST-002: Use dynamic namespace
-				ResourceKind:      "Pod",
-				ResourceName:      "test-pod",
-				ErrorMessage:      "Test validation error",
-				Environment:       "staging",
-				Priority:          "P3",
-				RiskTolerance:     "high",
-				BusinessCategory:  "standard",
-				ClusterName:       "test-cluster",
+				IncidentID:         "test-validation-error",
+				RemediationID:      "", // EMPTY - violates DD-WORKFLOW-002
+				SignalName:         "Test",
+				Severity:           "info",
+				SignalSource:       "kubernaut",
+				ResourceNamespace:  testNamespace, // DD-TEST-002: Use dynamic namespace
+				ResourceKind:       "Pod",
+				ResourceAPIVersion: "v1",
+				ResourceName:       "test-pod",
+				ErrorMessage:       "Test validation error",
+				Environment:        "staging",
+				Priority:           "P3",
+				RiskTolerance:      "high",
+				BusinessCategory:   "standard",
+				ClusterName:        "test-cluster",
 			})
 
 			Expect(err).To(HaveOccurred(),
