@@ -473,6 +473,17 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	err = agentsessionv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
+	// DD-AA-KA-001: RemediationWorkflow must be registered here too, not just
+	// in Phase 1's process-1-only function above (line ~243) -- scheme.Scheme
+	// is a per-process global singleton (client-go/kubernetes/scheme), and
+	// Ginkgo parallel processes are separate OS processes, so processes other
+	// than #1 never execute Phase 1's registration. Without this, every
+	// process except #1 fails "Per-process workflow re-seed" below with "no
+	// kind is registered for the type v1alpha1.RemediationWorkflow".
+	By(fmt.Sprintf("[Process %d] Registering RemediationWorkflow CRD scheme (DD-AA-KA-001 per-process re-seed)", processNum))
+	err = rwv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
 	By(fmt.Sprintf("[Process %d] Bootstrapping per-process envtest environment", processNum))
 	// DD-TEST-010: Each process gets its OWN Kubernetes API server (envtest)
 	testEnv = &envtest.Environment{
