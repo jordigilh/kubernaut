@@ -16186,7 +16186,7 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.NewPhase)
 			}
 		}
-	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
+	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
 		switch s.Type {
 		case AuditEventEventDataAianalysisAiagentCallAuditEventEventData:
 			e.FieldStart("event_type")
@@ -16194,9 +16194,6 @@ func (s AuditEventEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventEventDataAianalysisAiagentResultAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("aianalysis.aiagent.result")
-		case AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData:
-			e.FieldStart("event_type")
-			e.Str("aianalysis.aiagent.session_lost")
 		case AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
 			e.FieldStart("event_type")
 			e.Str("aianalysis.aiagent.submit")
@@ -18916,9 +18913,6 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 				case "aianalysis.aiagent.result":
 					s.Type = AuditEventEventDataAianalysisAiagentResultAuditEventEventData
 					found = true
-				case "aianalysis.aiagent.session_lost":
-					s.Type = AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData
-					found = true
 				case "aianalysis.aiagent.submit":
 					s.Type = AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData
 					found = true
@@ -19266,7 +19260,7 @@ func (s *AuditEventEventData) Decode(d *jx.Decoder) error {
 		if err := s.AIAnalysisPhaseTransitionPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
+	case AuditEventEventDataAianalysisAiagentCallAuditEventEventData, AuditEventEventDataAianalysisAiagentResultAuditEventEventData, AuditEventEventDataAianalysisAiagentSubmitAuditEventEventData:
 		if err := s.AIAnalysisAIAgentCallPayload.Decode(d); err != nil {
 			return err
 		}
@@ -21188,7 +21182,7 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 				e.Str(s.NewPhase)
 			}
 		}
-	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
+	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
 		switch s.Type {
 		case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData:
 			e.FieldStart("event_type")
@@ -21196,9 +21190,6 @@ func (s AuditEventRequestEventData) encodeFields(e *jx.Encoder) {
 		case AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("aianalysis.aiagent.result")
-		case AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData:
-			e.FieldStart("event_type")
-			e.Str("aianalysis.aiagent.session_lost")
 		case AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
 			e.FieldStart("event_type")
 			e.Str("aianalysis.aiagent.submit")
@@ -23918,9 +23909,6 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 				case "aianalysis.aiagent.result":
 					s.Type = AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData
 					found = true
-				case "aianalysis.aiagent.session_lost":
-					s.Type = AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData
-					found = true
 				case "aianalysis.aiagent.submit":
 					s.Type = AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData
 					found = true
@@ -24268,7 +24256,7 @@ func (s *AuditEventRequestEventData) Decode(d *jx.Decoder) error {
 		if err := s.AIAnalysisPhaseTransitionPayload.Decode(d); err != nil {
 			return err
 		}
-	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSessionLostAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
+	case AuditEventRequestEventDataAianalysisAiagentCallAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentResultAuditEventRequestEventData, AuditEventRequestEventDataAianalysisAiagentSubmitAuditEventRequestEventData:
 		if err := s.AIAnalysisAIAgentCallPayload.Decode(d); err != nil {
 			return err
 		}

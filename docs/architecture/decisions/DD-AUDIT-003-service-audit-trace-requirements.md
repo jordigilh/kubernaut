@@ -335,10 +335,11 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 >   `internal/controller/aianalysis/schema_rejection_retry_test.go`,
 >   `test/integration/aianalysis/schemarejection/retry_test.go`) — `AuditClientInterface` never
 >   declared this method to begin with, so removing it changed no contract. The
->   `pkg/datastorage/ogen-client` generated wire types for this event (`AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData`
->   etc.) are left untouched: they are OpenAPI-schema-generated and reflect the Data Storage
->   service's audit-events API contract, not this specific caller's usage — regenerating them is a
->   separate, schema-level decision outside this cleanup's scope. See
+>   `aianalysis.aiagent.session_lost` discriminator-mapping entry was also removed from
+>   `api/openapi/data-storage-v1.yaml` and `pkg/datastorage/ogen-client` regenerated via
+>   `make generate-datastorage-client` (2026-08-18) — the shared `AIAnalysisAIAgentCallPayload`
+>   schema itself is untouched (still used by `.call`/`.submit`/`.result`); only the
+>   `session_lost` event-type route was removed, since no producer emits it anymore. See
 >   [docs/testing/2170/TEST_PLAN.md](../../testing/2170/TEST_PLAN.md) for the full BR/control
 >   coverage record.
 | `aianalysis.approval.decision` | Manual approval decision recorded | P0 |
