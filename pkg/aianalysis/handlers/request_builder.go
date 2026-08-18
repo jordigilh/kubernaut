@@ -28,7 +28,6 @@ import (
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
@@ -48,78 +47,6 @@ func NewRequestBuilder(log logr.Logger) *RequestBuilder {
 	return &RequestBuilder{
 		log: log.WithName("request-builder"),
 	}
-}
-
-// ========================================
-// INCIDENT REQUEST CONSTRUCTION
-// BR-AI-080: Build request with all required KA fields
-// ========================================
-
-// BuildIncidentRequest constructs an IncidentRequest from AIAnalysis CRD spec.
-// Uses generated OpenAPI types for type-safe KA contract compliance.
-//
-// Parameters:
-// - analysis: AIAnalysis CRD containing signal context and enrichment
-//
-// Returns:
-// - *client.IncidentRequest: Type-safe request for KA /incident/analyze endpoint
-func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis) *agentclient.IncidentRequest {
-	spec := analysis.Spec.AnalysisRequest.SignalContext
-	enrichment := spec.EnrichmentResults
-
-	// DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for correlation consistency
-	// Priority: RemediationRequestRef.Name (human-readable) > RemediationID (fallback for backward compatibility)
-	correlationID := analysis.Spec.RemediationID // Fallback
-	if analysis.Spec.RemediationRequestRef.Name != "" {
-		correlationID = analysis.Spec.RemediationRequestRef.Name // Preferred
-	}
-
-	// BR-AI-080: Build request with all required KA fields using generated types
-	// Issue #113: CustomLabels now on enrichment.KubernetesContext
-	customLabels := getCustomLabels(enrichment)
-	req := &agentclient.IncidentRequest{
-		// REQUIRED fields per KA OpenAPI spec
-		IncidentID:         analysis.Name, // Q1: Use CR name
-		RemediationID:      correlationID, // DD-AUDIT-CORRELATION-001: Use RemediationRequestRef.Name for audit correlation
-		SignalName:         spec.SignalName,
-		Severity:           agentclient.Severity(spec.Severity),
-		SignalSource:       "kubernaut",
-		ResourceNamespace:  spec.TargetResource.Namespace,
-		ResourceKind:       spec.TargetResource.Kind,
-		ResourceName:       spec.TargetResource.Name,
-		ResourceAPIVersion: spec.TargetResource.APIVersion, // #2064: was omitted, KA never received it
-		ErrorMessage:       "",                             // Populated from enrichment if available
-		Environment:        spec.Environment,
-		Priority:           spec.BusinessPriority,
-		RiskTolerance:      getOrDefault(customLabels, "risk_tolerance", "medium"),
-		BusinessCategory:   getOrDefault(customLabels, "business_category", "standard"),
-		ClusterName:        clusterNameFor(analysis.Spec.ClusterID, customLabels),
-	}
-
-	// Map enrichment results for richer KA context
-	req.EnrichmentResults.SetTo(b.buildEnrichmentResults(enrichment))
-
-	// BR-AI-084: Pass signal mode to KA for prompt strategy switching (ADR-054)
-	// "reactive" triggers RCA investigation; "proactive" triggers proactive prevention strategy
-	if spec.SignalMode != "" {
-		req.SignalMode.SetTo(agentclient.SignalMode(spec.SignalMode))
-	}
-
-	// #462: Forward signal annotations for alert-author context in KA prompt
-	if len(spec.SignalAnnotations) > 0 {
-		req.SignalAnnotations.SetTo(agentclient.IncidentRequestSignalAnnotations(spec.SignalAnnotations))
-	}
-
-	// BR-FLEET-003 (#1511): forward the optional cluster business classification.
-	// Distinct from ClusterName above (the raw cluster identifier) -- omitted
-	// entirely (not even an empty string) for non-fleet deployments/unregistered
-	// clusters so KA's discovery tool call sends no `cluster` filter, per the
-	// mandatory-field matching semantics in DD-FLEET-002.
-	if spec.Cluster != "" {
-		req.Cluster.SetTo(spec.Cluster)
-	}
-
-	return req
 }
 
 // ========================================
@@ -213,52 +140,6 @@ func marshalEnrichmentResults(enrichment sharedtypes.EnrichmentResults) *apiexte
 // HELPER FUNCTIONS
 // ========================================
 
-// buildEnrichmentResults maps shared EnrichmentResults to client.EnrichmentResults
-func (b *RequestBuilder) buildEnrichmentResults(enrichment sharedtypes.EnrichmentResults) agentclient.EnrichmentResults {
-	result := agentclient.EnrichmentResults{}
-
-	// ADR-056: DetectedLabels removed from EnrichmentResults.
-	// DetectedLabels are now computed by KA post-RCA and returned
-	// in the response (stored in PostRCAContext).
-
-	// Map CustomLabels if present (Issue #113: CustomLabels now on KubernetesContext)
-	if enrichment.KubernetesContext != nil && len(enrichment.KubernetesContext.CustomLabels) > 0 {
-		customLabels := agentclient.EnrichmentResultsCustomLabels(enrichment.KubernetesContext.CustomLabels)
-		result.CustomLabels.SetTo(customLabels)
-	}
-
-	// Map KubernetesContext if present (simplified - core fields only)
-	// client.EnrichmentResultsKubernetesContext is map[string]jx.Raw
-	// Note: Full mapping of all KubernetesContext fields can be added as needed
-	if enrichment.KubernetesContext != nil {
-		// For now, pass through essential fields only
-		// KA can handle the structured types or use default processing
-		// Future: Complete mapping of PodDetails, DeploymentDetails, NodeDetails, etc.
-		result.KubernetesContext.SetToNull() // Mark as present but empty for now
-	}
-
-	// Map BusinessClassification if present (BR-SP-002, BR-SP-080, BR-SP-081)
-	if enrichment.BusinessClassification != nil {
-		bc := enrichment.BusinessClassification
-		clientBC := agentclient.BusinessClassification{}
-		if bc.BusinessUnit != "" {
-			clientBC.BusinessUnit.SetTo(bc.BusinessUnit)
-		}
-		if bc.ServiceOwner != "" {
-			clientBC.ServiceOwner.SetTo(bc.ServiceOwner)
-		}
-		if bc.Criticality != "" {
-			clientBC.Criticality.SetTo(string(bc.Criticality))
-		}
-		if bc.SLARequirement != "" {
-			clientBC.SlaRequirement.SetTo(string(bc.SLARequirement))
-		}
-		result.BusinessClassification.SetTo(clientBC)
-	}
-
-	return result
-}
-
 // getCustomLabels returns CustomLabels from EnrichmentResults (Issue #113: now on KubernetesContext).
 func getCustomLabels(enrichment sharedtypes.EnrichmentResults) map[string][]string {
 	if enrichment.KubernetesContext != nil {
@@ -275,11 +156,10 @@ func getOrDefault(labels map[string][]string, key, defaultVal string) string {
 	return defaultVal
 }
 
-// clusterNameFor resolves the wire IncidentRequest's cluster_name field --
-// documented (openapi.json) as "the raw cluster identifier" KA uses to
-// resolve its per-investigation fleet tool overlay via
-// MapIncidentRequestToSignal -> SignalContext.ClusterID
-// (internal/kubernautagent/server/handler.go, DD-FLEET-005).
+// clusterNameFor resolves AgentSessionSpec.ClusterName -- the raw cluster
+// identifier KA uses to resolve its per-investigation fleet tool overlay via
+// internal/kubernautagent/agentsession/mapping.go's MapSpecToSignal ->
+// SignalContext.ClusterID (DD-FLEET-004).
 //
 // BR-FLEET-054: RemediationOrchestrator already propagates
 // RemediationRequest.Spec.ClusterID onto AIAnalysis.Spec.ClusterID

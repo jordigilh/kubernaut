@@ -30,6 +30,13 @@ import (
 	"github.com/jordigilh/kubernaut/test/shared/helpers"
 )
 
+// goconst dedup: test-fixture literals deduplicated below.
+const (
+	oomkilled     = "OOMKilled"
+	criticalSev   = "critical"
+	productionEnv = "production"
+)
+
 // Unit Tests: RequestBuilder.BuildAgentSessionSpec
 // DD-AA-KA-001, BR-AA-KA-065.2: 1:1, lossless translation of the retired
 // agentclient.IncidentRequest into AgentSessionSpec, sourced from the exact
