@@ -28,6 +28,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/agentsession"
 	karbac "github.com/jordigilh/kubernaut/internal/kubernautagent/rbac"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
@@ -35,11 +36,21 @@ import (
 
 // buildAgentSessionScheme builds the scheme for the AgentSession dispatcher's
 // controller-runtime client: the built-in K8s scheme (which already
-// registers coordination/v1 Lease) plus AgentSession itself.
+// registers coordination/v1 Lease) plus AgentSession and InvestigationSession.
+// InvestigationSession is required here because Dispatcher.hasInvestigationSession
+// (DD-AA-KA-001 Amendment Gap 1's dispatch-time interactivity check, the sole
+// source of truth for Signal.Interactive) Lists InvestigationSessionList
+// through this same client -- omitting it here made that List call fail on
+// every single dispatch with "no kind is registered for the type
+// v1alpha1.InvestigationSessionList", silently defaulting every investigation
+// to autonomous dispatch regardless of the caller's actual interactive intent
+// (caught via IT-AA integration failures, not a compile error, since the
+// dispatcher fails open and only logs the error).
 func buildAgentSessionScheme() *k8sruntime.Scheme {
 	scheme := k8sruntime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(agentsessionv1.AddToScheme(scheme))
+	utilruntime.Must(isv1alpha1.AddToScheme(scheme))
 	return scheme
 }
 
