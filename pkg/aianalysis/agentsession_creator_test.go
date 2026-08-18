@@ -155,5 +155,47 @@ var _ = Describe("AgentSessionCreator", func() {
 
 			Expect(err).To(HaveOccurred())
 		})
+
+		// Regression proof for #2081 (main-tracking clone of #2080):
+		// handleSessionLost's 404-triggered regeneration raced
+		// tryAdoptCorrelatedSession with no backoff and no cap-exhaustion
+		// safety net, so a rapid cascade of legitimate KA hand-offs
+		// (autonomous->interactive upgrade, then one or more AF-correlated
+		// takeovers) could exhaust the 5-regeneration cap and permanently
+		// fail an AIAnalysis whose underlying investigation had already
+		// completed successfully. Both handleSessionLost and
+		// tryAdoptCorrelatedSession are fully retired under DD-AA-KA-001 --
+		// GetOrCreate has no regeneration concept, no cap, and no adoption
+		// race to lose: repeated/concurrent calls for the same AIAnalysis
+		// always resolve to the single already-created AgentSession
+		// (BR-AA-KA-065.1/065.2), eliminating this failure mode by
+		// construction rather than by tuning a cap or backoff.
+		It("UT-AA-KA-065-207 (#2081 regression): rapid concurrent GetOrCreate calls for the same AIAnalysis never error and never create more than one AgentSession", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			c := creator.NewAgentSessionCreator(fakeClient, scheme)
+			analysis := helpers.NewAIAnalysis("ai-test", "default")
+			analysis.Spec.RemediationRequestRef = corev1.ObjectReference{Name: "test-remediation"}
+
+			// #2081's evidence describes several hand-offs landing in quick
+			// succession; 10 concurrent callers exceeds the old 5-regeneration
+			// cap that used to be exhausted by this exact shape of race.
+			const concurrentCallers = 10
+			results := make(chan error, concurrentCallers)
+			for i := 0; i < concurrentCallers; i++ {
+				go func() {
+					_, err := c.GetOrCreate(ctx, analysis)
+					results <- err
+				}()
+			}
+			for i := 0; i < concurrentCallers; i++ {
+				Expect(<-results).ToNot(HaveOccurred(),
+					"#2081: no caller should ever see an error from a concurrent hand-off -- there is no cap left to exhaust")
+			}
+
+			list := &agentsessionv1.AgentSessionList{}
+			Expect(fakeClient.List(ctx, list)).To(Succeed())
+			Expect(list.Items).To(HaveLen(1),
+				"#2081: concurrent GetOrCreate calls must never produce more than one AgentSession for the same AIAnalysis")
+		})
 	})
 })

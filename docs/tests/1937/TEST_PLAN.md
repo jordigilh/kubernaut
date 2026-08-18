@@ -125,6 +125,15 @@ parameter on `main` (hardcoded to `"kubernaut-system"` internally) —
 
 **Test file**: `pkg/apifrontend/tools/status_message_leak_1916_test.go`
 
+> **Update (2026-08-18, DD-AA-KA-001 Amendment Gap 1 / #2172)**: `AwaitISPhaseActive` (and the
+> `InvestigationSession.Status.Phase == Active` signal it polled, which AA no longer writes as of
+> #2170) was retired and replaced by `AwaitAgentSessionInteractive`, which watches
+> `AgentSession.Status.Interactive` instead. UT-AF-1916-002's assertion (emitted text omits `"AA"`)
+> is unchanged and still passes — only its trigger fixture was swapped (`newTypedAgentSession(...,
+> interactive=true)` in place of `newTypedIS(..., SessionPhaseActive)`). Recorded here rather than
+> editing the row above, since this document is a historical, already-closed (`PASS`) record of
+> issue #1916 at the time it shipped.
+
 ---
 
 ## 5. Wiring Manifest

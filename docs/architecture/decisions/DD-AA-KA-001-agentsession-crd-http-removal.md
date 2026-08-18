@@ -246,6 +246,15 @@ wait for the ack must watch `AgentSessionList` (filtered by `RemediationRequestR
 named object, mirroring `HandleAwaitSession`'s existing pattern — the object may not exist yet at
 fresh-start time.
 
+**Implemented (2026-08-18, #2172)**: `AwaitAgentSessionInteractive`
+(`pkg/apifrontend/tools/crd_tools_session.go`) replaces the retired `AwaitISPhaseActive` poll loop
+with exactly this watch-first/poll-fallback shape against `AgentSessionList`, returning
+`(bool, error)` so a timeout (expected, non-fatal) is distinguishable from an invalid-input/client
+error. `ka_investigate_mcp.go`'s `awaitInvestigationReady` was updated to call it; AF's typed
+client scheme (`cmd/apifrontend/backend_deps.go`) and ClusterRole
+(`charts/kubernaut/templates/apifrontend/apifrontend.yaml`, `agentsessions` get/list/watch) were
+updated accordingly. AA is now fully out of this ack handshake.
+
 ### Gap 2: Terminal-status-write race in `session.Manager`
 
 `Dispatcher.dispatch()`'s `investigateFn` originally wrapped the raw investigator call and wrote
@@ -265,6 +274,10 @@ fired from the single call sites that actually *win* a state transition (`handle
 the hook for that session — the race is closed by construction, not by ordering. `Dispatcher`
 maintains a `remediationID -> AgentSession ObjectKey` map so the hooks can resolve which CRD to
 write, since `session.Manager` has no CRD awareness of its own.
+
+**Implemented**: `internal/kubernautagent/session/manager.go`/`manager_interactive.go`/
+`manager_query.go` wire `TerminalHook`/`InteractiveUpgradeHook` at every winning call site;
+`internal/kubernautagent/session/terminal_hooks_2170_test.go` covers the race directly.
 
 ### Gap 3: KA's MCP-direct interactive fallback can create a session with no execution path
 
@@ -287,6 +300,10 @@ completed with a real RCA to seed from) exists anywhere for the RR, KA fails clo
 actionable error instead of fabricating a directionless placeholder. This is a KA-internal MCP-tool
 fix, not `AgentSession` plumbing, but is recorded here because it was surfaced directly by this
 decision's own AF-wait redesign.
+
+**Implemented** (#2100/#2101): `internal/kubernautagent/mcp/tools/investigate_start.go`'s
+`upgradeOrCreateInteractiveSession` routes the no-real-session case through
+`failStartOnFallbackExhausted` rather than `createFallbackSession`'s placeholder branch.
 
 ## Future Considerations (not a decision — revisit later)
 

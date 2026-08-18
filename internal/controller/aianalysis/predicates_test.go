@@ -116,6 +116,22 @@ var _ = Describe("AgentSessionEventPredicate (#1449, DD-AA-KA-001)", func() {
 	// Without this, KA's dispatch acknowledgment (which only changes
 	// Interactive/SessionID, not Phase) is silently dropped and AA only
 	// learns about it on its next scheduled poll instead of near-instantly.
+	//
+	// Regression coverage for #1713 (E2E-FP-1390-001 "Session Upgrade
+	// Journey" intermittently hanging its full 10-minute Eventually window
+	// waiting for AIAnalysis.Status.KASession.Interactive to flip true): that
+	// flake's root cause was AA's now-fully-retired applyInteractiveDetection
+	// racing its own IS-existence poll against a concurrent HTTP submit
+	// (DD-AA-KA-001 Amendment Gap 1's "no create-time snapshot stays
+	// correct" analysis). Under this design there is no AA-side detection to
+	// race at all -- KA's dispatcher is the sole writer of
+	// AgentSession.Status.Interactive (see dispatcher.go), and
+	// UT-AA-2030-013a below is the direct proof that AA's real
+	// SetupWithManager wiring (WatchesRawSource + this predicate,
+	// aianalysis_controller.go) reconciles on that write immediately rather
+	// than waiting for AIAnalysis's own poll-driven requeue -- eliminating
+	// the multi-minute-hang failure mode by construction, not by a longer
+	// timeout.
 	// ═══════════════════════════════════════════════════════════════════════
 
 	makeASWithSession := func(phase agentsessionv1.AgentSessionPhase, interactive bool, sessionID string) *agentsessionv1.AgentSession {
