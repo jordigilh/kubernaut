@@ -19,6 +19,7 @@ package agentsession
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -446,6 +447,16 @@ func dispatchLeaseName(agentSessionName string) string {
 	if len(name) > 63 {
 		name = name[:63]
 	}
+	// DNS-1123 subdomain (metadata.name) must start and end with an
+	// alphanumeric character; a naive length cut can leave a trailing
+	// separator (e.g. "...1787063336-26" chopped to "...1787063336-"),
+	// which the API server rejects at Lease-Create time. That rejection is
+	// swallowed as a per-tryDispatch error and retried every resync with
+	// the same invalid name, permanently blocking dispatch for that
+	// AgentSession -- confirmed live via a stuck-forever poll loop
+	// (helios08 repro, 2026-08-18, IT-AA #2170). Trim any trailing
+	// separators left by the cut.
+	name = strings.TrimRight(name, "-.")
 	return name
 }
 

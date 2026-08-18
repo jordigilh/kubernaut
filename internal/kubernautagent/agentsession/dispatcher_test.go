@@ -29,6 +29,7 @@ import (
 	coordinationv1 "k8s.io/api/coordination/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation"
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -160,6 +161,40 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			lease := &coordinationv1.Lease{}
 			Expect(cli.Get(ctx, crclient.ObjectKey{Name: "dispatch-as-1", Namespace: testNamespace}, lease)).To(Succeed())
 			Expect(*lease.Spec.HolderIdentity).To(Equal("replica-a"))
+		})
+	})
+
+	Describe("IT-AA-2170-DISPATCH-LEASE-NAME: a long AgentSession name that would truncate the dispatch Lease name to a trailing separator", func() {
+		It("should still produce a valid DNS-1123 subdomain Lease name and dispatch successfully", func() {
+			// "dispatch-" (9 chars) + this 58-char name is exactly 67 chars,
+			// and the naive name[:63] cut used to land exactly on a "-"
+			// (reproduces the real name shape seen live on helios08:
+			// "as-test-remediation-hr-<19-digit>-<10-digit>-26" truncated
+			// mid-separator by dispatchLeaseName, rejected by the API
+			// server as an invalid metadata.name, and retried forever on
+			// every resync -- IT-AA #2170).
+			longName := "as-test-remediation-hr-1787063451227311451-1787063336-26"
+			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "ok", Confidence: 0.8}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+			wireHooks(mgr, d)
+			go d.Start(ctx)
+
+			as := newPendingAgentSession(longName)
+			Expect(cli.Create(ctx, as)).To(Succeed())
+			key := crclient.ObjectKeyFromObject(as)
+
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, key, got)).To(Succeed())
+				return got.Status.Phase
+			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseCompleted),
+				"dispatch must not get permanently stuck retrying an invalid Lease name every resync")
+
+			leaseList := &coordinationv1.LeaseList{}
+			Expect(cli.List(ctx, leaseList, crclient.InNamespace(testNamespace))).To(Succeed())
+			Expect(leaseList.Items).To(HaveLen(1))
+			Expect(validation.IsDNS1123Subdomain(leaseList.Items[0].Name)).To(BeEmpty(),
+				"the dispatch Lease name must be a valid DNS-1123 subdomain (start/end alphanumeric)")
 		})
 	})
 
