@@ -751,7 +751,23 @@ func (h *InvestigatingHandler) checkInvestigationTimeout(ctx context.Context, an
 		return false
 	}
 	elapsed := time.Since(session.CreatedAt.Time)
-	if elapsed <= h.maxInvestigationDuration {
+
+	// DD-TIMEOUT-002 / Issue #2176: prefer RO's authoritative absolute
+	// deadline (Spec.TimesOutAt, propagated from
+	// RemediationRequest.Status.TimeoutConfig.Analyzing) when set. Fall back
+	// to the hardcoded session.CreatedAt+maxInvestigationDuration default
+	// when RO has no authoritative Analyzing timeout (back-compat /
+	// defensive -- e.g. AIAnalysis CRDs created before this field existed).
+	var timedOut bool
+	var limitDesc string
+	if analysis.Spec.TimesOutAt != nil {
+		timedOut = metav1.Now().After(analysis.Spec.TimesOutAt.Time)
+		limitDesc = "deadline " + analysis.Spec.TimesOutAt.Format(time.RFC3339)
+	} else {
+		timedOut = elapsed > h.maxInvestigationDuration
+		limitDesc = h.maxInvestigationDuration.String()
+	}
+	if !timedOut {
 		return false
 	}
 
@@ -766,6 +782,7 @@ func (h *InvestigatingHandler) checkInvestigationTimeout(ctx context.Context, an
 		"sessionID", session.ID,
 		"elapsed", elapsed,
 		"maxDuration", h.maxInvestigationDuration,
+		"timesOutAt", analysis.Spec.TimesOutAt,
 	)
 	// #1376: Close the InvestigationSession CRD on timeout.
 	h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseFailed)
@@ -776,7 +793,15 @@ func (h *InvestigatingHandler) checkInvestigationTimeout(ctx context.Context, an
 	analysis.Status.CompletedAt = &now
 	analysis.Status.Reason = aianalysisv1.ReasonTransientError
 	analysis.Status.SubReason = aianalysisv1.SubReasonTransientError
-	analysis.Status.Message = fmt.Sprintf(timeoutMsgFmt, elapsed.Truncate(time.Second), h.maxInvestigationDuration)
+	analysis.Status.Message = fmt.Sprintf(timeoutMsgFmt, elapsed.Truncate(time.Second), limitDesc)
+
+	// BR-AUDIT-005 Gap #7 / Issue #2176: this terminal-failure path previously
+	// did not emit a failure audit event, unlike every other checkInvestigationTimeout
+	// sibling in this file (e.g. failMaxRetriesExceeded, failPermanentError).
+	timeoutErr := fmt.Errorf("investigation timed out after %s (limit: %s)", elapsed.Truncate(time.Second), limitDesc)
+	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, timeoutErr); auditErr != nil {
+		h.log.V(1).Info("Failed to record analysis timeout audit", "error", auditErr)
+	}
 
 	return true
 }

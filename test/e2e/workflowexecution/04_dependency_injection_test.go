@@ -207,11 +207,10 @@ var _ = Describe("DD-WE-006: Schema-Declared Dependency Injection E2E", func() {
 					// BR-WORKFLOW-008: Issue #1481 removed the pre-flight dependency
 					// check, so a missing Secret is now only discovered when the
 					// real kubelet fails to mount the volume. A short explicit
-					// timeout keeps this test fast instead of waiting out the
-					// (30m) default ActiveDeadlineSeconds.
-					ExecutionConfig: &workflowexecutionv1alpha1.ExecutionConfig{
-						Timeout: &metav1.Duration{Duration: 20 * time.Second},
-					},
+					// deadline (DD-TIMEOUT-002 / Issue #2176: Spec.TimesOutAt,
+					// an absolute deadline) keeps this test fast instead of
+					// waiting out the (30m) default ActiveDeadlineSeconds.
+					TimesOutAt: &metav1.Time{Time: time.Now().Add(20 * time.Second)},
 				},
 			}
 

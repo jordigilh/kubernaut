@@ -197,6 +197,39 @@ var _ = Describe("Job Backend Lifecycle (BR-WE-014)", func() {
 		})
 	})
 
+	// DD-TIMEOUT-002 / Issue #2176: proves the real JobExecutor (invoked
+	// through the production WFE controller loop, not called directly)
+	// derives the Job's ActiveDeadlineSeconds from Spec.TimesOutAt, RO's
+	// authoritative absolute deadline, rather than the 30m default.
+	Context("DD-TIMEOUT-002: TimesOutAt propagation to Job ActiveDeadlineSeconds", func() {
+		It("IT-WE-2176-001: sets Job ActiveDeadlineSeconds from WFE Spec.TimesOutAt", func() {
+			targetResource := fmt.Sprintf("default/deployment/job-timeout-%d", time.Now().UnixNano())
+			wfe := createUniqueJobWFE("timeout-2176", targetResource)
+			deadline := metav1.NewTime(time.Now().Add(5 * time.Minute))
+			wfe.Spec.TimesOutAt = &deadline
+
+			defer func() {
+				cleanupJobWFE(wfe)
+			}()
+
+			By("Creating a WFE with an explicit Spec.TimesOutAt")
+			Expect(k8sClient.Create(ctx, wfe)).To(Succeed())
+
+			By("Waiting for the real controller to create a Job")
+			job, err := waitForJobCreation(wfe.Name, 15*time.Second)
+			Expect(err).ToNot(HaveOccurred())
+
+			By("Verifying ActiveDeadlineSeconds is sourced from Spec.TimesOutAt, not the 30m default")
+			Expect(job.Spec.ActiveDeadlineSeconds).ToNot(BeNil())
+			// Tolerance accounts for time elapsed between test setup and the
+			// production controller's Job-creation reconcile.
+			Expect(*job.Spec.ActiveDeadlineSeconds).To(BeNumerically("~", 5*60, 10),
+				"DD-TIMEOUT-002: ActiveDeadlineSeconds should reflect the ~5m remaining until Spec.TimesOutAt, not the 30m default")
+
+			GinkgoWriter.Printf("✅ IT-WE-2176-001: Job ActiveDeadlineSeconds sourced from Spec.TimesOutAt\n")
+		})
+	})
+
 	Context("Job Cleanup via Finalizer", func() {
 
 		It("should clean up Job when WFE is deleted (IT-WE-014-004)", func() {

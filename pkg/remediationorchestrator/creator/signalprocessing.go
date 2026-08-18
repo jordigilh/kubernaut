@@ -88,8 +88,20 @@ func (c *SignalProcessingCreator) buildSignalProcessing(rr *remediationv1.Remedi
 				ProviderData:   rr.Spec.ProviderData,
 				TargetResource: c.buildTargetResource(rr),
 			},
+			// DD-TIMEOUT-002 / Issue #2176: propagate RO's authoritative Processing
+			// timeout as a self-enforceable absolute deadline. Nil-safe: leaves
+			// TimesOutAt nil when RO has no authoritative Processing timeout, so
+			// SignalProcessing relies solely on RO's outer backstop.
+			TimesOutAt: signalProcessingTimesOutAt(rr),
 		},
 	}
+}
+
+func signalProcessingTimesOutAt(rr *remediationv1.RemediationRequest) *metav1.Time {
+	if rr.Status.TimeoutConfig == nil {
+		return nil
+	}
+	return computeTimesOutAt(rr.Status.TimeoutConfig.Processing)
 }
 
 // Create creates a SignalProcessing CRD for the given RemediationRequest.

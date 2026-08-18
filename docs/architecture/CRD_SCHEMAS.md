@@ -820,6 +820,14 @@ For schemas of CRDs created by Central Controller:
 > via KA's own runtime LLM profile configuration (`kubernautAgent.llmProfileRef` in
 > `charts/kubernaut/values.yaml`), not a per-CRD enum. Treat this entire extension section as historical;
 > defer to the Go types for the authoritative current schema, as the note below already instructs.
+>
+> **Also stale (2026-08, [Issue #2176](https://github.com/jordigilh/kubernaut/issues/2176) /
+> [DD-TIMEOUT-002](decisions/DD-TIMEOUT-002-child-crd-timeout-self-enforcement.md))**: neither the
+> `AIAnalysisSpec` nor `WorkflowExecutionSpec` snippets below show the current `TimesOutAt *metav1.Time`
+> field. RO's creator populates it from `RemediationRequest.Status.TimeoutConfig` (Analyzing/Executing
+> respectively) as an absolute deadline, which each controller now self-enforces. `SignalProcessingSpec`
+> (not documented in this file at all -- see `api/signalprocessing/v1alpha1/signalprocessing_types.go`)
+> carries the same field, sourced from `Status.TimeoutConfig.Processing`.
 
 ---
 

@@ -6,7 +6,18 @@
 **Version**: 1.0
 **Date**: 2025-12-02
 **Status**: 🚧 Planned
-**Design Decision**: [DD-TIMEOUT-001-global-remediation-timeout.md](../architecture/decisions/DD-TIMEOUT-001-global-remediation-timeout.md)
+**Design Decision**: [DD-TIMEOUT-001-global-remediation-timeout.md](../architecture/decisions/DD-TIMEOUT-001-global-remediation-timeout.md), extended by [DD-TIMEOUT-002-child-crd-timeout-self-enforcement.md](../architecture/decisions/DD-TIMEOUT-002-child-crd-timeout-self-enforcement.md)
+
+> **Update (2026-08, [Issue #2176](https://github.com/jordigilh/kubernaut/issues/2176))**: AC-028-2
+> ("Phase timeout triggers before global timeout") and AC-028-5 ("Per-remediation phase timeout
+> override supported") are now also enforced *inside* each child CRD, not only by RO's own outer
+> check. RO's `Status.TimeoutConfig.{Processing,Analyzing,Executing}` (the real field this document's
+> `status.timeoutConfig.overallWorkflowTimeout`-style examples below predate) is propagated verbatim
+> as an absolute deadline (`Spec.TimesOutAt`) into SignalProcessing, AIAnalysis, and WorkflowExecution
+> at creation time, and each subcontroller self-enforces it independently of RO's backstop. See
+> [DD-TIMEOUT-002](../architecture/decisions/DD-TIMEOUT-002-child-crd-timeout-self-enforcement.md) for
+> the full design. EffectivenessAssessment/NotificationRequest are not yet covered — tracked in
+> [Issue #2181](https://github.com/jordigilh/kubernaut/issues/2181).
 
 ---
 

@@ -281,6 +281,12 @@ const (
 	// EventReasonEnrichmentFailed is emitted when K8s enrichment fails completely.
 	// Type: Warning
 	EventReasonEnrichmentFailed = "EnrichmentFailed"
+
+	// EventReasonProcessingTimedOut is emitted when SignalProcessing
+	// self-enforces RO's authoritative Spec.TimesOutAt deadline
+	// (DD-TIMEOUT-002 / Issue #2176) and fails as a result.
+	// Type: Warning
+	EventReasonProcessingTimedOut = "ProcessingTimedOut"
 )
 
 // ============================================================

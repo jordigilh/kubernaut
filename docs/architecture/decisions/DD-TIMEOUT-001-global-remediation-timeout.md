@@ -3,6 +3,12 @@
 > **Superseded (partial)**: The "Rejected" terminal phase referenced in this document is superseded.
 > Approval rejection now transitions the RemediationRequest to **Failed** (not "Rejected").
 > See `pkg/remediationorchestrator/phase/types.go` for the authoritative phase state machine.
+>
+> **Extended (2026-08, [Issue #2176](https://github.com/jordigilh/kubernaut/issues/2176))**: this
+> document stops at RO's own boundary — it never specified propagating RO's authoritative
+> per-phase timeout into any child CRD's own Spec. See
+> [DD-TIMEOUT-002](DD-TIMEOUT-002-child-crd-timeout-self-enforcement.md) for the child-CRD
+> propagation and self-enforcement pattern (SignalProcessing, AIAnalysis, WorkflowExecution).
 
 **Status**: ✅ Approved
 **Version**: 1.0

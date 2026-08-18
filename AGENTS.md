@@ -288,11 +288,12 @@ Kubernaut captures audit traces as part of its business requirements. All audit-
 
 ### SOC2 Trust Service Criteria (Actively Enforced)
 
-| Control | Requirement | Kubernaut Application |
+| Control | AICPA 2017 TSC Definition | Kubernaut Application |
 |---------|------------|----------------------|
-| **CC8.1** | Audit completeness | Complete remediation request reconstruction from audit traces |
-| **CC6.1** | Financial governance | Forensic/postmortem data completeness |
-| **CC7.2** | Internal controls | Decision audit trails, workflow selection auditing |
+| **CC7.2** | Monitoring of system components for anomalies (incl. SIEM/log-aggregation support for investigation) | Complete remediation request reconstruction from audit traces; decision audit trails; workflow selection auditing; forensic/postmortem data completeness |
+| **CC8.1** | Change Management -- authorizes, designs, develops, tests, approves, and implements changes to infrastructure, data, software, and procedures | This project's own PR/TDD workflow (plan approval, RED/GREEN/REFACTOR, code review) for changes to audit-emitting code -- NOT the audit events themselves |
+
+> **Correction (2026-08-17, Issue #2176 GA audit)**: this table previously mapped "audit completeness / reconstruction" to CC8.1 and "forensic/postmortem completeness" to CC6.1 ("Financial governance"). Both were factually incorrect against the AICPA 2017 Trust Services Criteria (CC8.1 = Change Management; CC6.1 = Logical and Physical Access Controls, e.g. authentication/authorization -- neither is about audit-trail completeness). Corrected above; CC6.1 row removed since it has no genuine mapping to this capability. This correction covers this table and DD-AUDIT-003's Fleet Cluster-Scoped Audit Requirements section only -- the same historically-incorrect CC8.1 shorthand still appears in ~250 other files (per-service `AUDIT_EVENT_CATALOG.md`s, BRs, test plans, code comments) that were not swept in this pass.
 
 ### FedRAMP Controls (Actively Enforced)
 
@@ -327,7 +328,7 @@ This is the root business requirement for audit compliance. Its mandates:
 - All business-critical operations MUST produce audit events persisted to the unified audit table
 - Audit events MUST be queryable by `remediation_id` (correlation) to enable full remediation request reconstruction
 - Each event MUST conform to ADR-034 schema: `event_id`, `event_type`, `event_action`, `event_outcome`, `actor_type`, `actor_id`, `correlation_id`, `event_data` (typed JSON)
-- SOC2 CC8.1 reconstruction test: given a `correlation_id`, the complete lifecycle (signal -> analysis -> workflow selection -> execution -> verification -> notification) MUST be reconstructable from audit traces alone
+- SOC2 CC7.2 reconstruction test (see correction note above): given a `correlation_id`, the complete lifecycle (signal -> analysis -> workflow selection -> execution -> verification -> notification) MUST be reconstructable from audit traces alone
 - Retention: minimum 7 years for compliance-category events (AU-11), configurable per event category
 
 ---
