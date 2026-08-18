@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
@@ -42,6 +43,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	aianalysispkg "github.com/jordigilh/kubernaut/pkg/aianalysis"
@@ -119,8 +121,16 @@ type AIAnalysisReconciler struct {
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=kubernaut.ai,resources=aianalyses/finalizers,verbs=update
-// +kubebuilder:rbac:groups=kubernaut.ai,resources=investigationsessions,verbs=get;list;watch
-// +kubebuilder:rbac:groups=kubernaut.ai,resources=investigationsessions/status,verbs=get;update;patch
+// DD-AA-KA-001 Amendment (Gap 1/3): AA no longer reads InvestigationSession
+// for decision-making. list;watch remain here (not get) because
+// K8sISPhaseUpdater.SetTerminalPhase (#1376) still does a cache-backed List
+// by RR-name field index for its best-effort terminal-close write --
+// controller-runtime's cached client requires list+watch RBAC to start that
+// informer even though the call site never reads Spec/Status content.
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=investigationsessions,verbs=list;watch
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=investigationsessions/status,verbs=update;patch
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions,verbs=get;list;watch;create
+// +kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions/status,verbs=get
 // +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
@@ -294,71 +304,60 @@ func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&aianalysisv1.AIAnalysis{}).
-		WatchesRawSource(source.Kind(mgr.GetCache(), &isv1alpha1.InvestigationSession{},
-			handler.TypedEnqueueRequestsFromMapFunc(r.mapISToAIAnalysis),
-			ISEventPredicate(),
+		WatchesRawSource(source.Kind(mgr.GetCache(), &agentsessionv1.AgentSession{},
+			handler.TypedEnqueueRequestsFromMapFunc(r.mapAgentSessionToAIAnalysis),
+			AgentSessionEventPredicate(),
 		)).
 		WithEventFilter(aiAnalysisUpdatePredicate()).
 		Complete(r)
 }
 
-// mapISToAIAnalysis maps an InvestigationSession event to the AIAnalysis that
-// references the same RemediationRequest. BR-INTERACTIVE-010: enables takeover/deletion detection.
-func (r *AIAnalysisReconciler) mapISToAIAnalysis(ctx context.Context, is *isv1alpha1.InvestigationSession) []reconcile.Request {
-	rrName := is.Spec.RemediationRequestRef.Name
-	if rrName == "" {
+// mapAgentSessionToAIAnalysis maps an AgentSession event to the AIAnalysis
+// that owns it (DD-AA-KA-001: replaces the retired IS-watch). AgentSession's
+// OwnerReference is set directly to the creating AIAnalysis
+// (creator.AgentSessionCreator.GetOrCreate), so the owning AIAnalysis name is
+// read straight off the controller reference -- no RR-name field-index List
+// required, unlike the old IS-based mapping.
+func (r *AIAnalysisReconciler) mapAgentSessionToAIAnalysis(_ context.Context, as *agentsessionv1.AgentSession) []reconcile.Request {
+	owner := metav1.GetControllerOf(as)
+	if owner == nil || owner.Kind != "AIAnalysis" {
 		return nil
 	}
-
-	var list aianalysisv1.AIAnalysisList
-	if err := r.List(ctx, &list,
-		client.InNamespace(is.Namespace),
-		client.MatchingFields{aiAnalysisRRNameIndex: rrName},
-	); err != nil {
-		r.Log.Error(err, "failed to map IS to AIAnalysis", "is", is.Name, "rrName", rrName)
-		return nil
-	}
-
-	requests := make([]reconcile.Request, 0, len(list.Items))
-	for i := range list.Items {
-		aa := &list.Items[i]
-		if aa.Status.Phase == PhaseInvestigating {
-			requests = append(requests, reconcile.Request{
-				NamespacedName: types.NamespacedName{Name: aa.Name, Namespace: aa.Namespace},
-			})
-		}
-	}
-	return requests
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{Name: owner.Name, Namespace: as.Namespace},
+	}}
 }
 
-// ISEventPredicate filters IS events: passes create, delete, and update events
-// where the new phase is terminal (Completed, Cancelled, Failed). Non-terminal
-// updates are dropped to avoid unnecessary reconciles.
-// #1449/SI-4: Terminal transitions must wake the AA controller immediately.
-func ISEventPredicate() predicate.TypedPredicate[*isv1alpha1.InvestigationSession] {
-	return predicate.TypedFuncs[*isv1alpha1.InvestigationSession]{
-		CreateFunc: func(e event.TypedCreateEvent[*isv1alpha1.InvestigationSession]) bool {
+// AgentSessionEventPredicate filters AgentSession events: passes create and
+// delete unconditionally, and update events only when a field AA's
+// InvestigatingHandler actually branches on changed -- Phase (terminal
+// transition or dispatch ack), Interactive (Gap 1 ack signal), or SessionID
+// (KA correlation onset). Status-only churn that AA doesn't act on (e.g. a
+// future observability-only field) is dropped to avoid unnecessary
+// reconciles, mirroring the old ISEventPredicate's terminal-only filter but
+// widened to the fields InvestigatingHandler.syncKASessionStatus reads.
+func AgentSessionEventPredicate() predicate.TypedPredicate[*agentsessionv1.AgentSession] {
+	return predicate.TypedFuncs[*agentsessionv1.AgentSession]{
+		CreateFunc: func(e event.TypedCreateEvent[*agentsessionv1.AgentSession]) bool {
 			return true
 		},
-		DeleteFunc: func(e event.TypedDeleteEvent[*isv1alpha1.InvestigationSession]) bool {
+		DeleteFunc: func(e event.TypedDeleteEvent[*agentsessionv1.AgentSession]) bool {
 			return true
 		},
-		UpdateFunc: func(e event.TypedUpdateEvent[*isv1alpha1.InvestigationSession]) bool {
+		UpdateFunc: func(e event.TypedUpdateEvent[*agentsessionv1.AgentSession]) bool {
 			if e.ObjectOld == nil || e.ObjectNew == nil {
 				return false
 			}
-			newPhase := e.ObjectNew.Status.Phase
-			if newPhase == isv1alpha1.SessionPhaseCompleted ||
-				newPhase == isv1alpha1.SessionPhaseCancelled ||
-				newPhase == isv1alpha1.SessionPhaseFailed {
+			oldStatus, newStatus := e.ObjectOld.Status, e.ObjectNew.Status
+			if oldStatus.Phase != newStatus.Phase {
 				return true
 			}
-			// #2030 Part B / FedRAMP SI-4: a takeover's correlation write only
-			// changes KACorrelationID (not Phase), so without this the
-			// controller would silently miss it until the next scheduled poll.
-			return e.ObjectNew.Status.KACorrelationID != e.ObjectOld.Status.KACorrelationID
+			if oldStatus.Interactive != newStatus.Interactive {
+				return true
+			}
+			return oldStatus.SessionID != newStatus.SessionID
 		},
-		GenericFunc: func(e event.TypedGenericEvent[*isv1alpha1.InvestigationSession]) bool {
+		GenericFunc: func(e event.TypedGenericEvent[*agentsessionv1.AgentSession]) bool {
 			return false
 		},
 	}

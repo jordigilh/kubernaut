@@ -19,7 +19,6 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -30,9 +29,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/shared/events"
@@ -40,55 +39,46 @@ import (
 
 // P2.2 Refactoring: Constants moved to constants.go
 
-// P1.3 Refactoring: AgentClientInterface moved to interfaces.go
-
 // InvestigatingHandler handles the Investigating phase
-// BR-AI-007: Call KA and process response
+// BR-AI-007: Get-or-create the AgentSession backing the investigation, then
+// process its Status once KA reports a terminal outcome
 // BR-AI-009: Retry transient errors with exponential backoff
 // BR-AI-010: Fail immediately on permanent errors
-// BR-AA-KA-064: Async session-based submit/poll/result flow
+// BR-AA-KA-065 (DD-AA-KA-001): AA<->KA channel is the AgentSession CRD --
+// replaces the retired pkg/agentclient HTTP submit/poll/result flow.
+// GetOrCreate is naturally idempotent, so submit and poll collapse into the
+// single Handle() call site below.
 // Refactoring P1.1: Uses ResponseProcessor for response handling
-// Refactoring P1.2: Uses RequestBuilder for request construction
-// Refactoring P2.1: Uses ErrorClassifier for error classification and retry logic
 type InvestigatingHandler struct {
 	log                      logr.Logger
-	kaClient                 AgentClientInterface
-	metrics                  *metrics.Metrics            // DD-METRICS-001: Injected metrics
-	auditClient              AuditClientInterface        // DD-AUDIT-003: Injected audit client
-	processor                *ResponseProcessor          // P1.1: Response processing logic
-	builder                  *RequestBuilder             // P1.2: Request construction logic
-	errorClassifier          *ErrorClassifier            // P2.1: Error classification and retry logic
-	useSessionMode           bool                        // BR-AA-KA-064: Enable async session-based flow
-	sessionPollInterval      time.Duration               // BR-AA-KA-064.8: Constant interval between session polls
-	maxInvestigationDuration time.Duration               // #1078: Wall-clock cap on investigation before PhaseFailed
-	recorder                 record.EventRecorder        // DD-EVENT-001: K8s event recorder for session lifecycle events
-	isChecker                InvestigationSessionChecker // BR-INTERACTIVE-010: Check IS CRD before submit
-	isPhaseUpdater           ISPhaseUpdater              // BR-INTERACTIVE-010: Set IS Phase=Active after submit
+	agentSessionGetOrCreator AgentSessionGetOrCreator
+	metrics                  *metrics.Metrics     // DD-METRICS-001: Injected metrics
+	auditClient              AuditClientInterface // DD-AUDIT-003: Injected audit client
+	processor                *ResponseProcessor    // P1.1: Response processing logic
+	errorClassifier          *ErrorClassifier      // P2.1: Error classification and retry logic
+	sessionPollInterval      time.Duration         // BR-AA-KA-065.8: Safety-net requeue interval while running
+	maxInvestigationDuration time.Duration         // #1078: Wall-clock cap on investigation before PhaseFailed
+	recorder                 record.EventRecorder  // DD-EVENT-001: K8s event recorder for session lifecycle events
+	isPhaseUpdater           ISPhaseUpdater         // #1376: Write-only IS terminal-close (DD-AA-KA-001 Amendment)
 }
 
 // InvestigatingHandlerOption is a functional option for InvestigatingHandler configuration.
 type InvestigatingHandlerOption func(*InvestigatingHandler)
 
-// WithSessionMode enables the async session-based submit/poll/result flow (BR-AA-KA-064).
-// When enabled, the handler uses SubmitInvestigation/PollSession/GetSessionResult
-// instead of the legacy synchronous Investigate method.
-func WithSessionMode() InvestigatingHandlerOption {
-	return func(h *InvestigatingHandler) {
-		h.useSessionMode = true
-	}
-}
-
 // WithRecorder injects a Kubernetes EventRecorder for session lifecycle events (DD-EVENT-001).
-// When set, the handler emits SessionCreated, SessionLost, and SessionRegenerationExceeded events.
+// When set, the handler emits SessionCreated and UserDriving events.
 func WithRecorder(r record.EventRecorder) InvestigatingHandlerOption {
 	return func(h *InvestigatingHandler) {
 		h.recorder = r
 	}
 }
 
-// WithSessionPollInterval sets the constant interval between session status polls.
-// BR-AA-KA-064.8: Polling is normal async behavior, not error recovery, so a constant
-// interval is used instead of exponential backoff. Default: DefaultSessionPollInterval (15s).
+// WithSessionPollInterval sets the constant safety-net requeue interval while
+// an investigation is still running. BR-AA-KA-065.8: the AgentSession watch
+// wakes the reconciler on every meaningful KA status write, so this interval
+// is a backstop -- it guarantees checkInvestigationTimeout still runs even if
+// KA never writes another status update (e.g. it hangs). Default:
+// DefaultSessionPollInterval (15s).
 func WithSessionPollInterval(d time.Duration) InvestigatingHandlerOption {
 	return func(h *InvestigatingHandler) {
 		h.sessionPollInterval = d
@@ -104,18 +94,10 @@ func WithMaxInvestigationDuration(d time.Duration) InvestigatingHandlerOption {
 	}
 }
 
-// WithInvestigationSessionChecker injects the IS CRD checker for interactive mode detection.
-// BR-INTERACTIVE-010: When set, the handler checks for IS CRD existence before submitting
-// to KA and sets interactive=true on the IncidentRequest if found.
-func WithInvestigationSessionChecker(checker InvestigationSessionChecker) InvestigatingHandlerOption {
-	return func(h *InvestigatingHandler) {
-		h.isChecker = checker
-	}
-}
-
-// WithISPhaseUpdater injects the IS phase updater for setting Phase=Active after
-// AA submits to KA with interactive=true. This signals AF that the pending session
-// is ready for action=start. BR-INTERACTIVE-010.
+// WithISPhaseUpdater injects the IS phase updater used to close out AF's own
+// InvestigationSession bookkeeping when the investigation reaches a terminal
+// state (#1376). DD-AA-KA-001 Amendment (Gap 1): this is now the only
+// AA->IS interaction; it does not affect interactivity detection.
 func WithISPhaseUpdater(updater ISPhaseUpdater) InvestigatingHandlerOption {
 	return func(h *InvestigatingHandler) {
 		h.isPhaseUpdater = updater
@@ -135,28 +117,26 @@ func WithLowConfidenceFloor(floor *float64) InvestigatingHandlerOption {
 
 // P1.3 Refactoring: AuditClientInterface moved to interfaces.go
 
-// NewInvestigatingHandler creates a new InvestigatingHandler
+// NewInvestigatingHandler creates a new InvestigatingHandler.
 // Refactoring P1.1: Initializes ResponseProcessor
-// Refactoring P1.2: Initializes RequestBuilder
 // Refactoring P2.1: Initializes ErrorClassifier with configurable backoff parameters
-// BR-AA-KA-064: Accepts functional options (e.g., WithSessionMode())
-func NewInvestigatingHandler(hgClient AgentClientInterface, log logr.Logger, m *metrics.Metrics, auditClient AuditClientInterface, opts ...InvestigatingHandlerOption) *InvestigatingHandler {
+// DD-AA-KA-001: getOrCreator is mandatory -- it is the sole channel to KA.
+func NewInvestigatingHandler(getOrCreator AgentSessionGetOrCreator, log logr.Logger, m *metrics.Metrics, auditClient AuditClientInterface, opts ...InvestigatingHandlerOption) *InvestigatingHandler {
 	if m == nil {
 		panic("metrics cannot be nil: metrics are mandatory for observability")
 	}
-	if hgClient == nil {
-		panic("agent client cannot be nil: KA investigation requires a configured agent client (BR-AI-023)")
+	if getOrCreator == nil {
+		panic("agent session get-or-creator cannot be nil: KA investigation requires a configured AgentSession channel (BR-AI-023, DD-AA-KA-001)")
 	}
 	handlerLog := log.WithName("investigating-handler")
 	h := &InvestigatingHandler{
-		kaClient:                 hgClient,
+		agentSessionGetOrCreator: getOrCreator,
 		metrics:                  m,
 		auditClient:              auditClient,
 		log:                      handlerLog,
-		sessionPollInterval:      DefaultSessionPollInterval,      // BR-AA-KA-064.8: Constant poll interval
+		sessionPollInterval:      DefaultSessionPollInterval,      // BR-AA-KA-065.8: Safety-net requeue interval
 		maxInvestigationDuration: DefaultMaxInvestigationDuration, // #1078: Wall-clock cap
 		processor:                NewResponseProcessor(log, m, auditClient),
-		builder:                  NewRequestBuilder(log),
 		errorClassifier:          NewErrorClassifier(handlerLog),
 	}
 	for _, opt := range opts {
@@ -165,587 +145,160 @@ func NewInvestigatingHandler(hgClient AgentClientInterface, log logr.Logger, m *
 	return h
 }
 
-// Handle processes the Investigating phase
-// BR-AI-007: Call KA and update status
-// BR-AA-KA-064: Async session-based flow when useSessionMode=true
+// Handle processes the Investigating phase.
+// BR-AI-007: Get-or-create the AgentSession and branch on its Status.Phase.
+// GetOrCreate is naturally idempotent: Create on the very first reconcile
+// (no AgentSession exists yet for this AIAnalysis), a plain Get on every
+// reconcile thereafter -- so there is no separate submit-vs-poll branch.
 func (h *InvestigatingHandler) Handle(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	h.log.Info("Processing Investigating phase",
-		"name", analysis.Name,
-		"sessionMode", h.useSessionMode,
-	)
+	h.log.Info("Processing Investigating phase", "name", analysis.Name)
 
-	// AA-KA-001: Idempotency is handled at controller level (phase_handlers.go:125-130)
+	// AA-KA-001: Idempotency is handled at controller level (phase_handlers.go)
 	// via AtomicStatusUpdate callback with APIReader refetch. No handler-level check needed.
 
-	// BR-AA-KA-064: Use async session-based flow when enabled
-	if h.useSessionMode {
-		return h.handleSessionBased(ctx, analysis)
-	}
+	firstObservation := analysis.Status.KASession == nil
 
-	// ========================================
-	// Legacy synchronous flow (will be deprecated)
-	// ========================================
-
-	// Track duration (per crd-schema.md: InvestigationTime)
-	startTime := time.Now()
-
-	req := h.builder.BuildIncidentRequest(analysis) // P1.2: Use request builder
-	incidentResp, err := h.kaClient.Investigate(ctx, req)
-
-	investigationTime := time.Since(startTime).Milliseconds()
-
-	// DD-AUDIT-003: Record KA API call for audit trail
-	statusCode := 200
-	if err != nil {
-		statusCode = 500 // Error case
-	}
-	h.auditClient.RecordAIAgentCall(ctx, analysis, "/api/v1/incident/analyze", statusCode, int(investigationTime))
-
+	as, err := h.agentSessionGetOrCreator.GetOrCreate(ctx, analysis)
 	if err != nil {
 		return h.handleError(ctx, analysis, err)
 	}
 
-	// AA-KA-001: Set ObservedGeneration immediately after successful KA call
-	// This prevents duplicate KA calls when controller reconciles before status persists
-	// DD-CONTROLLER-001 v3.0 Pattern C: Set before phase transition
-	analysis.Status.ObservedGeneration = analysis.Generation
+	// BR-AI-009/AA-CRIT-2: a successful GetOrCreate is this design's equivalent
+	// of the retired "successful poll" -- reset the transient-failure counter
+	// so it doesn't keep accumulating across a healthy AgentSession channel.
+	analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 0
 
-	// Set investigation time on successful response
-	analysis.Status.EnsureInvestigationMetadata().InvestigationTime = investigationTime
+	h.syncKASessionStatus(analysis, as, firstObservation)
 
-	// Process incident response - must check for nil (CRITICAL: prevents panic)
-	if incidentResp == nil {
-		return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from KA"))
-	}
-	// P1.1: Delegate to processor, reset retry count after success
-	// DD-AUDIT-003: Phase transition audit recorded by controller AFTER AtomicStatusUpdate (phase_handlers.go)
-	result, err := h.processor.ProcessIncidentResponse(ctx, analysis, incidentResp)
-	if err == nil {
-		h.setRetryCount(analysis, 0)
-	}
-	return result, err
-}
-
-// buildRequest constructs the KA request from AIAnalysis spec using generated types
-// BR-AI-080: Updated with all required KA fields per NOTICE_AIANALYSIS_KA_CONTRACT_MISMATCH.md
-// Per crd-schema.md: Include enrichment data (owner chain, detected labels) for AI context
-// P1.2 Refactoring: Request building methods moved to request_builder.go
-// - BuildIncidentRequest (was buildRequest)
-// - getOrDefault (helper function in builder)
-// - strPtr (helper function in builder)
-
-// handleError processes errors from KA
-// BR-AI-009: Retry transient errors with exponential backoff
-// BR-AI-010: Fail immediately on permanent errors
-// Refactoring P2.1: Uses ErrorClassifier for error classification and retry logic
-func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
-	// P2.1: Classify error type using error classifier
-	classification := h.errorClassifier.ClassifyError(err)
-
-	// Increment failure count before retry check
-	analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures++
-
-	// P2.1: Check if error should be retried based on classification and attempt count
-	if h.errorClassifier.ShouldRetry(classification, int(analysis.Status.InvestigationMetadata.ConsecutiveFailures)) {
-		return h.retryTransientError(analysis, err, classification)
+	if firstObservation {
+		h.finalizeSessionSubmit(ctx, analysis, as)
 	}
 
-	// If we get here, either max retries exceeded or error is not retryable
-	if classification.IsRetryable {
-		return h.failMaxRetriesExceeded(ctx, analysis, err, classification)
-	}
-
-	// BR-AI-010: Fail immediately on permanent errors
-	return h.failPermanentError(ctx, analysis, err, classification)
-}
-
-// retryTransientError requeues with exponential backoff for a transient
-// error that hasn't yet exhausted its retry budget (BR-AI-009). Extracted
-// from handleError (Wave 6 6c GREEN: funlen remediation) — pure code
-// motion, no behavior change.
-func (h *InvestigatingHandler) retryTransientError(analysis *aianalysisv1.AIAnalysis, err error, classification ErrorClassification) (ctrl.Result, error) {
-	// P2.1: Use error classifier to calculate backoff duration
-	backoffDuration := h.errorClassifier.GetRetryDelay(int(analysis.Status.InvestigationMetadata.ConsecutiveFailures))
-
-	h.log.Info("Transient error - retrying with backoff",
-		"error", err,
-		"errorType", classification.ErrorType,
-		"attempts", analysis.Status.InvestigationMetadata.ConsecutiveFailures,
-		"backoff", backoffDuration,
-	)
-
-	// Update status to indicate retry
-	analysis.Status.Message = fmt.Sprintf("Transient error (attempt %d/%d): %v",
-		analysis.Status.InvestigationMetadata.ConsecutiveFailures, MaxRetries, err)
-	analysis.Status.Reason = aianalysisv1.ReasonTransientError
-	analysis.Status.SubReason = mapErrorTypeToSubReason(classification.ErrorType) // Map to valid CRD enum
-
-	// Record metric for transient errors
-	h.metrics.RecordFailure(aianalysisv1.SubReasonTransientError, "Retrying")
-
-	// Requeue with exponential backoff (error classifier handles jitter internally)
-	return ctrl.Result{RequeueAfter: backoffDuration}, nil
-}
-
-// failMaxRetriesExceeded transitions analysis to permanent Failed after a
-// retryable error has exhausted its retry budget. Extracted from
-// handleError (Wave 6 6c GREEN: funlen remediation) — pure code motion, no
-// behavior change.
-func (h *InvestigatingHandler) failMaxRetriesExceeded(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error, classification ErrorClassification) (ctrl.Result, error) {
-	h.log.Info("Transient error exceeded max retries - failing permanently",
-		"error", err,
-		"errorType", classification.ErrorType,
-		"attempts", analysis.Status.InvestigationMetadata.ConsecutiveFailures,
-		"maxRetries", h.errorClassifier.GetMaxRetries(),
-	)
-
-	// Transition to permanent failure after max retries
-	now := metav1.Now()
-	analysis.Status.Phase = aianalysis.PhaseFailed
-	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
-	analysis.Status.CompletedAt = &now
-	analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
-		analysis.Status.InvestigationMetadata.ConsecutiveFailures, err)
-	analysis.Status.Reason = aianalysisv1.ReasonAPIError
-	analysis.Status.SubReason = aianalysisv1.SubReasonMaxRetriesExceeded
-
-	// Record metric for max retries exceeded
-	h.metrics.RecordFailure(string(aianalysisv1.ReasonAPIError), aianalysisv1.SubReasonMaxRetriesExceeded)
-
-	// BR-AUDIT-005 Gap #7: Record failure audit with standardized error details
-	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
-		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
-	}
-
-	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v", analysis.Status.InvestigationMetadata.ConsecutiveFailures, err))
-	return ctrl.Result{}, nil
-}
-
-// failPermanentError transitions analysis to Failed immediately for a
-// non-retryable error (BR-AI-010). Extracted from handleError (Wave 6 6c
-// GREEN: funlen remediation) — pure code motion, no behavior change.
-func (h *InvestigatingHandler) failPermanentError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error, classification ErrorClassification) (ctrl.Result, error) {
-	h.log.Info("Permanent error - failing immediately",
-		"error", err,
-		"errorType", classification.ErrorType,
-	)
-	now := metav1.Now()
-	analysis.Status.Phase = aianalysis.PhaseFailed
-	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
-	analysis.Status.CompletedAt = &now                       // Per crd-schema.md: set on terminal state
-	analysis.Status.Message = fmt.Sprintf("Permanent error: %v", err)
-	analysis.Status.Reason = aianalysisv1.ReasonAPIError
-	analysis.Status.SubReason = mapErrorTypeToSubReason(classification.ErrorType) // Map to valid CRD enum
-
-	// Record metric for permanent errors
-	h.metrics.RecordFailure("APIError", string(classification.ErrorType))
-
-	// BR-AUDIT-005 Gap #7: Record failure audit with standardized error details
-	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
-		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
-	}
-
-	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("Permanent error: %v", err))
-	return ctrl.Result{}, nil
-}
-
-// setRetryCount writes retry count to annotations
-func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, count int) {
-	if analysis.Annotations == nil {
-		analysis.Annotations = make(map[string]string)
-	}
-	analysis.Annotations[RetryCountAnnotation] = strconv.Itoa(count)
-}
-
-// ========================================
-// BR-KA-197: WORKFLOW RESOLUTION FAILURE HANDLING
-// When KA returns needs_human_review=true, we MUST:
-// 1. NOT proceed to Analyzing phase
-// 2. Set structured failure reason (Reason + SubReason)
-// 3. Preserve partial response for operator context
-// ========================================
-
-// handleWorkflowResolutionFailure handles needs_human_review=true responses
-// BR-KA-197: Workflow resolution failed, human must intervene
-// NOTE: Old handleWorkflowResolutionFailure and handleProblemResolved methods
-// have been replaced by generated-type versions:
-// - handleWorkflowResolutionFailureFromIncident (for IncidentResponse)
-// - handleProblemResolvedFromIncident (for IncidentResponse)
-
-// P1.1 Refactoring: mapEnumToSubReason and mapWarningsToSubReason moved to response_processor.go
-
-// mapErrorTypeToSubReason maps error classifier ErrorType to valid AIAnalysis CRD SubReason enum values
-// per config/crd/bases/kubernaut.ai_aianalyses.yaml line 134-144
-func mapErrorTypeToSubReason(errorType ErrorType) string {
-	switch errorType {
-	case ErrorTypeNetwork, ErrorTypeTimeout, ErrorTypeRateLimit, ErrorTypeTransient:
-		// All transient/retryable errors map to "TransientError"
-		return aianalysisv1.SubReasonTransientError
-	case ErrorTypePermanent, ErrorTypeAuthentication, ErrorTypeAuthorization, ErrorTypeConfiguration:
-		// All non-retryable errors map to "PermanentError"
-		return "PermanentError"
+	switch as.Status.Phase {
+	case agentsessionv1.AgentSessionPhaseCompleted:
+		return h.handleSessionCompleted(ctx, analysis, as)
+	case agentsessionv1.AgentSessionPhaseFailed:
+		return h.handleSessionFailed(ctx, analysis, as)
+	case agentsessionv1.AgentSessionPhaseCancelled:
+		return h.handleSessionCancelled(ctx, analysis, as)
 	default:
-		// Fallback for unknown error types
-		return aianalysisv1.SubReasonTransientError
+		// "", Pending, Investigating -- still running (possibly interactive/user-driving).
+		return h.handleSessionRunning(ctx, analysis, as)
 	}
 }
 
-// ========================================
-// SESSION-BASED FLOW (BR-AA-KA-064)
-// Async submit/poll/result pattern for KA communication
-// ========================================
-
-// handleSessionBased routes the session-based flow based on InvestigationSession state.
-// BR-AA-KA-064: Non-blocking communication with KA via submit/poll/result
-func (h *InvestigatingHandler) handleSessionBased(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	session := analysis.Status.KASession
-
-	// SUBMIT: No session yet, or session ID cleared after loss (needs new submit)
-	if session == nil || session.ID == "" {
-		return h.handleSessionSubmit(ctx, analysis)
-	}
-
-	// BR-INTERACTIVE-010: Detect IS state mismatch before polling.
-	// If IS appeared after autonomous submit → cancel for takeover.
-	// If IS disappeared after interactive submit → cancel for deletion.
-	if result, cancelled := h.checkISMismatchAndCancel(ctx, analysis); cancelled {
-		return result, nil
-	}
-
-	// POLL: Session exists with an active ID
-	return h.handleSessionPoll(ctx, analysis)
-}
-
-// checkISMismatchAndCancel detects when the InvestigationSession CRD state has changed
-// since the last submit and handles the transition. For autonomous→interactive upgrade
-// (#1390), sets Interactive=true and calls SetActivePhase instead of cancelling, preserving
-// the running KA session. For IS deletion, cancels the KA session.
-// Returns (result, true) if action was taken, (_, false) to proceed with normal polling.
-func (h *InvestigatingHandler) checkISMismatchAndCancel(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, bool) {
-	if h.isChecker == nil {
-		return ctrl.Result{}, false
-	}
-
-	session := analysis.Status.KASession
-	rrName := analysis.Spec.RemediationRequestRef.Name
-	if rrName == "" {
-		return ctrl.Result{}, false
-	}
-
-	hasIS, err := h.isChecker.HasActiveSession(ctx, rrName)
-	if err != nil {
-		h.log.Error(err, "IS mismatch check failed, proceeding with normal poll", "rrName", rrName)
-		return ctrl.Result{}, false
-	}
-
-	switch {
-	case hasIS && !session.Interactive:
-		// #1390: IS appeared for autonomous session → upgrade in-place (no cancel).
-		// KA's UpgradeToInteractive sets the atomic flag; the goroutine will hold
-		// the session open for MCP takeover. Session ID is preserved.
-		h.log.Info("IS CRD detected for autonomous session — upgrading to interactive in-place",
-			"sessionID", session.ID, "rrName", rrName)
-		session.Interactive = true
-		if h.isPhaseUpdater != nil {
-			if phaseErr := h.isPhaseUpdater.SetActivePhase(ctx, rrName); phaseErr != nil {
-				h.log.Error(phaseErr, "Failed to set IS phase to Active after upgrade (best-effort)",
-					"rrName", rrName, "sessionID", session.ID)
-			}
-		}
-		return ctrl.Result{Requeue: true}, true
-
-	case !hasIS && session.Interactive:
-		// IS disappeared after interactive submit → cancel (user removed session)
-		h.log.Info("IS CRD no longer active for interactive session — cancelling investigation",
-			"sessionID", session.ID, "rrName", rrName)
-		if cancelErr := h.kaClient.CancelSession(ctx, session.ID); cancelErr != nil {
-			h.log.Error(cancelErr, "Failed to cancel session for IS deletion; will retry", "sessionID", session.ID)
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, true
-		}
-		session.Interactive = false
-		return ctrl.Result{Requeue: true}, true
-	}
-
-	// #2030 Part B: hasIS && session.Interactive is the common "everything
-	// looks normal" steady state — neither case above fires. But AF may have
-	// correlated a newer, different KA session onto this IS since our last
-	// check (e.g. a reconnect/takeover after our tracked session went stale).
-	// Adopt it instead of silently continuing to poll a session AF has moved
-	// on from.
-	if hasIS && session.Interactive && h.tryAdoptCorrelatedSession(ctx, analysis, rrName, "mismatch-check") {
-		return ctrl.Result{Requeue: true}, true
-	}
-
-	return ctrl.Result{}, false
-}
-
-// adoptCorrelatedSession swaps the AA-tracked KA session onto a session ID
-// AF has correlated for this RR's InvestigationSession (#2030 Part B). This
-// is deliberately NOT a regeneration: KA already ran (or is actively
-// running) this session — AA is catching up to work that already exists,
-// not starting a new investigation — so Generation is left unchanged (unlike
-// handleSessionLost's 404-triggered regeneration, or handleSessionPollCancelled's
-// takeover-resubmit branch, both of which intentionally start a fresh session).
+// syncKASessionStatus mirrors the AgentSession's observable fields onto
+// analysis.Status.KASession for backward-compatible observability (same CRD
+// field shape, repurposed semantics -- DD-AA-KA-001).
 //
-// FedRAMP SI-4/AU-2/AU-3: emits a K8s event (observability) and a durable
-// audit record (traceability) so this is never a silent state change — the
-// business-relevant fact being preserved is that a real, possibly-completed
-// investigation is not discarded.
-func (h *InvestigatingHandler) adoptCorrelatedSession(ctx context.Context, analysis *aianalysisv1.AIAnalysis, newSessionID string) {
+// ID is set to the AgentSession's own deterministic object name rather than
+// KA's internal session ID: it is known the instant GetOrCreate succeeds
+// (unlike the historical value here, only known once KA actually dispatched),
+// which preserves the reconciler-level idempotency check in
+// phase_handlers.go (KASession != nil && KASession.ID != ""). KA's own
+// internal session ID remains available on demand via as.Status.SessionID
+// for audit correlation (see finalizeSessionSubmit/handleSessionCompleted).
+func (h *InvestigatingHandler) syncKASessionStatus(analysis *aianalysisv1.AIAnalysis, as *agentsessionv1.AgentSession, firstObservation bool) {
 	session := analysis.Status.KASession
-	oldSessionID := session.ID
+	if session == nil {
+		session = &aianalysisv1.KASession{}
+		analysis.Status.KASession = session
+	}
+	session.ID = as.Name
+	session.Interactive = as.Status.Interactive
+	if session.CreatedAt == nil {
+		created := as.CreationTimestamp
+		session.CreatedAt = &created
+	}
+	if firstObservation {
+		session.PollCount = 0
+	} else {
+		session.PollCount++
+	}
 	now := metav1.Now()
-	session.ID = newSessionID
-	session.Interactive = true
-	session.PollCount = 0
-	session.LastPolled = nil
-	session.CreatedAt = &now
-	session.ConsecutiveGetResultErrors = 0
+	session.LastPolled = &now
 
-	if h.recorder != nil {
-		h.recorder.Eventf(analysis, corev1.EventTypeNormal, events.EventReasonSessionAdopted,
-			"Adopted KA session %s correlated by API Frontend (previously tracking %s)", newSessionID, oldSessionID)
-	}
-	h.auditClient.RecordAIAgentCall(ctx, analysis, "session_adopted", 200, 0)
-}
-
-// tryAdoptCorrelatedSession checks whether AF has correlated a newer, active
-// KA session onto rrName's InvestigationSession and, if so, adopts it
-// (#2030 Part B). Shared by both adoption call sites -- the general
-// IS-mismatch check in checkISMismatchAndCancel and the race-closing
-// re-check in checkCorrelatedSessionBeforeFinalizing -- which differ only in
-// when they call this and what logCtx they pass for log correlation.
-// Returns true if adoption occurred.
-func (h *InvestigatingHandler) tryAdoptCorrelatedSession(ctx context.Context, analysis *aianalysisv1.AIAnalysis, rrName, logCtx string) bool {
-	session := analysis.Status.KASession
-	newID, active, err := h.isChecker.CorrelatedSessionID(ctx, rrName)
-	if err != nil {
-		h.log.Error(err, "CorrelatedSessionID check failed, proceeding without adoption", "context", logCtx, "rrName", rrName)
-		return false
-	}
-	if !active || newID == "" || newID == session.ID {
-		return false
-	}
-	h.log.Info("AF correlated a newer KA session — adopting",
-		"context", logCtx, "oldSessionID", session.ID, "newSessionID", newID, "rrName", rrName)
-	h.adoptCorrelatedSession(ctx, analysis, newID)
-	return true
-}
-
-// checkCorrelatedSessionBeforeFinalizing re-checks IS correlation immediately
-// before finalizing a terminal poll result (completed/failed). Closes the
-// race where AF's correlation write lands between the general mismatch check
-// at the top of handleSessionBased and the poll result arriving from KA
-// (#2030 Part B): the old session can report completed/failed at the exact
-// moment a takeover has already moved AA's true session elsewhere. Returns
-// true if adoption occurred — the caller must skip finalizing this poll
-// result so the newly adopted session is never wrongly marked terminal.
-func (h *InvestigatingHandler) checkCorrelatedSessionBeforeFinalizing(ctx context.Context, analysis *aianalysisv1.AIAnalysis) bool {
-	if h.isChecker == nil {
-		return false
-	}
-	rrName := analysis.Spec.RemediationRequestRef.Name
-	if rrName == "" {
-		return false
-	}
-	return h.tryAdoptCorrelatedSession(ctx, analysis, rrName, "finalize-recheck")
-}
-
-// handleSessionSubmit submits a new investigation to KA and records the session ID.
-// BR-AA-KA-064.1: Submit returns session ID for subsequent polling
-// BR-AA-KA-064.9: Submit incident investigation to KA
-func (h *InvestigatingHandler) handleSessionSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	// Detect if this is a regeneration (session exists but ID was cleared after 404)
-	isRegeneration := analysis.Status.KASession != nil &&
-		analysis.Status.KASession.ID == "" &&
-		analysis.Status.KASession.Generation > 0
-
-	h.log.Info("Submitting incident investigation to KA (session mode)",
-		"isRegeneration", isRegeneration,
-	)
-	req := h.builder.BuildIncidentRequest(analysis)
-
-	// BR-INTERACTIVE-010: Check IS CRD existence and set interactive=true if found
-	h.applyInteractiveDetection(ctx, analysis, req)
-
-	sessionID, err := h.kaClient.SubmitInvestigation(ctx, req)
-	if err != nil {
-		return h.handleError(ctx, analysis, err)
-	}
-
-	// Initialize or update InvestigationSession in CRD status
-	interactive, _ := req.Interactive.Get()
-	updateKASessionStatus(analysis, sessionID, interactive)
-
-	// BR-INTERACTIVE-010: After submitting with interactive=true, set the IS
-	// CRD phase to Active so AF knows the pending session is ready. Best-effort:
-	// failure is logged but does not block the investigation.
-	if interactive {
-		h.notifyInteractiveSessionActive(ctx, analysis, sessionID)
-	}
-
-	h.finalizeSessionSubmit(ctx, analysis, sessionID, isRegeneration)
-
-	// Requeue for first poll at configured session poll interval
-	return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
-}
-
-// applyInteractiveDetection checks for an active InvestigationSession CRD
-// (BR-INTERACTIVE-010) and, if found, marks the incident request as
-// interactive. Failure to check is logged and treated as "proceed
-// autonomous" (fail-open, since this is a UX enhancement, not a safety
-// control). Extracted from handleSessionSubmit (Wave 6 6c GREEN: funlen
-// remediation) — pure code motion, no behavior change.
-func (h *InvestigatingHandler) applyInteractiveDetection(ctx context.Context, analysis *aianalysisv1.AIAnalysis, req *agentclient.IncidentRequest) {
-	if h.isChecker == nil {
-		return
-	}
-	rrName := analysis.Spec.RemediationRequestRef.Name
-	if rrName == "" {
-		return
-	}
-	hasIS, checkErr := h.isChecker.HasActiveSession(ctx, rrName)
-	if checkErr != nil {
-		h.log.Error(checkErr, "Failed to check InvestigationSession existence, proceeding as autonomous",
-			"rrName", rrName)
-		return
-	}
-	if hasIS {
-		req.Interactive.SetTo(true)
-		h.log.Info("InvestigationSession detected, setting interactive=true",
-			"rrName", rrName)
-	}
-}
-
-// updateKASessionStatus initializes or refreshes analysis.Status.KASession
-// after a successful submit to KA. Extracted from handleSessionSubmit
-// (Wave 6 6c GREEN: funlen remediation) — pure code motion, no behavior
-// change.
-func updateKASessionStatus(analysis *aianalysisv1.AIAnalysis, sessionID string, interactive bool) {
-	now := metav1.Now()
-	if analysis.Status.KASession == nil {
-		analysis.Status.KASession = &aianalysisv1.KASession{
-			ID:          sessionID,
-			Generation:  0,
-			Interactive: interactive,
-			CreatedAt:   &now,
-			PollCount:   0,
+	// #774: Propagate identity from KA's live status to CR status while a
+	// user is driving (DD-INTERACTIVE-002).
+	if as.Status.Interactive && (as.Status.ActingUser != "" || len(as.Status.ActingUserGroups) > 0 || as.Status.SessionID != "") {
+		if analysis.Status.InteractiveSession == nil {
+			analysis.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{}
 		}
-		return
+		analysis.Status.InteractiveSession.ActingUser = as.Status.ActingUser
+		analysis.Status.InteractiveSession.ActingUserGroups = as.Status.ActingUserGroups
+		if as.Status.SessionID != "" {
+			analysis.Status.InteractiveSession.SessionID = as.Status.SessionID
+		}
+		if analysis.Status.InteractiveSession.StartedAt == nil {
+			analysis.Status.InteractiveSession.StartedAt = &now
+		}
 	}
-	analysis.Status.KASession.ID = sessionID
-	analysis.Status.KASession.Interactive = interactive
-	analysis.Status.KASession.CreatedAt = &now
-	analysis.Status.KASession.PollCount = 0
-	analysis.Status.KASession.LastPolled = nil
 }
 
-// notifyInteractiveSessionActive sets the IS CRD phase to Active so AF knows
-// the pending interactive session is ready (BR-INTERACTIVE-010). Best-effort:
-// failure is logged but does not block the investigation. Extracted from
-// handleSessionSubmit (Wave 6 6c GREEN: funlen remediation) — pure code
-// motion, no behavior change.
-func (h *InvestigatingHandler) notifyInteractiveSessionActive(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string) {
-	if h.isPhaseUpdater == nil {
-		return
-	}
-	rrName := analysis.Spec.RemediationRequestRef.Name
-	if phaseErr := h.isPhaseUpdater.SetActivePhase(ctx, rrName); phaseErr != nil {
-		h.log.Error(phaseErr, "Failed to set IS phase to Active after interactive submit",
-			"rrName", rrName, "sessionID", sessionID)
-		return
-	}
-	h.log.Info("IS CRD phase set to Active", "rrName", rrName, "sessionID", sessionID)
-}
-
-// finalizeSessionSubmit sets the SessionCreated/SessionRegenerated condition,
-// records the mandatory submit audit event, emits the SessionCreated K8s
-// event, and logs the outcome. Extracted from handleSessionSubmit (Wave 6
-// 6c GREEN: funlen remediation) — pure code motion, no behavior change.
-func (h *InvestigatingHandler) finalizeSessionSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string, isRegeneration bool) {
-	// Set condition: SessionCreated (first time) or SessionRegenerated (after loss)
-	condReason := aianalysis.ReasonSessionCreated
-	condMsg := fmt.Sprintf("Session %s created", sessionID)
-	if isRegeneration {
-		condReason = aianalysis.ReasonSessionRegenerated
-		condMsg = fmt.Sprintf("Session %s regenerated (generation %d)", sessionID, analysis.Status.KASession.Generation)
-	}
-	aianalysis.SetInvestigationSessionReady(analysis, true, condReason, condMsg)
+// finalizeSessionSubmit sets the SessionCreated condition, records the
+// mandatory submit audit event, emits the SessionCreated K8s event, and logs
+// the outcome. Called once, on the reconcile where GetOrCreate first creates
+// the AgentSession.
+func (h *InvestigatingHandler) finalizeSessionSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, as *agentsessionv1.AgentSession) {
+	aianalysis.SetInvestigationSessionReady(analysis, true, aianalysis.ReasonSessionCreated,
+		fmt.Sprintf("AgentSession %s created", as.Name))
 
 	// DD-AUDIT-003: Record submit audit event
-	h.auditClient.RecordAIAgentSubmit(ctx, analysis, sessionID)
+	h.auditClient.RecordAIAgentSubmit(ctx, analysis, as.Name)
 
 	// DD-EVENT-001: Emit SessionCreated K8s event for observability
 	if h.recorder != nil {
 		h.recorder.Event(analysis, corev1.EventTypeNormal, events.EventReasonSessionCreated,
-			fmt.Sprintf("KA investigation session created (ID: %s, generation: %d)", sessionID, analysis.Status.KASession.Generation))
+			fmt.Sprintf("AgentSession %s created", as.Name))
 	}
 
-	// #1713: include interactive so a future Interactive-flag race recurrence
-	// is diagnosable directly from controller logs (this is the point where
-	// the in-memory Status.KASession.Interactive value set by
-	// applyInteractiveDetection is known, ahead of the reconciler's
-	// subsequent Status().Update() persisting it).
-	h.log.Info("KA session created",
-		"sessionID", sessionID,
-		"generation", analysis.Status.KASession.Generation,
-		"isRegeneration", isRegeneration,
-		"interactive", analysis.Status.KASession.Interactive,
-	)
+	h.log.Info("AgentSession created", "agentSession", as.Name)
 }
 
-// handleSessionPoll polls the status of an active KA session.
-// BR-AA-KA-064.2: Poll session status (pending/investigating/completed/failed)
-//
-// Poll-tracking status writes (PollCount, LastPolled) are filtered by the
-// informer predicate (aiAnalysisUpdatePredicate) so they don't trigger
-// re-reconciles. Only RequeueAfter controls the next poll timing.
-func (h *InvestigatingHandler) handleSessionPoll(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
+// handleSessionRunning covers the AgentSession's non-terminal phases (unset,
+// Pending, Investigating). It enforces AA's own wall-clock investigation cap
+// independently of KA (checkInvestigationTimeout), emits UserDriving
+// observability when a human is currently driving, and requeues at the
+// safety-net poll interval -- the AgentSession watch wakes the reconciler
+// immediately on any actual KA status write, but this requeue guarantees the
+// timeout check still runs even if KA never writes another update.
+func (h *InvestigatingHandler) handleSessionRunning(ctx context.Context, analysis *aianalysisv1.AIAnalysis, as *agentsessionv1.AgentSession) (ctrl.Result, error) {
 	session := analysis.Status.KASession
 
-	h.log.V(1).Info("Polling KA session",
-		"sessionID", session.ID,
+	if h.checkInvestigationTimeout(ctx, analysis, session, as.Status.Interactive) {
+		return ctrl.Result{}, nil
+	}
+
+	if as.Status.Interactive {
+		h.log.Info("Session under user control, continuing to poll",
+			"agentSession", as.Name,
+			"actingUser", as.Status.ActingUser,
+			"nextPollIn", h.sessionPollInterval,
+			"pollCount", session.PollCount,
+		)
+		if h.recorder != nil {
+			h.recorder.Eventf(analysis, corev1.EventTypeNormal, events.EventReasonUserDriving,
+				"Interactive session %s: user is driving investigation", as.Name)
+		}
+		return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
+	}
+
+	h.log.Info("Investigation still in progress, requeuing",
+		"agentSession", as.Name,
+		"phase", as.Status.Phase,
+		"nextPollIn", h.sessionPollInterval,
 		"pollCount", session.PollCount,
 	)
-
-	status, err := h.kaClient.PollSession(ctx, session.ID)
-	if err != nil {
-		return h.handleSessionPollError(ctx, analysis, err)
-	}
-
-	// AA-CRIT-2: Reset consecutive failure counter on successful poll to prevent
-	// transient errors from accumulating across successful intervals.
-	analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 0
-
-	switch status.Status {
-	case "pending", "investigating":
-		return h.handleSessionPollPending(ctx, analysis, status)
-	case "user_driving":
-		return h.handleSessionPollUserDriving(ctx, analysis, status)
-	case "completed":
-		return h.handleSessionPollCompleted(ctx, analysis)
-	case "failed":
-		return h.handleSessionPollFailed(ctx, analysis, status)
-	case "cancelled":
-		return h.handleSessionPollCancelled(ctx, analysis)
-	default:
-		// Unknown status: treat as pending (requeue for re-poll)
-		h.log.Info("Unknown session status, treating as pending", "status", status.Status)
-		return h.handleSessionPollPending(ctx, analysis, status)
-	}
+	return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
 }
 
 // checkInvestigationTimeout fails analysis in place and returns true if
 // session has exceeded h.maxInvestigationDuration, in which case the caller
-// must return (ctrl.Result{}, nil) without further poll handling; returns
-// false otherwise, in which case the caller should proceed with its normal
-// poll handling. Issue #1530 (dupl): extracted from
-// handleSessionPollUserDriving and handleSessionPollPending, which shared
-// this exact timeout-check-and-fail block; interactive selects between the
-// "Interactive session/investigation"-worded messages used by the
-// user-driving caller (AA-CRIT-1: user_driving must NOT bypass
-// MaxInvestigationDuration) and the plain "Investigation"-worded messages
-// used by the pending caller.
+// must return (ctrl.Result{}, nil) without further handling; returns false
+// otherwise, in which case the caller should proceed normally. Issue #1530
+// (dupl): interactive selects between the "Interactive session/investigation"
+// -worded messages (AA-CRIT-1: user_driving must NOT bypass
+// MaxInvestigationDuration) and the plain "Investigation"-worded messages.
 func (h *InvestigatingHandler) checkInvestigationTimeout(ctx context.Context, analysis *aianalysisv1.AIAnalysis, session *aianalysisv1.KASession, interactive bool) bool {
 	if session.CreatedAt == nil {
 		return false
@@ -806,103 +359,16 @@ func (h *InvestigatingHandler) checkInvestigationTimeout(ctx context.Context, an
 	return true
 }
 
-// handleSessionPollUserDriving handles the case where a user has taken over the
-// interactive session via MCP (DD-INTERACTIVE-002 dynamic takeover).
-// The controller continues polling at the normal interval so it detects when the
-// user-driven session completes or fails.
-// BR-INTERACTIVE-001: User takeover observability via CRD status.
-func (h *InvestigatingHandler) handleSessionPollUserDriving(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
+// handleSessionCompleted handles the AgentSession's Completed phase.
+// BR-AA-KA-065.3: Status.Result carries the curated outcome KA already
+// wrote -- no separate result-fetch call is needed (unlike the retired
+// GetSessionResult HTTP call).
+func (h *InvestigatingHandler) handleSessionCompleted(ctx context.Context, analysis *aianalysisv1.AIAnalysis, as *agentsessionv1.AgentSession) (ctrl.Result, error) {
 	session := analysis.Status.KASession
 
-	// AA-CRIT-1: user_driving must NOT bypass MaxInvestigationDuration.
-	// A malicious or stalled interactive session cannot hold the pipeline indefinitely.
-	if h.checkInvestigationTimeout(ctx, analysis, session, true) {
-		return ctrl.Result{}, nil
-	}
-
-	session.PollCount++
-	now := metav1.Now()
-	session.LastPolled = &now
-
-	// #774: Propagate identity and session ID from KA poll response to CR status.
-	if status.ActingUser != "" || len(status.ActingUserGroups) > 0 || status.SessionID != "" {
-		if analysis.Status.InteractiveSession == nil {
-			analysis.Status.InteractiveSession = &aianalysisv1.InteractiveSessionInfo{}
-		}
-		analysis.Status.InteractiveSession.ActingUser = status.ActingUser
-		analysis.Status.InteractiveSession.ActingUserGroups = status.ActingUserGroups
-		if status.SessionID != "" {
-			analysis.Status.InteractiveSession.SessionID = status.SessionID
-		}
-		if analysis.Status.InteractiveSession.StartedAt == nil {
-			analysis.Status.InteractiveSession.StartedAt = &now
-		}
-	}
-
-	h.log.Info("Session under user control, continuing to poll",
-		"sessionID", session.ID,
-		"progress", status.Progress,
-		"actingUser", status.ActingUser,
-		"nextPollIn", h.sessionPollInterval,
-		"pollCount", session.PollCount,
-	)
-
-	if h.recorder != nil {
-		h.recorder.Eventf(analysis, corev1.EventTypeNormal, events.EventReasonUserDriving,
-			"Interactive session %s: user is driving investigation", session.ID)
-	}
-
-	return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
-}
-
-// handleSessionPollPending handles poll results where investigation is still in progress.
-// BR-AA-KA-064.8: Constant poll interval (not backoff -- polling is normal async behavior).
-//
-// Updates PollCount and LastPolled in the CRD status for observability.
-// The aiAnalysisUpdatePredicate filters PollCount/LastPolled-only status writes
-// so they don't trigger re-reconciles. Only RequeueAfter controls the next poll.
-func (h *InvestigatingHandler) handleSessionPollPending(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
-	session := analysis.Status.KASession
-
-	if h.checkInvestigationTimeout(ctx, analysis, session, false) {
-		return ctrl.Result{}, nil
-	}
-
-	// Update poll tracking fields for observability
-	session.PollCount++
-	now := metav1.Now()
-	session.LastPolled = &now
-
-	h.log.Info("Session still in progress, requeuing",
-		"status", status.Status,
-		"nextPollIn", h.sessionPollInterval,
-		"pollCount", session.PollCount,
-	)
-
-	return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
-}
-
-// handleSessionPollCompleted handles poll results where investigation has completed.
-// BR-AA-KA-064.3: Fetch result and process through ResponseProcessor
-func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	// #2030 Part B: re-check correlation before finalizing — closes the race
-	// where AF adopts a takeover session between our last mismatch check and
-	// this (now-stale) session's poll reporting completed.
-	if h.checkCorrelatedSessionBeforeFinalizing(ctx, analysis) {
-		return ctrl.Result{Requeue: true}, nil
-	}
-
-	session := analysis.Status.KASession
-
-	// Track that a poll occurred even on terminal status — the poll that discovered
-	// completion is still a poll event for observability and precondition checks
-	// (e.g., E2E-1293-006 requires PollCount >= 1 before takeover).
-	session.PollCount++
-	now := metav1.Now()
-	session.LastPolled = &now
-
-	h.log.Info("KA session completed, fetching result",
-		"sessionID", session.ID,
+	h.log.Info("KA session completed, processing result",
+		"agentSession", as.Name,
+		"sessionID", as.Status.SessionID,
 		"pollCount", session.PollCount,
 	)
 
@@ -917,40 +383,22 @@ func (h *InvestigatingHandler) handleSessionPollCompleted(ctx context.Context, a
 	// #1376: Close the InvestigationSession CRD now that KA has finished.
 	h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseCompleted)
 
-	// Calculate investigation time from session creation
 	var investigationTime int64
 	if session.CreatedAt != nil {
 		investigationTime = time.Since(session.CreatedAt.Time).Milliseconds()
 	}
-
-	return h.handleSessionIncidentResult(ctx, analysis, investigationTime)
-}
-
-// handleSessionIncidentResult fetches and processes the incident investigation result.
-func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTime int64) (ctrl.Result, error) {
-	session := analysis.Status.KASession
-
-	resp, err := h.kaClient.GetSessionResult(ctx, session.ID)
-	if err != nil {
-		return h.handleSessionGetResultError(ctx, analysis, err)
-	}
-
-	// #1390: Reset consecutive 409 error counter on successful result retrieval.
-	session.ConsecutiveGetResultErrors = 0
-
-	// Set investigation metadata
 	analysis.Status.EnsureInvestigationMetadata().InvestigationTime = investigationTime
 	analysis.Status.ObservedGeneration = analysis.Generation
 
 	// DD-AUDIT-003: Record result retrieval audit event
 	h.auditClient.RecordAIAgentResult(ctx, analysis, investigationTime)
 
-	if resp == nil {
-		return h.handleError(ctx, analysis, fmt.Errorf("received nil incident response from KA session %s", session.ID))
+	res := as.Status.Result
+	if res == nil {
+		return h.handleError(ctx, analysis, fmt.Errorf("AgentSession %s completed with no Result", as.Name))
 	}
 
-	// Delegate to ResponseProcessor (same as legacy flow)
-	result, err := h.processor.ProcessIncidentResponse(ctx, analysis, resp)
+	result, err := h.processor.ProcessAgentSessionResult(ctx, analysis, res)
 	if err == nil {
 		h.setRetryCount(analysis, 0)
 	}
@@ -958,17 +406,14 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 	// #2088 (main port of #2086 Fix 4): KA's own session inactivity timeout
 	// (e.g. a 10-minute interactive-session idle limit) completes with no
 	// InvestigationResult ever produced. KA synthesizes a placeholder for
-	// this (synthesizeNilResult's default branch,
-	// internal/kubernautagent/server/handler.go) with has_workflow=false and
-	// human_review_reason="" -- ProcessIncidentResponse cannot distinguish
-	// this from a genuine "investigated and found no matching workflow"
-	// conclusion, so it always classifies both identically as
-	// SubReason=NoMatchingWorkflows. That is misleading: the investigation
-	// never actually reached a conclusion. Correct the classification here
-	// (response_processor.go stays untouched -- this fix's blast radius is
-	// contained to this file). FedRAMP AU-3 (truthful audit content) / SI-11
-	// (accurate error handling).
-	if analysis.Status.SubReason == "NoMatchingWorkflows" && isSessionTimedOutWithoutResult(resp) {
+	// this with has_workflow=false and human_review_reason="" --
+	// ProcessAgentSessionResult cannot distinguish this from a genuine
+	// "investigated and found no matching workflow" conclusion, so it
+	// always classifies both identically as SubReason=NoMatchingWorkflows.
+	// That is misleading: the investigation never actually reached a
+	// conclusion. Correct the classification here. FedRAMP AU-3 (truthful
+	// audit content) / SI-11 (accurate error handling).
+	if analysis.Status.SubReason == "NoMatchingWorkflows" && isSessionTimedOutWithoutResult(res) {
 		analysis.Status.SubReason = "InvestigationInconclusive"
 		analysis.Status.EnsureReview().HumanReviewReason = "investigation_inconclusive"
 		analysis.Status.Message = "KA session completed without producing a result " +
@@ -978,78 +423,60 @@ func (h *InvestigatingHandler) handleSessionIncidentResult(ctx context.Context, 
 	return result, err
 }
 
-// isSessionTimedOutWithoutResult reports whether resp is KA's nil-result
+// isSessionTimedOutWithoutResult reports whether res is KA's nil-result
 // synthesis placeholder rather than a genuine investigation outcome. #2088
 // (main port of #2086): this is the only signal available on the wire that
 // distinguishes "the session completed without KA ever producing a result"
 // (e.g. an inactivity timeout) from "KA investigated and concluded no
-// workflow matches" -- synthesizeNilResult's default branch always sets
-// exactly this Analysis text with Confidence 0 and no other fields
-// populated.
-func isSessionTimedOutWithoutResult(resp *agentclient.IncidentResponse) bool {
-	return resp.Analysis == "Investigation completed without result" && resp.Confidence == 0
+// workflow matches".
+func isSessionTimedOutWithoutResult(res *agentsessionv1.AgentSessionResult) bool {
+	return res.Analysis == "Investigation completed without result" && res.Confidence == 0
 }
 
-// handleSessionPollFailed handles poll results where investigation has failed on KA side.
-// BR-AA-KA-064: Surface KA-side failure to operators via CRD status
+// handleSessionFailed handles the AgentSession's Failed phase.
+// BR-AA-KA-065: Surface KA-side failure to operators via CRD status.
 // AA-MED-1: Ensure Reason and SubReason are set for structured failure reporting.
-func (h *InvestigatingHandler) handleSessionPollFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, status *agentclient.SessionStatusResult) (ctrl.Result, error) {
-	// #2030 Part B: symmetric race-closing check (see handleSessionPollCompleted).
-	if h.checkCorrelatedSessionBeforeFinalizing(ctx, analysis) {
-		return ctrl.Result{Requeue: true}, nil
-	}
-
+func (h *InvestigatingHandler) handleSessionFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, as *agentsessionv1.AgentSession) (ctrl.Result, error) {
 	session := analysis.Status.KASession
-	session.PollCount++
-	now := metav1.Now()
-	session.LastPolled = &now
 
 	h.log.Info("KA session failed",
-		"sessionID", session.ID,
+		"agentSession", as.Name,
 		"pollCount", session.PollCount,
-		"error", status.Error,
+		"error", as.Status.Error,
 	)
 
 	// #1376: Close the InvestigationSession CRD on failure.
 	h.setISTerminalPhase(ctx, analysis, isv1alpha1.SessionPhaseFailed)
 
+	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
 	analysis.Status.Reason = aianalysisv1.ReasonAPIError
 	analysis.Status.SubReason = "InvestigationFailed"
 	analysis.Status.CompletedAt = &now
 	analysis.Status.ObservedGeneration = analysis.Generation
-	analysis.Status.Message = status.Error
+	analysis.Status.Message = as.Status.Error
 	if analysis.Status.Message == "" {
 		analysis.Status.Message = "Investigation failed on KA side"
 	}
 
 	// Record failure audit
-	failureErr := fmt.Errorf("KA session failed: %s", status.Error)
+	failureErr := fmt.Errorf("KA session failed: %s", as.Status.Error)
 	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
 		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 	}
 
-	msg := status.Error
-	if msg == "" {
-		msg = "Investigation failed on KA side"
-	}
-	aianalysis.SetInvestigationComplete(analysis, false, msg)
+	aianalysis.SetInvestigationComplete(analysis, false, analysis.Status.Message)
 	return ctrl.Result{}, nil
 }
 
-// handleSessionPollCancelled handles the case where a KA session was cancelled.
-// BR-INTERACTIVE-010: Two scenarios:
-//   - IS CRD still exists: takeover — re-submit with interactive=true
-//   - IS CRD gone: user cancelled — transition to PhaseFailed (terminal)
-func (h *InvestigatingHandler) handleSessionPollCancelled(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	h.log.Info("KA session cancelled",
-		"sessionID", analysis.Status.KASession.ID,
-	)
-
-	// Check if an IS CRD still exists — if so, this was a takeover cancel and we should re-submit.
-	if result, err, handled := h.handleCancellationTakeover(ctx, analysis); handled {
-		return result, err
-	}
+// handleSessionCancelled handles the AgentSession's Cancelled phase: the
+// interactive driver disconnected without a takeover. DD-AA-KA-001 Amendment
+// (Gap 1): dispatch happens exactly once per AgentSession (Lease-based), so
+// unlike the retired HTTP design (where a new session could be resubmitted
+// under the same AIAnalysis), Cancelled is terminal for this investigation --
+// there is no takeover-resubmit branch to check for here anymore.
+func (h *InvestigatingHandler) handleSessionCancelled(ctx context.Context, analysis *aianalysisv1.AIAnalysis, as *agentsessionv1.AgentSession) (ctrl.Result, error) {
+	h.log.Info("KA session cancelled", "agentSession", as.Name)
 
 	now := metav1.Now()
 	analysis.Status.Phase = aianalysis.PhaseFailed
@@ -1067,210 +494,139 @@ func (h *InvestigatingHandler) handleSessionPollCancelled(ctx context.Context, a
 	return ctrl.Result{}, nil
 }
 
-// handleCancellationTakeover implements the BR-INTERACTIVE-010 takeover
-// check for handleSessionPollCancelled: if an IS CRD still exists, this was
-// a takeover cancel and the caller should re-submit; if IS raced to
-// Completed, fetch that result instead. The third return value reports
-// whether the caller should return the given (result, err) immediately;
-// handled=false means "IS deleted or in a terminal phase — proceed to the
-// standard cancelled-terminal transition". Extracted from
-// handleSessionPollCancelled (Wave 6 6c GREEN: nestif remediation) — pure
-// code motion, no behavior change.
-func (h *InvestigatingHandler) handleCancellationTakeover(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error, bool) {
-	if h.isChecker == nil {
-		return ctrl.Result{}, nil, false
-	}
-	rrName := analysis.Spec.RemediationRequestRef.Name
-	if rrName == "" {
-		return ctrl.Result{}, nil, false
+// handleError processes errors from GetOrCreate (e.g. a transient K8s API
+// failure) or a nil Result on a Completed AgentSession.
+// BR-AI-009: Retry transient errors with exponential backoff
+// BR-AI-010: Fail immediately on permanent errors
+// Refactoring P2.1: Uses ErrorClassifier for error classification and retry logic
+func (h *InvestigatingHandler) handleError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
+	// P2.1: Classify error type using error classifier
+	classification := h.errorClassifier.ClassifyError(err)
+
+	// Increment failure count before retry check
+	analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures++
+
+	// P2.1: Check if error should be retried based on classification and attempt count
+	if h.errorClassifier.ShouldRetry(classification, int(analysis.Status.InvestigationMetadata.ConsecutiveFailures)) {
+		return h.retryTransientError(analysis, err, classification)
 	}
 
-	hasIS, checkErr := h.isChecker.HasActiveSession(ctx, rrName)
-	if checkErr != nil {
-		// AA-HIGH-2: Transient API error must not cause premature terminal state.
-		// Requeue to retry the IS check instead of assuming cancellation.
-		h.log.Error(checkErr, "Failed to check IS existence during cancellation, requeuing",
-			"rrName", rrName)
-		return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil, true
-	}
-	if hasIS {
-		h.log.Info("IS CRD still active after cancellation — re-submitting with interactive=true (takeover)",
-			"rrName", rrName)
-		analysis.Status.KASession.ID = ""
-		return ctrl.Result{Requeue: true}, nil, true
+	// If we get here, either max retries exceeded or error is not retryable
+	if classification.IsRetryable {
+		return h.failMaxRetriesExceeded(ctx, analysis, err, classification)
 	}
 
-	// No active IS — distinguish "IS deleted" from "IS in terminal phase"
-	phase, exists, phaseErr := h.isChecker.FindSessionPhase(ctx, rrName)
-	if phaseErr != nil {
-		h.log.Error(phaseErr, "Failed to check IS phase during cancellation, requeuing",
-			"rrName", rrName)
-		return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil, true
-	}
-	if exists && phase == isv1alpha1.SessionPhaseCompleted {
-		// IS completed but KA session cancelled (race) — fetch the result
-		h.log.Info("IS completed but KA session cancelled (race condition) — fetching result",
-			"rrName", rrName, "phase", phase)
-		result, err := h.handleSessionPollCompleted(ctx, analysis)
-		return result, err, true
-	}
-	// IS deleted or IS in Cancelled/Failed phase → user/system ended session
-	return ctrl.Result{}, nil, false
+	// BR-AI-010: Fail immediately on permanent errors
+	return h.failPermanentError(ctx, analysis, err, classification)
 }
 
-// handleSessionPollError handles errors during session polling (e.g., 404 session lost).
-// BR-AA-KA-064.5: 404 triggers session regeneration, not standard retry
-func (h *InvestigatingHandler) handleSessionPollError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
-	// Check for 404 (session lost) - triggers regeneration logic
-	var apiErr *agentclient.APIError
-	if errors.As(err, &apiErr) && apiErr.StatusCode == 404 {
-		return h.handleSessionLost(ctx, analysis)
-	}
+// retryTransientError requeues with exponential backoff for a transient
+// error that hasn't yet exhausted its retry budget (BR-AI-009).
+func (h *InvestigatingHandler) retryTransientError(analysis *aianalysisv1.AIAnalysis, err error, classification ErrorClassification) (ctrl.Result, error) {
+	// P2.1: Use error classifier to calculate backoff duration
+	backoffDuration := h.errorClassifier.GetRetryDelay(int(analysis.Status.InvestigationMetadata.ConsecutiveFailures))
 
-	// For other errors, use standard error classification and retry
-	return h.handleError(ctx, analysis, err)
-}
-
-// handleSessionLost handles session loss (404 on poll) with regeneration logic.
-// BR-AA-KA-064.5: Increment generation, clear ID, requeue for re-submit
-// BR-AA-KA-064.6: Fail with SessionRegenerationExceeded if cap reached
-//
-// #2081 (v1.6 clone of #2080): before declaring the session lost, re-check
-// whether AF has already correlated a different, currently-active KA session
-// onto this RR's InvestigationSession. A rapid, legitimate session hand-off
-// (autonomous->interactive upgrade immediately followed by a takeover, or
-// several hops in quick succession) can produce a 404 for an
-// already-superseded session ID before checkISMismatchAndCancel/
-// checkCorrelatedSessionBeforeFinalizing get another chance to run --
-// exhausting the regeneration cap even though the real, underlying
-// investigation had already completed. This re-check is symmetric to those
-// two call sites (same tryAdoptCorrelatedSession helper, #2030 Part B) but
-// closes the gap for the session-lost path specifically.
-//
-// Residual (accepted, theoretical) risk: if this re-check races and misses
-// (correlation hasn't landed yet at the exact instant of this 404), the 404
-// below still counts as one regeneration before the backoff gives the race
-// room to settle on the next attempt. No evidence of this occurring in the
-// #2080/#2081 incident's log timeline; the backoff below already shrinks
-// this window to well under the ~1-2s cascade duration observed there.
-func (h *InvestigatingHandler) handleSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (ctrl.Result, error) {
-	if h.isChecker != nil {
-		if rrName := analysis.Spec.RemediationRequestRef.Name; rrName != "" {
-			if h.tryAdoptCorrelatedSession(ctx, analysis, rrName, "session-lost-recheck") {
-				return ctrl.Result{Requeue: true}, nil
-			}
-		}
-	}
-
-	session := analysis.Status.KASession
-	session.Generation++
-	session.ID = ""
-	session.PollCount = 0
-	session.LastPolled = nil
-
-	h.log.Info("KA session lost, regenerating",
-		"generation", session.Generation,
-		"maxRegenerations", MaxSessionRegenerations,
+	h.log.Info("Transient error - retrying with backoff",
+		"error", err,
+		"errorType", classification.ErrorType,
+		"attempts", analysis.Status.InvestigationMetadata.ConsecutiveFailures,
+		"backoff", backoffDuration,
 	)
 
-	// DD-AUDIT-003: Record session lost event
-	h.auditClient.RecordAIAgentSessionLost(ctx, analysis, session.Generation)
+	// Update status to indicate retry
+	analysis.Status.Message = fmt.Sprintf("Transient error (attempt %d/%d): %v",
+		analysis.Status.InvestigationMetadata.ConsecutiveFailures, MaxRetries, err)
+	analysis.Status.Reason = aianalysisv1.ReasonTransientError
+	analysis.Status.SubReason = mapErrorTypeToSubReason(classification.ErrorType) // Map to valid CRD enum
 
-	// DD-EVENT-001: Emit SessionLost K8s event for observability
-	if h.recorder != nil {
-		h.recorder.Event(analysis, corev1.EventTypeWarning, events.EventReasonSessionLost,
-			fmt.Sprintf("KA session lost (generation %d), attempting regeneration", session.Generation))
-	}
+	// Record metric for transient errors
+	h.metrics.RecordFailure(aianalysisv1.SubReasonTransientError, "Retrying")
 
-	// BR-AA-KA-064.6: Check if regeneration cap exceeded
-	if session.Generation >= MaxSessionRegenerations {
-		h.log.Info("Session regeneration cap exceeded",
-			"generation", session.Generation,
-			"cap", MaxSessionRegenerations,
-		)
-
-		now := metav1.Now()
-		analysis.Status.Phase = aianalysis.PhaseFailed
-		analysis.Status.CompletedAt = &now
-		analysis.Status.ObservedGeneration = analysis.Generation
-		analysis.Status.Reason = aianalysisv1.ReasonTransientError
-		analysis.Status.SubReason = "SessionRegenerationExceeded"
-		analysis.Status.Message = fmt.Sprintf("Session regeneration cap exceeded (%d regenerations)", session.Generation)
-
-		aianalysis.SetInvestigationSessionReady(analysis, false, aianalysis.ReasonSessionRegenerationExceeded,
-			fmt.Sprintf("Regeneration cap (%d) exceeded", MaxSessionRegenerations))
-
-		// Record failure audit
-		failureErr := fmt.Errorf("session regeneration cap exceeded: %d regenerations", session.Generation)
-		if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, failureErr); auditErr != nil {
-			h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
-		}
-
-		// DD-EVENT-001: Emit SessionRegenerationExceeded K8s event for observability
-		if h.recorder != nil {
-			h.recorder.Event(analysis, corev1.EventTypeWarning, events.EventReasonSessionRegenerationExceeded,
-				fmt.Sprintf("Max session regenerations (%d) exceeded, failing investigation", MaxSessionRegenerations))
-		}
-
-		aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("Session regeneration cap exceeded (%d regenerations)", session.Generation))
-		return ctrl.Result{}, nil
-	}
-
-	// Set condition: SessionLost (not terminal yet)
-	aianalysis.SetInvestigationSessionReady(analysis, false, aianalysis.ReasonSessionLost,
-		fmt.Sprintf("Session lost, regenerating (generation %d/%d)", session.Generation, MaxSessionRegenerations))
-
-	// #2080: back off before resubmitting instead of an immediate tight-loop
-	// requeue -- gives a legitimate multi-hop session hand-off room to settle
-	// (see the re-check above) before the next regeneration is even
-	// attempted. Reuses the same DD-SHARED-001-compliant backoff calculator
-	// as BR-AI-009's transient-error retry (handleError), keyed on
-	// session.Generation instead of ConsecutiveFailures.
-	backoffDuration := h.errorClassifier.GetRetryDelay(int(session.Generation))
-
-	// #2080 recurrence: RequeueAfter alone is not durable -- the controller's
-	// own self-watch predicate (aiAnalysisUpdatePredicate) wakes the
-	// reconciler immediately whenever KASession.ID changes, which this very
-	// function just did (cleared it above), bypassing the backoff entirely.
-	// BackoffUntil is checked by reconcileInvestigating BEFORE this handler
-	// runs again, so it survives any early wake-up regardless of source.
-	backoffUntil := metav1.NewTime(time.Now().Add(backoffDuration))
-	session.BackoffUntil = &backoffUntil
+	// Requeue with exponential backoff (error classifier handles jitter internally)
 	return ctrl.Result{RequeueAfter: backoffDuration}, nil
 }
 
-// handleSessionGetResultError handles errors when fetching the session result.
-// BR-AA-KA-064: 409 Conflict tracked with consecutive error counter (#1390)
-// AA-HIGH-1: 404 triggers session regeneration (same as poll 404)
-func (h *InvestigatingHandler) handleSessionGetResultError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error) (ctrl.Result, error) {
-	var apiErr *agentclient.APIError
-	if errors.As(err, &apiErr) {
-		switch apiErr.StatusCode {
-		case 404:
-			h.log.Info("GetSessionResult returned 404, triggering session regeneration",
-				"sessionID", analysis.Status.KASession.ID,
-			)
-			return h.handleSessionLost(ctx, analysis)
-		case 409:
-			session := analysis.Status.KASession
-			session.ConsecutiveGetResultErrors++
-			h.log.Info("GetSessionResult returned 409 Conflict",
-				"sessionID", session.ID,
-				"consecutiveErrors", session.ConsecutiveGetResultErrors,
-			)
-			if session.ConsecutiveGetResultErrors >= MaxConsecutiveGetResultErrors {
-				h.log.Info("409 retry cap reached, regenerating session",
-					"sessionID", session.ID,
-					"cap", MaxConsecutiveGetResultErrors,
-				)
-				return h.handleSessionLost(ctx, analysis)
-			}
-			return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
-		}
+// failMaxRetriesExceeded transitions analysis to permanent Failed after a
+// retryable error has exhausted its retry budget.
+func (h *InvestigatingHandler) failMaxRetriesExceeded(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error, classification ErrorClassification) (ctrl.Result, error) {
+	h.log.Info("Transient error exceeded max retries - failing permanently",
+		"error", err,
+		"errorType", classification.ErrorType,
+		"attempts", analysis.Status.InvestigationMetadata.ConsecutiveFailures,
+		"maxRetries", h.errorClassifier.GetMaxRetries(),
+	)
+
+	// Transition to permanent failure after max retries
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+	analysis.Status.CompletedAt = &now
+	analysis.Status.Message = fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v",
+		analysis.Status.InvestigationMetadata.ConsecutiveFailures, err)
+	analysis.Status.Reason = aianalysisv1.ReasonAPIError
+	analysis.Status.SubReason = aianalysisv1.SubReasonMaxRetriesExceeded
+
+	// Record metric for max retries exceeded
+	h.metrics.RecordFailure(string(aianalysisv1.ReasonAPIError), aianalysisv1.SubReasonMaxRetriesExceeded)
+
+	// BR-AUDIT-005 Gap #7: Record failure audit with standardized error details
+	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
+		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
 	}
 
-	// For other errors, use standard error classification
-	return h.handleError(ctx, analysis, err)
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("Transient error exceeded max retries (%d attempts): %v", analysis.Status.InvestigationMetadata.ConsecutiveFailures, err))
+	return ctrl.Result{}, nil
+}
+
+// failPermanentError transitions analysis to Failed immediately for a
+// non-retryable error (BR-AI-010).
+func (h *InvestigatingHandler) failPermanentError(ctx context.Context, analysis *aianalysisv1.AIAnalysis, err error, classification ErrorClassification) (ctrl.Result, error) {
+	h.log.Info("Permanent error - failing immediately",
+		"error", err,
+		"errorType", classification.ErrorType,
+	)
+	now := metav1.Now()
+	analysis.Status.Phase = aianalysis.PhaseFailed
+	analysis.Status.ObservedGeneration = analysis.Generation // DD-CONTROLLER-001
+	analysis.Status.CompletedAt = &now                       // Per crd-schema.md: set on terminal state
+	analysis.Status.Message = fmt.Sprintf("Permanent error: %v", err)
+	analysis.Status.Reason = aianalysisv1.ReasonAPIError
+	analysis.Status.SubReason = mapErrorTypeToSubReason(classification.ErrorType) // Map to valid CRD enum
+
+	// Record metric for permanent errors
+	h.metrics.RecordFailure("APIError", string(classification.ErrorType))
+
+	// BR-AUDIT-005 Gap #7: Record failure audit with standardized error details
+	if auditErr := h.auditClient.RecordAnalysisFailed(ctx, analysis, err); auditErr != nil {
+		h.log.V(1).Info("Failed to record analysis failure audit", "error", auditErr)
+	}
+
+	aianalysis.SetInvestigationComplete(analysis, false, fmt.Sprintf("Permanent error: %v", err))
+	return ctrl.Result{}, nil
+}
+
+// setRetryCount writes retry count to annotations
+func (h *InvestigatingHandler) setRetryCount(analysis *aianalysisv1.AIAnalysis, count int) {
+	if analysis.Annotations == nil {
+		analysis.Annotations = make(map[string]string)
+	}
+	analysis.Annotations[RetryCountAnnotation] = strconv.Itoa(count)
+}
+
+// mapErrorTypeToSubReason maps error classifier ErrorType to valid AIAnalysis CRD SubReason enum values
+// per config/crd/bases/kubernaut.ai_aianalyses.yaml line 134-144
+func mapErrorTypeToSubReason(errorType ErrorType) string {
+	switch errorType {
+	case ErrorTypeNetwork, ErrorTypeTimeout, ErrorTypeRateLimit, ErrorTypeTransient:
+		// All transient/retryable errors map to "TransientError"
+		return aianalysisv1.SubReasonTransientError
+	case ErrorTypePermanent, ErrorTypeAuthentication, ErrorTypeAuthorization, ErrorTypeConfiguration:
+		// All non-retryable errors map to "PermanentError"
+		return "PermanentError"
+	default:
+		// Fallback for unknown error types
+		return aianalysisv1.SubReasonTransientError
+	}
 }
 
 // setISTerminalPhase transitions the InvestigationSession CRD to a terminal

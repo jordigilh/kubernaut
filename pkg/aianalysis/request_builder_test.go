@@ -30,7 +30,9 @@ import (
 
 // goconst dedup: test-fixture literals deduplicated below.
 const (
-	oomkilled = "OOMKilled"
+	oomkilled     = "OOMKilled"
+	criticalSev   = "critical"
+	productionEnv = "production"
 )
 
 // Unit Tests: RequestBuilder - Signal Mode Pass-through

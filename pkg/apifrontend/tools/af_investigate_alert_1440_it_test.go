@@ -7,7 +7,6 @@ import (
 	. "github.com/onsi/gomega"
 
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
-	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/auth"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/session"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/tools"
@@ -105,41 +104,11 @@ var _ = Describe("Fix #1440 Integration: IS CRD co-creation wiring", func() {
 		})
 	})
 
-	Describe("IT-AF-1440-002: IS CRD created by investigate_alert is findable by is_checker.HasActiveSession (SI-4)", func() {
-		It("should be detectable by AA's K8sInvestigationSessionChecker", func() {
-			isClient := newISITClient()
-			svc := session.NewCRDSessionService(adksession.InMemoryService(), isClient, isITScheme(), "kubernaut-system")
-			signaler := &productionSignalerAdapter{svc: svc, namespace: "kubernaut-system"}
-
-			cfg := tools.InvestigateAlertConfig{
-				Client:       newTypedFakeClient(),
-				ControllerNS: "kubernaut-system",
-				Signaler:     signaler,
-				Triager:      defaultTestTriager("production", "Deployment", "api-server"),
-			}
-
-			ctx := auth.WithUserIdentity(context.Background(), &auth.UserIdentity{
-				Username: "sre-bob",
-				Groups:   []string{"sre-team", "oncall"},
-			})
-
-			result, err := tools.HandleInvestigateAlert(ctx, cfg, &tools.InvestigateAlertArgs{
-				AlertName:  "HighMemoryUsage",
-				APIVersion: "apps/v1",
-				Kind:       "Deployment",
-				Name:       "api-server",
-				Namespace:  "production",
-			}, "sre-bob")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RRID).NotTo(BeEmpty())
-
-			rrName := extractRRName(result.RRID)
-
-			checker := handlers.NewK8sInvestigationSessionChecker(isClient, "kubernaut-system")
-			hasActive, checkErr := checker.HasActiveSession(ctx, rrName)
-			Expect(checkErr).NotTo(HaveOccurred())
-			Expect(hasActive).To(BeTrue(),
-				"SI-4: IS CRD created by investigate_alert must be findable by AA's is_checker")
-		})
-	})
+	// IT-AF-1440-002 (retired): previously asserted the IS CRD created here was
+	// findable via AA's handlers.NewK8sInvestigationSessionChecker.HasActiveSession.
+	// DD-AA-KA-001 Amendment Gap 1 retires AA's own IS-existence check entirely --
+	// that decision now lives in KA's dispatch watcher (read-only IS-existence
+	// check before acquiring the dispatch Lease), not in AA. The
+	// InvestigationSession CRD itself is NOT removed (AF still owns it for
+	// reconnect/resume bookkeeping); only AA's consumption of it is gone.
 })

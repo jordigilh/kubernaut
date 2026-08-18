@@ -38,9 +38,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
@@ -53,21 +53,17 @@ import (
 // _test.go file are not importable from here — _test.go files never are).
 // ----------------------------------------------------------------------------
 
+// fakeKAClientAlwaysErrors implements handlers.AgentSessionGetOrCreator.
+// GetOrCreate always returns a generic (unclassified) error, which
+// InvestigatingHandler's ErrorClassifier treats as a permanent error --
+// naturally driving analysis.Status.Phase to Failed in memory without
+// needing a real Kubernetes API server. The resulting Status().Update()
+// attempt is what these tests' schema-rejection interceptors target.
 type fakeKAClientAlwaysErrors struct{}
 
-func (fakeKAClientAlwaysErrors) Investigate(_ context.Context, _ *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error) {
+func (fakeKAClientAlwaysErrors) GetOrCreate(_ context.Context, _ *aianalysisv1.AIAnalysis) (*agentsessionv1.AgentSession, error) {
 	return nil, errors.New("simulated KA outage (test double, #2030 IT)")
 }
-func (fakeKAClientAlwaysErrors) SubmitInvestigation(_ context.Context, _ *agentclient.IncidentRequest) (string, error) {
-	return "", errors.New("not implemented in test double (#2030 IT): session mode unused")
-}
-func (fakeKAClientAlwaysErrors) PollSession(_ context.Context, _ string) (*agentclient.SessionStatusResult, error) {
-	return nil, errors.New("not implemented in test double (#2030 IT): session mode unused")
-}
-func (fakeKAClientAlwaysErrors) GetSessionResult(_ context.Context, _ string) (*agentclient.IncidentResponse, error) {
-	return nil, errors.New("not implemented in test double (#2030 IT): session mode unused")
-}
-func (fakeKAClientAlwaysErrors) CancelSession(_ context.Context, _ string) error { return nil }
 
 type noopAuditClient struct{}
 

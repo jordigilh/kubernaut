@@ -21,8 +21,12 @@ limitations under the License.
 package handlers
 
 import (
-	"github.com/go-logr/logr"
+	"encoding/json"
 
+	"github.com/go-logr/logr"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
@@ -116,6 +120,93 @@ func (b *RequestBuilder) BuildIncidentRequest(analysis *aianalysisv1.AIAnalysis)
 	}
 
 	return req
+}
+
+// ========================================
+// AGENTSESSION SPEC CONSTRUCTION
+// DD-AA-KA-001, BR-AA-KA-065.2: 1:1, lossless translation of the retired
+// agentclient.IncidentRequest into AgentSessionSpec.
+// ========================================
+
+// BuildAgentSessionSpec constructs an AgentSessionSpec from AIAnalysis CRD
+// spec -- the CRD-native replacement for BuildIncidentRequest, reading the
+// exact same source fields (BR-AA-KA-065.2) so removing the HTTP channel
+// loses no content KA previously received.
+//
+// Parameters:
+// - analysis: AIAnalysis CRD containing signal context and enrichment
+//
+// Returns:
+// - agentsessionv1.AgentSessionSpec: immutable spec for the AgentSession AA creates
+func (b *RequestBuilder) BuildAgentSessionSpec(analysis *aianalysisv1.AIAnalysis) agentsessionv1.AgentSessionSpec {
+	spec := analysis.Spec.AnalysisRequest.SignalContext
+	enrichment := spec.EnrichmentResults
+
+	// DD-AUDIT-CORRELATION-001: same correlationID precedence as BuildIncidentRequest.
+	correlationID := analysis.Spec.RemediationID
+	if analysis.Spec.RemediationRequestRef.Name != "" {
+		correlationID = analysis.Spec.RemediationRequestRef.Name
+	}
+
+	customLabels := getCustomLabels(enrichment)
+	out := agentsessionv1.AgentSessionSpec{
+		RemediationRequestRef: agentsessionv1.ObjectRef{
+			Name: analysis.Spec.RemediationRequestRef.Name,
+			// AgentSession MUST be created in the same namespace as the RR;
+			// corev1.ObjectReference.Namespace is not reliably populated for
+			// same-namespace refs, so use AIAnalysis's own namespace instead
+			// (every RO-created child CRD already lives in rr.Namespace).
+			Namespace: analysis.Namespace,
+		},
+		IncidentID:         analysis.Name, // Q1: use CR name
+		RemediationID:      correlationID,
+		SignalName:         spec.SignalName,
+		Severity:           spec.Severity,
+		SignalSource:       "kubernaut",
+		ResourceNamespace:  spec.TargetResource.Namespace,
+		ResourceKind:       spec.TargetResource.Kind,
+		ResourceName:       spec.TargetResource.Name,
+		ResourceAPIVersion: spec.TargetResource.APIVersion,
+		Environment:        spec.Environment,
+		Priority:           spec.BusinessPriority,
+		RiskTolerance:      getOrDefault(customLabels, "risk_tolerance", "medium"),
+		BusinessCategory:   getOrDefault(customLabels, "business_category", "standard"),
+		ClusterName:        clusterNameFor(analysis.Spec.ClusterID, customLabels),
+		SignalMode:         spec.SignalMode,
+		EnrichmentResults:  marshalEnrichmentResults(enrichment),
+	}
+
+	// #462: Forward signal annotations for alert-author context in KA prompt.
+	if len(spec.SignalAnnotations) > 0 {
+		out.SignalAnnotations = spec.SignalAnnotations
+	}
+
+	// BR-FLEET-003 (#1511): forward the optional cluster business classification,
+	// omitted entirely (not even an empty string) for non-fleet/unregistered
+	// clusters, same as BuildIncidentRequest's req.Cluster.SetTo guard.
+	if spec.Cluster != "" {
+		out.Cluster = spec.Cluster
+	}
+
+	return out
+}
+
+// marshalEnrichmentResults marshals the full sharedtypes.EnrichmentResults
+// into raw JSON for AgentSessionSpec.EnrichmentResults. Unlike the retired
+// ogen buildEnrichmentResults (which dropped KubernetesContext content via
+// SetToNull()), this carries the complete struct -- a strict superset, never
+// lossy. Returns nil when enrichment is empty or marshaling fails (never
+// panics on a malformed result), same defensive pattern as mapping.go's
+// marshalJSON on KA's side.
+func marshalEnrichmentResults(enrichment sharedtypes.EnrichmentResults) *apiextensionsv1.JSON {
+	if enrichment.KubernetesContext == nil && enrichment.BusinessClassification == nil {
+		return nil
+	}
+	raw, err := json.Marshal(enrichment)
+	if err != nil || len(raw) == 0 || string(raw) == "null" || string(raw) == "{}" {
+		return nil
+	}
+	return &apiextensionsv1.JSON{Raw: raw}
 }
 
 // ========================================

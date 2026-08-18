@@ -23,6 +23,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -91,6 +92,12 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: fmt.Sprintf("rem-%s", uniqueSuffix),
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      fmt.Sprintf("rem-%s", uniqueSuffix),
+						Namespace: testNamespace,
+					},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("shutdown-test-%s", uniqueSuffix),
@@ -184,6 +191,12 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: fmt.Sprintf("rem-%s", uniqueSuffix),
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      fmt.Sprintf("rem-%s", uniqueSuffix),
+						Namespace: testNamespace,
+					},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("post-shutdown-%s", uniqueSuffix),
@@ -258,6 +271,12 @@ var _ = Describe("BR-AI-080/081/082: Graceful Shutdown", func() {
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationID: fmt.Sprintf("rem-%s", uniqueSuffix),
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      fmt.Sprintf("rem-%s", uniqueSuffix),
+						Namespace: testNamespace,
+					},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("audit-test-%s", uniqueSuffix),

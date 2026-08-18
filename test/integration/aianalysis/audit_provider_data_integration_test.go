@@ -81,7 +81,11 @@ var _ = Describe("BR-AUDIT-005 Gap #4: Hybrid Provider Data Capture", Label("int
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		namespace = "default"
+		// DD-AA-KA-001 test-only fix: must match the per-process KA
+		// dispatcher's fixed watch namespace (testNamespace, set in the
+		// suite-level BeforeEach), not a hardcoded "default" -- otherwise
+		// AgentSession objects created here are invisible to KA's dispatch.
+		namespace = testNamespace
 
 		datastorageHealthURL := "http://127.0.0.1:28095" // Issue #753: dedicated health probe port
 

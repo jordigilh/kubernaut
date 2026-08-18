@@ -51,6 +51,7 @@ import (
 	ogenclient "github.com/jordigilh/kubernaut/pkg/datastorage/ogen-client"
 	"github.com/jordigilh/kubernaut/test/shared/validators"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -122,7 +123,11 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 
 	BeforeEach(func() {
 		ctx = context.Background()
-		namespace = "default"
+		// DD-AA-KA-001 test-only fix: must match the per-process KA
+		// dispatcher's fixed watch namespace (testNamespace, set in the
+		// suite-level BeforeEach), not a hardcoded "default" -- otherwise
+		// AgentSession objects created here are invisible to KA's dispatch.
+		namespace = testNamespace
 
 		// DD-AUTH-014: Use authenticated OpenAPI client from suite setup
 		// FIX: Creating unauthenticated client here caused HTTP 401 errors when querying audit events
@@ -154,13 +159,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// Root cause under investigation. See commit 08ba84723 for partial fix.
 
 			By("Creating AIAnalysis resource requiring full workflow")
+			rrID := fmt.Sprintf("rr-complete-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-complete-workflow-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-complete-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-workflow-%s", uuid.New().String()[:8]),
@@ -423,13 +432,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// Uses explicit auditStore.Flush() to ensure events are persisted before querying.
 
 			By("Creating AIAnalysis resource requiring investigation")
+			rrID := fmt.Sprintf("rr-investigation-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-investigation-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-investigation-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-investigation-%s", uuid.New().String()[:8]),
@@ -534,13 +547,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// to the AIAnalysis, which proves the audit trail is being generated.
 
 			By("Creating AIAnalysis with potentially problematic configuration")
+			rrID := fmt.Sprintf("rr-inv-error-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-investigation-error-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-inv-error-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-inv-error-%s", uuid.New().String()[:8]),
@@ -622,13 +639,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// ========================================
 
 			By("Creating AIAnalysis resource requiring approval decision")
+			rrID := fmt.Sprintf("rr-approval-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-approval-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-approval-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-approval-%s", uuid.New().String()[:8]),
@@ -733,13 +754,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// Uses explicit auditStore.Flush() to ensure events are persisted before querying.
 
 			By("Creating AIAnalysis resource that triggers Rego evaluation")
+			rrID := fmt.Sprintf("rr-rego-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-rego-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-rego-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-rego-%s", uuid.New().String()[:8]),
@@ -842,13 +867,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// Uses explicit auditStore.Flush() to ensure all transitions are persisted before querying.
 
 			By("Creating AIAnalysis resource to trigger phase transitions")
+			rrID := fmt.Sprintf("rr-phases-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-phases-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-phases-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-phases-%s", uuid.New().String()[:8]),
@@ -928,13 +957,17 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 			// ========================================
 
 			By("Creating AIAnalysis that will trigger AI agent error (using invalid signal type)")
+			rrID := fmt.Sprintf("rr-ka-error-%s", uuid.New().String()[:8])
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      fmt.Sprintf("test-ka-error-%s", uuid.New().String()[:8]),
 					Namespace: namespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationID: fmt.Sprintf("rr-ka-error-%s", uuid.New().String()[:8]),
+					RemediationID: rrID,
+					// DD-AA-KA-001: AgentSessionCreator names the child
+					// AgentSession "as-<RemediationRequestRef.Name>".
+					RemediationRequestRef: corev1.ObjectReference{Name: rrID, Namespace: namespace},
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
 							Fingerprint:      fmt.Sprintf("fp-ka-error-%s", uuid.New().String()[:8]),

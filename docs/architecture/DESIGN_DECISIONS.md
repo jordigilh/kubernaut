@@ -121,6 +121,7 @@
 | DD-FLEET-006 | AF's LLM-Facing `list_clusters`/`cluster_id` Is Not an Asymmetry with DD-FLEET-005 (documentation-only, no code change) | ✅ Accepted | 2026-07-29 | [DD-FLEET-006-af-list-clusters-vs-ka-prescoping.md](decisions/DD-FLEET-006-af-list-clusters-vs-ka-prescoping.md) |
 | DD-FLEET-007 | Ansible/AAP Engine Not Supported for Fleet (Remote) WorkflowExecution (fails closed instead) | ✅ Approved | 2026-07-30 | [DD-FLEET-007-ansible-engine-not-supported-for-remote-execution.md](decisions/DD-FLEET-007-ansible-engine-not-supported-for-remote-execution.md) |
 | DD-TIMEOUT-002 | Child-CRD Timeout Self-Enforcement via Propagated Absolute Deadline (`Spec.TimesOutAt`, SP/AA/WE; extends DD-TIMEOUT-001) | ✅ Approved & Implemented | 2026-08 | [DD-TIMEOUT-002-child-crd-timeout-self-enforcement.md](decisions/DD-TIMEOUT-002-child-crd-timeout-self-enforcement.md) |
+| DD-AA-KA-001 | `AgentSession` CRD — Replacing AA↔KA HTTP Polling with K8s-Native Watch+Lease | ✅ Approved | 2026-08-17 | [DD-AA-KA-001-agentsession-crd-http-removal.md](decisions/DD-AA-KA-001-agentsession-crd-http-removal.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 

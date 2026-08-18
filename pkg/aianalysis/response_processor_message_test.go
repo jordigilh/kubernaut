@@ -31,11 +31,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	client "github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 var _ = Describe("Issue #588: Status.Message and Status.Warnings Independence", func() {
@@ -73,24 +73,21 @@ var _ = Describe("Issue #588: Status.Message and Status.Warnings Independence", 
 	It("UT-AA-588-001: Status.Message contains only validation attempt errors, not warnings", func() {
 		analysis = createAnalysis()
 
-		resp := &client.IncidentResponse{
-			IncidentID:       "test-588-001",
-			Analysis:         "Analysis text",
-			NeedsHumanReview: client.NewOptBool(true),
-			HumanReviewReason: client.OptNilHumanReviewReason{
-				Value: client.HumanReviewReasonParameterValidationFailed,
-				Set:   true,
-			},
-			Confidence: 0.3,
-			Timestamp:  "2026-03-04T12:00:00Z",
-			ValidationAttemptsHistory: []client.ValidationAttempt{
+		resp := &agentsessionv1.AgentSessionResult{
+			IncidentID:        "test-588-001",
+			Analysis:          "Analysis text",
+			NeedsHumanReview:  true,
+			HumanReviewReason: "parameter_validation_failed",
+			Confidence:        0.3,
+			Timestamp:         "2026-03-04T12:00:00Z",
+			ValidationAttemptsHistory: []agentsessionv1.AgentSessionValidationAttempt{
 				{Attempt: 1, IsValid: false, Errors: []string{"missing workflow_id"}, Timestamp: "2026-03-04T12:00:01Z"},
 				{Attempt: 2, IsValid: false, Errors: []string{"invalid parameters"}, Timestamp: "2026-03-04T12:00:02Z"},
 			},
 			Warnings: []string{"LLM output was not structured JSON", "Retry budget exhausted"},
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Message must contain ONLY validation attempt errors
@@ -112,21 +109,18 @@ var _ = Describe("Issue #588: Status.Message and Status.Warnings Independence", 
 	It("UT-AA-588-002: Status.Warnings is populated independently when no validation attempts exist", func() {
 		analysis = createAnalysis()
 
-		resp := &client.IncidentResponse{
-			IncidentID:       "test-588-002",
-			Analysis:         "Analysis text",
-			NeedsHumanReview: client.NewOptBool(true),
-			HumanReviewReason: client.OptNilHumanReviewReason{
-				Value: client.HumanReviewReasonWorkflowNotFound,
-				Set:   true,
-			},
+		resp := &agentsessionv1.AgentSessionResult{
+			IncidentID:                "test-588-002",
+			Analysis:                  "Analysis text",
+			NeedsHumanReview:          true,
+			HumanReviewReason:         "workflow_not_found",
 			Confidence:                0.2,
 			Timestamp:                 "2026-03-04T12:00:00Z",
 			ValidationAttemptsHistory: nil,
 			Warnings:                  []string{"Workflow not found in catalog", "Search scope was empty"},
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
 		// Message must be empty — no validation attempts means no attempt errors
@@ -142,21 +136,18 @@ var _ = Describe("Issue #588: Status.Message and Status.Warnings Independence", 
 	It("UT-AA-588-003: both fields empty when no validation attempts and no warnings", func() {
 		analysis = createAnalysis()
 
-		resp := &client.IncidentResponse{
-			IncidentID:       "test-588-003",
-			Analysis:         "Analysis text",
-			NeedsHumanReview: client.NewOptBool(true),
-			HumanReviewReason: client.OptNilHumanReviewReason{
-				Value: client.HumanReviewReasonWorkflowNotFound,
-				Set:   true,
-			},
+		resp := &agentsessionv1.AgentSessionResult{
+			IncidentID:                "test-588-003",
+			Analysis:                  "Analysis text",
+			NeedsHumanReview:          true,
+			HumanReviewReason:         "workflow_not_found",
 			Confidence:                0.1,
 			Timestamp:                 "2026-03-04T12:00:00Z",
 			ValidationAttemptsHistory: nil,
 			Warnings:                  nil,
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(analysis.Status.Message).To(BeEmpty(),

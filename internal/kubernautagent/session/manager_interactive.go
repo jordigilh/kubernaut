@@ -165,6 +165,7 @@ func (m *Manager) UpgradeToInteractive(id string, username string, groups []stri
 		Outcome: audit.OutcomeSuccess, SessionID: id, CorrelationID: correlationID,
 	}, nil, "acting_user", username, "upgrade_type", "jump_in")
 
+	m.fireInteractiveUpgradeHook(id, correlationID, username, groups)
 	return nil
 }
 
@@ -220,6 +221,11 @@ func (m *Manager) terminateSession(id, eventType, action string) error {
 	if eventType == audit.EventTypeSessionSuspended {
 		m.metrics.RecordSessionSuspended()
 	}
+	// BR-AA-KA-065.11: terminateSession is a winning commit point for
+	// StatusCancelled just like handleInvestigationFailure/Success --
+	// covers both CancelInvestigation and SuspendInvestigation, which
+	// share this implementation.
+	m.fireTerminalHook(id, correlationID, StatusCancelled, nil, nil)
 	return nil
 }
 
@@ -272,6 +278,7 @@ func (m *Manager) TransitionToUserDriving(id, username string, groups []string) 
 		"session_id", id, "acting_user", username,
 		"groups_count", len(groups))
 
+	m.fireInteractiveUpgradeHook(id, correlationID, username, groups)
 	return nil
 }
 
@@ -287,7 +294,6 @@ func (m *Manager) ForceTransitionToUserDriving(rrID, username string, groups []s
 	}
 
 	m.store.mu.Lock()
-	defer m.store.mu.Unlock()
 
 	var latest *Session
 	for _, sess := range m.store.sessions {
@@ -298,6 +304,7 @@ func (m *Manager) ForceTransitionToUserDriving(rrID, username string, groups []s
 		}
 	}
 	if latest == nil {
+		m.store.mu.Unlock()
 		return ErrSessionNotFound
 	}
 
@@ -311,8 +318,12 @@ func (m *Manager) ForceTransitionToUserDriving(rrID, username string, groups []s
 	}
 	latest.Metadata["acting_user"] = username
 	latest.Metadata["acting_user_groups"] = string(groupsJSON)
+	sessionID := latest.ID
 	m.logger.Info("Force-transitioned session to user-driving",
 		"remediation_id", rrID, "previous_status", string(prevStatus),
 		"acting_user", username)
+	m.store.mu.Unlock()
+
+	m.fireInteractiveUpgradeHook(sessionID, rrID, username, groups)
 	return nil
 }

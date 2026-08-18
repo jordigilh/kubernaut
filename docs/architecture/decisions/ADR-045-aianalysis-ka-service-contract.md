@@ -13,6 +13,13 @@ API before this contract was fully implemented — the actual endpoint set, sche
 client differ substantially from what this document originally specified. See Version History for
 what changed.
 
+> **⚠️ SUPERSEDED (2026-08-17)**: The HTTP contract this ADR describes (`pkg/agentclient`, the
+> async submit/poll/result endpoints) is being removed entirely per
+> [DD-AA-KA-001](DD-AA-KA-001-agentsession-crd-http-removal.md) /
+> [BR-AA-KA-065](../../requirements/BR-AA-KA-065-agentsession-watch-design.md) — AA and KA no
+> longer communicate over HTTP; dispatch and results flow through the `AgentSession` CRD. This
+> document is retained for historical context; do not implement against it.
+
 ---
 
 ## Context

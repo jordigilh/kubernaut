@@ -22,133 +22,239 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/go-faster/jx"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 )
 
-// MockAgentClient is a mock implementation of AgentClientInterface for unit tests.
-// Now uses generated types from KA OpenAPI spec for type-safe testing.
-// BR-AI-006: Mock for API call testing
-// BR-AA-KA-064: Extended with async session methods
+// MockAgentClient is a mock implementation of handlers.AgentSessionGetOrCreator
+// for unit tests (DD-AA-KA-001, BR-AA-KA-065.1). The retired ogen-generated
+// agentclient.IncidentRequest/IncidentResponse types are gone -- GetOrCreate
+// returns a plain agentsessionv1.AgentSession, and tests configure the
+// Status.Phase/Result/Error the mock returns via the With* helpers below.
+// The type name is kept (not renamed to e.g. MockAgentSessionGetOrCreator)
+// to minimize churn across the ~14 existing call sites that already say
+// `mocks.NewMockAgentClient()`.
 type MockAgentClient struct {
-	// InvestigateFunc allows tests to customize the Investigate behavior
-	InvestigateFunc func(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error)
+	// GetOrCreateFunc allows tests to fully customize GetOrCreate behavior.
+	GetOrCreateFunc func(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (*agentsessionv1.AgentSession, error)
 
-	// CallCount tracks how many times Investigate was called
-	CallCount int
+	// AgentSession is returned by GetOrCreate when GetOrCreateFunc is nil and
+	// Err is nil. Mutate its Status directly, or use the With* helpers.
+	AgentSession *agentsessionv1.AgentSession
 
-	// LastRequest stores the last request passed to Investigate
-	LastRequest *agentclient.IncidentRequest
-
-	// Response is the default response to return (if InvestigateFunc is nil)
-	Response *agentclient.IncidentResponse
-
-	// Err is the default error to return
+	// Err, when non-nil, is returned by GetOrCreate instead of AgentSession
+	// (simulates a K8s API failure on Get/Create).
 	Err error
 
-	// ========================================
-	// Async session fields (BR-AA-KA-064)
-	// ========================================
+	// CallCount tracks how many times GetOrCreate was called.
+	CallCount int
 
-	// SubmitInvestigationFunc allows tests to customize SubmitInvestigation behavior
-	SubmitInvestigationFunc func(ctx context.Context, req *agentclient.IncidentRequest) (string, error)
+	// LastRequest stores the last AIAnalysis passed to GetOrCreate.
+	LastRequest *aianalysisv1.AIAnalysis
 
-	// PollSessionFunc allows tests to customize PollSession behavior
-	PollSessionFunc func(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error)
-
-	// GetSessionResultFunc allows tests to customize GetSessionResult behavior
-	GetSessionResultFunc func(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error)
-
-	// SubmitCallCount tracks how many times SubmitInvestigation was called
-	SubmitCallCount int
-
-	// PollCallCount tracks how many times PollSession was called
-	PollCallCount int
-
-	// GetResultCallCount tracks how many times GetSessionResult was called
-	GetResultCallCount int
-
-	// DefaultSessionID is returned by SubmitInvestigation when no func is set
-	DefaultSessionID string
-
-	// DefaultSessionStatus is returned by PollSession when no func is set
-	DefaultSessionStatus *agentclient.SessionStatusResult
-
-	// CancelSessionFunc allows tests to customize CancelSession behavior
-	CancelSessionFunc func() error
-
-	// CancelErr is the error returned by CancelSession
-	CancelErr error
-
-	// CancelCallCount tracks how many times CancelSession was called
-	CancelCallCount int
-
-	// SubmitErr is the error returned by SubmitInvestigation
-	SubmitErr error
-
-	// PollErr is the error returned by PollSession
-	PollErr error
-
-	// GetResultErr is the error returned by GetSessionResult
-	GetResultErr error
-
-	// mu protects concurrent access to call counts
 	mu sync.Mutex
 }
 
-// NewMockAgentClient creates a new mock agent client with default success behavior.
+// NewMockAgentClient creates a new mock with a default Investigating-phase
+// AgentSession (i.e. "still running, no result yet").
 func NewMockAgentClient() *MockAgentClient {
 	return &MockAgentClient{
-		Response: &agentclient.IncidentResponse{
-			IncidentID: "mock-incident-001",
-			Analysis:   "Mock analysis: No issues detected",
-			Confidence: 0.8,
-			Timestamp:  "2025-12-05T10:00:00Z",
-			Warnings:   []string{},
+		AgentSession: &agentsessionv1.AgentSession{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              "as-mock-001",
+				CreationTimestamp: metav1.Now(),
+			},
+			Status: agentsessionv1.AgentSessionStatus{
+				Phase: agentsessionv1.AgentSessionPhaseInvestigating,
+			},
 		},
 	}
 }
 
-// Investigate implements AgentClientInterface.
-func (m *MockAgentClient) Investigate(ctx context.Context, req *agentclient.IncidentRequest) (*agentclient.IncidentResponse, error) {
+// GetOrCreate implements handlers.AgentSessionGetOrCreator.
+func (m *MockAgentClient) GetOrCreate(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (*agentsessionv1.AgentSession, error) {
+	m.mu.Lock()
 	m.CallCount++
-	m.LastRequest = req
+	m.LastRequest = analysis
+	m.mu.Unlock()
 
-	if m.InvestigateFunc != nil {
-		return m.InvestigateFunc(ctx, req)
+	if m.GetOrCreateFunc != nil {
+		return m.GetOrCreateFunc(ctx, analysis)
 	}
-
-	return m.Response, m.Err
+	if m.Err != nil {
+		return nil, m.Err
+	}
+	return m.AgentSession, nil
 }
 
-// WithResponse configures the mock to return a specific response.
-func (m *MockAgentClient) WithResponse(resp *agentclient.IncidentResponse) *MockAgentClient {
-	m.Response = resp
-	m.Err = nil
+// GetCallCount returns CallCount in a thread-safe manner.
+func (m *MockAgentClient) GetCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.CallCount
+}
+
+// Reset clears call tracking state.
+func (m *MockAgentClient) Reset() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.CallCount = 0
+	m.LastRequest = nil
+}
+
+// AssertCalled returns an error if GetOrCreate was not called exactly expectedCount times.
+func (m *MockAgentClient) AssertCalled(expectedCount int) error {
+	if m.GetCallCount() != expectedCount {
+		return fmt.Errorf("expected GetOrCreate to be called %d times, but was called %d times", expectedCount, m.GetCallCount())
+	}
+	return nil
+}
+
+// AssertNotCalled returns an error if GetOrCreate was called.
+func (m *MockAgentClient) AssertNotCalled() error {
+	if m.GetCallCount() > 0 {
+		return fmt.Errorf("expected GetOrCreate to not be called, but was called %d times", m.GetCallCount())
+	}
+	return nil
+}
+
+// ========================================
+// Phase/Result configuration helpers
+// ========================================
+
+// WithPhase sets the AgentSession's Status.Phase (e.g. Pending, Investigating).
+func (m *MockAgentClient) WithPhase(phase agentsessionv1.AgentSessionPhase) *MockAgentClient {
+	m.AgentSession.Status.Phase = phase
 	return m
 }
 
-// WithError configures the mock to return an error.
+// WithInteractive marks the session interactive with the given acting user
+// identity (DD-AA-KA-001 Amendment Gap 1: KA's dispatcher, not AA, decides
+// this -- the mock just reports whatever Status the test configures).
+func (m *MockAgentClient) WithInteractive(user string, groups []string) *MockAgentClient {
+	m.AgentSession.Status.Interactive = true
+	m.AgentSession.Status.ActingUser = user
+	m.AgentSession.Status.ActingUserGroups = groups
+	if m.AgentSession.Status.SessionID == "" {
+		m.AgentSession.Status.SessionID = "mock-session-001"
+	}
+	return m
+}
+
+// WithResult marks the session Completed with the given result.
+func (m *MockAgentClient) WithResult(res *agentsessionv1.AgentSessionResult) *MockAgentClient {
+	m.AgentSession.Status.Phase = agentsessionv1.AgentSessionPhaseCompleted
+	m.AgentSession.Status.Result = res
+	return m
+}
+
+// WithFailed marks the session Failed with the given curated error message.
+func (m *MockAgentClient) WithFailed(errMsg string) *MockAgentClient {
+	m.AgentSession.Status.Phase = agentsessionv1.AgentSessionPhaseFailed
+	m.AgentSession.Status.Error = errMsg
+	return m
+}
+
+// WithCancelled marks the session Cancelled (interactive driver disconnected
+// without a takeover, DD-AA-KA-001 Amendment).
+func (m *MockAgentClient) WithCancelled() *MockAgentClient {
+	m.AgentSession.Status.Phase = agentsessionv1.AgentSessionPhaseCancelled
+	return m
+}
+
+// WithError configures GetOrCreate to return err instead of an AgentSession
+// (simulates a K8s API failure, e.g. transient 5xx or a permanent 4xx).
 func (m *MockAgentClient) WithError(err error) *MockAgentClient {
-	m.Response = nil
 	m.Err = err
 	return m
 }
 
-// WithSuccessResponse configures the mock to return a successful investigation response.
+// WithCreatedAt overrides the AgentSession's CreationTimestamp, used by
+// investigation-timeout tests to simulate an old, still-running session.
+func (m *MockAgentClient) WithCreatedAt(t metav1.Time) *MockAgentClient {
+	m.AgentSession.CreationTimestamp = t
+	return m
+}
+
+// ========================================
+// AgentSessionResult fixture builders
+// BR-AI-008: full-fidelity fixtures for ResponseProcessor unit tests
+// ========================================
+
+// jsonRaw marshals v to *apiextensionsv1.JSON, panicking on failure (test-only helper).
+func jsonRaw(v interface{}) *apiextensionsv1.JSON {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		panic(fmt.Sprintf("jsonRaw: %v", err))
+	}
+	return &apiextensionsv1.JSON{Raw: raw}
+}
+
+// BuildMockRCA creates a mock RootCauseAnalysis as raw JSON.
+func BuildMockRCA(summary string, severity string, contributingFactors []string) *apiextensionsv1.JSON {
+	m := map[string]interface{}{}
+	if summary != "" {
+		m["summary"] = summary
+	}
+	if severity != "" {
+		m["severity"] = severity
+	}
+	if len(contributingFactors) > 0 {
+		m["contributing_factors"] = contributingFactors
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	return jsonRaw(m)
+}
+
+// BuildMockSelectedWorkflow creates a mock SelectedWorkflow as raw JSON.
+func BuildMockSelectedWorkflow(workflowID string, containerImage string, confidence float64, rationale string) *apiextensionsv1.JSON {
+	m := map[string]interface{}{}
+	if workflowID != "" {
+		m["workflow_id"] = workflowID
+	}
+	if containerImage != "" {
+		m["execution_bundle"] = containerImage
+	}
+	if confidence > 0 {
+		m["confidence"] = confidence
+	}
+	if rationale != "" {
+		m["rationale"] = rationale
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	return jsonRaw(m)
+}
+
+// NewMockAgentSessionResult builds a minimal successful AgentSessionResult.
+func NewMockAgentSessionResult() *agentsessionv1.AgentSessionResult {
+	return &agentsessionv1.AgentSessionResult{
+		IncidentID: "mock-incident-001",
+		Analysis:   "Mock analysis: No issues detected",
+		Confidence: 0.8,
+		Timestamp:  "2025-12-05T10:00:00Z",
+		Warnings:   []string{},
+	}
+}
+
+// WithSuccessResponse configures the mock to return a successful investigation result.
 func (m *MockAgentClient) WithSuccessResponse(analysis string, confidence float64, warnings []string) *MockAgentClient {
-	m.Response = &agentclient.IncidentResponse{
+	return m.WithResult(&agentsessionv1.AgentSessionResult{
 		IncidentID: "mock-incident-001",
 		Analysis:   analysis,
 		Confidence: confidence,
 		Timestamp:  "2025-12-05T10:00:00Z",
 		Warnings:   warnings,
-	}
-	m.Err = nil
-	return m
+	})
 }
 
-// WithFullResponse configures the mock to return a complete response including RCA and workflow.
+// WithFullResponse configures the mock to return a complete result including RCA and workflow.
 // ADR-055: targetInOwnerChain parameter removed - remediationTarget is now in RCA output.
 func (m *MockAgentClient) WithFullResponse(
 	analysis string,
@@ -162,355 +268,92 @@ func (m *MockAgentClient) WithFullResponse(
 	workflowRationale string,
 	includeAlternatives bool,
 ) *MockAgentClient {
-	// Build RCA as map[string]jx.Raw
-	rcaMap := make(map[string]jx.Raw)
-	if rcaSummary != "" {
-		summaryBytes, _ := json.Marshal(rcaSummary)
-		rcaMap["summary"] = jx.Raw(summaryBytes)
-		sevBytes, _ := json.Marshal(rcaSeverity)
-		rcaMap["severity"] = jx.Raw(sevBytes)
+	res := &agentsessionv1.AgentSessionResult{
+		IncidentID:        "mock-incident-001",
+		Analysis:          analysis,
+		RootCauseAnalysis: BuildMockRCA(rcaSummary, rcaSeverity, nil),
+		Confidence:        confidence,
+		Timestamp:         "2025-12-05T10:00:00Z",
+		Warnings:          warnings,
+		SelectedWorkflow:  BuildMockSelectedWorkflow(workflowID, containerImage, workflowConfidence, workflowRationale),
 	}
-
-	// Build SelectedWorkflow as map[string]jx.Raw
-	swMap := make(map[string]jx.Raw)
-	if workflowID != "" {
-		idBytes, _ := json.Marshal(workflowID)
-		swMap["workflow_id"] = jx.Raw(idBytes)
-		imgBytes, _ := json.Marshal(containerImage)
-		swMap["execution_bundle"] = jx.Raw(imgBytes)
-		confBytes, _ := json.Marshal(workflowConfidence)
-		swMap["confidence"] = jx.Raw(confBytes)
-		if workflowRationale != "" {
-			ratBytes, _ := json.Marshal(workflowRationale)
-			swMap["rationale"] = jx.Raw(ratBytes)
-		}
-	}
-
-	// Build AlternativeWorkflows as []client.AlternativeWorkflow
-	var alternatives []agentclient.AlternativeWorkflow
 	if includeAlternatives && workflowID != "" {
-		alt := agentclient.AlternativeWorkflow{
+		res.AlternativeWorkflows = []agentsessionv1.AgentSessionAlternativeWorkflow{{
 			WorkflowID:      "wf-scale-deployment",
 			Confidence:      0.75,
 			Rationale:       "Consider scaling deployment for resource pressure",
-			ExecutionBundle: agentclient.NewOptNilString("kubernaut.io/workflows/scale:v1.0.0"),
-		}
-		alternatives = append(alternatives, alt)
+			ExecutionBundle: "kubernaut.io/workflows/scale:v1.0.0",
+		}}
 	}
-
-	m.Response = &agentclient.IncidentResponse{
-		IncidentID:           "mock-incident-001",
-		Analysis:             analysis,
-		RootCauseAnalysis:    rcaMap,
-		Confidence:           confidence,
-		Timestamp:            "2025-12-05T10:00:00Z",
-		Warnings:             warnings,
-		AlternativeWorkflows: alternatives,
-	}
-
-	if len(swMap) > 0 {
-		m.Response.SelectedWorkflow.SetTo(swMap)
-	}
-
-	m.Err = nil
-	return m
+	return m.WithResult(res)
 }
 
-// ========================================
-// Async Session Methods (BR-AA-KA-064)
-// ========================================
-
-// SubmitInvestigation implements AgentClientInterface for async submit.
-func (m *MockAgentClient) SubmitInvestigation(ctx context.Context, req *agentclient.IncidentRequest) (string, error) {
-	m.mu.Lock()
-	m.SubmitCallCount++
-	m.LastRequest = req
-	m.mu.Unlock()
-
-	if m.SubmitInvestigationFunc != nil {
-		return m.SubmitInvestigationFunc(ctx, req)
-	}
-
-	if m.SubmitErr != nil {
-		return "", m.SubmitErr
-	}
-
-	sessionID := m.DefaultSessionID
-	if sessionID == "" {
-		sessionID = "mock-session-001"
-	}
-	return sessionID, nil
-}
-
-// PollSession implements AgentClientInterface for session polling.
-func (m *MockAgentClient) PollSession(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error) {
-	m.mu.Lock()
-	m.PollCallCount++
-	m.mu.Unlock()
-
-	if m.PollSessionFunc != nil {
-		return m.PollSessionFunc(ctx, sessionID)
-	}
-
-	if m.PollErr != nil {
-		return nil, m.PollErr
-	}
-
-	if m.DefaultSessionStatus != nil {
-		return m.DefaultSessionStatus, nil
-	}
-
-	return &agentclient.SessionStatusResult{Status: "completed"}, nil
-}
-
-// GetSessionResult implements AgentClientInterface for result retrieval.
-func (m *MockAgentClient) GetSessionResult(ctx context.Context, sessionID string) (*agentclient.IncidentResponse, error) {
-	m.mu.Lock()
-	m.GetResultCallCount++
-	m.mu.Unlock()
-
-	if m.GetSessionResultFunc != nil {
-		return m.GetSessionResultFunc(ctx, sessionID)
-	}
-
-	if m.GetResultErr != nil {
-		return nil, m.GetResultErr
-	}
-
-	return m.Response, m.Err
-}
-
-// CancelSession implements AgentClientInterface for session cancellation.
-// BR-INTERACTIVE-010: Allows tests to verify cancel behavior.
-func (m *MockAgentClient) CancelSession(_ context.Context, _ string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.CancelCallCount++
-	if m.CancelSessionFunc != nil {
-		return m.CancelSessionFunc()
-	}
-	return m.CancelErr
-}
-
-// ========================================
-// Async Session Test Helpers (BR-AA-KA-064)
-// ========================================
-
-// WithSessionSubmitResponse configures the mock to return a specific session ID on submit.
-func (m *MockAgentClient) WithSessionSubmitResponse(sessionID string) *MockAgentClient {
-	m.DefaultSessionID = sessionID
-	m.SubmitErr = nil
-	return m
-}
-
-// WithSessionSubmitError configures the mock to return an error on submit.
-func (m *MockAgentClient) WithSessionSubmitError(err error) *MockAgentClient {
-	m.SubmitErr = err
-	return m
-}
-
-// WithSessionPollStatus configures the mock to return a specific session status on poll.
-func (m *MockAgentClient) WithSessionPollStatus(status string) *MockAgentClient {
-	m.DefaultSessionStatus = &agentclient.SessionStatusResult{Status: status}
-	m.PollErr = nil
-	return m
-}
-
-// WithSessionPollError configures the mock to return an error on poll (e.g., 404 for session lost).
-func (m *MockAgentClient) WithSessionPollError(err error) *MockAgentClient {
-	m.PollErr = err
-	return m
-}
-
-// WithSessionResultError configures the mock to return an error on result retrieval.
-func (m *MockAgentClient) WithSessionResultError(err error) *MockAgentClient {
-	m.GetResultErr = err
-	return m
-}
-
-// WithSessionPollSequence configures the mock to return different statuses on consecutive polls.
-// Useful for testing the poll flow: pending -> investigating -> completed.
-func (m *MockAgentClient) WithSessionPollSequence(statuses []string) *MockAgentClient {
-	callIndex := 0
-	mu := &sync.Mutex{}
-	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		if callIndex >= len(statuses) {
-			return &agentclient.SessionStatusResult{Status: statuses[len(statuses)-1]}, nil
-		}
-		status := statuses[callIndex]
-		callIndex++
-		return &agentclient.SessionStatusResult{Status: status}, nil
-	}
-	return m
-}
-
-// WithSessionPollFailThenRecover configures the mock to return 404 for the first N polls,
-// then succeed on subsequent polls. Used for testing session regeneration (IT-AA-064-003).
-func (m *MockAgentClient) WithSessionPollFailThenRecover(failCount int, sessionLostErr error) *MockAgentClient {
-	callIndex := 0
-	mu := &sync.Mutex{}
-	m.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error) {
-		mu.Lock()
-		defer mu.Unlock()
-		callIndex++
-		if callIndex <= failCount {
-			return nil, sessionLostErr
-		}
-		return &agentclient.SessionStatusResult{Status: "completed"}, nil
-	}
-	return m
-}
-
-// GetPollCallCount returns PollCallCount in a thread-safe manner.
-func (m *MockAgentClient) GetPollCallCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.PollCallCount
-}
-
-// GetCancelCallCount returns CancelCallCount in a thread-safe manner.
-func (m *MockAgentClient) GetCancelCallCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.CancelCallCount
-}
-
-// GetSubmitCallCount returns SubmitCallCount in a thread-safe manner.
-func (m *MockAgentClient) GetSubmitCallCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.SubmitCallCount
-}
-
-// GetLastRequest returns LastRequest in a thread-safe manner.
-func (m *MockAgentClient) GetLastRequest() *agentclient.IncidentRequest {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.LastRequest
-}
-
-// Reset resets the mock's state (call count and last request).
-func (m *MockAgentClient) Reset() {
-	m.CallCount = 0
-	m.LastRequest = nil
-	m.SubmitCallCount = 0
-	m.PollCallCount = 0
-	m.GetResultCallCount = 0
-}
-
-// AssertCalled returns an error if Investigate was not called the expected number of times.
-func (m *MockAgentClient) AssertCalled(expectedCount int) error {
-	if m.CallCount != expectedCount {
-		return fmt.Errorf("expected Investigate to be called %d times, but was called %d times", expectedCount, m.CallCount)
-	}
-	return nil
-}
-
-// AssertNotCalled returns an error if Investigate was called.
-func (m *MockAgentClient) AssertNotCalled() error {
-	if m.CallCount > 0 {
-		return fmt.Errorf("expected Investigate to not be called, but was called %d times", m.CallCount)
-	}
-	return nil
-}
-
-// ========================================
-// BR-KA-197: Human Review Required Test Helpers
-// ========================================
-
-// WithHumanReviewRequired configures the mock to return needs_human_review=true
+// WithHumanReviewRequired configures the mock to return needs_human_review=true.
 func (m *MockAgentClient) WithHumanReviewRequired(warnings []string) *MockAgentClient {
-	m.Response = &agentclient.IncidentResponse{
-		IncidentID: "mock-incident-001",
-		Analysis:   "Mock analysis: Human review required",
-		Confidence: 0.5,
-		Timestamp:  "2025-12-06T10:00:00Z",
-		Warnings:   warnings,
-	}
-	m.Response.NeedsHumanReview.SetTo(true)
-	m.Err = nil
-	return m
+	return m.WithResult(&agentsessionv1.AgentSessionResult{
+		IncidentID:       "mock-incident-001",
+		Analysis:         "Mock analysis: Human review required",
+		Confidence:       0.5,
+		Timestamp:        "2025-12-06T10:00:00Z",
+		Warnings:         warnings,
+		NeedsHumanReview: true,
+	})
 }
 
 // WithHumanReviewReasonEnum configures the mock to return needs_human_review=true with reason enum.
 func (m *MockAgentClient) WithHumanReviewReasonEnum(reason string, warnings []string) *MockAgentClient {
-	m.Response = &agentclient.IncidentResponse{
-		IncidentID: "mock-incident-001",
-		Analysis:   "Mock analysis: Human review required",
-		Confidence: 0.5,
-		Timestamp:  "2025-12-06T10:00:00Z",
-		Warnings:   warnings,
-	}
-	m.Response.NeedsHumanReview.SetTo(true)
-	m.Response.HumanReviewReason.SetTo(agentclient.HumanReviewReason(reason))
-	m.Err = nil
-	return m
+	return m.WithResult(&agentsessionv1.AgentSessionResult{
+		IncidentID:        "mock-incident-001",
+		Analysis:          "Mock analysis: Human review required",
+		Confidence:        0.5,
+		Timestamp:         "2025-12-06T10:00:00Z",
+		Warnings:          warnings,
+		NeedsHumanReview:  true,
+		HumanReviewReason: reason,
+	})
 }
 
-// ========================================
-// BR-KA-200: Problem Resolved Test Helpers
-// ========================================
-
-// WithProblemResolved configures the mock to return a "problem resolved" response.
+// WithProblemResolved configures the mock to return a "problem resolved" result.
 // BR-KA-200 Outcome A: needs_human_review=false, selected_workflow=null, confidence >= 0.7
 func (m *MockAgentClient) WithProblemResolved(confidence float64, warnings []string, analysis string) *MockAgentClient {
-	m.Response = &agentclient.IncidentResponse{
-		IncidentID: "mock-incident-001",
-		Analysis:   analysis,
-		Confidence: confidence,
-		Timestamp:  "2025-12-07T10:00:00Z",
-		Warnings:   warnings,
-	}
-	m.Response.NeedsHumanReview.SetTo(false)
-	// SelectedWorkflow left unset (null)
-	m.Err = nil
-	return m
+	return m.WithResult(&agentsessionv1.AgentSessionResult{
+		IncidentID:       "mock-incident-001",
+		Analysis:         analysis,
+		Confidence:       confidence,
+		Timestamp:        "2025-12-07T10:00:00Z",
+		Warnings:         warnings,
+		NeedsHumanReview: false,
+	})
 }
 
-// WithNotActionable configures the mock to return a "not actionable" response.
+// WithNotActionable configures the mock to return a "not actionable" result.
 // #388 Outcome D: actionable=false, needs_human_review=false, selected_workflow=null, confidence >= 0.7
 func (m *MockAgentClient) WithNotActionable(confidence float64, rcaSummary string, rcaSeverity string, contributingFactors []string) *MockAgentClient {
-	rcaMap := BuildMockRCA(rcaSummary, rcaSeverity, contributingFactors)
-	m.Response = &agentclient.IncidentResponse{
+	notActionable := false
+	return m.WithResult(&agentsessionv1.AgentSessionResult{
 		IncidentID:        "mock-incident-001",
 		Analysis:          rcaSummary,
-		RootCauseAnalysis: rcaMap,
+		RootCauseAnalysis: BuildMockRCA(rcaSummary, rcaSeverity, contributingFactors),
 		Confidence:        confidence,
 		Timestamp:         "2025-12-07T10:00:00Z",
 		Warnings:          []string{"Alert not actionable \u2014 no remediation warranted"},
-	}
-	m.Response.NeedsHumanReview.SetTo(false)
-	m.Response.IsActionable.SetTo(false)
-	m.Err = nil
-	return m
+		NeedsHumanReview:  false,
+		IsActionable:      &notActionable,
+	})
 }
 
-// WithProblemResolvedAndRCA configures a "problem resolved" response with RCA context.
+// WithProblemResolvedAndRCA configures a "problem resolved" result with RCA context.
 func (m *MockAgentClient) WithProblemResolvedAndRCA(confidence float64, warnings []string, analysis string, rcaSummary string, rcaSeverity string) *MockAgentClient {
-	// Build RCA as map[string]jx.Raw
-	rcaMap := make(map[string]jx.Raw)
-	summaryBytes, _ := json.Marshal(rcaSummary)
-	rcaMap["summary"] = jx.Raw(summaryBytes)
-	sevBytes, _ := json.Marshal(rcaSeverity)
-	rcaMap["severity"] = jx.Raw(sevBytes)
-	// Add contributing factors for problem resolved with RCA
 	contributingFactors := []string{"Temporary memory spike", "High traffic load"}
-	cfBytes, _ := json.Marshal(contributingFactors)
-	rcaMap["contributing_factors"] = jx.Raw(cfBytes)
-
-	m.Response = &agentclient.IncidentResponse{
+	return m.WithResult(&agentsessionv1.AgentSessionResult{
 		IncidentID:        "mock-incident-001",
 		Analysis:          analysis,
-		RootCauseAnalysis: rcaMap,
+		RootCauseAnalysis: BuildMockRCA(rcaSummary, rcaSeverity, contributingFactors),
 		Confidence:        confidence,
 		Timestamp:         "2025-12-07T10:00:00Z",
 		Warnings:          warnings,
-	}
-	m.Response.NeedsHumanReview.SetTo(false)
-	m.Err = nil
-	return m
+		NeedsHumanReview:  false,
+	})
 }
 
 // WithHumanReviewRequiredWithPartialResponse configures the mock to return
@@ -522,120 +365,57 @@ func (m *MockAgentClient) WithHumanReviewRequiredWithPartialResponse(
 	containerImage string,
 	rcaSummary string,
 ) *MockAgentClient {
-	// Build RCA
-	rcaMap := BuildMockRCA(rcaSummary, "medium", nil)
-
-	// Build partial workflow
-	swMap := BuildMockSelectedWorkflow(workflowID, containerImage, 0.5, "")
-
-	m.Response = &agentclient.IncidentResponse{
+	return m.WithResult(&agentsessionv1.AgentSessionResult{
 		IncidentID:        "mock-incident-001",
 		Analysis:          "Mock analysis: Human review required",
-		RootCauseAnalysis: rcaMap,
+		RootCauseAnalysis: BuildMockRCA(rcaSummary, "medium", nil),
 		Confidence:        0.5,
 		Timestamp:         "2025-12-06T10:00:00Z",
 		Warnings:          warnings,
-	}
-	m.Response.NeedsHumanReview.SetTo(true)
-	m.Response.HumanReviewReason.SetTo(agentclient.HumanReviewReason(reason))
-	if len(swMap) > 0 {
-		m.Response.SelectedWorkflow.SetTo(swMap)
-	}
-	m.Err = nil
-	return m
+		NeedsHumanReview:  true,
+		HumanReviewReason: reason,
+		SelectedWorkflow:  BuildMockSelectedWorkflow(workflowID, containerImage, 0.5, ""),
+	})
 }
 
-// WithHumanReviewAndHistory configures a complete needs_human_review=true response
+// WithHumanReviewAndHistory configures a complete needs_human_review=true result
 // with reason enum and validation attempts history (DD-KA-001 v1.4 compliant).
 func (m *MockAgentClient) WithHumanReviewAndHistory(
 	reason string,
 	warnings []string,
 	validationAttempts []map[string]interface{},
 ) *MockAgentClient {
-	// Convert validation attempts to client.ValidationAttempt structs
-	var history []agentclient.ValidationAttempt
+	history := make([]agentsessionv1.AgentSessionValidationAttempt, 0, len(validationAttempts))
 	for _, attempt := range validationAttempts {
-		va := agentclient.ValidationAttempt{
+		va := agentsessionv1.AgentSessionValidationAttempt{
 			Attempt:   attempt["attempt"].(int),
 			IsValid:   attempt["is_valid"].(bool),
 			Timestamp: attempt["timestamp"].(string),
 		}
-
-		// Handle optional workflow_id
-		if wfID, ok := attempt["workflow_id"].(string); ok && wfID != "" {
-			va.WorkflowID = agentclient.NewOptNilString(wfID)
+		if wfID, ok := attempt["workflow_id"].(string); ok {
+			va.WorkflowID = wfID
 		}
-
-		// Handle errors array
 		if errs, ok := attempt["errors"].([]string); ok {
 			va.Errors = errs
 		}
-
 		history = append(history, va)
 	}
 
-	m.Response = &agentclient.IncidentResponse{
+	return m.WithResult(&agentsessionv1.AgentSessionResult{
 		IncidentID:                "mock-incident-001",
 		Analysis:                  "Mock analysis: Human review required after LLM self-correction",
 		Confidence:                0.5,
 		Timestamp:                 "2025-12-06T10:00:00Z",
 		Warnings:                  warnings,
+		NeedsHumanReview:          true,
+		HumanReviewReason:         reason,
 		ValidationAttemptsHistory: history,
-	}
-	m.Response.NeedsHumanReview.SetTo(true)
-	m.Response.HumanReviewReason.SetTo(agentclient.HumanReviewReason(reason))
-
-	m.Err = nil
-	return m
+	})
 }
 
 // ========================================
-// Helper Functions for Building Generated Types
+// Helper Functions
 // ========================================
-
-// BuildMockRCA creates a mock RootCauseAnalysis as map[string]jx.Raw
-func BuildMockRCA(summary string, severity string, contributingFactors []string) map[string]jx.Raw {
-	rcaMap := make(map[string]jx.Raw)
-
-	if summary != "" {
-		bytes, _ := json.Marshal(summary)
-		rcaMap["summary"] = jx.Raw(bytes)
-	}
-	if severity != "" {
-		bytes, _ := json.Marshal(severity)
-		rcaMap["severity"] = jx.Raw(bytes)
-	}
-	if len(contributingFactors) > 0 {
-		bytes, _ := json.Marshal(contributingFactors)
-		rcaMap["contributing_factors"] = jx.Raw(bytes)
-	}
-
-	return rcaMap
-}
-
-// BuildMockSelectedWorkflow creates a mock SelectedWorkflow as map[string]jx.Raw
-func BuildMockSelectedWorkflow(workflowID string, containerImage string, confidence float64, rationale string) map[string]jx.Raw {
-	swMap := make(map[string]jx.Raw)
-
-	if workflowID != "" {
-		bytes, _ := json.Marshal(workflowID)
-		swMap["workflow_id"] = jx.Raw(bytes)
-	}
-	if containerImage != "" {
-		bytes, _ := json.Marshal(containerImage)
-		swMap["execution_bundle"] = jx.Raw(bytes)
-	}
-	if confidence > 0 {
-		bytes, _ := json.Marshal(confidence)
-		swMap["confidence"] = jx.Raw(bytes)
-	}
-	if rationale != "" {
-		bytes, _ := json.Marshal(rationale)
-		swMap["rationale"] = jx.Raw(bytes)
-	}
-
-	return swMap
-}
 
 // NewMockValidationAttempts creates mock validation attempts for testing.
 // Each attempt represents a failed LLM self-correction iteration.

@@ -35,11 +35,6 @@ import (
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 )
 
-// goconst dedup: test-fixture literals deduplicated below.
-const (
-	defaultFixture = "default"
-)
-
 // ========================================
 // METRICS INTEGRATION TESTS
 // Business Requirement: BR-AI-OBSERVABILITY-001
@@ -77,7 +72,12 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 		Expect(reconciler.Metrics).ToNot(BeNil(), "Reconciler metrics must be initialized")
 
 		ctx = context.Background()
-		namespace = defaultFixture // Use default namespace for integration tests
+		// DD-AA-KA-001 test-only fix: must match the per-process KA
+		// dispatcher's fixed watch namespace (testNamespace, set in the
+		// suite-level BeforeEach), not the hardcoded defaultFixture --
+		// otherwise AgentSession objects created here are invisible to KA's
+		// dispatch.
+		namespace = testNamespace
 	})
 
 	// Helper to get counter value from reconciler's metrics (WorkflowExecution pattern)

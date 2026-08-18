@@ -25,7 +25,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-faster/jx"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -33,11 +32,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	client "github.com/jordigilh/kubernaut/pkg/agentclient"
+	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)", func() {
@@ -88,20 +88,17 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 	It("UT-AA-610-001: handleWorkflowResolutionFailureFromIncident sets TotalAnalysisTime and all conditions", func() {
 		analysis := createAnalysisWithStartedAt()
 
-		resp := &client.IncidentResponse{
-			IncidentID:       "test-wrf-001",
-			Analysis:         "Workflow resolution failed",
-			NeedsHumanReview: client.NewOptBool(true),
-			HumanReviewReason: client.OptNilHumanReviewReason{
-				Value: client.HumanReviewReasonParameterValidationFailed,
-				Set:   true,
-			},
-			Confidence: 0.8,
-			Timestamp:  "2026-04-03T00:00:00Z",
-			Warnings:   []string{"parameter validation failed"},
+		resp := &agentsessionv1.AgentSessionResult{
+			IncidentID:        "test-wrf-001",
+			Analysis:          "Workflow resolution failed",
+			NeedsHumanReview:  true,
+			HumanReviewReason: "parameter_validation_failed",
+			Confidence:        0.8,
+			Timestamp:         "2026-04-03T00:00:00Z",
+			Warnings:          []string{"parameter validation failed"},
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">", 0),
@@ -124,16 +121,16 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 	It("UT-AA-610-002: handleProblemResolvedFromIncident sets TotalAnalysisTime and all conditions", func() {
 		analysis := createAnalysisWithStartedAt()
 
-		resp := &client.IncidentResponse{
+		resp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-pr-001",
 			Analysis:         "Problem self-resolved",
-			NeedsHumanReview: client.NewOptBool(false),
+			NeedsHumanReview: false,
 			Confidence:       0.9,
 			Timestamp:        "2026-04-03T00:00:00Z",
 			Warnings:         []string{"Problem self-resolved: alert condition no longer active"},
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">", 0),
@@ -156,17 +153,18 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 	It("UT-AA-610-003: handleNotActionableFromIncident sets TotalAnalysisTime and all conditions", func() {
 		analysis := createAnalysisWithStartedAt()
 
-		resp := &client.IncidentResponse{
+		notActionable := false
+		resp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-na-001",
 			Analysis:         "Alert not actionable",
-			NeedsHumanReview: client.NewOptBool(false),
+			NeedsHumanReview: false,
 			Confidence:       0.85,
 			Timestamp:        "2026-04-03T00:00:00Z",
 			Warnings:         []string{"Alert not actionable: condition is benign"},
-			IsActionable:     client.NewOptNilBool(false),
+			IsActionable:     &notActionable,
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">", 0),
@@ -189,16 +187,16 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 	It("UT-AA-610-004: handleNoWorkflowTerminalFailure sets TotalAnalysisTime and all conditions", func() {
 		analysis := createAnalysisWithStartedAt()
 
-		resp := &client.IncidentResponse{
+		resp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-nw-001",
 			Analysis:         "No workflow found",
-			NeedsHumanReview: client.NewOptBool(false),
+			NeedsHumanReview: false,
 			Confidence:       0.3,
 			Timestamp:        "2026-04-03T00:00:00Z",
 			Warnings:         []string{"No workflows matched the alert criteria"},
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">", 0),
@@ -221,23 +219,16 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 	It("UT-AA-610-005: handleLowConfidenceFailure sets TotalAnalysisTime and all conditions", func() {
 		analysis := createAnalysisWithStartedAt()
 
-		resp := &client.IncidentResponse{
+		resp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-lc-001",
 			Analysis:         "Low confidence workflow",
-			NeedsHumanReview: client.NewOptBool(false),
+			NeedsHumanReview: false,
 			Confidence:       0.3,
 			Timestamp:        "2026-04-03T00:00:00Z",
-			SelectedWorkflow: client.OptNilIncidentResponseSelectedWorkflow{
-				Value: client.IncidentResponseSelectedWorkflow{
-					"workflow_id":      jx.Raw(`"restart-pod-v1"`),
-					"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/restart-pod:v1.0"`),
-					"confidence":       jx.Raw(`0.30`),
-				},
-				Set: true,
-			},
+			SelectedWorkflow: mocks.BuildMockSelectedWorkflow("restart-pod-v1", "ghcr.io/kubernaut/restart-pod:v1.0", 0.30, ""),
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">", 0),
@@ -273,15 +264,15 @@ var _ = Describe("ResponseProcessor Terminal Handler Status Completeness (#610)"
 			},
 		}
 
-		resp := &client.IncidentResponse{
+		resp := &agentsessionv1.AgentSessionResult{
 			IncidentID:       "test-nil-start-001",
 			Analysis:         "Test with nil StartedAt",
-			NeedsHumanReview: client.NewOptBool(true),
+			NeedsHumanReview: true,
 			Confidence:       0.5,
 			Timestamp:        "2026-04-03T00:00:00Z",
 		}
 
-		_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+		_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 		Expect(err).ToNot(HaveOccurred())
 
 		Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeZero(),

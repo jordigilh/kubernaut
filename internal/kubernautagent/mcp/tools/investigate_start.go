@@ -268,7 +268,7 @@ func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context,
 
 // reattachOrCreateFallback resolves the investigation session the user
 // should be attached to when no viable Running autonomous session exists
-// for rrID, in order of preference (#1818):
+// for rrID, in order of preference (#1818, DD-AA-KA-001 Amendment Gap 3):
 //  1. An already-user_driving session for this rrID — e.g. left over from a
 //     prior action=start/takeover whose MCP lease was since released — is
 //     reused directly rather than creating a duplicate placeholder.
@@ -277,7 +277,17 @@ func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context,
 //     createFallbackSession always seeded a hardcoded placeholder here,
 //     orphaning any real RCA the autonomous investigation had already
 //     produced before the interactive request raced past it.
-//  3. A genuine placeholder session when neither of the above exists.
+//
+// Returns "" when neither exists — genuinely nothing (no user_driving
+// session, no completed RCA anywhere) for this rrID. This is a deliberate
+// fail-closed exhaustion signal, not an error to recover from here: a
+// placeholder session with no execution path is a dead end (AF has exactly
+// two terminal flows -- interactive remediation and autonomous fix -- both
+// of which require a real investigation behind them), so callers must
+// route this through the existing exhaustion path
+// (upgradeOrCreateInteractiveSession -> ForceTransitionToUserDriving ->
+// failStartOnFallbackExhausted) instead of fabricating a chat session with
+// nothing backing it.
 //
 // httpCompleter is used (with a nil check) rather than extending
 // AutonomousSessionQuerier: FindUserDrivingByRemediationID already lives on
@@ -289,7 +299,10 @@ func (t *InvestigateTool) reattachOrCreateFallback(ctx context.Context, rrID str
 			return existingID
 		}
 	}
-	seedResult, _ := t.autoMgr.GetLatestRCAResultByRemediationID(rrID)
+	seedResult, found := t.autoMgr.GetLatestRCAResultByRemediationID(rrID)
+	if !found {
+		return ""
+	}
 	return t.createFallbackSession(ctx, rrID, user, seedResult)
 }
 

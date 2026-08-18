@@ -28,27 +28,53 @@ import (
 	mcpinternal "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp"
 	mcptools "github.com/jordigilh/kubernaut/internal/kubernautagent/mcp/tools"
 	"github.com/jordigilh/kubernaut/internal/kubernautagent/session"
+	katypes "github.com/jordigilh/kubernaut/pkg/kubernautagent/types"
 )
 
 // IT-KA-1639-004 exercises the full production wiring path — a real
-// session.Manager, not mocks — for the exact scenario E2E-AF-1637-001
-// depends on: a user calls kubernaut_investigate on an RR with no prior
-// autonomous investigation (the common case, createFallbackSession), then
-// drives it with kubernaut_message. Before #1639/#1640, this combination
-// NEVER streamed a live event: #1640's metadata key mismatch made the
-// fallback session invisible to FindUserDrivingByRemediationID, and #1639's
-// missing enrichment meant handleMessage never attached a sink even if it
-// had been found. This test proves both fixes together, wired exactly as
-// production wires them (InvestigateTool + real session.Manager as both
-// autoMgr and httpCompleter).
-var _ = Describe("Fresh interactive session live event streaming — #1639 + #1640", func() {
+// session.Manager, not mocks — for the scenario E2E-AF-1637-001 depends on:
+// a user calls kubernaut_investigate on an RR whose autonomous investigation
+// already completed (the reattach case, createFallbackSession), then drives
+// it with kubernaut_message. Before #1639/#1640, this combination NEVER
+// streamed a live event: #1640's metadata key mismatch made the reattached
+// session invisible to FindUserDrivingByRemediationID, and #1639's missing
+// enrichment meant handleMessage never attached a sink even if it had been
+// found. This test proves both fixes together, wired exactly as production
+// wires them (InvestigateTool + real session.Manager as both autoMgr and
+// httpCompleter).
+//
+// DD-AA-KA-001 Amendment Gap 3 (BR-AA-KA-065.12): rebased to seed a real
+// completed autonomous investigation before action=start, rather than
+// exercising the zero-seed case -- that case now fails closed
+// (ErrCodeNoInvestigationAvailable, see UT-KA-1818-004) instead of creating
+// an unbacked placeholder session, so it can no longer reach the
+// message/live-stream steps this test proves.
+var _ = Describe("Reattached interactive session live event streaming — #1639 + #1640", func() {
 
-	Describe("IT-KA-1639-004: kubernaut_message on a fallback-origin session attaches the real LazySink", func() {
-		It("should resolve the SAME fallback session across start->message and stream once subscribed", func() {
+	Describe("IT-KA-1639-004: kubernaut_message on a reattached session attaches the real LazySink", func() {
+		It("should resolve the SAME reattached session across start->message and stream once subscribed", func() {
 			store := session.NewStore(30 * time.Minute)
 			mgr := session.NewManager(store, logr.Discard(), audit.NopAuditStore{}, nil)
 
 			rrID := "rr-it-1639-004"
+			realRCA := &katypes.InvestigationResult{
+				RCASummary: "Pod OOMKilled due to memory leak",
+				Confidence: 0.85,
+			}
+
+			By("a prior autonomous investigation already completed for this RR")
+			autoID, startErr := mgr.StartInvestigation(context.Background(), func(_ context.Context) (*katypes.InvestigationResult, error) {
+				return realRCA, nil
+			}, map[string]string{"remediation_id": rrID})
+			Expect(startErr).NotTo(HaveOccurred())
+			Eventually(func() session.Status {
+				s, _ := mgr.GetSession(autoID)
+				if s == nil {
+					return ""
+				}
+				return s.Status
+			}, 2*time.Second).Should(Equal(session.StatusCompleted))
+
 			takeoverSess := &mcpinternal.InteractiveSession{
 				SessionID:     "mcp-sess-it-1639-004",
 				CorrelationID: rrID,
@@ -68,7 +94,7 @@ var _ = Describe("Fresh interactive session live event streaming — #1639 + #16
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, mgr,
 				mcptools.WithHTTPCompleter(mgr))
 
-			By("Step 1: action=start creates a fresh fallback session (no prior autonomous investigation)")
+			By("Step 1: action=start reattaches to a fresh session seeded with the real RCA (autonomous session is terminal)")
 			startOut, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   rrID,
 				Action: mcptools.ActionStart,
@@ -76,9 +102,10 @@ var _ = Describe("Fresh interactive session live event streaming — #1639 + #16
 			Expect(err).NotTo(HaveOccurred())
 			Expect(startOut.Status).To(Equal("started"))
 			Expect(startOut.InvestigationSessionID).NotTo(BeEmpty(),
-				"handleStart must create a fallback session since no autonomous investigation exists for this RR")
+				"handleStart must reattach to a fresh session seeded with the real RCA from the completed autonomous investigation")
+			Expect(startOut.InvestigationSessionID).NotTo(Equal(autoID))
 
-			By("Step 2: fallback session settles into StatusUserDriving")
+			By("Step 2: reattached session settles into StatusUserDriving")
 			Eventually(func() session.Status {
 				s, _ := mgr.GetSession(startOut.InvestigationSessionID)
 				if s == nil {
@@ -87,7 +114,7 @@ var _ = Describe("Fresh interactive session live event streaming — #1639 + #16
 				return s.Status
 			}, 2*time.Second).Should(Equal(session.StatusUserDriving))
 
-			By("Step 3: action=message must resolve to the SAME fallback session and attach its LazySink")
+			By("Step 3: action=message must resolve to the SAME reattached session and attach its LazySink")
 			_, err = tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:    rrID,
 				Action:  mcptools.ActionMessage,
@@ -98,8 +125,8 @@ var _ = Describe("Fresh interactive session live event streaming — #1639 + #16
 			capturedCtx := runner.capturedCtx
 			Expect(capturedCtx).NotTo(BeNil())
 			Expect(session.SessionIDFromContext(capturedCtx)).To(Equal(startOut.InvestigationSessionID),
-				"IT-KA-1639-004: kubernaut_message must resolve to the SAME fallback session kubernaut_investigate created — "+
-					"proves #1640's metadata-key fix makes the fallback session discoverable by FindUserDrivingByRemediationID")
+				"IT-KA-1639-004: kubernaut_message must resolve to the SAME reattached session kubernaut_investigate created — "+
+					"proves #1640's metadata-key fix makes the reattached session discoverable by FindUserDrivingByRemediationID")
 
 			_, foundSink := mgr.GetSessionLazySink(startOut.InvestigationSessionID)
 			Expect(foundSink).To(BeTrue())

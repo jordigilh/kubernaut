@@ -29,34 +29,26 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
-// mockISPhaseUpdater tracks SetActivePhase and SetTerminalPhase calls.
+// mockISPhaseUpdater tracks SetTerminalPhase calls (DD-AA-KA-001 Amendment
+// Gap 1: SetActivePhase was removed -- AA no longer decides interactivity).
 type mockISPhaseUpdater struct {
-	mu                  sync.Mutex
-	activePhaseRRNames  []string
-	terminalPhaseCalls  []terminalPhaseCall
-	setActiveErr        error
-	setTerminalErr      error
+	mu                 sync.Mutex
+	terminalPhaseCalls []terminalPhaseCall
+	setTerminalErr     error
 }
 
 type terminalPhaseCall struct {
 	RRName string
 	Phase  isv1alpha1.SessionPhase
-}
-
-func (m *mockISPhaseUpdater) SetActivePhase(_ context.Context, rrName string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.activePhaseRRNames = append(m.activePhaseRRNames, rrName)
-	return m.setActiveErr
 }
 
 func (m *mockISPhaseUpdater) SetTerminalPhase(_ context.Context, rrName string, phase isv1alpha1.SessionPhase) error {
@@ -136,20 +128,18 @@ var _ = Describe("InvestigatingHandler IS Phase Completion — #1376, BR-INTERAC
 			updater := &mockISPhaseUpdater{}
 			handler := handlers.NewInvestigatingHandler(
 				mockClient, ctrl.Log.WithName("test-is-complete"), metrics.NewMetrics(), auditSpy,
-				handlers.WithSessionMode(),
 				handlers.WithRecorder(recorder),
 				handlers.WithISPhaseUpdater(updater),
 			)
 
 			analysis := createAnalysisWithSession("rr-1376-complete", "session-complete-001")
-			mockClient.WithSessionPollStatus("completed")
-			mockClient.Response = &agentclient.IncidentResponse{
+			mockClient.WithResult(&agentsessionv1.AgentSessionResult{
 				IncidentID:        "mock-1376-001",
 				Analysis:          "OOM caused by memory leak",
 				RootCauseAnalysis: mocks.BuildMockRCA("OOM caused by memory leak", "high", nil),
 				Confidence:        0.95,
 				Timestamp:         "2026-06-06T10:00:00Z",
-			}
+			})
 
 			_, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -166,17 +156,12 @@ var _ = Describe("InvestigatingHandler IS Phase Completion — #1376, BR-INTERAC
 			updater := &mockISPhaseUpdater{}
 			handler := handlers.NewInvestigatingHandler(
 				mockClient, ctrl.Log.WithName("test-is-failed"), metrics.NewMetrics(), auditSpy,
-				handlers.WithSessionMode(),
 				handlers.WithRecorder(recorder),
 				handlers.WithISPhaseUpdater(updater),
 			)
 
 			analysis := createAnalysisWithSession("rr-1376-failed", "session-failed-001")
-			mockClient.WithSessionPollStatus("failed")
-			mockClient.DefaultSessionStatus = &agentclient.SessionStatusResult{
-				Status: "failed",
-				Error:  "LLM timeout",
-			}
+			mockClient.WithFailed("LLM timeout")
 
 			_, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -193,20 +178,18 @@ var _ = Describe("InvestigatingHandler IS Phase Completion — #1376, BR-INTERAC
 			updater := &mockISPhaseUpdater{setTerminalErr: fmt.Errorf("API server unavailable")}
 			handler := handlers.NewInvestigatingHandler(
 				mockClient, ctrl.Log.WithName("test-is-phase-err"), metrics.NewMetrics(), auditSpy,
-				handlers.WithSessionMode(),
 				handlers.WithRecorder(recorder),
 				handlers.WithISPhaseUpdater(updater),
 			)
 
 			analysis := createAnalysisWithSession("rr-1376-err", "session-err-001")
-			mockClient.WithSessionPollStatus("completed")
-			mockClient.Response = &agentclient.IncidentResponse{
+			mockClient.WithResult(&agentsessionv1.AgentSessionResult{
 				IncidentID:        "mock-1376-003",
 				Analysis:          "Root cause identified",
 				RootCauseAnalysis: mocks.BuildMockRCA("Root cause identified", "warning", nil),
 				Confidence:        0.90,
 				Timestamp:         "2026-06-06T10:00:00Z",
-			}
+			})
 
 			_, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred(),
@@ -221,19 +204,17 @@ var _ = Describe("InvestigatingHandler IS Phase Completion — #1376, BR-INTERAC
 		It("should complete normally when no ISPhaseUpdater is injected", func() {
 			handler := handlers.NewInvestigatingHandler(
 				mockClient, ctrl.Log.WithName("test-no-updater"), metrics.NewMetrics(), auditSpy,
-				handlers.WithSessionMode(),
 				handlers.WithRecorder(recorder),
 			)
 
 			analysis := createAnalysisWithSession("rr-1376-no-updater", "session-no-updater-001")
-			mockClient.WithSessionPollStatus("completed")
-			mockClient.Response = &agentclient.IncidentResponse{
+			mockClient.WithResult(&agentsessionv1.AgentSessionResult{
 				IncidentID:        "mock-1376-004",
 				Analysis:          "Root cause identified",
 				RootCauseAnalysis: mocks.BuildMockRCA("Root cause identified", "warning", nil),
 				Confidence:        0.90,
 				Timestamp:         "2026-06-06T10:00:00Z",
-			}
+			})
 
 			_, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred(),
@@ -246,7 +227,6 @@ var _ = Describe("InvestigatingHandler IS Phase Completion — #1376, BR-INTERAC
 			updater := &mockISPhaseUpdater{}
 			handler := handlers.NewInvestigatingHandler(
 				mockClient, ctrl.Log.WithName("test-is-timeout"), metrics.NewMetrics(), auditSpy,
-				handlers.WithSessionMode(),
 				handlers.WithRecorder(recorder),
 				handlers.WithISPhaseUpdater(updater),
 				handlers.WithMaxInvestigationDuration(1*time.Minute),
@@ -256,7 +236,7 @@ var _ = Describe("InvestigatingHandler IS Phase Completion — #1376, BR-INTERAC
 			pastTime := metav1.NewTime(time.Now().Add(-2 * time.Hour))
 			analysis.Status.KASession.CreatedAt = &pastTime
 
-			mockClient.WithSessionPollStatus("investigating")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 			_, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())
@@ -274,7 +254,6 @@ var _ = Describe("InvestigatingHandler IS Phase Completion — #1376, BR-INTERAC
 			updater := &mockISPhaseUpdater{}
 			handler := handlers.NewInvestigatingHandler(
 				mockClient, ctrl.Log.WithName("test-is-user-driving-timeout"), metrics.NewMetrics(), auditSpy,
-				handlers.WithSessionMode(),
 				handlers.WithRecorder(recorder),
 				handlers.WithISPhaseUpdater(updater),
 				handlers.WithMaxInvestigationDuration(1*time.Minute),
@@ -284,7 +263,7 @@ var _ = Describe("InvestigatingHandler IS Phase Completion — #1376, BR-INTERAC
 			pastTime := metav1.NewTime(time.Now().Add(-2 * time.Hour))
 			analysis.Status.KASession.CreatedAt = &pastTime
 
-			mockClient.WithSessionPollStatus("user_driving")
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating).WithInteractive("oncall@example.com", nil)
 
 			_, err := handler.Handle(ctx, analysis)
 			Expect(err).NotTo(HaveOccurred())

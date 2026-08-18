@@ -388,7 +388,9 @@ kubernautAgent:
 
 Interactive mode requires these RBAC grants (auto-provisioned by Helm):
 
-1. **Namespace-scoped Role** (`kubernaut-agent-interactive-leases`):
+1. **Namespace-scoped Role** (`kubernaut-agent-leases`, unconditional as of
+   DD-AA-KA-001/#2170 — also used by the AgentSession dispatch Lease
+   regardless of `interactive.enabled`):
    - `coordination.k8s.io/leases`: get, create, update, delete
 
 2. **ClusterRole** (added to `kubernaut-agent-investigator`):

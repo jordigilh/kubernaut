@@ -414,6 +414,23 @@ rules:
   - apiGroups: ["kubernaut.ai"]
     resources: ["remediationrequests"]
     verbs: ["get", "list"]
+  # ── AgentSession (DD-AA-KA-001, #2170): dispatch watcher + Status writer.
+  # Unconditional -- every investigation flows through AgentSession
+  # dispatch regardless of interactive.enabled. KA never writes Spec.
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["agentsessions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["agentsessions/status"]
+    verbs: ["get", "update", "patch"]
+  # ── InvestigationSession (DD-AA-KA-001 Amendment Gap 1, #2170): read-only,
+  # dispatch-time existence check ONLY -- KA never writes InvestigationSession
+  # and never uses it for anything but deciding autonomous-vs-interactive
+  # dispatch (BR-AA-KA-065.5). AA's own InvestigationSession RBAC is narrowed
+  # to write-only for the unrelated cascade-cancel/terminal-close concern.
+  - apiGroups: ["kubernaut.ai"]
+    resources: ["investigationsessions"]
+    verbs: ["get", "list", "watch"]
   # ── Workflow catalog (#1677, DD-WORKFLOW-019): KA owns discovery directly
   # via its own informer-backed cache instead of proxying through DataStorage.
   - apiGroups: ["kubernaut.ai"]
@@ -472,20 +489,25 @@ subjects:
   - kind: ServiceAccount
     name: kubernaut-agent-sa
     namespace: {{ .Release.Namespace }}
-{{- if .Values.kubernautAgent.interactive.enabled }}
 ---
 # HELM-03 (#703): Lease RBAC is namespace-scoped (least privilege).
+# DD-AA-KA-001 (#2170): unconditional (not gated on interactive.enabled) --
+# the AgentSession dispatch Lease (dispatch-<agentsession-name>) is used by
+# every investigation, autonomous or interactive. The interactive-driver
+# Lease (per-RR, one human driver at a time) remains the other consumer of
+# this same Role.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: kubernaut-agent-interactive-leases
+  name: kubernaut-agent-leases
   namespace: {{ .Release.Namespace }}
   labels:
     app: kubernaut-agent
-    component: interactive
+    component: session
     {{- include "kubernaut.labels" . | nindent 4 }}
 rules:
-  # list required by ReconcileOrphanedLeases startup loop
+  # list required by ReconcileOrphanedLeases startup loop (interactive-driver
+  # Leases) and by the AgentSession dispatcher's stale-Lease reclaim check.
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
     verbs: ["get", "list", "create", "update", "delete"]
@@ -493,21 +515,20 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: kubernaut-agent-interactive-leases-binding
+  name: kubernaut-agent-leases-binding
   namespace: {{ .Release.Namespace }}
   labels:
     app: kubernaut-agent
-    component: interactive
+    component: session
     {{- include "kubernaut.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: kubernaut-agent-interactive-leases
+  name: kubernaut-agent-leases
 subjects:
   - kind: ServiceAccount
     name: kubernaut-agent-sa
     namespace: {{ .Release.Namespace }}
-{{- end }}
 ---
 apiVersion: v1
 kind: ConfigMap

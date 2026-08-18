@@ -55,15 +55,6 @@ func (m *Manager) FindPendingByRemediationID(rrID string) (string, bool) {
 	return "", false
 }
 
-// isFallbackSession reports whether sess is a placeholder created by
-// createFallbackSession (mode=interactive_fallback) rather than a genuine
-// investigation. Its canned RCASummary ("Interactive session — awaiting user
-// direction") must never be surfaced by the RCA-summary lookups below as if
-// it were real investigation output (#1640).
-func isFallbackSession(sess *Session) bool {
-	return sess.Metadata["mode"] == "interactive_fallback"
-}
-
 // WaitForCompletionByRemediationID returns a channel that closes once the
 // most recent investigation goroutine for the given remediation_id has fully
 // finished mutating session state (including any storePartialResult fallback
@@ -116,9 +107,6 @@ func (m *Manager) GetLatestRCASummaryByRemediationID(rrID string) (string, bool)
 		if sess.Metadata["remediation_id"] != rrID {
 			continue
 		}
-		if isFallbackSession(sess) {
-			continue
-		}
 		if sess.Result == nil || sess.Result.RCASummary == "" {
 			continue
 		}
@@ -146,9 +134,6 @@ func (m *Manager) GetLatestRCAResultByRemediationID(rrID string) (*katypes.Inves
 	var latestResult *katypes.InvestigationResult
 	for _, sess := range m.store.sessions {
 		if sess.Metadata["remediation_id"] != rrID {
-			continue
-		}
-		if isFallbackSession(sess) {
 			continue
 		}
 		if sess.Result == nil {
@@ -357,6 +342,13 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 	}, nil, "completion_mode", "user_driving")
 	m.logger.Info("User-driven session completed",
 		"session_id", id, "has_workflow", hasWorkflow, "human_review_reason", humanReviewReason)
+	// BR-AA-KA-065.11: this is the winning commit point for a user-driven
+	// completion (select_workflow/complete_no_action) -- fire the hook with
+	// the final, actually-stored result (sess.Result), not the raw
+	// parameter, for the same #2020 reason the logging above reads sess.Result.
+	if sess != nil {
+		m.fireTerminalHook(id, correlationID, StatusCompleted, sess.Result, nil)
+	}
 	return nil
 }
 
@@ -445,6 +437,11 @@ func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.Inve
 			EventType: audit.EventTypeSessionCompleted, Action: audit.ActionSessionCompleted,
 			Outcome: audit.OutcomeSuccess, SessionID: c.id, CorrelationID: c.correlationID,
 		}, nil, "completion_mode", "force_complete", "previous_status", string(c.prevStatus))
+		// BR-AA-KA-065.11: this is the winning commit point for an
+		// out-of-band force-complete -- the cancelled goroutine's own later
+		// (rejected) store.Update, if any, will never reach this call site,
+		// closing the "no silent drop" race by construction.
+		m.fireTerminalHook(c.id, c.correlationID, StatusCompleted, result, nil)
 	}
 	return nil
 }

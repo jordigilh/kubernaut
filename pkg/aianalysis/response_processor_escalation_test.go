@@ -31,11 +31,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	client "github.com/jordigilh/kubernaut/pkg/agentclient"
 )
 
 var _ = Describe("ResponseProcessor operator_escalation (#1449)", func() {
@@ -70,17 +70,14 @@ var _ = Describe("ResponseProcessor operator_escalation (#1449)", func() {
 		}
 	}
 
-	buildEscalationResp := func() *client.IncidentResponse {
-		return &client.IncidentResponse{
-			IncidentID:       "inc-1449-001",
-			Analysis:         "Operator escalated: critical infrastructure alert requires human review.",
-			NeedsHumanReview: client.NewOptBool(true),
-			HumanReviewReason: client.OptNilHumanReviewReason{
-				Value: client.HumanReviewReasonOperatorEscalation,
-				Set:   true,
-			},
-			Confidence: 0.95,
-			Timestamp:  "2026-06-17T17:06:10Z",
+	buildEscalationResp := func() *agentsessionv1.AgentSessionResult {
+		return &agentsessionv1.AgentSessionResult{
+			IncidentID:        "inc-1449-001",
+			Analysis:          "Operator escalated: critical infrastructure alert requires human review.",
+			NeedsHumanReview:  true,
+			HumanReviewReason: "operator_escalation",
+			Confidence:        0.95,
+			Timestamp:         "2026-06-17T17:06:10Z",
 		}
 	}
 
@@ -93,7 +90,7 @@ var _ = Describe("ResponseProcessor operator_escalation (#1449)", func() {
 			analysis := createAnalysis()
 			resp := buildEscalationResp()
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
@@ -110,7 +107,7 @@ var _ = Describe("ResponseProcessor operator_escalation (#1449)", func() {
 			analysis := createAnalysis()
 			resp := buildEscalationResp()
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(analysis.Status.SubReason).To(Equal("OperatorEscalation"),
@@ -121,7 +118,7 @@ var _ = Describe("ResponseProcessor operator_escalation (#1449)", func() {
 			analysis := createAnalysis()
 			resp := buildEscalationResp()
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, resp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, resp)
 			Expect(err).ToNot(HaveOccurred())
 
 			Expect(analysis.Status.CompletedAt).ToNot(BeNil(),

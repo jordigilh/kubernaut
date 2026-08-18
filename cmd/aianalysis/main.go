@@ -43,13 +43,14 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	internalconfig "github.com/jordigilh/kubernaut/internal/config"
 	config "github.com/jordigilh/kubernaut/internal/config/aianalysis"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
 	"github.com/jordigilh/kubernaut/internal/version"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
@@ -70,6 +71,9 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(aianalysisv1.AddToScheme(scheme))
 	utilruntime.Must(isv1alpha1.AddToScheme(scheme))
+	// DD-AA-KA-001: AgentSession replaces the retired pkg/agentclient HTTP
+	// channel -- AA creates it and watches its Status.
+	utilruntime.Must(agentsessionv1.AddToScheme(scheme))
 }
 
 // loadAIAnalysisConfig loads and validates the AIAnalysis config (ADR-030),
@@ -139,6 +143,11 @@ func buildAIAnalysisManager(cfg *config.Config, controllerNS string) ctrl.Manage
 						controllerNS: {},
 					},
 				},
+				&agentsessionv1.AgentSession{}: {
+					Namespaces: map[string]cache.Config{
+						controllerNS: {},
+					},
+				},
 			},
 		},
 		Metrics: metricsserver.Options{
@@ -198,33 +207,22 @@ func buildAIAnalysisManager(cfg *config.Config, controllerNS string) ctrl.Manage
 // Investigating (BR-AI-007) and Analyzing (BR-AI-012) phase handlers, plus
 // the P0 audit store/client (DD-AUDIT-003).
 type aiAnalysisClients struct {
-	agentClient   *agentclient.KubernautAgentClient
 	regoEvaluator *rego.Evaluator
 	auditStore    sharedaudit.AuditStore
 	auditClient   *audit.AuditClient
 }
 
-// wireAIAnalysisClients constructs the Kubernaut Agent client (BR-AI-007,
-// DD-KA-003), the Rego evaluator with startup policy validation (BR-AI-012,
-// DD-AIANALYSIS-001/002, ADR-050), and the buffered audit store/client
-// (DD-AUDIT-003, ADR-030). Exits the process on any failure, matching
-// main()'s original fail-fast behavior. Rego hot-reloader and audit store
-// cleanup remain the caller's responsibility during graceful shutdown.
+// wireAIAnalysisClients constructs the Rego evaluator with startup policy
+// validation (BR-AI-012, DD-AIANALYSIS-001/002, ADR-050), and the buffered
+// audit store/client (DD-AUDIT-003, ADR-030). Exits the process on any
+// failure, matching main()'s original fail-fast behavior. Rego hot-reloader
+// and audit store cleanup remain the caller's responsibility during
+// graceful shutdown.
+//
+// DD-AA-KA-001: the retired pkg/agentclient HTTP client is no longer wired
+// here -- AA's channel to KA is now the AgentSession CRD (creator.AgentSessionCreator,
+// wired directly into InvestigatingHandler in setupAIAnalysisReconciler).
 func wireAIAnalysisClients(ctx context.Context, cfg *config.Config) *aiAnalysisClients {
-	// BR-AA-KA-064: HTTP client timeout for session submit/poll/result calls.
-	setupLog.Info("Creating Kubernaut Agent client",
-		"url", cfg.Agent.URL,
-		"timeout", cfg.Agent.Timeout,
-		"sessionPollInterval", cfg.Agent.SessionPollInterval)
-	agentClient, err := agentclient.NewKubernautAgentClient(agentclient.Config{
-		BaseURL: cfg.Agent.URL,
-		Timeout: cfg.Agent.Timeout,
-	})
-	if err != nil {
-		setupLog.Error(err, "failed to create Kubernaut Agent client")
-		os.Exit(1)
-	}
-
 	// DD-AIANALYSIS-001: Rego policy loading; ADR-050: fail-fast startup validation.
 	setupLog.Info("Creating Rego evaluator", "policyPath", cfg.Rego.PolicyPath)
 	regoEvaluator := rego.NewEvaluator(rego.Config{
@@ -276,7 +274,6 @@ func wireAIAnalysisClients(ctx context.Context, cfg *config.Config) *aiAnalysisC
 		"flushInterval", auditConfig.FlushInterval)
 
 	return &aiAnalysisClients{
-		agentClient:   agentClient,
 		regoEvaluator: regoEvaluator,
 		auditStore:    auditStore,
 		auditClient:   auditClient,
@@ -298,14 +295,15 @@ func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerN
 
 	controllerLog := ctrl.Log.WithName("controllers").WithName("AIAnalysis")
 	eventRecorder := mgr.GetEventRecorderFor("aianalysis-controller")
-	isChecker := handlers.NewK8sInvestigationSessionChecker(mgr.GetAPIReader(), controllerNS)
 	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(mgr.GetClient(), controllerNS)
-	investigatingHandler := handlers.NewInvestigatingHandler(clients.agentClient, controllerLog, aianalysisMetrics, clients.auditClient,
+	// DD-AA-KA-001: AgentSessionCreator replaces the retired pkg/agentclient
+	// HTTP channel -- GetOrCreate is naturally idempotent, so it serves both
+	// the historical "submit" and "poll" call sites.
+	agentSessionCreator := creator.NewAgentSessionCreator(mgr.GetClient(), mgr.GetScheme())
+	investigatingHandler := handlers.NewInvestigatingHandler(agentSessionCreator, controllerLog, aianalysisMetrics, clients.auditClient,
 		handlers.WithRecorder(eventRecorder),                            // DD-EVENT-001: Session lifecycle events
-		handlers.WithSessionMode(),                                      // BR-AA-KA-064: Async submit/poll/result flow
-		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval), // BR-AA-KA-064.8: From config
-		handlers.WithInvestigationSessionChecker(isChecker),             // BR-INTERACTIVE-010: IS CRD awareness
-		handlers.WithISPhaseUpdater(isPhaseUpdater),                     // BR-INTERACTIVE-010: Set IS Active after submit
+		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval), // BR-AA-KA-065.8: Safety-net requeue interval
+		handlers.WithISPhaseUpdater(isPhaseUpdater),                     // #1376: Write-only IS terminal-close
 		handlers.WithLowConfidenceFloor(cfg.Rego.LowConfidenceFloor))    // BR-AI-088.4, #1828: operator-configurable floor
 	analyzingHandler := handlers.NewAnalyzingHandler(clients.regoEvaluator, controllerLog, aianalysisMetrics, clients.auditClient).
 		WithConfidenceThreshold(cfg.Rego.ConfidenceThreshold) // #225: operator-configurable threshold

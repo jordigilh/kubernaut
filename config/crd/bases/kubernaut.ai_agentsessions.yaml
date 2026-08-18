@@ -1,0 +1,472 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: agentsessions.kubernaut.ai
+spec:
+  group: kubernaut.ai
+  names:
+    kind: AgentSession
+    listKind: AgentSessionList
+    plural: agentsessions
+    shortNames:
+    - asess
+    singular: agentsession
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.interactive
+      name: Interactive
+      type: boolean
+    - jsonPath: .status.sessionID
+      name: Session ID
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          AgentSession is the single AA<->KA dispatch/result channel (DD-AA-KA-001,
+          BR-AA-KA-065). AA creates one AgentSession per investigation (autonomous
+          or interactive) with an ownerRef to the RemediationRequest it investigates;
+          KA watches for Create/Update events, dispatches exactly once via a
+          per-AgentSession coordination/v1 Lease, and exclusively writes Status.
+          Replaces the retired pkg/agentclient HTTP submit/poll/result channel.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              AgentSessionSpec defines the desired state (immutable after creation).
+              Exists uniformly for every investigation AA initiates, autonomous or
+              interactive. Beyond RemediationRequestRef, the incident-payload fields
+              below are a 1:1, lossless translation of the retired
+              agentclient.IncidentRequest HTTP request body (BR-AA-KA-065.2): AA
+              populates them at Create time from the exact same source
+              (AIAnalysis.Spec.AnalysisRequest) RequestBuilder.BuildIncidentRequest used
+              to read, so removing the HTTP channel loses no content KA previously
+              received. KA's dispatch watcher reads Spec directly -- no additional
+              RemediationRequest/AIAnalysis RBAC is required on KA's side.
+            properties:
+              businessCategory:
+                description: BusinessCategory is the configured business category.
+                type: string
+              cluster:
+                description: Cluster is the optional fleet business classification
+                  (BR-FLEET-003).
+                type: string
+              clusterName:
+                description: ClusterName is the Kubernetes cluster name.
+                type: string
+              deduplicationWindowMinutes:
+                description: DeduplicationWindowMinutes is the dedup window used by
+                  SignalProcessing.
+                type: integer
+              description:
+                description: Description is an optional additional description.
+                type: string
+              enrichmentResults:
+                description: |-
+                  EnrichmentResults is the enriched context from SignalProcessing
+                  (Kubernetes context, custom labels), free-form per its evolving
+                  schema -- same raw-JSON precedent as AgentSessionResult's fields.
+                x-kubernetes-preserve-unknown-fields: true
+              environment:
+                description: Environment is the deployment environment.
+                type: string
+              errorMessage:
+                description: ErrorMessage is an optional error message associated
+                  with the signal.
+                type: string
+              firingTime:
+                description: FiringTime is the ISO timestamp the signal started firing.
+                type: string
+              firstSeen:
+                description: FirstSeen is the ISO timestamp of the first occurrence.
+                type: string
+              incidentID:
+                description: IncidentID is the unique incident identifier (AIAnalysis
+                  CR name).
+                type: string
+              isDuplicate:
+                description: IsDuplicate reports whether this is a duplicate signal.
+                type: boolean
+              lastSeen:
+                description: LastSeen is the ISO timestamp of the most recent occurrence.
+                type: string
+              occurrenceCount:
+                description: OccurrenceCount is the number of times this signal has
+                  occurred.
+                type: integer
+              priority:
+                description: Priority is the business priority.
+                type: string
+              receivedTime:
+                description: ReceivedTime is the ISO timestamp kubernaut received
+                  the signal.
+                type: string
+              remediationID:
+                description: |-
+                  RemediationID is for audit correlation ONLY -- never used for RCA or
+                  workflow matching.
+                type: string
+              remediationRequestRef:
+                description: |-
+                  RemediationRequestRef references the RR this session investigates.
+                  The AgentSession MUST be created in the same namespace as the RR.
+                  OwnerReference is set to this RR for automatic garbage collection.
+                properties:
+                  name:
+                    description: Name of the referenced object.
+                    maxLength: 253
+                    minLength: 1
+                    type: string
+                  namespace:
+                    description: Namespace of the referenced object.
+                    maxLength: 63
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - namespace
+                type: object
+              resourceAPIVersion:
+                description: ResourceAPIVersion disambiguates the target resource's
+                  API group.
+                type: string
+              resourceKind:
+                description: ResourceKind is the target resource's Kubernetes kind.
+                type: string
+              resourceName:
+                description: ResourceName is the target resource's name.
+                type: string
+              resourceNamespace:
+                description: ResourceNamespace is the target resource's Kubernetes
+                  namespace.
+                type: string
+              riskTolerance:
+                description: RiskTolerance is the configured risk tolerance.
+                type: string
+              severity:
+                description: Severity is the signal severity (BR-SEVERITY-001).
+                enum:
+                - critical
+                - high
+                - warning
+                - info
+                - unknown
+                type: string
+              signalAnnotations:
+                additionalProperties:
+                  type: string
+                description: |-
+                  SignalAnnotations are alert-author annotations from the original
+                  signal (e.g. description/summary from AlertManager).
+                type: object
+              signalLabels:
+                additionalProperties:
+                  type: string
+                description: SignalLabels are the signal's Kubernetes-style labels.
+                type: object
+              signalMode:
+                description: |-
+                  SignalMode controls KA's prompt strategy: "reactive" or "proactive"
+                  (ADR-054).
+                enum:
+                - reactive
+                - proactive
+                type: string
+              signalName:
+                description: SignalName is the canonical signal name (e.g. OOMKilled).
+                type: string
+              signalSource:
+                description: SignalSource is the monitoring system that produced the
+                  signal.
+                type: string
+            required:
+            - incidentID
+            - remediationID
+            - remediationRequestRef
+            - severity
+            - signalName
+            type: object
+            x-kubernetes-validations:
+            - message: spec is immutable
+              rule: self == oldSelf
+          status:
+            description: |-
+              AgentSessionStatus defines the observed state (mutable, KA-only per
+              BR-AA-KA-065.9 -- AA and AF never write Status, only watch it).
+            properties:
+              actingUser:
+                description: |-
+                  ActingUser is the authenticated identity currently driving an
+                  interactive session, if any.
+                type: string
+              actingUserGroups:
+                description: ActingUserGroups are the RBAC-relevant groups of ActingUser.
+                items:
+                  type: string
+                type: array
+              completedAt:
+                description: |-
+                  CompletedAt is the timestamp when the session reached a terminal
+                  phase (Completed, Failed, or Cancelled).
+                format: date-time
+                type: string
+              conditions:
+                description: Conditions provide detailed status information.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              dispatchedAt:
+                description: |-
+                  DispatchedAt is the timestamp when a KA replica won the dispatch
+                  Lease and began investigating.
+                format: date-time
+                type: string
+              error:
+                description: |-
+                  Error is a curated, user-facing failure message, set on the Failed
+                  transition (SI-11: never a raw internal error string).
+                type: string
+              interactive:
+                description: |-
+                  Interactive is true once a human driver has taken over this
+                  investigation via KA's UpgradeToInteractive (BR-AA-KA-065.5). Written
+                  atomically with, never before, the interactive-driver Lease actually
+                  being held. AA and AF MUST read this field, not infer interactivity
+                  from InvestigationSession existence or any other secondhand signal.
+                type: boolean
+              phase:
+                description: Phase is the current lifecycle state, exclusively written
+                  by KA.
+                enum:
+                - Pending
+                - Investigating
+                - Completed
+                - Failed
+                - Cancelled
+                type: string
+              result:
+                description: |-
+                  Result is the curated investigation outcome, set on the Completed
+                  transition (SI-10: never carries internal workflow/validation/
+                  alignment state).
+                properties:
+                  alignmentVerdict:
+                    description: |-
+                      AlignmentVerdict is the shadow-agent alignment verdict, present when
+                      KA's alignment check is enabled.
+                    properties:
+                      circuitBreakerActivated:
+                        type: boolean
+                      findings:
+                        items:
+                          description: |-
+                            AgentSessionAlignmentFinding mirrors one finding from the shadow-agent
+                            alignment verdict.
+                          properties:
+                            explanation:
+                              type: string
+                            stepIndex:
+                              type: integer
+                            stepKind:
+                              type: string
+                            tool:
+                              type: string
+                          type: object
+                        type: array
+                      flagged:
+                        type: integer
+                      result:
+                        type: string
+                      summary:
+                        type: string
+                      total:
+                        type: integer
+                    type: object
+                  alternativeWorkflows:
+                    description: |-
+                      AlternativeWorkflows lists workflows considered but not selected
+                      (operator context/audit trail only, never automatic fallback).
+                    items:
+                      description: |-
+                        AgentSessionAlternativeWorkflow mirrors the retired
+                        agentclient.AlternativeWorkflow shape as a plain, CRD-native type
+                        (context/audit only -- never used for automatic fallback execution).
+                      properties:
+                        confidence:
+                          type: number
+                        executionBundle:
+                          type: string
+                        rationale:
+                          type: string
+                        workflowID:
+                          type: string
+                      type: object
+                    type: array
+                  analysis:
+                    description: Analysis is the natural-language analysis produced
+                      by the LLM.
+                    type: string
+                  confidence:
+                    description: Confidence is KA's overall confidence in the analysis
+                      (0.0-1.0).
+                    type: number
+                  detectedLabels:
+                    description: |-
+                      DetectedLabels are cluster characteristics detected at runtime by KA
+                      (ADR-056), free-form per KA's schema.
+                    x-kubernetes-preserve-unknown-fields: true
+                  humanReviewReason:
+                    description: |-
+                      HumanReviewReason is the structured reason when NeedsHumanReview=true.
+                      Empty means no specific reason was recorded.
+                    type: string
+                  incidentID:
+                    description: IncidentID is KA's investigation identifier for correlation.
+                    type: string
+                  isActionable:
+                    description: |-
+                      IsActionable is the LLM's assessment of whether the alert warrants
+                      action. nil means the LLM did not explicitly assess actionability.
+                    type: boolean
+                  needsHumanReview:
+                    description: |-
+                      NeedsHumanReview is true when KA could not produce a reliable result.
+                      When true, AA must NOT create a WorkflowExecution.
+                    type: boolean
+                  rootCauseAnalysis:
+                    description: |-
+                      RootCauseAnalysis is the structured RCA (summary, severity,
+                      contributing_factors, remediationTarget), free-form per KA's schema.
+                    x-kubernetes-preserve-unknown-fields: true
+                  selectedWorkflow:
+                    description: |-
+                      SelectedWorkflow is the workflow KA selected (workflow_id,
+                      execution_bundle, confidence, parameters), free-form per KA's schema.
+                      Absent (nil) means no workflow was selected.
+                    x-kubernetes-preserve-unknown-fields: true
+                  timestamp:
+                    description: Timestamp is the ISO timestamp of analysis completion.
+                    type: string
+                  validationAttemptsHistory:
+                    description: ValidationAttemptsHistory records LLM self-correction
+                      attempts.
+                    items:
+                      description: |-
+                        AgentSessionValidationAttempt mirrors the retired
+                        agentclient.ValidationAttempt shape as a plain, CRD-native type.
+                      properties:
+                        attempt:
+                          type: integer
+                        errors:
+                          items:
+                            type: string
+                          type: array
+                        isValid:
+                          type: boolean
+                        timestamp:
+                          type: string
+                        workflowID:
+                          type: string
+                      type: object
+                    type: array
+                  warnings:
+                    description: Warnings are non-fatal warnings from the investigation.
+                    items:
+                      type: string
+                    type: array
+                type: object
+              sessionID:
+                description: |-
+                  SessionID is KA's internal investigation session identifier, used for
+                  audit correlation (AU-2/AU-3). Set the instant a KA replica wins the
+                  dispatch Lease and begins investigating.
+                type: string
+            type: object
+        type: object
+    selectableFields:
+    - jsonPath: .spec.remediationRequestRef.name
+    served: true
+    storage: true
+    subresources:
+      status: {}

@@ -18,7 +18,6 @@ package mcp_test
 
 import (
 	"os"
-	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -35,32 +34,40 @@ var _ = Describe("Helm RBAC — PR4 H1 BR-INTERACTIVE-001", func() {
 	})
 
 	Describe("UT-KA-HELM-001: coordination.k8s.io/leases RBAC present in namespace-scoped Role", func() {
-		It("should include Lease RBAC rules for interactive sessions", func() {
+		It("should include Lease RBAC rules for interactive sessions and AgentSession dispatch", func() {
 			Expect(helmTemplate).To(ContainSubstring("coordination.k8s.io"))
 			Expect(helmTemplate).To(ContainSubstring("leases"))
-			Expect(helmTemplate).To(ContainSubstring("kubernaut-agent-interactive-leases"))
+			Expect(helmTemplate).To(ContainSubstring("kubernaut-agent-leases"))
 		})
 	})
 
-	Describe("UT-KA-HELM-002: Leases RBAC is feature-gated on interactive.enabled", func() {
-		It("should conditionally include Lease RBAC based on interactive.enabled value", func() {
-			Expect(helmTemplate).To(ContainSubstring("interactive"))
-			lines := strings.Split(helmTemplate, "\n")
-			foundCoordination := false
-			for i, line := range lines {
-				if strings.Contains(line, "coordination.k8s.io") {
-					foundCoordination = true
-					// Verify there's an if-guard within 15 lines above (Role block is conditionally rendered)
-					contextStart := i - 15
-					if contextStart < 0 {
-						contextStart = 0
-					}
-					context := strings.Join(lines[contextStart:i], "\n")
-					Expect(context).To(ContainSubstring("if"))
-					break
-				}
-			}
-			Expect(foundCoordination).To(BeTrue(), "coordination.k8s.io not found in template")
+	// UT-KA-HELM-002 (DD-AA-KA-001, #2170): Leases RBAC is now unconditional,
+	// not gated on interactive.enabled — the AgentSession dispatch Lease is
+	// used by every investigation (autonomous or interactive), so KA's
+	// controller-runtime client/RBAC wiring for it must always be present.
+	// This supersedes the previous "feature-gated" assertion.
+	Describe("UT-KA-HELM-002: Leases RBAC is unconditional (dispatch Lease needed regardless of interactive.enabled)", func() {
+		It("should include the Lease Role/RoleBinding without wrapping them in an interactive.enabled guard", func() {
+			Expect(helmTemplate).To(ContainSubstring("kubernaut-agent-leases-binding"))
+			Expect(helmTemplate).NotTo(ContainSubstring("{{- if .Values.kubernautAgent.interactive.enabled }}\n---\n# HELM-03"))
+		})
+	})
+
+	Describe("UT-KA-HELM-003 (DD-AA-KA-001): AgentSession RBAC present, scoped to read + status-subresource only", func() {
+		It("should include get/list/watch on agentsessions and update/patch on agentsessions/status, never a full write", func() {
+			Expect(helmTemplate).To(ContainSubstring("agentsessions"))
+			Expect(helmTemplate).To(ContainSubstring("agentsessions/status"))
+		})
+	})
+
+	// UT-KA-HELM-004 (DD-AA-KA-001 Amendment Gap 1, BR-AA-KA-065.9): KA's
+	// dispatch-time InvestigationSession-existence check needs read-only
+	// RBAC -- KA never writes InvestigationSession, so there must be no
+	// investigationsessions/status grant alongside it.
+	Describe("UT-KA-HELM-004: InvestigationSession RBAC present, read-only (get/list/watch), no status-write grant", func() {
+		It("should include get/list/watch on investigationsessions but never investigationsessions/status", func() {
+			Expect(helmTemplate).To(ContainSubstring("investigationsessions"))
+			Expect(helmTemplate).NotTo(ContainSubstring("investigationsessions/status"))
 		})
 	})
 })

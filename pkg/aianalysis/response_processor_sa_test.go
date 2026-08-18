@@ -18,20 +18,30 @@ package aianalysis_test
 
 import (
 	"context"
+	"encoding/json"
 
-	"github.com/go-faster/jx"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 )
+
+// rawJSONSA marshals v to *apiextensionsv1.JSON, panicking on failure (test-only helper).
+func rawJSONSA(v interface{}) *apiextensionsv1.JSON {
+	raw, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return &apiextensionsv1.JSON{Raw: raw}
+}
 
 // ========================================
 // RESPONSE PROCESSOR SA MAPPING TESTS (#481 / #650 / #1661)
@@ -84,7 +94,7 @@ var _ = Describe("Response Processor SA Mapping [DD-WE-005] (#481/#650/#1661)", 
 		})
 	})
 
-	Context("storeSelectedWorkflow / ProcessIncidentResponse (production wiring)", func() {
+	Context("storeSelectedWorkflow / ProcessAgentSessionResult (production wiring)", func() {
 		var (
 			processor *handlers.ResponseProcessor
 			analysis  *aianalysisv1.AIAnalysis
@@ -111,25 +121,22 @@ var _ = Describe("Response Processor SA Mapping [DD-WE-005] (#481/#650/#1661)", 
 		})
 
 		It("UT-AA-1661-650-001: propagates service_account_name from the KA response into SelectedWorkflow (DD-WE-005 v2.0, regression guard)", func() {
-			kaResp := &agentclient.IncidentResponse{
+			kaResp := &agentsessionv1.AgentSessionResult{
 				IncidentID:       "test-sa-001",
 				Analysis:         "Root cause: OOM",
-				NeedsHumanReview: agentclient.NewOptBool(false),
+				NeedsHumanReview: false,
 				Confidence:       0.93,
 				Timestamp:        "2026-07-21T12:00:00Z",
-				SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-					Value: agentclient.IncidentResponseSelectedWorkflow{
-						"workflow_id":          jx.Raw(`"oomkill-increase-memory-v1"`),
-						"execution_bundle":     jx.Raw(`"quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec"`),
-						"execution_engine":     jx.Raw(`"job"`),
-						"confidence":           jx.Raw(`0.93`),
-						"service_account_name": jx.Raw(`"workflow-job-executor"`),
-					},
-					Set: true,
-				},
+				SelectedWorkflow: rawJSONSA(map[string]interface{}{
+					"workflow_id":          "oomkill-increase-memory-v1",
+					"execution_bundle":     "quay.io/kubernaut-cicd/test-workflows/oomkill-increase-memory-job:v1.0.0-exec",
+					"execution_engine":     "job",
+					"confidence":           0.93,
+					"service_account_name": "workflow-job-executor",
+				}),
 			}
 
-			_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+			_, err := processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
 			Expect(err).ToNot(HaveOccurred())
 
 			sw := analysis.Status.GetRCAResult().SelectedWorkflow
@@ -142,26 +149,23 @@ var _ = Describe("Response Processor SA Mapping [DD-WE-005] (#481/#650/#1661)", 
 		})
 
 		It("UT-AA-1661-650-002: leaves ServiceAccountName empty (not panicking) when absent from the KA response", func() {
-			kaResp := &agentclient.IncidentResponse{
+			kaResp := &agentsessionv1.AgentSessionResult{
 				IncidentID:       "test-sa-002",
 				Analysis:         "Root cause: crash loop",
-				NeedsHumanReview: agentclient.NewOptBool(false),
+				NeedsHumanReview: false,
 				Confidence:       0.85,
 				Timestamp:        "2026-07-21T12:05:00Z",
-				SelectedWorkflow: agentclient.OptNilIncidentResponseSelectedWorkflow{
-					Value: agentclient.IncidentResponseSelectedWorkflow{
-						"workflow_id":      jx.Raw(`"restart-pod-v1"`),
-						"execution_bundle": jx.Raw(`"ghcr.io/kubernaut/restart-pod:v1.0"`),
-						"execution_engine": jx.Raw(`"job"`),
-						"confidence":       jx.Raw(`0.85`),
-					},
-					Set: true,
-				},
+				SelectedWorkflow: rawJSONSA(map[string]interface{}{
+					"workflow_id":      "restart-pod-v1",
+					"execution_bundle": "ghcr.io/kubernaut/restart-pod:v1.0",
+					"execution_engine": "job",
+					"confidence":       0.85,
+				}),
 			}
 
 			var err error
 			Expect(func() {
-				_, err = processor.ProcessIncidentResponse(ctx, analysis, kaResp)
+				_, err = processor.ProcessAgentSessionResult(ctx, analysis, kaResp)
 			}).ToNot(Panic())
 			Expect(err).ToNot(HaveOccurred())
 

@@ -130,35 +130,31 @@ func (t *InvestigateTool) handleStartAutonomous(ctx context.Context, input Inves
 	}, nil
 }
 
-// createFallbackSession creates a fresh interactive session when no viable
-// autonomous session exists (no session found, or terminal session). This
-// ensures the user always has an investigation to drive after acquiring the
-// MCP lease (SC-24, #1440).
+// createFallbackSession creates a fresh interactive session reattached to
+// seedResult, the real RCA from a completed autonomous investigation for
+// this rrID (#1818: GetLatestRCAResultByRemediationID, resolved by
+// reattachOrCreateFallback, which is this function's sole caller). This
+// ensures the user always has a real investigation to drive after acquiring
+// the MCP lease (SC-24, #1440), without orphaning the real RCA the
+// autonomous investigation already produced behind a disconnected
+// placeholder the instant an interactive request races in after autonomous
+// completion -- which would fragment the audit trail for this remediation
+// request (BR-AUDIT-005, SOC2 CC8.1).
 //
-// seedResult carries the real RCA from a completed autonomous investigation
-// for this rrID, when one exists (#1818: GetLatestRCAResultByRemediationID,
-// wired by reattachOrCreateFallback). When non-nil, the fresh session is
-// seeded with that real content — tagged mode=interactive_reattached —
-// instead of the hardcoded "awaiting user direction" placeholder
-// (mode=interactive_fallback). Without this, a real RCA the autonomous
-// investigation already produced would be orphaned behind a placeholder the
-// instant an interactive request raced in after autonomous completion,
-// fragmenting the audit trail for this remediation request (BR-AUDIT-005,
-// SOC2 CC8.1). InteractiveHold is always forced true so the seeded session
-// behaves like a fresh interactive session (stays in UserDriving) rather
-// than immediately re-completing with the copied result.
+// DD-AA-KA-001 Amendment Gap 3 (BR-AA-KA-065.12): seedResult is always
+// non-nil here -- reattachOrCreateFallback returns "" without calling this
+// function at all when no seed exists, rather than this function ever
+// fabricating a hardcoded "awaiting user direction" placeholder with
+// nothing real behind it. The former mode=interactive_fallback placeholder
+// path was removed; every session this function creates is tagged
+// mode=interactive_reattached.
+//
+// InteractiveHold is always forced true so the seeded session behaves like
+// a fresh interactive session (stays in UserDriving) rather than
+// immediately re-completing with the copied result.
 func (t *InvestigateTool) createFallbackSession(ctx context.Context, rrID string, user mcpinternal.UserInfo, seedResult *katypes.InvestigationResult) string {
-	mode := "interactive_fallback"
-	result := &katypes.InvestigationResult{
-		RCASummary:      "Interactive session — awaiting user direction",
-		InteractiveHold: true,
-	}
-	if seedResult != nil {
-		mode = "interactive_reattached"
-		reattached := *seedResult
-		reattached.InteractiveHold = true
-		result = &reattached
-	}
+	reattached := *seedResult
+	reattached.InteractiveHold = true
 
 	// #1640: key must be "remediation_id" to match every other by-RR-ID
 	// lookup (FindByRemediationID, FindUserDrivingByRemediationID, etc.) —
@@ -167,15 +163,15 @@ func (t *InvestigateTool) createFallbackSession(ctx context.Context, rrID string
 	metadata := map[string]string{
 		"remediation_id": rrID,
 		"username":       user.Username,
-		"mode":           mode,
+		"mode":           "interactive_reattached",
 	}
 	investigateFn := session.InvestigateFunc(func(_ context.Context) (*katypes.InvestigationResult, error) {
-		return result, nil
+		return &reattached, nil
 	})
 	sessionID, err := t.autoMgr.StartInvestigation(ctx, investigateFn, metadata)
 	if err != nil {
-		t.logger.Error(err, "start: fallback session creation failed",
-			"rr_id", rrID, "username", user.Username, "mode", mode)
+		t.logger.Error(err, "start: reattached fallback session creation failed",
+			"rr_id", rrID, "username", user.Username)
 		return ""
 	}
 	return sessionID

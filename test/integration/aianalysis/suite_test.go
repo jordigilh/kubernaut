@@ -81,19 +81,20 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
+	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
+	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/rego"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/pkg/audit"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
-	"github.com/jordigilh/kubernaut/test/shared/helpers"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
 
@@ -141,10 +142,15 @@ var (
 	// Shared infrastructure for cleanup (SynchronizedAfterSuite second function)
 	sharedTestEnv     *envtest.Environment
 	sharedCfg         *rest.Config
-	kaContainer       *infrastructure.ContainerInstance
 	mockLLMConfig     infrastructure.MockLLMConfig
 	mockLLMConfigPath string
-	kaSATokenDir      string
+
+	// DD-AA-KA-001: KA now runs as a per-process container (Phase 2, all
+	// processes) watching that process's own envtest for AgentSession CRDs
+	// -- cleaned up per-process in SynchronizedAfterSuite's first function,
+	// not the shared/last-process-only second function.
+	kaContainer  *infrastructure.ContainerInstance
+	kaSATokenDir string
 
 	// DD-WORKFLOW-002 v3.0: Workflow UUID mapping for test assertions
 	// Map format: "workflow_name:environment" → "actual-uuid-from-datastorage"
@@ -284,130 +290,15 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	}
 	GinkgoWriter.Println("✅ AIAnalysis controller granted Kubernaut Agent access permissions")
 
-	// DD-AUTH-014: Create ServiceAccount for KA service (for TokenReview/SAR validation)
-	// KA is an HTTP server (like DataStorage) that validates incoming Bearer tokens
-	// Platform-specific: Linux uses host network, macOS uses bridge network
-	By("Creating ServiceAccount for Kubernaut Agent service with TokenReview/SAR permissions")
-	useHostNetworkForKA := runtime.GOOS == goosLinux
-	kaServiceAuthConfig, err := infrastructure.CreateServiceAccountForHTTPService(
-		sharedCfg,
-		"kubernaut-agent-service",
-		"default",
-		useHostNetworkForKA,
-		GinkgoWriter,
-	)
-	Expect(err).ToNot(HaveOccurred())
-	GinkgoWriter.Println("✅ ServiceAccount + RBAC created for KA → envtest (TokenReview/SAR)")
-
-	// DD-AUTH-014: Grant KA ServiceAccount permission to write audit events to DataStorage
-	By("Granting KA ServiceAccount permission to write audit events to DataStorage")
-	kaDSClientBinding := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubernaut-agent-service-datastorage-client",
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     "data-storage-client",
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      "kubernaut-agent-service",
-				Namespace: "default",
-			},
-		},
-	}
-	err = k8sClient.Create(context.Background(), kaDSClientBinding)
-	if !apierrors.IsAlreadyExists(err) {
-		Expect(err).ToNot(HaveOccurred())
-	}
-	GinkgoWriter.Println("✅ KA ServiceAccount granted DataStorage write permissions")
-
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// #704: K8s investigation + label detection RBAC for KA
-	// Mirrors kubernaut-agent-investigator ClusterRole from E2E (aianalysis_e2e.go)
-	// Required because HAPI-default enrichment (MaxRetries=3) needs K8s access
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	By("Granting KA ServiceAccount K8s investigation + label detection RBAC (#704)")
-	investigatorRole := &rbacv1.ClusterRole{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubernaut-agent-investigator",
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{""},
-				Resources: []string{"pods", "pods/log", "events", "services", "configmaps", "nodes", "namespaces", "replicationcontrollers", "persistentvolumeclaims"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-			{
-				APIGroups: []string{"apps"},
-				Resources: []string{"deployments", "replicasets", "statefulsets", "daemonsets"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-			{
-				APIGroups: []string{"batch"},
-				Resources: []string{"jobs", "cronjobs"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-			{
-				APIGroups: []string{"events.k8s.io"},
-				Resources: []string{"events"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-			{
-				APIGroups: []string{"policy"},
-				Resources: []string{"poddisruptionbudgets"},
-				Verbs:     []string{"get", "list"},
-			},
-			{
-				APIGroups: []string{"autoscaling"},
-				Resources: []string{"horizontalpodautoscalers"},
-				Verbs:     []string{"get", "list"},
-			},
-			{
-				APIGroups: []string{"networking.k8s.io"},
-				Resources: []string{"networkpolicies"},
-				Verbs:     []string{"get", "list"},
-			},
-		},
-	}
-	err = k8sClient.Create(context.Background(), investigatorRole)
-	if !apierrors.IsAlreadyExists(err) {
-		Expect(err).ToNot(HaveOccurred())
-	}
-
-	investigatorBinding := &rbacv1.ClusterRoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "kubernaut-agent-service-investigator",
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "ClusterRole",
-			Name:     "kubernaut-agent-investigator",
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      "kubernaut-agent-service",
-				Namespace: "default",
-			},
-		},
-	}
-	err = k8sClient.Create(context.Background(), investigatorBinding)
-	if !apierrors.IsAlreadyExists(err) {
-		Expect(err).ToNot(HaveOccurred())
-	}
-	GinkgoWriter.Println("✅ KA ServiceAccount granted K8s investigation RBAC (#704)")
-
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	// #704: Enrichment fixture resources for mock LLM scenario targets
-	// Without these, re-enrichment returns NotFound → HardFail → rca_incomplete
-	// Matches createEnrichmentFixtures() from E2E infrastructure
-	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-	By("Creating enrichment fixture resources in shared envtest (#704)")
-	createITAAEnrichmentFixtures(k8sClient)
-	GinkgoWriter.Println("✅ Enrichment fixtures created in shared envtest (#704)")
+	// DD-AA-KA-001: KA itself moves to a per-process instance below (Phase 2),
+	// one per Ginkgo process, each pointed at that process's OWN envtest --
+	// AA's channel to KA is now the AgentSession CRD, so KA's dispatch
+	// watcher must watch the exact same cluster AA's per-process controller
+	// writes to (DD-TEST-010's single shared envtest, used only for
+	// DataStorage auth above, cannot also host N per-process controllers'
+	// AgentSession writes without cross-process reconcile races). KA's
+	// ServiceAccount/RBAC/enrichment-fixtures/container therefore move from
+	// this shared Phase 1 into per-process Phase 2 as well.
 
 	// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 	// OPTIMIZATION: Build images in parallel (saves ~100 seconds)
@@ -508,122 +399,28 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 
 	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
-	By("Starting Kubernaut Agent HTTP service (using pre-built image)")
-
-	// DD-AUTH-014: Create ServiceAccount secrets directory for KA container
-	kaSATokenDir = filepath.Join(os.TempDir(), fmt.Sprintf("aianalysis-ka-sa-secrets-%d", time.Now().UnixNano()))
-	err = os.MkdirAll(kaSATokenDir, 0755)
-	Expect(err).ToNot(HaveOccurred(), "Failed to create KA ServiceAccount secrets directory")
-	kaTokenFilePath := filepath.Join(kaSATokenDir, "token")
-	err = os.WriteFile(kaTokenFilePath, []byte(kaServiceAuthConfig.Token), 0644)
-	Expect(err).ToNot(HaveOccurred(), "Failed to write KA ServiceAccount token to file")
-	GinkgoWriter.Printf("✅ KA ServiceAccount token written to: %s\n", kaTokenFilePath)
-
-	// Create KA config file for the container
-	kaConfigDir := filepath.Join(os.TempDir(), fmt.Sprintf("aianalysis-ka-config-%d", time.Now().UnixNano()))
-	err = os.MkdirAll(kaConfigDir, 0755)
-	Expect(err).ToNot(HaveOccurred())
-
-	useHostNetwork := runtime.GOOS == goosLinux
-	var llmEndpoint, dsURL string
-	if useHostNetwork {
-		llmEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mockLLMConfig.Port)
-		dsURL = "http://127.0.0.1:18095"
-	} else {
-		llmEndpoint = infrastructure.GetMockLLMContainerEndpoint(mockLLMConfig)
-		dsURL = "http://host.containers.internal:18095"
-	}
-
-	kaConfigContent := fmt.Sprintf(`runtime:
-  logging:
-    level: "debug"
-  server:
-    port: 18120
-    healthAddr: ":18121"
-    metricsAddr: ":18122"
-    rateLimit:
-      requestsPerSecond: 50
-      burst: 100
-  audit:
-    flushIntervalSeconds: 0.1
-    bufferSize: 10000
-    batchSize: 50
-ai:
-  llm:
-    provider: "openai"
-    apiKeyFile: "/etc/kubernautagent-llm-runtime/api-key"
-integrations:
-  dataStorage:
-    url: "%s"
-`, dsURL)
-	kaConfigPath := filepath.Join(kaConfigDir, "config.yaml")
-	err = os.WriteFile(kaConfigPath, []byte(kaConfigContent), 0644)
-	Expect(err).ToNot(HaveOccurred())
-
-	kaLLMRuntimeDir, err := os.MkdirTemp("", "ka-llm-runtime-*")
-	Expect(err).ToNot(HaveOccurred())
-	Expect(os.Chmod(kaLLMRuntimeDir, 0755)).To(Succeed())
-	kaLLMRuntimeContent := fmt.Sprintf(`model: "mock-model"
-endpoint: "%s"
-temperature: 0.7
-maxRetries: 3
-timeoutSeconds: 120
-`, llmEndpoint)
-	err = os.WriteFile(filepath.Join(kaLLMRuntimeDir, "llm-runtime.yaml"), []byte(kaLLMRuntimeContent), 0644)
-	Expect(err).ToNot(HaveOccurred())
-	err = os.WriteFile(filepath.Join(kaLLMRuntimeDir, "api-key"), []byte("mock-api-key-for-integration-tests"), 0644)
-	Expect(err).ToNot(HaveOccurred())
-
-	kaContainerConfig := infrastructure.GenericContainerConfig{
-		Name:  "aianalysis_ka_test",
-		Image: kaImageName,
-		Env: map[string]string{
-			"KUBECONFIG":    "/tmp/kubeconfig",
-			"POD_NAMESPACE": "default",
-		},
-		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent-llm-runtime/llm-runtime.yaml"},
-		Volumes: map[string]string{
-			kaConfigDir:                          "/etc/kubernautagent:ro",
-			kaLLMRuntimeDir:                      "/etc/kubernautagent-llm-runtime:ro",
-			kaServiceAuthConfig.KubeconfigPath:   "/tmp/kubeconfig:ro",
-			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
-		},
-		HealthCheck: &infrastructure.HealthCheckConfig{
-			URL:     "http://127.0.0.1:18121/healthz",
-			Timeout: 120 * time.Second,
-		},
-	}
-
-	if useHostNetwork {
-		kaContainerConfig.Network = "host"
-		GinkgoWriter.Printf("   🌐 KA using host network (Linux CI)\n")
-	} else {
-		kaContainerConfig.Network = "aianalysis_test_network"
-		kaContainerConfig.Ports = map[int]int{18120: 18120, 18121: 18121}
-		kaContainerConfig.ExtraHosts = []string{
-			"host.containers.internal:host-gateway",
-		}
-		GinkgoWriter.Printf("   🌐 KA using bridge network (macOS)\n")
-	}
-	kaContainer, err = infrastructure.StartGenericContainer(kaContainerConfig, GinkgoWriter)
-	Expect(err).ToNot(HaveOccurred(), "KA container must start successfully")
-	GinkgoWriter.Printf("✅ Kubernaut Agent started at http://127.0.0.1:18120 (container: %s)\n", kaContainer.ID)
-
-	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
+	// DD-AA-KA-001: KA container itself is started per-process in Phase 2
+	// below (see startPerProcessKubernautAgent), not here -- see the note
+	// above the removed shared-KA RBAC block for why.
 
 	GinkgoWriter.Println("✅ Infrastructure startup complete (Phase 1)")
 	GinkgoWriter.Println("  Phase 2 will now run on ALL processes (per-process controller setup)")
 	GinkgoWriter.Println("")
 
 	// DD-AUTH-014 + DD-TEST-010: Phase 1 → Phase 2 data passing
-	// Serialize BOTH token and workflowUUIDs for ALL processes
+	// Serialize token, workflowUUIDs, and the pre-built KA image tag for ALL
+	// processes -- DD-AA-KA-001: each process builds its OWN KA container in
+	// Phase 2 (see startPerProcessKubernautAgent) from this same image, so it
+	// must know the tag Phase 1 already built rather than rebuilding it.
 	type Phase1Data struct {
 		Token         string            `json:"token"`
 		WorkflowUUIDs map[string]string `json:"workflow_uuids"`
+		KAImageName   string            `json:"ka_image_name"`
 	}
 	phase1Data := Phase1Data{
 		Token:         authConfig.Token,
 		WorkflowUUIDs: workflowUUIDs,
+		KAImageName:   kaImageName,
 	}
 	phase1DataJSON, err := json.Marshal(phase1Data)
 	Expect(err).ToNot(HaveOccurred(), "Phase 1 data must serialize for Phase 2")
@@ -635,10 +432,12 @@ timeoutSeconds: 120
 	// Per DD-TEST-010: Each process gets its own controller, envtest, metrics, etc.
 	logf.SetLogger(zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true)))
 
-	// DD-AUTH-014 + DD-TEST-010: Deserialize token and workflow UUIDs from Phase 1
+	// DD-AUTH-014 + DD-TEST-010: Deserialize token, workflow UUIDs, and the
+	// pre-built KA image tag from Phase 1
 	type Phase1Data struct {
 		Token         string            `json:"token"`
 		WorkflowUUIDs map[string]string `json:"workflow_uuids"`
+		KAImageName   string            `json:"ka_image_name"`
 	}
 	var phase1Data Phase1Data
 	deserializeErr := json.Unmarshal(data, &phase1Data)
@@ -673,6 +472,10 @@ timeoutSeconds: 120
 
 	By(fmt.Sprintf("[Process %d] Registering InvestigationSession CRD scheme (BR-INTERACTIVE-010)", processNum))
 	err = isv1alpha1.AddToScheme(scheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+
+	By(fmt.Sprintf("[Process %d] Registering AgentSession CRD scheme (DD-AA-KA-001)", processNum))
+	err = agentsessionv1.AddToScheme(scheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	By(fmt.Sprintf("[Process %d] Bootstrapping per-process envtest environment", processNum))
@@ -783,16 +586,30 @@ timeoutSeconds: 120
 	// Create audit client for handlers
 	auditClient := aiaudit.NewAuditClient(auditStore, auditLogger)
 
+	// DD-AA-KA-001: KA itself now moves per-process, right alongside its own
+	// AIAnalysisReconciler -- AA's channel to KA is the AgentSession CRD, so
+	// KA's dispatch watcher must watch this SAME per-process cfg/envtest,
+	// not the shared one DataStorage auth used above (see the Phase 1 note
+	// this replaces). Enrichment fixtures move here too, since KA's own
+	// live K8s enrichment queries now target this per-process cluster.
+	By(fmt.Sprintf("[Process %d] Creating enrichment fixture resources (#704)", processNum))
+	createITAAEnrichmentFixtures(k8sClient)
+
+	By(fmt.Sprintf("[Process %d] Starting per-process Kubernaut Agent HTTP service", processNum))
+	kaBaseURL, kaCallerToken := startPerProcessKubernautAgent(processNum, cfg, phase1Data.KAImageName)
+
 	By(fmt.Sprintf("[Process %d] Setting up per-process agent client with authentication", processNum))
-	// DD-AUTH-014: KA middleware requires Bearer token (real K8s auth via envtest)
-	// Use ServiceAccount transport (KA will mock-validate the token)
+	// DD-AUTH-014: KA middleware requires Bearer token (real K8s auth against
+	// THIS process's own envtest, minted in startPerProcessKubernautAgent
+	// above -- the shared Phase-1 token above is only valid against
+	// sharedCfg's signing key, not this process's per-process cfg).
 	// Wrap with RetryOn429Transport to absorb transient rate-limit rejections
 	// from the per-IP token-bucket limiter during parallel test execution.
 	kaAuthTransport := testauth.NewRetryOn429Transport(
-		testauth.NewServiceAccountTransport(token),
+		testauth.NewServiceAccountTransport(kaCallerToken),
 	)
 	realAgentClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{
-		BaseURL: "http://localhost:18120",
+		BaseURL: kaBaseURL,
 		Timeout: 30 * time.Second,
 	}, kaAuthTransport)
 	Expect(err).ToNot(HaveOccurred(), "failed to create real agent client")
@@ -812,17 +629,17 @@ timeoutSeconds: 120
 	Expect(err).NotTo(HaveOccurred(), "Production policy should load successfully in integration tests")
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process controller with handlers", processNum))
-	// Create handlers with REAL agent client, metrics, and REAL audit client
+	// DD-AA-KA-001: AgentSessionCreator replaces the retired HTTP submit/poll
+	// channel (realAgentClient is kept only for the legacy direct-HTTP KA
+	// test in agentclient_integration_test.go, not for the reconciler).
 	eventRecorder := k8sManager.GetEventRecorderFor("aianalysis-controller")
 	const controllerNS = "kubernaut-system"
-	isChecker := handlers.NewK8sInvestigationSessionChecker(k8sManager.GetAPIReader(), controllerNS)
 	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sManager.GetClient(), controllerNS)
-	investigatingHandler := handlers.NewInvestigatingHandler(realAgentClient, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
-		handlers.WithRecorder(eventRecorder),                  // DD-EVENT-001: Session lifecycle events
-		handlers.WithSessionMode(),                            // BR-AA-KA-064: Async submit/poll/result flow
-		handlers.WithSessionPollInterval(2*time.Second),       // Fast polling for tests (production default: 15s)
-		handlers.WithInvestigationSessionChecker(isChecker),   // BR-INTERACTIVE-010: IS CRD awareness
-		handlers.WithISPhaseUpdater(isPhaseUpdater))           // BR-INTERACTIVE-010: Set IS Active after submit
+	agentSessionCreator := creator.NewAgentSessionCreator(k8sManager.GetClient(), k8sManager.GetScheme())
+	investigatingHandler := handlers.NewInvestigatingHandler(agentSessionCreator, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
+		handlers.WithRecorder(eventRecorder),            // DD-EVENT-001: Session lifecycle events
+		handlers.WithSessionPollInterval(2*time.Second), // Fast requeue for tests (production default: 15s)
+		handlers.WithISPhaseUpdater(isPhaseUpdater))     // #1376: Write-only IS terminal-close
 	// #225: Mock LLM current_scenario persists across analyses (statefulness),
 	// so unrecognized signals inherit high confidence (e.g., 0.88 from crashloop).
 	// Threshold 0.9 ensures mock scenarios requiring approval stay below threshold.
@@ -895,6 +712,24 @@ var _ = SynchronizedAfterSuite(func() {
 		cancel()
 	}
 
+	// DD-AA-KA-001: KA runs per-process now -- stop THIS process's own
+	// container before tearing down the envtest it was watching.
+	By(fmt.Sprintf("[Process %d] Stopping per-process Kubernaut Agent container", processNum))
+	if kaContainer != nil {
+		GinkgoWriter.Printf("\n📋 [Process %d] Capturing KA container logs before cleanup:\n", processNum)
+		logsCmd := exec.Command("podman", "logs", "--tail", "100", kaContainer.Name)
+		logsCmd.Stdout = GinkgoWriter
+		logsCmd.Stderr = GinkgoWriter
+		_ = logsCmd.Run()
+
+		if err := infrastructure.StopGenericContainer(kaContainer, GinkgoWriter); err != nil {
+			GinkgoWriter.Printf("⚠️  [Process %d] Failed to stop KA container: %v\n", processNum, err)
+		}
+	}
+	if kaSATokenDir != "" {
+		_ = os.RemoveAll(kaSATokenDir)
+	}
+
 	By(fmt.Sprintf("[Process %d] Tearing down envtest environment", processNum))
 	if testEnv != nil {
 		err := testEnv.Stop()
@@ -911,14 +746,15 @@ var _ = SynchronizedAfterSuite(func() {
 	// DD-TEST-DIAGNOSTICS: Must-gather container logs for post-mortem analysis
 	// ALWAYS collect logs - failures may have occurred on other parallel processes
 	// The overhead is minimal (~2s) and logs are invaluable for debugging flaky tests
+	// DD-AA-KA-001: per-process KA containers are captured/stopped in the
+	// per-process cleanup function above, not here.
 	if dsInfra != nil {
 		GinkgoWriter.Println("📦 Collecting container logs for post-mortem analysis...")
 		infrastructure.MustGatherContainerLogs("aianalysis", []string{
 			dsInfra.DataStorageContainer,
 			dsInfra.PostgresContainer,
 			dsInfra.RedisContainer,
-			"mock-llm-aianalysis",  // Mock LLM service
-			"aianalysis_ka_test", // Kubernaut Agent service
+			"mock-llm-aianalysis", // Mock LLM service
 		}, GinkgoWriter)
 	}
 
@@ -928,34 +764,20 @@ var _ = SynchronizedAfterSuite(func() {
 	if preserveContainers {
 		GinkgoWriter.Println("⚠️  Tests may have failed - preserving containers for debugging")
 		GinkgoWriter.Println("📋 To inspect container logs:")
-		GinkgoWriter.Println("   podman logs aianalysis_ka_test")
+		GinkgoWriter.Println("   podman logs aianalysis_ka_test_<processNum>")
 		GinkgoWriter.Println("   podman logs aianalysis_datastorage_test")
 		GinkgoWriter.Println("   podman logs aianalysis_postgres_test")
 		GinkgoWriter.Println("   podman logs aianalysis_redis_test")
 		GinkgoWriter.Println("📋 To manually clean up:")
-		GinkgoWriter.Println("   podman stop aianalysis_ka_test aianalysis_datastorage_test aianalysis_redis_test aianalysis_postgres_test")
-		GinkgoWriter.Println("   podman rm aianalysis_ka_test aianalysis_datastorage_test aianalysis_redis_test aianalysis_postgres_test")
+		GinkgoWriter.Println("   podman stop aianalysis_datastorage_test aianalysis_redis_test aianalysis_postgres_test")
+		GinkgoWriter.Println("   podman rm aianalysis_datastorage_test aianalysis_redis_test aianalysis_postgres_test")
 		GinkgoWriter.Println("   podman network rm aianalysis_test_network")
 	} else {
 		// FIX: Ginkgo API Compliance - DeferCleanup cannot be used in SynchronizedBeforeSuite first function
 		// All cleanup must happen here in SynchronizedAfterSuite second function (process 1 only)
 		// Cleanup in reverse order of setup
 
-		// 1. Stop KA container (capture logs first for debugging)
-		if kaContainer != nil {
-			GinkgoWriter.Println("\n📋 Capturing KA container logs before cleanup:")
-			logsCmd := exec.Command("podman", "logs", "--tail", "100", kaContainer.Name)
-			logsCmd.Stdout = GinkgoWriter
-			logsCmd.Stderr = GinkgoWriter
-			_ = logsCmd.Run()
-			GinkgoWriter.Println("")
-
-			if err := infrastructure.StopGenericContainer(kaContainer, GinkgoWriter); err != nil {
-				GinkgoWriter.Printf("⚠️  Failed to stop KA container: %v\n", err)
-			}
-		}
-
-		// 2. Stop Mock LLM container
+		// 1. Stop Mock LLM container
 		if mockLLMConfig.ServiceName != "" {
 			stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer stopCancel()
@@ -964,23 +786,18 @@ var _ = SynchronizedAfterSuite(func() {
 			}
 		}
 
-		// 3. Remove Mock LLM config file
+		// 2. Remove Mock LLM config file
 		if mockLLMConfigPath != "" {
 			_ = os.Remove(mockLLMConfigPath)
 		}
 
-		// 4. Remove KA ServiceAccount token directory
-		if kaSATokenDir != "" {
-			_ = os.RemoveAll(kaSATokenDir)
-		}
-
-		// 5. Stop DataStorage infrastructure (PostgreSQL, Redis, DataStorage container)
+		// 3. Stop DataStorage infrastructure (PostgreSQL, Redis, DataStorage container)
 		// Per DD-TEST-001 v1.3: StopDSBootstrap removes DataStorage image by name
 		if dsInfra != nil {
 			_ = infrastructure.StopDSBootstrap(dsInfra, GinkgoWriter)
 		}
 
-		// 6. Stop shared envtest
+		// 4. Stop shared envtest
 		if sharedTestEnv != nil {
 			GinkgoWriter.Println("\n🛑 Stopping shared envtest")
 			err := sharedTestEnv.Stop()
@@ -993,25 +810,289 @@ var _ = SynchronizedAfterSuite(func() {
 	GinkgoWriter.Println("✅ Shared infrastructure cleanup complete")
 })
 
-// DD-TEST-002 Compliance: Unique namespace per test for parallel execution
-// This enables -procs=4 parallel execution (matching Notification pattern)
-// Each test gets its own namespace to prevent resource conflicts
+// DD-TEST-002 Compliance (amended by DD-AA-KA-001 per-process KA): a fresh
+// namespace per test previously enabled parallel execution across processes
+// sharing one envtest. Now that each Ginkgo process owns its own isolated
+// envtest (DD-TEST-010), that cross-process collision risk no longer exists
+// -- but a new constraint replaces it: the per-process Kubernaut Agent
+// container's AgentSession dispatcher watches exactly one fixed namespace
+// (detectNamespace() in cmd/kubernautagent/health.go, which falls back to
+// "kubernaut-system" when no ServiceAccount "namespace" file is mounted --
+// see startPerProcessKubernautAgent, which deliberately does not mount one).
+// Any AIAnalysis/AgentSession created in a fresh per-test namespace would be
+// invisible to that watch, so tests needing real KA dispatch would poll
+// forever. testNamespace is therefore now the shared, already-existing
+// "kubernaut-system" namespace (created once per process above) rather than
+// a fresh namespace per test; per-test isolation instead comes from each
+// test's own timestamp/uuid-suffixed object names.
 
 var _ = BeforeEach(func() {
-	// DD-TEST-002: Create unique namespace per test (enables parallel execution)
-	testNamespace = helpers.CreateTestNamespace(context.Background(), k8sClient, "test-aa")
-
-	GinkgoWriter.Printf("📦 [AA] Test namespace created: %s (DD-TEST-002 compliance)\n", testNamespace)
+	testNamespace = "kubernaut-system"
 })
 
 var _ = AfterEach(func() {
-	// DD-TEST-002: Clean up namespace and ALL resources (instant cleanup)
-	// This is MUCH faster than deleting individual AIAnalysis resources
-	if testNamespace != "" {
-		helpers.DeleteTestNamespace(context.Background(), k8sClient, testNamespace)
-		GinkgoWriter.Printf("🗑️  [AA] Namespace %s deleted (DD-TEST-002 cleanup)\n", testNamespace)
-	}
+	// testNamespace is shared for the whole process's lifetime now (see
+	// BeforeEach) -- delete only this test's AIAnalysis/AgentSession objects
+	// rather than the namespace itself.
+	ctx := context.Background()
+	_ = k8sClient.DeleteAllOf(ctx, &aianalysisv1alpha1.AIAnalysis{}, client.InNamespace(testNamespace))
+	_ = k8sClient.DeleteAllOf(ctx, &agentsessionv1.AgentSession{}, client.InNamespace(testNamespace))
 })
+
+// startPerProcessKubernautAgent starts a dedicated Kubernaut Agent HTTP
+// container for THIS Ginkgo parallel process, with its dispatch watcher
+// pointed at this process's own envtest (cfg) via a freshly-minted
+// kubeconfig -- not the shared envtest DataStorage auth uses (DD-AA-KA-001).
+//
+// AA's own channel to KA is the AgentSession CRD (creator.AgentSessionCreator,
+// wired by the caller), watched natively by KA's in-process dispatcher
+// against this same cfg. The HTTP endpoint started here is kept only for
+// the legacy direct-HTTP KA test (agentclient_integration_test.go, exercising
+// KA's not-yet-deleted raw /investigate endpoint per DD-AA-KA-001) --
+// the reconciler itself no longer calls it.
+//
+// Returns the per-process KA base URL and a caller Bearer token valid
+// against cfg's TokenReview API (for realAgentClient's direct-HTTP tests).
+func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName string) (baseURL string, callerToken string) {
+	// DD-AUTH-014: KA's ServiceAccount binding reuses the "datastorage-tokenreview"
+	// ClusterRole (generic TokenReview/SAR create verbs) -- CreateServiceAccountForHTTPService
+	// expects it to already exist; the shared envtest gets it from
+	// CreateIntegrationServiceAccountWithDataStorageAccess in Phase 1, but this
+	// process's own cfg needs its own copy.
+	tokenReviewRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "datastorage-tokenreview",
+			Labels: map[string]string{
+				"app":       "datastorage",
+				"component": "rbac",
+				"test":      "integration",
+			},
+		},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{"authentication.k8s.io"},
+				Resources: []string{"tokenreviews"},
+				Verbs:     []string{"create"},
+			},
+			{
+				APIGroups: []string{"authorization.k8s.io"},
+				Resources: []string{"subjectaccessreviews"},
+				Verbs:     []string{"create"},
+			},
+		},
+	}
+	createErr := k8sClient.Create(context.Background(), tokenReviewRole)
+	Expect(client.IgnoreAlreadyExists(createErr)).ToNot(HaveOccurred())
+
+	useHostNetworkForKA := runtime.GOOS == goosLinux
+	kaServiceAuthConfig, err := infrastructure.CreateServiceAccountForHTTPService(
+		cfg,
+		"kubernaut-agent-service",
+		"default",
+		useHostNetworkForKA,
+		GinkgoWriter,
+	)
+	Expect(err).ToNot(HaveOccurred())
+	GinkgoWriter.Printf("✅ [Process %d] ServiceAccount + RBAC created for KA → per-process envtest (TokenReview/SAR)\n", processNum)
+
+	// #704: K8s investigation + label detection RBAC for KA. Mirrors
+	// kubernaut-agent-investigator ClusterRole from E2E (aianalysis_e2e.go).
+	investigatorRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-agent-investigator"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups: []string{""},
+				Resources: []string{"pods", "pods/log", "events", "services", "configmaps", "nodes", "namespaces", "replicationcontrollers", "persistentvolumeclaims"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"apps"},
+				Resources: []string{"deployments", "replicasets", "statefulsets", "daemonsets"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"batch"},
+				Resources: []string{"jobs", "cronjobs"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"events.k8s.io"},
+				Resources: []string{"events"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"policy"},
+				Resources: []string{"poddisruptionbudgets"},
+				Verbs:     []string{"get", "list"},
+			},
+			{
+				APIGroups: []string{"autoscaling"},
+				Resources: []string{"horizontalpodautoscalers"},
+				Verbs:     []string{"get", "list"},
+			},
+			{
+				APIGroups: []string{"networking.k8s.io"},
+				Resources: []string{"networkpolicies"},
+				Verbs:     []string{"get", "list"},
+			},
+			// DD-AA-KA-001: KA's dispatch watcher needs AgentSession
+			// get/list/watch + status update, InvestigationSession read-only
+			// (dispatch-time interactive check), workflow catalog
+			// (RemediationWorkflow/ActionType, DD-WORKFLOW-019), and Lease
+			// for dispatch coordination -- mirrors charts/kubernaut/templates/
+			// kubernaut-agent/kubernaut-agent.yaml's RBAC.
+			{
+				APIGroups: []string{"kubernaut.ai"},
+				Resources: []string{"agentsessions"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"kubernaut.ai"},
+				Resources: []string{"agentsessions/status"},
+				Verbs:     []string{"get", "update", "patch"},
+			},
+			{
+				APIGroups: []string{"kubernaut.ai"},
+				Resources: []string{"investigationsessions"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"kubernaut.ai"},
+				Resources: []string{"remediationworkflows", "actiontypes"},
+				Verbs:     []string{"get", "list", "watch"},
+			},
+			{
+				APIGroups: []string{"kubernaut.ai"},
+				Resources: []string{"remediationrequests"},
+				Verbs:     []string{"get", "list"},
+			},
+			{
+				APIGroups: []string{"coordination.k8s.io"},
+				Resources: []string{"leases"},
+				Verbs:     []string{"get", "list", "create", "update", "delete"},
+			},
+		},
+	}
+	Expect(client.IgnoreAlreadyExists(k8sClient.Create(context.Background(), investigatorRole))).ToNot(HaveOccurred())
+
+	investigatorBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-agent-service-investigator"},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "kubernaut-agent-investigator",
+		},
+		Subjects: []rbacv1.Subject{
+			{Kind: "ServiceAccount", Name: "kubernaut-agent-service", Namespace: "default"},
+		},
+	}
+	Expect(client.IgnoreAlreadyExists(k8sClient.Create(context.Background(), investigatorBinding))).ToNot(HaveOccurred())
+	GinkgoWriter.Printf("✅ [Process %d] KA ServiceAccount granted K8s investigation + AgentSession RBAC (#704, DD-AA-KA-001)\n", processNum)
+
+	// DD-AUTH-014: Create ServiceAccount secrets directory for KA container
+	kaSATokenDir = filepath.Join(os.TempDir(), fmt.Sprintf("aianalysis-ka-sa-secrets-%d-%d", processNum, time.Now().UnixNano()))
+	Expect(os.MkdirAll(kaSATokenDir, 0755)).To(Succeed(), "Failed to create KA ServiceAccount secrets directory")
+	kaTokenFilePath := filepath.Join(kaSATokenDir, "token")
+	Expect(os.WriteFile(kaTokenFilePath, []byte(kaServiceAuthConfig.Token), 0644)).To(Succeed(), "Failed to write KA ServiceAccount token to file")
+
+	// Create KA config file for the container
+	kaConfigDir := filepath.Join(os.TempDir(), fmt.Sprintf("aianalysis-ka-config-%d-%d", processNum, time.Now().UnixNano()))
+	Expect(os.MkdirAll(kaConfigDir, 0755)).To(Succeed())
+
+	// DD-AA-KA-001 port de-confliction: each process's KA container gets its
+	// own port triple so N per-process containers can coexist, whether they
+	// share the host network namespace (Linux CI) or are individually
+	// port-mapped (macOS bridge network, mapped N:N so KA's own config file
+	// and the health-check URL agree regardless of platform).
+	kaPort := 18120 + (processNum-1)*10
+	kaHealthPort := kaPort + 1
+	kaMetricsPort := kaPort + 2
+
+	mockLLMCfg := infrastructure.GetMockLLMConfigForAIAnalysis()
+	var llmEndpoint, dsURL string
+	if useHostNetworkForKA {
+		llmEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mockLLMCfg.Port)
+		dsURL = "http://127.0.0.1:18095"
+	} else {
+		llmEndpoint = infrastructure.GetMockLLMContainerEndpoint(mockLLMCfg)
+		dsURL = "http://host.containers.internal:18095"
+	}
+
+	kaConfigContent := fmt.Sprintf(`runtime:
+  logging:
+    level: "debug"
+  server:
+    port: %d
+    healthAddr: ":%d"
+    metricsAddr: ":%d"
+    rateLimit:
+      requestsPerSecond: 50
+      burst: 100
+  audit:
+    flushIntervalSeconds: 0.1
+    bufferSize: 10000
+    batchSize: 50
+ai:
+  llm:
+    provider: "openai"
+    apiKeyFile: "/etc/kubernautagent-llm-runtime/api-key"
+integrations:
+  dataStorage:
+    url: "%s"
+`, kaPort, kaHealthPort, kaMetricsPort, dsURL)
+	kaConfigPath := filepath.Join(kaConfigDir, "config.yaml")
+	Expect(os.WriteFile(kaConfigPath, []byte(kaConfigContent), 0644)).To(Succeed())
+
+	kaLLMRuntimeDir, err := os.MkdirTemp("", fmt.Sprintf("ka-llm-runtime-%d-*", processNum))
+	Expect(err).ToNot(HaveOccurred())
+	Expect(os.Chmod(kaLLMRuntimeDir, 0755)).To(Succeed())
+	kaLLMRuntimeContent := fmt.Sprintf(`model: "mock-model"
+endpoint: "%s"
+temperature: 0.7
+maxRetries: 3
+timeoutSeconds: 120
+`, llmEndpoint)
+	Expect(os.WriteFile(filepath.Join(kaLLMRuntimeDir, "llm-runtime.yaml"), []byte(kaLLMRuntimeContent), 0644)).To(Succeed())
+	Expect(os.WriteFile(filepath.Join(kaLLMRuntimeDir, "api-key"), []byte("mock-api-key-for-integration-tests"), 0644)).To(Succeed())
+
+	kaContainerConfig := infrastructure.GenericContainerConfig{
+		Name:  fmt.Sprintf("aianalysis_ka_test_%d", processNum),
+		Image: kaImageName,
+		Env: map[string]string{
+			"KUBECONFIG":    "/tmp/kubeconfig",
+			"POD_NAMESPACE": "default",
+		},
+		Cmd: []string{"-config", "/etc/kubernautagent/config.yaml", "-llm-runtime", "/etc/kubernautagent-llm-runtime/llm-runtime.yaml"},
+		Volumes: map[string]string{
+			kaConfigDir:                        "/etc/kubernautagent:ro",
+			kaLLMRuntimeDir:                    "/etc/kubernautagent-llm-runtime:ro",
+			kaServiceAuthConfig.KubeconfigPath: "/tmp/kubeconfig:ro",
+			kaSATokenDir:                       "/var/run/secrets/kubernetes.io/serviceaccount:ro",
+		},
+		HealthCheck: &infrastructure.HealthCheckConfig{
+			URL:     fmt.Sprintf("http://127.0.0.1:%d/healthz", kaHealthPort),
+			Timeout: 120 * time.Second,
+		},
+	}
+
+	if useHostNetworkForKA {
+		kaContainerConfig.Network = "host"
+		GinkgoWriter.Printf("   🌐 [Process %d] KA using host network (Linux CI), port %d\n", processNum, kaPort)
+	} else {
+		kaContainerConfig.Network = "aianalysis_test_network"
+		kaContainerConfig.Ports = map[int]int{kaPort: kaPort, kaHealthPort: kaHealthPort}
+		kaContainerConfig.ExtraHosts = []string{"host.containers.internal:host-gateway"}
+		GinkgoWriter.Printf("   🌐 [Process %d] KA using bridge network (macOS), port %d\n", processNum, kaPort)
+	}
+	kaContainer, err = infrastructure.StartGenericContainer(kaContainerConfig, GinkgoWriter)
+	Expect(err).ToNot(HaveOccurred(), "KA container must start successfully")
+	GinkgoWriter.Printf("✅ [Process %d] Kubernaut Agent started at http://127.0.0.1:%d (container: %s)\n", processNum, kaPort, kaContainer.ID)
+
+	// KA's TokenReview only needs ANY valid token minted from this SAME
+	// cluster (cfg) -- reuse KA's own ServiceAccount token as the direct-HTTP
+	// test caller's Bearer token rather than minting a separate identity.
+	return fmt.Sprintf("http://localhost:%d", kaPort), kaServiceAuthConfig.Token
+}
 
 // createITAAEnrichmentFixtures creates namespaces and minimal workloads in the
 // shared envtest so that KA's HAPI-default enrichment (MaxRetries=3) can resolve

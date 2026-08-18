@@ -18,6 +18,7 @@ package aianalysis
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -28,6 +29,28 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 )
+
+// mapFromOptNil round-trips an ogen Opt*/OptNil* value's raw payload into a
+// plain map for assertions below. This test exercises KA's raw HTTP
+// /investigate endpoint directly (via the retired-but-not-yet-deleted
+// pkg/agentclient, DD-AA-KA-001), so it still needs the ogen response
+// shape -- unlike ResponseProcessor, which now consumes agentsessionv1
+// types and no longer needs this conversion (hence its removal from
+// pkg/aianalysis/handlers/generated_helpers.go).
+func mapFromOptNil(data interface{}) map[string]interface{} {
+	if data == nil {
+		return nil
+	}
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return nil
+	}
+	var result map[string]interface{}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil
+	}
+	return result
+}
 
 // KA Integration Tests
 //
@@ -144,7 +167,7 @@ var _ = Describe("KA Integration", Label("integration", "kubernaut-agent"), func
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.SelectedWorkflow.Set).To(BeTrue())
 			// Extract workflow_id from the map using helper
-			swMap := GetMapFromOptNil(resp.SelectedWorkflow.Value)
+			swMap := mapFromOptNil(resp.SelectedWorkflow.Value)
 			Expect(swMap).NotTo(BeNil())
 			workflowID := GetStringFromMap(swMap, "workflow_id")
 			Expect(workflowID).NotTo(BeEmpty(), "Mock LLM should return workflow for OOMKilled")

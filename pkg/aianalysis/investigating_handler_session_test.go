@@ -18,7 +18,6 @@ package aianalysis_test
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -29,38 +28,34 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
-	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/metrics"
 	"github.com/jordigilh/kubernaut/test/shared/mocks"
 )
 
 // ========================================
-// BR-AA-KA-064: Session-Based Pull Design Unit Tests
+// DD-AA-KA-001, BR-AA-KA-065: AgentSession CRD Channel Unit Tests
 //
-// Test Plan: docs/testing/BR-AA-KA-064/session_based_pull_test_plan_v1.0.md
-//
-// These tests validate the async submit/poll/result flow between
-// AA controller and KA using session IDs.
-//
-// TDD Phase: RED - all tests expected to fail until GREEN phase implements
-// the handler logic for async session management.
+// Replaces the retired BR-AA-KA-064 session-based HTTP pull design tests.
+// GetOrCreate is naturally idempotent (Get on every reconcile once the
+// AgentSession exists), so the old submit-vs-poll distinction these tests
+// originally targeted no longer exists as a separate code path -- Handle()
+// always calls GetOrCreate once and branches on Status.Phase.
 // ========================================
 
 // sessionAuditSpy tracks session-related audit events for validation.
-// BR-AUDIT-005: Audit as side-effect validation in unit tests.
+// BR-AUDIT-005: Audit as side-effect validation in unit tests. Shared by
+// investigating_handler_identity_test.go, investigating_handler_is_phase_test.go,
+// and investigation_timeout_test.go.
 type sessionAuditSpy struct {
-	mu                sync.Mutex
-	submitEvents      []sessionSubmitEvent
-	resultEvents      []sessionResultEvent
-	sessionLostEvents []sessionLostEvent
-	failedEvents      []failedAnalysisEvent
-	// agentCallEvents tracks generic RecordAIAgentCall invocations, including
-	// #2030 Part B's "session_adopted" endpoint (FedRAMP AU-2/AU-3: durable
-	// audit trail proving an adoption was recorded, not just logged).
+	mu           sync.Mutex
+	submitEvents []sessionSubmitEvent
+	resultEvents []sessionResultEvent
+	failedEvents []failedAnalysisEvent
+	// agentCallEvents tracks generic RecordAIAgentCall invocations.
 	agentCallEvents []agentCallEvent
 }
 
@@ -79,11 +74,6 @@ type sessionSubmitEvent struct {
 type sessionResultEvent struct {
 	analysis          *aianalysisv1.AIAnalysis
 	investigationTime int64
-}
-
-type sessionLostEvent struct {
-	analysis   *aianalysisv1.AIAnalysis
-	generation int32
 }
 
 func (s *sessionAuditSpy) RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int) {
@@ -113,17 +103,12 @@ func (s *sessionAuditSpy) RecordAIAgentResult(ctx context.Context, analysis *aia
 	defer s.mu.Unlock()
 	s.resultEvents = append(s.resultEvents, sessionResultEvent{analysis: analysis, investigationTime: investigationTimeMs})
 }
-func (s *sessionAuditSpy) RecordAIAgentSessionLost(ctx context.Context, analysis *aianalysisv1.AIAnalysis, generation int32) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sessionLostEvents = append(s.sessionLostEvents, sessionLostEvent{analysis: analysis, generation: generation})
-}
 
 // ========================================
 // Test Suite
 // ========================================
 
-var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func() {
+var _ = Describe("InvestigatingHandler AgentSession Channel (BR-AA-KA-065)", func() {
 	var (
 		handler    *handlers.InvestigatingHandler
 		mockClient *mocks.MockAgentClient
@@ -132,7 +117,6 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func(
 		ctx        context.Context
 	)
 
-	// createSessionTestAnalysis creates a valid AIAnalysis for session tests
 	createSessionTestAnalysis := func() *aianalysisv1.AIAnalysis {
 		return &aianalysisv1.AIAnalysis{
 			ObjectMeta: metav1.ObjectMeta{
@@ -175,151 +159,57 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func(
 		recorder = record.NewFakeRecorder(20)
 		testMetrics := metrics.NewMetrics()
 		handler = handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-session"), testMetrics, auditSpy,
-			handlers.WithSessionMode(), handlers.WithRecorder(recorder))
+			handlers.WithRecorder(recorder))
 	})
 
 	// ========================================
-	// 1.1 Incident Submit Flow
+	// AgentSession Creation (first observation)
 	// ========================================
-	Describe("Session Submit Flow", func() {
-		// UT-AA-064-001: Submit investigation when InvestigationSession is nil
-		Context("UT-AA-064-001: Submit investigation when InvestigationSession is nil", func() {
-			It("should create a KA session and record it in CRD status", func() {
+	Describe("AgentSession Creation", func() {
+		Context("UT-AA-065-001: first reconcile creates the AgentSession", func() {
+			It("should call GetOrCreate, record the SessionCreated condition, and requeue at the poll interval", func() {
 				analysis := createSessionTestAnalysis()
-				// InvestigationSession is nil (first time)
 				Expect(analysis.Status.KASession).To(BeNil())
 
-				mockClient.WithSessionSubmitResponse("session-uuid-001")
+				mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
 
 				result, err := handler.Handle(ctx, analysis)
-
 				Expect(err).NotTo(HaveOccurred())
 
-				// CRD status: InvestigationSession populated
-				Expect(analysis.Status.KASession).NotTo(BeNil(), "InvestigationSession should be populated after submit")
-				Expect(analysis.Status.KASession.ID).To(Equal("session-uuid-001"), "Session ID should match KA response")
-				Expect(analysis.Status.KASession.Generation).To(Equal(int32(0)), "Generation should be 0 for first session")
+				Expect(analysis.Status.KASession).NotTo(BeNil(), "KASession status should be populated after GetOrCreate")
+				Expect(analysis.Status.KASession.ID).To(Equal(mockClient.AgentSession.Name))
 				Expect(analysis.Status.KASession.CreatedAt).NotTo(BeNil(), "CreatedAt should be set")
 
-				// Condition: InvestigationSessionReady=True, Reason=SessionCreated
 				cond := getCondition(analysis)
 				Expect(cond).NotTo(BeNil(), "InvestigationSessionReady condition should be set")
 				Expect(string(cond.Status)).To(Equal("True"))
 				Expect(cond.Reason).To(Equal("SessionCreated"))
 
-				// Result: RequeueAfter at configured session poll interval (non-blocking return for polling)
-				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "Should requeue at session poll interval for first poll")
+				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval),
+					"should requeue at the safety-net session poll interval")
 
-				// Audit side effect: exactly 1 aiagent.submit event
-				Expect(auditSpy.submitEvents).To(HaveLen(1), "Should record exactly 1 submit audit event")
-				Expect(auditSpy.submitEvents[0].sessionID).To(Equal("session-uuid-001"))
+				Expect(auditSpy.submitEvents).To(HaveLen(1), "should record exactly 1 submit audit event")
 
-				// DD-EVENT-001: K8s Event -- SessionCreated (Normal)
 				var evt string
 				Eventually(recorder.Events).Should(Receive(&evt))
 				Expect(evt).To(ContainSubstring("Normal"))
 				Expect(evt).To(ContainSubstring("SessionCreated"))
-				Expect(evt).To(ContainSubstring("session-uuid-001"))
-			})
-		})
-
-		// UT-AA-064-002: Submit investigation after session regeneration
-		Context("UT-AA-064-002: Submit after session regeneration (ID cleared, Generation preserved)", func() {
-			It("should resubmit while preserving the regeneration count", func() {
-				analysis := createSessionTestAnalysis()
-				// Session was lost: ID cleared but Generation preserved
-				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "", // Cleared after session loss
-					Generation: 2,
-				}
-
-				mockClient.WithSessionSubmitResponse("session-uuid-regen-001")
-
-				result, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-
-				// CRD status: ID populated with new UUID, Generation preserved at 2
-				Expect(analysis.Status.KASession.ID).To(Equal("session-uuid-regen-001"))
-				Expect(analysis.Status.KASession.Generation).To(Equal(int32(2)), "Generation should be preserved")
-				Expect(analysis.Status.KASession.CreatedAt).NotTo(BeNil(), "CreatedAt should be updated")
-
-				// Condition: InvestigationSessionReady=True, Reason=SessionRegenerated
-				cond := getCondition(analysis)
-				Expect(cond).NotTo(BeNil())
-				Expect(string(cond.Status)).To(Equal("True"))
-				Expect(cond.Reason).To(Equal("SessionRegenerated"))
-
-				// Should requeue at session poll interval for first poll
-				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "Regenerated session should requeue at standard poll interval")
 			})
 		})
 	})
 
 	// ========================================
-	// 1.2 Incident Poll Flow
+	// AgentSession Phase Transitions
 	// ========================================
-	Describe("Session Poll Flow", func() {
-		// UT-AA-064-003: Poll session -- status "pending"
-		// BR-AA-KA-064.8: Constant poll interval (not backoff). Polling is normal
-		// async behavior, not error recovery. Interval is configurable (default 15s).
-		Context("UT-AA-064-003: Poll session -- status pending, controller requeues", func() {
-			It("should update LastPolled and PollCount, requeue at constant interval", func() {
+	Describe("AgentSession Phase Transitions", func() {
+		Context("UT-AA-065-002: Completed phase advances to Analyzing", func() {
+			It("should process the curated result and advance to Analyzing phase", func() {
 				analysis := createSessionTestAnalysis()
 				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-poll-001",
-					Generation: 0,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-30 * time.Second)},
+					ID:        "as-session-completed-001",
+					CreatedAt: &metav1.Time{Time: time.Now().Add(-120 * time.Second)},
 				}
 
-				mockClient.WithSessionPollStatus("pending")
-
-				result, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.KASession.LastPolled).NotTo(BeNil(), "LastPolled should be updated")
-				Expect(analysis.Status.KASession.PollCount).To(Equal(int32(1)), "PollCount should be incremented to 1")
-				// BR-AA-KA-064.8: Constant interval, default 15s
-				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "First poll should requeue at constant interval (15s)")
-			})
-		})
-
-		// UT-AA-064-004: Poll session -- status "investigating", same constant interval
-		// BR-AA-KA-064.8: Constant poll interval regardless of PollCount.
-		Context("UT-AA-064-004: Poll session -- investigating, constant interval", func() {
-			It("should use same constant interval for second consecutive poll", func() {
-				analysis := createSessionTestAnalysis()
-				lastPoll := metav1.Now()
-				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-poll-002",
-					Generation: 0,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-60 * time.Second)},
-					LastPolled: &lastPoll, // Already polled once
-					PollCount:  1,         // Matches "already polled once"
-				}
-
-				mockClient.WithSessionPollStatus("investigating")
-
-				result, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				// BR-AA-KA-064.8: Constant interval, same as first poll
-				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "Second poll should use same constant interval (15s)")
-			})
-		})
-
-		// UT-AA-064-005: Poll session -- status "completed", result fetched
-		Context("UT-AA-064-005: Poll completed, result fetched and processed", func() {
-			It("should retrieve result and advance to Analyzing phase", func() {
-				analysis := createSessionTestAnalysis()
-				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-completed-001",
-					Generation: 0,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-120 * time.Second)},
-				}
-
-				mockClient.WithSessionPollStatus("completed")
-				// Configure GetSessionResult to return a full response with workflow
 				mockClient.WithFullResponse(
 					"Root cause identified: OOM",
 					0.9,
@@ -344,68 +234,71 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func(
 				Expect(analysis.Status.KASession.LastPolled).NotTo(BeNil(),
 					"LastPolled must be set on completed poll")
 
-				// Audit side effect: exactly 1 aiagent.result event
-				Expect(auditSpy.resultEvents).To(HaveLen(1), "Should record exactly 1 result audit event")
-				Expect(auditSpy.resultEvents[0].investigationTime).To(BeNumerically(">", 0), "Investigation time should be positive")
+				Expect(auditSpy.resultEvents).To(HaveLen(1), "should record exactly 1 result audit event")
+				Expect(auditSpy.resultEvents[0].investigationTime).To(BeNumerically(">", 0), "investigation time should be positive")
 			})
 		})
 
-		// UT-AA-064-006: Poll session -- status "failed"
-		Context("UT-AA-064-006: Poll session -- failed, investigation terminates", func() {
+		Context("UT-AA-065-003: Failed phase surfaces KA's curated error", func() {
 			It("should surface KA-side failure to operators via CRD status", func() {
 				analysis := createSessionTestAnalysis()
 				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-failed-001",
-					Generation: 0,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-120 * time.Second)},
+					ID:        "as-session-failed-001",
+					CreatedAt: &metav1.Time{Time: time.Now().Add(-120 * time.Second)},
 				}
 
-				mockClient.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error) {
-					return &agentclient.SessionStatusResult{
-						Status: "failed",
-						Error:  "LLM provider error: rate limit exceeded",
-					}, nil
-				}
+				mockClient.WithFailed("LLM provider error: rate limit exceeded")
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should transition to Failed")
-				Expect(analysis.Status.Message).To(ContainSubstring("LLM provider error"), "Error details should be in Message")
-				Expect(analysis.Status.KASession.PollCount).To(Equal(int32(1)),
-					"PollCount must be incremented even when poll returns failed")
-				Expect(analysis.Status.KASession.LastPolled).NotTo(BeNil(),
-					"LastPolled must be set on failed poll")
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "should transition to Failed")
+				Expect(analysis.Status.Message).To(ContainSubstring("LLM provider error"), "error details should be in Message")
 			})
 		})
 
-		// IT-AA-2088-020 (main port of #2086 Fix 4): Poll completed via KA's
-		// own inactivity timeout, which synthesizes a nil result
-		// (has_workflow=false, human_review_reason=""). Must not be
-		// misclassified identically to a genuine "no matching workflows"
-		// conclusion. Driven through the real reconcile entry point
-		// (handler.Handle), not a direct call to handleSessionIncidentResult,
-		// so this proves the wiring end-to-end.
-		Context("IT-AA-2088-020: Poll completed via KA inactivity timeout (nil result, no human_review_reason)", func() {
+		Context("UT-AA-065-004: Cancelled phase is terminal (no takeover-resubmit)", func() {
+			It("should transition to PhaseFailed with ReasonInteractiveCancelled", func() {
+				analysis := createSessionTestAnalysis()
+				now := metav1.Now()
+				analysis.Status.KASession = &aianalysisv1.KASession{
+					ID:        "as-session-cancelled-001",
+					CreatedAt: &now,
+					PollCount: 2,
+				}
+
+				mockClient.WithCancelled()
+
+				result, err := handler.Handle(ctx, analysis)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.RequeueAfter).To(BeZero())
+
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+				Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonInteractiveCancelled))
+				Expect(analysis.Status.Message).To(ContainSubstring("cancelled"))
+				Expect(analysis.Status.CompletedAt).NotTo(BeNil())
+			})
+		})
+
+		// IT-AA-2088-020 (main port of #2086 Fix 4): Completed via KA's own
+		// inactivity timeout, which synthesizes a nil result (Confidence=0,
+		// no HumanReviewReason). Must not be misclassified identically to a
+		// genuine "no matching workflows" conclusion.
+		Context("IT-AA-2088-020: Completed via KA inactivity timeout (nil result)", func() {
 			It("should classify as InvestigationInconclusive, not NoMatchingWorkflows (#2088 Fix 4)", func() {
 				analysis := createSessionTestAnalysis()
 				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-timeout-001",
-					Generation: 0,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-600 * time.Second)},
+					ID:        "as-session-timeout-001",
+					CreatedAt: &metav1.Time{Time: time.Now().Add(-600 * time.Second)},
 				}
 
-				mockClient.WithSessionPollStatus("completed")
-				// #2088: mirrors KA's synthesizeNilResult default branch
-				// (internal/kubernautagent/server/handler.go) -- the exact
-				// wire shape produced when a user-driving session's own
-				// 10-minute inactivity timeout fires with no
-				// InvestigationResult ever set: has_workflow=false,
-				// human_review_reason="" (left unset), confidence=0.
-				mockClient.WithResponse(&agentclient.IncidentResponse{
-					IncidentID:       "session-timeout-001",
+				// #2088: mirrors KA's synthesizeNilResult default branch -- the
+				// exact shape produced when a user-driving session's own
+				// inactivity timeout fires with no InvestigationResult ever set.
+				mockClient.WithResult(&agentsessionv1.AgentSessionResult{
+					IncidentID:       "as-session-timeout-001",
 					Analysis:         "Investigation completed without result",
-					NeedsHumanReview: agentclient.NewOptBool(false),
+					NeedsHumanReview: false,
 					Confidence:       0,
 					Timestamp:        "2026-04-03T00:00:00Z",
 					Warnings:         []string{},
@@ -415,10 +308,6 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func(
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
-				// #2088 Fix 4: must NOT be misclassified as a genuine "no
-				// matching workflows found" conclusion -- KA's investigation
-				// never reached one. FedRAMP AU-3 (truthful audit content) /
-				// SI-11 (accurate error handling).
 				Expect(analysis.Status.SubReason).NotTo(Equal("NoMatchingWorkflows"),
 					"#2088: a session that timed out with no result must not be reported as a genuine no-match conclusion")
 				Expect(analysis.Status.SubReason).To(Equal("InvestigationInconclusive"),
@@ -427,171 +316,17 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func(
 					"#2088: message must reflect the true timeout/no-result cause, not the generic no-match message")
 			})
 		})
-
-		// UT-AA-064-007: Polling interval is constant across all polls
-		// BR-AA-KA-064.8: Constant interval -- polling is not error recovery.
-		// Every poll uses the same configured interval regardless of PollCount.
-		Context("UT-AA-064-007: Polling interval is constant across all polls", func() {
-			It("should use the same constant interval for every poll", func() {
-				analysis := createSessionTestAnalysis()
-				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-constant-001",
-					Generation: 0,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
-				}
-
-				var intervals []time.Duration
-				mockClient.WithSessionPollStatus("investigating")
-
-				// Poll 4 times and record intervals
-				for i := 0; i < 4; i++ {
-					result, err := handler.Handle(ctx, analysis)
-					Expect(err).NotTo(HaveOccurred())
-					intervals = append(intervals, result.RequeueAfter)
-				}
-
-				// BR-AA-KA-064.8: All polls use the same constant interval
-				Expect(intervals).To(HaveLen(4))
-				for i, interval := range intervals {
-					Expect(interval).To(Equal(handlers.DefaultSessionPollInterval),
-						"Poll %d should use constant interval (15s)", i+1)
-				}
-			})
-		})
 	})
 
 	// ========================================
-	// 1.3 Session Lost and Regeneration
+	// GetOrCreate Error Handling
 	// ========================================
-	Describe("Session Lost and Regeneration", func() {
-		// UT-AA-064-008: Session lost (404) -- first regeneration
-		Context("UT-AA-064-008: Session lost (404) -- first regeneration", func() {
-			It("should increment Generation, clear ID, and requeue immediately", func() {
-				analysis := createSessionTestAnalysis()
-				createdAt := metav1.Now()
-				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-lost-001",
-					Generation: 0,
-					CreatedAt:  &createdAt,
-				}
-
-				// PollSession returns 404 (session lost)
-				mockClient.WithSessionPollError(&agentclient.APIError{StatusCode: 404, Message: "Session not found"})
-
-				result, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-
-				// CRD status: Generation=1, ID cleared, CreatedAt preserved
-				Expect(analysis.Status.KASession.Generation).To(Equal(int32(1)), "Generation should increment to 1")
-				Expect(analysis.Status.KASession.ID).To(BeEmpty(), "Session ID should be cleared")
-
-				// Condition: InvestigationSessionReady=False, Reason=SessionLost
-				cond := getCondition(analysis)
-				Expect(cond).NotTo(BeNil())
-				Expect(string(cond.Status)).To(Equal("False"))
-				Expect(cond.Reason).To(Equal("SessionLost"))
-
-				// #2080: regeneration retry now backs off (RequeueAfter) instead of
-				// an immediate tight-loop requeue, giving a legitimate multi-hop
-				// session hand-off room to settle before the next attempt (reuses
-				// the same DD-SHARED-001 ErrorClassifier.GetRetryDelay as BR-AI-009's
-				// transient-error backoff, keyed on Generation instead of
-				// ConsecutiveFailures).
-				Expect(result.Requeue).To(BeFalse())
-				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Should back off before resubmit, not requeue immediately")
-
-				// Audit side effect: exactly 1 aiagent.session_lost event
-				Expect(auditSpy.sessionLostEvents).To(HaveLen(1), "Should record exactly 1 session_lost audit event")
-				Expect(auditSpy.sessionLostEvents[0].generation).To(Equal(int32(1)))
-
-				// DD-EVENT-001: K8s Event -- SessionLost (Warning)
-				var evt string
-				Eventually(recorder.Events).Should(Receive(&evt))
-				Expect(evt).To(ContainSubstring("Warning"))
-				Expect(evt).To(ContainSubstring("SessionLost"))
-				Expect(evt).To(ContainSubstring("generation 1"))
-			})
-		})
-
-		// UT-AA-064-009: Session lost -- multiple regenerations under cap
-		Context("UT-AA-064-009: Multiple regenerations under cap", func() {
-			It("should continue self-healing up to the regeneration limit", func() {
-				analysis := createSessionTestAnalysis()
-				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-regen-multi",
-					Generation: 3,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-2 * time.Minute)},
-				}
-
-				mockClient.WithSessionPollError(&agentclient.APIError{StatusCode: 404, Message: "Session not found"})
-
-				result, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.KASession.Generation).To(Equal(int32(4)), "Generation should increment to 4")
-				Expect(analysis.Status.KASession.ID).To(BeEmpty(), "ID should be cleared")
-				// #2080: backs off instead of requeuing immediately (see UT-AA-064-008).
-				Expect(result.Requeue).To(BeFalse())
-				Expect(result.RequeueAfter).To(BeNumerically(">", 0), "Should back off before resubmit, not requeue immediately")
-				// Phase should NOT be Failed (still under cap)
-				Expect(analysis.Status.Phase).NotTo(Equal(aianalysis.PhaseFailed), "Should NOT fail while under regeneration cap")
-			})
-		})
-
-		// UT-AA-064-010: Regeneration cap exceeded -- investigation fails with escalation
-		Context("UT-AA-064-010: Regeneration cap exceeded", func() {
-			It("should fail with SessionRegenerationExceeded and emit K8s Warning Event", func() {
-				analysis := createSessionTestAnalysis()
-				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-cap-exceeded",
-					Generation: 4, // One more 404 will make it 5 = cap
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-5 * time.Minute)},
-				}
-
-				mockClient.WithSessionPollError(&agentclient.APIError{StatusCode: 404, Message: "Session not found"})
-
-				_, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-
-				// CRD status: Phase=Failed, SubReason=SessionRegenerationExceeded
-				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should transition to Failed")
-				Expect(analysis.Status.SubReason).To(Equal("SessionRegenerationExceeded"), "SubReason should indicate cap exceeded")
-
-				// Condition: InvestigationSessionReady=False, Reason=SessionRegenerationExceeded
-				cond := getCondition(analysis)
-				Expect(cond).NotTo(BeNil())
-				Expect(string(cond.Status)).To(Equal("False"))
-				Expect(cond.Reason).To(Equal("SessionRegenerationExceeded"))
-
-				// DD-EVENT-001: K8s Events -- SessionLost (Warning) + SessionRegenerationExceeded (Warning)
-				// The handler emits SessionLost first (before checking cap), then SessionRegenerationExceeded
-				var evts []string
-				for len(recorder.Events) > 0 {
-					var e string
-					Eventually(recorder.Events).Should(Receive(&e))
-					evts = append(evts, e)
-				}
-				// SessionLost is emitted during handleSessionLost before the cap check
-				Expect(evts).To(ContainElement(ContainSubstring("SessionLost")))
-				// SessionRegenerationExceeded is emitted when cap is exceeded
-				Expect(evts).To(ContainElement(ContainSubstring("SessionRegenerationExceeded")))
-				Expect(evts).To(ContainElement(ContainSubstring("Warning")))
-			})
-		})
-	})
-
-	// ========================================
-	// 1.4 Error Handling
-	// ========================================
-	Describe("Session Error Handling", func() {
-		// UT-AA-064-011: Submit transient error (503)
-		Context("UT-AA-064-011: Submit transient error (503)", func() {
+	Describe("GetOrCreate Error Handling", func() {
+		Context("UT-AA-065-005: transient K8s API error retries with backoff", func() {
 			It("should stay Investigating and retry with backoff", func() {
 				analysis := createSessionTestAnalysis()
 
-				mockClient.WithSessionSubmitError(&agentclient.APIError{StatusCode: 503, Message: "Service Unavailable"})
+				mockClient.WithError(k8sStatusError(503, "etcd request timed out"))
 
 				result, err := handler.Handle(ctx, analysis)
 
@@ -602,109 +337,74 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func(
 			})
 		})
 
-		// UT-AA-064-012: Submit permanent error (401)
-		Context("UT-AA-064-012: Submit permanent error (401)", func() {
+		Context("UT-AA-065-006: permanent K8s API error fails immediately", func() {
 			It("should fail immediately with PermanentError", func() {
 				analysis := createSessionTestAnalysis()
 
-				mockClient.WithSessionSubmitError(&agentclient.APIError{StatusCode: 401, Message: "Unauthorized"})
+				mockClient.WithError(k8sStatusError(401, "Unauthorized"))
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "Should transition to Failed")
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed), "should transition to Failed")
 				Expect(analysis.Status.SubReason).To(Equal("PermanentError"), "SubReason should indicate permanent error")
-			})
-		})
-
-		// UT-AA-064-013: GetSessionResult returns 409
-		Context("UT-AA-064-013: GetSessionResult returns 409 Conflict", func() {
-			It("should re-poll at standard session poll interval (treat as transient)", func() {
-				analysis := createSessionTestAnalysis()
-				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-409",
-					Generation: 0,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-60 * time.Second)},
-				}
-
-				// Poll says completed, but result returns 409
-				mockClient.WithSessionPollStatus("completed")
-				mockClient.WithSessionResultError(&agentclient.APIError{StatusCode: 409, Message: "Conflict: result not ready"})
-
-				result, err := handler.Handle(ctx, analysis)
-
-				Expect(err).NotTo(HaveOccurred())
-				// BR-AA-KA-064.8: Re-poll at standard constant interval (not backoff)
-				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval), "409 should re-poll at standard session poll interval (15s)")
-				// Phase should NOT be Failed
-				Expect(analysis.Status.Phase).NotTo(Equal(aianalysis.PhaseFailed), "Should NOT fail on 409 (transient)")
-				// PollCount should be incremented for observability
-				Expect(analysis.Status.KASession.PollCount).To(Equal(int32(1)), "PollCount should be incremented after 409 re-poll")
 			})
 		})
 	})
 
 	// ========================================
-	// 1.4 Interactive Session -- User Driving (DD-INTERACTIVE-002)
+	// Interactive Session -- User Driving (DD-INTERACTIVE-002)
 	// ========================================
 	Describe("Interactive Session -- User Driving", func() {
-		// UT-AA-703-001: Poll session -- status "user_driving", requeues at poll interval
-		// BR: BR-INTERACTIVE-001 (User takeover observability)
-		Context("UT-AA-703-001: Poll returns user_driving status", func() {
+		Context("UT-AA-703-001: Interactive AgentSession requeues at the poll interval", func() {
 			It("should requeue at the configured session poll interval", func() {
 				analysis := createSessionTestAnalysis()
 				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-interactive-001",
-					Generation: 0,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-60 * time.Second)},
+					ID:        "as-session-interactive-001",
+					CreatedAt: &metav1.Time{Time: time.Now().Add(-60 * time.Second)},
 				}
 
-				mockClient.WithSessionPollStatus("user_driving")
+				mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating).
+					WithInteractive("oncall@example.com", nil)
 
 				result, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
 				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval),
-					"Should requeue at constant session poll interval during user_driving")
+					"should requeue at constant session poll interval while a user is driving")
 			})
 		})
 
-		// UT-AA-703-002: Poll session -- status "user_driving", increments PollCount and sets LastPolled
-		// BR: BR-INTERACTIVE-001
-		Context("UT-AA-703-002: user_driving increments poll tracking", func() {
+		Context("UT-AA-703-002: Interactive AgentSession increments poll tracking", func() {
 			It("should increment PollCount and set LastPolled", func() {
 				analysis := createSessionTestAnalysis()
 				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-interactive-002",
-					Generation: 0,
-					PollCount:  3,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-120 * time.Second)},
+					ID:        "as-session-interactive-002",
+					PollCount: 3,
+					CreatedAt: &metav1.Time{Time: time.Now().Add(-120 * time.Second)},
 				}
 
-				mockClient.WithSessionPollStatus("user_driving")
+				mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating).
+					WithInteractive("oncall@example.com", nil)
 
 				_, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(analysis.Status.KASession.PollCount).To(Equal(int32(4)),
-					"PollCount should be incremented from 3 to 4")
-				Expect(analysis.Status.KASession.LastPolled).NotTo(BeNil(),
-					"LastPolled should be set")
+				Expect(analysis.Status.KASession.PollCount).To(Equal(int32(4)), "PollCount should be incremented from 3 to 4")
+				Expect(analysis.Status.KASession.LastPolled).NotTo(BeNil(), "LastPolled should be set")
 			})
 		})
 
-		// UT-AA-703-003: Poll session -- status "user_driving", emits K8s UserDriving event
-		// BR: BR-INTERACTIVE-007 (Operator observability)
-		Context("UT-AA-703-003: user_driving emits K8s event", func() {
+		Context("UT-AA-703-003: Interactive AgentSession emits K8s UserDriving event", func() {
 			It("should emit a Normal event with reason UserDriving", func() {
 				analysis := createSessionTestAnalysis()
 				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-interactive-003",
-					Generation: 0,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-30 * time.Second)},
+					ID:        "as-session-interactive-003",
+					CreatedAt: &metav1.Time{Time: time.Now().Add(-30 * time.Second)},
 				}
 
-				mockClient.WithSessionPollStatus("user_driving")
+				mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating).
+					WithInteractive("oncall@example.com", nil)
 
 				_, err := handler.Handle(ctx, analysis)
 
@@ -714,37 +414,30 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func(
 				close(recorder.Events)
 				for event := range recorder.Events {
 					if event != "" {
-						// Events format: "Normal UserDriving ..."
-						if len(event) > 0 {
-							Expect(event).To(ContainSubstring("UserDriving"))
-							foundEvent = true
-							break
-						}
+						Expect(event).To(ContainSubstring("UserDriving"))
+						foundEvent = true
+						break
 					}
 				}
-				Expect(foundEvent).To(BeTrue(), "Should emit a UserDriving K8s event")
+				Expect(foundEvent).To(BeTrue(), "should emit a UserDriving K8s event")
 			})
 		})
 
-		// UT-AA-703-004: Poll session -- user_driving then completed transition
-		// BR: BR-INTERACTIVE-001
-		Context("UT-AA-703-004: user_driving followed by completed", func() {
-			It("should transition to completed on second poll", func() {
+		Context("UT-AA-703-004: Interactive AgentSession then Completed", func() {
+			It("should transition to Analyzing once the AgentSession completes", func() {
 				analysis := createSessionTestAnalysis()
 				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-interactive-004",
-					Generation: 0,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-180 * time.Second)},
+					ID:        "as-session-interactive-004",
+					CreatedAt: &metav1.Time{Time: time.Now().Add(-180 * time.Second)},
 				}
 
-				callCount := 0
-				mockClient.PollSessionFunc = func(ctx context.Context, sessionID string) (*agentclient.SessionStatusResult, error) {
-					callCount++
-					if callCount == 1 {
-						return &agentclient.SessionStatusResult{Status: "user_driving", Progress: "User investigating"}, nil
-					}
-					return &agentclient.SessionStatusResult{Status: "completed"}, nil
-				}
+				mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating).
+					WithInteractive("oncall@example.com", nil)
+
+				result1, err := handler.Handle(ctx, analysis)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result1.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval))
+
 				mockClient.WithFullResponse(
 					"Root cause: config drift",
 					0.85,
@@ -758,804 +451,21 @@ var _ = Describe("InvestigatingHandler Session-Based Pull (BR-AA-KA-064)", func(
 					false,
 				)
 
-				// First poll: user_driving
-				result1, err := handler.Handle(ctx, analysis)
-				Expect(err).NotTo(HaveOccurred())
-				Expect(result1.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval))
-
-				// Second poll: completed
 				_, err = handler.Handle(ctx, analysis)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing),
-					"Should advance to Analyzing after user_driving -> completed")
-			})
-		})
-
-		// UT-AA-703-005: user_driving interval matches sessionPollInterval across multiple polls
-		// BR: BR-ORCH-028 (constant interval)
-		Context("UT-AA-703-005: user_driving uses constant poll interval", func() {
-			It("should return the same RequeueAfter duration across multiple user_driving polls", func() {
-				analysis := createSessionTestAnalysis()
-				analysis.Status.KASession = &aianalysisv1.KASession{
-					ID:         "session-interactive-005",
-					Generation: 0,
-					CreatedAt:  &metav1.Time{Time: time.Now().Add(-300 * time.Second)},
-				}
-
-				mockClient.WithSessionPollStatus("user_driving")
-
-				var intervals []time.Duration
-				for i := 0; i < 4; i++ {
-					result, err := handler.Handle(ctx, analysis)
-					Expect(err).NotTo(HaveOccurred())
-					intervals = append(intervals, result.RequeueAfter)
-				}
-
-				Expect(intervals).To(HaveLen(4))
-				for _, interval := range intervals {
-					Expect(interval).To(Equal(handlers.DefaultSessionPollInterval),
-						"All user_driving polls should use the same constant interval")
-				}
+					"should advance to Analyzing after interactive -> completed")
 			})
 		})
 	})
-
-	// ========================================
-	// 1.5 Client Configuration Correctness
-	// ========================================
-	Describe("Client Configuration", func() {
-		// UT-AA-064-014: Async client constructor sets 30s timeout
-		Context("UT-AA-064-014: Async client sets 30s timeout (not 10m workaround)", func() {
-			It("should configure 30s HTTP timeout for short-lived async calls", func() {
-				cfg := agentclient.Config{
-					BaseURL: "http://localhost:8080",
-					Timeout: 30 * time.Second,
-				}
-
-				// BR-AA-KA-064.10: Timeout removal - verify config value
-				Expect(cfg.Timeout).To(Equal(30*time.Second), "Async client should use 30s timeout, not 10m workaround")
-			})
-		})
-	})
-
 })
-
-// ========================================
-// BR-INTERACTIVE-010: Interactive Mode Detection Tests
-// ========================================
-
-var _ = Describe("InvestigatingHandler Interactive Session Detection (BR-INTERACTIVE-010)", func() {
-	var (
-		mockClient *mocks.MockAgentClient
-		auditSpy   *sessionAuditSpy
-		recorder   *record.FakeRecorder
-		ctx        context.Context
-	)
-
-	createInteractiveTestAnalysis := func() *aianalysisv1.AIAnalysis {
-		return &aianalysisv1.AIAnalysis{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "test-interactive-analysis",
-				Namespace: "default",
-			},
-			Spec: aianalysisv1.AIAnalysisSpec{
-				RemediationRequestRef: corev1.ObjectReference{
-					Kind:      "RemediationRequest",
-					Name:      "rr-interactive-001",
-					Namespace: "default",
-				},
-				RemediationID: "test-remediation-interactive-001",
-				AnalysisRequest: aianalysisv1.AnalysisRequest{
-					SignalContext: aianalysisv1.SignalContextInput{
-						Fingerprint:      "test-fingerprint-interactive",
-						Severity:         "high",
-						SignalName:       "OOMKilled",
-						Environment:      "production",
-						BusinessPriority: "P0",
-						TargetResource: aianalysisv1.TargetResource{
-							Kind:      "Pod",
-							Name:      "test-pod",
-							Namespace: "default",
-						},
-					},
-					AnalysisTypes: []aianalysisv1.AnalysisType{aianalysisv1.AnalysisTypeInvestigation},
-				},
-			},
-			Status: aianalysisv1.AIAnalysisStatus{
-				Phase: aianalysis.PhaseInvestigating,
-			},
-		}
-	}
-
-	BeforeEach(func() {
-		ctx = context.Background()
-		mockClient = mocks.NewMockAgentClient()
-		auditSpy = &sessionAuditSpy{}
-		recorder = record.NewFakeRecorder(20)
-	})
-
-	Context("UT-AA-1293-001: IS CRD exists for RR → interactive=true on submit", func() {
-		It("should set interactive=true when InvestigationSessionChecker returns true", func() {
-			isChecker := &mockISChecker{hasSession: true}
-			testMetrics := metrics.NewMetrics()
-			handler := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-interactive"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			analysis := createInteractiveTestAnalysis()
-			mockClient.WithSessionSubmitResponse("session-interactive-001")
-
-			_, err := handler.Handle(ctx, analysis)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(mockClient.SubmitCallCount).To(Equal(1))
-			Expect(mockClient.LastRequest).NotTo(BeNil())
-			interactive, ok := mockClient.LastRequest.Interactive.Get()
-			Expect(ok).To(BeTrue())
-			Expect(interactive).To(BeTrue())
-		})
-	})
-
-	Context("UT-AA-1293-002: No IS CRD for RR → interactive not set", func() {
-		It("should not set interactive when InvestigationSessionChecker returns false", func() {
-			isChecker := &mockISChecker{hasSession: false}
-			testMetrics := metrics.NewMetrics()
-			handler := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-no-interactive"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			analysis := createInteractiveTestAnalysis()
-			mockClient.WithSessionSubmitResponse("session-no-interactive-001")
-
-			_, err := handler.Handle(ctx, analysis)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(mockClient.SubmitCallCount).To(Equal(1))
-			Expect(mockClient.LastRequest).NotTo(BeNil())
-			_, ok := mockClient.LastRequest.Interactive.Get()
-			Expect(ok).To(BeFalse())
-		})
-	})
-
-	Context("UT-AA-1293-SC1-003: No IS checker configured → autonomous (backward compat)", func() {
-		It("should submit without interactive flag when no checker is configured", func() {
-			testMetrics := metrics.NewMetrics()
-			handler := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-no-checker"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder))
-
-			analysis := createInteractiveTestAnalysis()
-			mockClient.WithSessionSubmitResponse("session-compat-001")
-
-			_, err := handler.Handle(ctx, analysis)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(mockClient.SubmitCallCount).To(Equal(1))
-			Expect(mockClient.LastRequest).NotTo(BeNil())
-			_, ok := mockClient.LastRequest.Interactive.Get()
-			Expect(ok).To(BeFalse())
-		})
-	})
-
-	Context("UT-AA-1293-SC7-001: Poll returns 'cancelled' without checker → PhaseFailed baseline", func() {
-		It("should transition to PhaseFailed when KA session is cancelled", func() {
-			testMetrics := metrics.NewMetrics()
-			handler := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-cancelled"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder))
-
-			analysis := createInteractiveTestAnalysis()
-			now := metav1.Now()
-			analysis.Status.KASession = &aianalysisv1.KASession{
-				ID:        "session-cancelled-001",
-				CreatedAt: &now,
-				PollCount: 2,
-			}
-
-			mockClient.WithSessionPollStatus("cancelled")
-
-			result, err := handler.Handle(ctx, analysis)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(BeZero())
-
-			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
-			Expect(analysis.Status.Message).To(ContainSubstring("cancelled"))
-			Expect(analysis.Status.CompletedAt).NotTo(BeNil())
-		})
-	})
-})
-
-// ========================================
-// BR-INTERACTIVE-010: IS Mismatch Detection (Takeover + Deletion)
-// ========================================
-
-var _ = Describe("InvestigatingHandler IS Mismatch Detection", func() {
-	var (
-		mockClient *mocks.MockAgentClient
-		auditSpy   *sessionAuditSpy
-		recorder   record.EventRecorder
-	)
-
-	BeforeEach(func() {
-		mockClient = mocks.NewMockAgentClient()
-		mockClient.DefaultSessionStatus = &agentclient.SessionStatusResult{Status: "investigating"}
-		auditSpy = &sessionAuditSpy{}
-		recorder = record.NewFakeRecorder(10)
-	})
-
-	Context("UT-AA-1293-SC1-005: Autonomous session + IS appears → upgrade in-place (#1390)", func() {
-		It("should set Interactive=true and preserve session ID without cancel", func() {
-			upgradeClient := mocks.NewMockAgentClient()
-			upgradeClient.WithSessionPollStatus("investigating")
-			isChecker := &mockISChecker{hasSession: true}
-			testMetrics := metrics.NewMetrics()
-			h := handlers.NewInvestigatingHandler(upgradeClient, ctrl.Log.WithName("test-takeover"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			analysis := &aianalysisv1.AIAnalysis{
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: "rr-takeover", Namespace: "default"},
-				},
-				Status: aianalysisv1.AIAnalysisStatus{
-					Phase: aianalysis.PhaseInvestigating,
-					KASession: &aianalysisv1.KASession{
-						ID:          "session-123",
-						Interactive: false, // autonomous session
-					},
-				},
-			}
-
-			result, err := h.Handle(context.Background(), analysis)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue())
-			Expect(analysis.Status.KASession.ID).To(Equal("session-123"),
-				"session ID must be preserved — upgrade in-place, no cancel")
-			Expect(analysis.Status.KASession.Interactive).To(BeTrue(),
-				"Interactive flag must be set for upgrade path")
-			Expect(upgradeClient.CancelCallCount).To(Equal(0),
-				"CancelSession must NOT be called — #1390 upgrade replaces cancel")
-		})
-	})
-
-	Context("UT-AA-1293-SC1-006: Interactive session + IS deleted → cancel for deletion", func() {
-		It("should cancel the session, clear Interactive flag, and requeue", func() {
-			cancelClient := mocks.NewMockAgentClient()
-			cancelClient.WithSessionPollStatus("investigating")
-			isChecker := &mockISChecker{hasSession: false}
-			testMetrics := metrics.NewMetrics()
-			h := handlers.NewInvestigatingHandler(cancelClient, ctrl.Log.WithName("test-deletion"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			analysis := &aianalysisv1.AIAnalysis{
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: "rr-deletion", Namespace: "default"},
-				},
-				Status: aianalysisv1.AIAnalysisStatus{
-					Phase: aianalysis.PhaseInvestigating,
-					KASession: &aianalysisv1.KASession{
-						ID:          "session-456",
-						Interactive: true, // interactive session
-					},
-				},
-			}
-
-			result, err := h.Handle(context.Background(), analysis)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue())
-			// Session ID NOT cleared — poll will detect "cancelled" and transition to PhaseFailed
-			Expect(analysis.Status.KASession.ID).To(Equal("session-456"))
-			// P0-1 fix: Interactive cleared to prevent requeue loop
-			Expect(analysis.Status.KASession.Interactive).To(BeFalse())
-			Expect(cancelClient.CancelCallCount).To(Equal(1))
-		})
-	})
-
-	Context("UT-AA-1293-SC1-007: No mismatch → normal poll proceeds", func() {
-		It("should proceed to poll when autonomous session has no IS", func() {
-			isChecker := &mockISChecker{hasSession: false}
-			testMetrics := metrics.NewMetrics()
-			h := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-no-mismatch"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			analysis := &aianalysisv1.AIAnalysis{
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: "rr-normal", Namespace: "default"},
-				},
-				Status: aianalysisv1.AIAnalysisStatus{
-					Phase: aianalysis.PhaseInvestigating,
-					KASession: &aianalysisv1.KASession{
-						ID:          "session-789",
-						Interactive: false, // autonomous, no IS
-					},
-				},
-			}
-
-			result, err := h.Handle(context.Background(), analysis)
-			Expect(err).NotTo(HaveOccurred())
-			// Should have polled and requeued (not immediately requeued)
-			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
-		})
-	})
-})
-
-// ========================================
-// BR-INTERACTIVE-010: Canonical Plan Tests (003–005)
-// ========================================
-
-var _ = Describe("InvestigatingHandler Canonical Plan Tests [BR-INTERACTIVE-010]", func() {
-	var (
-		auditSpy *sessionAuditSpy
-		recorder record.EventRecorder
-		ctx      context.Context
-	)
-
-	BeforeEach(func() {
-		auditSpy = &sessionAuditSpy{}
-		recorder = record.NewFakeRecorder(10)
-		ctx = context.Background()
-	})
-
-	Context("UT-AA-1293-003: IS with non-Active phase ignored → interactive=false", func() {
-		It("should submit without interactive flag when IS exists but is Completed", func() {
-			mockClient := mocks.NewMockAgentClient()
-			mockClient.WithSessionSubmitResponse("session-nonactive-003")
-			isChecker := &mockISChecker{hasSession: false}
-			testMetrics := metrics.NewMetrics()
-			h := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-nonactive"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			analysis := &aianalysisv1.AIAnalysis{
-				ObjectMeta: metav1.ObjectMeta{Name: "test-nonactive-003", Namespace: "default"},
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{
-						Kind: "RemediationRequest", Name: "rr-nonactive-003", Namespace: "default",
-					},
-				},
-			}
-
-			_, err := h.Handle(ctx, analysis)
-			Expect(err).NotTo(HaveOccurred())
-
-			Expect(mockClient.SubmitCallCount).To(Equal(1))
-			Expect(mockClient.LastRequest).NotTo(BeNil())
-			interactiveVal, ok := mockClient.LastRequest.Interactive.Get()
-			if ok {
-				Expect(interactiveVal).To(BeFalse(),
-					"non-Active IS should result in interactive=false on submit")
-			}
-		})
-	})
-
-	Context("UT-AA-1293-004: Poll 'cancelled' + IS active → re-submit with interactive=true", func() {
-		It("should clear session ID and requeue for re-submit when IS still exists", func() {
-			cancelClient := mocks.NewMockAgentClient()
-			cancelClient.WithSessionPollStatus("cancelled")
-			isChecker := &mockISChecker{hasSession: true}
-			testMetrics := metrics.NewMetrics()
-			h := handlers.NewInvestigatingHandler(cancelClient, ctrl.Log.WithName("test-cancel-resubmit"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			now := metav1.Now()
-			analysis := &aianalysisv1.AIAnalysis{
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: "rr-cancel-resubmit", Namespace: "default"},
-				},
-				Status: aianalysisv1.AIAnalysisStatus{
-					Phase: aianalysis.PhaseInvestigating,
-					KASession: &aianalysisv1.KASession{
-						ID:          "session-to-resubmit",
-						Interactive: true,
-						CreatedAt:   &now,
-						PollCount:   3,
-					},
-				},
-			}
-
-			result, err := h.Handle(ctx, analysis)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue(), "should requeue for re-submit")
-			Expect(analysis.Status.KASession.ID).To(BeEmpty(),
-				"session ID should be cleared to trigger fresh submit")
-			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
-				"should remain in PhaseInvestigating for re-submit")
-		})
-	})
-
-	Context("UT-AA-1293-005: Poll 'cancelled' + IS deleted → PhaseFailed + ReasonInteractiveCancelled", func() {
-		It("should transition to terminal PhaseFailed when IS no longer exists", func() {
-			cancelClient := mocks.NewMockAgentClient()
-			cancelClient.WithSessionPollStatus("cancelled")
-			isChecker := &mockISChecker{hasSession: false}
-			testMetrics := metrics.NewMetrics()
-			h := handlers.NewInvestigatingHandler(cancelClient, ctrl.Log.WithName("test-cancel-terminal"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			now := metav1.Now()
-			analysis := &aianalysisv1.AIAnalysis{
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: "rr-cancel-terminal", Namespace: "default"},
-				},
-				Status: aianalysisv1.AIAnalysisStatus{
-					Phase: aianalysis.PhaseInvestigating,
-					KASession: &aianalysisv1.KASession{
-						ID:          "session-terminal",
-						Interactive: false, // already cleared by prior mismatch check reconcile
-						CreatedAt:   &now,
-						PollCount:   5,
-					},
-				},
-			}
-
-			result, err := h.Handle(ctx, analysis)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(BeZero(), "terminal state should not requeue")
-			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
-			Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonInteractiveCancelled))
-			Expect(analysis.Status.CompletedAt).NotTo(BeNil())
-			Expect(analysis.Status.Message).To(ContainSubstring("cancelled"))
-		})
-	})
-
-	Context("UT-AA-1455-001: Poll 'cancelled' + IS completed (race) → fetch result [#1455]", func() {
-		It("should fetch the session result when IS completed but KA session was cancelled", func() {
-			raceClient := mocks.NewMockAgentClient()
-			raceClient.WithSessionPollStatus("cancelled")
-			isChecker := &mockISChecker{
-				hasSession:    false,
-				sessionPhase:  isv1alpha1.SessionPhaseCompleted,
-				sessionExists: true,
-			}
-			testMetrics := metrics.NewMetrics()
-			h := handlers.NewInvestigatingHandler(raceClient, ctrl.Log.WithName("test-1455-race"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			now := metav1.Now()
-			analysis := &aianalysisv1.AIAnalysis{
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: "rr-1455-race", Namespace: "default"},
-				},
-				Status: aianalysisv1.AIAnalysisStatus{
-					Phase: aianalysis.PhaseInvestigating,
-					KASession: &aianalysisv1.KASession{
-						ID:        "session-1455-race",
-						CreatedAt: &now,
-						PollCount: 5,
-					},
-				},
-			}
-
-			result, err := h.Handle(ctx, analysis)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(raceClient.GetResultCallCount).To(BeNumerically(">=", 1),
-				"#1455: must call GetSessionResult to retrieve the completed investigation")
-			Expect(analysis.Status.Phase).NotTo(Equal(aianalysis.PhaseFailed),
-				"#1455: IS-completed race must not produce PhaseFailed — result should be processed")
-			Expect(result.RequeueAfter).To(BeZero(),
-				"completed result processing should not requeue")
-		})
-	})
-
-	Context("UT-AA-1455-002: Poll 'cancelled' + FindSessionPhase error → requeue [#1455]", func() {
-		It("should requeue when FindSessionPhase returns a transient error", func() {
-			errClient := mocks.NewMockAgentClient()
-			errClient.WithSessionPollStatus("cancelled")
-			isChecker := &mockISChecker{
-				hasSession:   false,
-				findPhaseErr: fmt.Errorf("transient API server error"),
-			}
-			testMetrics := metrics.NewMetrics()
-			h := handlers.NewInvestigatingHandler(errClient, ctrl.Log.WithName("test-1455-phase-err"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			now := metav1.Now()
-			analysis := &aianalysisv1.AIAnalysis{
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: "rr-1455-phase-err", Namespace: "default"},
-				},
-				Status: aianalysisv1.AIAnalysisStatus{
-					Phase: aianalysis.PhaseInvestigating,
-					KASession: &aianalysisv1.KASession{
-						ID:        "session-1455-phase-err",
-						CreatedAt: &now,
-						PollCount: 3,
-					},
-				},
-			}
-
-			result, err := h.Handle(ctx, analysis)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval),
-				"#1455: transient FindSessionPhase error must requeue, not produce terminal state")
-			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
-				"phase must remain Investigating during transient error")
-		})
-	})
-
-	Context("UT-AA-1455-003: Poll 'cancelled' + IS in Failed phase → PhaseFailed [#1455]", func() {
-		It("should transition to PhaseFailed when IS is in a non-completed terminal phase", func() {
-			failClient := mocks.NewMockAgentClient()
-			failClient.WithSessionPollStatus("cancelled")
-			isChecker := &mockISChecker{
-				hasSession:    false,
-				sessionPhase:  isv1alpha1.SessionPhaseFailed,
-				sessionExists: true,
-			}
-			testMetrics := metrics.NewMetrics()
-			h := handlers.NewInvestigatingHandler(failClient, ctrl.Log.WithName("test-1455-is-failed"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			now := metav1.Now()
-			analysis := &aianalysisv1.AIAnalysis{
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: "rr-1455-is-failed", Namespace: "default"},
-				},
-				Status: aianalysisv1.AIAnalysisStatus{
-					Phase: aianalysis.PhaseInvestigating,
-					KASession: &aianalysisv1.KASession{
-						ID:        "session-1455-is-failed",
-						CreatedAt: &now,
-						PollCount: 4,
-					},
-				},
-			}
-
-			result, err := h.Handle(ctx, analysis)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.RequeueAfter).To(BeZero(), "terminal state should not requeue")
-			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
-				"#1455: IS in Failed phase (not Completed) must produce terminal PhaseFailed")
-			Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonInteractiveCancelled))
-		})
-	})
-})
-
-// mockISChecker implements handlers.InvestigationSessionChecker for testing.
-type mockISChecker struct {
-	hasSession    bool
-	err           error
-	sessionPhase  isv1alpha1.SessionPhase
-	sessionExists bool
-	findPhaseErr  error
-
-	// #2030 Part B: CorrelatedSessionID stubbing.
-	//
-	// correlatedID/correlatedActive/correlatedErr are returned for every call
-	// when correlatedSequence is empty (the common case: a single, constant
-	// correlation state for the whole test).
-	//
-	// correlatedSequence, when non-empty, lets a test model correlation
-	// LANDING mid-reconcile: successive calls pop the next entry (simulating
-	// e.g. the general mismatch check seeing no correlation yet, while the
-	// race-closing check moments later in the same reconcile sees the new
-	// one). The last entry repeats once the sequence is exhausted.
-	correlatedID        string
-	correlatedActive    bool
-	correlatedErr       error
-	correlatedSequence  []correlatedSessionStub
-	correlatedCallCount int
-}
-
-// correlatedSessionStub is one canned CorrelatedSessionID return value in a
-// mockISChecker.correlatedSequence.
-type correlatedSessionStub struct {
-	id     string
-	active bool
-	err    error
-}
-
-func (m *mockISChecker) HasActiveSession(_ context.Context, _ string) (bool, error) {
-	return m.hasSession, m.err
-}
-
-func (m *mockISChecker) FindSessionPhase(_ context.Context, _ string) (isv1alpha1.SessionPhase, bool, error) {
-	if m.findPhaseErr != nil {
-		return "", false, m.findPhaseErr
-	}
-	return m.sessionPhase, m.sessionExists, m.err
-}
-
-func (m *mockISChecker) CorrelatedSessionID(_ context.Context, _ string) (string, bool, error) {
-	if len(m.correlatedSequence) == 0 {
-		return m.correlatedID, m.correlatedActive, m.correlatedErr
-	}
-	idx := m.correlatedCallCount
-	if idx >= len(m.correlatedSequence) {
-		idx = len(m.correlatedSequence) - 1
-	}
-	m.correlatedCallCount++
-	s := m.correlatedSequence[idx]
-	return s.id, s.active, s.err
-}
-
-// ========================================
-// Fix #1390: AA Takeover Simplification
-//
-// UT-AA-1390-014..017: Validate that the takeover branch no longer
-// cancels the session but instead sets Interactive=true and calls
-// SetActivePhase on the IS phase updater.
-// ========================================
-
-var _ = Describe("Fix #1390: AA Takeover Simplification — BR-INTERACTIVE-004", func() {
-	var (
-		auditSpy *sessionAuditSpy
-		recorder record.EventRecorder
-	)
-
-	BeforeEach(func() {
-		auditSpy = &sessionAuditSpy{}
-		recorder = record.NewFakeRecorder(32)
-	})
-
-	Context("UT-AA-1390-014 [AC-12]: Takeover sets Interactive=true without calling CancelSession", func() {
-		It("should not cancel the session when IS appears for autonomous session", func() {
-			cancelClient := mocks.NewMockAgentClient()
-			cancelClient.WithSessionPollStatus("investigating")
-			isChecker := &mockISChecker{hasSession: true}
-			phaseUpdater := &mockISPhaseUpdater1390{}
-			testMetrics := metrics.NewMetrics()
-
-			h := handlers.NewInvestigatingHandler(cancelClient, ctrl.Log.WithName("test-1390-014"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker),
-				handlers.WithISPhaseUpdater(phaseUpdater))
-
-			analysis := &aianalysisv1.AIAnalysis{
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: "rr-upgrade-014", Namespace: "default"},
-				},
-				Status: aianalysisv1.AIAnalysisStatus{
-					Phase: aianalysis.PhaseInvestigating,
-					KASession: &aianalysisv1.KASession{
-						ID:          "session-014",
-						Interactive: false,
-					},
-				},
-			}
-
-			result, err := h.Handle(context.Background(), analysis)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(result.Requeue).To(BeTrue())
-			Expect(cancelClient.CancelCallCount).To(Equal(0),
-				"CancelSession must NOT be called — upgrade-in-place replaces cancel")
-			Expect(analysis.Status.KASession.Interactive).To(BeTrue(),
-				"Interactive flag must be set to true for upgrade path")
-			Expect(analysis.Status.KASession.ID).To(Equal("session-014"),
-				"session ID must be preserved — no clearing")
-		})
-	})
-
-	Context("UT-AA-1390-015 [AC-12]: Takeover calls SetActivePhase on IS phase updater", func() {
-		It("should call SetActivePhase when upgrading to interactive", func() {
-			cancelClient := mocks.NewMockAgentClient()
-			cancelClient.WithSessionPollStatus("investigating")
-			isChecker := &mockISChecker{hasSession: true}
-			phaseUpdater := &mockISPhaseUpdater1390{}
-			testMetrics := metrics.NewMetrics()
-
-			h := handlers.NewInvestigatingHandler(cancelClient, ctrl.Log.WithName("test-1390-015"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker),
-				handlers.WithISPhaseUpdater(phaseUpdater))
-
-			analysis := &aianalysisv1.AIAnalysis{
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: "rr-upgrade-015", Namespace: "default"},
-				},
-				Status: aianalysisv1.AIAnalysisStatus{
-					Phase: aianalysis.PhaseInvestigating,
-					KASession: &aianalysisv1.KASession{
-						ID:          "session-015",
-						Interactive: false,
-					},
-				},
-			}
-
-			_, err := h.Handle(context.Background(), analysis)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(phaseUpdater.activePhaseCount).To(Equal(1),
-				"SetActivePhase must be called once for the upgrade")
-			Expect(phaseUpdater.lastActiveRRName).To(Equal("rr-upgrade-015"))
-		})
-	})
-
-	Context("UT-AA-1390-016 [AC-12]: Next reconcile with hasIS=true + Interactive=true is no-op", func() {
-		It("should skip mismatch check when Interactive already matches IS state", func() {
-			mockClient := mocks.NewMockAgentClient()
-			mockClient.WithSessionPollStatus("user_driving")
-			isChecker := &mockISChecker{hasSession: true}
-			testMetrics := metrics.NewMetrics()
-
-			h := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-1390-016"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			analysis := &aianalysisv1.AIAnalysis{
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: "rr-noop-016", Namespace: "default"},
-				},
-				Status: aianalysisv1.AIAnalysisStatus{
-					Phase: aianalysis.PhaseInvestigating,
-					KASession: &aianalysisv1.KASession{
-						ID:          "session-016",
-						Interactive: true,
-					},
-				},
-			}
-
-			result, err := h.Handle(context.Background(), analysis)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(mockClient.CancelCallCount).To(Equal(0), "no cancel expected")
-			Expect(result.RequeueAfter).To(BeNumerically(">", 0),
-				"should proceed to poll, not immediate requeue")
-		})
-	})
-
-	Context("UT-AA-1390-017 [AC-12]: Poll user_driving after upgrade populates InteractiveSession", func() {
-		It("should populate InteractiveSession info when polling upgraded session", func() {
-			mockClient := mocks.NewMockAgentClient()
-			mockClient.WithSessionPollStatus("user_driving")
-			mockClient.DefaultSessionStatus = &agentclient.SessionStatusResult{
-				Status:     "user_driving",
-				ActingUser: "sre-user@example.com",
-			}
-			isChecker := &mockISChecker{hasSession: true}
-			testMetrics := metrics.NewMetrics()
-
-			h := handlers.NewInvestigatingHandler(mockClient, ctrl.Log.WithName("test-1390-017"), testMetrics, auditSpy,
-				handlers.WithSessionMode(), handlers.WithRecorder(recorder),
-				handlers.WithInvestigationSessionChecker(isChecker))
-
-			analysis := &aianalysisv1.AIAnalysis{
-				Spec: aianalysisv1.AIAnalysisSpec{
-					RemediationRequestRef: corev1.ObjectReference{Name: "rr-poll-017", Namespace: "default"},
-				},
-				Status: aianalysisv1.AIAnalysisStatus{
-					Phase: aianalysis.PhaseInvestigating,
-					KASession: &aianalysisv1.KASession{
-						ID:          "session-017",
-						Interactive: true,
-					},
-				},
-			}
-
-			_, err := h.Handle(context.Background(), analysis)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(analysis.Status.InteractiveSession).NotTo(BeNil(),
-				"InteractiveSession must be populated after polling user_driving")
-			Expect(analysis.Status.InteractiveSession.ActingUser).To(Equal("sre-user@example.com"))
-		})
-	})
-})
-
-// mockISPhaseUpdater1390 tracks SetActivePhase calls for #1390 tests.
-type mockISPhaseUpdater1390 struct {
-	activePhaseCount int
-	lastActiveRRName string
-	setActiveErr     error
-}
-
-func (m *mockISPhaseUpdater1390) SetActivePhase(_ context.Context, rrName string) error {
-	m.activePhaseCount++
-	m.lastActiveRRName = rrName
-	return m.setActiveErr
-}
-
-func (m *mockISPhaseUpdater1390) SetTerminalPhase(_ context.Context, _ string, _ isv1alpha1.SessionPhase) error {
-	return nil
-}
 
 // ========================================
 // Helper Functions
 // ========================================
 
-// getCondition returns the InvestigationSessionReady condition from the AIAnalysis status
+// getCondition returns the InvestigationSessionReady condition from the AIAnalysis status.
+// Shared by investigating_handler_is_phase_test.go and investigation_timeout_test.go.
 func getCondition(analysis *aianalysisv1.AIAnalysis) *metav1.Condition {
 	for i := range analysis.Status.Conditions {
 		if analysis.Status.Conditions[i].Type == "InvestigationSessionReady" {
