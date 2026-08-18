@@ -3,6 +3,7 @@
 > **📋 Changelog**
 > | Version | Date | Changes | Reference |
 > |---------|------|---------|-----------|
+> | **v3.1** | 2026-08 | Replaced dead-schema `TimeoutConfig *AIAnalysisTimeoutConfig` (never populated by RO, never read by any handler) with `TimesOutAt *metav1.Time` — RO's creator now populates it from `Status.TimeoutConfig.Analyzing`, and `InvestigatingHandler.checkInvestigationTimeout` self-enforces it (taking precedence over the hardcoded `DefaultMaxInvestigationDuration` fallback) | [#2176](https://github.com/jordigilh/kubernaut/issues/2176), DD-TIMEOUT-002 |
 > | **v3.0** | 2026-08 | **REWRITE** ([#1806](https://github.com/jordigilh/kubernaut/issues/1806)): Regenerated against `api/aianalysis/v1alpha1/aianalysis_types.go` as of this date. Corrected: client/API references from HolmesGPT-API to Kubernaut Agent (KA); `AffectedResource`→`RemediationTarget` on `RootCauseAnalysis`; removed `IsRecoveryAttempt`/`RecoveryAttemptNumber`/`PreviousExecutions` (never re-added after Issue #180 deprecation — recovery now flows through Gateway re-fire, not a dedicated AIAnalysis field); added `TimeoutConfig`, `ClusterID` to spec; added `SignalName` (was documented as `SignalType`), `SignalMode`, `SignalAnnotations`, `Cluster` to `SignalContextInput`; added `APIVersion` to `TargetResource`/`RemediationTarget`/`OwnerChainEntry`; corrected `EnrichmentResults` to the current lean shape (`KubernetesContext` + `BusinessClassification` only — no top-level `DetectedLabels`/`OwnerChain`/`CustomLabels`); documented `KASession` (async submit/poll), `InteractiveSession`, `PostRCAContext`, `AlignmentVerdict`, `Actionability`, `ObservedGeneration`, `SubReason` on status; corrected `SelectedWorkflow` to its current `sharedtypes.WorkflowSnapshot`-embedding shape (`ExecutionBundle`/`ExecutionBundleDigest` replacing `ContainerImage`/`ContainerDigest`); noted `RemediationApprovalRequest` (ADR-040) is implemented and used by RemediationOrchestrator today — the "no CRD until V1.1" framing is stale. See [What Changed](#what-changed-in-this-rewrite) for the full list. | [#1806](https://github.com/jordigilh/kubernaut/issues/1806) |
 > | v2.7 | 2025-12-10 | Removed `TokensUsed` from status — LLM token tracking is KA's responsibility | DD-COST-001 |
 > | v2.6 | 2025-12-09 | V1.0 compliance audit: identified API group / status-population gaps | `NOTICE_AIANALYSIS_V1_COMPLIANCE_GAPS.md` (docs/handoff/, deleted in the repo-wide non-authoritative docs purge) |
@@ -100,34 +101,27 @@ type AIAnalysisSpec struct {
     // +kubebuilder:validation:Required
     AnalysisRequest AnalysisRequest `json:"analysisRequest"`
 
-    // Optional timeout configuration for this analysis.
-    // If nil, the controller uses defaults (Investigating: 60s, Analyzing: 5s).
-    // Passed through from RemediationRequest.Status.TimeoutConfig.AIAnalysisTimeout by RO.
+    // Absolute deadline for this analysis, propagated verbatim by RO from
+    // RemediationRequest.Status.TimeoutConfig.Analyzing at AIAnalysis creation
+    // time (DD-TIMEOUT-002 / Issue #2176). The Investigating phase handler
+    // self-enforces this deadline, taking precedence over the handler's own
+    // hardcoded DefaultMaxInvestigationDuration fallback (25m) when set. Nil
+    // when RO has no authoritative Analyzing timeout (defensive/back-compat).
     // +optional
-    TimeoutConfig *AIAnalysisTimeoutConfig `json:"timeoutConfig,omitempty"`
+    TimesOutAt *metav1.Time `json:"timesOutAt,omitempty"`
 
     // BR-FLEET-054: Remote cluster identifier for fleet-managed signals.
     // Propagated from RemediationRequest.Spec.ClusterID by the Remediation Orchestrator.
     // +optional
     ClusterID string `json:"clusterID,omitempty"`
 }
-
-// AIAnalysisTimeoutConfig defines timeout settings for AIAnalysis phases.
-type AIAnalysisTimeoutConfig struct {
-    // Timeout for Investigating phase (KA call). Default: 60s if not specified.
-    // +optional
-    InvestigatingTimeout metav1.Duration `json:"investigatingTimeout,omitempty"`
-
-    // Timeout for Analyzing phase (Rego policy evaluation). Default: 5s if not specified.
-    // +optional
-    AnalyzingTimeout metav1.Duration `json:"analyzingTimeout,omitempty"`
-}
 ```
 
-> **Not a request timeout for the KA call itself**: `InvestigatingTimeout` bounds how long the
-> Investigating *phase handler* runs per reconcile; the actual KA investigation is asynchronous
-> and bounded separately by `DefaultMaxInvestigationDuration` (25 minutes wall-clock, see
-> [Integration Points](./integration-points.md)) — the two are not the same knob.
+> **Supersedes `TimeoutConfig`/`AIAnalysisTimeoutConfig`** (removed, DD-TIMEOUT-002 / Issue #2176):
+> that field was never populated by RO's creator and never read by any handler — a dead-schema
+> field replaced outright by `TimesOutAt`, a single absolute deadline uniformly referencable
+> across AIAnalysis, SignalProcessing, and WorkflowExecution. See
+> [DD-TIMEOUT-002](../../../architecture/decisions/DD-TIMEOUT-002-child-crd-timeout-self-enforcement.md).
 
 ### AnalysisType and AnalysisRequest
 

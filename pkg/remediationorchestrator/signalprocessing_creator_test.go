@@ -20,6 +20,7 @@ package remediationorchestrator_test
 import (
 	"context"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -203,6 +204,80 @@ var _ = Describe("SignalProcessingCreator", func() {
 					"failed to create SignalProcessing",
 				),
 			)
+		})
+
+		// DD-TIMEOUT-002 / Issue #2176: RO's authoritative per-phase timeout must
+		// propagate into the child CRD spec as a self-enforceable absolute deadline.
+		Context("DD-TIMEOUT-002: TimesOutAt propagation from Status.TimeoutConfig.Processing", func() {
+			It("UT-ORCH-2176-001: sets Spec.TimesOutAt from Status.TimeoutConfig.Processing", func() {
+				// Arrange
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				spCreator := creator.NewSignalProcessingCreator(fakeClient, scheme, nil)
+				processingTimeout := &metav1.Duration{Duration: 5 * time.Minute}
+				rr := helpers.NewRemediationRequest("test-remediation", "default", helpers.RemediationRequestOpts{
+					TimeoutConfig: &remediationv1.TimeoutConfig{
+						Processing: processingTimeout,
+					},
+				})
+				before := metav1.Now()
+
+				// Act
+				name, err := spCreator.Create(ctx, rr)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Assert
+				createdSP := &signalprocessingv1.SignalProcessing{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdSP)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(createdSP.Spec.TimesOutAt).ToNot(BeNil(),
+					"DD-TIMEOUT-002: TimesOutAt must be set when RO has an authoritative Processing timeout")
+				// Lower bound floors "before" to the second: metav1.Time's JSON
+				// marshaling (RFC3339, no sub-second precision) truncates the
+				// value read back through the fake client's object tracker.
+				Expect(createdSP.Spec.TimesOutAt.Time).To(BeTemporally(">=", before.Time.Truncate(time.Second).Add(processingTimeout.Duration)))
+				Expect(createdSP.Spec.TimesOutAt.Time).To(BeTemporally("<", before.Add(processingTimeout.Duration+2*time.Second)),
+					"TimesOutAt must be computed as creation-time + the configured Processing duration, not drift further")
+			})
+
+			It("UT-ORCH-2176-002: leaves Spec.TimesOutAt nil when Status.TimeoutConfig is nil", func() {
+				// Arrange
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				spCreator := creator.NewSignalProcessingCreator(fakeClient, scheme, nil)
+				rr := helpers.NewRemediationRequest("test-remediation", "default")
+
+				// Act
+				name, err := spCreator.Create(ctx, rr)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Assert
+				createdSP := &signalprocessingv1.SignalProcessing{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdSP)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(createdSP.Spec.TimesOutAt).To(BeNil(),
+					"no authoritative Processing timeout is available, so SP must rely solely on RO's outer backstop")
+			})
+
+			It("UT-ORCH-2176-003: leaves Spec.TimesOutAt nil when Status.TimeoutConfig.Processing is nil", func() {
+				// Arrange
+				fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+				spCreator := creator.NewSignalProcessingCreator(fakeClient, scheme, nil)
+				rr := helpers.NewRemediationRequest("test-remediation", "default", helpers.RemediationRequestOpts{
+					TimeoutConfig: &remediationv1.TimeoutConfig{
+						// Processing intentionally left nil - only Global is set
+						Global: &metav1.Duration{Duration: time.Hour},
+					},
+				})
+
+				// Act
+				name, err := spCreator.Create(ctx, rr)
+				Expect(err).ToNot(HaveOccurred())
+
+				// Assert
+				createdSP := &signalprocessingv1.SignalProcessing{}
+				err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdSP)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(createdSP.Spec.TimesOutAt).To(BeNil())
+			})
 		})
 	})
 })

@@ -87,15 +87,6 @@ spec:
               confidence:
                 description: Confidence score from LLM (for audit trail)
                 type: number
-              executionConfig:
-                description: ExecutionConfig contains minimal execution settings
-                properties:
-                  timeout:
-                    description: |-
-                      Timeout for the entire workflow (Tekton PipelineRun timeout)
-                      Default: use global timeout from RemediationRequest or 30m
-                    type: string
-                type: object
               parameters:
                 additionalProperties:
                   type: string
@@ -157,6 +148,17 @@ spec:
                   Format: "namespace/kind/name" for namespaced resources
                           "kind/name" for cluster-scoped resources
                   Example: "payment/deployment/payment-api", "node/worker-node-1"
+                type: string
+              timesOutAt:
+                description: |-
+                  TimesOutAt is the absolute deadline for workflow execution,
+                  propagated verbatim from RemediationRequest.Status.TimeoutConfig.Executing
+                  by the RemediationOrchestrator creator at WorkflowExecution creation
+                  time (DD-TIMEOUT-002). An absolute timestamp (rather than a relative
+                  duration) avoids clock-skew ambiguity between RO and the
+                  WorkflowExecution executor. If nil, the executor falls back to its
+                  configured default execution duration.
+                format: date-time
                 type: string
               workflowRef:
                 description: |-

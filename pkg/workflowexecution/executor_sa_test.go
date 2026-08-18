@@ -17,6 +17,8 @@ limitations under the License.
 package workflowexecution_test
 
 import (
+	"time"
+
 	sharedtypes "github.com/jordigilh/kubernaut/pkg/shared/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -71,13 +73,12 @@ var _ = Describe("Per-Workflow ServiceAccount Spec Tests [DD-WE-005] (#650, #166
 			Expect(wfe.Spec.WorkflowRef.ServiceAccountName).To(Equal(""))
 		})
 
-		It("UT-WE-501-003: should be independent of ExecutionConfig", func() {
+		It("UT-WE-501-003: should be independent of Spec.TimesOutAt (DD-TIMEOUT-002)", func() {
 			wfe := buildWFE("top-level-sa")
-			wfe.Spec.ExecutionConfig = &workflowexecutionv1alpha1.ExecutionConfig{
-				Timeout: &metav1.Duration{Duration: 30 * 60e9},
-			}
+			deadline := metav1.NewTime(time.Now().Add(30 * time.Minute))
+			wfe.Spec.TimesOutAt = &deadline
 			Expect(wfe.Spec.WorkflowRef.ServiceAccountName).To(Equal("top-level-sa"),
-				"SA should be on WorkflowRef (CRD-embedded snapshot), not inside ExecutionConfig")
+				"SA should be on WorkflowRef (CRD-embedded snapshot), not derived from Spec.TimesOutAt")
 		})
 	})
 })

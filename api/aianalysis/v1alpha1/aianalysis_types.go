@@ -64,34 +64,24 @@ type AIAnalysisSpec struct {
 	AnalysisRequest AnalysisRequest `json:"analysisRequest"`
 
 	// ========================================
-	// TIMEOUT CONFIGURATION (REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md)
+	// TIMEOUT CONFIGURATION (DD-TIMEOUT-002)
 	// Replaces deprecated annotation-based timeout (security + validation)
-	// Passed through from RR.Status.TimeoutConfig.AIAnalysisTimeout by RO (Gap #8: moved to Status)
 	// ========================================
-	// Optional timeout configuration for this analysis
-	// If nil, AIAnalysis controller uses defaults (Investigating: 60s, Analyzing: 5s)
+	// TimesOutAt is the absolute deadline for the Investigating phase,
+	// propagated verbatim from RemediationRequest.Status.TimeoutConfig.Analyzing
+	// by the RemediationOrchestrator creator at AIAnalysis creation time
+	// (DD-TIMEOUT-002). An absolute timestamp (rather than a relative
+	// duration) avoids clock-skew ambiguity between RO and the AIAnalysis
+	// controller. If nil, the AIAnalysis controller falls back to its
+	// configured default investigation duration.
 	// +optional
-	TimeoutConfig *AIAnalysisTimeoutConfig `json:"timeoutConfig,omitempty"`
+	TimesOutAt *metav1.Time `json:"timesOutAt,omitempty"`
 
 	// BR-FLEET-054: Remote cluster identifier for fleet-managed signals.
 	// When non-empty, identifies the remote cluster where the signal originated.
 	// Propagated from RemediationRequest.Spec.ClusterID by the Remediation Orchestrator.
 	// +optional
 	ClusterID string `json:"clusterID,omitempty"`
-}
-
-// AIAnalysisTimeoutConfig defines timeout settings for AIAnalysis phases
-// Per REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md - Option A approved
-type AIAnalysisTimeoutConfig struct {
-	// Timeout for Investigating phase (KA call)
-	// Default: 60s if not specified
-	// +optional
-	InvestigatingTimeout metav1.Duration `json:"investigatingTimeout,omitempty"`
-
-	// Timeout for Analyzing phase (Rego policy evaluation)
-	// Default: 5s if not specified
-	// +optional
-	AnalyzingTimeout metav1.Duration `json:"analyzingTimeout,omitempty"`
 }
 
 // AnalysisType represents a type of analysis to perform.

@@ -252,6 +252,104 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 		})
 	})
 
+	// DD-TIMEOUT-002 / Issue #2176: RO's authoritative Analyzing-phase timeout,
+	// propagated as Spec.TimesOutAt, must take precedence over AA's own
+	// hardcoded maxInvestigationDuration default, and the existing audit-gap
+	// (checkInvestigationTimeout not calling RecordAnalysisFailed) must close.
+	Describe("UT-AA-2176-001: Spec.TimesOutAt takes precedence over maxInvestigationDuration", func() {
+		It("should fail the analysis when Spec.TimesOutAt has passed, even though session.CreatedAt is well within maxInvestigationDuration", func() {
+			// Session created 5 minutes ago -- comfortably within the 25m default --
+			// but RO's propagated absolute deadline has already passed.
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))
+			pastDeadline := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+			analysis.Spec.TimesOutAt = &pastDeadline
+			mockClient.WithSessionPollStatus("investigating")
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+				"DD-TIMEOUT-002: an expired Spec.TimesOutAt must fail the analysis regardless of maxInvestigationDuration")
+			Expect(result.RequeueAfter).To(BeZero(), "failed analysis should not requeue for polling")
+		})
+
+		It("should continue polling when Spec.TimesOutAt has not yet passed, even though session.CreatedAt exceeds maxInvestigationDuration", func() {
+			// Session created 30 minutes ago -- exceeds the 25m default -- but
+			// RO's propagated absolute deadline is still in the future, so the
+			// authoritative RO-driven deadline must win over AA's own default.
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
+			futureDeadline := metav1.NewTime(time.Now().Add(1 * time.Hour))
+			analysis.Spec.TimesOutAt = &futureDeadline
+			mockClient.WithSessionPollStatus("investigating")
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
+				"DD-TIMEOUT-002: a future Spec.TimesOutAt must take precedence over the hardcoded maxInvestigationDuration default")
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0), "should requeue for next poll")
+		})
+
+		It("should fall back to session.CreatedAt+maxInvestigationDuration when Spec.TimesOutAt is nil (back-compat)", func() {
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
+			Expect(analysis.Spec.TimesOutAt).To(BeNil())
+			mockClient.WithSessionPollStatus("investigating")
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+				"nil Spec.TimesOutAt must fall back to the existing session.CreatedAt+maxInvestigationDuration behavior")
+			Expect(result.RequeueAfter).To(BeZero())
+		})
+	})
+
+	Describe("UT-AA-2176-002: checkInvestigationTimeout records a failure audit event", func() {
+		It("should call RecordAnalysisFailed when the investigation times out (BR-AUDIT-005, AU-2/AU-3)", func() {
+			spy := &auditClientSpy{}
+			testMetrics := metrics.NewMetrics()
+			auditedHandler := handlers.NewInvestigatingHandler(
+				mockClient, ctrl.Log.WithName("test-timeout-audit"), testMetrics, spy,
+				handlers.WithSessionMode(),
+				handlers.WithRecorder(recorder),
+				handlers.WithMaxInvestigationDuration(25*time.Minute),
+			)
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
+			mockClient.WithSessionPollStatus("investigating")
+
+			_, err := auditedHandler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
+			Expect(spy.failedAnalysisEvents).To(HaveLen(1),
+				"BR-AUDIT-005 Gap #7 (Issue #2176): checkInvestigationTimeout must record a failure audit event, matching every other terminal-failure path in this handler")
+			Expect(spy.failedAnalysisEvents[0].analysis.Name).To(Equal(analysis.Name))
+			Expect(spy.failedAnalysisEvents[0].err).To(HaveOccurred())
+		})
+
+		It("should still fail the analysis (fail-open) when RecordAnalysisFailed itself errors", func() {
+			spy := &auditClientSpy{recordAnalysisFailedErr: fmt.Errorf("audit store unavailable")}
+			testMetrics := metrics.NewMetrics()
+			auditedHandler := handlers.NewInvestigatingHandler(
+				mockClient, ctrl.Log.WithName("test-timeout-audit-fail-open"), testMetrics, spy,
+				handlers.WithSessionMode(),
+				handlers.WithRecorder(recorder),
+				handlers.WithMaxInvestigationDuration(25*time.Minute),
+			)
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-30 * time.Minute))
+			mockClient.WithSessionPollStatus("investigating")
+
+			result, err := auditedHandler.Handle(ctx, analysis)
+
+			Expect(err).NotTo(HaveOccurred(),
+				"a failing audit write must not surface as a reconcile error (fail-open safety)")
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+				"the timeout failure itself must still be applied even when its audit record fails to write")
+			Expect(result.RequeueAfter).To(BeZero())
+			Expect(spy.failedAnalysisEvents).To(HaveLen(1), "the audit attempt must still have been made")
+		})
+	})
+
 	Describe("UT-AA-1351-008: handleSessionPollFailed sets Reason and SubReason (AA-MED-1)", func() {
 		It("should set structured failure fields when KA session poll returns failed", func() {
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))

@@ -139,6 +139,10 @@ const (
 
 	// ReasonValidationFailed - CRD validation failed
 	ReasonValidationFailed = "ValidationFailed"
+
+	// ReasonTimedOut - RO's authoritative Spec.TimesOutAt deadline
+	// (DD-TIMEOUT-002 / Issue #2176) has passed while SP was still active.
+	ReasonTimedOut = "TimedOut"
 )
 
 // Ready condition reasons

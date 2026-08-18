@@ -72,6 +72,11 @@ func (n *noopAuditClient) RecordAIAgentSessionLost(ctx context.Context, analysis
 // BR-AUDIT-005 Gap #7: Unit tests validate ErrorDetails structure.
 type auditClientSpy struct {
 	failedAnalysisEvents []failedAnalysisEvent
+	// recordAnalysisFailedErr, when set, is returned by RecordAnalysisFailed so
+	// callers can be tested for their fail-open handling of an audit-write
+	// failure (DD-TIMEOUT-002 / Issue #2176: checkInvestigationTimeout must
+	// log and continue, not fail the reconcile, when audit itself errors).
+	recordAnalysisFailedErr error
 }
 
 type failedAnalysisEvent struct {
@@ -92,7 +97,7 @@ func (s *auditClientSpy) RecordAnalysisFailed(ctx context.Context, analysis *aia
 		analysis: analysis,
 		err:      err,
 	})
-	return nil
+	return s.recordAnalysisFailedErr
 }
 
 func (s *auditClientSpy) RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis) {

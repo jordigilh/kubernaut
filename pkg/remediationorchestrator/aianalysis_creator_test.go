@@ -20,6 +20,7 @@ package remediationorchestrator_test
 import (
 	"context"
 	"fmt"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -684,6 +685,77 @@ var _ = Describe("AIAnalysisCreator", func() {
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalAnnotations).To(BeNil())
+		})
+	})
+
+	// DD-TIMEOUT-002 / Issue #2176: RO's authoritative per-phase timeout must
+	// propagate into the child CRD spec as a self-enforceable absolute deadline.
+	Describe("DD-TIMEOUT-002: TimesOutAt propagation from Status.TimeoutConfig.Analyzing", func() {
+		It("UT-ORCH-2176-001: sets Spec.TimesOutAt from Status.TimeoutConfig.Analyzing", func() {
+			completedSP := helpers.NewCompletedSignalProcessing("sp-timeout-test", "default")
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			analyzingTimeout := &metav1.Duration{Duration: 10 * time.Minute}
+			rr := helpers.NewRemediationRequest("timeout-test", "default", helpers.RemediationRequestOpts{
+				TimeoutConfig: &remediationv1.TimeoutConfig{
+					Analyzing: analyzingTimeout,
+				},
+			})
+			before := metav1.Now()
+
+			name, err := aiCreator.Create(ctx, rr, completedSP)
+			Expect(err).ToNot(HaveOccurred())
+
+			createdAI := &aianalysisv1.AIAnalysis{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdAI.Spec.TimesOutAt).ToNot(BeNil(),
+				"DD-TIMEOUT-002: TimesOutAt must be set when RO has an authoritative Analyzing timeout")
+			// Lower bound floors "before" to the second: metav1.Time's JSON
+			// marshaling (RFC3339, no sub-second precision) truncates the
+			// value read back through the fake client's object tracker.
+			Expect(createdAI.Spec.TimesOutAt.Time).To(BeTemporally(">=", before.Time.Truncate(time.Second).Add(analyzingTimeout.Duration)))
+			Expect(createdAI.Spec.TimesOutAt.Time).To(BeTemporally("<", before.Add(analyzingTimeout.Duration+2*time.Second)),
+				"TimesOutAt must be computed as creation-time + the configured Analyzing duration, not drift further")
+		})
+
+		It("UT-ORCH-2176-002: leaves Spec.TimesOutAt nil when Status.TimeoutConfig is nil", func() {
+			completedSP := helpers.NewCompletedSignalProcessing("sp-no-timeout-test", "default")
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("no-timeout-test", "default")
+
+			name, err := aiCreator.Create(ctx, rr, completedSP)
+			Expect(err).ToNot(HaveOccurred())
+
+			createdAI := &aianalysisv1.AIAnalysis{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdAI.Spec.TimesOutAt).To(BeNil(),
+				"no authoritative Analyzing timeout is available, so AA must rely solely on its configured default")
+		})
+
+		It("UT-ORCH-2176-003: leaves Spec.TimesOutAt nil when Status.TimeoutConfig.Analyzing is nil", func() {
+			completedSP := helpers.NewCompletedSignalProcessing("sp-partial-timeout-test", "default")
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
+				WithStatusSubresource(completedSP).Build()
+			aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
+			rr := helpers.NewRemediationRequest("partial-timeout-test", "default", helpers.RemediationRequestOpts{
+				TimeoutConfig: &remediationv1.TimeoutConfig{
+					// Analyzing intentionally left nil - only Processing is set
+					Processing: &metav1.Duration{Duration: 5 * time.Minute},
+				},
+			})
+
+			name, err := aiCreator.Create(ctx, rr, completedSP)
+			Expect(err).ToNot(HaveOccurred())
+
+			createdAI := &aianalysisv1.AIAnalysis{}
+			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, createdAI)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(createdAI.Spec.TimesOutAt).To(BeNil())
 		})
 	})
 })

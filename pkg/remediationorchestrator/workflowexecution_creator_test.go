@@ -503,12 +503,14 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 		})
 	})
 
-	Describe("buildExecutionConfig", func() {
-		It("should set timeout when TimeoutConfig is provided per BR-ORCH-028", func() {
+	// DD-TIMEOUT-002 / Issue #2176: RO's authoritative per-phase timeout must
+	// propagate into the child CRD spec as a self-enforceable absolute deadline.
+	Describe("DD-TIMEOUT-002: TimesOutAt propagation from Status.TimeoutConfig.Executing", func() {
+		It("UT-ORCH-2176-001 / UT-WE-501-010: sets Spec.TimesOutAt from Status.TimeoutConfig.Executing per BR-ORCH-028", func() {
 			// Arrange
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
-			executingTimeout := metav1.Duration{Duration: 30 * 60 * 1000000000} // 30 minutes
+			executingTimeout := metav1.Duration{Duration: 30 * time.Minute}
 			rr := helpers.NewRemediationRequest("test-remediation", "default",
 				helpers.RemediationRequestOpts{
 					TimeoutConfig: &remediationv1.TimeoutConfig{
@@ -517,6 +519,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 				})
 			ai := helpers.NewCompletedAIAnalysis("ai-test-remediation", "default")
 			ctx := context.Background()
+			before := metav1.Now()
 
 			// Act
 			name, err := weCreator.Create(ctx, rr, ai)
@@ -527,11 +530,17 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.ExecutionConfig).To(HaveValue(HaveField("Timeout", Not(BeNil()))))
-			Expect(created.Spec.ExecutionConfig.Timeout.Duration).To(Equal(30 * time.Minute))
+			Expect(created.Spec.TimesOutAt).ToNot(BeNil(),
+				"DD-TIMEOUT-002: TimesOutAt must be set when RO has an authoritative Executing timeout")
+			// Lower bound floors "before" to the second: metav1.Time's JSON
+			// marshaling (RFC3339, no sub-second precision) truncates the
+			// value read back through the fake client's object tracker.
+			Expect(created.Spec.TimesOutAt.Time).To(BeTemporally(">=", before.Time.Truncate(time.Second).Add(executingTimeout.Duration)))
+			Expect(created.Spec.TimesOutAt.Time).To(BeTemporally("<", before.Add(executingTimeout.Duration+2*time.Second)),
+				"TimesOutAt must be computed as creation-time + the configured Executing duration, not drift further")
 		})
 
-		It("should return nil ExecutionConfig when no timeout configured per BR-ORCH-028", func() {
+		It("UT-ORCH-2176-002 / UT-RO-481-002: leaves Spec.TimesOutAt nil when no timeout configured per BR-ORCH-028", func() {
 			// Arrange
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
@@ -548,10 +557,10 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.ExecutionConfig).To(BeNil())
+			Expect(created.Spec.TimesOutAt).To(BeNil())
 		})
 
-		It("should return nil ExecutionConfig when timeout duration is zero per BR-ORCH-028", func() {
+		It("UT-ORCH-2176-003: leaves Spec.TimesOutAt nil when timeout duration is zero per BR-ORCH-028", func() {
 			// Arrange
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			weCreator := creator.NewWorkflowExecutionCreator(fakeClient, scheme, nil)
@@ -573,7 +582,7 @@ var _ = Describe("WorkflowExecutionCreator", func() {
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = fakeClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.ExecutionConfig).To(BeNil())
+			Expect(created.Spec.TimesOutAt).To(BeNil())
 		})
 	})
 })
