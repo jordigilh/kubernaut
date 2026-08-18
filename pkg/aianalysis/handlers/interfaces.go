@@ -56,9 +56,11 @@ type AgentSessionGetOrCreator interface {
 // Methods:
 // - RecordAIAgentCall: Records AI agent API calls with status and duration
 // - RecordPhaseTransition: Records phase transition events (DD-AUDIT-003)
-// - RecordAIAgentSubmit: Records async AI agent submit event (BR-AA-KA-064)
-// - RecordAIAgentResult: Records async AI agent result retrieval event (BR-AA-KA-064)
-// - RecordAIAgentSessionLost: Records session lost event (BR-AA-KA-064)
+// - RecordAIAgentSubmit: Records AI agent submit event at AgentSession create time (BR-AA-KA-065.1)
+// - RecordAIAgentResult: Records AI agent result retrieval at AgentSession Status-read time (BR-AA-KA-065.1)
+//
+// RecordAIAgentSessionLost (BR-AA-KA-064) was retired, not repurposed, along with the
+// regeneration-cap mechanism it audited -- see DD-AA-KA-001, BR-AA-KA-065.7.
 type AuditClientInterface interface {
 	RecordAIAgentCall(ctx context.Context, analysis *aianalysisv1.AIAnalysis, endpoint string, statusCode int, durationMs int)
 	RecordPhaseTransition(ctx context.Context, analysis *aianalysisv1.AIAnalysis, from, to string)
@@ -68,12 +70,12 @@ type AuditClientInterface interface {
 	RecordAnalysisComplete(ctx context.Context, analysis *aianalysisv1.AIAnalysis)
 
 	// ========================================
-	// Session audit methods (BR-AA-KA-064)
+	// Session audit methods (BR-AA-KA-065.1)
 	// ========================================
 
-	// RecordAIAgentSubmit records an async AI agent submit event with session ID
+	// RecordAIAgentSubmit records an AI agent submit event with session ID
 	RecordAIAgentSubmit(ctx context.Context, analysis *aianalysisv1.AIAnalysis, sessionID string)
-	// RecordAIAgentResult records an async AI agent result retrieval with investigation time
+	// RecordAIAgentResult records an AI agent result retrieval with investigation time
 	RecordAIAgentResult(ctx context.Context, analysis *aianalysisv1.AIAnalysis, investigationTimeMs int64)
 }
 

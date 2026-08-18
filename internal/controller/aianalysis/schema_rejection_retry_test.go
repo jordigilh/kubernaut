@@ -97,8 +97,6 @@ func (noopAuditClient) RecordAnalysisComplete(_ context.Context, _ *aianalysisv1
 func (noopAuditClient) RecordAIAgentSubmit(_ context.Context, _ *aianalysisv1.AIAnalysis, _ string) {
 }
 func (noopAuditClient) RecordAIAgentResult(_ context.Context, _ *aianalysisv1.AIAnalysis, _ int64) {}
-func (noopAuditClient) RecordAIAgentSessionLost(_ context.Context, _ *aianalysisv1.AIAnalysis, _ int32) {
-}
 
 // noopAnalyzingAuditClient implements handlers.AnalyzingAuditClientInterface.
 type noopAnalyzingAuditClient struct{}

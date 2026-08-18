@@ -325,14 +325,20 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 >   `/api/v1/incident/analyze` endpoint string in its payload — kept only for dashboard/query
 >   continuity on that field; it no longer reflects an actual HTTP call.
 > - `aianalysis.aiagent.session_lost` (`EventTypeAIAgentSessionLost` /
->   `RecordAIAgentSessionLost`, `pkg/aianalysis/audit/audit.go`) is **retired, not repurposed**:
->   its sole production caller, `handleSessionLost`, was deleted along with the regeneration-cap
->   mechanism it audited (confirmed root cause of
+>   `RecordAIAgentSessionLost`) is **retired, not repurposed**: its sole production caller,
+>   `handleSessionLost`, was deleted along with the regeneration-cap mechanism it audited
+>   (confirmed root cause of
 >   [#2080](https://github.com/jordigilh/kubernaut/issues/2080)/[#2081](https://github.com/jordigilh/kubernaut/issues/2081)).
->   As of this update the method and its `AuditClient`/interface declaration still exist in code
->   (implemented only by test doubles, zero production callers) — full deletion of that dead code
->   is a candidate for issue [#2190](https://github.com/jordigilh/kubernaut/issues/2190)'s cleanup
->   pass, not done in this documentation update. See
+>   The constant and method were deleted from `pkg/aianalysis/audit/audit.go` (2026-08-18), along
+>   with the now-pointless no-op implementations in three test doubles
+>   (`pkg/aianalysis/investigating_handler_test.go`,
+>   `internal/controller/aianalysis/schema_rejection_retry_test.go`,
+>   `test/integration/aianalysis/schemarejection/retry_test.go`) — `AuditClientInterface` never
+>   declared this method to begin with, so removing it changed no contract. The
+>   `pkg/datastorage/ogen-client` generated wire types for this event (`AuditEventEventDataAianalysisAiagentSessionLostAuditEventEventData`
+>   etc.) are left untouched: they are OpenAPI-schema-generated and reflect the Data Storage
+>   service's audit-events API contract, not this specific caller's usage — regenerating them is a
+>   separate, schema-level decision outside this cleanup's scope. See
 >   [docs/testing/2170/TEST_PLAN.md](../../testing/2170/TEST_PLAN.md) for the full BR/control
 >   coverage record.
 | `aianalysis.approval.decision` | Manual approval decision recorded | P0 |
