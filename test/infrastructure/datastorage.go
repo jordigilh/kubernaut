@@ -262,42 +262,61 @@ func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName strin
 	_, _ = fmt.Fprintf(writer, "   (Events, pod status, jobs, deployments, replicasets, SP CRs also captured)\n\n")
 }
 
-// DeleteCluster deletes a Kind cluster and optionally exports logs on test failure
+// shouldDeleteClusterNow reports whether DeleteCluster should invoke
+// `kind delete cluster` itself, vs. deferring teardown to an external owner.
+//
+//   - CI/CD (inCICD=true): always false. The GitHub Actions workflow's
+//     "Cleanup Kind cluster" step (if: always()) is the sole owner of
+//     teardown there, and it already runs after diagnostic collection in
+//     every outcome (success, failure, cancellation). Go must never delete
+//     the cluster itself in CI/CD -- doing so on the "tests passed" path
+//     raced the workflow's "Collect must-gather logs" step (if: failure() ||
+//     cancelled()) whenever a job was cancelled after Ginkgo already
+//     observed testsFailed=false, erasing all evidence before that step
+//     could run (#2185).
+//   - Local dev (inCICD=false): only when cleanupOptIn is true. The cluster
+//     is preserved by default to aid local troubleshooting; set
+//     KUBERNAUT_E2E_CLEANUP_CLUSTER=true to restore automatic deletion.
+func shouldDeleteClusterNow(inCICD bool, cleanupOptIn bool) bool {
+	if inCICD {
+		return false
+	}
+	return cleanupOptIn
+}
+
+// DeleteCluster collects diagnostics on test failure and, depending on the
+// environment, either deletes the Kind cluster or preserves it for later
+// inspection/cleanup.
 //
 // Parameters:
 //   - clusterName: Name of the Kind cluster to delete
 //   - serviceName: Service name for log directory naming (e.g., "gateway", "datastorage")
-//   - testsFailed: If true, exports logs before deletion (must-gather style)
+//   - testsFailed: If true, collects diagnostics before deciding on teardown (must-gather style)
 //   - writer: Output writer for logging
 //   - namespace: Optional namespace override for must-gather (default: "kubernaut-system").
 //     Services that deploy pods in a custom namespace (e.g., KA in "kubernaut-agent-e2e")
 //     must pass the actual namespace so MustGatherPodLogs can find the pods.
 //
-// Log Export Behavior (when testsFailed=true):
-//   - CI/CD mode: Collects pod logs via kubectl to /tmp/kubernaut-must-gather/ and preserves cluster
-//   - Local mode: Exports to /tmp/{serviceName}-e2e-logs-{timestamp} via kind export logs
-//   - ALWAYS deletes cluster after log export (local mode only)
+// Teardown Behavior (see shouldDeleteClusterNow):
+//   - CI/CD mode: NEVER deletes the cluster, regardless of testsFailed. The GitHub
+//     Actions "Cleanup Kind cluster" step (if: always()) owns teardown after its own
+//     "Collect must-gather logs" step (if: failure() || cancelled()) has had a chance
+//     to inspect a still-live cluster in every outcome.
+//   - Local mode: exports diagnostics on failure via `kind export logs`, then preserves
+//     the cluster by default. Set KUBERNAUT_E2E_CLEANUP_CLUSTER=true to auto-delete.
 //
 // Example:
 //
 //	err := DeleteCluster("gateway-e2e", "gateway", anyTestFailed, GinkgoWriter)
 //	err := DeleteCluster("kubernaut-agent-e2e", "kubernaut-agent", anyTestFailed, GinkgoWriter, "kubernaut-agent-e2e")
 func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer, namespace ...string) error {
-	// ═══════════════════════════════════════════════════════════════════════
-	// FIX: Preserve cluster in CI/CD when tests fail (for must-gather)
-	// ═══════════════════════════════════════════════════════════════════════
-	// In CI/CD (IMAGE_REGISTRY set), GitHub Actions workflow collects must-gather
-	// artifacts. Tests must NOT delete cluster on failure so workflow can inspect
-	// pod status, events, and logs.
-	//
-	// In local dev (IMAGE_REGISTRY not set), export logs immediately for debugging,
-	// then delete cluster to free resources.
 	inCICD := os.Getenv("IMAGE_REGISTRY") != ""
+	cleanupOptIn := os.Getenv("KUBERNAUT_E2E_CLEANUP_CLUSTER") == "true"
 
 	if testsFailed {
 		if inCICD {
 			// ═══════════════════════════════════════════════════════════════════════
-			// CI/CD MODE: Collect pod logs via kubectl BEFORE preserving cluster
+			// CI/CD MODE: Collect pod logs via kubectl (cluster is preserved either way)
 			// ═══════════════════════════════════════════════════════════════════════
 			_, _ = fmt.Fprintf(writer, "⚠️  Test failure detected in CI/CD environment\n")
 
@@ -309,41 +328,48 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 				ns = namespace[0]
 			}
 			MustGatherPodLogs(clusterName, kubeconfigPath, ns, serviceName, writer)
-
-			_, _ = fmt.Fprintf(writer, "🔍 Preserving Kind cluster for must-gather collection\n")
-			_, _ = fmt.Fprintf(writer, "   • Cluster: %s\n", clusterName)
-			_, _ = fmt.Fprintf(writer, "   • GitHub Actions will collect pod logs, events, and status\n")
-			_, _ = fmt.Fprintf(writer, "   • Workflow will delete cluster after artifact collection\n")
-			_, _ = fmt.Fprintf(writer, "✅ Cluster preserved for diagnostics\n")
-			return nil // Don't delete - let GitHub Actions handle it
-		}
-
-		// ═══════════════════════════════════════════════════════════════════════
-		// LOCAL MODE: Export logs immediately (Must-Gather Style)
-		// ═══════════════════════════════════════════════════════════════════════
-		_, _ = fmt.Fprintf(writer, "⚠️  Test failure detected - collecting diagnostic information...\n\n")
-		_, _ = fmt.Fprintf(writer, "📋 Exporting cluster logs (Kind must-gather)...\n")
-
-		logsDir := fmt.Sprintf("/tmp/%s-e2e-logs-%s", serviceName, time.Now().Format("20060102-150405"))
-		exportCmd := exec.Command("kind", "export", "logs", logsDir, "--name", clusterName)
-
-		if exportOutput, exportErr := exportCmd.CombinedOutput(); exportErr != nil {
-			_, _ = fmt.Fprintf(writer, "❌ Failed to export Kind logs: %s\n", string(exportOutput))
-			_, _ = fmt.Fprintf(writer, "   (Continuing with cluster deletion)\n\n")
 		} else {
-			_, _ = fmt.Fprintf(writer, "✅ Cluster logs exported successfully\n")
-			_, _ = fmt.Fprintf(writer, "📁 Location: %s\n", logsDir)
-			_, _ = fmt.Fprintf(writer, "📁 Contents: pod logs, node logs, kubelet logs, and more\n\n")
+			// ═══════════════════════════════════════════════════════════════════════
+			// LOCAL MODE: Export logs immediately (Must-Gather Style)
+			// ═══════════════════════════════════════════════════════════════════════
+			_, _ = fmt.Fprintf(writer, "⚠️  Test failure detected - collecting diagnostic information...\n\n")
+			_, _ = fmt.Fprintf(writer, "📋 Exporting cluster logs (Kind must-gather)...\n")
 
-			// ═══════════════════════════════════════════════════════════════════════
-			// EXTRACT KUBERNAUT SERVICE LOGS (for immediate analysis)
-			// ═══════════════════════════════════════════════════════════════════════
-			extractKubernautServiceLogs(logsDir, serviceName, writer)
+			logsDir := fmt.Sprintf("/tmp/%s-e2e-logs-%s", serviceName, time.Now().Format("20060102-150405"))
+			exportCmd := exec.Command("kind", "export", "logs", logsDir, "--name", clusterName)
+
+			if exportOutput, exportErr := exportCmd.CombinedOutput(); exportErr != nil {
+				_, _ = fmt.Fprintf(writer, "❌ Failed to export Kind logs: %s\n", string(exportOutput))
+			} else {
+				_, _ = fmt.Fprintf(writer, "✅ Cluster logs exported successfully\n")
+				_, _ = fmt.Fprintf(writer, "📁 Location: %s\n", logsDir)
+				_, _ = fmt.Fprintf(writer, "📁 Contents: pod logs, node logs, kubelet logs, and more\n\n")
+
+				// ═══════════════════════════════════════════════════════════════════════
+				// EXTRACT KUBERNAUT SERVICE LOGS (for immediate analysis)
+				// ═══════════════════════════════════════════════════════════════════════
+				extractKubernautServiceLogs(logsDir, serviceName, writer)
+			}
 		}
 	}
 
 	// ═══════════════════════════════════════════════════════════════════════
-	// DELETE CLUSTER (normal cleanup or after local log export)
+	// TEARDOWN DECISION (see shouldDeleteClusterNow)
+	// ═══════════════════════════════════════════════════════════════════════
+	if !shouldDeleteClusterNow(inCICD, cleanupOptIn) {
+		if inCICD {
+			_, _ = fmt.Fprintf(writer, "🔍 Preserving Kind cluster: %s\n", clusterName)
+			_, _ = fmt.Fprintf(writer, "   • GitHub Actions \"Cleanup Kind cluster\" (if: always()) owns teardown in CI/CD\n")
+			_, _ = fmt.Fprintf(writer, "   • Its \"Collect must-gather logs\" step runs first in every outcome (success, failure, cancellation)\n")
+		} else {
+			_, _ = fmt.Fprintf(writer, "🔍 Preserving Kind cluster for local troubleshooting: %s\n", clusterName)
+			_, _ = fmt.Fprintf(writer, "   • Set KUBERNAUT_E2E_CLEANUP_CLUSTER=true to auto-delete\n")
+		}
+		return nil
+	}
+
+	// ═══════════════════════════════════════════════════════════════════════
+	// DELETE CLUSTER (local mode, explicit opt-in only)
 	// ═══════════════════════════════════════════════════════════════════════
 	_, _ = fmt.Fprintf(writer, "🗑️  Deleting Kind cluster...\n")
 	cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
