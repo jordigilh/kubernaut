@@ -49,6 +49,11 @@ import (
 // Tests per-workflow SA token injection, fallback, and TTL validation.
 // ========================================
 
+// tokenSubresource is the TokenRequest API subresource name used by every
+// reactor helper below to distinguish token-issuance calls from other
+// ServiceAccount "create" actions.
+const tokenSubresource = "token"
+
 var _ = Describe("Ansible TokenRequest Credential Injection [#501]", func() {
 
 	var (
@@ -86,9 +91,12 @@ var _ = Describe("Ansible TokenRequest Credential Injection [#501]", func() {
 			},
 		}
 		if timeout > 0 {
-			wfe.Spec.ExecutionConfig = &workflowexecutionv1alpha1.ExecutionConfig{
-				Timeout: &metav1.Duration{Duration: timeout},
-			}
+			// DD-TIMEOUT-002 / Issue #2176: Spec.TimesOutAt is an absolute
+			// deadline; convert the test's relative timeout to one anchored
+			// at "now" so requestTokenForSA's time.Until(TimesOutAt) recovers
+			// (approximately) the same duration.
+			deadline := metav1.NewTime(time.Now().Add(timeout))
+			wfe.Spec.TimesOutAt = &deadline
 		}
 		return wfe
 	}
@@ -128,7 +136,7 @@ var _ = Describe("Ansible TokenRequest Credential Injection [#501]", func() {
 	addTokenReactor := func(cs *kubefake.Clientset, token string, expiration time.Time) {
 		cs.PrependReactor("create", "serviceaccounts", func(action k8stesting.Action) (bool, runtime.Object, error) {
 			subresource := action.GetSubresource()
-			if subresource != "token" {
+			if subresource != tokenSubresource {
 				return false, nil, nil
 			}
 			return true, &authenticationv1.TokenRequest{
@@ -140,10 +148,37 @@ var _ = Describe("Ansible TokenRequest Credential Injection [#501]", func() {
 		})
 	}
 
+	// Helper: add a TokenRequest reactor that captures the requested
+	// ExpirationSeconds into capturedExpSeconds and grants exactly that TTL
+	// (so no TTL-shortening warning is produced), for asserting on what
+	// requestTokenForSA actually asked for (DD-TIMEOUT-002 / Issue #2176).
+	addCapturingTokenReactor := func(cs *kubefake.Clientset, capturedExpSeconds *int64) {
+		cs.PrependReactor("create", "serviceaccounts", func(action k8stesting.Action) (bool, runtime.Object, error) {
+			if action.GetSubresource() != tokenSubresource {
+				return false, nil, nil
+			}
+			createAction, ok := action.(k8stesting.CreateAction)
+			if !ok {
+				return false, nil, nil
+			}
+			treq, ok := createAction.GetObject().(*authenticationv1.TokenRequest)
+			if !ok || treq.Spec.ExpirationSeconds == nil {
+				return false, nil, nil
+			}
+			*capturedExpSeconds = *treq.Spec.ExpirationSeconds
+			return true, &authenticationv1.TokenRequest{
+				Status: authenticationv1.TokenRequestStatus{
+					Token:               "captured-token",
+					ExpirationTimestamp: metav1.NewTime(time.Now().Add(time.Duration(*treq.Spec.ExpirationSeconds) * time.Second)),
+				},
+			}, nil
+		})
+	}
+
 	// Helper: add a TokenRequest reactor that returns an error
 	addTokenErrorReactor := func(cs *kubefake.Clientset, err error) {
 		cs.PrependReactor("create", "serviceaccounts", func(action k8stesting.Action) (bool, runtime.Object, error) {
-			if action.GetSubresource() != "token" {
+			if action.GetSubresource() != tokenSubresource {
 				return false, nil, nil
 			}
 			return true, nil, err
@@ -243,6 +278,30 @@ var _ = Describe("Ansible TokenRequest Credential Injection [#501]", func() {
 			Expect(w.Reason).To(Equal(workflowexecutionv1alpha1.ReasonTokenTTLShortened))
 			Expect(w.Message).To(ContainSubstring("shorter than execution timeout"),
 				"warning message should describe the TTL mismatch")
+		})
+
+		It("UT-WE-2176-002: requests an extended token TTL when the remaining execution window exceeds the 1h default", func() {
+			// DD-TIMEOUT-002 / Issue #2176: when Spec.TimesOutAt implies more
+			// than defaultTokenExpirationSeconds (1h) remaining, requestTokenForSA
+			// must ask the API server for that longer TTL instead of the 1h default.
+			var capturedExpSeconds int64
+			addCapturingTokenReactor(fakeCS, &capturedExpSeconds)
+			wfe := buildWFE("my-sa", 90*time.Minute)
+			setupExecutor(fakeCS, wfe)
+			_, err := ansibleExec.Create(ctx, wfe, "kubernaut-workflows", executor.CreateOptions{})
+
+			Expect(err).ToNot(HaveOccurred())
+			// Warnings are intentionally not asserted here: the reactor grants
+			// exactly capturedExpSeconds (integer seconds) from its own
+			// call-time now(), while requestTokenForSA compares against
+			// executionTimeout captured microseconds earlier -- sub-second
+			// rounding drift can trip the TTL-shortening warning even when
+			// the two are effectively equal. That warning path already has
+			// its own dedicated coverage (UT-WE-501-008).
+			Expect(capturedExpSeconds).To(BeNumerically(">", 3600),
+				"a 90m remaining window must extend the requested TokenRequest TTL beyond the 1h default")
+			Expect(capturedExpSeconds).To(BeNumerically("~", 90*60, 5),
+				"requested TTL should match the ~90m remaining execution window")
 		})
 	})
 })

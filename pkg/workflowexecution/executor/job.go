@@ -41,11 +41,17 @@ const (
 
 	// defaultJobActiveDeadline is the fallback ActiveDeadlineSeconds applied to
 	// the Job (BR-WORKFLOW-008) when the WFE does not declare an explicit
-	// ExecutionConfig.Timeout. Matches the 30-minute default already used for
-	// Tekton executions and RemediationOrchestrator's Executing-phase safety
-	// net (BR-ORCH-028), so a Pod unable to mount a missing dependency reaches
-	// a terminal JobFailed condition instead of hanging indefinitely.
+	// Spec.TimesOutAt (DD-TIMEOUT-002). Matches the 30-minute default already
+	// used for Tekton executions and RemediationOrchestrator's Executing-phase
+	// safety net (BR-ORCH-028), so a Pod unable to mount a missing dependency
+	// reaches a terminal JobFailed condition instead of hanging indefinitely.
 	defaultJobActiveDeadline = 30 * time.Minute
+
+	// minJobActiveDeadlineSeconds floors the computed ActiveDeadlineSeconds
+	// (DD-TIMEOUT-002) so an already-past or near-past Spec.TimesOutAt still
+	// produces a valid, strictly-positive K8s Job deadline instead of a
+	// zero/negative value.
+	minJobActiveDeadlineSeconds = 1
 )
 
 // podMountFailureReasons are the kubelet Event reasons that indicate a Pod
@@ -335,16 +341,22 @@ func (j *JobExecutor) countPodCreationAttempts(ctx context.Context, c ExecutorCl
 }
 
 // activeDeadlineSecondsFor resolves the Job's ActiveDeadlineSeconds
-// (BR-WORKFLOW-008) from the WFE's ExecutionConfig.Timeout, falling back to
-// defaultJobActiveDeadline when unset. This bounds how long a Pod can remain
-// unable to start (e.g. stuck mounting a missing dependency) before the Job
-// reaches a terminal JobFailed condition.
+// (BR-WORKFLOW-008) from the WFE's Spec.TimesOutAt (DD-TIMEOUT-002 / Issue
+// #2176), an absolute deadline propagated by RO from
+// RemediationRequest.Status.TimeoutConfig.Executing, converted to the
+// K8s Job's relative-duration field via time.Until at Job-creation time.
+// Falls back to defaultJobActiveDeadline when Spec.TimesOutAt is unset. This
+// bounds how long a Pod can remain unable to start (e.g. stuck mounting a
+// missing dependency) before the Job reaches a terminal JobFailed condition.
 func activeDeadlineSecondsFor(wfe *workflowexecutionv1alpha1.WorkflowExecution) int64 {
 	timeout := defaultJobActiveDeadline
-	if wfe.Spec.ExecutionConfig != nil && wfe.Spec.ExecutionConfig.Timeout != nil && wfe.Spec.ExecutionConfig.Timeout.Duration > 0 {
-		timeout = wfe.Spec.ExecutionConfig.Timeout.Duration
+	if remaining, ok := remainingUntilDeadline(wfe.Spec.TimesOutAt); ok {
+		timeout = remaining
 	}
-	return int64(timeout.Seconds())
+	if seconds := int64(timeout.Seconds()); seconds >= minJobActiveDeadlineSeconds {
+		return seconds
+	}
+	return minJobActiveDeadlineSeconds
 }
 
 // IsCompleted checks whether the existing Job for the given target resource is

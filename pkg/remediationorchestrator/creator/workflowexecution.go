@@ -127,9 +127,13 @@ func (c *WorkflowExecutionCreator) buildWorkflowExecution(rr *remediationv1.Reme
 			ClusterID:      rr.Spec.ClusterID,
 			Parameters:     ai.Status.SelectedWorkflow.Parameters,
 			// Audit fields from AIAnalysis
-			Confidence:      ai.Status.SelectedWorkflow.Confidence,
-			Rationale:       ai.Status.SelectedWorkflow.Rationale,
-			ExecutionConfig: c.buildExecutionConfig(rr),
+			Confidence: ai.Status.SelectedWorkflow.Confidence,
+			Rationale:  ai.Status.SelectedWorkflow.Rationale,
+			// DD-TIMEOUT-002 / Issue #2176: propagate RO's authoritative Executing
+			// timeout as a self-enforceable absolute deadline. Nil-safe: leaves
+			// TimesOutAt nil when RO has no authoritative Executing timeout, so
+			// the executor falls back to its own configured default.
+			TimesOutAt: workflowExecutionTimesOutAt(rr),
 		},
 	}
 }
@@ -276,14 +280,14 @@ func resolveTargetResource(rr *remediationv1.RemediationRequest, ai *aianalysisv
 	return BuildTargetResourceString(rr)
 }
 
-// buildExecutionConfig builds ExecutionConfig from RemediationRequest timeouts.
-// Issue #650 / #1661 Change 11d: ServiceAccountName is carried on WorkflowRef
-// (see buildWorkflowRef), not on ExecutionConfig -- this only carries timeouts.
-func (c *WorkflowExecutionCreator) buildExecutionConfig(rr *remediationv1.RemediationRequest) *workflowexecutionv1.ExecutionConfig {
-	if rr.Status.TimeoutConfig != nil && rr.Status.TimeoutConfig.Executing != nil && rr.Status.TimeoutConfig.Executing.Duration > 0 {
-		return &workflowexecutionv1.ExecutionConfig{
-			Timeout: rr.Status.TimeoutConfig.Executing,
-		}
+// workflowExecutionTimesOutAt computes the absolute deadline for workflow
+// execution from RO's authoritative Status.TimeoutConfig.Executing
+// (DD-TIMEOUT-002). Issue #650 / #1661 Change 11d: ServiceAccountName is
+// carried on WorkflowRef (see buildWorkflowRef), not here -- this only
+// carries the timeout deadline.
+func workflowExecutionTimesOutAt(rr *remediationv1.RemediationRequest) *metav1.Time {
+	if rr.Status.TimeoutConfig == nil {
+		return nil
 	}
-	return nil
+	return computeTimesOutAt(rr.Status.TimeoutConfig.Executing)
 }

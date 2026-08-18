@@ -20,7 +20,8 @@
 | **DD-WORKFLOW-003** | **Parameters** - UPPER_SNAKE_CASE keys for Tekton params |
 | **DD-WE-001** | **Resource Locking** - Prevents parallel/redundant workflows on same target |
 | **Issue #91** | **Metadata Migration** - `kubernaut.ai/*` labels removed from CRDs; use spec fields and field selectors |
-| **DD-WE-005 v2.0** | **Per-workflow ServiceAccount** - Operators pre-create SAs and RBAC; `executionConfig.serviceAccountName` references them; if empty, Kubernetes uses the execution namespace default SA |
+| **DD-WE-005 v2.0** | **Per-workflow ServiceAccount** - Operators pre-create SAs and RBAC; `workflowRef.serviceAccountName` (CRD-embedded `WorkflowSnapshot`) references them; if empty, Kubernetes uses the execution namespace default SA |
+| **DD-TIMEOUT-002 / Issue #2176** | **Absolute deadline self-enforcement** - `spec.timesOutAt` (propagated verbatim from RO's `Status.TimeoutConfig.Executing`) replaces the never-populated `executionConfig.timeout`; sources `job.go`'s `ActiveDeadlineSeconds` and `ansible.go`'s TokenRequest TTL |
 
 ### Metadata and Filtering (Issue #91)
 
@@ -111,8 +112,12 @@ type WorkflowExecutionSpec struct {
     // Rationale from LLM (for audit trail)
     Rationale string `json:"rationale,omitempty"`
 
-    // ExecutionConfig contains minimal execution settings
-    ExecutionConfig *ExecutionConfig `json:"executionConfig,omitempty"`
+    // TimesOutAt is the absolute deadline for workflow execution, propagated
+    // verbatim from RemediationRequest.Status.TimeoutConfig.Executing by the
+    // RemediationOrchestrator creator at WorkflowExecution creation time
+    // (DD-TIMEOUT-002 / Issue #2176). If nil, the executor falls back to its
+    // configured default execution duration.
+    TimesOutAt *metav1.Time `json:"timesOutAt,omitempty"`
 }
 
 // WorkflowRef contains catalog-resolved workflow reference
@@ -131,18 +136,10 @@ type WorkflowRef struct {
     ContainerDigest string `json:"containerDigest,omitempty"`
 }
 
-// ExecutionConfig contains minimal execution settings
-// Note: Most execution logic is delegated to Tekton (ADR-044)
-type ExecutionConfig struct {
-    // Timeout for the entire workflow (Tekton PipelineRun timeout)
-    // Default: use global timeout from RemediationRequest or 30m
-    Timeout *metav1.Duration `json:"timeout,omitempty"`
-
-    // ServiceAccountName for the PipelineRun TaskRunTemplate (Tekton).
-    // DD-WE-005 v2.0: Must name a pre-existing SA in the execution namespace (e.g. kubernaut-workflows).
-    // If empty, Kubernetes uses the namespace default ServiceAccount.
-    ServiceAccountName string `json:"serviceAccountName,omitempty"`
-}
+> **`ExecutionConfig` removed** (DD-TIMEOUT-002 / Issue #2176): `ServiceAccountName` already lived
+> on `WorkflowRef` (CRD-embedded `WorkflowSnapshot`, Issue #1661 Change 11c/11f) before this change,
+> not on `ExecutionConfig` — only `Timeout` lived here, and it was replaced outright by the
+> top-level `Spec.TimesOutAt` absolute deadline above.
 
 // WorkflowExecutionStatus defines the observed state
 // Simplified per ADR-044 - just tracks PipelineRun status
@@ -878,17 +875,17 @@ func (r *WorkflowExecutionReconciler) buildPipelineRun(
         })
     }
 
-    // Determine timeout
+    // Determine timeout (DD-TIMEOUT-002 / Issue #2176: derived from the
+    // absolute Spec.TimesOutAt deadline, not a relative duration)
     timeout := metav1.Duration{Duration: 30 * time.Minute}
-    if wfe.Spec.ExecutionConfig != nil && wfe.Spec.ExecutionConfig.Timeout != nil {
-        timeout = *wfe.Spec.ExecutionConfig.Timeout
+    if wfe.Spec.TimesOutAt != nil {
+        if remaining := time.Until(wfe.Spec.TimesOutAt.Time); remaining > 0 {
+            timeout = metav1.Duration{Duration: remaining}
+        }
     }
 
-    // DD-WE-005 v2.0: SA from spec only; empty string → Kubernetes default SA in execution namespace
-    serviceAccount := ""
-    if wfe.Spec.ExecutionConfig != nil && wfe.Spec.ExecutionConfig.ServiceAccountName != "" {
-        serviceAccount = wfe.Spec.ExecutionConfig.ServiceAccountName
-    }
+    // DD-WE-005 v2.0: SA from the CRD-embedded WorkflowRef snapshot; empty string → Kubernetes default SA in execution namespace
+    serviceAccount := wfe.Spec.WorkflowRef.ServiceAccountName
 
     return &tektonv1.PipelineRun{
         ObjectMeta: metav1.ObjectMeta{
@@ -1153,7 +1150,7 @@ func (r *WorkflowExecutionReconciler) generateNaturalLanguageSummary(
         sb.WriteString("Recommendation: The workflow task itself ran out of memory. Consider increasing task resource limits or using a workflow with smaller memory footprint.\n")
     case kubernautv1alpha1.FailureReasonForbidden:
         sb.WriteString(fmt.Sprintf("Recommendation: The service account '%s' lacks required RBAC permissions. Grant appropriate permissions or use an alternative workflow.\n",
-            wfe.Spec.ExecutionConfig.ServiceAccountName))
+            wfe.Spec.WorkflowRef.ServiceAccountName))
     case kubernautv1alpha1.FailureReasonDeadlineExceeded:
         sb.WriteString("Recommendation: The workflow exceeded its timeout. Consider increasing the timeout or using a faster workflow variant.\n")
     case kubernautv1alpha1.FailureReasonImagePullBackOff:
@@ -1296,6 +1293,7 @@ func (r *WorkflowExecutionReconciler) checkResourceLock(
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 4.4 | 2026-08 | **DD-TIMEOUT-002 / Issue #2176**: Replaced `ExecutionConfig *ExecutionConfig{Timeout}` (never populated by RO, never read outside the executor's own fallback path) with `TimesOutAt *metav1.Time` — an absolute deadline propagated verbatim by RO's creator from `RemediationRequest.Status.TimeoutConfig.Executing`. `job.go`'s `ActiveDeadlineSeconds` and `ansible.go`'s TokenRequest TTL now derive from `time.Until(Spec.TimesOutAt)` via the shared `remainingUntilDeadline` helper, floored to a minimum of 1s when the deadline has already passed. `ServiceAccountName` is unaffected — it already lived on `WorkflowRef` (CRD-embedded `WorkflowSnapshot`), not `ExecutionConfig`. |
 | 4.3 | 2026-03-04 | **Issue #518**: Added `executionEngine` to `WorkflowExecutionStatus`. Engine resolved at runtime by WE controller from DS catalog; immutable once set. **DD-WE-005 v2.0**: Document per-workflow `serviceAccountName`; controller reads SA from spec only. |
 | 4.2 | 2026-02-18 | **Issue #91**: Removed `kubernaut.ai/remediation-request` and `kubernaut.ai/workflow-id` labels from WorkflowExecution CRD examples. Added Metadata and Filtering section: field selectors replace label-based filtering; `kubernaut.ai/workflow-execution` KEPT on PipelineRun (external resource). |
 | 4.1 | 2025-12-06 | **Exponential Backoff (DD-WE-004)**: Added `ConsecutiveFailures` and `NextAllowedExecution` status fields. Added `SkipReasonExhaustedRetries` and `SkipReasonPreviousExecutionFailed` constants. Backoff applies only to pre-execution failures; execution failures block retries immediately. |

@@ -35,10 +35,16 @@
 > this document's own Version 1.1 changelog entry above, which says `LLMProvider`, `LLMModel`, `MaxTokens`,
 > `Temperature`, and `IncludeHistory` were removed, or (b) the real current spec. Verified against
 > `api/aianalysis/v1alpha1/aianalysis_types.go`: the current `AIAnalysisSpec` has `RemediationRequestRef`,
-> `RemediationID`, `AnalysisRequest` (containing `SignalContext SignalContextInput`), and `TimeoutConfig` —
+> `RemediationID`, `AnalysisRequest` (containing `SignalContext SignalContextInput`), and `TimesOutAt` —
 > there is no `SignalData`, `EnrichedContext`, or any `LLM*` field, and no `"holmesgpt"` enum value anywhere
 > in the CRD types. Rewriting the "Decision" example to match the real, current CRD shape is out of scope
 > for this terminology-only sweep.
+>
+> **Superseded field name** (2026-08, [Issue #2176](https://github.com/jordigilh/kubernaut/issues/2176) /
+> [DD-TIMEOUT-002](DD-TIMEOUT-002-child-crd-timeout-self-enforcement.md)): the dead-schema `TimeoutConfig
+> *AIAnalysisTimeoutConfig` referenced above (never populated by RO, never read by any handler) was
+> replaced outright by `TimesOutAt *metav1.Time`, a single absolute deadline uniformly referencable
+> across AIAnalysis, SignalProcessing, and WorkflowExecution.
 
 ## Context
 

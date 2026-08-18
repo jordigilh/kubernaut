@@ -84,8 +84,20 @@ func (c *AIAnalysisCreator) buildAIAnalysis(rr *remediationv1.RemediationRequest
 				},
 			},
 			ClusterID: rr.Spec.ClusterID,
+			// DD-TIMEOUT-002 / Issue #2176: propagate RO's authoritative Analyzing
+			// timeout as a self-enforceable absolute deadline. Nil-safe: leaves
+			// TimesOutAt nil when RO has no authoritative Analyzing timeout, so
+			// AIAnalysis falls back to its own configured default.
+			TimesOutAt: aiAnalysisTimesOutAt(rr),
 		},
 	}
+}
+
+func aiAnalysisTimesOutAt(rr *remediationv1.RemediationRequest) *metav1.Time {
+	if rr.Status.TimeoutConfig == nil {
+		return nil
+	}
+	return computeTimesOutAt(rr.Status.TimeoutConfig.Analyzing)
 }
 
 // Create creates an AIAnalysis CRD for the given RemediationRequest.

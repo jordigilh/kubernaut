@@ -177,9 +177,15 @@ type WorkflowExecutionSpec struct {
 	// +optional
 	Rationale string `json:"rationale,omitempty"`
 
-	// ExecutionConfig contains minimal execution settings
+	// TimesOutAt is the absolute deadline for workflow execution,
+	// propagated verbatim from RemediationRequest.Status.TimeoutConfig.Executing
+	// by the RemediationOrchestrator creator at WorkflowExecution creation
+	// time (DD-TIMEOUT-002). An absolute timestamp (rather than a relative
+	// duration) avoids clock-skew ambiguity between RO and the
+	// WorkflowExecution executor. If nil, the executor falls back to its
+	// configured default execution duration.
 	// +optional
-	ExecutionConfig *ExecutionConfig `json:"executionConfig,omitempty"`
+	TimesOutAt *metav1.Time `json:"timesOutAt,omitempty"`
 }
 
 // WorkflowRef contains the catalog-resolved workflow reference.
@@ -205,16 +211,6 @@ type WorkflowExecutionSpec struct {
 // already covers WorkflowRef as a whole, including these fields.
 type WorkflowRef struct {
 	sharedtypes.WorkflowSnapshot `json:",inline"`
-}
-
-// ExecutionConfig contains minimal execution settings.
-// ServiceAccountName lives on WorkflowRef (CRD-embedded snapshot, Issue
-// #1661 Change 11c/11f), not here.
-type ExecutionConfig struct {
-	// Timeout for the entire workflow (Tekton PipelineRun timeout)
-	// Default: use global timeout from RemediationRequest or 30m
-	// +optional
-	Timeout *metav1.Duration `json:"timeout,omitempty"`
 }
 
 // WorkflowExecution phase constants
