@@ -80,8 +80,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
+	aianalysisv1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
@@ -1010,6 +1010,53 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 	}
 	Expect(client.IgnoreAlreadyExists(k8sClient.Create(context.Background(), investigatorBinding))).ToNot(HaveOccurred())
 	GinkgoWriter.Printf("✅ [Process %d] KA ServiceAccount granted K8s investigation + AgentSession RBAC (#704, DD-AA-KA-001)\n", processNum)
+
+	// DD-AUTH-014 test-only fix: KA's own SAR-authorization middleware
+	// (pkg/shared/auth/middleware.go's authorizeRequest) requires the
+	// CALLER of /api/v1/incident/analyze to hold create/get on the
+	// synthetic "services/kubernaut-agent" resource (see openapi.json's
+	// 403 description: "Grant ServiceAccount the kubernaut-agent-client
+	// ClusterRole"). The "kubernaut-agent-client" ClusterRole +
+	// aianalysis-kubernaut-agent-client binding created earlier in this
+	// function's caller (SynchronizedBeforeSuite Phase 1, ~line 252) only
+	// exists against the SHARED envtest for the "aianalysis-ds-client" SA.
+	// realAgentClient's caller identity (kaCallerToken below) is
+	// "kubernaut-agent-service"/default minted from THIS process's own
+	// per-process cfg (a wholly separate API server/RBAC graph from the
+	// shared envtest), so that Phase-1 binding is invisible to it --
+	// confirmed live via KA's own security_event log:
+	// reason=authorization_denied, status_code=403,
+	// user=system:serviceaccount:default:kubernaut-agent-service,
+	// resource=services, resource_name=kubernaut-agent, verb=create
+	// (helios08 repro4, 2026-08-18). Re-create both here, scoped to cfg,
+	// for the SA that actually calls KA's raw HTTP endpoint in this
+	// per-process test.
+	agentClientRole := &rbacv1.ClusterRole{
+		ObjectMeta: metav1.ObjectMeta{Name: "kubernaut-agent-client"},
+		Rules: []rbacv1.PolicyRule{
+			{
+				APIGroups:     []string{""},
+				Resources:     []string{"services"},
+				ResourceNames: []string{"kubernaut-agent"},
+				Verbs:         []string{"create", "get"},
+			},
+		},
+	}
+	Expect(client.IgnoreAlreadyExists(k8sClient.Create(context.Background(), agentClientRole))).ToNot(HaveOccurred())
+
+	agentClientBinding := &rbacv1.ClusterRoleBinding{
+		ObjectMeta: metav1.ObjectMeta{Name: "aianalysis-kubernaut-agent-client"},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "kubernaut-agent-client",
+		},
+		Subjects: []rbacv1.Subject{
+			{Kind: "ServiceAccount", Name: "kubernaut-agent-service", Namespace: "default"},
+		},
+	}
+	Expect(client.IgnoreAlreadyExists(k8sClient.Create(context.Background(), agentClientBinding))).ToNot(HaveOccurred())
+	GinkgoWriter.Printf("✅ [Process %d] KA caller SA granted kubernaut-agent-client RBAC for direct-HTTP legacy test (DD-AUTH-014)\n", processNum)
 
 	// DD-AUTH-014: Create ServiceAccount secrets directory for KA container.
 	//
