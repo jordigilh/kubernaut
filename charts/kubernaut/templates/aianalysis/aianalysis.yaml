@@ -102,6 +102,12 @@ rules:
     resources: ["leases"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
+# DD-AA-KA-001: AA no longer calls KA's HTTP endpoint (retired in favor of the
+# AgentSession CRD dispatch above), so AA no longer binds to this ClusterRole.
+# It is defined here (rather than in apifrontend.yaml) for historical reasons
+# but is now solely consumed by APIFrontend's binding to KA's surviving
+# /api/v1/mcp endpoint (DD-AUTH-MCP-001) -- see
+# charts/kubernaut/templates/apifrontend/apifrontend.yaml's RoleBinding.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -124,22 +130,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: aianalysis-controller
-subjects:
-  - kind: ServiceAccount
-    name: aianalysis-controller
-    namespace: {{ .Release.Namespace }}
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: aianalysis-controller-kubernaut-agent-access
-  namespace: {{ .Release.Namespace }}
-  labels:
-    {{- include "kubernaut.labels" . | nindent 4 }}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: kubernaut-agent-client
 subjects:
   - kind: ServiceAccount
     name: aianalysis-controller

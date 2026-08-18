@@ -85,7 +85,6 @@ import (
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	rwv1alpha1 "github.com/jordigilh/kubernaut/api/remediationworkflow/v1alpha1"
 	"github.com/jordigilh/kubernaut/internal/controller/aianalysis"
-	"github.com/jordigilh/kubernaut/pkg/agentclient"
 	aiaudit "github.com/jordigilh/kubernaut/pkg/aianalysis/audit"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/creator"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
@@ -94,7 +93,6 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/status"
 	"github.com/jordigilh/kubernaut/pkg/audit"
 	"github.com/jordigilh/kubernaut/test/infrastructure"
-	testauth "github.com/jordigilh/kubernaut/test/shared/auth"
 	"github.com/jordigilh/kubernaut/test/shared/integration"
 )
 
@@ -116,9 +114,6 @@ var (
 
 	// DD-AUTH-014: ServiceAccount token for creating authenticated clients
 	serviceAccountToken string
-
-	// Per-process agent client (each process gets its own)
-	realAgentClient *agentclient.KubernautAgentClient
 
 	// Per-process Rego evaluator
 	realRegoEvaluator *rego.Evaluator
@@ -618,23 +613,16 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	Expect(err).NotTo(HaveOccurred(), "Per-process workflow re-seed must succeed so KA's own workflowcatalog informer is non-empty")
 
 	By(fmt.Sprintf("[Process %d] Starting per-process Kubernaut Agent HTTP service", processNum))
-	kaBaseURL, kaCallerToken := startPerProcessKubernautAgent(processNum, cfg, phase1Data.KAImageName)
-
-	By(fmt.Sprintf("[Process %d] Setting up per-process agent client with authentication", processNum))
-	// DD-AUTH-014: KA middleware requires Bearer token (real K8s auth against
-	// THIS process's own envtest, minted in startPerProcessKubernautAgent
-	// above -- the shared Phase-1 token above is only valid against
-	// sharedCfg's signing key, not this process's per-process cfg).
-	// Wrap with RetryOn429Transport to absorb transient rate-limit rejections
-	// from the per-IP token-bucket limiter during parallel test execution.
-	kaAuthTransport := testauth.NewRetryOn429Transport(
-		testauth.NewServiceAccountTransport(kaCallerToken),
-	)
-	realAgentClient, err = agentclient.NewKubernautAgentClientWithTransport(agentclient.Config{
-		BaseURL: kaBaseURL,
-		Timeout: 30 * time.Second,
-	}, kaAuthTransport)
-	Expect(err).ToNot(HaveOccurred(), "failed to create real agent client")
+	// #2190: this suite no longer constructs a direct-HTTP client against
+	// KA's endpoint (the retired agentclient_integration_test.go -- the sole
+	// consumer of that client -- was deleted per DD-AA-KA-001; AA's only
+	// remaining channel to KA is the AgentSession CRD, watched by KA's
+	// in-process dispatcher against this same cfg). The returned base
+	// URL/token are unused here; KA's HTTP endpoint itself, and the
+	// RBAC/return-value plumbing for it inside startPerProcessKubernautAgent,
+	// remain until #2190 deletes them together with KA's HTTP server (still
+	// load-bearing for the deferred test/e2e/kubernautagent/ suite).
+	_, _ = startPerProcessKubernautAgent(processNum, cfg, phase1Data.KAImageName)
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process Rego evaluator", processNum))
 	// Test-owned policy fixture decoupled from production config.
@@ -652,8 +640,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 
 	By(fmt.Sprintf("[Process %d] Setting up per-process controller with handlers", processNum))
 	// DD-AA-KA-001: AgentSessionCreator replaces the retired HTTP submit/poll
-	// channel (realAgentClient is kept only for the legacy direct-HTTP KA
-	// test in agentclient_integration_test.go, not for the reconciler).
+	// channel; the reconciler has no dependency on KA's HTTP endpoint at all.
 	eventRecorder := k8sManager.GetEventRecorderFor("aianalysis-controller")
 	const controllerNS = "kubernaut-system"
 	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sManager.GetClient(), controllerNS)
@@ -868,13 +855,16 @@ var _ = AfterEach(func() {
 //
 // AA's own channel to KA is the AgentSession CRD (creator.AgentSessionCreator,
 // wired by the caller), watched natively by KA's in-process dispatcher
-// against this same cfg. The HTTP endpoint started here is kept only for
-// the legacy direct-HTTP KA test (agentclient_integration_test.go, exercising
-// KA's not-yet-deleted raw /investigate endpoint per DD-AA-KA-001) --
-// the reconciler itself no longer calls it.
+// against this same cfg. KA's HTTP endpoint itself is still started here --
+// no test in this suite calls it anymore (#2190 deleted the last direct-HTTP
+// caller, agentclient_integration_test.go), but the endpoint remains
+// load-bearing for the deferred test/e2e/kubernautagent/ suite, so its
+// removal (along with the RBAC/return-value plumbing below that exists
+// solely to authorize/address it) is tracked in #2190 rather than done here.
 //
 // Returns the per-process KA base URL and a caller Bearer token valid
-// against cfg's TokenReview API (for realAgentClient's direct-HTTP tests).
+// against cfg's TokenReview API. Currently unused by this suite's caller --
+// see the #2190 note above.
 func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName string) (baseURL string, callerToken string) {
 	// DD-AUTH-014: KA's ServiceAccount binding reuses the "datastorage-tokenreview"
 	// ClusterRole (generic TokenReview/SAR create verbs) -- CreateServiceAccountForHTTPService
