@@ -110,7 +110,7 @@ investigation — "AF owns triage, KA owns investigation"
 | **🔍 Kubernaut Agent (KA)** | Stateless HTTP + MCP (native Go) | AI investigation engine; async session-based API (submit, then poll); multi-provider LLM support | Historical `BR-HAPI-001` to `BR-HAPI-185` IDs (legacy naming, **not** describing a live Python service) + `BR-KA-*` catalog | ✅ Active |
 | **🚪 apifrontend (AF)** | Stateless HTTP + embedded mini CRD controller (`InvestigationSession`) | External-facing A2A/MCP natural-language gateway; own "Severity Triager" LLM (Claude via Vertex AI); creates `RemediationRequest` CRDs directly; separate REST client to KA for deep investigation | apifrontend-scoped BRs (see `docs/services/apifrontend/`) | ✅ Active |
 | **🔐 Auth Webhook** | K8s admission webhook (port 9443) + CRD controller | Validates admission for `RemediationWorkflow` and `ActionType` CRDs and `NotificationRequest` deletions (ADR-058, ADR-059); runs the `RemediationWorkflow` finalizer reconciler (versioned, semver-validated workflow catalog) | (see `docs/services/shared/authentication-webhook/`) | ✅ Active |
-| **🗺️ Fleet Metadata Cache (FMC)** | Stateless HTTP (no `ctrl.Manager`) | Multi-cluster "fleet" metadata caching for cross-cluster workflow targeting | (see ADR-068, DD-FLEET-001 to DD-FLEET-005) | ✅ Active |
+| **🗺️ Fleet Metadata Cache (FMC)** | Stateless HTTP (no `ctrl.Manager`) | Multi-cluster "fleet" metadata caching for cross-cluster workflow targeting | (see ADR-068, DD-FLEET-001 to DD-FLEET-007) | ✅ Active |
 
 **Service Breakdown**:
 - **CRD Controllers** (6): Signal Processing, AI Analysis, Workflow Execution, Remediation Orchestrator, Notification, Effectiveness Monitor

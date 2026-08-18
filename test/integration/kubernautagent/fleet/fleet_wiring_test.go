@@ -38,7 +38,7 @@ import (
 
 // fleetGenericNameTool locally mirrors cmd/kubernautagent's unexported
 // genericNameTool decorator (toolregistry.go's gatewayOverlayResolver.Overlay,
-// DD-FLEET-004): it exposes a *mcpclient.BridgeTool under a generic
+// DD-FLEET-005): it exposes a *mcpclient.BridgeTool under a generic
 // (unprefixed) name to the LLM-facing registry while Execute still delegates
 // to the inner BridgeTool, which dispatches using the tool's original wire
 // name. A bare BridgeTool cannot do this itself — it uses a single Name field
@@ -366,7 +366,7 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 
 	// IT-KA-FLEET-010/011/012 previously asserted that registerFleetTools
 	// registered list_clusters/list_tools_for_cluster LLM-facing meta-tools.
-	// Under DD-FLEET-004 (issue #1732), KA pre-scopes tools for the one
+	// Under DD-FLEET-005 (issue #1732), KA pre-scopes tools for the one
 	// target cluster server-side instead of letting the LLM discover and
 	// select clusters itself, so those meta-tools are gone. These three
 	// tests are repurposed to exercise the real discover -> rekey-to-generic-
@@ -423,11 +423,11 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 
 			_, err = reg.Get("list_clusters")
 			Expect(err).To(HaveOccurred(),
-				"DD-FLEET-004: list_clusters must never be registered into the LLM-facing registry")
+				"DD-FLEET-005: list_clusters must never be registered into the LLM-facing registry")
 
 			_, err = reg.Get("list_tools_for_cluster")
 			Expect(err).To(HaveOccurred(),
-				"DD-FLEET-004: list_tools_for_cluster must never be registered into the LLM-facing registry")
+				"DD-FLEET-005: list_tools_for_cluster must never be registered into the LLM-facing registry")
 
 			getTool, err := reg.Get("resources_get")
 			Expect(err).ToNot(HaveOccurred(),
@@ -466,7 +466,7 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 
 			_, err = reg.Get("list_tools_for_cluster")
 			Expect(err).To(HaveOccurred(),
-				"DD-FLEET-004: list_tools_for_cluster must never be registered into the LLM-facing registry")
+				"DD-FLEET-005: list_tools_for_cluster must never be registered into the LLM-facing registry")
 
 			getTool, err := reg.Get("resources_get")
 			Expect(err).ToNot(HaveOccurred())
@@ -498,7 +498,7 @@ var _ = Describe("Fleet Wiring Integration Tests (BR-INTEGRATION-065)", func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			// Real automatic pre-scoping recipe for a single investigation
-			// targeting "target-cluster" only (DD-FLEET-004, ADR-068 #11):
+			// targeting "target-cluster" only (DD-FLEET-005, ADR-068 #11):
 			// ToolsForCluster narrows discovery to exactly this cluster's
 			// tools before any generic-name rekeying happens.
 			defs, err := disc.ToolsForCluster(ctx, "target-cluster")

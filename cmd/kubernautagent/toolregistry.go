@@ -177,7 +177,7 @@ func resolveAlignmentCheckConfig(cfg *kaconfig.Config) kaconfig.AlignmentCheckCo
 // wrapping a fleetclient.GatewayDiscoverer. Overlay re-keys the discovered
 // tool definitions under each tool's generic (unprefixed) name, so KA's LLM
 // sees the exact same tool identity for a remote-cluster investigation as
-// for a hub-local one (DD-FLEET-004 full name transparency, issue #1732).
+// for a hub-local one (DD-FLEET-005 full name transparency, issue #1732).
 // The wire-level name used to actually reach the gateway (which may carry
 // the "{clusterID}__" EAIGW convention) is untouched inside the wrapped
 // BridgeTool — only the LLM-facing identity changes.
@@ -188,7 +188,7 @@ type gatewayOverlayResolver struct {
 	// sf deduplicates concurrent Overlay calls for the same clusterID down
 	// to a single ToolsForCluster gateway round trip (SC-5: Denial of
 	// Service Protection), exactly as the deleted ListToolsForClusterTool
-	// did before DD-FLEET-004 removed the LLM-facing discovery tools --
+	// did before DD-FLEET-005 removed the LLM-facing discovery tools --
 	// every investigation now calls Overlay() once at pre-scoping time, so
 	// N investigations landing on the same busy cluster concurrently would
 	// otherwise each trigger their own discover_tools/select_tools call.
@@ -242,7 +242,7 @@ func (r *gatewayOverlayResolver) Overlay(ctx context.Context, clusterID string) 
 // genericNameTool decorates a *fleetclient.BridgeTool, exposing it to KA's
 // tool registry/LLM schema under its generic name while Execute still
 // delegates to the inner BridgeTool, which calls the remote MCP gateway
-// using the tool's original wire name (DD-FLEET-004: LLM-facing identity
+// using the tool's original wire name (DD-FLEET-005: LLM-facing identity
 // and wire identity are allowed to differ; only the former is transparent).
 type genericNameTool struct {
 	inner *fleetclient.BridgeTool
@@ -310,14 +310,14 @@ func buildFleetOAuth2Config(oauth2 kaconfig.FleetOAuth2, basePath string) fleetc
 // registerFleetTools connects to the MCP Gateway and creates a
 // GatewayDiscoverer for the configured gateway type, returning an
 // investigator.FleetOverlayResolver that pre-scopes tools for each
-// investigation's own target cluster (DD-FLEET-004 / issue #1732). No tools
+// investigation's own target cluster (DD-FLEET-005 / issue #1732). No tools
 // are registered into any shared, LLM-facing registry here — pre-scoping
 // happens per-investigation via the resolver, replacing the previous
 // LLM-driven list_clusters/list_tools_for_cluster discovery tools entirely.
 // Returns the fleet client (must be closed on shutdown) and the resolver,
 // or (nil, nil) if fleet is disabled.
 //
-// Authority: DD-FLEET-004, ADR-068 decision #11
+// Authority: DD-FLEET-005, ADR-068 decision #11
 func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.Logger) (*fleetclient.ResilientClient, investigator.FleetOverlayResolver) {
 	gatewayType := cfg.Integrations.Fleet.GatewayType
 	endpoint := cfg.Integrations.Fleet.Endpoint
@@ -362,7 +362,7 @@ func registerFleetTools(ctx context.Context, cfg *kaconfig.Config, logger logr.L
 		return nil, nil
 	}
 
-	fleetLog.Info("fleet tool pre-scoping resolver ready (DD-FLEET-004)",
+	fleetLog.Info("fleet tool pre-scoping resolver ready (DD-FLEET-005)",
 		"endpoint", endpoint, "gatewayType", gatewayType)
 	return resilientClient, &gatewayOverlayResolver{discoverer: discoverer, session: session}
 }

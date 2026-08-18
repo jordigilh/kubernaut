@@ -172,22 +172,32 @@ func (c *HTTPClient) attemptScopeCheck(ctx context.Context, reqURL string) (mana
 	return result.Managed, true, false
 }
 
-// Ping checks connectivity to FMC's API by calling ClustersPath on the same
+// Ping checks connectivity to FMC's API by calling ReadyzPath on the same
 // base URL used for scope checks. Unlike IsManagedResource, Ping does NOT
 // swallow errors: the readiness gate (pkg/fleet/readiness.ScopeCheckerProber)
-// needs the real transport/status error to correctly flip /readyz to
-// NotReady when FMC is unreachable.
+// needs the real transport/status error to correctly flip GW/RO's own
+// /readyz to NotReady when FMC is unreachable or unready.
 //
-// DD-FLEET-004: Ping deliberately targets ClustersPath, not HealthzPath.
-// FMC's liveness endpoint (/healthz) is kubelet-only, served exclusively on
-// the dedicated health port (Issue #1683 3-port split) -- it is not, and
-// must not become, reachable from other pods (no NetworkPolicy ingress rule
-// permits it). ClustersPath already is: it's a real, already-registered API
-// endpoint that only reads FMC's in-memory cluster registry (no Valkey
-// round-trip), giving the same "shallow liveness" signal HealthzPath would
-// have, without duplicating a liveness handler onto the API mux.
+// DD-PLATFORM-010 (Issue #2169): Ping targets ReadyzPath, not ClustersPath.
+// ClustersPath is a real, authenticated business-data endpoint; #1993/
+// DD-AUTH-014 added TokenReview+SAR auth to the whole apiMux, so polling it
+// purely for reachability paid a live, uncached authn/authz round-trip to
+// kube-apiserver on every poll -- a cost DD-FLEET-004 never accounted for.
+// ReadyzPath is registered as a second, unauthenticated top-level route on
+// the same apiMux (cmd/fleetmetadatacache/main.go's buildFMCServers),
+// outside the auth-enforcing group, reusing fmc.ReadyzHandler verbatim.
+//
+// Note this is a deliberate DEEP check, not the "shallow liveness" ClustersPath
+// used to provide: ReadyzHandler pings FMC's own Valkey backend
+// (deps.cacheReader), so a Valkey outage inside FMC now correctly cascades
+// to GW/RO's fail-closed readiness gate (#1553/ADR-068) -- FMC cannot
+// answer scope checks correctly without Valkey, so signaling NotReady to
+// dependents is the right behavior. This mirrors DataStorage's own
+// /readyz (pings Postgres+Redis) cascading to all 10 audit-writing
+// services by design (BR-AUDIT-005 v2.0, DD-PLATFORM-010) -- see the
+// DD-FLEET-004 amendment for the full rationale.
 func (c *HTTPClient) Ping(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+ClustersPath, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+ReadyzPath, nil)
 	if err != nil {
 		return fmt.Errorf("build FMC ping request: %w", err)
 	}

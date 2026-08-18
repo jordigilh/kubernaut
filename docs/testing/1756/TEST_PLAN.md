@@ -1,7 +1,7 @@
 # Test Plan: Fleet Tool Overlay Gateway-Agnostic Prefix Resolution
 
 **Issue**: #1756
-**Authority**: [DD-FLEET-004](../../architecture/decisions/DD-FLEET-004-cluster-transparent-tool-exposure.md), [ADR-068](../../architecture/decisions/ADR-068-fleet-federation-architecture.md) decision #10/#11
+**Authority**: [DD-FLEET-005](../../architecture/decisions/DD-FLEET-005-cluster-transparent-tool-exposure.md), [ADR-068](../../architecture/decisions/ADR-068-fleet-federation-architecture.md) decision #10/#11
 **Business Requirements**: BR-INTEGRATION-054, BR-INTEGRATION-1489
 **Branch**: `fix/1756-kuadrant-tool-prefix`
 **Created**: 2026-07-28
@@ -19,7 +19,7 @@ strip is a no-op: the remote tool is never offered to the LLM under its generic 
 LLM silently falls back to the hub-local tool of the same name — an incorrect-cluster data
 correctness defect for RCA, not merely a missed optimization.
 
-This is a business acceptance criterion failure, not just a code defect: DD-FLEET-004 commits
+This is a business acceptance criterion failure, not just a code defect: DD-FLEET-005 commits
 to "the LLM's tool schema for a fleet-target investigation is byte-identical to a hub-local
 investigation's" and "the LLM can never request tools for a cluster other than the one it was
 asked to investigate." Every test below asserts one of these two business-level outcomes
@@ -31,7 +31,7 @@ mechanism — so the tests remain valid even if the extraction algorithm changes
 | Control | Title | Relevance |
 |---|---|---|
 | **AC-4** | Information Flow Enforcement | Primary control. The defect is a cross-cluster information-flow-enforcement failure: an investigation's tool calls must be enforced to the intended target-cluster boundary; on failure they must error, never silently resolve against a different (hub) boundary. Directly analogous to `E2E-FMC-054-015`'s cross-cluster isolation assertion in `docs/testing/BR-INTEGRATION-054/TEST_PLAN.md`. |
-| **AC-6** | Least Privilege | Secondary. DD-FLEET-004's own stated guarantee ("the LLM can never request tools for a cluster other than the one it was asked to investigate") is the least-privilege property this defect silently violates by substituting wrong-cluster data instead of failing closed. |
+| **AC-6** | Least Privilege | Secondary. DD-FLEET-005's own stated guarantee ("the LLM can never request tools for a cluster other than the one it was asked to investigate") is the least-privilege property this defect silently violates by substituting wrong-cluster data instead of failing closed. |
 
 ## 3. Pyramid Invariant — Test Scenario Inventory
 
@@ -46,7 +46,7 @@ and the journey test proves the full `Investigator.Investigate()` path end-to-en
 | UT-MCP-TN-101..106 | UT | `PrefixFromToolNames` derives the correct gateway-specific wire prefix from a list of discovered tool names for both EAIGW (`{clusterID}__`) and Kuadrant (admin-set, non-`{clusterID}__`) conventions, and errors (not panics/guesses) when no tool name matches the cluster | AC-4 | BR-INTEGRATION-054 | `pkg/fleet/mcpclient/discover_test.go` |
 | UT-KA-FLEET-024/025 | UT | The real, unexported `gatewayOverlayResolver.Overlay()` generic-izes a cluster's discovered tool name identically regardless of gateway convention: the LLM sees the tool under the same generic key (`resources_get`) whether the wire name is `cluster-a__resources_get` (EAIGW) or `prod_east_resources_get` (Kuadrant), and the wire call still reaches the gateway under the tool's original prefixed name | AC-4 | BR-INTEGRATION-054, BR-INTEGRATION-1489 | `cmd/kubernautagent/toolregistry_kuadrant_prefix_test.go` |
 | IT-KA-FLEET-010 (revised) | IT | The exported `fleetclient.PrefixFromToolNames` helper correctly derives a Kuadrant cluster's wire prefix from tool names discovered via a **real** two-phase `discover_tools`/`select_tools`/`ListTools` MCP protocol round trip against the mock gateway (no hardcoded literal prefix duplicated in test code) | AC-4 | BR-INTEGRATION-054 | `test/integration/kubernautagent/fleet/fleet_wiring_test.go` |
-| E2E-KA-FLEET-002 (new) | "E2E" (journey, per this repo's existing DD-FLEET-004 labeling of `fleet_e2e_journey_test.go`) | KA's full `Investigator.Investigate()` -> LLM -> gateway journey resolves and executes a remote-cluster tool correctly when the fleet gateway is Kuadrant (non-bare prefix convention), matching the existing EAIGW-only `E2E-KA-FLEET-001` journey | AC-4 | BR-INTEGRATION-054, BR-INTEGRATION-1489 | `test/integration/kubernautagent/investigator/fleet_e2e_journey_test.go` |
+| E2E-KA-FLEET-002 (new) | "E2E" (journey, per this repo's existing DD-FLEET-005 labeling of `fleet_e2e_journey_test.go`) | KA's full `Investigator.Investigate()` -> LLM -> gateway journey resolves and executes a remote-cluster tool correctly when the fleet gateway is Kuadrant (non-bare prefix convention), matching the existing EAIGW-only `E2E-KA-FLEET-001` journey | AC-4 | BR-INTEGRATION-054, BR-INTEGRATION-1489 | `test/integration/kubernautagent/investigator/fleet_e2e_journey_test.go` |
 
 ## 4. Why the Existing Suite Missed This (Coverage Gap Being Closed)
 
@@ -94,6 +94,6 @@ never run in CI at all.
 ## 6. References
 
 - Issue #1756
-- [DD-FLEET-004: Cluster-Transparent Tool Exposure](../../architecture/decisions/DD-FLEET-004-cluster-transparent-tool-exposure.md)
+- [DD-FLEET-005: Cluster-Transparent Tool Exposure](../../architecture/decisions/DD-FLEET-005-cluster-transparent-tool-exposure.md)
 - [ADR-068: Fleet Federation Architecture](../../architecture/decisions/ADR-068-fleet-federation-architecture.md)
 - [BR-INTEGRATION-054 Test Plan](../BR-INTEGRATION-054/TEST_PLAN.md) (AC-4 precedent: `E2E-FMC-054-015` cross-cluster isolation)

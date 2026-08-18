@@ -156,7 +156,7 @@ func toolNames(defs []llm.ToolDefinition) []string {
 }
 
 // toolDefinitionsForPhase builds the LLM-facing tool schema for phase. When
-// ctx carries a fleet tool overlay (DD-FLEET-004), a phase tool whose name
+// ctx carries a fleet tool overlay (DD-FLEET-005), a phase tool whose name
 // also appears in the overlay is described using the overlay's BridgeTool
 // instead of the local registry's tool of the same name — the LLM sees one
 // entry per name either way, so the schema is byte-identical to a hub-local
@@ -258,7 +258,7 @@ func submitResultSchemaForPhase(phase katypes.Phase) json.RawMessage {
 	return parser.InvestigationResultSchema()
 }
 
-// executeResolved executes name via the fleet tool overlay (DD-FLEET-004)
+// executeResolved executes name via the fleet tool overlay (DD-FLEET-005)
 // when ctx carries one and name is present in it, otherwise via the local
 // tool registry unchanged. Callers see identical (string, error) semantics
 // regardless of which backend served the call.

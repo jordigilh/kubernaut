@@ -53,7 +53,7 @@ import (
 const fleetE2EMarker = "kubernaut-fleet-e2e-remote-marker-1732"
 
 // fleetE2EOverlayResolver re-derives cmd/kubernautagent's unexported
-// gatewayOverlayResolver.Overlay() recipe (DD-FLEET-004) from exported
+// gatewayOverlayResolver.Overlay() recipe (DD-FLEET-005) from exported
 // fleetclient primitives: discover the target cluster's tools, then re-key
 // each one under its generic (unprefixed) name so the LLM sees the exact
 // same tool identity it would for a hub-local investigation. This is the
@@ -231,7 +231,7 @@ func (fleetE2EKuadrantScenario) ConfigForContext(ctx *scenarios.DetectionContext
 	}
 }
 
-var _ = Describe("Fleet cluster-transparent tool exposure — full journey (BR-INTEGRATION-1489, DD-FLEET-004)", Label("fleet", "integration"), func() {
+var _ = Describe("Fleet cluster-transparent tool exposure — full journey (BR-INTEGRATION-1489, DD-FLEET-005)", Label("fleet", "integration"), func() {
 
 	Describe("E2E-KA-FLEET-001: a real mock-LLM issues a tool call under a generic name during a fleet-target investigation, and it reaches the remote cluster, never the hub-local tool", func() {
 		It("routes kubectl_get_by_name to the remote-east mock gateway via the fleet overlay, not to the local registry", func() {
@@ -278,7 +278,7 @@ var _ = Describe("Fleet cluster-transparent tool exposure — full journey (BR-I
 			// list and only *overrides* entries also present in the fleet
 			// overlay) -- the overlay never adds brand-new tool names. This
 			// fakeTool's content ("local-hub") must never appear in the
-			// final result: DD-FLEET-004 requires cluster-transparent
+			// final result: DD-FLEET-005 requires cluster-transparent
 			// execution to resolve via the overlay first. ---
 			reg := registry.New()
 			reg.Register(&fakeTool{name: "kubectl_get_by_name", result: `{"source":"local-hub","warning":"must never be reached for a fleet-target investigation"}`})
@@ -321,7 +321,7 @@ var _ = Describe("Fleet cluster-transparent tool exposure — full journey (BR-I
 			Expect(calls).To(HaveLen(1),
 				"the remote mock gateway must receive exactly one real MCP tool call")
 			Expect(calls[0].ToolName).To(Equal("remote-east__kubectl_get_by_name"),
-				"DD-FLEET-004: the LLM only ever named the generic tool 'kubectl_get_by_name', "+
+				"DD-FLEET-005: the LLM only ever named the generic tool 'kubectl_get_by_name', "+
 					"yet the wire call must reach cluster remote-east's own prefixed tool -- proving "+
 					"cluster-transparent resolution end to end through a real MCP client/session, not a mock")
 

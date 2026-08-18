@@ -213,7 +213,7 @@ var _ = Describe("Kubernaut Agent DS Audit Store — TP-433-WIR Phase 7", func()
 			skipPayloadCheck := map[string]bool{
 				audit.EventTypeGroundingRequest:  true,
 				audit.EventTypeGroundingResponse: true,
-				// aiagent.fleet.overlay_failed (DD-FLEET-004, issue #1732) has
+				// aiagent.fleet.overlay_failed (DD-FLEET-005, issue #1732) has
 				// no dedicated OpenAPI discriminator variant yet either; it is
 				// stored with outer fields only (event_type, cluster_id,
 				// correlation_id, actor, event_action/outcome), same as the

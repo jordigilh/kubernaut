@@ -6,7 +6,7 @@
 answerable directly from production call graphs)
 **Decision needed**: YES/NO — does an interactive KA session opened via AF's
 `message`/`start`/`takeover` bridge for a non-hub `cluster_id` get the same
-`prescopeFleetOverlay` treatment DD-FLEET-004 gives autonomous investigations?
+`prescopeFleetOverlay` treatment DD-FLEET-005 gives autonomous investigations?
 
 ## Answer: NO — confirmed by direct call-graph tracing
 

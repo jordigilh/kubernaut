@@ -123,7 +123,7 @@ type AuditEvent struct {
 
 ---
 
-## Fleet Federation (DD-FLEET-004, Issue #1768)
+## Fleet Federation (DD-FLEET-005, Issue #1768)
 
 | Event Type | Constant | NIST/SOC2 Control | Trigger | Detail Fields (`Data`) |
 |-----------|----------|-------------|---------|---------------|

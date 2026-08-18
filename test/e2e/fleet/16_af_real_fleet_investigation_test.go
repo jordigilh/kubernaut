@@ -27,7 +27,7 @@ import (
 // fleet-aware kubectl_get tool with cluster_id via a real A2A request,
 // closing issue #1768 Gaps A+C.
 //
-// Authority: issue #1768, ADR-068, DD-FLEET-004, docs/testing/1768/TEST_PLAN.md
+// Authority: issue #1768, ADR-068, DD-FLEET-005, docs/testing/1768/TEST_PLAN.md
 //
 // Why this test exists (what it closes that no other test does):
 //   - 06_aa_fleet_investigation_test.go (Gap A) drives newFleetMCPClient
@@ -55,7 +55,7 @@ import (
 // emits kubectl_get(cluster_id="remote-cluster", kind=Deployment,
 // name=coredns, namespace=kube-system) as a single MultiToolCalls batch
 // (list_clusters is deliberately excluded -- see the scenario's own doc
-// comment and DD-FLEET-005: the "sre" persona's ClusterRole does not grant
+// comment and DD-FLEET-006: the "sre" persona's ClusterRole does not grant
 // it). AF's ADK loop executes the tool for real against this suite's
 // FleetReaderFactory -> kube-mcp-server -> Kuadrant gateway -> remote Kind
 // cluster, then the scenario echoes the accumulated conversation text (which

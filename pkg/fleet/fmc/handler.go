@@ -30,16 +30,24 @@ import (
 
 const (
 	ScopeCheckPath = "/api/v1/scope/check"
-	// ClustersPath lists known clusters, and doubles (DD-FLEET-004) as the
-	// target of HTTPClient.Ping (readiness gate Wave 0, #1553): it is a
-	// cheap, real API-port endpoint (in-memory registry read, no Valkey
-	// round-trip) reachable via GW/RO's existing CA-verified scope-check
-	// transport, so Ping needs no new endpoint and no new network path.
+	// ClustersPath lists known clusters, for real scope-check/cluster-list
+	// data queries. DD-PLATFORM-010 (Issue #2169) moved HTTPClient.Ping's
+	// target off this path -- see ReadyzPath -- because #1993/DD-AUTH-014
+	// added TokenReview+SAR auth to the whole apiMux, including this path,
+	// making it an expensive and semantically wrong health-check target.
 	ClustersPath = "/api/v1/clusters"
 	// HealthzPath is FMC's liveness endpoint. Served exclusively on the
 	// dedicated health port (Issue #1683 3-port split) -- kubelet-only by
 	// design (DD-FLEET-004); never registered on the API mux.
 	HealthzPath = "/healthz"
+	// ReadyzPath is FMC's cross-service readiness endpoint (DD-PLATFORM-010,
+	// Issue #2169): registered as a second, unauthenticated top-level route
+	// on the apiMux (outside authMiddleware.Handler's wrap), reusing the
+	// exact same ReadyzHandler that also backs the kubelet probe on the
+	// dedicated health port. HTTPClient.Ping targets this path instead of
+	// ClustersPath so GW/RO's readiness gate (Issue #1553/ADR-068) no
+	// longer pays a live TokenReview/SAR round-trip on every poll.
+	ReadyzPath = "/readyz"
 )
 
 // Handler serves the FMC REST API for federated scope checks and cluster listing.

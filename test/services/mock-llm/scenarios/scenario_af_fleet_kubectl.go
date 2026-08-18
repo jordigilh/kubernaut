@@ -46,7 +46,7 @@ const afFleetKubectlRemoteClusterID = "remote-cluster"
 // That SAR denial cascaded into an ADK reinvocation that failed calling the
 // mock LLM ("consumer stopped"), leaving the completed task with a nil
 // status message. This is a real, intentional persona-scoping policy (see
-// DD-FLEET-005), not a bug to route around — kubectl_get(cluster_id) alone
+// DD-FLEET-006), not a bug to route around — kubectl_get(cluster_id) alone
 // is sufficient to prove Gaps A+C (a real cross-cluster read via AF's own
 // binary), so this scenario is scoped to it.
 //

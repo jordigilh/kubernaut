@@ -144,7 +144,7 @@ var _ = Describe("DiscoverToolPrefix (BR-INTEGRATION-054, ADR-068 #10)", func() 
 // round trip and without duplicating (and silently drifting from) this logic.
 //
 // Authority: ADR-068 decision #10 (gateway-agnostic business logic),
-// DD-FLEET-004, BR-INTEGRATION-054, BR-INTEGRATION-1489, Issue #1756.
+// DD-FLEET-005, BR-INTEGRATION-054, BR-INTEGRATION-1489, Issue #1756.
 var _ = Describe("PrefixFromToolNames (BR-INTEGRATION-054, BR-INTEGRATION-1489, ADR-068 #10) [AC-4]", func() {
 	DescribeTable("derives the gateway-specific prefix from an already-discovered tool name list",
 		func(clusterID string, names []string, expectedPrefix string) {
