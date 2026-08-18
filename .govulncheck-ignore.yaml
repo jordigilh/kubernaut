@@ -11,3 +11,42 @@ GO-2026-4730:
 GO-2023-1901:
   reason: "No fix available (Fixed in: N/A through v1.12.0). Tekton does not validate child TaskRun UIDs against parent PipelineRun. Mitigated: requires cluster-level access to forge child runs; Kubernaut monitors PipelineRun status holistically."
   date: 2026-10-01T00:00:00Z
+
+# github.com/lib/pq@v1.12.3 -- 7 vulnerabilities newly published upstream
+# (2026-08-18), none with a fixed version available. All require a malicious
+# or already-compromised PostgreSQL server driving the wire protocol; lib/pq
+# is used only against PostgreSQL instances deployed and owned by the Data
+# Storage Service within the cluster (DD-INFRA-001), not an
+# externally-attacker-reachable boundary. Long-term fix is migrating
+# production code off lib/pq to jackc/pgx (already used in test
+# infrastructure, not yet in pkg/datastorage) -- tracked as follow-up work,
+# out of scope for this EOL-bound branch. Short expiry set per explicit
+# request to force prompt re-assessment.
+
+GO-2026-6173:
+  reason: "No fix available (Fixed in: N/A). Pre-protocol error reader permits unbounded memory consumption in lib/pq. Requires a malicious/compromised PostgreSQL server sending a malformed pre-authentication error response; Kubernaut's PostgreSQL is in-cluster and Data-Storage-owned (DD-INFRA-001)."
+  date: 2026-09-18T00:00:00Z
+
+GO-2026-6172:
+  reason: "No fix available (Fixed in: N/A). Backend frame lengths cause pre-validation memory exhaustion in lib/pq. Requires a malicious/compromised PostgreSQL server sending crafted frames; same in-cluster trust boundary as GO-2026-6173."
+  date: 2026-09-18T00:00:00Z
+
+GO-2026-6171:
+  reason: "No fix available (Fixed in: N/A). Malformed RowDescription/DataRow messages cause panics in lib/pq. Requires a malicious/compromised PostgreSQL server; same in-cluster trust boundary as GO-2026-6173."
+  date: 2026-09-18T00:00:00Z
+
+GO-2026-6170:
+  reason: "No fix available (Fixed in: N/A). Malformed backend frame length causes a panic in lib/pq. Requires a malicious/compromised PostgreSQL server; same in-cluster trust boundary as GO-2026-6173."
+  date: 2026-09-18T00:00:00Z
+
+GO-2026-6169:
+  reason: "No fix available (Fixed in: N/A). Disclosure of the wrong .pgpass credential via hostaddr in lib/pq. Kubernaut supplies PostgreSQL credentials via explicit connection strings/Secrets, not .pgpass files, so this parsing bug is unreachable in practice."
+  date: 2026-09-18T00:00:00Z
+
+GO-2026-6168:
+  reason: "No fix available (Fixed in: N/A). Unbounded iteration count in lib/pq/scram causes CPU denial of service. Requires a malicious/compromised PostgreSQL server driving SCRAM negotiation; same in-cluster trust boundary as GO-2026-6173."
+  date: 2026-09-18T00:00:00Z
+
+GO-2026-6166:
+  reason: "No fix available (Fixed in: N/A). GSS authentication completes without mutual proof in lib/pq. Kubernaut's PostgreSQL connections use password/TLS-cert authentication, not GSSAPI/Kerberos, so this code path is not exercised."
+  date: 2026-09-18T00:00:00Z
