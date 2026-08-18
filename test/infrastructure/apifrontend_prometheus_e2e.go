@@ -47,6 +47,27 @@ import (
 // This delegates to kubernaut's canonical DeployPrometheus (DD-TEST-001 v2.8)
 // and then patches the rules ConfigMap with AF's triage fixtures.
 //
+// CI RCA (#2182, run 32063443903, job 95495177776): DeployPrometheus's initial
+// `kubectl apply` used to be followed immediately by SeedTriageAlertRules's
+// `kubectl rollout restart`, with no wait for the first rollout to settle.
+// Restarting a Deployment before its first ReplicaSet ever reaches Ready lets
+// Kubernetes' RollingUpdate surge/unavailable budget (both round up to 1 for
+// replicas:1) scale the old AND new ReplicaSet to 1 concurrently -- two
+// Prometheus pods, each with its own empty non-PVC TSDB, briefly answering
+// the same prometheus-svc NodePort. kube-proxy load-balances each new
+// connection independently, so the OTLP metric injections that ground
+// "HighCPU" (test/e2e/apifrontend/e2e_suite_test.go) could land with a
+// genuine 200 OK on the pod about to be torn down -- silently discarding the
+// sample -- while every subsequent rule-state poll only ever reaches the
+// surviving pod, which never received it. That poll then times out after
+// 120s ("HighCPU alert must reach firing state within 120s"), failing
+// SynchronizedBeforeSuite and aborting the whole 204-spec suite before any
+// test runs. Waiting for the initial rollout to be fully Ready before
+// SeedTriageAlertRules restarts it removes the race: only one ReplicaSet is
+// ever "current" when the restart begins, so the rolling update tears down
+// the sole old pod before/as the new one becomes ready, never running both
+// concurrently.
+//
 // Ref: Prometheus OTLP receiver -- https://prometheus.io/docs/guides/opentelemetry/
 func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintln(writer, "Deploying Prometheus for severity triage testing...")
@@ -55,12 +76,43 @@ func DeployPrometheusForSeverityTriage(ctx context.Context, namespace, kubeconfi
 		return fmt.Errorf("deploy Prometheus: %w", err)
 	}
 
+	if err := waitForPrometheusRollout(ctx, namespace, kubeconfigPath, writer); err != nil {
+		return fmt.Errorf("initial Prometheus rollout not ready: %w", err)
+	}
+
 	_, _ = fmt.Fprintln(writer, "Seeding AF severity triage alert rules...")
 
 	if err := SeedTriageAlertRules(ctx, namespace, kubeconfigPath, writer); err != nil {
 		return fmt.Errorf("seed triage alert rules: %w", err)
 	}
 
+	return nil
+}
+
+// waitForPrometheusRollout blocks until the Prometheus Deployment's initial
+// ReplicaSet is fully available, so a subsequent `kubectl rollout restart`
+// (SeedTriageAlertRules) always starts from a single stable ReplicaSet
+// instead of racing with it (see DeployPrometheusForSeverityTriage RCA above).
+//
+// 120s (not SeedTriageAlertRules's 60s) because, unlike that restart, this is
+// the FIRST rollout: PrometheusImage ("prom/prometheus:latest") is pulled
+// live from Docker Hub here, not preloaded into Kind like the app images
+// (apifrontend/datastorage/mock-llm/kubernautagent) or already cached
+// node-side like SeedTriageAlertRules's restart of the same image. Docker
+// Hub is more prone to registry throttling on shared GH-hosted-runner egress
+// IPs than the ghcr.io pulls elsewhere in this package -- DeployDex's
+// equivalent first-rollout wait for its own external ghcr.io image uses
+// 120s for the same reason (test/infrastructure/dex_e2e.go).
+func waitForPrometheusRollout(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
+	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, //nolint:gosec // G204: test infra
+		"rollout", "status", "deployment/prometheus",
+		"-n", namespace,
+		"--timeout=120s")
+	cmd.Stdout = writer
+	cmd.Stderr = writer
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("prometheus not ready after initial deploy: %w", err)
+	}
 	return nil
 }
 
