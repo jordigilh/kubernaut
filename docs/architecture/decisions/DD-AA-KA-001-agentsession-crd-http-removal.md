@@ -305,6 +305,29 @@ decision's own AF-wait redesign.
 `upgradeOrCreateInteractiveSession` routes the no-real-session case through
 `failStartOnFallbackExhausted` rather than `createFallbackSession`'s placeholder branch.
 
+**Revised (2026-08-18, PR #2189 CI evidence)**: the fail-closed resolution above assumed the only
+alternative to a canned placeholder was an error. CI runs of PR #2189 disproved that: several E2E
+journeys explicitly exercise a user starting an interactive investigation for an RR that AA has
+never touched at all -- most notably `test/e2e/fullpipeline`'s **"FP-MCP-002: AF-style fresh start
+lifecycle"** (`should create RR directly and run start -> message -> complete`), with equivalents
+in the `apifrontend`/`fleet`/`kubernautagent` E2E suites. That is a legitimate product journey, not
+test convenience, and failing it closed was a regression, not a fix.
+
+**Re-resolution**: `reattachOrCreateFallback` now has a third rung below "reattach to an existing
+user-driving session" and "seed from a completed autonomous RCA" --
+`createFreshInteractiveSession`, which starts a genuinely real investigation by reusing the exact
+same signal-resolution + `RunFullInvestigation` pipeline `handleStartAutonomous` already uses for
+the pure-autonomous MCP entry point (F4, #1374), then immediately calls `UpgradeToInteractive` on
+it so the investigation holds for the user at its next checkpoint instead of running to autonomous
+completion. `failStartOnFallbackExhausted` is now reached only when a real investigation genuinely
+cannot be started at all (signal resolution unavailable/failing, or `StartInvestigation` itself
+erroring, e.g. capacity exhaustion) -- not merely because no prior session/RCA existed.
+
+**Implemented**: `internal/kubernautagent/mcp/tools/investigate_autonomous.go`'s
+`createFreshInteractiveSession`; unit coverage in
+`internal/kubernautagent/mcp/tools/investigate_start_fresh_investigation_test.go`
+(UT-KA-2170-020/021).
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:

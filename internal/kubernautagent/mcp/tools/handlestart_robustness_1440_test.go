@@ -153,15 +153,23 @@ func (c *reattachHTTPCompleter) PersistPendingDecisionResult(_ string, _ *katype
 
 var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 
-	// UT-KA-1440-010 (superseded by DD-AA-KA-001 Amendment Gap 3, BR-AA-KA-065.12):
+	// UT-KA-1440-010 (superseded by DD-AA-KA-001 Amendment Gap 3, BR-AA-KA-065.12,
+	// revised post-#2189 CI evidence -- see UT-KA-2170-020/021 in
+	// investigate_start_fresh_investigation_test.go):
 	// SC-24's original fix created a hardcoded placeholder session so a Lease
 	// was never left with nothing to drive. Gap 3 replaced that placeholder
-	// with a fail-closed contract instead: a genuinely nonexistent RR-backed
-	// investigation is a dead end for both of AF's supported flows
-	// (interactive remediation, autonomous fix), so the request must now fail
-	// closed rather than fabricate a chat session with no execution path.
-	// See UT-KA-1818-004 for the current contract this scenario maps to.
-	Describe("UT-KA-1440-010: handleStart fails closed (not a placeholder) when genuinely no session exists for RR", func() {
+	// with a fail-closed contract, on the assumption a genuinely nonexistent
+	// RR-backed investigation was always a dead end. That assumption was
+	// wrong -- test/e2e/fullpipeline's "FP-MCP-002: AF-style fresh start"
+	// (and equivalents in apifrontend/fleet/kubernautagent) proved this is a
+	// legitimate journey, so handleStart now starts a genuinely real
+	// investigation instead (createFreshInteractiveSession) whenever signal
+	// resolution is available. This test no longer exercises "genuinely no
+	// session exists" in general -- it's narrowed to the one case that still
+	// fails closed: the signal-resolution dependency itself unavailable
+	// (forceErr alone is not enough to trigger that any more; see this
+	// test's own WithSignalContextResolver omission below).
+	Describe("UT-KA-1440-010: handleStart fails closed when the signal-resolution dependency is unavailable (not a placeholder)", func() {
 		It("should release the lease and return ErrCodeNoInvestigationAvailable", func() {
 			sessionMgr := &mockSessionManager{
 				takeoverSession: &mcpinternal.InteractiveSession{
@@ -176,6 +184,11 @@ var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 			runner := &mockInvestigatorRunner{}
 			recon := &mockContextReconstructor{turns: []mcpinternal.ConversationTurn{}}
 
+			// No WithSignalContextResolver: production always wires one
+			// (cmd/kubernautagent/routes.go), so this exercises only the
+			// defensive "dependency not configured" branch of
+			// createFreshInteractiveSession, not a general "no session"
+			// scenario (which now succeeds -- see UT-KA-2170-020).
 			tool := mcptools.NewInvestigateTool(sessionMgr, runner, recon, autoMgr)
 			_, err := tool.Handle(context.Background(), mcptools.InvestigateInput{
 				RRID:   "rr-no-session-010",
@@ -186,7 +199,7 @@ var _ = Describe("Fix #1440: handleStart robustness — SC-24", func() {
 			Expect(errors.As(err, &mcpErr)).To(BeTrue())
 			Expect(mcpErr.Code).To(Equal(mcptools.ErrCodeNoInvestigationAvailable.Code))
 			Expect(autoMgr.startCalled.Load()).To(Equal(int32(0)),
-				"Gap 3: StartInvestigation must never be called to fabricate an unbacked placeholder session")
+				"StartInvestigation must never be called to fabricate an unbacked placeholder session, and must not be attempted when signal resolution is unavailable")
 		})
 	})
 

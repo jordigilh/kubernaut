@@ -177,6 +177,84 @@ func (t *InvestigateTool) createFallbackSession(ctx context.Context, rrID string
 	return sessionID
 }
 
+// createFreshInteractiveSession starts a brand-new, real investigation for
+// rrID when reattachOrCreateFallback found nothing to reattach to: no
+// user_driving session and no completed RCA exist anywhere for this RR.
+//
+// DD-AA-KA-001 Amendment Gap 3 (as originally implemented, #2170) treated
+// this case as a dead end and failed closed, on the assumption that the
+// only alternative was a hardcoded, disconnected placeholder. CI evidence
+// from #2189 showed that assumption was wrong: test/e2e/fullpipeline's
+// "FP-MCP-002: AF-style fresh start lifecycle" (and equivalent journeys in
+// the apifrontend/fleet/kubernautagent E2E suites) is a legitimate,
+// explicitly-named product journey -- a user choosing to interactively
+// investigate a RemediationRequest that AA has not (or will never) pick up
+// autonomously. The fix is to actually run a real investigation, not to
+// choose between a fake placeholder and an error.
+//
+// This reuses the exact same signal-resolution + RunFullInvestigation
+// pipeline handleStartAutonomous uses for the pure-autonomous MCP entry
+// point (F4, #1374), so the resulting session has a real, audit-recordable
+// RCA behind it. UpgradeToInteractive is applied immediately (matching the
+// existing "found a running autonomous session" branch in
+// upgradeOrCreateInteractiveSession above) so the background goroutine
+// holds for interactive control at its next InteractiveHold checkpoint
+// instead of running the investigation to full autonomous completion.
+//
+// Returns "" -- reattachOrCreateFallback's existing exhaustion contract --
+// only when a real investigation genuinely cannot be started: the
+// signal-resolution dependency is unavailable (defensive; production
+// wiring always supplies it, the same requirement handleStartAutonomous
+// has), signal resolution itself fails, or StartInvestigation errors (e.g.
+// interactive.maxConcurrentSessions capacity exhaustion).
+func (t *InvestigateTool) createFreshInteractiveSession(ctx context.Context, rrID string, user mcpinternal.UserInfo) string {
+	if t.signalResolver == nil {
+		t.logger.Error(fmt.Errorf("signal resolver not configured"),
+			"start: cannot create fresh interactive session", "rr_id", rrID)
+		return ""
+	}
+	resolved, resolveErr := t.signalResolver.ResolveSignalContext(ctx, rrID)
+	if resolveErr != nil {
+		t.logger.Error(resolveErr, "start: resolve signal context for fresh interactive session failed",
+			"rr_id", rrID)
+		return ""
+	}
+	if resolved == nil {
+		t.logger.Error(fmt.Errorf("nil signal context"),
+			"start: resolve signal context for fresh interactive session failed", "rr_id", rrID)
+		return ""
+	}
+	signal := *resolved
+
+	metadata := map[string]string{
+		"remediation_id": rrID,
+		"username":       user.Username,
+		"mode":           "interactive_fresh_start",
+	}
+	sessionID, err := t.autoMgr.StartInvestigation(ctx, func(bgCtx context.Context) (*katypes.InvestigationResult, error) {
+		return t.runner.RunFullInvestigation(bgCtx, signal)
+	}, metadata)
+	if err != nil {
+		t.logger.Error(err, "start: fresh interactive session creation failed",
+			"rr_id", rrID, "username", user.Username)
+		return ""
+	}
+
+	if upgradeErr := t.autoMgr.UpgradeToInteractive(sessionID, user.Username, user.Groups); upgradeErr != nil {
+		// The session was just created (StatusRunning) -- an upgrade
+		// failure here means it already raced to a terminal state (e.g.
+		// RunFullInvestigation returning near-instantly against a mock
+		// LLM in tests). The session itself is still real and valid to
+		// attach to; ForceTransitionToUserDriving in the caller's
+		// exhaustion chain is the backstop for that race, matching the
+		// existing terminal-session handling in
+		// upgradeOrCreateInteractiveSession.
+		t.logger.Info("start: fresh interactive session reached terminal before upgrade could apply",
+			"rr_id", rrID, "session_id", sessionID, "reason", upgradeErr.Error())
+	}
+	return sessionID
+}
+
 // storeReconstructedContext queries the reconstructor and caches prior turns
 // for the session's lifetime. Prefers RCA summary from a prior completed
 // session (more concise, prevents token bloat) over full audit trail

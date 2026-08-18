@@ -117,7 +117,7 @@ control objective) for the compliance record, and an honest accounting of what r
 | R2 | Two KA replicas double-dispatch the same `AgentSession` | Duplicate LLM cost, conflicting results written to Status | Low | UT-AA-KA-065-022 | Direct concurrency test: two `Dispatcher` instances racing the same object, asserting the underlying investigation runs exactly once |
 | R3 | A concurrent `AgentSession.Status` write (CAS conflict) is silently dropped | KA's dispatch-accept/complete/fail transition disappears; AA hangs waiting on a Status field that was never actually written | Medium | UT-AA-KA-065-021, UT-KA-2170-001–006 (indirect: proves the *hook* fires exactly once) | **Coverage gap identified, not closed** — see §15/Known Gaps: no test currently injects a genuine `apierrors.IsConflict` from a fake/envtest client against `status_writer.go`'s `updateStatus` retry loop. The 3-attempt bound (`maxStatusUpdateRetries`) is implemented but its retry-then-give-up behavior under a forced conflict is unverified by any automated test |
 | R4 | AA/AF infer `Interactive` from a secondhand signal (IS existence) instead of watching `Status.Interactive`, reintroducing the #1713 race | Interactive upgrade ack silently missed or delayed by a full poll interval | Low (structurally closed — the inferring code is deleted) | UT-AA-2030-013a, UT-AF-AS-WATCH-001–010, `E2E-FP-1390-001` | `AgentSessionEventPredicate` wakes AA immediately on `Interactive`-only changes; AF's `AwaitAgentSessionInteractive` watches `AgentSessionList` directly, never `InvestigationSession.Status.Phase` |
-| R5 | KA's MCP-direct interactive fallback creates a directionless placeholder session (Gap 3) | Session has no `AgentSession` to write a result to, no path to AA's escalation pipeline — silent dead end | Low | UT-KA-1440-010–012, UT-KA-1818-001–004, IT-KA-1440-010 | `reattachOrCreateFallback` fails closed with `ErrCodeNoInvestigationAvailable` when no real investigation exists; proven at both UT (unit) and IT (production MCP dispatch path) tiers |
+| R5 | KA's MCP-direct interactive fallback creates a directionless placeholder session (Gap 3) | Session has no `AgentSession` to write a result to, no path to AA's escalation pipeline — silent dead end | Low | UT-KA-1440-010–012, UT-KA-1818-001–004, IT-KA-1440-010, UT-KA-2170-020/021 | `reattachOrCreateFallback` starts a genuinely real investigation (`createFreshInteractiveSession`, reusing `handleStartAutonomous`'s pipeline) instead of a placeholder when no prior session/RCA exists; fails closed only when the signal-resolution dependency itself is unavailable or `StartInvestigation` errors. Revised 2026-08-18 (PR #2189 CI evidence) from an initial fail-closed-in-general design after `test/e2e/fullpipeline`'s "FP-MCP-002: AF-style fresh start" proved that scenario legitimate |
 | R6 | `BR-AA-KA-065.8` (HTTP removal) silently reported as done when it isn't | Compliance record overstates actual removal; a future auditor finds `pkg/agentclient` still present and questions the record's accuracy | Low (mitigated by this plan itself) | N/A — process risk | Explicitly tracked as **Deferred (#2190)** in §1.3 and §7, not marked Pass |
 
 ### 3.1 Risk-to-Test Traceability
@@ -150,7 +150,7 @@ Not implemented in this pass — filed as a coverage gap, not silently closed.
   `TerminalHook`/`InteractiveUpgradeHook` — single-commit-point terminal/upgrade notification
   (Gap 2).
 - **`internal/kubernautagent/mcp/tools/investigate_start.go`, `investigate_autonomous.go`**:
-  `reattachOrCreateFallback` fail-closed behavior (Gap 3).
+  `reattachOrCreateFallback` / `createFreshInteractiveSession` (Gap 3, revised).
 - **`pkg/apifrontend/tools/crd_tools_session.go`**: `AwaitAgentSessionInteractive` — AF's
   `AgentSessionList`-watch ack-wait, replacing `AwaitISPhaseActive`.
 - **RBAC**: `charts/kubernaut/templates/aianalysis/aianalysis.yaml`,
@@ -281,13 +281,13 @@ not-yet-written tests.
 | BR-AA-KA-065.9 | RoleBinding removal (AA no longer binds `kubernaut-agent-client`) | P1 | Manifest | `charts/kubernaut/templates/aianalysis/aianalysis.yaml` diff (RoleBinding deleted) | **Pass** |
 | BR-AA-KA-065.10 | `InvestigationSession` unaffected; AA stops reading for decisions | P0 | Unit + Structural | UT-KA-HELM-004; grep-confirmed AA decision-reading functions deleted | **Pass** |
 | BR-AA-KA-065.11 | No silent drop on out-of-band terminal completion | P0 | Unit | UT-KA-2170-001–006 (esp. UT-KA-2170-005 race case) | **Pass** |
-| BR-AA-KA-065.12 | Interactive fallback fails closed, not placeholder | P0 | Unit | UT-KA-1440-010–012, UT-KA-1818-001–004 | **Pass** |
-| BR-AA-KA-065.12 | Same, production MCP dispatch path proof | P0 | Integration | IT-KA-1440-010 | **Pass** |
+| BR-AA-KA-065.12 | Interactive fallback starts a real investigation (not placeholder, not fail-closed-in-general) | P0 | Unit | UT-KA-1440-010–012, UT-KA-1818-001–004, UT-KA-2170-020/021 | **Pass** |
+| BR-AA-KA-065.12 | Same, production MCP dispatch path proof (dependency-unavailable case) | P0 | Integration | IT-KA-1440-010 | **Pass** |
 | — (#2080/#2081 regression) | Concurrent hand-offs never exhaust a regeneration cap that no longer exists | P0 | Unit | UT-AA-KA-065-207 | **Pass** |
 | — (#1713 regression) | Interactive-upgrade-ack propagation no longer races AA's own poll | P0 | Unit + E2E | UT-AA-2030-013a; `E2E-FP-1390-001` (90s fast-fail assertion replacing the old 10-min timeout window) | **Pass** |
 | — (DD-AA-KA-001 Gap 1) | Fresh interactive start decided at KA's dispatch point, not AA's Create | P0 | Unit + Integration | UT-INTERACTIVE-010-030, UT-AA-KA-065-024; UT-AF-AS-WATCH-003 (AF handles pre-AgentSession-existence race) | **Pass** |
 | — (DD-AA-KA-001 Gap 2) | Terminal-status-write race — single commit point | P0 | Unit | UT-KA-2170-001–006 | **Pass** |
-| — (DD-AA-KA-001 Gap 3) | KA's MCP-direct interactive fallback fails closed | P0 | Unit + Integration | UT-KA-1440-010–012, UT-KA-1818-001–004; IT-KA-1440-010 | **Pass** |
+| — (DD-AA-KA-001 Gap 3, revised) | KA's MCP-direct interactive fallback starts a real investigation instead of a placeholder or a general fail-closed | P0 | Unit + Integration | UT-KA-1440-010–012, UT-KA-1818-001–004, UT-KA-2170-020/021; IT-KA-1440-010 | **Pass** |
 
 ### Status Legend
 
@@ -411,22 +411,58 @@ on its next scheduled poll — the exact multi-minute-hang shape `#1713` reporte
 **Acceptance Criteria**: `calls` has length 1; the cancelled goroutine's own rejected `store.Update`
 must never re-fire the hook.
 
-### UT-KA-1818-004: Interactive fallback fails closed with no placeholder
+### UT-KA-1818-004: Interactive fallback fails closed only when signal resolution is unavailable
 
-**BR**: BR-AA-KA-065.12 (DD-AA-KA-001 Amendment Gap 3)
+**BR**: BR-AA-KA-065.12 (DD-AA-KA-001 Amendment Gap 3, revised 2026-08-18)
 **Priority**: P0
 **Type**: Unit
 **File**: `internal/kubernautagent/mcp/tools/handlestart_robustness_1440_test.go`
 
 **Test Steps**:
-1. **Given**: No `user_driving` session and no real RCA anywhere for the remediation request.
+1. **Given**: No `user_driving` session, no real RCA anywhere for the remediation request, and no
+   `SignalContextResolver` configured (the one dependency `createFreshInteractiveSession` cannot
+   work around).
 2. **When**: `reattachOrCreateFallback` is called.
-3. **Then**: It returns without calling `StartInvestigation`, letting `handleStart`'s existing
-   `#2100` fail-closed path release the Lease and return `ErrCodeNoInvestigationAvailable`.
+3. **Then**: `createFreshInteractiveSession` returns "" without calling `StartInvestigation`,
+   letting `handleStart`'s existing `#2100` fail-closed path release the Lease and return
+   `ErrCodeNoInvestigationAvailable`.
 
-**Dependencies**: IT-KA-1440-010 proves the same contract through the real MCP dispatch path.
+**Dependencies**: IT-KA-1440-010 proves the same contract through the real MCP dispatch path;
+UT-KA-2170-020 proves the general (resolver-available) case now succeeds with a real investigation
+instead.
 
-### IT-KA-1440-010: Fail-closed proven through production MCP dispatch
+### UT-KA-2170-020: Interactive fallback starts a real investigation instead of failing closed
+
+**BR**: BR-AA-KA-065.12 (DD-AA-KA-001 Amendment Gap 3, revised 2026-08-18, PR #2189 CI evidence)
+**Priority**: P0
+**Type**: Unit
+**File**: `internal/kubernautagent/mcp/tools/investigate_start_fresh_investigation_test.go`
+
+**Test Steps**:
+1. **Given**: No `user_driving` session, no completed RCA anywhere for the RR, but a
+   `SignalContextResolver` is configured (the production default).
+2. **When**: `action=start` is invoked.
+3. **Then**: `createFreshInteractiveSession` resolves the signal context, calls
+   `StartInvestigation` with a real `RunFullInvestigation`-backed function tagged
+   `mode=interactive_fresh_start`, and immediately calls `UpgradeToInteractive` on the result.
+   `handleStart` returns `Status: "started"` with the new session's ID — no lease release, no
+   error.
+
+**Rationale**: proves the fix for the regression the original Gap 3 fail-closed design introduced,
+caught by `test/e2e/fullpipeline`'s "FP-MCP-002: AF-style fresh start" during PR #2189 CI.
+
+### UT-KA-2170-021: Interactive fallback still fails closed when signal resolution is unavailable
+
+**BR**: BR-AA-KA-065.12
+**Priority**: P0
+**Type**: Unit
+**File**: `internal/kubernautagent/mcp/tools/investigate_start_fresh_investigation_test.go`
+
+**Test Steps**: same as UT-KA-1818-004, retained alongside it as the narrower regression guard for
+`createFreshInteractiveSession`'s own defensive nil-check specifically (rather than the broader
+`handleStart` fallback chain).
+
+### IT-KA-1440-010: Dependency-unavailable fail-closed proven through production MCP dispatch
 
 **BR**: BR-AA-KA-065.12
 **Priority**: P0
@@ -434,10 +470,14 @@ must never re-fire the hook.
 **File**: `internal/kubernautagent/mcp/tools/handlestart_robustness_1440_it_test.go`
 
 **Test Steps**:
-1. **Given**: A real MCP tool-call dispatch path, no prior session for the RR.
+1. **Given**: A real MCP tool-call dispatch path, no prior session for the RR, and no
+   `SignalContextResolver` configured.
 2. **When**: `action=start` is invoked.
 3. **Then**: The call fails closed with an actionable error through the actual production
-   entry point — not just the unit-tested helper in isolation.
+   entry point — not just the unit-tested helper in isolation. (The general, resolver-available
+   case is proven at the UT tier only, by UT-KA-2170-020; no full envtest-backed IT exists yet for
+   the real-investigation success path — tracked as a coverage gap, not silently closed, per this
+   plan's §3 Risks & Mitigations convention.)
 
 ---
 
@@ -557,3 +597,4 @@ not silently upgraded to "Integration" tier without a real envtest behind it.
 | Version | Date | Changes |
 |---------|------|---------|
 | 1.0 | 2026-08-18 | Initial finalized test plan, written post-implementation against PR #2189. Documents BR-AA-KA-065.1–.12 coverage, the two closed regressions (#2080/#2081, #1713), the three DD-AA-KA-001 Amendment gaps, and honestly reports BR-AA-KA-065.8 (HTTP removal) as deferred to #2190. Identifies one open coverage gap (CAS-conflict-retry path, §3 R3) rather than papering over it. |
+| 1.1 | 2026-08-18 | PR #2189's own CI caught a regression in v1.0's Gap 3 as *implemented*: `test/e2e/fullpipeline`'s "FP-MCP-002: AF-style fresh start" (and equivalents in apifrontend/fleet/kubernautagent E2E) proved KA's MCP-direct interactive fallback failing closed on every genuinely-fresh RR was wrong, not just untested — that is a legitimate product journey. Revised the fix (`createFreshInteractiveSession`, real investigation instead of fail-closed-in-general) and this plan's BR-AA-KA-065.12 rows accordingly; added UT-KA-2170-020/021. Second open coverage gap noted: no envtest-backed IT yet for the real-investigation success path (only the dependency-unavailable fail-closed branch has IT coverage, IT-KA-1440-010). |

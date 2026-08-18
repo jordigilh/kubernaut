@@ -268,7 +268,8 @@ func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context,
 
 // reattachOrCreateFallback resolves the investigation session the user
 // should be attached to when no viable Running autonomous session exists
-// for rrID, in order of preference (#1818, DD-AA-KA-001 Amendment Gap 3):
+// for rrID, in order of preference (#1818, DD-AA-KA-001 Amendment Gap 3,
+// revised post-#2189 CI evidence -- see createFreshInteractiveSession):
 //  1. An already-user_driving session for this rrID — e.g. left over from a
 //     prior action=start/takeover whose MCP lease was since released — is
 //     reused directly rather than creating a duplicate placeholder.
@@ -277,17 +278,22 @@ func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context,
 //     createFallbackSession always seeded a hardcoded placeholder here,
 //     orphaning any real RCA the autonomous investigation had already
 //     produced before the interactive request raced past it.
+//  3. A genuinely fresh, real investigation (createFreshInteractiveSession)
+//     when neither of the above exists -- e.g. a user interactively
+//     investigating an RR that AA has not (or will never) pick up
+//     autonomously (the "AF-style fresh start" journey proven by
+//     test/e2e/fullpipeline's FP-MCP-002 and mirrored across
+//     apifrontend/fleet/kubernautagent E2E suites). Gap 3's original
+//     design treated this as a dead end because it only considered a
+//     *canned/hardcoded* placeholder with no execution path; the fix is a
+//     real investigation, not fail-closed.
 //
-// Returns "" when neither exists — genuinely nothing (no user_driving
-// session, no completed RCA anywhere) for this rrID. This is a deliberate
-// fail-closed exhaustion signal, not an error to recover from here: a
-// placeholder session with no execution path is a dead end (AF has exactly
-// two terminal flows -- interactive remediation and autonomous fix -- both
-// of which require a real investigation behind them), so callers must
-// route this through the existing exhaustion path
+// Returns "" only when a real investigation could not even be started
+// (StartInvestigation itself erroring, e.g. capacity exhaustion, or the
+// signal-resolution dependency being unavailable) -- callers still route
+// that through the existing exhaustion path
 // (upgradeOrCreateInteractiveSession -> ForceTransitionToUserDriving ->
-// failStartOnFallbackExhausted) instead of fabricating a chat session with
-// nothing backing it.
+// failStartOnFallbackExhausted).
 //
 // httpCompleter is used (with a nil check) rather than extending
 // AutonomousSessionQuerier: FindUserDrivingByRemediationID already lives on
@@ -299,11 +305,10 @@ func (t *InvestigateTool) reattachOrCreateFallback(ctx context.Context, rrID str
 			return existingID
 		}
 	}
-	seedResult, found := t.autoMgr.GetLatestRCAResultByRemediationID(rrID)
-	if !found {
-		return ""
+	if seedResult, found := t.autoMgr.GetLatestRCAResultByRemediationID(rrID); found {
+		return t.createFallbackSession(ctx, rrID, user, seedResult)
 	}
-	return t.createFallbackSession(ctx, rrID, user, seedResult)
+	return t.createFreshInteractiveSession(ctx, rrID, user)
 }
 
 // transitionAutonomousToUserDriving transitions the running autonomous

@@ -43,9 +43,9 @@ type itFallbackAutoMgr struct {
 	pendingResult string
 	pendingOK     bool
 	// forceErr configures ForceTransitionToUserDriving's return value.
-	// Defaults to nil; DD-AA-KA-001 Amendment Gap 3's fail-closed scenario
-	// (IT-KA-1440-010) sets this to session.ErrSessionNotFound to match the
-	// real Manager's behavior when genuinely no session exists for the RR.
+	// Defaults to nil; IT-KA-1440-010's dependency-unavailable scenario
+	// sets this to session.ErrSessionNotFound to match the real Manager's
+	// behavior when genuinely no session exists for the RR.
 	forceErr error
 }
 
@@ -93,12 +93,17 @@ func (m *itFallbackAutoMgr) GetSessionLazySink(_ string) (*session.LazySink, boo
 var _ = Describe("Fix #1440 Integration: KA handleStart fallback session creation", func() {
 
 	// IT-KA-1440-010 (superseded by DD-AA-KA-001 Amendment Gap 3,
-	// BR-AA-KA-065.12): SC-24's original placeholder-creation contract is
-	// gone. A genuinely nonexistent RR-backed investigation (no running/
-	// terminal autonomous session, no completed RCA anywhere) now fails
-	// closed through the production dispatch path instead of fabricating a
-	// session via StartInvestigation.
-	Describe("IT-KA-1440-010: MCP action=start with no prior session fails closed through the production dispatch path (SC-24 / Gap 3)", func() {
+	// BR-AA-KA-065.12, revised post-#2189 CI evidence -- see
+	// UT-KA-2170-020/021 in investigate_start_fresh_investigation_test.go):
+	// SC-24's original placeholder-creation contract is gone, but a
+	// genuinely nonexistent RR-backed investigation no longer fails closed
+	// in general either -- it starts a real investigation via
+	// createFreshInteractiveSession. This test omits
+	// WithSignalContextResolver (unlike production, which always wires one
+	// via cmd/kubernautagent/routes.go), so it exercises only the
+	// defensive "signal-resolution dependency unavailable" branch that
+	// still fails closed.
+	Describe("IT-KA-1440-010: MCP action=start fails closed when the signal-resolution dependency is unavailable (SC-24 / Gap 3)", func() {
 		It("should return ErrCodeNoInvestigationAvailable without ever calling StartInvestigation", func() {
 			sessionMgr := &mockSessionManager{
 				takeoverSession: &mcpinternal.InteractiveSession{
