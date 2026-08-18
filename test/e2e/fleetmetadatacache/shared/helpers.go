@@ -83,17 +83,19 @@ func ClusterIDs(g Gomega, h *Harness) []string {
 	return ids
 }
 
-// ReadyzStatus queries FMC's real /readyz endpoint (wired in
-// cmd/fleetmetadatacache/main.go via fmc.ReadyzHandler backed by
-// scopecache.ValkeyCacheReader.Ping) and returns the HTTP status code. No
-// path constant is exported for /readyz (unlike ScopeCheckPath/ClustersPath)
-// since it is a Kubernetes probe endpoint, not a public API contract.
+// ReadyzStatus queries FMC's real /readyz endpoint on the dedicated health
+// port (wired in cmd/fleetmetadatacache/main.go via fmc.ReadyzHandler backed
+// by scopecache.ValkeyCacheReader.Ping) and returns the HTTP status code.
 //
-// Issue #1683: /readyz lives exclusively on FMC's dedicated health port
-// (FMCHealthBaseURL) since the 3-port split -- it is no longer served on
-// the TLS-protected API port (FMCAPIBaseURL).
+// Issue #1683: /readyz has lived on FMC's dedicated health port
+// (FMCHealthBaseURL) since the 3-port split -- kubelet's own probe target,
+// unaffected by DD-PLATFORM-010 below. DD-PLATFORM-010 (Issue #2169) ALSO
+// registers the same fmc.ReadyzPath, unauthenticated, on the TLS-protected
+// API port (FMCAPIBaseURL), so GW/RO's fmc.HTTPClient.Ping() can reach it
+// without a NetworkPolicy widening -- see TLSPortSplit in
+// tls_port_split.go, which exercises that second registration directly.
 func ReadyzStatus(g Gomega, h *Harness) int {
-	req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, h.FMCHealthBaseURL+"/readyz", http.NoBody)
+	req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, h.FMCHealthBaseURL+fmc.ReadyzPath, http.NoBody)
 	g.Expect(err).ToNot(HaveOccurred(), "failed to build /readyz request")
 	resp, err := h.FMCHTTPClient.Do(req)
 	g.Expect(err).ToNot(HaveOccurred(), "/readyz request failed")

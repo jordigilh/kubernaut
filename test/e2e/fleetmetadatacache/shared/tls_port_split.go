@@ -43,8 +43,10 @@ import (
 //     harness's CA-aware client -- FMCHTTPClient, backed by
 //     infrastructure.NewTLSAwareTransport -- completes a real scope-check
 //     call over TLS)
-//   - /readyz is unreachable on the API port (moved off it, Issue #1683
-//     Section 4.3 design decision) and reachable on the dedicated health port
+//   - /readyz is reachable, unauthenticated, on the TLS-protected API port
+//     (DD-PLATFORM-010, Issue #2169), while /api/v1/clusters on that same
+//     port still requires auth -- and /readyz remains reachable on the
+//     dedicated health port too (Issue #1683, kubelet's own probe target)
 //   - a client that offers only TLS versions below the active TLSProfile's
 //     floor is rejected by the real production listener (SC-13: cipher/
 //     version restriction enforcement, not just "TLS is on")
@@ -52,33 +54,52 @@ import (
 // 100% gateway-agnostic: this journey exercises FMC's own server config, never
 // the MCP Gateway edge, so it is shared verbatim with the EAIGW lane.
 //
-// Authority: Issue #1683, docs/testing/1683/TEST_PLAN.md E2E-FMC-1683-016.
+// Authority: Issue #1683, docs/testing/1683/TEST_PLAN.md E2E-FMC-1683-016,
+// DD-PLATFORM-010, Issue #2169.
 func TLSPortSplit(h *Harness, v Variant) bool {
-	return Describe(fmt.Sprintf("%s: FMC presents TLS on the API port with readyz split onto a dedicated health port", v.ScenarioPrefix()), func() {
-		It("E2E-FMC-1683-016 [SC-8,SC-13,AC-4]: real TLS handshake + readyz port split + cipher-version restriction", func() {
+	return Describe(fmt.Sprintf("%s: FMC presents TLS on the API port with an unauthenticated readyz alongside the dedicated health port", v.ScenarioPrefix()), func() {
+		It("E2E-FMC-1683-016 [SC-8,SC-13,AC-4]: real TLS handshake + unauthenticated readyz on both ports + cipher-version restriction", func() {
 			By("Confirming FMC's real API port completes a CA-verified TLS scope-check call")
 			Eventually(func(g Gomega) {
 				ScopeCheck(g, h, "loopback-cluster", "", "v1", "Namespace", "", "kube-system")
 			}, Timeout, Interval).Should(Succeed(),
 				"SC-8: a CA-trusting client must complete real scope-check calls over the TLS-protected API port")
 
-			By("Confirming /readyz is unreachable on the API port (moved exclusively to the health port)")
+			// h.FMCHTTPClient always injects a valid bearer token (testauth.
+			// StaticTokenTransport), so it can't prove "unauthenticated" either
+			// way. noAuthClient reuses the same CA-aware base transport
+			// (http.DefaultTransport, set to infrastructure.NewTLSAwareTransport
+			// in this suite's BeforeEach) but adds no Authorization header at
+			// all, so it genuinely proves the auth-bypass claim below.
+			noAuthClient := &http.Client{Timeout: 10 * time.Second, Transport: http.DefaultTransport}
 			apiURL, err := url.Parse(h.FMCAPIBaseURL)
 			Expect(err).ToNot(HaveOccurred())
-			readyzOnAPIPort := fmt.Sprintf("%s://%s/readyz", apiURL.Scheme, apiURL.Host)
-			req, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, readyzOnAPIPort, http.NoBody)
-			Expect(err).ToNot(HaveOccurred())
-			resp, respErr := h.FMCHTTPClient.Do(req)
-			if respErr == nil {
-				defer func() { _ = resp.Body.Close() }()
-				Expect(resp.StatusCode).ToNot(Equal(http.StatusOK),
-					"AC-4: /readyz must not be served on the API port after the Issue #1683 3-port split")
-			}
-			// A transport-level error (connection refused/reset, TLS alert) is
-			// an equally valid proof that /readyz isn't served here -- the API
-			// mux never registers that handler at all post-split.
+			readyzOnAPIPort := fmt.Sprintf("%s://%s%s", apiURL.Scheme, apiURL.Host, fmc.ReadyzPath)
 
-			By("Confirming /readyz IS reachable and healthy on the dedicated health port")
+			By("Confirming /readyz IS reachable, with no Authorization header at all, on the TLS-protected API port (DD-PLATFORM-010)")
+			Eventually(func(g Gomega) int {
+				req, reqErr := http.NewRequestWithContext(h.Ctx, http.MethodGet, readyzOnAPIPort, http.NoBody)
+				g.Expect(reqErr).ToNot(HaveOccurred())
+				resp, respErr := noAuthClient.Do(req)
+				g.Expect(respErr).ToNot(HaveOccurred())
+				defer func() { _ = resp.Body.Close() }()
+				return resp.StatusCode
+			}, Timeout, Interval).Should(Equal(http.StatusOK),
+				"DD-PLATFORM-010/#2169: /readyz must be reachable with no Authorization header on the API port, "+
+					"exactly like the dedicated health port, so GW/RO's fmc.HTTPClient.Ping() reaches it without "+
+					"a NetworkPolicy widening")
+
+			By("Confirming /api/v1/clusters on the same API port still rejects that same no-Authorization-header client (auth exemption is scoped to /readyz only)")
+			clustersReq, err := http.NewRequestWithContext(h.Ctx, http.MethodGet, h.FMCAPIBaseURL+fmc.ClustersPath, http.NoBody)
+			Expect(err).ToNot(HaveOccurred())
+			clustersResp, err := noAuthClient.Do(clustersReq)
+			Expect(err).ToNot(HaveOccurred())
+			defer func() { _ = clustersResp.Body.Close() }()
+			Expect(clustersResp.StatusCode).To(Equal(http.StatusUnauthorized),
+				"DD-PLATFORM-010 must not accidentally exempt the whole API mux -- /api/v1/clusters must still "+
+					"reject an unauthenticated request")
+
+			By("Confirming /readyz IS also reachable and healthy on the dedicated health port")
 			Eventually(func(g Gomega) int {
 				return ReadyzStatus(g, h)
 			}, Timeout, Interval).Should(Equal(http.StatusOK),
