@@ -231,15 +231,15 @@ func (a *AnsibleExecutor) Create(
 	namespace string,
 	opts CreateOptions,
 ) (*CreateResult, error) {
-	// DD-FLEET-005 (#1761): the ansible engine does not support remote (fleet)
+	// DD-FLEET-007 (#1761): the ansible engine does not support remote (fleet)
 	// execution. Live spikes against both candidate remote paths (AAP MCP
 	// Server, tower.ansible.com Resource Operator CRDs) each surfaced
-	// independent, confirmed blockers -- see DD-FLEET-005 for the full
+	// independent, confirmed blockers -- see DD-FLEET-007 for the full
 	// evidence and rationale. Fail closed here, before any AWX/AAP
 	// interaction, rather than silently executing against the hub cluster.
 	if wfe.Spec.ClusterID != "" {
 		return nil, fmt.Errorf(
-			"ansible engine does not support remote execution: cannot target cluster %q (see DD-FLEET-005)",
+			"ansible engine does not support remote execution: cannot target cluster %q (see DD-FLEET-007)",
 			wfe.Spec.ClusterID,
 		)
 	}

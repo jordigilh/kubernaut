@@ -72,7 +72,7 @@ func DiscoverToolPrefix(ctx context.Context, session *mcp.ClientSession, cluster
 // went undetected.
 //
 // Authority: ADR-068 decision #10 (gateway-agnostic business logic),
-// DD-FLEET-004, BR-INTEGRATION-054, BR-INTEGRATION-1489, Issue #1756.
+// DD-FLEET-005, BR-INTEGRATION-054, BR-INTEGRATION-1489, Issue #1756.
 func PrefixFromToolNames(clusterID string, names []string) (string, error) {
 	normalized := strings.ReplaceAll(clusterID, "-", "_")
 

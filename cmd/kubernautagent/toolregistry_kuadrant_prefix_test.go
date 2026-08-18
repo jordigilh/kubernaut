@@ -52,7 +52,7 @@ func (d *fixedDiscoverer) ToolsForCluster(_ context.Context, clusterID string) (
 // capturingSession implements mcpclient.Session, recording the tool name
 // each CallTool invocation used. This lets a test assert that the wire call
 // reaches the gateway under the tool's ORIGINAL, gateway-prefixed name even
-// though the LLM only ever sees the generic one (DD-FLEET-004).
+// though the LLM only ever sees the generic one (DD-FLEET-005).
 type capturingSession struct {
 	lastToolName string
 }
@@ -75,7 +75,7 @@ func (s *capturingSession) CallTool(_ context.Context, params *mcp.CallToolParam
 // directly (not a re-derivation living in another package, which is exactly
 // how issue #1756 went undetected) with only the GatewayDiscoverer/Session
 // external dependencies faked, per the project's mock-external-only policy.
-var _ = Describe("gatewayOverlayResolver.Overlay prefix resolution across gateway conventions (DD-FLEET-004, BR-INTEGRATION-054, BR-INTEGRATION-1489) [AC-4]", func() {
+var _ = Describe("gatewayOverlayResolver.Overlay prefix resolution across gateway conventions (DD-FLEET-005, BR-INTEGRATION-054, BR-INTEGRATION-1489) [AC-4]", func() {
 	DescribeTable("generic-izes the tool name regardless of the gateway's wire prefix convention",
 		func(clusterID, wireName string) {
 			session := &capturingSession{}
@@ -90,7 +90,7 @@ var _ = Describe("gatewayOverlayResolver.Overlay prefix resolution across gatewa
 
 			tool, found := overlay["resources_get"]
 			Expect(found).To(BeTrue(),
-				"DD-FLEET-004/AC-4: the LLM must see this cluster's tool under the generic name "+
+				"DD-FLEET-005/AC-4: the LLM must see this cluster's tool under the generic name "+
 					"'resources_get', regardless of the gateway's wire prefix convention -- got keys %v", toolKeys(overlay))
 			Expect(tool.Name()).To(Equal("resources_get"))
 

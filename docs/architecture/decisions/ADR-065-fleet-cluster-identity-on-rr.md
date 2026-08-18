@@ -150,7 +150,7 @@ type RemediationRequestSpec struct {
 | IT-GW-FLEET-001 | Cluster label propagation to RR spec.clusterID | PASS |
 | IT-GW-FLEET-002 | Cluster-aware deduplication (different fingerprints) | PASS |
 | IT-GW-FLEET-003 | Backward compat (empty clusterID when no cluster label) | PASS |
-| ~~IT-KA-FLEET-001~~ | ~~Fleet tools visible in RCA phase after AppendFleetToolsToRCA~~ — **superseded**: `AppendFleetToolsToRCA` was deleted by [DD-FLEET-004](DD-FLEET-004-cluster-transparent-tool-exposure.md) (#1732); fleet tool visibility in the RCA phase is now proven by `IT-KA-FLEET-013` (`test/integration/kubernautagent/investigator/fleet_prescoping_test.go`) | superseded |
+| ~~IT-KA-FLEET-001~~ | ~~Fleet tools visible in RCA phase after AppendFleetToolsToRCA~~ — **superseded**: `AppendFleetToolsToRCA` was deleted by [DD-FLEET-005](DD-FLEET-005-cluster-transparent-tool-exposure.md) (#1732); fleet tool visibility in the RCA phase is now proven by `IT-KA-FLEET-013` (`test/integration/kubernautagent/investigator/fleet_prescoping_test.go`) | superseded |
 | ~~IT-KA-FLEET-002~~ | ~~Empty fleet tools do not corrupt phase map~~ — superseded alongside IT-KA-FLEET-001 above (same removed code path) | superseded |
 | UT/IT/E2E-AF-1409-* | AF cluster_id threading: RRContext, dedup, takeover reconstruction, investigation_summary/execution_progress artifacts, Console banner journey — see [docs/tests/1409/TEST_PLAN.md](../../tests/1409/TEST_PLAN.md) | PASS (full pyramid: 13 UT, 10 IT, 1 E2E — E2E verified against a live Kind cluster) |
 

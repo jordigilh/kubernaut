@@ -1,7 +1,7 @@
 # Test Plan: Real AF-via-A2A Fleet Investigation E2E Coverage
 
 **Issue**: [#1768](https://github.com/jordigilh/kubernaut/issues/1768) (Track 1 — Gaps A + C)
-**Authority**: [DD-FLEET-004](../../architecture/decisions/DD-FLEET-004-cluster-transparent-tool-exposure.md), ADR-068
+**Authority**: [DD-FLEET-005](../../architecture/decisions/DD-FLEET-005-cluster-transparent-tool-exposure.md), ADR-068
 **Business Requirements**: BR-INTEGRATION-054, BR-FLEET-054
 **Branch**: `test/1768-af-fleet-e2e-coverage`
 **Created**: 2026-07-29
@@ -39,7 +39,7 @@ one new E2E test file plus one new Mock LLM scenario, no infra or production cod
 | Control | Title | Relevance |
 |---|---|---|
 | **SI-4** | Information System Monitoring | Primary. Proves AF's real fleet-investigation tool-calling path (the same path an SRE's live A2A session uses) can actually read remote-cluster state, not just that the underlying gateway/MCP plumbing works in isolation. |
-| **AC-4** | Information Flow Enforcement | The test asserts the resource returned is the **remote** cluster's `coredns`, not the hub's — proving the `cluster_id` argument enforces the intended cross-cluster boundary through the real AF binary, matching DD-FLEET-004's per-investigation cluster-scoping guarantee for AF's tool surface. |
+| **AC-4** | Information Flow Enforcement | The test asserts the resource returned is the **remote** cluster's `coredns`, not the hub's — proving the `cluster_id` argument enforces the intended cross-cluster boundary through the real AF binary, matching DD-FLEET-005's per-investigation cluster-scoping guarantee for AF's tool surface. |
 | **AU-2/AU-3** | Audit Events / Content | AF's tool-call audit event (existing `audit.Emitter` path, unchanged) is exercised end-to-end for a real fleet-scoped `kubectl_get`, closing a previously-untested audit-completeness gap for cross-cluster reads specifically. |
 
 ## 3. Pyramid Invariant — Test Scenario Inventory
@@ -102,7 +102,7 @@ wiring that had no E2E test exercising it, per Gap A/C.
 ## 7. Out of Scope (tracked separately)
 
 - Gap D (AF↔KA interactive bridge fleet-scoping) — see `docs/spikes/1768-af-ka-interactive-fleet-scoping/README.md` and issue #1768 Track 2.
-- `list_clusters` vs DD-FLEET-004 asymmetry design question — issue #1768 Track 3 (CHECKPOINT DD, pending user decision).
+- `list_clusters` vs DD-FLEET-005 asymmetry design question — issue #1768 Track 3 (CHECKPOINT DD, pending user decision).
 - Issue #1729 (KA Helm chart fleet parity) — separate issue, unrelated to AF's own fleet wiring.
 
 ## 8. Coverage Target

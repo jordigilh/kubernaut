@@ -25,15 +25,15 @@ import (
 
 // FleetOverlayResolver resolves the set of remote-cluster tools KA should
 // expose to the LLM for one investigation's target cluster, under the exact
-// same generic names the equivalent local K8s tools already use (DD-FLEET-004
+// same generic names the equivalent local K8s tools already use (DD-FLEET-005
 // full name transparency). Implemented by cmd/kubernautagent (wrapping a
 // fleetclient.GatewayDiscoverer) and injected via Config.FleetOverlayResolver.
 //
 // nil is the expected value for KA deployments with fleet disabled: Investigate
 // never calls Overlay in that case, and every investigation behaves exactly as
-// it did before DD-FLEET-004 (zero regression for hub-local investigations).
+// it did before DD-FLEET-005 (zero regression for hub-local investigations).
 //
-// Authority: DD-FLEET-004, ADR-068 decision #11, BR-INTEGRATION-054/065.
+// Authority: DD-FLEET-005, ADR-068 decision #11, BR-INTEGRATION-054/065.
 type FleetOverlayResolver interface {
 	// Overlay returns a map from generic tool name (e.g. "kubectl_get_by_name")
 	// to the tools.Tool implementation that should serve that name for the
@@ -164,7 +164,7 @@ func (inv *Investigator) emitFleetOverlayUnavailableAudit(ctx context.Context, c
 // registry unchanged. The same generic name resolves to a different backing
 // implementation depending on the investigation's target cluster, never to a
 // different schema or a different name — the LLM's tool-calling behavior
-// never depends on fleet topology (AC-6, DD-FLEET-004 Alternative 1).
+// never depends on fleet topology (AC-6, DD-FLEET-005 Alternative 1).
 func resolveTool(overlay map[string]tools.Tool, name string) (tools.Tool, bool) {
 	if overlay == nil {
 		return nil, false

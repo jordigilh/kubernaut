@@ -1,7 +1,7 @@
 # Test Plan: AF↔KA Interactive Bridge Fleet Cluster-Scoping (Gap D)
 
 **Issue**: [#1768](https://github.com/jordigilh/kubernaut/issues/1768) (Track 2 — Gap D)
-**Authority**: [DD-FLEET-004](../../architecture/decisions/DD-FLEET-004-cluster-transparent-tool-exposure.md), [spike findings](../../spikes/1768-af-ka-interactive-fleet-scoping/README.md)
+**Authority**: [DD-FLEET-005](../../architecture/decisions/DD-FLEET-005-cluster-transparent-tool-exposure.md), [spike findings](../../spikes/1768-af-ka-interactive-fleet-scoping/README.md)
 **Business Requirements**: BR-INTEGRATION-054, BR-FLEET-054
 **Branch**: `fix/1768-track2-interactive-fleet-scoping`
 **Created**: 2026-07-30
@@ -14,7 +14,7 @@
 The [spike](../../spikes/1768-af-ka-interactive-fleet-scoping/README.md) confirmed (90%
 confidence, now re-verified against current `main` at 95%+) that KA's interactive
 investigation path — `InvestigateTool.handleMessage` → `Investigator.RunInteractiveTurn` —
-never applies `prescopeFleetOverlay`, the same DD-FLEET-004 server-side cluster pre-scoping
+never applies `prescopeFleetOverlay`, the same DD-FLEET-005 server-side cluster pre-scoping
 `Investigate()` applies for autonomous RCA. An interactive investigation (opened via AF's
 takeover/message bridge) for a non-hub `cluster_id` therefore silently resolves tool calls
 against the **hub** cluster's tools instead of the target remote cluster's — with no error,
@@ -56,7 +56,7 @@ implementation time — no change to the previously-approved design intent.
 
 | Control | Title | Relevance |
 |---|---|---|
-| **AC-4** | Information Flow Enforcement | Primary. Ensures an interactive investigation's tool calls are enforced against the *operator's actual target cluster*, not silently misrouted to the hub — closing the exact boundary DD-FLEET-004 established for the autonomous path. |
+| **AC-4** | Information Flow Enforcement | Primary. Ensures an interactive investigation's tool calls are enforced against the *operator's actual target cluster*, not silently misrouted to the hub — closing the exact boundary DD-FLEET-005 established for the autonomous path. |
 | **AC-6** | Least Privilege | The LLM's tool schema stays byte-identical regardless of which cluster backs it (existing `toolDefinitionsForPhase` guarantee) — this fix extends that guarantee to interactive turns, so an interactive session's LLM never gains visibility into cluster topology it shouldn't reason about. |
 | **AU-3** | Content of Audit Records | `prescopeFleetOverlay` failure path already emits `EventTypeFleetOverlayFailed` (AU-3) with `cluster_id` + `correlation_id`; this fix makes that audit path reachable from interactive sessions too (previously unreachable, since the resolver was never invoked there). |
 

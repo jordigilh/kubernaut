@@ -123,7 +123,7 @@ func runKAToolCallE2ECase(targetKubeconfig string, targetClient client.Client, c
 // E2E-FLEET-017 [AC-4, AC-6, SI-4]: real KA investigation calls the correct
 // tool for hub-local vs. fleet targets, closing issue #1729.
 //
-// Authority: issue #1729, DD-FLEET-004, ADR-068.
+// Authority: issue #1729, DD-FLEET-005, ADR-068.
 //
 // Why this test exists (what it closes that no other test does): before
 // #1729, KubernautAgent had no Helm-exposed `fleet` configuration block at

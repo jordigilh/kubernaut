@@ -28,11 +28,11 @@ import (
 	"github.com/jordigilh/kubernaut/pkg/kubernautagent/llm"
 )
 
-// BR-INTEGRATION-1489, DD-FLEET-004: proves the production entry point,
+// BR-INTEGRATION-1489, DD-FLEET-005: proves the production entry point,
 // SubmitToolStep, actually attributes cluster ID via audit.ClusterIDFromContext
 // end-to-end through a real Observer/Evaluator — not just the extracted
 // attributionClusterID helper in isolation (that's UT-KA-FLEET-019).
-var _ = Describe("SubmitToolStep cluster attribution wiring (BR-INTEGRATION-1489, DD-FLEET-004)", Label("fleet", "integration"), func() {
+var _ = Describe("SubmitToolStep cluster attribution wiring (BR-INTEGRATION-1489, DD-FLEET-005)", Label("fleet", "integration"), func() {
 
 	Describe("IT-KA-FLEET-016 [AU-3/CC8.1]: SubmitToolStep attributes ClusterID from context", func() {
 		It("attributes the context's ClusterID to a generically-named tool call, not just prefixed ones", func() {
@@ -52,7 +52,7 @@ var _ = Describe("SubmitToolStep cluster attribution wiring (BR-INTEGRATION-1489
 			Expect(wr.Observations).To(HaveLen(1))
 			Expect(wr.Observations[0].Step.ClusterID).To(Equal("remote-east"),
 				"IT-KA-FLEET-016: a generically-named tool call must still be attributed to the "+
-					"investigation's target cluster via context — DD-FLEET-004 removes the "+
+					"investigation's target cluster via context — DD-FLEET-005 removes the "+
 					"'{clusterID}__tool' name prefix this used to rely on")
 		})
 
@@ -71,7 +71,7 @@ var _ = Describe("SubmitToolStep cluster attribution wiring (BR-INTEGRATION-1489
 			wr := observer.WaitForCompletion(5 * time.Second)
 			Expect(wr.Observations).To(HaveLen(1))
 			Expect(wr.Observations[0].Step.ClusterID).To(Equal("prefix-cluster"),
-				"IT-KA-FLEET-016: pre-DD-FLEET-004 callers that never set audit.WithClusterID must be "+
+				"IT-KA-FLEET-016: pre-DD-FLEET-005 callers that never set audit.WithClusterID must be "+
 					"unaffected — the legacy name-parsing fallback still works")
 		})
 	})

@@ -62,7 +62,7 @@ const kaToolE2EConfidence = 1.1
 
 // kaToolE2EFleetToolName/LocalToolName are the two candidate tool names this
 // scenario may call, matching pkg/fleet/mcpclient's kube-mcp-server naming
-// (fleet, reached via the real MCP overlay once DD-FLEET-004's
+// (fleet, reached via the real MCP overlay once DD-FLEET-005's
 // tool-transparency fix appends it to the schema) and
 // pkg/kubernautagent/tools/k8s's local registry naming (hub-local,
 // unaffected by fleet wiring) respectively.

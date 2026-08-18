@@ -27,13 +27,13 @@ import (
 
 // GatewayDiscoverer abstracts two-phase tool discovery for different MCP Gateway
 // implementations. KA calls this itself, server-side, to pre-scope the LLM's
-// tool context to the investigation's one target cluster (DD-FLEET-004);
+// tool context to the investigation's one target cluster (DD-FLEET-005);
 // the LLM never calls ListClusters/ToolsForCluster directly or chooses a
 // cluster. ListClusters remains useful as a KA-internal capability and is
 // also called programmatically by other services (e.g. KuadrantDiscoverer's
 // own ToolsForCluster) and exercised directly by the fleet E2E suite.
 //
-// Authority: ADR-068 decision #11, BR-FLEET-054, DD-FLEET-004
+// Authority: ADR-068 decision #11, BR-FLEET-054, DD-FLEET-005
 type GatewayDiscoverer interface {
 	// ListClusters returns metadata for all clusters visible through the gateway.
 	// The result does not include tool schemas to minimize context usage.
