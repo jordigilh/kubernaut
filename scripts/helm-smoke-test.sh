@@ -512,10 +512,10 @@ run_pre_001() {
   if kubectl apply --server-side --force-conflicts -f "${CHART_PATH}/crds/" >/dev/null 2>&1; then
     local count
     count=$(kubectl get crds 2>/dev/null | grep -c "kubernaut.ai" || true)
-    if [[ "$count" -eq 10 ]]; then
-      tap_ok "$desc (10 CRDs created)"
+    if [[ "$count" -eq 11 ]]; then
+      tap_ok "$desc (11 CRDs created)"
     else
-      tap_not_ok "$desc" "Expected 10 CRDs, found ${count}"
+      tap_not_ok "$desc" "Expected 11 CRDs, found ${count}"
     fi
   else
     tap_not_ok "$desc" "kubectl apply failed"
@@ -1544,10 +1544,10 @@ run_uninst_001() {
 
   local crd_count
   crd_count=$(kubectl get crds 2>/dev/null | grep -c "kubernaut.ai" || true)
-  if [[ "$crd_count" -eq 10 ]]; then
-    tap_ok "ST-CHART-UNINST-001d: 10 CRDs retained"
+  if [[ "$crd_count" -eq 11 ]]; then
+    tap_ok "ST-CHART-UNINST-001d: 11 CRDs retained"
   else
-    tap_not_ok "ST-CHART-UNINST-001d: 10 CRDs retained" "Found ${crd_count} CRDs"
+    tap_not_ok "ST-CHART-UNINST-001d: 11 CRDs retained" "Found ${crd_count} CRDs"
   fi
 }
 
