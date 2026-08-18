@@ -547,16 +547,19 @@ func awaitInvestigationReady(ctx context.Context, cfg *InvestigateConfig, rrID, 
 		_ = launcher.EmitStatusSafe(ctx, statusSessionReadyText)
 	}
 
-	// Wait for the IS CRD phase to become Active — AA sets this after
-	// acknowledging the interactive session and submitting to KA with
-	// interactive=true. Without this, action=start may arrive before
-	// KA has a pending session to activate.
+	// Wait for KA's own AgentSession.Status.Interactive ack (DD-AA-KA-001
+	// Amendment Gap 1 / #2172) — set the instant KA's dispatcher confirms an
+	// interactive driver, independent of AA. Without this, action=start may
+	// arrive before KA has a pending session to activate.
 	isPhaseTimeout := isPhaseActivePollTimeout
 	if isCRDName != "" {
 		isPhaseTimeout = takeoverISPhaseTimeout
 	}
 	isCtx, isCancel := context.WithTimeout(ctx, isPhaseTimeout)
-	if AwaitISPhaseActive(isCtx, cfg.Client, cfg.Namespace, rrID) {
+	interactive, awaitInteractiveErr := AwaitAgentSessionInteractive(isCtx, cfg.Client, cfg.Namespace, rrID)
+	if awaitInteractiveErr != nil {
+		logr.FromContextOrDiscard(ctx).Error(awaitInteractiveErr, "AwaitAgentSessionInteractive failed (proceeding without ack)", "rr_id", rrID)
+	} else if interactive {
 		_ = launcher.EmitStatusSafe(ctx, statusSessionAcknowledgedText)
 	}
 	isCancel()

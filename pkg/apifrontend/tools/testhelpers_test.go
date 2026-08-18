@@ -11,9 +11,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
-	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 )
 
@@ -24,15 +24,15 @@ func objMeta(namespace, name string) metav1.ObjectMeta {
 	}
 }
 
-func isTestScheme() *runtime.Scheme {
-	s := runtime.NewScheme()
-	_ = isv1alpha1.AddToScheme(s)
-	return s
-}
-
 func aiaTestScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	_ = aiav1alpha1.AddToScheme(s)
+	return s
+}
+
+func newAgentSessionScheme() *runtime.Scheme {
+	s := runtime.NewScheme()
+	_ = agentsessionv1.AddToScheme(s)
 	return s
 }
 

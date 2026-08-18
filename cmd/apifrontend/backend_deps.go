@@ -23,6 +23,7 @@ import (
 
 	"google.golang.org/genai"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	eav1alpha1 "github.com/jordigilh/kubernaut/api/effectivenessassessment/v1alpha1"
 	isv1alpha1 "github.com/jordigilh/kubernaut/api/investigationsession/v1alpha1"
@@ -390,14 +391,17 @@ func buildK8sDiscoveryMapper(restCfg *rest.Config, deps *backendDeps, logger log
 }
 
 // buildK8sTypedClient wires the controller-runtime typed client for all
-// kubernaut CRDs (RR, RAR, EA, AIAnalysis, IS, #1428). Unavailable falls back
-// to dynamic-only CRD operations.
+// kubernaut CRDs (RR, RAR, EA, AIAnalysis, IS, AgentSession, #1428, #2172).
+// Unavailable falls back to dynamic-only CRD operations.
 func buildK8sTypedClient(restCfg *rest.Config, deps *backendDeps, logger logr.Logger) {
 	typedScheme := k8sruntime.NewScheme()
 	_ = eav1alpha1.AddToScheme(typedScheme)
 	_ = remediationv1.AddToScheme(typedScheme)
 	_ = aianalysisv1.AddToScheme(typedScheme)
 	_ = isv1alpha1.AddToScheme(typedScheme)
+	// DD-AA-KA-001 Amendment Gap 1 / #2172: AwaitAgentSessionInteractive
+	// watches AgentSession directly via this same typed client.
+	_ = agentsessionv1.AddToScheme(typedScheme)
 	typedClient, tcErr := crclient.NewWithWatch(restCfg, crclient.Options{Scheme: typedScheme})
 	if tcErr != nil {
 		logger.Error(tcErr, "K8s typed client creation failed — CRD typed operations will fall back to dynamic")
