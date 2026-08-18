@@ -149,10 +149,13 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return r.initializeNewSignalProcessing(ctx, sp, logger)
 	}
 
-	// Skip if already completed or failed
-	if sp.Status.Phase == signalprocessingv1alpha1.PhaseCompleted ||
-		sp.Status.Phase == signalprocessingv1alpha1.PhaseFailed {
-		return ctrl.Result{}, nil
+	// Skip if already terminal, or self-fail if RO's authoritative deadline
+	// has passed (DD-TIMEOUT-002 / Issue #2176). Extracted to keep
+	// Reconcile's cyclomatic complexity within budget (gocyclo). Both
+	// branches are terminal (no requeue needed), so only the error is
+	// meaningful to the caller.
+	if handled, err := r.checkTerminalOrTimeout(ctx, sp, logger); handled {
+		return ctrl.Result{}, err
 	}
 
 	result, err := r.dispatchPhase(ctx, sp, logger)
@@ -175,6 +178,25 @@ func (r *SignalProcessingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	return result, err
+}
+
+// checkTerminalOrTimeout reports (via handled=true) whether Reconcile should
+// return immediately: either sp is already in a terminal phase, or RO's
+// authoritative Spec.TimesOutAt deadline (DD-TIMEOUT-002 / Issue #2176) has
+// already passed, ahead of phase dispatch so a stuck signal fails promptly
+// regardless of which active phase it's stuck in, rather than waiting on
+// RO's much coarser outer backstop. Extracted from Reconcile to keep its
+// cyclomatic complexity within budget (gocyclo). Both terminal paths need no
+// requeue, so the caller pairs handled=true with a bare ctrl.Result{}.
+func (r *SignalProcessingReconciler) checkTerminalOrTimeout(ctx context.Context, sp *signalprocessingv1alpha1.SignalProcessing, logger logr.Logger) (handled bool, err error) {
+	if sp.Status.Phase == signalprocessingv1alpha1.PhaseCompleted ||
+		sp.Status.Phase == signalprocessingv1alpha1.PhaseFailed {
+		return true, nil
+	}
+	if hasTimedOut(sp) {
+		return true, r.failOnTimeout(ctx, sp, logger)
+	}
+	return false, nil
 }
 
 // isDuplicateGenerationReconcile reports whether sp's current generation was

@@ -408,27 +408,21 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
-              timeoutConfig:
+              timesOutAt:
                 description: |-
                   ========================================
-                  TIMEOUT CONFIGURATION (REQUEST_RO_TIMEOUT_PASSTHROUGH_CLARIFICATION.md)
+                  TIMEOUT CONFIGURATION (DD-TIMEOUT-002)
                   Replaces deprecated annotation-based timeout (security + validation)
-                  Passed through from RR.Status.TimeoutConfig.AIAnalysisTimeout by RO (Gap #8: moved to Status)
                   ========================================
-                  Optional timeout configuration for this analysis
-                  If nil, AIAnalysis controller uses defaults (Investigating: 60s, Analyzing: 5s)
-                properties:
-                  analyzingTimeout:
-                    description: |-
-                      Timeout for Analyzing phase (Rego policy evaluation)
-                      Default: 5s if not specified
-                    type: string
-                  investigatingTimeout:
-                    description: |-
-                      Timeout for Investigating phase (KA call)
-                      Default: 60s if not specified
-                    type: string
-                type: object
+                  TimesOutAt is the absolute deadline for the Investigating phase,
+                  propagated verbatim from RemediationRequest.Status.TimeoutConfig.Analyzing
+                  by the RemediationOrchestrator creator at AIAnalysis creation time
+                  (DD-TIMEOUT-002). An absolute timestamp (rather than a relative
+                  duration) avoids clock-skew ambiguity between RO and the AIAnalysis
+                  controller. If nil, the AIAnalysis controller falls back to its
+                  configured default investigation duration.
+                format: date-time
+                type: string
             required:
             - analysisRequest
             - remediationId

@@ -657,9 +657,13 @@ func (a *AnsibleExecutor) requestTokenForSA(
 	namespace string,
 ) (*InClusterCredentials, []Warning, error) {
 	requestedExpSeconds := int64(defaultTokenExpirationSeconds)
+	// DD-TIMEOUT-002 / Issue #2176: Spec.TimesOutAt is an absolute deadline
+	// propagated by RO, converted to a relative duration via
+	// remainingUntilDeadline at token-request time so the granted token TTL
+	// covers the remaining execution window.
 	var executionTimeout time.Duration
-	if wfe.Spec.ExecutionConfig != nil && wfe.Spec.ExecutionConfig.Timeout != nil {
-		executionTimeout = wfe.Spec.ExecutionConfig.Timeout.Duration
+	if remaining, ok := remainingUntilDeadline(wfe.Spec.TimesOutAt); ok && remaining > 0 {
+		executionTimeout = remaining
 		if secs := int64(executionTimeout.Seconds()); secs > requestedExpSeconds {
 			requestedExpSeconds = secs
 		}

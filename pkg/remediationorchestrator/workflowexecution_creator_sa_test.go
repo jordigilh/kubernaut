@@ -103,7 +103,7 @@ var _ = Describe("WorkflowExecution Creator WFE spec [DD-WE-005] (#501/#650)", f
 			ctx = context.Background()
 		})
 
-		It("UT-WE-501-010: should set ExecutionConfig.Timeout from RR Status.TimeoutConfig.Executing", func() {
+		It("UT-WE-501-010: should set Spec.TimesOutAt from RR Status.TimeoutConfig.Executing (DD-TIMEOUT-002)", func() {
 			rr := buildRR()
 			execTimeout := &metav1.Duration{Duration: 45 * time.Minute}
 			rr.Status = remediationv1.RemediationRequestStatus{
@@ -114,6 +114,7 @@ var _ = Describe("WorkflowExecution Creator WFE spec [DD-WE-005] (#501/#650)", f
 			ai := buildAI()
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr).Build()
 			wec := creator.NewWorkflowExecutionCreator(k8sClient, scheme, nil)
+			before := metav1.Now()
 
 			name, err := wec.Create(ctx, rr, ai)
 			Expect(err).ToNot(HaveOccurred())
@@ -122,13 +123,17 @@ var _ = Describe("WorkflowExecution Creator WFE spec [DD-WE-005] (#501/#650)", f
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.ExecutionConfig.Timeout.Duration).To(Equal(execTimeout.Duration))
+			Expect(created.Spec.TimesOutAt).ToNot(BeNil())
+			// Lower bound floors "before" to the second: metav1.Time's JSON
+			// marshaling (RFC3339, no sub-second precision) truncates the
+			// value read back through the fake client's object tracker.
+			Expect(created.Spec.TimesOutAt.Time).To(BeTemporally(">=", before.Time.Truncate(time.Second).Add(execTimeout.Duration)))
 			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal("wf-uuid-123"))
 			Expect(created.Spec.WorkflowRef.Version).To(Equal("1.0.0"))
 			Expect(created.Spec.WorkflowRef.ExecutionBundle).To(Equal("quay.io/test:v1@sha256:abc123"))
 		})
 
-		It("UT-RO-481-002: should leave ExecutionConfig nil when no executing timeout (WFE spec has no SA per #650)", func() {
+		It("UT-RO-481-002: should leave Spec.TimesOutAt nil when no executing timeout (WFE spec has no SA per #650)", func() {
 			rr := buildRR()
 			ai := buildAI()
 			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(rr).Build()
@@ -140,7 +145,7 @@ var _ = Describe("WorkflowExecution Creator WFE spec [DD-WE-005] (#501/#650)", f
 			created := &workflowexecutionv1.WorkflowExecution{}
 			err = k8sClient.Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, created)
 			Expect(err).ToNot(HaveOccurred())
-			Expect(created.Spec.ExecutionConfig).To(BeNil())
+			Expect(created.Spec.TimesOutAt).To(BeNil())
 			Expect(created.Spec.WorkflowRef.WorkflowID).To(Equal("wf-uuid-123"))
 			Expect(created.Spec.TargetResource).To(Equal("default/Deployment/nginx"))
 		})

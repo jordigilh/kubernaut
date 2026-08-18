@@ -983,7 +983,9 @@ context_api:
 
 **Status**: ✅ **APPROVED** (June 29, 2026)
 **Authority**: BR-AUDIT-005 v2.0, ADR-065 (Multi-Cluster Federation), Issue #54
-**Controls**: SOC2 CC8.1, FedRAMP AU-2, AU-3
+**Controls**: SOC2 CC7.2, FedRAMP AU-2, AU-3
+
+> **Correction (2026-08-17, Issue #2176 GA audit)**: previously cited as SOC2 CC8.1. Per the AICPA 2017 TSC, CC8.1 is Change Management, not audit-trail reconstruction; CC7.2 (Monitoring of System Components, incl. log-aggregation/investigation support) is the accurate control here. See AGENTS.md's SOC2 table for the full correction note; this is one of ~250 repo-wide occurrences of the same historically-incorrect shorthand, of which only this section and AGENTS.md's table were corrected in this pass.
 
 ### Requirement
 
@@ -991,7 +993,7 @@ Every audit event originating from or targeting a **remote cluster** MUST popula
 
 ### Rationale
 
-SOC2 CC8.1 requires complete remediation request reconstruction from audit traces alone. In a fleet (multi-cluster) deployment, an auditor must be able to determine which cluster a remediation targeted. Without `cluster_id` in audit events, fleet remediations are indistinguishable from local hub remediations in the audit trail, violating CC8.1 completeness.
+BR-AUDIT-005 (mapped to SOC2 CC7.2, see correction note above) requires complete remediation request reconstruction from audit traces alone. In a fleet (multi-cluster) deployment, an auditor must be able to determine which cluster a remediation targeted. Without `cluster_id` in audit events, fleet remediations are indistinguishable from local hub remediations in the audit trail, violating this completeness requirement.
 
 ### Per-Service Requirements
 

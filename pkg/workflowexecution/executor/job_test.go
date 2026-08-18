@@ -359,7 +359,7 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 		// BR-WORKFLOW-008: without pre-flight dependency validation (#1481), a Job
 		// referencing a missing Secret/ConfigMap must still reach a terminal state
 		// instead of hanging in Pending forever.
-		It("UT-WE-054-JOB-016 [BR-WORKFLOW-008]: should default ActiveDeadlineSeconds to 30m when ExecutionConfig.Timeout is unset", func() {
+		It("UT-WE-054-JOB-016 [BR-WORKFLOW-008]: should default ActiveDeadlineSeconds to 30m when Spec.TimesOutAt is unset", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := &mockClientFactory{client: fakeClient}
 			je := executor.NewJobExecutorWithFactory(factory)
@@ -377,14 +377,13 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 				"default deadline should be 30 minutes when WFE does not declare an explicit timeout")
 		})
 
-		It("UT-WE-054-JOB-017 [BR-WORKFLOW-008]: should source ActiveDeadlineSeconds from ExecutionConfig.Timeout when set", func() {
+		It("UT-WE-054-JOB-017 [BR-WORKFLOW-008]: should source ActiveDeadlineSeconds from Spec.TimesOutAt when set (DD-TIMEOUT-002)", func() {
 			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 			factory := &mockClientFactory{client: fakeClient}
 			je := executor.NewJobExecutorWithFactory(factory)
 			wfe := newTestWFE("wfe-deadline-custom", "default/deployment/nginx", "")
-			wfe.Spec.ExecutionConfig = &workflowexecutionv1alpha1.ExecutionConfig{
-				Timeout: &metav1.Duration{Duration: 5 * time.Minute},
-			}
+			deadline := metav1.NewTime(time.Now().Add(5 * time.Minute))
+			wfe.Spec.TimesOutAt = &deadline
 
 			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
 			Expect(err).ToNot(HaveOccurred())
@@ -393,8 +392,31 @@ var _ = Describe("UT-WE-054-JOB: JobExecutor", func() {
 			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
 
 			Expect(job.Spec.ActiveDeadlineSeconds).ToNot(BeNil())
-			Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(5*60)),
-				"deadline should be sourced from WFE ExecutionConfig.Timeout when declared")
+			// DD-TIMEOUT-002: Spec.TimesOutAt is an absolute deadline, converted
+			// to a relative ActiveDeadlineSeconds via time.Until at Job-creation
+			// time, so allow a small tolerance for test execution time instead
+			// of asserting an exact value.
+			Expect(*job.Spec.ActiveDeadlineSeconds).To(BeNumerically("~", 5*60, 2),
+				"deadline should be sourced from WFE Spec.TimesOutAt when declared")
+		})
+
+		It("UT-WE-2176-001 [DD-TIMEOUT-002]: should floor ActiveDeadlineSeconds to 1 when Spec.TimesOutAt has already passed", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			factory := &mockClientFactory{client: fakeClient}
+			je := executor.NewJobExecutorWithFactory(factory)
+			wfe := newTestWFE("wfe-deadline-past", "default/deployment/nginx", "")
+			pastDeadline := metav1.NewTime(time.Now().Add(-1 * time.Minute))
+			wfe.Spec.TimesOutAt = &pastDeadline
+
+			result, err := je.Create(ctx, wfe, namespace, executor.CreateOptions{})
+			Expect(err).ToNot(HaveOccurred())
+
+			var job batchv1.Job
+			Expect(fakeClient.Get(ctx, client.ObjectKey{Name: result.ResourceName, Namespace: namespace}, &job)).To(Succeed())
+
+			Expect(job.Spec.ActiveDeadlineSeconds).ToNot(BeNil())
+			Expect(*job.Spec.ActiveDeadlineSeconds).To(Equal(int64(1)),
+				"an already-past Spec.TimesOutAt must still produce a strictly-positive K8s Job deadline, not zero/negative")
 		})
 
 		It("UT-WE-054-JOB-015: should mount a writable /tmp scratch volume for readOnlyRootFilesystem compatibility", func() {

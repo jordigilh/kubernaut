@@ -70,6 +70,17 @@ type SignalProcessingSpec struct {
 
 	// Configuration for processing
 	EnrichmentConfig EnrichmentConfig `json:"enrichmentConfig,omitempty"`
+
+	// TimesOutAt is the absolute deadline for the SignalProcessing phase,
+	// propagated verbatim from RemediationRequest.Status.TimeoutConfig.Processing
+	// by the RemediationOrchestrator creator at SignalProcessing creation time
+	// (DD-TIMEOUT-002). An absolute timestamp (rather than a relative
+	// duration) avoids clock-skew ambiguity between RO and the
+	// SignalProcessing controller. If nil, the SignalProcessing controller
+	// performs no self-enforced wall-clock timeout and relies solely on
+	// RemediationOrchestrator's outer backstop.
+	// +optional
+	TimesOutAt *metav1.Time `json:"timesOutAt,omitempty"`
 }
 
 // ObjectReference contains enough information to let you locate the referenced object.

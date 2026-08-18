@@ -118,6 +118,7 @@
 | DD-PLATFORM-008 | `startupProbe` for Fleet-Aware Services with Slow Cold Starts (AF/EM/WE, `kubernaut.startupProbe` helper) | ✅ Approved & Implemented | 2026-07-28 | [DD-PLATFORM-008-fleet-aware-service-startup-probe.md](decisions/DD-PLATFORM-008-fleet-aware-service-startup-probe.md) |
 | DD-PLATFORM-009 | Bootstrap Health Server for Slow Dependency Wiring (FMC + Gateway, `sharedhealth.NewBootstrapServer`) | ✅ Approved & Implemented | 2026-07-28 | [DD-PLATFORM-009-bootstrap-health-server-for-slow-dependency-wiring.md](decisions/DD-PLATFORM-009-bootstrap-health-server-for-slow-dependency-wiring.md) |
 | DD-TEST-015 | Fleet E2E "Deploy Correctly the First Time" (chart-native `global.fleet.*` on the first `helm install`, FMC chart migration, `FleetProvisioner` callback) | ✅ Approved & Implemented | 2026-07-28 | [DD-TEST-015-fleet-e2e-deploy-correctly-first-time.md](decisions/DD-TEST-015-fleet-e2e-deploy-correctly-first-time.md) |
+| DD-TIMEOUT-002 | Child-CRD Timeout Self-Enforcement via Propagated Absolute Deadline (`Spec.TimesOutAt`, SP/AA/WE; extends DD-TIMEOUT-001) | ✅ Approved & Implemented | 2026-08 | [DD-TIMEOUT-002-child-crd-timeout-self-enforcement.md](decisions/DD-TIMEOUT-002-child-crd-timeout-self-enforcement.md) |
 
 **Note**: For complete decision details, alternatives considered, implementation guidance, and consequences, see the individual DD-* files in `docs/architecture/decisions/`.
 
