@@ -35,7 +35,8 @@ spec:
         description: |-
           AgentSession is the single AA<->KA dispatch/result channel (DD-AA-KA-001,
           BR-AA-KA-065). AA creates one AgentSession per investigation (autonomous
-          or interactive) with an ownerRef to the RemediationRequest it investigates;
+          or interactive) with an ownerRef to the AIAnalysis that creates it (cascade
+          reaches the RemediationRequest transitively, see RemediationRequestRef);
           KA watches for Create/Update events, dispatches exactly once via a
           per-AgentSession coordination/v1 Lease, and exclusively writes Status.
           Replaces the retired pkg/agentclient HTTP submit/poll/result channel.
@@ -136,7 +137,14 @@ spec:
                 description: |-
                   RemediationRequestRef references the RR this session investigates.
                   The AgentSession MUST be created in the same namespace as the RR.
-                  OwnerReference is set to this RR for automatic garbage collection.
+                  OwnerReference is set to the AIAnalysis that creates this session
+                  (not directly to the RR) -- AA already holds that object live, with
+                  no additional RemediationRequest RBAC required (AC-6). Cascade
+                  deletion still reaches the RR transitively: RO already sets the RR
+                  as AIAnalysis's owner, so RR deletion -> AIAnalysis cascade-deletes
+                  -> AgentSession cascade-deletes, same end state as a direct edge,
+                  one hop deeper. Kubernetes' garbage collector walks owner chains
+                  transitively regardless of depth.
                 properties:
                   name:
                     description: Name of the referenced object.
