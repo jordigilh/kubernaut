@@ -989,11 +989,26 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 	Expect(client.IgnoreAlreadyExists(k8sClient.Create(context.Background(), investigatorBinding))).ToNot(HaveOccurred())
 	GinkgoWriter.Printf("✅ [Process %d] KA ServiceAccount granted K8s investigation + AgentSession RBAC (#704, DD-AA-KA-001)\n", processNum)
 
-	// DD-AUTH-014: Create ServiceAccount secrets directory for KA container
+	// DD-AUTH-014: Create ServiceAccount secrets directory for KA container.
+	//
+	// This mounted token is read by KA's *own* DataStorage audit client
+	// (internal/kubernautagent/config.DataStorageConfig.SATokenPath) for its
+	// outbound audit-write calls -- i.e. it must be valid against whichever
+	// cluster DataStorage's TokenReview call checks tokens against. DataStorage
+	// itself is a Phase-1 (shared) singleton whose EnvtestKubeconfig points at
+	// the SHARED envtest, so this must be `serviceAccountToken` (Phase 1's
+	// shared-envtest, DataStorage-RBAC'd token) -- NOT kaServiceAuthConfig.Token
+	// (minted from THIS process's own per-process cfg, which DataStorage's
+	// TokenReview against the shared envtest would reject as an unrecognized
+	// signer -- #2170 IT regression: KA audit writes 401'd after the
+	// per-process KA migration until this was pinned to the shared token).
+	// kaServiceAuthConfig.Token remains correct for its other purpose --
+	// the direct-HTTP legacy test's caller Bearer token, validated by KA's
+	// own TokenReview against ITS KUBECONFIG (this per-process cfg).
 	kaSATokenDir = filepath.Join(os.TempDir(), fmt.Sprintf("aianalysis-ka-sa-secrets-%d-%d", processNum, time.Now().UnixNano()))
 	Expect(os.MkdirAll(kaSATokenDir, 0755)).To(Succeed(), "Failed to create KA ServiceAccount secrets directory")
 	kaTokenFilePath := filepath.Join(kaSATokenDir, "token")
-	Expect(os.WriteFile(kaTokenFilePath, []byte(kaServiceAuthConfig.Token), 0644)).To(Succeed(), "Failed to write KA ServiceAccount token to file")
+	Expect(os.WriteFile(kaTokenFilePath, []byte(serviceAccountToken), 0644)).To(Succeed(), "Failed to write KA ServiceAccount token to file")
 
 	// Create KA config file for the container
 	kaConfigDir := filepath.Join(os.TempDir(), fmt.Sprintf("aianalysis-ka-config-%d-%d", processNum, time.Now().UnixNano()))
