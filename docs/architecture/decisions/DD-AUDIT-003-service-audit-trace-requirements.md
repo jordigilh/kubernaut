@@ -309,7 +309,32 @@ Kubernaut consists of 12 microservices with different responsibilities. Not all 
 | `aianalysis.analysis.failed` | AI analysis failed (KA timeout, invalid response, etc.) | **P0** |
 | `aianalysis.phase.transition` | AIAnalysis phase state machine transition | P0 |
 | `aianalysis.aiagent.call` | Call to Kubernaut Agent (KA) recorded (endpoint, HTTP status, duration) | P0 |
-| `aianalysis.aiagent.submit` / `.result` / `.session_lost` | Async submit/poll/result session lifecycle with KA (BR-AA-KA-064) | P0 |
+| `aianalysis.aiagent.submit` / `.result` | `AgentSession` lifecycle with KA (BR-AA-KA-065.1/.2) | P0 |
+| `aianalysis.aiagent.session_lost` | **Retired** — see note below | — |
+
+> **Updated (2026-08-18, [DD-AA-KA-001](DD-AA-KA-001-agentsession-crd-http-removal.md) /
+> [BR-AA-KA-065](../../requirements/BR-AA-KA-065-agentsession-watch-design.md) / issue
+> [#2170](https://github.com/jordigilh/kubernaut/issues/2170))**: BR-AA-KA-064's async HTTP
+> submit/poll design (and this table's original `BR-AA-KA-064` citation) is superseded by
+> BR-AA-KA-065's `AgentSession` CRD. The event *types* and their firing call sites
+> (`pkg/aianalysis/handlers/investigating.go`) are unchanged, but their meaning shifted:
+> - `aianalysis.aiagent.submit` now fires when AA **creates** the `AgentSession` (was: HTTP POST
+>   submit), and `aianalysis.aiagent.result` now fires when AA reads a terminal result off
+>   `AgentSession.Status` (was: HTTP GET poll response). `RecordAIAgentResult` also still emits a
+>   backward-compatible `aianalysis.aiagent.call` event with a vestigial hardcoded
+>   `/api/v1/incident/analyze` endpoint string in its payload — kept only for dashboard/query
+>   continuity on that field; it no longer reflects an actual HTTP call.
+> - `aianalysis.aiagent.session_lost` (`EventTypeAIAgentSessionLost` /
+>   `RecordAIAgentSessionLost`, `pkg/aianalysis/audit/audit.go`) is **retired, not repurposed**:
+>   its sole production caller, `handleSessionLost`, was deleted along with the regeneration-cap
+>   mechanism it audited (confirmed root cause of
+>   [#2080](https://github.com/jordigilh/kubernaut/issues/2080)/[#2081](https://github.com/jordigilh/kubernaut/issues/2081)).
+>   As of this update the method and its `AuditClient`/interface declaration still exist in code
+>   (implemented only by test doubles, zero production callers) — full deletion of that dead code
+>   is a candidate for issue [#2190](https://github.com/jordigilh/kubernaut/issues/2190)'s cleanup
+>   pass, not done in this documentation update. See
+>   [docs/testing/2170/TEST_PLAN.md](../../testing/2170/TEST_PLAN.md) for the full BR/control
+>   coverage record.
 | `aianalysis.approval.decision` | Manual approval decision recorded | P0 |
 | `aianalysis.rego.evaluation` | Rego policy evaluation result | P0 |
 | `aianalysis.error.occurred` | Structured error event | P0 |
