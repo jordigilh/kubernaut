@@ -595,6 +595,28 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	By(fmt.Sprintf("[Process %d] Creating enrichment fixture resources (#704)", processNum))
 	createITAAEnrichmentFixtures(k8sClient)
 
+	// DD-AA-KA-001: re-seed the SAME RemediationWorkflow/ActionType fixtures
+	// (Phase 1 seeded these into the SHARED envtest at "default" purely for
+	// Mock LLM's config file, back when KA was HTTP-mocked and never itself
+	// discovered workflows from a live cluster) into THIS process's own
+	// envtest. KA's workflowcatalog.Catalog is an informer-backed cache
+	// (internal/kubernautagent/workflowcatalog/catalog.go) built against
+	// whichever cluster KA's own kubeconfig points at -- now the per-process
+	// cfg started above, a completely separate API server from Phase 1's
+	// shared envtest. Without this, KA's real investigator sees an empty
+	// catalog ("workflow catalog returned 0 workflows") and every
+	// investigation falls back to human-review-required, even though the
+	// fixtures exist elsewhere -- confirmed live via `kubectl get
+	// remediationworkflows -A` against this process's envtest returning "No
+	// resources found" before this fix (helios08 repro, 2026-08-18).
+	// SeedTestWorkflowsViaDirectCRDCreation's IDs are content-hash
+	// deterministic (test/infrastructure/workflow_seeding_direct_crd.go), so
+	// re-seeding here reproduces the exact same workflow_ids Mock LLM's
+	// config file (written once in Phase 1) already references.
+	By(fmt.Sprintf("[Process %d] Re-seeding test workflows into per-process envtest for KA's catalog (DD-AA-KA-001)", processNum))
+	_, err = SeedTestWorkflowsViaDirectCRDCreation(ctx, k8sClient, "kubernaut-system", GinkgoWriter)
+	Expect(err).NotTo(HaveOccurred(), "Per-process workflow re-seed must succeed so KA's own workflowcatalog informer is non-empty")
+
 	By(fmt.Sprintf("[Process %d] Starting per-process Kubernaut Agent HTTP service", processNum))
 	kaBaseURL, kaCallerToken := startPerProcessKubernautAgent(processNum, cfg, phase1Data.KAImageName)
 
