@@ -1746,10 +1746,10 @@ jobs:
         run: |
           FAIL=0
 
-          echo "=== CRDs (expect 10, installed by the PreSync crd-upgrade hook) ==="
+          echo "=== CRDs (expect 11, installed by the PreSync crd-upgrade hook) ==="
           CRD_COUNT=$(kubectl get crds 2>/dev/null | grep -c "kubernaut.ai" || true)
           echo "Found: ${CRD_COUNT}"
-          [[ "$CRD_COUNT" -eq 10 ]] || { echo "FAIL: expected 10 CRDs"; FAIL=1; }
+          [[ "$CRD_COUNT" -eq 11 ]] || { echo "FAIL: expected 11 CRDs"; FAIL=1; }
 
           echo "=== cert-manager Certificates (#334 + DD-PLATFORM-001) ==="
           for cert in authwebhook-cert datastorage-signing-cert kubernaut-interservice-ca gateway-tls datastorage-tls kubernautagent-tls; do
