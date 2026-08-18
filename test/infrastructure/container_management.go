@@ -227,9 +227,14 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
 	}
 
-	// Add volumes
+	// Add volumes. ":z" relabels the host path with a shared SELinux
+	// context so containers can read it on enforcing hosts (e.g. RHEL);
+	// harmless no-op on non-SELinux hosts (macOS Podman VM). "z" (not "Z")
+	// because these host paths are commonly mounted read-only into more
+	// than one per-process container (e.g. envtest kubeconfig shared by
+	// DataStorage and the per-process KA container).
 	for hostPath, containerPath := range cfg.Volumes {
-		args = append(args, "-v", fmt.Sprintf("%s:%s", hostPath, containerPath))
+		args = append(args, "-v", fmt.Sprintf("%s:%s,z", hostPath, containerPath))
 	}
 
 	// Add image
