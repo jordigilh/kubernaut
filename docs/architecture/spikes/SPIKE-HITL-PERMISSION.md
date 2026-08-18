@@ -170,7 +170,7 @@ contains all required fields for KA to make an informed decision.
 
 5. **Integration with SDK hook**: In the real OAS Runtime, the `PermissionGate` will
    be wired into `hooks.HookConfig.PermissionRequest`. The existing spike code in
-   `docs/architecture/spikes/oas-runtime/internal/runtime/agent.go` already sets up the hook — it just
+   `docs/spikes/oas-runtime/internal/runtime/agent.go` already sets up the hook — it just
    needs to call `gate.RequestPermission()` instead of the inline closure.
 
 ## Files
