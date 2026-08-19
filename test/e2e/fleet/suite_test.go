@@ -62,6 +62,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -589,21 +590,43 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		if anyFailure && !setupFailed {
-			homeDir, _ := os.UserHomeDir()
-			kp := fmt.Sprintf("%s/.kube/%s-config", homeDir, clusterName)
-			infrastructure.MustGatherPodLogs(clusterName, kp, "kubernaut-system", "fleet", GinkgoWriter)
-			infrastructure.MustGatherPodLogs(clusterName, kp, "kubernaut-workflows", "fleet", GinkgoWriter)
+			// DD-TESTING-003 / Issue #2036/#2194: production must-gather image
+			// as a local podman container on each cluster's own "kind" network,
+			// replacing the old in-process kubectl-log-scraping (MustGatherPodLogs).
+			// The primary cluster additionally needs the Kuadrant mesh/gateway
+			// infra namespaces (mcp-system/gateway-system/istio-system) that
+			// DeployFleetCoreInfra creates outside kubernaut-system/kubernaut-workflows
+			// -- must-gather's --extra-namespace flag reaches those. Default
+			// --namespace/--workflow-namespace already cover kubernaut-system/
+			// kubernaut-workflows on both clusters, including the remote's Job/
+			// Pod/Event diagnostics per Issue #1690 RCA follow-up (BR-FLEET-054
+			// can route the K8s Job to the remote cluster).
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(ctx, GinkgoWriter)
+			if buildErr != nil {
+				GinkgoWriter.Printf("Failed to build must-gather image (non-fatal, no diagnostics collected): %v\n", buildErr)
+			} else {
+				primaryOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "fleet", clusterName)
+				if err := infrastructure.RunMustGatherImage(ctx, infrastructure.RunMustGatherImageOptions{
+					ClusterName:     clusterName,
+					Image:           mustGatherImage,
+					OutputDir:       primaryOutputDir,
+					UsePodman:       true,
+					ExtraNamespaces: []string{"mcp-system", "gateway-system", "istio-system"},
+				}, GinkgoWriter); err != nil {
+					GinkgoWriter.Printf("Failed to run must-gather image on primary cluster (non-fatal, no diagnostics collected): %v\n", err)
+				}
 
-			for _, ns := range []string{"mcp-system", "gateway-system", "istio-system"} {
-				infrastructure.MustGatherPodLogs(clusterName, kp, ns, "fleet", GinkgoWriter)
-			}
-			if remoteKubeconfigPath != "" {
-				infrastructure.MustGatherPodLogs(remoteClusterName, remoteKubeconfigPath, "kubernaut-system", "fleet", GinkgoWriter)
-				// Issue #1690 RCA follow-up: the job execution engine can route
-				// the K8s Job to the remote cluster (BR-FLEET-054), so its Job/
-				// Pod/Event diagnostics can live in the remote cluster's
-				// "kubernaut-workflows" namespace, not just the primary's.
-				infrastructure.MustGatherPodLogs(remoteClusterName, remoteKubeconfigPath, "kubernaut-workflows", "fleet", GinkgoWriter)
+				if remoteKubeconfigPath != "" {
+					remoteOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "fleet", remoteClusterName)
+					if err := infrastructure.RunMustGatherImage(ctx, infrastructure.RunMustGatherImageOptions{
+						ClusterName: remoteClusterName,
+						Image:       mustGatherImage,
+						OutputDir:   remoteOutputDir,
+						UsePodman:   true,
+					}, GinkgoWriter); err != nil {
+						GinkgoWriter.Printf("Failed to run must-gather image on remote cluster (non-fatal, no diagnostics collected): %v\n", err)
+					}
+				}
 			}
 		}
 
