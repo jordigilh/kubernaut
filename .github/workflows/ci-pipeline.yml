@@ -8,7 +8,7 @@ name: CI Pipeline
 #        amd64: full multi-stage Dockerfile (native, coverage-instrumented)
 #        arm64: native Go cross-compile + scratch runtime Dockerfile (no QEMU),
 #        build-validation only, not consumed downstream
-#   - 2a-infra: infra images (parallel matrix: 2 images — db-migrate, mock-llm, amd64 only) ~5 min
+#   - 2a-infra: infra images (parallel matrix: 3 images — db-migrate, must-gather, mock-llm, amd64 only) ~5 min
 # Stage 3: Integration Tests (parallel matrix: 12 services) ~15 min
 # Stage 4: E2E Tests (parallel jobs: 13 services, when enabled) ~30 min each
 #
@@ -660,10 +660,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Infrastructure (1)
+          # Infrastructure (2)
           - service: db-migrate
             dockerfile: docker/db-migrate.Dockerfile
             image_name: db-migrate
+          # Issue #2036/#2194: built once here instead of on-demand inside
+          # every E2E job's local `podman build` -- resolvePrebuiltCIArtifact
+          # (test/infrastructure/e2e_images.go) lets BuildMustGatherImageForE2E
+          # pick this artifact up via the same KUBERNAUT_CI_ARTIFACT_TAG fast
+          # path db-migrate/mock-llm/datastorage/kubernautagent already use.
+          - service: must-gather
+            dockerfile: cmd/must-gather/Dockerfile
+            image_name: must-gather
+            context: cmd/must-gather
+            build_args: --build-arg TARGETARCH=amd64
           # Test Fixtures (1)
           - service: mock-llm
             dockerfile: test/services/mock-llm/go.Dockerfile
@@ -722,6 +732,7 @@ jobs:
 
           docker build \
             --build-arg GOFLAGS=-cover \
+            ${{ matrix.build_args || '' }} \
             -t "${IMAGE}" \
             -f ${{ matrix.dockerfile }} \
             ${CONTEXT}
@@ -2025,7 +2036,7 @@ jobs:
           echo ""
           echo "STAGE 2 - Build Images (Parallel Matrix, artifact-based):"
           echo "  Go Services (12×2 arch):    ${{ needs.build-images.result }}"
-          echo "  Infra Images (2, amd64):    ${{ needs.build-infra-images.result }}"
+          echo "  Infra Images (3, amd64):    ${{ needs.build-infra-images.result }}"
           echo "  Distribution: workflow artifacts (no registry push, 2-day retention)"
           echo ""
           echo "STAGE 3 - Integration Tests (Parallel Matrix):"

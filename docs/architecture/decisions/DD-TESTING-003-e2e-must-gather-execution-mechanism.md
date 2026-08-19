@@ -193,6 +193,16 @@ CI validation strategy: no temporary "force must-gather on success" step was add
 (before the `Cleanup Kind cluster` step), which is sufficient — must-gather only needs to run, and be
 validated, on the failure path it exists for.
 
+6. ✅ Wired the must-gather image into `ci-pipeline.yml`'s existing artifact-based image handoff
+   instead of each E2E job building it from source on its own failure teardown: added `must-gather`
+   as a third `build-infra-images` matrix entry (alongside `db-migrate`/`mock-llm`), built once per
+   workflow run and uploaded as the `image-must-gather-amd64` artifact. Every E2E job's existing
+   `load-ci-images` step already globs `image-*-amd64` and `podman load`s whatever is there, so no
+   change was needed there. `BuildMustGatherImageForE2E` now calls `resolvePrebuiltCIArtifact(ctx,
+   "must-gather", writer)` first — the same `KUBERNAUT_CI_ARTIFACT_TAG` fast path `db-migrate`,
+   `mock-llm`, `datastorage`, `kubernautagent`, and `BuildImageForKind` already use — falling back to
+   a local `podman build` only for non-CI/local-dev runs where that env var isn't set.
+
 ---
 
 ## Consequences

@@ -134,20 +134,26 @@ func RunMustGatherImage(ctx context.Context, opts RunMustGatherImageOptions, wri
 const mustGatherE2EImageName = "localhost/kubernaut/must-gather:e2e"
 
 // BuildMustGatherImageForE2E resolves the must-gather image RunMustGatherImage
-// runs, building it locally from cmd/must-gather/Dockerfile if not already
-// cached.
+// runs: the CI-loaded artifact if one is available, else a local build from
+// cmd/must-gather/Dockerfile (cached across the E2E suite's lifetime).
 //
-// Deliberately always-local-build: unlike BuildImageForKind's per-service
-// registry-mode fast path (IMAGE_REGISTRY/IMAGE_TAG), CI does not yet publish
-// a per-commit must-gather image the way it does for gateway/datastorage/etc,
-// so a registry-mode branch here would silently return a reference nothing
-// has pushed, and the later `podman run` would fail to pull it. Wiring an
-// equivalent registry-mode fast path is a separate, explicit follow-up once
-// CI's build matrix actually publishes must-gather per-commit (tracked under
-// issue #2036) -- until then, building locally (~20-40s, matches the
-// DD-TESTING-003 spike measurement) on every E2E teardown that needs it is
-// simpler and cannot silently reference a nonexistent image.
+// Issue #2036/#2194: ci-pipeline.yml's build-infra-images matrix now builds
+// must-gather once per workflow run alongside db-migrate/mock-llm, uploads it
+// as the image-must-gather-amd64 artifact, and every E2E job's existing
+// load-ci-images step (glob "image-*-amd64", no changes needed there) podman
+// loads it under localhost/must-gather:<KUBERNAUT_CI_ARTIFACT_TAG>. Checking
+// resolvePrebuiltCIArtifact first -- the same one-liner db-migrate/mock-llm/
+// datastorage/kubernautagent/BuildImageForKind already use -- lets CI reuse
+// that single build across all ~13 E2E jobs instead of each one separately
+// podman-building it from source on its own failure teardown (~20-40s each,
+// per the DD-TESTING-003 spike measurement). Local/non-CI runs (no
+// KUBERNAUT_CI_ARTIFACT_TAG set) fall through to the local build below,
+// unchanged.
 func BuildMustGatherImageForE2E(ctx context.Context, writer io.Writer) (string, error) {
+	if prebuilt, ok := resolvePrebuiltCIArtifact(ctx, "must-gather", writer); ok {
+		return prebuilt, nil
+	}
+
 	checkCmd := exec.CommandContext(ctx, "podman", "image", "exists", mustGatherE2EImageName)
 	if checkCmd.Run() == nil {
 		_, _ = fmt.Fprintf(writer, "   ✅ must-gather image already exists (using cache): %s\n", mustGatherE2EImageName)
