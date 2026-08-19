@@ -454,3 +454,69 @@ func (m *Manager) ForceCompleteByRemediationID(rrID string, result *katypes.Inve
 	}
 	return nil
 }
+
+// ForceCancelByRemediationID locates every non-terminal session (Running,
+// Pending, or UserDriving) matching the given remediation ID and forces each
+// one to StatusCancelled, cancelling its investigation goroutine if still
+// running. Mirrors ForceCompleteByRemediationID's (#1654) iterate-then-fire-
+// hooks-after-unlock pattern and multi-sibling-session semantics exactly.
+//
+// #2170 (DD-AA-KA-001 Amendment): this is the cleanup path for two
+// call sites that have no other way to stop an orphaned investigation
+// goroutine now that HTTP polling's CancelSession RPC is gone:
+//   - Dispatcher.handleEvent's watch.Deleted case: the AgentSession is
+//     already gone (directly deleted, or transitively via RR/AIAnalysis
+//     cascade deletion) by the time this fires, so there is no CRD left to
+//     poll or write a terminal status to -- the only actionable step is
+//     stopping the in-memory goroutine so it does not run (and burn LLM/tool
+//     budget) forever.
+//   - Dispatcher.resync's TimesOutAt self-enforcement: KA independently
+//     honors the same absolute deadline AA already enforces
+//     (checkInvestigationTimeout, DD-TIMEOUT-002/#2176) so a
+//     partitioned/crashed AA replica can never leave KA investigating
+//     forever.
+//
+// Returns ErrSessionNotFound when no non-terminal session matched at all.
+func (m *Manager) ForceCancelByRemediationID(rrID string) error {
+	m.store.mu.Lock()
+	type cancelledSession struct {
+		id            string
+		correlationID string
+	}
+	var cancelled []cancelledSession
+	for id, sess := range m.store.sessions {
+		if sess.Metadata["remediation_id"] != rrID || IsTerminal(sess.Status) {
+			continue
+		}
+		if sess.cancel != nil {
+			sess.cancel()
+		}
+		sess.Status = StatusCancelled
+		sess.lazySink.Set(nil)
+		if sess.eventChan != nil {
+			close(sess.eventChan)
+			sess.eventChan = nil
+		}
+		cancelled = append(cancelled, cancelledSession{id: id, correlationID: rrID})
+	}
+	m.store.mu.Unlock()
+
+	if len(cancelled) == 0 {
+		return ErrSessionNotFound
+	}
+
+	for _, c := range cancelled {
+		m.logger.Info("Force-cancelled session by remediation ID",
+			"remediation_id", rrID, "session_id", c.id)
+		m.emitSessionEvent(context.Background(), sessionEventParams{
+			EventType: audit.EventTypeSessionCancelled, Action: audit.ActionSessionCancelled,
+			Outcome: audit.OutcomeSuccess, SessionID: c.id, CorrelationID: c.correlationID,
+		}, nil)
+		// Mirrors ForceCompleteByRemediationID's winning-commit-point
+		// comment: firing the hook here (after unlock) is what makes this
+		// the authoritative terminal transition, regardless of whether the
+		// cancelled goroutine's own (now-rejected) completion race loses.
+		m.fireTerminalHook(c.id, c.correlationID, StatusCancelled, nil, nil)
+	}
+	return nil
+}

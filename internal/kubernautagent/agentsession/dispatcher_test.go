@@ -353,6 +353,94 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			Expect(*lease.Spec.HolderIdentity).To(Equal("replica-new"), "the new replica must have reclaimed the stale Lease")
 		})
 	})
+
+	Describe("UT-AA-2170-DELETE-001 / DD-AA-KA-001 Amendment N: deleting an AgentSession (directly, or transitively via RR/AIAnalysis cascade deletion) stops the in-flight investigation goroutine", func() {
+		It("should cancel the running investigation instead of leaking the goroutine forever", func() {
+			started := make(chan struct{})
+			runner := &fakeInvestigationRunner{delay: 30 * time.Second, result: &katypes.InvestigationResult{RCASummary: "should never complete"}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+			wireHooks(mgr, d)
+			go d.Start(ctx)
+
+			as := newPendingAgentSession("as-delete-1")
+			Expect(cli.Create(ctx, as)).To(Succeed())
+			key := crclient.ObjectKeyFromObject(as)
+
+			var sessionID string
+			Eventually(func() bool {
+				id, ok := mgr.FindByRemediationID(as.Spec.RemediationID)
+				if ok {
+					sessionID = id
+					close(started)
+				}
+				return ok
+			}, "2s", "10ms").Should(BeTrue(), "the investigation must actually be running (StatusRunning) before delete is exercised")
+			<-started
+
+			got := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, key, got)).To(Succeed())
+			Expect(cli.Delete(ctx, got)).To(Succeed())
+
+			Eventually(func() session.Status {
+				s, err := mgr.GetSession(sessionID)
+				if err != nil {
+					return ""
+				}
+				return s.Status
+			}, "2s", "10ms").Should(Equal(session.StatusCancelled),
+				"AgentSession deletion must cancel the in-memory investigation session, not leave it running forever")
+		})
+	})
+
+	Describe("UT-AA-2170-TIMEOUT-001 / DD-AA-KA-001 Amendment N: an AgentSession created already past its Spec.TimesOutAt deadline is never dispatched", func() {
+		It("should self-enforce the deadline and mark Failed without calling Investigate", func() {
+			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "should never run"}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+			wireHooks(mgr, d)
+			go d.Start(ctx)
+
+			as := newPendingAgentSession("as-timeout-1")
+			pastDeadline := metav1.NewTime(time.Now().Add(-1 * time.Hour))
+			as.Spec.TimesOutAt = &pastDeadline
+			Expect(cli.Create(ctx, as)).To(Succeed())
+			key := crclient.ObjectKeyFromObject(as)
+
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, key, got)).To(Succeed())
+				return got.Status.Phase
+			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseFailed))
+
+			Expect(int(runner.calls.Load())).To(Equal(0), "an already-timed-out AgentSession must never be dispatched (self-enforced deadline takes priority)")
+
+			got := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, key, got)).To(Succeed())
+			Expect(got.Status.Error).To(ContainSubstring("TimesOutAt"))
+		})
+	})
+
+	Describe("UT-AA-2170-TIMEOUT-002: an AgentSession still within its Spec.TimesOutAt deadline dispatches normally", func() {
+		It("should not be affected by a future deadline", func() {
+			runner := &fakeInvestigationRunner{result: &katypes.InvestigationResult{RCASummary: "ok", Confidence: 0.7}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", mgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+			wireHooks(mgr, d)
+			go d.Start(ctx)
+
+			as := newPendingAgentSession("as-timeout-2")
+			futureDeadline := metav1.NewTime(time.Now().Add(1 * time.Hour))
+			as.Spec.TimesOutAt = &futureDeadline
+			Expect(cli.Create(ctx, as)).To(Succeed())
+			key := crclient.ObjectKeyFromObject(as)
+
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, key, got)).To(Succeed())
+				return got.Status.Phase
+			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseCompleted))
+
+			Expect(int(runner.calls.Load())).To(Equal(1))
+		})
+	})
 })
 
 func ptrString(s string) *string { return &s }

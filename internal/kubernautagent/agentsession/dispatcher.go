@@ -18,6 +18,7 @@ package agentsession
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -173,12 +174,37 @@ func (d *Dispatcher) resync(ctx context.Context) {
 		return
 	}
 	for i := range list.Items {
-		as := &list.Items[i]
-		if isTerminalPhase(as.Status.Phase) {
-			continue
-		}
-		go d.tryDispatch(ctx, as.DeepCopy())
+		d.considerAgentSession(ctx, list.Items[i].DeepCopy())
 	}
+}
+
+// considerAgentSession is the shared entry point for both the watch's
+// Added/Modified events and resync's periodic re-List: skip terminal
+// AgentSessions, self-enforce an expired Spec.TimesOutAt deadline (#2170,
+// DD-AA-KA-001 Amendment N) in preference to dispatching, and otherwise
+// attempt normal dispatch. Applying the TimesOutAt check here -- not only
+// in resync -- matters because a watch.Added event for an AgentSession
+// created already past its deadline (e.g. from a backlog) would otherwise
+// win the race to tryDispatch before the next resync tick ever runs.
+func (d *Dispatcher) considerAgentSession(ctx context.Context, as *agentsessionv1.AgentSession) {
+	if isTerminalPhase(as.Status.Phase) {
+		return
+	}
+	if isTimedOut(as) {
+		go d.cancelOnTimeout(ctx, as)
+		return
+	}
+	go d.tryDispatch(ctx, as)
+}
+
+// isTimedOut reports whether as has an authoritative Spec.TimesOutAt
+// deadline (propagated from AA, itself propagated from RO's
+// RemediationRequest.Status.TimeoutConfig.Analyzing, DD-TIMEOUT-002) that
+// has already passed. AgentSessions with no TimesOutAt set are never
+// considered timed out here -- AA's own checkInvestigationTimeout
+// fallback-duration enforcement still applies independently in that case.
+func isTimedOut(as *agentsessionv1.AgentSession) bool {
+	return as.Spec.TimesOutAt != nil && metav1.Now().After(as.Spec.TimesOutAt.Time)
 }
 
 func (d *Dispatcher) watchLoop(ctx context.Context) error {
@@ -214,18 +240,84 @@ func (d *Dispatcher) watchLoop(ctx context.Context) error {
 // recovery work -- a healthy Investigating session's dispatch Lease is
 // still fresh, so tryDispatch's Lease acquisition is a safe no-op; only a
 // stale Lease (owning replica crashed) allows a reclaim.
+//
+// watch.Deleted (DD-AA-KA-001 Amendment N, #2170) is handled separately: the
+// AgentSession is already gone by the time this fires (directly deleted, or
+// transitively via RR/AIAnalysis cascade deletion), so there is no CRD left
+// to dispatch against or write a terminal Status to -- only the in-memory
+// investigation goroutine can still be stopped.
 func (d *Dispatcher) handleEvent(ctx context.Context, evt watch.Event) {
-	if evt.Type != watch.Added && evt.Type != watch.Modified {
+	switch evt.Type {
+	case watch.Added, watch.Modified:
+		as, ok := evt.Object.(*agentsessionv1.AgentSession)
+		if !ok {
+			return
+		}
+		d.considerAgentSession(ctx, as.DeepCopy())
+	case watch.Deleted:
+		as, ok := evt.Object.(*agentsessionv1.AgentSession)
+		if !ok {
+			return
+		}
+		go d.cancelOnDelete(as) //nolint:contextcheck // cancelOnDelete runs detached: the AgentSession (and any ctx tied to its watch event) is already gone by the time this fires, only the in-memory goroutine cleanup remains
+	case watch.Bookmark, watch.Error:
+		// No AgentSession payload to act on for these event types.
+	}
+}
+
+// cancelOnDelete stops the in-memory investigation goroutine (if any) for a
+// deleted AgentSession. #2170: this is the only stop mechanism left now
+// that HTTP polling's CancelSession RPC is gone -- without it, deleting the
+// owning RR/AIAnalysis (which cascade-deletes the AgentSession, Kubernetes
+// garbage-collecting the owner chain transitively) would leave KA
+// investigating a remediation nothing will ever read the result of, forever
+// burning LLM/tool budget. ErrSessionNotFound is expected and silent: most
+// deletions arrive after the investigation has already reached a terminal
+// phase and been cleaned up.
+func (d *Dispatcher) cancelOnDelete(as *agentsessionv1.AgentSession) {
+	if as.Spec.RemediationID == "" {
 		return
 	}
-	as, ok := evt.Object.(*agentsessionv1.AgentSession)
-	if !ok {
+	if err := d.sessions.ForceCancelByRemediationID(as.Spec.RemediationID); err != nil { //nolint:contextcheck // ForceCancelByRemediationID is a pure in-memory map operation (mirrors ForceCompleteByRemediationID, #1654) with no I/O to cancel; it intentionally takes no context
+		if !errors.Is(err, session.ErrSessionNotFound) {
+			d.logger.Error(err, "failed to cancel investigation on AgentSession deletion",
+				"agentSession", as.Name, "namespace", as.Namespace, "remediationID", as.Spec.RemediationID)
+		}
 		return
 	}
-	if isTerminalPhase(as.Status.Phase) {
-		return
+	d.logger.Info("AgentSession deleted, cancelled in-flight investigation",
+		"agentSession", as.Name, "namespace", as.Namespace, "remediationID", as.Spec.RemediationID)
+}
+
+// cancelOnTimeout self-enforces an expired Spec.TimesOutAt deadline (#2170,
+// DD-AA-KA-001 Amendment N): best-effort stops this replica's in-memory
+// investigation goroutine if it happens to be the one running it, then
+// unconditionally writes a terminal Failed Status directly -- unlike
+// cancelOnDelete, the AgentSession CRD still exists here, so writing the
+// terminal status directly (rather than routing through the
+// dispatched-map/OnTerminal-hook machinery, which assumes an in-memory
+// session this replica dispatched) is both simpler and correct even after a
+// KA replica restart wipes the in-memory map that owned it.
+func (d *Dispatcher) cancelOnTimeout(ctx context.Context, as *agentsessionv1.AgentSession) {
+	if as.Spec.RemediationID != "" {
+		if err := d.sessions.ForceCancelByRemediationID(as.Spec.RemediationID); err != nil && !errors.Is(err, session.ErrSessionNotFound) { //nolint:contextcheck // ForceCancelByRemediationID is a pure in-memory map operation (mirrors ForceCompleteByRemediationID, #1654) with no I/O to cancel; it intentionally takes no context
+			d.logger.Error(err, "failed to cancel in-memory investigation on TimesOutAt expiry",
+				"agentSession", as.Name, "namespace", as.Namespace, "remediationID", as.Spec.RemediationID)
+		}
 	}
-	go d.tryDispatch(ctx, as.DeepCopy())
+
+	key := crclient.ObjectKeyFromObject(as)
+	d.updateStatus(ctx, key, func(fresh *agentsessionv1.AgentSession) {
+		if isTerminalPhase(fresh.Status.Phase) {
+			return
+		}
+		now := metav1.Now()
+		fresh.Status.Phase = agentsessionv1.AgentSessionPhaseFailed
+		fresh.Status.CompletedAt = &now
+		fresh.Status.Error = "investigation exceeded its TimesOutAt deadline"
+	})
+	d.logger.Info("AgentSession exceeded TimesOutAt, marked Failed",
+		"agentSession", as.Name, "namespace", as.Namespace, "timesOutAt", as.Spec.TimesOutAt)
 }
 
 func isTerminalPhase(p agentsessionv1.AgentSessionPhase) bool {
