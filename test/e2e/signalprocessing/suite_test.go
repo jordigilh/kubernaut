@@ -248,6 +248,30 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
+		// DD-TESTING-003 / Issue #2036: run the production must-gather image
+		// as a local podman container BEFORE coverage collection scales the
+		// deployment to 0 and BEFORE cluster teardown, replacing the old
+		// in-process kubectl-log-scraping (MustGatherPodLogs, previously
+		// invoked internally by DeleteCluster and removed once every caller
+		// migrated to this explicit call).
+		if anyFailure {
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(ctx, GinkgoWriter)
+			if buildErr != nil {
+				GinkgoWriter.Printf("⚠️  Failed to build must-gather image (non-fatal, no diagnostics collected): %v\n", buildErr)
+			} else {
+				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "signalprocessing", clusterName)
+				if err := infrastructure.RunMustGatherImage(ctx, infrastructure.RunMustGatherImageOptions{
+					ClusterName: clusterName,
+					Image:       mustGatherImage,
+					OutputDir:   mustGatherOutputDir,
+					Namespace:   controllerNamespace,
+					UsePodman:   true,
+				}, GinkgoWriter); err != nil {
+					GinkgoWriter.Printf("⚠️  Failed to run must-gather image (non-fatal, no diagnostics collected): %v\n", err)
+				}
+			}
+		}
+
 		// Delete cluster with must-gather log export
 		// Delete Kind cluster using infrastructure helper (with failure tracking)
 		Eventually(func() error {
