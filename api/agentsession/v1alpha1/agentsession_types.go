@@ -169,6 +169,23 @@ type AgentSessionSpec struct {
 	// +optional
 	SignalMode string `json:"signalMode,omitempty"`
 
+	// TimesOutAt is the absolute deadline for this investigation, propagated
+	// verbatim from AIAnalysis.Spec.TimesOutAt (itself propagated from
+	// RemediationRequest.Status.TimeoutConfig.Analyzing by
+	// RemediationOrchestrator, DD-TIMEOUT-002) by AA at AgentSession creation
+	// time. #2170 (DD-AA-KA-001 Amendment N): KA's dispatcher independently
+	// self-enforces this same deadline (resync loop) so a partitioned or
+	// crashed AA replica -- which has no other way to tell KA to stop, now
+	// that HTTP polling's CancelSession RPC is gone -- can never leave an
+	// investigation running forever. An absolute timestamp (rather than a
+	// relative duration) avoids clock-skew ambiguity between AA and KA,
+	// mirroring AIAnalysis.Spec.TimesOutAt's own rationale. If nil, KA
+	// applies no self-enforced deadline for this AgentSession (AA's own
+	// checkInvestigationTimeout fallback-duration enforcement still
+	// applies independently on AA's side).
+	// +optional
+	TimesOutAt *metav1.Time `json:"timesOutAt,omitempty"`
+
 	// Interactive is deliberately NOT a field on Spec. DD-AA-KA-001
 	// Amendment Gap 1: Spec is immutable after Create, but whether this
 	// investigation should be interactive can become true either before or

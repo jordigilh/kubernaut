@@ -213,6 +213,24 @@ spec:
                 description: SignalSource is the monitoring system that produced the
                   signal.
                 type: string
+              timesOutAt:
+                description: |-
+                  TimesOutAt is the absolute deadline for this investigation, propagated
+                  verbatim from AIAnalysis.Spec.TimesOutAt (itself propagated from
+                  RemediationRequest.Status.TimeoutConfig.Analyzing by
+                  RemediationOrchestrator, DD-TIMEOUT-002) by AA at AgentSession creation
+                  time. #2170 (DD-AA-KA-001 Amendment N): KA's dispatcher independently
+                  self-enforces this same deadline (resync loop) so a partitioned or
+                  crashed AA replica -- which has no other way to tell KA to stop, now
+                  that HTTP polling's CancelSession RPC is gone -- can never leave an
+                  investigation running forever. An absolute timestamp (rather than a
+                  relative duration) avoids clock-skew ambiguity between AA and KA,
+                  mirroring AIAnalysis.Spec.TimesOutAt's own rationale. If nil, KA
+                  applies no self-enforced deadline for this AgentSession (AA's own
+                  checkInvestigationTimeout fallback-duration enforcement still
+                  applies independently on AA's side).
+                format: date-time
+                type: string
             required:
             - incidentID
             - remediationID
