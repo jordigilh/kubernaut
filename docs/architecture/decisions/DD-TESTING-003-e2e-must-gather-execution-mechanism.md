@@ -179,20 +179,17 @@ tarball out, then delete the Pod and RBAC objects.
    integration smoke test against a live Kind cluster.
 4. ✅ Rolled out to all remaining E2E suites: single-cluster (`apifrontend`, `authwebhook`,
    `effectivenessmonitor`, `notification`, `workflowexecution`, `fullpipeline`,
-   `remediationorchestrator`, `kubernautagent`, `datastorage`) and multi-cluster (`fleet`,
-   `fleetmetadatacache`, `fleetmetadatacache/eaigw` — primary + remote cluster calls, using
-   `ExtraNamespaces` for the mesh/gateway components each suite deploys).
+   `remediationorchestrator`, `kubernautagent`, `datastorage`, `signalprocessing`, `aianalysis`)
+   and multi-cluster (`fleet`, `fleetmetadatacache`, `fleetmetadatacache/eaigw` — primary + remote
+   cluster calls, using `ExtraNamespaces` for the mesh/gateway components each suite deploys).
+   `signalprocessing`/`aianalysis` were missed in the initial rollout pass and briefly regressed to
+   zero diagnostic collection once step 5 removed `DeleteCluster()`'s implicit
+   `MustGatherPodLogs()` call — caught and fixed by the full-CI validation in step 7 below.
 5. ✅ Removed `MustGatherPodLogs()` and its dedicated unit test (confirmed dead: every caller
    of `DeleteCluster()` now runs `RunMustGatherImage` in its own `AfterSuite` before calling
    `DeleteCluster`, which made the old inline kubectl-log-scraping call inside `DeleteCluster`'s
    CI/CD branch fully redundant). Also dropped the now-unused `namespace ...string` variadic
    parameter from `DeleteCluster()`. Updated `MUST_GATHER_ARTIFACT_COLLECTION.md`. Closes #2036.
-
-CI validation strategy: no temporary "force must-gather on success" step was added. The existing
-`ci-pipeline.yml` E2E job already collects `/tmp/kubernaut-must-gather/` on `failure() || cancelled()`
-(before the `Cleanup Kind cluster` step), which is sufficient — must-gather only needs to run, and be
-validated, on the failure path it exists for.
-
 6. ✅ Wired the must-gather image into `ci-pipeline.yml`'s existing artifact-based image handoff
    instead of each E2E job building it from source on its own failure teardown: added `must-gather`
    as a third `build-infra-images` matrix entry (alongside `db-migrate`/`mock-llm`), built once per
@@ -202,6 +199,36 @@ validated, on the failure path it exists for.
    "must-gather", writer)` first — the same `KUBERNAUT_CI_ARTIFACT_TAG` fast path `db-migrate`,
    `mock-llm`, `datastorage`, `kubernautagent`, and `BuildImageForKind` already use — falling back to
    a local `podman build` only for non-CI/local-dev runs where that env var isn't set.
+7. ✅ Full-CI validation across all 15 E2E suites (2026-08-19), after being asked whether the
+   collection path had actually been exercised anywhere but the `gateway` pilot. Rather than adding
+   a permanent "always run must-gather" mode (rejected earlier in this same rollout — CI should only
+   pay the must-gather cost on the failure path it exists for), the validation was done as two
+   throwaway commits on this PR's branch: (1) an `E2E_FORCE_MUST_GATHER_VALIDATION=true` env var
+   forcing `ResolveAnyFailure()`'s `anyFailure` to `true`, and (2) flipping the E2E job's
+   `Collect/Upload must-gather logs` steps from `failure() || cancelled()` to `always()` — both
+   reverted immediately after inspection, never intended to reach `main`. This caught two real bugs
+   that UT/pattern-matching review had missed:
+   - The `signalprocessing`/`aianalysis` gap from step 4 above.
+   - A systemic context-cancellation bug in 11 of 15 suites: `SynchronizedAfterSuite`'s first
+     closure (runs on ALL processes) calls `cancel()` on the suite's shared `ctx`/`harness.Ctx`
+     *before* the second closure (process-1-only, where the must-gather call lives) ever runs —
+     `exec.CommandContext` against an already-canceled context fails immediately with `context
+     canceled`, so `RunMustGatherImage` silently produced nothing. The `gateway` pilot didn't catch
+     this because gateway's suite deliberately does *not* cancel its context before teardown; the
+     already-working `fleetmetadatacache` (Kuadrant lane) suite didn't hit it because it already
+     used a fresh `bgCtx := context.Background()`. Fixed by applying that same fresh-context pattern
+     to `signalprocessing`, `aianalysis`, `datastorage`, `remediationorchestrator`, `fleet`,
+     `workflowexecution`, `fullpipeline`, `notification`, `effectivenessmonitor`, `authwebhook`, and
+     `fleetmetadatacache/eaigw`.
+
+   After both fixes, a second full-CI validation run confirmed real, correctly-structured must-gather
+   bundles (collectors' `logs/`, `events/`, `jobs/`, `database/`, `tekton/`, `cluster-scoped/`,
+   `metrics/`, `SHA256SUMS`, `version-info.yaml`) for 14/15 suites, including `fleet`'s
+   `--extra-namespace` diagnostics (`logs/mcp-system/`, `logs/istio-system/` populated with real pod
+   logs) across both its primary and remote clusters. The 15th (`fleetmetadatacache-kuadrant`) hit
+   its own pre-existing 15-minute job timeout unrelated to must-gather (Kuadrant/Istio infra setup is
+   slow) and was killed mid-test before `AfterSuite` ran; the CI-level `kind export logs` fallback
+   still produced a bundle, confirming that degraded path also works as designed.
 
 ---
 
@@ -267,4 +294,5 @@ representative `kubernaut-system` workload (2 Deployments + 1 Job), using the un
 ---
 
 **Approved By**: Repository owner (2026-08-18)
-**Implementation Status**: ✅ Complete — all E2E suites migrated, old collector removed, #2036 resolved
+**Implementation Status**: ✅ Complete — all 15 E2E suites migrated and validated end-to-end via a
+temporary full-CI run (2026-08-19, reverted after inspection), old collector removed, #2036 resolved
