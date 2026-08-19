@@ -31,6 +31,24 @@ CVE-2026-39821 exp:2026-10-11
 # stdlib os.Root: Symlink following vulnerability allows directory traversal (fixed 1.25.12/1.26.5; kubectl v1.36.2 built with Go 1.26.4)
 CVE-2026-39822 exp:2026-10-11
 
+# golang.org/x/net/dns/dnsmessage: Denial of Service via invalid DNS record parsing (fixed 0.56.0; kubectl v1.36.2/v1.36.3 both ship 0.49.0 -- see "Changelog since v1.36.2" in kubernetes/kubernetes's CHANGELOG-1.36.md, no x/net bump between the two)
+CVE-2026-46600 exp:2026-10-11
+
+# stdlib encoding/asn1, net/http, html/template, encoding/xml, net/url, crypto/tls:
+# a batch of stdlib DoS/XSS CVEs, all fixed in Go 1.25.13/1.26.6/1.27.0-rc.3.
+# Verified 2026-08-18 (surfaced by Issue #2036/#2194's must-gather CI-artifact
+# wiring, first Trivy run against this image in ci-pipeline.yml): the latest
+# published kubectl release, v1.36.3, is built with Go 1.26.5 only (PR #140581)
+# -- one patch short of the 1.26.6 fix. No kubectl release yet crosses this
+# threshold. Re-triage alongside the batch above once a kubectl release built
+# with Go >= 1.25.13/1.26.6/1.27.0 ships.
+CVE-2026-33818 exp:2026-10-11
+CVE-2026-56853 exp:2026-10-11
+CVE-2026-56858 exp:2026-10-11
+CVE-2026-56859 exp:2026-10-11
+CVE-2026-56860 exp:2026-10-11
+CVE-2026-56862 exp:2026-10-11
+
 # golang.org/x/text: Denial of Service via invalid UTF-8 input (fixed 0.39.0;
 # latest published kubectl release, v1.36.3, still ships 0.33.0). Newly
 # published; not part of the original 23-CVE set in DD-PLATFORM-003. The fix

@@ -207,3 +207,59 @@ EOF
     [ ! -d "${MOCK_COLLECTION_DIR}/logs/kubernaut-operator-system" ]
 }
 
+# ========================================
+# UT-MG-2036-010: Extra (mesh/gateway infra) namespace pod logs (Issue #2036)
+# ========================================
+
+@test "UT-MG-2036-010: Support engineer gets pod logs from mesh/gateway infra namespaces outside the Helm release" {
+    # Business Outcome: fleet/fleetmetadatacache E2E suites (and any real
+    # install running Kuadrant or Envoy AI Gateway) need pod logs from
+    # namespaces DeployFleetCoreInfra creates outside RELEASE_NAMESPACE/
+    # WORKFLOW_NAMESPACE/OPERATOR_NAMESPACE -- e.g. Issue #54 RCA: an Envoy/
+    # AuthPolicy rejection went undiagnosed because istio-system was never
+    # gathered. EXTRA_NAMESPACES_CSV is a scalar env var (not a bash array)
+    # because gather.sh invokes this collector as a separate `bash logs.sh`
+    # subprocess -- bash arrays cannot cross that boundary via export, only
+    # scalars can.
+    create_mock_pod_names_list
+    mock_kubectl "${TEST_TEMP_DIR}/pod-list.yaml"
+
+    run env RELEASE_NAMESPACE="kubernaut-system" EXTRA_NAMESPACES_CSV="mcp-system,istio-system" \
+        bash "${COLLECTORS_DIR}/logs.sh" "${MOCK_COLLECTION_DIR}"
+
+    assert_success
+    assert_file_exists "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/gateway-abc123/current.log"
+    assert_file_exists "${MOCK_COLLECTION_DIR}/logs/mcp-system/gateway-abc123/current.log"
+    assert_file_exists "${MOCK_COLLECTION_DIR}/logs/istio-system/gateway-abc123/current.log"
+}
+
+@test "UT-MG-2036-010: Collection succeeds when EXTRA_NAMESPACES_CSV is unset (default, most installs)" {
+    # Edge Case: EXTRA_NAMESPACES_CSV is completely unset for the vast
+    # majority of installs/suites -- must not trip `set -u` (unbound
+    # variable) and must not attempt to collect any extra namespace.
+    create_mock_pod_names_list
+    mock_kubectl "${TEST_TEMP_DIR}/pod-list.yaml"
+
+    run env RELEASE_NAMESPACE="kubernaut-system" bash "${COLLECTORS_DIR}/logs.sh" "${MOCK_COLLECTION_DIR}"
+
+    assert_success
+    assert_file_exists "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/gateway-abc123/current.log"
+}
+
+@test "UT-MG-2036-010: Collection succeeds when EXTRA_NAMESPACES_CSV is set but empty" {
+    # Edge Case: gather.sh always exports EXTRA_NAMESPACES_CSV (possibly as
+    # an empty string when no --extra-namespace flags were passed) -- an
+    # empty string must not be treated as one bogus empty-string namespace.
+    create_mock_pod_names_list
+    mock_kubectl "${TEST_TEMP_DIR}/pod-list.yaml"
+
+    run env RELEASE_NAMESPACE="kubernaut-system" EXTRA_NAMESPACES_CSV="" \
+        bash "${COLLECTORS_DIR}/logs.sh" "${MOCK_COLLECTION_DIR}"
+
+    assert_success
+    assert_file_exists "${MOCK_COLLECTION_DIR}/logs/kubernaut-system/gateway-abc123/current.log"
+    local extra_dirs
+    extra_dirs=$(find "${MOCK_COLLECTION_DIR}/logs" -maxdepth 1 -mindepth 1 -type d | wc -l)
+    [ "${extra_dirs}" -eq 1 ]
+}
+

@@ -157,6 +157,39 @@ teardown() {
     [[ ! "$output" =~ "kubernaut-notifications" ]]
 }
 
+@test "UT-MG-2036-010: --extra-namespace is documented in --help" {
+    # Business Outcome: BR-PLATFORM-001 -- support engineer running against a
+    # fleet/fleetmetadatacache-style install with Kuadrant/Envoy AI Gateway
+    # mesh infra can discover how to include those namespaces (Issue #2036).
+    run bash "${GATHER_SCRIPT}" --help
+
+    assert_success
+    [[ "$output" =~ "--extra-namespace" ]]
+}
+
+@test "UT-MG-2036-010: repeated --extra-namespace flags all reach pod-log collection end-to-end" {
+    # Business Outcome: fleet/fleetmetadatacache E2E's Kuadrant lane needs
+    # BOTH mcp-system AND istio-system collected from a single gather run --
+    # a single-value flag would force choosing one.
+    create_mock_crd_response
+    create_mock_crd_list
+    create_mock_pod_names_list
+    create_mock_events
+    mock_kubectl "${TEST_TEMP_DIR}/crd-response.yaml"
+
+    run timeout 30 bash "${GATHER_SCRIPT}" \
+        --dest-dir="${TEST_TEMP_DIR}" \
+        --extra-namespace=mcp-system \
+        --extra-namespace=istio-system \
+        --no-sanitize
+
+    assert_success
+    local collection_dir
+    collection_dir=$(find "${TEST_TEMP_DIR}" -maxdepth 1 -type d -name "kubernaut-must-gather-*" | head -n 1)
+    assert_file_exists "${collection_dir}/logs/mcp-system/gateway-abc123/current.log"
+    assert_file_exists "${collection_dir}/logs/istio-system/gateway-abc123/current.log"
+}
+
 @test "UT-MG-2037-002: --namespace override is honored end-to-end" {
     # Business Outcome: support engineer collecting against a non-default
     # Helm release namespace gets the RIGHT namespace, not a hardcoded one.

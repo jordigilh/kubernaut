@@ -25,7 +25,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strings"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -534,40 +534,39 @@ var _ = SynchronizedAfterSuite(
 			keepCluster == "true" || keepCluster == "always"
 		defer infrastructure.CleanupFailureMarker(clusterName)
 
-		// Export cluster logs BEFORE coverage collection when tests fail.
-		// Coverage collection may terminate the DS pod (SIGTERM for flush);
-		// if we export after, the container is removed and its logs are lost.
-		var logsDir string
+		// DD-TESTING-003 / Issue #2036: production must-gather image as a local
+		// podman container on the cluster's "kind" network, replacing the old
+		// ad-hoc "kind export logs" + manual tail mechanism. Collected BEFORE
+		// coverage collection, which may terminate the DS pod (SIGTERM for
+		// flush) -- if we collect after, the container is removed and its
+		// logs are lost. DS deploys to sharedNamespace ("datastorage-e2e"),
+		// not the default "kubernaut-system".
+		var mustGatherOutputDir string
 		if suiteFailed {
 			logger.Info("⚠️  Test failure detected - collecting diagnostic information...")
 
-			logger.Info("📋 Exporting cluster logs (Kind must-gather)...")
-			logsDir = "/tmp/datastorage-e2e-logs-" + time.Now().Format("20060102-150405")
-			exportCmd := exec.Command("kind", "export", "logs", logsDir, "--name", clusterName)
-			if exportOutput, exportErr := exportCmd.CombinedOutput(); exportErr != nil {
-				logger.Error(exportErr, "Failed to export Kind logs",
-					"output", string(exportOutput),
-					"logs_dir", logsDir)
+			// #2036 rollout validation (2026-08-19 CI run): the package-level
+			// `ctx` is already canceled by the first SynchronizedAfterSuite
+			// closure's `cancel()` (runs on ALL processes, before this
+			// process-1-only closure) -- exec.CommandContext against an
+			// already-canceled context fails immediately with "context
+			// canceled" before podman ever runs. Use a fresh, independent
+			// context here so cluster teardown timing can never suppress
+			// diagnostic collection.
+			bgCtx := context.Background()
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(bgCtx, GinkgoWriter)
+			if buildErr != nil {
+				logger.Error(buildErr, "Failed to build must-gather image (non-fatal, no diagnostics collected)")
 			} else {
-				logger.Info("✅ Cluster logs exported successfully",
-					"logs_dir", logsDir)
-				logger.Info("📁 Logs include: pod logs, node logs, kubelet logs, and more")
-
-				// Extract and display DataStorage server logs for immediate analysis
-				dsLogPattern := logsDir + "/*/datastorage-e2e_datastorage-*/*.log"
-				findCmd := exec.Command("sh", "-c", "ls "+dsLogPattern+" 2>/dev/null | head -1")
-				if logPath, err := findCmd.Output(); err == nil && len(logPath) > 0 {
-					logPathStr := strings.TrimSpace(string(logPath))
-					logger.Info("📄 DataStorage server log location", "path", logPathStr)
-
-					tailCmd := exec.Command("tail", "-100", logPathStr)
-					if tailOutput, tailErr := tailCmd.CombinedOutput(); tailErr == nil {
-						logger.Info("═══════════════════════════════════════════════════════════")
-						logger.Info("📋 DATASTORAGE SERVER LOG (Last 100 lines)")
-						logger.Info("═══════════════════════════════════════════════════════════")
-						logger.Info(string(tailOutput))
-						logger.Info("═══════════════════════════════════════════════════════════")
-					}
+				mustGatherOutputDir = filepath.Join("/tmp", "kubernaut-must-gather", "datastorage", clusterName)
+				if err := infrastructure.RunMustGatherImage(bgCtx, infrastructure.RunMustGatherImageOptions{
+					ClusterName: clusterName,
+					Image:       mustGatherImage,
+					OutputDir:   mustGatherOutputDir,
+					Namespace:   sharedNamespace,
+					UsePodman:   true,
+				}, GinkgoWriter); err != nil {
+					logger.Error(err, "Failed to run must-gather image (non-fatal, no diagnostics collected)")
 				}
 			}
 		}
@@ -592,7 +591,7 @@ var _ = SynchronizedAfterSuite(
 				"kubeconfig", kubeconfigPath,
 				"dataStorageURL", dataStorageURL,
 				"postgresURL", postgresURL,
-				"logs_exported", logsDir)
+				"must_gather_output", mustGatherOutputDir)
 			logger.Info("To delete the cluster manually: kind delete cluster --name " + clusterName)
 			logger.Info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 			return

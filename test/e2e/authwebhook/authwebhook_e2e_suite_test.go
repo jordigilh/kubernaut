@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -343,8 +344,34 @@ var _ = SynchronizedAfterSuite(
 		// deployment to 0 and waits for pod termination. If we collect
 		// after, the container is removed and its logs are lost.
 		if anyFailure {
-			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath,
-				sharedNamespace, "authwebhook", GinkgoWriter)
+			// DD-TESTING-003: production must-gather image as a local podman
+			// container on the cluster's "kind" network (see gateway suite
+			// pilot), replacing the old in-process kubectl-log-scraping.
+			//
+			// #2036 rollout validation (2026-08-19 CI run): the package-level
+			// `ctx` is already canceled by the first SynchronizedAfterSuite
+			// closure's `cancel()` (runs on ALL processes, before this
+			// process-1-only closure) -- exec.CommandContext against an
+			// already-canceled context fails immediately with "context
+			// canceled" before podman ever runs. Use a fresh, independent
+			// context here so cluster teardown timing can never suppress
+			// diagnostic collection.
+			bgCtx := context.Background()
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(bgCtx, GinkgoWriter)
+			if buildErr != nil {
+				logger.Error(buildErr, "Failed to build must-gather image (non-fatal, no diagnostics collected)")
+			} else {
+				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "authwebhook", clusterName)
+				if err := infrastructure.RunMustGatherImage(bgCtx, infrastructure.RunMustGatherImageOptions{
+					ClusterName: clusterName,
+					Image:       mustGatherImage,
+					OutputDir:   mustGatherOutputDir,
+					Namespace:   sharedNamespace,
+					UsePodman:   true,
+				}, GinkgoWriter); err != nil {
+					logger.Error(err, "Failed to run must-gather image (non-fatal, no diagnostics collected)")
+				}
+			}
 		}
 
 		// DD-TEST-007: Collect E2E binary coverage AFTER log export but BEFORE cluster deletion

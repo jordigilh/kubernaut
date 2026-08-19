@@ -156,10 +156,10 @@ jobs:
             --entrypoint sh \
             localhost/must-gather:ci-test \
             -c "ls /usr/share/must-gather/collectors/ | wc -l")
-          if [ "$COUNT" -eq 9 ]; then
-            echo "✅ All 9 collectors present"
+          if [ "$COUNT" -eq 10 ]; then
+            echo "✅ All 10 collectors present"
           else
-            echo "❌ Expected 9 collectors, found $COUNT"
+            echo "❌ Expected 10 collectors, found $COUNT"
             exit 1
           fi
 

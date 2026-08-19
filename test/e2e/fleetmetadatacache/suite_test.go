@@ -78,6 +78,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -250,23 +251,46 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		if anyFailure && !setupFailed {
-			infrastructure.MustGatherPodLogs(clusterName, harness.KubeconfigPath, namespace, "fleetmetadatacache", GinkgoWriter)
-
+			// DD-TESTING-003 / Issue #2036/#2194: production must-gather image
+			// as a local podman container on each cluster's own "kind" network,
+			// replacing the old in-process kubectl-log-scraping (MustGatherPodLogs).
 			// Kuadrant's controller+broker (mcp-system) and the Istio Gateway/Envoy
 			// proxy (gateway-system, istio-system) are deployed by DeployFleetCoreInfra
-			// but live outside kubernaut-system, so the call above never captures them.
-			// A prior FMC E2E failure (Issue #54 RCA: syncKind calls rejected upstream
-			// with an empty-Content-Type Envoy local reply) went undiagnosed at the
-			// Envoy/AuthPolicy layer because these namespaces were never gathered.
-			for _, ns := range []string{"mcp-system", "gateway-system", "istio-system"} {
-				infrastructure.MustGatherPodLogs(clusterName, harness.KubeconfigPath, ns, "fleetmetadatacache", GinkgoWriter)
-			}
+			// but live outside kubernaut-system -- must-gather's --extra-namespace
+			// flag reaches those. A prior FMC E2E failure (Issue #54 RCA: syncKind
+			// calls rejected upstream with an empty-Content-Type Envoy local reply)
+			// went undiagnosed at the Envoy/AuthPolicy layer because these
+			// namespaces were never gathered.
+			bgCtx := context.Background()
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(bgCtx, GinkgoWriter)
+			if buildErr != nil {
+				GinkgoWriter.Printf("Failed to build must-gather image (non-fatal, no diagnostics collected): %v\n", buildErr)
+			} else {
+				primaryOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "fleetmetadatacache", clusterName)
+				if err := infrastructure.RunMustGatherImage(bgCtx, infrastructure.RunMustGatherImageOptions{
+					ClusterName:     clusterName,
+					Image:           mustGatherImage,
+					OutputDir:       primaryOutputDir,
+					UsePodman:       true,
+					ExtraNamespaces: []string{"mcp-system", "gateway-system", "istio-system"},
+				}, GinkgoWriter); err != nil {
+					GinkgoWriter.Printf("Failed to run must-gather image on primary cluster (non-fatal, no diagnostics collected): %v\n", err)
+				}
 
-			// Remote cluster (DD-TEST-013, Spike S19): only kube-mcp-server
-			// runs there, but it's the component the "prod-east" cross-cluster
-			// isolation scenario depends on most heavily.
-			if harness.RemoteKubeconfigPath != "" {
-				infrastructure.MustGatherPodLogs(remoteClusterName, harness.RemoteKubeconfigPath, namespace, "fleetmetadatacache", GinkgoWriter)
+				// Remote cluster (DD-TEST-013, Spike S19): only kube-mcp-server
+				// runs there, but it's the component the "prod-east" cross-cluster
+				// isolation scenario depends on most heavily.
+				if harness.RemoteKubeconfigPath != "" {
+					remoteOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "fleetmetadatacache", remoteClusterName)
+					if err := infrastructure.RunMustGatherImage(bgCtx, infrastructure.RunMustGatherImageOptions{
+						ClusterName: remoteClusterName,
+						Image:       mustGatherImage,
+						OutputDir:   remoteOutputDir,
+						UsePodman:   true,
+					}, GinkgoWriter); err != nil {
+						GinkgoWriter.Printf("Failed to run must-gather image on remote cluster (non-fatal, no diagnostics collected): %v\n", err)
+					}
+				}
 			}
 		}
 

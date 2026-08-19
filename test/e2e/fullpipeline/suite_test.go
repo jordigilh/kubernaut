@@ -46,6 +46,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -373,11 +374,37 @@ var _ = SynchronizedAfterSuite(
 
 		// Collect must-gather BEFORE coverage collection.
 		// Coverage collection scales down controllers, which terminates pods and loses their logs.
+		//
+		// DD-TESTING-003: production must-gather image as a local podman
+		// container on the cluster's "kind" network (see gateway suite
+		// pilot), replacing the old in-process kubectl-log-scraping. Default
+		// --namespace/--workflow-namespace ("kubernaut-system"/
+		// "kubernaut-workflows") already cover both namespaces the two old
+		// MustGatherPodLogs calls collected separately, in a single run.
 		if anyFailure && !setupFailed {
-			homeDir, _ := os.UserHomeDir()
-			kp := fmt.Sprintf("%s/.kube/%s-config", homeDir, clusterName)
-			infrastructure.MustGatherPodLogs(clusterName, kp, "kubernaut-system", "fullpipeline", GinkgoWriter)
-			infrastructure.MustGatherPodLogs(clusterName, kp, "kubernaut-workflows", "fullpipeline", GinkgoWriter)
+			// #2036 rollout validation (2026-08-19 CI run): the package-level
+			// `ctx` is already canceled by the first SynchronizedAfterSuite
+			// closure's `cancel()` (runs on ALL processes, before this
+			// process-1-only closure) -- exec.CommandContext against an
+			// already-canceled context fails immediately with "context
+			// canceled" before podman ever runs. Use a fresh, independent
+			// context here so cluster teardown timing can never suppress
+			// diagnostic collection.
+			bgCtx := context.Background()
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(bgCtx, GinkgoWriter)
+			if buildErr != nil {
+				GinkgoWriter.Printf("  Failed to build must-gather image (non-fatal): %v\n", buildErr)
+			} else {
+				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "fullpipeline", clusterName)
+				if err := infrastructure.RunMustGatherImage(bgCtx, infrastructure.RunMustGatherImageOptions{
+					ClusterName: clusterName,
+					Image:       mustGatherImage,
+					OutputDir:   mustGatherOutputDir,
+					UsePodman:   true,
+				}, GinkgoWriter); err != nil {
+					GinkgoWriter.Printf("  Failed to run must-gather image (non-fatal): %v\n", err)
+				}
+			}
 		}
 
 		// Clean up all test-created CRs and namespaces so the cluster

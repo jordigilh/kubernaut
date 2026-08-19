@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -288,12 +289,33 @@ var _ = SynchronizedAfterSuite(
 		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
 		defer infrastructure.CleanupFailureMarker(clusterName)
 
-		// Collect pod logs BEFORE coverage collection, which scales the
+		// Collect diagnostics BEFORE coverage collection, which scales the
 		// deployment to 0 and waits for pod termination. If we collect
 		// after, the container is removed and its logs are lost.
+		//
+		// DD-TESTING-003 pilot: run the production must-gather image as a
+		// local podman container on the cluster's "kind" network instead of
+		// the old in-process kubectl-log-scraping (MustGatherPodLogs). This
+		// is a single external `podman run`, not a step inside this Go
+		// process's own control flow, so it survives the exact failure mode
+		// that motivated the migration (this process being killed on E2E
+		// timeout before an in-process collector's AfterSuite ever runs).
 		if anyFailure {
-			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath,
-				"kubernaut-system", "gateway", GinkgoWriter)
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(ctx, GinkgoWriter)
+			if buildErr != nil {
+				logger.Error(buildErr, "Failed to build must-gather image (non-fatal, no diagnostics collected)")
+			} else {
+				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "gateway", clusterName)
+				if err := infrastructure.RunMustGatherImage(ctx, infrastructure.RunMustGatherImageOptions{
+					ClusterName: clusterName,
+					Image:       mustGatherImage,
+					OutputDir:   mustGatherOutputDir,
+					Namespace:   "kubernaut-system",
+					UsePodman:   true,
+				}, GinkgoWriter); err != nil {
+					logger.Error(err, "Failed to run must-gather image (non-fatal, no diagnostics collected)")
+				}
+			}
 		}
 
 		// DD-TEST-007: Collect E2E binary coverage AFTER log export but BEFORE cluster deletion

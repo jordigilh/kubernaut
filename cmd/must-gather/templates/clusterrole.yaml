@@ -38,6 +38,13 @@ rules:
     - daemonsets
   verbs: ["get", "list"]
 
+# Batch resources (Issue #2036: jobs.sh collects native batchv1.Job
+# resources created by the WorkflowExecution Job executor)
+- apiGroups: ["batch"]
+  resources:
+    - jobs
+  verbs: ["get", "list"]
+
 # Kubernaut CRDs (all 6 types)
 - apiGroups: ["kubernaut.ai"]
   resources:

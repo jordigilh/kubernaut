@@ -45,6 +45,15 @@ WORKFLOW_NAMESPACE="kubernaut-workflows"
 # it only if it actually exists on the cluster (mirrors crds.sh's dynamic,
 # self-healing discovery pattern rather than assuming presence).
 OPERATOR_NAMESPACE="kubernaut-operator-system"
+# Issue #2036: repeatable --extra-namespace flag for mesh/gateway infra
+# namespaces (Kuadrant's mcp-system/gateway-system/istio-system, Envoy AI
+# Gateway's envoy-gateway-system/envoy-ai-gateway-system) that
+# DeployFleetCoreInfra creates outside RELEASE_NAMESPACE/WORKFLOW_NAMESPACE/
+# OPERATOR_NAMESPACE. Stored as a scalar CSV string, not a bash array: this
+# variable is exported and consumed by logs.sh in a SEPARATE `bash logs.sh`
+# subprocess, and bash arrays cannot cross that boundary via export (only
+# scalars can) -- confirmed by direct repro during this change.
+EXTRA_NAMESPACES_CSV=""
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 COLLECTION_NAME="kubernaut-must-gather-${TIMESTAMP}"
 
@@ -79,6 +88,15 @@ while [[ $# -gt 0 ]]; do
             OPERATOR_NAMESPACE="${1#*=}"
             shift
             ;;
+        --extra-namespace=*)
+            extra_ns="${1#*=}"
+            if [ -z "${EXTRA_NAMESPACES_CSV}" ]; then
+                EXTRA_NAMESPACES_CSV="${extra_ns}"
+            else
+                EXTRA_NAMESPACES_CSV="${EXTRA_NAMESPACES_CSV},${extra_ns}"
+            fi
+            shift
+            ;;
         --help|-h)
             echo "Kubernaut Must-Gather Diagnostic Collection Tool"
             echo ""
@@ -92,6 +110,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --namespace=NS            Kubernaut Helm release namespace (default: kubernaut-system)"
             echo "  --workflow-namespace=NS   Tekton PipelineRun execution namespace (default: kubernaut-workflows)"
             echo "  --operator-namespace=NS   Optional kubernaut-operator namespace, collected if present (default: kubernaut-operator-system)"
+            echo "  --extra-namespace=NS      Additional namespace to collect pod logs from (repeatable, e.g. mesh/gateway infra namespaces)"
             echo "  --help, -h                Show this help message"
             echo ""
             echo "Examples:"
@@ -99,6 +118,7 @@ while [[ $# -gt 0 ]]; do
             echo "  gather --since=48h               # Collect last 48 hours"
             echo "  gather --dest-dir=/tmp/diagnostics"
             echo "  gather --namespace=my-kubernaut  # Non-default Helm release namespace"
+            echo "  gather --extra-namespace=istio-system --extra-namespace=mcp-system"
             exit 0
             ;;
         *)
@@ -125,6 +145,7 @@ export MAX_SIZE_MB
 export RELEASE_NAMESPACE
 export WORKFLOW_NAMESPACE
 export OPERATOR_NAMESPACE
+export EXTRA_NAMESPACES_CSV
 export KUBERNAUT_NAMESPACES
 export COLLECTION_NAME
 
@@ -176,21 +197,25 @@ echo "Phase 5: Tekton Resources (PipelineRuns, TaskRuns)..."
 bash "${COLLECTORS_DIR}/tekton.sh" "${COLLECTION_DIR}" || echo "Warning: Tekton collection had errors"
 
 echo ""
-echo "Phase 6: DataStorage REST API (workflows, audit events)..."
+echo "Phase 6: Kubernetes Jobs (Job-executor workflows)..."
+bash "${COLLECTORS_DIR}/jobs.sh" "${COLLECTION_DIR}" || echo "Warning: Jobs collection had errors"
+
+echo ""
+echo "Phase 7: DataStorage REST API (workflows, audit events)..."
 bash "${COLLECTORS_DIR}/datastorage.sh" "${COLLECTION_DIR}" || echo "Warning: DataStorage API collection had errors"
 
 echo ""
-echo "Phase 7: Database Infrastructure (PostgreSQL, Redis)..."
+echo "Phase 8: Database Infrastructure (PostgreSQL, Redis)..."
 bash "${COLLECTORS_DIR}/database.sh" "${COLLECTION_DIR}" || echo "Warning: Database collection had errors"
 
 echo ""
-echo "Phase 8: Metrics Collection..."
+echo "Phase 9: Metrics Collection..."
 bash "${COLLECTORS_DIR}/metrics.sh" "${COLLECTION_DIR}" || echo "Warning: Metrics collection had errors"
 
 # Sanitization (if enabled)
 if [ "${SANITIZE_ENABLED}" = "true" ]; then
     echo ""
-    echo "Phase 9: Sanitizing sensitive data..."
+    echo "Phase 10: Sanitizing sensitive data..."
     bash "${SANITIZERS_DIR}/sanitize-all.sh" "${COLLECTION_DIR}" || echo "Warning: Sanitization had errors"
 fi
 

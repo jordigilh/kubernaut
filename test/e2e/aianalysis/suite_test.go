@@ -40,6 +40,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -307,7 +308,12 @@ var _ = SynchronizedAfterSuite(
 			logger.Info("⚠️  Setup failure detected (k8sClient is nil)")
 		}
 
-		// Determine cleanup strategy
+		// Determine cleanup strategy.
+		// Pass true for testsFailed if EITHER setup failed OR any test failed.
+		// CheckTestFailure bridges multi-process Ginkgo runs where the failing
+		// spec may execute on a process other than process 1.
+		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
+		defer infrastructure.CleanupFailureMarker(clusterName)
 		preserveCluster := os.Getenv("SKIP_CLEANUP") == trueFixture || os.Getenv("KEEP_CLUSTER") != ""
 
 		if preserveCluster {
@@ -337,6 +343,39 @@ var _ = SynchronizedAfterSuite(
 			return
 		}
 
+		// DD-TESTING-003 / Issue #2036: run the production must-gather image
+		// as a local podman container BEFORE coverage collection scales the
+		// deployment to 0 and BEFORE cluster teardown, replacing the old
+		// in-process kubectl-log-scraping (MustGatherPodLogs, previously
+		// invoked internally by DeleteCluster and removed once every caller
+		// migrated to this explicit call).
+		if anyFailure {
+			// #2036 rollout validation (2026-08-19 CI run): the package-level
+			// `ctx` is already canceled by the first SynchronizedAfterSuite
+			// closure's `cancel()` (runs on ALL processes, before this
+			// process-1-only closure) -- exec.CommandContext against an
+			// already-canceled context fails immediately with "context
+			// canceled" before podman ever runs. Use a fresh, independent
+			// context here so cluster teardown timing can never suppress
+			// diagnostic collection.
+			bgCtx := context.Background()
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(bgCtx, GinkgoWriter)
+			if buildErr != nil {
+				logger.Error(buildErr, "Failed to build must-gather image (non-fatal, no diagnostics collected)")
+			} else {
+				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "aianalysis", clusterName)
+				if err := infrastructure.RunMustGatherImage(bgCtx, infrastructure.RunMustGatherImageOptions{
+					ClusterName: clusterName,
+					Image:       mustGatherImage,
+					OutputDir:   mustGatherOutputDir,
+					Namespace:   "kubernaut-system",
+					UsePodman:   true,
+				}, GinkgoWriter); err != nil {
+					logger.Error(err, "Failed to run must-gather image (non-fatal, no diagnostics collected)")
+				}
+			}
+		}
+
 		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion
 		if os.Getenv("E2E_COVERAGE") == trueFixture && !setupFailed {
 			if err := infrastructure.CollectE2EBinaryCoverage(infrastructure.E2ECoverageOptions{
@@ -351,11 +390,6 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		// Delete cluster (with must-gather log export on failure)
-		// Pass true for testsFailed if EITHER setup failed OR any test failed.
-		// CheckTestFailure bridges multi-process Ginkgo runs where the failing
-		// spec may execute on a process other than process 1.
-		anyFailure := infrastructure.ResolveAnyFailure(clusterName, setupFailed, anyTestFailed, GinkgoWriter)
-		defer infrastructure.CleanupFailureMarker(clusterName)
 		logger.Info("🗑️  Cleaning up cluster...")
 		err := infrastructure.DeleteAIAnalysisCluster(clusterName, kubeconfigPath, anyFailure, GinkgoWriter)
 		if err != nil {

@@ -38,6 +38,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -296,7 +297,37 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
-		By("Deleting KIND cluster (with must-gather log export on failure)")
+		// DD-TESTING-003 / Issue #2036: production must-gather image as a local
+		// podman container on the cluster's "kind" network, replacing the old
+		// in-process kubectl-log-scraping (MustGatherPodLogs, previously invoked
+		// internally by DeleteCluster below).
+		if anyFailure {
+			// #2036 rollout validation (2026-08-19 CI run): the package-level
+			// `ctx` is already canceled by the first SynchronizedAfterSuite
+			// closure's `cancel()` (runs on ALL processes, before this
+			// process-1-only closure) -- exec.CommandContext against an
+			// already-canceled context fails immediately with "context
+			// canceled" before podman ever runs. Use a fresh, independent
+			// context here so cluster teardown timing can never suppress
+			// diagnostic collection.
+			bgCtx := context.Background()
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(bgCtx, GinkgoWriter)
+			if buildErr != nil {
+				GinkgoWriter.Printf("⚠️  Failed to build must-gather image (non-fatal, no diagnostics collected): %v\n", buildErr)
+			} else {
+				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "remediationorchestrator", clusterName)
+				if err := infrastructure.RunMustGatherImage(bgCtx, infrastructure.RunMustGatherImageOptions{
+					ClusterName: clusterName,
+					Image:       mustGatherImage,
+					OutputDir:   mustGatherOutputDir,
+					UsePodman:   true,
+				}, GinkgoWriter); err != nil {
+					GinkgoWriter.Printf("⚠️  Failed to run must-gather image (non-fatal, no diagnostics collected): %v\n", err)
+				}
+			}
+		}
+
+		By("Deleting KIND cluster")
 		if err := infrastructure.DeleteCluster(clusterName, "remediationorchestrator", anyFailure, GinkgoWriter); err != nil {
 			GinkgoWriter.Printf("⚠️  Warning: Failed to delete cluster: %v\n", err)
 		}
