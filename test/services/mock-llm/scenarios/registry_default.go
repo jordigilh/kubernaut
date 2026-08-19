@@ -216,6 +216,13 @@ func defaultRegistryWithGoldenDir(goldenDir string) *Registry {
 	// deriveSignalName finds no grounded infrastructure signal.
 	r.Register(signalScenario("af_unknown", []string{"unknown"}, oomkilledConfig()))
 
+	// E2E-AF-1396-001 (issue #1818 Gap 3 regression): dedicated seed-only
+	// grounding scenario for structured_decision_e2e_test.go's
+	// groundSessionBeta call -- see scenario_af_structured_decision_ground.go's
+	// doc comment for why ToolCallArgs must hand-craft the RCA substituted
+	// into args["rca"] rather than relying on the typed config fields.
+	r.Register(signalScenario("af_structured_decision_ground_3", []string{"structureddecisiongrounding3"}, structuredDecisionGrounding3Config()))
+
 	// Issue #1918: grounded not-actionable signal for E2E-FP-1918-001, safe
 	// from the ctx.AllText leak that a broadly-matched keyword (like
 	// not_actionable's "mock_not_actionable") would suffer when AF's own
