@@ -285,7 +285,7 @@ Each test item follows RED → GREEN → REFACTOR:
 |----|----------|------------|----------|--------|
 | E2E-1293-001 | Interactive from start: full flow | AF → RO → AA → KA | IS created → KA session pending → MCP start → RCA → user_driving | Implemented |
 | E2E-1293-002 | Dynamic takeover: autonomous → interactive | AF → AA → KA | IS created mid-investigation → cancel → re-submit → pending | Implemented |
-| E2E-1293-003 | IS deletion cancels investigation | AF → AA → KA | IS deleted → KA cancelled → AIAnalysis PhaseFailed + ReasonInteractiveCancelled | Implemented |
+| ~~E2E-1293-003~~ | ~~IS deletion cancels investigation~~ | ~~CANCELLED~~ | ~~Retired: DD-AA-KA-001 Amendment Gap 4 (2026-08-19) — IS is now AF-side write-only bookkeeping with no causal effect on KA/AA control flow; the real user-facing cancel journey (MCP `action=cancel` on a taken-over session) already has E2E coverage elsewhere (e.g. `test/e2e/kubernautagent/interactive_coverage_e2e_test.go`) without touching IS at all~~ | Cancelled |
 | E2E-1293-004 | SA caller blocked from IS creation | AF | SA token → af_create_rr → ServiceDecorator.Create rejects SA | Implemented |
 | ~~E2E-1293-005~~ | ~~Cooldown bypass with IS~~ | ~~CANCELLED~~ | ~~SC-4 cancelled by design — AF bypasses RO cooldown~~ | Cancelled |
 | E2E-1293-006 | Context reconstruction from prior session | KA → DS | Prior completed session → new interactive session → context pre-loaded | Implemented |

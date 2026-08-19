@@ -176,50 +176,23 @@ var _ = Describe("E2E-1293: Interactive Investigation Architecture", Label("e2e"
 		Expect(result.IsError).To(BeFalse(), "takeover should succeed")
 	})
 
-	It("[E2E-1293-003] IS deletion cancels investigation → AIAnalysis PhaseFailed + ReasonInteractiveCancelled", func() {
-		By("Setting up MCP session pre-RR")
-		setup, err := infrastructure.SetupMCPSession(ctx, namespace, "e2e-1293-003-sa", kubeconfigPath, GinkgoWriter)
-		Expect(err).NotTo(HaveOccurred())
-		defer setup.Cleanup()
-
-		By("Creating direct RR")
-		rrName, err := infrastructure.CreateDirectRR(ctx, namespace, "e2e-1293-003")
-		Expect(err).NotTo(HaveOccurred())
-
-		By("Creating Active IS CRD immediately (before mock-LLM can complete autonomous investigation)")
-		is := createISForRR("1293-003", rrName)
-
-		By("Waiting for AA to reach Investigating with interactive=true")
-		aaName := waitForAAInvestigating(rrName)
-		aa := &aianalysisv1.AIAnalysis{}
-		Eventually(func(g Gomega) {
-			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
-			g.Expect(aa.Status.KASession).NotTo(BeNil())
-			g.Expect(aa.Status.KASession.Interactive).To(BeTrue())
-		}, 90*time.Second, 2*time.Second).Should(Succeed())
-
-		By("Performing MCP takeover on the interactive session")
-		callCtx, callCancel := context.WithTimeout(ctx, 30*time.Second)
-		defer callCancel()
-		result, err := infrastructure.CallInvestigate(callCtx, setup.Session, map[string]any{
-			"rr_id":  rrName,
-			"action": "takeover",
-		})
-		Expect(err).NotTo(HaveOccurred())
-		Expect(result.IsError).To(BeFalse(), "takeover should succeed on interactive session")
-
-		By("Deleting the InvestigationSession CRD (simulates user cancellation)")
-		Expect(k8sClient.Delete(ctx, is)).To(Succeed())
-
-		By("Verifying AA transitions to PhaseFailed with ReasonInteractiveCancelled")
-		Eventually(func(g Gomega) {
-			g.Expect(apiReader.Get(ctx, client.ObjectKey{Name: aaName, Namespace: namespace}, aa)).To(Succeed())
-			g.Expect(aa.Status.Phase).To(Equal(aianalysisv1.PhaseFailed),
-				"BR-INTERACTIVE-010 SC-7: AA should fail when IS is deleted")
-			g.Expect(aa.Status.Reason).To(Equal(aianalysisv1.ReasonInteractiveCancelled),
-				"BR-INTERACTIVE-010 SC-7: Reason should be InteractiveCancelled")
-		}, 2*time.Minute, 2*time.Second).Should(Succeed())
-	})
+	// [E2E-1293-003] "IS deletion cancels investigation" was retired
+	// (DD-AA-KA-001 Amendment Gap 4, 2026-08-19): this decision deliberately
+	// narrowed InvestigationSession to AF-side write-only bookkeeping with
+	// no causal effect on KA/AA control flow (see "IS interactive
+	// detection" note earlier in this decision), so deleting it can no
+	// longer cancel anything by design -- the scenario this test proved no
+	// longer exists as a real behavior. The actual user-facing cancel
+	// journey (MCP kubernaut_investigate action=cancel on a taken-over
+	// session) already has E2E coverage elsewhere, e.g.
+	// test/e2e/kubernautagent/interactive_coverage_e2e_test.go, without
+	// touching IS at all. Orphaned-investigation cleanup on
+	// AgentSession/RemediationRequest deletion (the new capability this
+	// same Gap 4 amendment adds) is proven at the dispatcher-wiring level
+	// instead (internal/kubernautagent/agentsession/dispatcher_test.go's
+	// UT-AA-2170-DELETE-001/TIMEOUT-001/002) -- RR-cascade deletion removes
+	// AIAnalysis itself, leaving no AA Status left to assert on from an E2E
+	// journey's perspective.
 
 	It("[E2E-1293-006] Context reconstruction: takeover pre-loads prior session context", func() {
 		By("Setting up MCP session pre-RR")
