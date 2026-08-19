@@ -77,14 +77,6 @@ func CreateDataStorageCluster(ctx context.Context, clusterName, kubeconfigPath s
 	return nil
 }
 
-// MustGatherPodLogs collects logs from ALL pods in the specified namespace using
-// kubectl logs. This captures both current and previous container logs, which is
-// more reliable than `kind export logs` (which may miss some pod logs).
-//
-// Logs are written to /tmp/kubernaut-must-gather/{serviceName}/ so the CI pipeline's
-// existing must-gather collection step picks them up automatically.
-//
-// Parameters:
 // MarkTestFailure writes a marker file so that other Ginkgo processes
 // (notably process 1 in SynchronizedAfterSuite) can detect that at least
 // one spec failed. This is necessary because per-process variables like
@@ -132,206 +124,25 @@ func ResolveAnyFailure(clusterName string, setupFailed, anyTestFailed bool, writ
 	return anyFailure
 }
 
-// - clusterName: Name of the Kind cluster (used for kubeconfig context)
-// - kubeconfigPath: Path to the kubeconfig file
-// - namespace: Kubernetes namespace to collect logs from (e.g., "kubernaut-system")
-// - serviceName: Service name for directory naming (e.g., "fullpipeline", "aianalysis")
-// - writer: Output writer for logging
-// mustGatherDirPath builds the on-disk directory a single MustGatherPodLogs
-// call writes into.
-//
-// Issue #1690 RCA follow-up: this MUST include clusterName. Multi-cluster
-// E2E suites (fleet, fleetmetadatacache, fleetmetadatacache/eaigw) call
-// MustGatherPodLogs once per cluster with the *same* serviceName and the
-// *same* namespace ("kubernaut-system" exists on both the primary and the
-// remote cluster) -- only clusterName differs between the calls. Without it
-// in the path, the second cluster's call silently overwrote the first
-// cluster's namespace-level files (events.txt, jobs.txt, jobs_describe.txt,
-// pod_status.txt/json -- everything except per-pod log files, which happen
-// to not collide because pod names differ). This is exactly what destroyed
-// the primary cluster's WorkflowFailed event during the RCA for the
-// E2E-FLEET-014 BackoffLimitExceeded flake: the event was captured, then
-// clobbered by the remote cluster's must-gather pass moments later in the
-// same run.
-func mustGatherDirPath(serviceName, clusterName, namespace string) string {
-	return fmt.Sprintf("/tmp/kubernaut-must-gather/%s/%s/%s", serviceName, clusterName, namespace)
-}
-
-func MustGatherPodLogs(clusterName, kubeconfigPath, namespace, serviceName string, writer io.Writer) {
-	_, _ = fmt.Fprintf(writer, "═══════════════════════════════════════════════════════════\n")
-	_, _ = fmt.Fprintf(writer, "📋 MUST-GATHER: Collecting pod logs via kubectl\n")
-	_, _ = fmt.Fprintf(writer, "   Cluster: %s | Namespace: %s | Service: %s\n", clusterName, namespace, serviceName)
-	_, _ = fmt.Fprintf(writer, "═══════════════════════════════════════════════════════════\n\n")
-
-	mustGatherDir := mustGatherDirPath(serviceName, clusterName, namespace)
-	if err := os.MkdirAll(mustGatherDir, 0755); err != nil {
-		_, _ = fmt.Fprintf(writer, "❌ Failed to create must-gather directory %s: %v\n", mustGatherDir, err)
-		return
-	}
-
-	// Determine kubeconfig args
-	kubeconfigArgs := []string{}
-	if kubeconfigPath != "" {
-		kubeconfigArgs = append(kubeconfigArgs, "--kubeconfig", kubeconfigPath)
-	}
-
-	// Get all pods in the namespace
-	getPodArgs := append(kubeconfigArgs, "get", "pods", "-n", namespace,
-		"-o", "jsonpath={range .items[*]}{.metadata.name},{.spec.containers[*].name},{.spec.initContainers[*].name}{\"\\n\"}{end}")
-	getPodsCmd := exec.CommandContext(context.Background(), "kubectl", getPodArgs...)
-	podOutput, err := getPodsCmd.CombinedOutput()
-	if err != nil {
-		_, _ = fmt.Fprintf(writer, "❌ Failed to list pods in namespace %s: %v\n%s\n", namespace, err, string(podOutput))
-		return
-	}
-
-	podLines := strings.Split(strings.TrimSpace(string(podOutput)), "\n")
-	if len(podLines) == 0 || (len(podLines) == 1 && podLines[0] == "") {
-		_, _ = fmt.Fprintf(writer, "⚠️  No pods found in namespace %s\n", namespace)
-		return
-	}
-
-	collectedCount := 0
-	for _, line := range podLines {
-		if line == "" {
-			continue
-		}
-
-		parts := strings.SplitN(line, ",", 3)
-		if len(parts) < 2 {
-			continue
-		}
-		podName := parts[0]
-		containers := strings.Fields(parts[1])
-		initContainers := []string{}
-		if len(parts) > 2 && parts[2] != "" {
-			initContainers = strings.Fields(parts[2])
-		}
-
-		allContainers := append(containers, initContainers...)
-
-		for _, container := range allContainers {
-			if container == "" {
-				continue
-			}
-
-			// Collect current logs
-			logFile := filepath.Join(mustGatherDir, fmt.Sprintf("%s_%s.log", podName, container))
-			logArgs := append(kubeconfigArgs, "logs", "-n", namespace, podName, "-c", container, "--tail=-1")
-			logCmd := exec.CommandContext(context.Background(), "kubectl", logArgs...)
-			logOutput, logErr := logCmd.CombinedOutput()
-
-			if logErr == nil && len(logOutput) > 0 {
-				if writeErr := os.WriteFile(logFile, logOutput, 0644); writeErr == nil {
-					collectedCount++
-				}
-			}
-
-			// Collect previous container logs (for crashed/restarted containers)
-			prevLogFile := filepath.Join(mustGatherDir, fmt.Sprintf("%s_%s_previous.log", podName, container))
-			prevLogArgs := append(kubeconfigArgs, "logs", "-n", namespace, podName, "-c", container, "--previous", "--tail=-1")
-			prevLogCmd := exec.CommandContext(context.Background(), "kubectl", prevLogArgs...)
-			prevLogOutput, prevLogErr := prevLogCmd.CombinedOutput()
-
-			if prevLogErr == nil && len(prevLogOutput) > 0 {
-				if writeErr := os.WriteFile(prevLogFile, prevLogOutput, 0644); writeErr == nil {
-					collectedCount++
-				}
-			}
-		}
-	}
-
-	// Also collect events
-	eventsFile := filepath.Join(mustGatherDir, "events.txt")
-	eventsArgs := append(kubeconfigArgs, "get", "events", "-n", namespace, "--sort-by=.lastTimestamp")
-	eventsCmd := exec.CommandContext(context.Background(), "kubectl", eventsArgs...)
-	eventsOutput, eventsErr := eventsCmd.CombinedOutput()
-	if eventsErr == nil && len(eventsOutput) > 0 {
-		_ = os.WriteFile(eventsFile, eventsOutput, 0644)
-	}
-
-	// Collect pod status
-	statusFile := filepath.Join(mustGatherDir, "pod_status.txt")
-	statusArgs := append(kubeconfigArgs, "get", "pods", "-n", namespace, "-o", "wide")
-	statusCmd := exec.CommandContext(context.Background(), "kubectl", statusArgs...)
-	statusOutput, statusErr := statusCmd.CombinedOutput()
-	if statusErr == nil && len(statusOutput) > 0 {
-		_ = os.WriteFile(statusFile, statusOutput, 0644)
-	}
-
-	// Collect Job status and descriptions (captures BackoffLimitExceeded and
-	// other failure reasons that disappear after TTL-based garbage collection).
-	jobsFile := filepath.Join(mustGatherDir, "jobs.txt")
-	jobsArgs := append(kubeconfigArgs, "get", "jobs", "-n", namespace, "-o", "wide")
-	jobsCmd := exec.CommandContext(context.Background(), "kubectl", jobsArgs...)
-	jobsOutput, jobsErr := jobsCmd.CombinedOutput()
-	if jobsErr == nil && len(jobsOutput) > 0 {
-		_ = os.WriteFile(jobsFile, jobsOutput, 0644)
-	}
-
-	jobDescribeFile := filepath.Join(mustGatherDir, "jobs_describe.txt")
-	jobDescArgs := append(kubeconfigArgs, "describe", "jobs", "-n", namespace)
-	jobDescCmd := exec.CommandContext(context.Background(), "kubectl", jobDescArgs...)
-	jobDescOutput, jobDescErr := jobDescCmd.CombinedOutput()
-	if jobDescErr == nil && len(jobDescOutput) > 0 {
-		_ = os.WriteFile(jobDescribeFile, jobDescOutput, 0644)
-	}
-
-	// Collect pod JSON for termination reason diagnostics (lastState.terminated.reason)
-	podJSONFile := filepath.Join(mustGatherDir, "pod_status.json")
-	podJSONArgs := append(kubeconfigArgs, "get", "pods", "-n", namespace, "-o", "json")
-	podJSONCmd := exec.CommandContext(context.Background(), "kubectl", podJSONArgs...)
-	podJSONOutput, podJSONErr := podJSONCmd.CombinedOutput()
-	if podJSONErr == nil && len(podJSONOutput) > 0 {
-		_ = os.WriteFile(podJSONFile, podJSONOutput, 0644)
-	}
-
-	// Issue #437: Dump SignalProcessing CRs as YAML for classification debugging
-	spFile := filepath.Join(mustGatherDir, "signalprocessing_crs.yaml")
-	spArgs := append(kubeconfigArgs, "get", "signalprocessings.signalprocessing.kubernaut.ai",
-		"-n", namespace, "-o", "yaml", "--ignore-not-found")
-	spCmd := exec.CommandContext(context.Background(), "kubectl", spArgs...)
-	spOutput, spErr := spCmd.CombinedOutput()
-	if spErr == nil && len(spOutput) > 0 {
-		_ = os.WriteFile(spFile, spOutput, 0644)
-		_, _ = fmt.Fprintf(writer, "📄 SignalProcessing CRs dumped to %s\n", spFile)
-	}
-
-	// Also try all-namespaces variant in case SPs are in the controller namespace
-	spAllFile := filepath.Join(mustGatherDir, "signalprocessing_crs_all_ns.yaml")
-	spAllArgs := append(kubeconfigArgs, "get", "signalprocessings.signalprocessing.kubernaut.ai",
-		"--all-namespaces", "-o", "yaml", "--ignore-not-found")
-	spAllCmd := exec.CommandContext(context.Background(), "kubectl", spAllArgs...)
-	spAllOutput, spAllErr := spAllCmd.CombinedOutput()
-	if spAllErr == nil && len(spAllOutput) > 0 {
-		_ = os.WriteFile(spAllFile, spAllOutput, 0644)
-	}
-
-	_, _ = fmt.Fprintf(writer, "✅ Must-gather collected %d log files to %s\n", collectedCount, mustGatherDir)
-	_, _ = fmt.Fprintf(writer, "   (Events, pod status, jobs, deployments, replicasets, SP CRs also captured)\n\n")
-}
-
 // DeleteCluster deletes a Kind cluster and optionally exports logs on test failure
 //
 // Parameters:
 //   - clusterName: Name of the Kind cluster to delete
 //   - serviceName: Service name for log directory naming (e.g., "gateway", "datastorage")
-//   - testsFailed: If true, exports logs before deletion (must-gather style)
+//   - testsFailed: If true, preserves the cluster in CI/CD (or exports kind logs locally)
 //   - writer: Output writer for logging
-//   - namespace: Optional namespace override for must-gather (default: "kubernaut-system").
-//     Services that deploy pods in a custom namespace (e.g., KA in "kubernaut-agent-e2e")
-//     must pass the actual namespace so MustGatherPodLogs can find the pods.
 //
 // Log Export Behavior (when testsFailed=true):
-//   - CI/CD mode: Collects pod logs via kubectl to /tmp/kubernaut-must-gather/ and preserves cluster
+//   - CI/CD mode: Preserves the cluster; the caller is responsible for collecting its own
+//     diagnostics beforehand (DD-TESTING-003: BuildMustGatherImageForE2E + RunMustGatherImage,
+//     run in the caller's own AfterSuite before this call)
 //   - Local mode: Exports to /tmp/{serviceName}-e2e-logs-{timestamp} via kind export logs
 //   - ALWAYS deletes cluster after log export (local mode only)
 //
 // Example:
 //
 //	err := DeleteCluster("gateway-e2e", "gateway", anyTestFailed, GinkgoWriter)
-//	err := DeleteCluster("kubernaut-agent-e2e", "kubernaut-agent", anyTestFailed, GinkgoWriter, "kubernaut-agent-e2e")
-func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer, namespace ...string) error {
+func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.Writer) error {
 	// ═══════════════════════════════════════════════════════════════════════
 	// FIX: Preserve cluster in CI/CD when tests fail (for must-gather)
 	// ═══════════════════════════════════════════════════════════════════════
@@ -346,19 +157,15 @@ func DeleteCluster(clusterName, serviceName string, testsFailed bool, writer io.
 	if testsFailed {
 		if inCICD {
 			// ═══════════════════════════════════════════════════════════════════════
-			// CI/CD MODE: Collect pod logs via kubectl BEFORE preserving cluster
+			// CI/CD MODE: preserve the cluster for the caller's own diagnostics
 			// ═══════════════════════════════════════════════════════════════════════
+			// DD-TESTING-003 / Issue #2036: pod-log collection no longer happens
+			// here. Every caller now runs the production must-gather image
+			// (BuildMustGatherImageForE2E + RunMustGatherImage) in its own
+			// AfterSuite BEFORE calling DeleteCluster, which survives process
+			// death on E2E timeout -- the exact failure mode the old inline
+			// MustGatherPodLogs call (removed here) could not.
 			_, _ = fmt.Fprintf(writer, "⚠️  Test failure detected in CI/CD environment\n")
-
-			// Collect pod logs to /tmp/kubernaut-must-gather/ for CI artifact collection
-			homeDir, _ := os.UserHomeDir()
-			kubeconfigPath := fmt.Sprintf("%s/.kube/%s-config", homeDir, clusterName)
-			ns := kubernautSystem
-			if len(namespace) > 0 && namespace[0] != "" {
-				ns = namespace[0]
-			}
-			MustGatherPodLogs(clusterName, kubeconfigPath, ns, serviceName, writer)
-
 			_, _ = fmt.Fprintf(writer, "🔍 Preserving Kind cluster for must-gather collection\n")
 			_, _ = fmt.Fprintf(writer, "   • Cluster: %s\n", clusterName)
 			_, _ = fmt.Fprintf(writer, "   • GitHub Actions will collect pod logs, events, and status\n")
