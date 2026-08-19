@@ -77,27 +77,62 @@ Enhanced GitHub CI workflows to automatically:
 
 **Artifact Pattern**: `must-gather-logs-{service}-{run_id}`
 
-### E2E Tests (`.github/workflows/e2e-test-template.yml`)
+### E2E Tests (`.github/workflows/ci-pipeline.yml`)
 
-**Enhanced Step** (lines 112-121):
+**DD-TESTING-003 / Issue #2036 (2026-08)**: E2E suites no longer collect diagnostics via
+ad-hoc `kubectl logs` scraping (the old `MustGatherPodLogs()` in
+`test/infrastructure/datastorage.go`, now removed). Every E2E suite's `AfterSuite` runs the
+actual production `cmd/must-gather` image as a local podman container on the Kind cluster's
+podman network (`infrastructure.BuildMustGatherImageForE2E` + `infrastructure.RunMustGatherImage`,
+see `test/infrastructure/must_gather_image.go`), writing to
+`/tmp/kubernaut-must-gather/{service}/{clusterName}/` — **before** the CI workflow's
+"Cleanup Kind cluster" step runs. This means diagnostics are collected by the still-running
+test process itself, not by a separate post-hoc CI step, so they survive even a suite timeout
+that kills the Ginkgo process (the exact failure mode that motivated this migration — see
+DD-TESTING-003).
+
+**Collection step** (`ci-pipeline.yml`, E2E job, `Collect must-gather logs on failure`):
 
 ```yaml
-- name: Upload failure diagnostics (must-gather + Kind logs)
-  if: failure()
+- name: Collect must-gather logs on failure
+  if: failure() || cancelled()
+  run: |
+    if [ -d "/tmp/kubernaut-must-gather" ]; then
+      tar -czf must-gather-e2e-${{ matrix.service }}-${TIMESTAMP}.tar.gz -C /tmp kubernaut-must-gather/
+    elif compgen -G "/tmp/*-e2e-logs-*" > /dev/null; then
+      # Local-mode (non-CI-registry) DeleteCluster fallback: kind export logs,
+      # already written before this step runs.
+      tar -czf must-gather-e2e-${{ matrix.service }}-${TIMESTAMP}.tar.gz -C /tmp $(cd /tmp && compgen -G "*-e2e-logs-*")
+    else
+      # BeforeSuite failure (cluster never came up far enough for an AfterSuite
+      # to run) -- best-effort live `kind export logs` fallback.
+      ...
+    fi
+
+- name: Upload must-gather logs as artifacts
+  if: failure() || cancelled()
   uses: actions/upload-artifact@v4
   with:
-    name: ${{ inputs.service }}-e2e-diagnostics-${{ github.run_id }}
-    path: |
-      /tmp/kind-logs-*
-      /tmp/${{ inputs.service }}-e2e-logs-*
-      /tmp/kubernaut-agent-e2e-logs-*
+    name: must-gather-logs-e2e-${{ matrix.service }}-${{ github.run_id }}
+    path: must-gather-e2e-*.tar.gz
     retention-days: 14
     if-no-files-found: warn
+
+- name: Cleanup Kind cluster # runs AFTER collection + upload
+  if: always()
+  run: ...
 ```
 
-**Services Covered**: All E2E test services (reusable template)
+**Services Covered**: All E2E test services (single-cluster and multi-cluster suites like
+`fleet`/`fleetmetadatacache` produce one `{clusterName}` subdirectory per cluster under the
+same `/tmp/kubernaut-must-gather/{service}/` tree, so both primary and remote cluster
+diagnostics are archived together)
 
-**Artifact Pattern**: `{service}-e2e-diagnostics-{run_id}`
+**Artifact Pattern**: `must-gather-logs-e2e-{service}-{run_id}`
+
+**Note**: `.github/workflows/e2e-test-template.yml` is an older, currently-unreferenced reusable
+workflow that still uploads via the pre-must-gather `/tmp/kind-logs-*` / `/tmp/{service}-e2e-logs-*`
+paths; it is not wired into any calling workflow today and is not the mechanism described above.
 
 ---
 
@@ -128,28 +163,31 @@ must-gather-{service}-{timestamp}.tar.gz
 
 ### E2E Test Artifacts
 
-**Location**: `/tmp/{service}-e2e-logs-{timestamp}/`
+**Location**: `/tmp/kubernaut-must-gather/{service}/{clusterName}/`
 
-**Structure**:
+**Structure** (real production `cmd/must-gather` bundle — see
+[`cmd/must-gather/README.md`](../../../cmd/must-gather/README.md) for the full tree):
 ```
-{service}-e2e-diagnostics-{run_id}/
-├── kind-logs-*/
-│   └── {service}-e2e-control-plane/
-│       ├── pods/
-│       ├── containers/
-│       ├── kubelet.log
-│       └── journal.log
-└── {service}-e2e-logs-*/
-    ├── podman-info.txt
-    └── kind-version.txt
+must-gather-e2e-{service}-{timestamp}.tar.gz
+└── kubernaut-must-gather/
+    └── {service}/
+        └── {clusterName}/                      # one subdir per cluster (multi-cluster suites: primary + remote)
+            └── kubernaut-must-gather-{ts}/
+                ├── cluster-scoped/              # nodes, RBAC, storage, network, config
+                ├── crds/                        # RemediationRequest, SignalProcessing, AIAnalysis, WorkflowExecution, etc.
+                ├── logs/{namespace}/{pod}/       # current.log, previous.log, describe.txt (incl. --extra-namespace additions)
+                ├── jobs/                         # batchv1.Job status + describe (Issue #2194)
+                ├── events/, metrics/, db-infra/
+                └── must-gather-checksums.txt
 ```
 
-**Contents**:
-- Kind cluster logs (all pods, containers)
-- Kubelet logs
-- System journal
-- Podman configuration
-- Kind version information
+**Contents**: Everything the production must-gather image collects (CRDs, cluster-scoped
+resources, pod logs + describe, Jobs, events, metrics, DB infra state), sanitized and
+checksummed identically to a real customer-run must-gather (dogfooding — see DD-TESTING-003).
+
+Fallback (`BeforeSuite` failure, no `AfterSuite` ever ran): a best-effort live `kind export
+logs` archived to `/tmp/{service}-e2e-logs-{timestamp}/` (Kind node/kubelet/journal logs only,
+no application-level detail).
 
 ---
 
@@ -248,9 +286,11 @@ git push origin feature-branch
 
 ## 🔗 **Related Documentation**
 
-- **Must-Gather Implementation**: `test/infrastructure/must_gather.go`
+- **DD-TESTING-003**: [E2E Must-Gather Execution Mechanism](../../architecture/decisions/DD-TESTING-003-e2e-must-gather-execution-mechanism.md) — decision record for the E2E collector described above
+- **E2E Must-Gather Implementation**: `test/infrastructure/must_gather_image.go` (`RunMustGatherImage`, `BuildMustGatherImageForE2E`)
+- **DD-TESTING-002**: [Integration Test Diagnostics (Must-Gather Pattern)](../../architecture/decisions/DD-TESTING-002-integration-test-diagnostics-must-gather.md) — the separate, still-current podman-compose integration-tier mechanism
 - **Integration Test Infrastructure**: `test/infrastructure/shared_integration_utils.go`
-- **E2E Test Cleanup**: `test/infrastructure/cluster_cleanup.go`
+- **E2E Test Cleanup**: `test/infrastructure/datastorage.go` (`DeleteCluster`)
 - ~~**HAPI Integration Triage**: `docs/triage/HAPI_MOCK_LLM_PORT_MISMATCH_JAN_22_2026.md`~~ — dead link removed (flagged [#1806](https://github.com/jordigilh/kubernaut/issues/1806)); `docs/triage/` no longer exists in the repo
 
 ---
@@ -337,5 +377,5 @@ git push origin feature-branch
 ---
 
 **Status**: ✅ Ready for production use
-**Last Updated**: January 23, 2026
+**Last Updated**: August 18, 2026 (E2E section rewritten for DD-TESTING-003 / Issue #2036 migration to the production must-gather image)
 **Maintainer**: Kubernaut Team

@@ -112,7 +112,7 @@ The separate **`fleet/` sub-package (2 files, `BR-FLEET-054`)** is lighter-weigh
 > - Real AlertManager (alert resolution queries)
 > - DataStorage (PostgreSQL + Redis) for audit event verification
 
-Concretely: a real **KIND cluster** (`clusterName = "em-e2e"`) is created once per suite run (`infrastructure.SetupEMInfrastructure`, DD-TEST-002 hybrid-parallel setup) with an isolated kubeconfig (`~/.kube/em-e2e-config`, never overwriting the developer's default). A real ServiceAccount is created and its token retrieved for DD-AUTH-014-authenticated calls to the real DataStorage container. `ginkgo -p --procs=4` parallelism is supported. On failure, `infrastructure.MustGatherPodLogs` collects controller logs, and `E2E_COVERAGE=true` triggers DD-TEST-007 binary coverage collection from the running pod before cluster teardown.
+Concretely: a real **KIND cluster** (`clusterName = "em-e2e"`) is created once per suite run (`infrastructure.SetupEMInfrastructure`, DD-TEST-002 hybrid-parallel setup) with an isolated kubeconfig (`~/.kube/em-e2e-config`, never overwriting the developer's default). A real ServiceAccount is created and its token retrieved for DD-AUTH-014-authenticated calls to the real DataStorage container. `ginkgo -p --procs=4` parallelism is supported. On failure, `infrastructure.RunMustGatherImage` (DD-TESTING-003: the production `cmd/must-gather` image, run as a local podman container) collects controller diagnostics, and `E2E_COVERAGE=true` triggers DD-TEST-007 binary coverage collection from the running pod before cluster teardown.
 
 ### What's actually tested
 
