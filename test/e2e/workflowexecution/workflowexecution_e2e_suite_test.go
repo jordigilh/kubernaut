@@ -295,12 +295,22 @@ var _ = SynchronizedAfterSuite(
 			// namespace and the spawned Job/Tekton execution namespace
 			// (BR-WE-018) the two old MustGatherPodLogs calls collected
 			// separately, in a single run.
-			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(ctx, GinkgoWriter)
+			//
+			// #2036 rollout validation (2026-08-19 CI run): the package-level
+			// `ctx` is already canceled by the first SynchronizedAfterSuite
+			// closure's `cancel()` (runs on ALL processes, before this
+			// process-1-only closure) -- exec.CommandContext against an
+			// already-canceled context fails immediately with "context
+			// canceled" before podman ever runs. Use a fresh, independent
+			// context here so cluster teardown timing can never suppress
+			// diagnostic collection.
+			bgCtx := context.Background()
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(bgCtx, GinkgoWriter)
 			if buildErr != nil {
 				logger.Error(buildErr, "Failed to build must-gather image (non-fatal, no diagnostics collected)")
 			} else {
 				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "workflowexecution", clusterName)
-				if err := infrastructure.RunMustGatherImage(ctx, infrastructure.RunMustGatherImageOptions{
+				if err := infrastructure.RunMustGatherImage(bgCtx, infrastructure.RunMustGatherImageOptions{
 					ClusterName: clusterName,
 					Image:       mustGatherImage,
 					OutputDir:   mustGatherOutputDir,

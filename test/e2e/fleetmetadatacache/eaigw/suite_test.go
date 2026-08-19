@@ -241,12 +241,23 @@ var _ = SynchronizedAfterSuite(
 			// must-gather's --extra-namespace flag reaches those, mirroring the
 			// Kuadrant lane's mcp-system/gateway-system/istio-system must-gather
 			// (see suite_test.go there).
-			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(harness.Ctx, GinkgoWriter)
+			//
+			// #2036 rollout validation (2026-08-19 CI run): harness.Ctx is
+			// already canceled by the first SynchronizedAfterSuite closure's
+			// `cancel()` (runs on ALL processes, before this process-1-only
+			// closure) -- exec.CommandContext against an already-canceled
+			// context fails immediately with "context canceled" before
+			// podman ever runs. Use a fresh, independent context here so
+			// cluster teardown timing can never suppress diagnostic
+			// collection (mirrors the fix already applied to the Kuadrant
+			// lane's fleetmetadatacache/suite_test.go bgCtx).
+			bgCtx := context.Background()
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(bgCtx, GinkgoWriter)
 			if buildErr != nil {
 				GinkgoWriter.Printf("Failed to build must-gather image (non-fatal, no diagnostics collected): %v\n", buildErr)
 			} else {
 				primaryOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "fleetmetadatacache-eaigw", clusterName)
-				if err := infrastructure.RunMustGatherImage(harness.Ctx, infrastructure.RunMustGatherImageOptions{
+				if err := infrastructure.RunMustGatherImage(bgCtx, infrastructure.RunMustGatherImageOptions{
 					ClusterName:     clusterName,
 					Image:           mustGatherImage,
 					OutputDir:       primaryOutputDir,
@@ -261,7 +272,7 @@ var _ = SynchronizedAfterSuite(
 				// isolation scenario depends on most heavily.
 				if harness.RemoteKubeconfigPath != "" {
 					remoteOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "fleetmetadatacache-eaigw", remoteClusterName)
-					if err := infrastructure.RunMustGatherImage(harness.Ctx, infrastructure.RunMustGatherImageOptions{
+					if err := infrastructure.RunMustGatherImage(bgCtx, infrastructure.RunMustGatherImageOptions{
 						ClusterName: remoteClusterName,
 						Image:       mustGatherImage,
 						OutputDir:   remoteOutputDir,
