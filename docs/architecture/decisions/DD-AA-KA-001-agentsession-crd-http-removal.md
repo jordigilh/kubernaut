@@ -328,6 +328,72 @@ erroring, e.g. capacity exhaustion) -- not merely because no prior session/RCA e
 `internal/kubernautagent/mcp/tools/investigate_start_fresh_investigation_test.go`
 (UT-KA-2170-020/021).
 
+### Gap 4 (2026-08-19): no mechanism stops an orphaned KA investigation once its `AgentSession` is gone or its deadline has passed
+
+Found while investigating `E2E-1293-003` ("IS deletion cancels investigation") CI failures: the
+retired HTTP path had an explicit, imperative stop signal — AA's `checkISMismatchAndCancel`
+watched IS create/delete and called `kaClient.CancelSession(ctx, session.ID)` (a synchronous HTTP
+RPC) whenever an interactive session's IS CRD disappeared. This decision's CRD-native channel has
+no equivalent: `Dispatcher.handleEvent` explicitly discarded `watch.Deleted` events
+(`evt.Type != watch.Added && evt.Type != watch.Modified`), and no field anywhere carried a
+deadline KA itself could enforce. Two concrete, still-open gaps followed from this:
+
+1. **`RemediationRequest` deletion silently leaks KA's investigation goroutine.** `AgentSession` is
+   owned by the `AIAnalysis` that creates it (never directly by the RR — see "Owner reference"
+   above), so RR deletion cascades `AIAnalysis` → `AgentSession` deletion transitively via
+   Kubernetes' garbage collector, exactly as designed. But KA's dispatcher had nothing listening
+   for that deletion, so the in-memory investigation goroutine for a remediation nobody will ever
+   read the result of kept running (and burning LLM/tool budget) until it happened to finish on
+   its own.
+2. **A partitioned or crashed AA replica leaves KA investigating forever.** AA already
+   self-enforces an absolute deadline on its own side
+   (`InvestigatingHandler.checkInvestigationTimeout`, preferring `AIAnalysis.Spec.TimesOutAt`
+   when RO has set an authoritative one — DD-TIMEOUT-002/#2176 — falling back to a hardcoded
+   25-minute default otherwise). KA had no equivalent of its own, so it depended entirely on AA
+   staying alive and reachable to ever notice a runaway investigation.
+
+**Resolution:**
+
+- **Delete-triggered cancellation.** `Dispatcher.handleEvent` now handles `watch.Deleted`:
+  `cancelOnDelete` calls the new `session.Manager.ForceCancelByRemediationID` (mirroring the
+  existing `ForceCompleteByRemediationID`'s (#1654) multi-sibling-session, iterate-then-fire-hooks-
+  after-unlock pattern, but transitioning to `StatusCancelled` with no result). No CRD write is
+  attempted here — the `AgentSession` is already gone by the time this fires, so the only
+  actionable step is stopping the goroutine.
+- **Self-enforced timeout, independent of AA.** `AgentSessionSpec` gains an optional `TimesOutAt`
+  field (`*metav1.Time`), populated verbatim from `AIAnalysis.Spec.TimesOutAt` by
+  `RequestBuilder.BuildAgentSessionSpec` at `AgentSession` creation time — same absolute-timestamp
+  rationale as `AIAnalysis.Spec.TimesOutAt` itself (avoids AA/KA clock-skew ambiguity). Both the
+  watch's Added/Modified path and the periodic resync now route through a shared
+  `considerAgentSession`, which checks `isTimedOut` *before* attempting dispatch — an
+  already-past-deadline `AgentSession` (e.g. created from a backlog) is never dispatched at all,
+  not dispatched-then-immediately-cancelled. A still-non-terminal `AgentSession` whose deadline
+  passes mid-investigation is handled by `cancelOnTimeout`: best-effort stop the in-memory
+  session (if this replica happens to own it — `ErrSessionNotFound` is the expected outcome after
+  a replica restart) and unconditionally write `Status.Phase = Failed` directly via `updateStatus`,
+  deliberately bypassing the dispatched-map/`OnTerminal`-hook machinery (which assumes an
+  in-memory session this same replica dispatched, not guaranteed true after a crash/restart).
+- **What this deliberately does *not* do**: reinstate IS-deletion as a control signal. IS's role
+  stays narrowed to AF-side write-only bookkeeping (per the "IS interactive detection" note
+  above) — its existence or deletion has no causal effect on KA/AA control flow. The one
+  user-facing "cancel my investigation" journey — MCP `kubernaut_investigate action=cancel`,
+  scoped to the currently-driving user of an interactive takeover
+  (`internal/kubernautagent/mcp/tools/investigate_autonomous.go`'s `handleCancel`) — already
+  cascades to `AgentSession.Status.Phase = Cancelled` (and from there to AA's
+  `handleSessionCancelled`, `PhaseFailed`/`ReasonInteractiveCancelled`) without touching IS or
+  `AgentSession` deletion at all. `E2E-1293-003` is retired, not rewritten, because the mechanism
+  it proved (IS deletion as a cancel trigger) has no remaining place in this architecture.
+- **Still open (tracked as follow-up, not resolved by this amendment)**: whether the
+  Console UI itself sends an explicit cancel when a user navigates away from or closes an
+  in-progress interactive session — tracked separately against `kubernaut-console`.
+
+**Implemented**: `internal/kubernautagent/session/manager_query.go`'s
+`ForceCancelByRemediationID` (UT-KA-2170-001/002); `internal/kubernautagent/agentsession/dispatcher.go`'s
+`cancelOnDelete`/`cancelOnTimeout`/`considerAgentSession`/`isTimedOut`
+(UT-AA-2170-DELETE-001, UT-AA-2170-TIMEOUT-001/002); `AgentSessionSpec.TimesOutAt` (API type +
+CRD schema); `pkg/aianalysis/handlers/request_builder.go`'s `BuildAgentSessionSpec` propagation
+(UT-AA-KA-065-101 suite).
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:
