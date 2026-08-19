@@ -31,9 +31,13 @@ import (
 
 var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 	const (
-		// Uses 30s timeout to match SetDefaultEventuallyTimeout (per RCA Jan 31, 2026)
-		// Allows controller initialization + reconciliation time
-		timeout  = 30 * time.Second       // Matches suite default (was 10s - too short)
+		// #2204: 30s (the old suite default) is too tight once AgentSession
+		// dispatch load in this shared per-process KA container gets bursty --
+		// CI RCA (run 32303708986) timed out here at exactly 30.000s waiting
+		// for Investigating->Completed. Bumped to 60s to match the same
+		// dispatch-latency headroom already applied to
+		// 08_session_async_flow_test.go/09_detected_labels_e2e_test.go.
+		timeout  = 60 * time.Second
 		interval = 500 * time.Millisecond // Poll twice per second
 	)
 
