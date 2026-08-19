@@ -1097,7 +1097,7 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 	// then failed to bind ("listen tcp :18141: bind: address already in
 	// use"), stalling SynchronizedBeforeSuite until timeout. 18200+ clears
 	// every fixed port this suite allocates (PostgreSQL 15438, Redis 16384,
-	// DataStorage 18095/19095, Mock LLM 18141) for any realistic TEST_PROCS.
+	// DataStorage 18095/28095, Mock LLM 18141) for any realistic TEST_PROCS.
 	kaPort := 18200 + (processNum-1)*10
 	kaHealthPort := kaPort + 1
 	kaMetricsPort := kaPort + 2
@@ -1107,11 +1107,21 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 	if useHostNetworkForKA {
 		llmEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mockLLMCfg.Port)
 		dsURL = "http://127.0.0.1:18095"
-		dsHealthURL = "http://127.0.0.1:19095/readyz"
+		// CI RCA (run 32253223886, "Integration (aianalysis)" job,
+		// UT-AI-050 audit-flow test): 19095 is this suite's DataStorage
+		// MetricsPort (the 5th arg to NewDSBootstrapConfigWithAuth), not
+		// its health port -- nothing listens there, so KA's
+		// DataStorageProber saw a permanent "connection refused" and never
+		// reported ready, leaving the fleet-readiness gate stuck and no
+		// audit events ever written. StartDSBootstrap
+		// (datastorage_bootstrap.go) defaults HealthPort to
+		// DataStoragePort+10000 whenever the caller (as here) leaves it
+		// unset, i.e. 18095+10000 = 28095.
+		dsHealthURL = "http://127.0.0.1:28095/readyz"
 	} else {
 		llmEndpoint = infrastructure.GetMockLLMContainerEndpoint(mockLLMCfg)
 		dsURL = "http://host.containers.internal:18095"
-		dsHealthURL = "http://host.containers.internal:19095/readyz"
+		dsHealthURL = "http://host.containers.internal:28095/readyz"
 	}
 
 	kaConfigContent := fmt.Sprintf(`runtime:
