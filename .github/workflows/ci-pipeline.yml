@@ -741,6 +741,10 @@ jobs:
         uses: ./.github/actions/trivy-scan-with-retry
         with:
           image-ref: localhost/${{ matrix.image_name }}:${{ steps.tag.outputs.tag }}
+          # DD-PLATFORM-003: time-bound exceptions for must-gather's kubectl CVEs
+          # with no fix available yet in any published kubectl release (mirrors
+          # release.yml's must-gather Trivy scan step).
+          trivyignores: ${{ matrix.image_name == 'must-gather' && 'cmd/must-gather/.trivyignore' || '' }}
 
       - name: Save image to tarball
         run: |
