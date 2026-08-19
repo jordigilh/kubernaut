@@ -318,6 +318,7 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 	var correlationID string
 	var hasWorkflow bool
 	var humanReviewReason string
+	var finalResult *katypes.InvestigationResult
 	if sess != nil {
 		if sess.Metadata != nil {
 			correlationID = sess.Metadata["remediation_id"]
@@ -329,9 +330,17 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 		// SetPendingDecisionResult already attached, so logging the raw
 		// parameter would misreport an actually-preserved discovery as
 		// has_workflow=false.
-		if sess.Result != nil {
-			hasWorkflow = sess.Result.WorkflowID != ""
-			humanReviewReason = sess.Result.HumanReviewReason
+		//
+		// finalResult is captured here, still under RLock, for
+		// fireTerminalHook below -- reading sess.Result again after
+		// RUnlock() (as an earlier version of this code did) is a genuine
+		// data race with Store.SetResult writing it concurrently from the
+		// investigation goroutine (manager_events.go storePartialResult),
+		// caught by `go test -race` in CI (issue #2170 CI failure).
+		finalResult = sess.Result
+		if finalResult != nil {
+			hasWorkflow = finalResult.WorkflowID != ""
+			humanReviewReason = finalResult.HumanReviewReason
 		}
 	}
 	m.store.mu.RUnlock()
@@ -344,10 +353,10 @@ func (m *Manager) CompleteUserDriving(id string, result *katypes.InvestigationRe
 		"session_id", id, "has_workflow", hasWorkflow, "human_review_reason", humanReviewReason)
 	// BR-AA-KA-065.11: this is the winning commit point for a user-driven
 	// completion (select_workflow/complete_no_action) -- fire the hook with
-	// the final, actually-stored result (sess.Result), not the raw
-	// parameter, for the same #2020 reason the logging above reads sess.Result.
+	// the final, actually-stored result (finalResult), not the raw
+	// parameter, for the same #2020 reason the logging above reads it.
 	if sess != nil {
-		m.fireTerminalHook(id, correlationID, StatusCompleted, sess.Result, nil)
+		m.fireTerminalHook(id, correlationID, StatusCompleted, finalResult, nil)
 	}
 	return nil
 }
