@@ -779,16 +779,26 @@ spec:
 		coverageEnvYAML(),
 		coverageVolumeMountYAML(),
 		coverageVolumeYAML())
+	// Deploy the Rego policy ConfigMap (inline fixture, self-contained) BEFORE
+	// the Deployment below, which mounts it as the "rego-policies" volume.
+	//
+	// CI RCA (runs 32220596605 and 32248622464, "E2E (aianalysis)"): applying
+	// the Deployment first and this ConfigMap second raced the kubelet's
+	// volume mount against ConfigMap creation ("configmap \"aianalysis-policies\"
+	// not found"), delaying pod start and eating into this job's timeout
+	// budget. Production's Helm chart isn't affected -- Helm's default
+	// install order always creates ConfigMaps before Deployments regardless
+	// of template file/declaration order (helm.sh/helm/v3/pkg/releaseutil
+	// InstallOrder) -- this ordering bug is test-infrastructure-only.
+	if err := createInlineRegoPolicyConfigMap(ctx, kubeconfigPath, writer); err != nil {
+		return err
+	}
+
 	cmd := exec.CommandContext(ctx, "kubectl", "--kubeconfig", kubeconfigPath, "apply", "-f", "-")
 	cmd.Stdin = strings.NewReader(manifest)
 	cmd.Stdout = writer
 	cmd.Stderr = writer
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	// Deploy Rego policy ConfigMap (inline fixture, self-contained)
-	return createInlineRegoPolicyConfigMap(ctx, kubeconfigPath, writer)
+	return cmd.Run()
 }
 
 func waitForAllServicesReady(ctx context.Context, namespace, kubeconfigPath string, writer io.Writer) error {
