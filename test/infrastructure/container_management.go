@@ -253,8 +253,28 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	// PR's own CI history (destinations that happen to already exist as a
 	// directory, or whose owning process tolerates/recreates a missing
 	// file, mask the same off-by-one-field mount on other services).
+	//
+	// CI RCA round 2 (2026-08-19, "Integration (aianalysis)" job,
+	// SynchronizedBeforeSuite, run 32273056176): the unconditional ":z"
+	// above assumed containerPath is always a bare directory, but several
+	// callers (test/integration/aianalysis/suite_test.go,
+	// test/integration/apifrontend/suite_test.go) bake an inline option
+	// straight into the map's containerPath value, e.g.
+	// "/etc/kubernautagent:ro". Blindly appending ":z" to that produced
+	// "hostPath:/etc/kubernautagent:ro:z" -- FOUR colon-delimited fields,
+	// which podman rejects outright ("incorrect volume format, should be
+	// [host-dir:]ctr-dir[:option]"), immediately failing every KA
+	// container start. containerPath already containing a colon means an
+	// OPTIONS field is already present, so "z" must join it as a second,
+	// comma-separated option (matching the working ":ro,z" pattern used
+	// directly in mock_llm.go/datastorage_bootstrap.go) rather than open a
+	// new colon field.
 	for hostPath, containerPath := range cfg.Volumes {
-		args = append(args, "-v", fmt.Sprintf("%s:%s:z", hostPath, containerPath))
+		if strings.Contains(containerPath, ":") {
+			args = append(args, "-v", fmt.Sprintf("%s:%s,z", hostPath, containerPath))
+		} else {
+			args = append(args, "-v", fmt.Sprintf("%s:%s:z", hostPath, containerPath))
+		}
 	}
 
 	// Add image
