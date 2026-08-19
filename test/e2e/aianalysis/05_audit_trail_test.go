@@ -7,6 +7,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -163,6 +164,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-audit-test-rr-" + suffix,
+						Namespace: controllerNamespace,
+					},
 					RemediationID: "e2e-audit-test-" + suffix,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
@@ -295,6 +300,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-audit-phases-rr-" + suffix,
+						Namespace: controllerNamespace,
+					},
 					RemediationID: "e2e-audit-phases-" + suffix,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
@@ -357,6 +366,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-audit-ka-rr-" + suffix,
+						Namespace: controllerNamespace,
+					},
 					RemediationID: "e2e-audit-ka-" + suffix,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
@@ -424,6 +437,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-audit-rego-rr-" + suffix,
+						Namespace: controllerNamespace,
+					},
 					RemediationID: "e2e-audit-rego-" + suffix,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
@@ -488,6 +505,10 @@ var _ = Describe("Audit Trail E2E", Label("e2e", "audit"), func() {
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
+					RemediationRequestRef: corev1.ObjectReference{
+						Name:      "e2e-audit-approval-rr-" + suffix,
+						Namespace: controllerNamespace,
+					},
 					RemediationID: "e2e-audit-approval-" + suffix,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
