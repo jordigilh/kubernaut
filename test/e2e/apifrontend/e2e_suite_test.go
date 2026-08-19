@@ -184,9 +184,25 @@ var _ = SynchronizedAfterSuite(
 		defer kinfra.CleanupFailureMarker(e2eClusterName)
 
 		if anyFailure {
-			_, _ = fmt.Fprintln(GinkgoWriter, "⚠️  Failure detected — collecting must-gather logs BEFORE teardown")
-			kinfra.MustGatherPodLogs(e2eClusterName, kubeconfigPath,
-				e2eNamespace, "apifrontend", GinkgoWriter)
+			_, _ = fmt.Fprintln(GinkgoWriter, "⚠️  Failure detected — collecting must-gather diagnostics BEFORE teardown")
+			// DD-TESTING-003: production must-gather image as a local podman
+			// container on the cluster's "kind" network (see gateway suite
+			// pilot), replacing the old in-process kubectl-log-scraping.
+			mustGatherImage, buildErr := kinfra.BuildMustGatherImageForE2E(context.Background(), GinkgoWriter)
+			if buildErr != nil {
+				_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Failed to build must-gather image (non-fatal): %v\n", buildErr)
+			} else {
+				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "apifrontend", e2eClusterName)
+				if err := kinfra.RunMustGatherImage(context.Background(), kinfra.RunMustGatherImageOptions{
+					ClusterName: e2eClusterName,
+					Image:       mustGatherImage,
+					OutputDir:   mustGatherOutputDir,
+					Namespace:   e2eNamespace,
+					UsePodman:   true,
+				}, GinkgoWriter); err != nil {
+					_, _ = fmt.Fprintf(GinkgoWriter, "WARNING: Failed to run must-gather image (non-fatal): %v\n", err)
+				}
+			}
 		}
 
 		_, _ = fmt.Fprintln(GinkgoWriter, "\nCollecting E2E binary coverage data (DD-TEST-007)...")

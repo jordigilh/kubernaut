@@ -42,6 +42,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -249,7 +250,23 @@ var _ = SynchronizedAfterSuite(
 		}
 
 		if anyFailure && !setupFailed {
-			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath, "kubernaut-system", "effectivenessmonitor", GinkgoWriter)
+			// DD-TESTING-003: production must-gather image as a local podman
+			// container on the cluster's "kind" network (see gateway suite
+			// pilot), replacing the old in-process kubectl-log-scraping.
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(ctx, GinkgoWriter)
+			if buildErr != nil {
+				GinkgoWriter.Printf("  Failed to build must-gather image (non-fatal): %v\n", buildErr)
+			} else {
+				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "effectivenessmonitor", clusterName)
+				if err := infrastructure.RunMustGatherImage(ctx, infrastructure.RunMustGatherImageOptions{
+					ClusterName: clusterName,
+					Image:       mustGatherImage,
+					OutputDir:   mustGatherOutputDir,
+					UsePodman:   true,
+				}, GinkgoWriter); err != nil {
+					GinkgoWriter.Printf("  Failed to run must-gather image (non-fatal): %v\n", err)
+				}
+			}
 		}
 
 		// DD-TEST-007: Collect E2E binary coverage BEFORE cluster deletion

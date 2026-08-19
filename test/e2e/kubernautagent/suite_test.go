@@ -299,8 +299,31 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
+		// DD-TESTING-003 / Issue #2036: production must-gather image as a local
+		// podman container on the cluster's "kind" network, replacing the old
+		// in-process kubectl-log-scraping (MustGatherPodLogs, previously invoked
+		// internally by DeleteCluster below). KA deploys to sharedNamespace
+		// ("kubernaut-agent-e2e"), not the default "kubernaut-system".
+		if anyFailure {
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(ctx, GinkgoWriter)
+			if buildErr != nil {
+				logger.Error(buildErr, "Failed to build must-gather image (non-fatal, no diagnostics collected)")
+			} else {
+				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "kubernautagent", clusterName)
+				if err := infrastructure.RunMustGatherImage(ctx, infrastructure.RunMustGatherImageOptions{
+					ClusterName: clusterName,
+					Image:       mustGatherImage,
+					OutputDir:   mustGatherOutputDir,
+					Namespace:   sharedNamespace,
+					UsePodman:   true,
+				}, GinkgoWriter); err != nil {
+					logger.Error(err, "Failed to run must-gather image (non-fatal, no diagnostics collected)")
+				}
+			}
+		}
+
 		logger.Info("🧹 Deleting Kind cluster...")
-		err := infrastructure.DeleteCluster(clusterName, "kubernaut-agent", anyFailure, GinkgoWriter, sharedNamespace)
+		err := infrastructure.DeleteCluster(clusterName, "kubernaut-agent", anyFailure, GinkgoWriter)
 		if err != nil {
 			logger.Info("⚠️  Warning: Failed to delete cluster", errorFixture, err)
 		} else {

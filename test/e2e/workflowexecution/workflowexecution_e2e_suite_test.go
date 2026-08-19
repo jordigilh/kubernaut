@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -286,14 +287,28 @@ var _ = SynchronizedAfterSuite(
 		// deployment to 0 and waits for pod termination. If we collect
 		// after, the container is removed and its logs are lost.
 		if anyFailure {
-			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath,
-				controllerNamespace, "workflowexecution", GinkgoWriter)
-			// BR-WE-018: spawned Job/Tekton execution pods run in a separate
-			// namespace from the controller; without this, failures in the
-			// spawned pods themselves (e.g. SecurityContext rejections) are
-			// invisible in the must-gather artifact.
-			infrastructure.MustGatherPodLogs(clusterName, kubeconfigPath,
-				"kubernaut-workflows", "workflowexecution", GinkgoWriter)
+			// DD-TESTING-003: production must-gather image as a local podman
+			// container on the cluster's "kind" network (see gateway suite
+			// pilot), replacing the old in-process kubectl-log-scraping.
+			// Default --namespace/--workflow-namespace ("kubernaut-system"/
+			// "kubernaut-workflows") already cover both the controller
+			// namespace and the spawned Job/Tekton execution namespace
+			// (BR-WE-018) the two old MustGatherPodLogs calls collected
+			// separately, in a single run.
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(ctx, GinkgoWriter)
+			if buildErr != nil {
+				logger.Error(buildErr, "Failed to build must-gather image (non-fatal, no diagnostics collected)")
+			} else {
+				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "workflowexecution", clusterName)
+				if err := infrastructure.RunMustGatherImage(ctx, infrastructure.RunMustGatherImageOptions{
+					ClusterName: clusterName,
+					Image:       mustGatherImage,
+					OutputDir:   mustGatherOutputDir,
+					UsePodman:   true,
+				}, GinkgoWriter); err != nil {
+					logger.Error(err, "Failed to run must-gather image (non-fatal, no diagnostics collected)")
+				}
+			}
 		}
 
 		// DD-TEST-007: Collect E2E binary coverage AFTER log export but BEFORE cluster deletion

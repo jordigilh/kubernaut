@@ -38,6 +38,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -296,7 +297,28 @@ var _ = SynchronizedAfterSuite(
 			}
 		}
 
-		By("Deleting KIND cluster (with must-gather log export on failure)")
+		// DD-TESTING-003 / Issue #2036: production must-gather image as a local
+		// podman container on the cluster's "kind" network, replacing the old
+		// in-process kubectl-log-scraping (MustGatherPodLogs, previously invoked
+		// internally by DeleteCluster below).
+		if anyFailure {
+			mustGatherImage, buildErr := infrastructure.BuildMustGatherImageForE2E(ctx, GinkgoWriter)
+			if buildErr != nil {
+				GinkgoWriter.Printf("⚠️  Failed to build must-gather image (non-fatal, no diagnostics collected): %v\n", buildErr)
+			} else {
+				mustGatherOutputDir := filepath.Join("/tmp", "kubernaut-must-gather", "remediationorchestrator", clusterName)
+				if err := infrastructure.RunMustGatherImage(ctx, infrastructure.RunMustGatherImageOptions{
+					ClusterName: clusterName,
+					Image:       mustGatherImage,
+					OutputDir:   mustGatherOutputDir,
+					UsePodman:   true,
+				}, GinkgoWriter); err != nil {
+					GinkgoWriter.Printf("⚠️  Failed to run must-gather image (non-fatal, no diagnostics collected): %v\n", err)
+				}
+			}
+		}
+
+		By("Deleting KIND cluster")
 		if err := infrastructure.DeleteCluster(clusterName, "remediationorchestrator", anyFailure, GinkgoWriter); err != nil {
 			GinkgoWriter.Printf("⚠️  Warning: Failed to delete cluster: %v\n", err)
 		}
