@@ -79,7 +79,11 @@ func statusTextsFrom(queue *bridgeQueue) []string {
 var _ = Describe("Interactive investigation status messages — no internal-name leakage (#1916)", func() {
 
 	It("UT-AF-1916-001 [SI-11]: session-ready status omits internal acronym KA", func() {
-		tc := newStatusLeak1916Client(newTypedAIAnalysisWithSession("rr-1916-001", "sess-1916-001"))
+		// #2170/DD-AA-KA-001: HandleAwaitSession's session-ready signal now
+		// comes from AgentSession.Status.SessionID, not
+		// AIAnalysis.Status.KASession.ID (see crd_tools_session.go's
+		// HandleAwaitSession doc comment).
+		tc := newStatusLeak1916Client(newTypedAgentSessionWithSessionID("as-1916-001", "rr-1916-001", "sess-1916-001"))
 
 		mockMCP := &ka.MockMCPClient{
 			StartInvestigationFn: func(_ context.Context, _ ka.StartInvestigationArgs) (*ka.StartInvestigationResult, error) {

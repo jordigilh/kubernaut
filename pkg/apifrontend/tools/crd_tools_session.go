@@ -13,7 +13,6 @@ import (
 	crclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
-	aiav1alpha1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/apifrontend/validate"
 )
 
@@ -36,16 +35,33 @@ type AwaitSessionResult struct {
 }
 
 // AwaitSessionTimeout is the maximum duration HandleAwaitSession waits for an
-// AIAnalysis CRD with a session ID. In production the AA controller may take
+// AgentSession CRD with a session ID. In production the AA controller may take
 // minutes to process an RR; in E2E tests this can be shortened.
 // Exported so that tests can override it without modifying production code.
 var AwaitSessionTimeout = 3 * time.Minute
 
 const awaitSessionPollInterval = 3 * time.Second
 
-// HandleAwaitSession waits for an AIAnalysis resource (matching the given RR) to have
-// a non-empty status.investigationSession.id. Returns the session ID when ready, or
-// times out after AwaitSessionTimeout.
+// HandleAwaitSession waits for an AgentSession resource (matching the given RR) to
+// have a non-empty status.sessionID -- KA's own internal investigation session
+// identifier (api/agentsession/v1alpha1: Status.SessionID), NOT
+// AIAnalysis.Status.KASession.ID.
+//
+// #2170/DD-AA-KA-001 correction (CI evidence: run 32215236666, E2E-FLEET-018):
+// this previously watched AIAnalysis and read Status.KASession.ID, which
+// DD-AA-KA-001 repurposed to hold the AgentSession's own deterministic object
+// name (see pkg/aianalysis/handlers/investigating.go's syncKASessionStatus
+// doc comment), not KA's real session ID -- a holdover from the pre-redesign
+// HTTP architecture where that field genuinely was KA's session ID. Passing
+// the AgentSession's object name back to KA as MCP action=start's
+// session_id caused LaunchDeferredInvestigation to fail with "session not
+// found" (real ID mismatch, not the benign ErrSessionNotPending race),
+// orphaning the correctly fleet-scoped pending session and falling through
+// to a duplicate, generically-enriched investigation. AgentSession's own
+// Status.SessionID is written by the dispatcher (writeDispatchedStatus,
+// internal/kubernautagent/agentsession/status_writer.go) as soon as the
+// pending session is created -- available well before interactive takeover.
+// Returns the session ID when ready, or times out after AwaitSessionTimeout.
 func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitSessionArgs) (AwaitSessionResult, error) {
 	if client == nil {
 		return AwaitSessionResult{}, ErrK8sUnavailable
@@ -69,8 +85,8 @@ func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitS
 		return pollForSessionID(watchCtx, client, args)
 	}
 
-	var aiaList aiav1alpha1.AIAnalysisList
-	watcher, err := wc.Watch(watchCtx, &aiaList, crclient.InNamespace(args.Namespace))
+	var asList agentsessionv1.AgentSessionList
+	watcher, err := wc.Watch(watchCtx, &asList, crclient.InNamespace(args.Namespace))
 	if err != nil {
 		return pollForSessionID(watchCtx, client, args)
 	}
@@ -79,8 +95,8 @@ func HandleAwaitSession(ctx context.Context, client crclient.Client, args AwaitS
 	return watchForSessionID(watchCtx, watcher, args.RRName)
 }
 
-// watchForSessionID drains watcher's event channel until an AIAnalysis event
-// matching rrName carries a non-empty KASession.ID, the watch closes, or
+// watchForSessionID drains watcher's event channel until an AgentSession event
+// matching rrName carries a non-empty Status.SessionID, the watch closes, or
 // watchCtx is done (timeout).
 //
 //nolint:unparam // error is always nil here; signature matches pollForSessionID's (AwaitSessionResult, error), the interchangeable sibling branch at the shared call site (Issue #1546 Tier 4)
@@ -100,24 +116,24 @@ func watchForSessionID(watchCtx context.Context, watcher watch.Interface, rrName
 	}
 }
 
-// sessionIDFromEvent extracts the KA session ID from a watch event, if it is
-// an Added/Modified event for the AIAnalysis matching rrName with a
-// non-empty session ID already set. matched is true only in that case.
+// sessionIDFromEvent extracts KA's real session ID from a watch event, if it
+// is an Added/Modified event for the AgentSession matching rrName with a
+// non-empty Status.SessionID already set. matched is true only in that case.
 func sessionIDFromEvent(evt watch.Event, rrName string) (sessionID string, matched bool) {
 	if evt.Type != watch.Modified && evt.Type != watch.Added {
 		return "", false
 	}
-	aia, ok := evt.Object.(*aiav1alpha1.AIAnalysis)
-	if !ok || aia.Spec.RemediationRequestRef.Name != rrName {
+	as, ok := evt.Object.(*agentsessionv1.AgentSession)
+	if !ok || as.Spec.RemediationRequestRef.Name != rrName {
 		return "", false
 	}
-	if aia.Status.KASession == nil || aia.Status.KASession.ID == "" {
+	if as.Status.SessionID == "" {
 		return "", false
 	}
-	return aia.Status.KASession.ID, true
+	return as.Status.SessionID, true
 }
 
-// pollForSessionID is a fallback that polls AIAnalysis resources until session ID appears.
+// pollForSessionID is a fallback that polls AgentSession resources until session ID appears.
 func pollForSessionID(ctx context.Context, client crclient.Client, args AwaitSessionArgs) (AwaitSessionResult, error) {
 	ticker := time.NewTicker(awaitSessionPollInterval)
 	defer ticker.Stop()
@@ -134,9 +150,9 @@ func pollForSessionID(ctx context.Context, client crclient.Client, args AwaitSes
 	}
 }
 
-// findSessionIDByList lists AIAnalysis for the given RR and returns the first non-empty session ID.
+// findSessionIDByList lists AgentSessions for the given RR and returns the first non-empty session ID.
 func findSessionIDByList(ctx context.Context, client crclient.Client, args AwaitSessionArgs) string {
-	var list aiav1alpha1.AIAnalysisList
+	var list agentsessionv1.AgentSessionList
 	if err := client.List(ctx, &list, crclient.InNamespace(args.Namespace)); err != nil {
 		return ""
 	}
@@ -145,8 +161,8 @@ func findSessionIDByList(ctx context.Context, client crclient.Client, args Await
 		if item.Spec.RemediationRequestRef.Name != args.RRName {
 			continue
 		}
-		if item.Status.KASession != nil && item.Status.KASession.ID != "" {
-			return item.Status.KASession.ID
+		if item.Status.SessionID != "" {
+			return item.Status.SessionID
 		}
 	}
 	return ""
