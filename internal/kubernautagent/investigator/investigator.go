@@ -254,9 +254,9 @@ type Config struct {
 	PhaseResolver PhaseClientResolver
 	// FleetOverlayResolver resolves the target cluster's tools into the
 	// generic-name overlay consulted by toolDefinitionsForPhase/executeTool
-	// (DD-FLEET-004 cluster-transparent tool exposure). When nil (fleet
+	// (DD-FLEET-005 cluster-transparent tool exposure). When nil (fleet
 	// disabled), Investigate never attempts pre-scoping and every
-	// investigation behaves exactly as it did before DD-FLEET-004.
+	// investigation behaves exactly as it did before DD-FLEET-005.
 	FleetOverlayResolver FleetOverlayResolver
 	// ResolvedConfidenceThreshold and InconclusiveConfidenceThreshold are the
 	// operator-configurable investigation-outcome confidence bands (BR-KA-213,
@@ -294,7 +294,7 @@ type Investigator struct {
 	// fleetOverlayResolver mirrors Config.FleetOverlayResolver; see its doc
 	// comment. Read-only after construction — Investigator is a singleton
 	// shared across all concurrent investigations, so this must never be
-	// mutated post-New (DD-FLEET-004 preflight finding).
+	// mutated post-New (DD-FLEET-005 preflight finding).
 	fleetOverlayResolver FleetOverlayResolver
 	// resolvedConfidenceThreshold and inconclusiveConfidenceThreshold mirror
 	// Config's fields of the same name (BR-KA-213, Issue #1826).
@@ -393,7 +393,7 @@ func New(cfg Config) *Investigator {
 //
 // Issue #1768 Gap D: an interactive session's tool calls must be pre-scoped
 // to the operator's actual target cluster, exactly like Investigate()'s
-// autonomous path (DD-FLEET-004), instead of silently defaulting to the hub
+// autonomous path (DD-FLEET-005), instead of silently defaulting to the hub
 // cluster's tools. InvestigateTool.handleMessage already resolves the
 // target ClusterID via signalResolver and attaches it to ctx on every turn
 // (#1374/F9, katypes.WithSignalContext) — this reuses that existing value

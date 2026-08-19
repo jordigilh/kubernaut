@@ -4,7 +4,7 @@
 **Date**: 2026-06-19
 **Deciders**: Architecture Team
 **Context**: Multi-cluster federation requires coordinated architecture across GW, KA, RO, WE, and a new FMC Writer service (#54)
-**Related**: ADR-064 (MCP Gateway - deferred), ADR-065 (ClusterID on RR), ADR-067 (KA MCP Dynamic Tool Discovery), DD-FLEET-004 (Cluster-Transparent Tool Exposure — supersedes decision #11's LLM-facing discovery tools), DD-FLEET-005 (Ansible Engine Not Supported for Fleet Execution — amends decision #9 and Alternative H)
+**Related**: ADR-064 (MCP Gateway - deferred), ADR-065 (ClusterID on RR), ADR-067 (KA MCP Dynamic Tool Discovery), DD-FLEET-005 (Cluster-Transparent Tool Exposure — supersedes decision #11's LLM-facing discovery tools), DD-FLEET-007 (Ansible Engine Not Supported for Fleet Execution — amends decision #9 and Alternative H)
 
 ## Context
 
@@ -55,7 +55,7 @@ implementation is running.
 
 KA pre-scopes the MCP session to the alert's target cluster automatically,
 server-side, using `signal.ClusterID` — the LLM is never given a tool to
-choose or browse clusters (DD-FLEET-004, decision #11 below). Remote-cluster
+choose or browse clusters (DD-FLEET-005, decision #11 below). Remote-cluster
 tools are exposed to the LLM under the exact same generic names as their
 local-K8s equivalents (e.g. `resources_get`, never `cluster-a__resources_get`),
 so the LLM's tool-calling behavior is identical for a hub-local or a
@@ -133,8 +133,8 @@ business logic.
 | **ResilientClient** | MCP client with backoff, reconnect, readiness gating | `pkg/fleet/mcpclient/resilience.go` |
 | **ReloadableOAuth2Transport** | Hot-reloadable OAuth2 credentials via FileWatcher | `pkg/fleet/mcpclient/reloadable_auth.go` |
 | **CRDWatcher** | Discovers clusters from gateway CRDs (`MCPRoute`/`Backend` for EAIGW, `MCPServerRegistration` for Kuadrant) via adapter pattern | `pkg/fleet/registry/` |
-| **GatewayDiscoverer** | Cluster/tool discovery interface. `ToolsForCluster()` is called server-side by KA's fleet overlay resolver to pre-scope an investigation's tool set (DD-FLEET-004), and programmatically by SP/WE/FMC/EM — never LLM-facing. Gateway-specific implementations for Kuadrant (`discover_tools`/`select_tools`) and EAIGW (`tools/list` prefix scan). | `pkg/fleet/mcpclient/` |
-| **KA Fleet Tools** | Server-side `BridgeTool` registration from the MCP Gateway, pre-scoped to the investigation's target cluster and exposed to the LLM under the same generic names as local K8s tools — cluster-transparent, DD-FLEET-004. No LLM-callable discovery tools. | `cmd/kubernautagent/toolregistry.go` |
+| **GatewayDiscoverer** | Cluster/tool discovery interface. `ToolsForCluster()` is called server-side by KA's fleet overlay resolver to pre-scope an investigation's tool set (DD-FLEET-005), and programmatically by SP/WE/FMC/EM — never LLM-facing. Gateway-specific implementations for Kuadrant (`discover_tools`/`select_tools`) and EAIGW (`tools/list` prefix scan). | `pkg/fleet/mcpclient/` |
+| **KA Fleet Tools** | Server-side `BridgeTool` registration from the MCP Gateway, pre-scoped to the investigation's target cluster and exposed to the LLM under the same generic names as local K8s tools — cluster-transparent, DD-FLEET-005. No LLM-callable discovery tools. | `cmd/kubernautagent/toolregistry.go` |
 
 ### Key Design Decisions
 
@@ -150,16 +150,16 @@ business logic.
 
 6. **ClusterID on fingerprint** (not label): Fingerprints drive deduplication. Including ClusterID ensures same-resource-different-cluster alerts create separate RRs.
 
-7. **KA dynamic tool discovery** (not hard-coded): Fleet tools require no per-cluster code changes. Per DD-FLEET-004, discovery is server-side and per-investigation, not a startup-time global registration: KA's `FleetOverlayResolver` calls `GatewayDiscoverer.ToolsForCluster(signal.ClusterID)` once at the start of each fleet-target investigation and merges the results into that investigation's tool set under generic names. (The earlier startup-time `AppendFleetToolsToRCA` mechanism this decision originally described was removed as part of that change.)
+7. **KA dynamic tool discovery** (not hard-coded): Fleet tools require no per-cluster code changes. Per DD-FLEET-005, discovery is server-side and per-investigation, not a startup-time global registration: KA's `FleetOverlayResolver` calls `GatewayDiscoverer.ToolsForCluster(signal.ClusterID)` once at the start of each fleet-target investigation and merges the results into that investigation's tool set under generic names. (The earlier startup-time `AppendFleetToolsToRCA` mechanism this decision originally described was removed as part of that change.)
 
 8. **Gateway CRDs as source of truth** (not ConfigMap): The gateway's native CRDs (`MCPRoute`/`Backend` for EAIGW, `MCPServerRegistration` for Kuadrant) are the authoritative registry of MCP backends. Kubernaut is a **read-only consumer** — it watches but never creates or modifies these CRDs. The control plane (ACM, Rancher, GitOps) owns their lifecycle.
 
 9. **MCP Gateway as unified chokepoint for all remote cluster access** (not separate auth paths per backend type): All Kubernaut services that interact with remote clusters — GW, KA, RO, SP, AF, EM (read-only), FMC (metadata sync), and WE (remediation execution) — access remote clusters exclusively through the MCP Gateway. The K8s MCP Server and AAP MCP Server are both registered as backends behind the same gateway. This eliminates the need for service-specific credential management (e.g., separate AAP bearer token injection). Auth is enforced at two layers: (a) the gateway validates caller credentials via its native auth model (OAuth + CEL for EAIGW, Authorino + OPA for Kuadrant), and (b) each MCP Server authenticates against its own local APIs using its own ServiceAccount. No per-cluster SA tokens are maintained by Kubernaut services.
-   > **Amended by [DD-FLEET-005](DD-FLEET-005-ansible-engine-not-supported-for-remote-execution.md) (2026-07-30)**: live validation against a real Kuadrant gateway found `MCPServerRegistration.credentialRef` is discovery-only and is **not** injected into actual `tools/call` requests, so the AAP-MCP-Server-as-backend design described here does not work for WE's Ansible engine as-is. WE's Ansible engine does not use this chokepoint for remote clusters; it fails closed instead (see DD-FLEET-005). The chokepoint principle itself remains correct and unaffected for K8s MCP backends (Job/Tekton engines, all other services).
+   > **Amended by [DD-FLEET-007](DD-FLEET-007-ansible-engine-not-supported-for-remote-execution.md) (2026-07-30)**: live validation against a real Kuadrant gateway found `MCPServerRegistration.credentialRef` is discovery-only and is **not** injected into actual `tools/call` requests, so the AAP-MCP-Server-as-backend design described here does not work for WE's Ansible engine as-is. WE's Ansible engine does not use this chokepoint for remote clusters; it fails closed instead (see DD-FLEET-007). The chokepoint principle itself remains correct and unaffected for K8s MCP backends (Job/Tekton engines, all other services).
 
 10. **Gateway-agnostic business logic** (not per-gateway code paths): Services that need to call MCP tools on a remote cluster use the `GatewayDiscoverer` interface (decision #11) to discover clusters and tools. The only gateway-aware components are the `GatewayDiscoverer` implementations and the cluster registry in FMC (`pkg/fleet/registry/`). All other services — GW, SP, WE, KA, RO, AF, EM — are fully gateway-agnostic.
 
-11. **GatewayDiscoverer: server-side per-investigation pre-scoping** (not an LLM-facing two-phase discovery tool pair — **superseded by DD-FLEET-004**, issue #1732): At fleet scale (100+ clusters, 1800+ tools), presenting every cluster's tools to the LLM wastes context tokens and causes hallucination — but a single RCA investigation is always scoped to exactly one target cluster (`RemediationRequest.Spec.ClusterID` / `SignalContext.ClusterID`), so there is never a "pick a cluster" decision for the LLM to make in the first place. This decision originally exposed two LLM-callable tools, `list_clusters` and `list_tools_for_cluster(cluster_id)`, so the LLM could browse and activate clusters itself. That design was implemented and then replaced: KA now calls `GatewayDiscoverer.ToolsForCluster(signal.ClusterID)` itself, server-side, once per investigation, before the LLM ever runs. **`list_clusters` and `list_tools_for_cluster` no longer exist as LLM-callable tools.**
+11. **GatewayDiscoverer: server-side per-investigation pre-scoping** (not an LLM-facing two-phase discovery tool pair — **superseded by DD-FLEET-005**, issue #1732): At fleet scale (100+ clusters, 1800+ tools), presenting every cluster's tools to the LLM wastes context tokens and causes hallucination — but a single RCA investigation is always scoped to exactly one target cluster (`RemediationRequest.Spec.ClusterID` / `SignalContext.ClusterID`), so there is never a "pick a cluster" decision for the LLM to make in the first place. This decision originally exposed two LLM-callable tools, `list_clusters` and `list_tools_for_cluster(cluster_id)`, so the LLM could browse and activate clusters itself. That design was implemented and then replaced: KA now calls `GatewayDiscoverer.ToolsForCluster(signal.ClusterID)` itself, server-side, once per investigation, before the LLM ever runs. **`list_clusters` and `list_tools_for_cluster` no longer exist as LLM-callable tools.**
 
     The `GatewayDiscoverer` interface itself is unchanged by this — only its caller changed:
 
@@ -179,7 +179,7 @@ business logic.
     | Investigation start | N target-cluster tools, generic names | Same N local tools, same names |
     | Throughout | Unchanged — no discovery round trip, ever | Unchanged |
 
-    **Gateway-specific implementations** (unchanged by DD-FLEET-004): one implementation per supported gateway, selected by `gatewayType` configuration (same config FMC already uses):
+    **Gateway-specific implementations** (unchanged by DD-FLEET-005): one implementation per supported gateway, selected by `gatewayType` configuration (same config FMC already uses):
 
     | Gateway | `ListClusters()` | `ToolsForCluster()` |
     |---------|-----------------|-------------------|
@@ -194,9 +194,9 @@ business logic.
 
     **Fail-open on pre-scoping failure**: if `ToolsForCluster()` errors (e.g. the gateway is unreachable), the investigation proceeds without the remote-cluster overlay — behaving like a hub-local investigation minus remote-cluster access — rather than aborting over a degraded fleet dependency. The failure is recorded as an `aiagent.fleet.overlay_failed` audit event (AU-3) carrying the cluster and correlation IDs, so a degraded fleet investigation is never a silent failure (GA Readiness Dimension 12).
 
-    **Authority**: Spike S15 (2026-06-27) validated the Kuadrant `discover_tools`/`select_tools` response format, threshold behavior, and tool prefix conventions this interface still relies on. **DD-FLEET-004** (2026-07-25, issue #1732) is the authority for the pre-scoping/name-transparency change described in this decision; see that document for the alternatives considered and rejected.
+    **Authority**: Spike S15 (2026-06-27) validated the Kuadrant `discover_tools`/`select_tools` response format, threshold behavior, and tool prefix conventions this interface still relies on. **DD-FLEET-005** (2026-07-25, issue #1732) is the authority for the pre-scoping/name-transparency change described in this decision; see that document for the alternatives considered and rejected.
 
-    **Known-prefix direct-call semantics** (unchanged by DD-FLEET-004): Programmatic clients (FMC syncer, SP enricher, WE executor, EM target reader) know the target cluster's tool prefix at call time — it comes from the cluster registry, the `RemediationRequest.Spec.ClusterID`, or the service configuration. These clients call `mcpclient.Client` methods (`Get`, `List`) which internally construct the prefixed tool name (e.g., `prod_east__resources_list`) and call it directly via `CallTool`, never via `GatewayDiscoverer`. KA's `FleetOverlayResolver` is architecturally the same kind of caller: it also knows the target cluster (`signal.ClusterID`) up front and calls `GatewayDiscoverer` itself, server-side — the only KA-specific behavior is stripping the cluster prefix so the LLM never sees it.
+    **Known-prefix direct-call semantics** (unchanged by DD-FLEET-005): Programmatic clients (FMC syncer, SP enricher, WE executor, EM target reader) know the target cluster's tool prefix at call time — it comes from the cluster registry, the `RemediationRequest.Spec.ClusterID`, or the service configuration. These clients call `mcpclient.Client` methods (`Get`, `List`) which internally construct the prefixed tool name (e.g., `prod_east__resources_list`) and call it directly via `CallTool`, never via `GatewayDiscoverer`. KA's `FleetOverlayResolver` is architecturally the same kind of caller: it also knows the target cluster (`signal.ClusterID`) up front and calls `GatewayDiscoverer` itself, server-side — the only KA-specific behavior is stripping the cluster prefix so the LLM never sees it.
 
     This means `GatewayDiscoverer` is now **exclusively a server-side, per-caller resolution mechanism** — never an LLM-facing browsing tool. FMC, SP, WE, and EM call it programmatically the same way KA's pre-scoping does; none of them, and no LLM session, invoke it interactively.
 
@@ -264,7 +264,7 @@ business logic.
 - -: Separate credential management and rotation for AAP tokens outside the gateway
 - -: AAP MCP backends are treated differently from K8s MCP backends, violating the unified chokepoint principle
 - **Deferred**: AAP MCP Server is now registered as a standard `Backend` behind the MCP Gateway, same as K8s MCP Servers. The gateway handles routing to both. WE calls tools through the gateway without knowing whether the backend is K8s-native or AAP. If AAP MCP requires its own auth, the `MCPRoute.backendRefs[].securityPolicy` handles upstream credential injection — Kubernaut services are not involved.
-- **Superseded (2026-07-30, [DD-FLEET-005](DD-FLEET-005-ansible-engine-not-supported-for-remote-execution.md))**: this mitigation does not hold for the Kuadrant gateway implementation actually in use — live testing confirmed per-call credential injection for non-K8s backends does not work (see DD-FLEET-005 Option 1 findings). Combined with a second, independent blocker (no credential-delete tool in the AAP MCP Server's API surface), the Ansible engine does not use the MCP Gateway for remote clusters at all; it fails closed on any non-empty `ClusterID` instead. This does not reopen Alternative H for K8s MCP backends — the chokepoint principle remains sound there.
+- **Superseded (2026-07-30, [DD-FLEET-007](DD-FLEET-007-ansible-engine-not-supported-for-remote-execution.md))**: this mitigation does not hold for the Kuadrant gateway implementation actually in use — live testing confirmed per-call credential injection for non-K8s backends does not work (see DD-FLEET-007 Option 1 findings). Combined with a second, independent blocker (no credential-delete tool in the AAP MCP Server's API surface), the Ansible engine does not use the MCP Gateway for remote clusters at all; it fails closed on any non-empty `ClusterID` instead. This does not reopen Alternative H for K8s MCP backends — the chokepoint principle remains sound there.
 
 ## Consequences
 
@@ -385,12 +385,12 @@ for the full method and results.
 | SP Enrichment | SP remote cluster enrichment via MCP Gateway (BR-INTEGRATION-054) | Complete |
 | RO Fleet Scope | RO scope routing via FederatedScopeChecker (BR-FLEET-054) | Complete |
 | WE Fleet Routing | WE JobExecutor.IsCompleted ClusterID propagation (BR-FLEET-054) | Complete |
-| WE Ansible Fleet Routing | WE AnsibleExecutor remote (ClusterID != "") execution — evaluated, not pursued; fails closed instead (DD-FLEET-005) | Not Pursued (#1761) |
+| WE Ansible Fleet Routing | WE AnsibleExecutor remote (ClusterID != "") execution — evaluated, not pursued; fails closed instead (DD-FLEET-007) | Not Pursued (#1761) |
 | EM Fleet Routing | EM target-read routing via ReaderFactory (BR-FLEET-054) | Complete |
 | AF Fleet Routing | AF kubectl_get/kubectl_list ResourceReader abstraction + list_clusters tool (BR-FLEET-054) | Complete |
 | Fleet Readiness Gate | Fail-closed, pod-wide `/readyz` for runtime Fleet dependency unreachability across all 7 services (#1553) | Complete |
 | ACM bearer-token auth | `acm.Client` authentication via `auth.AuthTransport` + `FleetConfig.TokenPath` (hard-required by `Validate()` when backend=acm) | Complete (#1556) |
-| GatewayDiscoverer | Server-side per-investigation pre-scoping (DD-FLEET-004) with Kuadrant and EAIGW implementations; no LLM-facing discovery tools | Complete (#1732) |
+| GatewayDiscoverer | Server-side per-investigation pre-scoping (DD-FLEET-005) with Kuadrant and EAIGW implementations; no LLM-facing discovery tools | Complete (#1732) |
 | Rancher Adapter | Rancher v3 API adapter for cluster discovery and scope checks | Planned (v1.6) |
 | Clusterpedia Adapter | Clusterpedia Aggregated API adapter for scope checks | Planned (v1.6) |
 | `ValidateFullFederation` (GW/RO dual-capability startup check) | Config validation | pkg/fleet/config.go | Complete (DD-FLEET-003) |
@@ -420,7 +420,7 @@ client cannot drive Dex's token-exchange grant).
 | ResilientClient (FMC) | main() | cmd/fmc/main.go | UT-FMC-001 |
 | ReloadableOAuth2Transport (KA) | registerFleetTools() | cmd/kubernautagent/toolregistry.go | UT-FLEET-RES-001 |
 | ReloadableOAuth2Transport (FMC) | main() | cmd/fmc/main.go | UT-FLEET-RES-001 |
-| FleetOverlayResolver (per-investigation pre-scoping, DD-FLEET-004; supersedes the removed AppendFleetToolsToRCA) | Investigate() → prescopeFleetOverlay() | internal/kubernautagent/investigator/fleet_overlay.go | IT-KA-FLEET-013 |
+| FleetOverlayResolver (per-investigation pre-scoping, DD-FLEET-005; supersedes the removed AppendFleetToolsToRCA) | Investigate() → prescopeFleetOverlay() | internal/kubernautagent/investigator/fleet_overlay.go | IT-KA-FLEET-013 |
 | CRDWatcher | main() | cmd/fmc/main.go | UT-FMC-004 |
 | BuildKey validation | BuildKey() | pkg/fleet/scopecache/client.go | UT-FLEET-SC-006/007/008 |
 | readiness.Gate (GW) | readinessHandler() | pkg/gateway/server.go | IT-GW-1553-001 |

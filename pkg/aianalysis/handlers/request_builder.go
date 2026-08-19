@@ -188,7 +188,7 @@ func getOrDefault(labels map[string][]string, key, defaultVal string) string {
 // documented (openapi.json) as "the raw cluster identifier" KA uses to
 // resolve its per-investigation fleet tool overlay via
 // MapIncidentRequestToSignal -> SignalContext.ClusterID
-// (internal/kubernautagent/server/handler.go, DD-FLEET-004).
+// (internal/kubernautagent/server/handler.go, DD-FLEET-005).
 //
 // BR-FLEET-054: RemediationOrchestrator already propagates
 // RemediationRequest.Spec.ClusterID onto AIAnalysis.Spec.ClusterID

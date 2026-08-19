@@ -39,7 +39,7 @@ import (
 //	→ tool call succeeds
 //
 // This is a client-protocol test, not a KA production-flow test. KA itself
-// no longer drives this sequence at investigation time — per DD-FLEET-004
+// no longer drives this sequence at investigation time — per DD-FLEET-005
 // (issue #1732), KA pre-scopes server-side via ToolsForCluster(signal.ClusterID)
 // alone, and never calls ListClusters or lets the LLM pick a cluster.
 // ListClusters remains exercised here (and used internally by
@@ -47,7 +47,7 @@ import (
 // the GatewayDiscoverer contract other programmatic callers (SP, WE, FMC,
 // EM) may rely on.
 //
-// Authority: Issue #54, ADR-068 decision #11 (as amended by DD-FLEET-004), BR-FLEET-054
+// Authority: Issue #54, ADR-068 decision #11 (as amended by DD-FLEET-005), BR-FLEET-054
 // FedRAMP: CM-6 (Configuration Settings), AC-3 (Access Enforcement)
 var _ = Describe("E2E-FLEET-DISC: Two-Phase Discovery Journey", Label("fleet"), func() {
 

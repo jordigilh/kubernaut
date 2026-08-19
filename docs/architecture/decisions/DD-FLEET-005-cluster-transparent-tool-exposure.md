@@ -1,4 +1,4 @@
-# DD-FLEET-004: Cluster-Transparent Tool Exposure for KA's RCA Investigation
+# DD-FLEET-005: Cluster-Transparent Tool Exposure for KA's RCA Investigation
 
 **Status**: ✅ Implemented (issue #1732)
 **Date**: 2026-07-25

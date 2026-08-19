@@ -250,9 +250,10 @@ type fmcServers struct {
 // livenessHandler is FMC's liveness probe: a fixed 200 OK with no backend
 // dependency check. Registered exclusively on the dedicated health mux
 // (plain HTTP, kubelet-only) -- DD-FLEET-004: it is never registered on the
-// API mux. fmc.HTTPClient.Ping(), GW/RO's fail-closed readiness gate probe
-// (Issue #1553/ADR-068), targets fmc.ClustersPath on the API port instead,
-// so it needs no liveness handler duplicated there.
+// API mux. Unlike /healthz, /readyz IS deliberately registered a second
+// time on the API mux (see buildFMCServers below) -- DD-PLATFORM-010,
+// Issue #2169 -- as the unauthenticated target for fmc.HTTPClient.Ping(),
+// GW/RO's fail-closed readiness gate probe (Issue #1553/ADR-068).
 func livenessHandler(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
@@ -272,8 +273,8 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.
 	// scope-check/clusters request must carry a valid ServiceAccount bearer
 	// token (TokenReview) and be authorized (SAR) against this Service --
 	// mirrors DataStorage's own inbound-auth precedent (DD-AUTH-014).
-	// /readyz and /healthz are unaffected: DD-FLEET-004 already serves them
-	// exclusively on the separate health port, never on apiMux.
+	// /healthz is unaffected: DD-FLEET-004 already serves it exclusively on
+	// the separate health port, never on apiMux.
 	authenticator := auth.NewK8sAuthenticator(deps.k8sClientset)
 	authorizer := auth.NewK8sAuthorizer(deps.k8sClientset)
 	authMiddleware := auth.NewMiddleware(authenticator, authorizer, auth.MiddlewareConfig{
@@ -283,9 +284,22 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.
 		Verb:         "get",
 	}, logger)
 
+	// DD-PLATFORM-010 (Issue #2169): /readyz is registered at the top level
+	// of a wrapper mux, deliberately OUTSIDE authMiddleware's wrap, so
+	// fmc.HTTPClient.Ping() (GW/RO's fail-closed readiness gate probe,
+	// Issue #1553/ADR-068) reaches it without paying a live TokenReview/SAR
+	// round-trip on every poll. This reuses the exact same ReadyzHandler
+	// that already backs the kubelet probe on the dedicated health port --
+	// a second *registration*, not a second *implementation*. Everything
+	// else (the real scope-check/clusters API) still goes through
+	// authMiddleware via the "/" delegation below.
+	topMux := http.NewServeMux()
+	topMux.HandleFunc(fmc.ReadyzPath, fmc.ReadyzHandler(ready.Load, deps.cacheReader))
+	topMux.Handle("/", authMiddleware.Handler(apiMux))
+
 	apiServer := &http.Server{
 		Addr:              cfg.Server.APIAddr,
-		Handler:           authMiddleware.Handler(apiMux),
+		Handler:           topMux,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -305,8 +319,10 @@ func buildFMCServers(cfg *fmcconfig.ServiceConfig, deps *fmcDeps, ready *atomic.
 	}
 
 	// Issue #753: dedicated health-probe server, always plain HTTP -- kubelet
-	// probes never need TLS. /readyz lives exclusively here (no production
-	// caller outside FMC's own kubelet probe hits /readyz on the API port).
+	// probes never need TLS. DD-PLATFORM-010 (Issue #2169): /readyz is now
+	// ALSO registered on the API port above (topMux, unauthenticated) for
+	// GW/RO's cross-service Ping(); this health-port registration remains
+	// for kubelet's own probe, which never crosses pod boundaries.
 	healthServer := sharedhealth.NewHealthServer(
 		cfg.Server.HealthAddr,
 		livenessHandler,

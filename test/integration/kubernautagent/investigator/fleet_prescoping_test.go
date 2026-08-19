@@ -51,14 +51,14 @@ func (s *fleetOverlayResolverSpy) Overlay(_ context.Context, clusterID string) (
 	return s.overlay, s.err
 }
 
-// BR-INTEGRATION-1489, DD-FLEET-004: cluster-transparent tool exposure — wiring
+// BR-INTEGRATION-1489, DD-FLEET-005: cluster-transparent tool exposure — wiring
 // tier (IT). Proves the production entry point (Investigator.Investigate)
 // actually calls the configured FleetOverlayResolver for fleet-target
 // investigations, resolves generic tool names to the overlay's BridgeTool
 // ahead of the local registry, and never exposes the removed LLM-facing
 // discovery tools. Pure decision logic is covered separately by
 // UT-KA-FLEET-014/018 (fleet_overlay_internal_test.go).
-var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-1489, DD-FLEET-004)", Label("fleet", "integration"), func() {
+var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-1489, DD-FLEET-005)", Label("fleet", "integration"), func() {
 
 	var (
 		invLogger  logr.Logger
@@ -385,7 +385,7 @@ var _ = Describe("Fleet cluster-transparent tool pre-scoping (BR-INTEGRATION-148
 		})
 	})
 
-	// Issue #1729 (DD-FLEET-004 tool-transparency gap): toolDefinitionsForPhase
+	// Issue #1729 (DD-FLEET-005 tool-transparency gap): toolDefinitionsForPhase
 	// previously only ever *overrode* an existing local-registry tool entry
 	// with the overlay's BridgeTool when both shared the exact same name (see
 	// IT-KA-FLEET-015 above) -- it never added an overlay tool that had no

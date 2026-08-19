@@ -55,7 +55,7 @@ func (p *ToolProxy) Execute(ctx context.Context, name string, args json.RawMessa
 // truncate so the shadow evaluates the same content the primary LLM sees.
 // Cluster attribution is resolved via attributionClusterID: the investigation's
 // audit.ClusterIDFromContext value if present, else the legacy
-// "{clusterID}__tool" name-parsing convention (DD-FLEET-004).
+// "{clusterID}__tool" name-parsing convention (DD-FLEET-005).
 func SubmitToolStep(ctx context.Context, name, content string) {
 	obs := ObserverFromContext(ctx)
 	if obs == nil || content == "" {
@@ -76,9 +76,9 @@ func SubmitToolStep(ctx context.Context, name, content string) {
 // the investigation's own audit.ClusterIDFromContext — populated for every
 // fleet investigation regardless of the tool's name — and falls back to
 // parseClusterIDFromToolName only when the context carries none, so
-// pre-DD-FLEET-004 callers that never set the context value are unaffected.
+// pre-DD-FLEET-005 callers that never set the context value are unaffected.
 //
-// This is the fix for the regression DD-FLEET-004's full name transparency
+// This is the fix for the regression DD-FLEET-005's full name transparency
 // would otherwise introduce: once fleet tools resolve under generic names
 // with no "{clusterID}__" prefix, name-parsing alone can no longer attribute
 // them, and silently under-reports cluster origin in the alignment audit

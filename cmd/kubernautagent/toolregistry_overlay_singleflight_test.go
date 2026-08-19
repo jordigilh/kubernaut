@@ -73,11 +73,11 @@ func (d *countingDiscoverer) callCount(clusterID string) int {
 // UT-KA-FLEET-022 [SC-5]: gatewayOverlayResolver.Overlay deduplicates
 // concurrent ToolsForCluster calls for the same clusterID via
 // singleflight, exactly as the deleted ListToolsForClusterTool did before
-// DD-FLEET-004 removed the LLM-facing discovery tools. This protects the
+// DD-FLEET-005 removed the LLM-facing discovery tools. This protects the
 // MCP Gateway from a redundant discover_tools/select_tools round trip per
 // concurrent investigation when many investigations target the same busy
 // cluster at once.
-var _ = Describe("gatewayOverlayResolver.Overlay singleflight dedup (DD-FLEET-004, BR-INTEGRATION-1489)", func() {
+var _ = Describe("gatewayOverlayResolver.Overlay singleflight dedup (DD-FLEET-005, BR-INTEGRATION-1489)", func() {
 	It("UT-KA-FLEET-022 [SC-5]: N concurrent Overlay calls for the same cluster trigger exactly one ToolsForCluster call", func() {
 		disc := newCountingDiscoverer()
 		resolver := &gatewayOverlayResolver{discoverer: disc}

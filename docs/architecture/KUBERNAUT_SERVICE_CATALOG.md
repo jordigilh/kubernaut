@@ -483,7 +483,7 @@ Admission webhook `9443`, plus controller-runtime health/metrics ports
 ### **12. Fleet Metadata Cache (FMC) Service**
 
 **Service Type**: Stateless HTTP, no `ctrl.Manager` (`cmd/fleetmetadatacache`)
-**Documentation**: See [ADR-068](decisions/ADR-068-fleet-federation-architecture.md) and DD-FLEET-001 to DD-FLEET-005
+**Documentation**: See [ADR-068](decisions/ADR-068-fleet-federation-architecture.md) and DD-FLEET-001 to DD-FLEET-007
 
 #### **Single Responsibility**
 Multi-cluster "fleet" metadata caching to support cross-cluster workflow targeting

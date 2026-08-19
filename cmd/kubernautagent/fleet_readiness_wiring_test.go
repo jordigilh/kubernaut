@@ -66,7 +66,7 @@ var _ = Describe("registerFleetTools and wireFleetReadinessGate wiring (#1553)",
 			fc, resolver := registerFleetTools(ctx, cfg, logr.Discard())
 			Expect(fc).NotTo(BeNil(), "*mcpclient.ResilientClient must be returned when the Fleet MCP Gateway is reachable")
 			DeferCleanup(func() { _ = fc.Close() })
-			Expect(resolver).NotTo(BeNil(), "DD-FLEET-004: registerFleetTools must return a FleetOverlayResolver when the gateway is reachable")
+			Expect(resolver).NotTo(BeNil(), "DD-FLEET-005: registerFleetTools must return a FleetOverlayResolver when the gateway is reachable")
 
 			Expect(fc.Ready()).To(BeTrue(), "client must report Ready() when the initial connection succeeded")
 		})

@@ -34,6 +34,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -82,10 +83,21 @@ func (f *fakeClusterRegistry) Ready() bool                                 { ret
 func (f *fakeClusterRegistry) Start(context.Context) error                 { return nil }
 func (f *fakeClusterRegistry) Stop()                                       {}
 
+// unreachableValkeyAddr is a deliberately-unreachable address for tests
+// that don't care whether /readyz's backend ping succeeds.
+const unreachableValkeyAddr = "127.0.0.1:1"
+
 // testFMCDeps builds the minimal *fmcDeps needed to exercise
-// buildFMCServers' HTTP/TLS wiring without a real MCP Gateway or Valkey.
-// syncer/mcpClient/writer are deliberately left nil -- buildFMCServers never
+// buildFMCServers' HTTP/TLS wiring without a real MCP Gateway. syncer/
+// mcpClient/writer are deliberately left nil -- buildFMCServers never
 // touches them; only runFMCServers' background syncer goroutine would.
+//
+// valkeyAddr backs deps.cacheReader (DD-PLATFORM-010, Issue #2169: /readyz
+// -- and therefore fmc.HTTPClient.Ping() -- now pings this address for
+// real, unlike the pre-#2169 ClustersPath target). Pass
+// unreachableValkeyAddr for tests that don't care whether /readyz's
+// backend ping succeeds; pass a real miniredis address (see
+// IT-FMC-1683-A-002 below) for tests that need Ping()/readyz to succeed.
 //
 // Issue #1993: buildFMCServers now wraps apiMux with auth.NewMiddleware, so
 // every test below needs a k8sClientset (for the middleware's TokenReview/SAR
@@ -96,9 +108,9 @@ func (f *fakeClusterRegistry) Stop()                                       {}
 // and routing wiring, not auth.Middleware's own TokenReview/SAR logic
 // (covered by pkg/shared/auth/k8s_auth_test.go and the real envtest-backed
 // IT-FMC-1993-* cases in test/integration/fleetmetadatacache).
-func testFMCDeps(k8sClientset kubernetes.Interface) *fmcDeps {
+func testFMCDeps(k8sClientset kubernetes.Interface, valkeyAddr string) *fmcDeps {
 	return &fmcDeps{
-		cacheReader:      scopecache.NewValkeyCacheReader("127.0.0.1:1"), // unreachable by design; Ping() failure is fine, these tests don't assert /readyz body content
+		cacheReader:      scopecache.NewValkeyCacheReader(valkeyAddr),
 		clusterRegistry:  &fakeClusterRegistry{},
 		k8sClientset:     k8sClientset,
 		releaseNamespace: "kubernaut-system",
@@ -229,7 +241,7 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		cfg.Server.APIAddr = osAssignedAddr
 		cfg.Server.HealthAddr = osAssignedAddr
 		cfg.Server.MetricsAddr = osAssignedAddr
-		deps = testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"))
+		deps = testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"), unreachableValkeyAddr)
 		ready.Store(true)
 	})
 
@@ -277,28 +289,43 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 			"no cert mounted -- API server must remain plain HTTP (ConfigureConditionalTLS fail-open)")
 	})
 
-	It("IT-FMC-1683-A-002 [SC-8, AC-4, DD-FLEET-004]: fmc.HTTPClient.Ping() succeeds against the TLS-protected API port via /api/v1/clusters, without any liveness handler duplicated onto the API mux", func() {
+	It("IT-FMC-1683-A-002 [SC-8, AC-4, DD-PLATFORM-010]: fmc.HTTPClient.Ping() succeeds against the TLS-protected API port via the unauthenticated /readyz route, reusing fmc.ReadyzHandler rather than a duplicated liveness handler", func() {
+		mr, err := miniredis.Run()
+		Expect(err).ToNot(HaveOccurred(), "miniredis should start so /readyz's backend ping has something real to succeed against")
+		defer mr.Close()
+
 		generateSelfSignedCert(filepath.Join(certDir, "tls.crt"), filepath.Join(certDir, "tls.key"))
 		cfg.Server.TLS.CertDir = certDir
+		readyDeps := testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"), mr.Addr())
 
-		servers := buildFMCServers(cfg, deps, &ready, logr.Discard())
+		servers := buildFMCServers(cfg, readyDeps, &ready, logr.Discard())
 		ln, addr := listenOn()
 		go func() { _ = servers.api.ServeTLS(ln, "", "") }()
 		defer func() { _ = servers.api.Close() }()
 
-		caTrustingClient := bearerHTTPClient("test-caller-token", &http.Transport{
-			TLSClientConfig: &tls.Config{RootCAs: caPoolFromCert(filepath.Join(certDir, "tls.crt"))}, //nolint:gosec // test dials with modern Go defaults
-		})
-		caTrustingClient.Timeout = 5 * time.Second
-		fmcClient := fmc.NewHTTPClient("https://"+addr, fmc.WithHTTPClient(caTrustingClient))
+		// Deliberately no bearer token: DD-PLATFORM-010/#2169's whole point is
+		// that Ping() no longer needs one, unlike a real scope-check/clusters call.
+		caOnlyClient := &http.Client{
+			Timeout: 5 * time.Second,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{RootCAs: caPoolFromCert(filepath.Join(certDir, "tls.crt"))}, //nolint:gosec // test dials with modern Go defaults
+			},
+		}
+		fmcClient := fmc.NewHTTPClient("https://"+addr, fmc.WithHTTPClient(caOnlyClient))
 
 		Expect(fmcClient.Ping(context.Background())).To(Succeed(),
-			"AC-4/#1553: Ping() must still succeed against the API base URL post-split, "+
-				"reusing the real ClustersPath endpoint (DD-FLEET-004) rather than a duplicated /healthz")
+			"DD-PLATFORM-010/#2169: Ping() must succeed against the unauthenticated /readyz route on the "+
+				"TLS-protected API port, with no bearer token and no TokenReview/SAR round-trip, reusing the "+
+				"same fmc.ReadyzHandler that also backs the kubelet probe rather than a duplicated implementation")
 	})
 
-	It("IT-FMC-1683-A-003 [AC-4]: /readyz is served exclusively on the dedicated health port, not the API port", func() {
-		servers := buildFMCServers(cfg, deps, &ready, logr.Discard())
+	It("IT-FMC-1683-A-003 [AC-4, DD-PLATFORM-010]: /readyz on the API port is unauthenticated, while /api/v1/clusters on the same port still requires auth", func() {
+		mr, err := miniredis.Run()
+		Expect(err).ToNot(HaveOccurred(), "miniredis should start so /readyz's backend ping has something real to succeed against")
+		defer mr.Close()
+		readyDeps := testFMCDeps(fakeAuthorizedK8sClient("system:serviceaccount:kubernaut-system:test-caller"), mr.Addr())
+
+		servers := buildFMCServers(cfg, readyDeps, &ready, logr.Discard())
 
 		apiLn, apiAddr := listenOn()
 		go func() { _ = servers.api.Serve(apiLn) }()
@@ -308,23 +335,31 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		go func() { _ = servers.health.Serve(healthLn) }()
 		defer func() { _ = servers.health.Close() }()
 
-		apiResp, err := http.Get("http://" + apiAddr + "/readyz") //nolint:gosec,noctx // test-only probe
+		// DD-PLATFORM-010/#2169: /readyz is now ALSO registered, deliberately
+		// unauthenticated, on the API port -- a second registration of the
+		// same fmc.ReadyzHandler, not a leak of the whole router.
+		apiResp, err := http.Get("http://" + apiAddr + fmc.ReadyzPath) //nolint:gosec,noctx // test-only probe
 		Expect(err).ToNot(HaveOccurred())
 		defer func() { _ = apiResp.Body.Close() }()
-		// Issue #1993: auth.NewMiddleware now gates the API mux and rejects
-		// this token-less request (401) before the mux's own "not
-		// registered on this port" 404 is ever reached -- the underlying
-		// property ("/readyz is not served on the API port") still holds,
-		// just observed as 401 instead of 404 now that auth intercepts first.
-		Expect(apiResp.StatusCode).To(Equal(http.StatusUnauthorized),
-			"AC-4: /readyz must no longer be reachable on the API port after the 3-port split "+
-				"(auth middleware intercepts with 401 before the mux's own 404 is reached)")
+		Expect(apiResp.StatusCode).To(Equal(http.StatusOK),
+			"DD-PLATFORM-010: /readyz on the API port must be reachable with no Authorization header, "+
+				"exactly like the dedicated health port it mirrors")
 
-		healthResp, err := http.Get("http://" + healthAddr + "/readyz") //nolint:gosec,noctx // test-only probe
+		// Guard: the auth exemption must be scoped to /readyz only -- the
+		// real business-data route on the same port must still reject an
+		// unauthenticated request (no accidental exemption of the whole router).
+		clustersResp, err := http.Get("http://" + apiAddr + fmc.ClustersPath) //nolint:gosec,noctx // test-only probe
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = clustersResp.Body.Close() }()
+		Expect(clustersResp.StatusCode).To(Equal(http.StatusUnauthorized),
+			"DD-PLATFORM-010 must scope the auth exemption to /readyz only -- /api/v1/clusters must still "+
+				"reject unauthenticated requests")
+
+		healthResp, err := http.Get("http://" + healthAddr + fmc.ReadyzPath) //nolint:gosec,noctx // test-only probe
 		Expect(err).ToNot(HaveOccurred())
 		defer func() { _ = healthResp.Body.Close() }()
 		Expect(healthResp.StatusCode).To(BeNumerically(">=", http.StatusOK),
-			"/readyz must be routed (not 404) on the dedicated health port")
+			"/readyz must remain routed (not 404) on the dedicated health port -- unaffected by this change")
 		body, _ := io.ReadAll(healthResp.Body)
 		Expect(string(body)).ToNot(BeEmpty())
 	})
@@ -346,8 +381,8 @@ var _ = Describe("buildFMCServers TLS + 3-port wiring (#1683, BR-INTEGRATION-065
 		// Issue #1993: see the matching comment in IT-FMC-1683-A-003 above --
 		// auth middleware now intercepts with 401 before the mux's own 404.
 		Expect(apiResp.StatusCode).To(Equal(http.StatusUnauthorized),
-			"DD-FLEET-004: /healthz must not be registered on the API mux -- only Ping()'s "+
-				"ClustersPath target and the kubelet-only health port serve it "+
+			"DD-FLEET-004: /healthz must not be registered on the API mux -- FMC's cross-service health "+
+				"signal is /readyz now (DD-PLATFORM-010), and /healthz remains kubelet-only on the health port "+
 				"(auth middleware intercepts with 401 before the mux's own 404 is reached)")
 
 		healthResp, err := http.Get("http://" + healthAddr + fmc.HealthzPath) //nolint:gosec,noctx // test-only probe

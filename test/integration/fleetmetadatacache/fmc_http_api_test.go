@@ -279,7 +279,17 @@ var _ = Describe("FMC HTTP API AuthN/Z (Issue #1993, ADR-068)", Ordered, Label("
 			Verb:         "get",
 		}, logr.Discard())
 
-		server = httptest.NewServer(authMiddleware.Handler(mux))
+		// DD-PLATFORM-010 (Issue #2169): mirror buildFMCServers' real
+		// production wiring (cmd/fleetmetadatacache/main.go) exactly --
+		// /readyz is registered at the top level, outside authMiddleware's
+		// wrap, reusing fmc.ReadyzHandler against a real, reachable Valkey
+		// (the suite's shared valkeyAddr container) so the ping succeeds.
+		cacheReader := scopecache.NewValkeyCacheReader(valkeyAddr)
+		topMux := http.NewServeMux()
+		topMux.HandleFunc(fmc.ReadyzPath, fmc.ReadyzHandler(func() bool { return true }, cacheReader))
+		topMux.Handle("/", authMiddleware.Handler(mux))
+
+		server = httptest.NewServer(topMux)
 	})
 
 	AfterAll(func() {
@@ -323,6 +333,27 @@ var _ = Describe("FMC HTTP API AuthN/Z (Issue #1993, ADR-068)", Ordered, Label("
 		Expect(resp.StatusCode).To(Equal(http.StatusOK),
 			"IA-2/AC-3: a ServiceAccount bound to fmc-scope-check-client (mirrors gateway/"+
 				"remediationorchestrator-controller's production ClusterRoleBinding) must reach the handler")
+	})
+
+	It("IT-FMC-2169-001 [AC-4, DD-PLATFORM-010]: /readyz bypasses auth.NewMiddleware entirely, on the real production wiring shape", func() {
+		resp, err := http.Get(server.URL + fmc.ReadyzPath) //nolint:gosec,noctx // test-only probe
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+
+		Expect(resp.StatusCode).To(Equal(http.StatusOK),
+			"DD-PLATFORM-010/#2169: /readyz must be reachable with no Authorization header at all, since it "+
+				"is registered outside auth.NewMiddleware's wrap -- exactly mirroring buildFMCServers' "+
+				"production topMux/apiMux split")
+	})
+
+	It("IT-FMC-2169-002 [IA-2, AC-4]: /api/v1/clusters on the same server still requires auth (no accidental exemption of the whole router)", func() {
+		resp, err := http.Get(server.URL + fmc.ClustersPath) //nolint:gosec,noctx // test-only probe
+		Expect(err).ToNot(HaveOccurred())
+		defer func() { _ = resp.Body.Close() }()
+
+		Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized),
+			"DD-PLATFORM-010 must scope the /readyz auth exemption narrowly -- the real scope-check/clusters "+
+				"API on the same httptest.Server must still reject an unauthenticated request")
 	})
 })
 

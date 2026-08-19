@@ -542,7 +542,7 @@ kubernautAgent:
   # global.fleet.mcpGatewayEndpoint/mcpGatewayType are set, KA's investigator
   # additionally advertises the fleet MCP Gateway's remote-cluster tools
   # (e.g. resources_get) for fleet-tagged investigations, alongside its
-  # local kubectl_* tools (DD-FLEET-004). Before this, KA's Go-side fleet
+  # local kubectl_* tools (DD-FLEET-005). Before this, KA's Go-side fleet
   # client (cmd/kubernautagent/toolregistry.go registerFleetTools) was fully
   # wired but never reachable via Helm at all -- a fleet-tagged investigation
   # would silently fall back to hub-local tools regardless of

@@ -114,7 +114,7 @@ const (
 	EventTypeSecretAccessed = "aiagent.secret.accessed"
 
 	// EventTypeFleetOverlayFailed is emitted when a fleet-target
-	// investigation's FleetOverlayResolver.Overlay call fails (DD-FLEET-004,
+	// investigation's FleetOverlayResolver.Overlay call fails (DD-FLEET-005,
 	// issue #1732). The investigation fails open -- it proceeds without the
 	// remote cluster's tools, behaving like a hub-local investigation minus
 	// remote-cluster access, rather than aborting -- so this event is the

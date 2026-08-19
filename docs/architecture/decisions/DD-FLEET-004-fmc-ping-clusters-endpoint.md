@@ -93,9 +93,73 @@ transient Valkey hiccup on FMC's side does not cascade into GW/RO's own readines
 
 | Component | Production Entry Point | Wiring Code Location | IT Test ID |
 |---|---|---|---|
-| `fmc.HTTPClient.Ping()` → `ClustersPath` | `readiness.ScopeCheckerProber.Probe()` (GW/RO's `readiness.Gate`) | `pkg/fleet/fmc/http_client.go` | `IT-FMC-1683-A-002` |
+| `fmc.HTTPClient.Ping()` → `ReadyzPath` (amended, see below) | `readiness.ScopeCheckerProber.Probe()` (GW/RO's `readiness.Gate`) | `pkg/fleet/fmc/http_client.go` | `IT-FMC-1683-A-002` |
 | `/healthz` health-port-only registration | `buildFMCServers` | `cmd/fleetmetadatacache/main.go` | `IT-FMC-1683-A-004` |
 
 ## Authority
 
 Issue #1683, Issue #1553, ADR-068, BR-INTEGRATION-065.
+
+---
+
+## Amendment (2026-08-18, Issue #2169 / `DD-PLATFORM-010`)
+
+**Amended, not superseded**: `Ping()`'s target moves from `ClustersPath` to `ReadyzPath`
+(`/readyz`). This section records why, and explicitly calls out a semantic change to the
+readiness signal that the original decision above did not anticipate.
+
+### What changed and why
+
+`DD-PLATFORM-010` established a fleet-wide standard: cross-service readiness checks must use a
+dedicated, unauthenticated `/readyz` route on the already-open business port, never a real
+business-data endpoint. Issue #1993/`DD-AUTH-014` had, after this DD was originally written,
+added TokenReview+SAR authentication to FMC's entire `apiMux` -- including `ClustersPath` -- so
+every 15s `Ping()` poll from GW/RO was silently paying a live, uncached authn/authz round-trip
+to `kube-apiserver`, a cost this DD's original NetworkPolicy-only analysis never accounted for.
+`ClustersPath` itself is unchanged and remains the correct target for real scope-check/cluster-list
+data queries -- only the health-check *target* moves.
+
+### Semantic consequence: shallow liveness becomes deep readiness (deliberate)
+
+The original decision above justified `ClustersPath` partly because `handleListClusters` "only
+reads FMC's in-memory `ClusterRegistry` -- no Valkey round-trip", preserving a **shallow**
+liveness signal that would not cascade a transient FMC-side Valkey hiccup into GW/RO's
+fail-closed readiness gate (Issue #1553/ADR-068). `fmc.ReadyzHandler` -- the handler `Ping()` now
+targets -- pings `deps.cacheReader` (a real Valkey backend), making this a **deep** check: a
+Valkey outage inside FMC will now correctly flip GW/RO's readiness to `NotReady`.
+
+This is intentional, not an overlooked regression, confirmed by precedent already shipped under
+`DD-PLATFORM-010` for DataStorage: DataStorage's own `/readyz` (`pkg/datastorage/server/handlers.go`'s
+`handleReadiness`) pings both Postgres and Redis/DLQ, and that exact deep check is what
+`pkg/audit.DataStorageProber` polls to gate all 10 audit-writing services' own readiness
+(`BR-AUDIT-005 v2.0`) -- explicitly to close an audit-loss window, i.e. cascading `NotReady` on a
+backend outage is the intended fail-closed behavior, not a side effect to avoid. Retargeting
+FMC's `Ping()` to its own deep `/readyz` makes FMC consistent with that already-accepted pattern
+rather than an outlier: a scope-check backend that cannot reach its own cache genuinely cannot
+answer scope checks correctly, so signaling `NotReady` to GW/RO is the correct, not merely
+tolerable, outcome.
+
+### Updated consequences
+
+- **Positive**: `Ping()` no longer pays a TokenReview/SAR round-trip per poll (the problem this
+  amendment fixes).
+- **Positive**: FMC's cross-service readiness signal is now consistent with the DataStorage
+  precedent under the same fleet-wide standard (`DD-PLATFORM-010`).
+- **Changed (intentional)**: `Ping()`'s failure mode now includes FMC's own Valkey reachability,
+  not just FMC's process liveness/registry state. GW/RO's readiness gate (Issue #1553/ADR-068)
+  will cascade to `NotReady` on an FMC-side Valkey outage where it previously would not have.
+- **Unchanged**: `ClustersPath` remains authenticated and unchanged for real data queries;
+  `Ping()`'s call signature and nil/err success contract are unchanged; the health port (8081)
+  and NetworkPolicy topology are unchanged (`/readyz` rides the already-open API port 8080).
+
+### Updated Wiring Manifest
+
+| Component | Production Entry Point | Wiring Code Location | IT Test ID |
+|---|---|---|---|
+| `fmc.HTTPClient.Ping()` → `ReadyzPath` | `readiness.ScopeCheckerProber.Probe()` (GW/RO's `readiness.Gate`) | `pkg/fleet/fmc/http_client.go` | `IT-FMC-1683-A-002` (updated) |
+| FMC unauthenticated `/readyz` on API port 8080 | `buildFMCServers`'s `topMux` | `cmd/fleetmetadatacache/main.go` | `IT-FMC-1683-A-003` (updated), `IT-FMC-2169-001/002` |
+
+### Authority (amendment)
+
+Issue #2169, `DD-PLATFORM-010`, `pkg/audit.DataStorageProber` (DataStorage precedent),
+`BR-AUDIT-005 v2.0`.
