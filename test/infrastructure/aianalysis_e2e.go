@@ -625,6 +625,20 @@ rules:
 - apiGroups: ["kubernaut.ai"]
   resources: ["investigationsessions/status"]
   verbs: ["get", "update", "patch"]
+# AgentSessionCreator.GetOrCreate (DD-AA-KA-001, BR-AA-KA-065.1): mirrors the
+# production Helm chart's aianalysis-controller ClusterRole
+# (charts/kubernaut/templates/aianalysis/aianalysis.yaml) -- "create" for the
+# initial dispatch write, "get"/"list"/"watch" so AA's own AgentSession
+# EventSource informer can sync. Missing this grant here (this hand-rolled
+# E2E manifest had drifted from the Helm chart) is why the controller's cache
+# never synced: it retried "agentsessions is forbidden" every few seconds
+# until controller-runtime's 2-minute CacheSyncTimeout killed mgr.Start(),
+# crash-looping the whole aianalysis-controller pod (CI run 32280464090,
+# "E2E (aianalysis)": 34/36 specs failed, including trivial health checks --
+# consistent with the pod never becoming Ready at all).
+- apiGroups: ["kubernaut.ai"]
+  resources: ["agentsessions"]
+  verbs: ["get", "list", "watch", "create"]
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]
