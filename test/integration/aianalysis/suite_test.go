@@ -37,7 +37,7 @@ limitations under the License.
 // - Redis (port 16384): Caching layer
 // - Data Storage API (port 18095): Audit trail
 // - Mock LLM Service (port 18141): Standalone OpenAI-compatible mock (AIAnalysis-specific)
-// - KA (port 18120): AI analysis service (uses Mock LLM at 18141)
+// - KA (port 18200 + (processNum-1)*10, per-process): AI analysis service (uses Mock LLM at 18141)
 //
 // Per-Process Setup (Phase 2, all processes):
 // - envtest: In-memory Kubernetes API server (per process)
@@ -183,7 +183,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	GinkgoWriter.Println("  • Redis (port 16384)")
 	GinkgoWriter.Println("  • Data Storage API (port 18095)")
 	GinkgoWriter.Println("  • Mock LLM Service (port 18141 - AIAnalysis-specific)")
-	GinkgoWriter.Println("  • KA HTTP service (port 18120, uses Mock LLM)")
+	GinkgoWriter.Println("  • KA HTTP service (per-process, base port 18200, uses Mock LLM)")
 	GinkgoWriter.Println("")
 	GinkgoWriter.Println("Phase 2 will create PER-PROCESS (all processes):")
 	GinkgoWriter.Println("  • envtest (in-memory K8s API server)")
@@ -376,7 +376,7 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	// NOTE: Cleanup moved to SynchronizedAfterSuite (cannot use DeferCleanup in first function)
 
 	By("Starting Mock LLM service with configuration file (DD-TEST-011 v2.0)")
-	// Per DD-TEST-001 v2.3: Port 18141 (AIAnalysis-specific, unique from KA's 18140)
+	// Per DD-TEST-001 v2.3: Port 18141 (AIAnalysis-specific, unique from KA's per-process 18200+)
 	// Per MOCK_LLM_MIGRATION_PLAN.md v1.3.0: Standalone service for test isolation
 	mockLLMConfig = infrastructure.GetMockLLMConfigForAIAnalysis()
 	mockLLMConfig.ImageTag = mockLLMImageName        // Use the built image tag
@@ -1089,18 +1089,29 @@ func startPerProcessKubernautAgent(processNum int, cfg *rest.Config, kaImageName
 	// share the host network namespace (Linux CI) or are individually
 	// port-mapped (macOS bridge network, mapped N:N so KA's own config file
 	// and the health-check URL agree regardless of platform).
-	kaPort := 18120 + (processNum-1)*10
+	//
+	// Base 18200 (not 18120): CI RCA (run 32220596605, "Integration
+	// (aianalysis)" job) found process 3's kaHealthPort landing on 18141 --
+	// the exact same fixed port as this suite's own shared Mock LLM
+	// (infrastructure.MockLLMPortAIAnalysis), which process 3's KA container
+	// then failed to bind ("listen tcp :18141: bind: address already in
+	// use"), stalling SynchronizedBeforeSuite until timeout. 18200+ clears
+	// every fixed port this suite allocates (PostgreSQL 15438, Redis 16384,
+	// DataStorage 18095/19095, Mock LLM 18141) for any realistic TEST_PROCS.
+	kaPort := 18200 + (processNum-1)*10
 	kaHealthPort := kaPort + 1
 	kaMetricsPort := kaPort + 2
 
 	mockLLMCfg := infrastructure.GetMockLLMConfigForAIAnalysis()
-	var llmEndpoint, dsURL string
+	var llmEndpoint, dsURL, dsHealthURL string
 	if useHostNetworkForKA {
 		llmEndpoint = fmt.Sprintf("http://127.0.0.1:%d", mockLLMCfg.Port)
 		dsURL = "http://127.0.0.1:18095"
+		dsHealthURL = "http://127.0.0.1:19095/readyz"
 	} else {
 		llmEndpoint = infrastructure.GetMockLLMContainerEndpoint(mockLLMCfg)
 		dsURL = "http://host.containers.internal:18095"
+		dsHealthURL = "http://host.containers.internal:19095/readyz"
 	}
 
 	kaConfigContent := fmt.Sprintf(`runtime:
@@ -1124,7 +1135,8 @@ ai:
 integrations:
   dataStorage:
     url: "%s"
-`, kaPort, kaHealthPort, kaMetricsPort, dsURL)
+    healthUrl: "%s"
+`, kaPort, kaHealthPort, kaMetricsPort, dsURL, dsHealthURL)
 	kaConfigPath := filepath.Join(kaConfigDir, "config.yaml")
 	Expect(os.WriteFile(kaConfigPath, []byte(kaConfigContent), 0644)).To(Succeed())
 
