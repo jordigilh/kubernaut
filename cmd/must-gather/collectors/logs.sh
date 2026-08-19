@@ -107,6 +107,22 @@ collect_namespace_pod_logs() {
 collect_namespace_pod_logs "${RELEASE_NAMESPACE}" "false"
 collect_namespace_pod_logs "${OPERATOR_NAMESPACE}" "true"
 
+# Issue #2036: mesh/gateway infra namespaces (Kuadrant's mcp-system/
+# gateway-system/istio-system, Envoy AI Gateway's envoy-gateway-system/
+# envoy-ai-gateway-system) that DeployFleetCoreInfra creates outside
+# RELEASE_NAMESPACE/WORKFLOW_NAMESPACE/OPERATOR_NAMESPACE. EXTRA_NAMESPACES_CSV
+# is a scalar (comma-joined) env var, not a bash array: gather.sh runs this
+# collector as a separate `bash logs.sh` subprocess, and bash arrays cannot
+# cross that boundary via export -- only scalar strings can. All treated as
+# optional ("true"): which mesh (if any) is deployed varies per E2E lane.
+if [ -n "${EXTRA_NAMESPACES_CSV:-}" ]; then
+    IFS=',' read -ra EXTRA_NAMESPACES <<< "${EXTRA_NAMESPACES_CSV}"
+    for extra_ns in "${EXTRA_NAMESPACES[@]}"; do
+        [ -z "${extra_ns}" ] && continue
+        collect_namespace_pod_logs "${extra_ns}" "true"
+    done
+fi
+
 # Count total logs collected
 TOTAL_LOGS=$(find "${LOGS_DIR}" -name "*.log" 2>/dev/null | wc -l || echo "0")
 echo "Service logs collection complete (${TOTAL_LOGS} log files)"

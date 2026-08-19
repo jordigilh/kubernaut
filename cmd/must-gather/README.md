@@ -163,6 +163,11 @@ kubernaut-must-gather-20260104-123456/
 │       ├── operator-pods.yaml
 │       ├── configmaps.yaml
 │       └── *.log
+├── jobs/
+│   ├── all-jobs.yaml
+│   └── <job-name>/
+│       ├── spec.yaml
+│       └── logs.txt
 ├── datastorage/
 │   ├── workflows.json (50 workflows)
 │   └── audit-events.json (1000 events, 24h)
@@ -223,6 +228,9 @@ rules:
   verbs: ["get", "list"]
 - apiGroups: ["apps"]
   resources: ["deployments", "replicasets", "statefulsets", "daemonsets"]
+  verbs: ["get", "list"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
   verbs: ["get", "list"]
 - apiGroups: ["kubernaut.ai"]
   resources: ["*"]

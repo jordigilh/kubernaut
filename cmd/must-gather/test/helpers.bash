@@ -167,6 +167,43 @@ if [[ "\$*" == *"get events"* ]]; then
     exit 0
 fi
 
+# Check for Job name listing (must-gather jobs.sh collector, Issue #2036):
+# "kubectl get jobs -n WORKFLOW_NAMESPACE --no-headers" -- must be checked
+# before the bulk "get jobs ... -o yaml" branch below, which is a different
+# output shape (plural "jobs", same as the no-headers query).
+if [[ "\$*" == *"get jobs"* ]] && [[ "\$*" == *"--no-headers"* ]]; then
+    if [ -f "${TEST_TEMP_DIR}/job-names.txt" ]; then
+        cat "${TEST_TEMP_DIR}/job-names.txt"
+        exit 0
+    else
+        exit 0
+    fi
+fi
+
+# Check for bulk Jobs listing (must-gather jobs.sh collector, Issue #2036):
+# "kubectl get jobs -n WORKFLOW_NAMESPACE -o yaml" (plural -- all Jobs).
+if [[ "\$*" == "get jobs "* ]] && [[ "\$*" == *"-o yaml"* ]]; then
+    if [ -f "${TEST_TEMP_DIR}/jobs-list.yaml" ]; then
+        cat "${TEST_TEMP_DIR}/jobs-list.yaml"
+        exit 0
+    else
+        echo "---"
+        exit 1
+    fi
+fi
+
+# Check for single Job spec (must-gather jobs.sh collector, Issue #2036):
+# "kubectl get job NAME -n WORKFLOW_NAMESPACE -o yaml" (singular -- one Job).
+if [[ "\$*" == "get job "* ]] && [[ "\$*" == *"-o yaml"* ]]; then
+    if [ -f "${TEST_TEMP_DIR}/job-spec.yaml" ]; then
+        cat "${TEST_TEMP_DIR}/job-spec.yaml"
+        exit 0
+    else
+        echo "---"
+        exit 1
+    fi
+fi
+
 # Check for logs
 if [[ "\$*" == *"logs"* ]]; then
     echo "Mock log output for testing"
@@ -306,6 +343,65 @@ create_mock_operator_pod_names_list() {
     touch "${TEST_TEMP_DIR}/operator-ns-present"
     cat > "${TEST_TEMP_DIR}/operator-pod-names.txt" <<'EOF'
 kubernaut-operator-controller-manager-abc123   1/1   Running   0   5m
+EOF
+}
+
+# Create mock "kubectl get jobs -n WORKFLOW_NAMESPACE --no-headers" plain-text
+# response (Issue #2036: jobs.sh Job-name discovery, mirrors
+# create_mock_pod_names_list's column shape).
+create_mock_job_names_list() {
+    cat > "${TEST_TEMP_DIR}/job-names.txt" <<'EOF'
+wfe-deployment-frontend-abc123   1/1   3m   5m
+wfe-statefulset-cache-xyz789   0/1   -    2m
+EOF
+}
+
+# Create mock "kubectl get jobs -n WORKFLOW_NAMESPACE -o yaml" bulk response
+# (Issue #2036: jobs.sh all-jobs.yaml content).
+create_mock_jobs_list_yaml() {
+    cat > "${TEST_TEMP_DIR}/jobs-list.yaml" <<'EOF'
+apiVersion: v1
+kind: List
+items:
+- apiVersion: batch/v1
+  kind: Job
+  metadata:
+    name: wfe-deployment-frontend-abc123
+    namespace: kubernaut-workflows
+  status:
+    failed: 1
+    conditions:
+    - type: Failed
+      status: "True"
+      reason: BackoffLimitExceeded
+- apiVersion: batch/v1
+  kind: Job
+  metadata:
+    name: wfe-statefulset-cache-xyz789
+    namespace: kubernaut-workflows
+  status:
+    active: 1
+EOF
+}
+
+# Create mock "kubectl get job NAME -n WORKFLOW_NAMESPACE -o yaml" single-Job
+# response (Issue #2036: jobs.sh per-Job spec.yaml content).
+create_mock_job_spec_yaml() {
+    cat > "${TEST_TEMP_DIR}/job-spec.yaml" <<'EOF'
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: wfe-deployment-frontend-abc123
+  namespace: kubernaut-workflows
+spec:
+  backoffLimit: 0
+status:
+  failed: 1
+  conditions:
+  - type: Failed
+    status: "True"
+    reason: BackoffLimitExceeded
+    message: "Job has reached the specified backoff limit"
 EOF
 }
 
