@@ -203,7 +203,14 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 30*time.Second, 2*time.Second).Should(Equal("Completed"),
+			// #2204: bumped 30s->90s. A per-process KA container serves every
+			// spec run against it, not just this one -- when several specs'
+			// AgentSessions land on it in a short burst, KA legitimately runs
+			// multiple real LLM-tool-loop investigations concurrently, and any
+			// one of them can take longer than a short fixed timeout waits for.
+			// This is the tightest timeout in the file despite its own message
+			// already claiming "within 90 seconds" -- the literal never matched.
+			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"),
 				"Controller should complete full workflow within 90 seconds")
 
 			By("Verifying complete audit trail in Data Storage")
@@ -473,10 +480,11 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 60*time.Second, 2*time.Second).Should(Or(
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 2*time.Second).Should(Or(
 				Equal("Analyzing"),
 				Equal("Completed"),
-			), "Controller should complete investigation within 60 seconds")
+			), "Controller should complete investigation within 90 seconds")
 
 			By("Verifying AI agent call was automatically audited")
 
@@ -685,8 +693,9 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 60*time.Second, 2*time.Second).Should(Equal("Completed"),
-				"Controller should complete analysis within 60 seconds")
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"),
+				"Controller should complete analysis within 90 seconds")
 
 			By("Verifying approval decision was automatically audited")
 
@@ -796,7 +805,8 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 60*time.Second, 2*time.Second).Should(Equal("Completed"),
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"),
 				"Controller should complete analysis with Rego evaluation")
 
 			By("Verifying Rego evaluation was automatically audited")
@@ -909,7 +919,8 @@ var _ = Describe("AIAnalysis Controller Audit Flow Integration - BR-AI-050", Lab
 					return ""
 				}
 				return analysis.Status.Phase
-			}, 60*time.Second, 2*time.Second).Should(Equal("Completed"))
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 2*time.Second).Should(Equal("Completed"))
 
 			By("Verifying phase transitions were automatically audited")
 

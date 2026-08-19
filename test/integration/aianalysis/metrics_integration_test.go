@@ -147,7 +147,12 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return ""
 				}
 				return updated.Status.Phase
-			}, 60*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
+			// #2204: bumped 60s->90s. A per-process KA container serves every
+			// spec run against it; when several specs' AgentSessions land on
+			// it in a short burst, KA legitimately runs multiple real
+			// LLM-tool-loop investigations concurrently, and any one of them
+			// can take longer than a short fixed timeout waits for.
+			}, 90*time.Second, 500*time.Millisecond).Should(Equal("Completed"))
 
 		})
 
@@ -201,7 +206,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return ""
 				}
 				return updated.Status.Phase
-			}, 60*time.Second, 500*time.Millisecond).Should(Equal("Completed"),
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 500*time.Millisecond).Should(Equal("Completed"),
 				"AIAnalysis should complete successfully with mock returning success")
 
 			// 4. Verify failure metrics were NOT incremented
@@ -263,7 +269,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return false
 				}
 				return updated.Status.Phase == "AwaitingApproval" || updated.Status.Phase == "Completed"
-			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue())
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 			// 3. Verify approval decision metrics were emitted
 			Eventually(func() float64 {
@@ -325,7 +332,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return false
 				}
 				return updated.Status.GetRCAResult().SelectedWorkflow != nil
-			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue())
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 			// 3. Verify confidence score histogram was populated
 			Eventually(func() int {
@@ -381,7 +389,8 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 					return ""
 				}
 				return updated.Status.Phase
-			}, 60*time.Second, 500*time.Millisecond).Should(Or(Equal("Completed"), Equal("AwaitingApproval")))
+			// #2204: bumped 60s->90s (dispatch-backlog headroom, see comment above).
+			}, 90*time.Second, 500*time.Millisecond).Should(Or(Equal("Completed"), Equal("AwaitingApproval")))
 
 			// 3. Verify Rego evaluation metrics were emitted
 			Eventually(func() float64 {
