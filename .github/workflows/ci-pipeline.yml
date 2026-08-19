@@ -1017,6 +1017,11 @@ jobs:
       # if a given service's image wasn't loaded (non-fatal, just slower).
       KUBERNAUT_CI_ARTIFACT_TAG: ${{ needs.build-images.outputs.tag }}
       E2E_COVERAGE: true  # Enable coverage instrumentation for local builds (GOFLAGS=-cover)
+      # TEMPORARY (Issue #2036 rollout validation -- REVERT before merge): forces
+      # every suite's must-gather AfterSuite path to run even on a passing run,
+      # so the resulting artifact can be inspected across all 15 E2E jobs in one
+      # real CI pass instead of waiting for/injecting a genuine failure in each.
+      E2E_FORCE_MUST_GATHER_VALIDATION: true
     strategy:
       fail-fast: false
       matrix:
@@ -1213,7 +1218,12 @@ jobs:
           if-no-files-found: ignore
 
       - name: Collect must-gather logs on failure
-        if: failure() || cancelled()
+        # TEMPORARY (Issue #2036 rollout validation -- REVERT before merge):
+        # always() instead of failure()||cancelled(), paired with
+        # E2E_FORCE_MUST_GATHER_VALIDATION above, so this run exercises and
+        # uploads every one of the 15 E2E suites' must-gather bundles for
+        # manual inspection even though the suites themselves pass.
+        if: always()
         run: |
           echo "📋 Collecting must-gather logs for triage..."
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
@@ -1271,7 +1281,9 @@ jobs:
             fi
           fi
       - name: Upload must-gather logs as artifacts
-        if: failure() || cancelled()
+        # TEMPORARY (Issue #2036 rollout validation -- REVERT before merge):
+        # see "Collect must-gather logs on failure" above.
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: must-gather-logs-e2e-${{ matrix.service }}-${{ github.run_id }}
