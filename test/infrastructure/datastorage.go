@@ -118,21 +118,9 @@ func CleanupFailureMarker(clusterName string) {
 func ResolveAnyFailure(clusterName string, setupFailed, anyTestFailed bool, writer io.Writer) bool {
 	checkTestFailure := CheckTestFailure(clusterName)
 	anyFailure := setupFailed || anyTestFailed || checkTestFailure
-
-	// TEMPORARY (Issue #2036 rollout validation, remove after CI run confirms
-	// every E2E suite's must-gather AfterSuite path works on a real CI
-	// runner): forces the must-gather collection path to run even on a
-	// passing suite, so the resulting artifact can be inspected without
-	// waiting for/injecting a genuine failure in each of the 15 E2E jobs.
-	// Never set outside of that one-off validation CI run.
-	forcedForValidation := os.Getenv("E2E_FORCE_MUST_GATHER_VALIDATION") == "true"
-	if forcedForValidation {
-		anyFailure = true
-	}
-
 	_, _ = fmt.Fprintf(writer,
-		"🔎 Failure detection: cluster=%s setupFailed=%v anyTestFailed(local)=%v checkTestFailure(marker)=%v forcedForValidation=%v => anyFailure=%v\n",
-		clusterName, setupFailed, anyTestFailed, checkTestFailure, forcedForValidation, anyFailure)
+		"🔎 Failure detection: cluster=%s setupFailed=%v anyTestFailed(local)=%v checkTestFailure(marker)=%v => anyFailure=%v\n",
+		clusterName, setupFailed, anyTestFailed, checkTestFailure, anyFailure)
 	return anyFailure
 }
 
