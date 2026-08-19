@@ -39,30 +39,40 @@ import (
 // internal/kubernautagent/server/handler.go's MapIncidentRequestToSignal.
 func MapSpecToSignal(spec agentsessionv1.AgentSessionSpec) katypes.SignalContext {
 	sc := katypes.SignalContext{
-		Name:                   spec.SignalName,
-		Namespace:              spec.ResourceNamespace,
-		Severity:               spec.Severity,
-		Message:                spec.ErrorMessage,
-		IncidentID:             spec.IncidentID,
-		RemediationID:          spec.RemediationID,
-		ResourceKind:           spec.ResourceKind,
-		ResourceName:           spec.ResourceName,
-		ResourceAPIVersion:     spec.ResourceAPIVersion,
-		ClusterName:            spec.ClusterName,
-		Environment:            spec.Environment,
-		Priority:               spec.Priority,
-		RiskTolerance:          spec.RiskTolerance,
-		SignalSource:           spec.SignalSource,
-		BusinessCategory:       spec.BusinessCategory,
-		Description:            spec.Description,
-		SignalMode:             strings.ToLower(spec.SignalMode),
-		ClusterClassification:  spec.Cluster,
-		FiringTime:             spec.FiringTime,
-		ReceivedTime:           spec.ReceivedTime,
-		FirstSeen:              spec.FirstSeen,
-		LastSeen:               spec.LastSeen,
-		SignalAnnotations:      spec.SignalAnnotations,
-		SignalLabels:           spec.SignalLabels,
+		Name:               spec.SignalName,
+		Namespace:          spec.ResourceNamespace,
+		Severity:           spec.Severity,
+		Message:            spec.ErrorMessage,
+		IncidentID:         spec.IncidentID,
+		RemediationID:      spec.RemediationID,
+		ResourceKind:       spec.ResourceKind,
+		ResourceName:       spec.ResourceName,
+		ResourceAPIVersion: spec.ResourceAPIVersion,
+		ClusterName:        spec.ClusterName,
+		Environment:        spec.Environment,
+		Priority:           spec.Priority,
+		RiskTolerance:      spec.RiskTolerance,
+		SignalSource:       spec.SignalSource,
+		BusinessCategory:   spec.BusinessCategory,
+		Description:        spec.Description,
+		SignalMode:         strings.ToLower(spec.SignalMode),
+		// CI RCA (run 32220596605, E2E-FLEET-017/018): spec.ClusterName was
+		// only mapped into sc.ClusterName above, never into sc.ClusterID --
+		// the field prescopeFleetOverlay (fleet_overlay.go) actually reads
+		// to resolve the per-investigation fleet tool overlay. Every
+		// fleet-target investigation dispatched via AgentSession silently
+		// fell back to hub-local tools regardless of cluster_id. Mirrors
+		// the retired HTTP path's MapIncidentRequestToSignal
+		// (internal/kubernautagent/server/handler.go), which mapped
+		// req.ClusterName into both fields for exactly this reason.
+		ClusterID:             spec.ClusterName,
+		ClusterClassification: spec.Cluster,
+		FiringTime:            spec.FiringTime,
+		ReceivedTime:          spec.ReceivedTime,
+		FirstSeen:             spec.FirstSeen,
+		LastSeen:              spec.LastSeen,
+		SignalAnnotations:     spec.SignalAnnotations,
+		SignalLabels:          spec.SignalLabels,
 		// Interactive is deliberately NOT mapped here (DD-AA-KA-001
 		// Amendment Gap 1): Spec has no Interactive field. The dispatcher
 		// sets sc.Interactive itself, from its own dispatch-time
@@ -91,12 +101,12 @@ func MapSpecToSignal(spec agentsessionv1.AgentSessionSpec) katypes.SignalContext
 func MapInvestigationResultToAgentSessionResult(log logr.Logger, r *katypes.InvestigationResult, incidentID string) *agentsessionv1.AgentSessionResult {
 	res := &agentsessionv1.AgentSessionResult{
 		IncidentID:        incidentID,
-		Analysis:           r.RCASummary,
-		Confidence:         r.Confidence,
-		Timestamp:          time.Now().UTC().Format(time.RFC3339),
-		RootCauseAnalysis:  marshalJSON(buildRootCauseAnalysisMap(r)),
-		NeedsHumanReview:   r.HumanReviewNeeded,
-		Warnings:           buildWarnings(r),
+		Analysis:          r.RCASummary,
+		Confidence:        r.Confidence,
+		Timestamp:         time.Now().UTC().Format(time.RFC3339),
+		RootCauseAnalysis: marshalJSON(buildRootCauseAnalysisMap(r)),
+		NeedsHumanReview:  r.HumanReviewNeeded,
+		Warnings:          buildWarnings(r),
 	}
 
 	applyHumanReviewReason(res, log, r)

@@ -79,6 +79,14 @@ var _ = Describe("MapSpecToSignal — BR-AA-KA-065.2", func() {
 			Expect(sc.ResourceName).To(Equal("web-0"))
 			Expect(sc.ResourceAPIVersion).To(Equal("v1"))
 			Expect(sc.ClusterName).To(Equal("cluster-a"))
+			// CI RCA (run 32220596605, E2E-FLEET-017/018): ClusterID -- not
+			// ClusterName -- is the field prescopeFleetOverlay
+			// (internal/kubernautagent/investigator/fleet_overlay.go) reads
+			// to resolve the per-investigation fleet tool overlay. Mirrors
+			// the retired HTTP path's MapIncidentRequestToSignal
+			// (internal/kubernautagent/server/handler.go), which mapped
+			// req.ClusterName into both ClusterName and ClusterID.
+			Expect(sc.ClusterID).To(Equal("cluster-a"))
 			Expect(sc.ClusterClassification).To(Equal("fleet-prod"))
 			Expect(sc.Environment).To(Equal("production"))
 			Expect(sc.Priority).To(Equal("P1"))
