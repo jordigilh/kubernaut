@@ -233,8 +233,28 @@ func StartGenericContainer(cfg GenericContainerConfig, writer io.Writer) (*Conta
 	// because these host paths are commonly mounted read-only into more
 	// than one per-process container (e.g. envtest kubeconfig shared by
 	// DataStorage and the per-process KA container).
+	//
+	// CI RCA (2026-08-19, "Integration (fleetmetadatacache)" job,
+	// IT-FLEET-EAIGW-001, confirmed via `podman inspect` on helios08): the
+	// short `-v` form is host:container[:options], colon-delimited -- a
+	// COMMA before "z" (as this line previously read, "%s:%s,z") is not a
+	// field separator at all, so podman folds ",z" into the *container
+	// path* itself instead of parsing it as the relabel option (observed
+	// firsthand: `podman inspect` reported the actual bind Destination as
+	// the literal string "/etc/aigw,z", not "/etc/aigw"). Every container
+	// started through this function ends up bind-mounted one path off
+	// from what its own Cmd/config expects it to read, silently, with no
+	// error from podman itself -- only surfaced once EAIGWImage's `aigw`
+	// process failed fast with "no such file or directory" trying to open
+	// the (correct, comma-free) path it was told to use. Introduced by
+	// 7da8fa4fac ("fix(test-infra): add SELinux relabel to podman bind
+	// mounts", this same PR) -- a same-PR regression, not a pre-existing
+	// or external flake, despite passing intermittently elsewhere in this
+	// PR's own CI history (destinations that happen to already exist as a
+	// directory, or whose owning process tolerates/recreates a missing
+	// file, mask the same off-by-one-field mount on other services).
 	for hostPath, containerPath := range cfg.Volumes {
-		args = append(args, "-v", fmt.Sprintf("%s:%s,z", hostPath, containerPath))
+		args = append(args, "-v", fmt.Sprintf("%s:%s:z", hostPath, containerPath))
 	}
 
 	// Add image
