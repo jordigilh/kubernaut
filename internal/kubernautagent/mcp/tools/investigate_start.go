@@ -226,6 +226,9 @@ func (t *InvestigateTool) startInteractiveSession(ctx context.Context, input Inv
 func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context, input InvestigateInput, user mcpinternal.UserInfo) (string, bool) {
 	autoSessionID, found := t.autoMgr.FindByRemediationID(input.RRID)
 	if !found {
+		autoSessionID, found = t.waitForRaceyDispatch(ctx, input.RRID)
+	}
+	if !found {
 		// No Running session exists for this RR — reattach to an existing
 		// user_driving session or a completed session's real RCA, or create
 		// a genuine placeholder, so the user is never left with a lease but
@@ -264,6 +267,75 @@ func (t *InvestigateTool) upgradeOrCreateInteractiveSession(ctx context.Context,
 		return reattachedID, false
 	}
 	return autoSessionID, false
+}
+
+// raceyDispatchPollInterval/MaxAttempts bound waitForRaceyDispatch's total
+// wait budget to ~1.2s (6 x 200ms). Short and fixed rather than
+// context-deadline-based: this closes a same-process registration race (AA
+// creates an AgentSession -> KA's own dispatcher goroutine, running in this
+// same process, picks it up and registers it in session.Manager), which
+// resolves in low-single-digit milliseconds under normal load -- 1.2s is
+// already a generous margin for CI-level scheduling jitter, not a
+// network-latency budget.
+const (
+	raceyDispatchPollInterval = 200 * time.Millisecond
+	raceyDispatchMaxAttempts  = 6
+)
+
+// waitForRaceyDispatch closes the race window between AA creating (and
+// KA's own dispatcher starting to process) an AgentSession for rrID, and a
+// concurrent MCP action=start call finding nothing yet in session.Manager's
+// in-memory cache purely because the dispatcher hasn't finished registering
+// it there yet.
+//
+// Confirmed via CI must-gather evidence (run 32188463924, E2E-FLEET-018 and
+// the apifrontend E2E suite): before this guard, upgradeOrCreateInteractiveSession
+// treated "not found in session.Manager yet" as indistinguishable from
+// "genuinely no AgentSession exists or ever will," and fell straight to
+// createFreshInteractiveSession -- which starts a second, independent,
+// competing RunFullInvestigation call for the same RR. That duplicate ran
+// without the dispatcher's own AgentSession-driven cluster/fleet-overlay
+// context, produced generic enrichment-failure RCA content, and polluted
+// the shared conversation history the real (AA-dispatched) investigation
+// and any later interactive turn both read from -- observed directly in
+// KA's pod log as createFreshInteractiveSession.func1's enrichment errors
+// for a target that only existed on a remote cluster the duplicate never
+// fleet-scoped to.
+//
+// Only fires when t.agentSessionExists is wired (production always wires
+// it via WithAgentSessionExistenceChecker, cmd/kubernautagent/routes.go) --
+// a nil checker preserves the pre-existing immediate-fallback behavior
+// exactly, so unit tests that don't need this guard are unaffected.
+func (t *InvestigateTool) waitForRaceyDispatch(ctx context.Context, rrID string) (string, bool) {
+	if t.agentSessionExists == nil {
+		return "", false
+	}
+	exists, err := t.agentSessionExists.AgentSessionExists(ctx, rrID)
+	if err != nil {
+		t.logger.Error(err, "start: check AgentSession existence for race guard failed (proceeding as genuinely fresh)",
+			"rr_id", rrID)
+		return "", false
+	}
+	if !exists {
+		// No AgentSession anywhere for this RR: genuinely fresh, not a
+		// race. createFreshInteractiveSession is the correct path.
+		return "", false
+	}
+	for attempt := 0; attempt < raceyDispatchMaxAttempts; attempt++ {
+		select {
+		case <-ctx.Done():
+			return "", false
+		case <-time.After(raceyDispatchPollInterval):
+		}
+		if autoSessionID, found := t.autoMgr.FindByRemediationID(rrID); found {
+			return autoSessionID, true
+		}
+	}
+	// AgentSession CRD exists but never registered in session.Manager
+	// within the wait budget (e.g. its dispatch is itself stuck/erroring,
+	// not merely slow) -- fall through to the existing fallback chain
+	// rather than waiting indefinitely.
+	return "", false
 }
 
 // reattachOrCreateFallback resolves the investigation session the user

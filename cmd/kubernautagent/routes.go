@@ -32,6 +32,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
+	agentsessionv1 "github.com/jordigilh/kubernaut/api/agentsession/v1alpha1"
 	remediationv1 "github.com/jordigilh/kubernaut/api/remediation/v1alpha1"
 	dsmodels "github.com/jordigilh/kubernaut/pkg/datastorage/models"
 	auth "github.com/jordigilh/kubernaut/pkg/shared/auth"
@@ -439,6 +440,14 @@ func buildAndRegisterMCPTools(core *mcpCoreDeps, p mcpHandlerParams) (mcpkg.Tool
 	// HARM-004: Validate RR existence before creating interactive Leases.
 	rrChecker := mcptools.NewK8sRRExistenceChecker(core.ctrlCli, core.namespace)
 
+	// DD-AA-KA-001 race guard (#2189 CI evidence): lets
+	// upgradeOrCreateInteractiveSession distinguish "AA already created an
+	// AgentSession, KA's dispatcher just hasn't registered it into
+	// session.Manager yet" from "genuinely no AgentSession exists" before
+	// falling to createFreshInteractiveSession (investigate_start.go's
+	// waitForRaceyDispatch).
+	agentSessionChecker := mcptools.NewK8sAgentSessionExistenceChecker(core.ctrlCli, core.namespace)
+
 	// Signal context resolver: reads the SignalContext stored on the session
 	// from the original AA IncidentRequest payload. Falls back to reading
 	// the RR CRD for sessions without stored signal (e.g. interactive sessions
@@ -470,21 +479,22 @@ func buildAndRegisterMCPTools(core *mcpCoreDeps, p mcpHandlerParams) (mcpkg.Tool
 	autoCloseTombstone := mcpkg.NewAutoCloseTombstone(60 * time.Second)
 
 	investigateTool, selectWfTool, completeNoActionTool := buildMCPTools(mcpToolsDeps{
-		leaseMgr:           core.leaseMgr,
-		investigatorRunner: investigatorRunner,
-		recon:              core.recon,
-		autoMgr:            autoMgr,
-		agentMetrics:       agentMetrics,
-		sessionRateLimiter: sessionRateLimiter,
-		timeoutMgr:         core.timeoutMgr,
-		sessionNotifier:    sessionNotifier,
-		rrChecker:          rrChecker,
-		auditStore:         auditStore,
-		logger:             logger,
-		signalResolver:     signalResolver,
-		catalogAdapter:     catalogAdapter,
-		enricher:           enricher,
-		autoCloseTombstone: autoCloseTombstone,
+		leaseMgr:            core.leaseMgr,
+		investigatorRunner:  investigatorRunner,
+		recon:               core.recon,
+		autoMgr:             autoMgr,
+		agentMetrics:        agentMetrics,
+		sessionRateLimiter:  sessionRateLimiter,
+		timeoutMgr:          core.timeoutMgr,
+		sessionNotifier:     sessionNotifier,
+		rrChecker:           rrChecker,
+		agentSessionChecker: agentSessionChecker,
+		auditStore:          auditStore,
+		logger:              logger,
+		signalResolver:      signalResolver,
+		catalogAdapter:      catalogAdapter,
+		enricher:            enricher,
+		autoCloseTombstone:  autoCloseTombstone,
 	})
 
 	// Register tools with the MCP SDK server.
@@ -578,6 +588,10 @@ func buildMCPControllerClient(infra *k8sInfra) (ctrlclient.Client, error) {
 	mcpScheme := k8sruntime.NewScheme()
 	utilruntime.Must(clientgoscheme.AddToScheme(mcpScheme))
 	utilruntime.Must(remediationv1.AddToScheme(mcpScheme))
+	// DD-AA-KA-001 race guard (#2189 CI evidence, E2E-FLEET-018): needed by
+	// K8sAgentSessionExistenceChecker (mcptools.WithAgentSessionExistenceChecker
+	// below) to Get the AgentSession CRD by its deterministic "as-<rrID>" name.
+	utilruntime.Must(agentsessionv1.AddToScheme(mcpScheme))
 
 	mcpRestConfig := *infra.kubeConfig
 	mcpRestConfig.Timeout = 10 * time.Second
@@ -789,21 +803,22 @@ func buildMCPDisconnectHandler(d mcpDisconnectHandlerDeps) *mcpkg.GracefulSessio
 // struct (rather than individual parameters) per the Go Anti-Pattern
 // Checklist's 8+-param rule.
 type mcpToolsDeps struct {
-	leaseMgr           *mcpkg.LeaseSessionManager
-	investigatorRunner mcptools.InvestigatorRunner
-	recon              mcpkg.ContextReconstructor
-	autoMgr            *session.Manager
-	agentMetrics       *kametrics.Metrics
-	sessionRateLimiter *mcpkg.SessionRateLimiter
-	timeoutMgr         *mcpkg.TimeoutManager
-	sessionNotifier    *mcpkg.SessionNotifier
-	rrChecker          *mcptools.K8sRRExistenceChecker
-	auditStore         audit.AuditStore
-	logger             logr.Logger
-	signalResolver     *mcpadapters.SessionSignalContextResolver
-	catalogAdapter     *mcpadapters.WorkflowCatalogAdapter
-	enricher           *enrichment.Enricher
-	autoCloseTombstone *mcpkg.AutoCloseTombstone
+	leaseMgr            *mcpkg.LeaseSessionManager
+	investigatorRunner  mcptools.InvestigatorRunner
+	recon               mcpkg.ContextReconstructor
+	autoMgr             *session.Manager
+	agentMetrics        *kametrics.Metrics
+	sessionRateLimiter  *mcpkg.SessionRateLimiter
+	timeoutMgr          *mcpkg.TimeoutManager
+	sessionNotifier     *mcpkg.SessionNotifier
+	rrChecker           *mcptools.K8sRRExistenceChecker
+	agentSessionChecker *mcptools.K8sAgentSessionExistenceChecker
+	auditStore          audit.AuditStore
+	logger              logr.Logger
+	signalResolver      *mcpadapters.SessionSignalContextResolver
+	catalogAdapter      *mcpadapters.WorkflowCatalogAdapter
+	enricher            *enrichment.Enricher
+	autoCloseTombstone  *mcpkg.AutoCloseTombstone
 }
 
 // buildMCPTools constructs the InvestigateTool, SelectWorkflowTool, and
@@ -817,6 +832,7 @@ func buildMCPTools(d mcpToolsDeps) (*mcptools.InvestigateTool, *mcptools.SelectW
 		mcptools.WithTimeoutTracker(d.timeoutMgr),
 		mcptools.WithNotifyFunc(d.sessionNotifier.Notify),
 		mcptools.WithRRExistenceChecker(d.rrChecker),
+		mcptools.WithAgentSessionExistenceChecker(d.agentSessionChecker),
 		mcptools.WithHTTPCompleter(d.autoMgr),
 		mcptools.WithAuditStore(d.auditStore, d.logger.WithName("mcp-audit")),
 		mcptools.WithSignalContextResolver(d.signalResolver),
