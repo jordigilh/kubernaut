@@ -18,11 +18,13 @@ package aianalysis_test
 
 import (
 	"encoding/json"
+	"time"
 
 	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	aianalysisv1 "github.com/jordigilh/kubernaut/api/aianalysis/v1alpha1"
 	"github.com/jordigilh/kubernaut/pkg/aianalysis/handlers"
@@ -250,6 +252,29 @@ var _ = Describe("RequestBuilder.BuildAgentSessionSpec", func() {
 
 			Expect(spec.RiskTolerance).To(Equal("aggressive"))
 			Expect(spec.BusinessCategory).To(Equal("revenue-critical"))
+		})
+	})
+
+	Describe("#2170 (DD-AA-KA-001 Amendment N): TimesOutAt propagation for KA self-enforced timeout", func() {
+		It("should propagate AIAnalysis.Spec.TimesOutAt into AgentSessionSpec.TimesOutAt verbatim", func() {
+			analysis := helpers.NewAIAnalysis("ai-timeout-test", "default")
+			deadline := metav1.NewTime(time.Date(2026, 8, 19, 12, 0, 0, 0, time.UTC))
+			analysis.Spec.TimesOutAt = &deadline
+
+			spec := builder.BuildAgentSessionSpec(analysis)
+
+			Expect(spec.TimesOutAt).NotTo(BeNil())
+			Expect(spec.TimesOutAt.Time).To(Equal(deadline.Time),
+				"KA's dispatcher can only self-enforce the same deadline AA already enforces if it is propagated verbatim, not recomputed")
+		})
+
+		It("should leave TimesOutAt nil when AIAnalysis.Spec.TimesOutAt is unset (RO has no authoritative deadline)", func() {
+			analysis := helpers.NewAIAnalysis("ai-no-timeout", "default")
+
+			spec := builder.BuildAgentSessionSpec(analysis)
+
+			Expect(spec.TimesOutAt).To(BeNil(),
+				"KA must apply no self-enforced deadline when AA has none to propagate (back-compat/defensive)")
 		})
 	})
 })

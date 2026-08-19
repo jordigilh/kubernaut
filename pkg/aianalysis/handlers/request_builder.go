@@ -101,6 +101,12 @@ func (b *RequestBuilder) BuildAgentSessionSpec(analysis *aianalysisv1.AIAnalysis
 		ClusterName:        clusterNameFor(analysis.Spec.ClusterID, customLabels),
 		SignalMode:         spec.SignalMode,
 		EnrichmentResults:  marshalEnrichmentResults(enrichment),
+		// #2170 (DD-AA-KA-001 Amendment N): propagate verbatim so KA's
+		// dispatcher can independently self-enforce the same absolute
+		// deadline AA already enforces (checkInvestigationTimeout,
+		// DD-TIMEOUT-002/#2176) -- the only way to bound KA's investigation
+		// now that HTTP polling's CancelSession RPC is gone.
+		TimesOutAt: analysis.Spec.TimesOutAt,
 	}
 
 	// #462: Forward signal annotations for alert-author context in KA prompt.
