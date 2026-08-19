@@ -77,6 +77,7 @@ kubectl run kubernaut-must-gather \
 | `--namespace=NS` | `kubernaut-system` | Kubernaut Helm release namespace (CRDs, service pods, DataStorage API) |
 | `--workflow-namespace=NS` | `kubernaut-workflows` | Tekton PipelineRun execution namespace |
 | `--operator-namespace=NS` | `kubernaut-operator-system` | Optional: namespace of the separate [kubernaut-operator](https://github.com/jordigilh/kubernaut-operator) component. Its controller-manager logs are collected only if the namespace actually exists on the cluster -- most installs are Helm-chart-only and won't have it, which is not an error. |
+| `--extra-namespace=NS` | (none) | Additional namespace to collect pod logs from (repeatable). For mesh/gateway infra deployed outside the release/workflow/operator namespaces -- e.g. Kuadrant's `mcp-system`/`gateway-system`/`istio-system`, or Envoy AI Gateway's `envoy-gateway-system`/`envoy-ai-gateway-system`. Each namespace is optional and silently skipped if absent. |
 | `--help`, `-h` | - | Show usage information |
 
 ### Examples
@@ -99,6 +100,9 @@ kubectl run kubernaut-must-gather \
 
 # kubernaut-operator installed into a non-default namespace
 /usr/bin/gather --operator-namespace=my-kubernaut-operator
+
+# Collect pod logs from additional mesh/gateway infra namespaces (repeatable)
+/usr/bin/gather --extra-namespace=istio-system --extra-namespace=mcp-system
 ```
 
 ---
