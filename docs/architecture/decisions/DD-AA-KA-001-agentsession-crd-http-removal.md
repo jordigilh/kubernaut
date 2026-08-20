@@ -865,6 +865,40 @@ exact-count assertions (`aianalysis.aiagent.call` == 1, 9 total AA events) conti
 the audit now fires from the controller layer on the happy (non-conflicted) path exactly as before —
 this fix only changes behavior when a Conflict is actually hit.
 
+---
+### Amendment: #2204 Follow-up Round 4 — unrelated `kubernautagent` CI flake, test-only fix (2026-08-20)
+
+A separate CI run on this same push surfaced `UT-AA-KA-065-025` (from Round 2's dispatch-Lease-orphan
+fix, `internal/kubernautagent/agentsession/dispatcher_test.go`) failing once:
+`"a rejected (never-started) dispatch must release its Lease immediately..."` found the Lease still
+present. Confirmed unrelated to Round 3 above — the failing code path (`dispatcher.go`) was untouched
+by that commit.
+
+**RCA:** the test's own assertion, not production logic, has a narrow TOCTOU window. It runs
+`WithResyncInterval(20ms)` (~1500x faster than production's 30s `defaultResyncInterval`) so its
+`Eventually` for `Phase==Failed` resolves quickly. But that same fast tick means a `resync` call that
+snapshotted the AgentSession as still-non-terminal *just before* the winning `tryDispatch`'s
+`writeFailedStatus` committed can still be in flight when the very next line's bare, synchronous
+`cli.Get` for the Lease runs: it re-creates the Lease (the original was just deleted), re-fetches the
+AgentSession, observes it as terminal via `tryDispatch`'s own `isTerminalPhase` branch (Round 2's own
+fix), and deletes the Lease again — a self-correcting oscillation that always converges to "no
+Lease", just not necessarily by the exact instant the assertion runs. Production is unaffected: at a
+30s resync interval this window is negligible.
+
+**Reproduction attempts:** 25 local runs on `helios08` (15 focused on just these two specs, 10 full-
+suite at `--race --procs=4`, matching CI's exact `Makefile` invocation) — 0/25 failures. Consistent
+with a rare, real race rather than a deterministic bug: low enough probability to not reproduce
+locally, high enough to hit once across many CI runs.
+
+**Fix:** changed the test's bare `cli.Get` + `Expect(...).To(BeTrue())` Lease-absence check to an
+`Eventually(..., "1s", "10ms").Should(BeTrue())`, tolerating the oscillation's brief settle time
+without weakening what the test actually proves (the Lease must still be gone well within a bound far
+shorter than `dispatchLeaseDuration`, only not necessarily gone at the exact instant `Phase` first
+reads `Failed`). No production code changed.
+
+**Validation:** 10/10 full-suite reruns at `--race --procs=4` after the fix; `make
+test-unit-kubernautagent` (35 suites, 112+ specs) passes clean on `helios08`.
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:

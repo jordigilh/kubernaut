@@ -252,10 +252,32 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			// minutes (confirmed live: E2E-AA-065 CI run 2026-08-20,
 			// AgentSession Status.Phase stuck at "" for the full 300s test
 			// window with zero further dispatch attempts logged).
-			lease := &coordinationv1.Lease{}
-			leaseErr := cli.Get(ctx, crclient.ObjectKey{Name: "dispatch-as-cap-2", Namespace: testNamespace}, lease)
-			Expect(apierrors.IsNotFound(leaseErr)).To(BeTrue(),
-				"a rejected (never-started) dispatch must release its Lease immediately, not hold it for the full stale-Lease window")
+			//
+			// #2189 CI flake follow-up (2026-08-20): this must be an
+			// Eventually, not a bare synchronous Get. This test's
+			// WithResyncInterval(20ms) is ~1500x faster than production's
+			// defaultResyncInterval (30s), deliberately so the Eventually
+			// above observes Phase=Failed quickly -- but that same fast
+			// tick means a resync call that snapshotted "as-cap-2" as
+			// still-non-terminal a moment *before* the winning tryDispatch's
+			// writeFailedStatus committed can still be in flight when this
+			// assertion runs: it re-acquires a lease (the old one was just
+			// deleted), re-fetches the AgentSession, now observes it as
+			// terminal via tryDispatch's own isTerminalPhase branch, and
+			// deletes the lease again -- a self-correcting oscillation that
+			// always converges to "no lease", just not necessarily by the
+			// exact instant this line runs. A bare Get can catch that
+			// re-created-but-not-yet-cleaned-up lease mid-oscillation
+			// (observed once in CI, unreproduced in 25/25 local runs
+			// including --race --procs=4 matching CI); this changes no
+			// production code path (production's 30s resync makes the
+			// window negligible), only how patiently the test itself waits.
+			Eventually(func() bool {
+				lease := &coordinationv1.Lease{}
+				leaseErr := cli.Get(ctx, crclient.ObjectKey{Name: "dispatch-as-cap-2", Namespace: testNamespace}, lease)
+				return apierrors.IsNotFound(leaseErr)
+			}, "1s", "10ms").Should(BeTrue(),
+				"a rejected (never-started) dispatch must release its Lease promptly, not hold it for the full stale-Lease window")
 		})
 	})
 
