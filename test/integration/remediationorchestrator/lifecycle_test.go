@@ -388,13 +388,13 @@ var _ = Describe("AIAnalysis ManualReview Flow", Label("integration", "manual-re
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
-			ai.Status.RootCause = "Problem self-resolved - container restarted successfully"
+			ai.Status.EnsureRCAResult().RootCause = "Problem self-resolved - container restarted successfully"
 			ai.Status.Reason = "WorkflowNotNeeded"
 			ai.Status.SubReason = "ProblemResolved"
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
 			// No SelectedWorkflow - indicates WorkflowNotNeeded
-			ai.Status.SelectedWorkflow = nil
+			ai.Status.RCAResult.SelectedWorkflow = nil
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
 
 			By("Waiting for RR to complete with NoActionRequired")
@@ -477,9 +477,9 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
-			ai.Status.ApprovalRequired = true
-			ai.Status.ApprovalReason = "Confidence below 80% threshold"
-			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			ai.Status.EnsureApproval().ApprovalRequired = true
+			ai.Status.Approval.ApprovalReason = "Confidence below 80% threshold"
+			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pods",
 					WorkflowName:    "wf-restart-pods",
@@ -492,7 +492,7 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 				// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 				Rationale: "Pod restart recommended based on OOM patterns",
 			}
-			ai.Status.RootCause = "Memory leak causing OOM kills"
+			ai.Status.RCAResult.RootCause = "Memory leak causing OOM kills"
 			now := metav1.Now()
 			ai.Status.CompletedAt = &now
 			Expect(k8sClient.Status().Update(ctx, ai)).To(Succeed())
@@ -544,9 +544,9 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
-			ai.Status.ApprovalRequired = true
-			ai.Status.ApprovalReason = msgConfidenceBelowThresholdFixture
-			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			ai.Status.EnsureApproval().ApprovalRequired = true
+			ai.Status.Approval.ApprovalReason = msgConfidenceBelowThresholdFixture
+			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pods",
 					WorkflowName:    "wf-restart-pods",
@@ -621,9 +621,9 @@ var _ = Describe("Approval Flow", Label("integration", "approval"), func() {
 			ai := &aianalysisv1.AIAnalysis{}
 			Expect(k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)).To(Succeed())
 			ai.Status.Phase = aianalysisv1.PhaseCompleted
-			ai.Status.ApprovalRequired = true
-			ai.Status.ApprovalReason = msgConfidenceBelowThresholdFixture
-			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			ai.Status.EnsureApproval().ApprovalRequired = true
+			ai.Status.Approval.ApprovalReason = msgConfidenceBelowThresholdFixture
+			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-restart-pods",
 					WorkflowName:    "wf-restart-pods",

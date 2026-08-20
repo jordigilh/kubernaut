@@ -130,7 +130,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 			}
 
 			// The reconciliation should complete successfully regardless of label detection
-			Expect(analysis.Status.InvestigationID).NotTo(BeEmpty(),
+			Expect(analysis.Status.GetInvestigationMetadata().InvestigationID).NotTo(BeEmpty(),
 				"InvestigationID should be set after KA call")
 		})
 
@@ -156,7 +156,7 @@ var _ = Describe("ADR-056 PostRCAContext Integration", Label("integration", "adr
 			// The Rego evaluator receives detected_labels (from PostRCAContext or empty map).
 			// Production + confidence < 0.8 triggers approval via Rego policy.
 			if analysis.Status.Phase == aianalysisv1.PhaseCompleted {
-				Expect(analysis.Status.ApprovalRequired).To(BeTrue(),
+				Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeTrue(),
 					"Production environment should require approval (Rego evaluation with detected_labels)")
 			}
 		})

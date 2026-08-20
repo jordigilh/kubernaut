@@ -105,7 +105,7 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 		Expect(err).ToNot(HaveOccurred())
 
-		sw := analysis.Status.SelectedWorkflow
+		sw := analysis.Status.GetRCAResult().SelectedWorkflow
 		Expect(sw).ToNot(BeNil(), "SelectedWorkflow must be populated")
 
 		Expect(sw.Dependencies).ToNot(BeNil(), "Dependencies must be extracted from the KA response")
@@ -151,7 +151,7 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		}).ToNot(Panic())
 		Expect(err).ToNot(HaveOccurred())
 
-		sw := analysis.Status.SelectedWorkflow
+		sw := analysis.Status.GetRCAResult().SelectedWorkflow
 		Expect(sw).ToNot(BeNil())
 		Expect(sw.Dependencies).To(BeNil())
 		Expect(sw.Resources).To(BeNil())
@@ -184,7 +184,7 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 		Expect(err).ToNot(HaveOccurred())
 
-		sw := analysis.Status.SelectedWorkflow
+		sw := analysis.Status.GetRCAResult().SelectedWorkflow
 		Expect(sw).ToNot(BeNil(), "low-confidence path must still preserve SelectedWorkflow for operator visibility")
 		Expect(sw.SelectedAt).ToNot(BeNil(), "SelectedAt must be stamped on the low-confidence preservation path too")
 	})
@@ -216,7 +216,7 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 		Expect(err).ToNot(HaveOccurred())
 
-		sw := analysis.Status.SelectedWorkflow
+		sw := analysis.Status.GetRCAResult().SelectedWorkflow
 		Expect(sw).ToNot(BeNil())
 		Expect(sw.ActionType).To(Equal("ScaleReplicas"))
 		Expect(sw.WorkflowName).To(Equal("increase-memory"))
@@ -244,7 +244,7 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 		Expect(err).ToNot(HaveOccurred())
 
-		sw := analysis.Status.SelectedWorkflow
+		sw := analysis.Status.GetRCAResult().SelectedWorkflow
 		Expect(sw).ToNot(BeNil())
 		Expect(sw.ActionType).To(Equal("RestartPod"))
 		Expect(sw.WorkflowName).To(Equal("low-confidence-fix"))
@@ -276,7 +276,7 @@ var _ = Describe("ResponseProcessor SelectedWorkflow extended snapshot (Issue #1
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 		Expect(err).ToNot(HaveOccurred())
 
-		sw := analysis.Status.SelectedWorkflow
+		sw := analysis.Status.GetRCAResult().SelectedWorkflow
 		Expect(sw).ToNot(BeNil(), "partial workflow must be preserved for operator visibility")
 		Expect(sw.ActionType).To(Equal("ScaleReplicas"))
 		Expect(sw.WorkflowName).To(Equal("partial-fix"))

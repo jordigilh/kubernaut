@@ -221,9 +221,9 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 			By("Simulating AI completion with workflow recommendation (dry-run intercepts before WFE creation)")
 			analysis.Status.Phase = aianalysisv1.PhaseCompleted
 			analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
-			analysis.Status.NeedsHumanReview = false
+			analysis.Status.EnsureReview().NeedsHumanReview = false
 			analysis.Status.Message = workflowRecommendedRestartPodV1
-			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			analysis.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "restart-pod-v1",
 					WorkflowName:    "restart-pod-v1",
@@ -236,7 +236,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 				Confidence: 0.95,
 				Rationale:  "High confidence workflow match for pod restart scenario",
 			}
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "OOM kill detected on pod",
 				Severity:   signalprocessingv1.SeverityCritical,
 				SignalType: "alert",

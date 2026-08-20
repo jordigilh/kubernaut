@@ -226,8 +226,8 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 			completedAt := metav1.NewTime(time.Now().Add(-1 * time.Second))
 			ai := aiWithInteractiveSession("ai-race-completed", &startedAt, &completedAt)
 			ai.Status.Phase = "Completed"
-			ai.Status.ApprovalRequired = false
-			ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			ai.Status.EnsureApproval().ApprovalRequired = false
+			ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "wf-2012-completed",
 					WorkflowName:    "wf-2012-completed",
@@ -237,7 +237,7 @@ var _ = Describe("DD-INTERACTIVE-002: Interactive Timeout Extension", func() {
 				},
 				Confidence: 0.95,
 			}
-			ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			ai.Status.EnsureRCAResult().RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				RemediationTarget: &aianalysisv1.RemediationTarget{
 					Kind: "Deployment", Name: "target-completed", Namespace: "default",
 				},

@@ -133,9 +133,9 @@ var _ = Describe("Escalation Wiring (#1449)", Label("integration", "escalation",
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 			g.Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
 				"Phase must transition to Failed for operator escalation")
-			g.Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+			g.Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue(),
 				"NeedsHumanReview must be set by ResponseProcessor")
-			g.Expect(analysis.Status.HumanReviewReason).To(Equal("operator_escalation"),
+			g.Expect(analysis.Status.GetReview().HumanReviewReason).To(Equal("operator_escalation"),
 				"HumanReviewReason must flow from KA response through ResponseProcessor to CRD status")
 			g.Expect(analysis.Status.SubReason).To(Equal("OperatorEscalation"),
 				"SubReason must be mapped from operator_escalation via mapEnumToSubReason")

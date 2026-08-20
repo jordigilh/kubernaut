@@ -108,28 +108,28 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 
 			// Production should require approval per Rego policy
-			Expect(analysis.Status.ApprovalRequired).To(BeTrue())
+			Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeTrue())
 
 			// Should have workflow selected
-			Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil())
+			Expect(analysis.Status.GetRCAResult().SelectedWorkflow).NotTo(BeNil())
 
 			// Should have completion timestamp
 			Expect(analysis.Status.CompletedAt).NotTo(BeZero())
 
 			// E2E-AA-163-002: TotalAnalysisTime populated by controller
 			// Uses >= 0 because mock LLM responds instantly; sub-second analyses truncate to 0
-			Expect(analysis.Status.TotalAnalysisTime).To(BeNumerically(">=", 0))
+			Expect(analysis.Status.GetInvestigationMetadata().TotalAnalysisTime).To(BeNumerically(">=", 0))
 
 			// E2E-AA-163-001: RootCauseAnalysis populated from mock LLM response
-			Expect(analysis.Status.RootCauseAnalysis).NotTo(BeNil())
-			Expect(analysis.Status.RootCauseAnalysis.Summary).NotTo(BeEmpty())
-			Expect(analysis.Status.RootCauseAnalysis.Severity).To(BeElementOf("critical", "high", "warning", "info", "unknown"))
-			Expect(analysis.Status.RootCauseAnalysis.SignalType).NotTo(BeEmpty())
-			Expect(analysis.Status.RootCauseAnalysis.ContributingFactors).To(ContainElement("invalid_configuration_directive"))
+			Expect(analysis.Status.GetRCAResult().RootCauseAnalysis).NotTo(BeNil())
+			Expect(analysis.Status.RCAResult.RootCauseAnalysis.Summary).NotTo(BeEmpty())
+			Expect(analysis.Status.RCAResult.RootCauseAnalysis.Severity).To(BeElementOf("critical", "high", "warning", "info", "unknown"))
+			Expect(analysis.Status.RCAResult.RootCauseAnalysis.SignalType).NotTo(BeEmpty())
+			Expect(analysis.Status.RCAResult.RootCauseAnalysis.ContributingFactors).To(ContainElement("invalid_configuration_directive"))
 
 			// E2E-AA-163-001: RemediationTarget populated from mock LLM (crashloop scenario returns Deployment)
-			Expect(analysis.Status.RootCauseAnalysis.RemediationTarget).NotTo(BeNil())
-			Expect(analysis.Status.RootCauseAnalysis.RemediationTarget.Kind).To(Equal("Deployment"))
+			Expect(analysis.Status.RCAResult.RootCauseAnalysis.RemediationTarget).NotTo(BeNil())
+			Expect(analysis.Status.RCAResult.RootCauseAnalysis.RemediationTarget.Kind).To(Equal("Deployment"))
 
 			// E2E-AA-163-002: Condition assertions for completed AA
 			Expect(analysis.Status.Conditions).To(ContainElements(
@@ -156,9 +156,9 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			}, timeout, interval).Should(Equal("Completed"))
 
 			By("Verifying approval required")
-			Expect(analysis.Status.ApprovalRequired).To(BeTrue())
-			Expect(analysis.Status.ApprovalReason).NotTo(BeEmpty())
-			Expect(analysis.Status.ApprovalContext).NotTo(BeNil())
+			Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeTrue())
+			Expect(analysis.Status.GetApproval().ApprovalReason).NotTo(BeEmpty())
+			Expect(analysis.Status.GetApproval().ApprovalContext).NotTo(BeNil())
 		})
 	})
 
@@ -213,7 +213,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			}, timeout, interval).Should(Equal("Completed"))
 
 			By("Verifying auto-approved (no approval required)")
-			Expect(analysis.Status.ApprovalRequired).To(BeFalse())
+			Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeFalse())
 		})
 	})
 
@@ -269,7 +269,7 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			}, timeout, interval).Should(Equal("Completed"))
 
 			By("Verifying approval required due to data quality")
-			Expect(analysis.Status.ApprovalRequired).To(BeTrue())
+			Expect(analysis.Status.GetApproval().ApprovalRequired).To(BeTrue())
 		})
 	})
 
@@ -328,13 +328,13 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
 			Expect(analysis.Status.Reason).To(Equal(aianalysisv1.ReasonWorkflowResolutionFailed))
 			Expect(analysis.Status.SubReason).To(Equal("LowConfidence"))
-			Expect(analysis.Status.NeedsHumanReview).To(BeTrue(),
+			Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeTrue(),
 				"NeedsHumanReview must be true when confidence < threshold (BR-KA-197)")
 
 			By("Verifying AlternativeWorkflows populated (mock low_confidence scenario returns exactly 2 alternatives)")
-			Expect(analysis.Status.AlternativeWorkflows).To(HaveLen(2))
-			alt0 := analysis.Status.AlternativeWorkflows[0]
-			alt1 := analysis.Status.AlternativeWorkflows[1]
+			Expect(analysis.Status.GetRCAResult().AlternativeWorkflows).To(HaveLen(2))
+			alt0 := analysis.Status.RCAResult.AlternativeWorkflows[0]
+			alt1 := analysis.Status.RCAResult.AlternativeWorkflows[1]
 			Expect(alt0.WorkflowID).NotTo(BeEmpty(),
 				"alternative[0] must have a workflow ID (may be DS-overridden or deterministic)")
 			Expect(alt0.Rationale).To(Equal("Alternative approach for ambiguous root cause"))
@@ -400,8 +400,8 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 
 			By("Verifying ValidationAttemptsHistory populated with 3 attempts")
 			Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(analysis), analysis)).To(Succeed())
-			Expect(analysis.Status.ValidationAttemptsHistory).To(HaveLen(3))
-			for i, attempt := range analysis.Status.ValidationAttemptsHistory {
+			Expect(analysis.Status.GetInvestigationMetadata().ValidationAttemptsHistory).To(HaveLen(3))
+			for i, attempt := range analysis.Status.InvestigationMetadata.ValidationAttemptsHistory {
 				Expect(attempt.Attempt).To(Equal(i + 1))
 				Expect(attempt.IsValid).To(BeFalse())
 				Expect(attempt.Errors).NotTo(BeEmpty())

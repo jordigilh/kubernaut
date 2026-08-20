@@ -172,31 +172,34 @@ func ValidateAAStatus(aa *aianalysisv1.AIAnalysis, opts ...ValidationOption) []s
 		f = append(f, "AA: ObservedGeneration not set -- controller may not have reconciled")
 	}
 
+	rca := s.GetRCAResult()
+	im := s.GetInvestigationMetadata()
+
 	// RootCauseAnalysis
-	if s.RootCauseAnalysis == nil {
+	if rca.RootCauseAnalysis == nil {
 		f = append(f, "AA: RootCauseAnalysis not populated -- no root cause available for workflow selection")
 	} else {
-		f = appendIfNonEmpty(f, checkNonEmpty("AA: RootCauseAnalysis.Summary", "operator has no RCA summary for audit or review", s.RootCauseAnalysis.Summary))
-		f = appendIfNonEmpty(f, checkNonEmpty("AA: RootCauseAnalysis.Severity", "severity-based workflow selection unavailable", s.RootCauseAnalysis.Severity))
-		f = appendIfNonEmpty(f, checkNonEmpty("AA: RootCauseAnalysis.SignalType", "RO cannot determine analyzed signal type for routing", s.RootCauseAnalysis.SignalType))
+		f = appendIfNonEmpty(f, checkNonEmpty("AA: RootCauseAnalysis.Summary", "operator has no RCA summary for audit or review", rca.RootCauseAnalysis.Summary))
+		f = appendIfNonEmpty(f, checkNonEmpty("AA: RootCauseAnalysis.Severity", "severity-based workflow selection unavailable", rca.RootCauseAnalysis.Severity))
+		f = appendIfNonEmpty(f, checkNonEmpty("AA: RootCauseAnalysis.SignalType", "RO cannot determine analyzed signal type for routing", rca.RootCauseAnalysis.SignalType))
 	}
 
 	// SelectedWorkflow
-	if s.SelectedWorkflow == nil {
+	if rca.SelectedWorkflow == nil {
 		f = append(f, "AA: SelectedWorkflow not populated -- no workflow available for execution")
 	} else {
-		f = appendIfNonEmpty(f, checkNonEmpty("AA: SelectedWorkflow.WorkflowID", "WE cannot determine which workflow to execute", s.SelectedWorkflow.WorkflowID))
-		f = appendIfNonEmpty(f, checkNonEmpty("AA: SelectedWorkflow.ExecutionEngine", "WE cannot determine execution engine (job/tekton)", s.SelectedWorkflow.ExecutionEngine))
-		if s.SelectedWorkflow.Confidence <= 0 {
+		f = appendIfNonEmpty(f, checkNonEmpty("AA: SelectedWorkflow.WorkflowID", "WE cannot determine which workflow to execute", rca.SelectedWorkflow.WorkflowID))
+		f = appendIfNonEmpty(f, checkNonEmpty("AA: SelectedWorkflow.ExecutionEngine", "WE cannot determine execution engine (job/tekton)", rca.SelectedWorkflow.ExecutionEngine))
+		if rca.SelectedWorkflow.Confidence <= 0 {
 			f = append(f, "AA: SelectedWorkflow.Confidence not set -- approval policy cannot evaluate confidence threshold")
 		}
-		f = appendIfNonEmpty(f, checkNonEmpty("AA: SelectedWorkflow.Version", "audit trail missing workflow version", s.SelectedWorkflow.Version))
-		f = appendIfNonEmpty(f, checkNonEmpty("AA: SelectedWorkflow.ExecutionBundle", "WE cannot pull OCI bundle for execution", s.SelectedWorkflow.ExecutionBundle))
-		f = appendIfNonEmpty(f, checkNonEmpty("AA: SelectedWorkflow.Rationale", "operator has no rationale for workflow choice", s.SelectedWorkflow.Rationale))
+		f = appendIfNonEmpty(f, checkNonEmpty("AA: SelectedWorkflow.Version", "audit trail missing workflow version", rca.SelectedWorkflow.Version))
+		f = appendIfNonEmpty(f, checkNonEmpty("AA: SelectedWorkflow.ExecutionBundle", "WE cannot pull OCI bundle for execution", rca.SelectedWorkflow.ExecutionBundle))
+		f = appendIfNonEmpty(f, checkNonEmpty("AA: SelectedWorkflow.Rationale", "operator has no rationale for workflow choice", rca.SelectedWorkflow.Rationale))
 	}
 
-	f = appendIfNonEmpty(f, checkNonEmpty("AA: InvestigationID", "audit trail cannot correlate investigation with analysis", s.InvestigationID))
-	if s.TotalAnalysisTime <= 0 {
+	f = appendIfNonEmpty(f, checkNonEmpty("AA: InvestigationID", "audit trail cannot correlate investigation with analysis", im.InvestigationID))
+	if im.TotalAnalysisTime <= 0 {
 		f = append(f, "AA: TotalAnalysisTime not set -- SLA monitoring cannot track analysis duration")
 	}
 
@@ -219,21 +222,22 @@ func ValidateAAStatus(aa *aianalysisv1.AIAnalysis, opts ...ValidationOption) []s
 
 	// Approval-specific fields
 	if cfg.approvalFlow {
-		if !s.ApprovalRequired {
+		approval := s.GetApproval()
+		if !approval.ApprovalRequired {
 			f = append(f, "AA: ApprovalRequired is false -- expected true for production approval flow")
 		}
-		f = appendIfNonEmpty(f, checkNonEmpty("AA: ApprovalReason", "operator has no reason why approval was required", s.ApprovalReason))
-		if s.ApprovalContext == nil {
+		f = appendIfNonEmpty(f, checkNonEmpty("AA: ApprovalReason", "operator has no reason why approval was required", approval.ApprovalReason))
+		if approval.ApprovalContext == nil {
 			f = append(f, "AA: ApprovalContext not populated -- operator has no context for approval decision")
 		} else {
-			f = appendIfNonEmpty(f, checkNonEmpty("AA: ApprovalContext.Reason", "operator has no structured reason for approval", s.ApprovalContext.Reason))
-			f = appendIfNonEmpty(f, checkNonEmpty("AA: ApprovalContext.WhyApprovalRequired", "operator cannot understand why approval was triggered", s.ApprovalContext.WhyApprovalRequired))
-			if s.ApprovalContext.ConfidenceScore <= 0 {
+			f = appendIfNonEmpty(f, checkNonEmpty("AA: ApprovalContext.Reason", "operator has no structured reason for approval", approval.ApprovalContext.Reason))
+			f = appendIfNonEmpty(f, checkNonEmpty("AA: ApprovalContext.WhyApprovalRequired", "operator cannot understand why approval was triggered", approval.ApprovalContext.WhyApprovalRequired))
+			if approval.ApprovalContext.ConfidenceScore <= 0 {
 				f = append(f, "AA: ApprovalContext.ConfidenceScore not set -- operator cannot assess confidence level")
 			}
-			f = appendIfNonEmpty(f, checkNonEmpty("AA: ApprovalContext.ConfidenceLevel", "operator has no categorical confidence (low/medium/high)", s.ApprovalContext.ConfidenceLevel))
-			f = appendIfNonEmpty(f, checkNonEmpty("AA: ApprovalContext.InvestigationSummary", "operator has no investigation summary for decision", s.ApprovalContext.InvestigationSummary))
-			if len(s.ApprovalContext.RecommendedActions) == 0 {
+			f = appendIfNonEmpty(f, checkNonEmpty("AA: ApprovalContext.ConfidenceLevel", "operator has no categorical confidence (low/medium/high)", approval.ApprovalContext.ConfidenceLevel))
+			f = appendIfNonEmpty(f, checkNonEmpty("AA: ApprovalContext.InvestigationSummary", "operator has no investigation summary for decision", approval.ApprovalContext.InvestigationSummary))
+			if len(approval.ApprovalContext.RecommendedActions) == 0 {
 				f = append(f, "AA: ApprovalContext.RecommendedActions empty -- operator has no action guidance")
 			}
 		}

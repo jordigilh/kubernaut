@@ -147,8 +147,8 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 		analysis.Status.Phase = aianalysisv1.PhaseCompleted
 		analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 		analysis.Status.Message = "Workflow recommended: restart-deployment-v1"
-		analysis.Status.RootCause = "CPU throttling due to resource limits"
-		analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+		analysis.Status.EnsureRCAResult().RootCause = "CPU throttling due to resource limits"
+		analysis.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 				WorkflowID:      "restart-deployment-v1",
 				WorkflowName:    "restart-deployment-v1",
@@ -162,7 +162,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			Rationale:  "High confidence match for CPU remediation",
 		}
 		// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
-		analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+		analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 			Summary:    "CPU throttling due to resource limits",
 			Severity:   signalprocessingv1.SeverityCritical,
 			SignalType: "alert",
@@ -393,8 +393,8 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 			analysis.Status.Phase = aianalysisv1.PhaseCompleted
 			analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 			analysis.Status.Message = "Workflow recommended: restart-deployment-v1"
-			analysis.Status.RootCause = "CPU throttling due to resource limits"
-			analysis.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+			analysis.Status.EnsureRCAResult().RootCause = "CPU throttling due to resource limits"
+			analysis.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 				WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 					WorkflowID:      "restart-deployment-v1",
 					WorkflowName:    "restart-deployment-v1",
@@ -408,7 +408,7 @@ var _ = Describe("E2E-RO-EA-001: EA Creation on Completion", Label("e2e", "ea", 
 				Rationale:  "High confidence match for CPU remediation",
 			}
 			// DD-KA-006: RemediationTarget is required for routing to WorkflowExecution
-			analysis.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+			analysis.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 				Summary:    "CPU throttling due to resource limits",
 				Severity:   signalprocessingv1.SeverityCritical,
 				SignalType: "alert",

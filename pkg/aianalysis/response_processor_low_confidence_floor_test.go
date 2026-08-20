@@ -118,7 +118,7 @@ var _ = Describe("ResponseProcessor.WithLowConfidenceFloor (BR-AI-088.4, Issue #
 
 		Expect(err).ToNot(HaveOccurred())
 		Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed))
-		Expect(analysis.Status.HumanReviewReason).To(Equal(aianalysisv1.HumanReviewReasonLowConfidence))
+		Expect(analysis.Status.GetReview().HumanReviewReason).To(Equal(aianalysisv1.HumanReviewReasonLowConfidence))
 		Expect(analysis.Status.Message).To(ContainSubstring("below threshold 0.70"))
 	})
 
@@ -133,7 +133,7 @@ var _ = Describe("ResponseProcessor.WithLowConfidenceFloor (BR-AI-088.4, Issue #
 		Expect(err).ToNot(HaveOccurred())
 		Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing),
 			"0.65 confidence clears the operator-configured 0.5 floor even though it's below the 0.7 default")
-		Expect(analysis.Status.NeedsHumanReview).To(BeFalse())
+		Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeFalse())
 	})
 
 	It("UT-AA-1828-003: the low-confidence failure message reports the configured floor, not the hardcoded 0.70 default", func() {
@@ -181,6 +181,6 @@ var _ = Describe("ResponseProcessor.WithLowConfidenceFloor (BR-AI-088.4, Issue #
 		Expect(err).ToNot(HaveOccurred())
 		Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseAnalyzing),
 			"0.6 confidence clears the operator-configured 0.5 floor wired via handlers.WithLowConfidenceFloor")
-		Expect(analysis.Status.NeedsHumanReview).To(BeFalse())
+		Expect(analysis.Status.GetReview().NeedsHumanReview).To(BeFalse())
 	})
 })

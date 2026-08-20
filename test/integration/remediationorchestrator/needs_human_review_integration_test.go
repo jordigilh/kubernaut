@@ -91,11 +91,13 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-KA-197)", func() {
 
 			// Step 5: Update AIAnalysis status with needsHumanReview=true (simulating KA response)
 			analysis.Status = aianalysisv1.AIAnalysisStatus{
-				Phase:             "Failed",
-				Reason:            "WorkflowResolutionFailed",
-				NeedsHumanReview:  true,
-				HumanReviewReason: "workflow_not_found",
-				Message:           "Workflow 'restart-pod-v99' not found in catalog",
+				Phase:   "Failed",
+				Reason:  "WorkflowResolutionFailed",
+				Message: "Workflow 'restart-pod-v99' not found in catalog",
+				Review: &aianalysisv1.ReviewStatus{
+					NeedsHumanReview:  true,
+					HumanReviewReason: "workflow_not_found",
+				},
 			}
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
@@ -182,11 +184,13 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-KA-197)", func() {
 
 			// Step 5: Update AIAnalysis status with needsHumanReview=true (low_confidence reason)
 			analysis.Status = aianalysisv1.AIAnalysisStatus{
-				Phase:             "Failed",
-				Reason:            "WorkflowResolutionFailed",
-				NeedsHumanReview:  true,
-				HumanReviewReason: "low_confidence",
-				Message:           "AI confidence (0.55) below threshold (0.70)",
+				Phase:   "Failed",
+				Reason:  "WorkflowResolutionFailed",
+				Message: "AI confidence (0.55) below threshold (0.70)",
+				Review: &aianalysisv1.ReviewStatus{
+					NeedsHumanReview:  true,
+					HumanReviewReason: "low_confidence",
+				},
 			}
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
@@ -261,11 +265,13 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-KA-197)", func() {
 			// Step 5: Update AIAnalysis status with needsHumanReview=true (rca_incomplete reason)
 			// This simulates KA returning needs_human_review=true due to missing remediationTarget (BR-KA-212)
 			analysis.Status = aianalysisv1.AIAnalysisStatus{
-				Phase:             "Failed",
-				Reason:            "WorkflowResolutionFailed",
-				NeedsHumanReview:  true,
-				HumanReviewReason: "rca_incomplete",
-				Message:           "RCA is missing remediationTarget - cannot determine target for remediation",
+				Phase:   "Failed",
+				Reason:  "WorkflowResolutionFailed",
+				Message: "RCA is missing remediationTarget - cannot determine target for remediation",
+				Review: &aianalysisv1.ReviewStatus{
+					NeedsHumanReview:  true,
+					HumanReviewReason: "rca_incomplete",
+				},
 			}
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
@@ -334,11 +340,15 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-KA-197)", func() {
 
 			// SelectedWorkflow=nil: no workflow selected, needs human review
 			analysis.Status = aianalysisv1.AIAnalysisStatus{
-				Phase:             "Failed",
-				NeedsHumanReview:  true,
-				HumanReviewReason: "no_matching_workflows",
-				Message:           "No matching workflows found for PVC alert type",
-				RootCause:         "Orphaned PVCs detected in namespace production",
+				Phase:   "Failed",
+				Message: "No matching workflows found for PVC alert type",
+				Review: &aianalysisv1.ReviewStatus{
+					NeedsHumanReview:  true,
+					HumanReviewReason: "no_matching_workflows",
+				},
+				RCAResult: &aianalysisv1.RCAResult{
+					RootCause: "Orphaned PVCs detected in namespace production",
+				},
 			}
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())
 
@@ -400,17 +410,21 @@ var _ = Describe("NeedsHumanReview Integration Tests (BR-KA-197)", func() {
 
 			// SelectedWorkflow is non-nil: workflow present but rejected due to low confidence
 			analysis.Status = aianalysisv1.AIAnalysisStatus{
-				Phase:             "Failed",
-				NeedsHumanReview:  true,
-				HumanReviewReason: "low_confidence",
-				Message:           "AI confidence (0.55) below threshold (0.70)",
-				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:   "restart-pod-v1",
-						WorkflowName: "restart-pod-v1",
-						ActionType:   "RestartPod",
+				Phase:   "Failed",
+				Message: "AI confidence (0.55) below threshold (0.70)",
+				Review: &aianalysisv1.ReviewStatus{
+					NeedsHumanReview:  true,
+					HumanReviewReason: "low_confidence",
+				},
+				RCAResult: &aianalysisv1.RCAResult{
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:   "restart-pod-v1",
+							WorkflowName: "restart-pod-v1",
+							ActionType:   "RestartPod",
+						},
+						Confidence: 0.55,
 					},
-					Confidence: 0.55,
 				},
 			}
 			Expect(k8sClient.Status().Update(ctx, analysis)).To(Succeed())

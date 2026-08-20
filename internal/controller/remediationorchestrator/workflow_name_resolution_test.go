@@ -62,8 +62,8 @@ var _ = Describe("Issue #1677 Phase 1: Workflow Name Resolution from AIAnalysis 
 		ai := newAIAnalysisCompleted("ai-test-rr-643", defaultFixture, "test-rr-643", 0.95, workflowUUID)
 		// Distinct friendly name from the UUID, mirroring what KA/DS's catalog
 		// would resolve -- proves RO reads it verbatim, not from a live lookup.
-		ai.Status.SelectedWorkflow.WorkflowName = workflowName
-		ai.Status.SelectedWorkflow.ActionType = actionType
+		ai.Status.RCAResult.SelectedWorkflow.WorkflowName = workflowName
+		ai.Status.RCAResult.SelectedWorkflow.ActionType = actionType
 		sp := newSignalProcessingCompleted("sp-test-rr-643", "test-rr-643")
 
 		fakeClient := fake.NewClientBuilder().

@@ -182,7 +182,7 @@ func (h *AwaitingApprovalHandler) resolveApprovedWorkflow(ctx context.Context, r
 	}
 
 	resolvedWorkflow, overrideApplied, resolveErr := h.callbacks.ResolveWorkflow(
-		ctx, rar.Status.WorkflowOverride, ai.Status.SelectedWorkflow, rr.Namespace)
+		ctx, rar.Status.WorkflowOverride, ai.Status.GetRCAResult().SelectedWorkflow, rr.Namespace)
 	if resolveErr != nil {
 		if override.IsOverrideNotFoundError(resolveErr) {
 			logger.Error(resolveErr, "Override workflow not found, failing RR")
@@ -200,7 +200,7 @@ func (h *AwaitingApprovalHandler) resolveApprovedWorkflow(ctx context.Context, r
 
 	resolvedAI := ai.DeepCopy()
 	if overrideApplied {
-		resolvedAI.Status.SelectedWorkflow = resolvedWorkflow
+		resolvedAI.Status.EnsureRCAResult().SelectedWorkflow = resolvedWorkflow
 		h.callbacks.RecordEvent(rr, "Normal", "OperatorOverride",
 			fmt.Sprintf("Operator override applied: workflow=%s", rar.Status.WorkflowOverride.WorkflowName))
 		h.m.OverrideAppliedTotal.WithLabelValues(classifyOverride(rar.Status.WorkflowOverride), rr.Namespace).Inc()

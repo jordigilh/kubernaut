@@ -69,8 +69,10 @@ var _ = Describe("AA-H4: Investigating Handler Session Recovery", func() {
 				Namespace: "default",
 			},
 			Status: aianalysisv1.AIAnalysisStatus{
-				Phase:             "Investigating",
-				InvestigationTime: 5000,
+				Phase: "Investigating",
+				InvestigationMetadata: &aianalysisv1.InvestigationMetadata{
+					InvestigationTime: 5000,
+				},
 				KASession: &aianalysisv1.KASession{
 					ID:        "active-session-123",
 					CreatedAt: &now,

@@ -148,9 +148,9 @@ var _ = Describe("Problem Resolved No WorkflowExecution [#1432 / BR-KA-200]", fu
 		Expect(matchedAA).NotTo(BeNil(), "AA for RR %s must exist", rrName)
 		Expect(matchedAA.Status.SubReason).To(Equal("ProblemResolved"),
 			"#1432: AA SubReason must be ProblemResolved")
-		Expect(matchedAA.Status.SelectedWorkflow).To(BeNil(),
+		Expect(matchedAA.Status.GetRCAResult().SelectedWorkflow).To(BeNil(),
 			"#1432: AA must have no SelectedWorkflow for problem_resolved")
-		Expect(matchedAA.Status.NeedsHumanReview).To(BeFalse(),
+		Expect(matchedAA.Status.GetReview().NeedsHumanReview).To(BeFalse(),
 			"#1432: AA must not need human review for problem_resolved")
 
 		// Step 4: Wait for RR to reach Completed with NoActionRequired

@@ -58,8 +58,8 @@ func resolveNotificationTargetResource(rr *remediationv1.RemediationRequest, ai 
 	if rr.Spec.TargetResource.Kind != "Unknown" {
 		return rr.Spec.TargetResource
 	}
-	if ai != nil && ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
-		ar := ai.Status.RootCauseAnalysis.RemediationTarget
+	if ai != nil && ai.Status.GetRCAResult().RootCauseAnalysis != nil && ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget != nil {
+		ar := ai.Status.RCAResult.RootCauseAnalysis.RemediationTarget
 		return remediationv1.ResourceIdentifier{
 			Kind:      ar.Kind,
 			Name:      ar.Name,
@@ -193,11 +193,12 @@ func (c *NotificationCreator) CreateApprovalNotification(
 	)
 
 	// Precondition validation (per Day 3 pattern - BR-ORCH-001)
-	if ai.Status.SelectedWorkflow == nil {
+	sw := ai.Status.GetRCAResult().SelectedWorkflow
+	if sw == nil {
 		logger.Error(nil, "AIAnalysis missing SelectedWorkflow for approval notification")
 		return "", fmt.Errorf("AIAnalysis %s/%s missing SelectedWorkflow for approval notification", ai.Namespace, ai.Name)
 	}
-	if ai.Status.SelectedWorkflow.WorkflowID == "" {
+	if sw.WorkflowID == "" {
 		logger.Error(nil, "AIAnalysis SelectedWorkflow missing WorkflowID")
 		return "", fmt.Errorf("AIAnalysis %s/%s SelectedWorkflow missing WorkflowID", ai.Namespace, ai.Name)
 	}
@@ -224,7 +225,7 @@ func (c *NotificationCreator) CreateApprovalNotification(
 
 	logger.Info("Created approval NotificationRequest",
 		"name", result,
-		"approvalReason", ai.Status.ApprovalReason,
+		"approvalReason", ai.Status.GetApproval().ApprovalReason,
 	)
 
 	// BR-ORCH-035: Caller (reconciler) appends to rr.Status.NotificationRequestRefs
@@ -262,16 +263,16 @@ func (c *NotificationCreator) buildApprovalNotificationRequest(name string, rr *
 					AIAnalysis:         ai.Name,
 				},
 				Workflow: &notificationv1.WorkflowContext{
-					SelectedWorkflow: ai.Status.SelectedWorkflow.WorkflowID,
-					Confidence:       fmt.Sprintf("%.2f", ai.Status.SelectedWorkflow.Confidence),
+					SelectedWorkflow: ai.Status.RCAResult.SelectedWorkflow.WorkflowID,
+					Confidence:       fmt.Sprintf("%.2f", ai.Status.RCAResult.SelectedWorkflow.Confidence),
 					// Issue #1677 Phase 1: catalog-authoritative fields sourced
 					// directly from SelectedWorkflow -- no live DataStorage
 					// lookup needed by Notification.
-					WorkflowName: ai.Status.SelectedWorkflow.WorkflowName,
-					ActionType:   ai.Status.SelectedWorkflow.ActionType,
+					WorkflowName: ai.Status.RCAResult.SelectedWorkflow.WorkflowName,
+					ActionType:   ai.Status.RCAResult.SelectedWorkflow.ActionType,
 				},
 				Analysis: &notificationv1.AnalysisContext{
-					ApprovalReason: ai.Status.ApprovalReason,
+					ApprovalReason: ai.Status.GetApproval().ApprovalReason,
 				},
 			},
 		},
@@ -294,19 +295,22 @@ func (c *NotificationCreator) mapPriority(priority string) notificationv1.Notifi
 
 // buildApprovalBody builds the approval notification body.
 func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, target remediationv1.ResourceIdentifier) string {
-	rootCause := ai.Status.RootCause
-	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.Summary != "" {
-		rootCause = ai.Status.RootCauseAnalysis.Summary
+	rca := ai.Status.GetRCAResult()
+	rootCause := rca.RootCause
+	if rca.RootCauseAnalysis != nil && rca.RootCauseAnalysis.Summary != "" {
+		rootCause = rca.RootCauseAnalysis.Summary
 	}
 
-	approvalReason := ai.Status.ApprovalReason
-	if ai.Status.ApprovalContext != nil && ai.Status.ApprovalContext.Reason != "" {
-		approvalReason = ai.Status.ApprovalContext.Reason
+	approval := ai.Status.GetApproval()
+	approvalReason := approval.ApprovalReason
+	if approval.ApprovalContext != nil && approval.ApprovalContext.Reason != "" {
+		approvalReason = approval.ApprovalContext.Reason
 	}
 
-	workflowLabel := ai.Status.SelectedWorkflow.WorkflowID
-	if ai.Status.SelectedWorkflow.ActionType != "" {
-		workflowLabel = fmt.Sprintf("%s (%s)", ai.Status.SelectedWorkflow.ActionType, ai.Status.SelectedWorkflow.WorkflowID)
+	sw := rca.SelectedWorkflow
+	workflowLabel := sw.WorkflowID
+	if sw.ActionType != "" {
+		workflowLabel = fmt.Sprintf("%s (%s)", sw.ActionType, sw.WorkflowID)
 	}
 
 	body := "Remediation requires approval:\n\n" +
@@ -329,15 +333,15 @@ func (c *NotificationCreator) buildApprovalBody(rr *remediationv1.RemediationReq
 			rr.Spec.Severity,
 			formatTargetResource(target),
 			rootCause,
-			ai.Status.SelectedWorkflow.Confidence*100,
+			sw.Confidence*100,
 			workflowLabel,
 			approvalReason,
 		)
 
 	body += "\n\nPlease review and approve/reject the remediation."
 
-	if ai.Status.SelectedWorkflow.Rationale != "" {
-		body += fmt.Sprintf("\n\n**Selection Rationale**:\n%s", ai.Status.SelectedWorkflow.Rationale)
+	if sw.Rationale != "" {
+		body += fmt.Sprintf("\n\n**Selection Rationale**:\n%s", sw.Rationale)
 	}
 
 	return FormatClusterLine(c.clusterName, c.clusterUUID) + FormatRemediationLine(rr.Name) + body
@@ -405,17 +409,18 @@ type completionContent struct {
 // AIAnalysis and the (optional) EffectivenessAssessment.
 // #318: ea is optional -- nil produces "Verification: not available" (graceful degradation).
 func resolveCompletionContent(rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis, ea *eav1.EffectivenessAssessment) completionContent {
-	rootCause := ai.Status.RootCause
-	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.Summary != "" {
-		rootCause = ai.Status.RootCauseAnalysis.Summary
+	rca := ai.Status.GetRCAResult()
+	rootCause := rca.RootCause
+	if rca.RootCauseAnalysis != nil && rca.RootCauseAnalysis.Summary != "" {
+		rootCause = rca.RootCauseAnalysis.Summary
 	}
 
 	var workflowID, workflowName, actionType, rationale string
-	if ai.Status.SelectedWorkflow != nil {
-		workflowID = ai.Status.SelectedWorkflow.WorkflowID
-		workflowName = ai.Status.SelectedWorkflow.WorkflowName
-		actionType = ai.Status.SelectedWorkflow.ActionType
-		rationale = ai.Status.SelectedWorkflow.Rationale
+	if rca.SelectedWorkflow != nil {
+		workflowID = rca.SelectedWorkflow.WorkflowID
+		workflowName = rca.SelectedWorkflow.WorkflowName
+		actionType = rca.SelectedWorkflow.ActionType
+		rationale = rca.SelectedWorkflow.Rationale
 	}
 
 	// #318 + #546: Build verification summary from EA (with RR for hash degradation)
@@ -1234,9 +1239,10 @@ func (c *NotificationCreator) CreateSelfResolvedNotification(
 // self-resolved notification (BR-ORCH-037 AC-037-08). Split from
 // CreateSelfResolvedNotification for funlen.
 func (c *NotificationCreator) buildSelfResolvedNotificationRequest(name string, rr *remediationv1.RemediationRequest, ai *aianalysisv1.AIAnalysis) *notificationv1.NotificationRequest {
-	rootCause := ai.Status.RootCause
-	if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.Summary != "" {
-		rootCause = ai.Status.RootCauseAnalysis.Summary
+	rca := ai.Status.GetRCAResult()
+	rootCause := rca.RootCause
+	if rca.RootCauseAnalysis != nil && rca.RootCauseAnalysis.Summary != "" {
+		rootCause = rca.RootCauseAnalysis.Summary
 	}
 
 	return &notificationv1.NotificationRequest{

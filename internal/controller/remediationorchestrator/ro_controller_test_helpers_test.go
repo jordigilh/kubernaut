@@ -224,35 +224,39 @@ func newAIAnalysisCompleted(name, namespace, rrName string, confidence float64, 
 	ai := newAIAnalysis(name, namespace, rrName, aianalysisv1.PhaseCompleted)
 	now := metav1.Now()
 	ai.Status.CompletedAt = &now
-	ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
-		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-			WorkflowID: workflowID,
-			// WorkflowName/ActionType: Issue #1711 cascade (DD-KA-001 v1.1) made
-			// these required fields on validateSelectedWorkflow.
-			WorkflowName:    workflowID,
-			ActionType:      "RestartPod",
-			Version:         "v1",
-			ExecutionBundle: "test-image:latest",
-			// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made this a
-			// required field on validateSelectedWorkflow.
-			ExecutionEngine: "job",
+	ai.Status.RCAResult = &aianalysisv1.RCAResult{
+		SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+			WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+				WorkflowID: workflowID,
+				// WorkflowName/ActionType: Issue #1711 cascade (DD-KA-001 v1.1) made
+				// these required fields on validateSelectedWorkflow.
+				WorkflowName:    workflowID,
+				ActionType:      "RestartPod",
+				Version:         "v1",
+				ExecutionBundle: "test-image:latest",
+				// ExecutionEngine: Issue #1661 Change 11d (DD-WORKFLOW-018) made this a
+				// required field on validateSelectedWorkflow.
+				ExecutionEngine: "job",
+			},
+			Confidence: confidence,
 		},
-		Confidence: confidence,
-	}
-	ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-		Summary:  "Test root cause",
-		Severity: "high",
-		RemediationTarget: &aianalysisv1.RemediationTarget{
-			Kind:      "Deployment",
-			Name:      "test-deployment",
-			Namespace: namespace,
+		RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
+			Summary:  "Test root cause",
+			Severity: "high",
+			RemediationTarget: &aianalysisv1.RemediationTarget{
+				Kind:      "Deployment",
+				Name:      "test-deployment",
+				Namespace: namespace,
+			},
 		},
 	}
 
 	// Set approval required based on confidence
 	if confidence < 0.8 {
-		ai.Status.ApprovalRequired = true
-		ai.Status.ApprovalReason = "Low confidence score requires approval"
+		ai.Status.Approval = &aianalysisv1.ApprovalStatus{
+			ApprovalRequired: true,
+			ApprovalReason:   "Low confidence score requires approval",
+		}
 	}
 
 	return ai
@@ -521,8 +525,10 @@ func newAIAnalysisWorkflowResolutionFailed(name, namespace, rrName string) *aian
 	ai.Status.Reason = "WorkflowResolutionFailed"
 	ai.Status.SubReason = "NoMatchingWorkflows"
 	ai.Status.Message = "No workflows matched the search criteria"
-	ai.Status.NeedsHumanReview = true
-	ai.Status.HumanReviewReason = "no_matching_workflows"
+	ai.Status.Review = &aianalysisv1.ReviewStatus{
+		NeedsHumanReview:  true,
+		HumanReviewReason: "no_matching_workflows",
+	}
 	return ai
 }
 

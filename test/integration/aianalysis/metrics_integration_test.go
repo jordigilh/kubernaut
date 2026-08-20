@@ -324,7 +324,7 @@ var _ = Describe("Metrics Integration via Business Flows", Label("integration", 
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(aianalysis), &updated); err != nil {
 					return false
 				}
-				return updated.Status.SelectedWorkflow != nil
+				return updated.Status.GetRCAResult().SelectedWorkflow != nil
 			}, 60*time.Second, 500*time.Millisecond).Should(BeTrue())
 
 			// 3. Verify confidence score histogram was populated

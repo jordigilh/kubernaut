@@ -123,17 +123,19 @@ var _ = Describe("Issue #666: AwaitingApprovalHandler (BR-ORCH-026, ADR-040)", f
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: defaultFixture},
 			Status: aianalysisv1.AIAnalysisStatus{
 				Phase: "Completed",
-				SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
-					WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
-						WorkflowID:   "wf-restart",
-						WorkflowName: "wf-restart",
-						ActionType:   "patch",
+				RCAResult: &aianalysisv1.RCAResult{
+					SelectedWorkflow: &aianalysisv1.SelectedWorkflow{
+						WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
+							WorkflowID:   "wf-restart",
+							WorkflowName: "wf-restart",
+							ActionType:   "patch",
+						},
+						Confidence: 0.95,
 					},
-					Confidence: 0.95,
-				},
-				RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
-					RemediationTarget: &aianalysisv1.RemediationTarget{
-						Kind: "Deployment", Name: "my-app", Namespace: defaultFixture,
+					RootCauseAnalysis: &aianalysisv1.RootCauseAnalysis{
+						RemediationTarget: &aianalysisv1.RemediationTarget{
+							Kind: "Deployment", Name: "my-app", Namespace: defaultFixture,
+						},
 					},
 				},
 			},

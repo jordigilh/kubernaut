@@ -95,14 +95,16 @@ func persistWFERefAndDisplay(
 	ai *aianalysisv1.AIAnalysis,
 	weName string,
 ) error {
+	rca := ai.Status.GetRCAResult()
+	sw := rca.SelectedWorkflow
 	var workflowDisplayName, confidence string
-	if ai.Status.SelectedWorkflow != nil {
+	if sw != nil {
 		// Issue #1677 Phase 1 (DD-WORKFLOW-018 v1.1): ActionType/WorkflowName
 		// are catalog-authoritative, Required fields on SelectedWorkflow
 		// (never LLM-suppliable) -- no live DataStorage lookup needed.
 		workflowDisplayName = remediationrequest.FormatWorkflowDisplay(
-			ai.Status.SelectedWorkflow.ActionType, ai.Status.SelectedWorkflow.WorkflowName)
-		confidence = remediationrequest.FormatConfidence(ai.Status.SelectedWorkflow.Confidence)
+			sw.ActionType, sw.WorkflowName)
+		confidence = remediationrequest.FormatConfidence(sw.Confidence)
 	}
 
 	return helpers.UpdateRemediationRequestStatus(ctx, k8sClient, rr, func(rr *remediationv1.RemediationRequest) error {
@@ -112,18 +114,18 @@ func persistWFERefAndDisplay(
 			Name:       weName,
 			Namespace:  rr.Namespace,
 		}
-		if ai.Status.SelectedWorkflow != nil {
+		if sw != nil {
 			rr.Status.SelectedWorkflowRef = &remediationv1.WorkflowReference{
-				WorkflowID:            ai.Status.SelectedWorkflow.WorkflowID,
-				Version:               ai.Status.SelectedWorkflow.Version,
-				ExecutionBundle:       ai.Status.SelectedWorkflow.ExecutionBundle,
-				ExecutionBundleDigest: ai.Status.SelectedWorkflow.ExecutionBundleDigest,
+				WorkflowID:            sw.WorkflowID,
+				Version:               sw.Version,
+				ExecutionBundle:       sw.ExecutionBundle,
+				ExecutionBundleDigest: sw.ExecutionBundleDigest,
 			}
 			rr.Status.WorkflowDisplayName = workflowDisplayName
 			rr.Status.Confidence = confidence
 		}
-		if ai.Status.RootCauseAnalysis != nil && ai.Status.RootCauseAnalysis.RemediationTarget != nil {
-			ar := ai.Status.RootCauseAnalysis.RemediationTarget
+		if rca.RootCauseAnalysis != nil && rca.RootCauseAnalysis.RemediationTarget != nil {
+			ar := rca.RootCauseAnalysis.RemediationTarget
 			rr.Status.RemediationTarget = &remediationv1.ResourceIdentifier{
 				Kind:       ar.Kind,
 				Name:       ar.Name,

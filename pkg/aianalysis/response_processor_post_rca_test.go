@@ -263,15 +263,15 @@ var _ = Describe("ResponseProcessor PostRCAContext Population (ADR-056)", func()
 		_, err := processor.ProcessIncidentResponse(ctx, analysis, kaResp)
 		Expect(err).ToNot(HaveOccurred())
 
-		Expect(analysis.Status.SelectedWorkflow).NotTo(BeNil(),
+		Expect(analysis.Status.GetRCAResult().SelectedWorkflow).NotTo(BeNil(),
 			"SelectedWorkflow must be populated after successful processing")
-		Expect(analysis.Status.SelectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
+		Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAME", "memory-eater"),
 			"TARGET_RESOURCE_NAME must round-trip from KA response to AIAnalysis status")
-		Expect(analysis.Status.SelectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
+		Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_KIND", "Deployment"),
 			"TARGET_RESOURCE_KIND must round-trip from KA response to AIAnalysis status")
-		Expect(analysis.Status.SelectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"),
+		Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Parameters).To(HaveKeyWithValue("TARGET_RESOURCE_NAMESPACE", "production"),
 			"TARGET_RESOURCE_NAMESPACE must round-trip from KA response to AIAnalysis status")
-		Expect(analysis.Status.SelectedWorkflow.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
+		Expect(analysis.Status.GetRCAResult().SelectedWorkflow.Parameters).To(HaveKeyWithValue("MEMORY_LIMIT_NEW", "512Mi"),
 			"LLM-provided MEMORY_LIMIT_NEW must round-trip from KA response to AIAnalysis status")
 	})
 

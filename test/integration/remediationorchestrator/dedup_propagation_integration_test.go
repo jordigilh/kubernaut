@@ -80,7 +80,7 @@ func driveToExecuting(ns, rrName string) *remediationv1.RemediationRequest {
 		return k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: aiName, Namespace: ROControllerNamespace}, ai)
 	}, timeout, interval).Should(Succeed())
 	ai.Status.Phase = aianalysisv1.PhaseCompleted
-	ai.Status.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+	ai.Status.EnsureRCAResult().SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 		WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 			WorkflowID:      "wf-restart-pods",
 			WorkflowName:    "wf-restart-pods",
@@ -92,7 +92,7 @@ func driveToExecuting(ns, rrName string) *remediationv1.RemediationRequest {
 		// Issue #1661 Change 11d (DD-WORKFLOW-018): required, no DS fallback
 		Confidence: 0.95,
 	}
-	ai.Status.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+	ai.Status.RCAResult.RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
 		Summary:    "Dedup test RCA",
 		Severity:   "critical",
 		SignalType: "alert",

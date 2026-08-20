@@ -164,14 +164,14 @@ func RunOOMKillIncreaseMemoryScenario(cfg OOMKillIncreaseMemoryScenarioConfig) {
 
 	aa := &aianalysisv1.AIAnalysis{}
 	Expect(cfg.CRDClient.Get(ctx, client.ObjectKey{Name: aaName, Namespace: cfg.CRDNamespace}, aa)).To(Succeed())
-	Expect(aa.Status.SelectedWorkflow).ToNot(BeNil(), "AIAnalysis should have selected a workflow")
-	Expect(aa.Status.SelectedWorkflow.ExecutionEngine).To(Equal("job"),
+	Expect(aa.Status.GetRCAResult().SelectedWorkflow).ToNot(BeNil(), "AIAnalysis should have selected a workflow")
+	Expect(aa.Status.RCAResult.SelectedWorkflow.ExecutionEngine).To(Equal("job"),
 		"oomkill-increase-memory-v1 uses the job execution engine")
 	if cfg.ExpectedWorkflowID != "" {
-		Expect(aa.Status.SelectedWorkflow.WorkflowID).To(Equal(cfg.ExpectedWorkflowID),
+		Expect(aa.Status.RCAResult.SelectedWorkflow.WorkflowID).To(Equal(cfg.ExpectedWorkflowID),
 			"AA must select the real oomkill-increase-memory-v1 workflow (not a generic fallback)")
 	}
-	Expect(aa.Status.SelectedWorkflow.Parameters).To(HaveKey("MEMORY_LIMIT_NEW"),
+	Expect(aa.Status.RCAResult.SelectedWorkflow.Parameters).To(HaveKey("MEMORY_LIMIT_NEW"),
 		"selected workflow must carry the memory-limit fix parameter (proves oomkill-increase-memory-v1, not a different workflow)")
 
 	By("Waiting for WorkflowExecution to be created with job execution engine")

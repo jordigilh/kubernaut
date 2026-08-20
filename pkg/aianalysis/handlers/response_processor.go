@@ -93,11 +93,11 @@ func (p *ResponseProcessor) effectiveLowConfidenceFloor() float64 {
 // BR-KA-197: Check needs_human_review before proceeding
 func (p *ResponseProcessor) ProcessIncidentResponse(ctx context.Context, analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse) (ctrl.Result, error) {
 	// BR-AI-009: Reset failure counter on successful API call
-	analysis.Status.ConsecutiveFailures = 0
+	analysis.Status.EnsureInvestigationMetadata().ConsecutiveFailures = 0
 
 	// #388: All processed alerts are actionable by default; only the
 	// NotActionable handler overrides this to "NotActionable".
-	analysis.Status.Actionability = aianalysis.ActionabilityActionable
+	analysis.Status.EnsureRCAResult().Actionability = aianalysis.ActionabilityActionable
 
 	// BR-AI-601: Map alignment verdict from KA to CRD status for ALL response paths.
 	p.mapAlignmentVerdict(analysis, resp)
@@ -199,8 +199,9 @@ func (p *ResponseProcessor) checkAlternateOutcomes(ctx context.Context, analysis
 // (Wave 6 6c GREEN: gocognit remediation) — pure code motion, no behavior
 // change.
 func (p *ResponseProcessor) finalizeSuccessfulInvestigation(analysis *aianalysisv1.AIAnalysis, resp *agentclient.IncidentResponse, hasSelectedWorkflow bool) (ctrl.Result, error) {
-	analysis.Status.Warnings = resp.Warnings
-	analysis.Status.InvestigationID = resp.IncidentID
+	im := analysis.Status.EnsureInvestigationMetadata()
+	im.Warnings = resp.Warnings
+	im.InvestigationID = resp.IncidentID
 
 	// ADR-056: Extract detected_labels from KA response into PostRCAContext
 	p.populatePostRCAContext(analysis, resp.DetectedLabels.Value, resp.DetectedLabels.Set, resp.DetectedLabels.Null)
@@ -211,8 +212,9 @@ func (p *ResponseProcessor) finalizeSuccessfulInvestigation(analysis *aianalysis
 	// Store root cause analysis (if present) - uses centralized helper with remediationTarget
 	if len(resp.RootCauseAnalysis) > 0 {
 		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
-			analysis.Status.RootCause = rca.Summary
-			analysis.Status.RootCauseAnalysis = rca
+			rcaResult := analysis.Status.EnsureRCAResult()
+			rcaResult.RootCause = rca.Summary
+			rcaResult.RootCauseAnalysis = rca
 		}
 	}
 
@@ -225,7 +227,7 @@ func (p *ResponseProcessor) finalizeSuccessfulInvestigation(analysis *aianalysis
 	storeAlternativeWorkflows(analysis, resp)
 
 	// BR-KA-197: No human review needed for successful workflow selection
-	analysis.Status.NeedsHumanReview = false
+	analysis.Status.EnsureReview().NeedsHumanReview = false
 
 	// Set InvestigationComplete condition
 	aianalysis.SetInvestigationComplete(analysis, true, "KA investigation completed successfully")
@@ -287,7 +289,7 @@ func storeSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agentclient.
 		}
 	}
 	stampWorkflowSnapshot(sw, swMap)
-	analysis.Status.SelectedWorkflow = sw
+	analysis.Status.EnsureRCAResult().SelectedWorkflow = sw
 }
 
 // stampWorkflowSnapshot populates the CRD-embedded execution snapshot fields
@@ -325,7 +327,7 @@ func storeAlternativeWorkflows(analysis *aianalysisv1.AIAnalysis, resp *agentcli
 			Rationale:       alt.Rationale,
 		})
 	}
-	analysis.Status.AlternativeWorkflows = alternatives
+	analysis.Status.EnsureRCAResult().AlternativeWorkflows = alternatives
 }
 
 // mapAlignmentVerdict maps the alignment verdict from the ogen IncidentResponse
@@ -351,7 +353,7 @@ func (p *ResponseProcessor) mapAlignmentVerdict(analysis *aianalysisv1.AIAnalysi
 			Explanation: f.Explanation,
 		})
 	}
-	analysis.Status.AlignmentVerdict = status
+	analysis.Status.EnsureReview().AlignmentVerdict = status
 }
 
 // populatePostRCAContext extracts detected_labels from the KA response raw map
@@ -432,7 +434,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 	// buildManualReviewBody renders both Details and Warnings sections.
 	messageParts := recordValidationAttemptsHistory(analysis, resp.ValidationAttemptsHistory)
 	analysis.Status.Message = strings.Join(messageParts, "; ")
-	analysis.Status.Warnings = resp.Warnings
+	analysis.Status.EnsureInvestigationMetadata().Warnings = resp.Warnings
 
 	// Preserve partial response if available
 	if hasSelectedWorkflow {
@@ -442,7 +444,7 @@ func (p *ResponseProcessor) handleWorkflowResolutionFailureFromIncident(ctx cont
 	// Preserve RCA if available - Issue #97: uses centralized helper with remediationTarget
 	if len(resp.RootCauseAnalysis) > 0 {
 		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
-			analysis.Status.RootCauseAnalysis = rca
+			analysis.Status.EnsureRCAResult().RootCauseAnalysis = rca
 		}
 	}
 
@@ -466,12 +468,13 @@ func (p *ResponseProcessor) applyWorkflowResolutionFailureState(ctx context.Cont
 	analysis.Status.CompletedAt = &now
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysisv1.ReasonWorkflowResolutionFailed
-	analysis.Status.InvestigationID = resp.IncidentID
+	analysis.Status.EnsureInvestigationMetadata().InvestigationID = resp.IncidentID
 
 	// BR-KA-197: Store human review flag and reason in CRD status
-	analysis.Status.NeedsHumanReview = true
+	review := analysis.Status.EnsureReview()
+	review.NeedsHumanReview = true
 	if humanReviewReason != "" {
-		analysis.Status.HumanReviewReason = humanReviewReason
+		review.HumanReviewReason = humanReviewReason
 	}
 
 	// BR-KA-197: Track failure metrics
@@ -522,7 +525,8 @@ func recordValidationAttemptsHistory(analysis *aianalysisv1.AIAnalysis, genAttem
 			// Fallback to current time if parsing fails
 			attempt.Timestamp = metav1.Now()
 		}
-		analysis.Status.ValidationAttemptsHistory = append(analysis.Status.ValidationAttemptsHistory, attempt)
+		im := analysis.Status.EnsureInvestigationMetadata()
+		im.ValidationAttemptsHistory = append(im.ValidationAttemptsHistory, attempt)
 
 		// Build operator-friendly message from validation attempts
 		if len(genAttempt.Errors) > 0 {
@@ -555,7 +559,7 @@ func preservePartialSelectedWorkflow(analysis *aianalysisv1.AIAnalysis, resp *ag
 		Rationale:  GetStringFromMap(swMap, "rationale"),
 	}
 	stampWorkflowSnapshot(sw, swMap)
-	analysis.Status.SelectedWorkflow = sw
+	analysis.Status.EnsureRCAResult().SelectedWorkflow = sw
 }
 
 // handleProblemResolvedFromIncident handles problem self-resolved from IncidentResponse
@@ -575,10 +579,10 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
 	analysis.Status.SubReason = aianalysisv1.SubReasonProblemResolved
-	analysis.Status.InvestigationID = resp.IncidentID
+	analysis.Status.EnsureInvestigationMetadata().InvestigationID = resp.IncidentID
 
 	// BR-KA-197: No human review needed for resolved problems
-	analysis.Status.NeedsHumanReview = false
+	analysis.Status.EnsureReview().NeedsHumanReview = false
 
 	switch {
 	case resp.Analysis != "":
@@ -589,12 +593,12 @@ func (p *ResponseProcessor) handleProblemResolvedFromIncident(ctx context.Contex
 		analysis.Status.Message = "Problem self-resolved. No remediation required."
 	}
 
-	analysis.Status.Warnings = resp.Warnings
+	analysis.Status.EnsureInvestigationMetadata().Warnings = resp.Warnings
 
 	// Store RCA if available - Issue #97: uses centralized helper with remediationTarget
 	if len(resp.RootCauseAnalysis) > 0 {
 		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
-			analysis.Status.RootCauseAnalysis = rca
+			analysis.Status.EnsureRCAResult().RootCauseAnalysis = rca
 		}
 	}
 
@@ -629,11 +633,11 @@ func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context,
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysisv1.ReasonWorkflowNotNeeded
 	analysis.Status.SubReason = "NotActionable"
-	analysis.Status.InvestigationID = resp.IncidentID
+	analysis.Status.EnsureInvestigationMetadata().InvestigationID = resp.IncidentID
 
 	// #388: Benign alerts never require human review
-	analysis.Status.NeedsHumanReview = false
-	analysis.Status.Actionability = aianalysis.ActionabilityNotActionable
+	analysis.Status.EnsureReview().NeedsHumanReview = false
+	analysis.Status.EnsureRCAResult().Actionability = aianalysis.ActionabilityNotActionable
 
 	switch {
 	case resp.Analysis != "":
@@ -644,12 +648,12 @@ func (p *ResponseProcessor) handleNotActionableFromIncident(ctx context.Context,
 		analysis.Status.Message = "Alert not actionable. No remediation warranted."
 	}
 
-	analysis.Status.Warnings = resp.Warnings
+	analysis.Status.EnsureInvestigationMetadata().Warnings = resp.Warnings
 
 	// Store RCA for audit trail — benign conditions still warrant documentation
 	if len(resp.RootCauseAnalysis) > 0 {
 		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
-			analysis.Status.RootCauseAnalysis = rca
+			analysis.Status.EnsureRCAResult().RootCauseAnalysis = rca
 		}
 	}
 
@@ -688,12 +692,13 @@ func (p *ResponseProcessor) handleNoMatchingWorkflowsCompleted(ctx context.Conte
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysisv1.ReasonAnalysisCompleted
 	analysis.Status.SubReason = aianalysisv1.SubReasonNoMatchingWorkflows
-	analysis.Status.InvestigationID = resp.IncidentID
+	analysis.Status.EnsureInvestigationMetadata().InvestigationID = resp.IncidentID
 
 	// #768: NeedsHumanReview remains true — still requires human intervention
-	analysis.Status.NeedsHumanReview = true
+	review := analysis.Status.EnsureReview()
+	review.NeedsHumanReview = true
 	if humanReviewReason != "" {
-		analysis.Status.HumanReviewReason = humanReviewReason
+		review.HumanReviewReason = humanReviewReason
 	}
 
 	// Build operator-friendly message
@@ -701,13 +706,14 @@ func (p *ResponseProcessor) handleNoMatchingWorkflowsCompleted(ctx context.Conte
 	if len(resp.Warnings) > 0 {
 		analysis.Status.Message += "; " + strings.Join(resp.Warnings, "; ")
 	}
-	analysis.Status.Warnings = resp.Warnings
+	analysis.Status.EnsureInvestigationMetadata().Warnings = resp.Warnings
 
 	// #769: Preserve RCA — both rootCause (summary) and rootCauseAnalysis (full struct)
 	if len(resp.RootCauseAnalysis) > 0 {
 		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
-			analysis.Status.RootCause = rca.Summary
-			analysis.Status.RootCauseAnalysis = rca
+			rcaResult := analysis.Status.EnsureRCAResult()
+			rcaResult.RootCause = rca.Summary
+			rcaResult.RootCauseAnalysis = rca
 		}
 	}
 
@@ -741,23 +747,24 @@ func (p *ResponseProcessor) handleNoWorkflowTerminalFailure(ctx context.Context,
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysis.ReasonWorkflowResolutionFailed
 	analysis.Status.SubReason = aianalysisv1.SubReasonNoMatchingWorkflows // Maps to CRD SubReason enum
-	analysis.Status.InvestigationID = resp.IncidentID
+	analysis.Status.EnsureInvestigationMetadata().InvestigationID = resp.IncidentID
 
 	// BR-KA-197 AC-4: AIAnalysis sets needs_human_review for terminal failures
-	analysis.Status.NeedsHumanReview = true
-	analysis.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
+	review := analysis.Status.EnsureReview()
+	review.NeedsHumanReview = true
+	review.HumanReviewReason = aianalysisv1.HumanReviewReasonNoMatchingWorkflows
 
 	// Build operator-friendly message
 	analysis.Status.Message = "No workflow selected for remediation"
 	if len(resp.Warnings) > 0 {
 		analysis.Status.Message += "; " + strings.Join(resp.Warnings, "; ")
 	}
-	analysis.Status.Warnings = resp.Warnings
+	analysis.Status.EnsureInvestigationMetadata().Warnings = resp.Warnings
 
 	// Store RCA if available (for human review context) - Issue #97: centralized helper
 	if len(resp.RootCauseAnalysis) > 0 {
 		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
-			analysis.Status.RootCauseAnalysis = rca
+			analysis.Status.EnsureRCAResult().RootCauseAnalysis = rca
 		}
 	}
 
@@ -798,18 +805,19 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	setTotalAnalysisTime(analysis, now)
 	analysis.Status.Reason = aianalysis.ReasonWorkflowResolutionFailed
 	analysis.Status.SubReason = aianalysisv1.SubReasonLowConfidence // Maps to CRD SubReason enum
-	analysis.Status.InvestigationID = resp.IncidentID
+	analysis.Status.EnsureInvestigationMetadata().InvestigationID = resp.IncidentID
 
 	// BR-KA-197 AC-4: AIAnalysis sets needs_human_review for low confidence
-	analysis.Status.NeedsHumanReview = true
-	analysis.Status.HumanReviewReason = aianalysisv1.HumanReviewReasonLowConfidence
+	review := analysis.Status.EnsureReview()
+	review.NeedsHumanReview = true
+	review.HumanReviewReason = aianalysisv1.HumanReviewReasonLowConfidence
 
 	// Build operator-friendly message
 	analysis.Status.Message = fmt.Sprintf("Workflow confidence %.2f below threshold %.2f (low_confidence)", resp.Confidence, confidenceThreshold)
 	if len(resp.Warnings) > 0 {
 		analysis.Status.Message += "; " + strings.Join(resp.Warnings, "; ")
 	}
-	analysis.Status.Warnings = resp.Warnings
+	analysis.Status.EnsureInvestigationMetadata().Warnings = resp.Warnings
 
 	// Store workflow info for human review (partial information for operator context)
 	if resp.SelectedWorkflow.Set && !resp.SelectedWorkflow.Null {
@@ -819,7 +827,7 @@ func (p *ResponseProcessor) handleLowConfidenceFailure(ctx context.Context, anal
 	// Store RCA if available (for human review context) - Issue #97: centralized helper
 	if len(resp.RootCauseAnalysis) > 0 {
 		if rca := ExtractRootCauseAnalysis(resp.RootCauseAnalysis); rca != nil {
-			analysis.Status.RootCauseAnalysis = rca
+			analysis.Status.EnsureRCAResult().RootCauseAnalysis = rca
 		}
 	}
 
@@ -874,7 +882,7 @@ func preserveLowConfidenceWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agen
 		}
 	}
 	stampWorkflowSnapshot(sw, swMap)
-	analysis.Status.SelectedWorkflow = sw
+	analysis.Status.EnsureRCAResult().SelectedWorkflow = sw
 }
 
 // setTotalAnalysisTime calculates and sets TotalAnalysisTime from StartedAt.
@@ -882,7 +890,7 @@ func preserveLowConfidenceWorkflow(analysis *aianalysisv1.AIAnalysis, resp *agen
 // Safe to call when StartedAt is nil (no-op).
 func setTotalAnalysisTime(analysis *aianalysisv1.AIAnalysis, now metav1.Time) {
 	if analysis.Status.StartedAt != nil {
-		analysis.Status.TotalAnalysisTime = now.Sub(analysis.Status.StartedAt.Time).Milliseconds()
+		analysis.Status.EnsureInvestigationMetadata().TotalAnalysisTime = now.Sub(analysis.Status.StartedAt.Time).Milliseconds()
 	}
 }
 
