@@ -636,9 +636,18 @@ rules:
 # crash-looping the whole aianalysis-controller pod (CI run 32280464090,
 # "E2E (aianalysis)": 34/36 specs failed, including trivial health checks --
 # consistent with the pod never becoming Ready at all).
+# "delete" (BR-AI-009, DD-AA-KA-001 amendment) is for
+# AgentSessionCreator.DeleteForRetry -- this hand-rolled manifest drifted
+# from the Helm chart a second time (E2E-AA-065's first two CI runs both hit
+# "agentsessions is forbidden" on delete; RCA in DD-AA-KA-001's Gap 5
+# amendment). Keep this rule's verbs in sync with both
+# charts/kubernaut/templates/aianalysis/aianalysis.yaml and
+# config/rbac/role.yaml (kubebuilder marker in
+# internal/controller/aianalysis/aianalysis_controller.go) whenever any of
+# the three changes.
 - apiGroups: ["kubernaut.ai"]
   resources: ["agentsessions"]
-  verbs: ["get", "list", "watch", "create"]
+  verbs: ["get", "list", "watch", "create", "delete"]
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["create", "patch"]

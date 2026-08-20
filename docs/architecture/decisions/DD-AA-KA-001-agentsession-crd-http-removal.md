@@ -479,10 +479,28 @@ and neither RBAC source (`kubebuilder:rbac` marker → `config/rbac/role.yaml`, 
 independent hand-authored `ClusterRole`) was updated alongside it, so integration/unit tests (which
 use fake/envtest clients that don't enforce RBAC) never caught the gap — only a real E2E run against
 an actual API server with the real ServiceAccount surfaced it. Fixed by adding `delete` to both RBAC
-sources; no Go logic changed. Lesson for future `AgentSession`-verb-expanding changes in this
-decision's scope: grep both `+kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions` and
-`charts/kubernaut/templates/*/*.yaml`'s `resources: ["agentsessions"]` block before declaring a new
-client call wired.
+sources; no Go logic changed.
+
+**RCA — second CI run of E2E-AA-065 (2026-08-20, same day)**: after the first fix, 27/120 (worse,
+not better) still ended `Failed` with the *identical* "forbidden ... cannot delete resource
+"agentsessions"" error. A **third** independent `agentsessions` `ClusterRole` copy exists,
+hand-rolled directly in Go inside `test/infrastructure/aianalysis_e2e.go` (the E2E harness applies
+this one, not the Helm chart's -- `test/e2e/aianalysis` doesn't `helm install`, it builds the
+manifest itself) -- and its own doc comment already documented one prior drift incident from the
+Helm chart (CI run 32280464090, missing `create`/`get`/`list`/`watch` entirely, crash-looping the
+whole pod on cache-sync timeout) without that lesson preventing a second one. Fixed by adding
+`delete` there too. **Three independent copies of the same `ClusterRole` is the actual root defect**
+underlying both incidents -- the fix each time is correct but narrow; the systemic gap (no single
+source of truth, no parity test like the one `test/infrastructure/rbac_parity_test.go` already
+enforces for AF's persona `ClusterRole`s) remains open and is exactly why this cost two RCA rounds
+instead of one. Recorded as a Future Consideration below rather than fixed in this already-large
+amendment.
+
+Lesson for future `AgentSession`-verb-expanding changes in this decision's scope: grep all **three**
+sources before declaring a new client call wired --
+`+kubebuilder:rbac:groups=kubernaut.ai,resources=agentsessions` (→ `config/rbac/role.yaml`),
+`charts/kubernaut/templates/aianalysis/aianalysis.yaml`'s `resources: ["agentsessions"]` block, and
+`test/infrastructure/aianalysis_e2e.go`'s hand-rolled `ClusterRole` YAML string.
 
 ## Future Considerations (not a decision — revisit later)
 
@@ -509,6 +527,17 @@ Raised during implementation, deliberately deferred rather than decided here:
   AF watches and audit reconstructs from. What would become unnecessary is specifically the
   *Lease-based multi-replica dispatch race* this decision introduces — a single merged process
   wouldn't need to race itself for work it just created in the same call stack.
+- **RBAC parity test for AA's `agentsessions` `ClusterRole`.** Gap 5's second RCA round found
+  *three* independently-maintained copies of AA's `agentsessions` `ClusterRole` (kubebuilder
+  marker → `config/rbac/role.yaml`, the Helm chart, and a hand-rolled copy in
+  `test/infrastructure/aianalysis_e2e.go`) that have now drifted out of sync twice across two
+  separate incidents, each only caught by a real E2E run days-to-weeks apart. AF already has
+  exactly this class of regression test (`test/infrastructure/rbac_parity_test.go`, comparing its
+  persona `ClusterRole`s for parity) — extending an equivalent check to AA's three
+  `agentsessions` copies (and auditing whether any other service's E2E harness has silently
+  drifted the same way) would catch this class of gap at `go build`/unit-test speed instead of a
+  15-minute E2E cycle. Not done here to keep this already-large amendment scoped to the capacity-
+  retry feature itself.
 
 ## Consequences
 
