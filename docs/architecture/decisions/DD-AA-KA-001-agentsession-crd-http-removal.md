@@ -601,6 +601,21 @@ vs. completion-speed) to do so -- it must pin down every timing variable it can 
 duration) and leave only the one variable actually under test (dispatch admission control) free to
 vary.
 
+**Final status (2026-08-20, post-fix)**: two consecutive CI runs of E2E-AA-065 with the deterministic-delay
+fix passed cleanly (43.7s and 47.6s respectively, both comfortably under the 120s timeout, both with a
+confirmed genuine `AgentSessionReasonCapacityExceeded` retry). The feature itself (dispatch admission
+control, retry logic, Lease cleanup, RBAC) is proven correct and stable. Residual CI redness on
+`E2E (aianalysis)` and `Integration (aianalysis)` in the same runs is a **different, pre-existing, already
+tracked issue**: [#2204](https://github.com/jordigilh/kubernaut/issues/2204) (root-caused via live pprof +
+goroutine-dump correlation on `helios08`) -- bursty concurrent `AgentSession` creation across *any* spec in
+the shared per-process KA container causes legitimate LLM-tool-loop backlog that pushes some *unrelated*
+specs' fixed 60s `Eventually` assertions (in `05_audit_trail_test.go`, `06_error_audit_trail_test.go`,
+`03_full_flow_test.go`, `audit_flow_integration_test.go`, `metrics_integration_test.go`, and similar) past
+their timeout under system-wide CI resource contention -- confirmed via timestamp correlation showing
+several of these stalls beginning *before* E2E-AA-065's own burst window even started, ruling out this PR's
+burst as the trigger. #2204 predates this PR, is unrelated to `AgentSessionReasonCapacityExceeded` retry
+logic, and its suggested fix (raise the affected specs' `Eventually` timeouts) is out of scope for this PR.
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:
