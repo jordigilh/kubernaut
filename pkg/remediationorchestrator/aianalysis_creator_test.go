@@ -118,7 +118,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 				// Override SP status to have custom environment/priority/severity for test
 				completedSP.Status.EnvironmentClassification.Environment = signalprocessingv1.EnvironmentProduction
 				completedSP.Status.PriorityAssignment.Priority = signalprocessingv1.PriorityP0
-				completedSP.Status.Severity = signalprocessingv1.SeverityCritical // DD-SEVERITY-001: Normalized severity from SP
+				completedSP.Status.EnsureSignalClassification().Severity = signalprocessingv1.SeverityCritical // DD-SEVERITY-001: Normalized severity from SP
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()
 				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
@@ -150,9 +150,9 @@ var _ = Describe("AIAnalysisCreator", func() {
 				// Fingerprint comes from RR.Spec
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Fingerprint).To(Equal(rr.Spec.SignalFingerprint))
 				// BR-SP-106: SignalType now comes from SP.Status (normalized by signal mode classifier)
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal(completedSP.Status.SignalName))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.SignalName).To(Equal(completedSP.Status.GetSignalClassification().SignalName))
 				// DD-SEVERITY-001: Severity, Environment, and Priority come from SP.Status (normalized)
-				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal(completedSP.Status.Severity))
+				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Severity).To(Equal(completedSP.Status.GetSignalClassification().Severity))
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.Environment).To(Equal(string(completedSP.Status.EnvironmentClassification.Environment)))
 				Expect(createdAI.Spec.AnalysisRequest.SignalContext.BusinessPriority).To(Equal(string(completedSP.Status.PriorityAssignment.Priority)))
 
@@ -213,7 +213,7 @@ var _ = Describe("AIAnalysisCreator", func() {
 					Phase: signalprocessingv1.PhaseCompleted,
 				})
 				// Set normalized severity in SP status (determined by SignalProcessing Rego policy)
-				completedSP.Status.Severity = signalprocessingv1.SeverityCritical
+				completedSP.Status.EnsureSignalClassification().Severity = signalprocessingv1.SeverityCritical
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()
 				aiCreator := creator.NewAIAnalysisCreator(fakeClient, scheme, nil)
@@ -405,9 +405,10 @@ var _ = Describe("AIAnalysisCreator", func() {
 			It("UT-RO-106-001: should copy SignalMode from SP status to AA spec", func() {
 				// Arrange: SP has proactive signal mode
 				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
-				completedSP.Status.SignalMode = "proactive"
-				completedSP.Status.SignalName = "OOMKilled"              // normalized
-				completedSP.Status.SourceSignalName = "PredictedOOMKill" // preserved for audit
+				spClassification := completedSP.Status.EnsureSignalClassification()
+				spClassification.SignalMode = "proactive"
+				spClassification.SignalName = "OOMKilled"              // normalized
+				spClassification.SourceSignalName = "PredictedOOMKill" // preserved for audit
 
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()
@@ -433,9 +434,10 @@ var _ = Describe("AIAnalysisCreator", func() {
 			It("UT-RO-106-002: should read SignalType from SP status (not RR spec)", func() {
 				// Arrange: SP has normalized signal type
 				completedSP := helpers.NewCompletedSignalProcessing("sp-test-remediation", "default")
-				completedSP.Status.SignalMode = "proactive"
-				completedSP.Status.SignalName = "OOMKilled" // Normalized by SP
-				completedSP.Status.SourceSignalName = "PredictedOOMKill"
+				spClassification := completedSP.Status.EnsureSignalClassification()
+				spClassification.SignalMode = "proactive"
+				spClassification.SignalName = "OOMKilled" // Normalized by SP
+				spClassification.SourceSignalName = "PredictedOOMKill"
 
 				fakeClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(completedSP).
 					WithStatusSubresource(completedSP).Build()

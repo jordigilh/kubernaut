@@ -113,11 +113,12 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 
 		By("3. Manually updating SP status with proactive signal mode (simulating SP controller)")
 		sp.Status.Phase = signalprocessingv1.PhaseCompleted
-		sp.Status.Severity = signalprocessingv1.SeverityCritical
+		spClassification := sp.Status.EnsureSignalClassification()
+		spClassification.Severity = signalprocessingv1.SeverityCritical
 		// BR-SP-106: Proactive signal mode fields
-		sp.Status.SignalMode = signalprocessingv1.SignalModeProactive
-		sp.Status.SignalName = signalNameOOMKilledFixture // Normalized from PredictedOOMKill
-		sp.Status.SourceSignalName = "PredictedOOMKill"   // Preserved for SOC2 audit trail
+		spClassification.SignalMode = signalprocessingv1.SignalModeProactive
+		spClassification.SignalName = signalNameOOMKilledFixture // Normalized from PredictedOOMKill
+		spClassification.SourceSignalName = "PredictedOOMKill"   // Preserved for SOC2 audit trail
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 			Environment:  signalprocessingv1.EnvironmentProduction,
 			Source:       "namespace-labels",
@@ -205,9 +206,10 @@ var _ = Describe("E2E-RO-106-001: Proactive Signal Mode Propagation", Label("e2e
 
 		By("3. Manually updating SP status with reactive signal mode")
 		sp.Status.Phase = signalprocessingv1.PhaseCompleted
-		sp.Status.Severity = signalprocessingv1.SeverityCritical
-		sp.Status.SignalMode = signalprocessingv1.SignalModeReactive
-		sp.Status.SignalName = signalNameOOMKilledFixture // Unchanged for reactive
+		spClassification := sp.Status.EnsureSignalClassification()
+		spClassification.Severity = signalprocessingv1.SeverityCritical
+		spClassification.SignalMode = signalprocessingv1.SignalModeReactive
+		spClassification.SignalName = signalNameOOMKilledFixture // Unchanged for reactive
 		sp.Status.EnvironmentClassification = &signalprocessingv1.EnvironmentClassification{
 			Environment:  signalprocessingv1.EnvironmentProduction,
 			Source:       "namespace-labels",
