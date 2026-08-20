@@ -187,6 +187,23 @@ func (d *Dispatcher) resync(ctx context.Context) {
 // created already past its deadline (e.g. from a backlog) would otherwise
 // win the race to tryDispatch before the next resync tick ever runs.
 func (d *Dispatcher) considerAgentSession(ctx context.Context, as *agentsessionv1.AgentSession) {
+	// #2204 follow-up (2026-08-20, IT-AA CI RCA): unexplained silent-stall
+	// RCA target -- an Integration(aianalysis) run observed an AgentSession
+	// created and immediately requeued by AA (backstop ~25m away), then
+	// zero further activity of any kind (no enrichment, no LLM call, no
+	// dispatch-lease log) for the entire 90s test window, despite this
+	// replica's watch+resync loop having started well before the
+	// AgentSession existed. This entry-level log is the cheapest possible
+	// proof point: if it is missing for a given AgentSession name in a
+	// future occurrence, the watch/resync loop itself never visited the
+	// object (a KA-side observation gap); if present, the stall is further
+	// downstream (Lease race, session.Manager capacity, or the
+	// investigation itself). Debug, not Info: fires on every watch event
+	// AND every resync tick for every non-terminal AgentSession, so at
+	// production's 30s resync interval under real fleet volume this would
+	// otherwise be noisy at Info.
+	d.logger.V(1).Info("considering agentsession for dispatch",
+		"agentSession", as.Name, "namespace", as.Namespace, "phase", as.Status.Phase)
 	if isTerminalPhase(as.Status.Phase) {
 		return
 	}
@@ -341,6 +358,17 @@ func (d *Dispatcher) tryDispatch(ctx context.Context, as *agentsessionv1.AgentSe
 		return
 	}
 	if !won {
+		// #2204 follow-up: this is the expected, common outcome of every
+		// replica reacting to the same event (see this function's doc
+		// comment) -- V(1), not Error/Info, so it stays silent at
+		// production's default verbosity. Its value is purely diagnostic:
+		// without it, "lost the Lease race every single time this
+		// AgentSession was considered" (a genuine stall, e.g. a Lease held
+		// by a replica that itself never progresses) was previously
+		// indistinguishable from "never considered at all" -- both produced
+		// zero log output.
+		d.logger.V(1).Info("dispatch lease race lost, another replica owns this agentsession",
+			"agentSession", as.Name, "namespace", as.Namespace)
 		return
 	}
 
