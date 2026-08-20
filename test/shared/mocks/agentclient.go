@@ -55,6 +55,12 @@ type MockAgentClient struct {
 	// LastRequest stores the last AIAnalysis passed to GetOrCreate.
 	LastRequest *aianalysisv1.AIAnalysis
 
+	// DeleteForRetryErr, when non-nil, is returned by DeleteForRetry.
+	DeleteForRetryErr error
+
+	// DeleteForRetryCallCount tracks how many times DeleteForRetry was called.
+	DeleteForRetryCallCount int
+
 	mu sync.Mutex
 }
 
@@ -88,6 +94,17 @@ func (m *MockAgentClient) GetOrCreate(ctx context.Context, analysis *aianalysisv
 		return nil, m.Err
 	}
 	return m.AgentSession, nil
+}
+
+// DeleteForRetry implements handlers.AgentSessionGetOrCreator (BR-AI-009,
+// DD-AA-KA-001 amendment). The mock does not mutate AgentSession state --
+// tests that exercise a full retry cycle configure the next GetOrCreate
+// behavior separately via GetOrCreateFunc/WithPhase.
+func (m *MockAgentClient) DeleteForRetry(ctx context.Context, as *agentsessionv1.AgentSession) error {
+	m.mu.Lock()
+	m.DeleteForRetryCallCount++
+	m.mu.Unlock()
+	return m.DeleteForRetryErr
 }
 
 // GetCallCount returns CallCount in a thread-safe manner.
@@ -155,6 +172,16 @@ func (m *MockAgentClient) WithResult(res *agentsessionv1.AgentSessionResult) *Mo
 func (m *MockAgentClient) WithFailed(errMsg string) *MockAgentClient {
 	m.AgentSession.Status.Phase = agentsessionv1.AgentSessionPhaseFailed
 	m.AgentSession.Status.Error = errMsg
+	return m
+}
+
+// WithFailedCapacityExceeded marks the session Failed with
+// Status.Reason=AgentSessionReasonCapacityExceeded (BR-AI-009, DD-AA-KA-001
+// amendment) -- KA's tag for a transient, self-resolving dispatch-capacity
+// rejection, distinct from a genuine investigation failure.
+func (m *MockAgentClient) WithFailedCapacityExceeded(errMsg string) *MockAgentClient {
+	m.WithFailed(errMsg)
+	m.AgentSession.Status.Reason = agentsessionv1.AgentSessionReasonCapacityExceeded
 	return m
 }
 

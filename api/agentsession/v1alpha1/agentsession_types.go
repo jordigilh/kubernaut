@@ -44,6 +44,17 @@ const (
 	AgentSessionPhaseCancelled AgentSessionPhase = "Cancelled"
 )
 
+// AgentSessionStatus.Reason values.
+const (
+	// AgentSessionReasonCapacityExceeded means KA rejected dispatch because
+	// its per-process session.Store MaxConcurrentInvestigations capacity
+	// was exceeded (session.ErrMaxInvestigationsReached) -- a transient,
+	// self-resolving backpressure condition, not a genuine investigation
+	// failure. BR-AI-009 (retry transient errors with backoff): AA treats
+	// this Reason as retryable, distinct from all other Failed causes.
+	AgentSessionReasonCapacityExceeded = "CapacityExceeded"
+)
+
 // ObjectRef is a reference to a namespaced Kubernetes object.
 type ObjectRef struct {
 	// Name of the referenced object.
@@ -340,6 +351,16 @@ type AgentSessionStatus struct {
 	// transition (SI-11: never a raw internal error string).
 	// +optional
 	Error string `json:"error,omitempty"`
+
+	// Reason is a curated, machine-readable failure classification, set
+	// alongside Error on the Failed transition. Currently the sole defined
+	// value is AgentSessionReasonCapacityExceeded (BR-AI-009, DD-AA-KA-001
+	// amendment) -- distinguishing a transient, self-resolving capacity
+	// rejection (session.ErrMaxInvestigationsReached) from any other
+	// investigation failure, so AA can retry instead of permanently
+	// failing the AIAnalysis. Empty for all other failure causes.
+	// +optional
+	Reason string `json:"reason,omitempty"`
 
 	// DispatchedAt is the timestamp when a KA replica won the dispatch
 	// Lease and began investigating.

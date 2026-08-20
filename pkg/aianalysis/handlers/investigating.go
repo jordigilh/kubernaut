@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -54,12 +55,12 @@ type InvestigatingHandler struct {
 	agentSessionGetOrCreator AgentSessionGetOrCreator
 	metrics                  *metrics.Metrics     // DD-METRICS-001: Injected metrics
 	auditClient              AuditClientInterface // DD-AUDIT-003: Injected audit client
-	processor                *ResponseProcessor    // P1.1: Response processing logic
-	errorClassifier          *ErrorClassifier      // P2.1: Error classification and retry logic
-	sessionPollInterval      time.Duration         // BR-AA-KA-065.8: Safety-net requeue interval while running
-	maxInvestigationDuration time.Duration         // #1078: Wall-clock cap on investigation before PhaseFailed
-	recorder                 record.EventRecorder  // DD-EVENT-001: K8s event recorder for session lifecycle events
-	isPhaseUpdater           ISPhaseUpdater         // #1376: Write-only IS terminal-close (DD-AA-KA-001 Amendment)
+	processor                *ResponseProcessor   // P1.1: Response processing logic
+	errorClassifier          *ErrorClassifier     // P2.1: Error classification and retry logic
+	sessionPollInterval      time.Duration        // BR-AA-KA-065.8: Safety-net requeue interval while running
+	maxInvestigationDuration time.Duration        // #1078: Wall-clock cap on investigation before PhaseFailed
+	recorder                 record.EventRecorder // DD-EVENT-001: K8s event recorder for session lifecycle events
+	isPhaseUpdater           ISPhaseUpdater       // #1376: Write-only IS terminal-close (DD-AA-KA-001 Amendment)
 }
 
 // InvestigatingHandlerOption is a functional option for InvestigatingHandler configuration.
@@ -439,6 +440,15 @@ func isSessionTimedOutWithoutResult(res *agentsessionv1.AgentSessionResult) bool
 func (h *InvestigatingHandler) handleSessionFailed(ctx context.Context, analysis *aianalysisv1.AIAnalysis, as *agentsessionv1.AgentSession) (ctrl.Result, error) {
 	session := analysis.Status.KASession
 
+	if as.Status.Reason == agentsessionv1.AgentSessionReasonCapacityExceeded {
+		if result, retried := h.retryCapacityExceeded(ctx, analysis, as, session); retried {
+			return result, nil
+		}
+		// Retry budget exhausted: fall through to the permanent-fail path
+		// below, unchanged -- a capacity-exceeded failure that has
+		// exhausted its retries is reported identically to any other.
+	}
+
 	h.log.Info("KA session failed",
 		"agentSession", as.Name,
 		"pollCount", session.PollCount,
@@ -467,6 +477,45 @@ func (h *InvestigatingHandler) handleSessionFailed(ctx context.Context, analysis
 
 	aianalysis.SetInvestigationComplete(analysis, false, analysis.Status.Message)
 	return ctrl.Result{}, nil
+}
+
+// retryCapacityExceeded implements the BR-AI-009 retry path for a
+// KA-dispatch-time capacity rejection (DD-AA-KA-001 amendment,
+// AgentSessionReasonCapacityExceeded): a transient, self-resolving
+// backpressure condition (session.ErrMaxInvestigationsReached) that must
+// not permanently fail the AIAnalysis while retry budget remains. Reuses
+// ErrorClassifier's already-tested HTTP-429/rate-limit branch via a
+// synthetic status error -- no new classification or backoff logic -- and
+// KASession.Generation (vestigial after the retired HTTP-session
+// regeneration mechanism) as the retry-attempt counter, avoiding a new
+// field. Returns (result, true) when a retry was taken and the caller must
+// return result immediately; (zero, false) when the budget is exhausted,
+// in which case the caller falls through to the unchanged permanent-fail
+// path.
+func (h *InvestigatingHandler) retryCapacityExceeded(ctx context.Context, analysis *aianalysisv1.AIAnalysis, as *agentsessionv1.AgentSession, session *aianalysisv1.KASession) (ctrl.Result, bool) {
+	syntheticErr := apierrors.NewTooManyRequests(as.Status.Error, 0)
+	classification := h.errorClassifier.ClassifyError(syntheticErr)
+	attempt := int(session.Generation)
+
+	if !h.errorClassifier.ShouldRetry(classification, attempt) {
+		h.log.Info("capacity-exceeded retry budget exhausted, failing permanently",
+			"agentSession", as.Name, "attempts", attempt)
+		return ctrl.Result{}, false
+	}
+
+	if err := h.agentSessionGetOrCreator.DeleteForRetry(ctx, as); err != nil {
+		h.log.Error(err, "failed to delete AgentSession for capacity-exceeded retry, failing permanently",
+			"agentSession", as.Name)
+		return ctrl.Result{}, false
+	}
+
+	backoff := h.errorClassifier.GetRetryDelay(attempt)
+	analysis.Status.KASession = &aianalysisv1.KASession{Generation: session.Generation + 1}
+
+	h.log.Info("KA dispatch capacity exceeded, retrying with backoff",
+		"agentSession", as.Name, "attempt", attempt+1, "backoff", backoff)
+
+	return ctrl.Result{RequeueAfter: backoff}, true
 }
 
 // handleSessionCancelled handles the AgentSession's Cancelled phase: the

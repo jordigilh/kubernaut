@@ -198,6 +198,50 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 		})
 	})
 
+	Describe("UT-AA-KA-065-025 / BR-AI-009: dispatch rejected by KA's own per-process capacity cap is tagged CapacityExceeded, distinct from any other dispatch failure", func() {
+		It("should set Status.Reason=CapacityExceeded when session.Manager.StartInvestigationWithContext returns ErrMaxInvestigationsReached", func() {
+			// A dedicated, capacity-capped Store/Manager (WithMaxConcurrent(1)):
+			// the first AgentSession's investigation is held open by
+			// fakeInvestigationRunner's delay so a second, concurrently-
+			// dispatched AgentSession deterministically hits the cap instead
+			// of racing it.
+			cappedStore := session.NewStore(5*time.Minute, session.WithMaxConcurrent(1))
+			cappedMgr := session.NewManager(cappedStore, logr.Discard(), nil, kametrics.NewMetrics())
+
+			runner := &fakeInvestigationRunner{delay: 2 * time.Second, result: &katypes.InvestigationResult{RCASummary: "first, still running"}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", cappedMgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+			wireHooks(cappedMgr, d)
+			go d.Start(ctx)
+
+			first := newPendingAgentSession("as-cap-1")
+			Expect(cli.Create(ctx, first)).To(Succeed())
+			firstKey := crclient.ObjectKeyFromObject(first)
+
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, firstKey, got)).To(Succeed())
+				return got.Status.Phase
+			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseInvestigating),
+				"the first AgentSession must occupy the capped Manager's sole concurrent slot before the second is created")
+
+			second := newPendingAgentSession("as-cap-2")
+			Expect(cli.Create(ctx, second)).To(Succeed())
+			secondKey := crclient.ObjectKeyFromObject(second)
+
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, secondKey, got)).To(Succeed())
+				return got.Status.Phase
+			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseFailed))
+
+			got := &agentsessionv1.AgentSession{}
+			Expect(cli.Get(ctx, secondKey, got)).To(Succeed())
+			Expect(got.Status.Reason).To(Equal(agentsessionv1.AgentSessionReasonCapacityExceeded),
+				"a capacity-exceeded dispatch failure must be distinguishable (via Status.Reason) from a genuine investigation failure so AA can retry it")
+			Expect(got.Status.Error).NotTo(BeEmpty(), "Status.Error must still carry the curated, user-facing message")
+		})
+	})
+
 	Describe("UT-AA-KA-065-021: a failed investigation writes a curated Failed status", func() {
 		It("should set Phase=Failed with a curated, non-raw error message", func() {
 			runner := &fakeInvestigationRunner{err: errors.New("llm timeout: raw internal detail")}

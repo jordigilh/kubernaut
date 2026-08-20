@@ -394,6 +394,74 @@ deadline KA itself could enforce. Two concrete, still-open gaps followed from th
 CRD schema); `pkg/aianalysis/handlers/request_builder.go`'s `BuildAgentSessionSpec` propagation
 (UT-AA-KA-065-101 suite).
 
+### Gap 5 (2026-08-19): a genuine KA dispatch-capacity rejection had no way to distinguish itself from a real investigation failure
+
+Found while decomposing the 29-field `AIAnalysisStatus` god struct (a separate, behavior-preserving
+refactor landed first as its own PR) and re-examining `InvestigatingHandler.handleSessionFailed`
+for the sub-struct migration: KA's dispatcher already self-enforces admission control via
+`session.Manager`'s configured `MaxConcurrentInvestigations` (`internal/kubernautagent/session/
+store.go`) — a fresh `AgentSession` arriving when the store is already at capacity is rejected with
+`session.ErrMaxInvestigationsReached` before any investigation ever starts. Before this amendment,
+`Dispatcher.dispatch()` wrote that rejection to `AgentSession.Status` exactly like any other dispatch
+error: `Phase=Failed`, a curated `Status.Error` string, nothing else. AA's `handleSessionFailed` had
+no way to tell "KA is momentarily oversubscribed, try again shortly" apart from "the investigation
+itself genuinely failed" — every capacity rejection permanently failed the `AIAnalysis`, even though
+the condition is transient and self-resolving (some in-flight investigation finishes and frees a
+slot within seconds). Under real fleet-wide concurrent-alert load this is a false negative: an
+operator sees a permanently failed root-cause analysis for an incident KA was fully capable of
+investigating, just not in that exact instant.
+
+**Resolution:** `AgentSessionStatus` gains a new `Reason` field (`Status.Error` stays the curated
+message; `Reason` is a separate, machine-readable classification, set only alongside `Error` on the
+`Failed` transition — currently the sole defined value is `AgentSessionReasonCapacityExceeded`,
+empty for every other failure cause). `Dispatcher.dispatch()` sets it via `errors.Is(err,
+session.ErrMaxInvestigationsReached)` at the same point it already classifies the dispatch error for
+the curated message, no new classification logic. AA's `handleSessionFailed` branches on
+`Reason == AgentSessionReasonCapacityExceeded` *before* falling into the permanent-fail path:
+`retryCapacityExceeded` builds a synthetic `apierrors.NewTooManyRequests` status error and hands it
+to the already-tested `ErrorClassifier` (the same one `handleError`'s HTTP-429/rate-limit branch
+already exercises for `GetOrCreate` transport errors) rather than adding a second, parallel
+retry/backoff implementation. `KASession.Generation` — vestigial after the retired HTTP-session
+regeneration mechanism this decision's main body already removed — is repurposed as the
+capacity-exceeded retry-attempt counter, avoiding a new CRD field. Within budget: the creator's new
+`DeleteForRetry` removes the stale `Failed`/`CapacityExceeded` `AgentSession` (so the *next*
+`GetOrCreate` naturally falls through to `Create` instead of mutating a terminal object — mirroring
+this decision's existing "no stale-object mutation" convention elsewhere), `Generation` increments,
+and the reconcile returns `RequeueAfter: <classifier backoff>` with the `AIAnalysis` left in
+`Investigating` — a capacity rejection is never itself an observable phase transition. Once the
+budget (`ErrorClassifier`'s existing 5-attempt cap, exponential backoff, unchanged) is exhausted,
+`retryCapacityExceeded` returns `(zero, false)` and `handleSessionFailed` falls through to the
+unchanged permanent-fail path below it, reported identically to any other `AgentSession` failure —
+by that point five self-resolving retries have not resolved it, so continuing to distinguish the
+cause from a genuine failure has no remaining operator value.
+
+**Why reuse `ErrorClassifier` instead of a dedicated capacity-retry path**: the alternative
+(bespoke backoff/attempt-tracking logic specific to this one `Reason`) would duplicate exactly the
+policy `handleError`'s HTTP-429 branch already encodes and already has unit coverage for. A
+synthetic status error is the minimal seam that lets one retryable-error policy serve both a real
+transport failure and a status-carried business rejection, without teaching `ErrorClassifier`
+anything about `AgentSession` semantics.
+
+**Business Requirements**: BR-AI-009 (retry transient errors with backoff — the same identifier
+`handleError`'s pre-existing transient-error retry path in this file already uses; this amendment
+extends that established retry contract to a new transient-failure cause rather than introducing a
+new BR), BR-AA-KA-065 (AA↔KA channel is the `AgentSession` CRD).
+
+**Implemented**: `api/agentsession/v1alpha1/agentsession_types.go`'s `AgentSessionStatus.Reason` +
+`AgentSessionReasonCapacityExceeded`; `internal/kubernautagent/agentsession/dispatcher.go`'s
+`dispatch()` (`errors.Is` tagging) and `status_writer.go`'s `writeFailedStatus` (new `reason`
+parameter); `pkg/aianalysis/creator/agentsession.go`'s `AgentSessionCreator.DeleteForRetry`;
+`pkg/aianalysis/handlers/investigating.go`'s `handleSessionFailed`/`retryCapacityExceeded`. Test
+coverage: `internal/kubernautagent/agentsession/dispatcher_test.go` (UT-AA-KA-065-025),
+`pkg/aianalysis/agentsession_creator_test.go` (UT-AA-KA-065-208/209),
+`pkg/aianalysis/investigating_handler_session_test.go` (UT-AA-065-007/008),
+`test/integration/aianalysis/capacityretry` (IT-AA-KA-065-210/211 — deliberately isolated from the
+heavy shared `test/integration/aianalysis` suite's real per-process KA subprocess, which would race
+a directly-seeded `AgentSession` fixture; see that package's `suite_test.go` doc comment),
+`test/e2e/aianalysis/11_capacity_exceeded_retry_e2e_test.go` (E2E-AA-065 — the one layer that drives
+a *genuine* `session.ErrMaxInvestigationsReached` rejection under real concurrent load against the
+E2E cluster's actually-deployed KA, rather than a seeded/synthetic one).
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:

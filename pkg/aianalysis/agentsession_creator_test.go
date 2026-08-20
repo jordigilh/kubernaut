@@ -198,4 +198,44 @@ var _ = Describe("AgentSessionCreator", func() {
 				"#2081: concurrent GetOrCreate calls must never produce more than one AgentSession for the same AIAnalysis")
 		})
 	})
+
+	// DeleteForRetry: BR-AI-009 / DD-AA-KA-001 amendment. When KA tags a
+	// dispatch failure as AgentSessionReasonCapacityExceeded (a transient,
+	// self-resolving backpressure condition, not a genuine investigation
+	// failure), AA deletes the stale AgentSession so GetOrCreate's next
+	// reconcile naturally falls through to Create -- a fresh attempt, not a
+	// mutation of the terminal Failed object.
+	Describe("DeleteForRetry", func() {
+		It("UT-AA-KA-065-208: should delete an existing AgentSession", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			c := creator.NewAgentSessionCreator(fakeClient, scheme)
+			analysis := helpers.NewAIAnalysis("ai-test", "default")
+			analysis.Spec.RemediationRequestRef = corev1.ObjectReference{Name: "test-remediation"}
+
+			as, err := c.GetOrCreate(ctx, analysis)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(c.DeleteForRetry(ctx, as)).To(Succeed())
+
+			list := &agentsessionv1.AgentSessionList{}
+			Expect(fakeClient.List(ctx, list)).To(Succeed())
+			Expect(list.Items).To(BeEmpty(), "the stale AgentSession must be gone so the next GetOrCreate falls through to Create")
+		})
+
+		It("UT-AA-KA-065-209: should be idempotent — deleting an already-deleted (NotFound) AgentSession is not an error", func() {
+			fakeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+			c := creator.NewAgentSessionCreator(fakeClient, scheme)
+			analysis := helpers.NewAIAnalysis("ai-test", "default")
+			analysis.Spec.RemediationRequestRef = corev1.ObjectReference{Name: "test-remediation"}
+
+			as, err := c.GetOrCreate(ctx, analysis)
+			Expect(err).ToNot(HaveOccurred())
+
+			Expect(c.DeleteForRetry(ctx, as)).To(Succeed())
+			// Second call against the same, now-nonexistent object: a retry
+			// race (e.g. two reconciles both observing CapacityExceeded)
+			// must not surface a NotFound error.
+			Expect(c.DeleteForRetry(ctx, as)).To(Succeed())
+		})
+	})
 })

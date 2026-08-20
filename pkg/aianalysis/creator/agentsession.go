@@ -119,3 +119,16 @@ func (c *AgentSessionCreator) GetOrCreate(ctx context.Context, analysis *aianaly
 	logger.Info("Created AgentSession", "name", name)
 	return as, nil
 }
+
+// DeleteForRetry deletes as so that the next reconcile's GetOrCreate call
+// naturally falls through to Create, giving the retry attempt a fresh
+// AgentSession rather than mutating a terminal Failed object (BR-AI-009,
+// DD-AA-KA-001 amendment: AgentSessionReasonCapacityExceeded retry path).
+// Idempotent: a NotFound (e.g. a concurrent retry, or a delete already
+// observed by another reconcile) is not an error.
+func (c *AgentSessionCreator) DeleteForRetry(ctx context.Context, as *agentsessionv1.AgentSession) error {
+	if err := c.client.Delete(ctx, as); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete AgentSession %s/%s for retry: %w", as.Namespace, as.Name, err)
+	}
+	return nil
+}

@@ -82,6 +82,10 @@ func (fakeKAClientAlwaysErrors) GetOrCreate(_ context.Context, _ *aianalysisv1.A
 	return nil, errors.New("simulated KA outage (test double, #2030)")
 }
 
+func (fakeKAClientAlwaysErrors) DeleteForRetry(_ context.Context, _ *agentsessionv1.AgentSession) error {
+	return nil
+}
+
 // noopAuditClient implements handlers.AuditClientInterface. These tests
 // assert on Status/annotation state, not audit emission.
 type noopAuditClient struct{}

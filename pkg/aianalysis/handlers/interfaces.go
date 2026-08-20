@@ -43,6 +43,12 @@ import (
 // per reconcile and branches on the returned object's Status.Phase.
 type AgentSessionGetOrCreator interface {
 	GetOrCreate(ctx context.Context, analysis *aianalysisv1.AIAnalysis) (*agentsessionv1.AgentSession, error)
+
+	// DeleteForRetry deletes as so the next GetOrCreate call falls through
+	// to Create, giving a BR-AI-009 capacity-exceeded retry attempt a fresh
+	// AgentSession (DD-AA-KA-001 amendment). Idempotent: NotFound is not an
+	// error.
+	DeleteForRetry(ctx context.Context, as *agentsessionv1.AgentSession) error
 }
 
 // ========================================

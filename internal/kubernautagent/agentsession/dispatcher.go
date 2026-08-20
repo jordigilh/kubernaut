@@ -425,7 +425,15 @@ func (d *Dispatcher) dispatch(ctx context.Context, as *agentsessionv1.AgentSessi
 		stop()
 		close(dispatched)
 		d.logger.Error(err, "failed to start investigation", "agentSession", as.Name)
-		d.writeFailedStatus(ctx, key, fmt.Sprintf("failed to start investigation: %v", err))
+		reason := ""
+		if errors.Is(err, session.ErrMaxInvestigationsReached) {
+			// BR-AI-009: a transient, self-resolving capacity rejection --
+			// not a genuine investigation failure -- tagged so AA's
+			// InvestigatingHandler can retry instead of permanently
+			// failing the AIAnalysis (DD-AA-KA-001 amendment).
+			reason = agentsessionv1.AgentSessionReasonCapacityExceeded
+		}
+		d.writeFailedStatus(ctx, key, fmt.Sprintf("failed to start investigation: %v", err), reason)
 		return
 	}
 

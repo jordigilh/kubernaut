@@ -351,6 +351,16 @@ spec:
                 - Failed
                 - Cancelled
                 type: string
+              reason:
+                description: |-
+                  Reason is a curated, machine-readable failure classification, set
+                  alongside Error on the Failed transition. Currently the sole defined
+                  value is AgentSessionReasonCapacityExceeded (BR-AI-009, DD-AA-KA-001
+                  amendment) -- distinguishing a transient, self-resolving capacity
+                  rejection (session.ErrMaxInvestigationsReached) from any other
+                  investigation failure, so AA can retry instead of permanently
+                  failing the AIAnalysis. Empty for all other failure causes.
+                type: string
               result:
                 description: |-
                   Result is the curated investigation outcome, set on the Completed

@@ -319,6 +319,66 @@ var _ = Describe("InvestigatingHandler AgentSession Channel (BR-AA-KA-065)", fun
 	})
 
 	// ========================================
+	// AgentSession Capacity-Exceeded Retry (BR-AI-009, DD-AA-KA-001 amendment)
+	//
+	// KA tags a dispatch-time capacity rejection (session.ErrMaxInvestigationsReached)
+	// with Status.Reason=CapacityExceeded -- a transient, self-resolving
+	// backpressure condition, not a genuine investigation failure. AA reuses
+	// its existing ErrorClassifier retry machinery (synthetic HTTP-429) with
+	// KASession.Generation as the retry-attempt counter.
+	// ========================================
+	Describe("AgentSession Capacity-Exceeded Retry", func() {
+		Context("UT-AA-065-007: within retry budget", func() {
+			It("should delete the stale AgentSession, increment Generation, and requeue with backoff without permanently failing", func() {
+				analysis := createSessionTestAnalysis()
+				analysis.Status.KASession = &aianalysisv1.KASession{
+					ID:         "as-session-capacity-001",
+					Generation: 0,
+					CreatedAt:  &metav1.Time{Time: time.Now().Add(-5 * time.Second)},
+				}
+
+				mockClient.WithFailedCapacityExceeded("KA dispatch capacity exceeded")
+
+				result, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).NotTo(Equal(aianalysis.PhaseFailed),
+					"a within-budget capacity-exceeded retry must not permanently fail the AIAnalysis")
+				Expect(mockClient.DeleteForRetryCallCount).To(Equal(1),
+					"the stale AgentSession must be deleted so the next reconcile's GetOrCreate falls through to Create")
+				Expect(analysis.Status.KASession).NotTo(BeNil())
+				Expect(analysis.Status.KASession.Generation).To(Equal(int32(1)),
+					"the retry-attempt counter (repurposed KASession.Generation) must be incremented")
+				Expect(result.RequeueAfter).To(BeNumerically(">", 0),
+					"must requeue with backoff, not busy-loop against KA")
+			})
+		})
+
+		Context("UT-AA-065-008: retry budget exhausted", func() {
+			It("should fall through to today's permanent-fail path, unchanged", func() {
+				analysis := createSessionTestAnalysis()
+				analysis.Status.KASession = &aianalysisv1.KASession{
+					ID:         "as-session-capacity-002",
+					Generation: int32(handlers.MaxRetries),
+					CreatedAt:  &metav1.Time{Time: time.Now().Add(-5 * time.Second)},
+				}
+
+				mockClient.WithFailedCapacityExceeded("KA dispatch capacity exceeded")
+
+				_, err := handler.Handle(ctx, analysis)
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseFailed),
+					"once the retry budget is exhausted, a capacity-exceeded failure must permanently fail like any other failure")
+				Expect(mockClient.DeleteForRetryCallCount).To(Equal(0),
+					"a budget-exhausted failure must not attempt another retry deletion")
+				Expect(analysis.Status.Message).To(ContainSubstring("KA dispatch capacity exceeded"),
+					"the curated KA error must still be surfaced to operators once the retry budget is exhausted")
+			})
+		})
+	})
+
+	// ========================================
 	// GetOrCreate Error Handling
 	// ========================================
 	Describe("GetOrCreate Error Handling", func() {

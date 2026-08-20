@@ -104,14 +104,19 @@ func (d *Dispatcher) writeDispatchedStatus(ctx context.Context, key crclient.Obj
 // writeFailedStatus records a curated (SI-11), user-facing failure message
 // when dispatch itself could not start (e.g. session.Manager capacity
 // exhausted) -- distinct from an investigation that started and later
-// failed, which writeTerminalStatus handles.
-func (d *Dispatcher) writeFailedStatus(ctx context.Context, key crclient.ObjectKey, curatedMessage string) {
+// failed, which writeTerminalStatus handles. reason is a curated,
+// machine-readable classification (AgentSessionStatus.Reason, e.g.
+// AgentSessionReasonCapacityExceeded) for a dispatch-start failure whose
+// cause AA needs to act on differently than a generic one; pass "" when no
+// such classification applies.
+func (d *Dispatcher) writeFailedStatus(ctx context.Context, key crclient.ObjectKey, curatedMessage, reason string) {
 	d.updateStatus(ctx, key, func(as *agentsessionv1.AgentSession) {
 		if isTerminalPhase(as.Status.Phase) {
 			return
 		}
 		as.Status.Phase = agentsessionv1.AgentSessionPhaseFailed
 		as.Status.Error = curatedMessage
+		as.Status.Reason = reason
 		now := metav1.Now()
 		as.Status.CompletedAt = &now
 	})

@@ -65,6 +65,10 @@ func (fakeKAClientAlwaysErrors) GetOrCreate(_ context.Context, _ *aianalysisv1.A
 	return nil, errors.New("simulated KA outage (test double, #2030 IT)")
 }
 
+func (fakeKAClientAlwaysErrors) DeleteForRetry(_ context.Context, _ *agentsessionv1.AgentSession) error {
+	return nil
+}
+
 type noopAuditClient struct{}
 
 func (noopAuditClient) RecordAIAgentCall(_ context.Context, _ *aianalysisv1.AIAnalysis, _ string, _ int, _ int) {
