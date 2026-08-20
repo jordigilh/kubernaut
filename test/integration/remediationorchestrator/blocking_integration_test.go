@@ -103,9 +103,9 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			}, fetchedRR)).To(Succeed())
 
 			if fetchedRR.Status.OverallPhase == remediationv1.PhaseBlocked {
-				Expect(fetchedRR.Status.BlockedUntil).ToNot(BeNil(), "Should set BlockedUntil")
-				Expect(fetchedRR.Status.BlockReason).To(Equal(remediationv1.BlockReasonConsecutiveFailures), "Should set BlockReason")
-				GinkgoWriter.Printf("✅ RR blocked with cooldown until: %s\n", fetchedRR.Status.BlockedUntil.Format(time.RFC3339))
+				Expect(fetchedRR.Status.EnsureRoutingStatus().BlockedUntil).ToNot(BeNil(), "Should set BlockedUntil")
+				Expect(fetchedRR.Status.EnsureRoutingStatus().BlockReason).To(Equal(remediationv1.BlockReasonConsecutiveFailures), "Should set BlockReason")
+				GinkgoWriter.Printf("✅ RR blocked with cooldown until: %s\n", fetchedRR.Status.EnsureRoutingStatus().BlockedUntil.Format(time.RFC3339))
 			}
 
 			GinkgoWriter.Printf("✅ End-to-end blocking workflow validated\n")
@@ -137,8 +137,8 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 
 				now := metav1.NewTime(time.Now().Add(1 * time.Hour))
 				rrGet.Status.OverallPhase = "Blocked"
-				rrGet.Status.BlockedUntil = &now
-				rrGet.Status.BlockReason = remediationv1.BlockReasonConsecutiveFailures
+				rrGet.Status.EnsureRoutingStatus().BlockedUntil = &now
+				rrGet.Status.EnsureRoutingStatus().BlockReason = remediationv1.BlockReasonConsecutiveFailures
 				rrGet.Status.Message = "Signal blocked due to consecutive failures"
 
 				return k8sClient.Status().Update(ctx, rrGet)
@@ -149,9 +149,9 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rrFinal)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFinal.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
-			Expect(rrFinal.Status.BlockedUntil).ToNot(BeNil(),
+			Expect(rrFinal.Status.EnsureRoutingStatus().BlockedUntil).ToNot(BeNil(),
 				"BR-SCOPE-010: Blocked RR must have a BlockedUntil timestamp for backoff")
-			Expect(rrFinal.Status.BlockReason).To(Equal(remediationv1.BlockReasonConsecutiveFailures))
+			Expect(rrFinal.Status.EnsureRoutingStatus().BlockReason).To(Equal(remediationv1.BlockReasonConsecutiveFailures))
 		})
 	})
 
@@ -181,8 +181,8 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 				}
 
 				rrGet.Status.OverallPhase = remediationv1.PhaseBlocked
-				rrGet.Status.BlockedUntil = nil // No auto-expiry
-				rrGet.Status.BlockReason = remediationv1.BlockReasonConsecutiveFailures
+				rrGet.Status.EnsureRoutingStatus().BlockedUntil = nil // No auto-expiry
+				rrGet.Status.EnsureRoutingStatus().BlockReason = remediationv1.BlockReasonConsecutiveFailures
 				rrGet.Status.Message = "Manually blocked by operator"
 
 				return k8sClient.Status().Update(ctx, rrGet)
@@ -193,7 +193,7 @@ var _ = Describe("BR-ORCH-042: Consecutive Failure Blocking", func() {
 			err := k8sManager.GetAPIReader().Get(ctx, types.NamespacedName{Name: rr.Name, Namespace: ROControllerNamespace}, rrFinal)
 			Expect(err).ToNot(HaveOccurred())
 			Expect(rrFinal.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
-			Expect(rrFinal.Status.BlockedUntil).To(BeNil(),
+			Expect(rrFinal.Status.EnsureRoutingStatus().BlockedUntil).To(BeNil(),
 				"Manual blocks should have nil BlockedUntil (no auto-expiry)")
 		})
 	})
@@ -462,8 +462,8 @@ func createFailedRemediationRequestWithFingerprint(namespace, name, fingerprint 
 		failReason := "Simulated failure for blocking test"
 
 		fetched.Status.OverallPhase = "Failed"
-		fetched.Status.FailurePhase = &failPhase
-		fetched.Status.FailureReason = &failReason
+		fetched.Status.EnsureCompletionStatus().FailurePhase = &failPhase
+		fetched.Status.EnsureCompletionStatus().FailureReason = &failReason
 
 		return k8sClient.Status().Update(ctx, fetched)
 	}, timeout, interval).Should(Succeed(), "Should set Failed status for %s/%s", ROControllerNamespace, name)

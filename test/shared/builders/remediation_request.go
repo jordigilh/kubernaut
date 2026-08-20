@@ -123,37 +123,37 @@ func (b *RemediationRequestBuilder) WithMessage(message string) *RemediationRequ
 
 // WithSkipReason sets the skip reason.
 func (b *RemediationRequestBuilder) WithSkipReason(reason remediationv1.SkipReason) *RemediationRequestBuilder {
-	b.rr.Status.SkipReason = reason
+	b.rr.Status.EnsureRoutingStatus().SkipReason = reason
 	return b
 }
 
 // WithDuplicateOf sets the parent RR for duplicates.
 func (b *RemediationRequestBuilder) WithDuplicateOf(parent string) *RemediationRequestBuilder {
-	b.rr.Status.DuplicateOf = parent
+	b.rr.Status.EnsureRoutingStatus().DuplicateOf = parent
 	return b
 }
 
 // WithRequiresManualReview sets whether manual review is required.
 func (b *RemediationRequestBuilder) WithRequiresManualReview(required bool) *RemediationRequestBuilder {
-	b.rr.Status.RequiresManualReview = required
+	b.rr.Status.EnsureCompletionStatus().RequiresManualReview = required
 	return b
 }
 
 // WithConsecutiveFailureCount sets the consecutive failure count.
 func (b *RemediationRequestBuilder) WithConsecutiveFailureCount(count int32) *RemediationRequestBuilder {
-	b.rr.Status.ConsecutiveFailureCount = count
+	b.rr.Status.EnsureRoutingStatus().ConsecutiveFailureCount = count
 	return b
 }
 
 // WithBlockReason sets the block reason.
 func (b *RemediationRequestBuilder) WithBlockReason(reason remediationv1.BlockReason) *RemediationRequestBuilder {
-	b.rr.Status.BlockReason = reason
+	b.rr.Status.EnsureRoutingStatus().BlockReason = reason
 	return b
 }
 
 // WithBlockedUntil sets the blocked until timestamp.
 func (b *RemediationRequestBuilder) WithBlockedUntil(until metav1.Time) *RemediationRequestBuilder {
-	b.rr.Status.BlockedUntil = &until
+	b.rr.Status.EnsureRoutingStatus().BlockedUntil = &until
 	return b
 }
 

@@ -196,7 +196,7 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 			if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 				return err
 			}
-			rr.Status.Outcome = "Remediated"
+			rr.Status.EnsureCompletionStatus().Outcome = "Remediated"
 			return k8sClient.Status().Update(ctx, rr)
 		}, 5*time.Second, 200*time.Millisecond).Should(Succeed())
 
@@ -231,7 +231,7 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 		nr := &notificationv1.NotificationRequest{}
 		Expect(k8sManager.GetAPIReader().Get(ctx, client.ObjectKey{Name: name, Namespace: rr.Namespace}, nr)).To(Succeed())
 
-		Expect(nr.Spec.Context.Analysis.Outcome).To(Equal(rr.Status.Outcome))
+		Expect(nr.Spec.Context.Analysis.Outcome).To(Equal(rr.Status.EnsureCompletionStatus().Outcome))
 		Expect(nr.Spec.Context.Workflow.WorkflowID).To(Equal(ai.Status.RCAResult.SelectedWorkflow.WorkflowID))
 		Expect(nr.Spec.Context.Lineage.RemediationRequest).To(Equal(rr.Name))
 		Expect(nr.Spec.Context.Lineage.AIAnalysis).To(Equal(ai.Name))
@@ -246,7 +246,7 @@ var _ = Describe("Issue #453 Phase B: Notification Context Integration Tests", L
 			if err := k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 				return err
 			}
-			rr.Status.DuplicateCount = 5
+			rr.Status.EnsureRoutingStatus().DuplicateCount = 5
 			rr.Status.OverallPhase = remediationv1.PhaseCompleted
 			return k8sClient.Status().Update(ctx, rr)
 		}, 5*time.Second, 200*time.Millisecond).Should(Succeed())

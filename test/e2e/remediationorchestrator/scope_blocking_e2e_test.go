@@ -95,7 +95,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			if err := apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched); err != nil {
 				return ""
 			}
-			return string(fetched.Status.BlockReason)
+			return string(fetched.Status.EnsureRoutingStatus().BlockReason)
 		}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)),
 			"RR should be blocked with UnmanagedResource reason by the RO controller")
 
@@ -104,15 +104,15 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
 		Expect(fetched.Status.OverallPhase).To(Equal(remediationv1.PhaseBlocked))
 		// E2E-RO-163-003: Blocking fields validation
-		Expect(fetched.Status.BlockReason).NotTo(BeEmpty())
-		Expect(fetched.Status.BlockMessage).NotTo(BeEmpty())
-		Expect(fetched.Status.BlockMessage).To(ContainSubstring("kubernaut.ai/managed=true"),
+		Expect(fetched.Status.EnsureRoutingStatus().BlockReason).NotTo(BeEmpty())
+		Expect(fetched.Status.EnsureRoutingStatus().BlockMessage).NotTo(BeEmpty())
+		Expect(fetched.Status.EnsureRoutingStatus().BlockMessage).To(ContainSubstring("kubernaut.ai/managed=true"),
 			"Block message should include remediation instructions")
-		Expect(fetched.Status.BlockedUntil).ToNot(BeNil(),
+		Expect(fetched.Status.EnsureRoutingStatus().BlockedUntil).ToNot(BeNil(),
 			"BlockedUntil should be set for scope backoff")
 
 		GinkgoWriter.Printf("✅ E2E-RO-010-001: RR blocked — reason: %s, message: %s\n",
-			fetched.Status.BlockReason, fetched.Status.BlockMessage)
+			fetched.Status.EnsureRoutingStatus().BlockReason, fetched.Status.EnsureRoutingStatus().BlockMessage)
 	})
 
 	// ─────────────────────────────────────────────
@@ -165,7 +165,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
 
 		if fetched.Status.OverallPhase == remediationv1.PhaseBlocked {
-			Expect(fetched.Status.BlockReason).ToNot(Equal(remediationv1.BlockReasonUnmanagedResource),
+			Expect(fetched.Status.EnsureRoutingStatus().BlockReason).ToNot(Equal(remediationv1.BlockReasonUnmanagedResource),
 				"RR in managed namespace should NOT be blocked for UnmanagedResource")
 		}
 
@@ -219,7 +219,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			if err := apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched); err != nil {
 				return ""
 			}
-			return string(fetched.Status.BlockReason)
+			return string(fetched.Status.EnsureRoutingStatus().BlockReason)
 		}, timeout, interval).Should(Equal(string(remediationv1.BlockReasonUnmanagedResource)))
 
 		GinkgoWriter.Println("✅ RR blocked — now adding managed label to namespace")
@@ -245,7 +245,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 			}
 			// Check if no longer blocked for UnmanagedResource
 			if fetched.Status.OverallPhase == remediationv1.PhaseBlocked &&
-				fetched.Status.BlockReason == remediationv1.BlockReasonUnmanagedResource {
+				fetched.Status.EnsureRoutingStatus().BlockReason == remediationv1.BlockReasonUnmanagedResource {
 				return false
 			}
 			return true
@@ -256,7 +256,7 @@ var _ = Describe("BR-SCOPE-010: RO Scope Blocking E2E", Label("e2e", "scope"), f
 		fetched := &remediationv1.RemediationRequest{}
 		Expect(apiReader.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
 		GinkgoWriter.Printf("✅ E2E-RO-010-003: RR auto-unblocked — final phase: %s, blockReason: %s\n",
-			fetched.Status.OverallPhase, fetched.Status.BlockReason)
+			fetched.Status.OverallPhase, fetched.Status.EnsureRoutingStatus().BlockReason)
 
 		By("Completing SP/AI lifecycle if RR progressed past Pending")
 		fetched = &remediationv1.RemediationRequest{}

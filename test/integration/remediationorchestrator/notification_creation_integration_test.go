@@ -217,7 +217,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 					return err
 				}
 				rr.Status.OverallPhase = remediationv1.PhaseSkipped
-				rr.Status.SkipReason = remediationv1.SkipReasonExhaustedRetries
+				rr.Status.EnsureRoutingStatus().SkipReason = remediationv1.SkipReasonExhaustedRetries
 				return k8sClient.Status().Update(ctx, rr)
 			}, timeout, interval).Should(Succeed())
 
@@ -236,7 +236,7 @@ var _ = Describe("Notification Creation Integration Tests (BR-ORCH-033/034)", fu
 					Type:     notificationv1.NotificationTypeManualReview,
 					Priority: notificationv1.NotificationPriorityHigh,
 					Subject:  "Workflow Skipped for " + rrName,
-					Body:     "RemediationRequest " + rrName + " skipped due to: " + string(rr.Status.SkipReason),
+					Body:     "RemediationRequest " + rrName + " skipped due to: " + string(rr.Status.EnsureRoutingStatus().SkipReason),
 				},
 			}
 			Expect(k8sClient.Create(ctx, nr)).To(Succeed())

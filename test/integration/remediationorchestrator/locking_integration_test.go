@@ -254,11 +254,11 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr1), rr1); err != nil {
 					return false
 				}
-				return rr1.Status.WorkflowExecutionRef != nil
+				return rr1.Status.EnsurePhaseProgress().WorkflowExecutionRef != nil
 			}, timeout, interval).Should(BeTrue(), "RR1 should have WFE ref")
 
 			// Complete the WFE1 (make it terminal so second RR isn't blocked by ResourceBusy)
-			wfe1Name := rr1.Status.WorkflowExecutionRef.Name
+			wfe1Name := rr1.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name
 			Eventually(func() error {
 				wfe1 := &workflowexecutionv1.WorkflowExecution{}
 				if err := k8sClient.Get(ctx, types.NamespacedName{
@@ -299,7 +299,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr1), rr1); err != nil {
 					return false
 				}
-				return rr1.Status.WorkflowExecutionRef != nil
+				return rr1.Status.EnsurePhaseProgress().WorkflowExecutionRef != nil
 			}, timeout, interval).Should(BeTrue(), "RR1 should have WFE ref")
 
 			// Create RR2 with approval required
@@ -358,18 +358,18 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 						ai.Status.Phase = completed
 						now := metav1.Now()
 						ai.Status.CompletedAt = &now
-					ai.Status.EnsureApproval().ApprovalRequired = true
-					ai.Status.Approval.ApprovalReason = "Confidence below threshold"
-					ai.Status.EnsureRCAResult().RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
-						Summary:  "Test root cause - approval required",
-						Severity: "critical",
-						RemediationTarget: &aianalysisv1.RemediationTarget{
-							Kind:      "Deployment",
-							Name:      "test-app",
-							Namespace: ns,
-						},
-					}
-					ai.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
+						ai.Status.EnsureApproval().ApprovalRequired = true
+						ai.Status.Approval.ApprovalReason = "Confidence below threshold"
+						ai.Status.EnsureRCAResult().RootCauseAnalysis = &aianalysisv1.RootCauseAnalysis{
+							Summary:  "Test root cause - approval required",
+							Severity: "critical",
+							RemediationTarget: &aianalysisv1.RemediationTarget{
+								Kind:      "Deployment",
+								Name:      "test-app",
+								Namespace: ns,
+							},
+						}
+						ai.Status.RCAResult.SelectedWorkflow = &aianalysisv1.SelectedWorkflow{
 							WorkflowSnapshot: sharedtypes.WorkflowSnapshot{
 								WorkflowID:      "wf-test-001",
 								WorkflowName:    "wf-test-001",
@@ -454,10 +454,10 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 					return false
 				}
-				return rr.Status.WorkflowExecutionRef != nil
+				return rr.Status.EnsurePhaseProgress().WorkflowExecutionRef != nil
 			}, timeout, interval).Should(BeTrue(), "WFE should be created")
 
-			wfeName := rr.Status.WorkflowExecutionRef.Name
+			wfeName := rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name
 
 			// Simulate status update failure by clearing WorkflowExecutionRef
 			// (as if the status update after WFE creation failed)
@@ -465,7 +465,7 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 					return err
 				}
-				rr.Status.WorkflowExecutionRef = nil
+				rr.Status.EnsurePhaseProgress().WorkflowExecutionRef = nil
 				rr.Status.OverallPhase = remediationv1.PhaseAnalyzing
 				return k8sClient.Status().Update(ctx, rr)
 			}, timeout, interval).Should(Succeed())
@@ -475,11 +475,11 @@ var _ = Describe("RO Distributed Locking (Issue #189, BR-ORCH-025)", func() {
 				if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), rr); err != nil {
 					return false
 				}
-				return rr.Status.WorkflowExecutionRef != nil
+				return rr.Status.EnsurePhaseProgress().WorkflowExecutionRef != nil
 			}, timeout, interval).Should(BeTrue(), "WFE ref should be restored via idempotent create")
 
 			// Verify the same WFE was reused (not a new one)
-			Expect(rr.Status.WorkflowExecutionRef.Name).To(Equal(wfeName),
+			Expect(rr.Status.EnsurePhaseProgress().WorkflowExecutionRef.Name).To(Equal(wfeName),
 				"Get-before-Create should reuse existing WFE, not create a duplicate")
 		})
 	})

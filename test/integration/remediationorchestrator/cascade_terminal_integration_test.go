@@ -139,13 +139,13 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 
 			fetched.Status.OverallPhase = remediationv1.PhaseCancelled
 			fetched.Status.StartTime = &now
-			fetched.Status.AIAnalysisRef = &corev1.ObjectReference{
+			fetched.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{
 				APIVersion: aianalysisv1.GroupVersion.String(),
 				Kind:       "AIAnalysis",
 				Name:       aiName,
 				Namespace:  ROControllerNamespace,
 			}
-			fetched.Status.SignalProcessingRef = &corev1.ObjectReference{
+			fetched.Status.EnsurePhaseProgress().SignalProcessingRef = &corev1.ObjectReference{
 				APIVersion: signalprocessingv1.GroupVersion.String(),
 				Kind:       "SignalProcessing",
 				Name:       spName,
@@ -235,7 +235,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
 			fetched.Status.OverallPhase = remediationv1.PhaseCancelled
 			fetched.Status.StartTime = &now
-			fetched.Status.AIAnalysisRef = &corev1.ObjectReference{
+			fetched.Status.EnsurePhaseProgress().AIAnalysisRef = &corev1.ObjectReference{
 				APIVersion: aianalysisv1.GroupVersion.String(),
 				Kind:       "AIAnalysis",
 				Name:       aiName,
@@ -310,7 +310,7 @@ var _ = Describe("Cascade Terminal to Children (#1421) [IR-4, AC-6, AU-12]", Lab
 			g.Expect(k8sClient.Get(ctx, client.ObjectKeyFromObject(rr), fetched)).To(Succeed())
 			fetched.Status.OverallPhase = remediationv1.PhaseCancelled
 			fetched.Status.StartTime = &now
-			fetched.Status.WorkflowExecutionRef = &corev1.ObjectReference{
+			fetched.Status.EnsurePhaseProgress().WorkflowExecutionRef = &corev1.ObjectReference{
 				APIVersion: workflowexecutionv1.GroupVersion.String(),
 				Kind:       "WorkflowExecution",
 				Name:       weName,

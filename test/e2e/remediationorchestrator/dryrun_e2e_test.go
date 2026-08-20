@@ -256,7 +256,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 			}, timeout, interval).Should(Equal(remediationv1.PhaseCompleted),
 				"RR should reach Completed phase (dry-run intercept in AnalyzingHandler)")
 
-			Expect(updatedRR.Status.Outcome).To(Equal("DryRun"),
+			Expect(updatedRR.Status.EnsureCompletionStatus().Outcome).To(Equal("DryRun"),
 				"Outcome must be DryRun per ADR-RO-001")
 
 			By("Verifying NO WorkflowExecution was created (dry-run stops pipeline)")
@@ -276,7 +276,7 @@ var _ = Describe("ADR-RO-001: Dry-Run Mode E2E", Serial, Label("e2e", "dry-run")
 				"NO WorkflowExecution should exist — dry-run intercepts before WFE creation")
 
 			By("Verifying NextAllowedExecution is set for Gateway dedup suppression")
-			Expect(updatedRR.Status.NextAllowedExecution).ToNot(BeNil(),
+			Expect(updatedRR.Status.EnsureRoutingStatus().NextAllowedExecution).ToNot(BeNil(),
 				"NextAllowedExecution must be set per ADR-RO-001 Gateway dedup")
 		})
 	})

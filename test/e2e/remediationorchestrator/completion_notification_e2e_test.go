@@ -222,13 +222,13 @@ var _ = Describe("E2E-RO-045-001: Completion Notification", Label("e2e", "notifi
 			if updatedRR.Status.OverallPhase != remediationv1.PhaseVerifying {
 				GinkgoWriter.Printf("  ⏳ RR %s phase=%s blockReason=%s failurePhase=%v failureReason=%v\n",
 					updatedRR.Name, updatedRR.Status.OverallPhase,
-					updatedRR.Status.BlockReason,
-					updatedRR.Status.FailurePhase, updatedRR.Status.FailureReason)
+					updatedRR.Status.EnsureRoutingStatus().BlockReason,
+					updatedRR.Status.EnsureCompletionStatus().FailurePhase, updatedRR.Status.EnsureCompletionStatus().FailureReason)
 			}
 			return updatedRR.Status.OverallPhase
 		}, timeout, interval).Should(Equal(remediationv1.PhaseVerifying),
 			fmt.Sprintf("#280: RemediationRequest should transition to Verifying after WE completes (actual phase: %s, blockReason: %s, failurePhase: %v)",
-				updatedRR.Status.OverallPhase, updatedRR.Status.BlockReason, updatedRR.Status.FailurePhase))
+				updatedRR.Status.OverallPhase, updatedRR.Status.EnsureRoutingStatus().BlockReason, updatedRR.Status.EnsureCompletionStatus().FailurePhase))
 
 		By("8a. Driving EA to completion for Verifying → Completed (#280)")
 		eaDriveName := fmt.Sprintf("ea-%s", rr.Name)

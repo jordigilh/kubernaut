@@ -421,7 +421,7 @@ var _ = Describe("EA Creation Guard (Issue #240)", func() {
 
 		By("Verifying RR has RequiresManualReview set")
 		_ = k8sManager.GetAPIReader().Get(ctx, client.ObjectKeyFromObject(rr), rr)
-		Expect(rr.Status.RequiresManualReview).To(BeTrue(),
+		Expect(rr.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue(),
 			"RR should require manual review when AIA fails with WorkflowResolutionFailed")
 	})
 
@@ -707,9 +707,9 @@ var _ = Describe("EA Dual-Target Resolution (Issue #188, DD-EM-003)", func() {
 		}, timeout, interval).Should(Equal(remediationv1.PhaseFailed))
 
 		By("Verifying ManualReviewRequired is set")
-		Expect(rr.Status.RequiresManualReview).To(BeTrue(),
+		Expect(rr.Status.EnsureCompletionStatus().RequiresManualReview).To(BeTrue(),
 			"BR-ORCH-036 v4.0: RR should have RequiresManualReview=true when RemediationTarget is missing")
-		Expect(rr.Status.Outcome).To(Equal("ManualReviewRequired"),
+		Expect(rr.Status.EnsureCompletionStatus().Outcome).To(Equal("ManualReviewRequired"),
 			"BR-ORCH-036 v4.0: RR outcome should be ManualReviewRequired")
 	})
 
