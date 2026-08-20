@@ -4,11 +4,6 @@ controller:
   metricsAddr: ""
   healthProbeAddr: ""
 
-agent:
-  url: ""
-  timeout: 0s
-  sessionPollInterval: 0s
-
 datastorage:
   url: ""
   timeout: 0s

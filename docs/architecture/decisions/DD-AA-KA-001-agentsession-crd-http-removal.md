@@ -616,6 +616,101 @@ several of these stalls beginning *before* E2E-AA-065's own burst window even st
 burst as the trigger. #2204 predates this PR, is unrelated to `AgentSessionReasonCapacityExceeded` retry
 logic, and its suggested fix (raise the affected specs' `Eventually` timeouts) is out of scope for this PR.
 
+## Amendment: #2204 — controller concurrency + deadline-driven backstop requeue (2026-08-20)
+
+**Problem.** Once E2E-AA-065's own flakiness was fixed (previous section), CI still showed
+intermittent `Integration (aianalysis)`/`E2E (aianalysis)` redness — unrelated specs
+(`05_audit_trail_test.go`, `03_full_flow_test.go`, `audit_flow_integration_test.go`, etc.) tripping
+their fixed 60s/120s `Eventually` timeouts under concurrent load. The user flagged this as a
+regression blocking merge (not the pre-existing #2204 "out of scope" call made earlier) and
+explicitly rejected raising the affected `Eventually` timeouts as the fix: *"this is a performance
+issue that we must address ... we can't have a single go routine running for all requests
+sequentially ... this a regression from what we had before."*
+
+**RCA.** Two independent, compounding causes, confirmed on `helios08` with live pprof +
+goroutine-dump correlation:
+
+1. **`AIAnalysisReconciler` ran with controller-runtime's implicit `MaxConcurrentReconciles=1`**
+   — unlike its `EffectivenessMonitor`/`Notification` siblings, which already expose a
+   variadic-option worker count, this controller had never set one since it was first
+   scaffolded (not a regression from this PR's own changes; a pre-existing gap this PR's own
+   test load was the first to surface at volume). Every `AIAnalysis` CR's reconcile — including
+   the `Investigating` phase's poll-and-requeue loop — serialized through a single worker per
+   controller-manager process, regardless of how many KA investigations were actually running
+   concurrently underneath it (confirmed KA's own dispatcher already runs investigations via
+   per-`AgentSession` goroutines, refuting an initial hypothesis that KA itself was the
+   single-goroutine bottleneck).
+2. **The `Investigating` phase's safety-net requeue was a flat interval** (`sessionPollInterval`,
+   15s production / 2s in this suite pre-fix) applied unconditionally to every still-running
+   investigation regardless of how much of its actual deadline remained — adding reconcile/API-
+   server volume with no relationship to when a timeout check was actually due, and deepening the
+   single worker's queue backlog under (1) further.
+
+**Fix.**
+
+1. **`MaxConcurrentReconciles`**: `AIAnalysisReconciler.SetupWithManager` now accepts a variadic
+   `maxConcurrentReconciles ...int` (mirroring the `EffectivenessMonitor`/`Notification` pattern),
+   wired to `10` in `test/integration/aianalysis/suite_test.go`. Spike results: 6→2 CI failures,
+   14m30s→9m51s total suite time at 10 workers; 20 workers *regressed* to 5 failures/12m30s
+   (diminishing returns / added scheduling contention past this point) — 10 is retained as the
+   validated value. Production wiring (`cmd/aianalysis/main.go`) is left at the controller-runtime
+   default for now; this PR's evidence is from the integration suite's concurrency profile
+   specifically, not a production capacity claim — revisit production's own worker count
+   separately if warranted.
+2. **Deadline-driven backstop requeue, replacing the flat poll interval entirely** (user-directed
+   design pivot: *"instead of polling every 2 seconds, why not watch? ... there is no need to poll
+   the api server when we own the resource ... I'd rather ... use the timesOutAt value for each AA
+   CRD"*): `InvestigatingHandler.backstopRequeueAfter` computes the same authoritative deadline
+   `checkInvestigationTimeout` already evaluates (`Spec.TimesOutAt` when RO has set it, else
+   `session.CreatedAt + maxInvestigationDuration`) and requeues exactly at that deadline — one
+   precisely-scheduled reconcile per investigation instead of a periodic drumbeat for its entire
+   lifetime. The `AgentSession` watch (already the primary signal since this DD's core design)
+   continues to wake the reconciler immediately on any real KA status write; this backstop only
+   fires if KA hangs and never writes again.
+3. **`sessionPollInterval` and its whole config section removed, not just replaced.** Auditing for
+   "any other field belonging to the deprecated HTTP polling mechanism" (user-directed) found that
+   `AgentConfig.URL` and `AgentConfig.Timeout` — doc-commented as "the Kubernaut Agent base URL" and
+   "the HTTP client timeout for Kubernaut Agent calls" — had **zero production readers** anywhere in
+   `cmd/aianalysis` or `pkg/aianalysis` (confirmed by repo-wide grep): AA's actual KA channel is
+   `creator.AgentSessionCreator` talking to the K8s API server, which needs neither. With all three
+   `AgentConfig` fields dead, the entire `Agent AgentConfig` struct/field, its `Validate()` block,
+   the `agent:` section in the Helm chart config template, and the matching config testdata/tests
+   were removed rather than leaving an empty vestigial section.
+
+**Wiring Manifest** (this amendment only):
+
+| Component | Production Entry Point | Wiring Code Location | Test proving wiring |
+|---|---|---|---|
+| `AIAnalysisReconciler.SetupWithManager(mgr, maxConcurrentReconciles ...int)` | `cmd/aianalysis/main.go` (unchanged call site, still 0-arg → controller-runtime default) | `internal/controller/aianalysis/aianalysis_controller.go` | `test/integration/aianalysis/suite_test.go` calls `SetupWithManager(k8sManager, 10)`; full suite run proves no regression |
+| `InvestigatingHandler.backstopRequeueAfter` / `investigationDeadline` | `handleSessionRunning`'s two `RequeueAfter` sites | `pkg/aianalysis/handlers/investigating.go` | `UT-AA-2204-001` (`pkg/aianalysis/investigation_timeout_test.go`) — three specs proving `RequeueAfter` tracks `Spec.TimesOutAt`/`maxInvestigationDuration`, not a flat interval, including under an active interactive session |
+
+**Validation.** `go build ./...`, `golangci-lint run` (0 issues on all touched packages), and
+`make test-unit-aianalysis` (419/421 passed, 2 pre-existing skips, 76.5% composite coverage) all
+pass locally. `make test-integration-aianalysis` passes locally (macOS, no containerized KA —
+that suite's local-Mac run doesn't exercise the containerized-KA specs at all, since Podman/Mock
+LLM image builds aren't available in this session's local environment).
+
+On `helios08`, `make test-integration-aianalysis` (40 Ginkgo procs, real containerized KA per
+process) showed 35/64 failures with this amendment's diff applied. Rather than accept that at
+face value, it was A/B'd against the unmodified branch tip (`ccb296333`, `git stash`/`git stash
+pop`) on the *same host, same moment*: the unmodified baseline showed 33/64 failures on an
+identical run — statistically the same failure rate. A third run at reduced concurrency
+(`TEST_PROCS=8`) with this amendment's diff applied dropped to 7/64. All three runs' failures
+share one signature: the per-process containerized KA's `agentsession-dispatcher` watch/resync
+loop hitting `connect: connection refused` against its own envtest API server for the run's
+duration, meaning KA never dispatches anything for that process's `AgentSession`s at all (not a
+"slow investigation," a KA container that can never reach its own control plane) — a container
+start/network-readiness race under N-way concurrent Podman container startup, worsening
+proportionally with `N`. `podman system df` on the host showed 206GB/211GB (98%) of image storage
+marked reclaimable at the time, consistent with this session's earlier, separately-diagnosed
+Podman storage degradation on this same host. This is **not** this amendment's regression: it
+reproduces identically on the unmodified branch tip, confirming it as the same pre-existing,
+host-level #2204 contention class this DD already documents above (E2E-AA-065 section), now also
+visible directly in `Integration (aianalysis)`. This host's degraded Podman state, not this PR's
+code, gates how high `TEST_PROCS` can go for a clean local repro on `helios08` specifically; GitHub
+Actions CI runners (this PR's actual merge gate) are separate infrastructure and are the
+authoritative signal for this change.
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:

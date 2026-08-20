@@ -185,8 +185,12 @@ var _ = Describe("InvestigatingHandler AgentSession Channel (BR-AA-KA-065)", fun
 				Expect(string(cond.Status)).To(Equal("True"))
 				Expect(cond.Reason).To(Equal("SessionCreated"))
 
-				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval),
-					"should requeue at the safety-net session poll interval")
+				// #2204: backstop requeue is now derived from the
+				// investigation's own deadline (session.CreatedAt +
+				// DefaultMaxInvestigationDuration, TimesOutAt unset here),
+				// not a flat poll interval.
+				Expect(result.RequeueAfter).To(BeNumerically("~", handlers.DefaultMaxInvestigationDuration, 5*time.Second),
+					"should requeue at the investigation's own deadline (#2204)")
 
 				Expect(auditSpy.submitEvents).To(HaveLen(1), "should record exactly 1 submit audit event")
 
@@ -430,8 +434,10 @@ var _ = Describe("InvestigatingHandler AgentSession Channel (BR-AA-KA-065)", fun
 				result, err := handler.Handle(ctx, analysis)
 
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval),
-					"should requeue at constant session poll interval while a user is driving")
+				// #2204: session created 60s ago against the default 25m
+				// cap -- ~24m remains until the deadline.
+				Expect(result.RequeueAfter).To(BeNumerically("~", handlers.DefaultMaxInvestigationDuration-60*time.Second, 5*time.Second),
+					"should requeue at the investigation's own deadline while a user is driving (#2204)")
 			})
 		})
 
@@ -496,7 +502,8 @@ var _ = Describe("InvestigatingHandler AgentSession Channel (BR-AA-KA-065)", fun
 
 				result1, err := handler.Handle(ctx, analysis)
 				Expect(err).NotTo(HaveOccurred())
-				Expect(result1.RequeueAfter).To(Equal(handlers.DefaultSessionPollInterval))
+				// #2204: session created 180s ago against the default 25m cap.
+				Expect(result1.RequeueAfter).To(BeNumerically("~", handlers.DefaultMaxInvestigationDuration-180*time.Second, 5*time.Second))
 
 				mockClient.WithFullResponse(
 					"Root cause: config drift",

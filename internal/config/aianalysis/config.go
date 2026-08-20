@@ -19,7 +19,6 @@ package aianalysis
 import (
 	"fmt"
 	"os"
-	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -37,9 +36,6 @@ type Config struct {
 	// Controller runtime configuration (DD-005)
 	Controller sharedconfig.ControllerConfig `yaml:"controller"`
 
-	// Kubernaut Agent connectivity and session polling (BR-AI-007)
-	Agent AgentConfig `yaml:"agent"`
-
 	// DataStorage connectivity (ADR-030: audit trail + workflow catalog)
 	DataStorage sharedconfig.DataStorageConfig `yaml:"datastorage"`
 
@@ -54,20 +50,14 @@ type Config struct {
 	TLSProfile string `yaml:"tlsProfile,omitempty"`
 }
 
-// AgentConfig defines Kubernaut Agent connectivity and session behavior.
-// Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase
-type AgentConfig struct {
-	// URL is the Kubernaut Agent base URL (REQUIRED).
-	URL string `yaml:"url"`
-
-	// Timeout is the HTTP client timeout for Kubernaut Agent calls.
-	Timeout time.Duration `yaml:"timeout"`
-
-	// SessionPollInterval is the constant interval between session status polls.
-	// BR-AA-KA-064.8: Polling is normal async behavior, not error recovery.
-	// Default: 15s. Range: [1s, 5m].
-	SessionPollInterval time.Duration `yaml:"sessionPollInterval"`
-}
+// #2204 (2026-08-20): AgentConfig (agent.url / agent.timeout /
+// agent.sessionPollInterval) removed. It configured an HTTP client to
+// Kubernaut Agent (base URL + timeout) and a fixed poll cadence -- both
+// vestiges of the pre-AgentSession-CRD design retired by DD-AA-KA-001. AA's
+// actual KA channel is creator.AgentSessionCreator talking to the K8s API
+// server (watched AgentSession CRDs), which needs neither a base URL/HTTP
+// timeout nor a poll interval; nothing in cmd/aianalysis or pkg/aianalysis
+// read any of these three fields.
 
 // RegoConfig defines Rego policy evaluation configuration.
 // Per CRD_FIELD_NAMING_CONVENTION.md: YAML fields use camelCase
@@ -107,11 +97,6 @@ func DefaultConfig() *Config {
 			HealthProbeAddr:  ":8081",
 			LeaderElection:   false,
 			LeaderElectionID: "aianalysis.kubernaut.ai",
-		},
-		Agent: AgentConfig{
-			URL:                 "https://kubernaut-agent:8443",
-			Timeout:             180 * time.Second,
-			SessionPollInterval: 15 * time.Second,
 		},
 		DataStorage: ds,
 		Rego: RegoConfig{
@@ -160,20 +145,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Controller.HealthProbeAddr == "" {
 		return fmt.Errorf("controller.healthProbeAddr is required")
-	}
-
-	// Validate Agent config
-	if c.Agent.URL == "" {
-		return fmt.Errorf("agent.url is required")
-	}
-	if c.Agent.Timeout <= 0 {
-		return fmt.Errorf("agent.timeout must be positive, got %v", c.Agent.Timeout)
-	}
-	if c.Agent.SessionPollInterval < 1*time.Second {
-		return fmt.Errorf("agent.sessionPollInterval must be at least 1s, got %v", c.Agent.SessionPollInterval)
-	}
-	if c.Agent.SessionPollInterval > 5*time.Minute {
-		return fmt.Errorf("agent.sessionPollInterval must not exceed 5m, got %v", c.Agent.SessionPollInterval)
 	}
 
 	// Validate DataStorage config (ADR-030)

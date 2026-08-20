@@ -6,11 +6,6 @@ controller:
   leaderElection: false
   leaderElectionId: "aianalysis.kubernaut.ai"
 
-agent:
-  url: "https://kubernaut-agent:8443"
-  timeout: 180s
-  sessionPollInterval: 15s
-
 datastorage:
   url: "http://data-storage-service:8080"
   timeout: 10s

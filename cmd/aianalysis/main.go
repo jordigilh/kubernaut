@@ -301,10 +301,9 @@ func setupAIAnalysisReconciler(mgr ctrl.Manager, cfg *config.Config, controllerN
 	// the historical "submit" and "poll" call sites.
 	agentSessionCreator := creator.NewAgentSessionCreator(mgr.GetClient(), mgr.GetScheme())
 	investigatingHandler := handlers.NewInvestigatingHandler(agentSessionCreator, controllerLog, aianalysisMetrics, clients.auditClient,
-		handlers.WithRecorder(eventRecorder),                            // DD-EVENT-001: Session lifecycle events
-		handlers.WithSessionPollInterval(cfg.Agent.SessionPollInterval), // BR-AA-KA-065.8: Safety-net requeue interval
-		handlers.WithISPhaseUpdater(isPhaseUpdater),                     // #1376: Write-only IS terminal-close
-		handlers.WithLowConfidenceFloor(cfg.Rego.LowConfidenceFloor))    // BR-AI-088.4, #1828: operator-configurable floor
+		handlers.WithRecorder(eventRecorder),                         // DD-EVENT-001: Session lifecycle events
+		handlers.WithISPhaseUpdater(isPhaseUpdater),                  // #1376: Write-only IS terminal-close
+		handlers.WithLowConfidenceFloor(cfg.Rego.LowConfidenceFloor)) // BR-AI-088.4, #1828: operator-configurable floor
 	analyzingHandler := handlers.NewAnalyzingHandler(clients.regoEvaluator, controllerLog, aianalysisMetrics, clients.auditClient).
 		WithConfidenceThreshold(cfg.Rego.ConfidenceThreshold) // #225: operator-configurable threshold
 

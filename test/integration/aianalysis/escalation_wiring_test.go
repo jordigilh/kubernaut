@@ -62,7 +62,6 @@ var _ = Describe("Escalation Wiring (#1449)", Label("integration", "escalation",
 			ctrl.Log.WithName("escalation-wiring-mock-handler"),
 			testMetrics,
 			auditClient,
-			handlers.WithSessionPollInterval(1*time.Second),
 			handlers.WithRecorder(k8sManager.GetEventRecorderFor("aianalysis-controller")),
 		))
 	})

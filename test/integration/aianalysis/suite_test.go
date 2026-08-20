@@ -657,9 +657,8 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 	isPhaseUpdater := handlers.NewK8sISPhaseUpdater(k8sManager.GetClient(), controllerNS)
 	agentSessionCreator := creator.NewAgentSessionCreator(k8sManager.GetClient(), k8sManager.GetScheme())
 	investigatingHandler := handlers.NewInvestigatingHandler(agentSessionCreator, ctrl.Log.WithName("investigating-handler"), testMetrics, auditClient,
-		handlers.WithRecorder(eventRecorder),            // DD-EVENT-001: Session lifecycle events
-		handlers.WithSessionPollInterval(2*time.Second), // Fast requeue for tests (production default: 15s)
-		handlers.WithISPhaseUpdater(isPhaseUpdater))     // #1376: Write-only IS terminal-close
+		handlers.WithRecorder(eventRecorder),        // DD-EVENT-001: Session lifecycle events
+		handlers.WithISPhaseUpdater(isPhaseUpdater)) // #1376: Write-only IS terminal-close
 	// #225: Mock LLM current_scenario persists across analyses (statefulness),
 	// so unrecognized signals inherit high confidence (e.g., 0.88 from crashloop).
 	// Threshold 0.9 ensures mock scenarios requiring approval stay below threshold.
@@ -680,7 +679,17 @@ var _ = SynchronizedBeforeSuite(NodeTimeout(10*time.Minute), func(specCtx SpecCo
 		AuditClient:      auditClient,
 	}
 	reconciler.InvestigatingHandler.Store(investigatingHandler)
-	err = reconciler.SetupWithManager(k8sManager)
+	// #2204 RCA (2026-08-20): 10 workers, mirroring the
+	// EffectivenessMonitor/Notification integration suites' precedent for
+	// this exact class of problem -- the controller's previous implicit
+	// MaxConcurrentReconciles=1 default serialized this suite's per-process
+	// AIAnalysis CR backlog through a single worker, deepening the
+	// workqueue under concurrent load and pushing unrelated specs' fixed
+	// Eventually timeouts past their limit. Paired with the InvestigatingHandler
+	// change above (deadline-driven backstop requeue instead of a flat
+	// poll interval, removing needless requeue volume from this same
+	// workqueue) rather than either fix alone.
+	err = reconciler.SetupWithManager(k8sManager, 10)
 	Expect(err).ToNot(HaveOccurred())
 
 	By(fmt.Sprintf("[Process %d] Starting per-process controller manager", processNum))

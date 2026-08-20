@@ -631,7 +631,8 @@ type KASession struct {
     LastPolled *metav1.Time `json:"lastPolled,omitempty"`
     // +optional
     CreatedAt *metav1.Time `json:"createdAt,omitempty"`
-    // BR-AA-KA-064.8: constant 15s poll interval (configurable 1s–5m)
+    // #2204: reconcile count for observability, not tied to a fixed interval --
+    // AgentSession watch + deadline-driven backstop requeue drive reconciles now
     // +optional
     PollCount int32 `json:"pollCount,omitempty"`
     // #1390: after 3 consecutive 409s the session is regenerated

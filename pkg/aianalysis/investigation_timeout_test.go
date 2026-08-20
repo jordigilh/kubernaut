@@ -305,6 +305,80 @@ var _ = Describe("AA-Side Investigation Timeout — #1078", func() {
 		})
 	})
 
+	// #2204: the reconciler previously requeued a still-running investigation
+	// at a flat, hardcoded interval (sessionPollInterval) regardless of how
+	// far away the investigation's actual deadline was -- e.g. requeuing
+	// every 15s (or 2s under some test suites' overrides) for the entire
+	// lifetime of a 25-minute investigation, generating a per-process
+	// reconcile/API-server-hit volume with no relationship to when a check
+	// was actually needed. checkInvestigationTimeout already computes the
+	// authoritative deadline (Spec.TimesOutAt, else
+	// session.CreatedAt+maxInvestigationDuration) to decide *whether* to
+	// fail -- these tests prove the backstop requeue now reuses that same
+	// deadline to decide *when* to check next, collapsing the "still
+	// running" path to a single precisely-scheduled reconcile at the
+	// deadline instead of a periodic drumbeat.
+	Describe("UT-AA-2204-001: backstop requeue derives from the investigation deadline, not a flat interval", func() {
+		It("requeues close to Spec.TimesOutAt when it is sooner than any flat interval would have implied", func() {
+			// Session created 1 minute ago (irrelevant to the deadline
+			// computation once TimesOutAt is set) with TimesOutAt only 3s
+			// away. A flat-interval requeue would blow past this deadline
+			// by many seconds; the deadline-driven requeue must not.
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-1 * time.Minute))
+			deadline := metav1.NewTime(time.Now().Add(3 * time.Second))
+			analysis.Spec.TimesOutAt = &deadline
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating),
+				"investigation still within its deadline must keep polling, not fail")
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+			Expect(result.RequeueAfter).To(BeNumerically("<=", 4*time.Second),
+				"#2204: requeue must track the imminent TimesOutAt deadline (~3s away), not a flat interval that would overshoot it")
+		})
+
+		It("requeues close to the maxInvestigationDuration-derived deadline when Spec.TimesOutAt is nil", func() {
+			testMetrics := metrics.NewMetrics()
+			shortMaxHandler := handlers.NewInvestigatingHandler(
+				mockClient, ctrl.Log.WithName("test-short-max"), testMetrics, &noopAuditClient{},
+				handlers.WithRecorder(recorder),
+				handlers.WithMaxInvestigationDuration(10*time.Second),
+			)
+			// Session created 7s ago against a 10s max duration -- ~3s of
+			// deadline remains, and Spec.TimesOutAt is nil (back-compat
+			// fallback path).
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-7 * time.Second))
+			Expect(analysis.Spec.TimesOutAt).To(BeNil())
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating)
+
+			result, err := shortMaxHandler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating))
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+			Expect(result.RequeueAfter).To(BeNumerically("<=", 4*time.Second),
+				"#2204: requeue must track the maxInvestigationDuration-derived deadline (~3s remaining), not a flat interval")
+		})
+
+		It("applies the same deadline-driven requeue while a user is actively driving an interactive session", func() {
+			analysis := createTimeoutTestAnalysis(time.Now().Add(-1 * time.Minute))
+			deadline := metav1.NewTime(time.Now().Add(3 * time.Second))
+			analysis.Spec.TimesOutAt = &deadline
+			mockClient.WithPhase(agentsessionv1.AgentSessionPhaseInvestigating).
+				WithInteractive("oncall@example.com", nil)
+
+			result, err := handler.Handle(ctx, analysis)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(analysis.Status.Phase).To(Equal(aianalysis.PhaseInvestigating))
+			Expect(result.RequeueAfter).To(BeNumerically(">", 0))
+			Expect(result.RequeueAfter).To(BeNumerically("<=", 4*time.Second),
+				"AA-CRIT-1: interactive sessions share the same deadline-driven backstop, not a separate flat interval")
+		})
+	})
+
 	Describe("UT-AA-1351-008: handleSessionPollFailed sets Reason and SubReason (AA-MED-1)", func() {
 		It("should set structured failure fields when KA session poll returns failed", func() {
 			analysis := createTimeoutTestAnalysis(time.Now().Add(-5 * time.Minute))

@@ -21,10 +21,6 @@ controller:
   healthProbeAddr: ":8081"
   leaderElection: false
   leaderElectionId: "aianalysis.kubernaut.ai"
-agent:
-  url: "https://kubernaut-agent:8443"
-  timeout: "180s"
-  sessionPollInterval: "15s"
 datastorage:
   url: "{{ include "kubernaut.datastorage.url" . }}"
   healthUrl: "{{ include "kubernaut.datastorage.healthUrl" . }}"

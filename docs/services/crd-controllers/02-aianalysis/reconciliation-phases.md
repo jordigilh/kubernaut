@@ -89,23 +89,33 @@ status:
 
 ## Phase 2: Investigating
 
-**Purpose**: AI-powered investigation via **Kubernaut Agent (KA)**, using an async submit/poll/result session (BR-AA-KA-064) — **not** a single synchronous HTTP call.
+**Purpose**: AI-powered investigation via **Kubernaut Agent (KA)**, using a watched `AgentSession` CRD (DD-AA-KA-001) — **not** an HTTP submit/poll/result session, and **not** a single synchronous HTTP call.
 
-**Timeout**: 25 minutes wall-clock cap on the whole session (`DefaultMaxInvestigationDuration` in `pkg/aianalysis/handlers/constants.go`, configurable via `WithMaxInvestigationDuration(d time.Duration)` on the `InvestigatingHandler`) — not a per-call timeout.
+**Timeout**: 25 minutes wall-clock cap on the whole session by default (`DefaultMaxInvestigationDuration` in `pkg/aianalysis/handlers/constants.go`, configurable via `WithMaxInvestigationDuration(d time.Duration)` on the `InvestigatingHandler`), or RO's authoritative `Spec.TimesOutAt` deadline when set — not a per-call timeout.
 
 ### Actions
+
+> **STALE (2026-08-20, #2204)**: steps 1-3 below still describe the pre-DD-AA-KA-001
+> HTTP submit/poll/result flow (`agentclient.IncidentRequest`, `SubmitInvestigation`,
+> `PollSession`, `GetSessionResult`), which no longer matches
+> `pkg/aianalysis/handlers/investigating.go`. AA now creates an `AgentSession` CRD
+> (`creator.AgentSessionCreator.GetOrCreate`) and watches it for status changes; the
+> reconciler no longer makes any HTTP call to KA. A full rewrite of this section against
+> the current `AgentSession`-watch flow is out of scope for #2204, which only replaced the
+> flat `DefaultSessionPollInterval` (15s) backstop requeue mentioned below with a
+> deadline-driven one (`InvestigatingHandler.backstopRequeueAfter`).
 
 The `InvestigatingHandler` (`pkg/aianalysis/handlers/investigating.go`) dispatches on whether `status.kaSession` already has an active session ID:
 
 1. **Submit** (no session yet, or session lost — see error handling below)
    - Build `agentclient.IncidentRequest` from `spec.analysisRequest.signalContext` (`RequestBuilder.BuildIncidentRequest`), including `enrichmentResults.customLabels` and `enrichmentResults.businessClassification`
    - Call `AgentClientInterface.SubmitInvestigation(ctx, req)` → `POST /api/v1/incident/analyze` → KA responds `202 Accepted` with a `session_id`
-   - Store the session ID in `status.kaSession`; requeue for the first poll after `DefaultSessionPollInterval` (15s)
+   - Store the session ID in `status.kaSession`; requeue at the investigation's own deadline (`backstopRequeueAfter`, #2204) as a backstop — the `AgentSession` watch is the real completion signal
 
 2. **Poll** (session ID present)
    - Call `AgentClientInterface.PollSession(ctx, sessionID)` → `GET /api/v1/incident/session/{id}` on each subsequent reconcile
-   - Session status `pending`/`investigating`: requeue after the poll interval
-   - Session status `user_driving`: a human operator has taken over the session (DD-INTERACTIVE-002); continue polling, same 25-minute cap still applies
+   - Session status `pending`/`investigating`: requeue at the deadline-driven backstop interval, not a fixed poll cadence
+   - Session status `user_driving`: a human operator has taken over the session (DD-INTERACTIVE-002); continue watching/backstop-requeuing, same wall-clock cap still applies
    - Session status `completed`: call `GetSessionResult(ctx, sessionID)` to fetch the final `IncidentResponse`
    - Session status `failed`/`cancelled`: transition to `Failed`
 

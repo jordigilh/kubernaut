@@ -36,6 +36,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlcontroller "sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -303,18 +304,37 @@ func (r *AIAnalysisReconciler) ValidateDependencies() error {
 // allowing RequeueAfter backoff intervals to work correctly.
 //
 // Issue #1116: Validates all mandatory dependencies before registering.
-func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager) error {
+//
+// SPIKE (2026-08-20, #2204 RCA): maxConcurrentReconciles mirrors the
+// EffectivenessMonitor/Notification variadic-option pattern
+// (internal/controller/effectivenessmonitor/reconciler.go SetupWithManager).
+// Unlike those two, this controller has run with controller-runtime's
+// implicit MaxConcurrentReconciles=1 default since it was first scaffolded
+// (no prior value to regress from) -- every AIAnalysis CR's reconcile
+// (including the Investigating phase's 2s poll-and-requeue loop) is
+// serialized through a single worker per controller-manager process. Under
+// this PR's own capacity-retry E2E/IT specs and #2204's bursty concurrent
+// investigations, a deep per-process workqueue backlog on that single
+// worker is the leading hypothesis for the 60s+ Eventually timeouts.
+func (r *AIAnalysisReconciler) SetupWithManager(mgr ctrl.Manager, maxConcurrentReconciles ...int) error {
 	if err := r.ValidateDependencies(); err != nil {
 		return fmt.Errorf("aianalysis controller has nil dependencies: %w", err)
 	}
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&aianalysisv1.AIAnalysis{}).
 		WatchesRawSource(source.Kind(mgr.GetCache(), &agentsessionv1.AgentSession{},
 			handler.TypedEnqueueRequestsFromMapFunc(r.mapAgentSessionToAIAnalysis),
 			AgentSessionEventPredicate(),
 		)).
-		WithEventFilter(aiAnalysisUpdatePredicate()).
-		Complete(r)
+		WithEventFilter(aiAnalysisUpdatePredicate())
+
+	if len(maxConcurrentReconciles) > 0 && maxConcurrentReconciles[0] > 0 {
+		builder = builder.WithOptions(ctrlcontroller.TypedOptions[ctrl.Request]{
+			MaxConcurrentReconciles: maxConcurrentReconciles[0],
+		})
+	}
+
+	return builder.Complete(r)
 }
 
 // mapAgentSessionToAIAnalysis maps an AgentSession event to the AIAnalysis

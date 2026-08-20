@@ -84,7 +84,7 @@ graph TB
     RO -->|"Creates with<br/>EnrichmentResults copy"| AIA
     Controller -->|Watches| AIA
     Controller -->|"1. POST /api/v1/incident/analyze<br/>(async submit → 202 + session_id)"| KA
-    Controller -->|"2. GET .../incident/session/{id}<br/>(poll every 15s)"| KA
+    Controller -->|"2. Watches AgentSession<br/>(+ deadline-driven backstop, #2204)"| KA
     Controller -->|"3. GET .../incident/session/{id}/result<br/>(fetch once completed)"| KA
     KA -->|"Resolves & validates workflow"| DataStorage
     Controller -->|"Load policy"| RegoEngine
@@ -116,7 +116,7 @@ Pending → Investigating → Analyzing → Completed
 | Phase | Duration | Actions | Transition Criteria |
 |-------|----------|---------|---------------------|
 | **Pending** | <1s | Validation, finalizer setup | Spec valid → Investigating |
-| **Investigating** | Async; wall-clock cap 25 min (`DefaultMaxInvestigationDuration`) | Submit investigation to Kubernaut Agent (KA), poll session every 15s (`DefaultSessionPollInterval`), fetch result once the session completes | Session `completed` → Analyzing; session `failed`/cancelled or 25-min cap exceeded → Failed |
+| **Investigating** | Async; wall-clock cap 25 min (`DefaultMaxInvestigationDuration`) | Create and watch an `AgentSession` CRD for Kubernaut Agent (KA); a deadline-driven backstop requeue (#2204) catches a hung KA; read result once the session completes | Session `completed` → Analyzing; session `failed`/cancelled or 25-min cap exceeded → Failed |
 | **Analyzing** | ≤5s | Evaluate Rego approval policies, validate workflow exists | Policy evaluated → Completed |
 | **Completed** | Terminal | Update status with `selectedWorkflow`, `approvalRequired` flag | RO watches for completion |
 

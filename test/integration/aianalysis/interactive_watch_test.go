@@ -188,7 +188,6 @@ var _ = Describe("BR-INTERACTIVE-010: InvestigationSession field index + termina
 				ctrl.Log.WithName("is-phase-wiring-mock-handler"),
 				testMetrics,
 				auditClient,
-				handlers.WithSessionPollInterval(500*time.Millisecond),
 				handlers.WithISPhaseUpdater(isPhaseUpdater),
 				handlers.WithRecorder(k8sManager.GetEventRecorderFor("aianalysis-controller")),
 			))

@@ -57,7 +57,6 @@ type InvestigatingHandler struct {
 	auditClient              AuditClientInterface // DD-AUDIT-003: Injected audit client
 	processor                *ResponseProcessor   // P1.1: Response processing logic
 	errorClassifier          *ErrorClassifier     // P2.1: Error classification and retry logic
-	sessionPollInterval      time.Duration        // BR-AA-KA-065.8: Safety-net requeue interval while running
 	maxInvestigationDuration time.Duration        // #1078: Wall-clock cap on investigation before PhaseFailed
 	recorder                 record.EventRecorder // DD-EVENT-001: K8s event recorder for session lifecycle events
 	isPhaseUpdater           ISPhaseUpdater       // #1376: Write-only IS terminal-close (DD-AA-KA-001 Amendment)
@@ -71,18 +70,6 @@ type InvestigatingHandlerOption func(*InvestigatingHandler)
 func WithRecorder(r record.EventRecorder) InvestigatingHandlerOption {
 	return func(h *InvestigatingHandler) {
 		h.recorder = r
-	}
-}
-
-// WithSessionPollInterval sets the constant safety-net requeue interval while
-// an investigation is still running. BR-AA-KA-065.8: the AgentSession watch
-// wakes the reconciler on every meaningful KA status write, so this interval
-// is a backstop -- it guarantees checkInvestigationTimeout still runs even if
-// KA never writes another status update (e.g. it hangs). Default:
-// DefaultSessionPollInterval (15s).
-func WithSessionPollInterval(d time.Duration) InvestigatingHandlerOption {
-	return func(h *InvestigatingHandler) {
-		h.sessionPollInterval = d
 	}
 }
 
@@ -135,7 +122,6 @@ func NewInvestigatingHandler(getOrCreator AgentSessionGetOrCreator, log logr.Log
 		metrics:                  m,
 		auditClient:              auditClient,
 		log:                      handlerLog,
-		sessionPollInterval:      DefaultSessionPollInterval,      // BR-AA-KA-065.8: Safety-net requeue interval
 		maxInvestigationDuration: DefaultMaxInvestigationDuration, // #1078: Wall-clock cap
 		processor:                NewResponseProcessor(log, m, auditClient),
 		errorClassifier:          NewErrorClassifier(handlerLog),
@@ -259,10 +245,12 @@ func (h *InvestigatingHandler) finalizeSessionSubmit(ctx context.Context, analys
 // handleSessionRunning covers the AgentSession's non-terminal phases (unset,
 // Pending, Investigating). It enforces AA's own wall-clock investigation cap
 // independently of KA (checkInvestigationTimeout), emits UserDriving
-// observability when a human is currently driving, and requeues at the
-// safety-net poll interval -- the AgentSession watch wakes the reconciler
-// immediately on any actual KA status write, but this requeue guarantees the
-// timeout check still runs even if KA never writes another update.
+// observability when a human is currently driving, and requeues exactly at
+// the investigation's own deadline (backstopRequeueAfter) -- the
+// AgentSession watch wakes the reconciler immediately on any actual KA
+// status write, so this requeue is a pure backstop: it guarantees the
+// timeout check still runs even if KA never writes another update (e.g. it
+// hangs), without polling on any interval unrelated to that deadline (#2204).
 func (h *InvestigatingHandler) handleSessionRunning(ctx context.Context, analysis *aianalysisv1.AIAnalysis, as *agentsessionv1.AgentSession) (ctrl.Result, error) {
 	session := analysis.Status.KASession
 
@@ -270,27 +258,69 @@ func (h *InvestigatingHandler) handleSessionRunning(ctx context.Context, analysi
 		return ctrl.Result{}, nil
 	}
 
+	requeueAfter := h.backstopRequeueAfter(analysis, session)
+
 	if as.Status.Interactive {
 		h.log.Info("Session under user control, continuing to poll",
 			"agentSession", as.Name,
 			"actingUser", as.Status.ActingUser,
-			"nextPollIn", h.sessionPollInterval,
+			"nextCheckIn", requeueAfter,
 			"pollCount", session.PollCount,
 		)
 		if h.recorder != nil {
 			h.recorder.Eventf(analysis, corev1.EventTypeNormal, events.EventReasonUserDriving,
 				"Interactive session %s: user is driving investigation", as.Name)
 		}
-		return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
+		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
 	h.log.Info("Investigation still in progress, requeuing",
 		"agentSession", as.Name,
 		"phase", as.Status.Phase,
-		"nextPollIn", h.sessionPollInterval,
+		"nextCheckIn", requeueAfter,
 		"pollCount", session.PollCount,
 	)
-	return ctrl.Result{RequeueAfter: h.sessionPollInterval}, nil
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
+}
+
+// minBackstopRequeueAfter floors backstopRequeueAfter's result. Defensive
+// only: checkInvestigationTimeout already short-circuits handleSessionRunning
+// before this is ever computed once the deadline has actually passed, so in
+// practice the raw remaining-time value is always positive here -- this
+// floor exists purely to avoid a zero/negative RequeueAfter (which
+// controller-runtime treats as "requeue immediately", a tight busy-loop)
+// from ever reaching the workqueue if clock skew or test timing ever closes
+// that gap.
+const minBackstopRequeueAfter = 1 * time.Second
+
+// investigationDeadline returns the same authoritative deadline
+// checkInvestigationTimeout evaluates against: RO's absolute
+// Spec.TimesOutAt (DD-TIMEOUT-002 / Issue #2176) when set, else the
+// back-compat session.CreatedAt+maxInvestigationDuration fallback.
+func (h *InvestigatingHandler) investigationDeadline(analysis *aianalysisv1.AIAnalysis, session *aianalysisv1.KASession) time.Time {
+	if analysis.Spec.TimesOutAt != nil {
+		return analysis.Spec.TimesOutAt.Time
+	}
+	var createdAt time.Time
+	if session != nil && session.CreatedAt != nil {
+		createdAt = session.CreatedAt.Time
+	}
+	return createdAt.Add(h.maxInvestigationDuration)
+}
+
+// backstopRequeueAfter computes how long until the investigation's own
+// deadline (investigationDeadline) and returns that as the safety-net
+// requeue duration -- a single reconcile scheduled exactly when a timeout
+// check is next actually needed, instead of a periodic poll interval
+// unrelated to that deadline (#2204: the prior flat sessionPollInterval
+// design generated reconcile/API-server volume with no relationship to
+// when a check was actually due).
+func (h *InvestigatingHandler) backstopRequeueAfter(analysis *aianalysisv1.AIAnalysis, session *aianalysisv1.KASession) time.Duration {
+	remaining := time.Until(h.investigationDeadline(analysis, session))
+	if remaining < minBackstopRequeueAfter {
+		return minBackstopRequeueAfter
+	}
+	return remaining
 }
 
 // checkInvestigationTimeout fails analysis in place and returns true if
@@ -312,13 +342,12 @@ func (h *InvestigatingHandler) checkInvestigationTimeout(ctx context.Context, an
 	// to the hardcoded session.CreatedAt+maxInvestigationDuration default
 	// when RO has no authoritative Analyzing timeout (back-compat /
 	// defensive -- e.g. AIAnalysis CRDs created before this field existed).
-	var timedOut bool
+	deadline := h.investigationDeadline(analysis, session)
+	timedOut := metav1.Now().After(deadline)
 	var limitDesc string
 	if analysis.Spec.TimesOutAt != nil {
-		timedOut = metav1.Now().After(analysis.Spec.TimesOutAt.Time)
 		limitDesc = "deadline " + analysis.Spec.TimesOutAt.Format(time.RFC3339)
 	} else {
-		timedOut = elapsed > h.maxInvestigationDuration
 		limitDesc = h.maxInvestigationDuration.String()
 	}
 	if !timedOut {
