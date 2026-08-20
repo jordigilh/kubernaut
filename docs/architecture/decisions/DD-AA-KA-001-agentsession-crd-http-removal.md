@@ -548,6 +548,15 @@ the 15-minute staleness window as the only eventual cleanup path, which is fine 
 crashed mid-investigation" (the scenario the Lease was designed for) but wrong for "this attempt was
 rejected before any investigation began" (the capacity-retry scenario introduced by this amendment).
 
+**RCA — fifth CI run of E2E-AA-065 (2026-08-20, same day)**: with the Lease fix deployed, 116/120
+converged to `Completed` within 300s (up from 92/120 pre-fix) and zero `Failed` — confirming Gap 6's
+fix as the actual root cause, not the 180s→300s timeout bump alone. The 4 still-`Investigating`
+tracked separately: each showed `Status.Phase == "Investigating"` continuously for the full test
+window (never stuck at `""`), i.e. genuinely still mid-investigation, not dispatch-blocked. Raised the
+timeout again, 300s → 360s, to cover this residual real tail latency (120 concurrent LLM-driven
+investigations sharing a CI runner) — still comfortably inside the job's 20-minute CI budget (this run
+took 16m38s at 300s).
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:

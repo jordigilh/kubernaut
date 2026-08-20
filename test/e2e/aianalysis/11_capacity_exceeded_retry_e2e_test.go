@@ -110,13 +110,19 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 		wg.Wait()
 
 		By("every investigation must eventually converge to Completed -- a capacity rejection is transient and must never surface as a permanent failure")
-		// 300s (raised from 180s per CI evidence, 2026-08-20): two consecutive real CI
-		// runs after the RBAC fix (DD-AA-KA-001 Gap 5 amendment) showed zero Failed --
-		// the retry mechanism itself is correct -- but only 90/120 had converged to
-		// Completed by 180s, the rest still (correctly) retrying. 120 investigations
-		// against KA's 50-slot cap means a meaningful fraction queue through multiple
-		// ErrorClassifier backoff rounds (up to ~31s of backoff alone across 5 retries)
-		// before a slot frees; 300s gives comfortable margin on a shared CI runner.
+		// 360s (raised from 300s per CI evidence, 2026-08-20): the 180s->300s bump
+		// above turned out to be masking a real bug, not just tight timing -- a
+		// rejected dispatch's per-name Lease (dispatchLeaseDuration=15m) was never
+		// released, so AA's DeleteForRetry-driven retry (recreating an AgentSession
+		// under the identical name) silently lost the Lease race and never
+		// redispatched (fixed in dispatcher.go's dispatch() failure path, DD-AA-KA-001
+		// Gap 6). Post-fix CI run: 116/120 Completed within 300s, zero Failed, and the
+		// remaining 4 were still genuinely mid-investigation (Status.Phase=Investigating
+		// the whole time, not stuck/blocked) -- real tail latency from 120 concurrent
+		// LLM-driven investigations sharing a CI runner, not a retry-logic gap. 360s
+		// gives that tail headroom while staying under this job's 20-minute CI budget
+		// (ci-pipeline.yml's e2e-tests matrix: aianalysis timeout=20; this run took
+		// 16m38s at 300s, so +60s here keeps ample margin).
 		Eventually(func() map[string]int {
 			counts := map[string]int{}
 			for _, a := range analyses {
@@ -132,7 +138,7 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 				counts[phase]++
 			}
 			return counts
-		}, 300*time.Second, 3*time.Second).Should(
+		}, 360*time.Second, 3*time.Second).Should(
 			SatisfyAll(
 				HaveKeyWithValue("Completed", capacityBurstOvershoot),
 				Not(HaveKey("Failed")),
