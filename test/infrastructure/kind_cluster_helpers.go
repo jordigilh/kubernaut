@@ -416,8 +416,19 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 		return err
 	}
 
-	// 1. Check if cluster already exists
+	// 1. Check if cluster already exists. Must set the same provider env as
+	// the "kind create cluster" call below (step 9) -- `kind get clusters`
+	// enumerates nodes via the container runtime (docker or podman), so
+	// checking under the wrong provider either misses a cluster that
+	// genuinely exists (leading to a spurious re-create attempt) or, worse,
+	// reports a stale same-named cluster under the OTHER provider as a
+	// reusable match, whose kubeconfig/image-load calls then fail because
+	// they run under opts.UsePodman's provider instead of the one that
+	// actually owns those nodes.
 	checkCmd := exec.CommandContext(ctx, "kind", "get", "clusters")
+	if opts.UsePodman {
+		checkCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+	}
 	checkOutput, _ := checkCmd.CombinedOutput()
 	clusterExists := strings.Contains(string(checkOutput), opts.ClusterName)
 
@@ -429,6 +440,9 @@ func CreateKindClusterWithConfig(ctx context.Context, opts KindClusterOptions, w
 		if opts.DeleteExisting {
 			_, _ = fmt.Fprintf(writer, "  ⚠️  Cluster already exists, deleting...\n")
 			delCmd := exec.CommandContext(ctx, "kind", "delete", "cluster", "--name", opts.ClusterName)
+			if opts.UsePodman {
+				delCmd.Env = append(os.Environ(), "KIND_EXPERIMENTAL_PROVIDER=podman")
+			}
 			if output, err := delCmd.CombinedOutput(); err != nil {
 				_, _ = fmt.Fprintf(writer, "  ⚠️  Failed to delete existing cluster: %s\n", output)
 			}

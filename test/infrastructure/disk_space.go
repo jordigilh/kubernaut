@@ -143,6 +143,16 @@ func LogDiskSpaceWithComparison(stage string, previousInfo *DiskSpaceInfo, write
 func ExportImageToTar(imageName, tarPath string, writer io.Writer) error {
 	_, _ = fmt.Fprintf(writer, "  📦 Exporting %s to %s...\n", imageName, tarPath)
 
+	// `podman save -o` refuses to write over an existing docker-archive file
+	// ("doesn't support modifying existing images"), so a leftover .tar from
+	// a prior failed/retried run permanently blocks every subsequent export
+	// to the same fixed path until manually removed. Since tarPath is always
+	// deterministic per service (e.g. "/tmp/datastorage-e2e.tar"), remove any
+	// stale file first so retries are self-healing.
+	if err := os.Remove(tarPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to remove stale .tar file %s: %w", tarPath, err)
+	}
+
 	saveCmd := exec.CommandContext(context.Background(), "podman", "save", "-o", tarPath, imageName)
 	saveCmd.Stdout = writer
 	saveCmd.Stderr = writer

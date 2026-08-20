@@ -493,6 +493,22 @@ func createAIAnalysisKindCluster(ctx context.Context, clusterName, kubeconfigPat
 		ReuseExisting:             true, // Original behavior: reuse if exists
 		CleanupOrphanedContainers: true, // Original behavior: cleanup Podman containers on macOS
 		ProjectRootAsWorkingDir:   true, // DD-TEST-007: For ./coverdata resolution in Kind config
+		// UsePodman: this suite's entire image pipeline (BuildImageForKind,
+		// ExportImageToTar, LoadImageFromTar in e2e_images.go/disk_space.go)
+		// shells out to `podman` exclusively, and LoadImageFromTar hardcodes
+		// KIND_EXPERIMENTAL_PROVIDER=podman unconditionally. Without this,
+		// `kind create cluster` falls back to the ambient default provider
+		// (Docker, when the docker binary is present and
+		// KIND_EXPERIMENTAL_PROVIDER isn't set in the shell -- e.g. a bare
+		// `make test-e2e-aianalysis` on a host with both runtimes installed),
+		// while every subsequent `kind load image-archive` call still forces
+		// podman -- a deterministic provider mismatch where kind looks for
+		// the cluster's nodes under the wrong runtime and reports "no nodes
+		// found for cluster". Every other E2E service (gateway, apifrontend,
+		// authwebhook, fleetmetadatacache, shared_e2e) already sets this;
+		// aianalysis was the one outlier. GitHub Actions CI runners never
+		// surfaced this because they don't have a competing Docker install.
+		UsePodman: true,
 	}
 	if err := CreateKindClusterWithConfig(ctx, opts, writer); err != nil {
 		return err
