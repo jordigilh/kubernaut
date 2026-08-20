@@ -55,14 +55,21 @@ var _ = Describe("E2E-AA-084-001: Proactive Signal Mode Investigation", Label("e
 			// This E2E test validates the full AA → KA → Mock LLM pipeline with
 			// proactive signal mode context flowing through all components.
 
+			// #2204 follow-up (2026-08-20 helios08 RCA): RemediationRequestRef.Name
+			// must be unique per call, not a static literal -- AgentSessionCreator.
+			// GetOrCreate derives the child AgentSession's name deterministically
+			// from this field alone (as-<name>) with no ownership check, so a
+			// static value risks a cross-spec/cross-process name collision (see
+			// test/e2e/aianalysis/03_full_flow_test.go for the confirmed repro).
+			suffix := randomSuffix()
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-proactive-oomkill-" + randomSuffix(),
+					Name:      "e2e-proactive-oomkill-" + suffix,
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "e2e-proactive-remediation",
+						Name:      "e2e-proactive-remediation-" + suffix,
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-proactive-rem-001",
@@ -120,14 +127,17 @@ var _ = Describe("E2E-AA-084-001: Proactive Signal Mode Investigation", Label("e
 			// Existing reactive signals should continue working with standard RCA.
 			// signalMode=reactive (or empty) should produce normal investigation results.
 
+			// #2204 follow-up: unique RemediationRequestRef.Name per call (see
+			// Proactive OOMKill investigation Context above for full rationale).
+			suffix := randomSuffix()
 			analysis := &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-reactive-oomkill-" + randomSuffix(),
+					Name:      "e2e-reactive-oomkill-" + suffix,
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "e2e-reactive-remediation",
+						Name:      "e2e-reactive-remediation-" + suffix,
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-reactive-rem-001",

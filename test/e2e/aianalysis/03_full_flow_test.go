@@ -49,14 +49,29 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 
 		BeforeEach(func() {
 			_ = createTestNamespace(ctx, "full-flow-prod")
+			// #2204 follow-up (2026-08-20 helios08 RCA): RemediationRequestRef.Name
+			// must be unique per BeforeEach invocation, not a static literal --
+			// this Context has two Its ("should complete full 4-phase..." and
+			// "should require approval..."), and with --procs > 1 Ginkgo can
+			// schedule them onto different parallel processes running
+			// concurrently. AgentSessionCreator.GetOrCreate derives the child
+			// AgentSession's name deterministically from this field alone
+			// (as-<name>) with no ownership check, so both processes raced to
+			// create/adopt the SAME AgentSession; the loser's AIAnalysis
+			// silently inherited a foreign, already-terminal session it
+			// doesn't own, and its owner-scoped watch never woke it again --
+			// it hung until the 60s Eventually below timed out. Confirmed live
+			// on helios08 (TEST_PROCS=4): the stuck AIAnalysis's AgentSession
+			// ownerReference pointed at the OTHER It's AIAnalysis UID.
+			suffix := randomSuffix()
 			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-prod-incident-" + randomSuffix(),
+					Name:      "e2e-prod-incident-" + suffix,
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "e2e-remediation",
+						Name:      "e2e-remediation-" + suffix,
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-001",
@@ -170,14 +185,17 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 		var analysis *aianalysisv1.AIAnalysis
 
 		BeforeEach(func() {
+			// #2204 follow-up: unique RemediationRequestRef.Name per call (see
+			// Production incident analysis Context above for full rationale).
+			suffix := randomSuffix()
 			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-staging-incident-" + randomSuffix(),
+					Name:      "e2e-staging-incident-" + suffix,
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "e2e-remediation-staging",
+						Name:      "e2e-remediation-staging-" + suffix,
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-002",
@@ -226,14 +244,17 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 
 		BeforeEach(func() {
 			_ = createTestNamespace(ctx, "full-flow-data-quality")
+			// #2204 follow-up: unique RemediationRequestRef.Name per call (see
+			// Production incident analysis Context above for full rationale).
+			suffix := randomSuffix()
 			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-data-quality-" + randomSuffix(),
+					Name:      "e2e-data-quality-" + suffix,
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "e2e-remediation-dq",
+						Name:      "e2e-remediation-dq-" + suffix,
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-004",
@@ -283,14 +304,17 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 
 		BeforeEach(func() {
 			_ = createTestNamespace(ctx, "full-flow-low-conf")
+			// #2204 follow-up: unique RemediationRequestRef.Name per call (see
+			// Production incident analysis Context above for full rationale).
+			suffix := randomSuffix()
 			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-low-conf-" + randomSuffix(),
+					Name:      "e2e-low-conf-" + suffix,
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "e2e-remediation-low-conf",
+						Name:      "e2e-remediation-low-conf-" + suffix,
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-low-conf",
@@ -357,14 +381,17 @@ var _ = Describe("Full User Journey E2E", Label("e2e", "full-flow"), func() {
 
 		BeforeEach(func() {
 			_ = createTestNamespace(ctx, "full-flow-max-retries")
+			// #2204 follow-up: unique RemediationRequestRef.Name per call (see
+			// Production incident analysis Context above for full rationale).
+			suffix := randomSuffix()
 			analysis = &aianalysisv1.AIAnalysis{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "e2e-max-retries-" + randomSuffix(),
+					Name:      "e2e-max-retries-" + suffix,
 					Namespace: controllerNamespace,
 				},
 				Spec: aianalysisv1.AIAnalysisSpec{
 					RemediationRequestRef: corev1.ObjectReference{
-						Name:      "e2e-remediation-max-retries",
+						Name:      "e2e-remediation-max-retries-" + suffix,
 						Namespace: controllerNamespace,
 					},
 					RemediationID: "e2e-rem-max-retries",
