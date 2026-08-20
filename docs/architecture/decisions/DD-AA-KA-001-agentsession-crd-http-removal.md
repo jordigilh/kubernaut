@@ -502,6 +502,52 @@ sources before declaring a new client call wired --
 `charts/kubernaut/templates/aianalysis/aianalysis.yaml`'s `resources: ["agentsessions"]` block, and
 `test/infrastructure/aianalysis_e2e.go`'s hand-rolled `ClusterRole` YAML string.
 
+**RCA — third CI run of E2E-AA-065 (2026-08-20, same day)**: after both RBAC fixes, `DeleteForRetry`
+finally executed cleanly (0/120 `Failed`), but the test still failed on a different assertion: only
+90/120 reached `Completed` within the 180s `Eventually` timeout (30 stuck `Investigating`). Read
+superficially, this looked like "the retry mechanism works, convergence just needs more time under
+concurrent-burst load" — the timeout was raised 180s → 300s (commit `c54f28535`) on that theory.
+
+**RCA — fourth CI run of E2E-AA-065 (2026-08-20, same day)**: the 300s timeout barely moved the
+needle (92/120 `Completed`, 28 stuck `Investigating` — 2 more than the 180s run despite 120s more
+budget), disproving the "just needs more time" theory. Tracing one stuck `AgentSession`
+(`as-e2e-capacity-retry-ab5c814d`) end-to-end: KA's dispatcher log showed exactly **one**
+`"failed to start investigation" / "maximum concurrent investigations reached"` entry for that name,
+ever — no second attempt, even though AA's `DeleteForRetry` + recreate cycle should have produced
+one. AA's own poll log showed the AgentSession's `Status.Phase` stuck at `""` (never even reaching
+`Investigating`) for the entire remaining ~4.5 minutes of the test. Root cause, confirmed by tracing
+`Dispatcher.tryDispatch`/`acquireDispatchLease`/`dispatch` (`internal/kubernautagent/agentsession/dispatcher.go`):
+the per-`AgentSession`-name dispatch `Lease` (`dispatch-<name>`, `dispatchLeaseDuration` = 15 minutes)
+created on the *first*, capacity-rejected attempt was never deleted when that attempt failed —
+`dispatch()`'s error branch wrote the `Failed`/`CapacityExceeded` `Status` and stopped the Lease
+*renewal* goroutine, but left the Lease object itself in the cluster, fresh (not stale) for the
+remainder of its 15-minute duration. AA's retry deletes the `AgentSession` and recreates a new one
+under the **identical name** (`AgentSessionCreator.GetOrCreate`'s naming is deterministic per
+`AIAnalysis`), so the retry's `tryDispatch` → `acquireDispatchLease` hits `AlreadyExists` on the
+leftover Lease and falls into `tryReclaimStaleLease`, whose `isLeaseStale` check correctly reports
+"not stale yet" (the Lease is only seconds/minutes old) — so the retry is silently treated as a lost
+race against another (nonexistent) in-progress dispatcher, and never dispatched again until the
+15-minute window elapses. This fully explains both the fourth run's near-flat 90→92 convergence (the
+15-minute block vastly exceeds either 180s or 300s test timeout, so a session unlucky enough to be
+capacity-rejected on its first attempt was effectively stuck for the rest of the test) and why the
+capacity-exceeded unit test (`UT-AA-KA-065-025`) never caught it: that test only asserts the *first*
+rejection's `Status.Reason`, never simulates a second dispatch attempt against the same name.
+Reproduced deterministically at unit-test speed (`UT-AA-KA-065-026`, added alongside the fix) before
+touching the fix itself, confirming root cause without a further 15-minute E2E cycle. Fixed by having
+`dispatch()`'s failure branch delete its own dispatch Lease immediately (`Dispatcher.deleteDispatchLease`,
+idempotent, best-effort) whenever the investigation never started — covers the capacity-exceeded case
+and, for the same reason, every other `session.Manager` rejection path, since none of them leave an
+in-progress investigation for the Lease to protect. `UT-AA-KA-065-025` was also extended to assert the
+Lease no longer exists after a capacity-exceeded rejection.
+
+Lesson: a Lease (or any per-attempt claim object) acquired *before* the operation it protects is known
+to have started must be released on every failure path that returns before that operation actually
+begins — not just on success/normal completion. The existing `renewDispatchLease` "stop renewing on
+failure" behavior looked sufficient (no more Lease *refresh* after a failure) but silently relied on
+the 15-minute staleness window as the only eventual cleanup path, which is fine for "this replica
+crashed mid-investigation" (the scenario the Lease was designed for) but wrong for "this attempt was
+rejected before any investigation began" (the capacity-retry scenario introduced by this amendment).
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:

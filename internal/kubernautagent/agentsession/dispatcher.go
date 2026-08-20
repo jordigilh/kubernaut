@@ -434,6 +434,19 @@ func (d *Dispatcher) dispatch(ctx context.Context, as *agentsessionv1.AgentSessi
 			reason = agentsessionv1.AgentSessionReasonCapacityExceeded
 		}
 		d.writeFailedStatus(ctx, key, fmt.Sprintf("failed to start investigation: %v", err), reason)
+		// BR-AI-009 / DD-AA-KA-001 amendment Gap 6 (2026-08-20): the
+		// investigation never started (session.Manager rejected it before
+		// accepting ownership), so this replica's dispatch Lease no longer
+		// protects anything in-flight -- release it immediately. Without
+		// this, AA's retry (DeleteForRetry + a fresh AgentSession under
+		// the identical name) races this Lease while it is still fresh
+		// (dispatchLeaseDuration=15m), and tryReclaimStaleLease's
+		// isLeaseStale check silently treats the retry's tryDispatch as a
+		// lost race, blocking it for up to 15 minutes. Confirmed live:
+		// E2E-AA-065 (2026-08-20 CI run) -- retried AgentSessions' Status
+		// stuck at Phase="" for the full 300s test window, zero further
+		// dispatch attempts logged.
+		d.deleteDispatchLease(ctx, as.Name, as.Namespace)
 		return
 	}
 
@@ -627,6 +640,31 @@ func (d *Dispatcher) tryReclaimStaleLease(ctx context.Context, want *coordinatio
 	}
 	d.logger.Info("reclaimed stale dispatch lease", "lease", want.Name, "namespace", want.Namespace)
 	return true, nil
+}
+
+// deleteDispatchLease removes the dispatch Lease for agentSessionName so a
+// subsequent dispatch attempt (a resync re-considering the same
+// AgentSession, or a brand-new AgentSession created under the identical
+// name by an AA retry) can immediately acquire a fresh Lease rather than
+// waiting out isLeaseStale's dispatchLeaseDuration window (BR-AI-009,
+// DD-AA-KA-001 amendment Gap 6). Idempotent and best-effort: NotFound is
+// expected (nothing to clean up) and any other error is logged, not fatal
+// -- worst case the caller falls back to the pre-existing stale-Lease
+// reclaim path once dispatchLeaseDuration elapses.
+func (d *Dispatcher) deleteDispatchLease(ctx context.Context, agentSessionName, namespace string) {
+	deleteCtx, cancel := context.WithTimeout(ctx, listTimeout)
+	defer cancel()
+
+	lease := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      dispatchLeaseName(agentSessionName),
+			Namespace: namespace,
+		},
+	}
+	if err := d.client.Delete(deleteCtx, lease); err != nil && !apierrors.IsNotFound(err) {
+		d.logger.Error(err, "failed to delete dispatch lease after rejected dispatch",
+			"agentSession", agentSessionName, "namespace", namespace)
+	}
 }
 
 func isLeaseStale(l *coordinationv1.Lease) bool {

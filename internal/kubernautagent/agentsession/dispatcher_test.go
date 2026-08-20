@@ -27,6 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -239,6 +240,80 @@ var _ = Describe("Dispatcher — BR-AA-KA-065.3/.4 dispatch + Status lifecycle",
 			Expect(got.Status.Reason).To(Equal(agentsessionv1.AgentSessionReasonCapacityExceeded),
 				"a capacity-exceeded dispatch failure must be distinguishable (via Status.Reason) from a genuine investigation failure so AA can retry it")
 			Expect(got.Status.Error).NotTo(BeEmpty(), "Status.Error must still carry the curated, user-facing message")
+
+			// BR-AI-009 / DD-AA-KA-001 amendment Gap 6 (2026-08-20): the
+			// investigation never started for "as-cap-2" (rejected before
+			// session.Manager accepted it), so its dispatch Lease must not
+			// survive the failed attempt -- otherwise AA's retry (delete +
+			// recreate an AgentSession with this same name) races a stale-
+			// but-not-yet-expired Lease (dispatchLeaseDuration=15m) and
+			// tryDispatch's tryReclaimStaleLease silently treats it as a
+			// lost race, permanently blocking the retry for up to 15
+			// minutes (confirmed live: E2E-AA-065 CI run 2026-08-20,
+			// AgentSession Status.Phase stuck at "" for the full 300s test
+			// window with zero further dispatch attempts logged).
+			lease := &coordinationv1.Lease{}
+			leaseErr := cli.Get(ctx, crclient.ObjectKey{Name: "dispatch-as-cap-2", Namespace: testNamespace}, lease)
+			Expect(apierrors.IsNotFound(leaseErr)).To(BeTrue(),
+				"a rejected (never-started) dispatch must release its Lease immediately, not hold it for the full stale-Lease window")
+		})
+	})
+
+	Describe("UT-AA-KA-065-026 / BR-AI-009: a capacity-exceeded AgentSession deleted and recreated under the same name dispatches promptly once capacity frees up", func() {
+		It("should not be blocked by a stale dispatch Lease left behind by the earlier rejected attempt", func() {
+			// Mirrors the real AA retry flow (InvestigatingHandler.retryCapacityExceeded
+			// -> AgentSessionCreator.DeleteForRetry -> GetOrCreate): a fresh
+			// AgentSession object with the SAME NAME as the one that was
+			// just rejected for capacity.
+			cappedStore := session.NewStore(5*time.Minute, session.WithMaxConcurrent(1))
+			cappedMgr := session.NewManager(cappedStore, logr.Discard(), nil, kametrics.NewMetrics())
+
+			runner := &fakeInvestigationRunner{delay: 50 * time.Millisecond, result: &katypes.InvestigationResult{RCASummary: "first"}}
+			d := agentsession.NewDispatcher(cli, testNamespace, "replica-a", cappedMgr, runner, logr.Discard(), agentsession.WithResyncInterval(20*time.Millisecond))
+			wireHooks(cappedMgr, d)
+			go d.Start(ctx)
+
+			first := newPendingAgentSession("as-retry-1")
+			Expect(cli.Create(ctx, first)).To(Succeed())
+			firstKey := crclient.ObjectKeyFromObject(first)
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, firstKey, got)).To(Succeed())
+				return got.Status.Phase
+			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseInvestigating),
+				"the first AgentSession must occupy the capped Manager's sole concurrent slot before the second is created")
+
+			rejected := newPendingAgentSession("as-retry-2")
+			Expect(cli.Create(ctx, rejected)).To(Succeed())
+			rejectedKey := crclient.ObjectKeyFromObject(rejected)
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, rejectedKey, got)).To(Succeed())
+				return got.Status.Phase
+			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseFailed),
+				"the second AgentSession must be capacity-rejected while the first is still occupying the sole slot")
+
+			// AA's retry: delete the rejected AgentSession, then recreate a
+			// fresh one under the identical name -- exactly what
+			// AgentSessionCreator.DeleteForRetry + the next GetOrCreate does.
+			Expect(cli.Delete(ctx, rejected)).To(Succeed())
+			// The first investigation finishes on its own (50ms delay),
+			// freeing the sole slot for the retry attempt.
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, firstKey, got)).To(Succeed())
+				return got.Status.Phase
+			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseCompleted))
+
+			retry := newPendingAgentSession("as-retry-2")
+			Expect(cli.Create(ctx, retry)).To(Succeed())
+
+			Eventually(func() agentsessionv1.AgentSessionPhase {
+				got := &agentsessionv1.AgentSession{}
+				Expect(cli.Get(ctx, rejectedKey, got)).To(Succeed())
+				return got.Status.Phase
+			}, "2s", "10ms").Should(Equal(agentsessionv1.AgentSessionPhaseCompleted),
+				"the retried AgentSession must dispatch promptly once capacity frees up, not be blocked for the full stale-Lease window by the earlier rejected attempt's leftover Lease")
 		})
 	})
 
