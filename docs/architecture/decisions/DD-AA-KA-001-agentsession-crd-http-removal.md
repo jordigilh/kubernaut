@@ -571,6 +571,36 @@ rejections, which is all the test needs to prove the retry path, without needing
 correspondingly lowering the timeout back to 240s. This targets the actual lever (total concurrent
 load) instead of continuing to expand a timeout against unpredictable CI-runner variance.
 
+**RCA — seventh CI run of E2E-AA-065 (2026-08-20, same day)**: the burst-reduction fix (120→70)
+uncovered the *opposite* failure mode on this run's (lighter-loaded) runner: all 70 investigations
+converged to `Completed` in just 18.4s, but the "at least one real capacity-exceeded retry occurred"
+assertion failed (`KASession.Generation` never advanced on any of the 70). The default mock LLM
+scenario (keyed off `SignalName: "CrashLoopBackOff"`) completes an investigation in well under a
+second, and burst *creation* itself (rate-limited by the API server across 70 concurrent `Create`
+calls) apparently took longer than individual investigations took to *finish* on this lighter-loaded
+run -- so completions kept freeing slots faster than new investigations arrived, and concurrent
+in-flight count never actually broke through the 50-slot cap. This reveals the deeper flaw shared by
+every attempt so far (120, then 70): the test relied on winning a wall-clock race between
+burst-creation speed and investigation-completion speed, a fundamentally non-deterministic lever that
+CI-runner scheduling variance can tip either way -- too slow a burst-creation-vs-completion ratio (a
+heavily loaded runner, as in runs 4-6) produces a long convergence tail; too fast a ratio (a lightly
+loaded runner, as in this run) produces zero overlap at all. Fixed by switching the burst's
+`SignalName` to `"brief-investigation-test"`, an existing mock LLM scenario
+(`scenario_brief_investigation.go`, already proven by `IT-AA-1376-001` to reliably hold a KA session
+open for a controlled ~9-12s window) instead of the default near-instant scenario. This removes the
+race entirely: with every investigation's duration now deterministic and bounded well above the burst
+API-server-imposed creation window, overlap past the 50-slot cap is guaranteed regardless of runner
+speed. Burst size stays at 70 (no longer needs to be large enough to "win" a timing race, just enough
+to exceed the cap once overlap is guaranteed), and the timeout was lowered 240s → 120s accordingly
+(bounded, deterministic per-investigation duration makes a tight timeout safe, and further reduces
+this spec's share of the job's 20-minute CI budget).
+
+Lesson (compounds the Gap 6 lesson): a test that manufactures a race condition to *prove* a fix for a
+race condition must not itself depend on an unmanaged, unbounded race (wall-clock burst-creation-speed
+vs. completion-speed) to do so -- it must pin down every timing variable it can (here, investigation
+duration) and leave only the one variable actually under test (dispatch admission control) free to
+vary.
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:

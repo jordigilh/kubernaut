@@ -47,24 +47,32 @@ import (
 // than this E2E cluster's configured KA runtime.session.maxConcurrentInvestigations
 // (50 -- see the inline KA config template in test/infrastructure/kubernautagent.go).
 // Investigations are created via concurrent goroutines (not a serial loop) so
-// the burst arrives at KA's dispatcher as close to simultaneously as possible
-// -- Mock LLM investigations typically complete in well under a second, so a
-// serial, trickling burst could let completions free up slots fast enough to
-// never genuinely exceed capacity.
+// the burst arrives at KA's dispatcher as close to simultaneously as possible.
 //
-// 120 (2.4x overshoot) originally, reduced to 70 (1.4x overshoot, 2026-08-20)
-// after DD-AA-KA-001 Gap 6's dispatch-Lease-leak fix landed: with the actual
-// bug fixed, two consecutive real CI runs showed zero Failed (retry logic is
-// correct) but a still-flaky tail of not-yet-Completed investigations at any
-// fixed timeout -- worse (113/120) on the run with the *longer* 360s timeout
-// than the prior run's 300s (116/120), proving this tail is driven by
-// absolute concurrent system load on the shared CI runner (120 simultaneous
-// LLM-driven investigations), not insufficient wall-clock budget. Raising the
-// timeout further was also approaching this job's 20-minute CI cap (this
-// single spec alone was consuming ~6 of the ~17 minutes used). 70 still
-// comfortably exceeds the 50-slot cap by 20 (enough to force multiple genuine
-// rejections -- the retry mechanism only needs *some* overshoot to prove
-// itself, not 2.4x) while cutting total concurrent load ~42%.
+// History (2026-08-20): 120 (2.4x overshoot) originally, with the default
+// fast-completing "CrashLoopBackOff" mock scenario. After DD-AA-KA-001 Gap
+// 6's dispatch-Lease-leak fix landed, two consecutive CI runs showed zero
+// Failed (retry logic is correct) but a flaky tail of not-yet-Completed
+// investigations that got *worse*, not better, when only the timeout was
+// raised (113/120 Completed at 360s vs. 116/120 at 300s) -- proving the tail
+// was driven by absolute concurrent system load on the shared CI runner, not
+// insufficient wall-clock budget. Cutting the burst to 70 fixed the load
+// problem but introduced the opposite failure: on a lightly-loaded runner,
+// all 70 completed in 18s with ZERO capacity rejections ever observed
+// (KASession.Generation never advanced) -- fast-completing investigations
+// simply never overlapped enough to exceed the 50-slot cap, since burst
+// *creation* (rate-limited by the API server) and burst *completion* (mock
+// LLM responds in well under a second) were racing each other, and on that
+// run creation lost. Root cause of both failure modes: relying on wall-clock
+// race timing (a fundamentally non-deterministic lever) to force overlap.
+// Fixed by using the "brief-investigation-test" mock LLM scenario below
+// (~9-12s deterministic investigation duration, the same mechanism already
+// proven by IT-AA-1376-001 for holding KA sessions open a controlled amount
+// of time) instead of racing burst-creation speed against instant
+// completion -- this guarantees overlap deterministically regardless of CI
+// runner speed, so the burst size no longer needs to be large enough to
+// "win" a timing race. 70 (1.4x overshoot, 20 over the 50-slot cap) is ample
+// to force multiple genuine rejections once overlap is guaranteed.
 const capacityBurstOvershoot = 70
 
 var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e", "capacity-retry", "aa-065"), func() {
@@ -86,9 +94,16 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 					RemediationID: rrName,
 					AnalysisRequest: aianalysisv1.AnalysisRequest{
 						SignalContext: aianalysisv1.SignalContextInput{
-							Fingerprint:      "e2e-fp-" + suffix,
-							Severity:         "warning",
-							SignalName:       "CrashLoopBackOff",
+							Fingerprint: "e2e-fp-" + suffix,
+							Severity:    "warning",
+							// "brief-investigation-test" routes to the mock LLM's
+							// briefInvestigationConfig scenario (~9-12s deterministic
+							// investigation duration) instead of the near-instant
+							// default "CrashLoopBackOff" scenario -- see
+							// capacityBurstOvershoot's doc comment above for why a
+							// deterministic delay, not burst size, is what reliably
+							// forces capacity overlap.
+							SignalName:       "brief-investigation-test",
 							Environment:      "staging",
 							BusinessPriority: "P2",
 							TargetResource: aianalysisv1.TargetResource{
@@ -123,16 +138,15 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 		wg.Wait()
 
 		By("every investigation must eventually converge to Completed -- a capacity rejection is transient and must never surface as a permanent failure")
-		// 240s (2026-08-20, alongside capacityBurstOvershoot's 120->70 reduction
-		// above): the earlier 180s->300s->360s timeout bumps were chasing a moving
-		// target -- the real bug (DD-AA-KA-001 Gap 6's dispatch-Lease leak) is now
-		// fixed (two consecutive CI runs: zero Failed), but a 120-investigation
-		// burst's absolute concurrent load produced a tail that got *worse*, not
-		// better, when the timeout alone was raised (113/120 at 360s vs. 116/120 at
-		// 300s), while also consuming most of this job's 20-minute CI budget on this
-		// one spec. With the burst now cut to 70 (still 20 over KA's 50-slot cap,
-		// comfortably enough to force multiple genuine rejections), 240s gives
-		// generous margin against a much smaller concurrent load.
+		// 120s (2026-08-20, alongside switching to the deterministic
+		// "brief-investigation-test" scenario -- see capacityBurstOvershoot's doc
+		// comment above): with each investigation taking a bounded ~9-12s and at
+		// most a handful of ErrorClassifier retry cycles (backoff base 1s,
+		// multiplier 2.0, max 5 attempts -- ~31s worst case) needed to drain 20
+		// investigations past a 50-slot cap in two waves, total convergence should
+		// land well under a minute; 120s leaves generous margin for CI scheduling
+		// noise without re-approaching this job's 20-minute CI budget the way the
+		// earlier 240s-360s timeouts (chasing a non-deterministic race) did.
 		Eventually(func() map[string]int {
 			counts := map[string]int{}
 			for _, a := range analyses {
@@ -148,7 +162,7 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 				counts[phase]++
 			}
 			return counts
-		}, 240*time.Second, 3*time.Second).Should(
+		}, 120*time.Second, 3*time.Second).Should(
 			SatisfyAll(
 				HaveKeyWithValue("Completed", capacityBurstOvershoot),
 				Not(HaveKey("Failed")),
