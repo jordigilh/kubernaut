@@ -557,6 +557,20 @@ timeout again, 300s → 360s, to cover this residual real tail latency (120 conc
 investigations sharing a CI runner) — still comfortably inside the job's 20-minute CI budget (this run
 took 16m38s at 300s).
 
+**RCA — sixth CI run of E2E-AA-065 (2026-08-20, same day)**: the 360s timeout produced a *worse*
+result than the prior 300s run -- 113/120 Completed (7 stuck) vs. 116/120 (4 stuck) -- despite 60s more
+budget, and zero `Failed` again. A longer timeout making convergence worse disproves "just needs more
+time": the tail is driven by the burst's absolute concurrent system load on a shared CI runner (120
+simultaneous LLM-driven investigations competing for CPU/network with everything else in the job), not
+by an insufficient wall-clock window -- more time doesn't help when the runner is already saturated,
+and run-to-run scheduling noise on GitHub-hosted runners means the *same* timeout can yield different
+tail sizes. Continuing to raise the timeout was also consuming most of this job's 20-minute CI budget
+on this one spec alone (~6 of ~17 minutes). Fixed by reducing `capacityBurstOvershoot` 120 → 70 (still
+20 over KA's 50-slot cap -- comfortably enough to force multiple genuine `session.ErrMaxInvestigationsReached`
+rejections, which is all the test needs to prove the retry path, without needing 2.4x overshoot) and
+correspondingly lowering the timeout back to 240s. This targets the actual lever (total concurrent
+load) instead of continuing to expand a timeout against unpredictable CI-runner variance.
+
 ## Future Considerations (not a decision — revisit later)
 
 Raised during implementation, deliberately deferred rather than decided here:

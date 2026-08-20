@@ -43,16 +43,29 @@ import (
 // doc comment). Only this E2E test exercises KA's actual session.Store
 // admission control under genuine concurrent load.
 //
-// capacityBurstOvershoot deliberately creates far more concurrent
-// investigations than this E2E cluster's configured KA
-// runtime.session.maxConcurrentInvestigations (50 -- see the inline KA config
-// template in test/infrastructure/kubernautagent.go). Investigations are
-// created via concurrent goroutines (not a serial loop) so the burst arrives
-// at KA's dispatcher as close to simultaneously as possible -- Mock LLM
-// investigations typically complete in well under a second, so a serial,
-// trickling burst could let completions free up slots fast enough to never
-// genuinely exceed capacity.
-const capacityBurstOvershoot = 120
+// capacityBurstOvershoot deliberately creates more concurrent investigations
+// than this E2E cluster's configured KA runtime.session.maxConcurrentInvestigations
+// (50 -- see the inline KA config template in test/infrastructure/kubernautagent.go).
+// Investigations are created via concurrent goroutines (not a serial loop) so
+// the burst arrives at KA's dispatcher as close to simultaneously as possible
+// -- Mock LLM investigations typically complete in well under a second, so a
+// serial, trickling burst could let completions free up slots fast enough to
+// never genuinely exceed capacity.
+//
+// 120 (2.4x overshoot) originally, reduced to 70 (1.4x overshoot, 2026-08-20)
+// after DD-AA-KA-001 Gap 6's dispatch-Lease-leak fix landed: with the actual
+// bug fixed, two consecutive real CI runs showed zero Failed (retry logic is
+// correct) but a still-flaky tail of not-yet-Completed investigations at any
+// fixed timeout -- worse (113/120) on the run with the *longer* 360s timeout
+// than the prior run's 300s (116/120), proving this tail is driven by
+// absolute concurrent system load on the shared CI runner (120 simultaneous
+// LLM-driven investigations), not insufficient wall-clock budget. Raising the
+// timeout further was also approaching this job's 20-minute CI cap (this
+// single spec alone was consuming ~6 of the ~17 minutes used). 70 still
+// comfortably exceeds the 50-slot cap by 20 (enough to force multiple genuine
+// rejections -- the retry mechanism only needs *some* overshoot to prove
+// itself, not 2.4x) while cutting total concurrent load ~42%.
+const capacityBurstOvershoot = 70
 
 var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e", "capacity-retry", "aa-065"), func() {
 	It("transparently retries and eventually completes every investigation despite exceeding KA's real dispatch capacity", func() {
@@ -110,19 +123,16 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 		wg.Wait()
 
 		By("every investigation must eventually converge to Completed -- a capacity rejection is transient and must never surface as a permanent failure")
-		// 360s (raised from 300s per CI evidence, 2026-08-20): the 180s->300s bump
-		// above turned out to be masking a real bug, not just tight timing -- a
-		// rejected dispatch's per-name Lease (dispatchLeaseDuration=15m) was never
-		// released, so AA's DeleteForRetry-driven retry (recreating an AgentSession
-		// under the identical name) silently lost the Lease race and never
-		// redispatched (fixed in dispatcher.go's dispatch() failure path, DD-AA-KA-001
-		// Gap 6). Post-fix CI run: 116/120 Completed within 300s, zero Failed, and the
-		// remaining 4 were still genuinely mid-investigation (Status.Phase=Investigating
-		// the whole time, not stuck/blocked) -- real tail latency from 120 concurrent
-		// LLM-driven investigations sharing a CI runner, not a retry-logic gap. 360s
-		// gives that tail headroom while staying under this job's 20-minute CI budget
-		// (ci-pipeline.yml's e2e-tests matrix: aianalysis timeout=20; this run took
-		// 16m38s at 300s, so +60s here keeps ample margin).
+		// 240s (2026-08-20, alongside capacityBurstOvershoot's 120->70 reduction
+		// above): the earlier 180s->300s->360s timeout bumps were chasing a moving
+		// target -- the real bug (DD-AA-KA-001 Gap 6's dispatch-Lease leak) is now
+		// fixed (two consecutive CI runs: zero Failed), but a 120-investigation
+		// burst's absolute concurrent load produced a tail that got *worse*, not
+		// better, when the timeout alone was raised (113/120 at 360s vs. 116/120 at
+		// 300s), while also consuming most of this job's 20-minute CI budget on this
+		// one spec. With the burst now cut to 70 (still 20 over KA's 50-slot cap,
+		// comfortably enough to force multiple genuine rejections), 240s gives
+		// generous margin against a much smaller concurrent load.
 		Eventually(func() map[string]int {
 			counts := map[string]int{}
 			for _, a := range analyses {
@@ -138,7 +148,7 @@ var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e"
 				counts[phase]++
 			}
 			return counts
-		}, 360*time.Second, 3*time.Second).Should(
+		}, 240*time.Second, 3*time.Second).Should(
 			SatisfyAll(
 				HaveKeyWithValue("Completed", capacityBurstOvershoot),
 				Not(HaveKey("Failed")),
