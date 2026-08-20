@@ -75,7 +75,21 @@ import (
 // to force multiple genuine rejections once overlap is guaranteed.
 const capacityBurstOvershoot = 70
 
-var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e", "capacity-retry", "aa-065"), func() {
+// Serial (2026-08-20 RCA, PR #2189 round-13): this suite runs with
+// `--procs=$(TEST_PROCS)` (Makefile test-e2e-% target), so without Serial
+// this spec's deliberate capacity-saturating burst runs concurrently with
+// OTHER specs in sibling Ginkgo processes -- all sharing the SAME KA
+// deployment's session.maxConcurrentInvestigations=50 cap. That starved
+// unrelated specs (03_full_flow_test.go, 02_metrics_test.go,
+// 05_audit_trail_test.go) of dispatch capacity mid-burst, pushing their
+// tight (30-60s) Eventually windows past their limit even though they never
+// touch capacity-retry logic themselves. Exact precedent for this class of
+// fix: test/e2e/datastorage/11_connection_pool_exhaustion_test.go's own
+// Serial (burst saturates a shared connection pool, interfering with
+// parallel tests). Serial guarantees this spec only runs once every other
+// process is idle, matching this test's already-serial internal design (one
+// blocking burst-then-converge It).
+var _ = Describe("E2E-AA-065: AgentSession capacity-exceeded retry", Label("e2e", "capacity-retry", "aa-065"), Serial, func() {
 	It("transparently retries and eventually completes every investigation despite exceeding KA's real dispatch capacity", func() {
 		analyses := make([]*aianalysisv1.AIAnalysis, capacityBurstOvershoot)
 		for i := range analyses {
